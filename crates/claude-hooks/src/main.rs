@@ -13,6 +13,8 @@
 //!     claude-hooks cd-guard      legge il JSON del gancio da stdin
 //!     claude-hooks --list        i ganci disponibili
 
+mod linear;
+
 use hook_io::{Decision, Mode};
 
 fn main() {
@@ -67,6 +69,13 @@ const SMOKE: &[(&str, &str, &str)] = &[
         "gh pr merge 262 --admin",
         "gh pr merge 262 --squash",
     ),
+    (
+        // anche questo a pezzi, e per lo stesso motivo: scritto in chiaro, il
+        // gancio vivo rifiuterebbe il comando che compila il proprio smoke test
+        "linear-readonly",
+        concat!("linear ", "issue ", "close HRD-1"),
+        "orca linear list --json",
+    ),
 ];
 
 /// Esegue ogni gancio su due casi noti, in-process. Uscita 0 se tutti si
@@ -79,6 +88,15 @@ fn self_check() -> i32 {
             let decision = match *name {
                 "cd-guard" => guards::cd_guard::judge(command),
                 "block-pr-merge-admin" => guards::pr_merge_admin::judge(command),
+                // Il rifiuto viaggia sull'altro canale (`deny` su stdout,
+                // uscita 0), quindi qui si guarda che il giudizio ci sia — non
+                // che il gancio esca con codice 2.
+                "linear-readonly" => match guards::linear_readonly::judge_bash(command) {
+                    guards::linear_readonly::Verdict::Refused { reason, .. } => {
+                        Decision::Block(reason)
+                    }
+                    _ => Decision::Pass,
+                },
                 _ => {
                     eprintln!("{name}: nessun caso di prova registrato");
                     failures += 1;
@@ -199,6 +217,18 @@ fn run(which: &str) -> Result<i32, String> {
                 return Ok(2);
             }
             Ok(0)
+        }
+        // Il divieto su Linear: 813 righe di Python, il gancio più grande del
+        // parco. Il giudizio sta in `guards::linear_readonly` ed è puro; la
+        // parte con stato — permesso di Theo e registro — in `linear.rs`.
+        "linear-readonly" => {
+            // Nessuna valvola d'ambiente: il mandato dell'11/08/2026 non
+            // prevede che una variabile lo tolga. Le tre valvole che esistono
+            // stanno dentro il giudizio, e la più forte non la digita l'agente.
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            Ok(linear::run(&input))
         }
         other => Err(format!("gancio sconosciuto: {other}")),
     }
