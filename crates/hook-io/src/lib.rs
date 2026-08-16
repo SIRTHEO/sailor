@@ -50,11 +50,17 @@ impl HookInput {
 /// Cosa il gancio ha deciso. `Warn` esiste perché un divieto senza una
 /// sostituzione ovvia peggiora le abitudini invece di correggerle: si blocca
 /// dove la riscrittura è meccanica, si avvisa dove dipende dal caso.
+///
+/// `Deny` non è un `Block` più educato: è **un altro canale**. Il blocco esce
+/// con codice 2 e scrive su stderr; il diniego esce con codice 0 e scrive su
+/// stdout un JSON che l'harness interpreta come rifiuto del permesso. I ganci
+/// Python usano l'uno o l'altro, e scambiarli cambia ciò che l'harness fa.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decision {
     Pass,
     Warn(String),
     Block(String),
+    Deny(String),
 }
 
 impl Decision {
@@ -82,8 +88,23 @@ pub fn emit(hook: &str, decision: &Decision) -> i32 {
         Decision::Pass => {}
         Decision::Warn(m) => eprintln!("avviso ({hook}): {m}"),
         Decision::Block(m) => eprintln!("BLOCCATO ({hook}): {m}"),
+        Decision::Deny(m) => println!("{}", deny_payload(m)),
     }
     decision.exit_code()
+}
+
+/// Il JSON che l'harness legge come «permesso negato». La forma è quella che
+/// scrivono i ganci Python, campo per campo: cambiarla non fa fallire niente,
+/// fa **passare** il comando in silenzio.
+fn deny_payload(reason: &str) -> String {
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    })
+    .to_string()
 }
 
 /// La valvola di un gancio, letta dall'ambiente.

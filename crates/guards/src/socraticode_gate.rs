@@ -65,7 +65,12 @@ pub struct Verdict {
 
 impl Verdict {
     fn pass(reason: &'static str) -> Verdict {
-        Verdict { decision: Decision::Pass, reason, path: None, count: None }
+        Verdict {
+            decision: Decision::Pass,
+            reason,
+            path: None,
+            count: None,
+        }
     }
     fn with_path(mut self, p: &str) -> Verdict {
         self.path = Some(p.to_string());
@@ -79,7 +84,12 @@ impl Verdict {
     /// **di competenza**, e sporcarlo con ogni chiamata a strumento renderebbe
     /// il denominatore inutile.
     fn out_of_scope() -> Verdict {
-        Verdict { decision: Decision::Pass, reason: "", path: None, count: None }
+        Verdict {
+            decision: Decision::Pass,
+            reason: "",
+            path: None,
+            count: None,
+        }
     }
     fn is_recorded(&self) -> bool {
         !self.reason.is_empty()
@@ -102,7 +112,11 @@ fn canonical_of_worktree(dir: &Path) -> Option<PathBuf> {
     let text = std::fs::read_to_string(&dotgit).ok()?;
     let line = text.lines().find_map(|l| l.strip_prefix("gitdir:"))?;
     let gitdir = line.trim();
-    let marker = format!("{}.git{}", std::path::MAIN_SEPARATOR, std::path::MAIN_SEPARATOR);
+    let marker = format!(
+        "{}.git{}",
+        std::path::MAIN_SEPARATOR,
+        std::path::MAIN_SEPARATOR
+    );
     let i = gitdir.find(&marker)?;
     if i == 0 {
         return None;
@@ -158,7 +172,9 @@ fn is_indexed_within(ws: &Workspace, dir: &Path, hops_left: u8) -> bool {
 /// settimana. Nelle sessioni corte si pagava quasi solo quel pedaggio, perché le
 /// trenta ricerche successive non arrivavano mai.
 fn throttle(ws: &Workspace, session: &str, reason: &str, quota: i64) -> Option<i64> {
-    let marker = ws.tmp.join(format!("claude-socraticode-gate-{reason}-{session}"));
+    let marker = ws
+        .tmp
+        .join(format!("claude-socraticode-gate-{reason}-{session}"));
     match std::fs::read_to_string(&marker) {
         Ok(text) => {
             let n: i64 = text.trim().parse().unwrap_or(0);
@@ -192,10 +208,11 @@ pub fn is_code_search(command: &str) -> bool {
     if rg.is_match(command) {
         return true;
     }
-    let grep = GREP
-        .get_or_init(|| Regex::new(&format!(r"(^|;|&&|\|\|)\s*{ENV_PREFIX}grep\s+([^|;]*)")).unwrap());
-    let recursive =
-        RECURSIVE.get_or_init(|| Regex::new(r"\s(-[a-zA-Z]*[rR][a-zA-Z]*\b|--recursive\b)").unwrap());
+    let grep = GREP.get_or_init(|| {
+        Regex::new(&format!(r"(^|;|&&|\|\|)\s*{ENV_PREFIX}grep\s+([^|;]*)")).unwrap()
+    });
+    let recursive = RECURSIVE
+        .get_or_init(|| Regex::new(r"\s(-[a-zA-Z]*[rR][a-zA-Z]*\b|--recursive\b)").unwrap());
     match grep.captures(command) {
         Some(c) => recursive.is_match(&format!(" {}", c.get(2).map_or("", |m| m.as_str()))),
         None => false,
@@ -269,10 +286,8 @@ pub fn is_out_of_perimeter(path: &str) -> bool {
 
 pub fn is_throwaway(path: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"(^/tmp/|^/private/tmp/|/scratchpad/|\.claude/state/)").unwrap()
-    })
-    .is_match(path)
+    RE.get_or_init(|| Regex::new(r"(^/tmp/|^/private/tmp/|/scratchpad/|\.claude/state/)").unwrap())
+        .is_match(path)
 }
 
 /// Il primo percorso assoluto del comando — copre `S=/repo/… grep "$S/src"`.
@@ -502,7 +517,11 @@ fn base64url_tail(s: &str, n: usize) -> String {
     let bytes = s.as_bytes();
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         let take = chunk.len() + 1;
         for i in 0..take {
@@ -522,10 +541,8 @@ pub fn record(verdict: &Verdict, tool: &str, session: &str) {
         Decision::Block(_) => "blocca",
         _ => "passa",
     };
-    let mut extra: Vec<(&str, journal::Field)> = vec![
-        ("strumento", tool.into()),
-        ("sessione", session.into()),
-    ];
+    let mut extra: Vec<(&str, journal::Field)> =
+        vec![("strumento", tool.into()), ("sessione", session.into())];
     if let Some(n) = verdict.count {
         extra.push(("conteggio", n.into()));
     }
@@ -596,12 +613,18 @@ mod tests {
     #[test]
     fn it_encodes_the_marker_name_like_the_javascript_did() {
         // node: Buffer.from('/home/someone/a.ts').toString('base64url').slice(-40)
-        assert_eq!(base64url_tail("/home/someone/a.ts", 40), "L1VzZXJzL3RoZW8vYS50cw");
+        assert_eq!(
+            base64url_tail("/home/someone/a.ts", 40),
+            "L1VzZXJzL3RoZW8vYS50cw"
+        );
     }
 
     fn workspace() -> (Workspace, tempdir::TempDir) {
         let dir = tempdir::TempDir::new();
-        let ws = Workspace { home: dir.path().join("home"), tmp: dir.path().join("tmp") };
+        let ws = Workspace {
+            home: dir.path().join("home"),
+            tmp: dir.path().join("tmp"),
+        };
         std::fs::create_dir_all(&ws.tmp).unwrap();
         std::fs::create_dir_all(ws.home.join(".claude").join("state")).unwrap();
         (ws, dir)
@@ -618,7 +641,10 @@ mod tests {
             last = throttle(&ws, "s1", "search", 30).expect("ancora sotto quota");
         }
         assert_eq!(last, 30);
-        assert!(throttle(&ws, "s1", "search", 30).is_none(), "a quota deve bloccare");
+        assert!(
+            throttle(&ws, "s1", "search", 30).is_none(),
+            "a quota deve bloccare"
+        );
         // e subito dopo si riarma: il rilancio consapevole passa sempre
         assert_eq!(throttle(&ws, "s1", "search", 30), Some(1));
     }
@@ -651,7 +677,10 @@ mod tests {
             format!("gitdir: {}/.git/worktrees/copia\n", canonical.display()),
         )
         .unwrap();
-        assert!(is_indexed(&ws, &worktree), "il marcatore vive solo nel canonico");
+        assert!(
+            is_indexed(&ws, &worktree),
+            "il marcatore vive solo nel canonico"
+        );
     }
 
     #[test]
@@ -680,7 +709,8 @@ mod tests {
         impl TempDir {
             pub fn new() -> TempDir {
                 let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-                let p = std::env::temp_dir().join(format!("socraticode-gate-prova-{}-{n}", std::process::id()));
+                let p = std::env::temp_dir()
+                    .join(format!("socraticode-gate-prova-{}-{n}", std::process::id()));
                 std::fs::create_dir_all(&p).unwrap();
                 TempDir(p)
             }

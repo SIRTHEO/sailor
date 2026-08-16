@@ -136,6 +136,24 @@ fn run(which: &str) -> Result<i32, String> {
             let decision = guards::pr_merge_admin::judge(input.bash_command());
             Ok(emit_with_legacy_prefix("block-pr-merge-admin", &decision))
         }
+        "hooks-off" => {
+            if Mode::from_env("GANCI_SPENTI") == Mode::Off {
+                return Ok(0);
+            }
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            if !input.is_tool("Bash") {
+                return Ok(0);
+            }
+            let default_dir = input
+                .cwd
+                .clone()
+                .or_else(|| std::env::var("CLAUDE_PROJECT_DIR").ok())
+                .unwrap_or_default();
+            let decision = guards::hooks_off::judge(input.bash_command(), &default_dir);
+            Ok(hook_io::emit("hooks-off", &decision))
+        }
         "socraticode-gate" => {
             let Some(input) = hook_io::read_input() else {
                 return Ok(0);

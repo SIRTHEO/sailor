@@ -49,6 +49,9 @@ fn it_decides_exactly_like_the_python_hook_on_real_commands() {
             // sue etichette, e il corpus le porta così
             Decision::Warn(_) => "avvisa",
             Decision::Block(_) => "blocca",
+            // `cd-guard` non nega permessi: qui sarebbe un difetto, e il
+            // confronto col Python lo farebbe vedere come divergenza
+            Decision::Deny(_) => "nega",
         };
         checked += 1;
         if got != expected {
