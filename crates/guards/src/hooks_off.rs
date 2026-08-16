@@ -22,6 +22,7 @@
 //! quel repo ha fatto una scelta e non è questo il posto per ribaltarla. E non
 //! controlla che i ganci *funzionino*: solo che ci siano.
 
+use crate::shell::split_words;
 use hook_io::Decision;
 use regex::Regex;
 use std::path::{Path, PathBuf};
@@ -69,63 +70,6 @@ pub fn targets(command: &str) -> Vec<(Option<String>, String)> {
         found.push((path, m[1].to_string()));
     }
     found
-}
-
-/// Lo `shlex.split` del Python, per quel che serve qui: rispetta apici e
-/// virgolette e restituisce `None` se restano aperte.
-fn split_words(s: &str) -> Option<Vec<String>> {
-    let mut words = Vec::new();
-    let mut current = String::new();
-    let mut quote: Option<char> = None;
-    let mut started = false;
-    let mut chars = s.chars();
-
-    while let Some(c) = chars.next() {
-        match quote {
-            Some(q) => {
-                if c == q {
-                    quote = None;
-                } else {
-                    if c == '\\' && q == '"' {
-                        if let Some(next) = chars.next() {
-                            current.push(next);
-                            continue;
-                        }
-                    }
-                    current.push(c);
-                }
-            }
-            None => match c {
-                '\'' | '"' => {
-                    quote = Some(c);
-                    started = true;
-                }
-                '\\' => {
-                    if let Some(next) = chars.next() {
-                        current.push(next);
-                        started = true;
-                    }
-                }
-                c if c.is_whitespace() => {
-                    if started || !current.is_empty() {
-                        words.push(std::mem::take(&mut current));
-                        started = false;
-                    }
-                }
-                c => {
-                    current.push(c);
-                    started = true;
-                }
-            },
-        }
-    }
-    if quote.is_some() {
-        return None; // virgolette dispari: il gancio tace
-    }
-    if started || !current.is_empty() {
-        words.push(current);
-    }
-    Some(words)
 }
 
 fn git(repo: &Path, args: &[&str]) -> Option<String> {
@@ -279,17 +223,4 @@ mod tests {
         assert!(targets(r#"git commit -m "aperta"#).is_empty());
     }
 
-    #[test]
-    fn it_splits_words_like_the_python_shlex_did() {
-        assert_eq!(
-            split_words(r#"git -C /tmp/a commit -m "feat: x y""#).unwrap(),
-            vec!["git", "-C", "/tmp/a", "commit", "-m", "feat: x y"]
-        );
-        assert_eq!(split_words("a  b\tc").unwrap(), vec!["a", "b", "c"]);
-        // una stringa vuota fra virgolette è una parola, non niente
-        assert_eq!(
-            split_words(r#"git commit -m """#).unwrap(),
-            vec!["git", "commit", "-m", ""]
-        );
-    }
 }
