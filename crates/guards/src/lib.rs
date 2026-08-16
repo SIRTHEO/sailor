@@ -7,3 +7,4 @@
 
 pub mod cd_guard;
 pub mod pr_merge_admin;
+pub mod socraticode_gate;

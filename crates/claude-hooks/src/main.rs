@@ -56,6 +56,10 @@ fn main() {
 /// all'avvio. Qui si chiede al gancio di decidere, e si guarda cosa decide.
 const SMOKE: &[(&str, &str, &str)] = &[
     ("cd-guard", "cd /repo && git status", "git -C /repo status"),
+    // Il gate SocratiCode non è in questa tabella: la sua decisione dipende da
+    // un repo indicizzato e da un contatore per sessione, quindi un caso «deve
+    // bloccare» qui sarebbe una finzione. La sua rete è il confronto col Node
+    // in `tools/compare-socraticode-gate.py`, che gira con stato isolato.
     (
         // scritto a pezzi: un freno che blocca il proprio smoke test scritto in
         // chiaro renderebbe impossibile provarlo dalla riga di comando
@@ -131,6 +135,26 @@ fn run(which: &str) -> Result<i32, String> {
             }
             let decision = guards::pr_merge_admin::judge(input.bash_command());
             Ok(emit_with_legacy_prefix("block-pr-merge-admin", &decision))
+        }
+        "socraticode-gate" => {
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            let ws = guards::socraticode_gate::Workspace::from_env();
+            let verdict = guards::socraticode_gate::judge(&ws, &input);
+            guards::socraticode_gate::record(
+                &verdict,
+                input.tool_name.as_deref().unwrap_or(""),
+                input.session_id.as_deref().unwrap_or("nosession"),
+            );
+            // Il messaggio esce senza il prefisso comune: l'originale scriveva
+            // il testo nudo, e quel testo contiene già il nome del gate nella
+            // prima riga. Aggiungerlo cambierebbe ciò che il modello legge.
+            if let hook_io::Decision::Block(m) = &verdict.decision {
+                eprintln!("{m}");
+                return Ok(2);
+            }
+            Ok(0)
         }
         other => Err(format!("gancio sconosciuto: {other}")),
     }
