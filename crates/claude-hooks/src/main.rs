@@ -136,6 +136,21 @@ fn run(which: &str) -> Result<i32, String> {
             let decision = guards::pr_merge_admin::judge(input.bash_command());
             Ok(emit_with_legacy_prefix("block-pr-merge-admin", &decision))
         }
+        "pr-title" => {
+            if Mode::from_env("TITOLO_RICHIESTA") == Mode::Off {
+                return Ok(0);
+            }
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            if !input.is_tool("Bash") {
+                return Ok(0);
+            }
+            Ok(hook_io::emit(
+                "pr-title",
+                &guards::pr_title::judge(input.bash_command()),
+            ))
+        }
         "hooks-off" => {
             if Mode::from_env("GANCI_SPENTI") == Mode::Off {
                 return Ok(0);
