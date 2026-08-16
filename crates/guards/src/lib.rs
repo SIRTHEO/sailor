@@ -6,5 +6,6 @@
 //! prova la decisione, non il processo.
 
 pub mod cd_guard;
+pub mod hooks_off;
 pub mod pr_merge_admin;
 pub mod socraticode_gate;
