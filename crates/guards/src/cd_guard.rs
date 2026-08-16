@@ -234,6 +234,8 @@ mod tests {
                 Decision::Pass => "pass",
                 Decision::Warn(_) => "warn",
                 Decision::Block(_) => "block",
+                // questo freno non nega permessi: se ci arriva, è un difetto
+                Decision::Deny(_) => "deny",
             };
             assert_eq!(&got, expected, "caso: {command:?}");
         }
