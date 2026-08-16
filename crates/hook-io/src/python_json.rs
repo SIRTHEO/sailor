@@ -21,27 +21,40 @@
 use serde_json::Value;
 
 /// La stessa stringa che produrrebbe `json.dumps(value)` con i parametri
-/// predefiniti.
+/// predefiniti, cioè con `ensure_ascii=True`.
 pub fn dumps(value: &Value) -> String {
     let mut out = String::new();
-    write_value(value, &mut out);
+    write_value(value, true, &mut out);
     out
 }
 
-fn write_value(value: &Value, out: &mut String) {
+/// `json.dumps(value, ensure_ascii=False)`: gli accenti restano sé stessi.
+///
+/// Le due forme convivono nella stessa configurazione e non sono
+/// intercambiabili: la raccolta delle osservazioni scrive in ASCII, il registro
+/// di `linear-sola-lettura` no — e le sue 13.560 righe si leggono a occhio,
+/// dove `perché` sarebbe un peggioramento. Chi porta un gancio deve
+/// guardare quale delle due usa l'originale, non indovinare.
+pub fn dumps_unicode(value: &Value) -> String {
+    let mut out = String::new();
+    write_value(value, false, &mut out);
+    out
+}
+
+fn write_value(value: &Value, ascii_only: bool, out: &mut String) {
     match value {
         Value::Null => out.push_str("null"),
         Value::Bool(true) => out.push_str("true"),
         Value::Bool(false) => out.push_str("false"),
         Value::Number(n) => out.push_str(&n.to_string()),
-        Value::String(s) => write_string(s, out),
+        Value::String(s) => write_string(s, ascii_only, out),
         Value::Array(items) => {
             out.push('[');
             for (i, item) in items.iter().enumerate() {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                write_value(item, out);
+                write_value(item, ascii_only, out);
             }
             out.push(']');
         }
@@ -51,9 +64,9 @@ fn write_value(value: &Value, out: &mut String) {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                write_string(key, out);
+                write_string(key, ascii_only, out);
                 out.push_str(": ");
-                write_value(item, out);
+                write_value(item, ascii_only, out);
             }
             out.push('}');
         }
@@ -62,7 +75,7 @@ fn write_value(value: &Value, out: &mut String) {
 
 /// Le regole di escape di Python: i controlli con i nomi brevi dove esistono,
 /// `\uXXXX` per tutto il resto — compreso ogni carattere fuori dall'ASCII.
-fn write_string(s: &str, out: &mut String) {
+fn write_string(s: &str, ascii_only: bool, out: &mut String) {
     out.push('"');
     for c in s.chars() {
         match c {
@@ -74,7 +87,7 @@ fn write_string(s: &str, out: &mut String) {
             '\u{08}' => out.push_str("\\b"),
             '\u{0c}' => out.push_str("\\f"),
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c if c.is_ascii() => out.push(c),
+            c if c.is_ascii() || !ascii_only => out.push(c),
             c => {
                 // Fuori dal piano base servono due unità: Python emette la
                 // coppia di surrogati, non un solo `\u` a cinque cifre.
@@ -115,6 +128,15 @@ mod tests {
     fn the_short_names_win_over_the_numeric_escape() {
         assert_eq!(dumps(&json!("a\nb\tc")), r#""a\nb\tc""#);
         assert_eq!(dumps(&json!("\u{1}")), r#""\u0001""#);
+    }
+
+    #[test]
+    fn without_ensure_ascii_the_accents_stay_themselves() {
+        assert_eq!(dumps_unicode(&json!("perch\u{e9}")), "\"perch\u{e9}\"");
+        assert_eq!(dumps_unicode(&json!("\u{1f642}")), "\"\u{1f642}\"");
+        // gli escape veri restano tali: `ensure_ascii` non li riguarda
+        assert_eq!(dumps_unicode(&json!("a\nb\"c")), r#""a\nb\"c""#);
+        assert_eq!(dumps_unicode(&json!("\u{1}")), r#""\u0001""#);
     }
 
     #[test]

@@ -12,6 +12,7 @@
 //! silenzio è peggio, perché è indistinguibile da uno contento.
 
 pub mod journal;
+pub mod local_time;
 pub mod observations;
 pub mod python_json;
 
@@ -98,15 +99,20 @@ pub fn emit(hook: &str, decision: &Decision) -> i32 {
 /// Il JSON che l'harness legge come «permesso negato». La forma è quella che
 /// scrivono i ganci Python, campo per campo: cambiarla non fa fallire niente,
 /// fa **passare** il comando in silenzio.
+///
+/// Serializzato come `json.dumps`, non come `serde_json::to_string`: separatori
+/// con lo spazio e non-ASCII in `\uXXXX`. L'harness fa il parse e non se ne
+/// accorgerebbe, ma questa riga finisce anche nelle trascrizioni, che si
+/// confrontano a occhio e con `grep` — e su un messaggio pieno di accenti e
+/// trattini lunghi le due forme non si somigliano affatto.
 fn deny_payload(reason: &str) -> String {
-    serde_json::json!({
+    python_json::dumps(&serde_json::json!({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": reason,
         }
-    })
-    .to_string()
+    }))
 }
 
 /// La valvola di un gancio, letta dall'ambiente.
