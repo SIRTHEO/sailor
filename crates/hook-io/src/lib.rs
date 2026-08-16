@@ -11,6 +11,8 @@
 //! Un freno che si rompe non deve fermare il lavoro; un freno che si rompe in
 //! silenzio è peggio, perché è indistinguibile da uno contento.
 
+pub mod journal;
+
 use serde::Deserialize;
 use std::io::Read;
 
