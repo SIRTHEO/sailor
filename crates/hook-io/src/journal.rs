@@ -40,15 +40,17 @@ fn home() -> PathBuf {
 pub enum Field {
     Text(String),
     Number(i64),
+    Bool(bool),
 }
 
 impl Field {
-    fn write(&self, out: &mut String) {
+    pub fn write_to(&self, out: &mut String) {
         match self {
             Field::Text(s) => out.push_str(&quote(s)),
             Field::Number(n) => {
                 let _ = write!(out, "{n}");
             }
+            Field::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         }
     }
 }
@@ -95,7 +97,7 @@ pub fn record(hook: &str, decision: &str, reason: &str, extra: &[(&str, Field)])
     let _ = write!(line, ",\"motivo\":{}", quote(reason));
     for (key, value) in extra {
         let _ = write!(line, ",{}:", quote(key));
-        value.write(&mut line);
+        value.write_to(&mut line);
     }
     line.push_str("}\n");
 
@@ -106,6 +108,17 @@ pub fn record(hook: &str, decision: &str, reason: &str, extra: &[(&str, Field)])
 
 fn quote(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
+}
+
+/// Lo stesso istante senza i millisecondi — «2026-08-16T21:42:27Z».
+///
+/// Due formati e non uno perché i due registri sono nati in tempi diversi e
+/// chi li legge si aspetta quello che c'è: il registro dei ganci ha i
+/// millisecondi (`toISOString` del JavaScript), la raccolta delle osservazioni
+/// no (`time.strftime` del Python). Uniformarli romperebbe chi li interroga.
+pub fn now_iso8601_seconds() -> String {
+    let full = now_iso8601();
+    format!("{}Z", &full[..19])
 }
 
 /// `new Date().toISOString()` — «2026-08-16T21:42:27.675Z».
