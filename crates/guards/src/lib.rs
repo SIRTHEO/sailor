@@ -6,3 +6,4 @@
 //! prova la decisione, non il processo.
 
 pub mod cd_guard;
+pub mod pr_merge_admin;
