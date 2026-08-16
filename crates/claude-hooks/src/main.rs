@@ -136,6 +136,17 @@ fn run(which: &str) -> Result<i32, String> {
             let decision = guards::pr_merge_admin::judge(input.bash_command());
             Ok(emit_with_legacy_prefix("block-pr-merge-admin", &decision))
         }
+        // `observe` non decide niente: registra e sveglia l'osservatore. È il
+        // gancio più caldo di tutti, perché gira due volte per ogni chiamata.
+        "observe" => {
+            let phase = std::env::args().nth(2).unwrap_or_else(|| "post".into());
+            let mut raw = String::new();
+            use std::io::Read as _;
+            let _ = std::io::stdin().read_to_string(&mut raw);
+            hook_io::observations::record(&phase, &raw);
+            hook_io::observations::wake_observer();
+            Ok(0)
+        }
         "pr-title" => {
             if Mode::from_env("TITOLO_RICHIESTA") == Mode::Off {
                 return Ok(0);
