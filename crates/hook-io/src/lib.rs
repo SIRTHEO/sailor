@@ -12,6 +12,8 @@
 //! silenzio è peggio, perché è indistinguibile da uno contento.
 
 pub mod journal;
+pub mod observations;
+pub mod python_json;
 
 use serde::Deserialize;
 use std::io::Read;
