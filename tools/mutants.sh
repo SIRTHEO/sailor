@@ -39,7 +39,18 @@ for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
   cp "$ROOT/$f" "$BACKUP/$f"
 done
-restore_files() { for f in "${FILES[@]}"; do cp "$BACKUP/$f" "$ROOT/$f"; done; }
+# La copia di sicurezza si prende su tutti, il ripristino no: si rimettono a
+# posto **solo i file che questo giro ha davvero mutato**. Prima ricopiava tutti
+# e tredici a ogni mutante, e la copia era quella dell'avvio dello script — così
+# un giro su una sezione cancellava il lavoro non committato sulle altre dodici.
+# Il 17/08/2026 `mutants.sh successor` ha riportato al commit, sette volte in
+# venti minuti, `claude-hooks/src/handoff_on_stop.rs` che un'altra sessione stava
+# scrivendo: là hanno creduto a un Edit andato storto e riapplicato tre volte.
+# I percorsi non contengono spazi, quindi una stringa separata da spazi basta e
+# non serve un array (bash 3.2 su questa macchina, dove un array vuoto sotto
+# `set -u` è un errore).
+TOUCHED=""
+restore_touched() { for f in $TOUCHED; do cp "$BACKUP/$f" "$ROOT/$f"; done; }
 
 # Ripristinare i sorgenti non basta: **il binario resta quello mutato**, ed è
 # quello che i ganci di questa macchina eseguono davvero. Il 17/08/2026 questo
@@ -47,7 +58,16 @@ restore_files() { for f in "${FILES[@]}"; do cp "$BACKUP/$f" "$ROOT/$f"; done; }
 # lanciato subito dopo ha dato 318 divergenze che sembravano un difetto del
 # porting. Ricompilare fa parte del ripristino, non è un di più.
 restore() {
-  restore_files
+  restore_touched
+  # Aver *chiamato* il ripristino non prova che sia riuscito. Un giro ucciso in
+  # mezzo può lasciare un mutante addormentato, e quel difetto è invisibile ai
+  # verdi: il 17/08/2026 `successor.rs` è rimasto col nome del gancio cambiato in
+  # `successore`, che non rompe niente e fa sparire dai conteggi ogni riga che
+  # quel gancio scrive. Qui si confronta, e se non torna lo si dice per nome.
+  for f in $TOUCHED; do
+    cmp -s "$BACKUP/$f" "$ROOT/$f" \
+      || echo "ATTENZIONE: $f non e' tornato alla copia di sicurezza — mutante residuo"
+  done
   (cd "$ROOT" && cargo build --release >/dev/null 2>&1) \
     || echo "ATTENZIONE: ricompilazione fallita, il binario è ancora quello mutato"
   rm -rf "$BACKUP"
@@ -68,7 +88,8 @@ ORACOLO=""
 
 mutate() {
   local name="$1" file="$2" script="$3"
-  restore_files
+  restore_touched
+  case " $TOUCHED " in *" $file "*) ;; *) TOUCHED="$TOUCHED $file" ;; esac
   # Un mutante che non muta niente risulterebbe «sopravvissuto» senza aver mai
   # cambiato il comportamento: è un difetto dello script, non un punto cieco
   # della batteria, e va distinto ad alta voce.
