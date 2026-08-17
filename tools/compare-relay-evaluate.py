@@ -169,6 +169,7 @@ def caso(idx: int, **kv) -> dict:
         'optout': 'nessuno',
         'raffreddamento': 'assente',
         'consegna': True,
+        'volontaria': False,
         'successore': 'assente',
         'memo': None,
     }
@@ -222,6 +223,19 @@ def casi() -> list[dict]:
     for r in ('esatto', 'quasi', 'rotto', 'futuro'):
         aggiungi(raffreddamento=r)
         aggiungi(raffreddamento=r, consegna=False)
+
+    # LA CONSEGNA DELIBERATA. Il prodotto non la incrocia perche' e' una
+    # dimensione nuova, e moltiplicarla per tutto raddoppierebbe i 1932 casi per
+    # una manciata di rami veri: qui si nominano quelli, contesto per contesto.
+    # Il ramo che conta e' «sotto soglia + volontaria», che senza la correzione
+    # rispondeva «salta» e adesso passa il testimone.
+    for nome_ctx in sorted(TRANSCRIPTS):
+        aggiungi(contesto=nome_ctx, consegna=True, volontaria=True)
+        aggiungi(contesto=nome_ctx, consegna=False, volontaria=True)
+    # E la volontaria non deve scavalcare le guardie che stanno prima di lei.
+    aggiungi(volontaria=True, optout='sessione')
+    aggiungi(volontaria=True, raffreddamento='attivo')
+    aggiungi(volontaria=True, vivi='senza')
 
     # Le forme del marcatore di successore che il prodotto non copre.
     for s in ('illeggibile', 'tab-assente', 'solo-handle', 'solo-handle-morto',
@@ -293,6 +307,7 @@ def fatti_rust(c: dict, transcripts: dict[str, str]) -> dict:
         'in_cooldown': raffreddato(c),
         'armed': successore_atteso(c),
         'handoff_done': bool(c['consegna']),
+        'handoff_deliberate': bool(c.get('volontaria')),
         'transcript': transcripts[c['contesto']],
         'memo_session': c['session_id'][:8],
     }
@@ -380,6 +395,8 @@ def prepara(c: dict, stato: Path) -> list[Path]:
         scrivi(f'staffetta-cooldown-{wt}', valore)
     if c['consegna']:
         scrivi(f'consegna-fatta-{sess}', '1')
+    if c.get('volontaria'):
+        scrivi(f'consegna-volontaria-{sess}', '1')
     marcatore = contenuto_successore(c['successore'])
     if marcatore is not None:
         scrivi(f'successore-di-{c["session_id"]}', marcatore)

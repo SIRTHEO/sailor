@@ -111,6 +111,19 @@ fn mark_done(session: &str) {
     let _ = fs::remove_file(state_dir().join(format!("consegna-fatta-ripartenze-{session}")));
 }
 
+/// Segna che la consegna è stata una **scelta**, non un ordine del presidio.
+///
+/// È il secondo motivo per cui la staffetta passa il testimone: chi consegna con
+/// il contesto ancora largo dichiara chiuso l'ambito, e per quel caso la soglia
+/// di occupazione non c'entra.
+fn mark_deliberate(session: &str) {
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(
+        state_dir().join(format!("consegna-volontaria-{session}")),
+        "1",
+    );
+}
+
 /// Stampa la risposta nella forma esatta dell'originale, e esce.
 fn say(payload: serde_json::Value) -> i32 {
     // `json.dumps(..., ensure_ascii=False)`, non `serde_json::to_string`: il
@@ -156,8 +169,23 @@ pub fn run() -> i32 {
 
     // Se questo strumento È l'handoff, la garanzia è soddisfatta: da qui in poi
     // questo gancio e il gemello sullo Stop lasciano passare tutto.
+    //
+    // E si registra anche PERCHÉ è stata consegnata. Sotto la soglia del
+    // presidio nessuno l'ha ordinata: è una scelta, e vuol dire che il lavoro è
+    // finito o che cambia mestiere. Senza questa distinzione la staffetta guarda
+    // solo l'occupazione, e una consegna deliberata resta sul disco senza che
+    // nessuno la raccolga — misurato il 18/08/2026, consegnata al 67% con soglia
+    // al 90%: la sessione successiva non è mai partita.
     if is_handoff_call(tool, data.get("tool_input")) {
         mark_done(&session);
+        let used_ora = crate::handoff::context_used(transcript, &session);
+        if used_ora > 0 {
+            let coda = crate::handoff::transcript_tail(transcript);
+            let soglie = thresholds_from_lines(&coda.lines().collect::<Vec<_>>());
+            if used_ora < soglie.require {
+                mark_deliberate(&session);
+            }
+        }
         return 0;
     }
 
