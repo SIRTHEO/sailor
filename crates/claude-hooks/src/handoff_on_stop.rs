@@ -65,6 +65,13 @@ fn successor_marker(session: &str) -> PathBuf {
 /// letture da venti l'una ci stanno dentro solo per fortuna. `None` significa
 /// «non si è potuto leggere», e da lì non si conclude niente — un congedo contro
 /// un'intenzione invece che contro una prova spegne chi lavora.
+///
+/// SI RISOLVE DALLA `tabId`, come fa la staffetta. Il 17/08/2026 lo scrittore ha
+/// cominciato a salvarla accanto all'handle proprio perché l'handle scade al
+/// primo riattacco del pannello, ma la correzione era arrivata solo all'altro
+/// lettore (`relay::armed_successor`): qui si continuava a confrontare
+/// l'identificatore che invecchia, e un successore vivo risultava morto. Nello
+/// stesso periodo: 14 successori aperti, **una** sessione vecchia congedata.
 fn successor_alive(session: &str, terminals: Option<&[Terminal]>) -> String {
     if session.is_empty() {
         return String::new();
@@ -72,25 +79,16 @@ fn successor_alive(session: &str, terminals: Option<&[Terminal]>) -> String {
     let Ok(text) = fs::read_to_string(successor_marker(session)) else {
         return String::new();
     };
-    let handle = serde_json::from_str::<serde_json::Value>(&text)
-        .ok()
-        .and_then(|v| {
-            v.get("handle")
-                .and_then(|h| h.as_str())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_default();
+    let Ok(d) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return String::new();
+    };
     let Some(list) = terminals else {
         return String::new();
     };
-    if handle.is_empty() || list.is_empty() {
-        return String::new();
-    }
-    if list.iter().any(|t| t.handle == handle) {
-        handle
-    } else {
-        String::new()
-    }
+    let get = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    // Il worktree resta vuoto di proposito: qui si cerca **quel** successore, e
+    // dedurlo dall'albero adotterebbe una scheda qualsiasi che ci abita.
+    resolve_terminal_handle(get("tabId"), "", get("handle"), list)
 }
 
 /// Chiude la propria scheda, ma solo se qualcuno prosegue davvero.
@@ -271,5 +269,81 @@ pub fn run() -> i32 {
             eprint!("{messaggio}");
             2
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_home::HomeIsolata;
+
+    fn term(handle: &str, tab: &str) -> Terminal {
+        Terminal {
+            handle: handle.into(),
+            tab_id: tab.into(),
+            worktree_id: String::new(),
+            title: String::new(),
+        }
+    }
+
+    fn scrivi_marcatore(casa: &HomeIsolata, sessione: &str, json: &str) {
+        fs::write(casa.stato().join(format!("successore-di-{sessione}")), json).unwrap();
+    }
+
+    /// Il caso che il congedo sbagliava: la scheda è viva, l'handle è scaduto.
+    ///
+    /// È lo scenario normale dopo un riattacco del pannello. Prima il successore
+    /// risultava morto e la sessione vecchia restava aperta accanto a lui.
+    #[test]
+    fn la_tab_ritrova_il_successore_quando_l_handle_e_scaduto() {
+        let casa = HomeIsolata::nuova("congedo-tab");
+        scrivi_marcatore(
+            &casa,
+            "S1",
+            r#"{"handle":"term_vecchio","tabId":"tab-42","quando":"x"}"#,
+        );
+        assert_eq!(
+            successor_alive("S1", Some(&[term("term_nuovo", "tab-42")])),
+            "term_nuovo"
+        );
+    }
+
+    /// I marcatori scritti prima del 17/08/2026 non hanno la tab: l'handle resta
+    /// l'unica strada, e vale solo se è ancora fra i vivi.
+    #[test]
+    fn senza_tab_si_ricade_sull_handle_ma_solo_se_vivo() {
+        let casa = HomeIsolata::nuova("congedo-handle");
+        scrivi_marcatore(&casa, "S2", r#"{"handle":"term_a","quando":"x"}"#);
+        assert_eq!(successor_alive("S2", Some(&[term("term_a", "t1")])), "term_a");
+        assert_eq!(successor_alive("S2", Some(&[term("term_b", "t1")])), "");
+    }
+
+    /// Una scheda chiusa non congeda nessuno: se la tab non è più fra i vivi la
+    /// risposta è vuota anche quando il vecchio handle per caso combacia.
+    #[test]
+    fn una_tab_sparita_non_autorizza_il_congedo() {
+        let casa = HomeIsolata::nuova("congedo-morto");
+        scrivi_marcatore(
+            &casa,
+            "S3",
+            r#"{"handle":"term_a","tabId":"tab-sparita","quando":"x"}"#,
+        );
+        assert_eq!(
+            successor_alive("S3", Some(&[term("term_a", "tab-altra")])),
+            ""
+        );
+    }
+
+    /// Elenco illeggibile e marcatore assente non sono «non c'è nessuno».
+    #[test]
+    fn nel_dubbio_non_si_congeda() {
+        let casa = HomeIsolata::nuova("congedo-dubbio");
+        scrivi_marcatore(&casa, "S4", r#"{"handle":"term_a","tabId":"tab-1"}"#);
+        assert_eq!(successor_alive("S4", None), "");
+        assert_eq!(
+            successor_alive("mai-armata", Some(&[term("term_a", "tab-1")])),
+            ""
+        );
+        assert_eq!(successor_alive("", Some(&[term("term_a", "tab-1")])), "");
     }
 }
