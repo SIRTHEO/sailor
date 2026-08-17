@@ -20,6 +20,7 @@ mod live_rules;
 mod preflight;
 mod handoff_required;
 mod handoff_on_stop;
+mod worktree_deletes;
 mod relay;
 mod restart;
 #[cfg(test)]
@@ -383,6 +384,7 @@ fn run(which: &str) -> Result<i32, String> {
         // Il presidio della consegna, lato PostToolUse.
         "handoff-required" => Ok(handoff_required::run()),
         "handoff-on-stop" => Ok(handoff_on_stop::run()),
+        "allow-worktree-deletes" => Ok(worktree_deletes::run()),
         // Non è un gancio: è l'aggancio dello strumento di equivalenza, che pone
         // la stessa domanda ai due conteggi sullo stesso transcript vero.
         "restart-count" => {

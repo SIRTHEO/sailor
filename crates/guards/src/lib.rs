@@ -22,3 +22,4 @@ pub mod socraticode_gate;
 pub mod handoff_required;
 pub mod handoff_on_stop;
 pub mod restart;
+pub mod worktree_deletes;

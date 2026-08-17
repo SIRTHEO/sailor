@@ -32,6 +32,8 @@ FILES=(
   "crates/guards/src/handoff_on_stop.rs"
   "crates/claude-hooks/src/successor.rs"
   "crates/claude-hooks/src/handoff_on_stop.rs"
+  "crates/guards/src/worktree_deletes.rs"
+  "crates/claude-hooks/src/worktree_deletes.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -573,6 +575,76 @@ if [ "$WHICH" = "handoff-on-stop-involucro" ]; then
   # aver mai parlato.
   mutate "contatore incrementato troppo presto" "$I" \
     's = s.replace("stop_blocks_so_far: stop_blocks(&session, false),", "stop_blocks_so_far: stop_blocks(&session, true),", 1)'
+
+  COMPARE=""
+fi
+
+# ── worktree-deletes ────────────────────────────────────────────────────────
+# Il gancio che CONCEDE permessi: qui un mutante sopravvissuto non e un
+# messaggio sbagliato, e una cancellazione autorizzata che non doveva esserlo.
+if [ "$WHICH" = "worktree-deletes" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su worktree_deletes.rs (le cancellazioni concesse):"
+  COMPARE="compare-worktree-deletes.py"
+  G="crates/guards/src/worktree_deletes.rs"
+  I="crates/claude-hooks/src/worktree_deletes.rs"
+
+  # La profondita minima sparisce: un worktree intero, o un repo intero, o la
+  # radice di tutte le copie diventano cancellabili senza domande.
+  mutate "profondita minima azzerata" "$G" \
+    's = s.replace("pub const MIN_DEPTH: usize = 3;", "pub const MIN_DEPTH: usize = 0;", 1)'
+
+  # Il confine sul prefisso cade: basta che il nome cominci allo stesso modo, e
+  # `workspacesXX` passa.
+  mutate "confine del prefisso allentato" "$G" \
+    's = s.replace("let prefisso = format!(\"{root}/\");", "let prefisso = root.clone();", 1)'
+
+  # I collegamenti smettono di contare: cancellare *attraverso* un collegamento
+  # a `node_modules` del canonico diventa autorizzato.
+  mutate "collegamenti non piu seguiti" "$G" \
+    's = s.replace("        if is_link(&current) {\n            return false;\n        }\n", "", 1)'
+
+  # La risalita torna ammessa: un comando puo scavalcare la propria copia di
+  # lavoro ed entrare in quella di un altro giro.
+  mutate "risalita ammessa" "$G" \
+    's = s.replace("    if path.split(\x27/\x27).any(|p| p == \"..\") {\n        return false;\n    }\n", "", 1)'
+
+  # Basta un bersaglio dentro invece di tutti: `rm -rf <dentro> /etc/passwd`
+  # verrebbe concesso.
+  mutate "basta un bersaglio dentro" "$G" \
+    's = s.replace("        .find(|t| !inside_worktree(t, f.workspaces, f.is_link))", "        .find(|t| false && !inside_worktree(t, f.workspaces, f.is_link))", 1)'
+
+  # ATTESO SOPRAVVISSUTO, e l originale lo dichiara come «ridondanza voluta»:
+  # `$(...)` non si espande, quindi il pezzo resta non-assoluto e cade comunque
+  # sul controllo del prefisso. Resta scritto perche su un gancio che concede
+  # permessi la prima linea dev essere esplicita — se un domani il controllo che
+  # lo copre cambia, questo tiene. Il mutante sta qui per non far sembrare quel
+  # ramo provato quando non lo e.
+  mutate "sostituzioni non piu rifiutate" "$G" \
+    's = s.replace("    if f.command.contains(\"$(\") || f.command.contains(\x27`\x27) {", "    if false {", 1)'
+
+  # Un `rm` illeggibile smette di fermare tutto: la riga si salta in silenzio e
+  # si giudica sul resto.
+  mutate "rm illeggibile ignorato" "$G" \
+    's = s.replace("                if bare_rm().is_match(&line) {\n                    return Verdict::Abstain(\"un rm che non so leggere per intero\".into());\n                }\n", "", 1)'
+
+  # Il comando non si spezza piu sui separatori: si guarda solo il primo pezzo,
+  # e cio che segue `&&` passa inosservato.
+  mutate "separatori non spezzano" "$G" \
+    's = s.replace("    for line in split_commands(f.command) {", "    for line in [f.command.to_string()] {", 1)'
+
+  # Una variabile non definita smette di essere un ostacolo e diventa stringa
+  # vuota: il bersaglio cambia significato senza che nessuno lo dica.
+  mutate "variabile ignota trattata come vuota" "$G" \
+    's = s.replace("        let value = variables.get(name)?;", "        let vuoto = String::new();\n        let value = variables.get(name).unwrap_or(&vuoto);", 1)'
+
+  # Il perimetro si allarga a ogni strumento, non solo a Bash.
+  mutate "perimetro esteso a ogni strumento" "$I" \
+    's = s.replace("    if data.get(\"tool_name\").and_then(|v| v.as_str()) != Some(\"Bash\") {\n        return 0;\n    }\n", "", 1)'
+
+  # Il registro delle concessioni sparisce: da fuori, «ha concesso» e «non e
+  # partito» tornano indistinguibili.
+  mutate "registro delle concessioni rimosso" "$I" \
+    's = s.replace("    log_grant(&data, reason, command);", "", 1)'
 
   COMPARE=""
 fi
