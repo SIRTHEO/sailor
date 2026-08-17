@@ -375,14 +375,31 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
     }
 
     // 4. attendi che il successore sia su, poi mandagli l'ordine di ripresa
-    orca(&[
+    //
+    // QUESTO CANALE NON HA MAI CONSEGNATO NIENTE. Misurato il 17/08/2026 su
+    // tutti i transcript della macchina: la frase compare in cinque file, e in
+    // tutti e cinque perché quella sessione stava leggendo questo sorgente.
+    // Come messaggio ricevuto: **zero**, su ogni rigenerazione mai fatta. Il
+    // sospetto è che `tui-idle` diventi vero quando il processo è partito ma la
+    // TUI non accetta ancora input, e il testo cada nel vuoto.
+    //
+    // Resta finché non si decide di toglierlo, ma smette di tacere: gli esiti
+    // venivano scartati entrambi, e un canale che fallisce in silenzio non si
+    // distingue da uno che funziona. Il mandato vero viaggia per `riprendi-da/`.
+    let (rc_wait, _) = orca(&[
         "terminal", "wait", "--terminal", &new_handle, "--for", "tui-idle",
         "--timeout-ms", "15000",
     ]);
-    orca(&[
+    let (rc_send, _) = orca(&[
         "terminal", "send", "--terminal", &new_handle, "--text",
         "riprendi dall'ultimo handoff", "--enter",
     ]);
+    if rc_wait != 0 || rc_send != 0 {
+        log_line(&format!(
+            "sess={sess}: il successore non ha ricevuto l'ordine a voce \
+             (wait rc={rc_wait}, send rc={rc_send}); resta il segnale in riprendi-da"
+        ));
+    }
 
     // 5. ORA chiudi la vecchia e pulisci
     orca(&["terminal", "close", "--terminal", &rec.handle]);
@@ -691,6 +708,35 @@ mod tests {
         let seq = chiamate.borrow().clone();
         assert_eq!(seq.len(), 1, "dopo un wait fallito non si fa altro: {seq:?}");
         assert!(seq[0].contains("wait"));
+    }
+
+    #[test]
+    fn un_ordine_di_ripresa_non_consegnato_lascia_una_riga() {
+        let _home = HomeIsolata::nuova("send-fallito");
+        // Il caso vero: il create riesce, la vecchia si chiude, e l'ordine a
+        // voce non arriva. Finché gli esiti venivano scartati, questo era
+        // indistinguibile da una staffetta perfetta — ed è andata così su
+        // **tutte** le rigenerazioni mai fatte su questa macchina.
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"create") {
+                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
+            } else if args.contains(&"send") {
+                (1, String::new())
+            } else {
+                (0, String::new())
+            }
+        };
+        regenerate(&record_di_prova(), "", false, &mut orca);
+        let log = fs::read_to_string(
+            home().join(".claude/state/staffetta.log"),
+        )
+        .unwrap_or_default();
+        assert!(
+            log.contains("non ha ricevuto l'ordine a voce"),
+            "il fallimento del send non lascia traccia: {log}"
+        );
+        // E la staffetta va avanti lo stesso: il mandato viaggia per disco.
+        assert!(log.contains("RIGENERATA"), "{log}");
     }
 
     #[test]
