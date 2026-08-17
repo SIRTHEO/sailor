@@ -188,9 +188,209 @@ pub fn is_handoff_call(tool: &str, tool_input: Option<&serde_json::Value>) -> bo
     }
 }
 
+/// Un pannello Orca, per quel poco che serve a riconoscerlo.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Terminal {
+    pub handle: String,
+    pub tab_id: String,
+    pub worktree_id: String,
+}
+
+impl Terminal {
+    /// I pannelli dentro la risposta di `orca terminal list --json`.
+    ///
+    /// Costruiti a mano invece che con `derive(Deserialize)` perché `guards` non
+    /// dipende da `serde` e il mandato non vuole dipendenze nuove: qui i campi
+    /// sono tre e la mappatura sta in sei righe.
+    ///
+    /// La risposta arriva o come `{"result":{"terminals":[…]}}` o già come lista:
+    /// si accettano entrambe, come fa il Python, perché la forma è cambiata una
+    /// volta e chi la fissa la rincorre.
+    pub fn from_response(value: &serde_json::Value) -> Vec<Terminal> {
+        let inner = value.get("result").unwrap_or(value);
+        let items = inner
+            .get("terminals")
+            .and_then(|x| x.as_array())
+            .or_else(|| inner.as_array());
+        let Some(items) = items else {
+            return Vec::new();
+        };
+        items
+            .iter()
+            .map(|t| {
+                let field = |name: &str| {
+                    t.get(name)
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string()
+                };
+                Terminal {
+                    // `id` è il ripiego che il Python accetta accanto a `handle`.
+                    handle: {
+                        let h = field("handle");
+                        if h.is_empty() {
+                            field("id")
+                        } else {
+                            h
+                        }
+                    },
+                    tab_id: field("tabId"),
+                    worktree_id: field("worktreeId"),
+                }
+            })
+            .collect()
+    }
+}
+
+/// L'handle della propria scheda, chiesto adesso invece che ricordato.
+///
+/// IL DIFETTO CHE CHIUDE. `ORCA_TERMINAL_HANDLE` è catturato quando la sessione
+/// parte e non si aggiorna mai più: ogni riavvio del terminale ne conia uno
+/// nuovo, e il vecchio sparisce dall'elenco. Chi lo conserva parla a un oggetto
+/// che non esiste. Misurato il 16/08/2026, e di nuovo il 17/08 su un marcatore
+/// di successore che citava un handle assente mentre la sua tab lavorava.
+///
+/// IL PONTE STABILE È LA TAB, non il worktree. `ORCA_TAB_ID` sopravvive al
+/// riavvio del terminale e identifica **una** scheda; il worktree no, perché due
+/// sessioni sullo stesso albero sono un caso normale qui. Col solo worktree si
+/// risponde **solo** se il candidato è unico: chiudere il terminale sbagliato
+/// costa il lavoro di qualcun altro, e nel dubbio si tace.
+///
+/// L'ordine delle tre vie è comportamento, non stile: la tab batte l'handle noto,
+/// che batte il worktree. Chi lo inverte fa rispondere l'handle scaduto per primo.
+pub fn resolve_terminal_handle(
+    tab_id: &str,
+    worktree_id: &str,
+    known_handle: &str,
+    terminals: &[Terminal],
+) -> String {
+    if terminals.is_empty() {
+        return String::new();
+    }
+    if !tab_id.is_empty() {
+        return terminals
+            .iter()
+            .find(|t| t.tab_id == tab_id)
+            .map(|t| t.handle.clone())
+            .unwrap_or_default();
+    }
+    // Il ripiego per i record scritti prima che la tab venisse salvata: quel
+    // vecchio handle vale se è ancora fra i vivi, altrimenti no. Senza,
+    // adottare questa funzione cancellerebbe le sessioni già in corso.
+    if !known_handle.is_empty() {
+        return if terminals.iter().any(|t| t.handle == known_handle) {
+            known_handle.to_string()
+        } else {
+            String::new()
+        };
+    }
+    if !worktree_id.is_empty() {
+        let hits: Vec<&Terminal> = terminals
+            .iter()
+            .filter(|t| t.worktree_id == worktree_id)
+            .collect();
+        if hits.len() == 1 {
+            return hits[0].handle.clone();
+        }
+    }
+    String::new()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tre_pannelli() -> Vec<Terminal> {
+        vec![
+            Terminal {
+                handle: "term_a".into(),
+                tab_id: "tab-1".into(),
+                worktree_id: "wt-1".into(),
+            },
+            Terminal {
+                handle: "term_b".into(),
+                tab_id: "tab-2".into(),
+                worktree_id: "wt-2".into(),
+            },
+            Terminal {
+                handle: "term_c".into(),
+                tab_id: "tab-3".into(),
+                worktree_id: "wt-2".into(),
+            },
+        ]
+    }
+
+    #[test]
+    fn la_tab_ritrova_l_handle_rinato() {
+        // Il caso vero: l'handle salvato è morto, la tab no.
+        assert_eq!(
+            resolve_terminal_handle("tab-1", "", "term_morto", &tre_pannelli()),
+            "term_a"
+        );
+    }
+
+    #[test]
+    fn una_tab_sparita_non_risponde_per_un_altra() {
+        assert_eq!(
+            resolve_terminal_handle("tab-9", "", "term_a", &tre_pannelli()),
+            ""
+        );
+    }
+
+    #[test]
+    fn senza_tab_l_handle_noto_vale_solo_se_vivo() {
+        assert_eq!(
+            resolve_terminal_handle("", "", "term_b", &tre_pannelli()),
+            "term_b"
+        );
+        assert_eq!(
+            resolve_terminal_handle("", "", "term_morto", &tre_pannelli()),
+            ""
+        );
+    }
+
+    #[test]
+    fn il_worktree_risponde_solo_se_il_candidato_e_unico() {
+        // `wt-2` ne ha due: chiudere quello sbagliato costa il lavoro altrui.
+        assert_eq!(resolve_terminal_handle("", "wt-2", "", &tre_pannelli()), "");
+        assert_eq!(
+            resolve_terminal_handle("", "wt-1", "", &tre_pannelli()),
+            "term_a"
+        );
+    }
+
+    #[test]
+    fn si_accettano_entrambe_le_forme_della_risposta() {
+        // Annidata sotto `result`, e già come lista: la forma è cambiata una
+        // volta, e leggerne una sola è il difetto che ha creato 24 sessioni.
+        let annidata: serde_json::Value =
+            serde_json::from_str(r#"{"result":{"terminals":[{"handle":"term_a"}]}}"#).unwrap();
+        let piatta: serde_json::Value = serde_json::from_str(r#"[{"handle":"term_a"}]"#).unwrap();
+        assert_eq!(Terminal::from_response(&annidata)[0].handle, "term_a");
+        assert_eq!(Terminal::from_response(&piatta)[0].handle, "term_a");
+        // Una risposta d'errore non produce pannelli inventati.
+        let errore: serde_json::Value = serde_json::from_str(r#"{"ok":false}"#).unwrap();
+        assert!(Terminal::from_response(&errore).is_empty());
+    }
+
+    #[test]
+    fn un_elenco_vuoto_non_fa_rispondere_nessuno() {
+        assert_eq!(resolve_terminal_handle("tab-1", "wt-1", "term_a", &[]), "");
+    }
+
+    #[test]
+    fn i_campi_di_orca_si_leggono_col_nome_che_hanno() {
+        // `tabId` e `worktreeId` arrivano in camelCase: sbagliare la rinomina
+        // darebbe stringhe vuote senza errori, e la risoluzione tacerebbe sempre.
+        let raw: serde_json::Value = serde_json::from_str(
+            r#"{"result":{"terminals":[{"handle":"term_x","tabId":"tab-x","worktreeId":"wt-x","title":"ignorato"}]}}"#,
+        )
+        .unwrap();
+        let t = Terminal::from_response(&raw);
+        assert_eq!(t[0].tab_id, "tab-x");
+        assert_eq!(t[0].worktree_id, "wt-x");
+        assert_eq!(resolve_terminal_handle("tab-x", "", "", &t), "term_x");
+    }
 
     #[test]
     fn ogni_modello_prende_il_suo_budget() {
