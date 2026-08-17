@@ -216,7 +216,7 @@ fn real_orca(args: &[&str]) -> (i32, String) {
 /// come risposta: una lettura fallita era indistinguibile da una strage, e
 /// questo gira ogni minuto — 276 giri tutti «riusciti» mentre cancellava i
 /// record di sessioni vive.
-fn read_terminals(orca: OrcaFn) -> Option<Vec<Terminal>> {
+pub(crate) fn read_terminals(orca: OrcaFn) -> Option<Vec<Terminal>> {
     let (rc, out) = orca(&["terminal", "list", "--json"]);
     if rc != 0 || out.is_empty() {
         return None;
@@ -226,7 +226,7 @@ fn read_terminals(orca: OrcaFn) -> Option<Vec<Terminal>> {
 }
 
 /// Il documento di consegna più recente, da citare al successore.
-fn latest_handoff(cwd: &str) -> String {
+pub(crate) fn latest_handoff(cwd: &str) -> String {
     let base = home().join(".claude").join("projects");
     let mut roots: Vec<PathBuf> = Vec::new();
     if !cwd.is_empty() {
