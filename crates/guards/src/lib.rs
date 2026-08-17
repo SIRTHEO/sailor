@@ -19,3 +19,4 @@ pub mod pr_title;
 pub mod shell;
 pub mod successor;
 pub mod socraticode_gate;
+pub mod restart;

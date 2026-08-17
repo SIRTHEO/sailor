@@ -19,6 +19,7 @@ mod linear;
 mod live_rules;
 mod preflight;
 mod relay;
+mod restart;
 #[cfg(test)]
 mod test_home;
 mod successor;
@@ -374,6 +375,15 @@ fn run(which: &str) -> Result<i32, String> {
         // La staffetta, un passo. `--secco` non rigenera nessuna sessione ma
         // NON e' a vuoto: i record dei terminali morti li cancella lo stesso.
         "relay" => Ok(relay::step(std::env::args().any(|a| a == "--secco"))),
+        // Il promemoria alla sessione che riparte da un riassunto. Legge il
+        // JSON di SessionStart da stdin e, solo dopo una compattazione, parla.
+        "restart-notice" => Ok(restart::run()),
+        // Non è un gancio: è l'aggancio dello strumento di equivalenza, che pone
+        // la stessa domanda ai due conteggi sullo stesso transcript vero.
+        "restart-count" => {
+            let path = std::env::args().nth(2).unwrap_or_default();
+            Ok(restart::count_probe(&path))
+        }
         "successor-probe" => {
             let a: Vec<String> = std::env::args().skip(2).collect();
             let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
