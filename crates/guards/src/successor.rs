@@ -54,6 +54,53 @@ fn in_memory() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"/memory/[^/]*\d{2}-\d{2}-\d{4}[^/]*\.md$").unwrap())
 }
 
+/// Sta in `memory/` e non è l'indice — senza pretendere niente dal nome.
+fn in_memory_dir() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"/memory/[^/]+\.md$").unwrap())
+}
+
+/// Le due intestazioni che la skill `handoff` prescrive nel corpo.
+///
+/// Sono il criterio che non passa dal nome del file, e servono perché il nome
+/// non dice più niente: il comando `/handoff` ordina di AGGIORNARE la consegna
+/// aperta sullo stesso filone (`commands/handoff.md:38`) e di scriverla in
+/// `<memory-dir>/<slug>.md` (`:44`) — uno slug tematico, senza prefisso e senza
+/// data. Le sezioni invece le prescrive una per una (`:57-65`), e sono ciò che
+/// distingue una consegna da una nota di progetto.
+fn body_marks() -> &'static [Regex; 2] {
+    static RE: OnceLock<[Regex; 2]> = OnceLock::new();
+    RE.get_or_init(|| {
+        [
+            Regex::new(r"(?mi)^#+\s*stato\b").unwrap(),
+            Regex::new(r"(?mi)^#+\s*prossim[io]\s+pass").unwrap(),
+        ]
+    })
+}
+
+/// Il corpo ha la forma di una consegna: **entrambe** le sezioni, non una.
+///
+/// Entrambe perché «Stato» da solo compare in mezze note di progetto, mentre la
+/// coppia no: misurata il 17/08/2026 su 415 documenti in `memory/`, seleziona 18
+/// file — le consegne note, più quella che quel giorno era rimasta a terra — e
+/// **zero** falsi positivi sui 187 senza `type: project`.
+pub fn body_says_handoff(text: &str) -> bool {
+    body_marks().iter().all(|re| re.is_match(text))
+}
+
+/// I primi 400 byte, tagliati su un confine di carattere.
+///
+/// Il frontmatter si guarda solo in testa: `type: project` citato a metà corpo
+/// — in una consegna che parla di consegne, cioè il caso normale qui dentro —
+/// non deve valere come dichiarazione.
+fn front(text: &str) -> &str {
+    let mut end = 400.min(text.len());
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 /// Il nome dice già che è una consegna?
 pub fn name_says_handoff(path: &str) -> bool {
     name_patterns().iter().any(|re| re.is_match(path))
@@ -78,7 +125,7 @@ pub fn is_dated_memory(path: &str) -> bool {
     !path.ends_with("/memory/MEMORY.md")
 }
 
-/// È un documento di consegna? `head` sono i primi 400 byte del file.
+/// È un documento di consegna? `text` è il contenuto del file.
 ///
 /// Il nome da solo non basta e il frontmatter da solo nemmeno. La skill
 /// `handoff` di questo progetto scrive un file dal nome libero dentro `memory/`,
@@ -86,17 +133,30 @@ pub fn is_dated_memory(path: &str) -> bool {
 /// consegne. Misurato il 13/08/2026 subito dopo aver acceso il gancio — su una
 /// consegna vera rispondeva «non è una consegna», quindi era acceso e cieco.
 ///
+/// LA DATA NEL NOME NON È PIÙ L'UNICA PORTA, dal 17/08/2026. Chiedere una data a
+/// un file che la skill battezza con uno slug tematico rendeva il gancio cieco
+/// sul caso che la skill stessa rende normale — aggiornare la consegna aperta.
+/// Quel giorno una sessione all'88% del budget ha consegnato in
+/// `sezioni-cv-campi-separati-o-testo.md` e non è partito niente: il gancio è
+/// uscito prima di ogni freno, senza lasciare una riga di registro. Sul disco di
+/// quel giorno erano invisibili 202 dei 227 documenti `type: project`.
+///
 /// Nel dubbio il gancio deve tacere: una consegna non raccolta costa
 /// un'apertura a mano, una scheda aperta a sproposito costa fiducia — e a quel
-/// punto lo si spegne del tutto.
-pub fn is_handoff_doc(path: &str, head: Option<&str>) -> bool {
+/// punto lo si spegne del tutto. Per questo la porta nuova non allarga a tutto
+/// `type: project`: pretende anche la forma del corpo.
+pub fn is_handoff_doc(path: &str, text: Option<&str>) -> bool {
     if name_says_handoff(path) {
         return true;
     }
-    if !is_dated_memory(path) {
+    if !in_memory_dir().is_match(path) || path.ends_with("/memory/MEMORY.md") {
         return false;
     }
-    head.map(|t| t.contains("type: project")).unwrap_or(false)
+    let Some(text) = text else { return false };
+    if !front(text).contains("type: project") {
+        return false;
+    }
+    is_dated_memory(path) || body_says_handoff(text)
 }
 
 /// L'ora sta nella finestra in cui è lecito aprire una sessione?
@@ -283,6 +343,50 @@ mod tests {
         assert!(!is_handoff_doc(p, Some("---\ntype: reference\n---")));
         // File illeggibile: non si arma niente.
         assert!(!is_handoff_doc(p, None));
+    }
+
+    /// Il corpo di una consegna come la scrive `/handoff`, ridotto all'osso.
+    fn consegna(extra: &str) -> String {
+        format!("---\nname: x\nmetadata:\n  type: project\n---\n\n## Stato\n\nfatto.\n\n## Prossimi passi\n\n1. riprendere.\n{extra}")
+    }
+
+    #[test]
+    fn il_corpo_riconosce_la_consegna_che_il_nome_non_dichiara() {
+        // Il caso vero del 17/08/2026: slug tematico, nessuna data, `type:
+        // project`, e le sezioni che la skill prescrive. Prima usciva `False`.
+        let p = "/p/memory/sezioni-cv-campi-separati-o-testo.md";
+        assert!(is_handoff_doc(p, Some(&consegna(""))));
+    }
+
+    #[test]
+    fn una_nota_di_progetto_non_arma_niente() {
+        // La difesa che la data garantiva prima, ora la fa la forma del corpo:
+        // `type: project` senza le due sezioni resta una nota, non una consegna.
+        let p = "/p/memory/orca-usciere-tab.md";
+        assert!(!is_handoff_doc(
+            p,
+            Some("---\ntype: project\n---\n\n## Come funziona\n\nchiude le tab.\n")
+        ));
+        // Una sezione sola non basta: «Stato» da solo sta in mezze note.
+        assert!(!is_handoff_doc(
+            p,
+            Some("---\ntype: project\n---\n\n## Stato\n\nva bene.\n")
+        ));
+    }
+
+    #[test]
+    fn il_frontmatter_vale_solo_in_testa() {
+        // Una consegna che parla di consegne cita `type: project` nel corpo: se
+        // valesse ovunque, ogni documento sui ganci diventerebbe una consegna.
+        let p = "/p/memory/note-sui-ganci.md";
+        let corpo = format!("{}\n\n## Stato\n\nx\n\n## Prossimi passi\n\ny\n", "-".repeat(420));
+        assert!(!is_handoff_doc(p, Some(&format!("---\ntype: reference\n---{corpo}\ntype: project\n"))));
+    }
+
+    #[test]
+    fn fuori_da_memory_il_corpo_non_conta() {
+        // Le sezioni giuste in un file qualunque del repo non aprono niente.
+        assert!(!is_handoff_doc("/repo/docs/piano.md", Some(&consegna(""))));
     }
 
     #[test]
