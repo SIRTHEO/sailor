@@ -31,8 +31,25 @@ SETTINGS = '/home/someone/.claude/settings.json'
 BINARY = '/home/someone/.claude/rust/target/release/claude-hooks'
 
 
-def registered(hook: str, fallback: str) -> str:
-    """La riga che va in settings.json, con la rete di sicurezza."""
+def registered(hook: str, fallback: str, async_out: str = '') -> str:
+    """La riga che va in settings.json, con la rete di sicurezza.
+
+    `async_out` serve ai ganci che non si possono aspettare. Il censimento dei
+    ganci impiega **sedici minuti** e sta su `SessionEnd`: registrato nella forma
+    sincrona bloccherebbe la chiusura di ogni sessione, e l'uscita finirebbe sul
+    terminale invece che nel suo rapporto. Il Python originale infatti è
+    registrato con `nohup … > file 2>&1 &`, e la rete deve conservarlo.
+    """
+    if async_out:
+        # Un comando che finisce con `&` è già terminato: aggiungergli un `;`
+        # produce `& ; fi`, che è un errore di sintassi — e una riga di
+        # `settings.json` che non si legge rompe l'evento intero, in silenzio.
+        # Successo il 17/08/2026 al primo uso di questa forma.
+        tail = fallback if fallback.rstrip().endswith('&') else f'{fallback};'
+        return (
+            f'B={BINARY}; if [ -x "$B" ]; then nohup "$B" {hook} > {async_out} 2>&1 & '
+            f'else {tail} fi'
+        )
     return (
         f'B={BINARY}; if [ -x "$B" ]; then "$B" {hook}; else {fallback}; fi'
     )
@@ -45,13 +62,29 @@ def self_check() -> None:
     print(f'  --check: {result.stdout.strip()}')
 
 
-def swap(old: str, new: str) -> None:
+def swap(old: str, new: str, everywhere: bool = False) -> None:
     text = open(SETTINGS).read()
     needle = json.dumps(old)          # con le virgolette e gli escape del file
     replacement = json.dumps(new)
     found = text.count(needle)
-    if found != 1:
-        sys.exit(f'la riga da sostituire compare {found} volte, non una: {old!r}')
+    if found == 0:
+        sys.exit(f'la riga da sostituire non compare: {old!r}')
+    # Lo stesso gancio registrato su due eventi è normale — `link-worktree-rules`
+    # sta su `SessionStart` e su `PostToolUse` con la stessa identica riga — ma
+    # non si sostituisce alla cieca: chi adotta deve dire che le vuole entrambe.
+    # Aggiunto il 17/08/2026, dopo che l'adozione si era fermata proprio lì.
+    if found != 1 and not everywhere:
+        sys.exit(
+            f'la riga da sostituire compare {found} volte, non una: {old!r}\n'
+            '  se le vuoi tutte: --tutte'
+        )
+    # La riga dev'essere shell valida PRIMA di entrare nella configurazione.
+    # `bash -n` la analizza senza eseguirla; senza questo controllo, il 17/08 una
+    # riga con `& ; fi` è finita in `SessionEnd` e nessuno se ne sarebbe accorto
+    # fino alla chiusura di una sessione.
+    check = subprocess.run(['bash', '-n', '-c', new], capture_output=True, text=True)
+    if check.returncode != 0:
+        sys.exit(f'la riga non e shell valida, non la scrivo:\n  {new}\n{check.stderr}')
     text = text.replace(needle, replacement)
     json.loads(text)                  # non si scrive un JSON che non si rilegge
     stamp = time.strftime('%Y%m%d-%H%M%S')
@@ -64,19 +97,36 @@ def main() -> None:
     parser.add_argument('hook', help='il sottocomando del binario, es. cd-guard')
     parser.add_argument('fallback', nargs='?', help='il comando da sostituire e da tenere come rete')
     parser.add_argument('--revert', action='store_true', help='torna al comando originale')
+    parser.add_argument('--tutte', action='store_true',
+                        help='sostituisce ogni occorrenza, per un gancio registrato su piu eventi')
+    parser.add_argument('--async-out', default='', metavar='FILE',
+                        help='per i ganci lenti: gira in sottofondo scrivendo qui')
+    # Serve quando la riga da togliere non è più deducibile: una registrazione
+    # sbagliata scritta da una versione precedente di questo strumento. Il
+    # presidio della configurazione rifiuta ogni altra strada, e giustamente:
+    # chi ha rotto la riga deve poterla riparare *da qui*, non a mano.
+    parser.add_argument('--replace-exact', default='', metavar='TESTO',
+                        help='sostituisce questa riga esatta col comando di ripiego')
     args = parser.parse_args()
+
+    if args.replace_exact:
+        if not args.fallback:
+            sys.exit('serve anche il comando che deve prendere il suo posto')
+        swap(args.replace_exact, args.fallback, args.tutte)
+        print(f'{args.hook}: riga sostituita con {args.fallback[:60]}…')
+        return
 
     if args.revert:
         if not args.fallback:
             sys.exit('per tornare indietro serve il comando originale')
-        swap(registered(args.hook, args.fallback), args.fallback)
+        swap(registered(args.hook, args.fallback, args.async_out), args.fallback, args.tutte)
         print(f'{args.hook}: torna a {args.fallback}')
         return
 
     if not args.fallback:
         sys.exit('serve il comando attuale, quello che resta come rete')
     self_check()
-    swap(args.fallback, registered(args.hook, args.fallback))
+    swap(args.fallback, registered(args.hook, args.fallback, args.async_out), args.tutte)
     print(f'{args.hook}: ora passa dal binario, con ritorno al vecchio se manca')
 
 
