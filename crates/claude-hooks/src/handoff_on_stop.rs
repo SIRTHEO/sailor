@@ -155,7 +155,9 @@ fn arm_successor(session: &str, used: u64, require: u64) -> bool {
         return false;
     }
     matches!(
-        crate::successor::arm(&doc, session, "stop"),
+        // `true`: la pienezza l'ha già verificata la guardia qui sopra, ed è la
+        // condizione d'ingresso di questo percorso.
+        crate::successor::arm(&doc, session, "stop", true),
         crate::successor::ArmOutcome::Open(_)
     )
 }
