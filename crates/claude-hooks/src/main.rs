@@ -14,6 +14,7 @@
 //!     claude-hooks --list        i ganci disponibili
 
 mod duplication;
+mod handoff;
 mod linear;
 mod preflight;
 
@@ -332,6 +333,17 @@ fn run(which: &str) -> Result<i32, String> {
                 return Ok(0);
             };
             Ok(linear::run(&input))
+        }
+        // Non un gancio: l'interrogazione che permette allo strumento di
+        // equivalenza di chiedere al Rust la stessa cosa che chiede al Python.
+        // Senza, il porting della misura di consegna si proverebbe solo sui casi
+        // scritti a mano — e sono proprio quelli a non trovare i difetti.
+        "handoff-measure" => {
+            let mut args = std::env::args().skip(2);
+            let Some(transcript) = args.next() else {
+                return Err("handoff-measure vuole il percorso di un transcript".into());
+            };
+            Ok(handoff::measure(&transcript, &args.next().unwrap_or_default()))
         }
         other => Err(format!("gancio sconosciuto: {other}")),
     }
