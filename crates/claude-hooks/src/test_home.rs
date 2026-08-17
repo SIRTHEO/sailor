@@ -40,6 +40,10 @@ impl HomeIsolata {
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::create_dir_all(dir.join(".claude").join("state"));
         std::env::set_var("HOME", &dir);
+        // L'attesa che il successore raccolga il mandato vale venticinque
+        // secondi in produzione: qui a zero, o ogni caso che rigenera li
+        // pagherebbe. Chi prova proprio quell'attesa se la rialza da sé.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
         Self { _lock: lock, precedente, dir }
     }
 
@@ -50,6 +54,7 @@ impl HomeIsolata {
 
 impl Drop for HomeIsolata {
     fn drop(&mut self) {
+        std::env::remove_var("RELAY_PICKUP_TIMEOUT_SEC");
         match &self.precedente {
             Some(h) => std::env::set_var("HOME", h),
             None => std::env::remove_var("HOME"),
