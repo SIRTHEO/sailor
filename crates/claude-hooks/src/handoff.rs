@@ -15,7 +15,12 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
-fn state_dir() -> PathBuf {
+/// Dove vivono i marcatori dei presidi della consegna.
+///
+/// Sede unica: prima ce n'erano tre copie identiche — qui, nel presidio
+/// PostToolUse e nell'involucro del successore — e tre copie divergono la prima
+/// volta che qualcuno cambia idea su dove tenere lo stato.
+pub(crate) fn state_dir() -> PathBuf {
     dirs_home().join(".claude").join("state")
 }
 
