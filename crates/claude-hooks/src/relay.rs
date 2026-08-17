@@ -26,7 +26,9 @@
 //! con due mutanti che passavano su 36 prove su 36. Qui il chiamante entra come
 //! parametro: le prove registrano la sequenza e la confrontano.
 
-use guards::handoff::{evaluate, resolve_terminal_handle, Action, SessionFacts, Terminal};
+use guards::handoff::{
+    evaluate, resolve_terminal_handle, state_key, Action, SessionFacts, Terminal,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -101,18 +103,24 @@ fn opt_out(sess: &str, worktree: &str) -> bool {
     .any(|n| state_dir().join(n).exists())
 }
 
+/// `state_key`: un worktree_id vero contiene le barre di un percorso, e un nome
+/// di file non le regge. Perché fosse un difetto e non un dettaglio, vedi
+/// `guards::handoff::state_key` — fino al 17/08/2026 nessuna tregua è mai stata
+/// scritta su questa macchina.
 fn in_cooldown(worktree: &str, now: f64) -> bool {
-    fs::read_to_string(state_dir().join(format!("staffetta-cooldown-{worktree}")))
-        .ok()
-        .and_then(|t| t.trim().parse::<f64>().ok())
-        .map(|then| now - then < COOLDOWN_SEC as f64)
-        .unwrap_or(false)
+    fs::read_to_string(
+        state_dir().join(format!("staffetta-cooldown-{}", state_key(worktree))),
+    )
+    .ok()
+    .and_then(|t| t.trim().parse::<f64>().ok())
+    .map(|then| now - then < COOLDOWN_SEC as f64)
+    .unwrap_or(false)
 }
 
 fn set_cooldown(worktree: &str) {
     let _ = fs::create_dir_all(state_dir());
     let _ = fs::write(
-        state_dir().join(format!("staffetta-cooldown-{worktree}")),
+        state_dir().join(format!("staffetta-cooldown-{}", state_key(worktree))),
         format!("{}", now_epoch()),
     );
 }
@@ -321,7 +329,7 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
     let hpath = latest_handoff(&rec.cwd);
     let _ = fs::create_dir_all(resume_dir());
     let _ = fs::write(
-        resume_dir().join(format!("{}.txt", rec.worktree)),
+        resume_dir().join(format!("{}.txt", state_key(&rec.worktree))),
         if hpath.is_empty() {
             "ultimo handoff in memory"
         } else {
@@ -488,7 +496,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
         let transcript_exists =
             !rec.transcript.is_empty() && Path::new(&rec.transcript).exists();
         macro_rules! fatti {
-            ($thresholds:expr, $used:expr) => {
+            ($thresholds:expr, $used:expr, $lavorato:expr) => {
                 SessionFacts {
                     session: &rec.session,
                     handle: &rec.handle,
@@ -499,6 +507,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                     armed_successor: &armed,
                     handoff_done,
                     transcript_exists,
+                    worked_after_handoff: $lavorato,
                     used: $used,
                     thresholds: $thresholds,
                 }
@@ -510,11 +519,15 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
         // scopo — un vaglio indipendente l'aveva segnalato come irraggiungibile
         // dall'oracolo — e questo è lo scopo.
         let t;
-        let (action, reason) = match evaluate(&fatti!(None, 0)) {
+        let (action, reason) = match evaluate(&fatti!(None, 0, false)) {
             (Action::Skip, r) if r == "soglie non calcolabili" => {
                 t = crate::handoff::thresholds(&rec.transcript);
                 let used = crate::handoff::context_used(&rec.transcript, &rec.session);
-                evaluate(&fatti!(Some(&t), used))
+                // Si scorre la coda una seconda volta, e solo qui: è la stessa
+                // ragione per cui la misura sta in questo ramo e non sopra.
+                let lavorato =
+                    crate::handoff::worked_after_handoff(&rec.transcript, &rec.session);
+                evaluate(&fatti!(Some(&t), used, lavorato))
             }
             altro => altro,
         };
@@ -716,6 +729,41 @@ mod tests {
         let seq = chiamate.borrow().clone();
         assert_eq!(seq.len(), 1, "dopo un wait fallito non si fa altro: {seq:?}");
         assert!(seq[0].contains("wait"));
+    }
+
+    #[test]
+    fn un_worktree_col_percorso_dentro_scrive_i_suoi_file() {
+        let _home = HomeIsolata::nuova("worktree-con-barre");
+        // Il caso normale, non un caso limite: ogni identificativo di copia di
+        // Orca è `<uuid>::/percorso/assoluto`. Finché quelle barre finivano nel
+        // nome del file, la tregua e il segnale di ripresa non venivano scritti
+        // mai — sul disco del 17/08/2026, zero e zero su sei sessioni vive.
+        let mut rec = record_di_prova();
+        rec.worktree = "9591c8dd-9b12::/Users/theo/gyver/work/suite".into();
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"create") {
+                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
+        regenerate(&rec, "", false, &mut orca);
+
+        let state = home().join(".claude").join("state");
+        let ripresa: Vec<_> = fs::read_dir(state.join("riprendi-da"))
+            .map(|d| d.flatten().map(|e| e.file_name()).collect())
+            .unwrap_or_default();
+        assert_eq!(ripresa.len(), 1, "il segnale di ripresa non è stato scritto");
+        let tregua = fs::read_dir(&state)
+            .map(|d| {
+                d.flatten()
+                    .filter(|e| {
+                        e.file_name().to_string_lossy().starts_with("staffetta-cooldown-")
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        assert_eq!(tregua, 1, "la tregua non è stata scritta");
     }
 
     #[test]
