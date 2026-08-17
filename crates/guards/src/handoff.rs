@@ -404,6 +404,10 @@ pub struct SessionFacts<'a> {
     /// L'handle del successore che un altro meccanismo ha già aperto, se vivo.
     pub armed_successor: &'a str,
     pub handoff_done: bool,
+    /// La consegna è stata una **scelta**, non un ordine del presidio: scritta
+    /// mentre il contesto era ancora sotto la soglia. Vale come secondo motivo
+    /// per passare il testimone, accanto all'occupazione.
+    pub handoff_deliberate: bool,
     pub transcript_exists: bool,
     /// Dopo aver consegnato, la sessione ha ricevuto altro lavoro.
     ///
@@ -500,17 +504,37 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
     let Some(t) = f.thresholds else {
         return (Action::Skip, "soglie non calcolabili".into());
     };
-    if f.used == 0 || f.used < t.require {
+    // DUE MOTIVI PER PASSARE IL TESTIMONE, non uno. L'occupazione è quello per
+    // cui la staffetta è nata, ma il CLAUDE.md ne prescrive un altro — «una
+    // sessione, un ambito»: quando il lavoro cambia mestiere si consegna e si
+    // riparte, con qualunque contesto residuo. Chi consegna sotto soglia non
+    // obbedisce a un limite, dichiara finito il lavoro.
+    //
+    // Guardare la sola occupazione lasciava quel caso senza successore: la
+    // consegna restava sul disco e non la raccoglieva nessuno, cioè proprio il
+    // lavoro che doveva far proseguire. Misurato il 18/08/2026: consegnata al
+    // 67% con la soglia al 90%, la sessione dopo non è mai partita e aprirla è
+    // toccato a Theo. Le altre guardie restano: chi ha lavorato dopo la consegna
+    // è protetto dal controllo qui sotto.
+    if !f.handoff_deliberate && (f.used == 0 || f.used < t.require) {
         return (
             Action::Skip,
             format!("sotto soglia ({} < {}, {})", f.used, t.require, t.model),
         );
     }
     let pct = round_half_to_even(f.used as f64 / t.budget as f64 * 100.0);
-    let piena = format!(
-        "consegnato e pieno ({} token, {pct}% del budget {} ~{})",
-        f.used, t.model, t.budget
-    );
+    let piena = if f.handoff_deliberate {
+        format!(
+            "consegnato di proposito ({} token, {pct}% del budget {} ~{}): \
+             ambito chiuso, non contesto pieno",
+            f.used, t.model, t.budget
+        )
+    } else {
+        format!(
+            "consegnato e pieno ({} token, {pct}% del budget {} ~{})",
+            f.used, t.model, t.budget
+        )
+    };
     // HA CONSEGNATO, MA POI HA RICEVUTO ALTRO LAVORO. Il 17/08/2026 questa
     // guardia non c'era e la staffetta ha chiuso due volte la stessa sessione
     // mentre lavorava: `cdca7b36` aveva un mandato arrivato ventun secondi dopo
@@ -705,6 +729,47 @@ mod tests {
         let (a, why) = evaluate(&sessione_piena(&live, &t));
         assert_eq!(a, Action::Regenerate);
         assert!(why.contains("96% del budget claude-opus-5"), "{why}");
+    }
+
+    #[test]
+    fn sotto_soglia_e_non_deliberata_si_salta() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 363_283; // il caso vero del 18/08/2026: 67% del budget
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Skip);
+        assert!(why.contains("sotto soglia"), "{why}");
+    }
+
+    #[test]
+    fn sotto_soglia_ma_deliberata_passa_il_testimone() {
+        // Chi consegna con il contesto largo dichiara chiuso l'ambito. Senza
+        // questo, la sua consegna resta sul disco e non la raccoglie nessuno.
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 363_283;
+        f.handoff_deliberate = true;
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Regenerate);
+        assert!(why.contains("di proposito"), "{why}");
+        assert!(why.contains("ambito chiuso"), "{why}");
+    }
+
+    #[test]
+    fn deliberata_non_scavalca_chi_ha_lavorato_dopo() {
+        // La guardia che protegge una sessione ancora al lavoro non si allenta:
+        // consegnare di proposito non autorizza a chiudere chi sta lavorando.
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 363_283;
+        f.handoff_deliberate = true;
+        f.worked_after_handoff = true;
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Skip);
+        assert!(why.contains("lavoro dopo la consegna"), "{why}");
     }
 
     #[test]

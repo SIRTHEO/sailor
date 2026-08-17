@@ -646,6 +646,9 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
         let handoff_done = state_dir()
             .join(format!("consegna-fatta-{}", rec.session))
             .exists();
+        let handoff_deliberate = state_dir()
+            .join(format!("consegna-volontaria-{}", rec.session))
+            .exists();
         let transcript_exists =
             !rec.transcript.is_empty() && Path::new(&rec.transcript).exists();
         macro_rules! fatti {
@@ -659,6 +662,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                     in_cooldown,
                     armed_successor: &armed,
                     handoff_done,
+                    handoff_deliberate,
                     transcript_exists,
                     worked_after_handoff: $lavorato,
                     used: $used,
