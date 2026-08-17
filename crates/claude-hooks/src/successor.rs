@@ -13,23 +13,35 @@ use hook_io::journal::{self, Field};
 use std::fs;
 use std::io::Read;
 
-/// I primi 400 byte del file, come li legge il Python.
+/// Quanto si legge di un file candidato.
 ///
-/// La lunghezza è la stessa di proposito: il frontmatter sta in testa, e un
-/// limite diverso farebbe divergere le due implementazioni su un file che
-/// dichiara `type: project` al byte 401 — improbabile, ma il confronto lo
-/// vedrebbe e nessuno saprebbe perché.
-fn head(path: &str) -> Option<String> {
+/// Non più 400 byte: dal 17/08/2026 il riconoscimento guarda anche le sezioni
+/// del corpo, che stanno oltre il frontmatter. Il tetto resta perché il gancio
+/// scatta su ogni Write/Edit, e in `memory/` potrebbe un giorno finire qualcosa
+/// di grosso: la consegna più lunga sul disco di quel giorno era 19 KB.
+const MAX_READ: usize = 64 * 1024;
+
+fn text_of(path: &str) -> Option<String> {
     let mut f = fs::File::open(path).ok()?;
-    let mut buf = vec![0u8; 400];
+    let mut buf = vec![0u8; MAX_READ];
     let n = f.read(&mut buf).ok()?;
     buf.truncate(n);
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
 /// È un documento di consegna? Legge il file solo quando serve davvero.
+///
+/// La guardia sul percorso viene prima della lettura, e non è un'ottimizzazione
+/// oziosa: questo gancio gira a ogni Write ed Edit della sessione, e senza di
+/// essa aprirebbe ogni file toccato solo per scoprire che non sta in `memory/`.
 pub fn is_doc(path: &str) -> bool {
-    is_handoff_doc(path, head(path).as_deref())
+    if guards::successor::name_says_handoff(path) {
+        return true;
+    }
+    if !path.contains("/memory/") {
+        return false;
+    }
+    is_handoff_doc(path, text_of(path).as_deref())
 }
 
 /// Quanti pannelli con un agente ci sono in questo albero. `None` se ignoto.
@@ -137,6 +149,15 @@ fn open_tab(path: &str) -> (bool, String) {
 /// altro. Misurato il 17/08/2026 — il marcatore citava un handle assente dagli
 /// undici vivi mentre la sua tab lavorava.
 fn note_successor(session: &str, detail: &str) {
+    // Senza sessione il marcatore è illeggibile per costruzione: chi congeda lo
+    // cerca per `successore-di-<sessione>` e con la chiave vuota esce subito.
+    // Scriverlo lascia solo un file che nessuno raccoglie — sul disco del
+    // 17/08/2026 ce n'era uno, e il Python lo chiamava pure con un altro nome
+    // (`senza-sessione` contro la chiave vuota del porto): due rifiuti diversi
+    // per lo stesso caso.
+    if session.is_empty() {
+        return;
+    }
     let grab = |re: &regex::Regex| -> String {
         re.captures(detail)
             .and_then(|c| c.get(1))
