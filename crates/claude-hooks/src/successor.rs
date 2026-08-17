@@ -44,6 +44,39 @@ pub fn is_doc(path: &str) -> bool {
     is_handoff_doc(path, text_of(path).as_deref())
 }
 
+/// L'inventario di ciò che è rimasto acceso in `root`, già in forma di clausola.
+///
+/// Due chiamate a `lsof` e non una per processo: i pid in ascolto sono una
+/// decina, e interrogarli uno a uno costerebbe una decina di processi in un
+/// gancio che ne ha già tre. Fail-open: se `lsof` non risponde l'inventario è
+/// vuoto e il mandato resta quello di prima — meglio senza terza clausola che
+/// senza mandato.
+fn inherited_clause(root: &str) -> String {
+    let lsof = |args: &[&str]| -> String {
+        std::process::Command::new("lsof")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|o| !o.stdout.is_empty())
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+            .unwrap_or_default()
+    };
+    let listeners =
+        guards::successor::parse_listeners(&lsof(&["-nP", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]));
+    if listeners.is_empty() {
+        return String::new();
+    }
+    let pids = listeners
+        .iter()
+        .map(|l| l.pid.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let cwds = guards::successor::parse_cwds(&lsof(&["-a", "-p", &pids, "-d", "cwd", "-Fn"]));
+    guards::successor::inherited_clause(&guards::successor::inherited_listeners(
+        &listeners, &cwds, root,
+    ))
+}
+
 /// Quanti pannelli con un agente ci sono in questo albero. `None` se ignoto.
 pub fn panes_here(root: &str) -> Option<usize> {
     let out = std::process::Command::new("orca")
@@ -99,14 +132,14 @@ fn already_armed(path: &str, session: &str) -> bool {
 /// L'attesa non è una conferma da dare: è una via d'uscita per chi sta
 /// guardando. Prima qui c'era un Invio da premere, e nessuno lo premeva — 21
 /// schede armate e zero avviate. L'inerzia deve lavorare nel verso giusto.
-fn open_tab(path: &str) -> (bool, String) {
+fn open_tab(path: &str, inherited: &str) -> (bool, String) {
     let wait_s = std::env::var("CONSEGNA_ATTESA_S")
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(30);
     // Il mandato entra in una stringa fra apici singoli della shell: l'unico
     // carattere da neutralizzare è l'apice stesso.
-    let text = mandate(path).replace('\'', r"'\''");
+    let text = mandate(path, inherited).replace('\'', r"'\''");
     let command = format!(
         "printf '%s\\n\\n' '{text}'; \
          printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
@@ -285,7 +318,9 @@ pub fn arm(path: &str, session: &str, origin: &str) -> ArmOutcome {
             if facts.already_armed {
                 return ArmOutcome::Stop(String::new());
             }
-            let (ok, detail) = open_tab(path);
+            // L'inventario si raccoglie qui e non prima: costa due `lsof`, e
+            // ogni altro ramo di questa funzione si ferma senza aprire niente.
+            let (ok, detail) = open_tab(path, &inherited_clause(&cwd));
             if ok {
                 note_successor(session, &detail);
             }
@@ -377,7 +412,12 @@ pub fn run(input: &hook_io::HookInput) -> i32 {
 pub fn probe(verb: &str, a: &str, b: &str) -> i32 {
     match verb {
         "doc" => println!("{}", if is_doc(a) { "True" } else { "False" }),
-        "mandate" => print!("{}", mandate(a)),
+        // Il mandato nudo, senza inventario: è ciò che il confronto col Python
+        // esercita, e la clausola dipende da cosa gira sulla macchina in quel
+        // momento — un ingresso che non si può fissare in un caso di prova.
+        "mandate" => print!("{}", mandate(a, "")),
+        // L'inventario da solo, per poterlo guardare senza aprire una scheda.
+        "inherited" => print!("{}", inherited_clause(a)),
         "fingerprint" => println!("{}", guards::successor::armed_fingerprint(a, b)),
         "hours" => println!(
             "{}",
