@@ -217,10 +217,17 @@ pub fn run(input: &hook_io::HookInput) -> i32 {
         return 0;
     }
     let session = input.session_id.clone().unwrap_or_default();
-    let cwd = input
-        .cwd
-        .clone()
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().display().to_string());
+    // La cwd del PROCESSO, non quella dichiarata nel payload. Il Python usa
+    // `os.getcwd()`, e le due coincidono quasi sempre — per questo il confronto
+    // non se ne era accorto: i casi passavano la cwd vera in entrambi i campi.
+    // Divergono la prima volta che qualcuno invoca il gancio da fuori l'albero,
+    // e allora il tetto guarda un albero che non è quello in cui si sta
+    // lavorando. Trovato rendendo il binario non eseguibile e confrontando le
+    // due risposte sullo stesso ingresso: 0 pannelli contro 2.
+    let cwd = std::env::current_dir()
+        .unwrap_or_default()
+        .display()
+        .to_string();
 
     let mut facts = guards::successor::ArmFacts {
         second_generation: std::env::var(guards::successor::GENERATION_ENV).is_ok(),
