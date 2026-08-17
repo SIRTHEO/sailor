@@ -33,7 +33,7 @@ fn caps() -> (u32, u32) {
 /// contate **dall'inizio**, e questi file arrivano a 245 MB. È l'unico gancio
 /// della famiglia che deve attraversare l'intero transcript, e il filtro grezzo
 /// sulla stringa prima del JSON è ciò che lo rende sostenibile.
-fn count_file(path: &str) -> Option<Restarts> {
+pub fn count_whole_file(path: &str) -> Option<Restarts> {
     let file = std::fs::File::open(path).ok()?;
     let mut out = Restarts::default();
     for line in BufReader::new(file).lines() {
@@ -67,7 +67,7 @@ pub fn run() -> i32 {
     if path.is_empty() || !std::path::Path::new(path).exists() {
         return 0;
     }
-    let Some(r) = count_file(path) else { return 0 };
+    let Some(r) = count_whole_file(path) else { return 0 };
     let (max_restarts, max_tool_calls) = caps();
     println!("{}", message(&r, max_restarts, max_tool_calls));
     0
@@ -77,7 +77,7 @@ pub fn run() -> i32 {
 /// numeri, così il confronto può interrogare le due implementazioni sullo stesso
 /// file senza passare per stdin e per il ramo `source == compact`.
 pub fn count_probe(transcript: &str) -> i32 {
-    let r = count_file(transcript).unwrap_or_default();
+    let r = count_whole_file(transcript).unwrap_or_default();
     println!(
         "{}",
         serde_json::json!({"restarts": r.restarts, "tool_calls": r.tool_calls})
@@ -114,7 +114,7 @@ mod tests {
         );
         bytes.push(b'\n');
         std::fs::write(&path, bytes).unwrap();
-        let r = count_file(path.to_str().unwrap()).unwrap();
+        let r = count_whole_file(path.to_str().unwrap()).unwrap();
         assert_eq!(r.restarts, 1, "la riga rotta ha fermato il conteggio");
     }
 }

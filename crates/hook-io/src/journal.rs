@@ -91,7 +91,7 @@ pub fn record(hook: &str, decision: &str, reason: &str, extra: &[(&str, Field)])
 
     let mut line = String::with_capacity(160);
     line.push('{');
-    let _ = write!(line, "\"t\":{}", quote(&now_iso8601()));
+    let _ = write!(line, "\"t\":{}", quote(&now_iso8601_python()));
     let _ = write!(line, ",\"gancio\":{}", quote(hook));
     let _ = write!(line, ",\"decisione\":{}", quote(decision));
     let _ = write!(line, ",\"motivo\":{}", quote(reason));
@@ -110,12 +110,27 @@ fn quote(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
 }
 
+/// Il timestamp nella forma di `datetime.now(timezone.utc).isoformat(timespec="seconds")`
+/// — «2026-08-17T12:05:00+00:00» — che è quella che scrive `hook_log.py`.
+///
+/// PERCHÉ SI SEGUE L'ORACOLO ANCHE QUI. `ganci.jsonl` è un archivio che leggono
+/// script che non conosciamo tutti, e al 17/08/2026 conteneva **due** forme:
+/// 3314 righe con i millisecondi e la `Z`, scritte dai ganci già portati, e 2045
+/// con l'offset, scritte dall'originale. Nessuna delle due è sbagliata da sola;
+/// averle mescolate senza accorgersene sì, ed è il motivo per cui questa
+/// funzione esiste invece di lasciar correre. La forma che vince è quella del
+/// Python, che è ciò che il resto della configurazione sa leggere.
+pub fn now_iso8601_python() -> String {
+    let full = now_iso8601();
+    format!("{}+00:00", &full[..19])
+}
+
 /// Lo stesso istante senza i millisecondi — «2026-08-16T21:42:27Z».
 ///
-/// Due formati e non uno perché i due registri sono nati in tempi diversi e
-/// chi li legge si aspetta quello che c'è: il registro dei ganci ha i
-/// millisecondi (`toISOString` del JavaScript), la raccolta delle osservazioni
-/// no (`time.strftime` del Python). Uniformarli romperebbe chi li interroga.
+/// Tre formati e non uno perché i registri sono nati in tempi diversi e chi li
+/// legge si aspetta quello che c'è: la raccolta delle osservazioni usa questo
+/// (`time.strftime` del Python), il registro dei ganci quello sopra.
+/// Uniformarli tutti romperebbe chi li interroga.
 pub fn now_iso8601_seconds() -> String {
     let full = now_iso8601();
     format!("{}Z", &full[..19])
@@ -178,6 +193,19 @@ mod tests {
         assert_eq!(&t[4..5], "-");
         assert_eq!(&t[10..11], "T");
         assert_eq!(&t[19..20], ".");
+    }
+
+    #[test]
+    fn the_journal_stamps_the_shape_python_writes() {
+        // `ganci.jsonl` è un archivio già misto: 3314 righe con i millisecondi e
+        // la Z contro 2045 con l'offset. Chi lo legge conosce la seconda forma,
+        // ed è quella che il registro deve continuare a scrivere.
+        let t = now_iso8601_python();
+        assert_eq!(t.len(), 25, "atteso 2026-08-17T12:05:00+00:00, ottenuto {t}");
+        assert!(t.ends_with("+00:00"), "{t}");
+        assert!(!t.contains('.'), "i millisecondi non ci vanno: {t}");
+        // E l'altra forma resta com'è: la usa la raccolta delle osservazioni.
+        assert!(now_iso8601_seconds().ends_with('Z'));
     }
 
     #[test]

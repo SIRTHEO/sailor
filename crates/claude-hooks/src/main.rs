@@ -18,6 +18,7 @@ mod handoff;
 mod linear;
 mod live_rules;
 mod preflight;
+mod handoff_required;
 mod relay;
 mod restart;
 #[cfg(test)]
@@ -378,6 +379,8 @@ fn run(which: &str) -> Result<i32, String> {
         // Il promemoria alla sessione che riparte da un riassunto. Legge il
         // JSON di SessionStart da stdin e, solo dopo una compattazione, parla.
         "restart-notice" => Ok(restart::run()),
+        // Il presidio della consegna, lato PostToolUse.
+        "handoff-required" => Ok(handoff_required::run()),
         // Non è un gancio: è l'aggancio dello strumento di equivalenza, che pone
         // la stessa domanda ai due conteggi sullo stesso transcript vero.
         "restart-count" => {
