@@ -209,14 +209,127 @@ pub fn armed_fingerprint(path: &str, session: &str) -> String {
         .collect()
 }
 
+/// Un processo in ascolto su una porta, come lo riporta `lsof`.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Listener {
+    pub pid: u32,
+    pub command: String,
+    pub port: u16,
+}
+
+/// I processi in ascolto, dall'uscita `-Fpcn` di `lsof`.
+///
+/// Il formato è una riga per campo, con la lettera davanti: `p` apre un
+/// processo, `c` lo nomina, `n` è l'indirizzo di un suo file aperto. Le porte
+/// si ripetono — IPv4 e IPv6 arrivano come due righe uguali — e qui si contano
+/// una volta sola, altrimenti il mandato elencherebbe due volte lo stesso
+/// server.
+pub fn parse_listeners(out: &str) -> Vec<Listener> {
+    let mut found: Vec<Listener> = Vec::new();
+    let (mut pid, mut command) = (0u32, String::new());
+    for line in out.lines() {
+        let (tag, rest) = line.split_at(line.char_indices().nth(1).map_or(0, |(i, _)| i));
+        match tag {
+            "p" => {
+                pid = rest.parse().unwrap_or(0);
+                command.clear();
+            }
+            "c" => command = rest.to_string(),
+            "n" => {
+                // `*:3040` e `127.0.0.1:3040` finiscono nella stessa porta.
+                let Some(port) = rest.rsplit(':').next().and_then(|p| p.parse::<u16>().ok())
+                else {
+                    continue;
+                };
+                if pid != 0 && !found.iter().any(|l| l.pid == pid && l.port == port) {
+                    found.push(Listener { pid, command: command.clone(), port });
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// La cartella di lavoro di ogni processo, dall'uscita `-d cwd -Fn` di `lsof`.
+pub fn parse_cwds(out: &str) -> Vec<(u32, String)> {
+    let mut pairs = Vec::new();
+    let mut pid = 0u32;
+    for line in out.lines() {
+        if let Some(rest) = line.strip_prefix('p') {
+            pid = rest.parse().unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix('n') {
+            if pid != 0 {
+                pairs.push((pid, rest.to_string()));
+            }
+        }
+    }
+    pairs
+}
+
+/// Chi di quei processi sta lavorando dentro `root`.
+///
+/// Il confronto è sul prefisso della cartella di lavoro, non sull'uguaglianza:
+/// misurato il 17/08/2026, un `mastra dev` aveva la cwd in
+/// `matching-engine/src/mastra/public`, tre livelli sotto la radice del repo.
+pub fn inherited_listeners(
+    listeners: &[Listener],
+    cwds: &[(u32, String)],
+    root: &str,
+) -> Vec<Listener> {
+    if root.is_empty() {
+        return Vec::new();
+    }
+    let mut here: Vec<Listener> = listeners
+        .iter()
+        .filter(|l| {
+            cwds.iter()
+                .any(|(pid, dir)| *pid == l.pid && (dir == root || dir.starts_with(&format!("{root}/"))))
+        })
+        .cloned()
+        .collect();
+    here.sort_by_key(|l| l.port);
+    here
+}
+
+/// La clausola che dice al successore cosa ha ereditato acceso, o niente.
+///
+/// PERCHÉ NON DICE «SPEGNILI». Un successore che spegne il server di qualcun
+/// altro fa più danno di uno che ne accende un secondo; e il guasto vero non è
+/// il processo di troppo, è il minuto perso a inseguirlo. Il 17/08/2026 una
+/// sessione ha scambiato per un difetto del codice un pannello che «si chiudeva
+/// da solo» ed era solo il server dev caduto — e quel giorno l'inventario delle
+/// porte gliel'aveva dovuto ricopiare Theo a mano nel prompt.
+pub fn inherited_clause(here: &[Listener]) -> String {
+    if here.is_empty() {
+        return String::new();
+    }
+    let listed = here
+        .iter()
+        .map(|l| format!("porta {} ({})", l.port, l.command))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "\n\nTERZA REGOLA: in questo albero e' rimasto acceso del lavoro della \
+         sessione precedente — {listed}. Non riavviarli alla cieca e non spegnerli \
+         per abitudine: prima verifica che rispondano davvero \
+         (`lsof -nP -iTCP:<porta> -sTCP:LISTEN`). Una seconda copia sulla stessa \
+         porta fallisce, e un server caduto imita un difetto del codice."
+    )
+}
+
 /// Il testo che il successore riceve come primo prompt.
 ///
-/// Le due clausole sono ricopiate apposta, e nessuna è oziosa: una sessione
+/// Le clausole sono ricopiate apposta, e nessuna è oziosa: una sessione
 /// aperta in automatico parte senza nessuno che la corregga al primo turno,
 /// quindi ciò che non sta qui non lo fa. Il 13/08/2026 una sessione aperta così
 /// ha risposto al bollettino del monitor pur avendo in contesto la regola che lo
 /// vieta — regola ricevuta, regola non applicata.
-pub fn mandate(path: &str) -> String {
+///
+/// `inherited` è vuoto quando non c'è niente acceso, e allora la terza clausola
+/// non compare: un inventario vuoto scritto ogni volta insegna a saltare il
+/// paragrafo, e il giorno che elenca qualcosa nessuno lo legge.
+pub fn mandate(path: &str, inherited: &str) -> String {
     format!(
         "Leggi {path} e riprendi da li'.\n\n\
          PRIMA REGOLA, prima di qualunque altra cosa: se il primo messaggio che \
@@ -232,7 +345,7 @@ pub fn mandate(path: &str) -> String {
          modifica e aggiornamenti che arrivano mentre tu non c'eri: la consegna \
          che stai leggendo descrive il codice di quando e' stata scritta, non \
          quello di adesso. Se sei indietro, allineati PRIMA — e se ci sono \
-         dipendenze, reinstallale."
+         dipendenze, reinstallale.{inherited}"
     )
 }
 
@@ -346,7 +459,7 @@ mod tests {
     }
 
     /// Il corpo di una consegna come la scrive `/handoff`, ridotto all'osso.
-    fn consegna(extra: &str) -> String {
+    fn handoff_body(extra: &str) -> String {
         format!("---\nname: x\nmetadata:\n  type: project\n---\n\n## Stato\n\nfatto.\n\n## Prossimi passi\n\n1. riprendere.\n{extra}")
     }
 
@@ -355,7 +468,7 @@ mod tests {
         // Il caso vero del 17/08/2026: slug tematico, nessuna data, `type:
         // project`, e le sezioni che la skill prescrive. Prima usciva `False`.
         let p = "/p/memory/sezioni-cv-campi-separati-o-testo.md";
-        assert!(is_handoff_doc(p, Some(&consegna(""))));
+        assert!(is_handoff_doc(p, Some(&handoff_body(""))));
     }
 
     #[test]
@@ -386,7 +499,7 @@ mod tests {
     #[test]
     fn fuori_da_memory_il_corpo_non_conta() {
         // Le sezioni giuste in un file qualunque del repo non aprono niente.
-        assert!(!is_handoff_doc("/repo/docs/piano.md", Some(&consegna(""))));
+        assert!(!is_handoff_doc("/repo/docs/piano.md", Some(&handoff_body(""))));
     }
 
     #[test]
@@ -398,6 +511,75 @@ mod tests {
             "/p/memory/MEMORY.md",
             Some("type: project")
         ));
+    }
+
+    /// L'uscita vera di `lsof -nP -iTCP -sTCP:LISTEN -Fpcn` su questa macchina,
+    /// ridotta: un processo con la stessa porta due volte (IPv4 e IPv6), uno con
+    /// due porte diverse, e uno che non ascolta niente di interessante.
+    const LSOF_LISTEN: &str = concat!(
+        "p648\n", "crapportd\n", "f10\n", "n*:50923\n", "f11\n", "n*:50923\n",
+        "p50361\n", "cnode\n", "f24\n", "n*:3040\n",
+        "p39389\n", "cnode\n", "f30\n", "n127.0.0.1:4111\n", "f31\n", "n*:4111\n",
+    );
+
+    #[test]
+    fn le_porte_si_contano_una_volta_sola() {
+        let l = parse_listeners(LSOF_LISTEN);
+        assert_eq!(l.len(), 3, "IPv4 e IPv6 sono lo stesso server: {l:?}");
+        assert_eq!(l[0].port, 50923);
+        assert_eq!(l[1].port, 3040);
+        assert_eq!(l[1].command, "node");
+        assert_eq!(l[2].port, 4111);
+    }
+
+    #[test]
+    fn la_cartella_di_lavoro_si_lega_al_processo_giusto() {
+        let out = "p50361\nfcwd\nn/w/tautog\np39389\nfcwd\nn/w/altro\n";
+        assert_eq!(
+            parse_cwds(out),
+            vec![(50361, "/w/tautog".to_string()), (39389, "/w/altro".to_string())]
+        );
+    }
+
+    #[test]
+    fn eredita_solo_chi_lavora_in_questo_albero() {
+        let listeners = vec![
+            Listener { pid: 1, command: "node".into(), port: 3040 },
+            Listener { pid: 2, command: "node".into(), port: 4111 },
+            Listener { pid: 3, command: "ollama".into(), port: 11434 },
+        ];
+        // Il caso vero del 17/08/2026: la cwd del secondo sta tre livelli sotto
+        // la radice, quindi il confronto è sul prefisso e non sull'uguaglianza.
+        let cwds = vec![
+            (1, "/w/tautog".to_string()),
+            (2, "/w/tautog/src/mastra/public".to_string()),
+            (3, "/Users/theo".to_string()),
+        ];
+        let here = inherited_listeners(&listeners, &cwds, "/w/tautog");
+        assert_eq!(here.iter().map(|l| l.port).collect::<Vec<_>>(), vec![3040, 4111]);
+        // Un albero fratello col nome che comincia uguale non è questo albero.
+        assert!(inherited_listeners(&listeners, &cwds, "/w/tau").is_empty());
+        // Radice ignota: non si eredita niente invece di ereditare tutto.
+        assert!(inherited_listeners(&listeners, &cwds, "").is_empty());
+    }
+
+    #[test]
+    fn senza_niente_acceso_la_terza_clausola_non_compare() {
+        assert_eq!(inherited_clause(&[]), "");
+        let m = mandate("/x/consegna.md", "");
+        assert!(!m.contains("TERZA REGOLA"), "{m}");
+    }
+
+    #[test]
+    fn la_terza_clausola_elenca_le_porte_e_non_ordina_di_spegnere() {
+        let here = vec![Listener { pid: 1, command: "node".into(), port: 3040 }];
+        let c = inherited_clause(&here);
+        assert!(c.contains("porta 3040 (node)"), "{c}");
+        // Il successore non deve spegnere il lavoro di qualcun altro.
+        assert!(!c.contains("spegnili"), "{c}");
+        assert!(c.contains("lsof"), "deve dire come verificare: {c}");
+        // E la clausola arriva davvero nel mandato.
+        assert!(mandate("/x/consegna.md", &c).contains("TERZA REGOLA"));
     }
 
     #[test]
@@ -447,7 +629,7 @@ mod tests {
 
     #[test]
     fn il_mandato_porta_le_due_clausole() {
-        let m = mandate("/x/consegna.md");
+        let m = mandate("/x/consegna.md", "");
         assert!(m.contains("/x/consegna.md"));
         assert!(m.contains("notifica automatica"));
         assert!(m.contains("git fetch --all --prune"));
