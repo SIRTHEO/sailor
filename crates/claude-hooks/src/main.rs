@@ -39,8 +39,12 @@ fn main() {
     };
 
     if which == "--list" {
-        for (name, _, _) in SMOKE {
-            println!("{name}");
+        // Prima stampava i soli nomi di SMOKE: chi chiedeva «quali ganci
+        // esistono?» ne vedeva 5 su 22, e i 17 senza caso di prova erano
+        // invisibili proprio a chi li cercava (17/08/2026).
+        for name in ALL_HOOKS {
+            let covered = if is_covered(name) { "provato" } else { "senza caso" };
+            println!("{name}\t{covered}");
         }
         return;
     }
@@ -85,6 +89,44 @@ fn main() {
 /// cui si rompe un gancio, quasi sempre, è che parte e risponde male:
 /// sottocomando rinominato, binario per l'architettura sbagliata, panico
 /// all'avvio. Qui si chiede al gancio di decidere, e si guarda cosa decide.
+/// Ogni gancio che il binario sa eseguire. L'elenco è scritto a mano perché il
+/// dispatch è un `match`, ma non può divergere: il test
+/// `ogni_gancio_del_dispatch_e_elencato` rilegge questo stesso sorgente e
+/// fallisce se un ramo nuovo non compare qui.
+const ALL_HOOKS: &[&str] = &[
+    "allow-worktree-deletes",
+    "block-pr-merge-admin",
+    "cd-guard",
+    "code-language",
+    "duplication",
+    "handoff-arms-successor",
+    "handoff-measure",
+    "handoff-on-stop",
+    "handoff-required",
+    "handoff-resolve",
+    "hooks-off",
+    "linear-readonly",
+    "live-rules",
+    "observe",
+    "pr-title",
+    "relay",
+    "relay-evaluate",
+    "restart-count",
+    "restart-notice",
+    "scope-drift",
+    "socraticode-gate",
+    "successor-probe",
+];
+
+/// Ganci con un caso di prova in `self_check`, oltre a quelli di SMOKE: qui
+/// stanno quelli che non giudicano un comando e hanno un controllo scritto a
+/// parte, più sotto.
+const COVERED_APART: &[&str] = &["code-language", "duplication"];
+
+fn is_covered(name: &str) -> bool {
+    SMOKE.iter().any(|(n, _, _)| *n == name) || COVERED_APART.contains(&name)
+}
+
 const SMOKE: &[(&str, &str, &str)] = &[
     ("cd-guard", "cd /repo && git status", "git -C /repo status"),
     // Il gate SocratiCode non è in questa tabella: la sua decisione dipende da
@@ -108,6 +150,16 @@ const SMOKE: &[(&str, &str, &str)] = &[
     // `code-language` non giudica un comando ma una coppia percorso+testo, che
     // in questa tabella non ci sta. Il suo caso «deve bloccare» è dentro
     // `self_check`, insieme agli altri.
+    (
+        // Il titolo di una richiesta diventa l'oggetto del commit di fusione:
+        // fuori formato deve fermarsi qui, in formato deve passare.
+        // Niente apostrofi nel titolo di prova: chiuderebbe la stringa, lo
+        // splitter di shell rinuncerebbe e il gancio tacerebbe — un caso «deve
+        // bloccare» che passa per il motivo sbagliato.
+        "pr-title",
+        "gh pr create --title 'aggiustato il conteggio dei ganci'",
+        "gh pr create --title 'fix(hooks): count the covered hooks'",
+    ),
 ];
 
 /// Esegue ogni gancio su due casi noti, in-process. Uscita 0 se tutti si
@@ -123,6 +175,7 @@ fn self_check() -> i32 {
                 // Il rifiuto viaggia sull'altro canale (`deny` su stdout,
                 // uscita 0), quindi qui si guarda che il giudizio ci sia — non
                 // che il gancio esca con codice 2.
+                "pr-title" => guards::pr_title::judge(command),
                 "linear-readonly" => match guards::linear_readonly::judge_bash(command) {
                     guards::linear_readonly::Verdict::Refused { reason, .. } => {
                         Decision::Block(reason)
@@ -135,7 +188,11 @@ fn self_check() -> i32 {
                     continue;
                 }
             };
-            let blocked = matches!(decision, Decision::Block(_));
+            // Un rifiuto viaggia su due canali: `Block` (uscita 2) e `Deny`
+            // (messaggio su stdout, uscita 0). Guardare solo `Block` diceva
+            // «non blocca» di ganci che rifiutano eccome — è il motivo per cui
+            // `linear-readonly` qui sotto aveva una conversione scritta a mano.
+            let blocked = matches!(decision, Decision::Block(_) | Decision::Deny(_));
             if blocked != expected_block {
                 let atteso = if expected_block {
                     "blocco"
@@ -174,7 +231,26 @@ fn self_check() -> i32 {
     }
 
     if failures == 0 {
-        println!("{} ganci, tutti rispondono come devono", SMOKE.len() + 2);
+        // Il messaggio diceva «N ganci, tutti rispondono come devono» contando
+        // i soli provati: chi lo leggeva capiva «tutto il binario è a posto»,
+        // mentre 17 ganci su 22 non avevano nessun caso. `adopt-hook.py` si
+        // fida di questa riga prima di far puntare la configurazione al
+        // binario, quindi la riga deve dire la copertura, non il totale dei
+        // provati (17/08/2026).
+        let covered: Vec<&str> = ALL_HOOKS.iter().copied().filter(|h| is_covered(h)).collect();
+        let uncovered: Vec<&str> = ALL_HOOKS
+            .iter()
+            .copied()
+            .filter(|h| !is_covered(h))
+            .collect();
+        println!(
+            "{} ganci su {} controllati, e rispondono come devono",
+            covered.len(),
+            ALL_HOOKS.len()
+        );
+        if !uncovered.is_empty() {
+            println!("senza caso di prova: {}", uncovered.join(", "));
+        }
         0
     } else {
         eprintln!("{failures} controlli falliti: NON pubblicare questo binario");
@@ -420,4 +496,107 @@ fn run(which: &str) -> Result<i32, String> {
 /// rimandi senza migliorare niente.
 fn emit_with_legacy_prefix(hook: &str, decision: &Decision) -> i32 {
     hook_io::emit(hook, decision)
+}
+
+#[cfg(test)]
+mod catalogo {
+    use super::*;
+
+    /// I nomi dei rami del `match` di `run()`, letti da questo stesso sorgente.
+    ///
+    /// Un elenco scritto a mano accanto a un `match` diverge al primo gancio
+    /// nuovo, e diverge in silenzio: chi aggiunge un ramo non ha motivo di
+    /// sospettare che esista un secondo posto da aggiornare. Qui il secondo
+    /// posto se ne accorge da solo.
+    fn hooks_in_dispatch() -> Vec<String> {
+        let source = include_str!("main.rs");
+        let body = source
+            .split_once("fn run(which: &str)")
+            .expect("la firma di run() è cambiata: aggiorna questo test")
+            .1;
+        let mut found = Vec::new();
+        for line in body.lines() {
+            let t = line.trim();
+            // i rami hanno la forma `"nome" => …`, eventualmente su più nomi
+            let Some(rest) = t.strip_prefix('"') else {
+                continue;
+            };
+            let Some((name, after)) = rest.split_once('"') else {
+                continue;
+            };
+            if after.trim_start().starts_with("=>")
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                found.push(name.to_string());
+            }
+        }
+        found.sort();
+        found.dedup();
+        found
+    }
+
+    #[test]
+    fn ogni_gancio_del_dispatch_e_elencato() {
+        let dispatch = hooks_in_dispatch();
+        assert!(
+            !dispatch.is_empty(),
+            "nessun ramo trovato: il lettore del sorgente non funziona più"
+        );
+        let missing: Vec<&String> = dispatch
+            .iter()
+            .filter(|h| !ALL_HOOKS.contains(&h.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "ganci nel dispatch ma non in ALL_HOOKS: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn nessun_gancio_elencato_e_sconosciuto_al_dispatch() {
+        let dispatch = hooks_in_dispatch();
+        let ghosts: Vec<&&str> = ALL_HOOKS
+            .iter()
+            .filter(|h| !dispatch.contains(&h.to_string()))
+            .collect();
+        assert!(
+            ghosts.is_empty(),
+            "ganci elencati che il dispatch non conosce: {ghosts:?}"
+        );
+    }
+
+    #[test]
+    fn i_ganci_dichiarati_provati_hanno_davvero_un_caso() {
+        for name in COVERED_APART {
+            assert!(
+                ALL_HOOKS.contains(name),
+                "{name} è dichiarato provato ma non è un gancio"
+            );
+            assert!(
+                !SMOKE.iter().any(|(n, _, _)| n == name),
+                "{name} è contato due volte: sta in SMOKE e in COVERED_APART"
+            );
+        }
+    }
+
+    #[test]
+    fn l_autoverifica_passa_da_qui() {
+        // `self_check()` girava solo dentro il binario: togliere il caso di un
+        // gancio lasciava i test verdi, e se ne accorgeva soltanto chi lanciava
+        // `--check` a mano. Ora la stessa domanda la fa anche `cargo test`.
+        assert_eq!(self_check(), 0, "l'autoverifica del binario non passa");
+    }
+
+    #[test]
+    fn la_copertura_non_e_totale_e_lo_si_dice() {
+        // Se un giorno saranno tutti coperti questo test cadrà, ed è il momento
+        // giusto per toglierlo: finché non succede, difende la riga onesta.
+        let covered = ALL_HOOKS.iter().filter(|h| is_covered(h)).count();
+        assert!(
+            covered < ALL_HOOKS.len(),
+            "copertura totale raggiunta: togli questo test e il ramo «senza caso di prova»"
+        );
+    }
 }
