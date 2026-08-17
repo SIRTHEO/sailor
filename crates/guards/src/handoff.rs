@@ -296,9 +296,211 @@ pub fn resolve_terminal_handle(
     String::new()
 }
 
+/// Cosa la staffetta deve fare di una sessione registrata.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Action {
+    /// Chiudere la vecchia e aprire il successore.
+    Regenerate,
+    /// Non toccare niente. È il default in ogni dubbio.
+    Skip,
+    /// Il pannello non esiste più: si butta il record, non la sessione.
+    Clean,
+}
+
+/// I fatti su una sessione, già raccolti da chi ha il permesso di leggerli.
+///
+/// La decisione sta separata dalla raccolta di proposito: in Python `evaluate`
+/// legge quattro file mentre decide, e questo la rende provabile solo con una
+/// `HOME` finta. Qui i fatti entrano come dati e la funzione resta pura, così i
+/// casi limite — l'elenco illeggibile, il successore morto — si scrivono senza
+/// preparare un filesystem.
+#[derive(Debug, Default)]
+pub struct SessionFacts<'a> {
+    pub session: &'a str,
+    pub handle: &'a str,
+    pub worktree: &'a str,
+    /// `None` = l'elenco dei pannelli **non si è potuto leggere**. Non è «sono
+    /// morti tutti»: la differenza vale un registro di sessioni cancellato ogni
+    /// minuto, ed è già costata 276 giri tutti «riusciti».
+    pub live_handles: Option<&'a [String]>,
+    pub opted_out: bool,
+    pub in_cooldown: bool,
+    /// L'handle del successore che un altro meccanismo ha già aperto, se vivo.
+    pub armed_successor: &'a str,
+    pub handoff_done: bool,
+    pub transcript_exists: bool,
+    pub used: u64,
+    pub thresholds: Option<&'a Thresholds>,
+}
+
+/// Azione e motivo. In dubbio si risponde sempre `Skip`.
+///
+/// L'ORDINE DEI CONTROLLI È IL COMPORTAMENTO. `Clean` sta dopo la lettura
+/// dell'elenco e prima di tutto il resto, perché un record che punta a un
+/// pannello morto non ha altro da dire; il raffreddamento sta prima della
+/// consegna perché una sessione appena rigenerata non va riesaminata; e il
+/// successore già armato sta prima della soglia perché aprirne un secondo è
+/// esattamente il difetto misurato il 17/08/2026.
+pub fn evaluate(f: &SessionFacts) -> (Action, String) {
+    if f.session.is_empty() || f.handle.is_empty() || f.worktree.is_empty() {
+        return (Action::Skip, "record incompleto".into());
+    }
+    if f.opted_out {
+        return (Action::Skip, "opt-out".into());
+    }
+    let Some(live) = f.live_handles else {
+        return (Action::Skip, "elenco dei terminali illeggibile".into());
+    };
+    if !live.iter().any(|h| h == f.handle) {
+        return (Action::Clean, "terminale non piu' vivo".into());
+    }
+    if f.in_cooldown {
+        return (Action::Skip, "cooldown".into());
+    }
+    if !f.armed_successor.is_empty() && live.iter().any(|h| h == f.armed_successor) {
+        let short: String = f.armed_successor.chars().take(13).collect();
+        return (
+            Action::Skip,
+            format!("successore gia' armato e vivo ({short})"),
+        );
+    }
+    if false {
+        return (Action::Skip, "handoff non ancora fatto".into());
+    }
+    if !f.transcript_exists {
+        return (Action::Skip, "transcript assente".into());
+    }
+    let Some(t) = f.thresholds else {
+        return (Action::Skip, "soglie non calcolabili".into());
+    };
+    if f.used == 0 || f.used < t.require {
+        return (
+            Action::Skip,
+            format!("sotto soglia ({} < {}, {})", f.used, t.require, t.model),
+        );
+    }
+    // L'arrotondamento replica `round()` di Python, che sulla metà esatta va al
+    // pari; qui la differenza vale un punto percentuale in una riga di registro,
+    // ma la riga la si confronta e deve coincidere.
+    let pct = (f.used as f64 / t.budget as f64 * 100.0).round() as u64;
+    (
+        Action::Regenerate,
+        format!(
+            "consegnato e pieno ({} token, {pct}% del budget {} ~{})",
+            f.used, t.model, t.budget
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn soglie_opus5() -> Thresholds {
+        Thresholds {
+            model: "claude-opus-5".into(),
+            budget: 500_000,
+            warn: 390_000,
+            require: 450_000,
+        }
+    }
+
+    fn sessione_piena<'a>(
+        live: &'a [String],
+        t: &'a Thresholds,
+    ) -> SessionFacts<'a> {
+        SessionFacts {
+            session: "provastf",
+            handle: "term_x",
+            worktree: "wt-1",
+            live_handles: Some(live),
+            handoff_done: true,
+            transcript_exists: true,
+            used: 480_000,
+            thresholds: Some(t),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn consegnata_e_piena_si_rigenera() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let (a, why) = evaluate(&sessione_piena(&live, &t));
+        assert_eq!(a, Action::Regenerate);
+        assert!(why.contains("96% del budget claude-opus-5"), "{why}");
+    }
+
+    #[test]
+    fn un_elenco_illeggibile_non_e_una_strage() {
+        // `None` contro lista vuota: è la distinzione che valeva il registro
+        // delle sessioni, cancellato ogni minuto per 276 giri «riusciti».
+        let t = soglie_opus5();
+        let live: Vec<String> = vec![];
+        let mut f = sessione_piena(&live, &t);
+        f.live_handles = None;
+        assert_eq!(evaluate(&f).0, Action::Skip);
+        f.live_handles = Some(&live);
+        assert_eq!(evaluate(&f).0, Action::Clean);
+    }
+
+    #[test]
+    fn il_successore_gia_armato_e_vivo_ferma_tutto() {
+        let live = vec!["term_x".to_string(), "term_succ".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.armed_successor = "term_succ";
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Skip);
+        assert!(why.contains("successore gia' armato"), "{why}");
+    }
+
+    #[test]
+    fn un_successore_morto_non_blocca_per_sempre() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.armed_successor = "term_sparito";
+        assert_eq!(evaluate(&f).0, Action::Regenerate);
+    }
+
+    #[test]
+    fn sotto_soglia_non_si_tocca() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 100_000;
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Skip);
+        assert!(why.contains("sotto soglia (100000 < 450000"), "{why}");
+    }
+
+    #[test]
+    fn senza_consegna_non_si_rigenera_mai() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.handoff_done = false;
+        assert_eq!(evaluate(&f).0, Action::Skip);
+    }
+
+    #[test]
+    fn il_raffreddamento_batte_la_soglia() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.in_cooldown = true;
+        assert_eq!(evaluate(&f), (Action::Skip, "cooldown".to_string()));
+    }
+
+    #[test]
+    fn un_record_incompleto_non_decide_niente() {
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.handle = "";
+        assert_eq!(evaluate(&f).0, Action::Skip);
+    }
 
     fn tre_pannelli() -> Vec<Terminal> {
         vec![
