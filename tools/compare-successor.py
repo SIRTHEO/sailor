@@ -185,6 +185,17 @@ def compare_end_to_end():
         'tool_name': 'Write',
         'tool_input': {'file_path': str(doc)},
     })
+    # Lo stesso caso con una cwd DICHIARATA diversa da quella del processo. Fino
+    # al 17/08/2026 ogni caso qui passava la cwd vera in entrambi i posti, e la
+    # divergenza restava invisibile: il porto contava i pannelli dell'albero
+    # dichiarato nel payload, il Python quelli del processo. Su questa macchina
+    # facevano 0 contro 2.
+    payload_altrove = json.dumps({
+        'session_id': 'prova-e2e-0000',
+        'cwd': '/tmp',
+        'tool_name': 'Write',
+        'tool_input': {'file_path': str(doc)},
+    })
     not_a_doc = json.dumps({
         'session_id': 'prova-e2e-0000',
         'cwd': str(Path.cwd()),
@@ -197,15 +208,46 @@ def compare_end_to_end():
         ('troppe sessioni', payload, {'CONSEGNA_TETTO_SESSIONI': '0'}),
         ('seconda generazione', payload, {'CLAUDE_NATO_DA_CONSEGNA': '1'}),
         ('non e una consegna', not_a_doc, {'CONSEGNA_TETTO_PANNELLI': '0'}),
+        ('cwd dichiarata altrove', payload_altrove, {'CONSEGNA_TETTO_PANNELLI': '0'}),
+        ('cwd altrove, tetto sessioni', payload_altrove, {'CONSEGNA_TETTO_SESSIONI': '0'}),
     ]
+    # L'albero con più pannelli fra quelli aperti: è lì che le due letture della
+    # cwd danno numeri diversi, e quindi l'unico posto da cui il confronto vede
+    # la differenza.
+    busy_tree = str(Path.cwd())
+    try:
+        r = subprocess.run(['orca', 'terminal', 'list', '--json'],
+                           capture_output=True, text=True, timeout=60)
+        d = json.loads(r.stdout)
+        items = d.get('result', d)
+        if isinstance(items, dict):
+            items = items.get('terminals') or []
+        conteggio = {}
+        for t in items:
+            p = t.get('worktreePath') or ''
+            if p and any(m in (t.get('title') or '') for m in ('✳', '◑', '◐', '⏳')):
+                conteggio[p] = conteggio.get(p, 0) + 1
+        if conteggio:
+            busy_tree = max(conteggio, key=conteggio.get)
+    except Exception:
+        pass
+    print(f'end-to-end eseguito da {busy_tree}', file=sys.stderr)
+
     diverged = 0
     import os
     for name, body, extra in cases:
         env = {**os.environ, **extra}
+        # Entrambi lanciati DENTRO un albero che ha pannelli. Senza questo il
+        # caso «cwd dichiarata altrove» non discrimina: da una cartella qualsiasi
+        # sia la cwd del processo sia quella del payload contano zero pannelli, e
+        # un porto che legge la seconda invece della prima passa il confronto.
+        # Verificato per mutazione il 17/08/2026 — sopravviveva.
         a = subprocess.run([str(BIN), 'handoff-arms-successor'], input=body,
-                           capture_output=True, text=True, timeout=120, env=env)
+                           capture_output=True, text=True, timeout=120, env=env,
+                           cwd=busy_tree)
         b = subprocess.run([sys.executable, str(HOOK)], input=body,
-                           capture_output=True, text=True, timeout=120, env=env)
+                           capture_output=True, text=True, timeout=120, env=env,
+                           cwd=busy_tree)
         if a.stdout != b.stdout or a.returncode != b.returncode:
             diverged += 1
             print(f'\nDIVERGE end-to-end [{name}]')
