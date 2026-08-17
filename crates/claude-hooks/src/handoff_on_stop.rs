@@ -88,7 +88,32 @@ fn successor_alive(session: &str, terminals: Option<&[Terminal]>) -> String {
     let get = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("");
     // Il worktree resta vuoto di proposito: qui si cerca **quel** successore, e
     // dedurlo dall'albero adotterebbe una scheda qualsiasi che ci abita.
-    resolve_terminal_handle(get("tabId"), "", get("handle"), list)
+    let handle = resolve_terminal_handle(get("tabId"), "", get("handle"), list);
+    if handle.is_empty() {
+        return handle;
+    }
+    // UNA SCHEDA APERTA NON È UN SUCCESSORE. La tab nasce trenta secondi prima
+    // della sessione che dovrà ospitare — `sleep 30; exec claude` — e in quella
+    // finestra esiste, risponde all'elenco, e dentro non c'è nessuno. Congedarsi
+    // contro di essa chiuderebbe l'unica sessione viva del lavoro senza lasciarne
+    // nessuna: è il caso che questo gancio esiste per non fare. Orca antepone un
+    // marcatore al titolo quando un agente c'è davvero, ed è la sola prova
+    // disponibile qui — sull'elenco già letto, senza una seconda chiamata da
+    // venti secondi dentro un gancio che ne ha quindici in tutto.
+    let ha_agente = list
+        .iter()
+        .find(|t| t.handle == handle)
+        .map(|t| {
+            t.title
+                .chars()
+                .any(|c| guards::successor::AGENT_MARKS.contains(&c))
+        })
+        .unwrap_or(false);
+    if ha_agente {
+        handle
+    } else {
+        String::new()
+    }
 }
 
 /// Chiude la propria scheda, ma solo se qualcuno prosegue davvero.
@@ -279,13 +304,35 @@ mod tests {
     use super::*;
     use crate::test_home::HomeIsolata;
 
+    /// Un pannello con un agente dentro: il marcatore lo mette Orca.
     fn term(handle: &str, tab: &str) -> Terminal {
         Terminal {
             handle: handle.into(),
             tab_id: tab.into(),
             worktree_id: String::new(),
-            title: String::new(),
+            title: "◑ al lavoro".into(),
         }
+    }
+
+    /// Una scheda aperta e ancora vuota: esiste, ma dentro non c'è nessuno.
+    ///
+    /// È lo stato normale nei trenta secondi fra `terminal create` e `exec
+    /// claude`. Congedarsi contro di essa chiude l'unica sessione viva del lavoro
+    /// senza lasciarne nessuna.
+    fn term_vuoto(handle: &str, tab: &str) -> Terminal {
+        Terminal {
+            title: "consegna raccolta (parte da sola)".into(),
+            ..term(handle, tab)
+        }
+    }
+
+    #[test]
+    fn una_scheda_ancora_vuota_non_e_un_successore() {
+        let casa = HomeIsolata::nuova("congedo-vuota");
+        scrivi_marcatore(&casa, "S5", r#"{"handle":"term_a","tabId":"tab-1"}"#);
+        assert_eq!(successor_alive("S5", Some(&[term_vuoto("term_a", "tab-1")])), "");
+        // Trenta secondi dopo, con l'agente dentro, il congedo può procedere.
+        assert_eq!(successor_alive("S5", Some(&[term("term_a", "tab-1")])), "term_a");
     }
 
     fn scrivi_marcatore(casa: &HomeIsolata, sessione: &str, json: &str) {
