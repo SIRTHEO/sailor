@@ -36,6 +36,16 @@ FILES=(
   "crates/claude-hooks/src/worktree_deletes.rs"
   "crates/guards/src/scope_drift.rs"
   "crates/claude-hooks/src/scope_drift.rs"
+  "crates/guards/src/link_worktree_rules.rs"
+  "crates/claude-hooks/src/link_worktree_rules.rs"
+  "crates/guards/src/handoff_threshold.rs"
+  "crates/claude-hooks/src/handoff_threshold.rs"
+  "crates/guards/src/spotlight_marker.rs"
+  "crates/claude-hooks/src/spotlight_marker.rs"
+  "crates/guards/src/skill_nudge.rs"
+  "crates/claude-hooks/src/skill_nudge.rs"
+  "crates/claude-hooks/src/work_status.rs"
+  "crates/claude-hooks/src/orca_cleanup.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -843,6 +853,523 @@ if [ "$WHICH" = "scope-drift" ] || [ "$WHICH" = "tutte" ]; then
   # La sessione non si tronca piu' a otto caratteri: il registro cambia forma.
   mutate "sessione non troncata nel registro" "$I" \
     's = s.replace("session.chars().take(8).collect::<String>()", "session.to_string()", 1)'
+
+  COMPARE=""
+fi
+
+# ── link-worktree-rules ─────────────────────────────────────────────────────
+if [ "$WHICH" = "link-worktree-rules" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su link_worktree_rules.rs:"
+  # `--veloce` salta il caso del tempo massimo: quaranta secondi per mutante,
+  # e questa sezione ne ha tredici. Il giro completo lo fa chi confronta.
+  COMPARE="compare-link-worktree-rules.py --veloce"
+  G="crates/guards/src/link_worktree_rules.rs"
+  I="crates/claude-hooks/src/link_worktree_rules.rs"
+
+  # Il primo dei due momenti sparisce: le copie nate mentre non c'eravamo
+  # restano scoperte, ed e' meta' del caso.
+  mutate "SessionStart non lancia piu" "$G" \
+    's = s.replace("""    if event == "SessionStart" {
+        return true;
+    }
+""", "", 1)'
+
+  # La guardia sullo strumento cade: il gancio guarda il comando di qualunque
+  # chiamata, e parte su un payload che non ha mai eseguito niente in una shell.
+  mutate "tool_name non guardato" "$G" \
+    's = s.replace("""    if payload.get("tool_name").and_then(Value::as_str) != Some("Bash") {
+        return false;
+    }
+""", "", 1)'
+
+  # Il confine di parola in coda: `git worktree added` tornerebbe a contare come
+  # una creazione, e la cura girerebbe su un comando che non crea niente.
+  mutate "confine di parola in coda rimosso" "$G" \
+    's = s.replace(r"worktree\s+add)\b", r"worktree\s+add)", 1)'
+
+  # Lo script cercato altrove: il gancio non trova piu' niente e tace per
+  # sempre, che e' esattamente lo stato da cui questo gancio ci ha tirati fuori.
+  mutate "percorso dello script cambiato" "$I" \
+    's = s.replace(".claude/scripts/link-worktree-rules.sh", ".claude/scripts/link-worktree-rules.bash", 1)'
+
+  # La cura non si lancia piu': si conta su un'uscita vuota, quindi si tace
+  # sempre. Da fuori sembra un gancio contento, e il confronto se ne accorge
+  # solo perche' guarda **i lanci**, non il solo avviso.
+  mutate "lo script non si lancia" "$I" \
+    's = s.replace("""    let Some(uscita) = link(&script) else {
+        return 0;
+    };""", "    let uscita = String::new();", 1)'
+
+  # Si conta ogni riga invece delle sole collegate: il gancio parla anche quando
+  # non c'era niente da fare, cioe' quasi sempre.
+  mutate "si contano tutte le righe" "$G" \
+    's = s.replace(".filter(|r| strip(r).starts_with(\"collegato\"))", ".filter(|r| !strip(r).is_empty())", 1)'
+
+  # `lines()` invece di `splitlines()` di Python: le righe spezzate da una
+  # tabulazione verticale o da un separatore di record tornano una sola.
+  mutate "righe spezzate come in Rust invece che come in Python" "$G" \
+    's = s.replace("    splitlines(stdout)\n        .into_iter()", "    stdout\n        .lines()", 1)'
+
+  # `trim()` invece di `str.strip()`: i quattro separatori `\\x1c`-`\\x1f` non
+  # sono spazio per Rust, e una riga che comincia con uno di quelli smette di
+  # contare.
+  mutate "bordi ripuliti alla maniera di Rust" "$G" \
+    's = s.replace("""    s.trim_matches(|c: char| c.is_whitespace() || (\x27\\u{1c}\x27..=\x27\\u{1f}\x27).contains(&c))""", "    s.trim()", 1)'
+
+  # L uscita non decodificabile smette di far tacere il gancio: dove il Python
+  # muore su `UnicodeDecodeError`, il porto conterebbe righe con il carattere di
+  # rimpiazzo dentro.
+  mutate "uscita non UTF-8 accettata lo stesso" "$I" \
+    's = s.replace("    let testo = String::from_utf8(raw).ok()?;", "    let testo = String::from_utf8_lossy(&raw).into_owned();", 1)'
+
+  # Lo stderr del figlio torna a scorrere sullo stderr del gancio, cioe' sotto
+  # gli occhi del modello: il porto parlerebbe dove l originale sta zitto.
+  mutate "stderr del figlio ereditato" "$I" \
+    's = s.replace(".stderr(Stdio::piped())", ".stderr(Stdio::inherit())", 1)'
+
+  # Si parla anche con zero copie collegate: l avviso diventa rumore a ogni
+  # apertura di sessione.
+  mutate "si parla anche a zero" "$I" \
+    's = s.replace("""    if quante == 0 {
+        return 0;
+    }
+""", "", 1)'
+
+  # L'avviso cambia parole: stessa informazione, altro testo. E' il mutante che
+  # prova che il confronto guarda stderr byte per byte.
+  mutate "testo dell avviso cambiato" "$G" \
+    's = s.replace("worktree(s) that had none", "worktrees without rules", 1)'
+
+  # Un ingresso illeggibile smette di essere un fatto e diventa un rimprovero:
+  # su PostToolUse un'uscita 2 finisce davanti al modello a ogni comando.
+  mutate "uscita 2 su stdin malformato" "$I" \
+    's = s.replace("""    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&grezzo) else {
+        return 0;
+    };""", """    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&grezzo) else {
+        return 2;
+    };""", 1)'
+
+  COMPARE=""
+fi
+
+# ── handoff-threshold ───────────────────────────────────────────────────────
+if [ "$WHICH" = "handoff-threshold" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su handoff_threshold.rs:"
+  COMPARE="compare-handoff-threshold.py"
+  G="crates/guards/src/handoff_threshold.rs"
+  I="crates/claude-hooks/src/handoff_threshold.rs"
+
+  # Il gradino basso si sposta: il gancio comincia a parlare dove l'originale
+  # tace. È la soglia intera del presidio, e senza un caso appena sotto — 69,4%
+  # — nessun confronto se ne accorge.
+  mutate "gradino spostato da 70 a 60" "$G" \
+    's = s.replace("pub const STEPS: [u64; 2] = [70, 85];", "pub const STEPS: [u64; 2] = [60, 85];", 1)'
+
+  # Il confine da chiuso a aperto: al 70% e all85% esatti non si parla piu.
+  mutate "verso del confronto sul gradino" "$G" \
+    's = s.replace("percent >= *s", "percent > *s", 1)'
+
+  # Il freno «una volta per gradino» sparisce: il gancio riparla a ogni prompt,
+  # che e esattamente il difetto che l'originale dichiara di aver curato.
+  mutate "freno una-volta-per-gradino tolto" "$G" \
+    's = s.replace("pub fn already_said(text: &str, step: u64) -> bool {", "pub fn already_said(text: &str, step: u64) -> bool {\n    if true { return false; }", 1)'
+
+  # Lo stato non si scrive piu: stesso effetto del mutante di sopra, ma la
+  # traccia e diversa — qui il file non compare proprio nella TMPDIR finta.
+  mutate "scrittura dello stato saltata" "$I" \
+    's = s.replace("let _ = fs::write(&state, step.to_string());", "let _ = &state;", 1)'
+
+  # Il separatore delle migliaia torna quello di Python: 144,000 invece di
+  # 144.000. Cambia un byte del testo che la sessione legge.
+  mutate "separatore delle migliaia" "$G" \
+    's = s.replace("gruppi(used).replace(\x27,\x27, \".\")", "gruppi(used)", 1)'
+
+  # L'arrotondamento lontano da zero al posto di quello al pari: l84,5% diventa
+  # 85 e con esso cambia anche QUALE dei due messaggi esce.
+  mutate "arrotondamento non al pari" "$G" \
+    's = s.replace("round_half_to_even(used as f64 * 100.0 / window as f64)", "(used as f64 * 100.0 / window as f64).round() as u64", 1)'
+
+  # Il messaggio alto si sceglie con il confine aperto: all85% esatto esce
+  # quello basso, che non nomina la compattazione.
+  mutate "confine del messaggio alto" "$G" \
+    's = s.replace("if step >= 85 {", "if step > 85 {", 1)'
+
+  # Le due variabili si guardano nell ordine inverso: lo scavalco manuale non
+  # scavalca piu niente, e il gancio non e piu provabile su una sessione vera.
+  mutate "ordine delle variabili della finestra" "$I" \
+    's = s.replace("[\"SOGLIA_FINESTRA\", \"CLAUDE_CODE_AUTO_COMPACT_WINDOW\"]", "[\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\", \"SOGLIA_FINESTRA\"]", 1)'
+
+  # La misura prende il ripiego dell ALTRO impianto di soglie: un usage di primo
+  # livello comincia a contare. E il modo piu probabile in cui questo porto
+  # sarebbe stato scritto sbagliato, riusando context_used di handoff.rs.
+  mutate "ripiego sull usage di primo livello" "$I" \
+    's = s.replace("let usage = msg.as_object()?.get(\"usage\");", "let usage = msg.as_object()?.get(\"usage\").or_else(|| obj.get(\"usage\"));", 1)'
+
+  # La prima riga della coda non si scarta piu: si legge un usage che l oracolo
+  # non vede, e solo su transcript sopra i 400 kB.
+  mutate "prima riga della coda conservata" "$I" \
+    's = s.replace("if size > TAIL_BYTES && !lines.is_empty() {", "if false && size > TAIL_BYTES && !lines.is_empty() {", 1)'
+
+  COMPARE=""
+fi
+
+# ── spotlight-marker ────────────────────────────────────────────────────────
+if [ "$WHICH" = "spotlight-marker" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su spotlight_marker.rs:"
+  COMPARE="compare-spotlight-marker.py"
+  G="crates/guards/src/spotlight_marker.rs"
+  I="crates/claude-hooks/src/spotlight_marker.rs"
+
+  # La condizione si rovescia: il marcatore si rimette su ogni comando TRANNE
+  # le installazioni, cioe' esattamente quando non serve.
+  mutate "condizione invertita sul riconoscitore" "$I" \
+    's = s.replace("if !is_an_install(text) {", "if is_an_install(text) {", 1)'
+
+  # La guardia che tiene `find` fuori da una radice-link: senza, un cwd che e'
+  # un collegamento fa scrivere marcatori in un albero che l originale non
+  # tocca mai.
+  mutate "guardia sulla radice-link tolta" "$I" \
+    's = s.replace("""    if fs::symlink_metadata(p)\n        .map(|m| m.file_type().is_symlink())\n        .unwrap_or(false)\n    {\n        return Some(Vec::new());\n    }\n""", "", 1)'
+
+  # La soglia di profondita: a cinque livelli si trovano cartelle che
+  # l originale non vede, e si scrive dove lui non scrive.
+  mutate "soglia di profondita a cinque" "$G" \
+    's = s.replace("pub const MAX_DEPTH: usize = 4;", "pub const MAX_DEPTH: usize = 5;", 1)'
+
+  # Il file non si scrive piu, ma si continua a contarlo: il messaggio resta
+  # identico e l unica traccia e' l albero. E' il mutante che dimostra perche'
+  # il confronto fotografa il disco e non solo stderr.
+  mutate "scrittura del marcatore saltata" "$I" \
+    's = s.replace("""        if fs::OpenOptions::new()\n            .create(true)\n            .append(true)\n            .open(&path)\n            .is_ok()\n        {\n            touched.push(d);\n        }""", "        touched.push(d);", 1)'
+
+  # Il formato del messaggio: una parola sola, e chi cerca la riga nei registri
+  # non la trova piu.
+  mutate "formato del messaggio cambiato" "$I" \
+    's = s.replace("exclusion marker(s) under", "exclusion markers under", 1)'
+
+  # Il `-prune` sparisce: si scende dentro le cartelle gia' trovate, e ogni
+  # `node_modules` annidata prende un marcatore dentro un albero che ha gia il
+  # suo. E' la ragione per cui l originale usa `-prune` e non un `find` piatto.
+  mutate "prune tolto" "$I" \
+    's = s.replace("""            out.push(child);\n            continue;""", """            out.push(child.clone());\n            walk(&child, depth + 1, out);\n            continue;""", 1)'
+
+  # Il controllo «c e gia»: senza, il conteggio conta anche i marcatori che
+  # esistevano, e il gancio dice di aver rimesso cio che non ha toccato.
+  mutate "controllo di esistenza tolto" "$I" \
+    's = s.replace("""        if path.exists() {\n            continue;\n        }\n""", "", 1)'
+
+  # Il difetto dell originale non si riproduce piu: dove Python muore con
+  # uscita 1, il porto esce 0. E la tentazione naturale di chi porta — «tanto
+  # e un difetto» — ed e' proprio cio che il confronto deve vietare.
+  mutate "AttributeError non riprodotto" "$I" \
+    's = s.replace("""        python_type(v),\n        attr\n    );\n    1\n}""", """        python_type(v),\n        attr\n    );\n    0\n}""", 1)'
+
+  # `splitlines` di Python contro `lines` di Rust: differiscono su `\\r`
+  # solitario, `\\x0b`, `\\u2028` e compagnia. Col solo `\\n` questo mutante
+  # sopravviveva — `lines()` spezza anche lui — ed e' il buco che ha aggiunto al
+  # confronto i tre casi coi separatori esotici.
+  mutate "splitlines diventa lines di Rust" "$I" \
+    's = s.replace(r"""    python_splitlines(&found.join("\n"))""", r"""    found.join("\n").lines().map(String::from).collect::<Vec<_>>()""", 1)'
+
+  # Il filtro su `tool_name`: senza, il gancio parte su ogni strumento, e un
+  # Read che nomina «pnpm install» scrive marcatori.
+  mutate "filtro su tool_name tolto" "$I" \
+    's = s.replace("""    if obj.get(\"tool_name\") != Some(&Value::String(\"Bash\".to_string())) {\n        return 0;\n    }\n""", "", 1)'
+
+  # La valvola sparisce: `MARCATORE_SPOTLIGHT=off` smette di spegnere il gancio.
+  mutate "valvola rimossa" "$I" \
+    's = s.replace("""    if std::env::var(\"MARCATORE_SPOTLIGHT\").as_deref() == Ok(\"off\") {\n        return 0;\n    }\n""", "", 1)'
+
+  # Lo spazio di Rust invece di quello di Python: i separatori di controllo
+  # `\\x1c`-`\\x1f` smettono di contare come spazio nella normalizzazione.
+  mutate "spazio di Rust invece di quello di Python" "$G" \
+    "s = s.replace(\"    c.is_whitespace() || matches!(c, '\\\\u{1c}'..='\\\\u{1f}')\", '    c.is_whitespace()', 1)"
+
+  # La radice non combacia piu con se stessa: un `pnpm install` lanciato da
+  # dentro una `node_modules` smette di rimetterci il marcatore.
+  mutate "la radice non combacia con se stessa" "$I" \
+    's = s.replace("    if is_dependency_dir(&find_name(root)) {", "    if false {", 1)'
+
+  # Un `cwd` intero: `os.path.isdir` lo legge come descrittore e risponde no,
+  # senza errori. Trattarlo come un TypeError fa morire il porto dove
+  # l originale tace.
+  mutate "cwd intera trattata come errore" "$I" \
+    's = s.replace("        Some(Value::Number(n)) if !n.is_f64() => Root::Opaque,", "        Some(Value::Number(_)) => Root::Refused(\"int\"),", 1)'
+
+  # Il nome del marcatore: un file che somiglia a quello giusto non spegne
+  # Spotlight, e nessun messaggio lo direbbe.
+  mutate "nome del marcatore cambiato" "$G" \
+    "s = s.replace('pub const MARKER: &str = \".metadata_never_index\";', 'pub const MARKER: &str = \".metadata_never_indexed\";', 1)"
+
+  COMPARE=""
+fi
+
+# ── work-status ─────────────────────────────────────────────────────────────
+# Il gancio che SCRIVE SU ORCA: qui un mutante sopravvissuto non e' un messaggio
+# sbagliato, e' lo stato di una copia di lavoro riscritto quando non doveva. Il
+# confronto non tocca Orca vera — `orca`, `gh` e `git` sono finti e ogni
+# chiamata finisce in un registro che fa parte di cio' che si confronta.
+if [ "$WHICH" = "work-status" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su work_status.rs (lo stato delle lavorazioni):"
+  COMPARE="compare-work-status.py"
+  W="crates/claude-hooks/src/work_status.rs"
+
+  # LA GUARDIA CHE E' COSTATA DUE MARCATURE SBAGLIATE IL 17/08/2026: la copia
+  # scelta deve parlare proprio col repo dove la richiesta e' nata. Senza, la
+  # copia della sessione viene marcata per la richiesta di qualcun altro.
+  mutate "repo della richiesta non verificato" "$W" \
+    's = s.replace("    if wanted != slug_of_remote(&path_) {", "    if false != slug_of_remote(&path_).is_empty() {", 1)'
+
+  # L URL stampato smette di essere la prova: il solo testo `gh pr create` —
+  # dentro un messaggio di commit, in un grep — torna a marcare.
+  mutate "URL non piu richiesto" "$W" \
+    's = s.replace("    if wanted.is_empty() {\n        return Ok(None);\n    }\n", "", 1)'
+
+  # Un comando fallito o interrotto torna a valere come richiesta nata.
+  mutate "errore dello strumento ignorato" "$W" \
+    's = s.replace("        if rotto {\n            return Ok(None);\n        }\n", "", 1)'
+
+  # I cambi di cartella si leggono dal primo invece che dall ultimo: in
+  # `cd /tmp && cd <copia> && gh pr create` la richiesta nasce nella seconda.
+  mutate "primo cd invece dell ultimo" "$W" \
+    's = s.replace("    visti.reverse();\n", "", 1)'
+
+  # IL DIFETTO NOTO, primo verso: un repo che non ha risposto torna
+  # indistinguibile da un repo senza richieste, e le sue copie in revisione
+  # vengono declassate a «in-progress» a ogni avvio di sessione.
+  mutate "repo muto letto come repo senza richieste" "$W" \
+    's = s.replace("        if repo_noti.contains(&mine) && !answered.contains(&mine) {", "        if false && repo_noti.contains(&mine) && !answered.contains(&mine) {", 1)'
+
+  # IL DIFETTO NOTO, secondo verso: con TUTTI i repo muti si riscrive lo stesso,
+  # cioe' trentatre' stati riscritti su zero informazione.
+  mutate "nessuna risposta, si riscrive lo stesso" "$W" \
+    's = s.replace("    if answered.is_empty() {", "    if false {", 1)'
+
+  # Una prova sola invece di tre: col 503 due volte su tre, il repo risulta muto
+  # quasi sempre.
+  mutate "un solo tentativo su gh" "$W" \
+    's = s.replace("        for _ in 0..3 {", "        for _ in 0..1 {", 1)'
+
+  # DOPO UNO SQUASH `merge-base --is-ancestor` mente sempre: il confronto giusto
+  # e' sul contenuto. Senza, una copia gia' confluita resta «in-progress» per
+  # sempre.
+  mutate "contenuto non confrontato dopo lo squash" "$W" \
+    's = s.replace("            if !f.is_empty() && f == albero {", "            if false {", 1)'
+
+  # git muto torna a valere come albero pulito: su uno zero finto una copia
+  # viene dichiarata completata.
+  mutate "git muto letto come zero" "$W" \
+    's = s.replace("--not\", \"--remotes\"])?;", "--not\", \"--remotes\"]).unwrap_or_default();", 1)'
+
+  # Il residuo smette di contare: `media-link-recovery` torna «completed» con
+  # sette commit scritti dopo la fusione.
+  mutate "residuo ignorato nel giudizio" "$W" \
+    's = s.replace("            Some(_) => \"in-progress\".into(),", "            Some(_) => \"completed\".into(),", 1)'
+
+  # Il giro a secco scrive davvero: e' il mutante che, senza il registro delle
+  # chiamate, sarebbe invisibile.
+  mutate "a secco scrive lo stesso" "$W" \
+    's = s.replace("        if secco {", "        if false {", 1)'
+
+  # La tab dell agente viene chiusa insieme a quella di avvio: con `--agent`
+  # quella tab ospita il lavoro.
+  mutate "tab dell agente chiusa" "$W" \
+    's = s.replace("    if startup.is_empty() || startup == agent {", "    if startup.is_empty() {", 1)'
+
+  # Un checkout canonico torna a essere giudicato come una lavorazione: e' il
+  # motivo per cui cinque erano «in-review» da 16-25 giorni.
+  mutate "checkout canonico giudicato come lavorazione" "$W" \
+    's = s.replace("    if git.get(\"isMainWorktree\").map(truthy).unwrap_or(false) {", "    if false {", 1)'
+
+  # Il registro del giro sparisce: «quanti repo non hanno risposto?» torna una
+  # domanda senza risposta, ed e' come il difetto e' rimasto invisibile per
+  # giorni.
+  mutate "registro del giro rimosso" "$W" \
+    's = s.replace("    registra(\n        if secco", "    #[allow(unused)] let _skip = (\n        if secco", 1)'
+
+  # La riga del registro perde lo spazio dopo i due punti, cioe prende la forma
+  # del JavaScript: stessa informazione, byte diversi, due formati mescolati
+  # nello stesso archivio storico.
+  mutate "registro nella forma senza spazi" "$W" \
+    's = s.replace("hook_io::python_json::dumps_unicode(&Value::Object(line))", "serde_json::to_string(&Value::Object(line)).unwrap_or_default()", 1)'
+
+  # Il guasto torna muto: un gancio rotto e uno contento si leggono uguali.
+  mutate "guasto non annotato" "$W" \
+    's = s.replace("            Err(e) => annota_guasto(name, &e),", "            Err(_e) => {}", 1)'
+
+  COMPARE=""
+fi
+
+# ── skill-nudge ─────────────────────────────────────────────────────────────
+if [ "$WHICH" = "skill-nudge" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su skill_nudge.rs:"
+  COMPARE="compare-skill-nudge.py"
+  G="crates/guards/src/skill_nudge.rs"
+  S="crates/claude-hooks/src/skill_nudge.rs"
+
+  # La soglia di costo si sposta: la fascia che consuma l'82% della cache
+  # riletta comincia altrove, e l'invito a passare il lavoro sparisce.
+  mutate "soglia di costo spostata" "$G" \
+    's = s.replace("pub const DEFAULT_THRESHOLD_MB: u64 = 6;", "pub const DEFAULT_THRESHOLD_MB: u64 = 30;", 1)'
+
+  # Il taglio in lunghezza abbassato: le richieste lunghe — cioe' quelle con
+  # piu' aree in una volta, dove la competenza serve di piu' — tornano mute.
+  mutate "taglio in lunghezza abbassato" "$G" \
+    's = s.replace("pub const CHAR_CUTOFF: usize = 12_000;", "pub const CHAR_CUTOFF: usize = 11_000;", 1)'
+
+  # Una domanda torna a essere lavoro nuovo: «hai testato e verificato in ui?»
+  # contiene un verbo di compito al participio, e senza questo filtro innescava
+  # l'invito a delegare una risposta.
+  mutate "la domanda torna lavoro nuovo" "$G" \
+    's = s.replace("if mb >= threshold && !already_said && !is_question", "if mb >= threshold && !already_said", 1)'
+
+  # Il freno a un colpo tolto: l'invito torna a ogni messaggio, che e'
+  # esattamente il rumore per cui il freno esiste. Nella prova sui messaggi veri
+  # usciva 276 volte, e dopo la prima nessuna aggiungeva nulla.
+  mutate "freno a un colpo tolto" "$G" \
+    's = s.replace("if mb >= threshold && !already_said", "if mb >= threshold", 1)'
+
+  # L'ordine con cui si sceglie la competenza si inverte: con il tetto di due,
+  # una frase che ne aggancia tre nomina le ultime invece delle prime.
+  mutate "ordine della tavola invertito" "$G" \
+    's = s.replace("for (skill, re) in SKILLS.iter().zip(skill_regexes()) {", "for (skill, re) in SKILLS.iter().rev().zip(skill_regexes().iter().rev()) {", 1)'
+
+  # Il tetto di due alzato: un elenco lungo e rumore, e viene saltato come tutto
+  # il resto.
+  mutate "tetto di due competenze alzato" "$G" \
+    's = s.replace("if matched.len() == 2 {", "if matched.len() == 3 {", 1)'
+
+  # Una voce sparisce dalla tavola. Non si neutralizza lo schema: si toglie
+  # proprio la riga, com'e' successo davvero due volte in agosto.
+  mutate "una voce tolta dalla tavola" "$G" \
+    'i = s.index("        name: \"orca-linear\",")
+j = s.rindex("    Skill {", 0, i)
+k = s.index("    },\n", i) + len("    },\n")
+s = s[:j] + s[k:]'
+
+  # Il testo della riga cambia. Stessa decisione, altre parole: il confronto
+  # deve guardare cosa esce, non solo se esce qualcosa.
+  mutate "testo della riga cambiato" "$G" \
+    's = s.replace("\"Esiste `{}`: copre {}, con la procedura già scritta e provata.\",", "\"Esiste gia` `{}`: copre {}, con la procedura già scritta e provata.\",", 1)'
+
+  # Il catalogo ignorato: si torna a nominare competenze disinstallate, che e'
+  # mandare a cercare una cosa che non c'e' — peggio del silenzio.
+  mutate "catalogo ignorato" "$G" \
+    's = s.replace("            if !exists(skill.name)? {", "            if false && !exists(skill.name)? {", 1)'
+
+  # `str.strip()` di Python torna `trim()` di Rust: i quattro separatori di
+  # controllo restano attaccati alla richiesta.
+  mutate "estremi tagliati con trim()" "$G" \
+    's = s.replace("    let p = python_trim(prompt);", "    let p = prompt.trim();", 1)'
+
+  # Lo sguardo indietro riscritto sparisce da `prisma`: i PERCORSI tornano ad
+  # agganciare, che e' il difetto corretto a mano sull'originale.
+  mutate "sguardo indietro di prisma tolto" "$G" \
+    's = s.replace("r\"(?:^|[^/.\\w])(prisma (migrate", "r\"(prisma (migrate", 1)'
+
+  # Lo sguardo avanti riscritto sparisce da `mastra`: `mastra.config.ts` torna a
+  # essere il framework.
+  mutate "sguardo avanti di mastra tolto" "$G" \
+    's = s.replace("dentro) mastra(?:$|[^/.\\w]))\",", "dentro) mastra)\",", 1)'
+
+  # Il registro non scrive piu': il suggerimento diventa non verificabile, ed e'
+  # l'unico modo di sapere fra un mese se e' stato raccolto.
+  mutate "registro del suggerimento tolto" "$S" \
+    's = s.replace("fn log_suggestion(session: &str, reason: &str, skills: &[String], chars: usize) {", "fn log_suggestion(session: &str, reason: &str, skills: &[String], chars: usize) {\n    if true { let _ = (session, reason, skills, chars); return }", 1)'
+
+  # Il marcatore nasce leggibile da chiunque invece che 0600.
+  mutate "permessi del marcatore allargati" "$S" \
+    's = s.replace("                .mode(0o600)\n", "", 1)'
+
+  COMPARE=""
+fi
+
+# ── orca-cleanup ────────────────────────────────────────────────────────────
+#
+# Qui il mutante piu' informativo non cambia una riga di testo: cambia **quali
+# chiamate a orca partono**. Un porto che stampa la tabella giusta e non chiude
+# niente, o che chiude la scheda di chi sta lavorando, ha lo stesso stdout — la
+# differenza sta solo nel registro del finto orca. Meta' dei mutanti qui sotto
+# sono di quella specie, e sono l'unica ragione per cui quel registro esiste.
+if [ "$WHICH" = "orca-cleanup" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su orca_cleanup.rs (chiude terminali e rinomina copie):"
+  COMPARE="compare-orca-cleanup.py"
+  O="crates/claude-hooks/src/orca_cleanup.rs"
+
+  # La chiusura perde il passo con --tab: il pannello se ne va, la voce resta
+  # nella barra. Invisibile a stdout, visibile solo nel registro.
+  mutate "chiusura senza --tab" "$O" \
+    's = s.replace("    orca(&[\"terminal\", \"close\", \"--terminal\", handle, \"--tab\"]);\n", "", 1)'
+
+  # I due passi in ordine invertito: e lo stesso insieme di chiamate, quindi lo
+  # vede solo la vista per manico. E il mutante che dice se l ordinamento del
+  # blocco delle chiusure ha nascosto qualcosa.
+  mutate "chiusura in ordine invertito" "$O" \
+    's = s.replace("    orca(&[\"terminal\", \"close\", \"--terminal\", handle, \"--tab\"]);\n    orca(&[\"terminal\", \"close\", \"--terminal\", handle]);", "    orca(&[\"terminal\", \"close\", \"--terminal\", handle]);\n    orca(&[\"terminal\", \"close\", \"--terminal\", handle, \"--tab\"]);", 1)'
+
+  # La scheda da cui sto girando smette di essere protetta: il gancio di
+  # SessionEnd chiuderebbe se stesso e le schede della stessa cartella.
+  mutate "la mia scheda non e protetta" "$O" \
+    's = s.replace("fn is_mine(term: &Value) -> bool {", "fn is_mine(term: &Value) -> bool {\n    if true { return false }", 1)'
+
+  # `waiting` finisce fra gli stati che liberano: si chiude una sessione che
+  # sta aspettando una risposta, buttando via cio che aspettava.
+  mutate "waiting vale come done" "$O" \
+    's = s.replace("if state == \"working\" || state == \"waiting\" {", "if state == \"working\" {", 1)'
+
+  # La chiave dello stato perde il pannello: lo stato di un pannello decide per
+  # l altro pannello della stessa scheda.
+  mutate "lo stato si cerca per sola scheda" "$O" \
+    's = s.replace("let state = states.get(&key).and_then(|v| v.as_str()).unwrap_or(\"\");", "let pre = format!(\"{}:\", py_str(term.get(\"tabId\")));\n    let state = states.iter().find(|(k, _)| k.starts_with(&pre)).map(|(_, v)| v).and_then(|v| v.as_str()).unwrap_or(\"\");", 1)'
+
+  # Un agente che ha appena finito si chiude subito, senza i venti minuti di
+  # grazia: puo essere ancora dentro a scrivere.
+  mutate "nessuna grazia per un agente appena finito" "$O" \
+    's = s.replace("        if idle < DONE_IDLE_MIN {", "        if false {", 1)'
+
+  # Le consegne in attesa di INVIO non sono piu protette da --handoffs.
+  mutate "le consegne non sono piu protette" "$O" \
+    's = s.replace("        if !with_handoffs {", "        if false {", 1)'
+
+  # Senza lastOutputAt il terminale risulta appena attivo invece che vecchio
+  # all infinito: chi non ha mai scritto niente smette di essere chiudibile.
+  mutate "senza lastOutputAt il terminale e nuovo" "$O" \
+    's = s.replace("        _ => return f64::INFINITY,", "        _ => return 0.0,", 1)'
+
+  # L esito del processo torna a contare: l originale passa check=False, e un
+  # orca che esce non-zero stampando JSON buono va preso per buono.
+  mutate "l esito di orca decide" "$O" \
+    's = s.replace("    let _ = child.wait();\n    Some(String::from_utf8_lossy(&buf).into_owned())", "    if !child.wait().map(|e| e.success()).unwrap_or(false) { return None }\n    Some(String::from_utf8_lossy(&buf).into_owned())", 1)'
+
+  # «Orca non risponde» diventa «non c e nessun terminale»: due frasi diverse
+  # per due situazioni diverse, e il porto le confonde.
+  mutate "orca muto vale elenco vuoto" "$O" \
+    's = s.replace("    let Some(terminals) = collect(args.worktree.as_deref()) else {", "    let Some(terminals) = collect(args.worktree.as_deref()).or(Some(Vec::new())) else {", 1)'
+
+  # Un titolo generico torna a poter rinominare una tab: «consegna raccolta»
+  # diventerebbe «Claude Code».
+  mutate "un titolo generico rinomina la tab" "$O" \
+    's = s.replace("    if wanted.is_empty() || is_anonymous_title(&wanted) {", "    if wanted.is_empty() {", 1)'
+
+  # La rinomina si conta invece di verificarla rileggendo: dice sempre «fatte
+  # tutte», anche quando Orca non ha cambiato niente.
+  mutate "rinomina data per fatta senza rileggere" "$O" \
+    's = s.replace("        .filter(|(w, _)| after.get(&realpath(&text(w.get(\"path\")))) == Some(&expected_name(w)))\n", "", 1)'
+
+  # La copia principale prende il nome del ramo invece che del repo: il nome
+  # ballerebbe a ogni checkout.
+  mutate "la copia principale prende il ramo" "$O" \
+    's = s.replace("    if truthy(w.get(\"isMainWorktree\")) {", "    if false {", 1)'
+
+  # La copia si indica col nome invece che col percorso. Stesso stdout, altra
+  # chiamata: senza il registro non lo vedrebbe nessuno.
+  mutate "la copia si indica col nome" "$O" \
+    's = s.replace("let target = format!(\"path:{}\", py_str(w.get(\"path\")));", "let target = format!(\"name:{}\", py_str(w.get(\"path\")));", 1)'
+
+  # Con --align si rinominano anche le tab: nello stesso comando si
+  # sovrascriverebbero nomi scritti a mano con titoli di agente.
+  mutate "con --align si toccano anche le tab" "$O" \
+    's = s.replace("        if args.align {\n            return outcome;\n        }\n", "", 1)'
 
   COMPARE=""
 fi
