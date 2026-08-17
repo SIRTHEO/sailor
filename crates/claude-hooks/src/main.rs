@@ -345,6 +345,14 @@ fn run(which: &str) -> Result<i32, String> {
             };
             Ok(handoff::measure(&transcript, &args.next().unwrap_or_default()))
         }
+        // Stessa ragione: l'elenco dei pannelli arriva da stdin perché le due
+        // implementazioni devono giudicare lo stesso elenco, non due letture a
+        // un secondo di distanza.
+        "handoff-resolve" => {
+            let a: Vec<String> = std::env::args().skip(2).collect();
+            let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
+            Ok(handoff::resolve(&arg(0), &arg(1), &arg(2)))
+        }
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }

@@ -95,6 +95,29 @@ pub fn context_used(transcript: &str, session: &str) -> u64 {
     tokens
 }
 
+/// Risolve un handle leggendo l'elenco dei pannelli da stdin, e lo stampa.
+///
+/// Legge da stdin invece di chiamare `orca` perché le due implementazioni devono
+/// vedere **lo stesso** elenco: chiamandolo ognuna per conto suo, due letture a
+/// un secondo di distanza possono già non concordare, e una divergenza così
+/// verrebbe letta come un difetto del porting.
+pub fn resolve(tab_id: &str, worktree_id: &str, known_handle: &str) -> i32 {
+    let mut raw = String::new();
+    if std::io::stdin().read_to_string(&mut raw).is_err() {
+        println!();
+        return 0;
+    }
+    let terminals = match serde_json::from_str::<serde_json::Value>(&raw) {
+        Ok(v) => guards::handoff::Terminal::from_response(&v),
+        Err(_) => Vec::new(),
+    };
+    println!(
+        "{}",
+        guards::handoff::resolve_terminal_handle(tab_id, worktree_id, known_handle, &terminals)
+    );
+    0
+}
+
 /// Stampa la misura in JSON, per il confronto con l'implementazione Python.
 ///
 /// Non è un gancio: è il punto d'aggancio dello strumento di equivalenza, che
