@@ -194,6 +194,10 @@ pub struct Terminal {
     pub handle: String,
     pub tab_id: String,
     pub worktree_id: String,
+    /// Il titolo del pannello. Serve alla staffetta, che lo ricopia sul
+    /// successore: senza, ogni sessione rigenerata perde il suo nome e la barra
+    /// si riempie di schede che si chiamano tutte «Claude Code».
+    pub title: String,
 }
 
 impl Terminal {
@@ -236,6 +240,7 @@ impl Terminal {
                     },
                     tab_id: field("tabId"),
                     worktree_id: field("worktreeId"),
+                    title: field("title"),
                 }
             })
             .collect()
@@ -561,16 +566,19 @@ mod tests {
                 handle: "term_a".into(),
                 tab_id: "tab-1".into(),
                 worktree_id: "wt-1".into(),
+                ..Default::default()
             },
             Terminal {
                 handle: "term_b".into(),
                 tab_id: "tab-2".into(),
                 worktree_id: "wt-2".into(),
+                ..Default::default()
             },
             Terminal {
                 handle: "term_c".into(),
                 tab_id: "tab-3".into(),
                 worktree_id: "wt-2".into(),
+                ..Default::default()
             },
         ]
     }
