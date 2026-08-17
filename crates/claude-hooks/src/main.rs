@@ -13,6 +13,7 @@
 //!     claude-hooks cd-guard      legge il JSON del gancio da stdin
 //!     claude-hooks --list        i ganci disponibili
 
+mod duplication;
 mod linear;
 
 use hook_io::{Decision, Mode};
@@ -137,8 +138,15 @@ fn self_check() -> i32 {
         failures += 1;
     }
 
+    // Anche il rilevatore di copie ha bisogno di due file per decidere, non di
+    // un comando: il suo caso vive in una cartella temporanea.
+    if let Err(why) = duplication::self_check() {
+        eprintln!("duplication: {why}");
+        failures += 1;
+    }
+
     if failures == 0 {
-        println!("{} ganci, tutti rispondono come devono", SMOKE.len() + 1);
+        println!("{} ganci, tutti rispondono come devono", SMOKE.len() + 2);
         0
     } else {
         eprintln!("{failures} controlli falliti: NON pubblicare questo binario");
@@ -239,6 +247,20 @@ fn run(which: &str) -> Result<i32, String> {
                 return Ok(2);
             }
             Ok(0)
+        }
+        // Il codice ricopiato. Due fasi con mestieri diversi: `pre` elenca la
+        // famiglia di un file che sta per nascere, `post` misura i blocchi
+        // identici. È l'unico gancio portato finora il cui tempo non è avvio
+        // dell'interprete ma lavoro vero — albero, letture, sottosequenza comune.
+        "duplication" => {
+            if Mode::from_env("DUPLICAZIONE") == Mode::Off {
+                return Ok(0);
+            }
+            let phase = std::env::args().nth(2).unwrap_or_else(|| "post".into());
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            Ok(duplication::run(&input, &phase))
         }
         // L'italiano dove la convenzione chiede l'inglese. Due fasi: registrato
         // su `pre`, dove il rifiuto viaggia su stdout e il file non viene
