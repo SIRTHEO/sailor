@@ -30,6 +30,7 @@ FILES=(
   "crates/claude-hooks/src/live_rules.rs"
   "crates/guards/src/handoff.rs"
   "crates/guards/src/handoff_on_stop.rs"
+  "crates/claude-hooks/src/successor.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -380,6 +381,51 @@ if [ "$WHICH" = "relay-evaluate" ] || [ "$WHICH" = "tutte" ]; then
   # dichiararlo è più utile che nascondere il buco togliendo il mutante.
   mutate "ramo senza soglie, irraggiungibile dal confronto" "$H" \
     's = s.replace("soglie non calcolabili", "soglie assenti", 1)'
+fi
+
+# ── successor ───────────────────────────────────────────────────────────────
+if [ "$WHICH" = "successor" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su successor.rs (l'involucro che arma):"
+  COMPARE="compare-successor.py"
+  A="crates/claude-hooks/src/successor.rs"
+
+  # IL DIFETTO VERO, rimesso: il porto decide bene e non registra niente. È lo
+  # stato in cui il gancio è vissuto dalle 10:57 del 17/08/2026, e il confronto
+  # di allora — solo `stdout`, HOME vera — restava verde.
+  mutate "registro dei freni rimosso" "$A" \
+    's = s.replace("    journal::record(\"consegna-arma-successore\", \"ferma\", reason, &extra);\n", "", 1)'
+
+  # Il nome del gancio cambia: le righe ci sono ma nessuna misura le trova,
+  # perché tutte le letture filtrano per quel nome.
+  mutate "nome del gancio cambiato" "$A" \
+    's = s.replace("journal::record(\"consegna-arma-successore\", \"ferma\", reason, &extra);", "journal::record(\"successore\", \"ferma\", reason, &extra);", 1)'
+
+  # Le chiavi dei numeri cambiano nome: chi somma `vive` e `pannelli` legge zero
+  # su righe formalmente valide.
+  mutate "chiavi dei conteggi rinominate" "$A" \
+    's = s.replace("                \"vive\",", "                \"sessioni\",", 1)'
+
+  # ATTESO SOPRAVVISSUTO, il primo dei due. `origin` è il campo che distingue le
+  # due strade, ma questo confronto esercita solo il gancio PostToolUse, che
+  # passa sempre `scrittura`: l altro innesco è lo Stop, il cui involucro è
+  # ancora il Python. Il mutante morirà da sé quando quel porto arriverà —
+  # tenerlo qui è il promemoria che oggi quella metà non ha rete.
+  mutate "origine costante" "$A" \
+    's = s.replace("(\"origine\", Field::Text(origin.to_string())),", "(\"origine\", Field::Text(\"scrittura\".to_string())),")'
+
+  # Il conteggio diventa testo: due righe identiche a vedersi, e una somma che
+  # non si può più fare. È il difetto che `journal::Field` esiste per non rifare.
+  mutate "conteggio scritto come testo" "$A" \
+    's = s.replace("(\"pannelli\", Field::Number(facts.panes_here.unwrap_or(0) as i64)),", "(\"pannelli\", Field::Text(facts.panes_here.unwrap_or(0).to_string())),", 1)'
+
+  # ATTESO SOPRAVVISSUTO. Nessun caso del confronto arriva al ramo che apre: là
+  # in fondo c è una tab vera e una sessione Claude che parte trenta secondi
+  # dopo, e uno strumento che genera sessioni non lo rilancia nessuno. La riga
+  # `apre`/`fallisce` resta senza rete automatica, ed è meglio dirlo qui.
+  mutate "registro dell apertura rimosso" "$A" \
+    's = s.replace("            journal::record(\n                \"consegna-arma-successore\",\n                if ok { \"apre\" } else { \"fallisce\" },", "            #[allow(unused)] let _skip = (\n                \"consegna-arma-successore\",\n                if ok { \"apre\" } else { \"fallisce\" },", 1)'
+
+  COMPARE=""
 fi
 
 # ── handoff-on-stop ─────────────────────────────────────────────────────────
