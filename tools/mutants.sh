@@ -26,6 +26,9 @@ FILES=(
   "crates/claude-hooks/src/linear.rs"
   "crates/guards/src/code_language.rs"
   "crates/guards/src/language.rs"
+  "crates/guards/src/live_rules.rs"
+  "crates/claude-hooks/src/live_rules.rs"
+  "crates/guards/src/handoff.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -73,7 +76,13 @@ PY
     echo "  $name: non compila — mutante scartato"
     return
   fi
-  if (cd "$ROOT" && python3 "tools/$COMPARE" >/dev/null 2>&1); then
+  # Senza virgolette di proposito: così `COMPARE` può portarsi dietro un
+  # argomento (`compare-live-rules.py 40`). Un confronto che gira su tutto il
+  # corpus per ognuno degli otto mutanti costa ore, e un giro che nessuno
+  # aspetta non viene lanciato — che è il modo in cui una batteria smette di
+  # esistere. I nomi dei file non hanno spazi, quindi qui non si perde niente.
+  # shellcheck disable=SC2086
+  if (cd "$ROOT" && python3 tools/$COMPARE >/dev/null 2>&1); then
     echo "  SOPRAVVIVE  $name  <- la batteria non lo vede"
     survivors=$((survivors + 1))
   else
@@ -103,8 +112,11 @@ if [ "$WHICH" = "linear-readonly" ] || [ "$WHICH" = "tutte" ]; then
   mutate "nucleo declassato a scavalcabile" "$G" \
     's = s.replace(".map(|f| (*f, Valve::Core))", ".map(|f| (*f, Valve::UserDeclared))", 1)'
 
-  # `timeout 30 linear issue close` era la scorciatoia più corta per aggirare la
-  # versione precedente.
+  # Un involucro (`timeout 30 …`) davanti alla chiusura di una scheda era la
+  # scorciatoia più corta per aggirare la versione precedente. Il comando non si
+  # scrive per esteso qui: il gancio vivo non guarda dentro le virgolette e
+  # rifiuterebbe l'esecuzione di questo stesso script — misurato il 17/08/2026,
+  # ed è lo stesso motivo per cui in `main.rs` lo smoke test è scritto a pezzi.
   mutate "involucri non spogliati" "$G" \
     's = s.replace("fn strip_wrappers(mut names: Vec<String>) -> Vec<String> {", "fn strip_wrappers(mut names: Vec<String>) -> Vec<String> {\n    return names;\n    #[allow(unreachable_code)]", 1)'
 
@@ -188,6 +200,130 @@ if [ "$WHICH" = "duplication" ] || [ "$WHICH" = "tutte" ]; then
   # e tutto il debito vecchio torna a parlare in una volta.
   mutate "impronta piu' corta" "$D" \
     's = s.replace("hex[..16].to_string()", "hex[..12].to_string()", 1)'
+fi
+
+# ── live-rules ──────────────────────────────────────────────────────────────
+if [ "$WHICH" = "live-rules" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su live_rules.rs:"
+  # 40 file veri più i 14 costruiti: il corpus intero manda ogni giro a ore,
+  # perché 308 dei 356 file passano dal verificatore Node — due volte a testa.
+  COMPARE="compare-live-rules.py 40"
+  G="crates/guards/src/live_rules.rs"
+  W="crates/claude-hooks/src/live_rules.rs"
+
+  # Il perimetro si allarga a ogni markdown: il gancio comincia a giudicare
+  # documenti e competenze, che non sono regole e non hanno `paths:` — cioè
+  # rimprovererebbe ogni file che tocca.
+  mutate "perimetro esteso a ogni markdown" "$W" \
+    's = s.replace("if !path.contains(\".claude/rules/\") || !path.ends_with(\".md\") {", "if !path.ends_with(\".md\") {", 1)'
+
+  # Sparisce il caso che non si vede a occhio: `paths: ["**"]` sembra uno scope
+  # e invece è l'assenza di scope, e passerebbe in silenzio.
+  mutate "paths universale non riconosciuto" "$G" \
+    's = s.replace("    if universal_paths(&front) {", "    if false {", 1)'
+
+  # Le righe commentate tornano a contare come configurazione: un `# paths:`
+  # dentro una spiegazione basterebbe a far tacere il controllo proprio sulle
+  # regole che si vogliono trovare.
+  mutate "commenti contati come paths" "$G" \
+    's = s.replace("    let front = without_comments(front);\n    if !front.lines()", "    if !front.lines()", 1)'
+
+  # Il filtro sul file appena scritto sparisce: il gancio rimprovera per il
+  # debito altrui, ed è il difetto per cui un controllo viene spento.
+  mutate "reperti altrui non filtrati" "$G" \
+    's = s.replace("MARKERS.iter().any(|m| r.contains(m)) && r.contains(relative)", "MARKERS.iter().any(|m| r.contains(m))", 1)'
+
+  # Il glob non viene più tagliato alla prima parte letterale: `src/**` viene
+  # cercato alla lettera come cartella, non esiste, e ogni regola con un glob
+  # normale viene dichiarata morta.
+  #
+  # Il primo mutante provato qui era «togli il `continue` sul prefisso vuoto», e
+  # sopravviveva sempre: senza prefisso il codice cerca `repo.join("")`, che è
+  # il repo stesso e c'è per definizione. Non era un punto cieco della batteria
+  # ma un mutante che non muta niente — la distinzione va fatta, altrimenti si
+  # aggiungono casi per un buco che non esiste.
+  mutate "glob non tagliato al primo jolly" "$G" \
+    's = s.replace("        if part.contains([\x27*\x27, \x27?\x27, \x27[\x27]) {\n            break;\n        }", "", 1)'
+
+  # La carta non si legge più: senza repo il verdetto sui glob sparisce del
+  # tutto, ed è la metà del gancio che riguarda le regole globali.
+  mutate "carta dei repo ignorata" "$W" \
+    's = s.replace("    let Ok(raw) = std::fs::read_to_string(CARTA) else {", "    if true { return Vec::new() }\n    let Ok(raw) = std::fs::read_to_string(CARTA) else {", 1)'
+
+  # L'estensione corta non è più richiesta: ogni cartella citata fra apici
+  # diventa un reperto, e il rapporto si riempie di falsi.
+  mutate "estensione non richiesta" "$G" \
+    's = s.replace("        if !has_short_extension(t) {\n            continue;\n        }", "", 1)'
+
+  # Una regola globale passa dal verificatore Node, che è il difetto del
+  # 14/08/2026: misurata sulla home, tutti i suoi glob risultano morti.
+  mutate "regola globale mandata al verificatore" "$W" \
+    's = s.replace("    let lines = if rules::is_global(path, &home) {", "    let lines = if false {", 1)'
+fi
+
+# ── relay-evaluate ──────────────────────────────────────────────────────────
+if [ "$WHICH" = "relay-evaluate" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su handoff.rs (la decisione della staffetta):"
+  # Il numero non è una linea di base congelata: è ciò che il sorgente **non
+  # mutato** produce, rimisurato con lo stesso comando prima di questo giro. Il
+  # porto ha divergenze vere e note (arrotondamento della percentuale, memo
+  # malformato); senza dirlo qui, ogni mutante risulterebbe ucciso dalle loro.
+  COMPARE="compare-relay-evaluate.py --attese 10"
+  H="crates/guards/src/handoff.rs"
+
+  # L'ordine dei controlli È il comportamento. Col raffreddamento davanti, un
+  # record che punta a un pannello morto non viene più buttato: resta lì finché
+  # dura la tregua, e il registro delle sessioni si riempie di fantasmi.
+  mutate "raffreddamento prima del pannello morto" "$H" \
+    's = s.replace("    if !live.iter().any(|h| h == f.handle) {", "    if f.in_cooldown { return (Action::Skip, \"cooldown\".into()); }\n    if !live.iter().any(|h| h == f.handle) {", 1)'
+
+  # La distinzione che vale il registro delle sessioni: elenco illeggibile
+  # trattato come «sono morti tutti», cioè 276 giri che cancellano sessioni vive.
+  mutate "elenco illeggibile letto come vuoto" "$H" \
+    's = s.replace("    let Some(live) = f.live_handles else {\n        return (Action::Skip, \"elenco dei terminali illeggibile\".into());\n    };", "    let live: &[String] = f.live_handles.unwrap_or(&[]);", 1)'
+
+  # Il freno del 17/08/2026: senza, la staffetta apre un secondo successore per
+  # una sessione che ne ha già uno vivo.
+  mutate "successore gia armato ignorato" "$H" \
+    's = s.replace("if !f.armed_successor.is_empty() && live.iter().any(|h| h == f.armed_successor) {", "if false {", 1)'
+
+  # Un carattere: la sessione esattamente sulla soglia smette di rigenerare.
+  # È il caso che nessun transcript vero contiene, e per questo va fabbricato.
+  mutate "soglia con <= invece di <" "$H" \
+    's = s.replace("if f.used == 0 || f.used < t.require {", "if f.used == 0 || f.used <= t.require {", 1)'
+
+  # L'opt-out scavalcato dal pannello morto: chi ha chiesto di non essere
+  # toccato si vede cancellare il record lo stesso.
+  mutate "opt-out spostato dopo l elenco" "$H" \
+    's = s.replace("    if f.opted_out {\n        return (Action::Skip, \"opt-out\".into());\n    }\n", "", 1); s = s.replace("    if f.in_cooldown {", "    if f.opted_out {\n        return (Action::Skip, \"opt-out\".into());\n    }\n    if f.in_cooldown {", 1)'
+
+  # Mezzo record basta: un handle vuoto non è più «non so di chi parliamo» ma
+  # «non è fra i vivi», e la risposta diventa una cancellazione.
+  mutate "record incompleto giudicato sulla sola sessione" "$H" \
+    's = s.replace("if f.session.is_empty() || f.handle.is_empty() || f.worktree.is_empty() {", "if f.session.is_empty() {", 1)'
+
+  # La guardia forte: si rigenera SOLO dopo che la consegna è su disco. Senza,
+  # chiudere una sessione piena perde il lavoro non consegnato.
+  mutate "consegna non piu richiesta" "$H" \
+    's = s.replace("if !f.handoff_done {", "if false {", 1)'
+
+  # Stessa azione, motivo diverso: senza transcript la misura è zero e la frase
+  # diventa «sotto soglia». Un confronto che guardasse solo l'azione lo perde,
+  # ed è la ragione per cui azione e motivo si contano separati.
+  mutate "transcript assente non nominato" "$H" \
+    's = s.replace("if !f.transcript_exists {", "if false {", 1)'
+
+  # Un carattere dentro una riga di registro. Si vede solo se il corpus usa
+  # handle veri: con `term_succ` il troncamento non si esercita mai.
+  mutate "handle del successore troncato a 12" "$H" \
+    's = s.replace(".chars().take(13)", ".chars().take(12)", 1)'
+
+  # ATTESO SOPRAVVISSUTO, ed è la ragione per cui sta qui. `thresholds: None` è
+  # uno stato che il Python non ha: lui le soglie le calcola sempre. Il confronto
+  # non può raggiungere quel ramo, e un mutante che lo tocca deve sopravvivere —
+  # dichiararlo è più utile che nascondere il buco togliendo il mutante.
+  mutate "ramo senza soglie, irraggiungibile dal confronto" "$H" \
+    's = s.replace("soglie non calcolabili", "soglie assenti", 1)'
 fi
 
 echo
