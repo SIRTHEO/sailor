@@ -9,7 +9,7 @@
 //! può rispondere con un valore vecchio senza sbagliare direzione — al più si
 //! consegna un turno più tardi, mai un turno troppo presto.
 
-use guards::handoff::{context_used_from_lines, thresholds_from_lines, Thresholds, MIN_GROWTH,
+use guards::handoff::{context_used_found, thresholds_from_lines, Thresholds, MIN_GROWTH,
                       TAIL_BYTES};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -195,16 +195,18 @@ pub fn context_used(transcript: &str, session: &str) -> u64 {
     }
 
     let tail = transcript_tail(transcript);
-    let tokens = context_used_from_lines(&tail.lines().collect::<Vec<_>>());
-    // Il Python scrive il memo solo quando ha trovato una misura: uno zero
-    // memorizzato terrebbe la sessione sotto soglia per i 400 KB successivi.
-    if tokens > 0 {
-        if let Some(path) = &memo {
-            let _ = fs::create_dir_all(state_dir());
-            let _ = fs::write(path, format!("{size} {tokens}"));
-        }
+    // IL MEMO SI SCRIVE QUANDO L'`usage` C'È, non quando la somma è positiva.
+    // Qui c'era un commento che affermava il contrario, e nessun caso lo
+    // verificava: su una trascrizione vera l'originale lasciava
+    // `consegna-misura-* = <size> 0` e il porto non lasciava niente. Un turno
+    // con il solo `output_tokens` è una misura fatta che vale zero, ed è diverso
+    // da «non ho trovato niente da misurare».
+    let trovato = context_used_found(&tail.lines().collect::<Vec<_>>());
+    if let (Some(tokens), Some(path)) = (trovato, &memo) {
+        let _ = fs::create_dir_all(state_dir());
+        let _ = fs::write(path, format!("{size} {tokens}"));
     }
-    tokens
+    trovato.unwrap_or(0)
 }
 
 /// Risolve un handle leggendo l'elenco dei pannelli da stdin, e lo stampa.

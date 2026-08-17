@@ -137,6 +137,19 @@ pub fn thresholds_from_lines(lines: &[&str]) -> Thresholds {
 /// sottostima di un ordine di grandezza con la cache calda, ed è la misura su
 /// cui si decide se consegnare.
 pub fn context_used_from_lines(lines: &[&str]) -> u64 {
+    context_used_found(lines).unwrap_or(0)
+}
+
+/// Come sopra, ma distingue **«non ho trovato nessun `usage`»** (`None`) da
+/// «l'ho trovato e somma zero» (`Some(0)`).
+///
+/// La differenza non è teorica ed è costata un commento falso: chi chiama scrive
+/// il memo della misura quando ha trovato un `usage`, somma compresa lo zero —
+/// un turno con `{"output_tokens":5}` e nient'altro conta come misura fatta.
+/// Il porto scriveva il memo solo per una somma positiva, e su una trascrizione
+/// vera lasciava il disco diverso dall'originale: `consegna-misura-* = <size> 0`
+/// di là, niente di qua.
+pub fn context_used_found(lines: &[&str]) -> Option<u64> {
     for line in lines.iter().rev() {
         if !line.contains("\"usage\"") {
             continue;
@@ -158,11 +171,13 @@ pub fn context_used_from_lines(lines: &[&str]) -> u64 {
             continue;
         }
         let field = |name: &str| u.get(name).and_then(|v| v.as_u64()).unwrap_or(0);
-        return field("input_tokens")
-            + field("cache_read_input_tokens")
-            + field("cache_creation_input_tokens");
+        return Some(
+            field("input_tokens")
+                + field("cache_read_input_tokens")
+                + field("cache_creation_input_tokens"),
+        );
     }
-    0
+    None
 }
 
 /// Vero **solo** se questa chiamata è l'invocazione della skill `handoff`.
@@ -412,7 +427,7 @@ pub struct SessionFacts<'a> {
 /// Python. Il commento era falso, ed è il secondo commento falso trovato in
 /// questa giornata di porting: entrambi asserivano una proprietà che nessun
 /// caso verificava.
-fn round_half_to_even(x: f64) -> u64 {
+pub fn round_half_to_even(x: f64) -> u64 {
     let floor = x.floor();
     let diff = x - floor;
     let r = if diff > 0.5 {
