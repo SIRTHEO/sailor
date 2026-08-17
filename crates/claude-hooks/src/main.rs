@@ -15,6 +15,7 @@
 
 mod duplication;
 mod linear;
+mod preflight;
 
 use hook_io::{Decision, Mode};
 
@@ -34,6 +35,21 @@ fn main() {
 
     if which == "--check" {
         std::process::exit(self_check());
+    }
+
+    // Il catalogo degli eventi, e la domanda che il censimento non fa: non «il
+    // file esiste» ma «il gancio partirebbe».
+    if which == "--preflight" {
+        let verbose = args.iter().any(|a| a == "--verbose");
+        // All'apertura di una sessione il messaggio va nel contesto del modello
+        // e l'uscita resta 0: un gancio di SessionStart che fallisce sarebbe un
+        // guasto in piu', non un avviso.
+        let voice = if args.iter().any(|a| a == "--session-start") {
+            preflight::Voice::SessionStart
+        } else {
+            preflight::Voice::Command
+        };
+        std::process::exit(preflight::run_with(verbose, voice));
     }
 
     // Fail-open per tutti, prima ancora di leggere stdin: un `PreToolUse` che
