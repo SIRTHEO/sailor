@@ -51,6 +51,7 @@ trap restore EXIT
 
 survivors=0
 broken=0
+skipped=0
 WHICH="${1:-tutte}"
 COMPARE=""
 
@@ -73,7 +74,13 @@ PY
     return
   fi
   if ! (cd "$ROOT" && cargo build --release >/dev/null 2>&1); then
-    echo "  $name: non compila — mutante scartato"
+    # Uno scartato NON e' un ucciso, e va contato a parte: il 17/08/2026 un file
+    # rotto da un'altra sessione ha fatto fallire la compilazione dal terzo
+    # mutante in poi, e questo script ha stampato «tutti i mutanti uccisi» su un
+    # giro in cui nove non erano nemmeno stati provati. Un verdetto che si
+    # confonde col silenzio e' peggio di nessun verdetto.
+    echo "  SCARTATO    $name  <- non compila, quindi non e' stato provato"
+    skipped=$((skipped + 1))
     return
   fi
   # Senza virgolette di proposito: così `COMPARE` può portarsi dietro un
@@ -259,6 +266,31 @@ if [ "$WHICH" = "live-rules" ] || [ "$WHICH" = "tutte" ]; then
   # 14/08/2026: misurata sulla home, tutti i suoi glob risultano morti.
   mutate "regola globale mandata al verificatore" "$W" \
     's = s.replace("    let lines = if rules::is_global(path, &home) {", "    let lines = if false {", 1)'
+
+  # I tre che seguono chiudono le lacune trovate da una revisione indipendente il
+  # 17/08/2026, quando il confronto dava «0 differenze» e tre classi di ingresso
+  # non erano nel corpus. Ognuno rimette esattamente la prima stesura.
+
+  # Un file vuoto torna indistinguibile da uno illeggibile: zero byte non ha
+  # frontmatter, quindi si carica in ogni sessione, e passava in silenzio.
+  mutate "file vuoto scambiato per illeggibile" "$W" \
+    's = s.replace("        if let Some(why) = rules::always_loaded(text) {", "        if let Some(why) = rules::always_loaded(text).filter(|_| !text.is_empty()) {", 1)'
+
+  # Il guasto di lettura torna muto: senza la riga nel registro, un gancio morto
+  # e uno contento sono la stessa cosa vista da fuori.
+  mutate "guasto di lettura inghiottito" "$W" \
+    's = s.replace("log_failure(path, &format!(\"non e", "let _ = (&format!(\"non e", 1)'
+
+  # `is_global` smette di sciogliere e confronta solo alla lettera: una regola
+  # raggiunta attraverso un collegamento smette di essere globale e finisce dal
+  # verificatore Node con la home come radice — il difetto del 15/08/2026.
+  #
+  # Il mutante provato prima — *rimettere* il confronto letterale davanti allo
+  # scioglimento — sopravviveva, e non era un punto cieco: se due percorsi sono
+  # uguali alla lettera lo sono anche sciolti, quindi quel controllo anticipato
+  # non cambia nessun esito. Un altro «mutante che non muta».
+  mutate "is_global non scioglie i collegamenti" "$G" \
+    's = s.replace("    match (parent.canonicalize(), target.canonicalize()) {", "    if true { return parent == target }\n    match (parent.canonicalize(), target.canonicalize()) {", 1)'
 fi
 
 # ── relay-evaluate ──────────────────────────────────────────────────────────
@@ -330,9 +362,13 @@ echo
 if [ "$broken" -gt 0 ]; then
   echo "$broken mutanti non applicati: correggi lo script prima di leggere il resto"
 fi
-if [ "$survivors" -eq 0 ] && [ "$broken" -eq 0 ]; then
+if [ "$skipped" -gt 0 ]; then
+  echo "$skipped mutanti scartati perche' l'albero non compila: NON sono stati provati,"
+  echo "  e questo giro non dice niente su di loro. Ripara la compilazione e rilancia."
+fi
+if [ "$survivors" -eq 0 ] && [ "$broken" -eq 0 ] && [ "$skipped" -eq 0 ]; then
   echo "tutti i mutanti uccisi: la batteria vede ciò che dichiara di vedere"
-else
+elif [ "$survivors" -gt 0 ]; then
   echo "$survivors mutanti sopravvissuti: la batteria ha un punto cieco"
 fi
-exit $((survivors + broken))
+exit $((survivors + broken + skipped))
