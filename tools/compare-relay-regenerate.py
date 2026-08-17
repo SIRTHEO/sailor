@@ -65,6 +65,7 @@ case "$*" in
     else printf '%s' "$ORCA_LIST_REPLY"; fi ;;
   *"terminal create"*) printf '%s' "$ORCA_CREATE_REPLY"; exit $ORCA_CREATE_RC ;;
   *"terminal wait"*)   exit $ORCA_WAIT_RC ;;
+  *"terminal send"*)   exit $ORCA_SEND_RC ;;
 esac
 exit 0
 """
@@ -128,6 +129,7 @@ def run_side(which, case, home, log):
         'ORCA_CREATE_REPLY': case.get('create_reply', CREATE_OK),
         'ORCA_CREATE_RC': str(case.get('create_rc', 0)),
         'ORCA_WAIT_RC': str(case.get('wait_rc', 0)),
+        'ORCA_SEND_RC': str(case.get('send_rc', 0)),
     }
     if which == 'rust':
         cmd = [str(BIN), 'relay']
@@ -358,6 +360,11 @@ def field_cases(pane_list):
         ('CAMPO: consegna datata dopo, torna rigenerabile',
          {**base, 'records': [piena], 'markers': consegnata,
           'marker_times': {'consegna-fatta-e1fa3600': 1_786_959_000.0}}),   # 09:30:00Z
+        # L'ordine a voce che non arriva: e' il caso reale su **ogni**
+        # rigenerazione mai fatta, e finche' gli esiti venivano scartati non
+        # lasciava traccia da nessuna delle due parti.
+        ('CAMPO: piena, ma l ordine a voce non arriva',
+         {**base, 'records': [piena], 'markers': consegnata, 'send_rc': 1}),
         ('CAMPO: piena, a secco',
          {**base, 'records': [piena], 'markers': consegnata, 'secco': True}),
         ('CAMPO: pannello sparito, a secco',
