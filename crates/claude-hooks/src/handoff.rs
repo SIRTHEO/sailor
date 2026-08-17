@@ -47,6 +47,104 @@ pub fn transcript_tail(transcript: &str) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
+/// La sessione ha ricevuto lavoro **dopo** aver consegnato.
+///
+/// IL DIFETTO CHE CHIUDE, e non è un'ipotesi: il 17/08/2026 la staffetta ha
+/// chiuso due volte la stessa sessione mentre lavorava. `cdca7b36` ha consegnato
+/// alle 11:35:35, ha ricevuto un mandato da un'altra sessione ventun secondi
+/// dopo, ed è stata rigenerata alle 11:44:54 con quel mandato ancora in corso.
+///
+/// Il confronto è fra il marcatore di consegna — un mtime — e i timestamp dei
+/// messaggi che seguono, che i transcript scrivono in UTC. Il fuso non è un
+/// dettaglio: in agosto sono due ore, e sbagliarle farebbe sembrare **ogni**
+/// messaggio più vecchio della consegna, cioè spegnerebbe la guardia lasciandola
+/// scritta.
+///
+/// In dubbio si risponde `true` (non si chiude): sbagliare qui costa un giro da
+/// sessanta secondi, sbagliare dall'altra parte costa il lavoro di una sessione.
+pub fn worked_after_handoff(transcript: &str, session: &str) -> bool {
+    let marker = state_dir().join(format!("consegna-fatta-{session}"));
+    let Ok(since) = marker.metadata().and_then(|m| m.modified()) else {
+        return false; // non ha consegnato: non è questa guardia a fermarla
+    };
+    let since = since
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0);
+    let tail = transcript_tail(transcript);
+    for line in tail.lines() {
+        let Ok(d) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue; // la prima riga della coda è tagliata a metà: si salta
+        };
+        if d.get("type").and_then(|v| v.as_str()) != Some("user") {
+            continue;
+        }
+        let at_utc = d
+            .get("timestamp")
+            .and_then(|v| v.as_str())
+            .and_then(epoch_from_iso);
+        match at_utc {
+            Some(t) if t > since => {}
+            _ => continue,
+        }
+        let content = d.get("message").and_then(|m| m.get("content"));
+        let text = match content {
+            Some(serde_json::Value::Array(parts)) => {
+                // Un esito di strumento è la sessione che parla con se stessa.
+                if parts.iter().any(|p| {
+                    p.get("type").and_then(|v| v.as_str()) == Some("tool_result")
+                }) {
+                    continue;
+                }
+                parts
+                    .iter()
+                    .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("text"))
+                    .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+            Some(serde_json::Value::String(s)) => s.clone(),
+            _ => String::new(),
+        };
+        let text = text.trim();
+        if text.is_empty()
+            || guards::handoff::AUTOMATIC_PREFIXES
+                .iter()
+                .any(|p| text.starts_with(p))
+        {
+            continue;
+        }
+        return true;
+    }
+    false
+}
+
+/// I secondi dell'epoca da un timestamp ISO-8601 in UTC.
+///
+/// I transcript scrivono `2026-08-17T09:35:56.123Z`. Si converte a mano invece
+/// di aggiungere una dipendenza: il formato è fisso, e ciò che serve è la data
+/// civile trasformata in giorni — l'algoritmo dei giorni dall'era, che non ha
+/// casi particolari sugli anni bisestili.
+fn epoch_from_iso(iso: &str) -> Option<f64> {
+    let b = iso.as_bytes();
+    if b.len() < 19 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' {
+        return None;
+    }
+    let num = |a: usize, z: usize| iso.get(a..z)?.parse::<i64>().ok();
+    let (y, m, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
+    let (hh, mm, ss) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    // Giorni dall'era (Howard Hinnant): marzo come primo mese, così il 29
+    // febbraio cade in fondo all'anno e non serve nessun caso a parte.
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some((days * 86_400 + hh * 3600 + mm * 60 + ss) as f64)
+}
+
 /// Modello, budget e soglie per la sessione che sta scrivendo questo transcript.
 pub fn thresholds(transcript: &str) -> Thresholds {
     let tail = transcript_tail(transcript);
@@ -152,4 +250,147 @@ pub fn measure(transcript: &str, session: &str) -> i32 {
         })
     );
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn i_timestamp_del_transcript_si_leggono_in_utc() {
+        // Il valore atteso viene da `date -u -j -f '%Y-%m-%dT%H:%M:%S' ... +%s`:
+        // se questa conversione slittasse di due ore, la guardia sul lavoro
+        // arrivato dopo la consegna resterebbe scritta e spenta, perché ogni
+        // messaggio sembrerebbe più vecchio del marcatore.
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56.123Z"), Some(1_786_959_356.0));
+        assert_eq!(epoch_from_iso("1970-01-01T00:00:00Z"), Some(0.0));
+        // Il 29 febbraio è il caso che gli algoritmi ingenui sbagliano.
+        assert_eq!(epoch_from_iso("2024-02-29T00:00:00Z"), Some(1_709_164_800.0));
+        assert_eq!(epoch_from_iso("non e' una data"), None);
+        assert_eq!(epoch_from_iso(""), None);
+    }
+
+    /// Una HOME usa-e-getta con dentro il marcatore di consegna e un transcript.
+    ///
+    /// `HOME` è globale al processo e i test Rust girano in parallelo: senza il
+    /// lucchetto un caso porterebbe via la casa a un altro mentre legge.
+    struct Scena {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        precedente: Option<String>,
+        dir: PathBuf,
+    }
+
+    static LUCCHETTO: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl Scena {
+        fn nuova(nome: &str, consegnato: bool, righe: Vec<String>) -> Self {
+            let lock = LUCCHETTO.lock().unwrap_or_else(|e| e.into_inner());
+            let precedente = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join(format!("handoff-prove-{nome}"));
+            let _ = fs::remove_dir_all(&dir);
+            let _ = fs::create_dir_all(dir.join(".claude").join("state"));
+            std::env::set_var("HOME", &dir);
+            if consegnato {
+                let _ = fs::write(
+                    dir.join(".claude/state/consegna-fatta-provalav"),
+                    "1",
+                );
+            }
+            let _ = fs::write(dir.join("transcript.jsonl"), righe.join("\n"));
+            Self { _lock: lock, precedente, dir }
+        }
+
+        fn transcript(&self) -> String {
+            self.dir.join("transcript.jsonl").to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for Scena {
+        fn drop(&mut self) {
+            match &self.precedente {
+                Some(h) => std::env::set_var("HOME", h),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    /// Un messaggio dell'anno 2100: sicuramente più recente del marcatore, che
+    /// il test ha appena scritto. Datarlo «adesso» renderebbe il caso una corsa.
+    fn messaggio(testo: &str) -> String {
+        serde_json::json!({
+            "type": "user",
+            "timestamp": "2100-01-01T00:00:00.000Z",
+            "message": {"content": [{"type": "text", "text": testo}]}
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn un_mandato_arrivato_dopo_la_consegna_si_vede() {
+        let s = Scena::nuova("mandato", true, vec![messaggio("Mandato. Riprendi da qui.")]);
+        assert!(worked_after_handoff(&s.transcript(), "provalav"));
+    }
+
+    #[test]
+    fn un_bollettino_del_monitor_non_e_lavoro() {
+        // È il caso vero del 17/08: la sessione aperta dalla staffetta ha
+        // ricevuto per primo un evento di monitor. Se contasse come mandato,
+        // nessuna sessione verrebbe più rigenerata — la guardia si spegnerebbe
+        // da sola restando verde.
+        let s = Scena::nuova(
+            "bollettino",
+            true,
+            vec![messaggio("<task-notification> <task-id>x</task-id>")],
+        );
+        assert!(!worked_after_handoff(&s.transcript(), "provalav"));
+    }
+
+    #[test]
+    fn un_esito_di_strumento_e_la_sessione_che_parla_da_sola() {
+        let riga = serde_json::json!({
+            "type": "user",
+            "timestamp": "2100-01-01T00:00:00.000Z",
+            "message": {"content": [{"type": "tool_result", "content": "ok"}]}
+        })
+        .to_string();
+        let s = Scena::nuova("tool-result", true, vec![riga]);
+        assert!(!worked_after_handoff(&s.transcript(), "provalav"));
+    }
+
+    #[test]
+    fn senza_consegna_questa_guardia_non_ferma_niente() {
+        // Il marcatore assente significa «non ha ancora consegnato», e a quel
+        // punto ferma tutto la guardia di prima: rispondere `true` qui
+        // bloccherebbe la staffetta per ogni sessione, per sempre.
+        let s = Scena::nuova("senza-consegna", false, vec![messaggio("Mandato.")]);
+        assert!(!worked_after_handoff(&s.transcript(), "provalav"));
+    }
+
+    #[test]
+    fn un_messaggio_precedente_alla_consegna_non_conta() {
+        let s = Scena::nuova(
+            "prima",
+            true,
+            vec![serde_json::json!({
+                "type": "user",
+                "timestamp": "2020-01-01T00:00:00.000Z",
+                "message": {"content": [{"type": "text", "text": "vecchio"}]}
+            })
+            .to_string()],
+        );
+        assert!(!worked_after_handoff(&s.transcript(), "provalav"));
+    }
+
+    #[test]
+    fn una_riga_tagliata_a_meta_non_interrompe_la_ricerca() {
+        // La coda del transcript comincia quasi sempre a metà di una riga: se
+        // un parse fallito fermasse il giro, il mandato che sta più in fondo
+        // non verrebbe mai visto.
+        let s = Scena::nuova(
+            "riga-rotta",
+            true,
+            vec!["ent\":\"x\"}]}}".to_string(), messaggio("Mandato vero.")],
+        );
+        assert!(worked_after_handoff(&s.transcript(), "provalav"));
+    }
 }
