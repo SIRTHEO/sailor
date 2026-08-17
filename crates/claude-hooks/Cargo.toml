@@ -12,3 +12,4 @@ path = "src/main.rs"
 hook-io = { path = "../hook-io" }
 guards = { path = "../guards" }
 serde_json.workspace = true
+regex.workspace = true

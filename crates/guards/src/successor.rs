@@ -125,7 +125,7 @@ pub fn count_agents(response: &serde_json::Value, root: &str) -> usize {
         .filter(|t| {
             let path = t.get("worktreePath").and_then(|v| v.as_str()).unwrap_or("");
             let title = t.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            path == root && !title.is_empty()
+            path == root && title.chars().any(|c| AGENT_MARKS.contains(&c))
         })
         .count()
 }
