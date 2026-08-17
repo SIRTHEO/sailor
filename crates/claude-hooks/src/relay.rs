@@ -506,8 +506,15 @@ fn retire(rec: &Record, orca: OrcaFn) {
 }
 
 /// Taglia a `n` **caratteri**, come lo slicing di Python su una stringa.
+/// I primi `n` caratteri, **su una riga sola**.
+///
+/// L'appiattimento non è cosmesi. Il registro della staffetta è per righe, e la
+/// risposta di `orca terminal create --json` è un JSON indentato: senza questo,
+/// di 400 caratteri se ne leggeva **uno** — la graffa aperta. Misurato il
+/// 17/08/2026 su 47 casi «nessun handle dal create», dove la domanda che conta è
+/// se il terminale sia nato lo stesso, e la risposta era nella parte tagliata.
 fn cut(s: &str, n: usize) -> String {
-    s.chars().take(n).collect()
+    s.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(n).collect()
 }
 
 /// Un passo della staffetta: guarda ogni sessione registrata e agisce.
