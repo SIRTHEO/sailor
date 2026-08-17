@@ -18,6 +18,7 @@ mod handoff;
 mod linear;
 mod live_rules;
 mod preflight;
+mod relay;
 mod successor;
 mod relay_eval;
 
@@ -368,6 +369,9 @@ fn run(which: &str) -> Result<i32, String> {
         // implementazioni devono giudicare lo stesso elenco, non due letture a
         // un secondo di distanza.
         // L'interrogazione del gancio che arma il successore, stessa ragione.
+        // La staffetta, un passo. `--secco` non rigenera nessuna sessione ma
+        // NON e' a vuoto: i record dei terminali morti li cancella lo stesso.
+        "relay" => Ok(relay::step(std::env::args().any(|a| a == "--secco"))),
         "successor-probe" => {
             let a: Vec<String> = std::env::args().skip(2).collect();
             let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
