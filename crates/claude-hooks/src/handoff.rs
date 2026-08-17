@@ -55,6 +55,14 @@ pub fn thresholds(transcript: &str) -> Thresholds {
 
 /// I token in contesto, rimisurati solo se il transcript è cresciuto abbastanza.
 ///
+/// IL DIFETTO CHE QUESTO PORTING HA TROVATO NELL'ORIGINALE. Su un memo che
+/// contiene un numero negativo il Python faceva `int('-5')` e si portava dietro
+/// un contesto negativo, che resta per sempre sotto ogni soglia: quella sessione
+/// non sarebbe stata rigenerata mai più, per quanto piena. Qui il tipo è `u64` e
+/// il parse fallisce, quindi si rimisura — immune per tipo, non per attenzione.
+/// Un vaglio indipendente l'ha misurato il 17/08/2026 su due casi, e la
+/// correzione è andata anche a monte: adesso rimisurano entrambe.
+///
 /// Il memo replica il formato del Python — `<byte> <token>` separati da uno
 /// spazio — perché lo stesso file lo scrivono e lo leggono entrambe le
 /// implementazioni finché convivono. Un formato diverso qui farebbe rimisurare
@@ -69,8 +77,14 @@ pub fn context_used(transcript: &str, session: &str) -> u64 {
 
     if let Some(path) = &memo {
         if let Ok(text) = fs::read_to_string(path) {
-            let mut parts = text.split_whitespace();
-            if let (Some(old_size), Some(old_tokens)) = (parts.next(), parts.next()) {
+            // ESATTAMENTE due campi. Il Python scrive `old_size, old_tokens =
+            // text.split()`, che su tre campi alza `ValueError` e fa rimisurare:
+            // prendendo i primi due ci si fiderebbe di un memo che l'oracolo ha
+            // già giudicato illeggibile. Trovato da un vaglio indipendente su
+            // 1932 combinazioni, e in un caso cambiava l'azione — `salta` invece
+            // di `rigenera` su una sessione piena e consegnata.
+            let parts: Vec<&str> = text.split_whitespace().collect();
+            if let [old_size, old_tokens] = parts[..] {
                 if let (Ok(old_size), Ok(old_tokens)) =
                     (old_size.parse::<u64>(), old_tokens.parse::<u64>())
                 {
