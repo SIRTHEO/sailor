@@ -342,7 +342,7 @@ pub fn regenerate(
     title: &str,
     dry_run: bool,
     orca: OrcaFn,
-    prima: Option<&[Terminal]>,
+    before: Option<&[Terminal]>,
 ) {
     let sess = &rec.session;
     if dry_run {
@@ -382,7 +382,7 @@ pub fn regenerate(
     // la foto giusta — lo stato prima di qualunque azione. Rileggerlo qui
     // costerebbe una chiamata a `orca` a **ogni** rigenerazione per servire un
     // ramo che scatta di rado.
-    let prima: Vec<String> = prima
+    let before: Vec<String> = before
         .map(|ts| {
             ts.iter()
                 .filter(|t| t.worktree_id == rec.worktree)
@@ -432,13 +432,13 @@ pub fn regenerate(
         // Uno solo: con due o più non si sa quale sia, e chiudere la vecchia
         // basandosi sul candidato sbagliato costa il lavoro di qualcun altro.
         let dopo = handles_on_worktree(&rec.worktree, &mut *orca);
-        let nuovi: Vec<&String> = dopo
+        let newcomers: Vec<&String> = dopo
             .iter()
-            .filter(|h| !prima.contains(h) && *h != &rec.handle)
+            .filter(|h| !before.contains(h) && *h != &rec.handle)
             .collect();
-        match nuovi.len() {
+        match newcomers.len() {
             1 => {
-                new_handle = nuovi[0].clone();
+                new_handle = newcomers[0].clone();
                 log_line(&format!(
                     "sess={sess}: handle non riconosciuto nella risposta, ma \
                      l'elenco ne mostra uno nuovo ({new_handle}): proseguo"
