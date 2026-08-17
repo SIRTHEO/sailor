@@ -7,12 +7,15 @@
 
 pub mod cd_guard;
 pub mod code_language;
+pub mod comment_refs;
 pub mod duplication;
 pub mod handoff;
 pub mod hooks_off;
 pub mod language;
 pub mod linear_readonly;
+pub mod live_rules;
 pub mod pr_merge_admin;
 pub mod pr_title;
 pub mod shell;
+pub mod successor;
 pub mod socraticode_gate;

@@ -16,7 +16,10 @@
 mod duplication;
 mod handoff;
 mod linear;
+mod live_rules;
 mod preflight;
+mod successor;
+mod relay_eval;
 
 use hook_io::{Decision, Mode};
 
@@ -322,6 +325,15 @@ fn run(which: &str) -> Result<i32, String> {
                 _ => Ok(0),
             }
         }
+        // Le regole appena scritte. Nessuna valvola d'ambiente: l'originale non
+        // ne aveva una, e aggiungerla qui vorrebbe dire che il porting cambia
+        // ciò che si può spegnere — una decisione, non una traduzione.
+        "live-rules" => {
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            Ok(live_rules::run(&input))
+        }
         // Il divieto su Linear: 813 righe di Python, il gancio più grande del
         // parco. Il giudizio sta in `guards::linear_readonly` ed è puro; la
         // parte con stato — permesso di Theo e registro — in `linear.rs`.
@@ -348,11 +360,21 @@ fn run(which: &str) -> Result<i32, String> {
         // Stessa ragione: l'elenco dei pannelli arriva da stdin perché le due
         // implementazioni devono giudicare lo stesso elenco, non due letture a
         // un secondo di distanza.
+        // L'interrogazione del gancio che arma il successore, stessa ragione.
+        "successor-probe" => {
+            let a: Vec<String> = std::env::args().skip(2).collect();
+            let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
+            Ok(successor::probe(&arg(0), &arg(1), &arg(2)))
+        }
         "handoff-resolve" => {
             let a: Vec<String> = std::env::args().skip(2).collect();
             let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
             Ok(handoff::resolve(&arg(0), &arg(1), &arg(2)))
         }
+        // Nemmeno questo è un gancio: è la decisione della staffetta esposta a
+        // `tools/compare-relay-evaluate.py`, che pone la stessa domanda a
+        // `relay.evaluate()` con una HOME finta e pretende la stessa risposta.
+        "relay-evaluate" => Ok(relay_eval::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }
