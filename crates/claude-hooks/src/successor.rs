@@ -9,6 +9,7 @@
 //! non frena.
 
 use guards::successor::{count_agents, is_handoff_doc, mandate};
+use hook_io::journal::{self, Field};
 use std::fs;
 use std::io::Read;
 
@@ -202,21 +203,37 @@ fn speak(message: &str) -> String {
     }))
 }
 
-/// Il gancio vero: PostToolUse, decide e — se tutti i freni sono liberi — apre.
+/// Come è finita la richiesta di armare, e cosa c'è da dire.
 ///
-/// Fail-open in ogni ramo: l'uscita è sempre 0. Un gancio che rompe la scrittura
-/// di una consegna è peggio del problema che risolve.
-pub fn run(input: &hook_io::HookInput) -> i32 {
-    let path = input
-        .tool_input
-        .as_ref()
-        .and_then(|v| v.get("file_path"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if path.is_empty() || !is_doc(path) {
-        return 0;
-    }
-    let session = input.session_id.clone().unwrap_or_default();
+/// Le tre voci sono quelle dell'originale (`ferma`, `apre`, `fallisce`), e il
+/// messaggio può essere vuoto: i freni silenziosi non parlano. La **forma**
+/// dell'uscita non si decide qui, perché i due eventi la vogliono diversa — un
+/// PostToolUse stampa JSON, uno Stop scrive su stderr.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ArmOutcome {
+    Stop(String),
+    Open(String),
+    Failed(String),
+}
+
+/// I quattro freni e, se passano tutti, la scheda che parte da sola.
+///
+/// ESTRATTA PER UN SECONDO CHIAMANTE, come nell'originale: fino al 16/08/2026
+/// l'unico innesco era la **scrittura** di una consegna, quindi una sessione
+/// piena che aveva già consegnato e proseguiva senza toccare file non armava
+/// mai niente — misurata così una sessione al 106% del budget di Opus 5, viva.
+/// `origin` distingue le due strade nel registro, e serve solo a quello.
+///
+/// IL REGISTRO FA PARTE DEL LAVORO, e questa funzione esiste anche per
+/// rimetterlo: fino a oggi il porto decideva bene e **non registrava niente**,
+/// mentre l'originale scrive cinque casi. Misurato il 17/08/2026 — il gancio è
+/// passato al binario alle 10:57, l'ultima riga `origine=scrittura` è delle
+/// 11:10 (una sessione avviata prima, che aveva ancora la riga vecchia in
+/// memoria), e dopo tre consegne vere scritte alle 11:35, 13:37 e 14:21 il
+/// registro non ha più una sola riga. Il freno più frequente — `troppe-sessioni`,
+/// 186 righe storiche — scattava invisibile. Nessun confronto se n'era accorto
+/// perché `compare-successor.py` non guardava il registro.
+pub fn arm(path: &str, session: &str, origin: &str) -> ArmOutcome {
     // La cwd del PROCESSO, non quella dichiarata nel payload. Il Python usa
     // `os.getcwd()`, e le due coincidono quasi sempre — per questo il confronto
     // non se ne era accorto: i casi passavano la cwd vera in entrambi i campi.
@@ -241,36 +258,96 @@ pub fn run(input: &hook_io::HookInput) -> i32 {
     // Il consumo si valuta per ultimo perché SCRIVE il marcatore: chiederlo prima
     // brucerebbe l'unica arma di questa sessione anche quando un altro freno
     // avrebbe fermato tutto comunque.
-    match guards::successor::decide(&facts) {
-        guards::successor::Outcome::StopQuiet(_) => return 0,
-        guards::successor::Outcome::StopLoud { message, .. } => {
-            println!("{}", speak(&message));
-            return 0;
+    let (reason, message) = match guards::successor::decide(&facts) {
+        guards::successor::Outcome::StopQuiet(r) => (r, String::new()),
+        guards::successor::Outcome::StopLoud { reason, message } => (reason, message),
+        guards::successor::Outcome::Open => {
+            // Il freno del già-armato non lascia riga, come nell'originale: si
+            // consuma leggendo, e registrarlo raddoppierebbe ogni consegna.
+            facts.already_armed = already_armed(path, session);
+            if facts.already_armed {
+                return ArmOutcome::Stop(String::new());
+            }
+            let (ok, detail) = open_tab(path);
+            if ok {
+                note_successor(session, &detail);
+            }
+            journal::record(
+                "consegna-arma-successore",
+                if ok { "apre" } else { "fallisce" },
+                "tab-che-parte-da-sola",
+                &[
+                    ("path_", Field::Text(path.to_string())),
+                    ("dettaglio", Field::Text(detail.clone())),
+                    ("origine", Field::Text(origin.to_string())),
+                ],
+            );
+            return if ok {
+                ArmOutcome::Open(
+                    "Consegna raccolta: ho aperto una tab col mandato dentro. Parte da \
+                     sola fra mezzo minuto — Ctrl-C in quella tab per fermarla."
+                        .to_string(),
+                )
+            } else {
+                ArmOutcome::Failed(format!(
+                    "Consegna scritta, ma non sono riuscito ad aprire la tab: {detail}"
+                ))
+            };
         }
-        guards::successor::Outcome::Open => {}
-    }
-    facts.already_armed = already_armed(path, &session);
-    if facts.already_armed {
+    };
+
+    // I campi accanto al motivo sono quelli dell'originale, uno per uno: chi
+    // legge il registro somma `vive` e `pannelli`, e una riga con le chiavi
+    // sbagliate è una riga persa anche quando la decisione è giusta.
+    let extra: Vec<(&str, Field)> = match reason {
+        "fuori-orario" => vec![
+            ("ora", Field::Number(facts.hour as i64)),
+            ("origine", Field::Text(origin.to_string())),
+        ],
+        "troppe-sessioni" => vec![
+            (
+                "vive",
+                Field::Number(facts.live_sessions.unwrap_or(0) as i64),
+            ),
+            ("origine", Field::Text(origin.to_string())),
+        ],
+        "albero-affollato" => vec![
+            ("pannelli", Field::Number(facts.panes_here.unwrap_or(0) as i64)),
+            ("origine", Field::Text(origin.to_string())),
+        ],
+        // `seconda-generazione` e ogni motivo futuro: il percorso e la strada.
+        _ => vec![
+            ("path_", Field::Text(path.to_string())),
+            ("origine", Field::Text(origin.to_string())),
+        ],
+    };
+    journal::record("consegna-arma-successore", "ferma", reason, &extra);
+    ArmOutcome::Stop(message)
+}
+
+/// Il gancio vero: PostToolUse, decide e — se tutti i freni sono liberi — apre.
+///
+/// Fail-open in ogni ramo: l'uscita è sempre 0. Un gancio che rompe la scrittura
+/// di una consegna è peggio del problema che risolve.
+pub fn run(input: &hook_io::HookInput) -> i32 {
+    let path = input
+        .tool_input
+        .as_ref()
+        .and_then(|v| v.get("file_path"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if path.is_empty() || !is_doc(path) {
         return 0;
     }
-
-    let (ok, detail) = open_tab(path);
-    if ok {
-        note_successor(&session, &detail);
-        println!(
-            "{}",
-            speak(
-                "Consegna raccolta: ho aperto una tab col mandato dentro. Parte da \
-                 sola fra mezzo minuto — Ctrl-C in quella tab per fermarla."
-            )
-        );
-    } else {
-        println!(
-            "{}",
-            speak(&format!(
-                "Consegna scritta, ma non sono riuscito ad aprire la tab: {detail}"
-            ))
-        );
+    let session = input.session_id.clone().unwrap_or_default();
+    match arm(path, &session, "scrittura") {
+        ArmOutcome::Stop(m) | ArmOutcome::Open(m) | ArmOutcome::Failed(m) => {
+            // Un freno silenzioso resta silenzioso: stampare un JSON vuoto
+            // riempirebbe di rumore ogni consegna scritta.
+            if !m.is_empty() {
+                println!("{}", speak(&m));
+            }
+        }
     }
     0
 }
