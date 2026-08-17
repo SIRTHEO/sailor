@@ -537,6 +537,137 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
     (Action::Regenerate, piena)
 }
 
+// ─── Il tetto alle sessioni: morde chi AGGIUNGE, mai chi SOSTITUISCE ─────────
+
+/// Cosa fa al numero di sessioni vive il gesto che sta per essere eseguito.
+///
+/// QUESTA DISTINZIONE È L'INTERA REGOLA, ed è la cosa che chi legge dopo
+/// sbaglierà — nel verso pericoloso, cioè applicando il tetto anche a chi
+/// sostituisce. Una sessione piena che si rigenera è a **saldo zero**: apre la
+/// nuova e chiude la vecchia. Fermarla sopra soglia la ferma proprio quando
+/// serve di più — con venti sessioni vive e piene, negare la sostituzione non
+/// fa scendere il conto di uno, tiene solo venti sessioni degradate al posto di
+/// venti fresche. Il totale lo fanno salire le AGGIUNTE, e solo quelle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionDelta {
+    /// Ne apre una in più: il conto sale.
+    Adds,
+    /// Ne apre una al posto di un'altra: il conto non cambia.
+    Replaces,
+    /// Non apre nessuna sessione.
+    None,
+}
+
+/// Il tetto oltre il quale non si aggiunge una sessione.
+///
+/// VENTI, E NON OTTO. Il tetto storico di `successor::arm` vale 8, ma è il tetto
+/// di **un** produttore automatico, che apre schede senza nessuno davanti. Un
+/// tetto globale a 8 negherebbe il lavoro normale: la settimana 10→17/08/2026 ha
+/// mediana **7** sessioni vive, quindi scatterebbe quasi sempre. La soglia qui è
+/// quella misurata sulla saturazione vera: nelle due ore prima del riavvio del
+/// 16/08/2026 alle 23:20 le sessioni erano **64** contro 7 del resto della
+/// settimana, mentre carico (6,7 contro 4,6) e memoria libera non discriminavano.
+/// `sessioni >= 20` scatta nel **6,8% del tempo** e un terzo dei suoi scatti cade
+/// nella finestra critica: le misure stanno in `docs/2026-08-17-cron-e-soglie.md`.
+pub const SESSION_CAP_DEFAULT: usize = 20;
+
+/// Il prefisso con cui un comando dichiara di chiudere ciò che apre.
+///
+/// Si scrive sulla riga di comando e non nell'ambiente del processo di proposito:
+/// una variabile esportata una volta esenterebbe in silenzio tutto ciò che viene
+/// dopo, cioè sarebbe una valvola per sbaglio. Scritta davanti al comando, la
+/// dichiarazione vale per quel comando e si vede nel registro.
+pub const REPLACEMENT_MARK: &str = "SESSION_REPLACES=1";
+
+/// `word` compare nel testo come parola, non come pezzo di un'altra.
+///
+/// Serve perché `.claude/rust` contiene «claude» e non avvia niente, e
+/// `claude-hooks` nemmeno: un `contains` avrebbe scambiato per apertura di
+/// sessione ogni comando eseguito dentro questa cartella.
+fn word_at(text: &str, word: &str) -> bool {
+    const BORDER: &[char] = &[
+        ' ', '\t', '\n', '\'', '"', ';', '&', '|', '(', ')', '=', '`',
+    ];
+    let mut from = 0;
+    while let Some(hit) = text[from..].find(word) {
+        let start = from + hit;
+        let end = start + word.len();
+        let before = text[..start].chars().next_back();
+        let after = text[end..].chars().next();
+        if before.is_none_or(|c| BORDER.contains(&c)) && after.is_none_or(|c| BORDER.contains(&c)) {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
+/// Gli spazi ripetuti diventano uno solo, così `terminal   create` si riconosce.
+fn squeeze(command: &str) -> String {
+    command.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Cosa questo comando fa al numero di sessioni vive.
+///
+/// ELENCO CHIUSO di cosa conta come apertura, non di cosa si esclude: l'elenco
+/// dei divieti è sempre in ritardo sul gesto nuovo, e qui il verso giusto in cui
+/// sbagliare è lasciar passare. Contano due gesti soli — una scheda Orca che
+/// avvia `claude`, e una copia di lavoro creata con un agente dentro. Un
+/// `terminal create` che avvia una shell **non** è una sessione: sono le due
+/// shell che `--setup run` lascia in ogni albero nuovo, e contarle spegnerebbe
+/// il meccanismo senza che nessuna sessione sia stata aperta.
+pub fn session_delta(command: &str) -> SessionDelta {
+    let c = squeeze(command);
+    if !word_at(&c, "orca") {
+        return SessionDelta::None;
+    }
+    let with_agent = word_at(&c, "--agent");
+    let opens = (c.contains("terminal create") && (with_agent || word_at(&c, "claude")))
+        || (c.contains("worktree create") && with_agent);
+    if !opens {
+        return SessionDelta::None;
+    }
+    if c.contains(REPLACEMENT_MARK) {
+        return SessionDelta::Replaces;
+    }
+    SessionDelta::Adds
+}
+
+/// I fatti che il tetto guarda, già raccolti da chi ha il permesso di leggerli.
+#[derive(Debug)]
+pub struct CapFacts {
+    pub delta: SessionDelta,
+    /// Sessioni Claude vive adesso. `None` = **non si è potuto contare**.
+    pub live: Option<usize>,
+    pub cap: usize,
+}
+
+/// Il messaggio del rifiuto, oppure `None` se si passa.
+///
+/// FAIL-OPEN SU DUE FRONTI, e sono i due modi in cui questo freno potrebbe fare
+/// più danno del problema: chi sostituisce passa sempre, e un conteggio che non
+/// si è potuto fare lascia passare. Un tetto che blocca tutto perché non sa
+/// contare è peggio di nessun tetto — smette di frenare l'apertura di sessioni e
+/// comincia a frenare il lavoro, che è la fine di ogni freno.
+pub fn session_cap_verdict(f: &CapFacts) -> Option<String> {
+    if f.delta != SessionDelta::Adds {
+        return None;
+    }
+    let live = f.live?;
+    if live < f.cap {
+        return None;
+    }
+    Some(format!(
+        "{live} Claude sessions are already running (cap {}). This machine \
+         restarted on 2026-08-16 at 23:20 with 64 sessions alive, and the number \
+         of sessions was the only signal that told saturation apart from a normal \
+         day. Close a session before opening another one. If this command closes \
+         one as it opens one, say so by prefixing it with {REPLACEMENT_MARK} — a \
+         replacement is never blocked. Valve: SESSION_CAP_GUARD=off.",
+        f.cap
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -931,5 +1062,160 @@ mod tests {
         let v: serde_json::Value = serde_json::json!({"skill": "grilling"});
         assert!(!is_handoff_call("Skill", Some(&v)));
         assert!(!is_handoff_call("Skill", None));
+    }
+
+    // ── il tetto alle sessioni ──────────────────────────────────────────────
+
+    fn aggiunta(live: Option<usize>) -> CapFacts {
+        CapFacts {
+            delta: SessionDelta::Adds,
+            live,
+            cap: SESSION_CAP_DEFAULT,
+        }
+    }
+
+    #[test]
+    fn sotto_soglia_si_apre() {
+        assert_eq!(session_cap_verdict(&aggiunta(Some(19))), None);
+        assert_eq!(session_cap_verdict(&aggiunta(Some(0))), None);
+    }
+
+    #[test]
+    fn alla_soglia_e_sopra_si_blocca() {
+        // Il confine è chiuso a sinistra: venti è già troppo, come `>=` della
+        // misura che ha scelto la soglia.
+        let messaggio = session_cap_verdict(&aggiunta(Some(20))).expect("doveva bloccare");
+        assert!(messaggio.contains("20 Claude sessions"), "{messaggio}");
+        assert!(messaggio.contains("cap 20"), "{messaggio}");
+        assert!(session_cap_verdict(&aggiunta(Some(64))).is_some());
+    }
+
+    #[test]
+    fn una_sostituzione_passa_sempre() {
+        // IL CASO CHE VALE PIÙ DI TUTTI. Con 64 sessioni vive, chi ne chiude una
+        // per aprirne una deve passare: bloccarlo lascia sul posto una sessione
+        // piena senza far scendere il conto di uno.
+        let f = CapFacts {
+            delta: SessionDelta::Replaces,
+            live: Some(64),
+            ..aggiunta(None)
+        };
+        assert_eq!(session_cap_verdict(&f), None);
+        let f = CapFacts {
+            delta: SessionDelta::None,
+            live: Some(64),
+            ..aggiunta(None)
+        };
+        assert_eq!(session_cap_verdict(&f), None);
+    }
+
+    #[test]
+    fn un_conteggio_fallito_lascia_passare() {
+        // Fail-open: un tetto che blocca perché non sa contare smette di frenare
+        // le sessioni e comincia a frenare il lavoro.
+        assert_eq!(session_cap_verdict(&aggiunta(None)), None);
+    }
+
+    #[test]
+    fn il_tetto_si_puo_stringere_e_allargare() {
+        let f = CapFacts {
+            cap: 0,
+            ..aggiunta(Some(0))
+        };
+        assert!(
+            session_cap_verdict(&f).is_some(),
+            "col tetto a zero non si apre niente"
+        );
+        let f = CapFacts {
+            cap: 1000,
+            ..aggiunta(Some(64))
+        };
+        assert_eq!(session_cap_verdict(&f), None);
+    }
+
+    #[test]
+    fn il_messaggio_dice_come_uscirne() {
+        // Un freno che non dice come procedere si aggira invece che rispettarlo.
+        let m = session_cap_verdict(&aggiunta(Some(30))).unwrap();
+        assert!(m.contains(REPLACEMENT_MARK), "{m}");
+        assert!(m.contains("SESSION_CAP_GUARD=off"), "{m}");
+    }
+
+    #[test]
+    fn le_due_aperture_note_contano_come_aggiunte() {
+        assert_eq!(
+            session_delta("orca terminal create --command 'claude' --title x"),
+            SessionDelta::Adds
+        );
+        assert_eq!(
+            session_delta("orca worktree create --repo id:r --name n --agent claude"),
+            SessionDelta::Adds
+        );
+        // Spazi ripetuti e flag globali in mezzo non nascondono il gesto.
+        assert_eq!(
+            session_delta("orca   terminal   create --command \"claude 'x'\""),
+            SessionDelta::Adds
+        );
+    }
+
+    #[test]
+    fn una_shell_non_e_una_sessione() {
+        // Le due shell che `--setup run` lascia in ogni albero nuovo: contarle
+        // spegnerebbe il meccanismo senza che nessuna sessione sia stata aperta.
+        assert_eq!(
+            session_delta("orca worktree create --repo id:r --name n --setup run"),
+            SessionDelta::None
+        );
+        assert_eq!(
+            session_delta("orca terminal create --command 'npm run dev'"),
+            SessionDelta::None
+        );
+        assert_eq!(
+            session_delta("orca terminal list --json"),
+            SessionDelta::None
+        );
+        assert_eq!(
+            session_delta("orca worktree rm --name n"),
+            SessionDelta::None
+        );
+    }
+
+    #[test]
+    fn la_cartella_della_configurazione_non_apre_niente() {
+        // `.claude` contiene «claude», e ogni comando eseguito qui dentro lo
+        // porta nel percorso: un `contains` avrebbe bloccato il lavoro normale.
+        assert_eq!(
+            session_delta("orca terminal create --command 'bash /home/someone/.claude/scripts/x.sh'"),
+            SessionDelta::None
+        );
+        assert_eq!(
+            session_delta("orca terminal create --command 'claude-hooks --check'"),
+            SessionDelta::None
+        );
+    }
+
+    #[test]
+    fn fuori_da_orca_non_si_giudica() {
+        // Un `claude -p` lanciato a mano non passa da qui: questo freno guarda i
+        // gesti che aprono una scheda, e dirlo è meglio che fingere di coprirlo.
+        assert_eq!(session_delta("claude -p 'ciao'"), SessionDelta::None);
+        assert_eq!(
+            session_delta("git commit -m 'terminal create'"),
+            SessionDelta::None
+        );
+    }
+
+    #[test]
+    fn la_dichiarazione_di_sostituzione_declassa_l_aggiunta() {
+        assert_eq!(
+            session_delta("SESSION_REPLACES=1 orca terminal create --command claude"),
+            SessionDelta::Replaces
+        );
+        // E su un comando che non apre niente resta «niente»: la dichiarazione
+        // non inventa una sostituzione dove non c'è un'apertura.
+        assert_eq!(
+            session_delta("SESSION_REPLACES=1 orca terminal list"),
+            SessionDelta::None
+        );
     }
 }
