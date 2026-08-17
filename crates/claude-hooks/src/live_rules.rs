@@ -33,16 +33,36 @@ pub fn run(input: &HookInput) -> i32 {
     let home = home_dir();
 
     // Il perimetro, prima dei riferimenti: costa una lettura e non serve Node.
-    let text = std::fs::read_to_string(path).unwrap_or_default();
-    if let Some(why) = rules::always_loaded(&text) {
-        // Un file illeggibile dà testo vuoto, che «non ha frontmatter»: sarebbe
-        // un rimprovero per un file che non abbiamo potuto guardare.
-        if !text.is_empty() {
+    //
+    // TRE ESITI DI UNA LETTURA, E VANNO TENUTI DISTINTI. La prima stesura li
+    // schiacciava con `unwrap_or_default()` e trattava «testo vuoto» come
+    // «non ho potuto leggere»: così un file di **zero byte** — che l'originale
+    // blocca, perché senza frontmatter la regola si carica in ogni sessione —
+    // passava in silenzio. Un `Write` con contenuto vuoto su una regola nuova
+    // non è un caso di laboratorio. Trovato da una revisione indipendente, con
+    // il caso riprodotto: Python 2, Rust 0.
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => Some(text),
+        // Non è UTF-8: l'originale non cattura `UnicodeDecodeError` — non è un
+        // `OSError` — quindi l'eccezione risale, **lascia una riga nel registro
+        // dei guasti** ed esce zero. Inghiottirla qui perderebbe l'unica cosa
+        // che distingue un gancio rotto da un gancio contento.
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
+            log_failure(path, &format!("non e' UTF-8: {e}"));
+            return 0;
+        }
+        // Illeggibile per altro (permessi, sparito nel frattempo): l'originale
+        // cattura `OSError`, tace, e **prosegue** verso i riferimenti.
+        Err(_) => None,
+    };
+
+    if let Some(text) = &text {
+        if let Some(why) = rules::always_loaded(text) {
             eprintln!("{}", rules::scope_message(why));
             return 2;
         }
-        return 0;
     }
+    let text = text.unwrap_or_default();
 
     if !Path::new(CHECKER).is_file() {
         return 0;
