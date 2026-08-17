@@ -73,6 +73,68 @@ def transcripts():
     return [everything[int(i * stride)] for i in range(SAMPLE)]
 
 
+def resolve_cases(terminals):
+    """Every (tab, worktree, known) triple worth asking about, from a real list.
+
+    Built from the panes Orca reports right now rather than invented: the ids
+    that matter are the ones this machine actually uses, and the interesting
+    cases are the mixed ones — a live tab with a dead handle is exactly the
+    situation that made a brake never fire on 2026-08-17.
+    """
+    cases = [('', '', ''), ('tab-inesistente', '', ''), ('', '', 'term_morto')]
+    for t in terminals[:6]:
+        tab, handle, wt = t.get('tabId', ''), t.get('handle', ''), t.get('worktreeId', '')
+        cases += [
+            (tab, '', ''),
+            (tab, '', 'term_morto'),      # tab viva, handle scaduto
+            ('', '', handle),             # solo l'handle, e vivo
+            ('', wt, ''),                 # solo il worktree: risponde se unico
+            ('', wt, handle),
+            ('tab-inesistente', wt, handle),
+        ]
+    return cases
+
+
+def compare_resolve():
+    """The handle resolution, both implementations judging the identical list."""
+    r = subprocess.run(['orca', 'terminal', 'list', '--json'],
+                       capture_output=True, text=True, timeout=60)
+    raw = r.stdout or ''
+    try:
+        d = json.loads(raw)
+        items = d.get('result', d)
+        if isinstance(items, dict):
+            items = items.get('terminals') or []
+    except Exception:
+        items = []
+    if not items:
+        print('orca returned no panes: resolution not compared', file=sys.stderr)
+        return 0, 0
+
+    diverged = 0
+    cases = resolve_cases(items)
+    for tab, wt, known in cases:
+        rust = subprocess.run(
+            [str(BIN), 'handoff-resolve', tab, wt, known],
+            input=raw, capture_output=True, text=True, timeout=60).stdout.strip()
+        code = (
+            'import sys, json;'
+            f'sys.path.insert(0, {str(HOOKS)!r});'
+            'from handoff_common import resolve_terminal_handle;'
+            f'items = json.loads(sys.stdin.read());'
+            'items = items.get("result", items);'
+            'items = items.get("terminals", []) if isinstance(items, dict) else items;'
+            f'print(resolve_terminal_handle({tab!r}, {wt!r}, {known!r}, lambda: items))'
+        )
+        py = subprocess.run([sys.executable, '-c', code], input=raw,
+                            capture_output=True, text=True, timeout=60).stdout.strip()
+        if rust != py:
+            diverged += 1
+            print(f'\nDIVERGE resolve(tab={tab!r}, wt={wt!r}, known={known!r})')
+            print(f'    rust={rust!r}  python={py!r}')
+    return len(cases), diverged
+
+
 def main():
     files = transcripts()
     if not files:
@@ -89,7 +151,9 @@ def main():
                 if a != b:
                     print(f'    {key:8} rust={a!r}  python={b!r}')
     print(f'\n{len(files)} transcripts compared, {diverged} diverged')
-    return 1 if diverged else 0
+    n_cases, r_diverged = compare_resolve()
+    print(f'{n_cases} resolution cases compared, {r_diverged} diverged')
+    return 1 if (diverged or r_diverged) else 0
 
 
 if __name__ == '__main__':
