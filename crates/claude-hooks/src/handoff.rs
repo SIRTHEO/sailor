@@ -270,47 +270,28 @@ mod tests {
         assert_eq!(epoch_from_iso(""), None);
     }
 
-    /// Una HOME usa-e-getta con dentro il marcatore di consegna e un transcript.
+    /// Il marcatore di consegna e un transcript, dentro una HOME usa-e-getta.
     ///
-    /// `HOME` è globale al processo e i test Rust girano in parallelo: senza il
-    /// lucchetto un caso porterebbe via la casa a un altro mentre legge.
+    /// L'isolamento vero — e il lucchetto, che è uno solo per tutto il binario —
+    /// sta in `crate::test_home`: vedi lì perché un mutex per modulo non basta.
     struct Scena {
-        _lock: std::sync::MutexGuard<'static, ()>,
-        precedente: Option<String>,
+        _home: crate::test_home::HomeIsolata,
         dir: PathBuf,
     }
 
-    static LUCCHETTO: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     impl Scena {
         fn nuova(nome: &str, consegnato: bool, righe: Vec<String>) -> Self {
-            let lock = LUCCHETTO.lock().unwrap_or_else(|e| e.into_inner());
-            let precedente = std::env::var("HOME").ok();
-            let dir = std::env::temp_dir().join(format!("handoff-prove-{nome}"));
-            let _ = fs::remove_dir_all(&dir);
-            let _ = fs::create_dir_all(dir.join(".claude").join("state"));
-            std::env::set_var("HOME", &dir);
+            let home = crate::test_home::HomeIsolata::nuova(nome);
+            let dir = home.dir.clone();
             if consegnato {
-                let _ = fs::write(
-                    dir.join(".claude/state/consegna-fatta-provalav"),
-                    "1",
-                );
+                let _ = fs::write(home.stato().join("consegna-fatta-provalav"), "1");
             }
             let _ = fs::write(dir.join("transcript.jsonl"), righe.join("\n"));
-            Self { _lock: lock, precedente, dir }
+            Self { _home: home, dir }
         }
 
         fn transcript(&self) -> String {
             self.dir.join("transcript.jsonl").to_string_lossy().into_owned()
-        }
-    }
-
-    impl Drop for Scena {
-        fn drop(&mut self) {
-            match &self.precedente {
-                Some(h) => std::env::set_var("HOME", h),
-                None => std::env::remove_var("HOME"),
-            }
         }
     }
 
