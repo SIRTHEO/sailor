@@ -452,6 +452,74 @@ if [ "$WHICH" = "successor" ] || [ "$WHICH" = "tutte" ]; then
   COMPARE=""
 fi
 
+# ── session-cap ─────────────────────────────────────────────────────────────
+if [ "$WHICH" = "session-cap" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti sul tetto alle sessioni (il giudizio puro):"
+  # L'oracolo e' la batteria del modulo: il giudizio non tocca la macchina, e
+  # provarlo contro il Python costerebbe un giro di confronto per ogni mutante
+  # senza vedere niente di piu'.
+  ORACOLO="cargo test -p guards handoff::tests"
+  H="crates/guards/src/handoff.rs"
+
+  # IL MUTANTE PIU' IMPORTANTE, ed e' l'errore che chi legge dopo fara' da se':
+  # il tetto morde anche chi sostituisce. Una sessione piena che si rigenera e' a
+  # saldo zero, e bloccarla la blocca proprio quando serve di piu'.
+  mutate "il tetto morde anche le sostituzioni" "$H" \
+    's = s.replace("    if f.delta != SessionDelta::Adds {", "    if f.delta == SessionDelta::None {", 1)'
+
+  # Il fail-open si capovolge: chi non sa contare blocca tutto. E' il verso in
+  # cui un freno smette di frenare le sessioni e comincia a frenare il lavoro.
+  mutate "conteggio fallito diventa infinito" "$H" \
+    's = s.replace("    let live = f.live?;", "    let live = f.live.unwrap_or(usize::MAX);", 1)'
+
+  # Il confine slitta di uno: venti sessioni passano, e la soglia misurata non e'
+  # piu' quella che il documento dichiara.
+  mutate "confine spostato di uno" "$H" \
+    's = s.replace("    if live < f.cap {", "    if live <= f.cap {", 1)'
+
+  # La parola torna a essere una sottostringa: ogni comando eseguito dentro
+  # `~/.claude` contiene «claude», e il freno bloccherebbe il lavoro normale.
+  mutate "claude cercato come sottostringa" "$H" \
+    's = s.replace("(with_agent || word_at(&c, \"claude\"))", "(with_agent || c.contains(\"claude\"))", 1)'
+
+  # Ogni `terminal create` conta come sessione: rientrano le due shell che
+  # `--setup run` lascia in ogni albero nuovo, che non sono sessioni.
+  mutate "ogni scheda conta come sessione" "$H" \
+    's = s.replace("(c.contains(\"terminal create\") && (with_agent || word_at(&c, \"claude\")))", "c.contains(\"terminal create\")", 1)'
+
+  # La dichiarazione di sostituzione viene ignorata: tutto diventa un'aggiunta.
+  mutate "dichiarazione di sostituzione ignorata" "$H" \
+    's = s.replace("    if c.contains(REPLACEMENT_MARK) {", "    if false {", 1)'
+
+  echo "mutanti sul tetto alle sessioni (l'involucro che conta e registra):"
+  ORACOLO=""
+  COMPARE="compare-successor.py"
+  A="crates/claude-hooks/src/successor.rs"
+
+  # La valvola non spegne piu' niente: un freno che non si puo' togliere si
+  # aggira, e allora lo si toglie del tutto.
+  mutate "valvola del tetto ignorata" "$A" \
+    's = s.replace("    let mode = hook_io::Mode::from_env(\"SESSION_CAP_GUARD\");\n    if mode == hook_io::Mode::Off {\n        return 0;\n    }\n", "    let mode = hook_io::Mode::from_env(\"SESSION_CAP_GUARD\");\n", 1)'
+
+  # Il rifiuto passa dal canale sbagliato: `Warn` scrive su stderr ed esce 0, e
+  # il comando viene eseguito lo stesso. Un freno che non nega non e' un freno.
+  mutate "diniego declassato ad avviso" "$A" \
+    's = s.replace("        _ => hook_io::Decision::Deny(message),", "        _ => hook_io::Decision::Warn(message),", 1)'
+
+  # Il registro del tetto sparisce: la decisione resta giusta e nessuno puo' piu'
+  # sapere quante sessioni si aprono in un giorno — cioe' non si potra' ritarare
+  # la soglia, che e' l'errore gia' pagato dalla regola sulla pressione.
+  mutate "registro del tetto rimosso" "$A" \
+    's = s.replace("    journal::record(\n        \"session-cap\",", "    #[allow(unused)] let _skip = (\n        \"session-cap\",", 1)'
+
+  # Il conteggio torna a contare per sottostringa: righe come
+  # `chrome-native-host` non lo cambiano oggi, ma `claude-hooks` si'.
+  mutate "conteggio dei processi non ancorato" "$A" \
+    's = s.replace(".filter(|l| l.trim() == \"claude\")", ".filter(|l| l.contains(\"claude\"))", 1)'
+
+  COMPARE=""
+fi
+
 # ── handoff-on-stop ─────────────────────────────────────────────────────────
 if [ "$WHICH" = "handoff-on-stop" ] || [ "$WHICH" = "tutte" ]; then
   echo "mutanti su handoff_on_stop.rs (la consegna a fine turno):"

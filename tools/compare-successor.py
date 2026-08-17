@@ -148,19 +148,182 @@ def main():
             print(f'DIVERGE agents({root!r})  rust={a!r} python={b!r}')
 
     # The two counts the caps consume, against the machine as it is right now.
+    #
+    # RETRIED ONCE, AND THAT IS NOT LENIENCY. The two sides are read a fraction
+    # of a second apart on a machine where sessions open and close on their own:
+    # on 2026-08-17 this case went red with rust=4 python=5 while five
+    # back-to-back readings of both agreed on 4. A difference that survives a
+    # second reading is in the code; one that does not is the machine moving, and
+    # a comparison that cries wolf is a comparison nobody runs.
     for verb, expr in (('live', 'm.live_sessions()'),
                        ('panes', f'm.panes_here({str(Path.cwd())!r})')):
         checked += 1
-        a = rust(verb, str(Path.cwd()))
-        b = python(expr)
+        a, b = rust(verb, str(Path.cwd())), python(expr)
+        if a != b:
+            a, b = rust(verb, str(Path.cwd())), python(expr)
         if a != b:
             diverged += 1
-            print(f'DIVERGE {verb}  rust={a!r} python={b!r}')
+            print(f'DIVERGE {verb}  rust={a!r} python={b!r}  (twice in a row)')
+
+    # The global session cap: the judgement is pure, so the live count is passed
+    # in rather than measured — two readings a second apart would agree on the
+    # wrong thing.
+    for command in CAP_COMMANDS:
+        checked += 1
+        a, b = rust('delta', command), python(f'm.session_delta({command!r})')
+        if a != b:
+            diverged += 1
+            print(f'DIVERGE delta({command!r})  rust={a!r} python={b!r}')
+        for live in (0, 7, 19, 20, 64, -1):
+            checked += 1
+            a = rust('cap', command, str(live))
+            b = python(f'm.session_cap_verdict(m.session_delta({command!r}), '
+                       f'{live}, m.SESSION_CAP_DEFAULT)')
+            if a != b:
+                diverged += 1
+                print(f'DIVERGE cap({command!r}, {live})\n'
+                      f'    rust  ={a[:200]!r}\n    python={b[:200]!r}')
 
     checked_e2e, diverged_e2e = compare_end_to_end()
+    checked_cap, diverged_cap = compare_session_cap()
     print(f'\n{checked} unit cases compared, {diverged} diverged')
     print(f'{checked_e2e} end-to-end cases compared, {diverged_e2e} diverged')
-    return 1 if (diverged or diverged_e2e) else 0
+    print(f'{checked_cap} session-cap hook cases compared, {diverged_cap} diverged')
+    return 1 if (diverged or diverged_e2e or diverged_cap) else 0
+
+
+# The commands the cap has to tell apart. Both kinds of error are in here: the
+# two real ways a session is opened, the two shells `--setup run` leaves behind
+# (which must not count), and the paths that merely contain the word "claude" —
+# every command run inside ~/.claude carries it, and a substring test would have
+# blocked ordinary work.
+CAP_COMMANDS = (
+    "orca terminal create --command 'claude' --title x",
+    'orca worktree create --repo id:r --name n --agent claude',
+    'orca worktree create --repo id:r --name n --setup run',
+    "orca terminal create --command 'npm run dev'",
+    'orca terminal list --json',
+    "orca terminal create --command 'bash /home/someone/.claude/scripts/x.sh'",
+    "orca terminal create --command 'claude-hooks --check'",
+    'SESSION_REPLACES=1 orca terminal create --command claude',
+    'SESSION_REPLACES=1 orca terminal list',
+    'claude -p ciao',
+    "git commit -m 'terminal create'",
+    'orca   terminal   create --command "claude \'x\'"',
+)
+
+
+def blank_count(text):
+    """Hide the live session count, which moves between the two readings."""
+    import re
+    return re.sub(r'\b\d+ Claude sessions\b', '<N> Claude sessions', text or '')
+
+
+def fake_homes(name):
+    """One scratch HOME per side, with the journal inside and scripts linked.
+
+    The link matters: without it the Python cannot import `hook_log`, falls back
+    to a mute function and *looks* like it agrees with a mute port — two silent
+    implementations agree by construction.
+    """
+    import os
+    scratch = Path(os.environ.get(
+        'RELAY_SCRATCH',
+        '/private/tmp/claude-501/-Users-theo-orca-general/scratchpad')) / name
+    homes = {}
+    for side in ('rust', 'python'):
+        h = scratch / f'home-{side}'
+        (h / '.claude' / 'state').mkdir(parents=True, exist_ok=True)
+        link = h / '.claude' / 'scripts'
+        if not link.exists():
+            try:
+                link.symlink_to(Path.home() / '.claude' / 'scripts')
+            except OSError:
+                pass
+        journal = h / '.claude' / 'state' / 'ganci.jsonl'
+        if journal.exists():
+            journal.unlink()
+        homes[side] = h
+    return homes
+
+
+def compare_session_cap():
+    """The cap hook itself, both implementations fed the identical payload.
+
+    Nothing is opened: this hook only ever judges a command someone else would
+    have run. The valve and the two limits are exercised from the environment,
+    because a valve nobody runs is a valve that one day fails to switch off.
+    """
+    import os
+    homes = fake_homes('session-cap')
+
+    def last_line(side):
+        p = homes[side] / '.claude' / 'state' / 'ganci.jsonl'
+        if not p.exists():
+            return None
+        rows = [r for r in p.read_text(errors='replace').splitlines() if r.strip()]
+        if not rows:
+            return None
+        try:
+            o = json.loads(rows[-1])
+        except Exception:
+            return {'<unreadable>': rows[-1]}
+        o.pop('t', None)
+        return o
+
+    cases = []
+    for command in CAP_COMMANDS:
+        payload = json.dumps({'tool_name': 'Bash', 'tool_input': {'command': command}})
+        # Limit 0 makes every addition refuse regardless of the machine's state,
+        # so the case does not depend on how many sessions are alive right now.
+        cases.append((f'limit 0 {command[:40]}', payload, {'SESSION_CAP_LIMIT': '0'}))
+        cases.append((f'limit high {command[:40]}', payload,
+                      {'SESSION_CAP_LIMIT': '9999'}))
+    blocking = json.dumps({'tool_name': 'Bash', 'tool_input': {
+        'command': 'orca terminal create --command claude'}})
+    cases += [
+        ('valve off', blocking, {'SESSION_CAP_LIMIT': '0', 'SESSION_CAP_GUARD': 'off'}),
+        ('valve warn', blocking, {'SESSION_CAP_LIMIT': '0', 'SESSION_CAP_GUARD': 'avvisa'}),
+        ('not a bash call',
+         json.dumps({'tool_name': 'Write', 'tool_input': {'command': blocking}}),
+         {'SESSION_CAP_LIMIT': '0'}),
+    ]
+
+    diverged = 0
+    for name, body, extra in cases:
+        env = {**os.environ, **extra}
+        a = subprocess.run([str(BIN), 'successor-probe', 'session-cap'], input=body,
+                           capture_output=True, text=True, timeout=120,
+                           env={**env, 'HOME': str(homes['rust'])})
+        b = subprocess.run([sys.executable, str(HOOK), '--session-cap'], input=body,
+                           capture_output=True, text=True, timeout=120,
+                           env={**env, 'HOME': str(homes['python'])})
+        row_r, row_p = last_line('rust'), last_line('python')
+        # THE LIVE COUNT IS BLANKED HERE, and only here. The two sides read it a
+        # fraction of a second apart on a machine that opens and closes sessions
+        # on its own — measured 4 against 5 on 2026-08-17, with both sides
+        # running the same `ps`. What these cases prove is the wiring: which
+        # channel the refusal takes, which valve silences it, which keys the
+        # journal carries. The number itself is compared where it can be held
+        # still, in the `cap` cases above, which pass it in from outside.
+        a.stdout, b.stdout = blank_count(a.stdout), blank_count(b.stdout)
+        # stderr too: in warn mode the whole message travels there, and comparing
+        # stdout alone would let a port that says nothing at all pass.
+        a.stderr, b.stderr = blank_count(a.stderr), blank_count(b.stderr)
+        for row in (row_r, row_p):
+            if row is not None and 'vive' in row:
+                row['vive'] = '<N>'
+        if (a.stdout, a.stderr, a.returncode) != (b.stdout, b.stderr, b.returncode):
+            diverged += 1
+            print(f'\nDIVERGE session-cap [{name}]')
+            print(f'    rust   rc={a.returncode} out={a.stdout[:300]!r} err={a.stderr[:200]!r}')
+            print(f'    python rc={b.returncode} out={b.stdout[:300]!r} err={b.stderr[:200]!r}')
+        elif row_r != row_p:
+            diverged += 1
+            print(f'\nDIVERGE session-cap journal [{name}]')
+            print(f'    python: {row_p!r}')
+            print(f'    rust:   {row_r!r}')
+    return len(cases), diverged
 
 
 def scratch_transcript(path, tokens=520_000, model='claude-opus-5'):
