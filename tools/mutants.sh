@@ -34,6 +34,8 @@ FILES=(
   "crates/claude-hooks/src/handoff_on_stop.rs"
   "crates/guards/src/worktree_deletes.rs"
   "crates/claude-hooks/src/worktree_deletes.rs"
+  "crates/guards/src/scope_drift.rs"
+  "crates/claude-hooks/src/scope_drift.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -734,6 +736,113 @@ if [ "$WHICH" = "worktree-deletes" ] || [ "$WHICH" = "tutte" ]; then
   # partito» tornano indistinguibili.
   mutate "registro delle concessioni rimosso" "$I" \
     's = s.replace("    log_grant(&data, reason, command);", "", 1)'
+
+  COMPARE=""
+fi
+
+# ── scope-drift ─────────────────────────────────────────────────────────────
+if [ "$WHICH" = "scope-drift" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su scope_drift.rs:"
+  COMPARE="compare-scope-drift.py"
+  G="crates/guards/src/scope_drift.rs"
+  I="crates/claude-hooks/src/scope_drift.rs"
+
+  # La soglia scende a due: l'avviso arriverebbe su ogni sessione che tocca un
+  # codice e la sua configurazione, cioe' quasi tutte. Un avviso che parla
+  # sempre non lo legge piu' nessuno, ed e' il modo in cui questo gancio
+  # smetterebbe di esistere restando acceso.
+  mutate "soglia a due aree" "$G" \
+    's = s.replace("pub const THRESHOLD: usize = 3;", "pub const THRESHOLD: usize = 2;", 1)'
+
+  # Il confine della soglia: con `>` la terza area non basta piu' e il gancio
+  # tace fino alla quarta.
+  mutate "soglia stretta a maggiore-di" "$G" \
+    's = s.replace("after.len() >= THRESHOLD", "after.len() > THRESHOLD", 1)'
+
+  # L avviso torna a ogni area nuova: e' la promessa «parla una volta sola».
+  mutate "detto ignorato" "$G" \
+    's = s.replace("let speak = after.len() >= THRESHOLD && !already_said;", "let speak = after.len() >= THRESHOLD;", 1)'
+
+  # Il ramo «niente di nuovo» sparisce: si riscrive lo stato a ogni chiamata, e
+  # su una sessione gia' a tre aree non ancora avvisata si ricomincia a parlare.
+  mutate "ristagno non riconosciuto" "$G" \
+    's = s.replace("    if after == *seen {", "    if false {", 1)'
+
+  # Il flag non si conserva: dopo il primo avviso lo stato tornerebbe a «mai
+  # detto», e l area successiva farebbe parlare di nuovo.
+  mutate "flag detto non conservato" "$I" \
+    's = s.replace("\"detto\": already_said || esito.speak,", "\"detto\": esito.speak,", 1)'
+
+  # I trascritti tornano a contare come configurazione: chiunque rilegga i
+  # propri registri si accende la terza area senza aver cambiato mestiere.
+  mutate "trascritti contati come configurazione" "$G" \
+    's = s.replace("        if !rest.starts_with(\"projects\") && !rest.starts_with(\"history\") {", "        if true {", 1)'
+
+  # Il confine di parola sparisce: `suiteXX` diventa `suite`.
+  mutate "confine di parola rimosso" "$G" \
+    's = s.replace(r"/gyver/work/suite\b|workspaces/suite/", "/gyver/work/suite|workspaces/suite/", 1)'
+
+  # Si guardano solo due campi: un percorso arrivato in `path` o in
+  # `notebook_path` smette di contare.
+  mutate "meta dei campi non guardati" "$G" \
+    's = s.replace(r"""pub const FIELDS: [&str; 4] = ["command", "file_path", "path", "notebook_path"];""", r"""pub const FIELDS: [&str; 4] = ["command", "file_path", "command", "file_path"];""", 1)'
+
+  # Il filtro che rende gratuito il caso normale: senza, il gancio tocca il
+  # disco a ogni chiamata a strumento. E' l unico mutante che il confronto vede
+  # solo grazie al campo «cartella dello stato».
+  mutate "uscita anticipata senza aree rimossa" "$I" \
+    's = s.replace("    if fresh.is_empty() {\n        return 0;\n    }\n", "", 1)'
+
+  # Uno stato inutilizzabile smette di fermare il gancio: dove l originale muore
+  # in silenzio senza toccare niente, il porto riscriverebbe il file.
+  mutate "stato non-oggetto accettato" "$I" \
+    's = s.replace("    if !v.is_object() {\n        return None;\n    }\n", "", 1)'
+
+  # La valvola non si legge piu': `SCOPE_DRIFT=off` smette di spegnere.
+  mutate "valvola rimossa" "$I" \
+    's = s.replace("    if std::env::var(\"SCOPE_DRIFT\").as_deref() == Ok(\"off\") {\n        return 0;\n    }\n", "", 1)'
+
+  # Il registro sparisce: da fuori, «ha avvisato» e «non e' partito» tornano
+  # indistinguibili — che e' esattamente lo stato in cui si trova l originale.
+  mutate "registro rimosso" "$I" \
+    's = s.replace("    log_notice(&session, &esito.areas);", "", 1)'
+
+  # Il registro nella forma del JavaScript invece che in quella del Python:
+  # stessa informazione, byte diversi, e due formati mescolati nello stesso
+  # archivio storico senza che nessuno se ne accorga. E' la trappola gia' pagata
+  # una volta da `journal::record`.
+  # La riga del registro perde lo spazio dopo i due punti, cioe' prende la forma
+  # che scrive `journal::record`. Stessa informazione, byte diversi, e due
+  # formati mescolati nello stesso archivio storico senza che nessuno se ne
+  # accorga: e' la trappola gia' pagata una volta da `journal::record`, e in
+  # `ganci.jsonl` le due forme convivono ancora (2093 righe contro 3517).
+  mutate "registro nella forma senza spazi" "$I" \
+    's = s.replace(r"""    let dir = state_dir();""", r"""    let line = line.replace("\": \"", "\":\"");
+    let dir = state_dir();""", 1)'
+
+  # Lo stato scritto con serde invece che con `json.dumps`: i separatori
+  # perdono lo spazio, e il file diverge pur dicendo la stessa cosa.
+  mutate "stato nella forma di serde" "$I" \
+    's = s.replace("""        hook_io::python_json::dumps(&serde_json::json!({
+            "aree": esito.areas.iter().cloned().collect::<Vec<_>>(),
+            "detto": already_said || esito.speak,
+        })),""", """        serde_json::to_string(&serde_json::json!({
+            "aree": esito.areas.iter().cloned().collect::<Vec<_>>(),
+            "detto": already_said || esito.speak,
+        }))
+        .unwrap_or_default(),""", 1)'
+
+  # L ordine delle chiavi dello stato si inverte. Compila, dice la stessa cosa,
+  # e cambia i byte: e' il mutante che prova che il confronto guarda il file
+  # come TESTO. Rianalizzandolo in un oggetto, questo sopravviverebbe.
+  mutate "ordine delle chiavi dello stato invertito" "$I" \
+    's = s.replace("""            "aree": esito.areas.iter().cloned().collect::<Vec<_>>(),
+            "detto": already_said || esito.speak,""", """            "detto": already_said || esito.speak,
+            "aree": esito.areas.iter().cloned().collect::<Vec<_>>(),""", 1)'
+
+  # La sessione non si tronca piu' a otto caratteri: il registro cambia forma.
+  mutate "sessione non troncata nel registro" "$I" \
+    's = s.replace("session.chars().take(8).collect::<String>()", "session.to_string()", 1)'
 
   COMPARE=""
 fi
