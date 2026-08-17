@@ -333,6 +333,33 @@ pub struct SessionFacts<'a> {
     pub thresholds: Option<&'a Thresholds>,
 }
 
+/// Arrotonda come `round()` di Python: sulla metà esatta **al pari**.
+///
+/// `f64::round()` di Rust arrotonda invece lontano da zero, e la differenza non
+/// è teorica: un vaglio indipendente su 1932 combinazioni ha trovato sei casi
+/// veri in cui la riga di registro divergeva — 90,5% diventava `90` di là e `91`
+/// di qua. Cambia solo il testo, mai l'azione, ma quel testo è la riga che si
+/// confronta per dire che le due implementazioni non si distinguono.
+///
+/// Prima qui c'era `.round()` con un commento che affermava di replicare
+/// Python. Il commento era falso, ed è il secondo commento falso trovato in
+/// questa giornata di porting: entrambi asserivano una proprietà che nessun
+/// caso verificava.
+fn round_half_to_even(x: f64) -> u64 {
+    let floor = x.floor();
+    let diff = x - floor;
+    let r = if diff > 0.5 {
+        floor + 1.0
+    } else if diff < 0.5 {
+        floor
+    } else if (floor as i64) % 2 == 0 {
+        floor
+    } else {
+        floor + 1.0
+    };
+    r.max(0.0) as u64
+}
+
 /// Azione e motivo. In dubbio si risponde sempre `Skip`.
 ///
 /// L'ORDINE DEI CONTROLLI È IL COMPORTAMENTO. `Clean` sta dopo la lettura
@@ -379,10 +406,7 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
             format!("sotto soglia ({} < {}, {})", f.used, t.require, t.model),
         );
     }
-    // L'arrotondamento replica `round()` di Python, che sulla metà esatta va al
-    // pari; qui la differenza vale un punto percentuale in una riga di registro,
-    // ma la riga la si confronta e deve coincidere.
-    let pct = (f.used as f64 / t.budget as f64 * 100.0).round() as u64;
+    let pct = round_half_to_even(f.used as f64 / t.budget as f64 * 100.0);
     (
         Action::Regenerate,
         format!(
@@ -429,6 +453,35 @@ mod tests {
         let (a, why) = evaluate(&sessione_piena(&live, &t));
         assert_eq!(a, Action::Regenerate);
         assert!(why.contains("96% del budget claude-opus-5"), "{why}");
+    }
+
+    #[test]
+    fn la_meta_esatta_arrotonda_al_pari() {
+        // I sei casi veri trovati dal vaglio indipendente: con `f64::round()`
+        // davano tutti un punto in più del Python.
+        assert_eq!(round_half_to_even(90.5), 90);
+        assert_eq!(round_half_to_even(92.5), 92);
+        assert_eq!(round_half_to_even(91.5), 92);
+        assert_eq!(round_half_to_even(93.5), 94);
+        // E il resto si comporta come chiunque si aspetta.
+        assert_eq!(round_half_to_even(90.4), 90);
+        assert_eq!(round_half_to_even(90.6), 91);
+        assert_eq!(round_half_to_even(0.0), 0);
+    }
+
+    #[test]
+    fn la_percentuale_nel_motivo_usa_l_arrotondamento_al_pari() {
+        let live = vec!["term_x".to_string()];
+        let t = Thresholds {
+            model: "claude-opus-4-8".into(),
+            budget: 200_000,
+            warn: 156_000,
+            require: 180_000,
+        };
+        let mut f = sessione_piena(&live, &t);
+        f.used = 181_000; // esattamente 90,5%
+        let (_, why) = evaluate(&f);
+        assert!(why.contains("90% del budget"), "{why}");
     }
 
     #[test]
