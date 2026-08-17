@@ -33,6 +33,10 @@ pub struct HookInput {
     pub tool_name: Option<String>,
     #[serde(default)]
     pub tool_input: Option<serde_json::Value>,
+    /// Il file della conversazione. Arriva anche su PostToolUse, non solo su
+    /// Stop: è la fonte con cui si misura quanto è piena la sessione.
+    #[serde(default)]
+    pub transcript_path: Option<String>,
 }
 
 impl HookInput {

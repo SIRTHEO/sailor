@@ -88,17 +88,33 @@ pub fn body_says_handoff(text: &str) -> bool {
     body_marks().iter().all(|re| re.is_match(text))
 }
 
-/// I primi 400 byte, tagliati su un confine di carattere.
+/// Il blocco di frontmatter: da `---` al `---` che lo chiude.
 ///
-/// Il frontmatter si guarda solo in testa: `type: project` citato a metà corpo
-/// — in una consegna che parla di consegne, cioè il caso normale qui dentro —
-/// non deve valere come dichiarazione.
+/// Il frontmatter si guarda solo in testa — `type: project` citato a metà corpo,
+/// in una consegna che parla di consegne, non deve valere come dichiarazione —
+/// ma «in testa» è il blocco, non una finestra di byte. Qui c'erano i primi 400,
+/// ereditati dal Python, e il 17/08/2026 sono bastati a rendere il gancio cieco
+/// una seconda volta sullo stesso documento: cresciuto a 32 KB, con una
+/// `description` più lunga, `type: project` è finito al byte **419** e la
+/// consegna ha smesso di essere riconosciuta un'ora dopo che l'avevamo fatta
+/// riconoscere. Una soglia più alta avrebbe solo spostato il giorno del guasto.
+///
+/// Il tetto resta contro un file che comincia con `---` e non lo chiude più:
+/// senza, un documento senza frontmatter farebbe scorrere tutto il testo.
 fn front(text: &str) -> &str {
-    let mut end = 400.min(text.len());
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
+    const CAP: usize = 4096;
+    let Some(rest) = text.strip_prefix("---") else {
+        return "";
+    };
+    let mut fine = CAP.min(rest.len());
+    while fine > 0 && !rest.is_char_boundary(fine) {
+        fine -= 1;
     }
-    &text[..end]
+    let head = &rest[..fine];
+    match head.find("\n---") {
+        Some(chiusura) => &head[..chiusura],
+        None => head,
+    }
 }
 
 /// Il nome dice già che è una consegna?
@@ -157,6 +173,15 @@ pub fn is_handoff_doc(path: &str, text: Option<&str>) -> bool {
         return false;
     }
     is_dated_memory(path) || body_says_handoff(text)
+}
+
+/// La sessione è abbastanza avanti da star chiudendo, e non a metà lavoro?
+///
+/// `warn` è la soglia d'avviso (78% del budget), non quella d'obbligo (90%): le
+/// due si separano su casi veri, e il test accanto li porta entrambi. Un consumo
+/// a zero è «non misurato», non «vuoto», e non autorizza niente.
+pub fn is_full_enough(used: u64, warn: u64) -> bool {
+    used > 0 && used >= warn
 }
 
 /// L'ora sta nella finestra in cui è lecito aprire una sessione?
@@ -374,6 +399,8 @@ pub struct ArmFacts {
     pub pane_cap: usize,
     /// Un successore per questa sessione è già stato armato.
     pub already_armed: bool,
+    /// La sessione è davvero al capolinea, non a metà lavoro.
+    pub enough_used: bool,
 }
 
 /// L'ordine dei freni è comportamento, non stile.
@@ -390,6 +417,16 @@ pub fn decide(f: &ArmFacts) -> Outcome {
     }
     if !within_hours(f.hour) {
         return Outcome::StopQuiet("fuori-orario");
+    }
+    // SCRIVERE UNA CONSEGNA NON SIGNIFICA AVER FINITO. `/handoff` si invoca
+    // anche a metà lavoro, e fino al 17/08/2026 questo bastava ad aprire il
+    // successore: quel giorno, un'ora dopo aver reso il gancio capace di
+    // riconoscere la consegna, una sessione l'ha aggiornata, ha continuato a
+    // lavorare, e in `tautog` si sono trovate due sessioni vive sullo stesso
+    // albero. Il percorso Stop questo freno ce l'aveva già; qui mancava, ed era
+    // l'unica differenza fra i due inneschi.
+    if !f.enough_used {
+        return Outcome::StopQuiet("non-piena");
     }
     // In dubbio non si frena: un conteggio che non si è potuto leggere deve
     // smettere di dare il suo parere, non spegnere il meccanismo.
@@ -494,6 +531,30 @@ mod tests {
         let p = "/p/memory/note-sui-ganci.md";
         let corpo = format!("{}\n\n## Stato\n\nx\n\n## Prossimi passi\n\ny\n", "-".repeat(420));
         assert!(!is_handoff_doc(p, Some(&format!("---\ntype: reference\n---{corpo}\ntype: project\n"))));
+    }
+
+    #[test]
+    fn un_frontmatter_lungo_resta_frontmatter() {
+        // Il caso vero del 17/08/2026: la `description` cresce, `type: project`
+        // scivola al byte 419, e con la finestra fissa da 400 la consegna
+        // smetteva di essere riconosciuta — un'ora dopo averla fatta riconoscere.
+        let p = "/p/memory/sezioni-cv-campi-separati-o-testo.md";
+        let testo = format!(
+            "---\nname: x\ndescription: \"{}\"\nmetadata:\n  node_type: memory\n  type: project\n---\n\n## Stato\n\nx\n\n## Prossimi passi\n\ny\n",
+            "parole ".repeat(60)
+        );
+        assert!(testo.find("type: project").unwrap() > 400, "il caso non riproduce");
+        assert!(is_handoff_doc(p, Some(&testo)));
+    }
+
+    #[test]
+    fn senza_frontmatter_non_si_dichiara_niente() {
+        let p = "/p/memory/nudo.md";
+        // Nessun `---` in apertura: non c'è nessun blocco da leggere.
+        assert!(!is_handoff_doc(p, Some("type: project\n\n## Stato\n\n## Prossimi passi\n")));
+        // Aperto e mai chiuso: si legge fino al tetto e non si scorre il file.
+        let mai_chiuso = format!("---\n{}\ntype: project\n", "x\n".repeat(4000));
+        assert!(!is_handoff_doc(p, Some(&mai_chiuso)));
     }
 
     #[test]
@@ -642,8 +703,62 @@ mod tests {
             session_cap: 8,
             panes_here: Some(1),
             pane_cap: 2,
+            // Il valore neutro è «piena»: questi casi provano gli ALTRI freni, e
+            // col default `false` si sarebbero fermati tutti qui — verdi per il
+            // motivo sbagliato, che è il modo in cui una batteria smette di
+            // guardare.
+            enough_used: true,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn una_consegna_scritta_a_meta_lavoro_non_arma() {
+        // Il difetto del 17/08/2026: `/handoff` si invoca anche a metà, e la
+        // sola scrittura apriva il successore accanto a chi stava lavorando.
+        let f = ArmFacts { enough_used: false, ..via_libera() };
+        assert_eq!(decide(&f), Outcome::StopQuiet("non-piena"));
+    }
+
+    #[test]
+    fn il_freno_della_pienezza_viene_prima_dei_tetti() {
+        // Se il consumo si valutasse dopo, una sessione a metà lavoro in un
+        // albero affollato riceverebbe il messaggio sbagliato — e soprattutto
+        // il freno che scrive il marcatore brucerebbe l'arma di quella sessione.
+        let f = ArmFacts {
+            enough_used: false,
+            panes_here: Some(9),
+            live_sessions: Some(99),
+            ..via_libera()
+        };
+        assert_eq!(decide(&f), Outcome::StopQuiet("non-piena"));
+    }
+
+    #[test]
+    fn una_sessione_piena_passa_come_prima() {
+        assert_eq!(decide(&via_libera()), Outcome::Open);
+    }
+
+    /// I due casi veri del 17/08/2026, che scelgono la soglia.
+    ///
+    /// Budget Opus 5: 500k, avviso 390k, obbligo 450k. Con la soglia d'obbligo
+    /// il primo caso sarebbe muto — ed è quello per cui questo meccanismo
+    /// esiste, la sessione che doveva passare il testimone e non l'ha passato.
+    #[test]
+    fn la_soglia_separa_chi_chiude_da_chi_e_a_meta() {
+        let (avviso, obbligo) = (390_000, 450_000);
+        // La sessione all'88% che quel giorno rimase a terra: deve armare.
+        assert!(is_full_enough(440_000, avviso));
+        assert!(!is_full_enough(440_000, obbligo), "con l'obbligo resterebbe ferma");
+        // `tautog` alle 16:28, consegna scritta a metà lavoro: non deve armare.
+        assert!(!is_full_enough(352_000, avviso));
+        // Non misurato non è vuoto: senza misura non si apre niente.
+        assert!(!is_full_enough(0, avviso));
+        // E se anche la soglia mancasse, «zero su zero» non è una sessione
+        // piena. Senza questo caso il `used > 0` sarebbe ridondante — con una
+        // soglia positiva nessun consumo nullo la raggiunge — e un mutante che
+        // lo toglie passerebbe la batteria: verificato il 17/08/2026.
+        assert!(!is_full_enough(0, 0));
     }
 
     #[test]

@@ -163,6 +163,27 @@ def main():
     return 1 if (diverged or diverged_e2e) else 0
 
 
+def scratch_transcript(path, tokens=520_000, model='claude-opus-5'):
+    """Un transcript minimo che misura `tokens` in contesto.
+
+    Due righe: una qualunque, e l'ultimo turno dell'assistente con la `usage`
+    che la misura somma — `input` più le due voci di cache. Il modello serve a
+    scegliere il budget, e quindi la soglia: senza, si ricade sul budget
+    prudente e la soglia non è quella che si vuole esercitare.
+    """
+    quota = tokens // 3
+    righe = [
+        {'type': 'user', 'message': {'role': 'user', 'content': 'x'}},
+        {'type': 'assistant', 'message': {
+            'role': 'assistant', 'model': model,
+            'usage': {'input_tokens': tokens - 2 * quota,
+                      'cache_read_input_tokens': quota,
+                      'cache_creation_input_tokens': quota}}},
+    ]
+    path.write_text('\n'.join(json.dumps(r) for r in righe) + '\n', encoding='utf8')
+    return path
+
+
 def compare_end_to_end():
     """The whole hook, both implementations fed the identical payload.
 
@@ -203,14 +224,53 @@ def compare_end_to_end():
         'tool_input': {'file_path': '/tmp/qualcosa.txt'},
     })
 
+    # Il transcript di una sessione vera oltre la soglia d'avviso, per esercitare
+    # il freno della pienezza dal lato che lo apre.
+    #
+    # IL TRANSCRIPT SI COSTRUISCE, non si pesca fra quelli veri, e i due modi
+    # sbagliati provati il 17/08/2026 lo spiegano meglio di una regola. Preso il
+    # file più GROSSO: 257 MB, e misurava 228k token — il contesto è quello
+    # dell'ultimo messaggio, non la somma di ciò che è passato. Preso quello con
+    # il memo più ALTO (518k): la misura si rifà dalla coda, e in una sessione
+    # ormai chiusa l'ultimo turno non porta più `usage`, quindi zero. In
+    # entrambi i casi il caso si fermava sul freno che doveva superare: verde, e
+    # cieco.
+    #
+    # Un file di due righe, invece, dice esattamente quello che serve: l'ultimo
+    # turno con `usage` è quello che la misura legge, e i tre campi che somma
+    # sono questi.
+    finto = scratch_transcript(doc.parent / 'transcript-pieno.jsonl')
+    pieni = [finto]
+    payload_pieno = json.dumps({
+        'session_id': 'prova-e2e-0000',
+        'cwd': str(Path.cwd()),
+        'tool_name': 'Write',
+        'transcript_path': str(pieni[0]),
+        'tool_input': {'file_path': str(doc)},
+    }) if pieni else None
+
+    # `CONSEGNA_ANCHE_A_META` è il valore neutro per i casi che provano i TETTI:
+    # dal 17/08/2026 il freno della pienezza sta PRIMA di loro, e senza un
+    # transcript nel payload si fermerebbero tutti lì — d'accordo fra loro, ma
+    # sul freno sbagliato. È lo stesso inganno del registro muto: due
+    # implementazioni che si fermano presto vanno d'accordo per costruzione.
+    meta = {'CONSEGNA_ANCHE_A_META': '1'}
     cases = [
-        ('albero affollato', payload, {'CONSEGNA_TETTO_PANNELLI': '0'}),
-        ('troppe sessioni', payload, {'CONSEGNA_TETTO_SESSIONI': '0'}),
-        ('seconda generazione', payload, {'CLAUDE_NATO_DA_CONSEGNA': '1'}),
-        ('non e una consegna', not_a_doc, {'CONSEGNA_TETTO_PANNELLI': '0'}),
-        ('cwd dichiarata altrove', payload_altrove, {'CONSEGNA_TETTO_PANNELLI': '0'}),
-        ('cwd altrove, tetto sessioni', payload_altrove, {'CONSEGNA_TETTO_SESSIONI': '0'}),
+        ('albero affollato', payload, {**meta, 'CONSEGNA_TETTO_PANNELLI': '0'}),
+        ('troppe sessioni', payload, {**meta, 'CONSEGNA_TETTO_SESSIONI': '0'}),
+        ('seconda generazione', payload, {**meta, 'CLAUDE_NATO_DA_CONSEGNA': '1'}),
+        ('non e una consegna', not_a_doc, {**meta, 'CONSEGNA_TETTO_PANNELLI': '0'}),
+        ('cwd dichiarata altrove', payload_altrove, {**meta, 'CONSEGNA_TETTO_PANNELLI': '0'}),
+        ('cwd altrove, tetto sessioni', payload_altrove, {**meta, 'CONSEGNA_TETTO_SESSIONI': '0'}),
+        # I due versi del freno nuovo. Senza transcript non si sa quanto sia
+        # piena la sessione, e chi non si sa pieno non si sostituisce.
+        ('consegna scritta a meta lavoro', payload, {'CONSEGNA_TETTO_PANNELLI': '0'}),
     ]
+    if payload_pieno:
+        # Sessione piena: il freno della pienezza si apre, e ci si ferma sul
+        # tetto successivo — così il caso discrimina senza aprire una scheda.
+        cases.append(('sessione piena, si ferma dopo',
+                      payload_pieno, {'CONSEGNA_TETTO_PANNELLI': '0'}))
     # L'albero con più pannelli fra quelli aperti: è lì che le due letture della
     # cwd danno numeri diversi, e quindi l'unico posto da cui il confronto vede
     # la differenza.
