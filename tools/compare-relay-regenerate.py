@@ -63,7 +63,11 @@ case "$*" in
   *"terminal list"*)
     if [ -n "$ORCA_LIST_FILE" ]; then cat "$ORCA_LIST_FILE"
     else printf '%s' "$ORCA_LIST_REPLY"; fi ;;
-  *"terminal create"*) printf '%s' "$ORCA_CREATE_REPLY"; exit $ORCA_CREATE_RC ;;
+  *"terminal create"*)
+    # Il successore che parte e raccoglie il mandato: e' cio' che fa
+    # `register-session.py` all'avvio, qui al momento in cui accadrebbe.
+    [ -n "$ORCA_PICKUP_FILE" ] && rm -f "$ORCA_PICKUP_FILE"
+    printf '%s' "$ORCA_CREATE_REPLY"; exit $ORCA_CREATE_RC ;;
   *"terminal wait"*)   exit $ORCA_WAIT_RC ;;
   *"terminal send"*)   exit $ORCA_SEND_RC ;;
 esac
@@ -119,6 +123,8 @@ def build_home(root: Path, case):
 
 
 def run_side(which, case, home, log):
+    # `home` serve anche a comporre il percorso del segnale: il caso «il
+    # successore raccoglie» si simula cancellandolo nell'istante giusto.
     env = {
         **os.environ,
         'HOME': str(home),
@@ -130,6 +136,13 @@ def run_side(which, case, home, log):
         'ORCA_CREATE_RC': str(case.get('create_rc', 0)),
         'ORCA_WAIT_RC': str(case.get('wait_rc', 0)),
         'ORCA_SEND_RC': str(case.get('send_rc', 0)),
+        # L'attesa vale 25 secondi in produzione: qui a zero, o un confronto da
+        # trentaquattro scenari durerebbe piu' di dieci minuti per parte.
+        'RELAY_PICKUP_TIMEOUT_SEC': str(case.get('pickup_timeout', 0)),
+        'ORCA_PICKUP_FILE': (
+            str(home / '.claude' / 'state' / 'riprendi-da' /
+                (case['worktree'].replace('/', '_') + '.txt'))
+            if case.get('pickup') else ''),
     }
     if which == 'rust':
         cmd = [str(BIN), 'relay']
@@ -363,6 +376,9 @@ def field_cases(pane_list):
         # L'ordine a voce che non arriva: e' il caso reale su **ogni**
         # rigenerazione mai fatta, e finche' gli esiti venivano scartati non
         # lasciava traccia da nessuna delle due parti.
+        ('CAMPO: piena, e il successore raccoglie il mandato',
+         {**base, 'records': [piena], 'markers': consegnata,
+          'worktree': piena['worktree_id'], 'pickup': True, 'pickup_timeout': 5}),
         ('CAMPO: piena, ma l ordine a voce non arriva',
          {**base, 'records': [piena], 'markers': consegnata, 'send_rc': 1}),
         ('CAMPO: piena, a secco',

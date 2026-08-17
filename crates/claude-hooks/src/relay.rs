@@ -11,7 +11,8 @@
 //!   2. write riprendi-da/<worktree>   il segnale di ripresa, prima di tutto
 //!   3. create il successore            PRIMA di chiudere: il worktree non resta
 //!                                      mai senza sessione
-//!   4. wait + send al successore       l'ordine di riprendere
+//!   4. attendi che il successore         la prova che il mandato è
+//!      raccolga il segnale               arrivato; il send è il ripiego
 //!   5. close la vecchia, pulisci       solo ORA, e solo se il resto è riuscito
 //! ```
 //!
@@ -37,6 +38,21 @@ use std::process::Command;
 const COOLDOWN_SEC: u64 = 300;
 /// Se non è idle entro quattro secondi sta lavorando: si riprova dopo.
 const IDLE_TIMEOUT_MS: u64 = 4000;
+/// Quanto si aspetta che il successore raccolga il mandato dal segnale.
+///
+/// Sovrascrivibile con `RELAY_PICKUP_TIMEOUT_SEC`, e non per gusto: le prove e
+/// lo strumento di equivalenza rigenerano una decina di volte a giro, e a
+/// venticinque secondi l'una il confronto durerebbe più di dieci minuti — cioè
+/// non lo lancerebbe più nessuno.
+const PICKUP_TIMEOUT_SEC: u64 = 25;
+const PICKUP_POLL_MS: u64 = 250;
+
+fn pickup_timeout() -> u64 {
+    std::env::var("RELAY_PICKUP_TIMEOUT_SEC")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(PICKUP_TIMEOUT_SEC)
+}
 /// Oltre questa dimensione il registro si tronca. La memoria «i log in
 /// background crescono senza limite» è un precedente: 5 GB in sette minuti.
 const LOG_MAX_BYTES: u64 = 1_000_000;
@@ -328,14 +344,15 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
     // 2. lascia il segnale di ripresa per il successore
     let hpath = latest_handoff(&rec.cwd);
     let _ = fs::create_dir_all(resume_dir());
-    let _ = fs::write(
+    let segnale_scritto = fs::write(
         resume_dir().join(format!("{}.txt", state_key(&rec.worktree))),
         if hpath.is_empty() {
             "ultimo handoff in memory"
         } else {
             &hpath
         },
-    );
+    )
+    .is_ok();
 
     // 3. CREA il successore PRIMA di chiudere
     let selector = if rec.cwd.is_empty() {
@@ -374,30 +391,33 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
         return;
     }
 
-    // 4. attendi che il successore sia su, poi mandagli l'ordine di ripresa
+    // 4. aspetta la PROVA che il successore ha ricevuto il mandato
     //
-    // QUESTO CANALE NON HA MAI CONSEGNATO NIENTE. Misurato il 17/08/2026 su
-    // tutti i transcript della macchina: la frase compare in cinque file, e in
-    // tutti e cinque perché quella sessione stava leggendo questo sorgente.
-    // Come messaggio ricevuto: **zero**, su ogni rigenerazione mai fatta. Il
-    // sospetto è che `tui-idle` diventi vero quando il processo è partito ma la
-    // TUI non accetta ancora input, e il testo cada nel vuoto.
+    // `tui-idle` NON DICE «PRONTO», dice «non sta scrivendo adesso» — vero anche
+    // di un processo che non è ancora partito. Misurato il 17/08/2026 creando un
+    // terminale e interrogandolo subito: `satisfied: true` dopo **0,1 secondi**,
+    // con Claude Code ancora in avvio. Il `send` che segue arriva in
+    // un'interfaccia che non c'è e il testo si perde: zero mandati consegnati su
+    // tutte le rigenerazioni mai fatte, e su tre prove su tre. Il `send` in sé
+    // funziona — provato su una shell, il comando è arrivato ed è stato
+    // eseguito: il difetto è il momento, non il canale.
     //
-    // Resta finché non si decide di toglierlo, ma smette di tacere: gli esiti
-    // venivano scartati entrambi, e un canale che fallisce in silenzio non si
-    // distingue da uno che funziona. Il mandato vero viaggia per `riprendi-da/`.
-    let (rc_wait, _) = orca(&[
-        "terminal", "wait", "--terminal", &new_handle, "--for", "tui-idle",
-        "--timeout-ms", "15000",
-    ]);
-    let (rc_send, _) = orca(&[
-        "terminal", "send", "--terminal", &new_handle, "--text",
-        "riprendi dall'ultimo handoff", "--enter",
-    ]);
-    if rc_wait != 0 || rc_send != 0 {
+    // Il segnale giusto c'è già: `register-session.py` **consuma** il file
+    // `riprendi-da/<worktree>.txt` quando la sessione nuova parte. Se sparisce,
+    // il successore è su e ha in mano il mandato. Il `send` resta come ripiego.
+    if wait_for_pickup(&rec.worktree, segnale_scritto) {
         log_line(&format!(
-            "sess={sess}: il successore non ha ricevuto l'ordine a voce \
-             (wait rc={rc_wait}, send rc={rc_send}); resta il segnale in riprendi-da"
+            "sess={sess}: il successore ha raccolto il mandato dal segnale"
+        ));
+    } else {
+        let (rc_send, _) = orca(&[
+            "terminal", "send", "--terminal", &new_handle, "--text",
+            "riprendi dall'ultimo handoff", "--enter",
+        ]);
+        log_line(&format!(
+            "sess={sess}: il segnale non e' stato raccolto entro \
+             {}s, provo a voce (send rc={rc_send})",
+            pickup_timeout()
         ));
     }
 
@@ -416,6 +436,37 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
         rec.handle,
         if hpath.is_empty() { "-" } else { &hpath }
     ));
+}
+
+/// True se il successore ha raccolto il segnale di ripresa, entro il tempo.
+///
+/// È l'unica conferma vera che il mandato sia arrivato: `register-session.py`
+/// cancella `riprendi-da/<worktree>.txt` **dopo** averlo letto e iniettato. Un
+/// `send` riuscito non prova niente — il testo può arrivare a un terminale che
+/// non ha ancora un'interfaccia dove metterlo, ed è quello che succedeva.
+///
+/// `scritto` viene da chi il segnale l'ha scritto, e non si deduce guardando se
+/// il file c'è: un successore svelto può averlo già raccolto prima che si arrivi
+/// qui, e «non c'è» significherebbe allora **riuscito**, non «mai scritto». Le
+/// due cose portano a righe di registro opposte, e la prima stesura le
+/// confondeva — trovato da un caso, non a mente.
+fn wait_for_pickup(worktree: &str, scritto: bool) -> bool {
+    if !scritto {
+        return false;
+    }
+    let signal = resume_dir().join(format!("{}.txt", state_key(worktree)));
+    if !signal.exists() {
+        return true; // già raccolto: il successore è stato più svelto di noi
+    }
+    let scadenza =
+        std::time::Instant::now() + std::time::Duration::from_secs(pickup_timeout());
+    while std::time::Instant::now() < scadenza {
+        if !signal.exists() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(PICKUP_POLL_MS));
+    }
+    false
 }
 
 /// Chiude la vecchia senza aprirne un'altra: il successore c'è già.
@@ -711,6 +762,40 @@ mod tests {
     }
 
     #[test]
+    fn quando_il_successore_raccoglie_il_mandato_non_si_digita_niente() {
+        let _home = HomeIsolata::nuova("mandato-raccolto");
+        // È il caso buono, e va provato perché è quello che il 17/08/2026 non
+        // succedeva mai: la sessione nuova parte, `register-session.py` legge
+        // `riprendi-da/<worktree>.txt` e lo cancella. Sparito il file, il
+        // mandato è arrivato — e digitare in una TUI diventa inutile.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "5");
+        let segnale = resume_dir().join(format!("{}.txt", state_key("wt-prova")));
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"create") {
+                // Il successore parte e raccoglie: è ciò che fa il gancio di
+                // avvio, qui al momento giusto invece che da un altro processo.
+                let _ = fs::remove_file(&segnale);
+                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
+        regenerate(&record_di_prova(), "", false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            !seq.iter().any(|c| c.contains("send")),
+            "ha digitato l'ordine a un successore che l'aveva già: {seq:?}"
+        );
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("ha raccolto il mandato"), "{log}");
+        assert!(log.contains("RIGENERATA"), "{log}");
+    }
+
+    #[test]
     fn un_ordine_di_ripresa_non_consegnato_lascia_una_riga() {
         let _home = HomeIsolata::nuova("send-fallito");
         // Il caso vero: il create riesce, la vecchia si chiude, e l'ordine a
@@ -732,8 +817,8 @@ mod tests {
         )
         .unwrap_or_default();
         assert!(
-            log.contains("non ha ricevuto l'ordine a voce"),
-            "il fallimento del send non lascia traccia: {log}"
+            log.contains("non e' stato raccolto"),
+            "il ripiego a voce non lascia traccia: {log}"
         );
         // E la staffetta va avanti lo stesso: il mandato viaggia per disco.
         assert!(log.contains("RIGENERATA"), "{log}");
