@@ -283,7 +283,7 @@ pub enum ArmOutcome {
 /// registro non ha più una sola riga. Il freno più frequente — `troppe-sessioni`,
 /// 186 righe storiche — scattava invisibile. Nessun confronto se n'era accorto
 /// perché `compare-successor.py` non guardava il registro.
-pub fn arm(path: &str, session: &str, origin: &str) -> ArmOutcome {
+pub fn arm(path: &str, session: &str, origin: &str, enough_used: bool) -> ArmOutcome {
     // La cwd del PROCESSO, non quella dichiarata nel payload. Il Python usa
     // `os.getcwd()`, e le due coincidono quasi sempre — per questo il confronto
     // non se ne era accorto: i casi passavano la cwd vera in entrambi i campi.
@@ -304,6 +304,7 @@ pub fn arm(path: &str, session: &str, origin: &str) -> ArmOutcome {
         panes_here: panes_here(&cwd),
         pane_cap: cap("CONSEGNA_TETTO_PANNELLI", 2),
         already_armed: false,
+        enough_used,
     };
     // Il consumo si valuta per ultimo perché SCRIVE il marcatore: chiederlo prima
     // brucerebbe l'unica arma di questa sessione anche quando un altro freno
@@ -377,6 +378,44 @@ pub fn arm(path: &str, session: &str, origin: &str) -> ArmOutcome {
     ArmOutcome::Stop(message)
 }
 
+/// La sessione ha consumato abbastanza da essere davvero al capolinea?
+///
+/// Stessa misura del gancio Stop, dalla stessa fonte: il transcript arriva anche
+/// nel payload di PostToolUse — `consegna-obbligatoria` lo legge di lì e scrive
+/// `percento` e `token` veri nel registro, quindi è un fatto verificato e non
+/// un'assunzione sul formato dell'evento.
+///
+/// LA SOGLIA È QUELLA DELL'AVVISO (78%), NON QUELLA DELL'OBBLIGO (90%), e le due
+/// scelte si separano su casi veri del 17/08/2026. Con l'obbligo, la sessione
+/// all'88% che quel giorno doveva passare il testimone — e non l'ha passato,
+/// tanto che il successore l'ha avviato Theo a voce — sarebbe rimasta ferma:
+/// 440k contro 450k. Con l'avviso passa, mentre `tautog` alle 16:28, a 352k su
+/// 390k, resta ferma: ed era la consegna scritta a metà lavoro che ha aperto la
+/// seconda sessione sullo stesso albero. L'avviso è il punto in cui la
+/// configurazione stessa dice «è ora di consegnare»: una consegna scritta oltre
+/// quella riga sta davvero chiudendo, una scritta prima è un salvataggio.
+///
+/// Fail-safe verso il **basso**: senza transcript non si sa quanto sia piena, e
+/// una sessione che non si sa piena non si sostituisce. È il verso opposto agli
+/// altri freni — lì «non lo so» lascia passare, perché il dubbio riguardava una
+/// misura esterna. Qui riguarda la ragione stessa per cui si aprirebbe.
+///
+/// La valvola `CONSEGNA_ANCHE_A_META` serve a Theo per riprendere il vecchio
+/// comportamento su una consegna scritta apposta per passare il lavoro.
+fn session_is_full(input: &hook_io::HookInput, session: &str) -> bool {
+    if std::env::var("CONSEGNA_ANCHE_A_META").is_ok() {
+        return true;
+    }
+    let transcript = input.transcript_path.clone().unwrap_or_default();
+    if transcript.is_empty() {
+        return false;
+    }
+    let short: String = session.chars().take(8).collect();
+    let used = crate::handoff::context_used(&transcript, &short);
+    let t = crate::handoff::thresholds(&transcript);
+    guards::successor::is_full_enough(used, t.warn)
+}
+
 /// Il gancio vero: PostToolUse, decide e — se tutti i freni sono liberi — apre.
 ///
 /// Fail-open in ogni ramo: l'uscita è sempre 0. Un gancio che rompe la scrittura
@@ -392,7 +431,7 @@ pub fn run(input: &hook_io::HookInput) -> i32 {
         return 0;
     }
     let session = input.session_id.clone().unwrap_or_default();
-    match arm(path, &session, "scrittura") {
+    match arm(path, &session, "scrittura", session_is_full(input, &session)) {
         ArmOutcome::Stop(m) | ArmOutcome::Open(m) | ArmOutcome::Failed(m) => {
             // Un freno silenzioso resta silenzioso: stampare un JSON vuoto
             // riempirebbe di rumore ogni consegna scritta.
