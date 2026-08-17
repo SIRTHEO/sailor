@@ -19,7 +19,7 @@
 //! che voleva evitare, e lo stallo, a differenza della compattazione, non lascia
 //! niente su disco.
 
-use crate::handoff::{Thresholds, HANDOFF_TOOLS};
+use crate::handoff::{gruppi, percent, Thresholds, HANDOFF_TOOLS};
 
 /// Dopo tanti rifiuti consecutivi il gancio si arrende e lascia passare.
 pub const BLOCK_CAP: u32 = 6;
@@ -52,11 +52,6 @@ pub struct Facts<'a> {
     pub already_warned: bool,
     /// Quanti rifiuti sono già stati opposti.
     pub blocks_so_far: u32,
-}
-
-/// La percentuale del budget, arrotondata come `round()` di Python.
-fn percent(used: u64, budget: u64) -> u64 {
-    crate::handoff::round_half_to_even(used as f64 / budget as f64 * 100.0)
 }
 
 pub fn decide(f: &Facts) -> Decision {
@@ -124,23 +119,6 @@ pub fn decide(f: &Facts) -> Decision {
         gruppi(budget),
         f.tool
     ))
-}
-
-/// Il separatore delle migliaia di Python (`f'{n:,}'`): la virgola.
-///
-/// Non è cosmesi: questi due numeri compaiono nel testo che la sessione legge e
-/// che il confronto pretende identico byte a byte. `180000` e `180,000` sono due
-/// stringhe diverse.
-fn gruppi(n: u64) -> String {
-    let cifre = n.to_string();
-    let mut out = String::new();
-    for (i, c) in cifre.chars().enumerate() {
-        if i > 0 && (cifre.len() - i) % 3 == 0 {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
 }
 
 #[cfg(test)]
