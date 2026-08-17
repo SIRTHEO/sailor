@@ -7,13 +7,18 @@ cosmesi — è l'unica cosa che la sessione legge quando il gancio le impedisce 
 fermarsi, e un apostrofo o una virgola delle migliaia che cambiano lo rendono un
 messaggio diverso.
 
-COSA QUESTO CONFRONTO COPRE, E COSA NO. Copre l'estrazione dalla trascrizione
-(modello, soglie, token in contesto, ripartenze) e il giudizio. **Non** copre
-l'involucro: `arm_successor` e `farewell` aprono e chiudono schede vere, non sono
-ancora portati, e restano fuori dal perimetro finché il gancio registrato è il
-Python. Per questo i tre esiti che l'originale non distingue — passare, congedarsi,
-arrendersi — qui si confrontano solo come «uscita 0»: la distinzione la fa la
-batteria del modulo, e i mutanti in `tools/mutants.sh` la esercitano.
+COSA QUESTO CONFRONTO COPRE, E COSA NO. Copre il gancio intero: l'estrazione
+dalla trascrizione (modello, soglie, token in contesto, ripartenze), il giudizio,
+il codice d'uscita, il testo su stderr e **la riga di registro**. Resta fuori il
+solo ramo in cui si apre una scheda: là in fondo nasce una sessione Claude vera
+trenta secondi dopo, e uno strumento che genera sessioni non lo rilancia nessuno.
+
+DUE VARIABILI TOLTE A ENTRAMBI, e non è pulizia: `ORCA_TAB_ID` e
+`ORCA_TERMINAL_HANDLE` sono ciò da cui il congedo capisce qual è la propria
+scheda. Lasciarle vorrebbe dire far girare, dentro uno strumento di confronto, il
+codice che chiude il terminale da cui lo si è lanciato. Senza, `mine` resta vuoto
+e il congedo non può scattare — il suo ramo è provato dalla batteria, dove non
+costa niente.
 
 DUE HOME FINTE, UNA PER PARTE, come negli altri confronti: il Python **scrive**
 mentre decide — il contatore delle forzature, il memo della misura, quello delle
@@ -36,7 +41,7 @@ from pathlib import Path
 
 ROOT = Path.home() / '.claude'
 HOOK = ROOT / 'skills/hooks/handoff-on-stop.py'
-EXAMPLE = ROOT / 'rust/target/debug/examples/handoff_on_stop_cli'
+BINARY = ROOT / 'rust/target/release/claude-hooks'
 SCRATCH = Path(os.environ.get(
     'RELAY_SCRATCH',
     '/private/tmp/claude-501/-Users-theo-orca-general/scratchpad')) / 'handoff-on-stop'
@@ -75,6 +80,13 @@ def prepara(root: Path, caso):
     shutil.rmtree(root, ignore_errors=True)
     state = root / '.claude' / 'state'
     state.mkdir(parents=True)
+    # Senza questo collegamento il Python non trova `hook_log`, ripiega su una
+    # funzione muta e **sembra** d'accordo con un porto muto: due implementazioni
+    # silenziose vanno d'accordo per costruzione.
+    try:
+        (root / '.claude' / 'scripts').symlink_to(ROOT / 'scripts')
+    except OSError:
+        pass
     sess = caso['session'][:8]
 
     if caso.get('transcript_reale'):
@@ -98,51 +110,65 @@ def prepara(root: Path, caso):
     return percorso
 
 
-def valida(caso, percorso):
-    """La consegna è valida per l'originale? È ciò che il Rust riceve come dato.
+def ambiente(home, caso):
+    env = dict(os.environ)
+    env['HOME'] = str(home)
+    # Il freno di generazione ferma `arm` prima di ogni effetto: senza, il ramo
+    # della consegna valida aprirebbe una scheda per ogni caso che passa di lì.
+    env['CLAUDE_NATO_DA_CONSEGNA'] = '1'
+    env['RIPARTENZA_TETTO_COMPATT'] = str(caso.get('restart_cap', RESTART_CAP))
+    for chiave in ('ORCA_TAB_ID', 'ORCA_TERMINAL_HANDLE'):
+        env.pop(chiave, None)
+    return env
 
-    Si ricalcola qui con la stessa regola di `handoff_stale` invece di chiederlo
-    al Python: il porto deve ricevere i fatti, non l'opinione dell'oracolo su di
-    essi.
+
+def registro(home):
+    """L'ultima riga del registro, senza l'istante e senza la propria HOME.
+
+    Fa parte della risposta: un presidio che decide bene e non registra è
+    indistinguibile da uno rotto, ed è esattamente il difetto trovato oggi nel
+    porto del gancio gemello — dove il confronto guardava solo `stdout`.
     """
-    if not caso.get('consegna_fatta'):
-        return False
-    if 'consegna_a_ripartenze' not in caso:
-        return True          # riferimento fissato adesso: vale un giro
-    return caso.get('restarts', 0) <= caso['consegna_a_ripartenze']
+    p = home / '.claude' / 'state' / 'ganci.jsonl'
+    if not p.exists():
+        return None
+    righe = [r for r in p.read_text(errors='replace').splitlines() if r.strip()]
+    if not righe:
+        return None
+    try:
+        o = json.loads(righe[-1])
+    except Exception:
+        return {'<riga illeggibile>': righe[-1]}
+    o.pop('t', None)
+    return {k: (v.replace(str(home), '<HOME>') if isinstance(v, str) else v)
+            for k, v in o.items()}
 
 
-def esegui_python(caso):
-    home = SCRATCH / 'home-python'
+def esegui(comando, home, caso):
+    """Esegue il gancio, eventualmente più volte sulla **stessa** HOME.
+
+    `ripeti` esiste per i fatti che vivono fra un turno e l'altro: il contatore
+    delle forzature si legge scrivendo, e con una HOME ricostruita a ogni caso
+    quel valore non viene mai riletto. Senza questi giri, un porto che non
+    incrementa mai il contatore — cioè che non si arrende mai, e incastra la
+    sessione — passa il confronto: misurato per mutazione il 17/08/2026.
+    """
     percorso = prepara(home, caso)
     payload = {'session_id': caso['session'], 'transcript_path': percorso,
                'stop_hook_active': caso.get('stop_hook_active', False)}
-    env = dict(os.environ)
-    env['HOME'] = str(home)
-    env['CLAUDE_NATO_DA_CONSEGNA'] = '1'
-    env['RIPARTENZA_TETTO_COMPATT'] = str(caso.get('restart_cap', RESTART_CAP))
-    p = subprocess.run([sys.executable, str(HOOK)], input=json.dumps(payload),
-                       capture_output=True, text=True, timeout=60,
-                       cwd=str(home), env=env)
-    return p.returncode, p.stderr
+    for _ in range(caso.get('ripeti', 1)):
+        p = subprocess.run(comando, input=json.dumps(payload),
+                           capture_output=True, text=True, timeout=120,
+                           cwd=str(home), env=ambiente(home, caso))
+    return p.returncode, p.stderr, registro(home)
+
+
+def esegui_python(caso):
+    return esegui([sys.executable, str(HOOK)], SCRATCH / 'home-python', caso)
 
 
 def esegui_rust(caso):
-    home = SCRATCH / 'home-rust'
-    percorso = prepara(home, caso)
-    payload = {
-        'transcript_path': percorso,
-        'stop_hook_active': caso.get('stop_hook_active', False),
-        'handoff_valid': valida(caso, percorso),
-        'restart_cap': caso.get('restart_cap', RESTART_CAP),
-        'stop_blocks_so_far': caso.get('blocchi', 0),
-    }
-    env = dict(os.environ)
-    env['HOME'] = str(home)
-    p = subprocess.run([str(EXAMPLE)], input=json.dumps(payload),
-                       capture_output=True, text=True, timeout=60,
-                       cwd=str(home), env=env)
-    return p.returncode, p.stderr
+    return esegui([str(BINARY), 'handoff-on-stop'], SCRATCH / 'home-rust', caso)
 
 
 def casi():
@@ -183,6 +209,11 @@ def casi():
         ('forzatura di troppo', {**base, 'used': 480_000, 'blocchi': STOP_CAP}),
         ('molto oltre il tetto delle forzature',
          {**base, 'used': 480_000, 'blocchi': 99}),
+        # I giri consecutivi: è l'unico modo di vedere il contatore, che si legge
+        # scrivendo e vale solo fra un turno e il successivo.
+        ('due forzature di seguito', {**base, 'used': 480_000, 'ripeti': 2}),
+        ('quattro di seguito: alla fine si arrende',
+         {**base, 'used': 480_000, 'ripeti': STOP_CAP + 1}),
         ('nessuna misura nella trascrizione', {**base, 'used': 0}),
         ('nessuna misura ma ripartenze oltre il tetto',
          {**base, 'used': 0, 'restarts': RESTART_CAP}),
@@ -199,8 +230,8 @@ def casi():
 
 
 def main():
-    if not EXAMPLE.exists():
-        print(f'manca {EXAMPLE}: cargo build --example handoff_on_stop_cli -p guards')
+    if not BINARY.exists():
+        print(f'manca {BINARY}: cargo build --release')
         return 1
     SCRATCH.mkdir(parents=True, exist_ok=True)
     divergenze = 0
@@ -222,6 +253,9 @@ def main():
         if attesa[1] != ottenuta[1]:
             print(f'      python: {attesa[1]!r}')
             print(f'      rust:   {ottenuta[1]!r}')
+        if attesa[2] != ottenuta[2]:
+            print(f'      registro python: {attesa[2]!r}')
+            print(f'      registro rust:   {ottenuta[2]!r}')
     print()
     if divergenze:
         print(f'{divergenze} divergenze su {len(casi())} casi')

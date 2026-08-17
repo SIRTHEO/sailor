@@ -18,13 +18,8 @@ use guards::handoff_required::{decide, Decision, Facts};
 use hook_io::journal::{self, Field};
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
 
-fn state_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".claude")
-        .join("state")
-}
+use crate::handoff::state_dir;
 
 /// Si era già avvisato — e se no, da adesso sì.
 ///
@@ -61,7 +56,7 @@ fn blocks_so_far(session: &str, increment: bool) -> u32 {
 /// presidi anche il giorno dopo, sei ripartenze più tardi — cioè proprio quando
 /// servivano. Si registra a quante ripartenze era stata scritta; se da allora la
 /// sessione è ripartita ancora, quel documento descrive un altro lavoro.
-fn handoff_valid(transcript: &str, session: &str) -> bool {
+pub(crate) fn handoff_valid(transcript: &str, session: &str) -> bool {
     if !state_dir().join(format!("consegna-fatta-{session}")).exists() {
         return false;
     }
@@ -88,7 +83,7 @@ fn handoff_valid(transcript: &str, session: &str) -> bool {
 /// è cresciuto di `MIN_GROWTH`. Una ripartenza in più fra due misure ritarda il
 /// presidio di un turno, che è il prezzo giusto per non rileggere centinaia di
 /// megabyte a ogni fine turno.
-fn restarts(transcript: &str, session: &str) -> u32 {
+pub(crate) fn restarts(transcript: &str, session: &str) -> u32 {
     let memo = state_dir().join(format!("consegna-ripartenze-{session}"));
     let size = fs::metadata(transcript).map(|m| m.len()).unwrap_or(0);
     if let Ok(text) = fs::read_to_string(&memo) {

@@ -31,6 +31,7 @@ FILES=(
   "crates/guards/src/handoff.rs"
   "crates/guards/src/handoff_on_stop.rs"
   "crates/claude-hooks/src/successor.rs"
+  "crates/claude-hooks/src/handoff_on_stop.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -496,7 +497,7 @@ fi
 # il porto, non dopo.
 if [ "$WHICH" = "handoff-on-stop-confronto" ]; then
   echo "mutanti su handoff_on_stop.rs, oracolo = confronto col Python:"
-  ORACOLO="cargo build --example handoff_on_stop_cli -p guards >/dev/null 2>&1 && python3 tools/compare-handoff-on-stop.py"
+  ORACOLO="cargo build --release >/dev/null 2>&1 && python3 tools/compare-handoff-on-stop.py"
   S="crates/guards/src/handoff_on_stop.rs"
 
   mutate "anti-loop primario rimosso" "$S" \
@@ -533,6 +534,47 @@ if [ "$WHICH" = "handoff-on-stop-confronto" ]; then
     's = s.replace("        return Decision::Settle;", "        return Decision::Pass;", 1)'
 
   ORACOLO=""
+fi
+
+# ── handoff-on-stop, l'involucro ────────────────────────────────────────────
+# Il gancio intero contro il Python: uscita, testo su stderr e riga di registro.
+if [ "$WHICH" = "handoff-on-stop-involucro" ]; then
+  echo "mutanti su claude-hooks/handoff_on_stop.rs (l'involucro dello Stop):"
+  COMPARE="compare-handoff-on-stop.py"
+  I="crates/claude-hooks/src/handoff_on_stop.rs"
+
+  # Il presidio decide e non lascia traccia: e il difetto trovato oggi nel
+  # gemello, rimesso qui per vedere se questo confronto lo prende.
+  mutate "registro del blocco rimosso" "$I" \
+    's = s.replace("            journal::record(\n                \"consegna-allo-stop\",\n                \"blocca\",", "            #[allow(unused)] let _skip = (\n                \"consegna-allo-stop\",\n                \"blocca\",", 1)'
+
+  # La resa smette di dirlo: da fuori, arrendersi e non essere mai arrivati li
+  # diventano la stessa cosa.
+  mutate "registro della resa rimosso" "$I" \
+    's = s.replace("            journal::record(\n                \"consegna-allo-stop\",\n                \"passa\",", "            #[allow(unused)] let _skip = (\n                \"consegna-allo-stop\",\n                \"passa\",", 1)'
+
+  # Il contatore non avanza: il gancio non si arrende mai, e la sessione resta
+  # incastrata a forzare per sempre.
+  mutate "contatore delle forzature fermo" "$I" \
+    's = s.replace("            let n = stop_blocks(&session, true);\n            journal::record(\n                \"consegna-allo-stop\",\n                \"blocca\",", "            let n = stop_blocks(&session, false);\n            journal::record(\n                \"consegna-allo-stop\",\n                \"blocca\",", 1)'
+
+  # Un numero fuori di uno nella riga del blocco: si vede solo confrontando il
+  # registro, mai l uscita.
+  mutate "blocchi contati senza se stesso" "$I" \
+    's = s.replace("(\"blocchi\", Field::Number((n + 1) as i64)),", "(\"blocchi\", Field::Number(n as i64)),", 1)'
+
+  # Il tetto delle ripartenze torna costante: alzarlo dall ambiente non serve
+  # piu a niente, ed e la valvola che i due ganci condividono.
+  mutate "tetto delle ripartenze non piu dall ambiente" "$I" \
+    's = s.replace("    let restart_cap = std::env::var(\"RIPARTENZA_TETTO_COMPATT\")\n        .ok()\n        .and_then(|v| v.parse::<u32>().ok())\n        .unwrap_or(RESTART_CAP_DEFAULT);", "    let restart_cap = RESTART_CAP_DEFAULT;", 1)'
+
+  # Il contatore si incrementa gia mentre si raccolgono i fatti: ogni fine turno
+  # sotto soglia consuma una forzatura, e dopo tre il presidio e disarmato senza
+  # aver mai parlato.
+  mutate "contatore incrementato troppo presto" "$I" \
+    's = s.replace("stop_blocks_so_far: stop_blocks(&session, false),", "stop_blocks_so_far: stop_blocks(&session, true),", 1)'
+
+  COMPARE=""
 fi
 
 echo

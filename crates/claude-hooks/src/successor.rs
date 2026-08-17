@@ -61,11 +61,7 @@ pub fn live_sessions() -> Option<usize> {
     v.as_array().map(|a| a.len())
 }
 
-fn state_dir() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".claude")
-        .join("state")
-}
+use crate::handoff::state_dir;
 
 /// Il marcatore «per questa sessione un successore c'è già», e se c'era.
 ///
