@@ -19,6 +19,8 @@ mod linear;
 mod live_rules;
 mod preflight;
 mod relay;
+#[cfg(test)]
+mod test_home;
 mod successor;
 mod relay_eval;
 
