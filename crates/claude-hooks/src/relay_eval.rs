@@ -74,6 +74,10 @@ pub fn run() -> i32 {
             Action::Regenerate => "rigenera",
             Action::Skip => "salta",
             Action::Clean => "pulisci",
+            // Nome nuovo su entrambi i lati: il Python lo prende con la stessa
+            // correzione, quindi il confronto resta un confronto e non una
+            // traduzione che nasconde la differenza.
+            Action::Retire => "congeda",
         };
         println!(
             "{}",
