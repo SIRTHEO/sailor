@@ -7,6 +7,7 @@
 
 pub mod cd_guard;
 pub mod code_language;
+pub mod duplication;
 pub mod hooks_off;
 pub mod language;
 pub mod linear_readonly;
