@@ -393,6 +393,42 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
     ));
 }
 
+/// Chiude la vecchia senza aprirne un'altra: il successore c'è già.
+///
+/// Stessa prudenza di `regenerate` sul primo passo — si attende che la sessione
+/// sia ferma, e se non lo è si rimanda. Troncare un turno a metà costa il lavoro
+/// in corso, e qui il rischio è più concreto che altrove: la sessione da
+/// chiudere è per definizione una che ha consegnato **e ha continuato a
+/// lavorare**, altrimenti la staffetta l'avrebbe già rigenerata.
+///
+/// Non si scrive il segnale di ripresa: il successore è già partito col suo
+/// mandato, e riscriverlo adesso non lo raggiunge.
+fn retire(rec: &Record, orca: OrcaFn) {
+    let sess = &rec.session;
+    let timeout = IDLE_TIMEOUT_MS.to_string();
+    let (rc, _) = orca(&[
+        "terminal", "wait", "--terminal", &rec.handle, "--for", "tui-idle",
+        "--timeout-ms", &timeout,
+    ]);
+    if rc != 0 {
+        log_line(&format!("sess={sess}: non idle (rc={rc}), rimando la chiusura"));
+        return;
+    }
+    orca(&["terminal", "close", "--terminal", &rec.handle]);
+    let _ = fs::remove_file(live_dir().join(format!("{sess}.json")));
+    for family in [
+        "consegna-fatta", "consegna-blocchi", "consegna-stop",
+        "consegna-avvisata", "consegna-misura",
+    ] {
+        let _ = fs::remove_file(state_dir().join(format!("{family}-{sess}")));
+    }
+    set_cooldown(&rec.worktree);
+    log_line(&format!(
+        "CONGEDATA sess={sess}: chiusa {} senza aprirne un'altra",
+        rec.handle
+    ));
+}
+
 /// Taglia a `n` **caratteri**, come lo slicing di Python su una stringa.
 fn cut(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
@@ -501,6 +537,17 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                     .map(|t| t.title.clone())
                     .unwrap_or_default();
                 regenerate(&rec, &title, dry_run, orca);
+            }
+            Action::Retire => {
+                log_line(&format!("congedo sess={}: {reason}", rec.session));
+                if dry_run {
+                    log_line(&format!(
+                        "[SECCO] chiuderei sess={} handle={} senza aprirne un'altra",
+                        rec.session, rec.handle
+                    ));
+                } else {
+                    retire(&rec, orca);
+                }
             }
             // 'salta': silenzio, o il registro si riempie a ogni giro.
             Action::Skip => {}
