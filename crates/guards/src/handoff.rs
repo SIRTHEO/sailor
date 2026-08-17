@@ -364,7 +364,7 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
             format!("successore gia' armato e vivo ({short})"),
         );
     }
-    if false {
+    if !f.handoff_done {
         return (Action::Skip, "handoff non ancora fatto".into());
     }
     if !f.transcript_exists {

@@ -337,6 +337,13 @@ fn run(which: &str) -> Result<i32, String> {
         // Il divieto su Linear: 813 righe di Python, il gancio più grande del
         // parco. Il giudizio sta in `guards::linear_readonly` ed è puro; la
         // parte con stato — permesso di Theo e registro — in `linear.rs`.
+        // Una consegna appena scritta arma la sessione dopo — una sola.
+        "handoff-arms-successor" => {
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            Ok(successor::run(&input))
+        }
         "linear-readonly" => {
             // Nessuna valvola d'ambiente: il mandato dell'11/08/2026 non
             // prevede che una variabile lo tolga. Le tre valvole che esistono

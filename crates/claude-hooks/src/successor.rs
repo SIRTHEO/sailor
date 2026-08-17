@@ -60,6 +60,214 @@ pub fn live_sessions() -> Option<usize> {
     v.as_array().map(|a| a.len())
 }
 
+fn state_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".claude")
+        .join("state")
+}
+
+/// Il marcatore «per questa sessione un successore c'è già», e se c'era.
+///
+/// Legge **e scrive** in una volta sola, come il Python: il freno si arma
+/// consumandosi. Separare le due cose introdurrebbe una finestra in cui due
+/// eventi ravvicinati passano entrambi, ed è esattamente il caso che questo
+/// freno esiste per chiudere.
+fn already_armed(path: &str, session: &str) -> bool {
+    let marker = state_dir().join(format!(
+        "successore-armato-{}",
+        guards::successor::armed_fingerprint(path, session)
+    ));
+    if marker.exists() {
+        return true;
+    }
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(&marker, format!("{path}\n"));
+    false
+}
+
+/// Apre la scheda col mandato dentro, e la fa partire dopo un conto alla rovescia.
+///
+/// L'attesa non è una conferma da dare: è una via d'uscita per chi sta
+/// guardando. Prima qui c'era un Invio da premere, e nessuno lo premeva — 21
+/// schede armate e zero avviate. L'inerzia deve lavorare nel verso giusto.
+fn open_tab(path: &str) -> (bool, String) {
+    let wait_s = std::env::var("CONSEGNA_ATTESA_S")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(30);
+    // Il mandato entra in una stringa fra apici singoli della shell: l'unico
+    // carattere da neutralizzare è l'apice stesso.
+    let text = mandate(path).replace('\'', r"'\''");
+    let command = format!(
+        "printf '%s\\n\\n' '{text}'; \
+         printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
+         sleep {wait_s}; exec claude '{text}'"
+    );
+    let out = std::process::Command::new("orca")
+        .args([
+            "terminal",
+            "create",
+            "--command",
+            &command,
+            "--title",
+            "consegna raccolta (parte da sola)",
+            "--json",
+        ])
+        // La figlia eredita il marchio di generazione: è il freno che le impedisce
+        // di armarne un'altra, e l'unico che sopravvive al cambio di processo.
+        .env(guards::successor::GENERATION_ENV, "1")
+        .output();
+    match out {
+        Ok(o) => {
+            let text = if o.stdout.is_empty() {
+                String::from_utf8_lossy(&o.stderr).into_owned()
+            } else {
+                String::from_utf8_lossy(&o.stdout).into_owned()
+            };
+            // 600 e non 200: la `tabId` arriva dopo l'handle nella risposta di
+            // Orca, e a 200 caratteri veniva tagliata a metà — l'handle da solo
+            // scade al primo riattacco e il marcatore diventa inservibile.
+            (o.status.success(), text.chars().take(600).collect())
+        }
+        Err(e) => (false, e.to_string().chars().take(600).collect()),
+    }
+}
+
+/// Lascia detto QUALE scheda prosegue, perché il congedo sia verificabile.
+///
+/// Si registra la `tabId` accanto all'handle: l'handle invecchia al primo
+/// riattacco del pannello e chi legge il marcatore conclude «morto» aprendone un
+/// altro. Misurato il 17/08/2026 — il marcatore citava un handle assente dagli
+/// undici vivi mentre la sua tab lavorava.
+fn note_successor(session: &str, detail: &str) {
+    let grab = |re: &regex::Regex| -> String {
+        re.captures(detail)
+            .and_then(|c| c.get(1))
+            .map(|m| m.as_str().to_string())
+            .unwrap_or_default()
+    };
+    let handle = grab(&regex::Regex::new(r"\b(term_[0-9a-f-]{8,})").unwrap());
+    let tab = grab(&regex::Regex::new(r#""tabId"\s*:\s*"([0-9a-f-]{8,})""#).unwrap());
+    let safe: String = session
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(64)
+        .collect();
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(
+        state_dir().join(format!("successore-di-{safe}")),
+        hook_io::python_json::dumps_unicode(&serde_json::json!({
+            "handle": handle,
+            "tabId": tab,
+            // Ora locale, non UTC: il Python scrive `datetime.now().isoformat()`,
+            // e un marcatore due ore indietro sarebbe formalmente valido e
+            // sbagliato — lo stesso inganno già visto nel registro Linear.
+            "quando": hook_io::local_time::now_local_iso8601(),
+        })),
+    );
+}
+
+fn cap(var: &str, default: usize) -> usize {
+    std::env::var(var)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
+/// L'ora locale adesso, dalla stessa fonte che data i registri.
+fn hour_now() -> u32 {
+    // `now_local_iso8601` dà `2026-08-17T14:05:12+0200`: l'ora sono due cifre a
+    // offset fisso. Estrarle di lì evita una seconda strada verso il fuso —
+    // e due strade verso il fuso divergono, come è già successo altrove.
+    hook_io::local_time::now_local_iso8601()
+        .get(11..13)
+        .and_then(|h| h.parse().ok())
+        .unwrap_or(12)
+}
+
+/// Il messaggio su **entrambi** i canali, perché uno solo non basta.
+///
+/// `systemMessage` va all'utente e Claude non lo vede; `additionalContext`
+/// raggiunge l'assistente e va annidato in `hookSpecificOutput`, perché al
+/// livello superiore Claude Code lo ignora in silenzio. Il 16/08/2026 il rifiuto
+/// più frequente di questo gancio era muto da entrambe le parti: 97 «troppe
+/// sessioni» contro 3 aperture, e nessuno dei 97 è arrivato a qualcuno.
+fn speak(message: &str) -> String {
+    hook_io::python_json::dumps_unicode(&serde_json::json!({
+        "systemMessage": message,
+        "hookSpecificOutput": {
+            "hookEventName": "PostToolUse",
+            "additionalContext": message,
+        },
+    }))
+}
+
+/// Il gancio vero: PostToolUse, decide e — se tutti i freni sono liberi — apre.
+///
+/// Fail-open in ogni ramo: l'uscita è sempre 0. Un gancio che rompe la scrittura
+/// di una consegna è peggio del problema che risolve.
+pub fn run(input: &hook_io::HookInput) -> i32 {
+    let path = input
+        .tool_input
+        .as_ref()
+        .and_then(|v| v.get("file_path"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if path.is_empty() || !is_doc(path) {
+        return 0;
+    }
+    let session = input.session_id.clone().unwrap_or_default();
+    let cwd = input
+        .cwd
+        .clone()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().display().to_string());
+
+    let mut facts = guards::successor::ArmFacts {
+        second_generation: std::env::var(guards::successor::GENERATION_ENV).is_ok(),
+        hour: hour_now(),
+        live_sessions: live_sessions(),
+        session_cap: cap("CONSEGNA_TETTO_SESSIONI", 8),
+        panes_here: panes_here(&cwd),
+        pane_cap: cap("CONSEGNA_TETTO_PANNELLI", 2),
+        already_armed: false,
+    };
+    // Il consumo si valuta per ultimo perché SCRIVE il marcatore: chiederlo prima
+    // brucerebbe l'unica arma di questa sessione anche quando un altro freno
+    // avrebbe fermato tutto comunque.
+    match guards::successor::decide(&facts) {
+        guards::successor::Outcome::StopQuiet(_) => return 0,
+        guards::successor::Outcome::StopLoud { message, .. } => {
+            println!("{}", speak(&message));
+            return 0;
+        }
+        guards::successor::Outcome::Open => {}
+    }
+    facts.already_armed = already_armed(path, &session);
+    if facts.already_armed {
+        return 0;
+    }
+
+    let (ok, detail) = open_tab(path);
+    if ok {
+        note_successor(&session, &detail);
+        println!(
+            "{}",
+            speak(
+                "Consegna raccolta: ho aperto una tab col mandato dentro. Parte da \
+                 sola fra mezzo minuto — Ctrl-C in quella tab per fermarla."
+            )
+        );
+    } else {
+        println!(
+            "{}",
+            speak(&format!(
+                "Consegna scritta, ma non sono riuscito ad aprire la tab: {detail}"
+            ))
+        );
+    }
+    0
+}
+
 /// Risponde alle domande che lo strumento di equivalenza pone al Python.
 ///
 /// Non è un gancio: è il punto d'aggancio del confronto. Senza un modo di
