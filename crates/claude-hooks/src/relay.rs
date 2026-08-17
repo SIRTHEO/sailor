@@ -518,6 +518,46 @@ pub fn step(dry_run: bool) -> i32 {
 mod tests {
     use super::*;
 
+    /// Serializza i casi che scrivono stato, e li porta in una HOME usa-e-getta.
+    ///
+    /// PERCHÉ. `log_line` e `set_cooldown` scrivono sotto `$HOME/.claude/state`,
+    /// e i test girano col `HOME` vero: il 17/08/2026 quattro righe
+    /// `sess=provarel` — fra cui una «RIGENERATA» — sono finite nel registro di
+    /// produzione della staffetta, dove chi indaga un guasto le legge come fatti.
+    /// Una batteria che sporca ciò che osserva è la stessa trappola già vista
+    /// quattro volte in questa configurazione, qui presa dal lato opposto.
+    ///
+    /// `HOME` è globale al processo e i test Rust girano in parallelo, quindi il
+    /// lucchetto non è prudenza: senza, un caso porterebbe via il `HOME` a un
+    /// altro mentre scrive.
+    struct HomeIsolata {
+        _lock: std::sync::MutexGuard<'static, ()>,
+        precedente: Option<String>,
+    }
+
+    static LUCCHETTO: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl HomeIsolata {
+        fn nuova(nome: &str) -> Self {
+            let lock = LUCCHETTO.lock().unwrap_or_else(|e| e.into_inner());
+            let precedente = std::env::var("HOME").ok();
+            let dir = std::env::temp_dir().join(format!("relay-prove-{nome}"));
+            let _ = fs::remove_dir_all(&dir);
+            let _ = fs::create_dir_all(dir.join(".claude").join("state"));
+            std::env::set_var("HOME", &dir);
+            Self { _lock: lock, precedente }
+        }
+    }
+
+    impl Drop for HomeIsolata {
+        fn drop(&mut self) {
+            match &self.precedente {
+                Some(h) => std::env::set_var("HOME", h),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
     #[test]
     fn l_handle_si_trova_ovunque_sia_annidato() {
         // La riga esatta del registro del 17/08/2026: forma riuscita, lettura
@@ -567,6 +607,7 @@ mod tests {
 
     #[test]
     fn il_successore_si_crea_prima_di_chiudere_la_vecchia() {
+        let _home = HomeIsolata::nuova("ordine");
         // L'invariante che vale più di ogni altra qui: se questo ordine si
         // inverte, un create fallito lascia il worktree senza sessione.
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
@@ -592,6 +633,7 @@ mod tests {
 
     #[test]
     fn senza_handle_dal_create_la_vecchia_non_si_chiude() {
+        let _home = HomeIsolata::nuova("senza-handle");
         // Il difetto del 17/08: risposta riuscita, handle non trovato. Il verso
         // giusto è tenersi la vecchia, mai chiuderla al buio.
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
@@ -614,6 +656,7 @@ mod tests {
 
     #[test]
     fn una_sessione_che_non_e_idle_non_si_tocca() {
+        let _home = HomeIsolata::nuova("non-idle");
         // Primo comando: `wait`. Se fallisce, non deve seguire nient'altro —
         // troncare un turno a metà costa il lavoro in corso.
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
@@ -630,6 +673,7 @@ mod tests {
 
     #[test]
     fn a_secco_non_si_chiama_orca_nemmeno_una_volta() {
+        let _home = HomeIsolata::nuova("a-secco");
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
