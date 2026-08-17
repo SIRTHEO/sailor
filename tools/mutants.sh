@@ -21,6 +21,7 @@ set -uo pipefail
 ROOT="$HOME/.claude/rust"
 BACKUP=$(mktemp -d)
 FILES=(
+  "crates/guards/src/duplication.rs"
   "crates/guards/src/linear_readonly.rs"
   "crates/claude-hooks/src/linear.rs"
   "crates/guards/src/code_language.rs"
@@ -149,6 +150,44 @@ if [ "$WHICH" = "code-language" ] || [ "$WHICH" = "tutte" ]; then
   # sta introducendo, e accusarlo sposta la colpa sul chiamante.
   mutate "anche gli usi contano come dichiarazioni" "$G" \
     's = s.replace(r"|\b(?:function|const|let|var|class)\s+([A-Za-z_$]\w*)", r"|\b([A-Za-z_$]\w*)\s*\(", 1)'
+fi
+
+# ── duplication ─────────────────────────────────────────────────────────────
+if [ "$WHICH" = "duplication" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su duplication.rs:"
+  COMPARE="compare-duplication.py"
+  D="crates/guards/src/duplication.rs"
+
+  # La linea di base ignorata: e' cio' che tiene acceso il gancio. Senza,
+  # toccare uno dei 122 file col debito vecchio fa scattare un rimprovero per
+  # una copia scritta mesi fa da un altro.
+  mutate "linea di base ignorata" "$D" \
+    's = s.replace("pub fn load_baseline(root: &Path) -> HashSet<String> {", "pub fn load_baseline(root: &Path) -> HashSet<String> {\n    if true { return HashSet::new() }", 1)'
+
+  # Il minimo di sostanza sparisce: quattro righe di intelaiatura JSX tornano a
+  # contare come una copia, e il rapporto si riempie di rumore.
+  mutate "minimo di sostanza azzerato" "$D" \
+    's = s.replace("const MIN_CHARS: usize = 180;", "const MIN_CHARS: usize = 0;", 1)'
+
+  # Gli import tornano a contare come logica: sono forma condivisa, e contarli
+  # segnala come copiati due file che importano le stesse cose.
+  mutate "import contati come logica" "$D" \
+    's = s.replace("fn is_import(line: &str) -> bool {\n    let t = line.trim_start();", "fn is_import(line: &str) -> bool {\n    if line.len() > 0 { return false }\n    let t = line.trim_start();", 1)'
+
+  # I punti di riuso escono dal confronto: e' il caso piu' prezioso — riscrivere
+  # a mano una funzione che esiste gia' in `lib/`.
+  mutate "punti di riuso non confrontati" "$D" \
+    's = s.replace("""&["/lib/", "/hooks/", "/utils/", "/helpers/", "/shared/"]""", "&[]", 1)'
+
+  # Le prove tornano a confrontarsi col codice di produzione: due mestieri
+  # diversi, e il rumore che ne esce non e' azionabile.
+  mutate "prove confrontate col codice" "$D" \
+    's = s.replace("            if is_test(p) != target_is_test {\n                return false;\n            }\n", "", 1)'
+
+  # L'impronta cambia forma: il congelato del Python diventa illeggibile da qui,
+  # e tutto il debito vecchio torna a parlare in una volta.
+  mutate "impronta piu' corta" "$D" \
+    's = s.replace("hex[..16].to_string()", "hex[..12].to_string()", 1)'
 fi
 
 echo
