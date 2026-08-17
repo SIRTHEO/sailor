@@ -29,6 +29,7 @@ FILES=(
   "crates/guards/src/live_rules.rs"
   "crates/claude-hooks/src/live_rules.rs"
   "crates/guards/src/handoff.rs"
+  "crates/guards/src/handoff_on_stop.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -55,6 +56,12 @@ skipped=0
 WHICH="${1:-tutte}"
 COMPARE=""
 
+# L'oracolo alternativo, per le guardie che un confronto col Python ancora non ce
+# l'hanno: finché l'involucro non è portato non esiste un binario da mettere di
+# fronte all'originale, e l'unica cosa che può accorgersi di un mutante è la
+# batteria del modulo. Vuoto = si usa `COMPARE`, che resta la strada normale.
+ORACOLO=""
+
 mutate() {
   local name="$1" file="$2" script="$3"
   restore_files
@@ -71,6 +78,23 @@ PY
   then
     echo "  NON APPLICATO  $name  <- lo script del mutante è da correggere"
     broken=$((broken + 1))
+    return
+  fi
+  if [ -n "$ORACOLO" ]; then
+    # Anche qui uno scartato non è un ucciso: un mutante che non compila fa
+    # fallire `cargo test` esattamente come lo farebbe un mutante visto, e senza
+    # questa separazione ogni errore di sintassi si conterebbe come successo.
+    if ! (cd "$ROOT" && cargo test -p guards --no-run >/dev/null 2>&1); then
+      echo "  SCARTATO    $name  <- non compila, quindi non e' stato provato"
+      skipped=$((skipped + 1))
+      return
+    fi
+    if (cd "$ROOT" && eval "$ORACOLO" >/dev/null 2>&1); then
+      echo "  SOPRAVVIVE  $name  <- la batteria non lo vede"
+      survivors=$((survivors + 1))
+    else
+      echo "  ucciso      $name"
+    fi
     return
   fi
   if ! (cd "$ROOT" && cargo build --release >/dev/null 2>&1); then
@@ -356,6 +380,113 @@ if [ "$WHICH" = "relay-evaluate" ] || [ "$WHICH" = "tutte" ]; then
   # dichiararlo è più utile che nascondere il buco togliendo il mutante.
   mutate "ramo senza soglie, irraggiungibile dal confronto" "$H" \
     's = s.replace("soglie non calcolabili", "soglie assenti", 1)'
+fi
+
+# ── handoff-on-stop ─────────────────────────────────────────────────────────
+if [ "$WHICH" = "handoff-on-stop" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su handoff_on_stop.rs (la consegna a fine turno):"
+  # Qui l'oracolo è la batteria del modulo, non un confronto: l'involucro è
+  # ancora il Python, quindi non c'è un binario da mettere di fronte.
+  ORACOLO="cargo test -p guards handoff_on_stop"
+  S="crates/guards/src/handoff_on_stop.rs"
+
+  # L'anti-loop primario sparisce: il presidio riblocca dentro la propria catena
+  # e incastra la sessione per sempre — più pericoloso della compattazione che
+  # evita.
+  mutate "anti-loop primario rimosso" "$S" \
+    's = s.replace("    if f.stop_hook_active {\n        return Decision::Pass;\n    }\n", "", 1)'
+
+  # La resa non arriva mai: stesso stallo, per l altra strada.
+  mutate "resa spostata di uno" "$S" \
+    's = s.replace("if f.stop_blocks_so_far >= STOP_CAP {", "if f.stop_blocks_so_far > STOP_CAP {", 1)'
+
+  # Il congedo torna verde e inerte: la consegna c e, ma nessuno arma il
+  # successore e nessuno chiude la scheda. E il difetto del 16/08/2026.
+  mutate "consegna valida che non congeda" "$S" \
+    's = s.replace("        return Decision::Settle;", "        return Decision::Pass;", 1)'
+
+  # Il secondo motivo sparisce del tutto: e la sessione e1fa3600, settima
+  # ripartenza a 129k token, che non verrebbe mai fermata.
+  mutate "motivo delle ripartenze rimosso" "$S" \
+    's = s.replace("    if !over_context && f.restarts < f.restart_cap {", "    if !over_context {", 1)'
+
+  # Un carattere sul tetto delle ripartenze: chi sta esattamente sulla soglia
+  # smette di essere fermato.
+  mutate "tetto delle ripartenze spostato di uno" "$S" \
+    's = s.replace("f.restarts < f.restart_cap {", "f.restarts <= f.restart_cap {", 1)'
+
+  # Un carattere sull obbligo di contesto, dall altra parte.
+  mutate "obbligo di contesto spostato di uno" "$S" \
+    's = s.replace("f.used >= f.thresholds.require;", "f.used > f.thresholds.require;", 1)'
+
+  # Le due teste si scambiano: a chi ha compattato sette volte si dice che il
+  # contesto e pieno, quando e basso proprio per quello.
+  mutate "teste del messaggio invertite" "$S" \
+    's = s.replace("let head = if f.restarts >= f.restart_cap {", "let head = if f.restarts < f.restart_cap {", 1)'
+
+  # Il tetto torna scritto a mano: alzarlo dall ambiente non cambierebbe piu il
+  # testo, e il messaggio direbbe un numero falso.
+  mutate "tetto scritto a mano nel messaggio" "$S" \
+    's = s.replace("            f.restarts, f.restart_cap\n", "            f.restarts, 5\n", 1)'
+
+  # Senza trascrizione si giudica lo stesso, cioe su una misura che non esiste.
+  mutate "trascrizione assente ignorata" "$S" \
+    's = s.replace("    if !f.has_transcript {", "    if false {", 1)'
+
+  # La misura assente torna a valere come contesto vuoto: con soglie degeneri il
+  # presidio blocca una sessione di cui non sa niente.
+  mutate "misura assente trattata come misura" "$S" \
+    's = s.replace("let over_context = f.used > 0 && f.used >=", "let over_context = f.used >=", 1)'
+
+  ORACOLO=""
+fi
+
+# ── handoff-on-stop, ma con l'oracolo del confronto ─────────────────────────
+# Gli stessi mutanti visti dall'altra parte. Serve perché i due oracoli vedono
+# cose diverse: la batteria conosce le quattro varianti della decisione, il
+# confronto conosce solo ciò che l'originale espone — un codice d'uscita e il
+# testo su stderr. Un mutante che muore di là e sopravvive di qua dice
+# esattamente quanto il confronto **non** copre, e va saputo prima di adottare
+# il porto, non dopo.
+if [ "$WHICH" = "handoff-on-stop-confronto" ]; then
+  echo "mutanti su handoff_on_stop.rs, oracolo = confronto col Python:"
+  ORACOLO="cargo build --example handoff_on_stop_cli -p guards >/dev/null 2>&1 && python3 tools/compare-handoff-on-stop.py"
+  S="crates/guards/src/handoff_on_stop.rs"
+
+  mutate "anti-loop primario rimosso" "$S" \
+    's = s.replace("    if f.stop_hook_active {\n        return Decision::Pass;\n    }\n", "", 1)'
+  mutate "resa spostata di uno" "$S" \
+    's = s.replace("if f.stop_blocks_so_far >= STOP_CAP {", "if f.stop_blocks_so_far > STOP_CAP {", 1)'
+  mutate "motivo delle ripartenze rimosso" "$S" \
+    's = s.replace("    if !over_context && f.restarts < f.restart_cap {", "    if !over_context {", 1)'
+  mutate "tetto delle ripartenze spostato di uno" "$S" \
+    's = s.replace("f.restarts < f.restart_cap {", "f.restarts <= f.restart_cap {", 1)'
+  mutate "obbligo di contesto spostato di uno" "$S" \
+    's = s.replace("f.used >= f.thresholds.require;", "f.used > f.thresholds.require;", 1)'
+  mutate "teste del messaggio invertite" "$S" \
+    's = s.replace("let head = if f.restarts >= f.restart_cap {", "let head = if f.restarts < f.restart_cap {", 1)'
+  mutate "tetto scritto a mano nel messaggio" "$S" \
+    's = s.replace("            f.restarts, f.restart_cap\n", "            f.restarts, 5\n", 1)'
+  # ATTESO SOPRAVVISSUTO, il primo dei due. Senza trascrizione i fatti che ne
+  # derivano — zero token, zero ripartenze, budget di ripiego — portano a `Pass`
+  # da soli: il ramo è una cintura sul contratto dei `Facts`, non un freno che
+  # cambi un esito raggiungibile da qui. A distinguerlo serve una combinazione
+  # che l'involucro non produrrebbe mai (nessuna trascrizione e 480k token in
+  # contesto), e quella vive nella batteria del modulo.
+  mutate "trascrizione assente ignorata" "$S" \
+    's = s.replace("    if !f.has_transcript {", "    if false {", 1)'
+
+  # ATTESO SOPRAVVISSUTO, il secondo, ed è la ragione per cui sta qui invece di
+  # essere tolto.
+  # `Settle` e `Pass` sono lo stesso codice d'uscita e lo stesso silenzio: la
+  # differenza sta negli effetti — armare il successore e chiudere la propria
+  # scheda — che vivono nell'involucro non ancora portato. Finché quel pezzo è il
+  # Python, nessun confronto può vedere questo mutante, e la sua rete è la
+  # batteria del modulo (`bash tools/mutants.sh handoff-on-stop`).
+  mutate "consegna valida che non congeda" "$S" \
+    's = s.replace("        return Decision::Settle;", "        return Decision::Pass;", 1)'
+
+  ORACOLO=""
 fi
 
 echo

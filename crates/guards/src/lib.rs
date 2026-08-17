@@ -20,4 +20,5 @@ pub mod shell;
 pub mod successor;
 pub mod socraticode_gate;
 pub mod handoff_required;
+pub mod handoff_on_stop;
 pub mod restart;

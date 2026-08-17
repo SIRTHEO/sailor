@@ -442,6 +442,29 @@ pub fn round_half_to_even(x: f64) -> u64 {
     r.max(0.0) as u64
 }
 
+/// Il separatore delle migliaia di Python (`f'{n:,}'`): la virgola.
+///
+/// Non è cosmesi: questi numeri compaiono nel testo che la sessione legge e che
+/// il confronto pretende identico byte a byte. `180000` e `180,000` sono due
+/// stringhe diverse. Sta qui perché la usano due presìdi — `handoff_required` e
+/// `handoff_on_stop` — e due copie divergono al primo ritocco.
+pub fn gruppi(n: u64) -> String {
+    let cifre = n.to_string();
+    let mut out = String::new();
+    for (i, c) in cifre.chars().enumerate() {
+        if i > 0 && (cifre.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// La percentuale del budget, arrotondata come `round()` di Python.
+pub fn percent(used: u64, budget: u64) -> u64 {
+    round_half_to_even(used as f64 / budget as f64 * 100.0)
+}
+
 /// Azione e motivo. In dubbio si risponde sempre `Skip`.
 ///
 /// L'ORDINE DEI CONTROLLI È IL COMPORTAMENTO. `Clean` sta dopo la lettura
