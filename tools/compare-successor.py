@@ -235,6 +235,57 @@ def compare_end_to_end():
 
     diverged = 0
     import os
+
+    # DUE HOME FINTE, UNA PER PARTE, e il registro dentro. Fino al 17/08/2026
+    # questi casi giravano con la HOME vera e si confrontava solo `stdout`: il
+    # porto **non scriveva una riga di registro** e il confronto restava verde.
+    # Misurato quel giorno: gancio passato al binario alle 10:57, tre consegne
+    # vere scritte alle 11:35, 13:37 e 14:21, e zero righe `origine=scrittura`
+    # dopo le 11:10. Il freno più frequente, `troppe-sessioni`, scattava
+    # invisibile. La riga fa parte della risposta, quindi va confrontata.
+    #
+    # `scripts` va collegato dentro la HOME finta o il Python non trova
+    # `hook_log`, ripiega su una funzione muta e **sembra** d'accordo col porto
+    # muto: due implementazioni silenziose vanno d'accordo per costruzione.
+    scratch = Path(os.environ.get(
+        'RELAY_SCRATCH',
+        '/private/tmp/claude-501/-Users-theo-orca-general/scratchpad')) / 'successor-e2e'
+    homes = {}
+    for lato in ('rust', 'python'):
+        h = scratch / f'home-{lato}'
+        (h / '.claude' / 'state').mkdir(parents=True, exist_ok=True)
+        link = h / '.claude' / 'scripts'
+        if not link.exists():
+            try:
+                link.symlink_to(Path.home() / '.claude' / 'scripts')
+            except OSError:
+                pass
+        registro = h / '.claude' / 'state' / 'ganci.jsonl'
+        if registro.exists():
+            registro.unlink()
+        homes[lato] = h
+
+    def ultima_riga(lato):
+        """L'ultima riga del registro, senza l'istante e senza la propria HOME.
+
+        I due percorsi differiscono per costruzione — ognuno punta alla propria
+        cartella finta — quindi confrontarli alla lettera darebbe una divergenza
+        che non è del codice. Si normalizza quella, e solo quella.
+        """
+        p = homes[lato] / '.claude' / 'state' / 'ganci.jsonl'
+        if not p.exists():
+            return None
+        righe = [r for r in p.read_text(errors='replace').splitlines() if r.strip()]
+        if not righe:
+            return None
+        try:
+            o = json.loads(righe[-1])
+        except Exception:
+            return {'<riga illeggibile>': righe[-1]}
+        o.pop('t', None)
+        return {k: (v.replace(str(homes[lato]), '<HOME>') if isinstance(v, str) else v)
+                for k, v in o.items()}
+
     for name, body, extra in cases:
         env = {**os.environ, **extra}
         # Entrambi lanciati DENTRO un albero che ha pannelli. Senza questo il
@@ -243,16 +294,24 @@ def compare_end_to_end():
         # un porto che legge la seconda invece della prima passa il confronto.
         # Verificato per mutazione il 17/08/2026 — sopravviveva.
         a = subprocess.run([str(BIN), 'handoff-arms-successor'], input=body,
-                           capture_output=True, text=True, timeout=120, env=env,
+                           capture_output=True, text=True, timeout=120,
+                           env={**env, 'HOME': str(homes['rust'])},
                            cwd=busy_tree)
         b = subprocess.run([sys.executable, str(HOOK)], input=body,
-                           capture_output=True, text=True, timeout=120, env=env,
+                           capture_output=True, text=True, timeout=120,
+                           env={**env, 'HOME': str(homes['python'])},
                            cwd=busy_tree)
+        riga_r, riga_p = ultima_riga('rust'), ultima_riga('python')
         if a.stdout != b.stdout or a.returncode != b.returncode:
             diverged += 1
             print(f'\nDIVERGE end-to-end [{name}]')
             print(f'    rust   rc={a.returncode} out={a.stdout[:300]!r}')
             print(f'    python rc={b.returncode} out={b.stdout[:300]!r}')
+        elif riga_r != riga_p:
+            diverged += 1
+            print(f'\nDIVERGE nel registro [{name}]')
+            print(f'    python: {riga_p!r}')
+            print(f'    rust:   {riga_r!r}')
     return len(cases), diverged
 
 
