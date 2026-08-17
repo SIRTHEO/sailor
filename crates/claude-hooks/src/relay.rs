@@ -225,6 +225,23 @@ pub(crate) fn read_terminals(orca: OrcaFn) -> Option<Vec<Terminal>> {
     Some(Terminal::from_response(&v))
 }
 
+/// Gli handle dei terminali aperti su un albero di lavoro, adesso.
+///
+/// Vuoto vuol dire due cose diverse — «nessuno» e «non ho potuto leggere» — e
+/// chi la usa deve trattarle uguale: qui serve a confrontare un prima con un
+/// dopo, e un confronto con una lettura fallita non conclude niente. Non si
+/// usi per decidere che un terminale è morto.
+fn handles_on_worktree(worktree: &str, orca: OrcaFn) -> Vec<String> {
+    read_terminals(orca)
+        .map(|ts| {
+            ts.iter()
+                .filter(|t| t.worktree_id == worktree)
+                .map(|t| t.handle.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Il documento di consegna più recente, da citare al successore.
 pub(crate) fn latest_handoff(cwd: &str) -> String {
     let base = home().join(".claude").join("projects");
@@ -320,7 +337,13 @@ fn read_record(path: &Path) -> Option<Record> {
 }
 
 /// Chiude la vecchia e apre il successore, nell'ordine che non lascia scoperti.
-pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
+pub fn regenerate(
+    rec: &Record,
+    title: &str,
+    dry_run: bool,
+    orca: OrcaFn,
+    prima: Option<&[Terminal]>,
+) {
     let sess = &rec.session;
     if dry_run {
         log_line(&format!(
@@ -354,6 +377,20 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
     )
     .is_ok();
 
+    // Chi c'era su questo albero PRIMA di creare. Non si rilegge: `step_with` ha
+    // gia' fotografato i terminali all'inizio del giro, e quella e' esattamente
+    // la foto giusta — lo stato prima di qualunque azione. Rileggerlo qui
+    // costerebbe una chiamata a `orca` a **ogni** rigenerazione per servire un
+    // ramo che scatta di rado.
+    let prima: Vec<String> = prima
+        .map(|ts| {
+            ts.iter()
+                .filter(|t| t.worktree_id == rec.worktree)
+                .map(|t| t.handle.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
     // 3. CREA il successore PRIMA di chiudere
     let selector = if rec.cwd.is_empty() {
         "active".to_string()
@@ -378,17 +415,59 @@ pub fn regenerate(rec: &Record, title: &str, dry_run: bool, orca: OrcaFn) {
         ));
         return;
     }
-    let new_handle = find_handle(&out);
+    let mut new_handle = find_handle(&out);
     if new_handle.is_empty() {
-        // Raffredda anche qui: senza, il giro dopo ricrea un terminale e lo
-        // riabbandona — è così che sono nate 22 sessioni in mezz'ora.
-        set_cooldown(&rec.worktree);
-        log_line(&format!(
-            "sess={sess}: nessun handle dal create, NON chiudo la vecchia \
-             (cooldown {COOLDOWN_SEC}s). out={}",
-            cut(&out, 400)
-        ));
-        return;
+        // IL RAMO CHE AGGIUNGE SESSIONI, e perché non basta fermarsi qui.
+        //
+        // «Non ho riconosciuto l'handle» non è «il terminale non è nato»: il
+        // comando può essere riuscito con una risposta di forma diversa. Fino al
+        // 17/08/2026 qui ci si fermava, quindi il successore restava vivo E la
+        // vecchia non veniva chiusa — una sessione in più, ogni volta. È il solo
+        // ramo automatico che fa crescere il totale: 47 volte in due giorni, 23
+        // delle quali il 17/08, ed è la spiegazione delle 64 sessioni del 16/08,
+        // giorno in cui le rigenerazioni **riuscite** sono state zero.
+        //
+        // Quindi si guarda invece di dedurre: se sull'albero è comparso
+        // esattamente un terminale che prima non c'era, quello è il successore.
+        // Uno solo: con due o più non si sa quale sia, e chiudere la vecchia
+        // basandosi sul candidato sbagliato costa il lavoro di qualcun altro.
+        let dopo = handles_on_worktree(&rec.worktree, &mut *orca);
+        let nuovi: Vec<&String> = dopo
+            .iter()
+            .filter(|h| !prima.contains(h) && *h != &rec.handle)
+            .collect();
+        match nuovi.len() {
+            1 => {
+                new_handle = nuovi[0].clone();
+                log_line(&format!(
+                    "sess={sess}: handle non riconosciuto nella risposta, ma \
+                     l'elenco ne mostra uno nuovo ({new_handle}): proseguo"
+                ));
+            }
+            0 => {
+                // Qui il create davvero non ha prodotto niente: si raffredda,
+                // altrimenti il giro dopo ricrea e riabbandona — è così che
+                // sono nate 22 sessioni in mezz'ora.
+                set_cooldown(&rec.worktree);
+                log_line(&format!(
+                    "sess={sess}: nessun handle dal create e nessun terminale \
+                     nuovo sull'albero, NON chiudo la vecchia (cooldown \
+                     {COOLDOWN_SEC}s). out={}",
+                    cut(&out, 400)
+                ));
+                return;
+            }
+            n => {
+                set_cooldown(&rec.worktree);
+                log_line(&format!(
+                    "sess={sess}: handle non riconosciuto e {n} terminali nuovi \
+                     sull'albero: non so quale sia il successore, NON chiudo la \
+                     vecchia (cooldown {COOLDOWN_SEC}s). out={}",
+                    cut(&out, 400)
+                ));
+                return;
+            }
+        }
     }
 
     // 4. aspetta la PROVA che il successore ha ricevuto il mandato
@@ -505,7 +584,6 @@ fn retire(rec: &Record, orca: OrcaFn) {
     ));
 }
 
-/// Taglia a `n` **caratteri**, come lo slicing di Python su una stringa.
 /// I primi `n` caratteri, **su una riga sola**.
 ///
 /// L'appiattimento non è cosmesi. Il registro della staffetta è per righe, e la
@@ -624,7 +702,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                     .and_then(|ts| ts.iter().find(|t| t.handle == rec.handle))
                     .map(|t| t.title.clone())
                     .unwrap_or_default();
-                regenerate(&rec, &title, dry_run, orca);
+                regenerate(&rec, &title, dry_run, orca, terminals.as_deref());
             }
             Action::Retire => {
                 log_line(&format!("congedo sess={}: {reason}", rec.session));
@@ -717,7 +795,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&record_di_prova(), "", false, &mut orca);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
         let seq = chiamate.borrow().clone();
         let pos = |frammento: &str| seq.iter().position(|c| c.contains(frammento));
         let create = pos("create").expect("il create deve esserci");
@@ -743,7 +821,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&record_di_prova(), "", false, &mut orca);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
         let seq = chiamate.borrow().clone();
         assert!(
             !seq.iter().any(|c| c.contains("close")),
@@ -762,7 +840,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (1, String::new())
         };
-        regenerate(&record_di_prova(), "", false, &mut orca);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
         let seq = chiamate.borrow().clone();
         assert_eq!(seq.len(), 1, "dopo un wait fallito non si fa altro: {seq:?}");
         assert!(seq[0].contains("wait"));
@@ -790,7 +868,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&record_di_prova(), "", false, &mut orca);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
         let seq = chiamate.borrow().clone();
         assert!(
             !seq.iter().any(|c| c.contains("send")),
@@ -818,7 +896,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&record_di_prova(), "", false, &mut orca);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
         let log = fs::read_to_string(
             home().join(".claude/state/staffetta.log"),
         )
@@ -847,7 +925,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&rec, "", false, &mut orca);
+        regenerate(&rec, "", false, &mut orca, None);
 
         let state = home().join(".claude").join("state");
         let ripresa: Vec<_> = fs::read_dir(state.join("riprendi-da"))
@@ -875,7 +953,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (0, String::new())
         };
-        regenerate(&record_di_prova(), "", true, &mut orca);
+        regenerate(&record_di_prova(), "", true, &mut orca, None);
         assert!(chiamate.borrow().is_empty(), "a secco ha parlato con orca");
     }
 }
