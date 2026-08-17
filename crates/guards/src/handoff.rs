@@ -310,6 +310,18 @@ pub enum Action {
     Skip,
     /// Il pannello non esiste più: si butta il record, non la sessione.
     Clean,
+    /// Un successore è già stato aperto da un altro meccanismo: si chiude la
+    /// vecchia **senza** crearne un altro.
+    ///
+    /// Nasce da un difetto misurato il 17/08/2026. Il freno aggiunto quella
+    /// mattina rispondeva `Skip` quando trovava un successore già armato, per
+    /// non aprirne un secondo. Ma il compito della staffetta è **chiudere la
+    /// vecchia**, e saltare non chiude mai: la sessione originale restava viva
+    /// accanto al successore, e continuava a lavorare su un documento di
+    /// consegna che invecchiava. Misurato su `d6cefb4d`: successore armato alle
+    /// 13:55 del 16/08, ultima attività della vecchia alle **23:34** — nove ore
+    /// e mezza dopo, con 93 MB di transcript.
+    Retire,
 }
 
 /// I fatti su una sessione, già raccolti da chi ha il permesso di leggerli.
@@ -371,8 +383,10 @@ fn round_half_to_even(x: f64) -> u64 {
 /// dell'elenco e prima di tutto il resto, perché un record che punta a un
 /// pannello morto non ha altro da dire; il raffreddamento sta prima della
 /// consegna perché una sessione appena rigenerata non va riesaminata; e il
-/// successore già armato sta prima della soglia perché aprirne un secondo è
-/// esattamente il difetto misurato il 17/08/2026.
+/// successore già armato sta **dopo** la soglia, perché la domanda che pone non
+/// è «vale la pena guardare questa sessione» ma «resta da creare o solo da
+/// chiudere»: metterlo prima faceva rispondere `Skip` a sessioni che non avevano
+/// nemmeno consegnato, e quel `Skip` non chiudeva mai niente.
 pub fn evaluate(f: &SessionFacts) -> (Action, String) {
     if f.session.is_empty() || f.handle.is_empty() || f.worktree.is_empty() {
         return (Action::Skip, "record incompleto".into());
@@ -388,13 +402,6 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
     }
     if f.in_cooldown {
         return (Action::Skip, "cooldown".into());
-    }
-    if !f.armed_successor.is_empty() && live.iter().any(|h| h == f.armed_successor) {
-        let short: String = f.armed_successor.chars().take(13).collect();
-        return (
-            Action::Skip,
-            format!("successore gia' armato e vivo ({short})"),
-        );
     }
     if !f.handoff_done {
         return (Action::Skip, "handoff non ancora fatto".into());
@@ -412,13 +419,19 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
         );
     }
     let pct = round_half_to_even(f.used as f64 / t.budget as f64 * 100.0);
-    (
-        Action::Regenerate,
-        format!(
-            "consegnato e pieno ({} token, {pct}% del budget {} ~{})",
-            f.used, t.model, t.budget
-        ),
-    )
+    let piena = format!(
+        "consegnato e pieno ({} token, {pct}% del budget {} ~{})",
+        f.used, t.model, t.budget
+    );
+    // Il successore c'è già: resta da chiudere la vecchia, non da aprirne un
+    // altro. Questo controllo sta QUI e non più in cima di proposito — dove
+    // stava, rispondeva `Skip` anche a una sessione che non aveva ancora
+    // consegnato, e quel `Skip` non chiudeva niente mai.
+    if !f.armed_successor.is_empty() && live.iter().any(|h| h == f.armed_successor) {
+        let short: String = f.armed_successor.chars().take(13).collect();
+        return (Action::Retire, format!("{piena}; successore gia' vivo ({short})"));
+    }
+    (Action::Regenerate, piena)
 }
 
 #[cfg(test)]
@@ -509,8 +522,33 @@ mod tests {
         let mut f = sessione_piena(&live, &t);
         f.armed_successor = "term_succ";
         let (a, why) = evaluate(&f);
-        assert_eq!(a, Action::Skip);
-        assert!(why.contains("successore gia' armato"), "{why}");
+        // NON `Skip`: la vecchia va chiusa comunque, solo senza aprirne un'altra.
+        // Con `Skip` restava viva accanto al successore e continuava a lavorare
+        // su una consegna che invecchiava — nove ore e mezza, misurate.
+        assert_eq!(a, Action::Retire);
+        assert!(why.contains("successore gia' vivo"), "{why}");
+    }
+
+    #[test]
+    fn un_successore_vivo_non_chiude_una_sessione_che_non_ha_consegnato() {
+        // Il freno vale solo sulla creazione. Una sessione senza consegna non si
+        // chiude comunque: il successore che c'è è di qualcun altro, o è vecchio.
+        let live = vec!["term_x".to_string(), "term_succ".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.armed_successor = "term_succ";
+        f.handoff_done = false;
+        assert_eq!(evaluate(&f).0, Action::Skip);
+    }
+
+    #[test]
+    fn un_successore_vivo_non_chiude_una_sessione_ancora_vuota() {
+        let live = vec!["term_x".to_string(), "term_succ".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.armed_successor = "term_succ";
+        f.used = 10_000;
+        assert_eq!(evaluate(&f).0, Action::Skip);
     }
 
     #[test]
