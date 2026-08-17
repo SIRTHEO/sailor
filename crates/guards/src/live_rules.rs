@@ -266,14 +266,22 @@ pub fn is_global(path: &str, home: &Path) -> bool {
     let Some(parent) = Path::new(path).parent() else {
         return false;
     };
-    if parent == target {
-        return true;
-    }
-    // `Path.resolve()` scioglie i symlink, e qui conta: `~/.claude/rules` viene
-    // raggiunta anche attraverso i link che i worktree si portano dietro.
+    // Si scioglie **sempre**, da entrambe le parti, come fa `Path.resolve()`
+    // dell'originale.
+    //
+    // La prima stesura provava prima un confronto letterale e cadeva sullo
+    // scioglimento solo se falliva. Copriva il caso del percorso raggiunto
+    // attraverso un link, e sbagliava quello opposto: se è `~/.claude/rules`
+    // **stessa** a essere un collegamento verso un'altra cartella, il confronto
+    // letterale riesce per primo e risponde «globale» dove l'originale, che
+    // scioglie, risponde «no» — due percorsi di codice diversi e due messaggi
+    // diversi per lo stesso file. Trovato da una revisione indipendente.
     match (parent.canonicalize(), target.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
-        _ => false,
+        // Se non si può sciogliere (cartella inesistente) resta il confronto
+        // letterale: è tutto ciò che si può dire, e negare sempre farebbe
+        // tacere il gancio su una regola appena creata in una cartella nuova.
+        _ => parent == target,
     }
 }
 
