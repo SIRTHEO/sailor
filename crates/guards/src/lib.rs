@@ -6,6 +6,7 @@
 //! prova la decisione, non il processo.
 
 pub mod cd_guard;
+pub mod code_language;
 pub mod hooks_off;
 pub mod language;
 pub mod linear_readonly;

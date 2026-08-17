@@ -872,13 +872,19 @@ pub fn judge_bash(command: &str) -> Verdict {
 mod tests {
     use super::*;
 
+    /// Rifiutato in uno dei due modi: `Sealed` è un rifiuto quanto `Refused`,
+    /// e distinguerli qui farebbe passare per «consentito» ciò che il ramo
+    /// dello heredoc nega senza appello.
     fn refused(command: &str) -> bool {
-        matches!(judge_bash(command), Verdict::Refused { .. })
+        matches!(
+            judge_bash(command),
+            Verdict::Refused { .. } | Verdict::Sealed { .. }
+        )
     }
 
     fn why(command: &str) -> String {
         match judge_bash(command) {
-            Verdict::Refused { reason, .. } => reason,
+            Verdict::Refused { reason, .. } | Verdict::Sealed { reason } => reason,
             _ => String::new(),
         }
     }
