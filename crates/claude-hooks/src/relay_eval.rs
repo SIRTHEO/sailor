@@ -64,6 +64,13 @@ pub fn run() -> i32 {
             armed_successor: text(&case, "armed"),
             handoff_done: flag(&case, "handoff_done"),
             transcript_exists: exists,
+            // Si legge dal disco invece di prenderlo dal caso, come tutto il
+            // resto di questa riga: il Python lo calcola da sé mentre decide, e
+            // passarglielo cotto qui confronterebbe due domande diverse.
+            worked_after_handoff: crate::handoff::worked_after_handoff(
+                transcript,
+                text(&case, "session"),
+            ),
             used,
             thresholds: Some(&t),
         };
