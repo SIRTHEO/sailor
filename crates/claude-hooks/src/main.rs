@@ -76,6 +76,9 @@ const SMOKE: &[(&str, &str, &str)] = &[
         concat!("linear ", "issue ", "close HRD-1"),
         "orca linear list --json",
     ),
+    // `code-language` non giudica un comando ma una coppia percorso+testo, che
+    // in questa tabella non ci sta. Il suo caso «deve bloccare» è dentro
+    // `self_check`, insieme agli altri.
 ];
 
 /// Esegue ogni gancio su due casi noti, in-process. Uscita 0 se tutti si
@@ -115,8 +118,27 @@ fn self_check() -> i32 {
             }
         }
     }
+    // `code-language` giudica una coppia percorso+testo, non un comando: non
+    // entra nella tabella, ma deve passare di qui lo stesso — l'autoverifica
+    // serve a dire che ogni gancio registrato decide, non che quasi tutti lo
+    // fanno.
+    let italian = guards::code_language::judge(
+        "/x/a.test.ts",
+        "it('rifiuta le date future', () => {})",
+        true,
+    );
+    let english = guards::code_language::judge(
+        "/x/a.test.ts",
+        "it('rejects future dates', () => {})",
+        true,
+    );
+    if italian.is_none() || english.is_some() {
+        eprintln!("code-language: non distingue una descrizione italiana da una inglese");
+        failures += 1;
+    }
+
     if failures == 0 {
-        println!("{} ganci, tutti rispondono come devono", SMOKE.len());
+        println!("{} ganci, tutti rispondono come devono", SMOKE.len() + 1);
         0
     } else {
         eprintln!("{failures} controlli falliti: NON pubblicare questo binario");
@@ -217,6 +239,49 @@ fn run(which: &str) -> Result<i32, String> {
                 return Ok(2);
             }
             Ok(0)
+        }
+        // L'italiano dove la convenzione chiede l'inglese. Due fasi: registrato
+        // su `pre`, dove il rifiuto viaggia su stdout e il file non viene
+        // scritto. Su `post` avviserebbe a cose fatte — «un avviso dopo lascia
+        // il file scritto in italiano», dice l'originale, ed è il motivo per
+        // cui la fase registrata è la prima.
+        "code-language" => {
+            if Mode::from_env("LINGUA_CODICE") == Mode::Off {
+                return Ok(0);
+            }
+            let phase = std::env::args().nth(2).unwrap_or_else(|| "pre".into());
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            let empty = serde_json::json!({});
+            let tool_input = input.tool_input.as_ref().unwrap_or(&empty);
+            let path = tool_input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if path.is_empty() {
+                return Ok(0);
+            }
+            let text = guards::code_language::written_text(tool_input);
+            let exists = std::path::Path::new(path).exists();
+            let Some(message) = guards::code_language::judge(path, &text, exists) else {
+                return Ok(0);
+            };
+            let decision = if phase == "pre" {
+                hook_io::Decision::Deny(message)
+            } else {
+                hook_io::Decision::Block(message)
+            };
+            // Senza prefisso: il messaggio è già un rapporto intero, e la prima
+            // riga dice da sola di che si tratta.
+            match decision {
+                hook_io::Decision::Deny(m) => Ok(hook_io::emit("code-language", &hook_io::Decision::Deny(m))),
+                hook_io::Decision::Block(m) => {
+                    eprintln!("{m}");
+                    Ok(2)
+                }
+                _ => Ok(0),
+            }
         }
         // Il divieto su Linear: 813 righe di Python, il gancio più grande del
         // parco. Il giudizio sta in `guards::linear_readonly` ed è puro; la
