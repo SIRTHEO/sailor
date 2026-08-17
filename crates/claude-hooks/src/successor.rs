@@ -90,20 +90,96 @@ pub fn panes_here(root: &str) -> Option<usize> {
     Some(count_agents(&v, root))
 }
 
-/// Le sessioni Claude vive adesso. `None` se non si è potuto sapere.
+/// Le sessioni Claude vive adesso, contate dal FATTO. `None` se non si è potuto.
 ///
-/// Si chiede al binario invece di contare i processi: un `ps | grep claude`
-/// conta anche i subagent e i wrapper della shell, e sovrastima di molto.
+/// SI CONTANO I PROCESSI, e il commento che stava qui diceva il contrario: «un
+/// `ps | grep claude` conta anche i subagent e i wrapper della shell, e
+/// sovrastima di molto». È falso per questa forma. `comm` è il **nome
+/// dell'eseguibile senza argomenti**, l'ancoraggio `^claude$` scarta ogni riga
+/// che lo contenga soltanto, e i subagent non sono processi: girano dentro il
+/// padre. Misurato il 17/08/2026 sullo stesso istante — `ps` dà 4 e
+/// `claude agents --json` dà 4, come il 5 contro 5 già registrato in
+/// `docs/2026-08-17-cron-e-soglie.md`.
+///
+/// Ed è la misura giusta per un tetto sulla saturazione: `claude agents` è il
+/// registro che la CLI tiene di sé, quindi non vede una sessione headless né una
+/// caduta male, mentre la RAM la occupano i processi. È anche la stessa
+/// grandezza su cui il registro dello swap ha raccolto 5.176 campioni in una
+/// settimana: il tetto e la serie storica parlano dello stesso numero, invece di
+/// due numeri che un giorno divergono. E costa un `ps` invece di avviare la CLI.
 pub fn live_sessions() -> Option<usize> {
-    let out = std::process::Command::new("claude")
-        .args(["agents", "--json"])
+    let out = std::process::Command::new("/bin/ps")
+        .args(["-Ao", "comm"])
         .output()
         .ok()?;
     if !out.status.success() {
         return None;
     }
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    v.as_array().map(|a| a.len())
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| l.trim() == "claude")
+            .count(),
+    )
+}
+
+/// Il tetto globale alle sessioni, come gancio `PreToolUse` su `Bash`.
+///
+/// PERCHÉ ESISTE UN SECONDO POSTO. Il tetto di `arm()` vive dentro **un**
+/// produttore: la consegna che apre il successore. Nessun'altra strada lo
+/// consulta — non l'apertura a mano di una scheda, non un dispaccio di
+/// orchestrazione. Il 16/08/2026 le sessioni contemporanee sono arrivate a
+/// **64** contro gli 8 dichiarati, e la macchina si è riavviata per saturazione
+/// alle 23:20: quel tetto non è stato scavalcato, è stato aggirato. Qui il
+/// controllo sta sulla superficie che **tutti** i produttori attraversano — il
+/// comando `Bash` — invece che dentro chi lo esegue.
+///
+/// Il giudizio è in `guards::handoff`, che non tocca niente: qui restano il
+/// conteggio, la valvola e il registro.
+pub fn session_cap(command: &str) -> i32 {
+    let mode = hook_io::Mode::from_env("SESSION_CAP_GUARD");
+    if mode == hook_io::Mode::Off {
+        return 0;
+    }
+    let delta = guards::handoff::session_delta(command);
+    if delta == guards::handoff::SessionDelta::None {
+        return 0;
+    }
+    let facts = guards::handoff::CapFacts {
+        delta,
+        live: live_sessions(),
+        cap: cap("SESSION_CAP_LIMIT", guards::handoff::SESSION_CAP_DEFAULT),
+    };
+    let verdict = guards::handoff::session_cap_verdict(&facts);
+    // SI REGISTRA ANCHE CHI PASSA, e non è simmetria oziosa: oggi nessuno sa
+    // quante sessioni vengano aperte in un giorno, e senza quel numero la soglia
+    // non si potrà ritarare — è l'errore già pagato dalla regola della pressione
+    // di memoria, buona all'11/08 e indistinguibile dal normale una settimana
+    // dopo. Le aperture sono poche, quindi il registro non si riempie.
+    journal::record(
+        "session-cap",
+        if verdict.is_some() { "ferma" } else { "apre" },
+        match facts.delta {
+            guards::handoff::SessionDelta::Replaces => "sostituzione",
+            _ => "aggiunta",
+        },
+        &[
+            ("vive", Field::Number(facts.live.unwrap_or(0) as i64)),
+            ("tetto", Field::Number(facts.cap as i64)),
+            (
+                "comando",
+                Field::Text(command.chars().take(200).collect::<String>()),
+            ),
+        ],
+    );
+    let Some(message) = verdict else {
+        return 0;
+    };
+    let decision = match mode {
+        hook_io::Mode::WarnOnly => hook_io::Decision::Warn(message),
+        _ => hook_io::Decision::Deny(message),
+    };
+    hook_io::emit("session-cap", &decision)
 }
 
 use crate::handoff::state_dir;
@@ -477,6 +553,38 @@ pub fn probe(verb: &str, a: &str, b: &str) -> i32 {
             "{}",
             live_sessions().map(|n| n.to_string()).unwrap_or("-1".into())
         ),
+        // Il tetto globale, nelle sue tre forme. `delta` e `cap` sono il
+        // giudizio puro, con il conteggio passato da fuori, così il confronto
+        // col Python esercita la decisione e non la macchina; `session-cap` è il
+        // gancio vero, che il comando lo prende dal payload di `PreToolUse`.
+        "delta" => println!(
+            "{}",
+            match guards::handoff::session_delta(a) {
+                guards::handoff::SessionDelta::Adds => "Adds",
+                guards::handoff::SessionDelta::Replaces => "Replaces",
+                guards::handoff::SessionDelta::None => "None",
+            }
+        ),
+        "cap" => {
+            let facts = guards::handoff::CapFacts {
+                delta: guards::handoff::session_delta(a),
+                live: b.parse::<usize>().ok(),
+                cap: cap("SESSION_CAP_LIMIT", guards::handoff::SESSION_CAP_DEFAULT),
+            };
+            print!(
+                "{}",
+                guards::handoff::session_cap_verdict(&facts).unwrap_or_default()
+            );
+        }
+        "session-cap" => {
+            let Some(input) = hook_io::read_input() else {
+                return 0;
+            };
+            if !input.is_tool("Bash") {
+                return 0;
+            }
+            return session_cap(input.bash_command());
+        }
         "agents" => {
             let mut raw = String::new();
             if std::io::stdin().read_to_string(&mut raw).is_err() {
