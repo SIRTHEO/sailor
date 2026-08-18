@@ -54,6 +54,29 @@ def normalise(value):
     return json.loads(json.dumps(value, default=str, sort_keys=True))
 
 
+def scrubbed(value, patterns):
+    """Il valore con i percorsi volatili sostituiti da un segnaposto.
+
+    SENZA QUESTO IL REGISTRO NON VALE NIENTE, e il difetto sarebbe silenzioso al
+    contrario: quasi tutti questi confronti fabbricano una `HOME` finta sotto
+    `/var/folders/...` che cambia a ogni esecuzione, e quel percorso finisce sia
+    nella chiave del caso sia dentro le risposte (i messaggi dei ganci citano i
+    file su cui decidono). Registrato cosi', il registro sarebbe buono per una
+    sola esecuzione: la successiva non riconoscerebbe nessun caso e direbbe
+    «impossibile giudicarli» su tutti.
+    """
+    if not patterns:
+        # NORMALIZZA COMUNQUE. Uscire di qui col valore grezzo rimetterebbe in
+        # gioco la trappola delle tuple proprio nel caso piu' comune, quello
+        # senza percorsi da ripulire: e' il difetto che le prove hanno preso.
+        return normalise(value)
+    blob = json.dumps(normalise(value), sort_keys=True, ensure_ascii=False)
+    for i, pattern in enumerate(patterns):
+        if pattern:
+            blob = blob.replace(str(pattern).replace('\\', '\\\\'), f'<volatile-{i}>')
+    return json.loads(blob)
+
+
 def case_key(case) -> str:
     """Un nome stabile per il caso, che non dipenda da come e' fatto dentro.
 
@@ -81,8 +104,12 @@ class Oracle:
     """
 
     def __init__(self, name: str, original: Path | None = None,
-                 argv: list[str] | None = None):
+                 argv: list[str] | None = None, scrub: list | None = None):
         self.name = name
+        # I percorsi volatili da togliere di mezzo, tipicamente la cartella
+        # temporanea del confronto. Vanno passati anche al valore del porto, con
+        # `oracle.clean(...)`, altrimenti i due lati non si somigliano piu'.
+        self.patterns = list(scrub or [])
         self.original = Path(original) if original else None
         argv = sys.argv if argv is None else argv
         self.recording = '--record' in argv
@@ -102,6 +129,12 @@ class Oracle:
     def has_original(self) -> bool:
         return bool(self.original and self.original.exists())
 
+    def clean(self, value):
+        """Da applicare anche alla risposta del porto: i due lati devono essere
+        ripuliti allo stesso modo, o il confronto diventa un confronto fra un
+        percorso vero e un segnaposto."""
+        return scrubbed(value, self.patterns)
+
     def answer(self, case, compute):
         """La risposta attesa per questo caso.
 
@@ -109,11 +142,11 @@ class Oracle:
         argomenti — e `compute` e' la chiamata che interroga l'originale. Non si
         chiama mai quando l'originale non c'e': e' proprio il punto.
         """
-        key = case_key(case)
+        key = case_key(scrubbed(case, self.patterns))
         stored = self.data.get('cases', {}).get(key)
 
         if self.recording or self.has_original:
-            value = normalise(compute())
+            value = scrubbed(compute(), self.patterns)
             if self.recording:
                 self.fresh[key] = value
             elif stored is not None and stored != value:
@@ -219,7 +252,27 @@ def _test() -> int:
         check('un caso ignoto torna None', o.answer({'y': 2}, lambda: None), None)
         check('e fa uscire non-zero', o.close(), 1)
 
-        # 5. LA TRAPPOLA: tuple e liste devono essere la stessa cosa
+        # 5. i percorsi volatili spariscono da chiave e valore
+        volatile = '/var/folders/ab/T/prova-1234'
+        o = Oracle('scrub', original, argv=['--record'], scrub=[volatile])
+        original.write_text('# torna\n')
+        check('il valore esce ripulito',
+              o.answer({'home': volatile},
+                       lambda: {'detto': f'ho scritto {volatile}/x.md'}),
+              {'detto': 'ho scritto <volatile-0>/x.md'})
+        o.close()
+        # una cartella diversa, stesso caso: deve riconoscerlo
+        altro = '/var/folders/cd/T/prova-9999'
+        o = Oracle('scrub', original, argv=[], scrub=[altro])
+        o.answer({'home': altro}, lambda: {'detto': f'ho scritto {altro}/x.md'})
+        check('un percorso nuovo trova lo stesso caso registrato', len(o.stale), 0)
+        check('e non ne mancano', len(o.missing), 0)
+        check('clean() vale anche per il porto',
+              o.clean({'detto': f'ho scritto {altro}/x.md'}),
+              {'detto': 'ho scritto <volatile-0>/x.md'})
+        original.unlink()
+
+        # 6. LA TRAPPOLA: tuple e liste devono essere la stessa cosa
         check('una tupla normalizzata e\' una lista',
               normalise(('go', '')), ['go', ''])
         check('la chiave non cambia fra tupla e lista',

@@ -18,7 +18,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-PY = ['python3', str(Path.home() / '.claude/skills/hooks/hooks-off.py')]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from oracle import Oracle                                  # noqa: E402
+
+ORIGINAL = Path.home() / '.claude/skills/hooks/hooks-off.py'
+PY = ['python3', str(ORIGINAL)]
 RUST = [str(Path.home() / '.claude/rust/target/release/claude-hooks'), 'hooks-off']
 
 
@@ -40,11 +44,18 @@ def repo(root: Path, kind: str) -> Path:
 
 
 def run(cmd, command, cwd):
+    """(codice di uscita, stdout): la coppia che il confronto guarda, e l'unica
+    forma che sopravvive a un giro attraverso il registro dell'oracolo."""
     payload = {'tool_name': 'Bash', 'cwd': str(cwd), 'tool_input': {'command': command}}
-    return subprocess.run(cmd, input=json.dumps(payload), capture_output=True, text=True)
+    p = subprocess.run(cmd, input=json.dumps(payload), capture_output=True, text=True)
+    return p.returncode, p.stdout
 
 
 root = Path(tempfile.mkdtemp(prefix='hooks-off-confronto-'))
+# La radice temporanea cambia a ogni esecuzione e compare sia nei comandi sia
+# nelle risposte: senza toglierla di mezzo il registro varrebbe per un giro solo.
+oracle = Oracle('hooks-off', ORIGINAL, scrub=[root])
+print(oracle.describe())
 cases = []
 for kind in ('sano', 'cieco', 'senza-controlli'):
     path = repo(root, kind)
@@ -57,8 +68,10 @@ print(f"{'scenario':<18}{'comando':<22}{'py':>4}{'rust':>6}   esito")
 print('-' * 62)
 divergent = 0
 for kind, command, path in cases:
-    a = run(PY, command, path)
-    b = run(RUST, command, path)
+    a = oracle.answer(command, lambda c=command, p=path: run(PY, c, p))
+    b = oracle.clean(run(RUST, command, path))
+    if a is None:
+        continue
     # Si confrontano gli **oggetti**, non il testo: `json.dumps` di Python mette
     # uno spazio dopo i due punti e la virgola, il serializzatore Rust no. Chi
     # legge questo canale fa il parsing, quindi la spaziatura non è una
@@ -69,17 +82,17 @@ for kind, command, path in cases:
         except ValueError:
             return ('ILLEGGIBILE', out)
 
-    same = a.returncode == b.returncode and parsed(a.stdout) == parsed(b.stdout)
+    same = a[0] == b[0] and parsed(a[1]) == parsed(b[1])
     if not same:
         divergent += 1
     gesture = command.split()[3] if len(command.split()) > 3 else '?'
-    negated = 'nega' if '"deny"' in a.stdout else 'passa'
-    print(f'{kind:<18}{gesture + " (" + negated + ")":<22}{a.returncode:>4}{b.returncode:>6}   '
+    negated = 'nega' if '"deny"' in a[1] else 'passa'
+    print(f'{kind:<18}{gesture + " (" + negated + ")":<22}{a[0]:>4}{b[0]:>6}   '
           f'{"uguali" if same else "DIVERGE"}')
     if not same:
-        print(f'    py:   {a.stdout.strip()[:150]}')
-        print(f'    rust: {b.stdout.strip()[:150]}')
+        print(f'    py:   {a[1].strip()[:150]}')
+        print(f'    rust: {b[1].strip()[:150]}')
 
 shutil.rmtree(root, ignore_errors=True)
 print(f'\ndivergenze: {divergent} su {len(cases)}')
-sys.exit(1 if divergent else 0)
+sys.exit(1 if (divergent or oracle.close()) else 0)
