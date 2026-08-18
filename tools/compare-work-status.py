@@ -136,6 +136,21 @@ def gh_ramo(ramo, richieste):
 RAMO_FUSO = [{"state": "MERGED", "mergedAt": "2026-08-18T09:00:00Z"}]
 RAMO_APERTO = [{"state": "OPEN", "mergedAt": None}]
 
+
+# Quando il comando nomina il numero, la domanda cambia forma: `gh pr view
+# <numero>` invece di `gh pr list --head <ramo>`. E' il gesto reale — la
+# richiesta #530 di `parole-side-table` e' stata fusa cosi', da una cartella che
+# non era la copia — e la risposta porta il ramo, che e' come si trova la copia.
+def gh_view(numero, ramo, stato):
+    return {
+        "match": ["view", str(numero)],
+        "stdout": json.dumps({
+            "headRefName": ramo,
+            "state": stato,
+            "mergedAt": "2026-08-18T09:34:05Z" if stato == "MERGED" else None,
+        }),
+    }
+
 # `unlanded_commits`: quanti commit non vivono altrove, e — se ce ne sono — se
 # fondere cambierebbe un byte. Due forme, «pulita» e «con lavoro dentro».
 GIT_PULITO = GIT_REMOTI + [
@@ -205,13 +220,94 @@ def casi():
          {"stdin": bash("cd /a/packages && gh pr merge --squash", {"stdout": "merged."}),
           "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
                    "gh": [gh_ramo("p", RAMO_FUSO)]}}),
-        # `gh pr merge 468` fonde la richiesta di un ALTRO ramo: marcare la copia
-        # da cui si e' digitato il comando scriverebbe lo stato sbagliato su una
-        # lavorazione viva.
-        ("la richiesta di un altro ramo, fusa da qui, non marca niente",
-         {"stdin": bash("cd /a/packages && gh pr merge 468", {"stdout": "merged."}),
+        # ── e quando il comando nomina la richiesta, si segue la richiesta ──
+        #
+        # IL DIFETTO DEL 18/08/2026, con l'esemplare in piedi: `gh -R <repo> pr
+        # merge <numero> --squash` da una cartella che non e' nessuna copia. La
+        # forma non era nemmeno riconosciuta, e `parole-side-table` e' rimasta
+        # «in revisione» con la #530 fusa e zero commit residui. Il `cwd` di
+        # questi casi e' la HOME finta, che nessuna copia contiene: se si
+        # tornasse a dedurre dalla cartella, resterebbero tutti a bocca asciutta.
+        ("CAMBIA STATO: la richiesta numerata trova la copia dal suo ramo",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530 --squash",
+                        {"stdout": "merged."}),
           "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
-                   "gh": [gh_ramo("p", RAMO_APERTO)]}}),
+                   "gh": [gh_view(530, "p", "MERGED")]}}),
+        # IL MUTANTE CHE CONTA: il comando parte da `/a/general` e fonde la
+        # richiesta di `/a/packages`. Marcare la cartella marcherebbe GENERAL.
+        ("e non la copia da cui si e' digitato il comando",
+         {"stdin": bash("cd /a/general && gh -R Gyver-Work/packages pr merge 468",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(468, "p", "MERGED")]}}),
+        ("una richiesta che GitHub dice aperta non marca niente",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(530, "p", "OPEN")]}}),
+        ("ne' una il cui ramo nessuna copia porta",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(530, "un-altro-ramo", "MERGED")]}}),
+        ("ne' una che non dichiara un ramo affatto",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(530, "", "MERGED")]}}),
+        ("GitHub muto sulla richiesta numerata: non si marca al buio",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [{"match": ["view"], "rc": 1}]}}),
+        # Due copie dello stesso repo sullo stesso ramo: qui non si indovina.
+        ("due copie sullo stesso ramo dello stesso repo non si marcano",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(elenco(
+              copia("p", "/a/packages", "PACKAGES", "in-review", "p"),
+              copia("q", "/a/packages-bis", "BIS", "in-review", "p"))),
+              "git": GIT_PULITO + [{"match": ["/a/packages-bis", "remote"],
+                                    "stdout": "git@github.com:Gyver-Work/packages.git\n"}],
+              "gh": [gh_view(530, "p", "MERGED")]}}),
+        # Le guardie vecchie valgono anche qui.
+        ("il ramo del checkout canonico non e' una lavorazione",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(elenco(copia("t", "/a/tronco", "TRONCO",
+                                                     "in-review", "develop", main=True))),
+                   "git": GIT_PULITO, "gh": [gh_view(530, "develop", "MERGED")]}}),
+        ("fusa per numero, ma il lavoro vive solo qui: resta in lavorazione",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_CON_RESIDUO,
+                   "gh": [gh_view(530, "p", "MERGED")]}}),
+        # Senza `-R` il repo lo dice la cartella: e' l'unico modo di saperlo per
+        # un `gh pr merge <numero>` digitato dentro una copia.
+        ("senza -R il repo lo dice la cartella del comando",
+         {"stdin": bash("cd /a/packages && gh pr merge 530 --squash",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(530, "p", "MERGED")]}}),
+        ("senza -R e senza una cartella nota non si chiede nemmeno a GitHub",
+         {"stdin": bash("gh pr merge 530 --squash", {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(530, "p", "MERGED")]}}),
+        ("l'URL della richiesta dice sia il repo sia il numero",
+         {"stdin": bash("gh pr merge https://github.com/Gyver-Work/packages/pull/530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,
+                   "gh": [gh_view(530, "p", "MERGED")]}}),
+        # L'ALIAS SSH, che e' la forma vera di 27 copie su 28: prima lo slug
+        # restava vuoto e nessuna copia poteva essere confermata.
+        ("un remoto che passa da un host di comodo e' comunque GitHub",
+         {"stdin": bash("gh -R Gyver-Work/packages pr merge 530",
+                        {"stdout": "merged."}),
+          "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW),
+                   "git": [{"match": ["/a/packages", "remote"],
+                            "stdout": "git@github.com-work:Gyver-work/packages.git\n"},
+                           {"match": ["rev-list", "--count"], "stdout": "0\n"}],
+                   "gh": [gh_view(530, "p", "MERGED")]}}),
         ("GitHub non risponde: non si marca al buio",
          {"stdin": bash("cd /a/packages && gh pr merge", {"stdout": "merged."}),
           "spec": {"orca": orca_normale(LISTA_GIA_IN_REVIEW), "git": GIT_PULITO,

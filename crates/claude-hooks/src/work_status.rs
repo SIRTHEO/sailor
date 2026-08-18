@@ -87,10 +87,23 @@ fn opens_request(command: &str) -> bool {
 /// Il gesto gemello, che mancava. `--merge`, `--squash`, `--rebase`, con o
 /// senza numero: la forma del comando è solo il primo filtro, la prova la dà
 /// GitHub.
-fn merges_request(command: &str) -> bool {
+///
+/// LE OPZIONI GLOBALI STANNO IN MEZZO: `gh -R <slug> pr merge 530 --squash` è
+/// la forma con cui le richieste vengono fuse davvero, e senza il tratto
+/// centrale non veniva riconosciuta affatto.
+fn merges_at(command: &str) -> Option<usize> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"\bgh\s+pr\s+merge").unwrap());
-    re.find_iter(command).any(|m| !word_continues(command, m.end()))
+    let re = RE.get_or_init(|| {
+        Regex::new(r"\bgh\s+(?:-{1,2}[\w-]+(?:=[^\s;&|]+|\s+[^\s;&|-][^\s;&|]*)?\s+)*pr\s+merge")
+            .unwrap()
+    });
+    re.find_iter(command)
+        .find(|m| !word_continues(command, m.end()))
+        .map(|m| m.end())
+}
+
+fn merges_request(command: &str) -> bool {
+    merges_at(command).is_some()
 }
 
 fn creates_worktree(command: &str) -> bool {
@@ -118,11 +131,39 @@ fn pull_url() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"github\.com[:/]([^/\s]+)/([^/\s]+)/pull/\d+").unwrap())
 }
 
+fn repo_arg() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    // `(?:^|\s)` esiste anche qui: è un'alternanza, non un lookaround.
+    RE.get_or_init(|| Regex::new(r"(?:^|\s)(?:-R|--repo)[=\s]+([\w.-]+/[\w.-]+)").unwrap())
+}
+
+/// Il numero nudo, che in Python sta fra due lookaround. Qui si cerca la cifra e
+/// si guardano i due caratteri attorno, come già fa `word_continues`.
+fn bare_number(tail: &str) -> Option<&str> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\d+").unwrap());
+    let borders = |c: char| c.is_alphanumeric() || c == '_' || c == '.' || c == '/' || c == '-';
+    re.find_iter(tail)
+        .find(|m| {
+            let before = tail[..m.start()].chars().next_back().map(borders).unwrap_or(false);
+            let after = tail[m.end()..].chars().next().map(borders).unwrap_or(false);
+            !before && !after
+        })
+        .map(|m| m.as_str())
+}
+
 fn remote_slug() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     // `$` di Python accetta anche la posizione prima di un `\n` finale; qui la
     // lettura è già passata da `strip()`, quindi non c'è nessun a capo in coda.
-    RE.get_or_init(|| Regex::new(r"github\.com[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?$").unwrap())
+    // L'ALIAS SSH: su questa macchina i remoti passano da `github.com-work`,
+    // un host di comodo di `~/.ssh/config`. La forma precedente pretendeva `:`
+    // o `/` subito dopo `github.com` e non lo riconosceva: il 18/08/2026 **27
+    // copie su 28** avevano lo slug vuoto. Il suffisso si accetta solo dopo un
+    // trattino, cosi' `github.company.com` resta un altro host.
+    RE.get_or_init(|| {
+        Regex::new(r"github\.com(?:-[\w.-]+)?[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?$").unwrap()
+    })
 }
 
 fn rango(state: &str) -> u8 {
@@ -543,6 +584,163 @@ fn tace(command: &str, motivo: &str) -> Option<String> {
     None
 }
 
+/// Il numero di richiesta che il comando nomina. Vuoto se non ne nomina nessuno.
+///
+/// Resta testo: serve solo a comporre una domanda a GitHub, e un intero
+/// costringerebbe a scegliere una larghezza dove il Python non ne ha nessuna.
+fn pull_number(command: &str) -> String {
+    let Some(end) = merges_at(command) else {
+        return String::new();
+    };
+    let rest = &command[end..];
+    let tail = rest
+        .split(|c| c == ';' || c == '&' || c == '|')
+        .next()
+        .unwrap_or("");
+    if let Some(m) = pull_url().find(tail) {
+        return m.as_str().rsplit('/').next().unwrap_or("").to_string();
+    }
+    bare_number(tail).unwrap_or("").to_string()
+}
+
+/// `owner/repo` che il comando nomina, dall'opzione o dall'URL. Vuoto se tace.
+fn repo_of_command(command: &str) -> String {
+    if let Some(c) = repo_arg().captures(command) {
+        return c[1].to_lowercase();
+    }
+    match pull_url().captures(command) {
+        Some(c) => format!("{}/{}", &c[1], &c[2]).to_lowercase(),
+        None => String::new(),
+    }
+}
+
+/// (ramo, stato) della richiesta numerata. Vuoti se GitHub non risponde.
+fn pull_by_number(slug: &str, number: &str) -> (String, String) {
+    let out = Command::new("gh")
+        .args([
+            "pr", "view", number, "--repo", slug, "--json",
+            "headRefName,state,mergedAt",
+        ])
+        .output();
+    let Ok(o) = out else {
+        return (String::new(), String::new());
+    };
+    if !o.status.success() {
+        return (String::new(), String::new());
+    }
+    let Ok(r) = serde_json::from_slice::<Value>(&o.stdout) else {
+        return (String::new(), String::new());
+    };
+    if !r.is_object() {
+        return (String::new(), String::new());
+    }
+    let merged = r
+        .get("mergedAt")
+        .map(|v| !v.is_null() && v != &Value::String(String::new()))
+        .unwrap_or(false);
+    let state = if merged {
+        "MERGED".to_string()
+    } else {
+        py_str(r.get("state"))
+    };
+    (py_str(r.get("headRefName")), state)
+}
+
+/// Le lavorazioni di quel repo su quel ramo.
+///
+/// Il ramo si legge dall'elenco di Orca, che non costa niente; il remoto si
+/// chiede a git **solo** sui candidati, che di norma sono uno.
+fn copies_of_branch<'a>(worktrees: &'a [Value], slug: &str, branch: &str) -> Vec<&'a Value> {
+    let mut found = Vec::new();
+    for w in worktrees {
+        if !w.is_object() {
+            continue;
+        }
+        let git = w.get("git").cloned().unwrap_or(json!({}));
+        if git.get("isMainWorktree").map(truthy).unwrap_or(false) {
+            continue;
+        }
+        if py_str(git.get("branch")).replace("refs/heads/", "") != branch {
+            continue;
+        }
+        if slug_of_remote(&py_str(w.get("path"))) == slug {
+            found.push(w);
+        }
+    }
+    found
+}
+
+/// Marca la copia del ramo che quella richiesta porta, se ne esiste una sola.
+///
+/// LE GUARDIE RESTANO TUTTE: si marca solo su MERGED confermato da GitHub, mai
+/// un checkout canonico, e «fusa» non basta finché la copia tiene commit che non
+/// vivono altrove. Cambia solo il modo di trovare la copia: dal ramo della
+/// richiesta invece che dal `cd`. Una sola, o nessuna — due copie sullo stesso
+/// ramo dello stesso repo non si risolvono indovinando.
+fn merge_by_number(
+    command: &str,
+    worktrees: &[Value],
+    number: &str,
+    cwd: &str,
+) -> Py<Option<String>> {
+    let mut slug = repo_of_command(command);
+    if slug.is_empty() {
+        // Il repo non è nel comando: lo dice la cartella da cui si è fuso.
+        if let Some(near) = worktree_of_command(command, cwd, worktrees)? {
+            slug = slug_of_remote(&py_str(near.get("path")));
+        }
+    }
+    if slug.is_empty() {
+        return Ok(tace(
+            command,
+            &format!(
+                "la richiesta #{number} non nomina il repo e la cartella del comando non lo dice"
+            ),
+        ));
+    }
+
+    let (branch, state) = pull_by_number(&slug, number);
+    if state != "MERGED" {
+        return Ok(tace(
+            command,
+            &format!(
+                "GitHub dice {} per la richiesta #{number} di {slug}",
+                if state.is_empty() { "niente" } else { &state }
+            ),
+        ));
+    }
+    if branch.is_empty() {
+        return Ok(tace(
+            command,
+            &format!("la richiesta #{number} di {slug} non dichiara un ramo"),
+        ));
+    }
+
+    let found = copies_of_branch(worktrees, &slug, &branch);
+    if found.len() != 1 {
+        return Ok(tace(
+            command,
+            &format!(
+                "la richiesta #{number} porta il ramo '{branch}', che risponde a {} copie di {slug}",
+                found.len()
+            ),
+        ));
+    }
+    let worktree = found[0];
+
+    let leftover = unlanded_commits(&py_str(worktree.get("path")));
+    let mut richieste = BTreeMap::new();
+    richieste.insert(branch, "MERGED".to_string());
+    let giusto = state_giusto(worktree, &richieste, leftover)?;
+    if !write_state(worktree, &giusto)? {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "Orca: '{}' marked {giusto} (pull request #{number} merged).",
+        py_str(worktree.get("displayName"))
+    )))
+}
+
 /// La copia il cui lavoro è appena atterrato smette di essere «in revisione».
 ///
 /// PERCHÉ NON BASTA IL RICONCILIATORE. `--riconcilia` gira a SessionStart, e fra
@@ -575,6 +773,14 @@ fn dopo_fusione(payload: &Value) -> Py<Option<String>> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
+    // QUANDO IL COMANDO NOMINA LA RICHIESTA, SI SEGUE LA RICHIESTA. Il gesto
+    // reale è `gh -R <repo> pr merge <numero> --squash` da qualunque cartella:
+    // dedurre la copia dal `cd` è un'euristica, il numero è un fatto.
+    let number = pull_number(&command);
+    if !number.is_empty() {
+        return merge_by_number(&command, &worktrees, &number, &cwd);
+    }
+
     // DA QUI IN GIÙ OGNI SILENZIO LASCIA UNA RIGA: un gancio muto è
     // indistinguibile da un gancio contento, e il 18/08/2026 una copia con la
     // richiesta fusa è rimasta «in revisione» senza niente da leggere.
@@ -1083,6 +1289,70 @@ mod tests {
         assert!(!merges_request("gh pr create"));
     }
 
+    /// Il caso vero del 18/08/2026: la forma con cui si fonde davvero, che il
+    /// gancio non riconosceva affatto.
+    #[test]
+    fn le_opzioni_globali_stanno_in_mezzo() {
+        for c in [
+            "gh -R Gyver-Work/matching-engine pr merge 530 --squash",
+            "gh --repo Gyver-Work/suite pr merge 77 --merge",
+            "gh -R=Gyver-Work/suite pr merge 77",
+        ] {
+            assert!(merges_request(c), "non riconosciuto: {c}");
+        }
+        // MUTANTE: il tratto centrale non deve inghiottire un altro comando.
+        assert!(!merges_request("gh pr list && echo pr merge"));
+        assert!(!merges_request("gh api /repos/x/y/pulls"));
+    }
+
+    #[test]
+    fn il_numero_e_il_repo_si_leggono_dal_comando() {
+        for (c, number, slug) in [
+            (
+                "gh -R Gyver-Work/matching-engine pr merge 530 --squash",
+                "530",
+                "gyver-work/matching-engine",
+            ),
+            ("gh pr merge --squash 468", "468", ""),
+            ("cd /a/x && gh pr merge 12 --merge", "12", ""),
+            (
+                "gh pr merge https://github.com/Gyver-Work/suite/pull/77 --squash",
+                "77",
+                "gyver-work/suite",
+            ),
+            // MUTANTE: il taglio al separatore. Senza, il `99` del comando in
+            // coda diventerebbe il numero della richiesta da fondere.
+            ("gh pr merge 5 && echo 99", "5", ""),
+            ("gh pr merge; gh pr list --limit 30", "", ""),
+            ("gh pr merge --auto", "", ""),
+            ("gh pr merge", "", ""),
+        ] {
+            assert_eq!(pull_number(c), number, "numero sbagliato: {c}");
+            assert_eq!(repo_of_command(c), slug, "repo sbagliato: {c}");
+        }
+    }
+
+    #[test]
+    fn la_copia_si_sceglie_dal_ramo_della_richiesta() {
+        let worktrees = vec![
+            json!({"path": "/a/uno", "id": "1", "git":
+                   {"isMainWorktree": false, "branch": "refs/heads/mio-ramo"}}),
+            json!({"path": "/a/tronco", "id": "T", "git":
+                   {"isMainWorktree": true, "branch": "refs/heads/mio-ramo"}}),
+            json!("non sono una copia"),
+        ];
+        // Il remoto vero non si legge in una prova: senza git, `slug_of_remote`
+        // torna vuoto, quindi qui si verifica il filtro sul ramo e il fatto che
+        // un remoto che non corrisponde escluda la copia.
+        assert!(copies_of_branch(&worktrees, "gyver-work/suite", "mio-ramo").is_empty());
+        // MUTANTE: il checkout canonico non è mai un candidato, nemmeno col
+        // ramo giusto.
+        assert!(copies_of_branch(&worktrees, "", "develop").is_empty());
+        let found = copies_of_branch(&worktrees, "", "mio-ramo");
+        assert_eq!(found.len(), 1, "il tronco non va contato");
+        assert_eq!(py_str(found[0].get("id")), "1");
+    }
+
     fn lav(ramo: &str) -> Value {
         json!({"git": {"isMainWorktree": false, "branch": format!("refs/heads/{ramo}")}})
     }
@@ -1198,6 +1468,30 @@ mod tests {
         );
         assert_eq!(slug_of_pull(Some(&json!({"stdout": "done."}))), "");
         assert_eq!(slug_of_pull(None), "");
+    }
+
+    /// L'alias SSH del remoto: la forma vera di 27 copie su 28.
+    #[test]
+    fn il_remoto_passa_da_un_host_di_comodo() {
+        let slug = |url: &str| match remote_slug().captures(url) {
+            Some(c) => format!("{}/{}", &c[1], &c[2]).to_lowercase(),
+            None => String::new(),
+        };
+        assert_eq!(
+            slug("git@github.com-work:Gyver-work/matching-engine.git"),
+            "gyver-work/matching-engine"
+        );
+        assert_eq!(
+            slug("git@github.com-personal:theo/sailor.git"),
+            "theo/sailor"
+        );
+        // Le due forme di sempre non si perdono per strada.
+        assert_eq!(slug("git@github.com:Gyver-Work/packages.git"), "gyver-work/packages");
+        assert_eq!(slug("https://github.com/Gyver-Work/suite"), "gyver-work/suite");
+        // MUTANTE: il suffisso si accetta solo dopo un trattino — un host che
+        // comincia allo stesso modo non e' GitHub.
+        assert_eq!(slug("git@github.company.com:x/y.git"), "");
+        assert_eq!(slug("git@gitlab.com:x/y.git"), "");
     }
 
     #[test]
