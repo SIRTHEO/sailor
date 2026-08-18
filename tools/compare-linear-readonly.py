@@ -126,6 +126,23 @@ def cases(battery):
                    {key: f'/home/someone/.claude/skills/hooks/{name}',
                     'content': 'x'}, None, None)
 
+    # Le LETTURE dei file protetti. Il corpus non ne aveva nessuna, e per questo
+    # il difetto è vissuto a lungo: `sed` stava fra i segni di scrittura come
+    # parola nuda, quindi `sed -n '5,10p'` sul gancio era negato mentre `grep`
+    # sullo stesso file passava. Il confronto taceva perché non gliel'aveva mai
+    # chiesto — un corpus senza il caso è cieco quanto un gate spento.
+    hook = '~/.claude/skills/hooks/linear-sola-lettura.py'
+    for command in (f"sed -n '5,10p' {hook}",
+                    f'sed -n "1,40p" {hook}',
+                    f'grep -n deny {hook}',
+                    f'head -20 {hook}'):
+        yield ('lettura-file-protetto', command, 'Bash', None, None, None)
+    # E la direzione opposta, o la riga sopra basterebbe a far passare un porto
+    # che ha smesso di guardare `sed` del tutto.
+    for command in (f'sed -i "" "s/deny/allow/" {hook}',
+                    f'sed --in-place "s/a/b/" {hook}'):
+        yield ('scrittura-sed-in-place', command, 'Bash', None, None, None)
+
     # La valvola sul file di configurazione, che è l'unico posto dove vale.
     # I casi `VALVOLA_FINTA` della batteria riguardano tutti scritture su Linear,
     # dove `OK_UTENTE=1` non viene nemmeno consultata: senza queste righe, un
