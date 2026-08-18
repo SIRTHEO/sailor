@@ -7,6 +7,8 @@
 //! L'ORDINE DELLE CHIAMATE A ORCA È IL COMPORTAMENTO, e non è negoziabile:
 //!
 //! ```text
+//!   0. il freno della catena          la storia, prima del momento: guarda
+//!                                     `guards::chain`
 //!   1. wait  tui-idle sulla vecchia   non si tronca un turno a metà
 //!   2. write riprendi-da/<worktree>   il segnale di ripresa, prima di tutto
 //!   3. create il successore            PRIMA di chiudere: il worktree non resta
@@ -27,6 +29,7 @@
 //! con due mutanti che passavano su 36 prove su 36. Qui il chiamante entra come
 //! parametro: le prove registrano la sequenza e la confrontano.
 
+use guards::chain::{chain_verdict, ChainLimits, ChainLink, ChainVerdict};
 use guards::handoff::{
     evaluate, resolve_terminal_handle, state_key, Action, SessionFacts, Terminal,
 };
@@ -146,6 +149,108 @@ fn now_epoch() -> f64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0)
+}
+
+// ─── La storia della catena: la parte che tocca il disco ─────────────────────
+//
+// La decisione sta in `guards::chain`, pura. Qui c'è dove si scrive, quanto se
+// ne tiene, e come si spegne. L'albero di lavoro è la chiave perché è l'unico
+// ponte che sopravvive alla sostituzione: la sessione cambia identità a ogni
+// anello, il suo pannello pure.
+
+/// Quanti anelli si conservano. Il verdetto ne guarda molti meno; il resto è la
+/// storia che si legge quando un freno morde e si vuole sapere perché.
+const CHAIN_KEEP: usize = 50;
+
+fn chain_dir() -> PathBuf {
+    state_dir().join("catene")
+}
+
+fn chain_path(worktree: &str) -> PathBuf {
+    chain_dir().join(format!("{}.json", state_key(worktree)))
+}
+
+/// Il marcatore che dice «questa catena è stata fermata, ed ecco perché».
+///
+/// Fa due mestieri di proposito: è la traccia che Theo legge e insieme la
+/// memoria di «l'ho già detto», senza la quale il registro prenderebbe una riga
+/// identica ogni sessanta secondi finché qualcuno non interviene.
+fn chain_blocked_path(worktree: &str) -> PathBuf {
+    state_dir().join(format!("catena-bloccata-{}", state_key(worktree)))
+}
+
+/// Il freno si spegne con un file, come `staffetta-off` accanto a cui vive:
+/// sotto launchd l'ambiente lo fissa il `.plist`, e una valvola che si accende
+/// solo riscrivendo un plist non la usa nessuno.
+fn brake_is_off() -> bool {
+    state_dir().join("freno-catena-off").exists()
+}
+
+fn env_num<T: std::str::FromStr>(name: &str, fallback: T) -> T {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(fallback)
+}
+
+fn chain_limits() -> ChainLimits {
+    let d = ChainLimits::default();
+    ChainLimits {
+        max_links: env_num("RELAY_CHAIN_MAX_LINKS", d.max_links),
+        max_age_sec: env_num("RELAY_CHAIN_MAX_AGE_SEC", d.max_age_sec),
+        idle_reset_sec: env_num("RELAY_CHAIN_IDLE_RESET_SEC", d.idle_reset_sec),
+        stall_links: env_num("RELAY_CHAIN_STALL_LINKS", d.stall_links),
+    }
+}
+
+/// Gli anelli già percorsi su questo albero. Vuoto anche quando il file è
+/// illeggibile: una storia che non si riesce a leggere non deve fermare niente,
+/// perché il costo dell'errore qui è una catena viva bloccata al buio.
+fn read_chain(worktree: &str) -> Vec<ChainLink> {
+    let Ok(text) = fs::read_to_string(chain_path(worktree)) else {
+        return Vec::new();
+    };
+    let Ok(d) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    let Some(items) = d.get("links").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .map(|l| {
+            let s = |k: &str| l.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let n = |k: &str| l.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+            ChainLink {
+                session: s("session"),
+                at: l.get("at").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                turns: n("turns"),
+                writes: n("writes"),
+                handoff: s("handoff"),
+            }
+        })
+        .collect()
+}
+
+fn write_chain(worktree: &str, links: &[ChainLink]) {
+    let _ = fs::create_dir_all(chain_dir());
+    let start = links.len().saturating_sub(CHAIN_KEEP);
+    let items: Vec<serde_json::Value> = links[start..]
+        .iter()
+        .map(|l| {
+            serde_json::json!({
+                "session": l.session,
+                "at": l.at,
+                "turns": l.turns,
+                "writes": l.writes,
+                "handoff": l.handoff,
+            })
+        })
+        .collect();
+    let _ = fs::write(
+        chain_path(worktree),
+        serde_json::json!({ "links": items }).to_string(),
+    );
 }
 
 /// L'handle del successore che un altro meccanismo ha già aperto, se ancora vivo.
@@ -427,8 +532,12 @@ fn read_record(path: &Path) -> Option<Record> {
 /// loop non lo faceva: il registro diceva quanti token aveva la sessione e
 /// perché veniva sostituita, mai cosa aveva concluso. Senza quel dato una catena
 /// che gira a vuoto — nasce, non conclude niente, consegna, viene sostituita — è
-/// indistinguibile da una che lavora, e i quattro freni non la fermerebbero:
-/// guardano tutti il momento, nessuno la storia.
+/// indistinguibile da una che lavora.
+///
+/// Dal 18/08/2026 questa misura non finisce solo nel registro: è metà del
+/// segnale che `guards::chain` usa per riconoscere un anello sterile. L'altra
+/// metà è la consegna citata, perché le sole scritture mentirebbero — in
+/// modalità automatica i file si toccano da Bash e qui risulterebbero zero.
 ///
 /// Si conta solo alla rigenerazione, che è rara (11 in 15 ore il 18/08/2026),
 /// non a ogni giro di valutazione. Il transcript è JSONL compatto e si legge a
@@ -459,6 +568,57 @@ pub fn regenerate(
     before: Option<&[Terminal]>,
 ) {
     let sess = &rec.session;
+
+    // 0. IL FRENO, prima di ogni altra cosa e prima di spendere una chiamata a
+    //    `orca`. Gli altri controlli guardano questa sessione adesso; questo
+    //    guarda le rigenerazioni già fatte su questo albero, che è l'unica cosa
+    //    che dice se la catena sta convergendo o girando a vuoto.
+    let mut chain = read_chain(&rec.worktree);
+    if !brake_is_off() {
+        let (verdict, why) = chain_verdict(&chain, now_epoch(), &chain_limits());
+        match verdict {
+            ChainVerdict::Stop => {
+                let marker = chain_blocked_path(&rec.worktree);
+                if dry_run {
+                    log_line(&format!("[SECCO] FRENO sess={sess}: {why}"));
+                    return;
+                }
+                // Si parla una volta sola: il marcatore è insieme la traccia per
+                // Theo e la memoria di averlo già detto. Senza, questa riga
+                // tornerebbe ogni sessanta secondi finché non interviene
+                // qualcuno, e un registro saturo è un registro cieco.
+                if !marker.exists() {
+                    let _ = fs::create_dir_all(state_dir());
+                    let _ = fs::write(
+                        &marker,
+                        format!(
+                            "{}\n{why}\nalbero: {}\nsessione: {sess}\n",
+                            hook_io::local_time::now_local_iso8601(),
+                            rec.worktree
+                        ),
+                    );
+                    log_line(&format!(
+                        "FRENO sess={sess}: {why}. NON rigenero. Per ripartire: \
+                         rm {} {}",
+                        chain_path(&rec.worktree).display(),
+                        marker.display()
+                    ));
+                }
+                return;
+            }
+            ChainVerdict::Reset => {
+                // La catena precedente è finita da un pezzo: il lavoro di oggi
+                // non si giudica coi numeri di ieri.
+                chain.clear();
+                if !dry_run {
+                    let _ = fs::remove_file(chain_blocked_path(&rec.worktree));
+                }
+                log_line(&format!("sess={sess}: {why}"));
+            }
+            ChainVerdict::Go => {}
+        }
+    }
+
     if dry_run {
         log_line(&format!(
             "[SECCO] rigenererei sess={sess} handle={} worktree={} cwd={}",
@@ -625,11 +785,24 @@ pub fn regenerate(
     }
     set_cooldown(&rec.worktree);
     let (turns, writes) = progress(&rec.transcript);
+    // L'anello si scrive solo qui, dove la rigenerazione è davvero avvenuta: un
+    // tentativo fallito non è un giro di catena, e contarlo farebbe mordere il
+    // tetto proprio mentre la staffetta non sta sostituendo niente.
+    chain.push(ChainLink {
+        session: sess.clone(),
+        at: now_epoch(),
+        turns,
+        writes,
+        handoff: hpath.clone(),
+    });
+    write_chain(&rec.worktree, &chain);
+    let _ = fs::remove_file(chain_blocked_path(&rec.worktree));
     log_line(&format!(
         "RIGENERATA sess={sess}: vecchio={} -> nuovo={new_handle} (handoff={}, \
-         prodotto: {turns} turni, {writes} scritture)",
+         prodotto: {turns} turni, {writes} scritture, anello {} della catena)",
         rec.handle,
-        if hpath.is_empty() { "-" } else { &hpath }
+        if hpath.is_empty() { "-" } else { &hpath },
+        chain.len()
     ));
 }
 
@@ -694,9 +867,34 @@ fn retire(rec: &Record, orca: OrcaFn) {
         let _ = fs::remove_file(state_dir().join(format!("{family}-{sess}")));
     }
     set_cooldown(&rec.worktree);
+    // ANCHE QUESTO È UN ANELLO, e ometterlo aprirebbe la porta di servizio: il
+    // congedo sostituisce una sessione esattamente come la rigenerazione, solo
+    // che il successore l'ha aperto qualcun altro. Contando i soli `Regenerate`,
+    // una catena che passa di qui cresce senza che nessun tetto la veda — ed è
+    // un percorso vivo, non teorico: una sostituzione su tredici nel registro
+    // del 17-18/08/2026, e in crescita da quando esiste il congedo.
+    //
+    // Non si frena, si conta. Frenare un congedo lascerebbe due sessioni vive
+    // sullo stesso albero, cioè più di quante ce n'erano prima: il freno esiste
+    // per chi apre, non per chi chiude.
+    let (turns, writes) = progress(&rec.transcript);
+    let mut chain = read_chain(&rec.worktree);
+    chain.push(ChainLink {
+        session: sess.clone(),
+        at: now_epoch(),
+        turns,
+        writes,
+        // Senza questa lettura ogni anello da congedo avrebbe consegna vuota, e
+        // una consegna vuota non è mai sterile: il rilevamento dello stallo si
+        // spegnerebbe proprio sul percorso che non ha freni.
+        handoff: latest_handoff(&rec.cwd),
+    });
+    write_chain(&rec.worktree, &chain);
     log_line(&format!(
-        "CONGEDATA sess={sess}: chiusa {} senza aprirne un'altra",
-        rec.handle
+        "CONGEDATA sess={sess}: chiusa {} senza aprirne un'altra \
+         (prodotto: {turns} turni, {writes} scritture, anello {} della catena)",
+        rec.handle,
+        chain.len()
     ));
 }
 
@@ -1165,5 +1363,165 @@ mod tests {
         // Senza cwd non c'è niente da restringere: lì il ripiego è tutto quello
         // che si può dire.
         assert_eq!(latest_handoff(""), altrui);
+    }
+
+    // ─── Il freno della catena ────────────────────────────────────────────────
+
+    /// Scrive una storia finta di `n` anelli, l'ultimo a `eta` secondi fa.
+    fn catena_finta(worktree: &str, n: usize, writes: u64, handoff: &str, eta: f64) {
+        let now = now_epoch();
+        let links: Vec<ChainLink> = (0..n)
+            .map(|i| ChainLink {
+                session: format!("sess{i}"),
+                // Un anello al minuto, come la fuga vera del 17/08/2026.
+                at: now - eta - ((n - 1 - i) as f64 * 60.0),
+                turns: 10,
+                writes,
+                handoff: handoff.to_string(),
+            })
+            .collect();
+        write_chain(worktree, &links);
+    }
+
+    /// Un `orca` che registra le chiamate e finge un create riuscito.
+    fn orca_che_registra(
+    ) -> (std::rc::Rc<std::cell::RefCell<Vec<String>>>, impl FnMut(&[&str]) -> (i32, String)) {
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"create") {
+                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
+        (chiamate, orca)
+    }
+
+    #[test]
+    fn a_worn_out_chain_is_not_regenerated() {
+        let _home = HomeIsolata::nuova("catena-esausta");
+        // Dieci rigenerazioni ravvicinate: il tetto morde PRIMA di spendere una
+        // sola chiamata a orca, che è il punto — il freno non deve costare un
+        // giro per accorgersi di essere un freno.
+        catena_finta("wt-prova", 10, 5, "/qualcosa.md", 30.0);
+        let (chiamate, mut orca) = orca_che_registra();
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        assert!(
+            chiamate.borrow().is_empty(),
+            "il freno non ha fermato niente: {:?}",
+            chiamate.borrow()
+        );
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("FRENO"), "{log}");
+        assert!(!log.contains("RIGENERATA"), "{log}");
+        assert!(chain_blocked_path("wt-prova").exists(), "manca il marcatore");
+    }
+
+    #[test]
+    fn a_stalled_chain_is_not_regenerated() {
+        let _home = HomeIsolata::nuova("catena-in-stallo");
+        // Quattro anelli sotto il tetto, ma gli ultimi tre non hanno scritto
+        // niente e citano tutti la stessa consegna.
+        catena_finta("wt-prova", 4, 0, "/ferma.md", 30.0);
+        let (chiamate, mut orca) = orca_che_registra();
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        assert!(chiamate.borrow().is_empty(), "{:?}", chiamate.borrow());
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("gira a vuoto"), "{log}");
+    }
+
+    #[test]
+    fn the_brake_speaks_once_not_every_minute() {
+        let _home = HomeIsolata::nuova("freno-silenzioso");
+        // Gira ogni sessanta secondi: se parlasse a ogni giro, il registro
+        // diventerebbe illeggibile in un pomeriggio — ed è il difetto che questa
+        // configurazione ha già pagato altrove, con 16 falsi allarmi su 18.
+        catena_finta("wt-prova", 10, 5, "/qualcosa.md", 30.0);
+        let (_, mut orca) = orca_che_registra();
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert_eq!(
+            log.matches("FRENO").count(),
+            1,
+            "il freno ha ripetuto la stessa riga: {log}"
+        );
+    }
+
+    #[test]
+    fn a_chain_gone_quiet_starts_over() {
+        let _home = HomeIsolata::nuova("catena-scaduta");
+        // Dieci anelli, ma l'ultimo è di otto ore fa: quella catena è finita, e
+        // il lavoro di adesso non si giudica coi suoi numeri.
+        catena_finta("wt-prova", 10, 0, "/vecchia.md", 8.0 * 3600.0);
+        let (chiamate, mut orca) = orca_che_registra();
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        let seq = chiamate.borrow().clone();
+        assert!(seq.iter().any(|c| c.contains("create")), "non ha rigenerato: {seq:?}");
+        let anelli = read_chain("wt-prova");
+        assert_eq!(anelli.len(), 1, "la catena vecchia non è stata azzerata");
+    }
+
+    #[test]
+    fn a_successful_regeneration_records_its_link() {
+        let _home = HomeIsolata::nuova("anello-registrato");
+        let (_, mut orca) = orca_che_registra();
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        let anelli = read_chain("wt-prova");
+        assert_eq!(anelli.len(), 1, "l'anello non è stato registrato");
+        assert_eq!(anelli[0].session, "provarel");
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("anello 1 della catena"), "{log}");
+    }
+
+    #[test]
+    fn the_brake_has_a_valve() {
+        let _home = HomeIsolata::nuova("freno-spento");
+        catena_finta("wt-prova", 10, 0, "/ferma.md", 30.0);
+        fs::write(home().join(".claude/state/freno-catena-off"), "").unwrap();
+        let (chiamate, mut orca) = orca_che_registra();
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        assert!(
+            chiamate.borrow().iter().any(|c| c.contains("create")),
+            "la valvola non spegne il freno: {:?}",
+            chiamate.borrow()
+        );
+        // E la storia si continua a scrivere anche a freno spento: serve a
+        // capire cosa è successo quando qualcuno riaccende.
+        assert_eq!(read_chain("wt-prova").len(), 11);
+    }
+
+    #[test]
+    fn a_retirement_is_a_link_too() {
+        let _home = HomeIsolata::nuova("congedo-e-un-anello");
+        // La porta di servizio: il congedo sostituisce una sessione come la
+        // rigenerazione, e se non contasse, una catena che passa di qui
+        // crescerebbe senza che nessun tetto la veda.
+        let mut orca = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
+        retire(&record_di_prova(), &mut orca);
+        let anelli = read_chain("wt-prova");
+        assert_eq!(anelli.len(), 1, "il congedo non ha lasciato un anello");
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("CONGEDATA"), "{log}");
+        assert!(log.contains("anello 1 della catena"), "{log}");
+    }
+
+    #[test]
+    fn a_failed_regeneration_is_not_a_link() {
+        let _home = HomeIsolata::nuova("anello-solo-se-riuscita");
+        // Il create fallisce: la catena non è avanzata, e contarlo farebbe
+        // mordere il tetto proprio mentre non si sostituisce niente.
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"create") {
+                (1, "boom".to_string())
+            } else {
+                (0, String::new())
+            }
+        };
+        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        assert!(read_chain("wt-prova").is_empty(), "un tentativo fallito ha contato");
     }
 }
