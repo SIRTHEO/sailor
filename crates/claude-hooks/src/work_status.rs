@@ -84,6 +84,15 @@ fn opens_request(command: &str) -> bool {
     re.find_iter(command).any(|m| !word_continues(command, m.end()))
 }
 
+/// Il gesto gemello, che mancava. `--merge`, `--squash`, `--rebase`, con o
+/// senza numero: la forma del comando è solo il primo filtro, la prova la dà
+/// GitHub.
+fn merges_request(command: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\bgh\s+pr\s+merge").unwrap());
+    re.find_iter(command).any(|m| !word_continues(command, m.end()))
+}
+
 fn creates_worktree(command: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| Regex::new(r"\borca\s+worktree\s+create").unwrap());
@@ -465,6 +474,123 @@ fn dopo_richiesta(payload: &Value) -> Py<Option<String>> {
     }
     Ok(Some(format!(
         "Orca: '{}' marked in-review (pull request opened).",
+        py_str(worktree.get("displayName"))
+    )))
+}
+
+/// Lo stato che GitHub dà alla richiesta di questo ramo. Vuoto se non risponde.
+///
+/// LA PROVA È GITHUB, non l'uscita del comando. `gh pr merge` stampa un testo
+/// che cambia forma fra versioni e fra modi di fusione, e un gancio che lo
+/// interpreta si rompe in silenzio al primo aggiornamento della CLI. Qui si
+/// chiede alla fonte: una chiamata di rete in più, ma solo nell'istante in cui
+/// qualcuno fonde.
+///
+/// SI CHIEDE PER REPO, NON DALLA CARTELLA: da lì la domanda non parte affatto se
+/// la cartella non c'è più — che dopo una fusione è proprio il caso che può
+/// capitare, perché è il momento in cui una copia si smonta.
+fn stato_richiesta_del_ramo(path_: &str, ramo: &str) -> String {
+    let slug = slug_of_remote(path_);
+    if slug.is_empty() {
+        return String::new();
+    }
+    let out = Command::new("gh")
+        .args([
+            "pr", "list", "--repo", &slug, "--head", ramo, "--state", "all",
+            "--limit", "5", "--json", "state,mergedAt",
+        ])
+        .output();
+    let Ok(o) = out else { return String::new() };
+    if !o.status.success() {
+        return String::new();
+    }
+    let Ok(prs) = serde_json::from_slice::<Value>(&o.stdout) else {
+        return String::new();
+    };
+    let mut migliore = String::new();
+    for r in prs.as_array().map(|v| v.as_slice()).unwrap_or(&[]) {
+        let merged = r
+            .get("mergedAt")
+            .map(|v| !v.is_null() && v != &Value::String(String::new()))
+            .unwrap_or(false);
+        let stato = if merged {
+            "MERGED".to_string()
+        } else {
+            py_str(r.get("state"))
+        };
+        if rango(&stato) > rango(&migliore) {
+            migliore = stato;
+        }
+    }
+    migliore
+}
+
+/// La copia il cui lavoro è appena atterrato smette di essere «in revisione».
+///
+/// PERCHÉ NON BASTA IL RICONCILIATORE. `--riconcilia` gira a SessionStart, e fra
+/// un avvio e l'altro passano ore: misurato il 18/08/2026, **7 copie su 13
+/// dichiarate in-review avevano già la richiesta fusa**, e tutte e cinque le
+/// fusioni verificabili erano avvenute **dopo** il suo ultimo giro (08:32 UTC;
+/// fusioni fra le 08:46 e le 09:04). La barra di Orca — che è quello che si
+/// guarda — raccontava fermo in revisione un lavoro già finito.
+fn dopo_fusione(payload: &Value) -> Py<Option<String>> {
+    if !payload.is_object() {
+        return Err("il payload non è un dizionario".into());
+    }
+    if payload.get("tool_name") != Some(&Value::String("Bash".into())) {
+        return Ok(None);
+    }
+    let command = command_of(payload)?;
+    if !merges_request(&command) {
+        return Ok(None);
+    }
+    if let Some(Value::Object(o)) = payload.get("tool_response") {
+        let rotto = o.get("is_error").map(truthy).unwrap_or(false)
+            || o.get("interrupted").map(truthy).unwrap_or(false);
+        if rotto {
+            return Ok(None);
+        }
+    }
+
+    let listing = orca_json(&["worktree", "list"]).unwrap_or(json!({}));
+    let worktrees = worktrees_of(&listing)?;
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let Some(worktree) = worktree_of_command(&command, &cwd, &worktrees)? else {
+        return Ok(None);
+    };
+    // Un checkout canonico non è una lavorazione: fondere stando lì dentro non
+    // deve marcare niente. `state_giusto` lo sa già, ma uscire qui risparmia la
+    // chiamata di rete.
+    let git = worktree.get("git").cloned().unwrap_or(json!({}));
+    if git.get("isMainWorktree").map(truthy).unwrap_or(false) {
+        return Ok(None);
+    }
+    let ramo = py_str(git.get("branch")).replace("refs/heads/", "");
+    if ramo.is_empty() {
+        return Ok(None);
+    }
+
+    // SI MARCA SOLO SU CONFERMA, come per l'apertura: `gh pr merge 468` fonde la
+    // richiesta di un ALTRO ramo, e marcare la copia da cui si è digitato il
+    // comando scriverebbe lo stato sbagliato su una lavorazione viva.
+    let path_ = py_str(worktree.get("path"));
+    if stato_richiesta_del_ramo(&path_, &ramo) != "MERGED" {
+        return Ok(None);
+    }
+
+    // Fusa non basta a dire finita: una copia con commit che non vivono da
+    // nessun'altra parte resta in lavorazione.
+    let leftover = unlanded_commits(&path_);
+    let mut richieste = BTreeMap::new();
+    richieste.insert(ramo, "MERGED".to_string());
+    let giusto = state_giusto(worktree, &richieste, leftover)?;
+    if !write_state(worktree, &giusto)? {
+        return Ok(None);
+    }
+    Ok(Some(format!(
+        "Orca: '{}' marked {giusto} (pull request merged).",
         py_str(worktree.get("displayName"))
     )))
 }
@@ -857,10 +983,10 @@ pub fn run() -> i32 {
         return 0;
     }
 
-    // Due gesti, un gancio solo. Una sessione tocca il ciclo di vita di Orca
-    // quando apre una richiesta e quando crea una copia; tenerli separati
-    // costerebbe una riga in più in `settings.json`, che il 16/08/2026 si è
-    // rivelato il punto fragile del sistema.
+    // Tre gesti, un gancio solo. Una sessione tocca il ciclo di vita di Orca
+    // quando apre una richiesta, quando la fonde e quando crea una copia;
+    // tenerli separati costerebbe due righe in più in `settings.json`, che il
+    // 16/08/2026 si è rivelato il punto fragile del sistema.
     let mut raw = String::new();
     if std::io::stdin().read_to_string(&mut raw).is_err() {
         return 0;
@@ -870,6 +996,7 @@ pub fn run() -> i32 {
     };
     for (name, step) in [
         ("dopo-richiesta", dopo_richiesta as fn(&Value) -> Py<Option<String>>),
+        ("dopo-fusione", dopo_fusione),
         ("tab-di-avvio", tabs_left_behind),
     ] {
         match step(&payload) {
@@ -892,6 +1019,31 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merging_is_recognised_like_opening() {
+        // La forma del comando è il primo filtro: `(?![\w-])` esclude i vicini
+        // che non sono lo stesso gesto — `gh pr merged`, `merge-queue`.
+        for c in [
+            "gh pr merge 468 --squash",
+            "gh pr merge --auto",
+            "git push && gh pr merge",
+            "gh  pr  merge",
+        ] {
+            assert!(merges_request(c), "non riconosciuto: {c}");
+        }
+        for c in [
+            "gh pr merged",
+            "gh pr list --state merged",
+            "gh pr create",
+            "echo gh pr merge-queue",
+        ] {
+            assert!(!merges_request(c), "riconosciuto per sbaglio: {c}");
+        }
+        // MUTANTE: i due gesti non si confondono fra loro.
+        assert!(!opens_request("gh pr merge"));
+        assert!(!merges_request("gh pr create"));
+    }
 
     fn lav(ramo: &str) -> Value {
         json!({"git": {"isMainWorktree": false, "branch": format!("refs/heads/{ramo}")}})
