@@ -29,4 +29,5 @@ pub mod restart;
 pub mod scope_drift;
 pub mod skill_nudge;
 pub mod spotlight_marker;
+pub mod worktree_create;
 pub mod worktree_deletes;
