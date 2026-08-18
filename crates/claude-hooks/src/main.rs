@@ -103,6 +103,7 @@ const ALL_HOOKS: &[&str] = &[
     "handoff-measure",
     "handoff-on-stop",
     "handoff-required",
+    "handoff-latest",
     "handoff-resolve",
     "hooks-off",
     "linear-readonly",
@@ -477,6 +478,14 @@ fn run(which: &str) -> Result<i32, String> {
             let a: Vec<String> = std::env::args().skip(2).collect();
             let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
             Ok(successor::probe(&arg(0), &arg(1), &arg(2)))
+        }
+        // Non è un gancio: è `latest_handoff` esposta in sola lettura, perché una
+        // correzione su quale consegna eredita il successore si verifica sul
+        // binario che gira, non sul sorgente che si legge.
+        "handoff-latest" => {
+            let cwd = std::env::args().nth(2).unwrap_or_default();
+            println!("{}", relay::latest_handoff(&cwd));
+            Ok(0)
         }
         "handoff-resolve" => {
             let a: Vec<String> = std::env::args().skip(2).collect();

@@ -46,6 +46,7 @@ FILES=(
   "crates/claude-hooks/src/skill_nudge.rs"
   "crates/claude-hooks/src/work_status.rs"
   "crates/claude-hooks/src/orca_cleanup.rs"
+  "crates/claude-hooks/src/relay.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -417,6 +418,44 @@ if [ "$WHICH" = "relay-evaluate" ] || [ "$WHICH" = "tutte" ]; then
   # dichiararlo è più utile che nascondere il buco togliendo il mutante.
   mutate "ramo senza soglie, irraggiungibile dal confronto" "$H" \
     's = s.replace("soglie non calcolabili", "soglie assenti", 1)'
+fi
+
+# ── relay-handoff ───────────────────────────────────────────────────────────
+if [ "$WHICH" = "relay-handoff" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su relay.rs (quale consegna eredita il successore):"
+  # Il caso che li vede tutti e cinque e' «CAMPO: la stessa, dentro un albero di
+  # lavoro», che sta solo nei casi di campo: senza `--all` questo gruppo
+  # dichiarerebbe uccisi mutanti che nessuno ha guardato.
+  COMPARE="compare-relay-regenerate.py --all"
+  R="crates/claude-hooks/src/relay.rs"
+
+  # Il difetto del 18/08/2026: la memoria di un albero di lavoro sta sotto il
+  # repo che lo ospita, e senza questa risalita il restringimento al progetto non
+  # si applica mai proprio dove serve — 5 rigenerazioni su 11.
+  mutate "l albero di lavoro non risale al repo" "$R" \
+    's = s.replace("    for candidate in [cwd, canonical.as_str()] {", "    for candidate in [cwd] {", 1)'
+
+  # Il nome non dice se un documento e' una consegna: la skill scrive uno slug
+  # tematico. Col criterio sul nome vince la consegna del giorno prima.
+  mutate "riconosce la consegna dal solo nome" "$R" \
+    's = s.replace("        if guards::successor::is_handoff_doc(path, text.as_deref()) {", "        if guards::successor::name_says_handoff(path) {", 1)'
+
+  # Senza conferma, la memoria piu' recente qualunque diventa il mandato del
+  # successore — appunti compresi.
+  mutate "prende il piu recente senza confermare" "$R" \
+    's = s.replace("""        if guards::successor::is_handoff_doc(path, text.as_deref()) {
+            return path.clone();
+        }""", "        return path.clone();", 1)'
+
+  # Il ripiego su tutti i progetti col cwd noto e' esattamente cio' che ha dato a
+  # una sessione sulla suite il mandato della configurazione.
+  mutate "ripiega su tutti anche col cwd noto" "$R" \
+    's = s.replace("    Vec::new()\n}", "    vec![base]\n}", 1)'
+
+  # L ordine e il comportamento: per data crescente si confermerebbe la consegna
+  # piu' vecchia, e il tetto dei candidati taglierebbe via proprio le recenti.
+  mutate "scorre per data crescente" "$R" \
+    's = s.replace("    found.sort_by(|a, b| b.cmp(a));", "    found.sort();", 1)'
 fi
 
 # ── successor ───────────────────────────────────────────────────────────────
