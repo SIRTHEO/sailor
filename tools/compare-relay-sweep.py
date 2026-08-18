@@ -55,11 +55,28 @@ for riga in sys.stdin:
     if not riga.strip():
         continue
     caso = json.loads(riga)
-    vivi = caso.get('live')
     radice = Path(caso['root'])
-    fuori = relay.orphan_tree_state(
-        None if vivi is None else set(vivi), caso.get('now') or 0, radice)
-    print(json.dumps({'stale': sorted(str(f.relative_to(radice)) for f in fuori)}))
+    if caso.get('orca_out') is not None:
+        # Si parte dalla risposta GREZZA di Orca e si passa da
+        # `live_worktree_keys`: era l'unico pezzo della catena fuori dal
+        # confronto, ed e' quello che decide chi e' vivo.
+        rc, out = int(caso.get('orca_rc') or 0), caso['orca_out']
+        relay.orca = lambda *a, **k: (rc, out)
+        try:
+            vivi = relay.live_worktree_keys()
+        except Exception as e:
+            print(json.dumps({'stale': [], 'keys': [], 'known': False,
+                              'eccezione': type(e).__name__}))
+            continue
+    else:
+        vivi = caso.get('live')
+        vivi = None if vivi is None else set(vivi)
+    fuori = relay.orphan_tree_state(vivi, caso.get('now') or 0, radice)
+    print(json.dumps({
+        'stale': sorted(str(f.relative_to(radice)) for f in fuori),
+        'keys': sorted(vivi or []),
+        'known': vivi is not None,
+    }))
 '''
 
 FAMIGLIE = ('catene/{k}.json', 'riprendi-da/{k}.txt',
@@ -137,6 +154,43 @@ def casi_fissi(base: Path) -> list:
         scrivi(radice, 'catene/.json', vecchio)
 
     caso('prefisso senza chiave', chiave_vuota, [VIVA])
+
+    # ─── Da qui in giu' si parte dalla risposta GREZZA di Orca ────────────────
+    #
+    # `live_worktree_keys` era l'unico anello fuori dal confronto, e il primo
+    # caso grezzo ha trovato subito una divergenza: su un array nudo il porto
+    # accettava gli elementi come copie di lavoro, il Python sollevava.
+    def grezzo(nome: str, rc: int, out: str) -> None:
+        radice = base / ('grezzo-' + nome.replace(' ', '-'))
+        radice.mkdir(parents=True, exist_ok=True)
+        for schema in FAMIGLIE:
+            scrivi(radice, schema.format(k=VIVA), vecchio)
+            scrivi(radice, schema.format(k=MORTA), vecchio)
+        casi.append({'nome': f'grezzo: {nome}', 'root': str(radice),
+                     'live': None, 'now': ORA, 'orca_rc': rc, 'orca_out': out})
+
+    id_viva = f'repo::/home/someone/orca/viva'
+    id_morta = f'repo::/home/someone/orca/morta'
+    grezzo('la forma vera di oggi', 0,
+           json.dumps({'id': 'x', 'result': {'worktrees': [
+               {'id': id_viva, 'path': '/home/someone/orca/viva'}]}}))
+    grezzo('result con items', 0, json.dumps({'result': {'items': [{'id': id_viva}]}}))
+    grezzo('result e una lista', 0, json.dumps({'result': [{'id': id_viva}]}))
+    grezzo('oggetto senza result', 0, json.dumps({'worktrees': [{'id': id_viva}]}))
+    grezzo('array nudo', 0, json.dumps([{'id': id_viva}]))
+    grezzo('array vuoto', 0, '[]')
+    grezzo('oggetto vuoto', 0, '{}')
+    grezzo('result vuoto', 0, json.dumps({'result': {'worktrees': []}}))
+    grezzo('id vuoti', 0, json.dumps({'result': {'worktrees': [{'id': ''}, {}]}}))
+    grezzo('id non stringa', 0, json.dumps({'result': {'worktrees': [{'id': 7}]}}))
+    grezzo('due copie, una morta', 0,
+           json.dumps({'result': {'worktrees': [{'id': id_viva}, {'id': id_morta}]}}))
+    grezzo('numero al posto della risposta', 0, '42')
+    grezzo('stringa JSON', 0, '"niente"')
+    grezzo('null', 0, 'null')
+    grezzo('testo non JSON', 0, 'boh')
+    grezzo('uscita vuota', 0, '')
+    grezzo('orca ha risposto male', 1, json.dumps({'result': {'worktrees': [{'id': id_viva}]}}))
     return casi
 
 
@@ -159,7 +213,8 @@ def casi_generati(base: Path, quanti: int) -> list:
 
 
 def domanda(casi: list) -> str:
-    return '\n'.join(json.dumps({k: c[k] for k in ('root', 'live', 'now')})
+    campi = ('root', 'live', 'now', 'orca_rc', 'orca_out')
+    return '\n'.join(json.dumps({k: c[k] for k in campi if k in c})
                      for c in casi)
 
 
@@ -206,8 +261,11 @@ def main() -> int:
                 diverse += 1
                 if len(esempi) < 5:
                     esempi.append((caso['nome'], a, b))
-        print(f'{len(casi)} casi confrontati · {casi_con_orfani} con almeno un '
-              f'orfano · {buttati} file dichiarati orfani dall\'oracolo')
+        grezzi = sum(1 for c in casi if 'orca_out' in c)
+        ignoti = sum(1 for a in py if not a.get('known'))
+        print(f'{len(casi)} casi confrontati ({grezzi} dalla risposta grezza di '
+              f'Orca) · {casi_con_orfani} con almeno un orfano · {buttati} file '
+              f'dichiarati orfani dall\'oracolo · {ignoti} volte «non lo so»')
         for nome, a, b in esempi:
             print(f'\n  --- divergenza su «{nome}» ---')
             print(f'    python: {json.dumps(a)[:220]}')
