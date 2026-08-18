@@ -126,6 +126,7 @@ const ALL_HOOKS: &[&str] = &[
     "pr-title",
     "relay",
     "relay-evaluate",
+    "relay-chain",
     "restart-count",
     "restart-notice",
     "scope-drift",
@@ -692,6 +693,9 @@ fn run(which: &str) -> Result<i32, String> {
         // `tools/compare-relay-evaluate.py`, che pone la stessa domanda a
         // `relay.evaluate()` con una HOME finta e pretende la stessa risposta.
         "relay-evaluate" => Ok(relay_eval::run()),
+        // Il gemello per il freno della catena, interrogato da
+        // `tools/compare-relay-chain.py`.
+        "relay-chain" => Ok(relay_eval::run_chain()),
         // I quattro porti del 17/08: rispondono già, ma la configurazione li
         // nomina solo quando il confronto col Python è verde e i mutanti sono
         // uccisi. L'ordine è quello di `adopt-hook.py`: prima si dimostra, poi
