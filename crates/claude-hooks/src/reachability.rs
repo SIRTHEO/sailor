@@ -875,6 +875,23 @@ pub fn run() -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    /// Le prove che fissano le cartelle passano da qui, una alla volta.
+    ///
+    /// `std::env` e' globale al PROCESSO e cargo esegue i test in parallelo su
+    /// piu' thread: due prove che scrivono `REACH_HOME_CLAUDE` nello stesso
+    /// istante si guastano a vicenda, e il guasto e' intermittente — la
+    /// batteria dava 136, 137 o rosso a giri diversi senza che niente fosse
+    /// cambiato. Il commento che diceva «girano in un thread solo» era
+    /// semplicemente falso, ed e' il tipo di affermazione che sopravvive
+    /// proprio perche' nessuno la verifica.
+    fn ambiente() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
 
     fn set(items: &[&str]) -> BTreeSet<String> {
         items.iter().map(|s| s.to_string()).collect()
@@ -1036,8 +1053,8 @@ mod tests {
         std::fs::write(src.join("reachability.rs"),
                        "//! Cita capienza.py e oracolo.py per spiegarsi\n").unwrap();
 
-        // SAFETY: le prove del modulo girano in un thread solo, e questa rimette
-        // l'ambiente com'era.
+        // SAFETY: serializzata da `ambiente()`, e rimette la variabile com'era.
+        let _guardia = ambiente();
         unsafe { std::env::set_var("REACH_HOME_CLAUDE", dir.join("casa")); }
 
         let node_paths: BTreeMap<String, PathBuf> =
@@ -1097,8 +1114,9 @@ mod tests {
         std::fs::write(aut.join("spenta.scheda.json"), "{\"attiva\": false}").unwrap();
         std::fs::write(aut.join("spenta.mandato.md"), "esegui qualcosa").unwrap();
 
-        // SAFETY: le prove del modulo girano in un thread solo per questo file,
-        // e ognuna rimette l'ambiente com'era.
+        // SAFETY: `ambiente()` serializza le prove che scrivono `std::env`, e
+        // ognuna rimette le variabili com'erano prima di uscire.
+        let _guardia = ambiente();
         unsafe {
             std::env::set_var("REACH_LAUNCH_AGENTS", &agents);
             std::env::set_var("REACH_WORKSPACE", dir.join("ws"));
