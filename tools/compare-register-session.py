@@ -215,6 +215,34 @@ CASES = [
         },
     ),
     (
+        # Il caso che il 18/08/2026 non c'era, ed e' quello che gira davvero: su
+        # `SessionEnd` la riga di `settings.json` passa `--fine` solo al ripiego
+        # Python, mai al binario. Senza questo caso, i due porti potevano
+        # divergere proprio dove il difetto era nato.
+        "SessionEnd senza --fine porta via lo stesso i marcatori",
+        {
+            "stdin": json.dumps({**json.loads(PAYLOAD), "hook_event_name": "SessionEnd"})
+            if isinstance(PAYLOAD, str) else PAYLOAD,
+            "argv": [],
+            "env": {"ORCA_WORKTREE_ID": "w::/x", "ORCA_TAB_ID": "t"},
+            "markers": [
+                "consegna-fatta-31a570a5",
+                "consegna-misura-31a570a5",
+                "consegna-fatta-altra111",
+            ],
+        },
+    ),
+    (
+        "un evento diverso non porta via niente",
+        {
+            "stdin": json.dumps({**json.loads(PAYLOAD), "hook_event_name": "SessionStart"})
+            if isinstance(PAYLOAD, str) else PAYLOAD,
+            "argv": [],
+            "env": {"ORCA_WORKTREE_ID": "w::/x", "ORCA_TAB_ID": "t"},
+            "markers": ["consegna-fatta-31a570a5", "consegna-misura-31a570a5"],
+        },
+    ),
+    (
         "--fine senza identificativo non cancella niente",
         {
             "stdin": json.dumps({"cwd": "/x"}),
