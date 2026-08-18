@@ -15,22 +15,27 @@ Il denominatore contiene anche ciò che deve restare in silenzio: i file `.md` e
 i sorgenti senza rimandi. Senza di loro un porto che negasse tutto passerebbe il
 confronto — è il punto cieco che `tools/mutants.sh` trova sugli altri gemelli.
 
-QUESTO CONFRONTO NON CHIUDE A ZERO, E NON È UNA REGRESSIONE. Alla prima passata
-— 120 file veri, 810 casi — le divergenze sono 32, e in tutte e 32 ha ragione il
-Rust. Due classi sole, entrambe difetti dell'originale:
+LE PRIME 32 DIVERGENZE ERANO TUTTE DELL'ORIGINALE, e sono corrette. Alla prima
+passata — 120 file veri, 810 casi — il Rust aveva ragione in tutte e 32:
 
-  28 casi (MultiEdit, in tutte e due le fasi): il Python legge `new_string` e
-      `content` e non guarda `edits`, quindi su una scrittura multipla resta
-      muto mentre le righe vengono scritte davvero;
-   4 casi (Write ed Edit su due file): il Python non chiude il blocco `/* */`
-      — nel ramo `in_block` la chiusura sposta il cursore ma non rimette lo
-      stato a «codice» — e da lì in poi tratta il file intero come commento.
-      Su `calendar-validation.test.ts` questo gli fa accusare la riga 10, che è
-      la stringa di un `describe(...)`, non un commento.
+  28 casi (MultiEdit, in tutte e due le fasi): il Python leggeva `new_string` e
+      `content` e non guardava `edits`, quindi su una scrittura multipla restava
+      muto mentre le righe che vieta venivano scritte davvero;
+   4 casi (Write ed Edit su due file): il Python non chiudeva il blocco `/* */`
+      — la chiusura spostava il cursore ma non rimetteva lo stato a «codice» — e
+      da lì in poi trattava il file intero come commento. Su
+      `calendar-validation.test.ts` accusava la riga 10, che è la stringa di un
+      `describe(...)`, non un commento.
 
-Zero casi contrari: mai il Rust muto dove il Python parla a ragione. Finché
-l'originale non è corretto, il numero da guardare è la **forma** delle
-divergenze nel riepilogo, non lo zero.
+Nessuna delle 26 prove interne dell'originale copriva i due difetti: passavano
+tutte. Ora sono 28, e ognuna delle due nuove muore col proprio mutante.
+
+Con i due difetti corretti la passata larga — 600 file, 3.690 casi, 264 dei
+quali il freno segnala — chiude a **zero divergenze**.
+
+Che lo zero non sia cecità è provato rompendo il Rust: togliendo `in_block =
+false` dal porto — cioè rimettendogli il difetto del Python — il confronto passa
+da 0 a 6 divergenze.
 
     python3 tools/compare-comment-refs.py [quanti]
 """
