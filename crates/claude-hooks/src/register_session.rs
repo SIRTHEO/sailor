@@ -203,6 +203,28 @@ autorizzato, dichiarando in una riga da cosa riparti. Non ricominciare da zero."
     )
 }
 
+/// Siamo a fine sessione? Lo dice l'evento, non un argomento.
+///
+/// `--fine` restava un argomento da ricopiare in `settings.json`, e nel ramo che
+/// esegue davvero non era stato ricopiato: la riga di `SessionEnd` passa
+/// l'opzione al ripiego Python e **non** al binario, che esiste sempre. Esito
+/// misurato il 18/08/2026: `forget_session` non era mai girata, e sul disco
+/// c'erano **176 marcatori** dal 14/08 — 84 `consegna-misura-*`, 72
+/// `consegna-ripartenze-*`, 16 `consegna-fatta-*`, 4 `consegna-volontaria-*`.
+///
+/// Il difetto non e' l'opzione dimenticata, e' che il gancio si affidava a
+/// qualcuno che la ricopiasse. L'evento invece arriva sempre e da solo: chi
+/// scrive la riga di configurazione non puo' piu' sbagliarla. `--fine` resta
+/// riconosciuto per non rompere chi lo passa ancora.
+fn is_session_end(data: &serde_json::Value, args: &[String]) -> bool {
+    if args.iter().any(|a| a == "--fine") {
+        return true;
+    }
+    data.get("hook_event_name")
+        .and_then(|v| v.as_str())
+        .is_some_and(|e| e == "SessionEnd")
+}
+
 pub fn run() -> i32 {
     let mut raw = String::new();
     if std::io::stdin().read_to_string(&mut raw).is_err() {
@@ -211,7 +233,8 @@ pub fn run() -> i32 {
     let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return 0; // stdin non è JSON: si esce muti, come l'originale
     };
-    if std::env::args().any(|a| a == "--fine") {
+    let args: Vec<String> = std::env::args().collect();
+    if is_session_end(&data, &args) {
         forget_session(&data);
         return 0;
     }
@@ -221,4 +244,68 @@ pub fn run() -> i32 {
         println!("{msg}");
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_home::HomeIsolata;
+
+    fn evento(nome: &str, sess: &str) -> serde_json::Value {
+        serde_json::json!({ "hook_event_name": nome, "session_id": sess })
+    }
+
+    #[test]
+    fn the_end_of_a_session_is_read_off_the_event() {
+        assert!(is_session_end(&evento("SessionEnd", "abc"), &[]));
+    }
+
+    #[test]
+    fn any_other_event_is_not_the_end() {
+        assert!(!is_session_end(&evento("SessionStart", "abc"), &[]));
+        assert!(!is_session_end(&evento("", "abc"), &[]));
+        assert!(!is_session_end(&serde_json::json!({ "session_id": "abc" }), &[]));
+    }
+
+    #[test]
+    fn the_old_flag_still_works_for_whoever_still_passes_it() {
+        // La compatibilita' e' una promessa: senza questo caso, toglierla non
+        // farebbe cadere niente.
+        let args = vec!["claude-hooks".to_string(), "--fine".to_string()];
+        assert!(is_session_end(&evento("SessionStart", "abc"), &args));
+        assert!(is_session_end(&serde_json::json!({}), &args));
+    }
+
+    #[test]
+    fn a_session_end_sweeps_its_own_markers_and_leaves_the_others() {
+        let casa = HomeIsolata::nuova("fine-sessione");
+        let state = casa.dir.join(".claude/state");
+        std::fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        let miei = ["consegna-misura-11112222", "consegna-fatta-11112222"];
+        let altrui = ["consegna-misura-99998888", "consegna-fatta-99998888"];
+        for n in miei.iter().chain(altrui.iter()) {
+            std::fs::write(state.join(n), "x").unwrap();
+        }
+        std::fs::write(state.join("sessioni-vive/11112222.json"), "{}").unwrap();
+
+        forget_session(&evento("SessionEnd", "11112222-3333-4444-5555-666677778888"));
+
+        for n in miei {
+            assert!(!state.join(n).exists(), "{n} doveva sparire");
+        }
+        for n in altrui {
+            assert!(state.join(n).exists(), "{n} non e' suo e doveva restare");
+        }
+        assert!(!state.join("sessioni-vive/11112222.json").exists());
+    }
+
+    #[test]
+    fn a_session_with_no_id_sweeps_nothing() {
+        let casa = HomeIsolata::nuova("fine-senza-id");
+        let state = casa.dir.join(".claude/state");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::write(state.join("consegna-misura-77776666"), "x").unwrap();
+        forget_session(&evento("SessionEnd", ""));
+        assert!(state.join("consegna-misura-77776666").exists());
+    }
 }
