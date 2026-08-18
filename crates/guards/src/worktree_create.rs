@@ -1,11 +1,16 @@
 //! Ferma la creazione a mano di un albero di lavoro dentro `~/orca/workspaces/`.
 //!
 //! PERCHÉ ESISTE. Misura del 18/08/2026 su 2.934 sessioni in trenta giorni:
-//! 126 creano un albero con `orca worktree create`, 12 con `git worktree add`.
-//! Letti tutti e venti i comandi di quelle 12, la maggioranza fa copie
-//! usa-e-getta sotto `mktemp` o nello scratchpad — tecnica prescritta altrove,
-//! non violazioni. Le violazioni vere sono **tre**, e si riconoscono da sole:
-//! creano un albero permanente dentro la cartella che Orca gestisce.
+//! 126 creano un albero con `orca worktree create`. Passato questo giudizio su
+//! tutti i 4.150 comandi distinti che nominano `worktree`, **20** creano un
+//! albero permanente dentro la cartella che Orca gestisce, e nessun altro viene
+//! toccato: zero falsi positivi.
+//!
+//! LA PRIMA STIMA DICEVA TRE, ED ERA SBAGLIATA. Cercava `git worktree add`
+//! alla lettera, mentre la forma prevalente è `git -C <repo> worktree add` —
+//! la stessa che le regole di casa prescrivono per non usare `cd`. Il grep
+//! letterale ne vedeva un sesto. È il motivo per cui il giudizio va passato sul
+//! traffico vero invece che su una ricerca a occhio.
 //!
 //! Il danno non è teorico. `orca/workspaces/sailor/interfaccia` esiste ancora e
 //! non è fra le 32 copie registrate: dentro ha sei commit mai finiti sul
