@@ -187,11 +187,26 @@ pub fn run_sweep() -> i32 {
         };
         // `live` assente o `null` = elenco **illeggibile**, che non è «nessun
         // albero è vivo»: la distinzione è il cuore di ciò che si confronta.
-        let live: Option<Vec<String>> = case.get("live").and_then(|v| v.as_array()).map(|a| {
-            a.iter()
-                .map(|x| x.as_str().unwrap_or_default().to_string())
-                .collect()
-        });
+        //
+        // Con `orca_out` si parte invece dalla risposta GREZZA, e si passa da
+        // `live_worktree_keys`: era l'unico pezzo della catena a restare fuori
+        // dal confronto, ed è quello che decide chi è vivo — cioè quali file
+        // sopravvivono. Il primo caso grezzo provato ha trovato subito una
+        // divergenza: su un array nudo il porto accettava, il Python sollevava.
+        let live: Option<Vec<String>> = match case.get("orca_out").and_then(|v| v.as_str()) {
+            Some(raw) => {
+                let rc = case.get("orca_rc").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+                let raw = raw.to_string();
+                let mut fake = move |_args: &[&str]| (rc, raw.clone());
+                crate::relay::live_worktree_keys(&mut fake)
+            }
+            None => case.get("live").and_then(|v| v.as_array()).map(|a| {
+                a.iter()
+                    .map(|x| x.as_str().unwrap_or_default().to_string())
+                    .collect()
+            }),
+        };
+        let known = live.is_some();
         let root = std::path::PathBuf::from(text(&case, "root"));
         let now = case.get("now").and_then(|v| v.as_f64()).unwrap_or(0.0);
         let mut stale: Vec<String> = crate::relay::orphan_tree_state(live.as_deref(), now, &root)
@@ -207,7 +222,15 @@ pub fn run_sweep() -> i32 {
         // orfani è un insieme: ordinarlo qui evita di confrontare il capriccio
         // del filesystem invece della decisione.
         stale.sort();
-        println!("{}", serde_json::json!({ "stale": stale }));
+        // Le chiavi vive escono anche loro: una divergenza su «chi è vivo» e una
+        // su «cosa si butta» hanno cause diverse, e stampandone una sola si
+        // guarderebbe il sintomo invece del punto in cui i due lati si separano.
+        let mut keys = live.unwrap_or_default();
+        keys.sort();
+        println!(
+            "{}",
+            serde_json::json!({ "stale": stale, "keys": keys, "known": known })
+        );
     }
     0
 }
