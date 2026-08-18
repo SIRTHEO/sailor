@@ -42,6 +42,7 @@ mod skill_nudge;
 mod work_status;
 mod json_tool;
 mod session_messages;
+mod reachability;
 
 use hook_io::{Decision, Mode};
 
@@ -777,6 +778,11 @@ fn run(which: &str) -> Result<i32, String> {
         "skill-nudge" => Ok(skill_nudge::run()),
         "work-status" => Ok(work_status::run()),
         "allow-session-messages" => Ok(session_messages::run()),
+        // Non e un gancio: e lo strumento che risponde a «chi lancia
+        // ancora questo controllo». Sta nel dispatch perche il binario e
+        // gia il posto dove vive la logica, e un secondo eseguibile per
+        // una misura sarebbe una superficie in piu da tenere viva.
+        "reachability" => Ok(reachability::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
