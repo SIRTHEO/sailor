@@ -169,6 +169,49 @@ pub fn run_chain() -> i32 {
     0
 }
 
+/// Il quarto ponte: quali file di stato la staffetta considera orfani.
+///
+/// A SECCO PER COSTRUZIONE — risponde l'elenco e non cancella niente. Un ponte
+/// di confronto che cancellasse dovrebbe fabbricare lo stato due volte, una per
+/// lato, e due fabbriche sono due occasioni di divergere su cose che non
+/// c'entrano con la decisione.
+pub fn run_sweep() -> i32 {
+    let mut raw = String::new();
+    if std::io::stdin().read_to_string(&mut raw).is_err() {
+        return 1;
+    }
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(case) = serde_json::from_str::<serde_json::Value>(line) else {
+            println!("{}", serde_json::json!({"error": "caso illeggibile"}));
+            continue;
+        };
+        // `live` assente o `null` = elenco **illeggibile**, che non è «nessun
+        // albero è vivo»: la distinzione è il cuore di ciò che si confronta.
+        let live: Option<Vec<String>> = case.get("live").and_then(|v| v.as_array()).map(|a| {
+            a.iter()
+                .map(|x| x.as_str().unwrap_or_default().to_string())
+                .collect()
+        });
+        let root = std::path::PathBuf::from(text(&case, "root"));
+        let now = case.get("now").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let mut stale: Vec<String> = crate::relay::orphan_tree_state(live.as_deref(), now, &root)
+            .iter()
+            .map(|p| {
+                p.strip_prefix(&root)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        // L'ordine di `read_dir` non è quello di `glob`, e un elenco di file
+        // orfani è un insieme: ordinarlo qui evita di confrontare il capriccio
+        // del filesystem invece della decisione.
+        stale.sort();
+        println!("{}", serde_json::json!({ "stale": stale }));
+    }
+    0
+}
+
 /// Il terzo ponte, e qui il disco serve: la guardia sull'albero ricreato sta in
 /// `relay::read_chain`, e ciò che distingue una copia rifatta dalla sua omonima
 /// è la data di nascita di una cartella vera. Il chiamante prepara una `HOME`
