@@ -104,6 +104,7 @@ const ALL_HOOKS: &[&str] = &[
     "handoff-on-stop",
     "handoff-required",
     "handoff-latest",
+    "repo-tools",
     "handoff-resolve",
     "hooks-off",
     "linear-readonly",
@@ -485,6 +486,23 @@ fn run(which: &str) -> Result<i32, String> {
         "handoff-latest" => {
             let cwd = std::env::args().nth(2).unwrap_or_default();
             println!("{}", relay::latest_handoff(&cwd));
+            Ok(0)
+        }
+        // Non è un gancio: è il consiglio di `guards::repo_tools` interrogabile
+        // dall'esterno, perché la misura che lo giustifica si prende sui comandi
+        // veri dei transcript e non sui casi scritti a mano. Il comando arriva da
+        // stdin, il repo come argomento.
+        "repo-tools" => {
+            let dir = std::env::args().nth(2).unwrap_or_default();
+            let mut command = String::new();
+            use std::io::Read;
+            let _ = std::io::stdin().read_to_string(&mut command);
+            let pkg = std::fs::read_to_string(std::path::Path::new(&dir).join("package.json"))
+                .unwrap_or_default();
+            let said = guards::repo_tools::advice(command.trim(), &pkg);
+            if !said.is_empty() {
+                println!("{said}");
+            }
             Ok(0)
         }
         "handoff-resolve" => {
