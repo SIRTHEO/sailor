@@ -11,7 +11,11 @@ rust-version = "1.89"
 # pochi millisecondi — è l'unica ragione per cui esistono.
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1", features = ["preserve_order"] }
+# `float_roundtrip` non è un dettaglio di gusto: senza, il parsing di un
+# `1787052662.1803281` torna indietro come `1787052662.180328` — mezzo ULP, ma
+# basta a far divergere ogni confronto col Python su un istante letto e
+# riscritto, e i file di stato passano da tutti e due.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 regex = "1"
 
 [profile.release]
