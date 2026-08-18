@@ -421,6 +421,36 @@ fn read_record(path: &Path) -> Option<Record> {
 }
 
 /// Chiude la vecchia e apre il successore, nell'ordine che non lascia scoperti.
+/// Cosa ha prodotto la sessione uscente: messaggi dell'assistente e scritture.
+///
+/// IL §3 DEL MANDATO CHIEDE CHE OGNI ITERAZIONE REGISTRI IL PROGRESSO, e questo
+/// loop non lo faceva: il registro diceva quanti token aveva la sessione e
+/// perché veniva sostituita, mai cosa aveva concluso. Senza quel dato una catena
+/// che gira a vuoto — nasce, non conclude niente, consegna, viene sostituita — è
+/// indistinguibile da una che lavora, e i quattro freni non la fermerebbero:
+/// guardano tutti il momento, nessuno la storia.
+///
+/// Si conta solo alla rigenerazione, che è rara (11 in 15 ore il 18/08/2026),
+/// non a ogni giro di valutazione. Il transcript è JSONL compatto e si legge a
+/// righe: un file da decine di MB non deve stare in memoria tutto insieme.
+fn progress(transcript: &str) -> (u64, u64) {
+    use std::io::BufRead;
+    let Ok(file) = fs::File::open(transcript) else {
+        return (0, 0);
+    };
+    let mut turns = 0;
+    let mut writes = 0;
+    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
+        if line.contains(r#""type":"assistant""#) {
+            turns += 1;
+        }
+        for tool in [r#""name":"Write""#, r#""name":"Edit""#, r#""name":"MultiEdit""#] {
+            writes += line.matches(tool).count() as u64;
+        }
+    }
+    (turns, writes)
+}
+
 pub fn regenerate(
     rec: &Record,
     title: &str,
@@ -594,8 +624,10 @@ pub fn regenerate(
         let _ = fs::remove_file(state_dir().join(format!("{family}-{sess}")));
     }
     set_cooldown(&rec.worktree);
+    let (turns, writes) = progress(&rec.transcript);
     log_line(&format!(
-        "RIGENERATA sess={sess}: vecchio={} -> nuovo={new_handle} (handoff={})",
+        "RIGENERATA sess={sess}: vecchio={} -> nuovo={new_handle} (handoff={}, \
+         prodotto: {turns} turni, {writes} scritture)",
         rec.handle,
         if hpath.is_empty() { "-" } else { &hpath }
     ));
