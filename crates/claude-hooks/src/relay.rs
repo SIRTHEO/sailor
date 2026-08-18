@@ -443,6 +443,153 @@ pub(crate) fn read_terminals(orca: OrcaFn) -> Option<Vec<Terminal>> {
     Some(Terminal::from_response(&v))
 }
 
+// ─── Lo stato che vive quanto l'albero, e chi lo butta ────────────────────────
+//
+// IL CRITERIO DI CASA È «chi scrive un marcatore sa quando scade, e lo butta
+// lui» (`register-session.py::forget_session`), e vale per ciò che è legato a
+// una SESSIONE: la sessione finisce, emette un evento, si porta via i suoi file.
+//
+// Queste quattro famiglie sono legate a un ALBERO, e un albero non emette
+// nessuna fine: nessuno dei tre smontatori tocca lo stato, quindi smontare una
+// copia lascia dietro la sua catena, la sua tregua e il suo mandato di ripresa.
+// La staffetta è l'unica che li scrive tutti, quindi tocca a lei buttarli.
+
+/// Cartella (dentro `state/`), prefisso, suffisso. La chiave sta in mezzo.
+const TREE_STATE: &[(&str, &str, &str)] = &[
+    ("catene", "", ".json"),
+    ("riprendi-da", "", ".txt"),
+    ("", "staffetta-cooldown-", ""),
+    ("", "catena-bloccata-", ""),
+];
+
+/// Quanto dev'essere vecchio un file perché la sua assenza dall'elenco valga
+/// come «l'albero non c'è più». Non è prudenza generica: un albero appena creato
+/// che per un istante non compare nella risposta di Orca perderebbe la sua
+/// catena, e con essa il freno. A un'ora di distanza quel dubbio non esiste più,
+/// e tenere quattro file in più per un'ora non costa niente.
+const TREE_STATE_GRACE_SEC: f64 = 3600.0;
+
+/// Le chiavi di stato delle copie che Orca conosce, o **None** se non lo so.
+///
+/// Vale la stessa distinzione di `read_terminals`, e per la stessa ragione: un
+/// elenco vuoto qui significherebbe «nessuna copia esiste», cioè butta tutto.
+pub(crate) fn live_worktree_keys(orca: OrcaFn) -> Option<Vec<String>> {
+    let (rc, out) = orca(&["worktree", "list", "--json"]);
+    if rc != 0 || out.is_empty() {
+        return None;
+    }
+    let v = serde_json::from_str::<serde_json::Value>(&out).ok()?;
+    let items = v.get("result").unwrap_or(&v).clone();
+    let list = match &items {
+        serde_json::Value::Array(a) => a.clone(),
+        serde_json::Value::Object(_) => items
+            .get("worktrees")
+            .or_else(|| items.get("items"))
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default(),
+        _ => return None,
+    };
+    let keys: Vec<String> = list
+        .iter()
+        .filter_map(|x| x.get("id").and_then(|i| i.as_str()))
+        .filter(|id| !id.is_empty())
+        .map(state_key)
+        .collect();
+    if keys.is_empty() {
+        return None;
+    }
+    Some(keys)
+}
+
+/// I file di stato il cui albero non esiste più. Vuoto se non si sa.
+///
+/// La radice entra come parametro perché le prove non giudichino `state/` di
+/// produzione, dove i file sono di chi sta lavorando adesso.
+pub(crate) fn orphan_tree_state(
+    live_keys: Option<&[String]>,
+    now: f64,
+    root: &Path,
+) -> Vec<PathBuf> {
+    let Some(live) = live_keys.filter(|k| !k.is_empty()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (folder, prefix, suffix) in TREE_STATE {
+        let base = if folder.is_empty() {
+            root.to_path_buf()
+        } else {
+            root.join(folder)
+        };
+        let Ok(dir) = fs::read_dir(&base) else {
+            continue;
+        };
+        let mut found: Vec<PathBuf> = dir
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.is_file())
+            .collect();
+        found.sort();
+        for f in found {
+            let Some(name) = f.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            // `strip_*` invece di tagliare per indice: con `starts_with` e
+            // `ends_with` in un `if` a parte, il taglio qui sotto resta corretto
+            // solo finché quel controllo esiste — e un mutante che lo toglieva ha
+            // fatto **panicare** il binario su `staffetta.log`, cioè un giro di
+            // staffetta perso invece di un file saltato. Qui il caso storto è
+            // impossibile per costruzione.
+            let Some(key) = name.strip_prefix(prefix).and_then(|r| r.strip_suffix(suffix)) else {
+                continue;
+            };
+            if key.is_empty() || live.iter().any(|k| k == key) {
+                continue;
+            }
+            let Ok(when) = fs::metadata(&f).and_then(|m| m.modified()) else {
+                continue;
+            };
+            let Ok(since) = when.duration_since(std::time::UNIX_EPOCH) else {
+                continue;
+            };
+            if now - since.as_secs_f64() < TREE_STATE_GRACE_SEC {
+                continue;
+            }
+            out.push(f);
+        }
+    }
+    out
+}
+
+/// Butta lo stato degli alberi che non ci sono più. Ritorna quanti file.
+///
+/// Si scrive PRIMA di cancellare, come per i record: una cancellazione muta non
+/// lascia niente da leggere quando si sbaglia.
+pub(crate) fn sweep_tree_state(
+    live_keys: Option<&[String]>,
+    now: f64,
+    dry_run: bool,
+    root: &Path,
+) -> usize {
+    let stale = orphan_tree_state(live_keys, now, root);
+    for f in &stale {
+        let parent = f
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        log_line(&format!(
+            "{} lo stato orfano {parent}/{name}: nessun albero con questa chiave",
+            if dry_run { "direi di buttare" } else { "butto" }
+        ));
+        if !dry_run {
+            let _ = fs::remove_file(f);
+        }
+    }
+    stale.len()
+}
+
 /// Gli handle dei terminali aperti su un albero di lavoro, adesso.
 ///
 /// Vuoto vuol dire due cose diverse — «nessuno» e «non ho potuto leggere» — e
@@ -1150,6 +1297,11 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
             Action::Skip => {}
         }
     }
+
+    // Alla fine, e non all'inizio: se un giro rigenera, la copia nuova è già
+    // nell'elenco quando si guarda chi è rimasto senza albero.
+    let keys = live_worktree_keys(orca);
+    sweep_tree_state(keys.as_deref(), now, dry_run, &state_dir());
     0
 }
 
@@ -1776,6 +1928,102 @@ mod tests {
             guards::chain::sterile_tail(&letti),
             0,
             "una catena viva è stata contata come stallo"
+        );
+    }
+
+    // ─── Lo stato che resta quando l'albero se ne va ─────────────────────────
+
+    /// `touch -t` vuole `[[CC]YY]MMDDhhmm[.ss]`, e qui si passa da `date`.
+    fn touch_timestamp(epoch_secs: u64) -> String {
+        let out = std::process::Command::new("date")
+            .args(["-r", &epoch_secs.to_string(), "+%Y%m%d%H%M.%S"])
+            .output()
+            .expect("date");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// Un file di stato con l'età voluta. `filetime` non è fra le dipendenze —
+    /// sono tenute al minimo di proposito — e per invecchiare un file basta il
+    /// comando di sistema.
+    fn fake_state_file(root: &Path, rel: &str, older_by: Option<f64>) -> PathBuf {
+        let f = root.join(rel);
+        let _ = fs::create_dir_all(f.parent().unwrap());
+        fs::write(&f, "x").unwrap();
+        if let Some(sec) = older_by {
+            let when = (now_epoch() - sec) as u64;
+            let _ = std::process::Command::new("touch")
+                .arg("-t")
+                .arg(touch_timestamp(when))
+                .arg(&f)
+                .status();
+        }
+        f
+    }
+
+    #[test]
+    fn the_state_of_a_vanished_tree_is_swept() {
+        let _home = HomeIsolata::nuova("stato-orfano");
+        let root = _home.stato();
+        let alive = "repo::_Users_theo_orca_viva".to_string();
+        let gone = "repo::_Users_theo_orca_morta";
+        let old_enough = Some(TREE_STATE_GRACE_SEC + 60.0);
+        for key in [alive.as_str(), gone] {
+            fake_state_file(&root, &format!("catene/{key}.json"), old_enough);
+            fake_state_file(&root, &format!("riprendi-da/{key}.txt"), old_enough);
+            fake_state_file(&root, &format!("staffetta-cooldown-{key}"), old_enough);
+            fake_state_file(&root, &format!("catena-bloccata-{key}"), old_enough);
+        }
+        let live = vec![alive.clone()];
+        let now = now_epoch();
+
+        let stale = orphan_tree_state(Some(&live), now, &root);
+        assert_eq!(stale.len(), 4, "quattro famiglie, un albero morto: {stale:?}");
+        assert!(
+            stale.iter().all(|f| f.to_string_lossy().contains(gone)),
+            "ha preso anche l'albero vivo: {stale:?}"
+        );
+
+        // LA GUARDIA CHE CONTA: un elenco che non si è potuto leggere non è
+        // «sono spariti tutti». Né lo è un elenco vuoto.
+        assert!(orphan_tree_state(None, now, &root).is_empty());
+        assert!(orphan_tree_state(Some(&[]), now, &root).is_empty());
+
+        // Il periodo di grazia: un file di un minuto fa è nuovo, non orfano.
+        //
+        // UN MINUTO, NON «adesso». Scritto senza età, il file nasce dopo
+        // l'istante `now` preso qui sopra: la sua età risulta negativa e sta
+        // dentro qualunque soglia, quindi la prova resterebbe verde anche a
+        // grazia azzerata — cioè proprio quando la protezione sparisce.
+        // Misurato mutando la costante: 123 verdi con la guardia spenta.
+        fake_state_file(
+            &root,
+            "catene/repo::_Users_theo_orca_appena_nata.json",
+            Some(60.0),
+        );
+        assert!(
+            !orphan_tree_state(Some(&live), now, &root)
+                .iter()
+                .any(|f| f.to_string_lossy().contains("appena_nata")),
+            "un file fresco è stato contato come orfano"
+        );
+
+        let before = fs::read_dir(root.join("catene")).unwrap().count();
+        assert_eq!(sweep_tree_state(Some(&live), now, true, &root), 4);
+        assert_eq!(
+            fs::read_dir(root.join("catene")).unwrap().count(),
+            before,
+            "a secco ha cancellato"
+        );
+        assert_eq!(sweep_tree_state(Some(&live), now, false, &root), 4);
+        assert!(
+            root.join(format!("catene/{alive}.json")).exists(),
+            "l'albero vivo ha perso la catena"
+        );
+        assert!(!root.join(format!("catene/{gone}.json")).exists());
+        assert_eq!(
+            sweep_tree_state(Some(&live), now, false, &root),
+            0,
+            "la spazzata non è idempotente"
         );
     }
 

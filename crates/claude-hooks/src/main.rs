@@ -133,6 +133,7 @@ const ALL_HOOKS: &[&str] = &[
     "relay-evaluate",
     "relay-chain",
     "relay-read-chain",
+    "relay-sweep",
     "restart-count",
     "restart-notice",
     "scope-drift",
@@ -761,6 +762,8 @@ fn run(which: &str) -> Result<i32, String> {
         // Il terzo, per la lettura da disco: lo stesso confronto, ma con la
         // guardia sull'albero ricreato in mezzo.
         "relay-read-chain" => Ok(relay_eval::run_read_chain()),
+        // Il quarto: quali file di stato restano senza albero.
+        "relay-sweep" => Ok(relay_eval::run_sweep()),
         // I quattro porti del 17/08: rispondono già, ma la configurazione li
         // nomina solo quando il confronto col Python è verde e i mutanti sono
         // uccisi. L'ordine è quello di `adopt-hook.py`: prima si dimostra, poi
