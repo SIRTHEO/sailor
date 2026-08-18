@@ -479,6 +479,14 @@ pub(crate) fn live_worktree_keys(orca: OrcaFn) -> Option<Vec<String>> {
         return None;
     }
     let v = serde_json::from_str::<serde_json::Value>(&out).ok()?;
+    // Una risposta che non è un oggetto è una forma che non conosco, e «non lo
+    // so» vale più di un'ipotesi. Qui il porto era più permissivo dell'oracolo:
+    // su un array nudo prendeva gli elementi come copie di lavoro, mentre il
+    // Python sollevava — due comportamenti diversi sulla funzione che decide
+    // quali file sopravvivono.
+    if !v.is_object() {
+        return None;
+    }
     let items = v.get("result").unwrap_or(&v).clone();
     let list = match &items {
         serde_json::Value::Array(a) => a.clone(),
@@ -1958,6 +1966,50 @@ mod tests {
                 .status();
         }
         f
+    }
+
+    #[test]
+    fn who_is_alive_says_i_do_not_know_when_the_shape_is_unknown() {
+        // Questa funzione decide l'insieme dei vivi, quindi decide quali file
+        // NON si cancellano: era l'unico anello della catena senza prove e fuori
+        // dal confronto, e proprio lì i due lati divergevano — su un array nudo
+        // il porto prendeva gli elementi come copie, il Python sollevava.
+        for (nome, rc, out, atteso) in [
+            (
+                "la forma vera di oggi",
+                0,
+                r#"{"id":"x","result":{"worktrees":[{"id":"repo::/a/b"}]}}"#,
+                Some(vec!["repo::_a_b".to_string()]),
+            ),
+            (
+                "result con items",
+                0,
+                r#"{"result":{"items":[{"id":"repo::/a/b"}]}}"#,
+                Some(vec!["repo::_a_b".to_string()]),
+            ),
+            (
+                "result è una lista",
+                0,
+                r#"{"result":[{"id":"repo::/a/b"}]}"#,
+                Some(vec!["repo::_a_b".to_string()]),
+            ),
+            ("array nudo: forma che non conosco", 0, r#"[{"id":"repo::/a/b"}]"#, None),
+            ("numero al posto della risposta", 0, "42", None),
+            ("null", 0, "null", None),
+            ("testo non JSON", 0, "boh", None),
+            ("uscita vuota", 0, "", None),
+            ("elenco vuoto: non lo so", 0, r#"{"result":{"worktrees":[]}}"#, None),
+            ("id vuoti o assenti", 0, r#"{"result":{"worktrees":[{"id":""},{}]}}"#, None),
+            (
+                "orca ha risposto male",
+                1,
+                r#"{"result":{"worktrees":[{"id":"repo::/a/b"}]}}"#,
+                None,
+            ),
+        ] {
+            let mut orca = |_args: &[&str]| (rc, out.to_string());
+            assert_eq!(live_worktree_keys(&mut orca), atteso, "caso: {nome}");
+        }
     }
 
     #[test]
