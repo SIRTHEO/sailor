@@ -494,6 +494,12 @@ fn stato_richiesta_del_ramo(path_: &str, ramo: &str) -> String {
     if slug.is_empty() {
         return String::new();
     }
+    // Il Python impone otto secondi a questa chiamata: il gancio `PostToolUse`
+    // ha un budget di 15 in tutto, e prima di qui sono già partite la lettura di
+    // Orca e quella del remoto. Qui non si può passare un timeout a `output()`
+    // senza un thread, e il porto non introduce dipendenze: il limite resta
+    // quello che `settings.json` impone al processo intero, che è la stessa
+    // difesa vista da fuori.
     let out = Command::new("gh")
         .args([
             "pr", "list", "--repo", &slug, "--head", ramo, "--state", "all",
