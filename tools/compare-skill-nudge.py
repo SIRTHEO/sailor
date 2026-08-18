@@ -45,6 +45,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path.home() / '.claude'
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from oracle import Oracle                                  # noqa: E402
+
 HOOK = ROOT / 'skills/hooks/skill-nudge.py'
 # Il binario si può spostare con `CLAUDE_HOOKS_BIN`, e non è un vezzo: più
 # sessioni fanno girare `mutants.sh` sullo stesso `target/`, quindi un giro di
@@ -549,17 +552,25 @@ def main():
     py, rs = SCRATCH / 'home-python', SCRATCH / 'home-rust'
     cmd_py = [sys.executable, str(HOOK)]
     cmd_rs = [str(BINARY), 'skill-nudge']
+    # L'oracolo puo' non esserci piu': finche' il Python e' sul disco si
+    # interroga lui e il registro fa da controllo di se stesso; quando sara'
+    # cancellato, le sue risposte restano qui. `SCRATCH` va ripulita perche'
+    # compare dentro le risposte e cambia a ogni esecuzione.
+    oracle = Oracle('skill-nudge', HOOK, scrub=[SCRATCH])
+    print(oracle.describe())
 
     divergenze = 0
     prove = casi()
     for nome, passi, seme, ambiente, sessioni in prove:
         try:
-            attesa = esegui(cmd_py, py, passi, seme, ambiente, sessioni)
-            ottenuta = esegui(cmd_rs, rs, passi, seme, ambiente, sessioni)
+            attesa = oracle.answer(nome, lambda: esegui(cmd_py, py, passi, seme, ambiente, sessioni))
+            ottenuta = oracle.clean(esegui(cmd_rs, rs, passi, seme, ambiente, sessioni))
         except Exception as exc:                       # pragma: no cover
             print(f'  ERRORE      {nome}: {exc}')
             divergenze += 1
             continue
+        if attesa is None:
+            continue                # il registro non lo conosce: lo dira' close()
         if attesa == ottenuta:
             parla = 'PARLA' if any(s.strip() for _, s, _ in attesa[0]) else 'tace'
             print(f'  uguale      {nome}  ({parla})')
@@ -585,7 +596,7 @@ def main():
         print(f'{divergenze} divergenze su {len(prove)} casi')
     else:
         print(f'{len(prove)} casi, nessuna divergenza')
-    return 1 if divergenze else 0
+    return 1 if (divergenze or oracle.close()) else 0
 
 
 if __name__ == '__main__':
