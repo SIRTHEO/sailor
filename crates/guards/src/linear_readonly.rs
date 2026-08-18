@@ -119,6 +119,12 @@ pub const FINAL_STATES: &[&str] = &[
 ];
 
 /// Il nucleo: scriverci dentro disarma il gancio per ogni sessione futura.
+///
+/// Chi sta qui e chi sta in `own_files()` deve coincidere: l'esenzione dalla
+/// lettura del contenuto è sicura **solo** perché il file esentato non è
+/// scrivibile da dentro una sessione. Esentare senza proteggere apre il disarmo
+/// in due gesti consentiti — scrivo quel che voglio nel file esentato, poi lo
+/// eseguo — e `inside_a_script` non guarda più cosa contiene.
 pub const CORE_FILES: &[&str] = &[
     "linear-sola-lettura.py",
     "linear-sola-lettura.jsonl",
@@ -126,6 +132,21 @@ pub const CORE_FILES: &[&str] = &[
     "prova-linear-sola-lettura.py",
     "linear-permesso.json",
     "permesso-linear.sh",
+    // Lo strumento che confronta i due gemelli: è esentato dalla lettura del
+    // proprio contenuto, e senza il posto qui quell'esenzione sarebbe una via
+    // di disarmo in due gesti consentiti.
+    "compare-linear-readonly.py",
+    // Il gancio vivo. Da quando il ramo Python è solo l'oracolo, il divieto lo
+    // regge questo file: elencare soltanto i nomi dell'era precedente lasciava
+    // il nucleo scoperto proprio dove batte. Costo misurato sui comandi
+    // realmente eseguiti in nove giorni: 2 su 37.003 sarebbero stati fermati.
+    //
+    // Il binario compilato NON è qui, ed è una scelta: `cargo build` lo
+    // riscrive senza mai nominarlo, quindi un nome in questo elenco non lo
+    // proteggerebbe, e in cambio fermerebbe 47 comandi veri — le compilazioni
+    // con una redirezione. Dove finisce quello che questo elenco può fare:
+    // `docs/2026-08-18-il-nucleo-non-si-difende-da-se.md`.
+    "linear_readonly.rs",
 ];
 
 /// Configurazione: protetta, ma scavalcabile dichiarando la valvola. È un file
@@ -357,11 +378,21 @@ fn discard() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r#"\d*>>?\s*("[^"]*"|'[^']*'|\S+)"#).unwrap())
 }
 
+/// I modi di rimpiazzare un file.
+///
+/// È un elenco di divieti, cioè la forma che questo stesso modulo dichiara
+/// perdente per i sottocomandi di Linear, e per la stessa ragione è sempre in
+/// ritardo: `ln -sf`, `install`, `rsync` e `patch` rimpiazzavano il gancio
+/// senza che nessuno dei due gemelli dicesse niente — misurato il 18/08/2026,
+/// cinque comandi provati e uno solo fermato. Aggiungerli qui alza la barriera
+/// e non la chiude: contro chi cerca il buco vince il filesystem (un file che
+/// l'utente non possiede), non una regex. Il confine sta scritto in
+/// `docs/2026-08-18-il-nucleo-non-si-difende-da-se.md`.
 fn write_words() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r#"\brm\b|\bmv\b|\bcp\b|\btee\b|\bchmod\b|\bdd\b|['"]w[+bt]*['"]|writeFile|appendFile|unlink|os\.remove|os\.replace|shutil\.|truncate|\.write\("#,
+            r#"\brm\b|\bmv\b|\bcp\b|\btee\b|\bchmod\b|\bdd\b|\bln\b|\binstall\b|\brsync\b|\bpatch\b|\btruncate\b|\bsponge\b|['"]w[+bt]*['"]|writeFile|appendFile|unlink|os\.remove|os\.replace|shutil\.|truncate|\.write\("#,
         )
         .unwrap()
     })
@@ -404,6 +435,18 @@ fn has_write_sign(text: &str) -> bool {
 /// nome del file. Nominare il gancio per leggerlo o per lanciarne le prove resta
 /// libero — altrimenti il divieto renderebbe impossibile lavorarci.
 pub fn touches_protected(line: &str) -> Option<(String, Valve)> {
+    // Un segmento è un comando solo — `segments()` ha già spezzato su `;`, `|`
+    // e `&&` — quindi qui la finestra non serve e fa danno: con un sorgente
+    // lungo, `cp <percorso di 97 caratteri> <gancio>` cadeva fuori dai 120 e
+    // passava su tutti e due i gemelli. La finestra ha senso solo dentro il
+    // testo di uno script, che è la ragione per cui è nata.
+    touches_protected_within(line, usize::MAX)
+}
+
+/// Come sopra, ma guardando solo `window` caratteri attorno al nome: serve per
+/// il contenuto di uno script, dove una scrittura mille righe più in là non
+/// parla del file nominato qui.
+pub fn touches_protected_within(line: &str, window: usize) -> Option<(String, Valve)> {
     let every: Vec<&str> = CORE_FILES.iter().chain(CONFIG_FILES).copied().collect();
 
     // La redirezione innocua si cancella sostituendo con spazi, così gli indici
@@ -426,8 +469,8 @@ pub fn touches_protected(line: &str) -> Option<(String, Valve)> {
 
     for (file, valve) in candidates {
         let Some(i) = line.find(file) else { continue };
-        let start = floor_boundary(&cleaned, i.saturating_sub(WINDOW));
-        let end = floor_boundary(&cleaned, i + file.len() + WINDOW);
+        let start = floor_boundary(&cleaned, i.saturating_sub(window));
+        let end = floor_boundary(&cleaned, i.saturating_add(file.len()).saturating_add(window));
         if has_write_sign(&cleaned[start..end]) {
             let what = if valve == Valve::UserDeclared {
                 "la configurazione dei ganci"
@@ -490,15 +533,60 @@ pub fn expand_variables(command: &str) -> String {
 
 const SCRIPT_EXTENSIONS: &[&str] = &[".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".ts"];
 
-/// I due file del gancio: le loro prove contengono per necessità gli esempi
+/// I file del gancio: le loro prove contengono per necessità gli esempi
 /// vietati, quindi non vanno letti come sospetti.
+///
+/// Ogni nome qui dentro sta **anche** in `CORE_FILES`, e non è una coincidenza
+/// da conservare per disciplina: è ciò che rende sicura l'esenzione. Un file
+/// esentato e scrivibile si riempie di quello che si vuole e poi si esegue —
+/// due gesti entrambi consentiti, e da lì in poi il gancio non guarda più cosa
+/// contiene. Chi aggiunge un nome qui lo aggiunge anche là, o apre quella via.
+///
+/// Il terzo è il comparatore col gemello Python. Senza deroga il suo contenuto
+/// si legge come una riscrittura del nucleo — copia il gancio in una HOME
+/// finta per mettere i due sullo stesso stato — ed eseguirlo era negato, cioè
+/// proprio il gesto che il rifiuto dichiara libero. La via che sembrava più
+/// economica, spezzare i nomi nel testo per non farsi riconoscere, è la
+/// peggiore: non rende il file innocuo, lo rende invisibile, e la porta resta
+/// aperta per chiunque riusi lo schema.
 fn own_files() -> Vec<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_default();
-    let hooks = Path::new(&home).join(".claude").join("skills").join("hooks");
+    let root = Path::new(&home).join(".claude");
+    let hooks = root.join("skills").join("hooks");
     vec![
         hooks.join("linear-sola-lettura.py"),
         hooks.join("prova-linear-sola-lettura.py"),
+        root.join("rust").join("tools").join("compare-linear-readonly.py"),
     ]
+}
+
+/// Lo stesso file, scritto in due modi — ma senza seguire un collegamento.
+///
+/// Il confronto era fra percorsi grezzi, e bastava lanciare lo strumento come
+/// lo documenta la sua stessa riga d'uso — `python3 tools/compare-…py`, dalla
+/// cartella `rust/` — per non essere riconosciuto ed essere negato. Il gemello
+/// Python non ha il difetto: passa da `os.path.abspath`.
+///
+/// Risolvere i collegamenti, però, sposta la deroga dove punta il collegamento:
+/// con `ln -s /tmp/ostile.py <percorso esentato>`, eseguire `/tmp/ostile.py`
+/// diventava muto mentre lo stesso contenuto sotto un altro nome era negato.
+/// Un percorso esentato che sia un collegamento non vale: l'esenzione sta sul
+/// file che il nucleo protegge, non su ciò a cui qualcuno l'ha fatto puntare.
+fn same_file(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    for path in [a, b] {
+        match std::fs::symlink_metadata(path) {
+            Ok(meta) if meta.file_type().is_symlink() => return false,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
 }
 
 /// Apre gli script che la riga *esegue* e ci cerca cosa fanno.
@@ -532,7 +620,7 @@ pub fn inside_a_script(line: &str) -> Option<(String, Valve)> {
         if !meta.is_file() || meta.len() > 200_000 {
             continue;
         }
-        if own_files().iter().any(|p| p == &path) {
+        if own_files().iter().any(|p| same_file(p, &path)) {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(&path) else { continue };
@@ -540,7 +628,7 @@ pub fn inside_a_script(line: &str) -> Option<(String, Valve)> {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
-        if let Some((protected, valve)) = touches_protected(&text) {
+        if let Some((protected, valve)) = touches_protected_within(&text, WINDOW) {
             return Some((format!("{protected}, dentro lo script {name}"), valve));
         }
         if let Some(inside) = names_write(&text) {
@@ -1047,6 +1135,29 @@ mod tests {
         assert!(!refused(
             "sed -n '1,40p' ~/.claude/skills/hooks/prova-linear-sola-lettura.py"
         ));
+    }
+
+    /// L'invariante che regge le esenzioni, presidiata invece che raccomandata.
+    ///
+    /// Un file di cui non si guarda il contenuto **e** su cui si può scrivere
+    /// disarma il gancio in due gesti entrambi consentiti: ci scrivo quello che
+    /// voglio, poi lo eseguo. È nato così, aggiungendo un nome qui e non là, e
+    /// nessuna delle 323 prove se n'era accorta: il commento diceva la cosa
+    /// giusta e non la faceva rispettare nessuno.
+    #[test]
+    fn every_exempt_file_is_also_write_protected() {
+        for path in own_files() {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            assert!(
+                CORE_FILES.contains(&name.as_str()),
+                "{name} è esentato dalla lettura del contenuto ma non è nel \
+                 nucleo: chi ci scrive dentro poi lo esegue, e il gancio non \
+                 guarda più cosa contiene"
+            );
+        }
     }
 
     /// E la direzione opposta: `sed -i` riscrive il file sul posto, ed e' il
