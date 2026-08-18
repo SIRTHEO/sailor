@@ -148,6 +148,11 @@ const ALL_HOOKS: &[&str] = &[
     "register-session",
     "skill-nudge",
     "work-status",
+    // Non e un gancio, come `json`: e lo strumento che risponde a «chi lancia
+    // ancora questo controllo». Sta qui perche il dispatch e l'elenco si
+    // controllano a vicenda, e il controllo ha fatto il suo mestiere — questa
+    // riga mancava, e il workspace non passava piu.
+    "reachability",
 ];
 
 /// Ganci con un caso di prova in `self_check`, oltre a quelli di SMOKE: qui
@@ -172,6 +177,10 @@ const COVERED_APART: &[&str] = &[
     "orca-cleanup",
     "spotlight-marker",
     "work-status",
+    // 14 prove nel modulo, piu 10 mutanti uccisi: la copertura c'e', ma non
+    // passa da `self_check`, che giudica un comando e qui non c'e niente da
+    // giudicare.
+    "reachability",
 ];
 
 fn is_covered(name: &str) -> bool {
