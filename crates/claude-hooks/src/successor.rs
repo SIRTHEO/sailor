@@ -303,6 +303,18 @@ fn cap(var: &str, default: usize) -> usize {
 
 /// L'ora locale adesso, dalla stessa fonte che data i registri.
 fn hour_now() -> u32 {
+    // L'ora si lascia fissare dal banco, come `CONSEGNA_ANCHE_A_META` fissa la
+    // pienezza: il freno orario sta PRIMA dei tetti e li copre, quindi di notte
+    // i casi che provano i tetti si fermano qui e risultano rossi senza che
+    // niente sia rotto — misurato sul Python alle 03:20 del 18/08/2026. La
+    // valvola sta anche qui perché il contratto fra i due porti è che rispondano
+    // uguale a parità di ambiente, e una valvola da un lato solo lo rompe nel
+    // silenzio: nessun confronto la esercitava.
+    if let Ok(fixed) = std::env::var("CONSEGNA_ORA") {
+        if let Ok(h) = fixed.parse::<u32>() {
+            return h;
+        }
+    }
     // `now_local_iso8601` dà `2026-08-17T14:05:12+0200`: l'ora sono due cifre a
     // offset fisso. Estrarle di lì evita una seconda strada verso il fuso —
     // e due strade verso il fuso divergono, come è già successo altrove.
