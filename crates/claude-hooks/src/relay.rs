@@ -242,33 +242,129 @@ fn handles_on_worktree(worktree: &str, orca: OrcaFn) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Il documento di consegna più recente, da citare al successore.
-pub(crate) fn latest_handoff(cwd: &str) -> String {
-    let base = home().join(".claude").join("projects");
-    let mut roots: Vec<PathBuf> = Vec::new();
-    if !cwd.is_empty() {
-        let p = base.join(cwd.replace('/', "-")).join("memory");
-        if p.is_dir() {
-            roots.push(p);
+/// Quante consegne candidate si aprono per confermarle. Si scorre per data
+/// decrescente, quindi la prima che regge è anche la più recente; il tetto vale
+/// per il ripiego su tutti i progetti, dove i documenti sono centinaia.
+const MAX_CANDIDATES: usize = 40;
+
+/// Quanto si legge di un documento prima di giudicarlo, come nel Python.
+const MAX_READ: u64 = 64 * 1024;
+
+/// Il repo che ospita `cwd`, se `cwd` è un albero di lavoro. Vuoto altrimenti.
+///
+/// In un albero secondario `.git` è un file che punta al repo principale
+/// (`gitdir: /percorso/.git/worktrees/<nome>`), quindi la risposta si legge
+/// invece di chiederla a `git`: nessun processo figlio in un gancio che gira a
+/// ogni Stop, e nessuna dipendenza dal PATH ristretto di launchd.
+pub(crate) fn canonical_root(cwd: &str) -> String {
+    let mut here = PathBuf::from(cwd);
+    for _ in 0..4 {
+        if cwd.is_empty() || here.parent().is_none() {
+            return String::new();
         }
+        let marker = here.join(".git");
+        if marker.is_file() {
+            let Ok(text) = fs::read_to_string(&marker) else {
+                return String::new();
+            };
+            for line in text.lines() {
+                let Some(rest) = line.trim().strip_prefix("gitdir:") else {
+                    continue;
+                };
+                let gitdir = rest.trim();
+                if let Some(cut) = gitdir.find("/.git/worktrees/") {
+                    if cut > 0 {
+                        return gitdir[..cut].to_string();
+                    }
+                }
+            }
+            return String::new();
+        }
+        if marker.is_dir() {
+            return String::new();
+        }
+        let Some(parent) = here.parent() else {
+            return String::new();
+        };
+        here = parent.to_path_buf();
     }
-    if roots.is_empty() {
-        roots.push(base);
-    }
-    let mut best: Option<(std::time::SystemTime, String)> = None;
-    for root in roots {
-        collect_handoffs(&root, 0, &mut best);
-    }
-    best.map(|(_, p)| p).unwrap_or_default()
+    String::new()
 }
 
-/// Cerca `handoff-*.md` e `consegna-*.md`, anche un livello sotto in `memory/`.
+/// Le cartelle dove cercare una consegna: quella del progetto, o tutte.
 ///
-/// Il Python usa quattro glob; qui una discesa limitata copre gli stessi
-/// percorsi senza dipendere da un crate di glob. Il limite di profondità non è
-/// prudenza generica: scendere ovunque significherebbe passeggiare su tutta la
-/// cartella dei transcript, che sono gigabyte.
-fn collect_handoffs(dir: &Path, depth: u32, best: &mut Option<(std::time::SystemTime, String)>) {
+/// IL RIPIEGO CONTRADDICEVA LA RIGA SOPRA DI SÉ. Il Python dichiarava che
+/// «armare un successore su una consegna altrui è peggio che non armarlo», e
+/// subito dopo, non trovando la cartella del progetto, cercava ovunque. Con un
+/// cwd noto la risposta giusta a «questo progetto non ha consegne» è **nessuna**:
+/// `arm_successor` esce sul percorso vuoto, e la staffetta scrive un mandato
+/// generico che il successore risolve leggendo il proprio `MEMORY.md`. Il
+/// ripiego resta solo dove non c'è niente da restringere: cwd assente.
+fn memory_roots(cwd: &str) -> Vec<PathBuf> {
+    let base = home().join(".claude").join("projects");
+    if cwd.is_empty() {
+        return vec![base];
+    }
+    let canonical = canonical_root(cwd);
+    for candidate in [cwd, canonical.as_str()] {
+        if candidate.is_empty() {
+            continue;
+        }
+        let p = base.join(candidate.replace('/', "-")).join("memory");
+        if p.is_dir() {
+            return vec![p];
+        }
+    }
+    Vec::new()
+}
+
+/// Il documento di consegna più recente, da citare al successore.
+///
+/// IL RIPIEGO ERA LA STRADA NORMALE, fino al 18/08/2026. Una sessione dentro un
+/// albero di lavoro non ha una cartella di memoria propria — la sua sta sotto il
+/// repo che lo ospita — quindi il restringimento al progetto non si applicava
+/// mai proprio dove serve. Misurato sul registro della staffetta: **5
+/// rigenerazioni su 11** hanno citato la consegna di un altro progetto, e alle
+/// 02:08 di quel giorno un successore sulla suite ha ricevuto il mandato della
+/// configurazione.
+///
+/// E il nome non riconosce le consegne: la skill scrive uno slug tematico, e la
+/// consegna delle 02:07 era invisibile mentre vinceva quella del giorno prima.
+/// Il criterio che funziona è quello di `guards::successor`, lo stesso che arma
+/// il successore: si scorre per data e si conferma leggendo.
+pub(crate) fn latest_handoff(cwd: &str) -> String {
+    let mut found: Vec<(std::time::SystemTime, String)> = Vec::new();
+    for root in memory_roots(cwd) {
+        collect_memory_docs(&root, 0, &mut found);
+    }
+    // Per data decrescente; a parità il percorso maggiore, come il `max()` su
+    // tupla del Python.
+    found.sort_by(|a, b| b.cmp(a));
+    for (_, path) in found.iter().take(MAX_CANDIDATES) {
+        let text = read_head(Path::new(path));
+        if guards::successor::is_handoff_doc(path, text.as_deref()) {
+            return path.clone();
+        }
+    }
+    String::new()
+}
+
+/// La testa di un documento, entro il tetto di lettura. `None` se illeggibile.
+fn read_head(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let file = fs::File::open(path).ok()?;
+    let mut buf = Vec::new();
+    file.take(MAX_READ).read_to_end(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// Raccoglie i `.md` che stanno in `memory/`, anche un livello più sotto.
+///
+/// Il Python usa due glob; qui una discesa limitata copre gli stessi percorsi
+/// senza dipendere da un crate di glob. Il limite di profondità non è prudenza
+/// generica: scendere ovunque significherebbe passeggiare su tutta la cartella
+/// dei transcript, che sono gigabyte.
+fn collect_memory_docs(dir: &Path, depth: u32, found: &mut Vec<(std::time::SystemTime, String)>) {
     if depth > 2 {
         return;
     }
@@ -284,28 +380,16 @@ fn collect_handoffs(dir: &Path, depth: u32, best: &mut Option<(std::time::System
             .to_string();
         if path.is_dir() {
             if depth == 0 || name == "memory" {
-                collect_handoffs(&path, depth + 1, best);
+                collect_memory_docs(&path, depth + 1, found);
             }
             continue;
         }
         if !name.ends_with(".md") {
             continue;
         }
-        if !(name.starts_with("handoff-") || name.starts_with("consegna-")) {
-            continue;
-        }
         let Ok(meta) = entry.metadata() else { continue };
         let Ok(mtime) = meta.modified() else { continue };
-        let candidate = path.to_string_lossy().to_string();
-        // A parità di mtime il Python sceglie il percorso maggiore: `max()` su
-        // una tupla confronta il secondo campo quando il primo è uguale.
-        let better = match best {
-            None => true,
-            Some((t, p)) => mtime > *t || (mtime == *t && candidate > *p),
-        };
-        if better {
-            *best = Some((mtime, candidate));
-        }
+        found.push((mtime, path.to_string_lossy().to_string()));
     }
 }
 
@@ -959,5 +1043,95 @@ mod tests {
         };
         regenerate(&record_di_prova(), "", true, &mut orca, None);
         assert!(chiamate.borrow().is_empty(), "a secco ha parlato con orca");
+    }
+
+    /// Il corpo che la skill `handoff` prescrive: frontmatter e le due sezioni.
+    const CONSEGNA: &str = "---\nname: x\ndescription: y\nmetadata:\n  type: project\n---\n\n## Stato\n\nfatto\n\n## Prossimi passi\n\nquello dopo\n";
+
+    /// Scrive un documento di memoria e ne fissa l'età in secondi.
+    fn doc(home: &Path, progetto: &str, nome: &str, testo: &str, eta: u64) -> String {
+        let dir = home
+            .join(".claude")
+            .join("projects")
+            .join(progetto.replace('/', "-"))
+            .join("memory");
+        fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(nome);
+        // L'età si fissa invece di aspettare: senza, due file scritti nello
+        // stesso istante lascerebbero decidere l'ordine al percorso, e il caso
+        // proverebbe qualcosa d'altro.
+        let f = fs::File::create(&p).unwrap();
+        use std::io::Write;
+        (&f).write_all(testo.as_bytes()).unwrap();
+        let quando =
+            std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000 - eta);
+        f.set_modified(quando).unwrap();
+        p.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn l_albero_di_lavoro_risale_al_repo_che_lo_ospita() {
+        let home = HomeIsolata::nuova("radice-canonica");
+        let repo = home.dir.join("gyver").join("suite");
+        let albero = home.dir.join("orca").join("tautog");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(&albero).unwrap();
+        fs::write(
+            albero.join(".git"),
+            format!("gitdir: {}/.git/worktrees/tautog\n", repo.display()),
+        )
+        .unwrap();
+        assert_eq!(
+            canonical_root(albero.to_str().unwrap()),
+            repo.to_string_lossy()
+        );
+        // MUTANTE: un checkout principale ha `.git` cartella, e non risale a nessuno.
+        assert_eq!(canonical_root(repo.to_str().unwrap()), "");
+        assert_eq!(canonical_root("/non/esiste/affatto"), "");
+        assert_eq!(canonical_root(""), "");
+    }
+
+    #[test]
+    fn il_successore_eredita_la_consegna_del_suo_repo() {
+        let home = HomeIsolata::nuova("consegna-ereditata");
+        let repo = home.dir.join("gyver").join("suite");
+        let albero = home.dir.join("orca").join("tautog");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(&albero).unwrap();
+        fs::write(
+            albero.join(".git"),
+            format!("gitdir: {}/.git/worktrees/tautog\n", repo.display()),
+        )
+        .unwrap();
+        let repo_s = repo.to_string_lossy().to_string();
+        // La consegna più recente del repo ha un nome tematico, la vecchia il
+        // prefisso: col criterio sul nome vinceva la vecchia.
+        doc(&home.dir, &repo_s, "consegna-vecchia.md", CONSEGNA, 3600);
+        let fresca = doc(&home.dir, &repo_s, "guardia-e-forma.md", CONSEGNA, 60);
+        // Un altro progetto ha consegnato più tardi di tutti: è il documento che
+        // il ripiego globale sceglieva.
+        let altrui = doc(&home.dir, "/altro/progetto", "consegna-altrui.md", CONSEGNA, 0);
+
+        assert_eq!(latest_handoff(albero.to_str().unwrap()), fresca);
+        assert_ne!(latest_handoff(albero.to_str().unwrap()), altrui);
+        assert_eq!(latest_handoff(&repo_s), fresca);
+
+        // MUTANTE: una memoria qualunque non è una consegna, nemmeno se è la più recente.
+        doc(
+            &home.dir,
+            &repo_s,
+            "nota-di-lavoro.md",
+            "---\nname: n\nmetadata:\n  type: reference\n---\n\nappunto\n",
+            0,
+        );
+        assert_eq!(latest_handoff(&repo_s), fresca);
+        // MUTANTE: l'indice non è una consegna.
+        doc(&home.dir, &repo_s, "MEMORY.md", "# indice\n", 0);
+        assert_eq!(latest_handoff(&repo_s), fresca);
+        // MUTANTE: senza cartella propria non si eredita la consegna di un altro.
+        assert_eq!(latest_handoff("/percorso/senza/memoria"), "");
+        // Senza cwd non c'è niente da restringere: lì il ripiego è tutto quello
+        // che si può dire.
+        assert_eq!(latest_handoff(""), altrui);
     }
 }

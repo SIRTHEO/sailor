@@ -330,6 +330,28 @@ def field_cases(pane_list):
         worktree_id='9591c8dd-9b12-4342-bcbb-c1d6ffff9ff3::/Users/theo/gyver/work/suite',
         cwd='/Users/theo/gyver/work/suite',
     )
+    # LA STESSA SESSIONE DENTRO UN ALBERO DI LAVORO, che e' il caso normale: 5
+    # rigenerazioni su 11 nel registro del 18/08/2026 partono da qui. La cartella
+    # di memoria di `orca/workspaces/suite/tautog` non esiste — la sua sta sotto
+    # il repo che lo ospita — quindi il segnale di ripresa dipende dal ramo
+    # aggiunto quel giorno, e senza questo caso la parita' su quel ramo non e'
+    # confrontata da nessuna parte. Il percorso e' vero perche' `canonical_root`
+    # legge il `.git` sul disco, non dentro la HOME finta.
+    albero_di_lavoro = dict(
+        piena,
+        worktree_id='9591c8dd-9b12-4342-bcbb-c1d6ffff9ff3::/Users/theo/orca/workspaces/suite/tautog',
+        cwd='/Users/theo/orca/workspaces/suite/tautog',
+    )
+    # UN PROGETTO CHE NON HA CONSEGNE PROPRIE. Serve perche' e' l'unico caso che
+    # raggiunge il ramo «non trovo niente»: fino al 18/08/2026 li' si ripiegava
+    # sul piu' recente ovunque, cioe' sul lavoro di un altro. Senza questo
+    # scenario il mutante che rimette il ripiego sopravvive — misurato, era
+    # l'unico dei cinque che la batteria non vedeva.
+    senza_consegne = dict(
+        piena,
+        worktree_id='9591c8dd-9b12-4342-bcbb-c1d6ffff9ff3::/Users/theo/orca/workspaces/whatsapp/senza-memoria',
+        cwd='/Users/theo/orca/workspaces/whatsapp/senza-memoria',
+    )
     # Lo stesso caso con un identificativo di copia senza barre. Ogni worktree
     # vero porta `::/percorso/assoluto`, e un file di raffreddamento chiamato
     # cosi' non si puo' creare: questo e' il controllo che lo dice ad alta voce.
@@ -351,6 +373,10 @@ def field_cases(pane_list):
          {**base, 'records': [piena], 'markers': consegnata}),
         ('CAMPO: la stessa, in un altro progetto',
          {**base, 'records': [altro_progetto], 'markers': consegnata}),
+        ('CAMPO: la stessa, dentro un albero di lavoro',
+         {**base, 'records': [albero_di_lavoro], 'markers': consegnata}),
+        ('CAMPO: la stessa, in un progetto senza consegne',
+         {**base, 'records': [senza_consegne], 'markers': consegnata}),
         ('CAMPO: la stessa, con una copia senza barre',
          {**base, 'records': [piena_piatta], 'markers': consegnata}),
         ('CAMPO: piena, ma il successore e gia vivo',
