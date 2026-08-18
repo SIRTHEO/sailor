@@ -456,6 +456,14 @@ if [ "$WHICH" = "relay-handoff" ] || [ "$WHICH" = "tutte" ]; then
   # piu' vecchia, e il tetto dei candidati taglierebbe via proprio le recenti.
   mutate "scorre per data crescente" "$R" \
     's = s.replace("    found.sort_by(|a, b| b.cmp(a));", "    found.sort();", 1)'
+
+  # Il progresso della generazione uscente: il §3 lo pretende nel registro, ed e'
+  # l'unico dato che distinguerebbe una catena che lavora da una che gira a vuoto.
+  mutate "conta solo le Write, non le altre scritture" "$R" \
+    's = s.replace("for tool in [r#\"\"name\":\"Write\"\"#, r#\"\"name\":\"Edit\"\"#, r#\"\"name\":\"MultiEdit\"\"#] {", "for tool in [r#\"\"name\":\"Write\"\"#] {", 1)'
+
+  mutate "il progresso non si misura" "$R" \
+    's = s.replace("    let (turns, writes) = progress(&rec.transcript);", "    let (turns, writes) = (0u64, 0u64);", 1)'
 fi
 
 # ── successor ───────────────────────────────────────────────────────────────
