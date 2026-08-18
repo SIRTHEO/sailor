@@ -12,13 +12,24 @@ non dalla sola funzione: così copre anche l'estrazione del titolo, che è il
 pezzo dove le virgolette fanno danni.
 
     compare-pr-title.py
+    compare-pr-title.py --record   registra le risposte dell'oracolo
+
+L'ORACOLO PUO' NON ESSERCI PIU'. Dal 18/08/2026 le risposte del Python si
+registrano su file (`tools/oracle/pr-title.json`), cosi' il confronto sopravvive
+alla cancellazione degli originali. Finche' il Python e' sul disco si interroga
+lui, e il registro fa da controllo di se stesso: se i due non dicono la stessa
+cosa, il registro e' invecchiato e lo si sente.
 """
 import json
 import subprocess
 import sys
 from pathlib import Path
 
-PY = ['python3', str(Path.home() / '.claude/skills/hooks/pr-title.py')]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from oracle import Oracle, normalise                    # noqa: E402
+
+ORIGINAL = Path.home() / '.claude/skills/hooks/pr-title.py'
+PY = ['python3', str(ORIGINAL)]
 RUST = [str(Path.home() / '.claude/rust/target/release/claude-hooks'), 'pr-title']
 
 REPOS = [
@@ -55,6 +66,8 @@ def decision(cmd, command):
     return out.returncode, reason
 
 
+oracle = Oracle('pr-title', ORIGINAL)
+print(oracle.describe())
 corpus = subjects()
 print(f'corpus: {len(corpus)} soggetti di commit veri')
 
@@ -67,8 +80,12 @@ for subject in corpus:
         command = 'gh pr create --title ' + json.dumps(subject)
     else:
         command = f"gh pr create --title '{subject}'"
-    a = decision(PY, command)
-    b = decision(RUST, command)
+    a = oracle.answer(command, lambda c=command: decision(PY, c))
+    # Normalizzato anche il porto: l'oracolo torna dal JSON come lista, e una
+    # tupla non e' mai uguale a una lista. E' la trappola scritta in oracle.py.
+    b = normalise(decision(RUST, command))
+    if a is None:
+        continue                       # il registro non lo conosce: lo dira' close()
     if a[1] is not None:
         refused += 1
     if a != b:
@@ -81,4 +98,5 @@ for subject, a, b in divergent[:10]:
     print(f'    python: {str(a[1])[:150]}')
     print(f'    rust:   {str(b[1])[:150]}')
 
-sys.exit(1 if divergent else 0)
+problems = oracle.close()
+sys.exit(1 if (divergent or problems) else 0)
