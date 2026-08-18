@@ -27,6 +27,7 @@ pub mod handoff_threshold;
 pub mod repo_tools;
 pub mod restart;
 pub mod scope_drift;
+pub mod session_messages;
 pub mod skill_nudge;
 pub mod spotlight_marker;
 pub mod worktree_create;

@@ -41,6 +41,7 @@ mod register_session;
 mod skill_nudge;
 mod work_status;
 mod json_tool;
+mod session_messages;
 
 use hook_io::{Decision, Mode};
 
@@ -108,6 +109,7 @@ fn main() {
 /// fallisce se un ramo nuovo non compare qui.
 const ALL_HOOKS: &[&str] = &[
     "allow-worktree-deletes",
+    "allow-session-messages",
     "json",
     "block-pr-merge-admin",
     "block-worktree-create",
@@ -150,6 +152,11 @@ const ALL_HOOKS: &[&str] = &[
 /// stanno quelli che non giudicano un comando e hanno un controllo scritto a
 /// parte, più sotto.
 const COVERED_APART: &[&str] = &[
+    // I due del 18/08: nessun caso in `self_check`, ma un confronto
+    // d'equivalenza col Python a parte — 28 casi e 3 mutanti uccisi per il
+    // primo, 126 casi e 2 mutanti per il secondo.
+    "allow-session-messages",
+    "json",
     "code-language",
     "comment-refs",
     "duplication",
@@ -759,10 +766,11 @@ fn run(which: &str) -> Result<i32, String> {
         "register-session" => Ok(register_session::run()),
         "skill-nudge" => Ok(skill_nudge::run()),
         "work-status" => Ok(work_status::run()),
-        // Non è un gancio: è il pezzo che toglie `python3 -c` dai tre ganci
-        // scritti in shell, che lo invocano per leggere un campo o costruire una
-        // risposta. Sta nell'elenco perché il dispatch e l'elenco si controllano
-        // a vicenda, non perché `settings.json` lo nomini.
+        "allow-session-messages" => Ok(session_messages::run()),
+        // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
+        // ganci scritti in shell, che lo invocano per leggere un campo o
+        // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
+        // si controllano a vicenda, non perché `settings.json` lo nomini.
         "json" => Ok(json_tool::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
