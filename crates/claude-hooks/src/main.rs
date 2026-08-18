@@ -98,6 +98,7 @@ const ALL_HOOKS: &[&str] = &[
     "block-pr-merge-admin",
     "cd-guard",
     "code-language",
+    "comment-refs",
     "duplication",
     "handoff-arms-successor",
     "handoff-measure",
@@ -409,6 +410,51 @@ fn run(which: &str) -> Result<i32, String> {
                     Ok(2)
                 }
                 _ => Ok(0),
+            }
+        }
+        // I rimandi a documenti locali nei commenti. Stesso involucro di
+        // `code-language`: entrambi guardano il testo appena scritto e negano
+        // prima della scrittura, perché un avviso dopo lascia la riga sul file.
+        // L'esenzione la legge il chiamante — `judge` è pura per poter essere
+        // confrontata col Python sulla sola decisione.
+        "comment-refs" => {
+            if Mode::from_env("COMMENT_REFS") == Mode::Off {
+                return Ok(0);
+            }
+            let phase = std::env::args().nth(2).unwrap_or_else(|| "pre".into());
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            let empty = serde_json::json!({});
+            let tool_input = input.tool_input.as_ref().unwrap_or(&empty);
+            let path = tool_input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if path.is_empty() {
+                return Ok(0);
+            }
+            let text = guards::code_language::written_text(tool_input);
+            let exempt = std::fs::read_to_string(path)
+                .map(|c| guards::comment_refs::declares_marker(&c))
+                .unwrap_or(false);
+            let hook_io::Decision::Deny(message) =
+                guards::comment_refs::judge(path, &text, exempt)
+            else {
+                return Ok(0);
+            };
+            // In fase `post` non si può più negare: si blocca con uscita 2, che
+            // è il canale che l'assistente legge. Il codice d'uscita di `pre`
+            // resta 0 — la negazione viaggia dentro lo stdout, ed è il motivo
+            // per cui la prima misura di questo freno lo credette muto.
+            if phase == "pre" {
+                Ok(hook_io::emit(
+                    "comment-refs",
+                    &hook_io::Decision::Deny(message),
+                ))
+            } else {
+                eprintln!("{message}");
+                Ok(2)
             }
         }
         // Le regole appena scritte. Nessuna valvola d'ambiente: l'originale non
