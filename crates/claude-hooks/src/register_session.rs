@@ -43,12 +43,22 @@ const MARKER_FAMILIES: &[&str] = &[
     "consegna-avvisata",
     "consegna-misura",
     "consegna-ripartenze",
+    // AGGIUNTA IL 18/08/2026, e il commento qui sopra la contava già fra i 176
+    // marcatori rimasti sul disco: era stata guardata e non aggiunta.
+    "consegna-volontaria",
 ];
 
 /// `successore-di-` fa eccezione: porta l'identificativo **intero**, non i primi
 /// otto come tutti gli altri. Chi cancella per prefisso corto lo manca sempre, e
 /// lo manca in silenzio.
 const FULL_ID_FAMILIES: &[&str] = &["successore-di"];
+
+/// E questa non porta l'id affatto, ma la sua impronta:
+/// `successore-armato-<sha1(session)[..16]>`. Non essendo il nome leggibile,
+/// nessuno aveva pensato a toglierla — 20 file il 18/08/2026, e provato lo
+/// stesso giorno che due corrispondono all'impronta di sessioni ancora nominate
+/// sul disco. Derivabile significa cancellabile.
+const FINGERPRINT_FAMILIES: &[&str] = &["successore-armato"];
 
 fn state_dir() -> PathBuf {
     // La HOME si legge dall'ambiente come nell'originale (`Path.home()`), così
@@ -142,6 +152,15 @@ fn own_markers(sess: &str, full_id: &str) -> Vec<PathBuf> {
             .collect();
         for f in FULL_ID_FAMILIES {
             paths.push(state.join(format!("{f}-{safe}")));
+        }
+        // L'impronta si calcola sull'identificativo INTERO e non filtrato,
+        // perché è esattamente ciò che il gancio passa a `hashlib.sha1`: con la
+        // forma corta, o con quella ripulita, il nome uscirebbe diverso e non si
+        // cancellerebbe niente. `guards::sha1` esiste per dare le stesse cifre.
+        let digest = guards::duplication::sha1(full_id.as_bytes());
+        let hex: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        for f in FINGERPRINT_FAMILIES {
+            paths.push(state.join(format!("{f}-{}", &hex[..16])));
         }
     }
     paths
