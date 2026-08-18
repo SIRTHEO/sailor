@@ -14,6 +14,7 @@
 //! avvii di processo per parte trasformano un confronto da secondi in minuti, e
 //! un confronto che nessuno aspetta non viene lanciato.
 
+use guards::chain::{chain_verdict, ChainLimits, ChainLink, ChainVerdict};
 use guards::handoff::{evaluate, Action, SessionFacts};
 use std::io::Read;
 
@@ -96,6 +97,67 @@ pub fn run() -> i32 {
                 "budget": t.budget,
                 "require": t.require,
                 "used": used,
+            })
+        );
+    }
+    0
+}
+
+/// Lo stesso ponte per il freno della catena, che `guards::chain` decide con la
+/// storia come dato: qui la storia arriva dal caso invece che dal disco, così il
+/// confronto col Python non deve fabbricare un `state/catene/` per ogni caso.
+pub fn run_chain() -> i32 {
+    let mut raw = String::new();
+    if std::io::stdin().read_to_string(&mut raw).is_err() {
+        return 1;
+    }
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(case) = serde_json::from_str::<serde_json::Value>(line) else {
+            println!("{}", serde_json::json!({"error": "caso illeggibile"}));
+            continue;
+        };
+        let links: Vec<ChainLink> = case
+            .get("links")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|l| ChainLink {
+                        session: l.get("session").and_then(|v| v.as_str()).unwrap_or("").into(),
+                        at: l.get("at").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                        turns: l.get("turns").and_then(|v| v.as_u64()).unwrap_or(0),
+                        writes: l.get("writes").and_then(|v| v.as_u64()).unwrap_or(0),
+                        handoff: l.get("handoff").and_then(|v| v.as_str()).unwrap_or("").into(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let d = ChainLimits::default();
+        let lim = case.get("limits");
+        let num = |name: &str, fallback: f64| -> f64 {
+            lim.and_then(|l| l.get(name)).and_then(|v| v.as_f64()).unwrap_or(fallback)
+        };
+        let limits = ChainLimits {
+            max_links: num("max_links", d.max_links as f64) as usize,
+            max_age_sec: num("max_age_sec", d.max_age_sec),
+            idle_reset_sec: num("idle_reset_sec", d.idle_reset_sec),
+            stall_links: num("stall_links", d.stall_links as f64) as usize,
+        };
+        let now = case.get("now").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let (verdict, reason) = chain_verdict(&links, now, &limits);
+        // I nomi sono quelli del Python, che resta l'oracolo: tradurli qui
+        // nasconderebbe una divergenza sul verdetto.
+        let verdict = match verdict {
+            ChainVerdict::Go => "go",
+            ChainVerdict::Reset => "reset",
+            ChainVerdict::Stop => "stop",
+        };
+        println!(
+            "{}",
+            serde_json::json!({
+                "verdict": verdict,
+                "reason": reason,
+                "sterile": guards::chain::sterile_tail(&links),
             })
         );
     }

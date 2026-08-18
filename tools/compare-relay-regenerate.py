@@ -286,6 +286,14 @@ def build_home_field(root: Path, case):
     # e nessun messaggio gli e' mai successivo: il caso non discriminerebbe.
     for name, quando in case.get('marker_times', {}).items():
         os.utime(state / name, (quando, quando))
+    # La storia della catena e' un ingresso come gli altri: senza poterla
+    # precaricare, il freno non morde in nessuno scenario e la sua parita' non
+    # sarebbe confrontata da nessuna parte.
+    for worktree, links in case.get('chains', {}).items():
+        (state / 'catene').mkdir(exist_ok=True)
+        chiave = worktree.replace('/', '_').replace(chr(92), '_')
+        (state / 'catene' / f'{chiave}.json').write_text(
+            json.dumps({'links': links}, separators=(',', ':')))
     return root
 
 
@@ -407,6 +415,25 @@ def field_cases(pane_list):
           'worktree': piena['worktree_id'], 'pickup': True, 'pickup_timeout': 5}),
         ('CAMPO: piena, ma l ordine a voce non arriva',
          {**base, 'records': [piena], 'markers': consegnata, 'send_rc': 1}),
+        # IL FRENO DELLA CATENA. Gli altri scenari guardano il momento; questi
+        # tre guardano la storia, ed erano l'unica parte del comportamento che
+        # nessun confronto vedeva. Il worktree e' quello di `piena` perche' la
+        # storia si indicizza sull'albero, non sulla sessione.
+        ('CAMPO: piena, ma la catena ha gia dieci anelli',
+         {**base, 'records': [piena], 'markers': consegnata,
+          'chains': {piena['worktree_id']: [
+              {'session': f's{i}', 'at': time.time() - (10 - i) * 60,
+               'turns': 10, 'writes': 5, 'handoff': f'/{i}.md'} for i in range(10)]}}),
+        ('CAMPO: piena, ma la catena gira a vuoto',
+         {**base, 'records': [piena], 'markers': consegnata,
+          'chains': {piena['worktree_id']: [
+              {'session': f's{i}', 'at': time.time() - (4 - i) * 60,
+               'turns': 3, 'writes': 0, 'handoff': '/ferma.md'} for i in range(4)]}}),
+        ('CAMPO: piena, e la catena di ieri e scaduta',
+         {**base, 'records': [piena], 'markers': consegnata,
+          'chains': {piena['worktree_id']: [
+              {'session': f's{i}', 'at': time.time() - 8 * 3600 - (10 - i) * 60,
+               'turns': 3, 'writes': 0, 'handoff': '/vecchia.md'} for i in range(10)]}}),
         ('CAMPO: piena, a secco',
          {**base, 'records': [piena], 'markers': consegnata, 'secco': True}),
         ('CAMPO: pannello sparito, a secco',
