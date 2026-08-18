@@ -225,17 +225,40 @@ impl Terminal {
     /// La risposta arriva o come `{"result":{"terminals":[…]}}` o già come lista:
     /// si accettano entrambe, come fa il Python, perché la forma è cambiata una
     /// volta e chi la fissa la rincorre.
-    pub fn from_response(value: &serde_json::Value) -> Vec<Terminal> {
+    pub fn from_response(value: &serde_json::Value) -> Option<Vec<Terminal>> {
         let inner = value.get("result").unwrap_or(value);
-        let items = inner
-            .get("terminals")
-            .and_then(|x| x.as_array())
-            .or_else(|| inner.as_array());
-        let Some(items) = items else {
-            return Vec::new();
+        // `items = d.get('result', d)`, poi `if isinstance(items, dict)`: solo
+        // su un OGGETTO il Python scende dentro `terminals`. Su qualunque altra
+        // forma resta dov'è, e se non è una lista risponde `None`.
+        let vuoto = serde_json::Value::Array(Vec::new());
+        let items = if inner.is_object() {
+            match inner.get("terminals") {
+                // Il Python scrive `items.get('terminals') or []`: un valore
+                // falso — assente, `null`, `0`, `""`, `[]`, `{}` — diventa la
+                // lista vuota, mentre uno vero passa così com'è e verrà
+                // giudicato dal controllo sulla lista qui sotto.
+                Some(v) if !e_falso(v) => v,
+                _ => &vuoto,
+            }
+        } else {
+            inner
         };
-        items
+        // NIENTE LISTA, NIENTE RISPOSTA. Prima una forma che non si riconosce
+        // tornava `Vec::new()`, e a valle una lista vuota vuol dire «i pannelli
+        // sono morti tutti»: la chiusura si dichiarava riuscita senza aver
+        // chiuso niente, e la sessione vecchia restava viva sullo stesso albero.
+        // È lo stesso difetto che `read_terminals` dice di aver chiuso — 276
+        // giri «riusciti» mentre cancellava record di sessioni vive — rimasto
+        // qui dentro perché il salto di forma avveniva un livello più giù.
+        let items = items.as_array()?;
+        Some(items
             .iter()
+            // Ciò che non è un oggetto non è un terminale, e va SALTATO, non
+            // trasformato in un pannello dai campi vuoti: nel ramo che sceglie
+            // per worktree la risposta dipende da quanti candidati ci sono
+            // (`len(hits) == 1`), quindi un fantasma in più fa tacere una
+            // risoluzione che l'oracolo dà.
+            .filter(|t| t.is_object())
             .map(|t| {
                 let field = |name: &str| {
                     t.get(name)
@@ -258,7 +281,22 @@ impl Terminal {
                     title: field("title"),
                 }
             })
-            .collect()
+            .collect())
+    }
+}
+
+/// Falso come lo intende Python: assente, `null`, `false`, zero, stringa,
+/// lista o oggetto vuoti. Serve a tradurre `x or []`, che non è un controllo
+/// sul tipo ma sulla verità — e i due si comportano diverso proprio sui casi
+/// storti, che sono gli unici per cui questa funzione esiste.
+fn e_falso(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Null => true,
+        serde_json::Value::Bool(b) => !b,
+        serde_json::Value::Number(n) => n.as_f64().map(|f| f == 0.0).unwrap_or(false),
+        serde_json::Value::String(s) => s.is_empty(),
+        serde_json::Value::Array(a) => a.is_empty(),
+        serde_json::Value::Object(o) => o.is_empty(),
     }
 }
 
@@ -991,11 +1029,71 @@ mod tests {
         let annidata: serde_json::Value =
             serde_json::from_str(r#"{"result":{"terminals":[{"handle":"term_a"}]}}"#).unwrap();
         let piatta: serde_json::Value = serde_json::from_str(r#"[{"handle":"term_a"}]"#).unwrap();
-        assert_eq!(Terminal::from_response(&annidata)[0].handle, "term_a");
-        assert_eq!(Terminal::from_response(&piatta)[0].handle, "term_a");
-        // Una risposta d'errore non produce pannelli inventati.
+        assert_eq!(Terminal::from_response(&annidata).unwrap()[0].handle, "term_a");
+        assert_eq!(Terminal::from_response(&piatta).unwrap()[0].handle, "term_a");
+        // Una risposta d'errore non produce pannelli inventati. Resta un
+        // elenco VUOTO e non un «non lo so», perché è un oggetto senza
+        // `terminals` — la stessa lettura del Python, che su un dizionario
+        // scende dentro e non trova niente.
         let errore: serde_json::Value = serde_json::from_str(r#"{"ok":false}"#).unwrap();
-        assert!(Terminal::from_response(&errore).is_empty());
+        assert_eq!(Terminal::from_response(&errore), Some(Vec::new()));
+    }
+
+    #[test]
+    fn an_unknown_shape_is_an_i_do_not_know() {
+        // IL CASO CARO. `result` che non è né lista né oggetto: prima tornava
+        // `Vec::new()`, e a valle un elenco vuoto vuol dire «i pannelli sono
+        // morti tutti» — la chiusura si dichiarava riuscita senza chiudere
+        // niente e la sessione vecchia restava viva sullo stesso albero.
+        for odd in [
+            r#"{"result":"oops"}"#,
+            r#"{"result":42}"#,
+            r#"{"result":true}"#,
+            r#""solo una stringa""#,
+            r#"42"#,
+            r#"null"#,
+        ] {
+            let v: serde_json::Value = serde_json::from_str(odd).unwrap();
+            assert_eq!(Terminal::from_response(&v), None, "forma: {odd}");
+        }
+        // E i gemelli che devono invece rispondere «zero pannelli»: la lista
+        // vuota vera, e l'oggetto che dichiara zero terminali.
+        for empty in [r#"[]"#, r#"{"result":{"terminals":[]}}"#, r#"{"result":{}}"#] {
+            let v: serde_json::Value = serde_json::from_str(empty).unwrap();
+            assert_eq!(Terminal::from_response(&v), Some(Vec::new()), "forma: {empty}");
+        }
+    }
+
+    #[test]
+    fn what_is_not_an_object_is_not_a_terminal() {
+        // Un elemento storto si SALTA, non diventa un pannello dai campi vuoti:
+        // il ramo che sceglie per worktree risponde solo se il candidato è
+        // unico, quindi un fantasma in più fa tacere una risoluzione buona.
+        let v: serde_json::Value =
+            serde_json::from_str(r#"[1,{"handle":"term_a","worktreeId":"wt-1"},"x",null]"#).unwrap();
+        let t = Terminal::from_response(&v).unwrap();
+        assert_eq!(t.len(), 1, "gli elementi storti sono diventati pannelli");
+        assert_eq!(resolve_terminal_handle("", "wt-1", "", &t), "term_a");
+    }
+
+    #[test]
+    fn a_falsy_terminals_field_means_an_empty_list() {
+        // Il Python scrive `items.get('terminals') or []`, che non è un
+        // controllo sul tipo ma sulla verità: `null`, `0`, `""`, `[]` e `{}`
+        // diventano la lista vuota, mentre un valore vero passa e viene
+        // giudicato dal controllo sulla lista.
+        for falsy in [r#"null"#, r#"0"#, r#""""#, r#"[]"#, r#"{}"#, r#"false"#] {
+            let payload = format!(r#"{{"result":{{"terminals":{falsy}}}}}"#);
+            let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+            assert_eq!(Terminal::from_response(&v), Some(Vec::new()), "falso: {falsy}");
+        }
+        // Vero ma non una lista: qui il Python non lo sostituisce, e il
+        // controllo sulla lista risponde «non lo so».
+        for truthy in [r#""x""#, r#"7"#, r#"{"a":1}"#, r#"true"#] {
+            let payload = format!(r#"{{"result":{{"terminals":{truthy}}}}}"#);
+            let v: serde_json::Value = serde_json::from_str(&payload).unwrap();
+            assert_eq!(Terminal::from_response(&v), None, "vero non-lista: {truthy}");
+        }
     }
 
     #[test]
@@ -1011,7 +1109,7 @@ mod tests {
             r#"{"result":{"terminals":[{"handle":"term_x","tabId":"tab-x","worktreeId":"wt-x","title":"ignorato"}]}}"#,
         )
         .unwrap();
-        let t = Terminal::from_response(&raw);
+        let t = Terminal::from_response(&raw).unwrap();
         assert_eq!(t[0].tab_id, "tab-x");
         assert_eq!(t[0].worktree_id, "wt-x");
         assert_eq!(resolve_terminal_handle("tab-x", "", "", &t), "term_x");

@@ -462,7 +462,10 @@ pub(crate) fn read_terminals(orca: OrcaFn) -> Option<Vec<Terminal>> {
         return None;
     }
     let v = serde_json::from_str::<serde_json::Value>(&out).ok()?;
-    Some(Terminal::from_response(&v))
+    // `?` e non `Some(...)`: una forma che non si riconosce deve arrivare qui
+    // come «non si è potuto leggere», che è il contratto scritto qui sopra.
+    // Appiattirla su una lista vuota è esattamente il difetto dei 276 giri.
+    Terminal::from_response(&v)
 }
 
 // ─── Lo stato che vive quanto l'albero, e chi lo butta ────────────────────────
