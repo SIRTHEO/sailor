@@ -293,24 +293,61 @@ fn live_roots(loaded: &BTreeSet<String>) -> Vec<Root> {
         }
     }
 
-    // I SORGENTI DEL BINARIO SONO CATENA VIVA. Quando una radice esegue
-    // `claude-hooks`, ciò che gira è questo codice: i moduli del porto nominano
-    // il ripiego Python che hanno sostituito (`linear_readonly.rs` cita
-    // `linear-sola-lettura.py` alla riga 3), e senza questo passo i ripieghi coi
-    // nomi italiani restavano fra i difetti mentre quelli col nome uguale allo
-    // slug venivano riconosciuti: due sorti diverse per la stessa cosa, decise
-    // dalla lingua del nome.
-    if roots.iter().any(|r| safe_read(&r.path).contains("claude-hooks")) {
-        for p in walk_sorted(&hc.join("rust")) {
-            if p.extension().map(|e| e == "rs").unwrap_or(false)
-                && p.parent().map(|d| d.ends_with("src")).unwrap_or(false)
-            {
-                roots.push(Root { path: p, why: "source of the Rust binary".into() });
+    roots
+}
+
+/// I sorgenti del binario, che NON sono radici e servono a un'altra domanda.
+///
+/// La prima versione li metteva fra le radici, ragionando che una radice esegue
+/// `claude-hooks` e quindi quel codice gira. Il ragionamento è giusto e la
+/// conclusione sbagliata, perché confonde due relazioni diverse:
+///
+///   «A lancia B»       — è il cammino, ed è la domanda di questo strumento
+///   «A ha sostituito B» — è il porto, ed è una classificazione
+///
+/// Mescolarle costa caro, e il conto è arrivato subito: i commenti di **questo
+/// file**, che nomina `capienza.py`, `oracolo.py` e `collaudo-carta.sh` per
+/// spiegare i propri casi, li facevano risultare raggiunti. Cinque orfani veri
+/// spariti dall'elenco perché qualcuno li aveva citati in una spiegazione — cioè
+/// il rapporto migliorava scrivendoci sopra della prosa.
+///
+/// Qui i sorgenti servono soltanto a riconoscere i ripieghi: `linear_readonly.rs`
+/// nomina `linear-sola-lettura.py`, e quel `.py` non è dimenticato, è sostituito.
+///
+/// E VALE SOLO IL MODULO CHE PORTA QUEL GANCIO. Un file citato da un modulo
+/// qualsiasi non è un ripiego: sposterebbe soltanto il difetto da «raggiunto» a
+/// «non è un difetto», che è lo stesso errore con un'altra etichetta. Il legame
+/// è il nome: `linear_readonly.rs` porta lo slug `linear-readonly`, che una
+/// radice viva esegue. Questo modulo si chiama `reachability.rs` e nessuna
+/// radice esegue `claude-hooks reachability`, quindi i suoi commenti — che
+/// nominano mezzo parco per spiegarsi — non salvano nessuno.
+fn ported_fallback_names(
+    node_paths: &BTreeMap<String, PathBuf>,
+    ported: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for p in walk_sorted(&home_claude().join("rust")) {
+        if !(p.extension().map(|e| e == "rs").unwrap_or(false)
+            && p.parent().map(|d| d.ends_with("src")).unwrap_or(false))
+        {
+            continue;
+        }
+        let slug = p
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .replace('_', "-");
+        if !ported.contains(&slug) {
+            continue;
+        }
+        let text = safe_read(&p);
+        for name in node_paths.keys() {
+            if cites(&text, name) {
+                out.insert(name.clone());
             }
         }
     }
-
-    roots
+    out
 }
 
 /// Le radici che ci sono e non si accendono: spente per decisione.
@@ -721,6 +758,8 @@ pub fn measure() -> Measure {
     // in pausa insieme a loro, non dimenticato.
     let (dormant_reached, _) = walk(&dormant_roots(&loaded), &node_paths);
 
+    let fallbacks = ported_fallback_names(&node_paths, &ported);
+
     let mut orphans = Vec::new();
     for (name, path) in &node_paths {
         if reached.contains(name) {
@@ -731,11 +770,15 @@ pub fn measure() -> Measure {
             .filter(|c| c != name)
             .collect();
         let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        let mut reason = classify(name, &stem, &ported, &off, &dormant_reached);
+        if reason == ORPHAN && fallbacks.contains(name) {
+            reason = PORTED_FALLBACK.into();
+        }
         orphans.push(Orphan {
             file: name.clone(),
             path: path.to_string_lossy().into_owned(),
             cited_by: who,
-            reason: classify(name, &stem, &ported, &off, &dormant_reached),
+            reason,
         });
     }
     spread_ported(&mut orphans);
@@ -975,6 +1018,40 @@ mod tests {
         assert_eq!(by["comune.py"], PORTED_FALLBACK);
         assert_eq!(by["nipote.py"], PORTED_FALLBACK);
         assert_eq!(by["strumento.py"], ORPHAN);
+    }
+
+    #[test]
+    fn only_the_module_that_ports_a_hook_marks_a_fallback() {
+        let dir = std::env::temp_dir().join(format!("reach-fb-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let src = dir.join("casa/rust/crates/x/src");
+        std::fs::create_dir_all(&src).unwrap();
+        // Il modulo che porta un gancio vivo: cio che nomina e ripiego.
+        std::fs::write(src.join("linear_readonly.rs"),
+                       "//! Porta di linear-sola-lettura.py\n").unwrap();
+        // Un modulo che nessuna radice esegue: i suoi commenti nominano mezzo
+        // parco per spiegarsi, e non devono salvare niente. E il caso vero:
+        // scrivendo la documentazione di questo file, cinque orfani erano
+        // spariti dall'elenco.
+        std::fs::write(src.join("reachability.rs"),
+                       "//! Cita capienza.py e oracolo.py per spiegarsi\n").unwrap();
+
+        // SAFETY: le prove del modulo girano in un thread solo, e questa rimette
+        // l'ambiente com'era.
+        unsafe { std::env::set_var("REACH_HOME_CLAUDE", dir.join("casa")); }
+
+        let node_paths: BTreeMap<String, PathBuf> =
+            ["linear-sola-lettura.py", "capienza.py", "oracolo.py"]
+                .iter()
+                .map(|n| (n.to_string(), PathBuf::from(n)))
+                .collect();
+        let got = ported_fallback_names(&node_paths, &set(&["linear-readonly"]));
+        assert!(got.contains("linear-sola-lettura.py"));
+        assert!(!got.contains("capienza.py"), "un modulo che nessuno esegue non salva nessuno");
+        assert!(!got.contains("oracolo.py"));
+
+        unsafe { std::env::remove_var("REACH_HOME_CLAUDE"); }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
