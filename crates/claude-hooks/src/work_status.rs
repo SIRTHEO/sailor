@@ -531,6 +531,18 @@ fn stato_richiesta_del_ramo(path_: &str, ramo: &str) -> String {
     migliore
 }
 
+/// Registra perché una fusione non ha marcato niente, e risponde `None`.
+///
+/// Il primo pezzo della riga basta a riconoscere il caso: il resto può contenere
+/// qualunque cosa, e un registro non è il posto dove farla finire.
+fn tace(command: &str, motivo: &str) -> Option<String> {
+    // IL COMANDO NON SI REGISTRA: può contenere qualunque cosa, e il motivo
+    // nomina già la copia e il ramo, che è ciò che serve a diagnosticare.
+    let _ = command;
+    registra("non-marca", motivo, &[]);
+    None
+}
+
 /// La copia il cui lavoro è appena atterrato smette di essere «in revisione».
 ///
 /// PERCHÉ NON BASTA IL RICONCILIATORE. `--riconcilia` gira a SessionStart, e fra
@@ -563,27 +575,47 @@ fn dopo_fusione(payload: &Value) -> Py<Option<String>> {
     let cwd = std::env::current_dir()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
+    // DA QUI IN GIÙ OGNI SILENZIO LASCIA UNA RIGA: un gancio muto è
+    // indistinguibile da un gancio contento, e il 18/08/2026 una copia con la
+    // richiesta fusa è rimasta «in revisione» senza niente da leggere.
     let Some(worktree) = worktree_of_command(&command, &cwd, &worktrees)? else {
-        return Ok(None);
+        return Ok(tace(&command, "nessuna copia riconosciuta per questo comando"));
     };
-    // Un checkout canonico non è una lavorazione: fondere stando lì dentro non
-    // deve marcare niente. `state_giusto` lo sa già, ma uscire qui risparmia la
-    // chiamata di rete.
     let git = worktree.get("git").cloned().unwrap_or(json!({}));
     if git.get("isMainWorktree").map(truthy).unwrap_or(false) {
-        return Ok(None);
+        return Ok(tace(
+            &command,
+            &format!(
+                "il comando risulta partito dal checkout canonico '{}'",
+                py_str(worktree.get("displayName"))
+            ),
+        ));
     }
     let ramo = py_str(git.get("branch")).replace("refs/heads/", "");
     if ramo.is_empty() {
-        return Ok(None);
+        return Ok(tace(
+            &command,
+            &format!(
+                "la copia '{}' non dichiara un ramo",
+                py_str(worktree.get("displayName"))
+            ),
+        ));
     }
 
     // SI MARCA SOLO SU CONFERMA, come per l'apertura: `gh pr merge 468` fonde la
     // richiesta di un ALTRO ramo, e marcare la copia da cui si è digitato il
     // comando scriverebbe lo stato sbagliato su una lavorazione viva.
     let path_ = py_str(worktree.get("path"));
-    if stato_richiesta_del_ramo(&path_, &ramo) != "MERGED" {
-        return Ok(None);
+    let stato = stato_richiesta_del_ramo(&path_, &ramo);
+    if stato != "MERGED" {
+        return Ok(tace(
+            &command,
+            &format!(
+                "GitHub dice {} per il ramo '{ramo}' (copia '{}')",
+                if stato.is_empty() { "niente" } else { &stato },
+                py_str(worktree.get("displayName"))
+            ),
+        ));
     }
 
     // Fusa non basta a dire finita: una copia con commit che non vivono da
