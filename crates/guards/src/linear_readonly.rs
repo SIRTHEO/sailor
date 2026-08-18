@@ -152,6 +152,19 @@ fn redirection() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"^(\d*(>>?|<)&?\d*|&\d)$").unwrap())
 }
 
+/// `--help` o `-h` come parola intera sulla riga.
+fn help_flag() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?:^|\s)--?h(?:elp)?(?:\s|$)").unwrap())
+}
+
+/// Un identificativo di scheda: `HRD-1`, `SUITE-209`. Serve a non far salvare
+/// da `--help` una coda che nomina una scheda vera.
+fn issue_key() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^[A-Z][A-Z0-9]+-\d+$").unwrap())
+}
+
 fn assignment() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"^\w+=").unwrap())
@@ -253,6 +266,23 @@ fn strip_wrappers(mut names: Vec<String>) -> Vec<String> {
 fn judge_queue(queue: &[String], reads: &[&[&str]], label: &str, line: &str) -> Option<String> {
     if queue.is_empty() {
         return None; // `linear`, `orca linear`, `--help`
+    }
+    // CHIEDERE L'AIUTO DI UN COMANDO NON LO ESEGUE. Il registro del 18/08/2026
+    // conta 89 rifiuti veri su una coda che finiva con `--help`. Il caso nudo
+    // era gia' stato sciolto quel giorno; resta quello in cui la coda porta un
+    // sottoverbo che scrive, perche' cade nel fallback insieme alle scritture
+    // vere. Un rimprovero a chi cerca la sintassi e' il modo piu' veloce di far
+    // spegnere un controllo.
+    //
+    // Il freno del freno: se nella coda c'e' un identificativo di scheda,
+    // `--help` non salva niente — la coda nomina un bersaglio, e nel dubbio si
+    // nega.
+    // Si guarda la RIGA e non la coda: `words` filtra via ogni token che
+    // comincia per `-`, quindi in coda un `--help` non arriva mai. Cercarlo li'
+    // era una correzione che compilava, passava i test scritti male e non
+    // toccava un solo caso — l'ha smentita la prova dal vivo, non la rilettura.
+    if help_flag().is_match(line) && !queue.iter().any(|q| issue_key().is_match(q)) {
+        return None;
     }
     let places = positional(line);
     let strong = set(STRONG_VERBS);
@@ -1090,5 +1120,30 @@ mod tests {
             why(r#"bash -c "linear issue close HRD-1""#),
             "linear … close eseguito da un interprete"
         );
+    }
+
+    /// 89 rifiuti veri nel registro del 18/08/2026 finivano con `--help`. Chi
+    /// cerca la sintassi non muove niente, e un rimprovero a lui è il modo più
+    /// veloce di far spegnere un controllo.
+    ///
+    /// La prima correzione cercava il flag **nella coda**, e non toccava un
+    /// solo caso: `words` filtra via ogni token che comincia per `-`, quindi lì
+    /// non arriva mai. Compilava, e i test scritti male sarebbero passati. L'ha
+    /// smentita la prova dal vivo.
+    #[test]
+    fn asking_for_help_is_not_writing() {
+        for line in [
+            "orca linear status set --help",
+            "orca linear issue close --help 2>&1 | head -20",
+            "orca linear status -h",
+        ] {
+            assert!(!refused(line), "doveva passare: {line}");
+        }
+    }
+
+    /// La coda nomina un bersaglio: nel dubbio si nega.
+    #[test]
+    fn help_does_not_rescue_a_line_that_names_an_issue() {
+        assert!(refused("orca linear status set HRD-123 --help"));
     }
 }
