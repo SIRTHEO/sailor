@@ -138,6 +138,26 @@ def casi_fissi(base: Path) -> list:
 
     caso('gli estranei restano dove sono', estranei, [VIVA])
 
+    def piu_corti_del_prefisso(radice: Path) -> None:
+        # LA CLASSE CHE HA FATTO PANICARE IL BINARIO SUL VIVO, il 18/08 alle
+        # 15:30: `byte index 19 is out of bounds of 'census-needles.txt'` — un
+        # nome piu' corto della somma di prefisso e suffisso, tagliato per
+        # indice. Un giro di staffetta perso, non un file saltato. I nomi qui
+        # sotto sono quelli veri di `state/`, non inventati: il banco partiva
+        # da nomi lunghi e questa regione non la toccava nessuno.
+        for nome in ('census-needles.txt', 'censimento-ganci.txt',
+                     'catalogo-skill.json', 'a', 'x.json'):
+            scrivi(radice, nome, vecchio)
+        # E i nomi che combaciano col prefisso ma non lasciano nessuna chiave:
+        # il taglio riesce e restituisce il vuoto, che non e' l'id di nessuno.
+        for nome in ('staffetta-cooldown-', 'catena-bloccata-'):
+            scrivi(radice, nome, vecchio)
+        scrivi(radice, 'catene/.json', vecchio)
+        scrivi(radice, 'riprendi-da/.txt', vecchio)
+        scrivi(radice, f'catene/{MORTA}.json', vecchio)
+
+    caso('nomi piu corti del prefisso', piu_corti_del_prefisso, [VIVA])
+
     def cartelle(radice: Path) -> None:
         # Una cartella dentro `catene/` non e' un file di stato.
         (radice / 'catene' / f'{MORTA}.json').mkdir(parents=True, exist_ok=True)
