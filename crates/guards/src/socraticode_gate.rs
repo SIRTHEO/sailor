@@ -213,11 +213,49 @@ pub fn is_code_search(command: &str) -> bool {
     });
     let recursive = RECURSIVE
         .get_or_init(|| Regex::new(r"\s(-[a-zA-Z]*[rR][a-zA-Z]*\b|--recursive\b)").unwrap());
-    match grep.captures(command) {
-        Some(c) => recursive.is_match(&format!(" {}", c.get(2).map_or("", |m| m.as_str()))),
-        None => false,
+    if let Some(c) = grep.captures(command) {
+        if recursive.is_match(&format!(" {}", c.get(2).map_or("", |m| m.as_str()))) {
+            return true;
+        }
     }
+    scans_many_files(command)
 }
+
+/// Le ricerche che non si scrivono `grep -r`, e che per questo passavano tutte.
+///
+/// La regola «mai dopo una pipe» è giusta per `… | grep x`, che filtra l'output
+/// di qualcun altro. Ma `find … | xargs grep` non filtra niente: apre i file che
+/// `find` gli passa, cioè è esattamente un grep ricorsivo scritto in due pezzi.
+/// Stesso discorso per `find … -exec grep`.
+///
+/// E c'è la strada che il gate non vedeva affatto: uno script che cammina
+/// l'albero e applica espressioni regolari. Misurato il 18/08/2026 su un
+/// censimento delle rotte del matching-engine — due regex su `method:` e
+/// `path:` — le sue **214 operazioni diventavano 168, il 21% perso**, e il
+/// numero sbagliato era finito in un piano prima di essere verificato. Lo
+/// strumento giusto stava già nel repo (`scripts/openapi-dump.ts`), e il gate,
+/// che serve proprio a farlo cercare, in tutta la sessione non ha detto niente:
+/// nessuno di quei comandi era un `grep`.
+///
+/// Si riconosce solo chi **cammina** l'albero (`glob`, `os.walk`, `rglob`,
+/// `iterdir`) **e** applica regex: leggere un file solo non è cercare.
+fn scans_many_files(command: &str) -> bool {
+    static XARGS: OnceLock<Regex> = OnceLock::new();
+    static WALK: OnceLock<Regex> = OnceLock::new();
+    static REGEX_USE: OnceLock<Regex> = OnceLock::new();
+
+    let xargs = XARGS.get_or_init(|| {
+        Regex::new(r"(\|\s*xargs\s+(-\S+\s+)*(grep|rg)\b|-exec\s+(grep|rg)\b)").unwrap()
+    });
+    if xargs.is_match(command) {
+        return true;
+    }
+    let walk = WALK
+        .get_or_init(|| Regex::new(r"\b(glob\.glob|glob\(|os\.walk|rglob|iterdir)").unwrap());
+    let regex_use = REGEX_USE.get_or_init(|| Regex::new(r"\bre\.(findall|search|match|compile|finditer)").unwrap());
+    walk.is_match(command) && regex_use.is_match(command)
+}
+
 
 /// I nomi esportati dichiarati in un pezzo di sorgente.
 pub fn exported_names(src: &str) -> BTreeSet<String> {
@@ -575,6 +613,31 @@ mod tests {
     #[test]
     fn a_non_recursive_grep_is_left_alone() {
         assert!(!is_code_search("grep foo file.txt"));
+    }
+
+    #[test]
+    fn a_grep_fed_by_find_is_still_a_code_search() {
+        // Dopo una pipe, ma non filtra: apre i file che find gli passa.
+        assert!(is_code_search("find src -name '*.ts' | xargs grep -l method:"));
+        assert!(is_code_search("find src -name '*.ts' | xargs -0 rg method:"));
+        assert!(is_code_search("find src -name '*.ts' -exec grep -l method: {} +"));
+    }
+
+    #[test]
+    fn a_script_that_walks_the_tree_with_regexes_is_a_code_search() {
+        assert!(is_code_search(
+            "python3 -c \"import re,glob;[re.findall(r'method:',open(f).read()) for f in glob.glob('src/**')]\""
+        ));
+        assert!(is_code_search("python3 -c \"import re,os;[re.search(p,l) for r,d,fs in os.walk('src')]\""));
+    }
+
+    #[test]
+    fn reading_or_walking_alone_is_not_a_code_search() {
+        // Camminare senza cercare, o cercare in un file solo, non e' un censimento.
+        assert!(!is_code_search("python3 -c \"import glob;print(glob.glob('src/**'))\""));
+        assert!(!is_code_search("python3 -c \"import re;re.findall(r'x',open('a.ts').read())\""));
+        assert!(!is_code_search("sed -n '1,80p' src/api/index.ts"));
+        assert!(!is_code_search("find src -name '*.ts' | head -20"));
     }
 
     #[test]
