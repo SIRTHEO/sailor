@@ -37,6 +37,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 RADICE = Path(__file__).resolve().parents[2]          # ~/.claude
@@ -265,6 +266,49 @@ def casi_disco(home: Path) -> list:
         d.mkdir(parents=True, exist_ok=True)
         return str(d), os.stat(d).st_birthtime
 
+    def retrodata(p, quando: float) -> bool:
+        """Sposta indietro la NASCITA di un percorso. Vero se ci è riuscito.
+
+        Serve perché la regione dove il `.git` cambia l'esito si apre solo con
+        una cartella vecchia e un `.git` nuovo, e il margine della guardia è di
+        due minuti: senza retrodatare, ogni corsa del banco dovrebbe dormire.
+        `os.utime` non basta — tocca mtime, non la nascita — e l'unico attrezzo
+        che la sposta su APFS è `SetFile`, che arriva coi Developer Tools.
+        """
+        stamp = time.strftime('%m/%d/%Y %H:%M:%S', time.localtime(quando))
+        try:
+            r = subprocess.run(['SetFile', '-d', stamp, str(p)],
+                               capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return r.returncode == 0 and abs(os.stat(p).st_birthtime - quando) < 2
+
+    def albero_git(nome: str, tipo: str, eta_cartella: float = 3600.0) -> tuple:
+        """Un albero con un `.git`, e la cartella invecchiata sotto di lui.
+
+        `tipo` è `file` per un worktree registrato (`git worktree add` scrive un
+        file), `dir` per un checkout principale, `link` per un `.git` che punta
+        altrove. Torna `(percorso, nascita_cartella, nascita_git)` oppure `None`
+        se la nascita non si è potuta spostare: un caso che non ha il divario
+        non prova niente, e si preferisce non generarlo piuttosto che generarlo
+        muto.
+        """
+        d = alberi / nome
+        d.mkdir(parents=True, exist_ok=True)
+        g = d / '.git'
+        if tipo == 'file':
+            g.write_text(f'gitdir: {alberi}/deposito/worktrees/{nome}\n')
+        elif tipo == 'dir':
+            g.mkdir(exist_ok=True)
+        else:
+            bersaglio = alberi / f'{nome}-altrove'
+            bersaglio.mkdir(exist_ok=True)
+            if not g.exists():
+                g.symlink_to(bersaglio)
+        if not retrodata(d, time.time() - eta_cartella):
+            return None
+        return str(d), os.stat(d).st_birthtime, os.stat(g).st_birthtime
+
     def caso(nome: str, wt: str, contenuto, now: float = ORA,
              oracolo_esplode: bool = False) -> None:
         """`now` entra nel caso perché il verdetto si giudica su una differenza:
@@ -397,6 +441,67 @@ def casi_disco(home: Path) -> list:
     caso('at come stringa numerica, albero vissuto', f'{REPO_FINTO}::{d}',
          [{'session': 's0', 'at': f' {nato + 60} ', 'turns': '3', 'writes': '5',
            'handoff': '/a.md'}])
+
+    # I CASI DEL `.git`, cioè la cartella che sopravvive allo smontaggio. La
+    # nascita della cartella da sola non li vede: `close-finished.py` stampa
+    # `STILL THERE` quando la cartella resta, e se la copia nuova ci viene
+    # ricreata dentro `st_birthtime` non cambia mai. Qui la cartella è
+    # invecchiata di un'ora e il `.git` è di adesso, cioè esattamente la forma
+    # che il segno vecchio non distingue da un albero vissuto.
+    scartati = []
+
+    a = albero_git('git-file-rinato', 'file')
+    if a:
+        d, nato, gnato = a
+        # `at` sta DOPO la nascita della cartella e molto PRIMA di quella del
+        # `.git`: guardando solo la cartella la catena resta, guardando il
+        # `.git` va buttata. È il caso che separa i due segni.
+        caso('git file: cartella vecchia, worktree rifatto', f'{REPO_FINTO}::{d}',
+             [anello(nato + 60, 0), anello(nato + 120, 1)], now=gnato + 3600)
+    else:
+        scartati.append('git-file-rinato')
+
+    a = albero_git('git-dir-checkout', 'dir')
+    if a:
+        d, nato, gnato = a
+        # Lo stesso identico divario, ma `.git` è una CARTELLA: è un checkout
+        # principale, dove la cartella `.git` ha vita propria — su `gyver/work`
+        # è nata 126 giorni dopo il checkout. Qui la catena NON si tocca, e il
+        # caso esiste per fissare quel confine da entrambe le parti.
+        caso('git cartella: checkout principale, catena intatta',
+             f'{REPO_FINTO}::{d}',
+             [anello(nato + 60, 0), anello(nato + 120, 1)], now=gnato + 3600)
+    else:
+        scartati.append('git-dir-checkout')
+
+    a = albero_git('git-link', 'link')
+    if a:
+        d, nato, gnato = a
+        # `.git` come collegamento a una cartella: entrambi i lati seguono il
+        # link e vedono una cartella, quindi non conta. Serve perché Python e
+        # Rust potrebbero seguirlo in modo diverso, ed è l'unico modo di saperlo.
+        caso('git collegamento a cartella', f'{REPO_FINTO}::{d}',
+             [anello(nato + 60, 0), anello(nato + 120, 1)], now=gnato + 3600)
+    else:
+        scartati.append('git-link')
+
+    a = albero_git('git-file-vissuto', 'file')
+    if a:
+        d, nato, gnato = a
+        # Il gemello che deve restare fermo: il primo anello è più vecchio di
+        # ENTRAMBE le nascite, quindi nessuno dei due segni può tagliare. Senza
+        # di lui il caso qui sopra proverebbe solo che il segno taglia sempre.
+        caso('git file: catena piu vecchia di tutto, resta',
+             f'{REPO_FINTO}::{d}',
+             [anello(min(nato, gnato) - 600, 0), anello(min(nato, gnato) - 540, 1)],
+             now=gnato + 3600)
+    else:
+        scartati.append('git-file-vissuto')
+
+    if scartati:
+        # Un caso saltato in silenzio si legge come un caso passato.
+        print(f'ATTENZIONE: {len(scartati)} casi del `.git` non generati '
+              f'(SetFile non ha spostato la nascita): {", ".join(scartati)}')
 
     d, nato = albero('at-booleano')
     # `float(True)` vale 1.0 anche in Python: un istante del 1970, quindi la
