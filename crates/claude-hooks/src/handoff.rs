@@ -226,10 +226,15 @@ pub fn resolve(tab_id: &str, worktree_id: &str, known_handle: &str) -> i32 {
         println!();
         return 0;
     }
-    let terminals = match serde_json::from_str::<serde_json::Value>(&raw) {
-        Ok(v) => guards::handoff::Terminal::from_response(&v),
-        Err(_) => Vec::new(),
-    };
+    // Una risposta illeggibile e una di forma sconosciuta portano allo stesso
+    // posto — l'elenco vuoto — e da qui è giusto: `resolve_terminal_handle`
+    // risponde `''` su un elenco vuoto, che è «non lo so» e non «chiudi».
+    // La distinzione conta a monte, in `read_terminals`, dove un elenco vuoto
+    // significherebbe invece «i pannelli sono morti tutti».
+    let terminals = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| guards::handoff::Terminal::from_response(&v))
+        .unwrap_or_default();
     println!(
         "{}",
         guards::handoff::resolve_terminal_handle(tab_id, worktree_id, known_handle, &terminals)
