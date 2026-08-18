@@ -30,6 +30,7 @@ d'ingresso del gancio.
 
     python3 tools/compare-register-session.py
 """
+import hashlib
 import json
 import os
 import re
@@ -44,6 +45,11 @@ ORIGINAL = CONFIG / "skills" / "hooks" / "register-session.py"
 BINARY = CONFIG / "rust" / "target" / "release" / "claude-hooks"
 
 SESSION = "31a570a5-1111-2222-3333-444455556666"
+# L'impronta con cui `handoff-arms-successor` nomina il marcatore del successore:
+# sha1 dell'identificativo INTERO, prime sedici cifre. Si ricalcola qui invece di
+# ricopiarla, perche' una costante scritta a mano resterebbe verde se una delle
+# due implementazioni cambiasse il modo di derivarla.
+ARMED = hashlib.sha1(SESSION.encode("utf8")).hexdigest()[:16]
 
 
 def prepare(home: Path, case: dict) -> None:
@@ -212,6 +218,28 @@ CASES = [
             "argv": ["--fine"],
             "env": {"ORCA_WORKTREE_ID": "w::/x", "ORCA_TAB_ID": "t"},
             "markers": ["consegna-fatta-99999999", "successore-di-99999999-aaaa"],
+        },
+    ),
+    (
+        # LE DUE FAMIGLIE TROVATE IL 18/08/2026, e senza un caso che le nomini il
+        # verde non direbbe niente su di loro: `consegna-volontaria` mancava
+        # dall'elenco benche' un commento la contasse fra i marcatori rimasti, e
+        # `successore-armato` porta un'IMPRONTA invece dell'id — nessuno l'aveva
+        # mai tolta, venti file sul disco.
+        "--fine porta via anche la volontaria e il marcatore a impronta",
+        {
+            "stdin": PAYLOAD,
+            "argv": ["--fine"],
+            "env": {"ORCA_WORKTREE_ID": "w::/x", "ORCA_TAB_ID": "t"},
+            "markers": [
+                "consegna-volontaria-31a570a5",
+                f"successore-armato-{ARMED}",
+                # Il gemello di un'altra sessione. L'impronta e' un nome opaco, e
+                # un porto che cancellasse «tutti i successore-armato-*» passerebbe
+                # la riga di sopra disarmando il successore di chi sta lavorando.
+                "successore-armato-0000000000000000",
+                "consegna-volontaria-altra111",
+            ],
         },
     ),
     (
