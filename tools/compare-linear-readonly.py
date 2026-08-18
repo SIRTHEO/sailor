@@ -131,7 +131,7 @@ def cases(battery):
     # dove `OK_UTENTE=1` non viene nemmeno consultata: senza queste righe, un
     # gancio che cercasse di nuovo la valvola come stringa — la falla chiusa il
     # 29/07/2026 — passerebbe il confronto senza che nessun caso se ne accorga.
-    # Trovato da `tools/mutants-linear-readonly.sh`, non a ragionamento.
+    # Trovato da `tools/mutants.sh`, non a ragionamento.
     config = '~/.claude/settings.json'
     yield ('valvola-config-vera', f'OK_UTENTE=1 cp /tmp/x.json {config}',
            'Bash', None, None, None)
