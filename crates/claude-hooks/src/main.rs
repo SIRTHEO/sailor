@@ -158,6 +158,13 @@ const COVERED_APART: &[&str] = &[
     "allow-session-messages",
     "json",
     "code-language",
+    // Aggiunto il 18/08/2026. `is_blind` non aveva un caso — si provava solo
+    // `targets`, cioe' l'estrazione — e per questo il censimento lo elencava
+    // fra i ganci di cui non si sa niente. Ora ha quattro prove sul giudizio
+    // (albero cieco, albero sano, repo senza controlli, push) e quattro mutanti
+    // uccisi. Non entra in SMOKE perche' la sua decisione vuole un repo vero
+    // sul disco, e un caso finto qui direbbe una cosa non vera.
+    "hooks-off",
     "comment-refs",
     "duplication",
     "orca-cleanup",
