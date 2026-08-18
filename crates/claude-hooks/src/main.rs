@@ -28,6 +28,18 @@ mod scope_drift;
 mod test_home;
 mod successor;
 mod relay_eval;
+// I quattro porti aperti il 17/08/2026. Registrati come scheletri prima di
+// essere scritti, così ogni porto tocca un file solo e il binario compila a
+// ogni passo.
+mod handoff_threshold;
+mod hook_census;
+mod link_worktree_rules;
+mod spotlight_marker;
+// La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
+mod orca_cleanup;
+mod register_session;
+mod skill_nudge;
+mod work_status;
 
 use hook_io::{Decision, Mode};
 
@@ -119,12 +131,27 @@ const ALL_HOOKS: &[&str] = &[
     "scope-drift",
     "socraticode-gate",
     "successor-probe",
+    "handoff-threshold",
+    "hook-census",
+    "link-worktree-rules",
+    "spotlight-marker",
+    "orca-cleanup",
+    "register-session",
+    "skill-nudge",
+    "work-status",
 ];
 
 /// Ganci con un caso di prova in `self_check`, oltre a quelli di SMOKE: qui
 /// stanno quelli che non giudicano un comando e hanno un controllo scritto a
 /// parte, più sotto.
-const COVERED_APART: &[&str] = &["code-language", "comment-refs", "duplication"];
+const COVERED_APART: &[&str] = &[
+    "code-language",
+    "comment-refs",
+    "duplication",
+    "orca-cleanup",
+    "spotlight-marker",
+    "work-status",
+];
 
 fn is_covered(name: &str) -> bool {
     SMOKE.iter().any(|(n, _, _)| *n == name) || COVERED_APART.contains(&name)
@@ -223,6 +250,85 @@ fn self_check() -> i32 {
     );
     if italian.is_none() || english.is_some() {
         eprintln!("code-language: non distingue una descrizione italiana da una inglese");
+        failures += 1;
+    }
+
+    // I tre ganci pronti per l'adozione e senza un caso qui. `adopt-hook.py`
+    // interroga questa autoverifica prima di far puntare un gancio al binario:
+    // il 18/08/2026 copriva 6 nomi su 33, e questi tre non c'erano — l'adozione
+    // sarebbe stata cieca proprio dove la rete non c'e'.
+    //
+    // Tutti e tre giudicano dati, non comandi, e la funzione che decide e' pura:
+    // niente Orca, niente `gh`, niente disco, niente orologio. Le funzioni che
+    // parlano col mondo restano private apposta — chiamare `riconcilia()` o
+    // `write_state()` da qui riscriverebbe lo stato di copie vive a ogni build.
+
+    // `work-status`: quale stato scrivere su una copia di lavoro. La coppia
+    // cambia una sola variabile — cosa e' rimasto che vive solo li' — perche' il
+    // caso positivo da solo non distingue un giudice da uno stub che risponde
+    // sempre «completed».
+    let merged = serde_json::json!({
+        "git": { "isMainWorktree": false, "branch": "refs/heads/suite-229-tabella" }
+    });
+    let requests: std::collections::BTreeMap<String, String> =
+        [("suite-229-tabella".to_string(), "MERGED".to_string())]
+            .into_iter()
+            .collect();
+    let clean = work_status::state_giusto(&merged, &requests, Some(0)).unwrap_or_default();
+    if clean != "completed" {
+        eprintln!("work-status: a merged request with nothing left behind must be completed, got {clean:?}");
+        failures += 1;
+    }
+    // Sette commit scritti dopo la fusione: la richiesta e' unita, il lavoro no.
+    // E' il caso vero di `whatsapp/media-link-recovery`, e smontare quella copia
+    // avrebbe perso quei commit.
+    let leftovers = work_status::state_giusto(&merged, &requests, Some(7)).unwrap_or_default();
+    if leftovers != "in-progress" {
+        eprintln!("work-status: a merged request holding local-only commits must stay in-progress, got {leftovers:?}");
+        failures += 1;
+    }
+
+    // `spotlight-marker`: riconosce un comando che ricrea un albero di
+    // dipendenze. Il comando vero non e' quasi mai nudo — arriva dietro un `cd`
+    // — e stringere il riconoscimento a `starts_with` e' la correzione «ovvia»
+    // che lo romperebbe in silenzio: esce 0 e la node_modules resta indicizzata.
+    if !guards::spotlight_marker::is_an_install("cd /tmp && pnpm install") {
+        eprintln!("spotlight-marker: does not recognise an install behind a leading cd");
+        failures += 1;
+    }
+    if guards::spotlight_marker::is_an_install("git status") {
+        eprintln!("spotlight-marker: treats an ordinary command as an install");
+        failures += 1;
+    }
+
+    // `orca-cleanup`: quale scheda si puo' chiudere. I due terminali sono
+    // identici — anonimo, fermo da 90 minuti — e cambia solo se dentro c'e' un
+    // agente al lavoro. Chiudere quella e' il danno peggiore che il gancio possa
+    // fare, ed e' il motivo per cui il caso negativo vale piu' del positivo.
+    let now_ms = 1_000_000_000_000.0_f64;
+    let term = serde_json::json!({
+        "title": "Terminal 12",
+        "handle": "term_selfcheck",
+        "tabId": "sc-t1",
+        "leafId": "sc-l1",
+        "lastOutputAt": now_ms - 90.0 * 60_000.0,
+    });
+    let nobody: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    let (idle_closed, _) = orca_cleanup::judge(&term, 30.0, false, now_ms, &nobody);
+    if !idle_closed {
+        eprintln!("orca-cleanup: an anonymous tab idle for 90 minutes is not closed");
+        failures += 1;
+    }
+    let mut working: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    working.insert(
+        "sc-t1:sc-l1".to_string(),
+        serde_json::Value::String("working".to_string()),
+    );
+    let (busy_closed, _) = orca_cleanup::judge(&term, 30.0, false, now_ms, &working);
+    if busy_closed {
+        eprintln!("orca-cleanup: would close a tab with an agent still working");
         failures += 1;
     }
 
@@ -586,6 +692,18 @@ fn run(which: &str) -> Result<i32, String> {
         // `tools/compare-relay-evaluate.py`, che pone la stessa domanda a
         // `relay.evaluate()` con una HOME finta e pretende la stessa risposta.
         "relay-evaluate" => Ok(relay_eval::run()),
+        // I quattro porti del 17/08: rispondono già, ma la configurazione li
+        // nomina solo quando il confronto col Python è verde e i mutanti sono
+        // uccisi. L'ordine è quello di `adopt-hook.py`: prima si dimostra, poi
+        // si registra.
+        "handoff-threshold" => Ok(handoff_threshold::run()),
+        "hook-census" => Ok(hook_census::run()),
+        "link-worktree-rules" => Ok(link_worktree_rules::run()),
+        "spotlight-marker" => Ok(spotlight_marker::run()),
+        "orca-cleanup" => Ok(orca_cleanup::run()),
+        "register-session" => Ok(register_session::run()),
+        "skill-nudge" => Ok(skill_nudge::run()),
+        "work-status" => Ok(work_status::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }
