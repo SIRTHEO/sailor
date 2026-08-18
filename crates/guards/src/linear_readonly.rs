@@ -331,10 +331,24 @@ fn write_words() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r#"\brm\b|\bmv\b|\bcp\b|\btee\b|\bsed\b|\bchmod\b|\bdd\b|['"]w[+bt]*['"]|writeFile|appendFile|unlink|os\.remove|os\.replace|shutil\.|truncate|\.write\("#,
+            r#"\brm\b|\bmv\b|\bcp\b|\btee\b|\bchmod\b|\bdd\b|['"]w[+bt]*['"]|writeFile|appendFile|unlink|os\.remove|os\.replace|shutil\.|truncate|\.write\("#,
         )
         .unwrap()
     })
+}
+
+/// `sed` scrive solo con `-i`: senza, stampa su stdout ed è una lettura.
+///
+/// Stava fra le parole di scrittura come parola nuda, e negava `sed -n '5,10p'
+/// <file protetto>` — la lettura a righe numerate, cioè il gesto normale su un
+/// file di 813 righe — mentre `grep` sullo stesso file passava. Misurato il
+/// 18/08/2026 provando il freno addosso a se stesso.
+///
+/// Il taglio a `;`, `|`, `&` tiene la ricerca dentro il comando: un `-i` che sta
+/// dopo una pipe è di qualcun altro.
+fn sed_writes() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r#"\bsed\b[^;|&]*(-[a-zA-Z]*i\b|--in-place)"#).unwrap())
 }
 
 /// Un segno di scrittura nel testo.
@@ -344,7 +358,7 @@ fn write_words() -> &'static Regex {
 /// dei descrittori (`2>&1`), che non scrivono su niente: senza, lanciare le
 /// prove del gancio veniva negato dal gancio stesso.
 fn has_write_sign(text: &str) -> bool {
-    if write_words().is_match(text) {
+    if write_words().is_match(text) || sed_writes().is_match(text) {
         return true;
     }
     let bytes = text.as_bytes();
@@ -687,6 +701,19 @@ pub fn reason_mcp(tool: &str) -> Option<String> {
 /// Il gancio guardava solo `Bash`, quindi `Write` con `file_path` sul gancio
 /// stesso lo disarmava in una riga — misurato l'11/08/2026, e nessuno dei tre
 /// verdetti indipendenti l'aveva visto, perché provavano tutti comandi di shell.
+/// Il prefisso dei motivi che parlano di FILE protetti, non di Linear.
+///
+/// Il rifiuto lo compone chi stampa, e prima stampava sempre l'omelia
+/// sull'elenco chiuso dei sottocomandi Linear: chi toccava `settings.json` si
+/// vedeva spiegare che non deve muovere le schede. Il criterio sta qui, accanto
+/// a chi produce il motivo, perché non diverga da lui.
+pub const PROTECTED_FILE_PREFIX: &str = "riscrittura di ";
+
+/// Il motivo parla di un file protetto?
+pub fn is_protected_file(reason: &str) -> bool {
+    reason.starts_with(PROTECTED_FILE_PREFIX)
+}
+
 pub fn reason_on_file(path: &str) -> Option<(String, Valve)> {
     if path.is_empty() {
         return None;
@@ -979,6 +1006,31 @@ mod tests {
         ));
         assert!(!refused(
             "python3 ~/.claude/skills/hooks/linear-sola-lettura.py > /dev/null"
+        ));
+        // `sed` senza `-i` stampa e basta: e' la lettura a righe numerate, il
+        // gesto normale su un file di 813 righe. Prima era negata mentre `grep`
+        // sullo stesso file passava — misurato il 18/08/2026 provando il freno
+        // addosso a se stesso.
+        assert!(!refused(
+            "sed -n '5,10p' ~/.claude/skills/hooks/linear-sola-lettura.py"
+        ));
+        assert!(!refused(
+            "sed -n '1,40p' ~/.claude/skills/hooks/prova-linear-sola-lettura.py"
+        ));
+    }
+
+    /// E la direzione opposta: `sed -i` riscrive il file sul posto, ed e' il
+    /// gesto che il divieto esiste per fermare.
+    #[test]
+    fn sed_in_place_on_the_hook_is_still_refused() {
+        assert!(refused(
+            "sed -i '' 's/deny/allow/' ~/.claude/skills/hooks/linear-sola-lettura.py"
+        ));
+        assert!(refused(
+            "sed --in-place 's/a/b/' ~/.claude/skills/hooks/linear-sola-lettura.py"
+        ));
+        assert!(refused(
+            "sed -n -i 's/a/b/p' ~/.claude/skills/hooks/linear-permesso.json"
         ));
     }
 
