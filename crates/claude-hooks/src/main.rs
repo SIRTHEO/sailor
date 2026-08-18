@@ -124,7 +124,7 @@ const ALL_HOOKS: &[&str] = &[
 /// Ganci con un caso di prova in `self_check`, oltre a quelli di SMOKE: qui
 /// stanno quelli che non giudicano un comando e hanno un controllo scritto a
 /// parte, più sotto.
-const COVERED_APART: &[&str] = &["code-language", "duplication"];
+const COVERED_APART: &[&str] = &["code-language", "comment-refs", "duplication"];
 
 fn is_covered(name: &str) -> bool {
     SMOKE.iter().any(|(n, _, _)| *n == name) || COVERED_APART.contains(&name)
@@ -223,6 +223,22 @@ fn self_check() -> i32 {
     );
     if italian.is_none() || english.is_some() {
         eprintln!("code-language: non distingue una descrizione italiana da una inglese");
+        failures += 1;
+    }
+
+    // Stessa forma per `comment-refs`, che giudica una coppia percorso+testo. Il
+    // caso «deve passare» cita un percorso di CODICE: la regola lo lascia stare
+    // di proposito, ed è quello che distingue questo freno da uno che nega ogni
+    // commento — senza, un porto rotto in quel verso passerebbe l'autoprova.
+    let to_a_document =
+        guards::comment_refs::judge("/x/src/a.ts", "// ADR 0008 #61: rimosso", false);
+    let to_a_source_file = guards::comment_refs::judge(
+        "/x/src/a.ts",
+        "// rispecchia il contratto di src/api/schema.ts",
+        false,
+    );
+    if !matches!(to_a_document, Decision::Deny(_)) || !matches!(to_a_source_file, Decision::Pass) {
+        eprintln!("comment-refs: non distingue un rimando a un documento da un percorso di codice");
         failures += 1;
     }
 
@@ -421,9 +437,19 @@ fn run(which: &str) -> Result<i32, String> {
             if Mode::from_env("COMMENT_REFS") == Mode::Off {
                 return Ok(0);
             }
-            let phase = std::env::args().nth(2).unwrap_or_else(|| "pre".into());
             let Some(input) = hook_io::read_input() else {
                 return Ok(0);
+            };
+            // La fase si prende dall'evento, non dall'argomento. L'argomento è
+            // una parola che qualcuno deve ricopiare in `settings.json`, e
+            // prima o poi non la ricopia: il 18/08/2026 `forget_session` non
+            // era mai girata perché `--fine` era scritto sul solo ripiego
+            // Python mentre a girare era il binario. Resta come ripiego, per
+            // poter provare il gancio dalla riga di comando.
+            let phase = match input.hook_event_name.as_deref() {
+                Some("PreToolUse") => "pre".to_string(),
+                Some("PostToolUse") => "post".to_string(),
+                _ => std::env::args().nth(2).unwrap_or_else(|| "pre".into()),
             };
             let empty = serde_json::json!({});
             let tool_input = input.tool_input.as_ref().unwrap_or(&empty);
