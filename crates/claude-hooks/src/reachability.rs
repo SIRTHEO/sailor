@@ -50,6 +50,31 @@ fn launch_agents() -> PathBuf {
     env_path("REACH_LAUNCH_AGENTS", home().join("Library/LaunchAgents"))
 }
 
+/// La cartella dei git hook di un repo: `core.hooksPath` quando c'è, `.git/hooks`
+/// altrimenti.
+///
+/// Serve perché un clone di monte tiene i propri hook FUORI dal repo — dentro
+/// `.git/hooks` i file non sono versionati né scrivibili dagli agenti — e senza
+/// questa lettura `sblocca-skill-mattpocock.sh` risultava un orfano mentre git lo
+/// esegue a ogni merge. È la classificazione peggiore possibile: dice «nessuno
+/// lo lancia» proprio di uno script armato, e invita a cancellarlo.
+///
+/// Il valore si legge da `.git/config` invece che da `git config` perché la
+/// misura non deve dipendere da un processo esterno; un percorso relativo si
+/// risolve rispetto al repo, come fa git.
+fn hooks_dir(repo: &Path) -> PathBuf {
+    for line in safe_read(&repo.join(".git/config")).lines() {
+        if let Some(value) = line.trim().strip_prefix("hooksPath") {
+            let value = value.trim_start().strip_prefix('=').unwrap_or("").trim();
+            if !value.is_empty() {
+                let p = PathBuf::from(value);
+                return if p.is_absolute() { p } else { repo.join(p) };
+            }
+        }
+    }
+    repo.join(".git/hooks")
+}
+
 /// Le estensioni di ciò che può essere lanciato. Un `.md` entra solo se è un
 /// mandato: la documentazione cita gli script per spiegarli, non per eseguirli, e
 /// contarla come arco farebbe risultare vivo tutto ciò che è ben documentato.
@@ -272,8 +297,14 @@ fn live_roots(loaded: &BTreeSet<String>) -> Vec<Root> {
         }
     }
 
-    for repo in sorted_children(&ws) {
-        let hooks = repo.join(".git/hooks");
+    let mut repos = sorted_children(&ws);
+    repos.extend(sorted_children(&hc.join("skills")));
+    repos.extend(sorted_children(&hc.join("plugins/marketplaces")));
+    for repo in repos {
+        if !repo.join(".git").exists() {
+            continue;
+        }
+        let hooks = hooks_dir(&repo);
         if !hooks.is_dir() {
             continue;
         }
@@ -1144,6 +1175,52 @@ mod tests {
 
         assert_eq!(active_mandate_names(), set(&["accesa.mandato.md"]));
         assert_eq!(off_automation_names(), set(&["spenta"]));
+
+        unsafe {
+            std::env::remove_var("REACH_LAUNCH_AGENTS");
+            std::env::remove_var("REACH_WORKSPACE");
+            std::env::remove_var("REACH_HOME_CLAUDE");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_hook_outside_the_repo_is_still_a_root() {
+        let dir = std::env::temp_dir().join(format!("reach-hookspath-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let clone = dir.join("casa/skills/skills-di-monte");
+        let altrove = dir.join("ganci-fuori");
+        let dentro = dir.join("ws/repo-normale/.git/hooks");
+        std::fs::create_dir_all(clone.join(".git")).unwrap();
+        std::fs::create_dir_all(&altrove).unwrap();
+        std::fs::create_dir_all(&dentro).unwrap();
+        std::fs::create_dir_all(dir.join("ws/repo-normale/.git")).unwrap();
+        std::fs::write(clone.join(".git/config"),
+                       format!("[core]\n\thooksPath = {}\n", altrove.display())).unwrap();
+        std::fs::write(altrove.join("post-merge"), "#!/bin/sh\nsblocca.sh\n").unwrap();
+        // Il clone ha anche la cartella di default, vuota: la scelta deve cadere
+        // sul percorso dichiarato, non su quella.
+        std::fs::create_dir_all(clone.join(".git/hooks")).unwrap();
+        std::fs::write(dentro.join("pre-commit"), "#!/bin/sh\n").unwrap();
+        std::fs::write(dentro.join("pre-push.sample"), "#!/bin/sh\n").unwrap();
+
+        // SAFETY: `ambiente()` serializza le prove che scrivono `std::env`, e
+        // ognuna rimette le variabili com'erano prima di uscire.
+        let _guardia = ambiente();
+        unsafe {
+            std::env::set_var("REACH_LAUNCH_AGENTS", dir.join("agents-vuoti"));
+            std::env::set_var("REACH_WORKSPACE", dir.join("ws"));
+            std::env::set_var("REACH_HOME_CLAUDE", dir.join("casa"));
+        }
+
+        let live: BTreeSet<String> = live_roots(&BTreeSet::new())
+            .iter()
+            .map(|r| r.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(live.contains("post-merge"),
+                "un gancio dichiarato da core.hooksPath è una radice viva");
+        assert!(live.contains("pre-commit"), "e i git hook normali restano radici");
+        assert!(!live.contains("pre-push.sample"), "un esempio non spara");
 
         unsafe {
             std::env::remove_var("REACH_LAUNCH_AGENTS");
