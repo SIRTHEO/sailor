@@ -511,7 +511,31 @@ fn run(which: &str) -> Result<i32, String> {
                 .get("file_path")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
+            // Stessa regola, altra porta. Senza questo ramo il gate vedeva solo
+            // `Write`/`Edit`, e chi scriveva con `cat > file <<EOF` passava
+            // intatto — misurato dal vivo il 18/08/2026. Si giudica solo il
+            // primo file sorvegliato che il comando scrive: un messaggio che ne
+            // elenca cinque non lo legge nessuno.
             if path.is_empty() {
+                if !input.is_tool("Bash") {
+                    return Ok(0);
+                }
+                let command = input.bash_command();
+                for (target, body) in guards::code_language::writes_from_bash(&command) {
+                    let exists = std::path::Path::new(&target).exists();
+                    let Some(message) = guards::code_language::judge(&target, &body, exists)
+                    else {
+                        continue;
+                    };
+                    if phase == "pre" {
+                        return Ok(hook_io::emit(
+                            "code-language",
+                            &hook_io::Decision::Deny(message),
+                        ));
+                    }
+                    eprintln!("{message}");
+                    return Ok(2);
+                }
                 return Ok(0);
             }
             let text = guards::code_language::written_text(tool_input);
