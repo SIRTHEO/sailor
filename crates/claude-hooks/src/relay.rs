@@ -203,10 +203,116 @@ fn chain_limits() -> ChainLimits {
     }
 }
 
+/// La cartella della copia, presa dall'id e non dal nome del file di stato.
+///
+/// Un id è `<repoId>::<percorso>`, quindi il percorso sta lì intero. Nel nome
+/// del file di stato le barre sono già diventate underscore e tornare indietro è
+/// ambiguo: `orca_general` può essere `orca/general` o `orca_general`.
+fn worktree_dir(worktree: &str) -> &str {
+    match worktree.split_once("::") {
+        Some((_, dir)) => dir,
+        None => "",
+    }
+}
+
+/// Quanto la nascita deve superare il primo anello perché l'albero conti come
+/// rifatto. NON è prudenza generica: i due istanti vengono dallo stesso orologio
+/// letti in momenti diversi, e una correzione all'indietro (NTP) sposterebbe il
+/// confine dalla parte sbagliata. Dei due errori possibili, l'unico caro è
+/// tagliare una catena viva; due minuti coprono ogni correzione plausibile e non
+/// salvano nessun albero davvero rifatto, perché fra lo smontaggio e la
+/// ricreazione ne passano molti di più.
+const REBORN_MARGIN_SEC: f64 = 120.0;
+
+/// Vero se la cartella è nata DOPO il primo anello, cioè è un altro albero.
+///
+/// L'id di una copia è deterministico: smontarla e rifarla con lo stesso nome
+/// restituisce lo stesso id, e con esso `catene/<id>.json`. Entro le sei ore
+/// della scadenza per inattività la copia nuova erediterebbe i tetti di una
+/// lavorazione morta e verrebbe frenata al primo giro — il primo morso del freno
+/// si leggerebbe come «funziona» invece che come guasto.
+///
+/// IL SEGNO È LA NASCITA DELLA CARTELLA, quindi vede solo gli alberi rifatti
+/// davvero. Se uno smontaggio lascia la cartella in piedi e la copia nuova ci
+/// viene ricreata dentro, la data di nascita non cambia e la catena morta viene
+/// ereditata lo stesso: è il limite noto di questa guardia, non un caso che
+/// copre.
+///
+/// Senza il segno non si taglia: cartella assente, data di nascita che il
+/// sistema non tiene, o un `at` non plausibile lasciano la catena com'è.
+fn tree_reborn(worktree: &str, first_at: f64) -> bool {
+    let dir = worktree_dir(worktree);
+    if dir.is_empty() || !(first_at > 0.0) {
+        return false;
+    }
+    let Ok(born) = fs::metadata(dir).and_then(|m| m.created()) else {
+        return false;
+    };
+    let Ok(since) = born.duration_since(std::time::UNIX_EPOCH) else {
+        return false;
+    };
+    since.as_secs_f64() > first_at + REBORN_MARGIN_SEC
+}
+
+/// Un numero come lo leggerebbe il Python, che chiama `float()` e accetta anche
+/// la stringa che lo contiene.
+///
+/// IL PORTO NON PUÒ ESSERE PIÙ SEVERO DELL'ORACOLO. Con `as_f64()` soltanto, un
+/// `"at":"1787053675.22"` diventava zero: l'albero non risultava mai rinato, la
+/// catena morta veniva ereditata, e l'età si calcolava dall'epoca — cioè il
+/// difetto opposto a quello che la guardia chiude, proprio nel campo su cui
+/// decide.
+pub(crate) fn link_time(v: Option<&serde_json::Value>) -> f64 {
+    match v {
+        Some(serde_json::Value::Number(n)) => n.as_f64().unwrap_or(0.0),
+        Some(serde_json::Value::String(s)) => s.trim().parse::<f64>().unwrap_or(0.0),
+        // `float(True)` vale 1.0 anche in Python: un istante assurdo, ma lo
+        // stesso assurdo da entrambe le parti.
+        Some(serde_json::Value::Bool(b)) => *b as u8 as f64,
+        _ => 0.0,
+    }
+}
+
+/// I conteggi, con la **verità** del Python e non col solo numero.
+///
+/// `_is_sterile` non guarda quanto vale `writes`: guarda se è falsy, e in Python
+/// la stringa `"0"` non lo è — è una stringa non vuota. Un porto che la leggesse
+/// come zero conterebbe sterile un anello che l'oracolo dichiara produttivo, e a
+/// tre di fila fermerebbe una catena viva. Quindi: il numero quando c'è un
+/// numero, altrimenti 1 se il valore sarebbe vero per Python e 0 se sarebbe
+/// falso.
+///
+/// Resta fuori il solo giro completo: riscrivendo la catena, un `"0"` diventa
+/// `1`, mentre il Python lo ricopierebbe tale e quale. Nessuno dei due scrive
+/// conteggi che non siano interi — li produce `progress()` — e allineare anche
+/// quello vorrebbe dire tenere il JSON grezzo dentro `ChainLink`.
+pub(crate) fn link_count(v: Option<&serde_json::Value>) -> u64 {
+    match v {
+        // `as_u64()` fallisce su `5.0` e su `-5`, e non perché valgano zero: non
+        // stanno in un `u64`. Ricadere lì su zero direbbe «non ha prodotto» di un
+        // anello che per Python ha prodotto eccome — `not 5.0` e `not -5` sono
+        // entrambi falsi. Prima la verità, il numero solo quando c'è.
+        Some(serde_json::Value::Number(n)) => match n.as_f64().unwrap_or(0.0) {
+            f if f == 0.0 => 0,
+            _ => n.as_u64().unwrap_or(1).max(1),
+        },
+        Some(serde_json::Value::String(s)) => match s.trim().parse::<u64>() {
+            Ok(n) if n > 0 => n,
+            // `"0"`, `"abc"`, `"1.5"`, `"  "`: stringhe non vuote, quindi vere.
+            _ if !s.is_empty() => 1,
+            _ => 0,
+        },
+        Some(serde_json::Value::Bool(b)) => *b as u64,
+        Some(serde_json::Value::Array(a)) => !a.is_empty() as u64,
+        Some(serde_json::Value::Object(o)) => !o.is_empty() as u64,
+        _ => 0,
+    }
+}
+
 /// Gli anelli già percorsi su questo albero. Vuoto anche quando il file è
 /// illeggibile: una storia che non si riesce a leggere non deve fermare niente,
 /// perché il costo dell'errore qui è una catena viva bloccata al buio.
-fn read_chain(worktree: &str) -> Vec<ChainLink> {
+pub(crate) fn read_chain(worktree: &str) -> Vec<ChainLink> {
     let Ok(text) = fs::read_to_string(chain_path(worktree)) else {
         return Vec::new();
     };
@@ -216,20 +322,27 @@ fn read_chain(worktree: &str) -> Vec<ChainLink> {
     let Some(items) = d.get("links").and_then(|v| v.as_array()) else {
         return Vec::new();
     };
-    items
+    let links: Vec<ChainLink> = items
         .iter()
+        // Ciò che non è un oggetto non è un anello, e il Python lo scarta.
+        // Convertirlo darebbe un anello a `at` zero in testa: una storia più
+        // lunga di quella vera, con un'età che sfonda ogni tetto.
+        .filter(|l| l.is_object())
         .map(|l| {
             let s = |k: &str| l.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-            let n = |k: &str| l.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
             ChainLink {
                 session: s("session"),
-                at: l.get("at").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                turns: n("turns"),
-                writes: n("writes"),
+                at: link_time(l.get("at")),
+                turns: link_count(l.get("turns")),
+                writes: link_count(l.get("writes")),
                 handoff: s("handoff"),
             }
         })
-        .collect()
+        .collect();
+    match links.first() {
+        Some(primo) if tree_reborn(worktree, primo.at) => Vec::new(),
+        _ => links,
+    }
 }
 
 fn write_chain(worktree: &str, links: &[ChainLink]) {
@@ -1523,5 +1636,264 @@ mod tests {
         };
         regenerate(&record_di_prova(), "", false, &mut orca, None);
         assert!(read_chain("wt-prova").is_empty(), "un tentativo fallito ha contato");
+    }
+
+    // ─── L'albero ricreato ───────────────────────────────────────────────────
+    //
+    // Le date si prendono dal filesystem, mai dall'orologio: fra il `mkdir` e la
+    // riga che scrive gli anelli passano millisecondi, e un confine calcolato su
+    // `now_epoch()` cadrebbe dalla parte sbagliata su una macchina occupata.
+
+    /// Una cartella vera dentro la casa isolata, e l'id di copia che la nomina.
+    fn albero_vero(home: &HomeIsolata, nome: &str) -> (PathBuf, String) {
+        let dir = home.dir.join(nome);
+        fs::create_dir_all(&dir).unwrap();
+        let wt = format!("repo-di-prova::{}", dir.display());
+        (dir, wt)
+    }
+
+    fn nascita(dir: &Path) -> f64 {
+        fs::metadata(dir)
+            .and_then(|m| m.created())
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+    }
+
+    /// Una catena i cui anelli stanno agli scarti dati dalla nascita della cartella.
+    fn catena_agli_scarti(worktree: &str, dir: &Path, scarti: &[f64]) {
+        let nato = nascita(dir);
+        let links: Vec<ChainLink> = scarti
+            .iter()
+            .enumerate()
+            .map(|(i, s)| ChainLink {
+                session: format!("sess{i}"),
+                at: nato + s,
+                turns: 10,
+                writes: 5,
+                handoff: "/a.md".to_string(),
+            })
+            .collect();
+        write_chain(worktree, &links);
+    }
+
+    #[test]
+    fn a_recreated_tree_does_not_inherit_the_brake() {
+        let _home = HomeIsolata::nuova("albero-ricreato");
+        let (dir, wt) = albero_vero(&_home, "copia-rifatta");
+        // Dieci anelli, tutti prima che la cartella nascesse: è la copia di
+        // prima, smontata e rifatta con lo stesso nome — e quindi con lo stesso
+        // id, perché l'id è `<repoId>::<percorso>`. Senza la guardia il freno
+        // morderebbe al primo giro della lavorazione nuova, e quel morso si
+        // leggerebbe come «funziona».
+        catena_agli_scarti(&wt, &dir, &[-600.0, -540.0, -480.0, -420.0, -360.0,
+                                        -300.0, -240.0, -180.0, -120.0, -60.0]);
+        let (chiamate, mut orca) = orca_che_registra();
+        let rec = Record { worktree: wt.clone(), ..record_di_prova() };
+        regenerate(&rec, "", false, &mut orca, None);
+        assert!(
+            chiamate.borrow().iter().any(|c| c.contains("create")),
+            "la copia nuova è stata frenata dalla storia di quella vecchia: {:?}",
+            chiamate.borrow()
+        );
+        assert_eq!(read_chain(&wt).len(), 1, "la catena non è ripartita da capo");
+    }
+
+    #[test]
+    fn a_tree_older_than_its_chain_keeps_it() {
+        let _home = HomeIsolata::nuova("albero-fermo");
+        let (dir, wt) = albero_vero(&_home, "copia-vissuta");
+        // Il gemello del caso sopra: qui la cartella c'era già quando la catena
+        // è partita, quindi la storia è sua e il tetto deve mordere.
+        let scarti: Vec<f64> = (1..=10).map(|i| i as f64 * 60.0).collect();
+        catena_agli_scarti(&wt, &dir, &scarti);
+        let (chiamate, mut orca) = orca_che_registra();
+        let rec = Record { worktree: wt.clone(), ..record_di_prova() };
+        regenerate(&rec, "", false, &mut orca, None);
+        assert!(
+            chiamate.borrow().is_empty(),
+            "il freno non ha fermato niente: {:?}",
+            chiamate.borrow()
+        );
+        // E la storia è ancora tutta lì: senza questa riga la prova resterebbe
+        // verde anche per un taglio parziale che lasciasse abbastanza anelli.
+        assert_eq!(read_chain(&wt).len(), 10, "la catena è stata toccata");
+    }
+
+    #[test]
+    fn the_margin_covers_a_clock_correction() {
+        let _home = HomeIsolata::nuova("margine-orologio");
+        let (dir, dentro) = albero_vero(&_home, "dentro-il-margine");
+        catena_agli_scarti(&dentro, &dir, &[-REBORN_MARGIN_SEC]);
+        assert_eq!(
+            read_chain(&dentro).len(),
+            1,
+            "un salto d'orologio ha tagliato una catena viva"
+        );
+        let (dir, oltre) = albero_vero(&_home, "oltre-il-margine");
+        catena_agli_scarti(&oltre, &dir, &[-REBORN_MARGIN_SEC - 1.0]);
+        assert!(read_chain(&oltre).is_empty(), "oltre il margine non ha tagliato");
+        // Il numero scritto per esteso: i due casi qui sopra si muovono con la
+        // costante e resterebbero verdi anche a margine zero, cioè proprio
+        // quando la protezione sparisce.
+        let (dir, un_minuto) = albero_vero(&_home, "un-minuto-prima");
+        catena_agli_scarti(&un_minuto, &dir, &[-60.0]);
+        assert_eq!(read_chain(&un_minuto).len(), 1, "un minuto di scarto ha tagliato");
+        // E il numero dall'altro lato: gonfiando il margine «per prudenza» la
+        // guardia smetterebbe di prendere gli alberi rifatti, e i due casi qui
+        // sopra resterebbero verdi lo stesso.
+        let (dir, cinque_minuti) = albero_vero(&_home, "cinque-minuti-prima");
+        catena_agli_scarti(&cinque_minuti, &dir, &[-300.0]);
+        assert!(
+            read_chain(&cinque_minuti).is_empty(),
+            "cinque minuti di scarto non hanno tagliato: il margine è troppo largo"
+        );
+    }
+
+    #[test]
+    fn a_count_written_as_text_is_a_truth_not_a_zero() {
+        let _home = HomeIsolata::nuova("writes-stringa");
+        let (dir, wt) = albero_vero(&_home, "writes-di-testo");
+        let nato = nascita(&dir);
+        let _ = fs::create_dir_all(chain_dir());
+        // `_is_sterile` del Python scrive `not link.get('writes')`, e `"0"` è una
+        // stringa non vuota: vera. Leggendola come zero, quattro anelli con la
+        // stessa consegna diventerebbero uno stallo e fermerebbero una catena
+        // che l'oracolo lascia correre.
+        let anelli: Vec<String> = (0..4)
+            .map(|i| {
+                format!(
+                    r#"{{"session":"s{i}","at":{},"turns":3,"writes":"0","handoff":"/ferma.md"}}"#,
+                    nato + 60.0 * (i as f64 + 1.0)
+                )
+            })
+            .collect();
+        fs::write(chain_path(&wt), format!(r#"{{"links":[{}]}}"#, anelli.join(","))).unwrap();
+        let letti = read_chain(&wt);
+        assert_eq!(letti.len(), 4);
+        assert_eq!(
+            guards::chain::sterile_tail(&letti),
+            0,
+            "una catena viva è stata contata come stallo"
+        );
+    }
+
+    #[test]
+    fn a_count_that_does_not_fit_a_u64_is_still_a_truth() {
+        let _home = HomeIsolata::nuova("writes-non-interi");
+        // `5.0` e `-5` non stanno in un `u64`, e `as_u64()` ci ricadeva sopra
+        // con uno zero: «non ha prodotto» detto di un anello che per Python ha
+        // prodotto (`not 5.0` e `not -5` sono entrambi falsi). Quattro anelli
+        // così, con la stessa consegna, diventavano uno stallo.
+        for (nome, valore) in [("float", "5.0"), ("negativo", "-5")] {
+            let (dir, wt) = albero_vero(&_home, &format!("writes-{nome}"));
+            let nato = nascita(&dir);
+            let _ = fs::create_dir_all(chain_dir());
+            let anelli: Vec<String> = (0..4)
+                .map(|i| {
+                    format!(
+                        r#"{{"session":"s{i}","at":{},"turns":3,"writes":{valore},"handoff":"/ferma.md"}}"#,
+                        nato + 60.0 * (i as f64 + 1.0)
+                    )
+                })
+                .collect();
+            fs::write(chain_path(&wt), format!(r#"{{"links":[{}]}}"#, anelli.join(","))).unwrap();
+            let letti = read_chain(&wt);
+            assert_eq!(letti.len(), 4, "writes {nome}");
+            assert_eq!(
+                guards::chain::sterile_tail(&letti),
+                0,
+                "writes {nome}: una catena viva è stata contata come stallo"
+            );
+        }
+        // E lo zero resta zero, altrimenti il caso sopra proverebbe solo che
+        // nessun valore conta più.
+        let (dir, wt) = albero_vero(&_home, "writes-zero");
+        catena_agli_scarti(&wt, &dir, &[60.0, 120.0, 180.0, 240.0]);
+        let nato = nascita(&dir);
+        let anelli: Vec<String> = (0..4)
+            .map(|i| {
+                format!(
+                    r#"{{"session":"s{i}","at":{},"turns":3,"writes":0,"handoff":"/ferma.md"}}"#,
+                    nato + 60.0 * (i as f64 + 1.0)
+                )
+            })
+            .collect();
+        fs::write(chain_path(&wt), format!(r#"{{"links":[{}]}}"#, anelli.join(","))).unwrap();
+        assert_eq!(
+            guards::chain::sterile_tail(&read_chain(&wt)),
+            3,
+            "lo zero vero non conta più come «non ha prodotto»"
+        );
+    }
+
+    #[test]
+    fn a_time_written_as_text_is_still_a_time() {
+        let _home = HomeIsolata::nuova("at-stringa");
+        let (dir, wt) = albero_vero(&_home, "at-di-testo");
+        let nato = nascita(&dir);
+        let _ = fs::create_dir_all(chain_dir());
+        // MUTANTE STORICO: con `as_f64()` soltanto questo `at` valeva zero, la
+        // guardia non scattava mai e la catena morta veniva ereditata — mentre
+        // il Python, che passa da `float()`, la tagliava.
+        fs::write(
+            chain_path(&wt),
+            format!(
+                r#"{{"links":[{{"session":"s0","at":"{}","turns":"3","writes":"5","handoff":"/a.md"}}]}}"#,
+                nato - 600.0
+            ),
+        )
+        .unwrap();
+        assert!(read_chain(&wt).is_empty(), "la stringa numerica non è stata letta");
+    }
+
+    #[test]
+    fn the_guard_reads_the_first_link_not_the_last() {
+        let _home = HomeIsolata::nuova("guardia-primo-anello");
+        let (dir, wt) = albero_vero(&_home, "a-cavallo");
+        // MUTANTE: guardando l'ultimo anello, proprio la copia rifatta che sta
+        // già lavorando passerebbe per «stesso albero».
+        catena_agli_scarti(&wt, &dir, &[-300.0, 300.0]);
+        assert!(read_chain(&wt).is_empty(), "la guardia ha guardato l'ultimo anello");
+    }
+
+    #[test]
+    fn without_a_sign_the_chain_stays() {
+        let _home = HomeIsolata::nuova("nessun-segno");
+        let (dir, wt) = albero_vero(&_home, "cartella-viva");
+        // Un `at` che non è un istante non è una prova di niente: si tiene.
+        write_chain(
+            &wt,
+            &[ChainLink { session: "s0".into(), at: 0.0, turns: 1, writes: 1,
+                          handoff: "/a.md".into() }],
+        );
+        assert_eq!(read_chain(&wt).len(), 1, "un `at` a zero ha azzerato la catena");
+        // Cartella mai creata e id senza percorso: nessun segno, nessun taglio.
+        assert!(!tree_reborn(&format!("repo::{}/mai-esistito", dir.display()), 1.0));
+        assert!(!tree_reborn("solo-un-nome", 1.0));
+        assert_eq!(worktree_dir("repo::/Users/theo/orca/general"), "/Users/theo/orca/general");
+    }
+
+    #[test]
+    fn what_is_not_an_object_is_not_a_link() {
+        let _home = HomeIsolata::nuova("anelli-misti");
+        let (dir, wt) = albero_vero(&_home, "elenco-misto");
+        let nato = nascita(&dir);
+        let _ = fs::create_dir_all(chain_dir());
+        // Il Python scarta ciò che non è un oggetto. Convertirlo darebbe un
+        // anello a `at` zero in testa: una storia più lunga di quella vera, con
+        // un'età che sfonda ogni tetto — e una guardia che non scatta mai.
+        fs::write(
+            chain_path(&wt),
+            format!(
+                r#"{{"links":["x",{{"session":"s0","at":{},"turns":1,"writes":1,"handoff":"/a.md"}},7]}}"#,
+                nato + 60.0
+            ),
+        )
+        .unwrap();
+        let anelli = read_chain(&wt);
+        assert_eq!(anelli.len(), 1, "un elemento non oggetto è diventato un anello");
+        assert_eq!(anelli[0].session, "s0");
     }
 }
