@@ -122,11 +122,16 @@ pub fn run_chain() -> i32 {
             .map(|items| {
                 items
                     .iter()
+                    // Le stesse funzioni di `relay::read_chain`, e non una copia:
+                    // finché erano due scritture, la correzione su una lasciava
+                    // l'altra indietro — e questa è quella che risponde ai 1009
+                    // casi del confronto, cioè alla cifra più vistosa che si
+                    // citi. Un porto con due letture ha due comportamenti.
                     .map(|l| ChainLink {
                         session: l.get("session").and_then(|v| v.as_str()).unwrap_or("").into(),
-                        at: l.get("at").and_then(|v| v.as_f64()).unwrap_or(0.0),
-                        turns: l.get("turns").and_then(|v| v.as_u64()).unwrap_or(0),
-                        writes: l.get("writes").and_then(|v| v.as_u64()).unwrap_or(0),
+                        at: crate::relay::link_time(l.get("at")),
+                        turns: crate::relay::link_count(l.get("turns")),
+                        writes: crate::relay::link_count(l.get("writes")),
                         handoff: l.get("handoff").and_then(|v| v.as_str()).unwrap_or("").into(),
                     })
                     .collect()
@@ -155,6 +160,60 @@ pub fn run_chain() -> i32 {
         println!(
             "{}",
             serde_json::json!({
+                "verdict": verdict,
+                "reason": reason,
+                "sterile": guards::chain::sterile_tail(&links),
+            })
+        );
+    }
+    0
+}
+
+/// Il terzo ponte, e qui il disco serve: la guardia sull'albero ricreato sta in
+/// `relay::read_chain`, e ciò che distingue una copia rifatta dalla sua omonima
+/// è la data di nascita di una cartella vera. Il chiamante prepara una `HOME`
+/// finta con dentro le catene e gli alberi, e i due lati la leggono entrambi.
+///
+/// SI RISPONDE ANCHE COL VERDETTO, non con i soli anelli. Confrontare la sola
+/// lettura certifica una normalizzazione, non un comportamento: un campo può
+/// tornare identico da entrambe le parti e portare comunque a una decisione
+/// diversa più avanti — è successo con `writes`, dove la stringa `"0"` è falsa
+/// per il porto e vera per Python. Qui la catena letta arriva fino a
+/// `chain_verdict`, che è ciò che ferma o lascia passare una staffetta.
+pub fn run_read_chain() -> i32 {
+    let mut raw = String::new();
+    if std::io::stdin().read_to_string(&mut raw).is_err() {
+        return 1;
+    }
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(case) = serde_json::from_str::<serde_json::Value>(line) else {
+            println!("{}", serde_json::json!({"error": "caso illeggibile"}));
+            continue;
+        };
+        let links = crate::relay::read_chain(text(&case, "worktree"));
+        let items: Vec<serde_json::Value> = links
+            .iter()
+            .map(|l| {
+                serde_json::json!({
+                    "session": l.session,
+                    "at": l.at,
+                    "turns": l.turns,
+                    "writes": l.writes,
+                    "handoff": l.handoff,
+                })
+            })
+            .collect();
+        let now = case.get("now").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let (verdict, reason) = chain_verdict(&links, now, &ChainLimits::default());
+        let verdict = match verdict {
+            ChainVerdict::Go => "go",
+            ChainVerdict::Reset => "reset",
+            ChainVerdict::Stop => "stop",
+        };
+        println!(
+            "{}",
+            serde_json::json!({
+                "links": items,
                 "verdict": verdict,
                 "reason": reason,
                 "sterile": guards::chain::sterile_tail(&links),
