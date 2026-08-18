@@ -428,6 +428,16 @@ def compare_end_to_end():
         # I due versi del freno nuovo. Senza transcript non si sa quanto sia
         # piena la sessione, e chi non si sa pieno non si sostituisce.
         ('consegna scritta a meta lavoro', payload, {'CONSEGNA_TETTO_PANNELLI': '0'}),
+        # L'ora fissata, nei due versi. E' una valvola del banco — serve a provare
+        # i tetti, che stanno DOPO il freno orario — ma se la legge un lato solo i
+        # due porti rispondono diverso a parita' di ambiente, in silenzio, perche'
+        # nessun altro caso la passa. Il verso «fuori finestra» e' quello che
+        # distingue: dentro finestra si ricade sul tetto, e i due andrebbero
+        # d'accordo anche senza valvola.
+        ('ora fissata fuori finestra', payload,
+         {**meta, 'CONSEGNA_ORA': '3', 'CONSEGNA_TETTO_PANNELLI': '0'}),
+        ('ora fissata dentro finestra', payload,
+         {**meta, 'CONSEGNA_ORA': '12', 'CONSEGNA_TETTO_PANNELLI': '0'}),
     ]
     if payload_pieno:
         # Sessione piena: il freno della pienezza si apre, e ci si ferma sul
