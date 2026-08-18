@@ -130,11 +130,23 @@ def run(argv, payload):
             'stderr': r.stderr.strip()}
 
 
-def compare(tool, tool_input, phase):
+EVENT = {'pre': 'PreToolUse', 'post': 'PostToolUse'}
+
+
+def compare(tool, tool_input, phase, with_arg=True):
+    """Le due decisioni sullo stesso ingresso.
+
+    `with_arg=False` toglie l'argomento e lascia solo `hook_event_name`: e' la
+    forma in cui arriva un gancio registrato senza ricopiare la fase in
+    `settings.json`, ed e' il modo in cui un porto puo' divergere in silenzio
+    dall'altro senza che nessun file di prova se ne accorga.
+    """
     payload = json.dumps({'tool_name': tool, 'session_id': 'confronto',
-                          'cwd': '/tmp', 'tool_input': tool_input})
-    return (run([sys.executable, HOOK, phase], payload),
-            run([BINARY, 'comment-refs', phase], payload))
+                          'cwd': '/tmp', 'hook_event_name': EVENT[phase],
+                          'tool_input': tool_input})
+    args = [phase] if with_arg else []
+    return (run([sys.executable, HOOK] + args, payload),
+            run([BINARY, 'comment-refs'] + args, payload))
 
 
 def main():
@@ -170,15 +182,17 @@ def main():
             # dentro lo stdout con uscita 0, in `post` e un blocco con uscita 2.
             # Un porto che sbagliasse solo la seconda passerebbe meta confronto.
             for phase in ('pre', 'post'):
-                python, rust = compare(tool, tool_input, phase)
-                if python['stdout'] or python['uscita'] == 2:
-                    flagged += 1
-                if python != rust:
-                    divergent.append((path, tool, phase, python, rust))
+                for with_arg in (True, False):
+                    python, rust = compare(tool, tool_input, phase, with_arg)
+                    if with_arg and (python['stdout'] or python['uscita'] == 2):
+                        flagged += 1
+                    if python != rust:
+                        label = phase if with_arg else f'{phase} (dall evento)'
+                        divergent.append((path, tool, label, python, rust))
 
     shutil.rmtree(tmp, ignore_errors=True)
 
-    total = (len(files) + len(built)) * 6
+    total = (len(files) + len(built)) * 12
     print(f'{len(files)} file veri + {len(built)} costruiti, {total} casi confrontati')
     print(f'segnalati dal Python: {flagged}')
     print(f'divergenze: {len(divergent)}')
