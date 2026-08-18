@@ -223,4 +223,87 @@ mod tests {
         assert!(targets(r#"git commit -m "aperta"#).is_empty());
     }
 
+    // ── La decisione, non solo l'estrazione ─────────────────────────────────
+    //
+    // Fino al 18/08/2026 qui si provava soltanto `targets`, cioè quali coppie
+    // (repo, gesto) il comando contiene. `is_blind` — che è dove sta il
+    // giudizio — non aveva un caso, e per questo il censimento dei ganci lo
+    // elencava fra quelli di cui non si sa niente.
+    //
+    // L'albero si costruisce qui dentro e non da riga di comando: la shell
+    // della sessione ha un freno che vieta di scrivere un file chiamato
+    // `pre-commit`, e il caso di prova non si costruiva proprio per quello.
+
+    /// Un repo vero in una cartella usa-e-getta, con `core.hooksPath` puntato a
+    /// `.husky/_` come fanno i repo in carico.
+    fn blank_repo(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("hooks-off-{name}"));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".husky")).unwrap();
+        for args in [
+            vec!["init", "-q"],
+            vec!["config", "core.hooksPath", ".husky/_"],
+        ] {
+            Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap();
+        }
+        root
+    }
+
+    fn put(path: PathBuf) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "#!/bin/sh\nnpm test\n").unwrap();
+    }
+
+    #[test]
+    fn a_tree_whose_checks_were_never_generated_is_blind() {
+        // `.husky/pre-commit` versionato (il repo I CONTROLLI LI HA), ma
+        // `.husky/_` mai generato perché l'installazione non è girata: è il
+        // caso che il 14/08/2026 è costato cinque controlli automatici falliti
+        // su dodici, tutti dallo stesso albero.
+        let repo = blank_repo("blind");
+        put(repo.join(".husky").join("pre-commit"));
+        assert_eq!(is_blind(&repo, "commit"), Some(true));
+        assert!(matches!(
+            judge("git commit -m x", repo.to_str().unwrap()),
+            Decision::Deny(_)
+        ));
+    }
+
+    #[test]
+    fn a_tree_with_its_checks_installed_passes() {
+        let repo = blank_repo("installed");
+        put(repo.join(".husky").join("pre-commit"));
+        put(repo.join(".husky").join("_").join("pre-commit"));
+        assert_eq!(is_blind(&repo, "commit"), Some(false));
+        assert!(matches!(
+            judge("git commit -m x", repo.to_str().unwrap()),
+            Decision::Pass
+        ));
+    }
+
+    #[test]
+    fn a_repo_that_never_had_checks_is_not_this_guards_business() {
+        // Nessun `.husky/pre-commit` versionato: quel repo ha fatto una scelta,
+        // e imporgliela non è compito di questo gancio. `None` = tace.
+        let repo = blank_repo("no-checks");
+        assert_eq!(is_blind(&repo, "commit"), None);
+        assert!(matches!(
+            judge("git commit -m x", repo.to_str().unwrap()),
+            Decision::Pass
+        ));
+    }
+
+    #[test]
+    fn push_is_judged_on_its_own_hook() {
+        let repo = blank_repo("push");
+        put(repo.join(".husky").join("pre-commit"));
+        put(repo.join(".husky").join("_").join("pre-commit"));
+        // I controlli del commit ci sono, quelli del push no.
+        assert_eq!(is_blind(&repo, "push"), Some(true));
+    }
 }
