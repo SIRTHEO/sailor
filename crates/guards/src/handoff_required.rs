@@ -108,7 +108,7 @@ pub fn decide(f: &Facts) -> Decision {
          1. Invoca la skill `handoff`: scrive un memory file di consegna + il \
          puntatore in MEMORY.md, che la prossima sessione ricarica da sola. Cita \
          specifiche, piani e commit per percorso invece di ricopiarli.\n\
-         2. Chiudi il turno con le tre righe: Stato / Procedo con / Cambia rotta se.\n\n\
+         2. Chiudi il turno con le due righe: Stato / Procedo con.\n\n\
          Fatto l'handoff il gancio si sblocca e si torna a lavorare: il blocco \
          serve solo a garantire che la consegna sia scritta una volta.\n\
          `{}` non serve a consegnare, quindi non passa. Passano: Skill, Read, \
