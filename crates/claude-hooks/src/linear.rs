@@ -171,6 +171,21 @@ fn note(outcome: &str, reason: &str, tool: &str, session: &str, cwd: &str, comma
 }
 
 fn refusal(reason: &str) -> Decision {
+    // Due rifiuti, non uno con la ragione interpolata: il divieto protegge due
+    // cose diverse, e fino al 18/08/2026 chi toccava `settings.json` riceveva
+    // per intero l'omelia sull'elenco chiuso dei sottocomandi Linear, col
+    // motivo vero relegato fra parentesi. Un messaggio che parla d'altro si
+    // legge come un difetto del freno, e chi lo riceve gira intorno al freno.
+    if linear::is_protected_file(reason) {
+        return Decision::Deny(format!(
+            "Questo file regge il divieto di scrittura su Linear ({reason}), e non si modifica \
+             dall'interno di una sessione: una valvola che autorizza il proprio smontaggio non è \
+             una valvola. Leggerlo, cercarlo e lanciarne le prove resta libero. Se il cambiamento \
+             serve davvero, dillo a Theo e lo scrive lui da un terminale fuori da Claude Code — \
+             per la configurazione dei ganci c'è il suo permesso scritto, per il nucleo del \
+             divieto non c'è niente, di proposito."
+        ));
+    }
     Decision::Deny(format!(
         "Linear è in sola lettura per le automazioni ({reason}). Lo stato delle schede lo muove \
          Theo, e nessun giro può spostare una scheda in Done — mandato dell'11/08/2026. Passano \
@@ -287,4 +302,35 @@ pub fn run(input: &HookInput) -> i32 {
     let outcome = if valve == Valve::Core { "negato-nucleo" } else { "negato" };
     note(outcome, &reason, &tool, &session, &cwd, command);
     hook_io::emit("linear-readonly", &refusal(&reason))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(reason: &str) -> String {
+        match refusal(reason) {
+            Decision::Deny(m) => m,
+            _ => panic!("refusal must deny"),
+        }
+    }
+
+    /// Il rifiuto deve nominare ciò che ha visto. Sul file protetto parlava di
+    /// Linear, e un messaggio fuori tema si legge come un freno rotto.
+    #[test]
+    fn the_refusal_on_a_protected_file_does_not_lecture_about_linear() {
+        let m = text("riscrittura di la configurazione dei ganci (settings.json)");
+        assert!(m.contains("regge il divieto"), "{m}");
+        assert!(m.contains("settings.json"), "{m}");
+        assert!(!m.contains("orca linear list"), "{m}");
+        assert!(!m.contains("OK_UTENTE"), "{m}");
+    }
+
+    #[test]
+    fn the_refusal_on_a_linear_subcommand_still_says_which_reads_pass() {
+        let m = text("sottocomando fuori dall'elenco delle letture");
+        assert!(m.contains("orca linear list"), "{m}");
+        assert!(m.contains("OK_UTENTE"), "{m}");
+        assert!(!m.contains("regge il divieto"), "{m}");
+    }
 }
