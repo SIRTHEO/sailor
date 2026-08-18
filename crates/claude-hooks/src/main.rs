@@ -40,6 +40,7 @@ mod orca_cleanup;
 mod register_session;
 mod skill_nudge;
 mod work_status;
+mod json_tool;
 
 use hook_io::{Decision, Mode};
 
@@ -107,7 +108,9 @@ fn main() {
 /// fallisce se un ramo nuovo non compare qui.
 const ALL_HOOKS: &[&str] = &[
     "allow-worktree-deletes",
+    "json",
     "block-pr-merge-admin",
+    "block-worktree-create",
     "cd-guard",
     "code-language",
     "comment-refs",
@@ -127,6 +130,7 @@ const ALL_HOOKS: &[&str] = &[
     "relay",
     "relay-evaluate",
     "relay-chain",
+    "relay-read-chain",
     "restart-count",
     "restart-notice",
     "scope-drift",
@@ -160,6 +164,11 @@ fn is_covered(name: &str) -> bool {
 
 const SMOKE: &[(&str, &str, &str)] = &[
     ("cd-guard", "cd /repo && git status", "git -C /repo status"),
+    (
+        "block-worktree-create",
+        "git worktree add /Users/theo/orca/workspaces/suite/x",
+        "git worktree add /private/tmp/x",
+    ),
     // Il gate SocratiCode non è in questa tabella: la sua decisione dipende da
     // un repo indicizzato e da un contatore per sessione, quindi un caso «deve
     // bloccare» qui sarebbe una finzione. La sua rete è il confronto col Node
@@ -202,6 +211,7 @@ fn self_check() -> i32 {
         for (command, expected_block) in [(must_block, true), (must_pass, false)] {
             let decision = match *name {
                 "cd-guard" => guards::cd_guard::judge(command),
+                "block-worktree-create" => guards::worktree_create::judge(command),
                 "block-pr-merge-admin" => guards::pr_merge_admin::judge(command),
                 // Il rifiuto viaggia sull'altro canale (`deny` su stdout,
                 // uscita 0), quindi qui si guarda che il giudizio ci sia — non
@@ -399,6 +409,20 @@ fn run(which: &str) -> Result<i32, String> {
             }
             let decision = mode.soften(guards::cd_guard::judge(input.bash_command()));
             Ok(emit_with_legacy_prefix("cd-guard", &decision))
+        }
+        "block-worktree-create" => {
+            let mode = Mode::from_env("BLOCK_WORKTREE_CREATE");
+            if mode == Mode::Off {
+                return Ok(0);
+            }
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0); // invocato fuori contesto
+            };
+            if !input.is_tool("Bash") {
+                return Ok(0);
+            }
+            let decision = mode.soften(guards::worktree_create::judge(input.bash_command()));
+            Ok(emit_with_legacy_prefix("block-worktree-create", &decision))
         }
         "block-pr-merge-admin" => {
             // Nessuna valvola: è l'unico freno della configurazione che
@@ -720,6 +744,9 @@ fn run(which: &str) -> Result<i32, String> {
         // Il gemello per il freno della catena, interrogato da
         // `tools/compare-relay-chain.py`.
         "relay-chain" => Ok(relay_eval::run_chain()),
+        // Il terzo, per la lettura da disco: lo stesso confronto, ma con la
+        // guardia sull'albero ricreato in mezzo.
+        "relay-read-chain" => Ok(relay_eval::run_read_chain()),
         // I quattro porti del 17/08: rispondono già, ma la configurazione li
         // nomina solo quando il confronto col Python è verde e i mutanti sono
         // uccisi. L'ordine è quello di `adopt-hook.py`: prima si dimostra, poi
@@ -732,6 +759,11 @@ fn run(which: &str) -> Result<i32, String> {
         "register-session" => Ok(register_session::run()),
         "skill-nudge" => Ok(skill_nudge::run()),
         "work-status" => Ok(work_status::run()),
+        // Non è un gancio: è il pezzo che toglie `python3 -c` dai tre ganci
+        // scritti in shell, che lo invocano per leggere un campo o costruire una
+        // risposta. Sta nell'elenco perché il dispatch e l'elenco si controllano
+        // a vicenda, non perché `settings.json` lo nomini.
+        "json" => Ok(json_tool::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }
