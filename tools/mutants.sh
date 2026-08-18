@@ -462,6 +462,17 @@ fi
 if [ "$WHICH" = "successor" ] || [ "$WHICH" = "tutte" ]; then
   echo "mutanti su successor.rs (l'involucro che arma):"
   COMPARE="compare-successor.py"
+
+  # La valvola che fissa l'ora, portata il 18/08/2026 perche' il freno orario sta
+  # PRIMA dei tetti e di notte li copre. Se la legge un lato solo, i due porti
+  # rispondono diverso a parita' di ambiente e nessuno se ne accorge.
+  mutate "il porto ignora l ora fissata" "crates/claude-hooks/src/successor.rs" \
+    's = s.replace("""    if let Ok(fixed) = std::env::var("CONSEGNA_ORA") {
+        if let Ok(h) = fixed.parse::<u32>() {
+            return h;
+        }
+    }
+""", "", 1)'
   A="crates/claude-hooks/src/successor.rs"
 
   # IL DIFETTO VERO, rimesso: il porto decide bene e non registra niente. È lo
