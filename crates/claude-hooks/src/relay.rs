@@ -224,19 +224,44 @@ fn worktree_dir(worktree: &str) -> &str {
 /// ricreazione ne passano molti di più.
 const REBORN_MARGIN_SEC: f64 = 120.0;
 
-/// Vero se la cartella è nata DOPO il primo anello, cioè è un altro albero.
+/// Quando un percorso è nato, come lo legge il Python: secondi dall'epoca.
+fn birth_of(path: &Path) -> Option<f64> {
+    let born = fs::metadata(path).and_then(|m| m.created()).ok()?;
+    Some(born.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs_f64())
+}
+
+/// Quando questo albero è stato messo su — non quando è nata la cartella.
+///
+/// La cartella non basta da sola. Uno smontaggio può lasciarla in piedi
+/// (`close-finished.py` stampa `STILL THERE` proprio in quel caso), e se la
+/// copia nuova ci viene ricreata dentro la data di nascita non cambia mai: la
+/// catena morta verrebbe ereditata per sempre. Il file `.git` di un worktree
+/// invece lo riscrive ogni `git worktree add`, quindi vede anche quel caso.
+///
+/// Si guarda solo se `.git` è un FILE, cioè un worktree registrato: in un
+/// checkout principale è una cartella con vita propria — su `other-repo/work` è nata
+/// 126 giorni dopo il checkout — e prenderla taglierebbe catene vive. Fra i due
+/// si tiene il più recente: un albero rifatto sposta almeno uno dei due segni, e
+/// nessuno dei due torna indietro da solo (`worktree repair` e `worktree move`
+/// lasciano la nascita del `.git` dov'era, misurato).
+fn tree_birth(dir: &str) -> Option<f64> {
+    let mut born = birth_of(Path::new(dir))?;
+    let g = Path::new(dir).join(".git");
+    if fs::metadata(&g).map(|m| m.is_file()).unwrap_or(false) {
+        if let Some(gborn) = birth_of(&g) {
+            born = born.max(gborn);
+        }
+    }
+    Some(born)
+}
+
+/// Vero se l'albero è nato DOPO il primo anello, cioè è un altro albero.
 ///
 /// L'id di una copia è deterministico: smontarla e rifarla con lo stesso nome
 /// restituisce lo stesso id, e con esso `catene/<id>.json`. Entro le sei ore
 /// della scadenza per inattività la copia nuova erediterebbe i tetti di una
 /// lavorazione morta e verrebbe frenata al primo giro — il primo morso del freno
 /// si leggerebbe come «funziona» invece che come guasto.
-///
-/// IL SEGNO È LA NASCITA DELLA CARTELLA, quindi vede solo gli alberi rifatti
-/// davvero. Se uno smontaggio lascia la cartella in piedi e la copia nuova ci
-/// viene ricreata dentro, la data di nascita non cambia e la catena morta viene
-/// ereditata lo stesso: è il limite noto di questa guardia, non un caso che
-/// copre.
 ///
 /// Senza il segno non si taglia: cartella assente, data di nascita che il
 /// sistema non tiene, o un `at` non plausibile lasciano la catena com'è.
@@ -245,13 +270,10 @@ fn tree_reborn(worktree: &str, first_at: f64) -> bool {
     if dir.is_empty() || !(first_at > 0.0) {
         return false;
     }
-    let Ok(born) = fs::metadata(dir).and_then(|m| m.created()) else {
+    let Some(born) = tree_birth(dir) else {
         return false;
     };
-    let Ok(since) = born.duration_since(std::time::UNIX_EPOCH) else {
-        return false;
-    };
-    since.as_secs_f64() > first_at + REBORN_MARGIN_SEC
+    born > first_at + REBORN_MARGIN_SEC
 }
 
 /// Un numero come lo leggerebbe il Python, che chiama `float()` e accetta anche
@@ -1909,6 +1931,113 @@ mod tests {
             read_chain(&cinque_minuti).is_empty(),
             "cinque minuti di scarto non hanno tagliato: il margine è troppo largo"
         );
+    }
+
+    /// Sposta indietro la NASCITA di un percorso, e dice se ci è riuscito.
+    ///
+    /// Il divario fra cartella e `.git` deve superare i due minuti del margine,
+    /// e una prova che dorme due minuti non la lancia più nessuno. `SetFile` è
+    /// l'unico attrezzo che sposta la nascita su APFS: se manca, i casi non si
+    /// eseguono e la prova lo dice invece di passare muta.
+    fn age_birth(path: &Path, seconds_ago: u64) -> bool {
+        let target = std::time::SystemTime::now() - std::time::Duration::from_secs(seconds_ago);
+        let secs = target
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        // `date -r` stampa l'istante nel formato che `SetFile` accetta, e non
+        // richiede una libreria di date nel crate.
+        let Ok(stamped) = Command::new("date")
+            .args(["-r", &secs.to_string(), "+%m/%d/%Y %H:%M:%S"])
+            .output()
+        else {
+            return false;
+        };
+        let arg = String::from_utf8_lossy(&stamped.stdout).trim().to_string();
+        if arg.is_empty() {
+            return false;
+        }
+        Command::new("SetFile")
+            .args(["-d", &arg])
+            .arg(path)
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[test]
+    fn a_surviving_directory_does_not_hide_a_rebuilt_worktree() {
+        let _home = HomeIsolata::nuova("cartella-sopravvissuta");
+        let (dir, wt) = albero_vero(&_home, "copia-ricreata-dentro");
+        // Il `.git` di un worktree è un FILE, e `git worktree add` lo riscrive
+        // ogni volta: è il segno che distingue la cartella lasciata in piedi da
+        // uno smontaggio (`close-finished.py` stampa `STILL THERE`) dalla
+        // cartella di un albero mai toccato.
+        fs::write(dir.join(".git"), "gitdir: /altrove\n").unwrap();
+        assert!(
+            age_birth(&dir, 3600),
+            "SetFile non ha spostato la nascita: il caso non è stato provato"
+        );
+        let nato = nascita(&dir);
+        // Gli anelli stanno un minuto DOPO la cartella e cinquantanove minuti
+        // PRIMA del `.git`: guardando la sola cartella la catena morta
+        // resterebbe, ed è esattamente il buco che questa guardia chiude.
+        catena_agli_scarti(&wt, &dir, &[60.0, 120.0]);
+        assert!(
+            read_chain(&wt).is_empty(),
+            "la catena della lavorazione morta è stata ereditata: nato={nato}"
+        );
+    }
+
+    #[test]
+    fn a_main_checkout_keeps_its_chain() {
+        let _home = HomeIsolata::nuova("checkout-principale");
+        let (dir, wt) = albero_vero(&_home, "copia-principale");
+        // Stesso identico divario, ma `.git` è una CARTELLA: è un checkout
+        // principale, dove `.git` ha vita propria — su `other-repo/work` è nata 126
+        // giorni dopo il checkout. Prenderla taglierebbe una catena viva.
+        fs::create_dir_all(dir.join(".git")).unwrap();
+        assert!(age_birth(&dir, 3600), "SetFile non ha spostato la nascita");
+        catena_agli_scarti(&wt, &dir, &[60.0, 120.0]);
+        assert_eq!(
+            read_chain(&wt).len(),
+            2,
+            "una catena viva è stata tagliata da un `.git` di cartella"
+        );
+    }
+
+    #[test]
+    fn an_old_git_file_cuts_nothing() {
+        let _home = HomeIsolata::nuova("git-vecchio");
+        let (dir, wt) = albero_vero(&_home, "copia-vissuta-con-git");
+        fs::write(dir.join(".git"), "gitdir: /altrove\n").unwrap();
+        // Il gemello che deve restare fermo: `.git` file come nel primo caso,
+        // ma vecchio quanto la cartella. Senza di lui i due casi sopra
+        // proverebbero solo che il segno taglia sempre.
+        assert!(age_birth(&dir, 3600), "SetFile non ha spostato la nascita");
+        assert!(age_birth(&dir.join(".git"), 3600), "SetFile sul `.git`");
+        catena_agli_scarti(&wt, &dir, &[60.0, 120.0]);
+        assert_eq!(read_chain(&wt).len(), 2, "il segno ha tagliato una catena viva");
+    }
+
+    #[test]
+    fn tree_birth_reads_the_two_signs() {
+        let _home = HomeIsolata::nuova("due-segni");
+        let (dir, _wt) = albero_vero(&_home, "segni");
+        // Senza `.git` resta la cartella, e non c'è modo di sbagliarsi.
+        assert_eq!(tree_birth(dir.to_str().unwrap()), Some(nascita(&dir)));
+        fs::write(dir.join(".git"), "gitdir: /altrove\n").unwrap();
+        assert!(age_birth(&dir, 3600), "SetFile non ha spostato la nascita");
+        let git_born = nascita(&dir.join(".git"));
+        assert_eq!(
+            tree_birth(dir.to_str().unwrap()),
+            Some(git_born),
+            "il `.git` più giovane non ha vinto"
+        );
+        // Una cartella che non c'è non risponde: «non lo so» vale più di
+        // un'ipotesi quando dopo c'è un taglio.
+        assert_eq!(tree_birth(&format!("{}/mai-esistita", dir.display())), None);
+        assert_eq!(tree_birth(""), None);
     }
 
     #[test]
