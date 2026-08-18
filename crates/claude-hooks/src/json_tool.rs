@@ -107,13 +107,18 @@ pub fn field(raw: &str, key: &str) -> Option<String> {
 /// DUE DIFFERENZE DA `serde_json`, e nessuna delle due e' cosmetica quando il
 /// confronto e' byte a byte:
 ///
-///   1. `ensure_ascii=True` e' il **default** di Python: `a` con l'accento esce
-///      come `à`, e un'emoji come una coppia di surrogati. `serde_json`
-///      scrive l'UTF-8 cosi' com'e';
+///   1. `ensure_ascii=True` e' il **default** di Python: una `e` accentata esce
+///      come la sequenza `\u00e8`, e un'emoji come una coppia di surrogati,
+///      mentre `serde_json` scrive l'UTF-8 cosi' com'e';
 ///   2. i separatori: `", "` e `": "` contro i compatti di serde. E' la stessa
 ///      trappola gia' incontrata in `relay.py`, dove pero' si e' scelto il verso
 ///      opposto perche' li' i file li scriveva il Rust.
-fn python_json_string(s: &str) -> String {
+///
+/// `ensure_ascii` sta come parametro perche' in questa configurazione le due
+/// forme convivono: i ganci di shell chiamano `json.dumps` col default, mentre
+/// i registri e i messaggi per Theo usano `ensure_ascii=False` — dove una riga
+/// piena di `\u00e8` sarebbe illeggibile proprio a chi deve leggerla.
+pub fn python_json_string_with(s: &str, ensure_ascii: bool) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {
@@ -127,10 +132,8 @@ fn python_json_string(s: &str) -> String {
             '\u{c}' => out.push_str("\\f"),
             c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
             c if (c as u32) < 0x7f => out.push(c),
+            c if !ensure_ascii => out.push(c),
             c => {
-                // Fuori dall'ASCII Python usa le sequenze `\uXXXX`, e per i punti
-                // oltre il piano base la coppia di surrogati — la stessa che
-                // scriverebbe UTF-16.
                 let mut buf = [0u16; 2];
                 for unit in c.encode_utf16(&mut buf) {
                     out.push_str(&format!("\\u{unit:04x}"));
@@ -140,6 +143,10 @@ fn python_json_string(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+fn python_json_string(s: &str) -> String {
+    python_json_string_with(s, true)
 }
 
 /// La risposta che un gancio SessionStart da' per aggiungere contesto.
