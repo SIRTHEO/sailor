@@ -76,16 +76,23 @@ fn roots() -> Vec<PathBuf> {
         return std::env::split_paths(&v).collect();
     }
     let h = home();
+    // Gli ombrelli, ognuno con piu' repo sotto. `personal` mancava, e le sue
+    // memorie risultavano morte in blocco: `apps/desktop/vite.config.ts` esiste
+    // su `personal/games`, ma nessuna radice ci arrivava.
+    let umbrellas = [h.join("gyver/work"), h.join("personal")];
     let mut out = vec![
         h.join(".claude"),
         h.join(".claude/rust"),
         h.join(".claude/scripts"),
         h.join("orca/general"),
-        h.join("gyver/work"),
     ];
+    out.extend(umbrellas.iter().cloned());
     // I repo sotto l'ombrello: `suite/src/...` si risolve dall'ombrello, ma
     // `src/...` no, e le memorie scrivono in tutti e due i modi.
-    if let Ok(entries) = std::fs::read_dir(h.join("gyver/work")) {
+    for umbrella in &umbrellas {
+        let Ok(entries) = std::fs::read_dir(umbrella) else {
+            continue;
+        };
         for e in entries.flatten() {
             if e.path().join(".git").exists() {
                 out.push(e.path());
@@ -237,6 +244,43 @@ fn by_name(name: &str) -> Vec<PathBuf> {
     index.get(name).cloned().unwrap_or_default()
 }
 
+/// Le cartelle nascoste che l'indice attraversa lo stesso.
+const KEPT_DOTDIRS: [&str; 2] = [".claude", ".github"];
+
+/// Il percorso di una memoria nominata a `--file`, quando non e' un file.
+///
+/// Le memorie si citano per nome (`consegna-19-08-x.md`), e lo stesso nome puo'
+/// vivere sotto piu' progetti: se e' uno solo lo si serve, se sono due si
+/// mostrano invece di sceglierne uno a caso.
+fn resolve_memory_name(given: &Path) -> Result<PathBuf, String> {
+    pick_memory_by_name(given, memory_files())
+}
+
+/// La scelta vera e propria, separata da dove arrivano le memorie: cosi' una
+/// prova puo' passare le sue senza toccare `HOME`, che e' del processo intero.
+fn pick_memory_by_name(given: &Path, candidates: Vec<PathBuf>) -> Result<PathBuf, String> {
+    let name = given.file_name().unwrap_or(given.as_os_str());
+    let hits: Vec<PathBuf> = candidates
+        .into_iter()
+        .filter(|p| p.file_name() == Some(name))
+        .collect();
+    match hits.len() {
+        1 => Ok(hits.into_iter().next().expect("appena contata")),
+        0 => Err(format!(
+            "--file: {} non si apre, e nessuna memoria si chiama cosi'.",
+            given.display()
+        )),
+        n => Err(format!(
+            "--file: {n} memorie si chiamano {}; passa il percorso completo.\n{}",
+            name.to_string_lossy(),
+            hits.iter()
+                .map(|p| format!("  {}", tilde(p)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )),
+    }
+}
+
 fn build_index() -> BTreeMap<String, Vec<PathBuf>> {
     {
         let mut map: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
@@ -251,13 +295,16 @@ fn build_index() -> BTreeMap<String, Vec<PathBuf>> {
                     let file_name = e.file_name();
                     let file_name = file_name.to_string_lossy().to_string();
                     if p.is_dir() {
-                        // Le cartelle col punto si saltano, **tranne `.claude`**:
-                        // è lì che vivono gli script e i ganci che le memorie
-                        // citano di più, e saltarla dichiarava morto
-                        // `plancia.py` mentre sta in `gyver/work/.claude/scripts/`.
-                        // È la stessa eccezione che SocratiCode fa indicizzando
-                        // `.claude` come progetto a sé.
-                        if (file_name.starts_with('.') && file_name != ".claude")
+                        // Le cartelle col punto si saltano, **tranne quelle in
+                        // `KEPT_DOTDIRS`**: è lì che vivono gli script, i ganci
+                        // e i flussi di lavoro che le memorie citano di più.
+                        // Saltarle dichiarava morto `plancia.py` (che sta in
+                        // `gyver/work/.claude/scripts/`) e i tre `ci.yml` —
+                        // 18 delle 177 citazioni morte misurate il 19/08/2026,
+                        // tutte false. È la stessa eccezione che SocratiCode fa
+                        // indicizzando `.claude` come progetto a sé.
+                        if (file_name.starts_with('.')
+                            && !KEPT_DOTDIRS.contains(&file_name.as_str()))
                             || is_generated_dir(&file_name)
                             || is_generated(&p)
                         {
@@ -309,6 +356,21 @@ pub fn run() -> i32 {
         .position(|a| a == "--file")
         .and_then(|i| args.get(i + 1))
         .map(PathBuf::from);
+
+    // Un `--file` che non si apre dava «0 file introvabili», cioe' la stessa
+    // riga del successo: il 19/08/2026 quattro agenti hanno cosi' dichiarato
+    // bonificate memorie che nessuno aveva letto. Chi cita il nome nudo va
+    // servito, chi sbaglia deve sentirselo dire.
+    let only = match only {
+        Some(f) if !f.is_file() => match resolve_memory_name(&f) {
+            Ok(p) => Some(p),
+            Err(msg) => {
+                eprintln!("{msg}");
+                return 2;
+            }
+        },
+        other => other,
+    };
 
     let files = match &only {
         Some(f) => vec![f.clone()],
@@ -978,6 +1040,42 @@ mod tests {
         let memory = dir.join("projects/-Users-theo-personal-sparito/memory");
         fs::create_dir_all(&memory).unwrap();
         assert_eq!(project_repo(&memory.join("m.md")), None);
+    }
+
+    #[test]
+    fn a_workflow_file_is_indexed_but_other_dot_folders_are_not() {
+        // `.github/workflows/ci.yml` era dichiarato morto in 18 citazioni su
+        // 177, tutte false. `.git` invece resta fuori: e' un deposito, non
+        // sorgente, e i suoi oggetti raddoppierebbero l'indice.
+        let dir = scratch("dotdirs");
+        fs::create_dir_all(dir.join(".github/workflows")).unwrap();
+        fs::create_dir_all(dir.join(".git/refs")).unwrap();
+        fs::write(dir.join(".github/workflows/ci.yml"), "on: push\n").unwrap();
+        fs::write(dir.join(".git/refs/head.txt"), "x\n").unwrap();
+        with_roots(&dir);
+        assert!(resolve(".github/workflows/ci.yml").is_some());
+        assert!(resolve("ci.yml").is_some());
+        assert!(resolve("head.txt").is_none());
+    }
+
+    #[test]
+    fn a_memory_named_without_its_folder_is_found_or_refused() {
+        // Il rendiconto vuoto e quello di una memoria sana erano la stessa
+        // riga: chi sbagliava progetto leggeva «0 introvabili» e la dava per
+        // bonificata.
+        let first = PathBuf::from("/p/-Users-theo-uno/memory/handoff.md");
+        let second = PathBuf::from("/p/-Users-theo-due/memory/handoff.md");
+        let other = PathBuf::from("/p/-Users-theo-uno/memory/other.md");
+        let only_one = vec![first.clone(), other.clone()];
+        assert_eq!(
+            pick_memory_by_name(Path::new("handoff.md"), only_one),
+            Ok(first.clone())
+        );
+        let twins = vec![first, second];
+        let picked = pick_memory_by_name(Path::new("handoff.md"), twins);
+        assert!(picked.unwrap_err().contains("2 memorie"));
+        let missing = pick_memory_by_name(Path::new("never-written.md"), vec![other]);
+        assert!(missing.unwrap_err().contains("nessuna memoria"));
     }
 
     #[test]
