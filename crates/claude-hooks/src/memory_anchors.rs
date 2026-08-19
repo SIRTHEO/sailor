@@ -33,6 +33,7 @@ use guards::memory_anchor::{
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 fn home() -> PathBuf {
     std::env::var_os("HOME")
@@ -141,7 +142,60 @@ fn resolve_all(path: &str) -> Vec<PathBuf> {
             out.push(cand);
         }
     }
+    if out.is_empty() {
+        // Le memorie citano un file col solo nome — `relay.rs`, `plancia.py` —
+        // molto piu' spesso che col percorso. Cercarlo solo sotto la radice
+        // dichiarava morto tutto cio' che vive in una sottocartella: 23 delle
+        // 272 «citazioni morte» del 19/08/2026 erano moduli Rust vivissimi,
+        // dentro `crates/*/src/`.
+        if !expanded.to_string_lossy().contains('/') {
+            out = by_name(&expanded.to_string_lossy());
+        }
+    }
     out
+}
+
+/// L'indice nome-di-file → percorsi, costruito una volta per esecuzione.
+///
+/// Camminare le radici a ogni citazione costerebbe un secondo per riga; qui si
+/// paga una volta sola e si tiene in memoria. Gli alberi rigenerati e le
+/// cartelle col punto non si visitano: il primo giro senza quel taglio ha letto
+/// 190.000 file e non e' finito.
+fn by_name(name: &str) -> Vec<PathBuf> {
+    static INDEX: OnceLock<BTreeMap<String, Vec<PathBuf>>> = OnceLock::new();
+    let index = INDEX.get_or_init(|| {
+        let mut map: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+        for root in roots() {
+            let mut stack = vec![root];
+            while let Some(dir) = stack.pop() {
+                let Ok(entries) = std::fs::read_dir(&dir) else {
+                    continue;
+                };
+                for e in entries.flatten() {
+                    let p = e.path();
+                    let file_name = e.file_name();
+                    let file_name = file_name.to_string_lossy().to_string();
+                    if p.is_dir() {
+                        if file_name.starts_with('.')
+                            || file_name == "node_modules"
+                            || file_name == "target"
+                            || is_generated(&p)
+                        {
+                            continue;
+                        }
+                        stack.push(p);
+                    } else {
+                        let list = map.entry(file_name).or_default();
+                        if !list.contains(&p) {
+                            list.push(p);
+                        }
+                    }
+                }
+            }
+        }
+        map
+    });
+    index.get(name).cloned().unwrap_or_default()
 }
 
 /// Il percorso assoluto riscritto con la tilde, che è come si citano i file
@@ -818,6 +872,15 @@ mod tests {
             "{dir:?}"
         );
         assert!(project_memory_dir("{}").is_none());
+    }
+
+    #[test]
+    fn a_bare_file_name_is_found_in_a_subfolder() {
+        let dir = scratch("byname");
+        std::fs::create_dir_all(dir.join("crates/guards/src")).unwrap();
+        fs::write(dir.join("crates/guards/src/chain.rs"), "fn a() {}\n").unwrap();
+        let _guard = with_roots(&dir);
+        assert!(resolve("chain.rs").is_some(), "il nome nudo non si trova");
     }
 
     #[test]
