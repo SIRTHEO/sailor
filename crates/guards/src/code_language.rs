@@ -347,13 +347,15 @@ pub fn report_opaque(targets: &[String]) -> String {
         .map(|t| format!("    · {t}"))
         .collect();
     format!(
-        "Questo comando scrive un file sorvegliato passando da un interprete in \
-         linea, e da lì il gate della lingua non vede cosa ci finisce dentro.\n\n\
+        "Questo comando scrive un file sorvegliato passando da un interprete, e \
+         da lì il gate della lingua non vede cosa ci finisce dentro.\n\n\
          Non leggibili:\n\n{}\n\n\
          Riscrivilo con `Write` o `Edit`: il testo passa dal controllo prima di \
          toccare il disco. Misurato il 19/08/2026: un'intera nottata di codice \
          e' passata da `python3 - <<PY … write_text …` senza che il gate \
-         leggesse una riga.",
+         leggesse una riga, e il 19/08 alle 17 sei identificatori italiani sono \
+         entrati in `relay.rs` da uno script scritto e lanciato nello stesso \
+         comando — la stessa cecità, con un file in mezzo.",
         lines.join("\n")
     )
 }
@@ -467,10 +469,9 @@ pub fn opaque_writes(command: &str) -> Vec<String> {
         return Vec::new();
     }
     let mut found: Vec<String> = Vec::new();
-    for m in inline_interpreter().find_iter(command) {
-        let corpo = &command[m.end()..];
+    let mut raccogli = |corpo: &str| {
         if !writes_a_file().is_match(corpo) {
-            continue;
+            return;
         }
         for c in quoted_path().captures_iter(corpo) {
             let path = c.get(1).map(|x| x.as_str()).unwrap_or("");
@@ -478,8 +479,92 @@ pub fn opaque_writes(command: &str) -> Vec<String> {
                 found.push(path.to_string());
             }
         }
+    };
+    for m in inline_interpreter().find_iter(command) {
+        raccogli(&command[m.end()..]);
+    }
+    for corpo in script_bodies(command) {
+        raccogli(&corpo);
     }
     found
+}
+
+/// I corpi degli script che questo comando manda a un interprete.
+///
+/// IL BUCO CHE RESTAVA DOPO AVER CHIUSO L'INTERPRETE IN LINEA, e che il
+/// 19/08/2026 alle 17 ha lasciato entrare in `relay.rs` sei identificatori
+/// italiani: fra `python3 - <<PY` e `python3 script.py` cambia solo dove vive il
+/// corpo, e il gate guardava soltanto il primo. Il rimprovero arrivava a lavoro
+/// finito, da un'interrogazione fatta a mano.
+///
+/// Due strade, perché il corpo può non essere ancora sul disco: quando lo
+/// **stesso** comando scrive lo script con un heredoc e poi lo lancia — la forma
+/// più comune, ed è quella misurata — il testo sta lì davanti, e il file non
+/// esiste finché il comando non parte. Altrimenti lo script c'è già e si legge.
+///
+/// Il tetto di lettura è la cautela solita: un percorso qualunque preso da una
+/// riga di comando può essere un file da centinaia di MB, e un gate che si
+/// ingoia un log non risponde più.
+fn script_bodies(command: &str) -> Vec<String> {
+    const MAX_SCRIPT_BYTES: u64 = 256 * 1024;
+    let mut bodies = Vec::new();
+    for c in interpreter_with_script().captures_iter(command) {
+        let Some(path) = c.get(1).map(|m| m.as_str()) else {
+            continue;
+        };
+        if let Some(body) = heredoc_body_for(command, path) {
+            bodies.push(body);
+            continue;
+        }
+        let resolved = match path.strip_prefix("~/") {
+            Some(rest) => match std::env::var("HOME") {
+                Ok(home) => format!("{home}/{rest}"),
+                Err(_) => path.to_string(),
+            },
+            None => path.to_string(),
+        };
+        let piccolo = std::fs::metadata(&resolved)
+            .map(|m| m.len() <= MAX_SCRIPT_BYTES)
+            .unwrap_or(false);
+        if piccolo {
+            if let Ok(text) = std::fs::read_to_string(&resolved) {
+                bodies.push(text);
+            }
+        }
+    }
+    bodies
+}
+
+/// Il corpo dell'heredoc che, dentro questo stesso comando, crea quel file.
+///
+/// Si confronta la coda del percorso e non la stringa intera: `cat > /tmp/x.py`
+/// e `python3 /tmp/x.py` combaciano, ma anche `cat > ./x.py` con `python3 x.py`,
+/// che è la stessa cosa scritta due volte in modo diverso.
+fn heredoc_body_for(command: &str, script: &str) -> Option<String> {
+    let nome = script.rsplit('/').next().unwrap_or(script);
+    for m in heredoc().captures_iter(command) {
+        let target = m.get(1)?.as_str();
+        if target.rsplit('/').next().unwrap_or(target) != nome {
+            continue;
+        }
+        let delimiter = m.get(2)?.as_str().trim_matches(|c| c == '\'' || c == '"');
+        if let Some(body) = heredoc_body(command, delimiter, m.get(0)?.end()) {
+            return Some(body);
+        }
+    }
+    None
+}
+
+/// `python3 script.py`, `bash script.sh`: l'interprete prende un file, e il
+/// corpo che conta sta dentro quel file invece che nel comando.
+fn interpreter_with_script() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?:python3?|node|perl|ruby|bash|sh|zsh)\s+([A-Za-z0-9_./~-]+\.(?:py|js|mjs|cjs|pl|rb|sh|bash))\b",
+        )
+        .unwrap()
+    })
 }
 
 /// `python3 - <<PY`, `node -e '…'`, `perl -e`: il corpo arriva dallo stesso
@@ -583,6 +668,60 @@ mod tests {
         let command = "python3 - <<PY\np = pathlib.Path('/x/crates/a.rs')\n\
                        p.write_text(body)\nPY";
         assert_eq!(opaque_writes(command), ["/x/crates/a.rs"]);
+    }
+
+    #[test]
+    fn a_script_written_and_run_in_one_command_is_not_readable() {
+        // LA FORMA CHE HA ATTRAVERSATO IL GATE il 19/08/2026: lo script nasce da
+        // un heredoc e parte nello stesso comando, quindi sul disco non c'è
+        // ancora niente da leggere — il corpo però sta lì, due righe più su.
+        let command = "cat > /tmp/patch.py <<'PY'\n\
+                       import io\n\
+                       io.open('/x/crates/a.rs', 'w').write(s)\n\
+                       PY\n\
+                       python3 /tmp/patch.py";
+        assert_eq!(opaque_writes(command), ["/x/crates/a.rs"]);
+    }
+
+    #[test]
+    fn a_script_already_on_disk_is_read_before_it_runs() {
+        let dir = std::env::temp_dir().join("gate-script-su-disco");
+        let _ = std::fs::create_dir_all(&dir);
+        let script = dir.join("scrive.py");
+        std::fs::write(&script, "import pathlib\npathlib.Path('/x/crates/a.rs').write_text(s)\n")
+            .unwrap();
+        let command = format!("python3 {}", script.display());
+        assert_eq!(opaque_writes(&command), ["/x/crates/a.rs"]);
+        let _ = std::fs::remove_file(&script);
+    }
+
+    #[test]
+    fn a_script_that_only_reads_is_left_alone() {
+        // Il gate che rimprovera a torto viene spento: servono tutti e tre gli
+        // indizi, e leggere non è scrivere.
+        let command = "cat > /tmp/legge.py <<'PY'\n\
+                       print(open('/x/crates/a.rs').read())\n\
+                       PY\n\
+                       python3 /tmp/legge.py";
+        assert!(opaque_writes(command).is_empty());
+    }
+
+    #[test]
+    fn naming_a_script_is_not_running_one() {
+        // Un comando che *parla* di uno script non è quello script: è lo stesso
+        // errore per cui il gate negò il `git commit` che descriveva la propria
+        // correzione.
+        assert!(opaque_writes("git add tools/patch.py && git commit -m 'x'").is_empty());
+        assert!(opaque_writes("ls -l /tmp/patch.py").is_empty());
+    }
+
+    #[test]
+    fn a_script_that_writes_something_unwatched_passes() {
+        let command = "cat > /tmp/patch.py <<'PY'\n\
+                       io.open('/tmp/appunti.txt', 'w').write(s)\n\
+                       PY\n\
+                       python3 /tmp/patch.py";
+        assert!(opaque_writes(command).is_empty());
     }
 
     #[test]
