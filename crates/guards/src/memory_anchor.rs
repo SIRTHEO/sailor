@@ -675,9 +675,24 @@ pub fn citations(text: &str) -> Vec<Citation> {
         .filter(|l| !l.trim_start().starts_with('>'))
         .collect::<Vec<_>>()
         .join("\n");
-    for chunk in body.split('`').skip(1).step_by(2) {
-        let token = chunk.trim();
+    let pieces: Vec<&str> = body.split('`').collect();
+    for i in (1..pieces.len()).step_by(2) {
+        let token = pieces[i].trim();
         if token.is_empty() || token.contains(' ') || token.len() > 200 {
+            continue;
+        }
+        // A sinistra di una freccia c'e' il nome di ieri: la nota «dove vive oggi
+        // questo codice» si scrive `handoff_common.py` → `guards/src/handoff.rs`,
+        // e nomina il file vecchio **per dire che non c'e' piu'**. Contarlo fra i
+        // rimandi vivi rende la bonifica invisibile — chi annota correttamente una
+        // memoria non vede scendere il conteggio, misurato il 19/08/2026 su sei
+        // memorie annotate: 24 morti prima, 22 dopo. Stesso guasto gia' curato
+        // per le righe citate (`>`), stessa cura.
+        if pieces
+            .get(i + 1)
+            .map(|after| after.trim_start())
+            .is_some_and(|a| a.starts_with('→') || a.starts_with("->"))
+        {
             continue;
         }
         // Una classe di file non e' un file: `compare-*.py`, `skills/hooks/*.py`,
@@ -965,6 +980,15 @@ fn other() -> u8 {
         assert_eq!(c[0].path, "relay.rs");
         assert_eq!(c[0].line, Some(1050));
         assert_eq!(c[1].symbol.as_deref(), Some("judge"));
+    }
+
+    #[test]
+    fn the_left_side_of_an_arrow_is_yesterdays_name() {
+        let text = "Dove vive oggi: `handoff_common.py` → `guards/src/handoff.rs`, \
+                    e `relay.py` -> `claude-hooks/src/relay.rs`.";
+        let c = citations(text);
+        let paths: Vec<&str> = c.iter().map(|x| x.path.as_str()).collect();
+        assert_eq!(paths, vec!["guards/src/handoff.rs", "claude-hooks/src/relay.rs"]);
     }
 
     #[test]
