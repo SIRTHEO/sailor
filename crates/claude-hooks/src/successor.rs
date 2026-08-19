@@ -228,7 +228,29 @@ fn open_tab(path: &str, inherited: &str) -> (bool, String) {
          printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
          sleep {wait_s}; exec claude '{text}'"
     );
-    let handle = std::env::var("ORCA_TERMINAL_HANDLE").unwrap_or_default();
+    // L'handle NON si prende dall'ambiente: `ORCA_TERMINAL_HANDLE` è catturato
+    // all'avvio e non si aggiorna più, e proprio le sessioni lunghe — quelle in
+    // cui questo gancio scatta — sono quelle che hanno riattaccato il terminale
+    // almeno una volta. Chiedere adesso costa una chiamata e vale la differenza
+    // fra un pannello e un errore; se non si sa, resta la scheda.
+    let mut orca = |args: &[&str]| -> (i32, String) {
+        match std::process::Command::new("orca").args(args).output() {
+            Ok(o) => (
+                o.status.code().unwrap_or(1),
+                String::from_utf8_lossy(&o.stdout).into_owned(),
+            ),
+            Err(_) => (1, String::new()),
+        }
+    };
+    let handle = match crate::relay::read_terminals(&mut orca) {
+        Some(list) => guards::handoff::resolve_terminal_handle(
+            &std::env::var("ORCA_TAB_ID").unwrap_or_default(),
+            &std::env::var("ORCA_WORKTREE_ID").unwrap_or_default(),
+            &std::env::var("ORCA_TERMINAL_HANDLE").unwrap_or_default(),
+            &list,
+        ),
+        None => String::new(),
+    };
     let args: Vec<String> = if handle.is_empty() {
         ["terminal", "create", "--command", &command, "--title",
          "consegna raccolta (parte da sola)", "--json"]
