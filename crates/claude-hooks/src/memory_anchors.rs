@@ -440,6 +440,53 @@ fn label_of(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
+/// Il nome del progetto a cui una memoria appartiene, come si legge nel percorso.
+fn project_of(memory_file: &Path) -> String {
+    memory_file
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+/// La cartella di lavoro che una memoria descrive, ricavata dal nome del
+/// progetto: `~/.claude/projects/-Users-theo-other-repo-work-suite/memory/x.md` parla
+/// di `/home/someone/other-repo/work/suite`.
+///
+/// **La conversione all'indietro e' ambigua** e non si fa sostituendo i trattini:
+/// `-Users-theo-other-repo-work-a-service` darebbe `.../matching/engine`, che non
+/// esiste. Si cammina invece dall'alto prendendo, a ogni passo, il prefisso piu'
+/// lungo che sia davvero una cartella — cosi' `a-service` resta intero.
+/// Torna `None` quando nessun cammino regge: il repo non c'e' (piu').
+fn project_repo(memory_file: &Path) -> Option<PathBuf> {
+    let slug = memory_file
+        .parent()
+        .filter(|p| p.file_name().is_some_and(|n| n == "memory"))
+        .and_then(|p| p.parent())
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_string())?;
+    let parts: Vec<&str> = slug.trim_start_matches('-').split('-').collect();
+    let mut here = PathBuf::from("/");
+    let mut i = 0;
+    while i < parts.len() {
+        let mut taken = 0;
+        for len in (1..=parts.len() - i).rev() {
+            let candidate = here.join(parts[i..i + len].join("-"));
+            if candidate.is_dir() {
+                here = candidate;
+                taken = len;
+                break;
+            }
+        }
+        if taken == 0 {
+            return None;
+        }
+        i += taken;
+    }
+    Some(here)
+}
+
 fn rows_for(files: &[PathBuf]) -> Vec<Row> {
     let mut rows = Vec::new();
     for file in files {
@@ -784,10 +831,19 @@ fn suggest_anchors(files: &[PathBuf], write: bool, json: bool) -> i32 {
 fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
     let mut per_memory: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut total = 0;
+    // I progetti il cui repo non c'e' piu': ogni loro percorso risulta
+    // introvabile, ma non e' la memoria a essere sbagliata. Contarli metteva 155
+    // righe di `personal/switch` in cima all'elenco di cio' che c'e' da
+    // bonificare — il 41% del residuo, e non bonificabile per definizione.
+    let mut gone: BTreeMap<String, usize> = BTreeMap::new();
     for file in files {
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
         };
+        if project_repo(file).is_none() {
+            *gone.entry(project_of(file)).or_default() += 1;
+            continue;
+        }
         let mut dead: Vec<String> = Vec::new();
         for cit in citations(&text) {
             if !resolve_all(&cit.path).is_empty() {
@@ -831,6 +887,13 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
         "Un file che non esiste piu' non rende falsa la memoria da solo: leggila \
          e decidi se il fatto vale ancora, poi correggi il percorso o archiviala."
     );
+    for (project, n) in &gone {
+        println!(
+            "Fuori conteggio: {project} ({n} memorie) — il repo che descrivono non \
+             esiste su questa macchina, quindi ogni loro percorso risulta \
+             introvabile. Non c'e' niente da bonificare finche' non torna."
+        );
+    }
     i32::from(total > 0)
 }
 
@@ -894,6 +957,27 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn a_project_name_with_a_hyphen_still_finds_its_repo() {
+        // `a-service` e' una cartella sola: sostituire i trattini darebbe
+        // `matching/engine` e dichiarerebbe sparito un repo vivo.
+        let dir = scratch("repo-walk");
+        let repo = dir.join("other-repo/work/a-service");
+        fs::create_dir_all(&repo).unwrap();
+        let slug: String = repo.to_string_lossy().replace('/', "-");
+        let memory = dir.join("projects").join(&slug).join("memory");
+        fs::create_dir_all(&memory).unwrap();
+        assert_eq!(project_repo(&memory.join("m.md")).as_deref(), Some(repo.as_path()));
+    }
+
+    #[test]
+    fn a_project_whose_repo_is_gone_resolves_to_nothing() {
+        let dir = scratch("repo-gone");
+        let memory = dir.join("projects/-Users-theo-personal-sparito/memory");
+        fs::create_dir_all(&memory).unwrap();
+        assert_eq!(project_repo(&memory.join("m.md")), None);
     }
 
     #[test]
