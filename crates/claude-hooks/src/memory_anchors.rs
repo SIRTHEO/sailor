@@ -149,6 +149,19 @@ fn is_generated(path: &Path) -> bool {
     GENERATED.iter().any(|g| s.contains(g))
 }
 
+/// Vero se una **cartella** con questo nome è un albero rigenerato.
+///
+/// Serve perché `GENERATED` confronta segmenti fra due barre (`/dist/`), e la
+/// cartella `…/dist` mentre la si visita non ne ha una in coda: l'indice per
+/// nome ci entrava dentro e trovava `index.mjs` di una build.
+fn is_generated_dir(name: &str) -> bool {
+    GENERATED
+        .iter()
+        .any(|g| g.trim_matches('/') == name)
+        || name == "node_modules"
+        || name == "target"
+}
+
 fn resolve_all(path: &str) -> Vec<PathBuf> {
     let expanded = if let Some(rest) = path.strip_prefix("~/") {
         home().join(rest)
@@ -171,15 +184,40 @@ fn resolve_all(path: &str) -> Vec<PathBuf> {
     }
     if out.is_empty() {
         // Le memorie citano un file col solo nome — `relay.rs`, `plancia.py` —
-        // molto piu' spesso che col percorso. Cercarlo solo sotto la radice
-        // dichiarava morto tutto cio' che vive in una sottocartella: 23 delle
-        // 272 «citazioni morte» del 19/08/2026 erano moduli Rust vivissimi,
-        // dentro `crates/*/src/`.
-        if !expanded.to_string_lossy().contains('/') {
-            out = by_name(&expanded.to_string_lossy());
+        // molto piu' spesso che col percorso, e quando scrivono un percorso lo
+        // scrivono accorciato: `guards/handoff.rs` per il file che vive tre
+        // cartelle piu' in basso. Cercare solo il join con le radici dichiarava
+        // morto tutto cio' che sta in una sottocartella: 23 delle 272
+        // «citazioni morte» del 19/08/2026 erano moduli Rust vivissimi.
+        let written = expanded.to_string_lossy().to_string();
+        let name = written.rsplit('/').next().unwrap_or(&written).to_string();
+        let mut found = by_name(&name);
+        // I segmenti scritti devono comparire nel candidato, in ordine: senza
+        // questo vincolo un percorso accorciato accetterebbe anche il gemello
+        // in un altro crate, e l'indicazione di chi cita andrebbe persa.
+        let segments: Vec<String> = written
+            .split('/')
+            .filter(|s| !s.is_empty() && *s != ".")
+            .map(|s| s.to_string())
+            .collect();
+        if segments.len() > 1 {
+            found.retain(|cand| contains_in_order(&cand.to_string_lossy(), &segments));
         }
+        out = found;
     }
     out
+}
+
+/// Vero se i pezzi compaiono nel percorso uno dopo l'altro.
+fn contains_in_order(haystack: &str, segments: &[String]) -> bool {
+    let mut rest = haystack;
+    for seg in segments {
+        match rest.find(seg.as_str()) {
+            Some(i) => rest = &rest[i + seg.len()..],
+            None => return false,
+        }
+    }
+    true
 }
 
 /// L'indice nome-di-file → percorsi, costruito una volta per esecuzione.
@@ -214,8 +252,7 @@ fn build_index() -> BTreeMap<String, Vec<PathBuf>> {
                     let file_name = file_name.to_string_lossy().to_string();
                     if p.is_dir() {
                         if file_name.starts_with('.')
-                            || file_name == "node_modules"
-                            || file_name == "target"
+                            || is_generated_dir(&file_name)
                             || is_generated(&p)
                         {
                             continue;
@@ -908,6 +945,24 @@ mod tests {
         fs::write(dir.join("crates/guards/src/chain.rs"), "fn a() {}\n").unwrap();
         with_roots(&dir);
         assert!(resolve("chain.rs").is_some(), "il nome nudo non si trova");
+    }
+
+    #[test]
+    fn a_shortened_path_finds_the_file_it_names() {
+        let dir = scratch("shortened");
+        let one = dir.join("crates/guards/src");
+        let two = dir.join("crates/arms/src");
+        fs::create_dir_all(&one).unwrap();
+        fs::create_dir_all(&two).unwrap();
+        fs::write(one.join("handoff.rs"), "fn a() {}\n").unwrap();
+        fs::write(two.join("handoff.rs"), "fn b() {}\n").unwrap();
+        with_roots(&dir);
+        // Il nome nudo è ambiguo: due file, nessuna scelta.
+        assert_eq!(resolve_all("handoff.rs").len(), 2);
+        // Col pezzo di percorso che la memoria ha scritto, uno solo.
+        let picked = resolve_all("guards/handoff.rs");
+        assert_eq!(picked.len(), 1, "{picked:?}");
+        assert!(picked[0].starts_with(&one));
     }
 
     #[test]

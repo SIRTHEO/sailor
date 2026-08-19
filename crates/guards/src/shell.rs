@@ -76,9 +76,48 @@ pub fn split_words(s: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
+/// La valvola scritta **davanti al comando**, che è dove i rifiuti dicono di
+/// metterla: `TITOLO_RICHIESTA=off gh pr create …`.
+///
+/// LEGGERLA DALL'AMBIENTE NON BASTA, ed è il motivo per cui questa esiste. Il
+/// gancio gira nel processo dell'harness, non nella shell del comando, quindi un
+/// prefisso sulla riga non gli arriva mai: `std::env::var` risponde sempre
+/// «assente». Provato il 19/08/2026 su `pr-title` — il rifiuto insegnava una via
+/// d'uscita che rifiutava a sua volta — e `hooks-off` aveva la stessa forma.
+/// Una valvola annunciata e inerte è peggio di nessuna: chi la trova chiusa se ne
+/// inventa una che non lascia traccia.
+///
+/// Sta sulla riga di comando e non nell'ambiente per la stessa ragione di
+/// `SESSION_REPLACES=1` in `handoff`: esportata una volta esenterebbe in silenzio
+/// tutto ciò che viene dopo; scritta qui vale per quel comando e resta nel
+/// registro.
+///
+/// Conta solo **in testa** a un segmento, fra le assegnazioni che precedono il
+/// comando: più in là è una stringa qualunque, e prenderla per una valvola
+/// aprirebbe il gate a chi la nomina nel corpo di una richiesta.
+pub fn valve_in_front(command: &str, valve: &str) -> bool {
+    command.split(|c| c == ';' || c == '&' || c == '|').any(|segment| {
+        segment
+            .split_whitespace()
+            .take_while(|w| w.contains('=') && !w.starts_with('-'))
+            .any(|w| w.eq_ignore_ascii_case(valve))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_valve_counts_in_front_of_the_command_and_nowhere_else() {
+        let v = "TITOLO_RICHIESTA=off";
+        assert!(valve_in_front("TITOLO_RICHIESTA=off gh pr create -t x", v));
+        assert!(valve_in_front("cd /tmp && TITOLO_RICHIESTA=off gh pr create -t x", v));
+        assert!(!valve_in_front("gh pr create -t x --body TITOLO_RICHIESTA=off", v));
+        assert!(!valve_in_front("gh pr create -t x", v));
+        // Un'altra valvola non apre questa.
+        assert!(!valve_in_front("GANCI_SPENTI=off gh pr create -t x", v));
+    }
 
     #[test]
     fn it_splits_words_like_the_python_shlex_did() {

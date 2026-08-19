@@ -141,14 +141,22 @@ fn message(repo: &Path, action: &str, directory: &Path) -> String {
          Ripara con l'installazione vera in questo albero (`npm install` o `pnpm install`, secondo il repo), oppure ricrea l'albero con `orca worktree create … --setup run`, che la esegue da sé.\n\
          \n\
          Misurato il 14/08/2026: cinque dei dodici controlli automatici falliti venivano da un solo albero cieco, e gli errori erano tutti di quelli che il controllo locale prende al primo colpo.\n\
-         Se devi davvero committare da qui, metti GANCI_SPENTI=off davanti al comando e dillo.",
+         Se devi davvero committare da qui, metti {VALVE} davanti al comando e dillo.",
         repo.display(),
         directory.display(),
         hook_name(action)
     )
 }
 
+/// Il nome della valvola, nella forma che il rifiuto insegna a scrivere.
+pub const VALVE: &str = "GANCI_SPENTI=off";
+
 pub fn judge(command: &str, default_dir: &str) -> Decision {
+    // La valvola vale scritta davanti al comando, che è dove il messaggio dice
+    // di metterla: letta dall'ambiente del gancio non ci sarebbe mai arrivata.
+    if crate::shell::valve_in_front(command, VALVE) {
+        return Decision::Pass;
+    }
     for (path, action) in targets(command) {
         let repo = PathBuf::from(expand_tilde(path.as_deref().unwrap_or(default_dir)));
         if !repo.is_dir() {
