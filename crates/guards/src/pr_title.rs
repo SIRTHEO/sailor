@@ -10,8 +10,8 @@
 //! fusione, quindi il gate locale è rispettato senza eccezioni e la cronologia
 //! si sporca dal gesto che quel gate non vede.
 //!
-//! Questo gancio guarda il gesto giusto: `gh pr create --title` e
-//! `gh pr edit --title`, prima che partano.
+//! Questo gancio guarda il gesto giusto: `gh pr create --title`,
+//! `gh pr edit --title` e `gh api …/pulls -f title=…`, prima che partano.
 //!
 //! COSA NON FA. Non guarda il corpo, non guarda i titoli scritti sul sito, non
 //! tocca le richieste di terzi. Se il titolo manca — `gh pr create` interattivo,
@@ -44,6 +44,39 @@ fn pr_command() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\bgh\s+pr\s+(create|edit)\b").unwrap())
 }
 
+/// La stessa richiesta aperta dall'API invece che dal comando di alto livello.
+///
+/// Trovata contando le trascrizioni il 19/08/2026: **15 comandi**
+/// `gh api …/pulls` con un campo `title`, che il gancio non vedeva affatto. Il
+/// titolo che ne esce diventa un commit esattamente come l'altro.
+fn api_command() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\bgh\s+api\b").unwrap())
+}
+
+/// Il nome della valvola, e la forma in cui il messaggio di rifiuto insegna a usarla.
+const VALVE: &str = "TITOLO_RICHIESTA=off";
+
+/// La valvola scritta davanti al comando, che è dove il rifiuto dice di metterla.
+///
+/// LEGGERLA DALL'AMBIENTE NON BASTA, ed è il motivo per cui questa esiste: il
+/// gancio gira nel processo dell'harness, non nella shell del comando, quindi un
+/// `TITOLO_RICHIESTA=off gh pr create …` non gli arriva mai. Provato il
+/// 19/08/2026: il rifiuto insegnava una via d'uscita che rifiutava a sua volta.
+/// Una valvola annunciata e inerte è peggio di nessuna — chi la trova chiusa
+/// se ne inventa una che non lascia traccia.
+///
+/// Sta sulla riga di comando e non nell'ambiente per la stessa ragione di
+/// `SESSION_REPLACES=1` in `handoff`: esportata una volta esenterebbe in
+/// silenzio tutto ciò che viene dopo; scritta qui vale per quel comando e
+/// resta nel registro.
+fn valve_in_front(segment: &str) -> bool {
+    segment
+        .split_whitespace()
+        .take_while(|w| w.contains('=') && !w.starts_with('-'))
+        .any(|w| w.eq_ignore_ascii_case(VALVE))
+}
+
 /// I titoli passati esplicitamente a `gh pr create|edit`, in ordine.
 ///
 /// Si passa dallo splitter di shell e non da una regex sul testo grezzo perché
@@ -55,7 +88,14 @@ pub fn titles(command: &str) -> Vec<String> {
 
     let mut found = Vec::new();
     for segment in split.split(command) {
-        if !pr_command().is_match(segment) {
+        let high_level = pr_command().is_match(segment);
+        // `gh api` serve a cento cose: conta solo quando l'indirizzo è quello
+        // delle richieste di modifica.
+        let through_api = api_command().is_match(segment) && segment.contains("/pulls");
+        if !high_level && !through_api {
+            continue;
+        }
+        if valve_in_front(segment) {
             continue;
         }
         // Un comando che non si sa spezzare non produce titoli e il gancio tace:
@@ -64,19 +104,56 @@ pub fn titles(command: &str) -> Vec<String> {
             continue;
         };
         for (i, p) in parts.iter().enumerate() {
-            if (p == "--title" || p == "-t") && i + 1 < parts.len() {
-                found.push(parts[i + 1].clone());
-            } else if let Some(rest) = p.strip_prefix("--title=") {
-                found.push(rest.to_string());
+            if high_level {
+                if (p == "--title" || p == "-t") && i + 1 < parts.len() {
+                    found.push(parts[i + 1].clone());
+                } else if let Some(rest) = p.strip_prefix("--title=") {
+                    found.push(rest.to_string());
+                }
+            }
+            if through_api {
+                // `-f title=…` e le sue quattro scritture. Il valore può stare
+                // nella stessa parola o in quella dopo, come per `--title`.
+                const FIELDS: &[&str] = &["-f", "--field", "-F", "--raw-field"];
+                if FIELDS.contains(&p.as_str()) {
+                    if let Some(rest) = parts.get(i + 1).and_then(|n| n.strip_prefix("title=")) {
+                        found.push(rest.to_string());
+                    }
+                } else if let Some(rest) = p
+                    .strip_prefix("-f")
+                    .or_else(|| p.strip_prefix("-F"))
+                    .and_then(|r| r.strip_prefix("title="))
+                {
+                    found.push(rest.to_string());
+                }
             }
         }
     }
     found
 }
 
+/// Il titolo è ancora da espandere: `$T`, `${T}`, `$(…)`, un apice inverso.
+///
+/// Non è un `$` qualunque — «show the $ sign» resta un titolo leggibile — ma la
+/// forma che la shell sostituirà.
+fn unresolved() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\$[A-Za-z_{(]|`").unwrap())
+}
+
 /// Cosa c'è che non va, in parole che dicono come si corregge.
 pub fn flaws(title: &str) -> Vec<String> {
     let mut found = Vec::new();
+    // Prima di tutto il resto, e da solo: sugli altri difetti si giudicherebbe
+    // il nome della variabile invece del titolo, e il rifiuto citerebbe un testo
+    // che l'autore non ha scritto.
+    if unresolved().is_match(title) {
+        return vec![
+            "è una variabile, non un titolo: il gancio non può sapere cosa diventerà. \
+             Scrivilo per esteso"
+                .to_string(),
+        ];
+    }
     if is_italian(title) {
         found.push("è in italiano, e diventerà l'oggetto di un commit".to_string());
     }
@@ -111,7 +188,7 @@ fn message(title: &str, found: &[String]) -> String {
     lines.extend([
         String::new(),
         "Misurato il 14/08/2026 sui tre repo: il 100% dei commit fuori formato è entrato da un titolo di richiesta, mai da un messaggio scritto a mano.".to_string(),
-        "Riscrivi il titolo in inglese e in formato Conventional, poi rilancia. Se il caso è davvero un'eccezione, metti TITOLO_RICHIESTA=off davanti al comando e dillo.".to_string(),
+        format!("Riscrivi il titolo in inglese e in formato Conventional, poi rilancia. Se il caso è davvero un'eccezione, metti {VALVE} davanti al comando e dillo."),
     ]);
     lines.join("\n")
 }
@@ -193,5 +270,66 @@ mod tests {
     #[test]
     fn an_unbalanced_quote_produces_no_title_at_all() {
         assert!(titles(r#"gh pr create --title "aperta"#).is_empty());
+    }
+
+    /// La via d'uscita che il rifiuto insegna deve esistere davvero: fino al
+    /// 19/08/2026 la valvola era letta dall'ambiente del gancio, dove un
+    /// prefisso sulla riga di comando non arriva mai.
+    #[test]
+    fn the_valve_the_message_teaches_actually_opens() {
+        let bad = r#"gh pr create --title "Il pannello dice quando non ha caricato""#;
+        assert!(refused(bad));
+        assert!(!refused(&format!("TITOLO_RICHIESTA=off {bad}")));
+        assert!(!refused(&format!("cd /tmp && TITOLO_RICHIESTA=off {bad}")));
+        // Il messaggio di rifiuto e la valvola che apre devono nominare la
+        // stessa variabile: se divergono, la via d'uscita torna a essere finta.
+        match judge(bad) {
+            Decision::Deny(m) => assert!(m.contains(VALVE)),
+            _ => panic!("il titolo fuori formato doveva essere rifiutato"),
+        }
+    }
+
+    /// Il prefisso vale per il comando, non per tutto ciò che gli somiglia:
+    /// scritto dopo non è una valvola, è una stringa.
+    #[test]
+    fn the_valve_only_counts_in_front_of_the_command() {
+        assert!(refused(
+            r#"gh pr create --title "Il pannello dice quando non ha caricato" --body TITOLO_RICHIESTA=off"#
+        ));
+    }
+
+    /// La stessa richiesta aperta dall'API: 15 comandi nelle trascrizioni, e il
+    /// gancio non ne vedeva nessuno.
+    #[test]
+    fn a_pull_request_opened_through_the_api_is_seen_too() {
+        assert!(refused(
+            r#"gh api repos/Gyver-work/suite/pulls -f title="Il pannello dice quando non ha caricato" -f head=x -f base=develop"#
+        ));
+        assert!(refused(
+            r#"gh api --method PATCH repos/Gyver-work/suite/pulls/12 --field title="Sistema la tabella""#
+        ));
+        assert!(!refused(
+            r#"gh api repos/Gyver-work/suite/pulls -f title="fix(ui): the panel says when it failed to load" -f base=develop"#
+        ));
+        // `gh api` senza le richieste di modifica non è affare di questo gancio.
+        assert!(!refused(
+            r#"gh api repos/Gyver-work/suite/issues -f title="Il pannello dice quando non ha caricato""#
+        ));
+    }
+
+    /// Un titolo che la shell deve ancora espandere non si giudica sul nome
+    /// della variabile: si chiede per esteso. Uno su 454 nelle trascrizioni,
+    /// quindi il costo è nullo e la scappatoia si chiude.
+    #[test]
+    fn a_title_still_to_be_expanded_is_asked_for_in_full() {
+        let says = |command: &str, needle: &str| match judge(command) {
+            Decision::Deny(m) => m.contains(needle),
+            _ => false,
+        };
+        assert!(says(r#"gh pr create --title "$T""#, "per esteso"));
+        assert!(says(r#"gh pr create --title "${TITOLO}""#, "per esteso"));
+        assert!(says(r#"gh pr create --title "$(cat /tmp/t)""#, "per esteso"));
+        // Un dollaro che non apre una sostituzione resta un carattere.
+        assert!(!refused(r#"gh pr create --title "fix(billing): show the $ sign""#));
     }
 }
