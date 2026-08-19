@@ -28,7 +28,7 @@
 //! della verifica.
 
 use guards::memory_anchor::{
-    anchors_in, citations, declaration_line, extract_symbol, fingerprint, identifiers, judge,
+    anchors_in, citations, extract_symbol, fingerprint, identifiers, is_anchorable, judge,
     normalise, symbol_at_line, with_anchors, Anchor, Citation, Lang, Verdict,
 };
 use std::collections::BTreeMap;
@@ -637,12 +637,12 @@ fn suggest_anchors(files: &[PathBuf], write: bool, json: bool) -> i32 {
                 if by_symbol >= MAX_SYMBOLS_PER_FILE {
                     break;
                 }
-                // Solo le definizioni di primo livello: un nome comune che
-                // vive dentro una funzione (`hex`, `phase`, `role`) combacia
-                // per caso, e l'ancoraggio che ne esce non dice niente.
-                match declaration_line(&source, name, lang) {
-                    Some(i) if source.lines().nth(i).is_some_and(|l| !l.starts_with(' ')) => {}
-                    _ => continue,
+                // Non «solo il primo livello»: un metodo dentro un `impl` o una
+                // classe è rientrato ed è proprio ciò che le memorie nominano.
+                // A non reggere è il legame locale (`let hex = …`), che combacia
+                // per caso.
+                if !is_anchorable(&source, name, lang) {
+                    continue;
                 }
                 let Some(body) = extract_symbol(&source, name, lang) else {
                     continue;
