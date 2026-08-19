@@ -604,7 +604,16 @@ const CODE_EXT: &[&str] = &[
 /// `file#simbolo` quando il simbolo si trova.
 pub fn citations(text: &str) -> Vec<Citation> {
     let mut out: Vec<Citation> = Vec::new();
-    for chunk in text.split('`').skip(1).step_by(2) {
+    // Le righe citate (`>`) sono la nota storica — «questo file viveva qui, ora
+    // sta là» — e nominano il vecchio percorso **per dire che non c'e' piu'**.
+    // Contarle fra i rimandi vivi fa salire il conteggio dei morti proprio
+    // quando qualcuno bonifica una memoria: successo il 19/08/2026, 191 → 197.
+    let body: String = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('>'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for chunk in body.split('`').skip(1).step_by(2) {
         let token = chunk.trim();
         if token.is_empty() || token.contains(' ') || token.len() > 200 {
             continue;
@@ -892,6 +901,14 @@ fn other() -> u8 {
         let hidden = declaration_line(src, "hidden", Lang::Braces).unwrap();
         assert!(!src.lines().nth(outer).unwrap().starts_with(' '));
         assert!(src.lines().nth(hidden).unwrap().starts_with(' '));
+    }
+
+    #[test]
+    fn a_quoted_note_is_history_not_a_reference() {
+        let text = "> Dove vive oggi: `relay.py` → `relay.rs`\n\nIl gancio `chain.rs` decide.";
+        let c = citations(text);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].path, "chain.rs");
     }
 
     #[test]
