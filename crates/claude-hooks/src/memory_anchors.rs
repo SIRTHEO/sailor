@@ -69,6 +69,9 @@ fn memory_dirs() -> Vec<PathBuf> {
 /// percorso assoluto: senza radici quei riferimenti resterebbero tutti «file
 /// mancante», che è la risposta sbagliata al 43% delle citazioni misurate.
 fn roots() -> Vec<PathBuf> {
+    if let Some(v) = test_roots() {
+        return v;
+    }
     if let Some(v) = std::env::var_os("MEMORY_ANCHOR_ROOTS") {
         return std::env::split_paths(&v).collect();
     }
@@ -90,6 +93,30 @@ fn roots() -> Vec<PathBuf> {
         }
     }
     out
+}
+
+/// Le radici imposte da una prova, **per thread**.
+///
+/// Una variabile d'ambiente e' del processo, e i test Rust girano in parallelo
+/// dentro lo stesso: due prove che dichiarano radici diverse se le rubano a
+/// vicenda, e l'esito diventa una moneta — provato due volte, con la stessa
+/// prova che rispondeva «FILE MANCANTE» su un file che c'era. Un mutex fra le
+/// mie prove non e' bastato, perche' l'ambiente lo tocca anche chi non lo sa.
+/// Qui l'override e' del thread, quindi nessuno puo' toccarlo per sbaglio.
+#[cfg(test)]
+fn test_roots() -> Option<Vec<PathBuf>> {
+    TEST_ROOTS.with(|r| r.borrow().clone())
+}
+
+#[cfg(not(test))]
+fn test_roots() -> Option<Vec<PathBuf>> {
+    None
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_ROOTS: std::cell::RefCell<Option<Vec<PathBuf>>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 /// Da come è scritto nella memoria al file sul disco.
@@ -162,8 +189,18 @@ fn resolve_all(path: &str) -> Vec<PathBuf> {
 /// cartelle col punto non si visitano: il primo giro senza quel taglio ha letto
 /// 190.000 file e non e' finito.
 fn by_name(name: &str) -> Vec<PathBuf> {
+    // Sotto prova l'indice si ricostruisce ogni volta: e' minuscolo, e una cache
+    // globale farebbe ereditare a una prova l'albero di un'altra.
+    if test_roots().is_some() {
+        return build_index().get(name).cloned().unwrap_or_default();
+    }
     static INDEX: OnceLock<BTreeMap<String, Vec<PathBuf>>> = OnceLock::new();
-    let index = INDEX.get_or_init(|| {
+    let index = INDEX.get_or_init(build_index);
+    index.get(name).cloned().unwrap_or_default()
+}
+
+fn build_index() -> BTreeMap<String, Vec<PathBuf>> {
+    {
         let mut map: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
         for root in roots() {
             let mut stack = vec![root];
@@ -194,8 +231,7 @@ fn by_name(name: &str) -> Vec<PathBuf> {
             }
         }
         map
-    });
-    index.get(name).cloned().unwrap_or_default()
+    }
 }
 
 /// Il percorso assoluto riscritto con la tilde, che è come si citano i file
@@ -804,18 +840,9 @@ fn quote(s: &str) -> String {
 mod tests {
     use super::*;
     use std::fs;
-    use std::sync::{Mutex, MutexGuard};
-
-    /// Le radici si passano da variabile d'ambiente, che e' del processo: due
-    /// prove in parallelo se le rubano a vicenda, e l'esito diventa una moneta.
-    /// Provato: `check_reports_the_drift_it_finds` leggeva le radici azzerate da
-    /// un'altra prova e rispondeva «FILE MANCANTE».
-    static ENV: Mutex<()> = Mutex::new(());
-
-    fn with_roots(dir: &Path) -> MutexGuard<'static, ()> {
-        let guard = ENV.lock().unwrap_or_else(|e| e.into_inner());
-        std::env::set_var("MEMORY_ANCHOR_ROOTS", dir);
-        guard
+    /// Le radici di questa prova, viste solo dal suo thread.
+    fn with_roots(dir: &Path) {
+        TEST_ROOTS.with(|r| *r.borrow_mut() = Some(vec![dir.to_path_buf()]));
     }
 
     /// Una cartella usa-e-getta con una memoria e un sorgente dentro.
@@ -830,7 +857,7 @@ mod tests {
     fn resolves_a_relative_path_under_a_declared_root() {
         let dir = scratch("resolve");
         fs::write(dir.join("codice.rs"), "fn a() {}\n").unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
         assert!(resolve("codice.rs").is_some());
         assert!(resolve("non-esiste.rs").is_none());
     }
@@ -879,7 +906,7 @@ mod tests {
         let dir = scratch("byname");
         std::fs::create_dir_all(dir.join("crates/guards/src")).unwrap();
         fs::write(dir.join("crates/guards/src/chain.rs"), "fn a() {}\n").unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
         assert!(resolve("chain.rs").is_some(), "il nome nudo non si trova");
     }
 
@@ -888,7 +915,7 @@ mod tests {
         let dir = scratch("generated");
         fs::create_dir_all(dir.join("dist")).unwrap();
         fs::write(dir.join("dist/index.mjs"), "const a = 1;\n").unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
         assert!(resolve("dist/index.mjs").is_none());
     }
 
@@ -898,7 +925,7 @@ mod tests {
         fs::write(dir.join("codice.rs"), "fn outer() {\n    1\n}\n").unwrap();
         let memory = dir.join("m.md");
         fs::write(&memory, "---\nname: m\n---\n\nSta in `codice.rs`.\n").unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
 
         suggest_anchors(&[memory.clone()], true, true);
         suggest_anchors(&[memory.clone()], true, true);
@@ -922,7 +949,7 @@ mod tests {
             "---\nname: m\n---\n\nIn `codice.rs` la funzione `outer` usa `hidden`.\n",
         )
         .unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
 
         suggest_anchors(&[memory.clone()], true, true);
 
@@ -941,7 +968,7 @@ mod tests {
             "---\nname: m\nanchors:\n  - codice.rs#uno@000000000000\n  - sparito.rs#x@111111111111\n---\n\ncorpo\n",
         )
         .unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
 
         restamp_anchors(&[memory.clone()], true);
 
@@ -960,7 +987,7 @@ mod tests {
             "---\nname: m\nanchors:\n  - codice.rs#uno@000000000000\n---\n\ncorpo\n",
         )
         .unwrap();
-        let _guard = with_roots(&dir);
+        with_roots(&dir);
         assert_eq!(check(&[memory.clone()], true), 1);
 
         // Timbrato bene, l'allarme si spegne.
