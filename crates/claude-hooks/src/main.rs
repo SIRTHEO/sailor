@@ -44,6 +44,7 @@ mod json_tool;
 mod session_messages;
 mod reachability;
 mod memory_anchors;
+mod ai_personal_data;
 
 use hook_io::{Decision, Mode};
 
@@ -114,6 +115,7 @@ fn main() {
 /// `ogni_gancio_del_dispatch_e_elencato` rilegge questo stesso sorgente e
 /// fallisce se un ramo nuovo non compare qui.
 const ALL_HOOKS: &[&str] = &[
+    "ai-personal-data",
     "allow-worktree-deletes",
     "allow-session-messages",
     "json",
@@ -790,6 +792,15 @@ fn run(which: &str) -> Result<i32, String> {
         // Il promemoria alla sessione che riparte da un riassunto. Legge il
         // JSON di SessionStart da stdin e, solo dopo una compattazione, parla.
         "restart-notice" => Ok(restart::run()),
+        // Il promemoria sui dati personali spediti a un modello. La regola
+        // gemella non basta da sola: il suo `paths:` si valuta sull'albero
+        // della sessione, e l'84,5% dei tocchi cade fuori.
+        "ai-personal-data" => {
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            Ok(ai_personal_data::run(&input))
+        }
         // Il presidio della consegna, lato PostToolUse.
         "handoff-required" => Ok(handoff_required::run()),
         "handoff-on-stop" => Ok(handoff_on_stop::run()),
