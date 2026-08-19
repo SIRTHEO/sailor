@@ -1429,14 +1429,14 @@ mod tests {
     use crate::test_home::HomeIsolata;
 
     #[test]
-    fn il_taglio_e_a_caratteri_non_a_byte() {
+    fn the_cut_counts_characters_not_bytes() {
         // Lo slicing di Python conta caratteri: su un messaggio accentato un
         // taglio a byte spezzerebbe una lettera a metà.
         assert_eq!(cut("perché", 5), "perch");
         assert_eq!(cut("abc", 10), "abc");
     }
 
-    fn record_di_prova() -> Record {
+    fn test_record() -> Record {
         Record {
             session_id: "prova-relay-0000".into(),
             session: "provarel".into(),
@@ -1449,7 +1449,7 @@ mod tests {
     }
 
     #[test]
-    fn la_sessione_si_azzera_sul_posto() {
+    fn the_session_is_cleared_in_place() {
         let _home = HomeIsolata::nuova("azzera-sul-posto");
         // L'invariante che ha sostituito «crea prima di chiudere»: non si crea
         // e non si chiude niente. Erano i due gesti che sbagliavano — 47
@@ -1462,7 +1462,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (0, String::new())
         };
-        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         assert!(!seq.iter().any(|c| c.contains("create")), "ha creato: {seq:?}");
         assert!(!seq.iter().any(|c| c.contains("close")), "ha chiuso: {seq:?}");
@@ -1471,7 +1471,7 @@ mod tests {
     }
 
     #[test]
-    fn un_clear_non_inviato_lascia_la_sessione_comera() {
+    fn a_clear_that_never_went_out_leaves_the_session_as_it_was() {
         let _home = HomeIsolata::nuova("clear-fallito");
         // Il verso sicuro: se il comando non parte non si è perso niente — la
         // sessione ha ancora il suo contesto e la sua consegna già scritta. Si
@@ -1482,7 +1482,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             if args.contains(&"/clear") { (1, "boom".into()) } else { (0, String::new()) }
         };
-        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         let send = seq.iter().filter(|c| c.contains("send")).count();
         assert_eq!(send, 1, "ha insistito dopo un /clear non inviato: {seq:?}");
@@ -1492,7 +1492,7 @@ mod tests {
     }
 
     #[test]
-    fn una_sessione_che_non_e_idle_non_si_tocca() {
+    fn a_session_that_is_not_idle_is_left_alone() {
         let _home = HomeIsolata::nuova("non-idle");
         // Primo comando: `wait`. Se fallisce, non deve seguire nient'altro —
         // troncare un turno a metà costa il lavoro in corso.
@@ -1502,14 +1502,14 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (1, String::new())
         };
-        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         assert_eq!(seq.len(), 1, "dopo un wait fallito non si fa altro: {seq:?}");
         assert!(seq[0].contains("wait"));
     }
 
     #[test]
-    fn raccolto_il_segnale_si_manda_solo_l_avvio() {
+    fn once_the_signal_is_picked_up_only_the_start_is_sent() {
         let _home = HomeIsolata::nuova("mandato-raccolto");
         // Il caso buono. `register-session` è agganciato al `SessionStart` della
         // sorgente `clear` e consuma `riprendi-da/<worktree>.txt` dopo averlo
@@ -1532,7 +1532,7 @@ mod tests {
             }
             (0, String::new())
         };
-        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         // Due `send`: il `/clear` e l'avvio. Contarne uno solo lascerebbe
         // passare la versione che azzera e non fa ripartire — e «l'ultimo
@@ -1552,7 +1552,7 @@ mod tests {
     }
 
     #[test]
-    fn il_segnale_porta_punto_e_mandato() {
+    fn the_signal_carries_both_the_resume_point_and_the_mandate() {
         let _home = HomeIsolata::nuova("segnale-completo");
         // Il contenuto del segnale non lo guardava nessuno: toglierne il punto
         // di ripresa non faceva cadere niente, e il successore sarebbe tornato
@@ -1579,7 +1579,7 @@ mod tests {
         fs::write(&transcript, righe.join("\n")).unwrap();
         let rec = Record {
             transcript: transcript.to_string_lossy().into_owned(),
-            ..record_di_prova()
+            ..test_record()
         };
         let mut orca = |_: &[&str]| -> (i32, String) { (0, String::new()) };
         regenerate(&rec, false, &mut orca);
@@ -1597,7 +1597,7 @@ mod tests {
     }
 
     #[test]
-    fn segnale_non_raccolto_il_mandato_si_da_a_voce() {
+    fn a_signal_left_unread_makes_the_mandate_said_out_loud() {
         let _home = HomeIsolata::nuova("mandato-a-voce");
         // Qui la sessione è GIÀ azzerata: lasciarla senza incarico sarebbe
         // l'unico esito davvero distruttivo della staffetta — un pannello vuoto
@@ -1610,7 +1610,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (0, String::new())
         };
-        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         let avvio = seq.last().expect("nessun comando");
         assert!(
@@ -1624,13 +1624,13 @@ mod tests {
     }
 
     #[test]
-    fn un_worktree_col_percorso_dentro_scrive_i_suoi_file() {
+    fn a_worktree_id_carrying_a_path_still_writes_its_files() {
         let _home = HomeIsolata::nuova("worktree-con-barre");
         // Il caso normale, non un caso limite: ogni identificativo di copia di
         // Orca è `<uuid>::/percorso/assoluto`. Finché quelle barre finivano nel
         // nome del file, la tregua e il segnale di ripresa non venivano scritti
         // mai — sul disco del 17/08/2026, zero e zero su sei sessioni vive.
-        let mut rec = record_di_prova();
+        let mut rec = test_record();
         rec.worktree = "9591c8dd-9b12::/Users/theo/gyver/work/suite".into();
         let mut orca = |args: &[&str]| -> (i32, String) {
             if args.contains(&"create") {
@@ -1659,7 +1659,7 @@ mod tests {
     }
 
     #[test]
-    fn a_secco_non_si_chiama_orca_nemmeno_una_volta() {
+    fn a_dry_run_never_calls_orca_even_once() {
         let _home = HomeIsolata::nuova("a-secco");
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
@@ -1667,7 +1667,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (0, String::new())
         };
-        regenerate(&record_di_prova(), true, &mut orca);
+        regenerate(&test_record(), true, &mut orca);
         assert!(chiamate.borrow().is_empty(), "a secco ha parlato con orca");
     }
 
@@ -1696,7 +1696,7 @@ mod tests {
     }
 
     #[test]
-    fn l_albero_di_lavoro_risale_al_repo_che_lo_ospita() {
+    fn a_worktree_traces_back_to_the_repo_that_hosts_it() {
         let home = HomeIsolata::nuova("radice-canonica");
         let repo = home.dir.join("gyver").join("suite");
         let albero = home.dir.join("orca").join("tautog");
@@ -1718,7 +1718,7 @@ mod tests {
     }
 
     #[test]
-    fn il_successore_eredita_la_consegna_del_suo_repo() {
+    fn the_successor_inherits_the_handoff_of_its_own_repo() {
         let home = HomeIsolata::nuova("consegna-ereditata");
         let repo = home.dir.join("gyver").join("suite");
         let albero = home.dir.join("orca").join("tautog");
@@ -1764,7 +1764,7 @@ mod tests {
     // ─── Il freno della catena ────────────────────────────────────────────────
 
     /// Scrive una storia finta di `n` anelli, l'ultimo a `eta` secondi fa.
-    fn catena_finta(worktree: &str, n: usize, writes: u64, handoff: &str, eta: f64) {
+    fn fake_chain(worktree: &str, n: usize, writes: u64, handoff: &str, eta: f64) {
         let now = now_epoch();
         let links: Vec<ChainLink> = (0..n)
             .map(|i| ChainLink {
@@ -1780,7 +1780,7 @@ mod tests {
     }
 
     /// Un `orca` che registra le chiamate e finge un create riuscito.
-    fn orca_che_registra(
+    fn orca_that_records(
     ) -> (std::rc::Rc<std::cell::RefCell<Vec<String>>>, impl FnMut(&[&str]) -> (i32, String)) {
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
@@ -1800,7 +1800,7 @@ mod tests {
     /// Un `orca` che risponde a `terminal list` con l'elenco dato, e registra
     /// tutto. `dopo` è l'elenco che risponde DOPO il primo `close`: è così che si
     /// finge una scheda che si chiude davvero, o una che resiste.
-    fn orca_con_schede(
+    fn orca_with_panels(
         prima: &'static str,
         dopo: &'static str,
     ) -> (std::rc::Rc<std::cell::RefCell<Vec<String>>>, impl FnMut(&[&str]) -> (i32, String)) {
@@ -1821,7 +1821,7 @@ mod tests {
     }
 
     #[test]
-    fn il_clear_va_all_handle_di_adesso_non_a_quello_del_record() {
+    fn the_clear_goes_to_the_current_handle_not_the_recorded_one() {
         let _home = HomeIsolata::nuova("clear-handle-fresco");
         // Lo stesso caso del 18/08/2026, ma sul gesto nuovo: mandare `/clear`
         // all'handle scaduto azzererebbe la sessione di qualcun altro — o
@@ -1831,9 +1831,9 @@ mod tests {
         let rec = Record {
             handle: "term_scaduto".into(),
             tab_id: "tab-1".into(),
-            ..record_di_prova()
+            ..test_record()
         };
-        let (chiamate, mut orca) = orca_con_schede(
+        let (chiamate, mut orca) = orca_with_panels(
             r#"{"result":{"terminals":[{"handle":"term_attuale","tabId":"tab-1"}]}}"#,
             r#"{"result":{"terminals":[]}}"#,
         );
@@ -1845,15 +1845,15 @@ mod tests {
     }
 
     #[test]
-    fn un_congedo_che_non_chiude_non_dimentica_la_sessione() {
+    fn a_retirement_that_does_not_close_does_not_forget_the_session() {
         let _home = HomeIsolata::nuova("congedo-fallito");
         // Il controllo c'era, il verdetto pure, e nessuno lo leggeva: il congedo
         // proseguiva a cancellare il record di una sessione ancora viva, che da
         // lì in poi girava non tracciata accanto a chi aveva preso il suo posto.
-        let rec = Record { tab_id: "tab-1".into(), ..record_di_prova() };
+        let rec = Record { tab_id: "tab-1".into(), ..test_record() };
         let vive = r#"{"result":{"terminals":[{"handle":"term_vecchio","tabId":"tab-1"}]}}"#;
         // La scheda resta nell'elenco anche dopo il `close`: non si è chiusa.
-        let (_, mut orca) = orca_con_schede(vive, vive);
+        let (_, mut orca) = orca_with_panels(vive, vive);
         let vivo = live_dir().join("provarel.json");
         fs::create_dir_all(live_dir()).unwrap();
         fs::write(&vivo, "{}").unwrap();
@@ -1874,9 +1874,9 @@ mod tests {
         let rec = Record {
             handle: "term_scaduto".into(),
             tab_id: "tab-1".into(),
-            ..record_di_prova()
+            ..test_record()
         };
-        let (chiamate, mut orca) = orca_con_schede(
+        let (chiamate, mut orca) = orca_with_panels(
             r#"{"result":{"terminals":[{"handle":"term_attuale","tabId":"tab-1"}]}}"#,
             r#"{"result":{"terminals":[]}}"#,
         );
@@ -1898,9 +1898,9 @@ mod tests {
         // Prima si scartava la risposta di `close`: una scheda che resta aperta
         // era indistinguibile da una chiusa, e il registro diceva RIGENERATA
         // mentre restavano due sessioni sullo stesso albero.
-        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..record_di_prova() };
+        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..test_record() };
         let vivo = r#"{"result":{"terminals":[{"handle":"term_x","tabId":"tab-1"}]}}"#;
-        let (_, mut orca) = orca_con_schede(vivo, vivo);
+        let (_, mut orca) = orca_with_panels(vivo, vivo);
         assert_eq!(
             close_old_panel(&rec, "provarel", &mut orca),
             Chiusura::Fallita,
@@ -1915,13 +1915,13 @@ mod tests {
     }
 
     #[test]
-    fn se_l_elenco_non_si_rilegge_vale_la_parola_del_comando() {
+    fn when_the_list_cannot_be_reread_the_command_is_taken_at_its_word() {
         let _home = HomeIsolata::nuova("verifica-impossibile");
         // L'unico ramo in cui si crede a un codice d'uscita, e nessun caso lo
         // toccava: un mutante che ci scrivesse `true` fisso — cioè «chiusa» per
         // un comando fallito — sopravviveva a tutta la batteria, e il congedo
         // avrebbe smesso di tracciare una sessione ancora viva.
-        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..record_di_prova() };
+        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..test_record() };
         let prima = r#"{"result":{"terminals":[{"handle":"term_x","tabId":"tab-1"}]}}"#;
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
@@ -1943,8 +1943,8 @@ mod tests {
     #[test]
     fn a_panel_already_gone_costs_no_close() {
         let _home = HomeIsolata::nuova("scheda-gia-sparita");
-        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..record_di_prova() };
-        let (chiamate, mut orca) = orca_con_schede(
+        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..test_record() };
+        let (chiamate, mut orca) = orca_with_panels(
             r#"{"result":{"terminals":[{"handle":"term_altro","tabId":"tab-9"}]}}"#,
             r#"{"result":{"terminals":[]}}"#,
         );
@@ -1964,9 +1964,9 @@ mod tests {
         // Dieci rigenerazioni ravvicinate: il tetto morde PRIMA di spendere una
         // sola chiamata a orca, che è il punto — il freno non deve costare un
         // giro per accorgersi di essere un freno.
-        catena_finta("wt-prova", 10, 5, "/qualcosa.md", 30.0);
-        let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), false, &mut orca);
+        fake_chain("wt-prova", 10, 5, "/qualcosa.md", 30.0);
+        let (chiamate, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
         assert!(
             chiamate.borrow().is_empty(),
             "il freno non ha fermato niente: {:?}",
@@ -1983,9 +1983,9 @@ mod tests {
         let _home = HomeIsolata::nuova("catena-in-stallo");
         // Quattro anelli sotto il tetto, ma gli ultimi tre non hanno scritto
         // niente e citano tutti la stessa consegna.
-        catena_finta("wt-prova", 4, 0, "/ferma.md", 30.0);
-        let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), false, &mut orca);
+        fake_chain("wt-prova", 4, 0, "/ferma.md", 30.0);
+        let (chiamate, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
         assert!(chiamate.borrow().is_empty(), "{:?}", chiamate.borrow());
         let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("gira a vuoto"), "{log}");
@@ -1997,11 +1997,11 @@ mod tests {
         // Gira ogni sessanta secondi: se parlasse a ogni giro, il registro
         // diventerebbe illeggibile in un pomeriggio — ed è il difetto che questa
         // configurazione ha già pagato altrove, con 16 falsi allarmi su 18.
-        catena_finta("wt-prova", 10, 5, "/qualcosa.md", 30.0);
-        let (_, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), false, &mut orca);
-        regenerate(&record_di_prova(), false, &mut orca);
-        regenerate(&record_di_prova(), false, &mut orca);
+        fake_chain("wt-prova", 10, 5, "/qualcosa.md", 30.0);
+        let (_, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert_eq!(
             log.matches("FRENO").count(),
@@ -2015,9 +2015,9 @@ mod tests {
         let _home = HomeIsolata::nuova("catena-scaduta");
         // Dieci anelli, ma l'ultimo è di otto ore fa: quella catena è finita, e
         // il lavoro di adesso non si giudica coi suoi numeri.
-        catena_finta("wt-prova", 10, 0, "/vecchia.md", 8.0 * 3600.0);
-        let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), false, &mut orca);
+        fake_chain("wt-prova", 10, 0, "/vecchia.md", 8.0 * 3600.0);
+        let (chiamate, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         assert!(seq.iter().any(|c| c.contains("/clear")), "non ha rigenerato: {seq:?}");
         let anelli = read_chain("wt-prova");
@@ -2027,8 +2027,8 @@ mod tests {
     #[test]
     fn a_successful_regeneration_records_its_link() {
         let _home = HomeIsolata::nuova("anello-registrato");
-        let (_, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), false, &mut orca);
+        let (_, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
         let anelli = read_chain("wt-prova");
         assert_eq!(anelli.len(), 1, "l'anello non è stato registrato");
         assert_eq!(anelli[0].session, "provarel");
@@ -2039,10 +2039,10 @@ mod tests {
     #[test]
     fn the_brake_has_a_valve() {
         let _home = HomeIsolata::nuova("freno-spento");
-        catena_finta("wt-prova", 10, 0, "/ferma.md", 30.0);
+        fake_chain("wt-prova", 10, 0, "/ferma.md", 30.0);
         fs::write(home().join(".claude/state/freno-catena-off"), "").unwrap();
-        let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), false, &mut orca);
+        let (chiamate, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
         assert!(
             chiamate.borrow().iter().any(|c| c.contains("/clear")),
             "la valvola non spegne il freno: {:?}",
@@ -2060,7 +2060,7 @@ mod tests {
         // rigenerazione, e se non contasse, una catena che passa di qui
         // crescerebbe senza che nessun tetto la veda.
         let mut orca = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
-        retire(&record_di_prova(), &mut orca);
+        retire(&test_record(), &mut orca);
         let anelli = read_chain("wt-prova");
         assert_eq!(anelli.len(), 1, "il congedo non ha lasciato un anello");
         let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
@@ -2080,7 +2080,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
         assert!(read_chain("wt-prova").is_empty(), "un tentativo fallito ha contato");
     }
 
@@ -2091,14 +2091,14 @@ mod tests {
     // `now_epoch()` cadrebbe dalla parte sbagliata su una macchina occupata.
 
     /// Una cartella vera dentro la casa isolata, e l'id di copia che la nomina.
-    fn albero_vero(home: &HomeIsolata, nome: &str) -> (PathBuf, String) {
+    fn real_tree(home: &HomeIsolata, nome: &str) -> (PathBuf, String) {
         let dir = home.dir.join(nome);
         fs::create_dir_all(&dir).unwrap();
         let wt = format!("repo-di-prova::{}", dir.display());
         (dir, wt)
     }
 
-    fn nascita(dir: &Path) -> f64 {
+    fn birth(dir: &Path) -> f64 {
         fs::metadata(dir)
             .and_then(|m| m.created())
             .unwrap()
@@ -2108,8 +2108,8 @@ mod tests {
     }
 
     /// Una catena i cui anelli stanno agli scarti dati dalla nascita della cartella.
-    fn catena_agli_scarti(worktree: &str, dir: &Path, scarti: &[f64]) {
-        let nato = nascita(dir);
+    fn chain_at_offsets(worktree: &str, dir: &Path, scarti: &[f64]) {
+        let nato = birth(dir);
         let links: Vec<ChainLink> = scarti
             .iter()
             .enumerate()
@@ -2127,16 +2127,16 @@ mod tests {
     #[test]
     fn a_recreated_tree_does_not_inherit_the_brake() {
         let _home = HomeIsolata::nuova("albero-ricreato");
-        let (dir, wt) = albero_vero(&_home, "copia-rifatta");
+        let (dir, wt) = real_tree(&_home, "copia-rifatta");
         // Dieci anelli, tutti prima che la cartella nascesse: è la copia di
         // prima, smontata e rifatta con lo stesso nome — e quindi con lo stesso
         // id, perché l'id è `<repoId>::<percorso>`. Senza la guardia il freno
         // morderebbe al primo giro della lavorazione nuova, e quel morso si
         // leggerebbe come «funziona».
-        catena_agli_scarti(&wt, &dir, &[-600.0, -540.0, -480.0, -420.0, -360.0,
+        chain_at_offsets(&wt, &dir, &[-600.0, -540.0, -480.0, -420.0, -360.0,
                                         -300.0, -240.0, -180.0, -120.0, -60.0]);
-        let (chiamate, mut orca) = orca_che_registra();
-        let rec = Record { worktree: wt.clone(), ..record_di_prova() };
+        let (chiamate, mut orca) = orca_that_records();
+        let rec = Record { worktree: wt.clone(), ..test_record() };
         regenerate(&rec, false, &mut orca);
         assert!(
             chiamate.borrow().iter().any(|c| c.contains("/clear")),
@@ -2149,13 +2149,13 @@ mod tests {
     #[test]
     fn a_tree_older_than_its_chain_keeps_it() {
         let _home = HomeIsolata::nuova("albero-fermo");
-        let (dir, wt) = albero_vero(&_home, "copia-vissuta");
+        let (dir, wt) = real_tree(&_home, "copia-vissuta");
         // Il gemello del caso sopra: qui la cartella c'era già quando la catena
         // è partita, quindi la storia è sua e il tetto deve mordere.
         let scarti: Vec<f64> = (1..=10).map(|i| i as f64 * 60.0).collect();
-        catena_agli_scarti(&wt, &dir, &scarti);
-        let (chiamate, mut orca) = orca_che_registra();
-        let rec = Record { worktree: wt.clone(), ..record_di_prova() };
+        chain_at_offsets(&wt, &dir, &scarti);
+        let (chiamate, mut orca) = orca_that_records();
+        let rec = Record { worktree: wt.clone(), ..test_record() };
         regenerate(&rec, false, &mut orca);
         assert!(
             chiamate.borrow().is_empty(),
@@ -2170,27 +2170,27 @@ mod tests {
     #[test]
     fn the_margin_covers_a_clock_correction() {
         let _home = HomeIsolata::nuova("margine-orologio");
-        let (dir, dentro) = albero_vero(&_home, "dentro-il-margine");
-        catena_agli_scarti(&dentro, &dir, &[-REBORN_MARGIN_SEC]);
+        let (dir, dentro) = real_tree(&_home, "dentro-il-margine");
+        chain_at_offsets(&dentro, &dir, &[-REBORN_MARGIN_SEC]);
         assert_eq!(
             read_chain(&dentro).len(),
             1,
             "un salto d'orologio ha tagliato una catena viva"
         );
-        let (dir, oltre) = albero_vero(&_home, "oltre-il-margine");
-        catena_agli_scarti(&oltre, &dir, &[-REBORN_MARGIN_SEC - 1.0]);
+        let (dir, oltre) = real_tree(&_home, "oltre-il-margine");
+        chain_at_offsets(&oltre, &dir, &[-REBORN_MARGIN_SEC - 1.0]);
         assert!(read_chain(&oltre).is_empty(), "oltre il margine non ha tagliato");
         // Il numero scritto per esteso: i due casi qui sopra si muovono con la
         // costante e resterebbero verdi anche a margine zero, cioè proprio
         // quando la protezione sparisce.
-        let (dir, un_minuto) = albero_vero(&_home, "un-minuto-prima");
-        catena_agli_scarti(&un_minuto, &dir, &[-60.0]);
+        let (dir, un_minuto) = real_tree(&_home, "un-minuto-prima");
+        chain_at_offsets(&un_minuto, &dir, &[-60.0]);
         assert_eq!(read_chain(&un_minuto).len(), 1, "un minuto di scarto ha tagliato");
         // E il numero dall'altro lato: gonfiando il margine «per prudenza» la
         // guardia smetterebbe di prendere gli alberi rifatti, e i due casi qui
         // sopra resterebbero verdi lo stesso.
-        let (dir, cinque_minuti) = albero_vero(&_home, "cinque-minuti-prima");
-        catena_agli_scarti(&cinque_minuti, &dir, &[-300.0]);
+        let (dir, cinque_minuti) = real_tree(&_home, "cinque-minuti-prima");
+        chain_at_offsets(&cinque_minuti, &dir, &[-300.0]);
         assert!(
             read_chain(&cinque_minuti).is_empty(),
             "cinque minuti di scarto non hanno tagliato: il margine è troppo largo"
@@ -2232,7 +2232,7 @@ mod tests {
     #[test]
     fn a_surviving_directory_does_not_hide_a_rebuilt_worktree() {
         let _home = HomeIsolata::nuova("cartella-sopravvissuta");
-        let (dir, wt) = albero_vero(&_home, "copia-ricreata-dentro");
+        let (dir, wt) = real_tree(&_home, "copia-ricreata-dentro");
         // Il `.git` di un worktree è un FILE, e `git worktree add` lo riscrive
         // ogni volta: è il segno che distingue la cartella lasciata in piedi da
         // uno smontaggio (`close-finished.py` stampa `STILL THERE`) dalla
@@ -2242,11 +2242,11 @@ mod tests {
             age_birth(&dir, 3600),
             "SetFile non ha spostato la nascita: il caso non è stato provato"
         );
-        let nato = nascita(&dir);
+        let nato = birth(&dir);
         // Gli anelli stanno un minuto DOPO la cartella e cinquantanove minuti
         // PRIMA del `.git`: guardando la sola cartella la catena morta
         // resterebbe, ed è esattamente il buco che questa guardia chiude.
-        catena_agli_scarti(&wt, &dir, &[60.0, 120.0]);
+        chain_at_offsets(&wt, &dir, &[60.0, 120.0]);
         assert!(
             read_chain(&wt).is_empty(),
             "la catena della lavorazione morta è stata ereditata: nato={nato}"
@@ -2256,13 +2256,13 @@ mod tests {
     #[test]
     fn a_main_checkout_keeps_its_chain() {
         let _home = HomeIsolata::nuova("checkout-principale");
-        let (dir, wt) = albero_vero(&_home, "copia-principale");
+        let (dir, wt) = real_tree(&_home, "copia-principale");
         // Stesso identico divario, ma `.git` è una CARTELLA: è un checkout
         // principale, dove `.git` ha vita propria — su `gyver/work` è nata 126
         // giorni dopo il checkout. Prenderla taglierebbe una catena viva.
         fs::create_dir_all(dir.join(".git")).unwrap();
         assert!(age_birth(&dir, 3600), "SetFile non ha spostato la nascita");
-        catena_agli_scarti(&wt, &dir, &[60.0, 120.0]);
+        chain_at_offsets(&wt, &dir, &[60.0, 120.0]);
         assert_eq!(
             read_chain(&wt).len(),
             2,
@@ -2273,26 +2273,26 @@ mod tests {
     #[test]
     fn an_old_git_file_cuts_nothing() {
         let _home = HomeIsolata::nuova("git-vecchio");
-        let (dir, wt) = albero_vero(&_home, "copia-vissuta-con-git");
+        let (dir, wt) = real_tree(&_home, "copia-vissuta-con-git");
         fs::write(dir.join(".git"), "gitdir: /altrove\n").unwrap();
         // Il gemello che deve restare fermo: `.git` file come nel primo caso,
         // ma vecchio quanto la cartella. Senza di lui i due casi sopra
         // proverebbero solo che il segno taglia sempre.
         assert!(age_birth(&dir, 3600), "SetFile non ha spostato la nascita");
         assert!(age_birth(&dir.join(".git"), 3600), "SetFile sul `.git`");
-        catena_agli_scarti(&wt, &dir, &[60.0, 120.0]);
+        chain_at_offsets(&wt, &dir, &[60.0, 120.0]);
         assert_eq!(read_chain(&wt).len(), 2, "il segno ha tagliato una catena viva");
     }
 
     #[test]
     fn tree_birth_reads_the_two_signs() {
         let _home = HomeIsolata::nuova("due-segni");
-        let (dir, _wt) = albero_vero(&_home, "segni");
+        let (dir, _wt) = real_tree(&_home, "segni");
         // Senza `.git` resta la cartella, e non c'è modo di sbagliarsi.
-        assert_eq!(tree_birth(dir.to_str().unwrap()), Some(nascita(&dir)));
+        assert_eq!(tree_birth(dir.to_str().unwrap()), Some(birth(&dir)));
         fs::write(dir.join(".git"), "gitdir: /altrove\n").unwrap();
         assert!(age_birth(&dir, 3600), "SetFile non ha spostato la nascita");
-        let git_born = nascita(&dir.join(".git"));
+        let git_born = birth(&dir.join(".git"));
         assert_eq!(
             tree_birth(dir.to_str().unwrap()),
             Some(git_born),
@@ -2307,8 +2307,8 @@ mod tests {
     #[test]
     fn a_count_written_as_text_is_a_truth_not_a_zero() {
         let _home = HomeIsolata::nuova("writes-stringa");
-        let (dir, wt) = albero_vero(&_home, "writes-di-testo");
-        let nato = nascita(&dir);
+        let (dir, wt) = real_tree(&_home, "writes-di-testo");
+        let nato = birth(&dir);
         let _ = fs::create_dir_all(chain_dir());
         // `_is_sterile` del Python scrive `not link.get('writes')`, e `"0"` è una
         // stringa non vuota: vera. Leggendola come zero, quattro anelli con la
@@ -2480,8 +2480,8 @@ mod tests {
         // prodotto (`not 5.0` e `not -5` sono entrambi falsi). Quattro anelli
         // così, con la stessa consegna, diventavano uno stallo.
         for (nome, valore) in [("float", "5.0"), ("negativo", "-5")] {
-            let (dir, wt) = albero_vero(&_home, &format!("writes-{nome}"));
-            let nato = nascita(&dir);
+            let (dir, wt) = real_tree(&_home, &format!("writes-{nome}"));
+            let nato = birth(&dir);
             let _ = fs::create_dir_all(chain_dir());
             let anelli: Vec<String> = (0..4)
                 .map(|i| {
@@ -2502,9 +2502,9 @@ mod tests {
         }
         // E lo zero resta zero, altrimenti il caso sopra proverebbe solo che
         // nessun valore conta più.
-        let (dir, wt) = albero_vero(&_home, "writes-zero");
-        catena_agli_scarti(&wt, &dir, &[60.0, 120.0, 180.0, 240.0]);
-        let nato = nascita(&dir);
+        let (dir, wt) = real_tree(&_home, "writes-zero");
+        chain_at_offsets(&wt, &dir, &[60.0, 120.0, 180.0, 240.0]);
+        let nato = birth(&dir);
         let anelli: Vec<String> = (0..4)
             .map(|i| {
                 format!(
@@ -2524,8 +2524,8 @@ mod tests {
     #[test]
     fn a_time_written_as_text_is_still_a_time() {
         let _home = HomeIsolata::nuova("at-stringa");
-        let (dir, wt) = albero_vero(&_home, "at-di-testo");
-        let nato = nascita(&dir);
+        let (dir, wt) = real_tree(&_home, "at-di-testo");
+        let nato = birth(&dir);
         let _ = fs::create_dir_all(chain_dir());
         // MUTANTE STORICO: con `as_f64()` soltanto questo `at` valeva zero, la
         // guardia non scattava mai e la catena morta veniva ereditata — mentre
@@ -2544,17 +2544,17 @@ mod tests {
     #[test]
     fn the_guard_reads_the_first_link_not_the_last() {
         let _home = HomeIsolata::nuova("guardia-primo-anello");
-        let (dir, wt) = albero_vero(&_home, "a-cavallo");
+        let (dir, wt) = real_tree(&_home, "a-cavallo");
         // MUTANTE: guardando l'ultimo anello, proprio la copia rifatta che sta
         // già lavorando passerebbe per «stesso albero».
-        catena_agli_scarti(&wt, &dir, &[-300.0, 300.0]);
+        chain_at_offsets(&wt, &dir, &[-300.0, 300.0]);
         assert!(read_chain(&wt).is_empty(), "la guardia ha guardato l'ultimo anello");
     }
 
     #[test]
     fn without_a_sign_the_chain_stays() {
         let _home = HomeIsolata::nuova("nessun-segno");
-        let (dir, wt) = albero_vero(&_home, "cartella-viva");
+        let (dir, wt) = real_tree(&_home, "cartella-viva");
         // Un `at` che non è un istante non è una prova di niente: si tiene.
         write_chain(
             &wt,
@@ -2571,8 +2571,8 @@ mod tests {
     #[test]
     fn what_is_not_an_object_is_not_a_link() {
         let _home = HomeIsolata::nuova("anelli-misti");
-        let (dir, wt) = albero_vero(&_home, "elenco-misto");
-        let nato = nascita(&dir);
+        let (dir, wt) = real_tree(&_home, "elenco-misto");
+        let nato = birth(&dir);
         let _ = fs::create_dir_all(chain_dir());
         // Il Python scarta ciò che non è un oggetto. Convertirlo darebbe un
         // anello a `at` zero in testa: una storia più lunga di quella vera, con

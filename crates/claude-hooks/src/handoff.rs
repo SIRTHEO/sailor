@@ -399,7 +399,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn i_timestamp_del_transcript_si_leggono_in_utc() {
+    fn transcript_timestamps_are_read_as_utc() {
         // Il valore atteso viene da `date -u -j -f '%Y-%m-%dT%H:%M:%S' ... +%s`:
         // se questa conversione slittasse di due ore, la guardia sul lavoro
         // arrivato dopo la consegna resterebbe scritta e spenta, perché ogni
@@ -416,13 +416,13 @@ mod tests {
     ///
     /// L'isolamento vero — e il lucchetto, che è uno solo per tutto il binario —
     /// sta in `crate::test_home`: vedi lì perché un mutex per modulo non basta.
-    struct Scena {
+    struct Scene {
         _home: crate::test_home::HomeIsolata,
         dir: PathBuf,
     }
 
-    impl Scena {
-        fn nuova(nome: &str, consegnato: bool, righe: Vec<String>) -> Self {
+    impl Scene {
+        fn new(nome: &str, consegnato: bool, righe: Vec<String>) -> Self {
             let home = crate::test_home::HomeIsolata::nuova(nome);
             let dir = home.dir.clone();
             if consegnato {
@@ -439,7 +439,7 @@ mod tests {
 
     /// Un messaggio dell'anno 2100: sicuramente più recente del marcatore, che
     /// il test ha appena scritto. Datarlo «adesso» renderebbe il caso una corsa.
-    fn messaggio(testo: &str) -> String {
+    fn user_message(testo: &str) -> String {
         serde_json::json!({
             "type": "user",
             "timestamp": "2100-01-01T00:00:00.000Z",
@@ -449,13 +449,13 @@ mod tests {
     }
 
     /// Un `ScheduleWakeup` armato al tempo dato, con quel ritardo.
-    fn sveglia(iso: &str, delay: u64, stop: bool) -> String {
-        sveglia_con_mandato(iso, delay, stop, "/loop Sistemare la configurazione")
+    fn wakeup(iso: &str, delay: u64, stop: bool) -> String {
+        wakeup_with_prompt(iso, delay, stop, "/loop Sistemare la configurazione")
     }
 
     /// Come sopra, ma col mandato esplicito: è il campo che porta avanti
     /// l'incarico, e senza un caso che lo legga può sparire in silenzio.
-    fn sveglia_con_mandato(iso: &str, delay: u64, stop: bool, prompt: &str) -> String {
+    fn wakeup_with_prompt(iso: &str, delay: u64, stop: bool, prompt: &str) -> String {
         let mut input = serde_json::json!({"delaySeconds": delay, "prompt": prompt});
         if stop {
             // Lo strumento dichiara che con `stop` gli altri campi si ignorano,
@@ -479,50 +479,50 @@ mod tests {
     /// il registro della staffetta in ora locale, e le due ore di scarto sono
     /// esattamente il genere di errore contro cui mette in guardia il commento
     /// di `worked_after_handoff` qui sopra.
-    const ARMATA: &str = "2026-08-18T23:30:15.814Z";
-    const ARMATA_EPOCH: f64 = 1_787_095_815.0;
+    const ARMED_AT: &str = "2026-08-18T23:30:15.814Z";
+    const ARMED_AT_EPOCH: f64 = 1_787_095_815.0;
 
     #[test]
-    fn un_risveglio_ancora_da_scadere_si_vede() {
-        let s = Scena::nuova("sveglia", false, vec![sveglia(ARMATA, 1500, false)]);
+    fn a_wakeup_still_pending_is_seen() {
+        let s = Scene::new("sveglia", false, vec![wakeup(ARMED_AT, 1500, false)]);
         // Quattro secondi dopo: è l'istante in cui la staffetta ha rigenerato.
-        let left = wakeup_pending(&s.transcript(), ARMATA_EPOCH + 4.0);
+        let left = wakeup_pending(&s.transcript(), ARMED_AT_EPOCH + 4.0);
         assert_eq!(left, Some(1496));
     }
 
     #[test]
-    fn un_risveglio_gia_scaduto_non_protegge_piu() {
-        let s = Scena::nuova("scaduta", false, vec![sveglia(ARMATA, 1500, false)]);
-        assert_eq!(wakeup_pending(&s.transcript(), ARMATA_EPOCH + 1501.0), None);
+    fn an_expired_wakeup_protects_no_longer() {
+        let s = Scene::new("scaduta", false, vec![wakeup(ARMED_AT, 1500, false)]);
+        assert_eq!(wakeup_pending(&s.transcript(), ARMED_AT_EPOCH + 1501.0), None);
     }
 
     #[test]
-    fn vale_lultimo_risveglio_non_il_primo() {
+    fn the_last_wakeup_counts_not_the_first() {
         // Un loop ne arma uno per giro: guardare il primo della coda darebbe
         // per armata una sessione il cui ultimo giro ha chiuso il loop.
-        let s = Scena::nuova(
+        let s = Scene::new(
             "ultimo",
             false,
-            vec![sveglia(ARMATA, 1500, false), sveglia(ARMATA, 0, true)],
+            vec![wakeup(ARMED_AT, 1500, false), wakeup(ARMED_AT, 0, true)],
         );
-        assert_eq!(wakeup_pending(&s.transcript(), ARMATA_EPOCH + 4.0), None);
+        assert_eq!(wakeup_pending(&s.transcript(), ARMED_AT_EPOCH + 4.0), None);
     }
 
     #[test]
-    fn una_riga_rotta_non_ferma_la_ricerca_del_risveglio() {
-        let s = Scena::nuova(
+    fn a_broken_line_does_not_stop_the_wakeup_search() {
+        let s = Scene::new(
             "sveglia-rotta",
             false,
-            vec![sveglia(ARMATA, 1500, false), "ent\":\"x\"}]}}".to_string()],
+            vec![wakeup(ARMED_AT, 1500, false), "ent\":\"x\"}]}}".to_string()],
         );
-        assert_eq!(wakeup_pending(&s.transcript(), ARMATA_EPOCH + 4.0), Some(1496));
+        assert_eq!(wakeup_pending(&s.transcript(), ARMED_AT_EPOCH + 4.0), Some(1496));
     }
 
     /// Un turno dell'assistente che chiude come prescrive il `CLAUDE.md`.
-    fn chiusura(punto: &str) -> String {
+    fn closing_turn(punto: &str) -> String {
         serde_json::json!({
             "type": "assistant",
-            "timestamp": ARMATA,
+            "timestamp": ARMED_AT,
             "message": {"content": [{"type": "text", "text":
                 format!("**Stato** — chiuso: fatto tutto\n**Procedo con** — {punto}")}]}
         })
@@ -530,21 +530,21 @@ mod tests {
     }
 
     #[test]
-    fn il_punto_di_ripresa_si_legge_dalla_chiusura() {
+    fn the_resume_point_is_read_from_the_closing_turn() {
         // La riga esiste in ogni turno per prescrizione, e fino al 19/08/2026
         // non la leggeva nessuno: al successore si chiedeva di dedurre da un
         // riassunto una cosa già scritta in chiaro.
-        let s = Scena::nuova("punto", false, vec![chiusura("la staffetta via /clear")]);
+        let s = Scene::new("punto", false, vec![closing_turn("la staffetta via /clear")]);
         let punto = resume_point(&s.transcript()).expect("punto non trovato");
         assert!(punto.contains("la staffetta via /clear"), "{punto}");
     }
 
     #[test]
-    fn vale_il_punto_dell_ultimo_turno() {
-        let s = Scena::nuova(
+    fn the_resume_point_of_the_last_turn_counts() {
+        let s = Scene::new(
             "punto-ultimo",
             false,
-            vec![chiusura("il primo passo"), chiusura("il passo di adesso")],
+            vec![closing_turn("il primo passo"), closing_turn("il passo di adesso")],
         );
         let punto = resume_point(&s.transcript()).unwrap();
         assert!(punto.contains("il passo di adesso"), "{punto}");
@@ -552,109 +552,109 @@ mod tests {
     }
 
     #[test]
-    fn senza_chiusura_non_si_inventa_un_punto() {
-        let s = Scena::nuova("punto-assente", false, vec![messaggio("Mandato.")]);
+    fn without_a_closing_turn_no_resume_point_is_invented() {
+        let s = Scene::new("punto-assente", false, vec![user_message("Mandato.")]);
         assert_eq!(resume_point(&s.transcript()), None);
     }
 
     #[test]
-    fn il_punto_non_si_prende_da_un_messaggio_di_theo() {
+    fn the_resume_point_is_not_taken_from_a_user_message() {
         // Chi scrive «Procedo con» in una richiesta non sta dichiarando il
         // proprio punto di ripresa: il campo `type` è l'unico discrimine.
-        let s = Scena::nuova(
+        let s = Scene::new(
             "punto-utente",
             false,
-            vec![messaggio("Procedo con questa richiesta, per favore")],
+            vec![user_message("Procedo con questa richiesta, per favore")],
         );
         assert_eq!(resume_point(&s.transcript()), None);
     }
 
     #[test]
-    fn il_mandato_si_legge_dal_risveglio() {
+    fn the_prompt_is_read_from_the_wakeup() {
         // È il campo che porta avanti l'incarico: sbagliarne il nome lascerebbe
         // il successore con la sola consegna, cioè col difetto del 19/08/2026
         // intatto — e senza questo caso nessuna prova andrebbe in rosso.
-        let s = Scena::nuova(
+        let s = Scene::new(
             "mandato-sveglia",
             false,
-            vec![sveglia_con_mandato(ARMATA, 1500, false, "/loop Sistema Orca")],
+            vec![wakeup_with_prompt(ARMED_AT, 1500, false, "/loop Sistema Orca")],
         );
         assert_eq!(wakeup_prompt(&s.transcript()).as_deref(), Some("/loop Sistema Orca"));
     }
 
     #[test]
-    fn un_mandato_vuoto_non_e_un_mandato() {
-        let s = Scena::nuova(
+    fn an_empty_prompt_is_not_a_prompt() {
+        let s = Scene::new(
             "mandato-vuoto",
             false,
-            vec![sveglia_con_mandato(ARMATA, 1500, false, "   ")],
+            vec![wakeup_with_prompt(ARMED_AT, 1500, false, "   ")],
         );
         assert_eq!(wakeup_prompt(&s.transcript()), None);
     }
 
     #[test]
-    fn vale_il_mandato_dell_ultimo_giro() {
-        let s = Scena::nuova(
+    fn the_prompt_of_the_last_round_counts() {
+        let s = Scene::new(
             "mandato-ultimo",
             false,
             vec![
-                sveglia_con_mandato(ARMATA, 1500, false, "/loop primo giro"),
-                sveglia_con_mandato(ARMATA, 1500, false, "/loop secondo giro"),
+                wakeup_with_prompt(ARMED_AT, 1500, false, "/loop primo giro"),
+                wakeup_with_prompt(ARMED_AT, 1500, false, "/loop secondo giro"),
             ],
         );
         assert_eq!(wakeup_prompt(&s.transcript()).as_deref(), Some("/loop secondo giro"));
     }
 
     #[test]
-    fn senza_risveglio_non_si_ferma_niente() {
-        let s = Scena::nuova("niente-sveglia", false, vec![messaggio("Mandato.")]);
-        assert_eq!(wakeup_pending(&s.transcript(), ARMATA_EPOCH), None);
+    fn without_a_wakeup_nothing_is_held_back() {
+        let s = Scene::new("niente-sveglia", false, vec![user_message("Mandato.")]);
+        assert_eq!(wakeup_pending(&s.transcript(), ARMED_AT_EPOCH), None);
     }
 
     #[test]
-    fn un_mandato_arrivato_dopo_la_consegna_si_vede() {
-        let s = Scena::nuova("mandato", true, vec![messaggio("Mandato. Riprendi da qui.")]);
+    fn work_arriving_after_the_handoff_is_seen() {
+        let s = Scene::new("mandato", true, vec![user_message("Mandato. Riprendi da qui.")]);
         assert!(worked_after_handoff(&s.transcript(), "provalav"));
     }
 
     #[test]
-    fn un_bollettino_del_monitor_non_e_lavoro() {
+    fn a_monitor_notification_is_not_work() {
         // È il caso vero del 17/08: la sessione aperta dalla staffetta ha
         // ricevuto per primo un evento di monitor. Se contasse come mandato,
         // nessuna sessione verrebbe più rigenerata — la guardia si spegnerebbe
         // da sola restando verde.
-        let s = Scena::nuova(
+        let s = Scene::new(
             "bollettino",
             true,
-            vec![messaggio("<task-notification> <task-id>x</task-id>")],
+            vec![user_message("<task-notification> <task-id>x</task-id>")],
         );
         assert!(!worked_after_handoff(&s.transcript(), "provalav"));
     }
 
     #[test]
-    fn un_esito_di_strumento_e_la_sessione_che_parla_da_sola() {
+    fn a_tool_result_is_the_session_talking_to_itself() {
         let riga = serde_json::json!({
             "type": "user",
             "timestamp": "2100-01-01T00:00:00.000Z",
             "message": {"content": [{"type": "tool_result", "content": "ok"}]}
         })
         .to_string();
-        let s = Scena::nuova("tool-result", true, vec![riga]);
+        let s = Scene::new("tool-result", true, vec![riga]);
         assert!(!worked_after_handoff(&s.transcript(), "provalav"));
     }
 
     #[test]
-    fn senza_consegna_questa_guardia_non_ferma_niente() {
+    fn without_a_handoff_this_guard_holds_nothing_back() {
         // Il marcatore assente significa «non ha ancora consegnato», e a quel
         // punto ferma tutto la guardia di prima: rispondere `true` qui
         // bloccherebbe la staffetta per ogni sessione, per sempre.
-        let s = Scena::nuova("senza-consegna", false, vec![messaggio("Mandato.")]);
+        let s = Scene::new("senza-consegna", false, vec![user_message("Mandato.")]);
         assert!(!worked_after_handoff(&s.transcript(), "provalav"));
     }
 
     #[test]
-    fn un_messaggio_precedente_alla_consegna_non_conta() {
-        let s = Scena::nuova(
+    fn a_message_older_than_the_handoff_does_not_count() {
+        let s = Scene::new(
             "prima",
             true,
             vec![serde_json::json!({
@@ -668,14 +668,14 @@ mod tests {
     }
 
     #[test]
-    fn una_riga_tagliata_a_meta_non_interrompe_la_ricerca() {
+    fn a_half_cut_line_does_not_interrupt_the_search() {
         // La coda del transcript comincia quasi sempre a metà di una riga: se
         // un parse fallito fermasse il giro, il mandato che sta più in fondo
         // non verrebbe mai visto.
-        let s = Scena::nuova(
+        let s = Scene::new(
             "riga-rotta",
             true,
-            vec!["ent\":\"x\"}]}}".to_string(), messaggio("Mandato vero.")],
+            vec!["ent\":\"x\"}]}}".to_string(), user_message("Mandato vero.")],
         );
         assert!(worked_after_handoff(&s.transcript(), "provalav"));
     }
