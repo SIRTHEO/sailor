@@ -542,7 +542,17 @@ fn suggest_anchors(files: &[PathBuf], write: bool, json: bool) -> i32 {
             .map(|a| a.path.clone())
             .collect();
         found.retain(|a| a.symbol.is_some() || !with_symbol.contains(&a.path));
-        if !found.is_empty() {
+        // Anche una memoria senza proposte nuove entra nell'elenco se i suoi
+        // ancoraggi hanno un doppione: la riscrittura li normalizza. E' la
+        // riparazione dei duplicati gia' scritti da una versione precedente.
+        let has_twins = {
+            let rendered: Vec<String> = existing.iter().map(|a| a.render()).collect();
+            let mut unique = rendered.clone();
+            unique.sort();
+            unique.dedup();
+            unique.len() != rendered.len()
+        };
+        if !found.is_empty() || has_twins {
             proposals.insert(file.display().to_string(), found);
         }
     }
@@ -566,6 +576,20 @@ fn suggest_anchors(files: &[PathBuf], write: bool, json: bool) -> i32 {
                 .filter(|a| a.symbol.is_some() || !promoted.contains(&a.path))
                 .collect();
             all.extend(fresh.iter().cloned());
+            // Due passate di `--suggest --write` scrivevano due volte lo stesso
+            // ancoraggio nudo: il filtro sopra lascia passare i percorsi senza
+            // simbolo, ed e' voluto (uno con simbolo deve poterli sostituire),
+            // ma senza questa riga il frontmatter cresce a ogni esecuzione.
+            let mut seen: Vec<String> = Vec::new();
+            all.retain(|a| {
+                let key = a.render();
+                if seen.contains(&key) {
+                    false
+                } else {
+                    seen.push(key);
+                    true
+                }
+            });
             if std::fs::write(&path, with_anchors(&text, &all)).is_ok() {
                 written += 1;
             }
@@ -803,6 +827,21 @@ mod tests {
         fs::write(dir.join("dist/index.mjs"), "const a = 1;\n").unwrap();
         let _guard = with_roots(&dir);
         assert!(resolve("dist/index.mjs").is_none());
+    }
+
+    #[test]
+    fn running_the_suggestion_twice_does_not_duplicate_anchors() {
+        let dir = scratch("twice");
+        fs::write(dir.join("codice.rs"), "fn outer() {\n    1\n}\n").unwrap();
+        let memory = dir.join("m.md");
+        fs::write(&memory, "---\nname: m\n---\n\nSta in `codice.rs`.\n").unwrap();
+        let _guard = with_roots(&dir);
+
+        suggest_anchors(&[memory.clone()], true, true);
+        suggest_anchors(&[memory.clone()], true, true);
+
+        let after = fs::read_to_string(&memory).unwrap();
+        assert_eq!(after.matches("codice.rs").count(), 2, "{after}"); // frontmatter + corpo
     }
 
     #[test]
