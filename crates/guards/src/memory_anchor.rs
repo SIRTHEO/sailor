@@ -408,7 +408,69 @@ fn declared_name(line: &str, lang: Lang) -> Option<String> {
             }
         }
     }
+    // Un metodo non porta parole chiave: `load(url) {` dentro una classe, o un
+    // membro di un oggetto TypeScript. Si riconosce dalla forma — nome, parentesi,
+    // e la riga che apre un blocco — e si scartano le parole del controllo di
+    // flusso, che hanno la stessa forma e non definiscono niente.
+    if matches!(lang, Lang::Braces) && t.ends_with('{') {
+        if let Some((head, _)) = t.split_once('(') {
+            let name = head.trim().trim_start_matches("async ").trim();
+            if !name.is_empty()
+                && !CONTROL_FLOW.contains(&name)
+                && name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+            {
+                return Some(name.to_string());
+            }
+        }
+    }
     None
+}
+
+/// Parole che aprono un blocco con la stessa forma di un metodo.
+const CONTROL_FLOW: &[&str] = &[
+    "if", "for", "while", "match", "switch", "catch", "loop", "else", "do", "try", "with",
+    "return", "unsafe", "impl",
+];
+
+/// Vero se questo simbolo regge un ancoraggio.
+///
+/// Il criterio non è il rientro: un metodo dentro un `impl` o una classe è
+/// rientrato ed è esattamente ciò che le memorie nominano. Quello che non regge è
+/// il **legame locale** — un `let hex = …` dentro una funzione — perché è un nome
+/// comune che combacia per caso, e l'ancoraggio che ne esce non dice niente.
+pub fn is_anchorable(source: &str, symbol: &str, lang: Lang) -> bool {
+    let Some(i) = declaration_line(source, symbol, lang) else {
+        return false;
+    };
+    let Some(line) = source.lines().nth(i) else {
+        return false;
+    };
+    if !line.starts_with(' ') && !line.starts_with('\t') {
+        return true; // primo livello: sempre buono
+    }
+    let first = line.split_whitespace().next().unwrap_or("");
+    let key = first.trim_start_matches("pub(crate)").trim_start_matches("pub");
+    // Rientrato: vale solo se lo introduce una parola che **definisce**.
+    matches!(
+        key,
+        "fn" | "def" | "class" | "struct" | "enum" | "trait" | "type" | "interface" | "impl"
+            | "function" | "async" | "static" | "mod"
+    ) || declared_by_shape(line, lang)
+}
+
+/// Vero se la riga definisce un metodo per forma (nome, parentesi, blocco).
+fn declared_by_shape(line: &str, lang: Lang) -> bool {
+    let t = line.trim();
+    matches!(lang, Lang::Braces)
+        && t.ends_with('{')
+        && t.split_once('(')
+            .map(|(head, _)| {
+                let name = head.trim().trim_start_matches("async ").trim();
+                !name.is_empty() && !CONTROL_FLOW.contains(&name)
+            })
+            .unwrap_or(false)
 }
 
 /// Toglie a un identificatore ciò che lo segue: `nome(`, `nome:`, `nome<T>`,
@@ -664,12 +726,22 @@ pub fn identifiers(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for chunk in text.split('`').skip(1).step_by(2) {
         let token = chunk.trim();
-        if token.contains(' ') || token.contains('/') || token.contains('.') {
+        if token.contains(' ') || token.contains('/') {
+            continue;
+        }
+        // Un percorso di file non è un identificatore: lo dice l'estensione.
+        if token
+            .rsplit_once('.')
+            .is_some_and(|(_, ext)| CODE_EXT.contains(&ext.to_ascii_lowercase().as_str()))
+        {
             continue;
         }
         // L'ultimo segmento di `guards::handoff::resolve_terminal_handle` è il
-        // nome che compare nel file.
+        // nome che compare nel file. Vale anche per `Classe.metodo` e
+        // `oggetto.campo`: sono 221 dei 708 identificatori citati dalle memorie,
+        // e prendere solo la prima parte li perdeva tutti.
         let name = token.rsplit("::").next().unwrap_or(token);
+        let name = name.rsplit('.').next().unwrap_or(name);
         let name = name.trim_end_matches("()");
         if name.len() < 3 || name.len() > 60 {
             continue;
@@ -902,6 +974,42 @@ fn other() -> u8 {
         let hidden = declaration_line(src, "hidden", Lang::Braces).unwrap();
         assert!(!src.lines().nth(outer).unwrap().starts_with(' '));
         assert!(src.lines().nth(hidden).unwrap().starts_with(' '));
+    }
+
+    const IMPL: &str = "impl Relay {\n    pub fn regenerate(&self) -> u8 {\n        let hex = 1;\n        hex\n    }\n}\n";
+    const TS: &str = "export class Api {\n  load(url: string) {\n    const parsed = 1;\n    return parsed;\n  }\n}\n\nexport function fetchAll() {\n  return 2;\n}\n";
+
+    #[test]
+    fn a_method_inside_an_impl_holds_an_anchor() {
+        assert!(is_anchorable(IMPL, "regenerate", Lang::Braces));
+        let body = extract_symbol(IMPL, "regenerate", Lang::Braces).unwrap();
+        assert!(body.contains("let hex"));
+    }
+
+    #[test]
+    fn a_local_binding_does_not_hold_an_anchor() {
+        // `hex` esiste nel file e si estrae, ma e' un nome comune che combacia
+        // per caso: 4 ancoraggi su 20 della prima passata erano di questa specie.
+        assert!(extract_symbol(IMPL, "hex", Lang::Braces).is_some());
+        assert!(!is_anchorable(IMPL, "hex", Lang::Braces));
+    }
+
+    #[test]
+    fn a_class_method_is_recognised_by_its_shape() {
+        assert_eq!(
+            declared_name("  load(url: string) {", Lang::Braces).as_deref(),
+            Some("load")
+        );
+        assert!(is_anchorable(TS, "load", Lang::Braces));
+        assert!(is_anchorable(TS, "fetchAll", Lang::Braces));
+        assert!(!is_anchorable(TS, "parsed", Lang::Braces));
+    }
+
+    #[test]
+    fn a_control_word_is_not_a_method() {
+        for line in ["  if (a) {", "    for (const x of y) {", "  while (true) {"] {
+            assert_eq!(declared_name(line, Lang::Braces), None, "su {line}");
+        }
     }
 
     #[test]
