@@ -53,6 +53,23 @@ impl HookInput {
     pub fn is_tool(&self, name: &str) -> bool {
         self.tool_name.as_deref() == Some(name)
     }
+
+    /// Vero se questo ingresso viene da una sessione vera, cioè se dichiara un
+    /// trascritto che esiste davvero sul disco.
+    ///
+    /// Serve al registro: il 19/08/2026 `ganci.jsonl` conteneva **233 righe su
+    /// 6.832** (3,4%) prodotte da prove lanciate a mano dal terminale, che chi
+    /// misura l'adozione conta come traffico vero. Il nome della sessione non
+    /// basta a distinguerle — le prove ne passano uno finto (`provasto`), e le
+    /// sessioni vere ne hanno tre forme diverse, compresi 913 `ignota`. Il
+    /// trascritto sì: una prova a mano non ne ha uno, e uno finto non esiste.
+    pub fn has_real_transcript(&self) -> bool {
+        self.transcript_path
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .map(|p| std::path::Path::new(p).exists())
+            .unwrap_or(false)
+    }
 }
 
 /// Cosa il gancio ha deciso. `Warn` esiste perché un divieto senza una
@@ -104,8 +121,11 @@ pub fn read_input() -> Option<HookInput> {
     if buf.trim().is_empty() {
         return None; // invocato senza ingresso: è il caso normale di un `--help`
     }
-    match serde_json::from_str(&buf) {
-        Ok(v) => Some(v),
+    match serde_json::from_str::<HookInput>(&buf) {
+        Ok(v) => {
+            journal::mark_live_run(v.has_real_transcript());
+            Some(v)
+        }
         Err(e) => {
             eprintln!(
                 "hook: ingresso non è JSON valido ({e}), lascio passare. \
@@ -256,5 +276,26 @@ mod tests {
         let input: HookInput = serde_json::from_str(r#"{"tool_name":"Read"}"#).unwrap();
         assert_eq!(input.bash_command(), "");
         assert!(!input.is_tool("Bash"));
+    }
+
+    /// Quello che distingue una sessione vera da una prova lanciata a mano: non
+    /// il nome della sessione, che una prova sa inventarsi, ma un trascritto
+    /// che esiste davvero.
+    #[test]
+    fn a_run_is_live_only_when_its_transcript_exists() {
+        let none: HookInput = serde_json::from_str(r#"{"session_id":"provasto"}"#).unwrap();
+        assert!(!none.has_real_transcript(), "senza campo non è una sessione viva");
+
+        let empty: HookInput = serde_json::from_str(r#"{"transcript_path":""}"#).unwrap();
+        assert!(!empty.has_real_transcript(), "un campo vuoto non è un trascritto");
+
+        let missing: HookInput =
+            serde_json::from_str(r#"{"transcript_path":"/nowhere/does/this/exist.jsonl"}"#).unwrap();
+        assert!(!missing.has_real_transcript(), "un percorso finto non esiste sul disco");
+
+        // Un file che esiste di sicuro, senza inventarne uno: questo sorgente.
+        let here = serde_json::json!({"transcript_path": file!()}).to_string();
+        let real: HookInput = serde_json::from_str(&here).unwrap();
+        assert_eq!(real.has_real_transcript(), std::path::Path::new(file!()).exists());
     }
 }
