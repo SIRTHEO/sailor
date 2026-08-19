@@ -210,10 +210,54 @@ fn not_italian() -> &'static HashSet<&'static str> {
 /// pacchetto non è preinstallato — e senza avviso il gate retrocederebbe in
 /// silenzio al tasso di rimproveri a torto che questa correzione ha appena
 /// tolto. Perciò lo dice, una volta per processo.
-fn english_dictionary() -> &'static HashSet<String> {
-    static WORDS: OnceLock<HashSet<String>> = OnceLock::new();
+///
+/// **Il costo non è leggere il file, è quello che se ne fa.** Il gancio è un
+/// processo nuovo a ogni scrittura, quindi non c'è niente da ammortizzare: la
+/// preparazione si paga intera ogni volta. Misurato il 19/08/2026 sul binario in
+/// servizio, mediana su 25 giri di una scrittura che apre il dizionario:
+///
+/// | | ms |
+/// |---|---|
+/// | `HashSet<String>`, una `String` allocata per riga | 30,9 |
+/// | elenco ordinato e ricerca binaria | 27,0 |
+/// | **`HashSet<&str>` su testo prestato una volta** | **18,9** |
+///
+/// Una scrittura che non apre il dizionario ne costa 4,5. I 2,4 MB si leggono in
+/// pochi millisecondi: il costo erano le 236.000 `String` allocate una per riga,
+/// e sparisce prestando il testo (`Box::leak` — il processo dura una frazione di
+/// secondo) e tenendo **fette** di quel testo.
+///
+/// **La ricerca binaria è stata provata e scartata**, e vale la pena averlo
+/// scritto: sembra la via ovvia — niente impronte da calcolare — ma il
+/// sottoinsieme va ordinato prima, e ordinare 210.000 voci costa più di quanto
+/// si risparmi. Saltare l'ordinamento non è un'opzione: quel sottoinsieme è
+/// ordinato tranne una riga, e la ricerca binaria su dati non ordinati non
+/// fallisce, **mente**.
+///
+/// **Le voci con la maiuscola servono comunque**, ed è la lezione di un
+/// tentativo sbagliato: tenere solo quelle già minuscole sembrava gratis —
+/// `looks_english` riceve sempre minuscolo — e invece buttava via 25.000 parole
+/// che, minuscolizzate, il confronto usa eccome. La radice `cas` si riprendeva
+/// `Cassiopeia`, `Casanovanic`, `Castilian`: i rimproveri a torto sul dizionario
+/// erano risaliti da 20 a 135. Se ne è accorto `examples/dictionary.rs`, non un
+/// test. Quindi si allocano le sole voci da abbassare, non tutte e 236.000.
+fn english_dictionary() -> &'static HashSet<&'static str> {
+    static WORDS: OnceLock<HashSet<&'static str>> = OnceLock::new();
     WORDS.get_or_init(|| match std::fs::read_to_string(DICTIONARY_PATH) {
-        Ok(text) => text.lines().map(|w| w.trim().to_lowercase()).collect(),
+        Ok(text) => {
+            let text: &'static str = Box::leak(text.into_boxed_str());
+            text.lines()
+                .map(str::trim)
+                .filter(|w| !w.is_empty())
+                .map(|w| -> &'static str {
+                    if w.bytes().any(|b| b.is_ascii_uppercase()) {
+                        Box::leak(w.to_lowercase().into_boxed_str())
+                    } else {
+                        w
+                    }
+                })
+                .collect()
+        }
         Err(_) => {
             eprintln!(
                 "code-language: no English dictionary at {DICTIONARY_PATH}, \
@@ -223,6 +267,11 @@ fn english_dictionary() -> &'static HashSet<String> {
             HashSet::new()
         }
     })
+}
+
+/// Il dizionario conosce questa parola.
+fn in_dictionary(word: &str) -> bool {
+    english_dictionary().contains(word)
 }
 
 /// Dove vive il dizionario. Costante e non configurabile di proposito: una
@@ -252,8 +301,7 @@ const INFLECTIONS: &[&str] = &["s", "es", "ed", "d", "ing", "er", "ers", "est", 
 /// tre. La regola giusta non è quanto è corta la parola, è **chi l'ha scritta a
 /// mano**: un elenco curato batte un dizionario generico.
 fn looks_english(low: &str) -> bool {
-    let dict = english_dictionary();
-    if dict.is_empty() {
+    if english_dictionary().is_empty() {
         return false;
     }
     // Le cifre finali non cambiano la lingua: `toLowerCase2` è `case`.
@@ -262,7 +310,7 @@ fn looks_english(low: &str) -> bool {
     if base.len() < 2 {
         return false;
     }
-    if dict.contains(base) {
+    if in_dictionary(base) {
         return true;
     }
     INFLECTIONS.iter().any(|suffix| {
@@ -272,7 +320,7 @@ fn looks_english(low: &str) -> bool {
         if root.chars().count() < 3 {
             return false;
         }
-        if dict.contains(root) || dict.contains(&format!("{root}e")) {
+        if in_dictionary(root) || in_dictionary(&format!("{root}e")) {
             return true;
         }
         // Il troncamento passa dai **caratteri**, mai dai byte: `&root[..len-1]`
@@ -289,8 +337,8 @@ fn looks_english(low: &str) -> bool {
         // `stopped` → `stop`: la consonante che il suffisso aveva raddoppiato.
         let doubled = shorter.chars().next_back() == Some(last);
         // `primaries` → `primary`: la `y` diventata `i` davanti a `-es`.
-        let from_y = last == 'i' && dict.contains(&format!("{shorter}y"));
-        from_y || (doubled && dict.contains(shorter))
+        let from_y = last == 'i' && in_dictionary(&format!("{shorter}y"));
+        from_y || (doubled && in_dictionary(shorter))
     })
 }
 
