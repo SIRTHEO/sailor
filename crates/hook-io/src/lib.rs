@@ -118,14 +118,43 @@ pub fn read_input() -> Option<HookInput> {
 /// Scrive la decisione dove il modello la legge e restituisce il codice di
 /// uscita. Il prefisso col nome del gancio non è cosmetico: con 45 ganci
 /// registrati, un messaggio anonimo non dice a chi chiedere conto.
+/// OGNI DECISIONE FINISCE NEL REGISTRO, e fino al 19/08/2026 nessuna di queste
+/// ci finiva. `state/ganci.jsonl` conteneva 6.660 righe da otto moduli su
+/// ventitré: tutti quelli che passano di qui — `cd-guard`, `code-language`,
+/// `comment-refs`, `duplication`, `linear-readonly`, `pr-title`,
+/// `block-pr-merge-admin`, `live-rules`, `hooks-off` — scrivevano una riga solo
+/// quando **si rompevano**. Il loro lavoro riuscito era invisibile, e la domanda
+/// «questo gate morde, e quanto?» non aveva risposta per nove ganci su ventitré.
+///
+/// Si registra qui e non nei chiamanti perché è l'unico punto per cui passano
+/// tutti: chiedere a ciascuno di ricordarsene è la ragione per cui otto se ne
+/// ricordavano e nove no. Un `Pass` non si scrive — sarebbe una riga per ogni
+/// comando della macchina — ma un rifiuto e un avviso sì: sono rari, e sono
+/// esattamente ciò che si conta quando si chiede se un controllo serve.
 pub fn emit(hook: &str, decision: &Decision) -> i32 {
     match decision {
         Decision::Pass => {}
-        Decision::Warn(m) => eprintln!("avviso ({hook}): {m}"),
-        Decision::Block(m) => eprintln!("BLOCCATO ({hook}): {m}"),
-        Decision::Deny(m) => println!("{}", deny_payload(m)),
+        Decision::Warn(m) => {
+            journal::record(hook, "avvisa", &first_line(m), &[]);
+            eprintln!("avviso ({hook}): {m}");
+        }
+        Decision::Block(m) => {
+            journal::record(hook, "blocca", &first_line(m), &[]);
+            eprintln!("BLOCCATO ({hook}): {m}");
+        }
+        Decision::Deny(m) => {
+            journal::record(hook, "nega", &first_line(m), &[]);
+            println!("{}", deny_payload(m));
+        }
     }
     decision.exit_code()
+}
+
+/// La prima riga del messaggio, tagliata: il registro è per righe, e un rapporto
+/// intero dentro un campo lo rende illeggibile a `grep` e pesante sul disco.
+fn first_line(message: &str) -> String {
+    let head = message.lines().next().unwrap_or("").trim();
+    head.chars().take(200).collect()
 }
 
 /// Il JSON che l'harness legge come «permesso negato». La forma è quella che
