@@ -303,8 +303,19 @@ mod tests {
 
     /// Il congelamento si prova come si prova un freno: prima il gancio deve
     /// parlare, poi — congelato — deve tacere sullo stesso file.
+    ///
+    /// LA CASA ISOLATA NON È PRUDENZA, È LA CONDIZIONE PERCHÉ IL CASO REGGA. La
+    /// linea di base vive sotto `$HOME/.claude/state/duplicazione`, e `HOME` è
+    /// una variabile **del processo**: finché questo caso girava senza prendere
+    /// il lucchetto di `HomeIsolata`, un altro caso poteva dirottare `HOME` fra
+    /// il congelamento e la rilettura. Allora `freeze` scriveva nella casa
+    /// dell'altro e qui il file non c'era. Misurato il 19/08/2026: **4 rossi su
+    /// 40 giri**, e il rosso citava due percorsi diversi per lo stesso nome di
+    /// file. Da solo il caso passava sempre, che è il modo in cui una prova
+    /// così fa perdere un pomeriggio.
     #[test]
     fn freezing_silences_the_debt_that_was_already_there() {
+        let _home = crate::test_home::HomeIsolata::nuova("duplicazione-congela");
         let dir = std::env::temp_dir().join(format!("duplication-freeze-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let src = dir.join("src");
@@ -328,7 +339,19 @@ mod tests {
         assert_eq!(freeze(Some(&dir.to_string_lossy())), 0);
 
         let known = dup::load_baseline(&root);
-        assert!(!known.is_empty(), "la linea di base e' vuota");
+        // Non «e' vuota», ma perche': il file manca, e' troncato, o contiene un
+        // elenco vuoto. Con la sola parola «vuota» questo caso e' caduto una
+        // volta su trenta il 19/08/2026 senza dire da quale delle tre parti.
+        let path = dup::baseline_path(&root);
+        assert!(
+            !known.is_empty(),
+            "linea di base vuota — file {}: {}",
+            path.display(),
+            match std::fs::read_to_string(&path) {
+                Ok(t) => format!("{} byte, contenuto: {t}", t.len()),
+                Err(e) => format!("illeggibile ({e})"),
+            }
+        );
         let (_, after) = dup::report(&target, &root, dup::MIN_LINES, &known, false);
         assert!(after.is_empty(), "congelato, deve tacere: {after:?}");
 
