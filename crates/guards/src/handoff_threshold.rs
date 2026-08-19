@@ -139,7 +139,7 @@ pub fn message(used: u64, percent: u64, step: u64) -> String {
     let count = thousands(used).replace(',', ".");
     if step >= 85 {
         format!(
-            "Contesto a {count} token, il {percent}% della finestra: la \
+            "Contesto a {count} token, il {percent}% del budget di qualita': la \
              compattazione automatica e' vicina. Comprime quello che c'e', non \
              sceglie cosa serve. La skill `handoff` scrive una consegna che \
              sceglie, e adesso c'e' ancora contesto per ragionare su cosa \
@@ -147,7 +147,7 @@ pub fn message(used: u64, percent: u64, step: u64) -> String {
         )
     } else {
         format!(
-            "Contesto a {count} token, il {percent}% della finestra. Da qui in \
+            "Contesto a {count} token, il {percent}% del budget di qualita'. Da qui in \
              poi ogni risposta rilegge tutto: se il lavoro sta per passare a \
              un'altra sessione, la skill `handoff` costa meno adesso che dopo \
              la compattazione."
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn il_testo_cambia_col_gradino_e_conta_le_migliaia_col_punto() {
         let basso = message(144_000, 72, 70);
-        assert!(basso.starts_with("Contesto a 144.000 token, il 72% della finestra."), "{basso}");
+        assert!(basso.starts_with("Contesto a 144.000 token, il 72% del budget di qualita'."), "{basso}");
         assert!(basso.contains("la skill `handoff` costa meno adesso"), "{basso}");
         // Al gradino basso NON si nomina la compattazione: è ciò che distingue
         // i due messaggi, e un porto che ne scrivesse uno solo passerebbe metà
@@ -230,7 +230,7 @@ mod tests {
         assert!(!basso.contains("compattazione automatica"), "{basso}");
 
         let alto = message(180_000, 90, 85);
-        assert!(alto.contains("il 90% della finestra: la compattazione automatica e' vicina"), "{alto}");
+        assert!(alto.contains("il 90% del budget di qualita': la compattazione automatica e' vicina"), "{alto}");
         assert!(alto.contains("Contesto a 180.000 token"), "{alto}");
     }
 

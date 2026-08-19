@@ -217,7 +217,29 @@ pub fn run() -> i32 {
         return 0;
     }
     let used = used as u64;
-    let percent = percent(used, window());
+    // IL METRO È IL BUDGET DI QUALITÀ, NON LA FINESTRA DICHIARATA — corretto il
+    // 19/08/2026. Misurando sulla finestra (1.000.000) i due gradini cadevano a
+    // 700.000 e 850.000 token, ma l'harness compatta da sé molto prima: il
+    // massimo mai registrato su questa macchina è 539.022, e con
+    // `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=55` su un modello da 500k la
+    // compattazione scatta a 264.000. I due gradini erano quindi irraggiungibili
+    // per costruzione, e infatti in 283 sessioni di sette giorni questo gancio
+    // ha parlato **quattro volte**. Sul budget (500.000 per opus-5) cadono a
+    // 350.000 e 425.000: entrambi prima del presidio che pretende la consegna a
+    // 450.000, che è l'ordine giusto — prima si suggerisce, poi si impone.
+    // Lo scavalco manuale `SOGLIA_FINESTRA` continua a vincere su tutto.
+    let metro = match std::env::var("SOGLIA_FINESTRA")
+        .ok()
+        .and_then(|raw| declared_window(&raw))
+    {
+        Some(v) => v,
+        None => {
+            let tail = crate::handoff::transcript_tail(path);
+            let lines: Vec<&str> = tail.lines().collect();
+            guards::handoff::thresholds_from_lines(&lines).budget as u128
+        }
+    };
+    let percent = percent(used, metro);
     let Some(step) = step_reached(percent) else {
         return 0;
     };
