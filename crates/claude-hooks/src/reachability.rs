@@ -665,6 +665,14 @@ fn is_dated(name: &str) -> bool {
         return false;
     }
     for start in 0..=b.len() - 11 {
+        // La finestra si taglia su indici di byte, e un accento occupa due byte:
+        // senza questa guardia `però-2026-08-19` andava in panico invece di
+        // rispondere, e un gancio che va in errore rifiuta ogni strumento. Il
+        // modello cercato è tutto ASCII, quindi le finestre scartate qui non
+        // possono contenerlo.
+        if !name.is_char_boundary(start) || !name.is_char_boundary(start + 11) {
+            continue;
+        }
         let w = &name[start..start + 11];
         let digits_ok = w.as_bytes()[3].is_ascii_digit()
             && w.as_bytes()[4].is_ascii_digit()
@@ -1014,6 +1022,16 @@ mod tests {
         assert!(is_dated("test-leftovers-2026-08-18.py"));
         assert!(!is_dated("cross-repo"));
         assert!(!is_dated("rami"));
+    }
+
+    /// La finestra scorre sui byte, e prima di questa prova un accento la faceva
+    /// cadere dentro un carattere: il gancio andava in panico invece di
+    /// rispondere. La data si riconosce ancora, perché il modello è tutto ASCII.
+    #[test]
+    fn an_accent_in_the_name_does_not_break_the_window() {
+        assert!(is_dated("però-2026-08-19"));
+        assert!(is_dated("misura-perché-2026-08-19.md"));
+        assert!(!is_dated("però-non-datato"));
     }
 
     #[test]
