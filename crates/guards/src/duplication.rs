@@ -508,13 +508,25 @@ pub fn root_of(path: &Path) -> PathBuf {
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("/"));
+    root_from_dir(&start)
+}
+
+/// La stessa risalita, ma partendo da una **cartella**.
+///
+/// `root_of` toglie un livello perche' riceve il percorso di un file: passandole
+/// una cartella si perde proprio quella che si voleva usare. Chi congela la
+/// linea di base riceve una cartella, e senza questa porta d'ingresso finiva a
+/// camminare l'albero di sopra — provato: da una radice di prova sotto `/tmp`
+/// ha censito 290 file estranei.
+pub fn root_from_dir(dir: &Path) -> PathBuf {
+    let start = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
     let mut current = Some(start.clone());
-    while let Some(dir) = current {
-        if dir.join(".git").exists() {
-            let src = dir.join("src");
-            return if src.is_dir() { src } else { dir };
+    while let Some(d) = current {
+        if d.join(".git").exists() {
+            let src = d.join("src");
+            return if src.is_dir() { src } else { d };
         }
-        current = dir.parent().map(|p| p.to_path_buf());
+        current = d.parent().map(|p| p.to_path_buf());
     }
     start
 }
