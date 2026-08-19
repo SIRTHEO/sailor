@@ -716,9 +716,16 @@ pub fn citations(text: &str) -> Vec<Citation> {
         }
         // Una classe di file non e' un file: `compare-*.py`, `skills/hooks/*.py`,
         // `rust/tools/oracle/*.json` nominano un insieme, e cercarli sul disco
-        // li dichiarerebbe morti per sempre. Stessa cosa per la sola estensione
-        // (`.py`), che nei testi vale come «gli script Python».
-        if token.contains('*') || token.contains('?') || token.starts_with('.') {
+        // li dichiarerebbe morti per sempre.
+        if token.contains('*') || token.contains('?') {
+            continue;
+        }
+        // Un token che apre col punto e' un file solo se ha una barra in mezzo.
+        // Senza, e' un'estensione (`.py`), un dominio (`.lvh.me`), una classe
+        // CSS (`.animate-fade-up`); con la barra in fondo e' una cartella
+        // (`.claude/rules/`). Scartarli tutti insieme, com'era, portava via
+        // anche i 19 `.github/workflows/*.yml` che sono file veri e citati.
+        if token.starts_with('.') && (!token.contains('/') || token.ends_with('/')) {
             continue;
         }
         // Un percorso con un segnaposto e' un modello, non una citazione:
@@ -1110,6 +1117,18 @@ fn other() -> u8 {
         let c = citations(text);
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].path, "relay.rs");
+    }
+
+    #[test]
+    fn a_dotted_token_is_a_citation_only_with_a_slash_inside() {
+        // Scartare tutto cio' che apre col punto portava via i 19
+        // `.github/workflows/*.yml` citati dalle memorie, che sono file veri.
+        let text = "Il flusso `.github/workflows/ci.yml` gira su `.lvh.me`, la classe \
+                    `.animate-fade-up` anima la riga, ogni `.py` e' migrato e le regole \
+                    stanno in `.claude/rules/`.";
+        let c = citations(text);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].path, ".github/workflows/ci.yml");
     }
 
     #[test]
