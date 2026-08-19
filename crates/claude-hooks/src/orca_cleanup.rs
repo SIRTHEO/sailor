@@ -843,6 +843,13 @@ pub fn run() -> i32 {
         // copia di lavoro e la tab. È lo stesso mestiere, e tenerle separate
         // vorrebbe dire una riga in più in `settings.json` — che il 16/08/2026
         // si è rivelato il punto fragile del sistema.
+        //
+        // `--names` e `--close` restano invece due invocazioni distinte in
+        // `settings.json`, e non è una svista: misurato il 19/08/2026, avviare
+        // questo binario costa **0,00 s** (`--test` non tocca la rete), mentre
+        // le due strade pesano 0,37 s e 0,28 s — cioè tutte chiamate alla CLI di
+        // Orca, che restano due anche in un processo solo perché interrogano
+        // cose diverse (`worktree list` di qua, `terminal list` di là).
         let outcome = fix_names(!args.all, args.rename, args.quiet, args.align);
         // Con `--align` si sistemano le righe della barra, non le tab:
         // mescolarci la rinomina delle tab vorrebbe dire, nello stesso comando,
