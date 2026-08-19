@@ -96,7 +96,10 @@ pub fn step_reached(percent: u64) -> Option<u64> {
 pub fn already_said(text: &str, step: u64) -> bool {
     let t = text.trim();
     if t.is_empty() {
-        return 0 >= step; // `'' or 0` di Python
+        // `'' or 0` di Python: lo zero supera il solo gradino zero. Scritto
+        // `0 >= step` clippy lo rifiuta — su un `u64` metà del confronto non può
+        // mai essere falsa — e il rifiuto rendeva rosso l'intero pacchetto.
+        return step == 0;
     }
     match t.parse::<i128>() {
         Ok(n) => n >= step as i128,
