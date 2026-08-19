@@ -197,18 +197,18 @@ fn chain_path(worktree: &str) -> PathBuf {
 /// niente — quel tipo di guasto sarebbe l'unico esente da ogni freno, e la
 /// staffetta manderebbe `/clear` allo stesso pannello ogni cinque minuti per
 /// sempre, anche a una persona che nel frattempo se l'è ripreso.
-const TENTATIVI_CIECHI_MAX: u32 = 3;
+const MAX_BLIND_ATTEMPTS: u32 = 3;
 
 /// Il conto dei tentativi di fila rimasti senza prova. Sparisce al primo
 /// successo: è una serie, non un totale storico.
-fn tentativi_ciechi_path(worktree: &str) -> PathBuf {
+fn blind_attempts_path(worktree: &str) -> PathBuf {
     state_dir().join(format!("staffetta-tentativi-ciechi-{}", state_key(worktree)))
 }
 
 /// Il marcatore che dice «qui si è smesso di provare, ed ecco perché». Stesso
 /// mestiere doppio del marcatore del freno: traccia per Theo e memoria di
 /// averlo già detto.
-fn cieca_path(worktree: &str) -> PathBuf {
+fn blind_stop_path(worktree: &str) -> PathBuf {
     state_dir().join(format!("staffetta-cieca-{}", state_key(worktree)))
 }
 
@@ -906,7 +906,7 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // 0-bis. si è già provato tre volte senza che nessuno rispondesse: da qui
     //        in poi il `/clear` è solo disturbo a un pannello che magari una
     //        persona ha ripreso in mano.
-    if cieca_path(&rec.worktree).exists() {
+    if blind_stop_path(&rec.worktree).exists() {
         return;
     }
 
@@ -1048,8 +1048,8 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // `register-session` a ogni `SessionStart` — dopo un `/clear` compare un
     // `sessioni-vive/<nuovo>.json` con `source: "clear"` sulla stessa tab — e
     // fino al 19/08/2026 non la leggeva nessuno.
-    let successore = successore_registrato(rec, clear_at);
-    let sostituita = raccolto || successore.is_some();
+    let heir = registered_heir(rec, clear_at);
+    let swapped = raccolto || heir.is_some();
 
     // 5. FALLA PARTIRE. Il contesto iniettato da un gancio non avvia nessun
     //    turno: dopo il `/clear` la sessione resta al prompt vuoto, e lì
@@ -1087,7 +1087,7 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         "sess={sess}: azzerata sul posto, mandato {} (avvio rc={rc_send}, \
          sostituzione {})",
         if raccolto { "raccolto dal segnale" } else { "dato a voce" },
-        match (&successore, raccolto) {
+        match (&heir, raccolto) {
             (Some(nuova), _) => format!("confermata dal record di {nuova}"),
             (None, true) => "confermata dal segnale raccolto".to_string(),
             (None, false) => "NON confermata".to_string(),
@@ -1105,23 +1105,23 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // record cancellato per errore rende la sessione invisibile per sempre,
     // perché `sessioni-vive/<sess>.json` si riscrive solo a `SessionStart` — e se
     // la sessione non è ripartita, quel momento non arriva più.
-    if !sostituita {
+    if !swapped {
         // Niente anello di catena: un tentativo fallito non è un giro, e
         // contarlo farebbe mordere il freno mentre non si sostituisce niente.
         // Il conto lo tiene un contatore suo, che ha il proprio tetto.
         set_cooldown(&rec.worktree);
-        let n = segna_tentativo_cieco(&rec.worktree);
+        let n = mark_blind_attempt(&rec.worktree);
         log_line(&format!(
-            "RIGENERAZIONE NON CONFERMATA sess={sess} ({n}/{TENTATIVI_CIECHI_MAX}): \
+            "RIGENERAZIONE NON CONFERMATA sess={sess} ({n}/{MAX_BLIND_ATTEMPTS}): \
              /clear inviato a {handle}, ma il segnale non e' stato raccolto e \
              nessuna sessione nuova si e' registrata qui. Stato e marcatori \
              restano dov'erano, si riprova fra {COOLDOWN_SEC}s."
         ));
-        if n >= TENTATIVI_CIECHI_MAX {
-            let marcatore = cieca_path(&rec.worktree);
+        if n >= MAX_BLIND_ATTEMPTS {
+            let marker = blind_stop_path(&rec.worktree);
             let _ = fs::create_dir_all(state_dir());
             let _ = fs::write(
-                &marcatore,
+                &marker,
                 format!(
                     "{}\n{n} tentativi di sostituzione senza prova, di fila.\nalbero: {}\n\
                      ultima sessione: {sess}\npannello: {handle}\n",
@@ -1133,15 +1133,15 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
                 "STAFFETTA CIECA su {}: {n} tentativi di fila senza prova che la \
                  sostituzione sia avvenuta. NON provo piu'. Per ripartire: rm {} {}",
                 rec.worktree,
-                marcatore.display(),
-                tentativi_ciechi_path(&rec.worktree).display()
+                marker.display(),
+                blind_attempts_path(&rec.worktree).display()
             ));
         }
         return;
     }
     // La serie si azzera al primo successo: tre tentativi ciechi sparsi in una
     // giornata non sono il guasto che questo tetto cerca.
-    let _ = fs::remove_file(tentativi_ciechi_path(&rec.worktree));
+    let _ = fs::remove_file(blind_attempts_path(&rec.worktree));
     let _ = fs::remove_file(live_dir().join(format!("{sess}.json")));
     // LA LISTA È UNA SOLA, e vive in `register_session`. Qui ne esistevano due
     // copie da cinque famiglie contro otto: mancavano `consegna-volontaria`,
@@ -1181,8 +1181,8 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
 /// Un file di stato e non la memoria del processo: la staffetta è un comando che
 /// launchd rilancia ogni sessanta secondi, e fra un giro e l'altro non
 /// sopravvive niente.
-fn segna_tentativo_cieco(worktree: &str) -> u32 {
-    let path = tentativi_ciechi_path(worktree);
+fn mark_blind_attempt(worktree: &str) -> u32 {
+    let path = blind_attempts_path(worktree);
     let n = fs::read_to_string(&path)
         .ok()
         .and_then(|s| s.trim().parse::<u32>().ok())
@@ -1246,11 +1246,11 @@ fn wait_for_pickup(worktree: &str, scritto: bool) -> bool {
 /// interi, quindi si confronta col secondo del `/clear` troncato — un record
 /// scritto mezzo secondo dopo porta lo stesso numero, e pretenderlo maggiore
 /// stretto lo scarterebbe.
-fn successore_registrato(rec: &Record, clear_at: f64) -> Option<String> {
+fn registered_heir(rec: &Record, clear_at: f64) -> Option<String> {
     if rec.tab_id.is_empty() {
         return None;
     }
-    let soglia = clear_at.max(0.0).floor() as u64;
+    let threshold = clear_at.max(0.0).floor() as u64;
     for entry in fs::read_dir(live_dir()).ok()?.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
@@ -1262,15 +1262,15 @@ fn successore_registrato(rec: &Record, clear_at: f64) -> Option<String> {
         let Ok(d) = serde_json::from_str::<serde_json::Value>(&text) else {
             continue;
         };
-        let campo = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("");
-        if campo("session_id") == rec.session_id || campo("source") != "clear" {
+        let field = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("");
+        if field("session_id") == rec.session_id || field("source") != "clear" {
             continue;
         }
-        if campo("tab_id") != rec.tab_id {
+        if field("tab_id") != rec.tab_id {
             continue;
         }
-        if d.get("updated_at").and_then(|v| v.as_u64()).unwrap_or(0) >= soglia {
-            return Some(campo("session_id").chars().take(8).collect());
+        if d.get("updated_at").and_then(|v| v.as_u64()).unwrap_or(0) >= threshold {
+            return Some(field("session_id").chars().take(8).collect());
         }
     }
     None
@@ -1814,17 +1814,17 @@ mod tests {
         // una sessione mai ripartita non arriva mai. Meglio riprovare fra cinque
         // minuti che perdere di vista una sessione per sempre.
         std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
-        registra_sessione("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
-        let marcatore = state_dir().join("consegna-volontaria-provarel");
+        write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
+        let marker = state_dir().join("consegna-volontaria-provarel");
         let _ = fs::create_dir_all(state_dir());
-        fs::write(&marcatore, "").unwrap();
+        fs::write(&marker, "").unwrap();
         let mut orca = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
         regenerate(&test_record(), false, &mut orca);
         assert!(
             live_dir().join("provarel.json").exists(),
             "la sessione è stata resa invisibile senza prova che fosse ripartita"
         );
-        assert!(marcatore.exists(), "i marcatori sono stati raccolti a vuoto");
+        assert!(marker.exists(), "i marcatori sono stati raccolti a vuoto");
         assert!(read_chain("wt-prova").is_empty(), "un tentativo fallito ha contato come anello");
     }
 
@@ -1837,10 +1837,10 @@ mod tests {
         // si è registrato su questa tab dopo il `/clear`. La sostituzione è
         // avvenuta, e lo stato vecchio si può raccogliere.
         std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
-        registra_sessione("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
+        write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
         let mut orca = |args: &[&str]| -> (i32, String) {
             if args.contains(&"/clear") {
-                registra_sessione("erede-000-0000", "tab-1", "clear", now_epoch() as u64);
+                write_live_record("erede-000-0000", "tab-1", "clear", now_epoch() as u64);
             }
             (0, String::new())
         };
@@ -1866,9 +1866,9 @@ mod tests {
         // albero per far passare per erede una sessione che non c'entra.
         let mut rec = test_record();
         rec.tab_id = String::new();
-        registra_sessione("altra-tab-0000", "tab-9", "clear", now_epoch() as u64 + 5);
+        write_live_record("altra-tab-0000", "tab-9", "clear", now_epoch() as u64 + 5);
         assert!(
-            successore_registrato(&rec, now_epoch()).is_none(),
+            registered_heir(&rec, now_epoch()).is_none(),
             "una sessione di un'altra tab è passata per erede solo perché condivide l'albero"
         );
     }
@@ -1880,10 +1880,10 @@ mod tests {
         // dopo il `/clear` porta lo stesso numero della soglia. Pretenderlo
         // maggiore stretto lo scarterebbe, e sarebbe un falso negativo a ogni
         // rigenerazione svelta.
-        let adesso = now_epoch();
-        registra_sessione("erede-000-0000", "tab-1", "clear", adesso as u64);
+        let now = now_epoch();
+        write_live_record("erede-000-0000", "tab-1", "clear", now as u64);
         assert_eq!(
-            successore_registrato(&test_record(), adesso).as_deref(),
+            registered_heir(&test_record(), now).as_deref(),
             Some("erede-00")
         );
     }
@@ -1896,9 +1896,9 @@ mod tests {
         let _ = fs::create_dir_all(live_dir());
         fs::write(live_dir().join("aaa-rotto.json"), "{\"session_id\": \"tron").unwrap();
         fs::write(live_dir().join("bbb-vuoto.json"), "").unwrap();
-        registra_sessione("erede-000-0000", "tab-1", "clear", now_epoch() as u64 + 5);
+        write_live_record("erede-000-0000", "tab-1", "clear", now_epoch() as u64 + 5);
         assert_eq!(
-            successore_registrato(&test_record(), now_epoch()).as_deref(),
+            registered_heir(&test_record(), now_epoch()).as_deref(),
             Some("erede-00")
         );
     }
@@ -1923,7 +1923,7 @@ mod tests {
         }
         let clear = chiamate.borrow().iter().filter(|c| c.contains("/clear")).count();
         assert_eq!(clear, 3, "la staffetta ha continuato a provare: {clear} volte");
-        assert!(cieca_path("wt-prova").exists(), "manca la traccia per Theo");
+        assert!(blind_stop_path("wt-prova").exists(), "manca la traccia per Theo");
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert_eq!(log.matches("STAFFETTA CIECA").count(), 1, "l'ha ripetuto: {log}");
@@ -1937,14 +1937,14 @@ mod tests {
         // giornata, poi uno riuscito, non devono lasciare la staffetta a un
         // passo dal proprio tetto.
         std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
-        let mut cieco = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
-        regenerate(&test_record(), false, &mut cieco);
-        regenerate(&test_record(), false, &mut cieco);
-        assert!(tentativi_ciechi_path("wt-prova").exists());
+        let mut unanswered = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
+        regenerate(&test_record(), false, &mut unanswered);
+        regenerate(&test_record(), false, &mut unanswered);
+        assert!(blind_attempts_path("wt-prova").exists());
         let (_, mut orca) = orca_that_records();
         regenerate(&test_record(), false, &mut orca);
         assert!(
-            !tentativi_ciechi_path("wt-prova").exists(),
+            !blind_attempts_path("wt-prova").exists(),
             "la serie non si è azzerata dopo una sostituzione provata"
         );
     }
@@ -1956,23 +1956,23 @@ mod tests {
         // cinque sessioni ce ne sono cinque, tutti con `source: "clear"`. Senza
         // la data, il primo predecessore letto dalla cartella basterebbe a
         // dichiarare avvenuta una sostituzione che non è avvenuta.
-        let adesso = now_epoch() as u64;
+        let now = now_epoch() as u64;
         let rec = test_record();
         // MUTANTE: stessa tab, `source` giusto, ma di prima del `/clear`.
-        registra_sessione("vecchia-0-0000", "tab-1", "clear", adesso - 600);
-        assert!(successore_registrato(&rec, now_epoch()).is_none());
+        write_live_record("vecchia-0-0000", "tab-1", "clear", now - 600);
+        assert!(registered_heir(&rec, now_epoch()).is_none());
         // MUTANTE: nuovo e sulla tab giusta, ma aperto a mano — non è un erede.
-        registra_sessione("a-mano-00-0000", "tab-1", "startup", adesso + 5);
-        assert!(successore_registrato(&rec, now_epoch()).is_none());
+        write_live_record("a-mano-00-0000", "tab-1", "startup", now + 5);
+        assert!(registered_heir(&rec, now_epoch()).is_none());
         // MUTANTE: nuovo e azzerato, ma su un'altra tab.
-        registra_sessione("altrove-0-0000", "tab-9", "clear", adesso + 5);
-        assert!(successore_registrato(&rec, now_epoch()).is_none());
+        write_live_record("altrove-0-0000", "tab-9", "clear", now + 5);
+        assert!(registered_heir(&rec, now_epoch()).is_none());
         // MUTANTE: è il record della sessione stessa, non del suo erede.
-        registra_sessione("provarel-0000-0000", "tab-1", "clear", adesso + 5);
-        assert!(successore_registrato(&rec, now_epoch()).is_none());
+        write_live_record("provarel-0000-0000", "tab-1", "clear", now + 5);
+        assert!(registered_heir(&rec, now_epoch()).is_none());
         // E questo invece è l'erede.
-        registra_sessione("erede-000-0000", "tab-1", "clear", adesso + 5);
-        assert_eq!(successore_registrato(&rec, now_epoch()).as_deref(), Some("erede-00"));
+        write_live_record("erede-000-0000", "tab-1", "clear", now + 5);
+        assert_eq!(registered_heir(&rec, now_epoch()).as_deref(), Some("erede-00"));
     }
 
     #[test]
@@ -2145,7 +2145,7 @@ mod tests {
         let orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
             if args.contains(&"/clear") {
-                il_successore_si_registra();
+                the_heir_registers_itself();
             }
             if args.contains(&"create") {
                 (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
@@ -2159,7 +2159,7 @@ mod tests {
     /// Quello che fa `register-session` a `SessionStart` dopo un `/clear`:
     /// consuma il segnale indirizzato alla propria tab e scrive il proprio
     /// record fra le sessioni vive.
-    fn il_successore_si_registra() {
+    fn the_heir_registers_itself() {
         let Ok(segnali) = fs::read_dir(resume_dir()) else {
             return;
         };
@@ -2170,12 +2170,12 @@ mod tests {
                 .and_then(|d| d.get("tab").and_then(|v| v.as_str()).map(String::from))
                 .unwrap_or_default();
             let _ = fs::remove_file(entry.path());
-            registra_sessione("nuova-dopo-il-clear", &tab, "clear", now_epoch() as u64);
+            write_live_record("nuova-dopo-il-clear", &tab, "clear", now_epoch() as u64);
         }
     }
 
     /// Un record fra le sessioni vive, come lo scrive `register_session`.
-    fn registra_sessione(session_id: &str, tab: &str, source: &str, updated_at: u64) {
+    fn write_live_record(session_id: &str, tab: &str, source: &str, updated_at: u64) {
         let corto: String = session_id.chars().take(8).collect();
         let _ = fs::create_dir_all(live_dir());
         let _ = fs::write(
