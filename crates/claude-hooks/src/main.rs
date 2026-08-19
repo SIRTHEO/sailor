@@ -578,6 +578,20 @@ fn run(which: &str) -> Result<i32, String> {
         // identici. È l'unico gancio portato finora il cui tempo non è avvio
         // dell'interprete ma lavoro vero — albero, letture, sottosequenza comune.
         "duplication" => {
+            // `--congela` non e' un gancio: e' il verbo che crea la linea di
+            // base, e va eseguito **prima** di leggere stdin — altrimenti resta
+            // in attesa di un JSON che nessuno gli manda.
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            let bare = args.iter().find(|a| !a.starts_with("--"));
+            if args.iter().any(|a| a == "--congela") {
+                return Ok(duplication::freeze(bare.map(String::as_str)));
+            }
+            if args.iter().any(|a| a == "--debito") {
+                return Ok(duplication::debt(bare.map(String::as_str)));
+            }
+            if args.iter().any(|a| a == "--scan") {
+                return Ok(duplication::scan(bare.map(String::as_str)));
+            }
             if Mode::from_env("DUPLICAZIONE") == Mode::Off {
                 return Ok(0);
             }
