@@ -316,7 +316,32 @@ pub fn report_names(names: &[String], filename: Option<&str>) -> String {
          perche' nessun controllo li guardava.\n\n\
          In italiano:\n\n{body}\n\
          I commenti restano in italiano: quelli non si toccano.\n\
-         Dai un nome inglese ora, prima che lo citino i ganci e le regole."
+         Dai un nome inglese ora, prima che lo citini un gancio o una regola."
+    )
+}
+
+/// Il rimprovero per una scrittura che il gate non può leggere.
+///
+/// Non dice «hai scritto in italiano»: dice che **non si sa**, ed è una cosa
+/// diversa che va detta con parole diverse. Chiedere di ripassare da
+/// `Write`/`Edit` non è un capriccio di forma: lì il testo arriva al gate prima
+/// di toccare il disco, che è l'unico momento in cui un rimprovero costa una
+/// riscrittura invece di un commit.
+pub fn report_opaque(targets: &[String]) -> String {
+    let lines: Vec<String> = targets
+        .iter()
+        .take(MAX_ENTRIES)
+        .map(|t| format!("    · {t}"))
+        .collect();
+    format!(
+        "Questo comando scrive un file sorvegliato passando da un interprete in \
+         linea, e da lì il gate della lingua non vede cosa ci finisce dentro.\n\n\
+         Non leggibili:\n\n{}\n\n\
+         Riscrivilo con `Write` o `Edit`: il testo passa dal controllo prima di \
+         toccare il disco. Misurato il 19/08/2026: un'intera nottata di codice \
+         e' passata da `python3 - <<PY … write_text …` senza che il gate \
+         leggesse una riga.",
+        lines.join("\n")
     )
 }
 
@@ -400,6 +425,86 @@ pub fn writes_from_bash(command: &str) -> Vec<(String, String)> {
     found
 }
 
+/// I file sorvegliati che un comando scrive per una via che non sappiamo leggere.
+///
+/// IL BUCO CHE MI RIGUARDAVA. `writes_from_bash` conosce due forme — `cat >
+/// file <<EOF` e `echo … > file` — e in modalità bypass le sessioni non usano
+/// nessuna delle due: scrivono con un interprete in linea
+/// (`python3 - <<PY … p.write_text(…) … PY`). Misurato il 19/08/2026: tutto il
+/// codice di quella notte è passato di lì, e il gate non ha visto una riga.
+///
+/// Qui non si prova a indovinare **cosa** verrà scritto: dentro un interprete il
+/// contenuto può nascere da una variabile, da una lettura, da una sostituzione.
+/// Si constata che un file sorvegliato sta per essere scritto da una via opaca,
+/// e si dice di passare da `Write`/`Edit`, dove il testo è leggibile prima di
+/// finire sul disco. Un controllo che non può guardare deve dirlo, non tacere.
+///
+/// Servono tutti e tre gli indizi — interprete in linea, un gesto di scrittura,
+/// un percorso sorvegliato — perché due su tre prendono anche chi legge un file
+/// con `python3 -c`, e un gate che rimprovera a torto viene spento.
+///
+/// E SI GUARDA SOLO DENTRO L'INTERPRETE, non in tutto il comando. Al primo giro
+/// si cercavano gli indizi ovunque, e il gate ha negato il `git commit` che
+/// *descriveva* questa correzione: il messaggio citava
+/// `python3 - <<PY … write_text …` e i percorsi dei file toccati. Un comando che
+/// parla di una scrittura non è una scrittura, e la differenza sta nel dove:
+/// ciò che conta è il corpo che l'interprete eseguirà.
+pub fn opaque_writes(command: &str) -> Vec<String> {
+    if command.is_empty() {
+        return Vec::new();
+    }
+    let mut found: Vec<String> = Vec::new();
+    for m in inline_interpreter().find_iter(command) {
+        let corpo = &command[m.end()..];
+        if !writes_a_file().is_match(corpo) {
+            continue;
+        }
+        for c in quoted_path().captures_iter(corpo) {
+            let path = c.get(1).map(|x| x.as_str()).unwrap_or("");
+            if family(path).is_some() && !found.iter().any(|f| f == path) {
+                found.push(path.to_string());
+            }
+        }
+    }
+    found
+}
+
+/// `python3 - <<PY`, `node -e '…'`, `perl -e`: il corpo arriva dallo stesso
+/// comando invece che da un file.
+fn inline_interpreter() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?:python3?|node|perl|ruby|osascript)\s+(?:-\s*<<|-[ec]\b|<<)").unwrap()
+    })
+}
+
+/// Un gesto che mette testo su disco, nelle lingue che l'interprete può parlare.
+fn writes_a_file() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // `open(` da solo prende anche chi **legge**: provato il 19/08/2026,
+        // `python3 -c "print(open('x.py').read())"` finiva negato. La modalità
+        // è l'unica cosa che distingue le due intenzioni, e va richiesta.
+        Regex::new(
+            r#"(?:write_text|writeFileSync|writeFile|\.write\s*\(|fs::write|open\s*\([^)]{0,200}['"][wax]\+?b?['"])"#,
+        )
+        .unwrap()
+    })
+}
+
+/// Un percorso con un'estensione sorvegliata, ovunque nel comando.
+///
+/// Non si cercano gli apici: dentro un heredoc il testo attraversa due livelli
+/// di citazione e le virgolette arrivano già mangiate. L'estensione basta a
+/// proporre un candidato, e `family` decide poi se è sorvegliato davvero — la
+/// fonte è lei, qui serve solo qualcosa da sottoporle.
+fn quoted_path() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"([A-Za-z0-9_./-]+\.(?:rs|py|ts|tsx|js|mjs|cjs|sh|bash|yml|yaml))").unwrap()
+    })
+}
+
 pub fn written_text(tool_input: &serde_json::Value) -> String {
     if let Some(s) = tool_input.get("new_string").and_then(|v| v.as_str()) {
         return s.to_string();
@@ -455,6 +560,49 @@ mod tests {
         assert_eq!(italian_names("fn raccogli_worktree() {}"), ["raccogli_worktree"]);
         assert!(italian_names("fn collect_worktrees() {}").is_empty());
         assert_eq!(italian_names("struct Elenco_Copie;"), ["Elenco_Copie"]);
+    }
+
+    #[test]
+    fn a_write_through_an_inline_interpreter_is_flagged_as_unreadable() {
+        // La via da cui è passato tutto il codice del 19/08/2026 senza che il
+        // gate leggesse una riga: il contenuto nasce dentro l'interprete, e da
+        // fuori non si vede.
+        let command = "python3 - <<PY\np = pathlib.Path('/x/crates/a.rs')\n\
+                       p.write_text(body)\nPY";
+        assert_eq!(opaque_writes(command), ["/x/crates/a.rs"]);
+    }
+
+    #[test]
+    fn reading_a_watched_file_is_not_writing_it() {
+        // Il falso positivo trovato al primo colpo: `open(` da solo prende
+        // anche chi legge, e un gate che rimprovera a torto viene spento.
+        let command = "python3 -c \"print(open('/x/scripts/a.py').read())\"";
+        assert!(opaque_writes(command).is_empty());
+    }
+
+    #[test]
+    fn talking_about_a_write_is_not_writing() {
+        // Il caso vero: il gate ha negato il `git commit` che descriveva questa
+        // stessa correzione, perché il messaggio citava la forma incriminata e
+        // i percorsi dei file toccati. Gli indizi si cercano solo nel corpo che
+        // l'interprete eseguirà.
+        let command = "git commit -F - <<'MSG'\nThe hole: python3 - <<PY with \
+                       write_text on crates/guards/src/a.rs went unseen.\nMSG";
+        assert!(opaque_writes(command).is_empty());
+    }
+
+    #[test]
+    fn an_opaque_write_to_an_unwatched_file_is_nobodys_business() {
+        let command = "python3 - <<PY\npathlib.Path('/tmp/note.txt').write_text(x)\nPY";
+        assert!(opaque_writes(command).is_empty());
+    }
+
+    #[test]
+    fn a_readable_write_is_left_to_the_reader() {
+        // `cat > file <<EOF` si legge: lo giudica `writes_from_bash`, e
+        // segnalarlo anche qui darebbe due rimproveri per un solo gesto.
+        let command = "cat > /x/crates/a.rs <<'EOF'\nfn collect() {}\nEOF";
+        assert!(opaque_writes(command).is_empty());
     }
 
     #[test]
