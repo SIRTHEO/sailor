@@ -767,7 +767,7 @@ pub fn session_cap_verdict(f: &CapFacts) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn soglie_opus5() -> Thresholds {
+    fn opus5_thresholds() -> Thresholds {
         Thresholds {
             model: "claude-opus-5".into(),
             budget: 500_000,
@@ -776,7 +776,7 @@ mod tests {
         }
     }
 
-    fn sessione_piena<'a>(
+    fn full_session<'a>(
         live: &'a [String],
         t: &'a Thresholds,
     ) -> SessionFacts<'a> {
@@ -794,19 +794,19 @@ mod tests {
     }
 
     #[test]
-    fn consegnata_e_piena_si_rigenera() {
+    fn handed_off_and_full_regenerates() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let (a, why) = evaluate(&sessione_piena(&live, &t));
+        let t = opus5_thresholds();
+        let (a, why) = evaluate(&full_session(&live, &t));
         assert_eq!(a, Action::Regenerate);
         assert!(why.contains("96% del budget claude-opus-5"), "{why}");
     }
 
     #[test]
-    fn sotto_soglia_e_non_deliberata_si_salta() {
+    fn below_threshold_and_not_deliberate_is_skipped() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 363_283; // il caso vero del 18/08/2026: 67% del budget
         let (a, why) = evaluate(&f);
         assert_eq!(a, Action::Skip);
@@ -814,12 +814,12 @@ mod tests {
     }
 
     #[test]
-    fn sotto_soglia_ma_deliberata_passa_il_testimone() {
+    fn below_threshold_but_deliberate_passes_the_baton() {
         // Chi consegna con il contesto largo dichiara chiuso l'ambito. Senza
         // questo, la sua consegna resta sul disco e non la raccoglie nessuno.
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 363_283;
         f.handoff_deliberate = true;
         let (a, why) = evaluate(&f);
@@ -829,13 +829,13 @@ mod tests {
     }
 
     #[test]
-    fn un_risveglio_armato_ferma_la_sostituzione() {
+    fn an_armed_wakeup_stops_the_replacement() {
         // Il caso vero del 19/08/2026: `23d89176` aveva chiuso il giro di un
         // `/loop` armando un risveglio a 1500s, e quattro secondi dopo la
         // staffetta l'ha rigenerata perché aveva consegnato ed era idle.
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 406_854;
         f.handoff_deliberate = true;
         f.wakeup_in = Some(1108);
@@ -845,14 +845,14 @@ mod tests {
     }
 
     #[test]
-    fn un_successore_gia_vivo_batte_il_risveglio_armato() {
+    fn an_already_live_successor_beats_the_armed_wakeup() {
         // Chi ha già passato il testimone non ha più un appuntamento da
         // onorare: onorarlo lascerebbe due sessioni sullo stesso lavoro.
         // Nell'ordine opposto questa rispondeva `Skip` e restava viva accanto
         // al successore finché il risveglio non scadeva.
         let live = vec!["term_x".to_string(), "term_nuovo".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 406_854;
         f.handoff_deliberate = true;
         f.wakeup_in = Some(1108);
@@ -863,13 +863,13 @@ mod tests {
     }
 
     #[test]
-    fn un_risveglio_armato_non_protegge_un_contesto_al_limite() {
+    fn an_armed_wakeup_does_not_protect_a_context_at_the_limit() {
         // La via d'uscita: sopra `require` continuare costa più che ripartire.
         // Qui la staffetta rigenera lo stesso, ed è il segnale che il mandato
         // del loop deve viaggiare col testimone.
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 480_000; // 96%: oltre require
         f.wakeup_in = Some(1108);
         let (a, _) = evaluate(&f);
@@ -877,12 +877,12 @@ mod tests {
     }
 
     #[test]
-    fn deliberata_non_scavalca_chi_ha_lavorato_dopo() {
+    fn deliberate_does_not_override_a_session_that_kept_working() {
         // La guardia che protegge una sessione ancora al lavoro non si allenta:
         // consegnare di proposito non autorizza a chiudere chi sta lavorando.
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 363_283;
         f.handoff_deliberate = true;
         f.worked_after_handoff = true;
@@ -892,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn la_meta_esatta_arrotonda_al_pari() {
+    fn an_exact_half_rounds_to_even() {
         // I sei casi veri trovati dal vaglio indipendente: con `f64::round()`
         // davano tutti un punto in più del Python.
         assert_eq!(round_half_to_even(90.5), 90);
@@ -906,7 +906,7 @@ mod tests {
     }
 
     #[test]
-    fn la_percentuale_nel_motivo_usa_l_arrotondamento_al_pari() {
+    fn the_percentage_in_the_reason_rounds_half_to_even() {
         let live = vec!["term_x".to_string()];
         let t = Thresholds {
             model: "claude-opus-4-8".into(),
@@ -914,19 +914,19 @@ mod tests {
             warn: 156_000,
             require: 180_000,
         };
-        let mut f = sessione_piena(&live, &t);
+        let mut f = full_session(&live, &t);
         f.used = 181_000; // esattamente 90,5%
         let (_, why) = evaluate(&f);
         assert!(why.contains("90% del budget"), "{why}");
     }
 
     #[test]
-    fn un_elenco_illeggibile_non_e_una_strage() {
+    fn an_unreadable_list_does_not_mean_all_are_dead() {
         // `None` contro lista vuota: è la distinzione che valeva il registro
         // delle sessioni, cancellato ogni minuto per 276 giri «riusciti».
-        let t = soglie_opus5();
+        let t = opus5_thresholds();
         let live: Vec<String> = vec![];
-        let mut f = sessione_piena(&live, &t);
+        let mut f = full_session(&live, &t);
         f.live_handles = None;
         assert_eq!(evaluate(&f).0, Action::Skip);
         f.live_handles = Some(&live);
@@ -934,10 +934,10 @@ mod tests {
     }
 
     #[test]
-    fn il_successore_gia_armato_e_vivo_ferma_tutto() {
+    fn an_armed_and_live_successor_stops_everything() {
         let live = vec!["term_x".to_string(), "term_succ".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.armed_successor = "term_succ";
         let (a, why) = evaluate(&f);
         // NON `Skip`: la vecchia va chiusa comunque, solo senza aprirne un'altra.
@@ -948,10 +948,10 @@ mod tests {
     }
 
     #[test]
-    fn un_lavoro_arrivato_dopo_la_consegna_ferma_la_rigenerazione() {
+    fn work_arriving_after_the_handoff_stops_the_regeneration() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.worked_after_handoff = true;
         let (a, why) = evaluate(&f);
         assert_eq!(a, Action::Skip, "ha chiuso una sessione che sta lavorando");
@@ -959,55 +959,55 @@ mod tests {
     }
 
     #[test]
-    fn e_lo_ferma_anche_quando_il_successore_e_gia_vivo() {
+    fn and_it_stops_it_even_when_the_successor_is_already_live() {
         // L'ORDINE È IL COMPORTAMENTO. Anche il congedo chiude: se questa
         // guardia stesse dopo quella del successore, una sessione con un
         // successore già armato verrebbe chiusa mentre lavora — che è
         // esattamente il caso del 17/08/2026, dove il successore c'era.
         let live = vec!["term_x".to_string(), "term_succ".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.armed_successor = "term_succ";
         f.worked_after_handoff = true;
         assert_eq!(evaluate(&f).0, Action::Skip);
     }
 
     #[test]
-    fn un_successore_vivo_non_chiude_una_sessione_che_non_ha_consegnato() {
+    fn a_live_successor_does_not_close_a_session_that_never_handed_off() {
         // Il freno vale solo sulla creazione. Una sessione senza consegna non si
         // chiude comunque: il successore che c'è è di qualcun altro, o è vecchio.
         let live = vec!["term_x".to_string(), "term_succ".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.armed_successor = "term_succ";
         f.handoff_done = false;
         assert_eq!(evaluate(&f).0, Action::Skip);
     }
 
     #[test]
-    fn un_successore_vivo_non_chiude_una_sessione_ancora_vuota() {
+    fn a_live_successor_does_not_close_a_still_empty_session() {
         let live = vec!["term_x".to_string(), "term_succ".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.armed_successor = "term_succ";
         f.used = 10_000;
         assert_eq!(evaluate(&f).0, Action::Skip);
     }
 
     #[test]
-    fn un_successore_morto_non_blocca_per_sempre() {
+    fn a_dead_successor_does_not_block_forever() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.armed_successor = "term_sparito";
         assert_eq!(evaluate(&f).0, Action::Regenerate);
     }
 
     #[test]
-    fn sotto_soglia_non_si_tocca() {
+    fn below_the_threshold_nothing_is_touched() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.used = 100_000;
         let (a, why) = evaluate(&f);
         assert_eq!(a, Action::Skip);
@@ -1015,33 +1015,33 @@ mod tests {
     }
 
     #[test]
-    fn senza_consegna_non_si_rigenera_mai() {
+    fn without_a_handoff_nothing_is_ever_regenerated() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.handoff_done = false;
         assert_eq!(evaluate(&f).0, Action::Skip);
     }
 
     #[test]
-    fn il_raffreddamento_batte_la_soglia() {
+    fn the_cooldown_beats_the_threshold() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.in_cooldown = true;
         assert_eq!(evaluate(&f), (Action::Skip, "cooldown".to_string()));
     }
 
     #[test]
-    fn un_record_incompleto_non_decide_niente() {
+    fn an_incomplete_record_decides_nothing() {
         let live = vec!["term_x".to_string()];
-        let t = soglie_opus5();
-        let mut f = sessione_piena(&live, &t);
+        let t = opus5_thresholds();
+        let mut f = full_session(&live, &t);
         f.handle = "";
         assert_eq!(evaluate(&f).0, Action::Skip);
     }
 
-    fn tre_pannelli() -> Vec<Terminal> {
+    fn three_terminals() -> Vec<Terminal> {
         vec![
             Terminal {
                 handle: "term_a".into(),
@@ -1065,46 +1065,46 @@ mod tests {
     }
 
     #[test]
-    fn la_tab_ritrova_l_handle_rinato() {
+    fn the_tab_finds_the_reborn_handle() {
         // Il caso vero: l'handle salvato è morto, la tab no.
         assert_eq!(
-            resolve_terminal_handle("tab-1", "", "term_morto", &tre_pannelli()),
+            resolve_terminal_handle("tab-1", "", "term_morto", &three_terminals()),
             "term_a"
         );
     }
 
     #[test]
-    fn una_tab_sparita_non_risponde_per_un_altra() {
+    fn a_vanished_tab_does_not_answer_for_another_one() {
         assert_eq!(
-            resolve_terminal_handle("tab-9", "", "term_a", &tre_pannelli()),
+            resolve_terminal_handle("tab-9", "", "term_a", &three_terminals()),
             ""
         );
     }
 
     #[test]
-    fn senza_tab_l_handle_noto_vale_solo_se_vivo() {
+    fn without_a_tab_the_known_handle_counts_only_if_live() {
         assert_eq!(
-            resolve_terminal_handle("", "", "term_b", &tre_pannelli()),
+            resolve_terminal_handle("", "", "term_b", &three_terminals()),
             "term_b"
         );
         assert_eq!(
-            resolve_terminal_handle("", "", "term_morto", &tre_pannelli()),
+            resolve_terminal_handle("", "", "term_morto", &three_terminals()),
             ""
         );
     }
 
     #[test]
-    fn il_worktree_risponde_solo_se_il_candidato_e_unico() {
+    fn the_worktree_answers_only_if_the_candidate_is_unique() {
         // `wt-2` ne ha due: chiudere quello sbagliato costa il lavoro altrui.
-        assert_eq!(resolve_terminal_handle("", "wt-2", "", &tre_pannelli()), "");
+        assert_eq!(resolve_terminal_handle("", "wt-2", "", &three_terminals()), "");
         assert_eq!(
-            resolve_terminal_handle("", "wt-1", "", &tre_pannelli()),
+            resolve_terminal_handle("", "wt-1", "", &three_terminals()),
             "term_a"
         );
     }
 
     #[test]
-    fn si_accettano_entrambe_le_forme_della_risposta() {
+    fn both_response_shapes_are_accepted() {
         // Annidata sotto `result`, e già come lista: la forma è cambiata una
         // volta, e leggerne una sola è il difetto che ha creato 24 sessioni.
         let annidata: serde_json::Value =
@@ -1178,12 +1178,12 @@ mod tests {
     }
 
     #[test]
-    fn un_elenco_vuoto_non_fa_rispondere_nessuno() {
+    fn an_empty_list_makes_nobody_answer() {
         assert_eq!(resolve_terminal_handle("tab-1", "wt-1", "term_a", &[]), "");
     }
 
     #[test]
-    fn i_campi_di_orca_si_leggono_col_nome_che_hanno() {
+    fn orca_fields_are_read_by_the_name_they_actually_have() {
         // `tabId` e `worktreeId` arrivano in camelCase: sbagliare la rinomina
         // darebbe stringhe vuote senza errori, e la risoluzione tacerebbe sempre.
         let raw: serde_json::Value = serde_json::from_str(
@@ -1197,7 +1197,7 @@ mod tests {
     }
 
     #[test]
-    fn ogni_modello_prende_il_suo_budget() {
+    fn every_model_gets_its_own_budget() {
         assert_eq!(quality_budget("claude-opus-4-8"), 200_000);
         assert_eq!(quality_budget("claude-opus-5"), 500_000);
         assert_eq!(quality_budget("claude-sonnet-5"), 400_000);
@@ -1205,7 +1205,7 @@ mod tests {
     }
 
     #[test]
-    fn i_frammenti_sono_disgiunti_e_per_questo_l_ordine_non_conta() {
+    fn the_fragments_are_disjoint_which_is_why_the_order_does_not_matter() {
         // Il vincolo vero non è «il più specifico prima», è che nessun model-id
         // contenga due frammenti: finché vale, l'ordine è indifferente. Provato
         // qui invece che nel commento, perché un frammento generico aggiunto
@@ -1223,18 +1223,18 @@ mod tests {
     }
 
     #[test]
-    fn un_modello_sconosciuto_taglia_basso() {
+    fn an_unknown_model_falls_back_low() {
         assert_eq!(quality_budget("gpt-9"), DEFAULT_BUDGET);
         assert_eq!(quality_budget(""), DEFAULT_BUDGET);
     }
 
     #[test]
-    fn il_confronto_e_insensibile_alle_maiuscole() {
+    fn the_match_is_case_insensitive() {
         assert_eq!(quality_budget("Claude-OPUS-5"), 500_000);
     }
 
     #[test]
-    fn si_prende_l_ultimo_modello_non_sintetico() {
+    fn the_last_non_synthetic_model_is_taken() {
         let lines = vec![
             r#"{"type":"assistant","message":{"model":"claude-opus-5"}}"#,
             r#"{"type":"assistant","message":{"model":"<synthetic>"}}"#,
@@ -1243,7 +1243,7 @@ mod tests {
     }
 
     #[test]
-    fn una_riga_illeggibile_non_ferma_la_ricerca() {
+    fn an_unreadable_line_does_not_stop_the_search() {
         let lines = vec![
             r#"{"type":"assistant","message":{"model":"claude-opus-5"}}"#,
             r#"{"model": rotta"#,
@@ -1252,7 +1252,7 @@ mod tests {
     }
 
     #[test]
-    fn senza_modello_le_soglie_dicono_sconosciuto() {
+    fn without_a_model_the_thresholds_say_unknown() {
         let t = thresholds_from_lines(&[]);
         assert_eq!(t.model, "sconosciuto");
         assert_eq!(t.budget, DEFAULT_BUDGET);
@@ -1261,7 +1261,7 @@ mod tests {
     }
 
     #[test]
-    fn le_soglie_di_opus_5() {
+    fn the_opus_5_thresholds() {
         let lines = vec![r#"{"message":{"model":"claude-opus-5"}}"#];
         let t = thresholds_from_lines(&lines);
         assert_eq!(t.budget, 500_000);
@@ -1270,7 +1270,7 @@ mod tests {
     }
 
     #[test]
-    fn il_contesto_somma_i_tre_campi() {
+    fn the_context_sums_the_three_fields() {
         let lines = vec![
             r#"{"message":{"usage":{"input_tokens":10,"cache_read_input_tokens":190000,"cache_creation_input_tokens":5}}}"#,
         ];
@@ -1278,7 +1278,7 @@ mod tests {
     }
 
     #[test]
-    fn un_usage_vuoto_non_conta_come_misura() {
+    fn an_empty_usage_does_not_count_as_a_measurement() {
         let lines = vec![
             r#"{"message":{"usage":{"input_tokens":100}}}"#,
             r#"{"message":{"usage":{}}}"#,
@@ -1287,12 +1287,12 @@ mod tests {
     }
 
     #[test]
-    fn senza_usage_il_contesto_e_zero() {
+    fn without_any_usage_the_context_is_zero() {
         assert_eq!(context_used_from_lines(&[r#"{"type":"user"}"#]), 0);
     }
 
     #[test]
-    fn solo_la_skill_conta_come_consegna() {
+    fn only_the_skill_counts_as_a_handoff() {
         let v: serde_json::Value = serde_json::json!({"skill": "handoff"});
         assert!(is_handoff_call("Skill", Some(&v)));
         // Scrivere un documento di consegna NON è aver consegnato.
@@ -1302,7 +1302,7 @@ mod tests {
     }
 
     #[test]
-    fn una_skill_diversa_non_conta() {
+    fn a_different_skill_does_not_count() {
         let v: serde_json::Value = serde_json::json!({"skill": "grilling"});
         assert!(!is_handoff_call("Skill", Some(&v)));
         assert!(!is_handoff_call("Skill", None));
@@ -1310,7 +1310,7 @@ mod tests {
 
     // ── il tetto alle sessioni ──────────────────────────────────────────────
 
-    fn aggiunta(live: Option<usize>) -> CapFacts {
+    fn adding(live: Option<usize>) -> CapFacts {
         CapFacts {
             delta: SessionDelta::Adds,
             live,
@@ -1319,52 +1319,52 @@ mod tests {
     }
 
     #[test]
-    fn sotto_soglia_si_apre() {
-        assert_eq!(session_cap_verdict(&aggiunta(Some(19))), None);
-        assert_eq!(session_cap_verdict(&aggiunta(Some(0))), None);
+    fn below_the_cap_a_session_opens() {
+        assert_eq!(session_cap_verdict(&adding(Some(19))), None);
+        assert_eq!(session_cap_verdict(&adding(Some(0))), None);
     }
 
     #[test]
-    fn alla_soglia_e_sopra_si_blocca() {
+    fn at_the_cap_and_above_it_blocks() {
         // Il confine è chiuso a sinistra: venti è già troppo, come `>=` della
         // misura che ha scelto la soglia.
-        let messaggio = session_cap_verdict(&aggiunta(Some(20))).expect("doveva bloccare");
+        let messaggio = session_cap_verdict(&adding(Some(20))).expect("doveva bloccare");
         assert!(messaggio.contains("20 Claude sessions"), "{messaggio}");
         assert!(messaggio.contains("cap 20"), "{messaggio}");
-        assert!(session_cap_verdict(&aggiunta(Some(64))).is_some());
+        assert!(session_cap_verdict(&adding(Some(64))).is_some());
     }
 
     #[test]
-    fn una_sostituzione_passa_sempre() {
+    fn a_replacement_always_passes() {
         // IL CASO CHE VALE PIÙ DI TUTTI. Con 64 sessioni vive, chi ne chiude una
         // per aprirne una deve passare: bloccarlo lascia sul posto una sessione
         // piena senza far scendere il conto di uno.
         let f = CapFacts {
             delta: SessionDelta::Replaces,
             live: Some(64),
-            ..aggiunta(None)
+            ..adding(None)
         };
         assert_eq!(session_cap_verdict(&f), None);
         let f = CapFacts {
             delta: SessionDelta::None,
             live: Some(64),
-            ..aggiunta(None)
+            ..adding(None)
         };
         assert_eq!(session_cap_verdict(&f), None);
     }
 
     #[test]
-    fn un_conteggio_fallito_lascia_passare() {
+    fn a_failed_count_lets_it_through() {
         // Fail-open: un tetto che blocca perché non sa contare smette di frenare
         // le sessioni e comincia a frenare il lavoro.
-        assert_eq!(session_cap_verdict(&aggiunta(None)), None);
+        assert_eq!(session_cap_verdict(&adding(None)), None);
     }
 
     #[test]
-    fn il_tetto_si_puo_stringere_e_allargare() {
+    fn the_cap_can_be_tightened_and_widened() {
         let f = CapFacts {
             cap: 0,
-            ..aggiunta(Some(0))
+            ..adding(Some(0))
         };
         assert!(
             session_cap_verdict(&f).is_some(),
@@ -1372,21 +1372,21 @@ mod tests {
         );
         let f = CapFacts {
             cap: 1000,
-            ..aggiunta(Some(64))
+            ..adding(Some(64))
         };
         assert_eq!(session_cap_verdict(&f), None);
     }
 
     #[test]
-    fn il_messaggio_dice_come_uscirne() {
+    fn the_message_says_how_to_get_past_it() {
         // Un freno che non dice come procedere si aggira invece che rispettarlo.
-        let m = session_cap_verdict(&aggiunta(Some(30))).unwrap();
+        let m = session_cap_verdict(&adding(Some(30))).unwrap();
         assert!(m.contains(REPLACEMENT_MARK), "{m}");
         assert!(m.contains("SESSION_CAP_GUARD=off"), "{m}");
     }
 
     #[test]
-    fn le_due_aperture_note_contano_come_aggiunte() {
+    fn the_two_known_openings_count_as_additions() {
         assert_eq!(
             session_delta("orca terminal create --command 'claude' --title x"),
             SessionDelta::Adds
@@ -1403,7 +1403,7 @@ mod tests {
     }
 
     #[test]
-    fn una_shell_non_e_una_sessione() {
+    fn a_shell_is_not_a_session() {
         // Le due shell che `--setup run` lascia in ogni albero nuovo: contarle
         // spegnerebbe il meccanismo senza che nessuna sessione sia stata aperta.
         assert_eq!(
@@ -1425,7 +1425,7 @@ mod tests {
     }
 
     #[test]
-    fn la_cartella_della_configurazione_non_apre_niente() {
+    fn the_config_directory_opens_nothing() {
         // `.claude` contiene «claude», e ogni comando eseguito qui dentro lo
         // porta nel percorso: un `contains` avrebbe bloccato il lavoro normale.
         assert_eq!(
@@ -1439,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn fuori_da_orca_non_si_giudica() {
+    fn outside_orca_nothing_is_judged() {
         // Un `claude -p` lanciato a mano non passa da qui: questo freno guarda i
         // gesti che aprono una scheda, e dirlo è meglio che fingere di coprirlo.
         assert_eq!(session_delta("claude -p 'ciao'"), SessionDelta::None);
@@ -1450,7 +1450,7 @@ mod tests {
     }
 
     #[test]
-    fn la_dichiarazione_di_sostituzione_declassa_l_aggiunta() {
+    fn the_replacement_declaration_downgrades_the_addition() {
         assert_eq!(
             session_delta("SESSION_REPLACES=1 orca terminal create --command claude"),
             SessionDelta::Replaces
