@@ -203,11 +203,18 @@ fn already_armed(path: &str, session: &str) -> bool {
     false
 }
 
-/// Apre la scheda col mandato dentro, e la fa partire dopo un conto alla rovescia.
+/// Apre il pannello col mandato dentro, e lo fa partire dopo un conto alla rovescia.
 ///
 /// L'attesa non è una conferma da dare: è una via d'uscita per chi sta
 /// guardando. Prima qui c'era un Invio da premere, e nessuno lo premeva — 21
 /// schede armate e zero avviate. L'inerzia deve lavorare nel verso giusto.
+///
+/// PANNELLO, NON SCHEDA, dal 19/08/2026. La consegna raccolta prosegue lo stesso
+/// lavoro, e il `CLAUDE.md` riserva `terminal create` a un lavoro che non
+/// appartiene a questo: venti schede aperte così hanno saturato la colonna di
+/// sinistra, dove Theo cerca le sessioni vive. Con l'handle del terminale che
+/// consegna si divide quello; senza handle — fuori da Orca — resta la scheda,
+/// che è meglio di nessuna ripresa.
 fn open_tab(path: &str, inherited: &str) -> (bool, String) {
     let wait_s = std::env::var("CONSEGNA_ATTESA_S")
         .ok()
@@ -221,16 +228,21 @@ fn open_tab(path: &str, inherited: &str) -> (bool, String) {
          printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
          sleep {wait_s}; exec claude '{text}'"
     );
+    let handle = std::env::var("ORCA_TERMINAL_HANDLE").unwrap_or_default();
+    let args: Vec<String> = if handle.is_empty() {
+        ["terminal", "create", "--command", &command, "--title",
+         "consegna raccolta (parte da sola)", "--json"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        ["terminal", "split", "--terminal", &handle, "--command", &command, "--json"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    };
     let out = std::process::Command::new("orca")
-        .args([
-            "terminal",
-            "create",
-            "--command",
-            &command,
-            "--title",
-            "consegna raccolta (parte da sola)",
-            "--json",
-        ])
+        .args(&args)
         // La figlia eredita il marchio di generazione: è il freno che le impedisce
         // di armarne un'altra, e l'unico che sopravvive al cambio di processo.
         .env(guards::successor::GENERATION_ENV, "1")
