@@ -284,6 +284,31 @@ mod tests {
         ));
     }
 
+    /// La via d'uscita che il rifiuto insegna deve esistere davvero: fino al
+    /// 19/08/2026 la valvola era letta dall'ambiente del gancio, dove un
+    /// prefisso scritto sulla riga di comando non arriva mai.
+    #[test]
+    fn the_valve_the_message_teaches_actually_opens() {
+        let repo = blank_repo("valve");
+        put(repo.join(".husky").join("pre-commit"));
+        let dir = repo.to_str().unwrap();
+        assert!(matches!(judge("git commit -m x", dir), Decision::Deny(_)));
+        assert!(matches!(
+            judge("GANCI_SPENTI=off git commit -m x", dir),
+            Decision::Pass
+        ));
+        // Nominarla altrove non la apre.
+        assert!(matches!(
+            judge("git commit -m GANCI_SPENTI=off", dir),
+            Decision::Deny(_)
+        ));
+        // Il messaggio e la valvola che apre nominano la stessa variabile.
+        match judge("git commit -m x", dir) {
+            Decision::Deny(m) => assert!(m.contains(VALVE)),
+            _ => panic!("un albero cieco doveva essere rifiutato"),
+        }
+    }
+
     #[test]
     fn a_tree_with_its_checks_installed_passes() {
         let repo = blank_repo("installed");
