@@ -609,6 +609,13 @@ pub fn citations(text: &str) -> Vec<Citation> {
         if token.is_empty() || token.contains(' ') || token.len() > 200 {
             continue;
         }
+        // Una classe di file non e' un file: `compare-*.py`, `skills/hooks/*.py`,
+        // `rust/tools/oracle/*.json` nominano un insieme, e cercarli sul disco
+        // li dichiarerebbe morti per sempre. Stessa cosa per la sola estensione
+        // (`.py`), che nei testi vale come «gli script Python».
+        if token.contains('*') || token.contains('?') || token.starts_with('.') {
+            continue;
+        }
         let (path_part, tail) = split_locator(token);
         let ext = path_part
             .rsplit('.')
@@ -885,6 +892,15 @@ fn other() -> u8 {
         let hidden = declaration_line(src, "hidden", Lang::Braces).unwrap();
         assert!(!src.lines().nth(outer).unwrap().starts_with(' '));
         assert!(src.lines().nth(hidden).unwrap().starts_with(' '));
+    }
+
+    #[test]
+    fn a_class_of_files_is_not_a_citation() {
+        let text = "I banchi `compare-*.py` e i moduli `skills/hooks/*.py` sono spariti, \
+                    e cosi' ogni `.py` di quella cartella. Resta `relay.rs`.";
+        let c = citations(text);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].path, "relay.rs");
     }
 
     #[test]
