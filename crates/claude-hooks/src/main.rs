@@ -43,6 +43,7 @@ mod work_status;
 mod json_tool;
 mod session_messages;
 mod reachability;
+mod memory_anchors;
 
 use hook_io::{Decision, Mode};
 
@@ -157,6 +158,7 @@ const ALL_HOOKS: &[&str] = &[
     // controllano a vicenda, e il controllo ha fatto il suo mestiere — questa
     // riga mancava, e il workspace non passava piu.
     "reachability",
+    "memory-anchors",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -179,6 +181,7 @@ const ALL_HOOKS: &[&str] = &[
 const NOT_HOOKS: &[&str] = &[
     "json",
     "reachability",
+    "memory-anchors",
     "handoff-measure",
     "handoff-latest",
     "handoff-resolve",
@@ -221,6 +224,9 @@ const COVERED_APART: &[&str] = &[
     // passa da `self_check`, che giudica un comando e qui non c'e niente da
     // giudicare.
     "reachability",
+    // 19 prove fra logica e braccio: l'impronta che non si muove quando cambia
+    // solo il commento, e quella che si muove quando cambia il codice.
+    "memory-anchors",
 ];
 
 fn is_covered(name: &str) -> bool {
@@ -850,6 +856,10 @@ fn run(which: &str) -> Result<i32, String> {
         // gia il posto dove vive la logica, e un secondo eseguibile per
         // una misura sarebbe una superficie in piu da tenere viva.
         "reachability" => Ok(reachability::run()),
+        // Nemmeno questo è un gancio: risponde a «questa memoria parla ancora
+        // del codice di adesso?», e nessuna radice lo invoca. Chi lo lancia è un
+        // servizio settimanale o una sessione che sta per agire su una memoria.
+        "memory-anchors" => Ok(memory_anchors::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
