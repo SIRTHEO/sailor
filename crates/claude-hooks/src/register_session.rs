@@ -209,17 +209,68 @@ fn resume_message() -> String {
     let Ok(body) = fs::read_to_string(&signal) else {
         return String::new();
     };
-    let path = body.trim().to_string();
+    // IL SEGNALE È JSON, e il formato vecchio era il solo percorso su una riga.
+    //
+    // Si distinguono da soli: un percorso non è JSON valido. Il formato a righe
+    // etichettate, provato per un'ora il 19/08/2026, non ha mai raggiunto la
+    // produzione — spezzava i mandati su più righe e chi rileggeva riattaccava
+    // le righe senza separatore.
+    let (path, punto, mandato) = match serde_json::from_str::<serde_json::Value>(body.trim()) {
+        Ok(d) => {
+            let campo = |k: &str| {
+                d.get(k).and_then(|v| v.as_str()).unwrap_or_default().trim().to_string()
+            };
+            // IL SEGNALE È DI CHI È INTESTATO. La chiave del file è l'albero, e
+            // su un albero possono vivere due sessioni: senza questo controllo
+            // la seconda che riparte si prende il punto di ripresa e il `/loop`
+            // della prima. Si confronta la tab, che `/clear` non cambia e che
+            // non invecchia come l'handle.
+            //
+            // Se il segnale non dice a chi va, o se l'ambiente non dice chi
+            // siamo, si consuma comunque: è la forma che aveva prima, e negarsi
+            // il mandato per un dubbio lascerebbe la sessione senza incarico.
+            let destinatario = campo("tab");
+            let io = env("ORCA_TAB_ID");
+            if !destinatario.is_empty() && !io.is_empty() && destinatario != io {
+                return String::new(); // non è per noi: resta a chi aspetta
+            }
+            (campo("handoff"), campo("punto"), campo("mandato"))
+        }
+        Err(_) => (body.trim().to_string(), String::new(), String::new()),
+    };
     let _ = fs::remove_file(&signal); // consumato: una staffetta, una ripresa
     if path.is_empty() {
         return String::new();
     }
-    format!(
+    let base = format!(
         "RIPARTENZA AUTOMATICA (staffetta). La sessione precedente su questo \
 worktree ha consegnato ed e' stata rigenerata per non trascinare un contesto \
 gonfio. Riprendi da quell'handoff: leggi `{path}` e prosegui il piano gia' \
 autorizzato, dichiarando in una riga da cosa riparti. Non ricominciare da zero."
-    )
+    );
+    if punto.is_empty() && mandato.is_empty() {
+        return base;
+    }
+    let mut coda = String::new();
+    if !punto.is_empty() {
+        // IL PUNTO PRIMA DEL MANDATO: è la riga che dice cosa fare adesso,
+        // mentre il mandato dice a che lavoro appartiene.
+        coda.push_str(&format!(
+            "\n\nRIPRENDI DA QUI, e' il punto che la sessione uscente ha \
+dichiarato chiudendo il suo ultimo turno:\n{punto}"
+        ));
+    }
+    // IL MANDATO NON E' CONTESTO, E' L'INCARICO. Chi arriva qui sta sostituendo
+    // una sessione che girava in `/loop`: senza queste righe legge la consegna,
+    // dichiara da dove riparte e si ferma — e il loop muore alla prima
+    // rigenerazione.
+    if !mandato.is_empty() {
+        coda.push_str(&format!(
+            "\n\nLa sessione uscente stava girando su questo mandato, e tocca \
+ora a te: riprendilo cosi' com'e'.\n\n{mandato}"
+        ));
+    }
+    format!("{base}{coda}")
 }
 
 /// Siamo a fine sessione? Lo dice l'evento, non un argomento.
@@ -316,6 +367,129 @@ mod tests {
             assert!(state.join(n).exists(), "{n} non e' suo e doveva restare");
         }
         assert!(!state.join("sessioni-vive/11112222.json").exists());
+    }
+
+    /// Un segnale di ripresa fresco, nella forma che scrive la staffetta.
+    fn segnale_json(casa: &HomeIsolata, handoff: &str, punto: &str, mandato: &str) {
+        segnale_per(casa, handoff, punto, mandato, "");
+    }
+
+    /// Come sopra, intestato a una tab.
+    fn segnale_per(
+        casa: &HomeIsolata,
+        handoff: &str,
+        punto: &str,
+        mandato: &str,
+        tab: &str,
+    ) {
+        let corpo = serde_json::json!({
+            "handoff": handoff, "punto": punto, "mandato": mandato, "tab": tab,
+        })
+        .to_string();
+        segnale(casa, &corpo);
+    }
+
+    /// Un segnale col corpo dato alla lettera, per provare le forme storte.
+    fn segnale(casa: &HomeIsolata, corpo: &str) {
+        std::env::set_var("ORCA_WORKTREE_ID", "repo::_prova");
+        let dir = casa.dir.join(".claude/state/riprendi-da");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{}.txt", state_key("repo::_prova"))), corpo)
+            .unwrap();
+    }
+
+    #[test]
+    fn il_segnale_con_il_solo_percorso_resta_valido() {
+        // E' la forma che il file ha avuto per giorni: cambiarla senza tenerla
+        // buona spegnerebbe la ripresa di ogni albero gia' in attesa.
+        let casa = HomeIsolata::nuova("segnale-vecchio");
+        segnale(&casa, "/percorso/consegna.md");
+        let msg = resume_message();
+        assert!(msg.contains("/percorso/consegna.md"), "{msg}");
+        assert!(!msg.contains("stava girando su questo mandato"), "{msg}");
+    }
+
+    #[test]
+    fn il_punto_di_ripresa_arriva_al_successore() {
+        // È la differenza fra «leggi questo documento e prosegui» e «riprendi
+        // da qui»: il primo chiede di dedurre, il secondo dice.
+        let casa = HomeIsolata::nuova("segnale-punto");
+        segnale_json(&casa, "/percorso/consegna.md", "la staffetta via /clear", "");
+        let msg = resume_message();
+        assert!(msg.contains("RIPRENDI DA QUI"), "{msg}");
+        assert!(msg.contains("la staffetta via /clear"), "{msg}");
+    }
+
+    #[test]
+    fn il_punto_viene_prima_del_mandato() {
+        let casa = HomeIsolata::nuova("segnale-ordine");
+        segnale_json(
+            &casa,
+            "/percorso/consegna.md",
+            "il gate della lingua",
+            "/loop Sistema tutto",
+        );
+        let msg = resume_message();
+        let p = msg.find("il gate della lingua").expect("punto assente");
+        let m = msg.find("/loop Sistema tutto").expect("mandato assente");
+        assert!(p < m, "il mandato precede il punto:\n{msg}");
+    }
+
+    #[test]
+    fn il_mandato_del_loop_arriva_al_successore() {
+        // Senza queste righe il successore legge la consegna, dichiara da dove
+        // riparte e si ferma: e' come e' morto il loop del 19/08/2026.
+        let casa = HomeIsolata::nuova("segnale-mandato");
+        segnale_json(&casa, "/percorso/consegna.md", "", "/loop Sistemare la configurazione");
+        let msg = resume_message();
+        assert!(msg.contains("/percorso/consegna.md"), "{msg}");
+        assert!(msg.contains("/loop Sistemare la configurazione"), "{msg}");
+        assert!(msg.contains("tocca"), "{msg}");
+    }
+
+    #[test]
+    fn un_segnale_intestato_a_un_altro_non_si_consuma() {
+        // Due sessioni sullo stesso albero sono un caso normale, e da quando
+        // ogni rigenerazione manda un `/clear` la seconda che riparte
+        // troverebbe il segnale della prima: si prenderebbe il suo punto di
+        // ripresa e il suo `/loop`.
+        let casa = HomeIsolata::nuova("segnale-altrui");
+        segnale_per(&casa, "/percorso/consegna.md", "punto altrui", "", "tab-di-un-altro");
+        std::env::set_var("ORCA_TAB_ID", "tab-mia");
+        let msg = resume_message();
+        std::env::remove_var("ORCA_TAB_ID");
+        assert!(msg.is_empty(), "ha raccolto il mandato di un'altra sessione: {msg}");
+        // E resta sul disco per chi lo aspetta.
+        let signal = casa
+            .dir
+            .join(".claude/state/riprendi-da")
+            .join(format!("{}.txt", state_key("repo::_prova")));
+        assert!(signal.exists(), "ha consumato un segnale non suo");
+    }
+
+    #[test]
+    fn un_segnale_intestato_a_noi_si_consuma() {
+        let casa = HomeIsolata::nuova("segnale-mio");
+        segnale_per(&casa, "/percorso/consegna.md", "il mio punto", "", "tab-mia");
+        std::env::set_var("ORCA_TAB_ID", "tab-mia");
+        let msg = resume_message();
+        std::env::remove_var("ORCA_TAB_ID");
+        assert!(msg.contains("il mio punto"), "{msg}");
+    }
+
+    #[test]
+    fn un_mandato_su_piu_righe_arriva_intero() {
+        // IL CASO PER CUI QUESTO CANALE ESISTE. Un mandato di `/loop` è spesso
+        // un elenco, e il formato a righe etichettate — provato per un'ora il
+        // 19/08/2026 — riattaccava le righe senza separatore: «1. leggi X» e
+        // «2. fai Y» arrivavano come «1. leggi X2. fai Y».
+        let casa = HomeIsolata::nuova("segnale-multiriga");
+        let mandato = "/loop Sistema la configurazione:\n1. leggi X\n2. fai Y";
+        segnale_json(&casa, "/percorso/consegna.md", "il primo punto\ne il secondo", mandato);
+        let msg = resume_message();
+        assert!(msg.contains(mandato), "mandato corrotto nel viaggio:\n{msg}");
+        assert!(msg.contains("il primo punto\ne il secondo"), "punto corrotto:\n{msg}");
+        assert!(!msg.contains("leggi X2."), "righe riattaccate senza separatore:\n{msg}");
     }
 
     #[test]

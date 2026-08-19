@@ -1,8 +1,7 @@
-//! La staffetta: chiude una sessione piena e ne apre una che riprende da lì.
+//! La staffetta: azzera una sessione piena e le rimette in mano il lavoro.
 //!
-//! Porta del corpo di `skills/hooks/relay.py`. Il giudizio — rigenera, salta,
-//! pulisci — sta in `guards::handoff::evaluate` ed è già portato; qui c'è ciò
-//! che tocca disco e `orca`.
+//! Il giudizio — rigenera, salta, congeda, pulisci — sta in
+//! `guards::handoff::evaluate`; qui c'è ciò che tocca disco e `orca`.
 //!
 //! L'ORDINE DELLE CHIAMATE A ORCA È IL COMPORTAMENTO, e non è negoziabile:
 //!
@@ -10,21 +9,40 @@
 //!   0. il freno della catena          la storia, prima del momento: guarda
 //!                                     `guards::chain`
 //!   1. wait  tui-idle sulla vecchia   non si tronca un turno a metà
-//!   2. write riprendi-da/<worktree>   il segnale di ripresa, prima di tutto
-//!   3. create il successore            PRIMA di chiudere: il worktree non resta
-//!                                      mai senza sessione
-//!   4. attendi che il successore         la prova che il mandato è
-//!      raccolga il segnale               arrivato; il send è il ripiego
-//!   5. close la vecchia, pulisci       solo ORA, e solo se il resto è riuscito
+//!   2. write riprendi-da/<worktree>   il testimone — consegna, punto di
+//!                                     ripresa e mandato — prima di agire
+//!   3. send  /clear allo stesso       la sessione riparte vuota sul posto:
+//!      pannello                       stesso handle, stessa tab
+//!   4. attendi che il segnale         la prova che il mandato è arrivato:
+//!      sparisca                       lo consuma il gancio di avvio
+//!   5. send  l'avvio                  un turno non parte da solo, e senza
+//!                                     questo tutto il resto non produce nulla
 //! ```
 //!
-//! Invertire 3 e 5 lascerebbe un albero scoperto ogni volta che il create
-//! fallisce. Un errore nel mezzo lascia due sessioni, mai zero: è il verso
-//! giusto in cui sbagliare, e vale più dell'eleganza.
+//! NON SI CREA E NON SI CHIUDE PIÙ NIENTE, ed è la differenza che conta rispetto
+//! a com'era fino al 19/08/2026. La vecchia via creava un pannello, ne
+//! riconosceva l'handle nella risposta, e se non lo riconosceva lo deduceva
+//! dalla differenza fra due elenchi; poi ririsolveva l'handle della vecchia,
+//! la chiudeva, e verificava che si fosse chiusa davvero. Cinque punti in cui
+//! sbagliare, e hanno sbagliato: 47 sessioni in più in due giorni dal ramo che
+//! non riconosceva l'handle, due sessioni sullo stesso albero da una chiusura
+//! che colpiva un handle già morto. `/clear` li toglie tutti — misurato sul
+//! vivo: la memoria si azzera, il pannello resta, il contesto riparte da 65k.
+//!
+//! IL VERSO IN CUI SBAGLIARE. Se il `/clear` non parte non si è perso niente: la
+//! sessione ha ancora contesto e consegna, si raffredda e si riprova. Se parte
+//! ma il segnale non viene raccolto, la sessione è già vuota — e allora il
+//! testo dell'avvio **diventa** il mandato, perché una sessione azzerata e
+//! lasciata senza incarico è l'unico esito davvero distruttivo di tutta la
+//! staffetta.
+//!
+//! `retire` è l'altro percorso: chiude una sessione senza aprirne una, quando il
+//! successore l'ha già aperto qualcun altro. Lì si chiude davvero un pannello, ed
+//! è l'unico posto rimasto dove si fa.
 //!
 //! PERCHÉ `orca` SI INIETTA. `regenerate` non ha un'uscita da confrontare, ha
-//! **effetti**: cinque chiamate in un ordine preciso. Chiamando `orca` davvero,
-//! una prova su un handle finto diventa verde perché la chiamata è fallita, non
+//! **effetti**: chiamate in un ordine preciso. Chiamando `orca` davvero, una
+//! prova su un handle finto diventa verde perché la chiamata è fallita, non
 //! perché la guardia ha funzionato — è già successo in questa configurazione,
 //! con due mutanti che passavano su 36 prove su 36. Qui il chiamante entra come
 //! parametro: le prove registrano la sequenza e la confrontano.
@@ -408,35 +426,6 @@ fn armed_successor(session_id: &str, terminals: &[Terminal]) -> String {
     resolve_terminal_handle(get("tabId"), "", get("handle"), terminals)
 }
 
-/// Il primo `handle` che somiglia a un terminale, ovunque sia nella risposta.
-///
-/// Non si fissa il percorso di proposito. La versione precedente leggeva
-/// `result.handle` mentre Orca risponde `result.terminal.handle`: un livello di
-/// scarto, e ogni creazione riuscita veniva letta come fallita — 24 sessioni in
-/// mezz'ora, una al minuto.
-pub fn find_handle(out: &str) -> String {
-    fn walk(node: &serde_json::Value) -> String {
-        match node {
-            serde_json::Value::Object(map) => {
-                if let Some(h) = map.get("handle").and_then(|v| v.as_str()) {
-                    if h.starts_with("term_") {
-                        return h.to_string();
-                    }
-                }
-                map.values().map(walk).find(|s| !s.is_empty()).unwrap_or_default()
-            }
-            serde_json::Value::Array(items) => items
-                .iter()
-                .map(walk)
-                .find(|s| !s.is_empty())
-                .unwrap_or_default(),
-            _ => String::new(),
-        }
-    }
-    serde_json::from_str::<serde_json::Value>(out)
-        .map(|v| walk(&v))
-        .unwrap_or_default()
-}
 
 /// Il chiamante vero, quello che parla con `orca` sul serio.
 fn real_orca(args: &[&str]) -> (i32, String) {
@@ -623,22 +612,6 @@ pub(crate) fn sweep_tree_state(
     stale.len()
 }
 
-/// Gli handle dei terminali aperti su un albero di lavoro, adesso.
-///
-/// Vuoto vuol dire due cose diverse — «nessuno» e «non ho potuto leggere» — e
-/// chi la usa deve trattarle uguale: qui serve a confrontare un prima con un
-/// dopo, e un confronto con una lettura fallita non conclude niente. Non si
-/// usi per decidere che un terminale è morto.
-fn handles_on_worktree(worktree: &str, orca: OrcaFn) -> Vec<String> {
-    read_terminals(orca)
-        .map(|ts| {
-            ts.iter()
-                .filter(|t| t.worktree_id == worktree)
-                .map(|t| t.handle.clone())
-                .collect()
-        })
-        .unwrap_or_default()
-}
 
 /// Quante consegne candidate si aprono per confermarle. Si scorre per data
 /// decrescente, quindi la prima che regge è anche la più recente; il tetto vale
@@ -853,13 +826,7 @@ fn progress(transcript: &str) -> (u64, u64) {
     (turns, writes)
 }
 
-pub fn regenerate(
-    rec: &Record,
-    title: &str,
-    dry_run: bool,
-    orca: OrcaFn,
-    before: Option<&[Terminal]>,
-) {
+pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     let sess = &rec.session;
 
     // 0. IL FRENO, prima di ogni altra cosa e prima di spendere una chiamata a
@@ -932,143 +899,154 @@ pub fn regenerate(
     }
 
     // 2. lascia il segnale di ripresa per il successore
+    //
+    // IL MANDATO DEL LOOP VIAGGIA COL TESTIMONE. Si arriva qui con un risveglio
+    // ancora armato solo quando il contesto è oltre `require` — sotto, la
+    // sessione non si tocca proprio — e in quel caso la consegna da sola non
+    // basta: dice da dove riprendere, non che si stava girando in `/loop` né su
+    // che mandato. Il 19/08/2026 il successore ha ricevuto solo la consegna e
+    // il loop è finito lì.
+    //
+    // IL PUNTO DI RIPRESA, non un documento da cui dedurlo. Il `CLAUDE.md`
+    // prescrive che ogni turno chiuda con «**Procedo con** — <il passo
+    // successivo>»: è il punto scritto da chi lavorava, nel momento in cui lo
+    // sapeva. Fino al 19/08/2026 il successore riceveva solo «leggi la consegna
+    // e prosegui», cioè gli si chiedeva di ricavarsi da un riassunto una cosa
+    // che era già scritta in chiaro tre righe più in là.
+    //
+    // SI SCRIVE IN JSON, e non a righe etichettate. Un mandato di `/loop` è
+    // spesso un elenco su più righe: un formato a righe lo spezza, e chi lo
+    // rilegge riga per riga o lo tronca o lo riattacca senza separatori —
+    // «1. leggi X» e «2. fai Y» diventano «1. leggi X2. fai Y». Trovato da un
+    // vaglio indipendente il 19/08/2026, ed è il caso per cui questo canale
+    // esiste. Il formato vecchio — il solo percorso, senza newline — non è JSON
+    // valido e continua a essere letto come tale.
     let hpath = latest_handoff(&rec.cwd);
-    let _ = fs::create_dir_all(resume_dir());
-    let segnale_scritto = fs::write(
-        resume_dir().join(format!("{}.txt", state_key(&rec.worktree))),
-        if hpath.is_empty() {
-            "ultimo handoff in memory"
-        } else {
-            &hpath
-        },
-    )
-    .is_ok();
-
-    // Chi c'era su questo albero PRIMA di creare. Non si rilegge: `step_with` ha
-    // gia' fotografato i terminali all'inizio del giro, e quella e' esattamente
-    // la foto giusta — lo stato prima di qualunque azione. Rileggerlo qui
-    // costerebbe una chiamata a `orca` a **ogni** rigenerazione per servire un
-    // ramo che scatta di rado.
-    let before: Vec<String> = before
-        .map(|ts| {
-            ts.iter()
-                .filter(|t| t.worktree_id == rec.worktree)
-                .map(|t| t.handle.clone())
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // 3. CREA il successore PRIMA di chiudere
-    let selector = if rec.cwd.is_empty() {
-        "active".to_string()
-    } else {
-        format!("path:{}", rec.cwd)
-    };
-    let mut args: Vec<&str> = vec![
-        "terminal", "create", "--worktree", &selector,
-        "--command", "claude", "--json",
-    ];
-    if !title.is_empty() {
-        args.push("--title");
-        args.push(title);
+    let punto = crate::handoff::resume_point(&rec.transcript).unwrap_or_default();
+    let mandato = crate::handoff::wakeup_prompt(&rec.transcript).unwrap_or_default();
+    if !mandato.is_empty() {
+        log_line(&format!(
+            "sess={sess}: il mandato del loop viaggia col testimone ({} caratteri)",
+            mandato.chars().count()
+        ));
     }
-    let (rc, out) = orca(&args);
-    if rc != 0 {
+    // IL SEGNALE È INDIRIZZATO, non lasciato sull'albero per chiunque. La chiave
+    // resta il worktree — la sessione che riparte non ha ancora un nome — ma il
+    // corpo dice a quale tab è destinato, e chi non è quella tab non lo consuma.
+    //
+    // Serviva poco finché il testimone passava da un pannello appena **creato**,
+    // evento raro. Adesso ogni rigenerazione manda un `/clear`, e un `/clear`
+    // può anche digitarlo una persona: due sessioni sullo stesso albero sono un
+    // caso normale — lo dicono `retire` e il tetto delle sessioni — e senza
+    // indirizzo la seconda si prenderebbe il punto di ripresa e il `/loop` della
+    // prima. La tab è l'identità giusta: `ORCA_TERMINAL_HANDLE` invecchia a ogni
+    // riattacco, `ORCA_TAB_ID` no, e `/clear` non la cambia (misurato).
+    let corpo = serde_json::json!({
+        "handoff": if hpath.is_empty() { "ultimo handoff in memory" } else { &hpath },
+        "punto": punto,
+        "mandato": mandato,
+        "tab": rec.tab_id,
+    })
+    .to_string();
+    let _ = fs::create_dir_all(resume_dir());
+    let segnale_scritto =
+        fs::write(resume_dir().join(format!("{}.txt", state_key(&rec.worktree))), &corpo)
+            .is_ok();
+
+    // 3. AZZERA LA SESSIONE SUL POSTO, invece di crearne un'altra e chiudere
+    //    questa.
+    //
+    // `/clear` svuota la memoria del modello e lascia **il pannello, la tab e
+    // l'handle dov'erano**: misurato sul vivo il 19/08/2026 facendo memorizzare
+    // un codice a una sessione di prova, mandando `/clear` e richiedendoglielo —
+    // risponde di non saperlo, e `terminal list` mostra lo stesso `handle`,
+    // `tabId` e `leaf`. Il contesto riparte da 65k, il 13% del budget.
+    //
+    // COSA SPARISCE DA QUI. La vecchia via era: crea un terminale, riconosci il
+    // suo handle nella risposta, e se non lo riconosci deducilo dalla differenza
+    // fra due elenchi, poi ririsolvi l'handle della vecchia perché nel frattempo
+    // è invecchiato, poi chiudila e guarda se si è chiusa davvero. Cinque punti
+    // in cui sbagliare, e tutti e cinque hanno sbagliato almeno una volta: 47
+    // sessioni in più in due giorni dal ramo che non riconosceva l'handle, due
+    // sessioni sullo stesso albero quando la chiusura colpiva un handle già
+    // morto. Nessuno di quei rami esiste più: non c'è niente da creare e niente
+    // da chiudere.
+    //
+    // L'HANDLE SI RIRISOLVE COMUNQUE, ed è l'unica cautela che resta: fra la
+    // lettura di inizio giro e questo istante Orca può aver riattaccato il
+    // pannello, e mandare `/clear` all'handle sbagliato azzera la sessione di
+    // qualcun altro.
+    let handle = handle_di_adesso(rec, orca);
+    if handle.is_empty() {
+        // Il pannello non c'è più: non è un guasto, è una sessione finita per
+        // conto suo. Il record lo raccoglie `Action::Clean` al giro dopo.
+        log_line(&format!(
+            "sess={sess}: il pannello non c'e' piu', niente da azzerare"
+        ));
+        return;
+    }
+    let (rc_clear, out) = orca(&[
+        "terminal", "send", "--terminal", &handle, "--text", "/clear", "--enter",
+    ]);
+    if rc_clear != 0 {
+        // NON si è perso niente: la sessione vecchia è ancora lì col suo
+        // contesto e la sua consegna già scritta. Si raffredda e si riprova.
         set_cooldown(&rec.worktree);
         log_line(&format!(
-            "sess={sess}: create fallito (rc={rc}), NON chiudo la vecchia \
-             (cooldown {COOLDOWN_SEC}s). out={}",
+            "sess={sess}: /clear non inviato (rc={rc_clear}), la sessione resta \
+             com'era (cooldown {COOLDOWN_SEC}s). out={}",
             cut(&out, 400)
         ));
         return;
     }
-    let mut new_handle = find_handle(&out);
-    if new_handle.is_empty() {
-        // IL RAMO CHE AGGIUNGE SESSIONI, e perché non basta fermarsi qui.
-        //
-        // «Non ho riconosciuto l'handle» non è «il terminale non è nato»: il
-        // comando può essere riuscito con una risposta di forma diversa. Fino al
-        // 17/08/2026 qui ci si fermava, quindi il successore restava vivo E la
-        // vecchia non veniva chiusa — una sessione in più, ogni volta. È il solo
-        // ramo automatico che fa crescere il totale: 47 volte in due giorni, 23
-        // delle quali il 17/08, ed è la spiegazione delle 64 sessioni del 16/08,
-        // giorno in cui le rigenerazioni **riuscite** sono state zero.
-        //
-        // Quindi si guarda invece di dedurre: se sull'albero è comparso
-        // esattamente un terminale che prima non c'era, quello è il successore.
-        // Uno solo: con due o più non si sa quale sia, e chiudere la vecchia
-        // basandosi sul candidato sbagliato costa il lavoro di qualcun altro.
-        let dopo = handles_on_worktree(&rec.worktree, &mut *orca);
-        let newcomers: Vec<&String> = dopo
-            .iter()
-            .filter(|h| !before.contains(h) && *h != &rec.handle)
-            .collect();
-        match newcomers.len() {
-            1 => {
-                new_handle = newcomers[0].clone();
-                log_line(&format!(
-                    "sess={sess}: handle non riconosciuto nella risposta, ma \
-                     l'elenco ne mostra uno nuovo ({new_handle}): proseguo"
-                ));
-            }
-            0 => {
-                // Qui il create davvero non ha prodotto niente: si raffredda,
-                // altrimenti il giro dopo ricrea e riabbandona — è così che
-                // sono nate 22 sessioni in mezz'ora.
-                set_cooldown(&rec.worktree);
-                log_line(&format!(
-                    "sess={sess}: nessun handle dal create e nessun terminale \
-                     nuovo sull'albero, NON chiudo la vecchia (cooldown \
-                     {COOLDOWN_SEC}s). out={}",
-                    cut(&out, 400)
-                ));
-                return;
-            }
-            n => {
-                set_cooldown(&rec.worktree);
-                log_line(&format!(
-                    "sess={sess}: handle non riconosciuto e {n} terminali nuovi \
-                     sull'albero: non so quale sia il successore, NON chiudo la \
-                     vecchia (cooldown {COOLDOWN_SEC}s). out={}",
-                    cut(&out, 400)
-                ));
-                return;
-            }
-        }
-    }
 
-    // 4. aspetta la PROVA che il successore ha ricevuto il mandato
+    // 4. aspetta la PROVA che la sessione azzerata ha in mano il mandato
     //
-    // `tui-idle` NON DICE «PRONTO», dice «non sta scrivendo adesso» — vero anche
-    // di un processo che non è ancora partito. Misurato il 17/08/2026 creando un
-    // terminale e interrogandolo subito: `satisfied: true` dopo **0,1 secondi**,
-    // con Claude Code ancora in avvio. Il `send` che segue arriva in
-    // un'interfaccia che non c'è e il testo si perde: zero mandati consegnati su
-    // tutte le rigenerazioni mai fatte, e su tre prove su tre. Il `send` in sé
-    // funziona — provato su una shell, il comando è arrivato ed è stato
-    // eseguito: il difetto è il momento, non il canale.
+    // `register-session` è agganciato a `SessionStart` anche per la sorgente
+    // `clear`, e **consuma** `riprendi-da/<worktree>.txt` dopo averlo iniettato.
+    // Se il file sparisce, il mandato è arrivato: misurato sul vivo, il segnale
+    // è stato raccolto pochi secondi dopo il `/clear`.
+    let raccolto = wait_for_pickup(&rec.worktree, segnale_scritto);
+
+    // 5. FALLA PARTIRE. Il contesto iniettato da un gancio non avvia nessun
+    //    turno: dopo il `/clear` la sessione resta al prompt vuoto, e lì
+    //    resterebbe finché non le scrive una persona. È il difetto che il
+    //    19/08/2026 ha lasciato una ripresa ferma ad aspettare un mandato che
+    //    aveva già in mano — nove byte bastano ad avviarla, e senza quei nove
+    //    byte tutto il resto di questa funzione non produce lavoro.
     //
-    // Il segnale giusto c'è già: `register-session.py` **consuma** il file
-    // `riprendi-da/<worktree>.txt` quando la sessione nuova parte. Se sparisce,
-    // il successore è su e ha in mano il mandato. Il `send` resta come ripiego.
-    if wait_for_pickup(&rec.worktree, segnale_scritto) {
-        log_line(&format!(
-            "sess={sess}: il successore ha raccolto il mandato dal segnale"
-        ));
+    // Quando il segnale NON è stato raccolto il testo diventa il mandato
+    // stesso: è l'ultimo canale rimasto, e a quel punto la sessione è già
+    // azzerata — lasciarla senza incarico sarebbe l'unico esito davvero
+    // distruttivo di tutta la staffetta.
+    let avvio = if raccolto {
+        "riprendi dal punto di ripresa che hai ricevuto".to_string()
     } else {
-        let (rc_send, _) = orca(&[
-            "terminal", "send", "--terminal", &new_handle, "--text",
-            "riprendi dall'ultimo handoff", "--enter",
-        ]);
-        log_line(&format!(
-            "sess={sess}: il segnale non e' stato raccolto entro \
-             {}s, provo a voce (send rc={rc_send})",
-            pickup_timeout()
-        ));
-    }
+        // A voce si dà il testo, non il JSON: chi legge è un modello in una
+        // TUI, e le newline dentro un `--text` le mangia il terminale.
+        let mut voce = format!(
+            "RIPARTENZA (staffetta). Il segnale non e' stato raccolto, quindi te \
+             lo do a voce. Leggi la consegna: {}.",
+            if hpath.is_empty() { "ultimo handoff in memory" } else { &hpath }
+        );
+        if !punto.is_empty() {
+            voce.push_str(&format!(" RIPRENDI DA QUI: {}", punto.replace('\n', " · ")));
+        }
+        if !mandato.is_empty() {
+            voce.push_str(&format!(" MANDATO: {}", mandato.replace('\n', " · ")));
+        }
+        voce
+    };
+    let (rc_send, _) = orca(&[
+        "terminal", "send", "--terminal", &handle, "--text", &avvio, "--enter",
+    ]);
+    log_line(&format!(
+        "sess={sess}: azzerata sul posto, mandato {} (avvio rc={rc_send})",
+        if raccolto { "raccolto dal segnale" } else { "dato a voce" }
+    ));
 
-    // 5. ORA chiudi la vecchia e pulisci
-    orca(&["terminal", "close", "--terminal", &rec.handle]);
+    // 6. pulisci lo stato della sessione sostituita. Il pannello non si tocca:
+    //    è lo stesso, e adesso ci vive la sessione nuova.
     let _ = fs::remove_file(live_dir().join(format!("{sess}.json")));
     for family in [
         "consegna-fatta", "consegna-blocchi", "consegna-stop",
@@ -1091,9 +1069,8 @@ pub fn regenerate(
     write_chain(&rec.worktree, &chain);
     let _ = fs::remove_file(chain_blocked_path(&rec.worktree));
     log_line(&format!(
-        "RIGENERATA sess={sess}: vecchio={} -> nuovo={new_handle} (handoff={}, \
+        "RIGENERATA sess={sess}: azzerata sul posto su {handle} (handoff={}, \
          prodotto: {turns} turni, {writes} scritture, anello {} della catena)",
-        rec.handle,
         if hpath.is_empty() { "-" } else { &hpath },
         chain.len()
     ));
@@ -1130,6 +1107,87 @@ fn wait_for_pickup(worktree: &str, scritto: bool) -> bool {
     false
 }
 
+/// L'handle su cui vive **adesso** la sessione del record, o vuoto se non c'è.
+///
+/// NON SI RIUSA L'HANDLE DEL RECORD. Invecchia a ogni riattacco del pannello, e
+/// fra la lettura di inizio giro e il momento di agire passa l'attesa dell'idle.
+/// Misurato il 18/08/2026 sulla sessione `6bd74afa`: la staffetta ha chiuso
+/// `term_49e690ff`, già morto, mentre quella sessione viveva su `term_ca8f3dab`
+/// e ha continuato a girare — due sessioni sullo stesso albero.
+///
+/// Se l'elenco non si legge si risponde con l'handle del record: è la scelta
+/// meno peggio, perché «non lo so» qui significherebbe non agire mai.
+fn handle_di_adesso(rec: &Record, orca: OrcaFn) -> String {
+    match read_terminals(orca) {
+        Some(ts) => resolve_terminal_handle(&rec.tab_id, &rec.worktree, &rec.handle, &ts),
+        None => rec.handle.clone(),
+    }
+}
+
+/// Chiude la scheda della sessione sostituita, e guarda se si è chiusa davvero.
+///
+/// L'HANDLE VA RIRISOLTO QUI, non riusato. Invecchia a ogni riattacco del
+/// pannello, e fra la lettura di inizio giro e questo momento passa l'attesa del
+/// pickup — venticinque secondi in cui Orca può aver riattaccato la scheda.
+/// Misurato il 18/08/2026 sulla sessione `6bd74afa`: la staffetta ha chiuso
+/// `term_49e690ff`, già morto, mentre quella sessione viveva su `term_ca8f3dab`
+/// e ha continuato a girare — due sessioni sullo stesso albero, e
+/// `register-session.py` ha riscritto il record col nuovo handle, rimettendola in
+/// fila per la prossima rigenerazione.
+///
+/// E L'ESITO SI GUARDA. Prima si chiamava `orca terminal close` scartando la
+/// risposta: «ho chiuso una scheda morta» era indistinguibile da «ho chiuso la
+/// vecchia», ed è lo stesso difetto già corretto per il `send` due passi più su.
+/// La prova è rileggere l'elenco: se l'handle è ancora fra i vivi, la chiusura
+/// non è avvenuta e lo si scrive.
+fn close_old_panel(rec: &Record, sess: &str, orca: OrcaFn) -> Chiusura {
+    let handle = handle_di_adesso(rec, orca);
+    if handle.is_empty() {
+        log_line(&format!(
+            "sess={sess}: la scheda vecchia non c'è già più, niente da chiudere"
+        ));
+        return Chiusura::NonCera;
+    }
+    let (rc, _) = orca(&["terminal", "close", "--terminal", &handle]);
+    match read_terminals(orca) {
+        None => {
+            // L'elenco non si rilegge: resta la parola del comando. È l'unico
+            // ramo in cui si crede a un `rc`, e si crede solo a quello — un
+            // `rc` diverso da zero qui è un fallimento dichiarato, non un
+            // dubbio.
+            log_line(&format!(
+                "sess={sess}: chiusa la scheda {handle} (rc={rc}), esito non verificabile"
+            ));
+            if rc == 0 { Chiusura::Fatta } else { Chiusura::Fallita }
+        }
+        Some(ts) if ts.iter().any(|t| t.handle == handle) => {
+            log_line(&format!(
+                "sess={sess}: LA SCHEDA {handle} NON SI E' CHIUSA (rc={rc}): \
+                 restano due sessioni su {}",
+                rec.worktree
+            ));
+            Chiusura::Fallita
+        }
+        Some(_) => Chiusura::Fatta,
+    }
+}
+
+/// Cos'è successo alla scheda che si voleva chiudere.
+///
+/// TRE ESITI, NON DUE. «Non c'era più» e «l'ho chiusa» portano entrambi avanti
+/// il congedo, ma non sono la stessa cosa da scrivere nel registro: fondendoli
+/// in un `bool`, una riga affermava «chiusa `term_x`» per una chiamata a `close`
+/// mai fatta. Chi indaga un guasto legge quella riga come un fatto.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Chiusura {
+    /// Il `close` è partito e la scheda non è più nell'elenco.
+    Fatta,
+    /// Non c'era niente da chiudere: il pannello era già sparito.
+    NonCera,
+    /// La scheda è ancora viva, o il comando ha dichiarato di non averla chiusa.
+    Fallita,
+}
+
 /// Chiude la vecchia senza aprirne un'altra: il successore c'è già.
 ///
 /// Stessa prudenza di `regenerate` sul primo passo — si attende che la sessione
@@ -1151,7 +1209,24 @@ fn retire(rec: &Record, orca: OrcaFn) {
         log_line(&format!("sess={sess}: non idle (rc={rc}), rimando la chiusura"));
         return;
     }
-    orca(&["terminal", "close", "--terminal", &rec.handle]);
+    // L'ESITO DELLA CHIUSURA DECIDE, invece di essere calcolato e buttato.
+    //
+    // `close_old_panel` ririsolve l'handle e rilegge l'elenco apposta per
+    // rispondere «si è chiusa davvero?», ed è nata dall'incidente `6bd74afa` —
+    // una scheda stantia chiusa mentre la sessione viveva altrove. Proseguire su
+    // un `false` cancella il record di una sessione ancora viva: da lì in poi
+    // gira **non tracciata**, accanto a chi ha preso il suo posto, e nessun giro
+    // successivo la guarda più. Trovato da un vaglio indipendente il
+    // 19/08/2026: il controllo c'era, il verdetto pure, e nessuno lo leggeva.
+    let esito = close_old_panel(rec, sess, orca);
+    if esito == Chiusura::Fallita {
+        set_cooldown(&rec.worktree);
+        log_line(&format!(
+            "sess={sess}: congedo annullato, la sessione e' ancora viva \
+             (cooldown {COOLDOWN_SEC}s)"
+        ));
+        return;
+    }
     let _ = fs::remove_file(live_dir().join(format!("{sess}.json")));
     for family in [
         "consegna-fatta", "consegna-blocchi", "consegna-stop",
@@ -1184,9 +1259,13 @@ fn retire(rec: &Record, orca: OrcaFn) {
     });
     write_chain(&rec.worktree, &chain);
     log_line(&format!(
-        "CONGEDATA sess={sess}: chiusa {} senza aprirne un'altra \
+        "CONGEDATA sess={sess}: {} senza aprirne un'altra \
          (prodotto: {turns} turni, {writes} scritture, anello {} della catena)",
-        rec.handle,
+        match esito {
+            Chiusura::Fatta => format!("chiusa {}", rec.handle),
+            Chiusura::NonCera => "il pannello era gia' sparito".to_string(),
+            Chiusura::Fallita => unreachable!("il ramo fallito esce sopra"),
+        },
         chain.len()
     ));
 }
@@ -1259,7 +1338,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
         let transcript_exists =
             !rec.transcript.is_empty() && Path::new(&rec.transcript).exists();
         macro_rules! fatti {
-            ($thresholds:expr, $used:expr, $lavorato:expr) => {
+            ($thresholds:expr, $used:expr, $lavorato:expr, $sveglia:expr) => {
                 SessionFacts {
                     session: &rec.session,
                     handle: &rec.handle,
@@ -1272,6 +1351,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                     handoff_deliberate,
                     transcript_exists,
                     worked_after_handoff: $lavorato,
+                    wakeup_in: $sveglia,
                     used: $used,
                     thresholds: $thresholds,
                 }
@@ -1283,7 +1363,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
         // scopo — un vaglio indipendente l'aveva segnalato come irraggiungibile
         // dall'oracolo — e questo è lo scopo.
         let t;
-        let (action, reason) = match evaluate(&fatti!(None, 0, false)) {
+        let (action, reason) = match evaluate(&fatti!(None, 0, false, None)) {
             (Action::Skip, r) if r == "soglie non calcolabili" => {
                 t = crate::handoff::thresholds(&rec.transcript);
                 let used = crate::handoff::context_used(&rec.transcript, &rec.session);
@@ -1291,7 +1371,11 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                 // ragione per cui la misura sta in questo ramo e non sopra.
                 let lavorato =
                     crate::handoff::worked_after_handoff(&rec.transcript, &rec.session);
-                evaluate(&fatti!(Some(&t), used, lavorato))
+                // Stessa coda, stessa passata: il risveglio armato si legge qui
+                // e non prima, per la ragione già scritta sopra.
+                let sveglia =
+                    crate::handoff::wakeup_pending(&rec.transcript, now as f64);
+                evaluate(&fatti!(Some(&t), used, lavorato, sveglia))
             }
             altro => altro,
         };
@@ -1308,12 +1392,7 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
             }
             Action::Regenerate => {
                 log_line(&format!("candidato sess={}: {reason}", rec.session));
-                let title = terminals
-                    .as_ref()
-                    .and_then(|ts| ts.iter().find(|t| t.handle == rec.handle))
-                    .map(|t| t.title.clone())
-                    .unwrap_or_default();
-                regenerate(&rec, &title, dry_run, orca, terminals.as_deref());
+                regenerate(&rec, dry_run, orca);
             }
             Action::Retire => {
                 log_line(&format!("congedo sess={}: {reason}", rec.session));
@@ -1350,33 +1429,6 @@ mod tests {
     use crate::test_home::HomeIsolata;
 
     #[test]
-    fn l_handle_si_trova_ovunque_sia_annidato() {
-        // La riga esatta del registro del 17/08/2026: forma riuscita, lettura
-        // fallita, e 24 sessioni nate da lì.
-        assert_eq!(
-            find_handle(
-                r#"{"ok":true,"result":{"terminal":{"handle":"term_dc752551","tabId":"x"}}}"#
-            ),
-            "term_dc752551"
-        );
-        assert_eq!(find_handle(r#"{"result":{"handle":"term_a"}}"#), "term_a");
-        assert_eq!(find_handle(r#"{"handle":"term_b"}"#), "term_b");
-        assert_eq!(
-            find_handle(r#"{"result":{"terminals":[{"handle":"term_c"}]}}"#),
-            "term_c"
-        );
-    }
-
-    #[test]
-    fn un_handle_che_non_e_un_terminale_non_conta() {
-        // La vecchia espressione restituiva volentieri un id di worktree.
-        assert_eq!(find_handle(r#"{"result":{"handle":"wt-123"}}"#), "");
-        assert_eq!(find_handle(r#"{"ok":false,"error":"no worktree"}"#), "");
-        assert_eq!(find_handle("non e' json"), "");
-        assert_eq!(find_handle(""), "");
-    }
-
-    #[test]
     fn il_taglio_e_a_caratteri_non_a_byte() {
         // Lo slicing di Python conta caratteri: su un messaggio accentato un
         // taglio a byte spezzerebbe una lettera a metà.
@@ -1397,52 +1449,46 @@ mod tests {
     }
 
     #[test]
-    fn il_successore_si_crea_prima_di_chiudere_la_vecchia() {
-        let _home = HomeIsolata::nuova("ordine");
-        // L'invariante che vale più di ogni altra qui: se questo ordine si
-        // inverte, un create fallito lascia il worktree senza sessione.
+    fn la_sessione_si_azzera_sul_posto() {
+        let _home = HomeIsolata::nuova("azzera-sul-posto");
+        // L'invariante che ha sostituito «crea prima di chiudere»: non si crea
+        // e non si chiude niente. Erano i due gesti che sbagliavano — 47
+        // sessioni in più in due giorni da un create riuscito e non
+        // riconosciuto, e due sessioni sullo stesso albero da una chiusura che
+        // colpiva un handle già morto.
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
-            if args.contains(&"create") {
-                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
-            } else {
-                (0, String::new())
-            }
+            (0, String::new())
         };
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         let seq = chiamate.borrow().clone();
-        let pos = |frammento: &str| seq.iter().position(|c| c.contains(frammento));
-        let create = pos("create").expect("il create deve esserci");
-        let close = pos("close").expect("il close deve esserci");
-        assert!(create < close, "create dopo close: {seq:?}");
-        // E il send arriva al NUOVO handle, non al vecchio.
-        let send = seq.iter().find(|c| c.contains("send")).expect("send assente");
-        assert!(send.contains("term_nuovo"), "send al terminale sbagliato: {send}");
+        assert!(!seq.iter().any(|c| c.contains("create")), "ha creato: {seq:?}");
+        assert!(!seq.iter().any(|c| c.contains("close")), "ha chiuso: {seq:?}");
+        let clear = seq.iter().find(|c| c.contains("/clear")).expect("nessun /clear");
+        assert!(clear.contains("term_vecchio"), "azzerata la sessione sbagliata: {clear}");
     }
 
     #[test]
-    fn senza_handle_dal_create_la_vecchia_non_si_chiude() {
-        let _home = HomeIsolata::nuova("senza-handle");
-        // Il difetto del 17/08: risposta riuscita, handle non trovato. Il verso
-        // giusto è tenersi la vecchia, mai chiuderla al buio.
+    fn un_clear_non_inviato_lascia_la_sessione_comera() {
+        let _home = HomeIsolata::nuova("clear-fallito");
+        // Il verso sicuro: se il comando non parte non si è perso niente — la
+        // sessione ha ancora il suo contesto e la sua consegna già scritta. Si
+        // raffredda e si riprova, invece di insistere sullo stesso giro.
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
-            if args.contains(&"create") {
-                (0, r#"{"ok":true,"result":{}}"#.to_string())
-            } else {
-                (0, String::new())
-            }
+            if args.contains(&"/clear") { (1, "boom".into()) } else { (0, String::new()) }
         };
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         let seq = chiamate.borrow().clone();
-        assert!(
-            !seq.iter().any(|c| c.contains("close")),
-            "ha chiuso la vecchia senza avere il successore: {seq:?}"
-        );
+        let send = seq.iter().filter(|c| c.contains("send")).count();
+        assert_eq!(send, 1, "ha insistito dopo un /clear non inviato: {seq:?}");
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("/clear non inviato"), "{log}");
+        assert!(!log.contains("RIGENERATA"), "ha contato una rigenerazione mai avvenuta: {log}");
     }
 
     #[test]
@@ -1456,72 +1502,124 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (1, String::new())
         };
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         let seq = chiamate.borrow().clone();
         assert_eq!(seq.len(), 1, "dopo un wait fallito non si fa altro: {seq:?}");
         assert!(seq[0].contains("wait"));
     }
 
     #[test]
-    fn quando_il_successore_raccoglie_il_mandato_non_si_digita_niente() {
+    fn raccolto_il_segnale_si_manda_solo_l_avvio() {
         let _home = HomeIsolata::nuova("mandato-raccolto");
-        // È il caso buono, e va provato perché è quello che il 17/08/2026 non
-        // succedeva mai: la sessione nuova parte, `register-session.py` legge
-        // `riprendi-da/<worktree>.txt` e lo cancella. Sparito il file, il
-        // mandato è arrivato — e digitare in una TUI diventa inutile.
+        // Il caso buono. `register-session` è agganciato al `SessionStart` della
+        // sorgente `clear` e consuma `riprendi-da/<worktree>.txt` dopo averlo
+        // iniettato: sparito il file, il mandato è in mano alla sessione nuova.
+        //
+        // MA UN TURNO VA AVVIATO LO STESSO. Il contesto iniettato da un gancio
+        // non fa partire niente: misurato sul vivo il 19/08/2026, dopo il
+        // `/clear` la sessione resta al prompt vuoto con il mandato già dentro.
+        // Sono nove byte, e senza di loro tutta la staffetta non produce lavoro.
         std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "5");
         let segnale = resume_dir().join(format!("{}.txt", state_key("wt-prova")));
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
-            if args.contains(&"create") {
-                // Il successore parte e raccoglie: è ciò che fa il gancio di
+            if args.contains(&"/clear") {
+                // La sessione riparte e raccoglie: è ciò che fa il gancio di
                 // avvio, qui al momento giusto invece che da un altro processo.
                 let _ = fs::remove_file(&segnale);
-                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
-            } else {
-                (0, String::new())
             }
+            (0, String::new())
         };
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         let seq = chiamate.borrow().clone();
+        // Due `send`: il `/clear` e l'avvio. Contarne uno solo lascerebbe
+        // passare la versione che azzera e non fa ripartire — e «l'ultimo
+        // comando contiene send» è vero anche del `/clear`.
+        let send: Vec<&String> = seq.iter().filter(|c| c.contains("send")).collect();
+        assert_eq!(send.len(), 2, "non ha avviato il turno dopo il /clear: {seq:?}");
+        assert!(send[0].contains("/clear"), "{seq:?}");
         assert!(
-            !seq.iter().any(|c| c.contains("send")),
-            "ha digitato l'ordine a un successore che l'aveva già: {seq:?}"
+            !send[1].contains("RIPARTENZA"),
+            "ha ridettato a voce un mandato già raccolto: {}",
+            send[1]
         );
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
-        assert!(log.contains("ha raccolto il mandato"), "{log}");
+        assert!(log.contains("raccolto dal segnale"), "{log}");
         assert!(log.contains("RIGENERATA"), "{log}");
     }
 
     #[test]
-    fn un_ordine_di_ripresa_non_consegnato_lascia_una_riga() {
-        let _home = HomeIsolata::nuova("send-fallito");
-        // Il caso vero: il create riesce, la vecchia si chiude, e l'ordine a
-        // voce non arriva. Finché gli esiti venivano scartati, questo era
-        // indistinguibile da una staffetta perfetta — ed è andata così su
-        // **tutte** le rigenerazioni mai fatte su questa macchina.
-        let mut orca = |args: &[&str]| -> (i32, String) {
-            if args.contains(&"create") {
-                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
-            } else if args.contains(&"send") {
-                (1, String::new())
-            } else {
-                (0, String::new())
-            }
+    fn il_segnale_porta_punto_e_mandato() {
+        let _home = HomeIsolata::nuova("segnale-completo");
+        // Il contenuto del segnale non lo guardava nessuno: toglierne il punto
+        // di ripresa non faceva cadere niente, e il successore sarebbe tornato
+        // a dedurlo da un documento — cioè al difetto del 19/08/2026.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let transcript = _home.dir.join("t.jsonl");
+        let righe = [
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-08-18T23:30:15.814Z",
+                "message": {"content": [{"type": "tool_use", "name": "ScheduleWakeup",
+                                         "input": {"delaySeconds": 1500,
+                                                   "prompt": "/loop Sistema la configurazione"}}]}
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "assistant",
+                "timestamp": "2026-08-18T23:30:23.608Z",
+                "message": {"content": [{"type": "text",
+                                         "text": "**Procedo con** — la staffetta via /clear"}]}
+            })
+            .to_string(),
+        ];
+        fs::write(&transcript, righe.join("\n")).unwrap();
+        let rec = Record {
+            transcript: transcript.to_string_lossy().into_owned(),
+            ..record_di_prova()
         };
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
-        let log = fs::read_to_string(
-            home().join(".claude/state/staffetta.log"),
+        let mut orca = |_: &[&str]| -> (i32, String) { (0, String::new()) };
+        regenerate(&rec, false, &mut orca);
+        // Il segnale resta sul disco: nessuno l'ha raccolto in questo caso.
+        let corpo = fs::read_to_string(
+            resume_dir().join(format!("{}.txt", state_key("wt-prova"))),
         )
         .unwrap_or_default();
+        let d: serde_json::Value = serde_json::from_str(&corpo)
+            .unwrap_or_else(|e| panic!("segnale non è JSON ({e}):\n{corpo}"));
+        assert_eq!(d["punto"].as_str().unwrap_or(""), "**Procedo con** — la staffetta via /clear");
+        assert_eq!(d["mandato"].as_str().unwrap_or(""), "/loop Sistema la configurazione");
+        assert!(d["handoff"].as_str().unwrap_or("").ends_with(".md")
+            || d["handoff"] == "ultimo handoff in memory", "{corpo}");
+    }
+
+    #[test]
+    fn segnale_non_raccolto_il_mandato_si_da_a_voce() {
+        let _home = HomeIsolata::nuova("mandato-a-voce");
+        // Qui la sessione è GIÀ azzerata: lasciarla senza incarico sarebbe
+        // l'unico esito davvero distruttivo della staffetta — un pannello vuoto
+        // che ha buttato il contesto e non sa cosa fare. Il testo dell'avvio
+        // diventa allora il mandato stesso.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            (0, String::new())
+        };
+        regenerate(&record_di_prova(), false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        let avvio = seq.last().expect("nessun comando");
         assert!(
-            log.contains("non e' stato raccolto"),
-            "il ripiego a voce non lascia traccia: {log}"
+            avvio.contains("RIPARTENZA"),
+            "sessione azzerata e lasciata senza incarico: {seq:?}"
         );
-        // E la staffetta va avanti lo stesso: il mandato viaggia per disco.
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("dato a voce"), "{log}");
         assert!(log.contains("RIGENERATA"), "{log}");
     }
 
@@ -1541,7 +1639,7 @@ mod tests {
                 (0, String::new())
             }
         };
-        regenerate(&rec, "", false, &mut orca, None);
+        regenerate(&rec, false, &mut orca);
 
         let state = home().join(".claude").join("state");
         let ripresa: Vec<_> = fs::read_dir(state.join("riprendi-da"))
@@ -1569,7 +1667,7 @@ mod tests {
             c.borrow_mut().push(args.join(" "));
             (0, String::new())
         };
-        regenerate(&record_di_prova(), "", true, &mut orca, None);
+        regenerate(&record_di_prova(), true, &mut orca);
         assert!(chiamate.borrow().is_empty(), "a secco ha parlato con orca");
     }
 
@@ -1697,6 +1795,169 @@ mod tests {
         (chiamate, orca)
     }
 
+    // ─── La chiusura della scheda vecchia ────────────────────────────────────
+
+    /// Un `orca` che risponde a `terminal list` con l'elenco dato, e registra
+    /// tutto. `dopo` è l'elenco che risponde DOPO il primo `close`: è così che si
+    /// finge una scheda che si chiude davvero, o una che resiste.
+    fn orca_con_schede(
+        prima: &'static str,
+        dopo: &'static str,
+    ) -> (std::rc::Rc<std::cell::RefCell<Vec<String>>>, impl FnMut(&[&str]) -> (i32, String)) {
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let orca = move |args: &[&str]| -> (i32, String) {
+            let chiuso = c.borrow().iter().any(|x| x.contains("close"));
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"list") {
+                (0, if chiuso { dopo.to_string() } else { prima.to_string() })
+            } else if args.contains(&"create") {
+                (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
+        (chiamate, orca)
+    }
+
+    #[test]
+    fn il_clear_va_all_handle_di_adesso_non_a_quello_del_record() {
+        let _home = HomeIsolata::nuova("clear-handle-fresco");
+        // Lo stesso caso del 18/08/2026, ma sul gesto nuovo: mandare `/clear`
+        // all'handle scaduto azzererebbe la sessione di qualcun altro — o
+        // nessuna — e questa lascerebbe il posto senza averlo mai lasciato.
+        // Fino al 19/08/2026 nessun caso di `regenerate` leggeva una lista di
+        // schede vera: la ririsoluzione era scritta e non provata.
+        let rec = Record {
+            handle: "term_scaduto".into(),
+            tab_id: "tab-1".into(),
+            ..record_di_prova()
+        };
+        let (chiamate, mut orca) = orca_con_schede(
+            r#"{"result":{"terminals":[{"handle":"term_attuale","tabId":"tab-1"}]}}"#,
+            r#"{"result":{"terminals":[]}}"#,
+        );
+        regenerate(&rec, false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        let clear = seq.iter().find(|c| c.contains("/clear")).expect("nessun /clear");
+        assert!(clear.contains("term_attuale"), "azzerata la scheda sbagliata: {clear}");
+        assert!(!clear.contains("term_scaduto"), "{clear}");
+    }
+
+    #[test]
+    fn un_congedo_che_non_chiude_non_dimentica_la_sessione() {
+        let _home = HomeIsolata::nuova("congedo-fallito");
+        // Il controllo c'era, il verdetto pure, e nessuno lo leggeva: il congedo
+        // proseguiva a cancellare il record di una sessione ancora viva, che da
+        // lì in poi girava non tracciata accanto a chi aveva preso il suo posto.
+        let rec = Record { tab_id: "tab-1".into(), ..record_di_prova() };
+        let vive = r#"{"result":{"terminals":[{"handle":"term_vecchio","tabId":"tab-1"}]}}"#;
+        // La scheda resta nell'elenco anche dopo il `close`: non si è chiusa.
+        let (_, mut orca) = orca_con_schede(vive, vive);
+        let vivo = live_dir().join("provarel.json");
+        fs::create_dir_all(live_dir()).unwrap();
+        fs::write(&vivo, "{}").unwrap();
+        retire(&rec, &mut orca);
+        assert!(vivo.exists(), "ha smesso di tracciare una sessione ancora viva");
+        assert!(read_chain("wt-prova").is_empty(), "ha contato un congedo mai avvenuto");
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("congedo annullato"), "{log}");
+    }
+
+    #[test]
+    fn the_panel_is_resolved_again_before_closing_it() {
+        let _home = HomeIsolata::nuova("chiusura-handle-fresco");
+        // IL CASO VERO DEL 18/08/2026. Il record porta l'handle letto a inizio
+        // giro; nel frattempo il pannello si è riattaccato e la stessa tab vive
+        // su un handle nuovo. Chiudendo quello vecchio si chiude una scheda già
+        // morta, e la sessione continua a girare accanto al successore.
+        let rec = Record {
+            handle: "term_scaduto".into(),
+            tab_id: "tab-1".into(),
+            ..record_di_prova()
+        };
+        let (chiamate, mut orca) = orca_con_schede(
+            r#"{"result":{"terminals":[{"handle":"term_attuale","tabId":"tab-1"}]}}"#,
+            r#"{"result":{"terminals":[]}}"#,
+        );
+        assert_eq!(close_old_panel(&rec, "provarel", &mut orca), Chiusura::Fatta);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            seq.iter().any(|c| c.contains("close") && c.contains("term_attuale")),
+            "ha chiuso l'handle scaduto invece di quello di adesso: {seq:?}"
+        );
+        assert!(
+            !seq.iter().any(|c| c.contains("close") && c.contains("term_scaduto")),
+            "ha speso una chiusura sulla scheda morta: {seq:?}"
+        );
+    }
+
+    #[test]
+    fn a_panel_that_does_not_close_is_said_out_loud() {
+        let _home = HomeIsolata::nuova("chiusura-fallita");
+        // Prima si scartava la risposta di `close`: una scheda che resta aperta
+        // era indistinguibile da una chiusa, e il registro diceva RIGENERATA
+        // mentre restavano due sessioni sullo stesso albero.
+        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..record_di_prova() };
+        let vivo = r#"{"result":{"terminals":[{"handle":"term_x","tabId":"tab-1"}]}}"#;
+        let (_, mut orca) = orca_con_schede(vivo, vivo);
+        assert_eq!(
+            close_old_panel(&rec, "provarel", &mut orca),
+            Chiusura::Fallita,
+            "ha dichiarato chiusa una scheda viva"
+        );
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        // La riga si cita come la scrive il codice: `E'` con l'apostrofo, non
+        // `È`. Con l'accento la prova non poteva passare mai, e il rosso si
+        // leggeva come una corsa fra prove parallele invece che come un
+        // confronto di stringhe che non combacia.
+        assert!(log.contains("NON SI E' CHIUSA"), "{log}");
+    }
+
+    #[test]
+    fn se_l_elenco_non_si_rilegge_vale_la_parola_del_comando() {
+        let _home = HomeIsolata::nuova("verifica-impossibile");
+        // L'unico ramo in cui si crede a un codice d'uscita, e nessun caso lo
+        // toccava: un mutante che ci scrivesse `true` fisso — cioè «chiusa» per
+        // un comando fallito — sopravviveva a tutta la batteria, e il congedo
+        // avrebbe smesso di tracciare una sessione ancora viva.
+        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..record_di_prova() };
+        let prima = r#"{"result":{"terminals":[{"handle":"term_x","tabId":"tab-1"}]}}"#;
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            let gia_chiuso = c.borrow().iter().any(|x| x.contains("close"));
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"list") {
+                // Dopo il `close` l'elenco non si legge più: è il ramo `None`.
+                if gia_chiuso { (1, String::new()) } else { (0, prima.to_string()) }
+            } else if args.contains(&"close") {
+                (1, "boom".to_string()) // il comando dichiara di non aver chiuso
+            } else {
+                (0, String::new())
+            }
+        };
+        assert_eq!(close_old_panel(&rec, "provarel", &mut orca), Chiusura::Fallita);
+    }
+
+    #[test]
+    fn a_panel_already_gone_costs_no_close() {
+        let _home = HomeIsolata::nuova("scheda-gia-sparita");
+        let rec = Record { handle: "term_x".into(), tab_id: "tab-1".into(), ..record_di_prova() };
+        let (chiamate, mut orca) = orca_con_schede(
+            r#"{"result":{"terminals":[{"handle":"term_altro","tabId":"tab-9"}]}}"#,
+            r#"{"result":{"terminals":[]}}"#,
+        );
+        // NON «Fatta»: non si è chiuso niente, e la riga di registro del
+        // congedo deve poterlo dire.
+        assert_eq!(close_old_panel(&rec, "provarel", &mut orca), Chiusura::NonCera);
+        assert!(
+            !chiamate.borrow().iter().any(|c| c.contains("close")),
+            "ha chiuso qualcosa che non era suo: {:?}",
+            chiamate.borrow()
+        );
+    }
+
     #[test]
     fn a_worn_out_chain_is_not_regenerated() {
         let _home = HomeIsolata::nuova("catena-esausta");
@@ -1705,7 +1966,7 @@ mod tests {
         // giro per accorgersi di essere un freno.
         catena_finta("wt-prova", 10, 5, "/qualcosa.md", 30.0);
         let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         assert!(
             chiamate.borrow().is_empty(),
             "il freno non ha fermato niente: {:?}",
@@ -1724,7 +1985,7 @@ mod tests {
         // niente e citano tutti la stessa consegna.
         catena_finta("wt-prova", 4, 0, "/ferma.md", 30.0);
         let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         assert!(chiamate.borrow().is_empty(), "{:?}", chiamate.borrow());
         let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("gira a vuoto"), "{log}");
@@ -1738,9 +1999,9 @@ mod tests {
         // configurazione ha già pagato altrove, con 16 falsi allarmi su 18.
         catena_finta("wt-prova", 10, 5, "/qualcosa.md", 30.0);
         let (_, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&record_di_prova(), false, &mut orca);
+        regenerate(&record_di_prova(), false, &mut orca);
         let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert_eq!(
             log.matches("FRENO").count(),
@@ -1756,9 +2017,9 @@ mod tests {
         // il lavoro di adesso non si giudica coi suoi numeri.
         catena_finta("wt-prova", 10, 0, "/vecchia.md", 8.0 * 3600.0);
         let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         let seq = chiamate.borrow().clone();
-        assert!(seq.iter().any(|c| c.contains("create")), "non ha rigenerato: {seq:?}");
+        assert!(seq.iter().any(|c| c.contains("/clear")), "non ha rigenerato: {seq:?}");
         let anelli = read_chain("wt-prova");
         assert_eq!(anelli.len(), 1, "la catena vecchia non è stata azzerata");
     }
@@ -1767,7 +2028,7 @@ mod tests {
     fn a_successful_regeneration_records_its_link() {
         let _home = HomeIsolata::nuova("anello-registrato");
         let (_, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         let anelli = read_chain("wt-prova");
         assert_eq!(anelli.len(), 1, "l'anello non è stato registrato");
         assert_eq!(anelli[0].session, "provarel");
@@ -1781,9 +2042,9 @@ mod tests {
         catena_finta("wt-prova", 10, 0, "/ferma.md", 30.0);
         fs::write(home().join(".claude/state/freno-catena-off"), "").unwrap();
         let (chiamate, mut orca) = orca_che_registra();
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         assert!(
-            chiamate.borrow().iter().any(|c| c.contains("create")),
+            chiamate.borrow().iter().any(|c| c.contains("/clear")),
             "la valvola non spegne il freno: {:?}",
             chiamate.borrow()
         );
@@ -1810,16 +2071,16 @@ mod tests {
     #[test]
     fn a_failed_regeneration_is_not_a_link() {
         let _home = HomeIsolata::nuova("anello-solo-se-riuscita");
-        // Il create fallisce: la catena non è avanzata, e contarlo farebbe
+        // Il `/clear` non parte: la catena non è avanzata, e contarlo farebbe
         // mordere il tetto proprio mentre non si sostituisce niente.
         let mut orca = |args: &[&str]| -> (i32, String) {
-            if args.contains(&"create") {
+            if args.contains(&"/clear") {
                 (1, "boom".to_string())
             } else {
                 (0, String::new())
             }
         };
-        regenerate(&record_di_prova(), "", false, &mut orca, None);
+        regenerate(&record_di_prova(), false, &mut orca);
         assert!(read_chain("wt-prova").is_empty(), "un tentativo fallito ha contato");
     }
 
@@ -1876,9 +2137,9 @@ mod tests {
                                         -300.0, -240.0, -180.0, -120.0, -60.0]);
         let (chiamate, mut orca) = orca_che_registra();
         let rec = Record { worktree: wt.clone(), ..record_di_prova() };
-        regenerate(&rec, "", false, &mut orca, None);
+        regenerate(&rec, false, &mut orca);
         assert!(
-            chiamate.borrow().iter().any(|c| c.contains("create")),
+            chiamate.borrow().iter().any(|c| c.contains("/clear")),
             "la copia nuova è stata frenata dalla storia di quella vecchia: {:?}",
             chiamate.borrow()
         );
@@ -1895,7 +2156,7 @@ mod tests {
         catena_agli_scarti(&wt, &dir, &scarti);
         let (chiamate, mut orca) = orca_che_registra();
         let rec = Record { worktree: wt.clone(), ..record_di_prova() };
-        regenerate(&rec, "", false, &mut orca, None);
+        regenerate(&rec, false, &mut orca);
         assert!(
             chiamate.borrow().is_empty(),
             "il freno non ha fermato niente: {:?}",

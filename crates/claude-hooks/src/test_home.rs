@@ -55,6 +55,12 @@ impl HomeIsolata {
 impl Drop for HomeIsolata {
     fn drop(&mut self) {
         std::env::remove_var("RELAY_PICKUP_TIMEOUT_SEC");
+        // Chi prova la ripresa dichiara l'albero da qui: lasciarla impostata
+        // farebbe leggere a un caso successivo l'albero di quello prima, ed è
+        // lo stesso genere di perdita che ha portato il lucchetto in questo
+        // file — una variabile di processo è globale, i test no.
+        std::env::remove_var("ORCA_WORKTREE_ID");
+        std::env::remove_var("ORCA_TAB_ID");
         match &self.precedente {
             Some(h) => std::env::set_var("HOME", h),
             None => std::env::remove_var("HOME"),
