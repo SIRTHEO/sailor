@@ -706,18 +706,25 @@ fn squeeze(command: &str) -> String {
 ///
 /// ELENCO CHIUSO di cosa conta come apertura, non di cosa si esclude: l'elenco
 /// dei divieti è sempre in ritardo sul gesto nuovo, e qui il verso giusto in cui
-/// sbagliare è lasciar passare. Contano due gesti soli — una scheda Orca che
-/// avvia `claude`, e una copia di lavoro creata con un agente dentro. Un
-/// `terminal create` che avvia una shell **non** è una sessione: sono le due
-/// shell che `--setup run` lascia in ogni albero nuovo, e contarle spegnerebbe
-/// il meccanismo senza che nessuna sessione sia stata aperta.
+/// sbagliare è lasciar passare. Contano tre gesti — una scheda Orca che avvia
+/// `claude`, un pannello affiancato che avvia `claude`, e una copia di lavoro
+/// creata con un agente dentro. Un terminale che avvia una shell **non** è una
+/// sessione: sono le due shell che `--setup run` lascia in ogni albero nuovo, e
+/// contarle spegnerebbe il meccanismo senza che nessuna sessione sia stata
+/// aperta.
+///
+/// `terminal split` sta qui perché la prescrizione manda gli agenti lì invece
+/// che su `terminal create` (`rules/orca-e-la-sessione.md`): se il freno
+/// riconoscesse solo il gesto vecchio, chi segue la prescrizione aprirebbe
+/// sessioni che nessuno conta.
 pub fn session_delta(command: &str) -> SessionDelta {
     let c = squeeze(command);
     if !word_at(&c, "orca") {
         return SessionDelta::None;
     }
     let with_agent = word_at(&c, "--agent");
-    let opens = (c.contains("terminal create") && (with_agent || word_at(&c, "claude")))
+    let new_pane = c.contains("terminal create") || c.contains("terminal split");
+    let opens = (new_pane && (with_agent || word_at(&c, "claude")))
         || (c.contains("worktree create") && with_agent);
     if !opens {
         return SessionDelta::None;
@@ -1386,13 +1393,18 @@ mod tests {
     }
 
     #[test]
-    fn the_two_known_openings_count_as_additions() {
+    fn the_three_known_openings_count_as_additions() {
         assert_eq!(
             session_delta("orca terminal create --command 'claude' --title x"),
             SessionDelta::Adds
         );
         assert_eq!(
             session_delta("orca worktree create --repo id:r --name n --agent claude"),
+            SessionDelta::Adds
+        );
+        // Il gesto che la prescrizione chiede: un pannello accanto, non una tab.
+        assert_eq!(
+            session_delta("orca terminal split --terminal term_abc --command claude"),
             SessionDelta::Adds
         );
         // Spazi ripetuti e flag globali in mezzo non nascondono il gesto.
@@ -1412,6 +1424,11 @@ mod tests {
         );
         assert_eq!(
             session_delta("orca terminal create --command 'npm run dev'"),
+            SessionDelta::None
+        );
+        // Vale anche per il pannello: si divide un terminale anche per un server.
+        assert_eq!(
+            session_delta("orca terminal split --terminal term_abc --direction horizontal"),
             SessionDelta::None
         );
         assert_eq!(
