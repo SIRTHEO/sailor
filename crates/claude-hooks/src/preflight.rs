@@ -375,7 +375,9 @@ mod tests {
     /// `is_file()` non vede, ed è il motivo per cui questo controllo esiste.
     #[test]
     fn a_file_that_exists_but_does_not_compile_is_broken() {
-        let path = std::env::temp_dir().join(format!("preflight-{}.py", std::process::id()));
+        let dir = crate::test_home::test_root();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("preflight-rotto.py");
         std::fs::write(&path, "def rotto(:\n").unwrap();
         let (health, detail) = health_of(&path);
         let _ = std::fs::remove_file(&path);
@@ -385,7 +387,9 @@ mod tests {
 
     #[test]
     fn a_healthy_script_is_fine() {
-        let path = std::env::temp_dir().join(format!("preflight-ok-{}.sh", std::process::id()));
+        let dir = crate::test_home::test_root();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("preflight-ok.sh");
         std::fs::write(&path, "#!/bin/bash\necho fine\n").unwrap();
         let (health, _) = health_of(&path);
         let _ = std::fs::remove_file(&path);

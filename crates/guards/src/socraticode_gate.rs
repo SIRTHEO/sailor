@@ -967,8 +967,8 @@ mod tests {
         impl TempDir {
             pub fn new() -> TempDir {
                 let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-                let p = std::env::temp_dir()
-                    .join(format!("socraticode-gate-prova-{}-{n}", std::process::id()));
+                let p = hook_io::testing::test_root()
+                    .join(format!("socraticode-gate-prova-{n}"));
                 std::fs::create_dir_all(&p).unwrap();
                 TempDir(p)
             }
