@@ -57,26 +57,6 @@ fn api_command() -> &'static Regex {
 /// Il nome della valvola, e la forma in cui il messaggio di rifiuto insegna a usarla.
 const VALVE: &str = "TITOLO_RICHIESTA=off";
 
-/// La valvola scritta davanti al comando, che è dove il rifiuto dice di metterla.
-///
-/// LEGGERLA DALL'AMBIENTE NON BASTA, ed è il motivo per cui questa esiste: il
-/// gancio gira nel processo dell'harness, non nella shell del comando, quindi un
-/// `TITOLO_RICHIESTA=off gh pr create …` non gli arriva mai. Provato il
-/// 19/08/2026: il rifiuto insegnava una via d'uscita che rifiutava a sua volta.
-/// Una valvola annunciata e inerte è peggio di nessuna — chi la trova chiusa
-/// se ne inventa una che non lascia traccia.
-///
-/// Sta sulla riga di comando e non nell'ambiente per la stessa ragione di
-/// `SESSION_REPLACES=1` in `handoff`: esportata una volta esenterebbe in
-/// silenzio tutto ciò che viene dopo; scritta qui vale per quel comando e
-/// resta nel registro.
-fn valve_in_front(segment: &str) -> bool {
-    segment
-        .split_whitespace()
-        .take_while(|w| w.contains('=') && !w.starts_with('-'))
-        .any(|w| w.eq_ignore_ascii_case(VALVE))
-}
-
 /// I titoli passati esplicitamente a `gh pr create|edit`, in ordine.
 ///
 /// Si passa dallo splitter di shell e non da una regex sul testo grezzo perché
@@ -95,7 +75,7 @@ pub fn titles(command: &str) -> Vec<String> {
         if !high_level && !through_api {
             continue;
         }
-        if valve_in_front(segment) {
+        if crate::shell::valve_in_front(segment, VALVE) {
             continue;
         }
         // Un comando che non si sa spezzare non produce titoli e il gancio tace:

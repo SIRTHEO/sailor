@@ -626,12 +626,13 @@ pub fn citations(text: &str) -> Vec<Citation> {
             continue;
         }
         let (path_part, tail) = split_locator(token);
-        let ext = path_part
-            .rsplit('.')
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        if !CODE_EXT.contains(&ext.as_str()) {
+        // Senza punto non c'è estensione, e `rsplit('.')` su un token senza
+        // punto restituisce il token intero: `Bash` diventava «estensione bash»
+        // e finiva fra i file introvabili, sette volte. Anche `sh` e `Write`.
+        let Some((_, ext)) = path_part.rsplit_once('.') else {
+            continue;
+        };
+        if !CODE_EXT.contains(&ext.to_ascii_lowercase().as_str()) {
             continue;
         }
         let cit = Citation {
@@ -901,6 +902,14 @@ fn other() -> u8 {
         let hidden = declaration_line(src, "hidden", Lang::Braces).unwrap();
         assert!(!src.lines().nth(outer).unwrap().starts_with(' '));
         assert!(src.lines().nth(hidden).unwrap().starts_with(' '));
+    }
+
+    #[test]
+    fn a_word_without_a_dot_is_not_a_file() {
+        let text = "Il gancio su `Bash`, la fase `sh`, e il vero file `chain.rs`.";
+        let c = citations(text);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].path, "chain.rs");
     }
 
     #[test]
