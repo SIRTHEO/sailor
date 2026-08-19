@@ -17,6 +17,7 @@
 //!     claude-hooks memory-anchors --suggest       cosa si potrebbe ancorare
 //!     claude-hooks memory-anchors --suggest --write   e lo scrive
 //!     claude-hooks memory-anchors --restamp       riallinea le derive già viste
+//!     claude-hooks memory-anchors --dead          i file citati che non esistono
 //!     claude-hooks memory-anchors --file <path>   una memoria sola
 //!
 //! Uscita: 0 quando nessun ancoraggio è in allarme, 1 quando almeno uno lo è.
@@ -169,6 +170,7 @@ pub fn run() -> i32 {
     let suggest = args.iter().any(|a| a == "--suggest");
     let write = args.iter().any(|a| a == "--write");
     let restamp = args.iter().any(|a| a == "--restamp");
+    let dead = args.iter().any(|a| a == "--dead");
     let only = args
         .iter()
         .position(|a| a == "--file")
@@ -185,6 +187,9 @@ pub fn run() -> i32 {
     }
     if restamp {
         return restamp_anchors(&files, json);
+    }
+    if dead {
+        return dead_citations(&files, json);
     }
     check(&files, json)
 }
@@ -609,6 +614,67 @@ fn suggest_anchors(files: &[PathBuf], write: bool, json: bool) -> i32 {
     );
     println!("Per scriverli: memory-anchors --suggest --write");
     0
+}
+
+/// I file che una memoria cita e che non esistono da nessuna parte.
+///
+/// Non diventano ancoraggi — un ancoraggio a un file che non c'e' griderebbe a
+/// ogni verifica, per sempre — ma sono la prova piu' forte che una memoria e'
+/// scaduta, ed e' l'unica che si legge senza aprire il codice.
+/// Il caso che l'ha motivata: `staffetta-cancella-ogni-sessione` racconta
+/// `relay.py:98-99` e `register-session.py`, portati in Rust il 17/08/2026. La
+/// memoria descrive un sistema che non esiste piu', e nessun controllo lo diceva.
+fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
+    let mut per_memory: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut total = 0;
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let mut dead: Vec<String> = Vec::new();
+        for cit in citations(&text) {
+            if !resolve_all(&cit.path).is_empty() {
+                continue;
+            }
+            if !dead.contains(&cit.path) {
+                dead.push(cit.path.clone());
+                total += 1;
+            }
+        }
+        if !dead.is_empty() {
+            per_memory.insert(label_of(file), dead);
+        }
+    }
+    if json {
+        let items: Vec<String> = per_memory
+            .iter()
+            .map(|(m, list)| {
+                let paths: Vec<String> = list.iter().map(|p| quote(p)).collect();
+                format!("{{\"memory\":{},\"dead\":[{}]}}", quote(m), paths.join(","))
+            })
+            .collect();
+        println!(
+            "{{\"dead\":{total},\"memories\":{},\"items\":[{}]}}",
+            per_memory.len(),
+            items.join(",")
+        );
+        return i32::from(total > 0);
+    }
+    for (memory, list) in &per_memory {
+        println!("{memory}");
+        for p in list {
+            println!("  ? {p}");
+        }
+    }
+    println!(
+        "\n{total} file citati e introvabili, in {} memorie.",
+        per_memory.len()
+    );
+    println!(
+        "Un file che non esiste piu' non rende falsa la memoria da solo: leggila \
+         e decidi se il fatto vale ancora, poi correggi il percorso o archiviala."
+    );
+    i32::from(total > 0)
 }
 
 /// L'ancoraggio migliore ricavabile da una citazione.
