@@ -71,12 +71,13 @@ pub static SKILLS: &[Skill] = &[
         name: "mattpocock-skills:tdd",
         when: "una funzione o una correzione prova-per-prima",
     },
-    // I conflitti: i worktree paralleli li producono per costruzione.
-    Skill {
-        pattern: r"\b(conflitt[oi] (di |in |durante |sul |nel )(merge|rebase|unione)|(merge|rebase) con conflitt|risolvi i conflitti|CONFLICT \(content\))",
-        name: "mattpocock-skills:resolving-merge-conflicts",
-        when: "i conflitti di unione",
-    },
+    // I conflitti di unione NON hanno più una voce qui. La competenza a monte
+    // `mattpocock-skills:resolving-merge-conflicts` è stata disattivata il
+    // 18/08/2026 (`disable-model-invocation: true`, «do not invoke»): dice di
+    // risolvere sempre e non abortire mai, mentre `rules/base-aggiornata.md`
+    // prescrive l'opposto su un CONFLICT (modify/delete). Lo schema restava
+    // agganciato e poi taceva, perché `exists` non la trova nel catalogo — cioè
+    // costava una lettura a ogni richiesta senza poter dire niente.
     // Le parole del dominio ambigue: è il segnale che precede il modello
     // sbagliato, e costa più di ogni difetto di codice.
     Skill {
@@ -114,12 +115,11 @@ pub static SKILLS: &[Skill] = &[
         name: "handoff",
         when: "la consegna del lavoro a chi riprende",
     },
-    // La richiesta grossa e confusa: spacchettarla prima di toccare i file.
-    Skill {
-        pattern: r"\b((sistema|sistemiamo|metti a posto|mettiamo a posto) un po.\s*(di\s+)?(tutto|tutte le cose|quello che)|(c.è|c.e|ci sono) (un po. di |tante |troppe )cose da (sistemare|fare|correggere))",
-        name: "mattpocock-skills:triage",
-        when: "una richiesta grossa da spacchettare",
-    },
+    // La richiesta grossa e confusa NON ha più una voce qui, per la stessa
+    // ragione: `mattpocock-skills:triage` è disattivata dal 18/08/2026 perché
+    // scrive sul tracciatore, e scrivere su Linear è riservato a Theo — un
+    // gancio lo rifiuta. Quel caso lo copre già il CLAUDE.md, che su «sistema un
+    // po'…» chiede l'elenco puntato dei cambiamenti prima di toccare i file.
     // Capire come funziona qualcosa nel codice: è il gate di CLAUDE.md, e
     // l'unico modo di usare grafo e artefatti insieme.
     Skill {
@@ -229,7 +229,7 @@ pub static SKILLS: &[Skill] = &[
     },
 ];
 
-/// Una richiesta vaga e grande: qui `indaga` vale più di partire a fare.
+/// Una richiesta vaga e grande: qui si chiarisce prima di partire a fare.
 const VAGUE_PATTERN: &str = r"(?i)\b(non so|boh|vedi tu|come (ti sembra|preferisci)|sistema un po|fai come|un po.? di ordine|migliora (un po|il)|ottimizza tutto|sistemiamo|miglioriamo|vediamo un po)\b";
 
 /// Conferme che non aprono lavoro nuovo: restano mute.
@@ -408,10 +408,16 @@ pub fn lines(
     //    Senza il secondo pezzo, «non so» dentro una lamentela sul passato
     //    innescava un invito a indagare su niente.
     if !is_ack && vague().is_match(p) && task().is_match(p) {
+        // Fino al 19/08/2026 questa riga diceva «invoca `indaga`», e `indaga` è
+        // in quarantena dal 12/08: non è nel catalogo, quindi il rimando mandava
+        // a una competenza che non esiste. Non passava da `exists` perché è
+        // testo fisso, non una voce della tavola — 81 righe di registro fino al
+        // 18/08 hanno nominato una porta murata. Qui resta la prescrizione del
+        // CLAUDE.md, che non dipende da nessuna competenza installata.
         out.push((
             CHIARIRE,
-            "La richiesta lascia spazio a letture diverse: invoca `indaga`, oppure \
-restituisci l'elenco puntato dei cambiamenti previsti prima di toccare qualcosa."
+            "La richiesta lascia spazio a letture diverse: restituisci l'elenco \
+puntato dei cambiamenti previsti prima di toccare qualcosa."
                 .to_string(),
         ));
     }
@@ -421,13 +427,22 @@ restituisci l'elenco puntato dei cambiamenti previsti prima di toccare qualcosa.
     //    e verificato in ui?» contiene un verbo di compito al participio.
     let is_question = p.trim_end().ends_with('?');
     if mb >= threshold && !already_said && !is_question && (task().is_match(p) || is_ack) {
+        // `Agent` e `SendMessage` sono strumenti e ci sono sempre; `handoff` è
+        // una competenza, e una competenza va chiesta al catalogo come tutte le
+        // altre. Fino al 19/08/2026 era nominata a scatola chiusa, ed è
+        // esattamente il modo in cui il rimando a `indaga` è sopravvissuto a sé
+        // stesso per una settimana.
+        let closing = if exists("handoff")? {
+            " Se invece va chiusa, la consegna si scrive con `handoff`."
+        } else {
+            ""
+        };
         out.push((
             PASSARE,
             format!(
                 "Questa sessione ha già prodotto {mb} MB di registro, nella fascia che \
 consuma l'82% della cache riletta. Se il lavoro che arriva è separabile, passalo: \
-`Agent` per un contesto nuovo, `SendMessage` per una sessione già viva. Se invece va \
-chiusa, la consegna si scrive con `handoff`."
+`Agent` per un contesto nuovo, `SendMessage` per una sessione già viva.{closing}"
             ),
         ));
     }
@@ -451,6 +466,76 @@ mod tests {
 
     fn reasons(prompt: &str, mb: u64) -> Vec<&'static str> {
         said(prompt, mb).into_iter().map(|(r, _)| r).collect()
+    }
+
+    /// Nessuna riga può nominare una competenza senza averla chiesta al
+    /// catalogo. Il difetto vero, corretto il 19/08/2026: la riga che invita a
+    /// chiarire diceva «invoca `indaga`», e `indaga` è in quarantena dal 12/08 —
+    /// il rimando non passava da `exists` perché era testo fisso, e per una
+    /// settimana ha mandato a una porta murata (81 righe di registro).
+    #[test]
+    fn no_line_names_a_skill_that_was_never_looked_up() {
+        let asked = std::cell::RefCell::new(Vec::<String>::new());
+        let mut spy = |name: &str| -> Option<bool> {
+            asked.borrow_mut().push(name.to_string());
+            Some(true)
+        };
+        // Vaga, apre lavoro, e la sessione è già cara: le tre righe insieme.
+        let rows = lines(
+            "sistema un po' tutto e poi implementa la scheda",
+            DEFAULT_THRESHOLD_MB,
+            false,
+            DEFAULT_THRESHOLD_MB,
+            &mut spy,
+        )
+        .unwrap();
+        assert!(rows.len() >= 2, "servono almeno due righe: {rows:?}");
+
+        // Gli strumenti dell'harness non sono competenze e non stanno in nessun
+        // catalogo: sono l'elenco chiuso delle eccezioni.
+        let tools = ["Agent", "SendMessage"];
+        let looked_up = asked.borrow().clone();
+        for (reason, text) in &rows {
+            for name in quoted(text) {
+                if tools.contains(&name.as_str()) {
+                    continue;
+                }
+                assert!(
+                    looked_up.contains(&name),
+                    "la riga «{reason}» nomina `{name}` senza chiederlo al catalogo"
+                );
+            }
+        }
+    }
+
+    /// I nomi fra apici rovesci di una riga.
+    fn quoted(text: &str) -> Vec<String> {
+        let re = Regex::new(r"`([^`]+)`").unwrap();
+        re.captures_iter(text)
+            .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+            .collect()
+    }
+
+    /// Una competenza che il catalogo non ha non si nomina, nemmeno nelle righe
+    /// scritte a mano: senza questo, `handoff` tornerebbe a essere citata a
+    /// scatola chiusa il giorno che sparisce.
+    #[test]
+    fn a_missing_skill_is_not_named_at_all() {
+        let mut none_exists = |_: &str| Some(false);
+        let rows = lines(
+            "sistema un po' tutto e poi implementa la scheda",
+            DEFAULT_THRESHOLD_MB,
+            false,
+            DEFAULT_THRESHOLD_MB,
+            &mut none_exists,
+        )
+        .unwrap();
+        for (reason, text) in &rows {
+            assert!(
+                !text.contains("handoff"),
+                "la riga «{reason}» nomina una competenza che il catalogo non ha: {text}"
+            );
+        }
     }
 
     /// Se questo si rompe, il gancio non parte proprio: una regex storta è un
