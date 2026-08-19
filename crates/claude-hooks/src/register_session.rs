@@ -35,7 +35,7 @@ const FRESH_SEC: u64 = 600;
 /// Le famiglie di marcatori che il presidio della consegna scrive per una
 /// sessione. L'elenco è CHIUSO e sta in un posto solo: quando ne esistevano due
 /// copie, la famiglia nata dopo era presente in una sola.
-const MARKER_FAMILIES: &[&str] = &[
+pub(crate) const MARKER_FAMILIES: &[&str] = &[
     "consegna-fatta",
     "consegna-fatta-ripartenze",
     "consegna-blocchi",
