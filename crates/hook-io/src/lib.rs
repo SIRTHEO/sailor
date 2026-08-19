@@ -79,12 +79,40 @@ impl Decision {
     }
 }
 
-/// Legge stdin e lo interpreta. Un JSON illeggibile non è un errore da
-/// segnalare: è un gancio invocato fuori contesto, e si lascia passare.
+/// Legge stdin e lo interpreta. Un ingresso illeggibile lascia passare — è un
+/// gancio invocato fuori contesto — ma **lo dice**.
+///
+/// IL SILENZIO QUI HA PRODOTTO UNA DIAGNOSI FALSA. Il 19/08/2026 il gate della
+/// lingua è stato dichiarato «scritto e mai scattato» dopo cinque prove a mano;
+/// era rotta la prova, non il gate. In zsh `echo '…\n…'` **interpreta** la
+/// sequenza e produce un JSON con un a capo vero dentro una stringa, cioè non
+/// valido: il parse falliva, il gancio usciva 0 senza una parola, e usciva 0
+/// anche quando faceva il suo mestiere. I due casi erano indistinguibili, e il
+/// giro dopo è partito dalla conclusione sbagliata. Con `printf` lo stesso gate
+/// nega al primo colpo.
+///
+/// La riga va su stderr e il codice resta 0: in produzione l'harness manda
+/// sempre JSON valido e questo ramo non si vede mai, quindi il costo è nullo e
+/// il guadagno è tutto di chi prova a mano.
 pub fn read_input() -> Option<HookInput> {
     let mut buf = String::new();
-    std::io::stdin().read_to_string(&mut buf).ok()?;
-    serde_json::from_str(&buf).ok()
+    if std::io::stdin().read_to_string(&mut buf).is_err() {
+        eprintln!("hook: stdin illeggibile, lascio passare");
+        return None;
+    }
+    if buf.trim().is_empty() {
+        return None; // invocato senza ingresso: è il caso normale di un `--help`
+    }
+    match serde_json::from_str(&buf) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            eprintln!(
+                "hook: ingresso non è JSON valido ({e}), lascio passare. \
+                 In zsh `echo` interpreta \\n: per provare a mano usa `printf`."
+            );
+            None
+        }
+    }
 }
 
 /// Scrive la decisione dove il modello la legge e restituisce il codice di
