@@ -237,7 +237,7 @@ impl Terminal {
                 // falso — assente, `null`, `0`, `""`, `[]`, `{}` — diventa la
                 // lista vuota, mentre uno vero passa così com'è e verrà
                 // giudicato dal controllo sulla lista qui sotto.
-                Some(v) if !e_falso(v) => v,
+                Some(v) if !is_falsy(v) => v,
                 _ => &vuoto,
             }
         } else {
@@ -289,7 +289,7 @@ impl Terminal {
 /// lista o oggetto vuoti. Serve a tradurre `x or []`, che non è un controllo
 /// sul tipo ma sulla verità — e i due si comportano diverso proprio sui casi
 /// storti, che sono gli unici per cui questa funzione esiste.
-fn e_falso(v: &serde_json::Value) -> bool {
+fn is_falsy(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::Null => true,
         serde_json::Value::Bool(b) => !b,
@@ -496,11 +496,11 @@ pub fn round_half_to_even(x: f64) -> u64 {
 /// il confronto pretende identico byte a byte. `180000` e `180,000` sono due
 /// stringhe diverse. Sta qui perché la usano due presìdi — `handoff_required` e
 /// `handoff_on_stop` — e due copie divergono al primo ritocco.
-pub fn gruppi(n: u64) -> String {
-    let cifre = n.to_string();
+pub fn thousands(n: u64) -> String {
+    let digits = n.to_string();
     let mut out = String::new();
-    for (i, c) in cifre.chars().enumerate() {
-        if i > 0 && (cifre.len() - i) % 3 == 0 {
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i) % 3 == 0 {
             out.push(',');
         }
         out.push(c);

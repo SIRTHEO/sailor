@@ -19,7 +19,7 @@
 //! che voleva evitare, e lo stallo, a differenza della compattazione, non lascia
 //! niente su disco.
 
-use crate::handoff::{gruppi, percent, Thresholds, HANDOFF_TOOLS};
+use crate::handoff::{percent, thousands, Thresholds, HANDOFF_TOOLS};
 
 /// Dopo tanti rifiuti consecutivi il gancio si arrende e lascia passare.
 pub const BLOCK_CAP: u32 = 6;
@@ -80,7 +80,7 @@ pub fn decide(f: &Facts) -> Decision {
              quello che c'e'; la consegna sceglie quello che serve. Al 90% del \
              budget questo gancio rifiuta gli strumenti che non servono a \
              consegnare, finche' l'handoff non e' scritto.",
-            gruppi(budget)
+            thousands(budget)
         ));
     }
 
@@ -115,8 +115,8 @@ pub fn decide(f: &Facts) -> Decision {
          Write, Edit, Grep, Glob, SendMessage e gli strumenti delle lavorazioni.\n\
          Se il lavoro puo' chiudersi adesso, chiudilo: una consegna scritta per \
          rimandare l'ultimo passo costa due volte.",
-        gruppi(f.used),
-        gruppi(budget),
+        thousands(f.used),
+        thousands(budget),
         f.tool
     ))
 }
@@ -160,7 +160,7 @@ mod tests {
         match d {
             Decision::Warn(m) => {
                 assert!(m.contains("CONTESTO AL 80%"), "{m}");
-                assert!(m.contains("~500,000 token"), "il budget senza gruppi: {m}");
+                assert!(m.contains("~500,000 token"), "budget without a thousands separator: {m}");
             }
             altro => panic!("atteso un avviso, non {altro:?}"),
         }
@@ -217,10 +217,10 @@ mod tests {
 
     #[test]
     fn le_migliaia_si_raggruppano_come_in_python() {
-        assert_eq!(gruppi(0), "0");
-        assert_eq!(gruppi(999), "999");
-        assert_eq!(gruppi(1_000), "1,000");
-        assert_eq!(gruppi(180_000), "180,000");
-        assert_eq!(gruppi(1_234_567), "1,234,567");
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(1_000), "1,000");
+        assert_eq!(thousands(180_000), "180,000");
+        assert_eq!(thousands(1_234_567), "1,234,567");
     }
 }

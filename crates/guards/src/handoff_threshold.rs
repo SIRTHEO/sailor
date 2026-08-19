@@ -21,7 +21,7 @@
 //! competenza sapendo solo che esisteva: l'imperativo non serve a far partire
 //! una competenza, e in cambio rende impossibile misurare se serviva.
 
-use crate::handoff::{gruppi, round_half_to_even};
+use crate::handoff::{round_half_to_even, thousands};
 
 /// Finestra di ripiego quando nessuno la dichiara.
 ///
@@ -136,7 +136,7 @@ pub fn already_said(text: &str, step: u64) -> bool {
 /// dell'originale. È testo che si confronta byte per byte, quindi `144,000` e
 /// `144.000` sono due risposte diverse.
 pub fn message(used: u64, percent: u64, step: u64) -> String {
-    let count = gruppi(used).replace(',', ".");
+    let count = thousands(used).replace(',', ".");
     if step >= 85 {
         format!(
             "Contesto a {count} token, il {percent}% della finestra: la \
