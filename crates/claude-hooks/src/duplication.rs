@@ -313,6 +313,12 @@ mod tests {
     /// 40 giri**, e il rosso citava due percorsi diversi per lo stesso nome di
     /// file. Da solo il caso passava sempre, che è il modo in cui una prova
     /// così fa perdere un pomeriggio.
+    ///
+    /// Il lucchetto chiude **due** vie, non una: `TmpIsolata` in
+    /// `handoff_threshold` dirotta anche `TMPDIR`, che è la sede letta da
+    /// `std::env::temp_dir()` — cioè da dove nasce il repo di prova qui sotto.
+    /// Quel lucchetto è lo stesso perché `TmpIsolata` contiene una
+    /// `HomeIsolata`, e infatti l'unico modo di reggere è prenderlo.
     #[test]
     fn freezing_silences_the_debt_that_was_already_there() {
         let _home = crate::test_home::HomeIsolata::nuova("duplicazione-congela");
