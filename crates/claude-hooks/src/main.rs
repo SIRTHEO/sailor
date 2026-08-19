@@ -57,9 +57,13 @@ fn main() {
         // Prima stampava i soli nomi di SMOKE: chi chiedeva «quali ganci
         // esistono?» ne vedeva 5 su 22, e i 17 senza caso di prova erano
         // invisibili proprio a chi li cercava (17/08/2026).
+        // La terza colonna risponde a «questo va acceso in una radice?». Senza,
+        // chi legge l'elenco non distingue un gancio spento da uno strumento che
+        // si invoca a mano, e i due casi hanno cure opposte.
         for name in ALL_HOOKS {
             let covered = if is_covered(name) { "provato" } else { "senza caso" };
-            println!("{name}\t{covered}");
+            let kind = if is_hook(name) { "gancio" } else { "strumento" };
+            println!("{name}\t{covered}\t{kind}");
         }
         return;
     }
@@ -154,6 +158,42 @@ const ALL_HOOKS: &[&str] = &[
     // riga mancava, e il workspace non passava piu.
     "reachability",
 ];
+
+/// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
+/// lettura, anelli di una catena che chiama un altro anello.
+///
+/// Serve per una domanda che nessun controllo faceva: «questo gancio e
+/// acceso?». Fino al 19/08/2026 `comment-refs` e `allow-session-messages` erano
+/// scritti, provati, portati e committati — e nessuna radice li invocava, quindi
+/// non erano mai partiti. I due controlli che c'erano guardavano altrove: la
+/// vista di aderenza chiede «ha un contratto?» e li dava per **provati**, il
+/// censimento di raggiungibilita parte dai file sul disco e vedeva solo i loro
+/// ripieghi, in mezzo ad altri sedici orfani legittimi.
+///
+/// Perche un elenco a mano e non una deduzione dal codice: dedurlo dal braccio
+/// (chi legge stdin e un gancio) sbaglia in entrambe le direzioni, perche molti
+/// bracci delegano la lettura a una funzione. E dedurlo dai commenti e peggio:
+/// il primo tentativo di questa misura ha creduto `handoff-latest` un gancio
+/// perche il commento del braccio accanto conteneva la parola «stdin». Qui la
+/// dichiarazione e esplicita, e il test la tiene onesta come fa per ALL_HOOKS.
+const NOT_HOOKS: &[&str] = &[
+    "json",
+    "reachability",
+    "handoff-measure",
+    "handoff-latest",
+    "handoff-resolve",
+    "repo-tools",
+    "relay-evaluate",
+    "relay-chain",
+    "relay-read-chain",
+    "relay-sweep",
+    "restart-count",
+    "successor-probe",
+];
+
+fn is_hook(name: &str) -> bool {
+    !NOT_HOOKS.contains(&name)
+}
 
 /// Ganci con un caso di prova in `self_check`, oltre a quelli di SMOKE: qui
 /// stanno quelli che non giudicano un comando e hanno un controllo scritto a
@@ -875,6 +915,31 @@ mod catalogo {
             ghosts.is_empty(),
             "ganci elencati che il dispatch non conosce: {ghosts:?}"
         );
+    }
+
+    #[test]
+    fn no_declared_tool_is_unknown_to_the_dispatch() {
+        let ghosts: Vec<&&str> = NOT_HOOKS
+            .iter()
+            .filter(|s| !ALL_HOOKS.contains(s))
+            .collect();
+        assert!(
+            ghosts.is_empty(),
+            "dichiarati non-ganci, ma il dispatch non li conosce: {ghosts:?}"
+        );
+    }
+
+    /// Il vincolo che rende utile la dichiarazione: uno slug esce dai ganci
+    /// perché è uno strumento, non perché così il conto torna. Questi tre
+    /// GIUDICANO — e restano ganci anche mentre nessuna radice li accende.
+    #[test]
+    fn whatever_judges_stays_a_hook_even_while_switched_off() {
+        for name in ["block-worktree-create", "comment-refs", "allow-session-messages"] {
+            assert!(
+                is_hook(name),
+                "{name} giudica: toglierlo dai ganci spegnerebbe la domanda invece di rispondere"
+            );
+        }
     }
 
     #[test]
