@@ -22,7 +22,7 @@
 //! `stop_hook_active` ferma la catena al primo giro, e dopo `STOP_CAP` forzature
 //! senza consegna il gancio si arrende comunque.
 
-use crate::handoff::{gruppi, percent, Thresholds};
+use crate::handoff::{percent, thousands, Thresholds};
 
 /// Dopo tante forzature senza consegna il gancio si arrende e lascia fermare.
 pub const STOP_CAP: u32 = 3;
@@ -131,8 +131,8 @@ pub fn message(f: &Facts) -> String {
             "CONTESTO AL {pct}% del budget di qualita' di {} ({} token, budget \
              ~{}) e stai per fermarti senza aver consegnato.",
             f.thresholds.model,
-            gruppi(f.used),
-            gruppi(f.thresholds.budget)
+            thousands(f.used),
+            thousands(f.thresholds.budget)
         )
     };
     format!(
