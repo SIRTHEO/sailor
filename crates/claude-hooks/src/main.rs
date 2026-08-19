@@ -625,6 +625,24 @@ fn run(which: &str) -> Result<i32, String> {
                     eprintln!("{message}");
                     return Ok(2);
                 }
+                // E le scritture che non sappiamo leggere. Un file sorvegliato
+                // che nasce dentro `python3 - <<PY … write_text …` passava
+                // intatto: misurato il 19/08/2026, è la via da cui era passato
+                // tutto il codice di quella notte. Qui non si indovina il
+                // contenuto — dentro un interprete può nascere da una variabile
+                // — si dice che da lì non si vede, e si manda a `Write`/`Edit`.
+                let opachi = guards::code_language::opaque_writes(&command);
+                if !opachi.is_empty() {
+                    let message = guards::code_language::report_opaque(&opachi);
+                    if phase == "pre" {
+                        return Ok(hook_io::emit(
+                            "code-language",
+                            &hook_io::Decision::Deny(message),
+                        ));
+                    }
+                    eprintln!("{message}");
+                    return Ok(2);
+                }
                 return Ok(0);
             }
             let text = guards::code_language::written_text(tool_input);
