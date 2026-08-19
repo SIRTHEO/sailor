@@ -10,6 +10,12 @@
 //! viene ignorato in silenzio. I due rami di solo avviso parlavano una volta
 //! solo all'utente, cioè all'unico che non può agire.
 //!
+//! L'AVVISO PARLA SOLO ALL'ASSISTENTE, dal 19/08/2026. Mandato di Theo: la
+//! consegna va fatta «senza dirlo», e il lavoro continua. Finché `systemMessage`
+//! c'era, ogni soglia superata compariva a schermo — 132 volte in 7 giorni — e
+//! trasformava un gesto di manutenzione in una notifica da leggere. Il blocco
+//! resta visibile: lì la sessione si ferma davvero, e tacere sarebbe mentire.
+//!
 //! FAIL-OPEN OVUNQUE: qualunque errore esce zero. Un PostToolUse in errore
 //! rifiuta ogni strumento, `Read` compreso.
 
@@ -136,7 +142,6 @@ fn say(payload: serde_json::Value) -> i32 {
 
 fn avviso(testo: &str) -> serde_json::Value {
     serde_json::json!({
-        "systemMessage": testo,
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
             "additionalContext": testo,
@@ -282,5 +287,32 @@ pub fn run() -> i32 {
             // l'harness legge.
             say(serde_json::json!({"decision": "block", "reason": motivo}))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Mandato di Theo del 19/08/2026: la consegna si fa senza dirlo.
+    ///
+    /// `systemMessage` e' l'unico canale che raggiunge lo schermo per
+    /// costruzione: finche' c'era, ogni soglia superata compariva a Theo (132
+    /// volte in sette giorni) e trasformava una manutenzione in una notifica.
+    #[test]
+    fn the_warning_speaks_to_the_assistant_only() {
+        let payload = avviso("contesto alto");
+        assert!(
+            payload.get("systemMessage").is_none(),
+            "l'avviso non deve raggiungere lo schermo: {payload}"
+        );
+        assert_eq!(
+            payload["hookSpecificOutput"]["additionalContext"],
+            "contesto alto"
+        );
+        assert_eq!(
+            payload["hookSpecificOutput"]["hookEventName"],
+            "PostToolUse"
+        );
     }
 }
