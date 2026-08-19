@@ -61,11 +61,18 @@ fn words_pattern() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?i)[a-zàèéìòù]+").unwrap())
 }
 
+/// I prefissi che in inglese si attaccano a un'altra parola. `non` è anche una
+/// preposizione italiana, e sono la ragione per cui l'elenco esiste: `non-OK`
+/// nel testo, `non_empty` in un nome.
+const ENGLISH_PREFIXES: &[&str] = &["non", "post", "pre", "multi", "inter", "extra", "sub", "super"];
+
 /// `non-OK`, `non-failed`, `non-CV`: in inglese `non-` è un prefisso, e la
 /// parola dopo il trattino non è italiana.
 fn compounds() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)\b(non|post|pre|multi|inter|extra|sub|super)-\w+").unwrap())
+    RE.get_or_init(|| {
+        Regex::new(&format!(r"(?i)\b({})-\w+", ENGLISH_PREFIXES.join("|"))).unwrap()
+    })
 }
 
 pub fn is_italian(text: &str) -> bool {
@@ -111,6 +118,25 @@ const ITALIAN_ROOTS: &[&str] = &[
     "attes", "mut", "esist", "deriv", "puliz", "adess", "ultim", "prim",
     "second", "terz", "vecchi", "nuov", "tutt", "ogni", "quest", "quell",
     "finestr", "comand", "regol", "aree", "testo", "dati", "fatti",
+    // Entrate il 19/08/2026 con la misura in mano
+    // (`docs/misura-vocabolario-lingua-2026-08-19/`): il vocabolario vedeva il
+    // 35,5% degli identificatori italiani del corpus, e queste lo portano al
+    // 71,5% senza un falso positivo. Due filtri, non uno: zero collisioni nelle
+    // 40.000 dichiarazioni di `~/.claude` **e** zero parole del dizionario
+    // inglese di sistema fra le prime venti. Il secondo ha scartato `ric`
+    // (`rich`), `ferm` (`ferment`), `viv` (`vivid`), `camp` (`campaign`),
+    // `testa`, `corpo` — che il solo corpus di casa dava per sicure.
+    "agente", "agganciati", "agisci", "albero", "ambiente", "anelli", "archivio", "attuale",
+    "avvio", "basso", "buoni", "cacciate", "carta", "catalogo", "cifre", "cresc",
+    "decisioni", "degeneri", "dentro", "destinatario", "dett", "difetti", "divieti", "dop",
+    "errore", "escludi", "etichetta", "evento", "fatte", "filo", "finiscono", "fuori",
+    "getta", "grezz", "gruppi", "guardia", "ingresso", "inizio", "intero", "isolata",
+    "istruzioni", "letti", "libera", "messaggio", "migli", "niente", "normalizza", "nostri",
+    "opachi", "opzioni", "pezzi", "piatta", "piena", "principale", "punto", "raccolt",
+    "rango", "riferimento", "rigenerate", "ritrova", "rumore", "ruota", "salto", "sbagliati",
+    "scelt", "scritto", "secco", "senza", "sogli", "sommario", "sorgenti", "successore",
+    "sveglia", "tetto", "toccate", "totali", "tronca", "unici", "uscita", "visti",
+    "volte",
 ];
 
 /// Nomi inglesi che una radice troppo corta prenderebbe per italiani.
@@ -141,6 +167,13 @@ fn not_italian() -> &'static HashSet<&'static str> {
             "formatted", "format", "formats", "normal", "normally", "ordinary",
             "apricot", "origin", "original", "originals", "prompt", "prompts",
             "residue", "residues", "residual", "control", "controls",
+            // Gli otto rimproveri a torto che la misura del 19/08 ha contato
+            // fra i 144 nomi già segnalati: `mut` prendeva `FnMut` e i nomi dei
+            // casi mutanti, `stamp` i test inglesi sulle marche temporali,
+            // `stat` `hasStatusline`, `motiv` `c_cron_motivated`. Le radici
+            // restano: `stampa` e `mutare` in italiano si continuano a vedere.
+            "mut", "mutant", "mutants", "stamp", "stamps", "stamped",
+            "statusline", "motivate", "motivated", "motivation",
         ]
         .into_iter()
         .collect()
@@ -178,11 +211,32 @@ fn split_identifier(name: &str) -> Vec<String> {
 }
 
 /// Vero se un identificatore è scritto in italiano.
+///
+/// Due criteri, e prendono cose diverse. Le **radici** vedono i nomi corti del
+/// codice vero (`soglie`, `_prefisso`, `VERDETTO`); le **parole-funzione** — le
+/// stesse che `is_italian` usa sul testo — vedono i nomi-frase dei test
+/// (`una_consegna_valida_disarma_tutto`), dove il vocabolario è infinito e ogni
+/// frase nuova porta parole che nessun elenco di radici avrà. Misurato il
+/// 19/08/2026: le sole radici prendevano 136 dei 383 identificatori italiani
+/// del corpus, le parole-funzione ne aggiungono 64 senza un falso positivo.
 pub fn is_italian_name(name: &str) -> bool {
     let english = not_italian();
-    split_identifier(name).iter().any(|part| {
+    let words = italian_words();
+    let parts = split_identifier(name);
+    parts.iter().enumerate().any(|(i, part)| {
         let low = part.to_lowercase();
-        !english.contains(low.as_str()) && ITALIAN_ROOTS.iter().any(|r| low.starts_with(r))
+        if english.contains(low.as_str()) {
+            return false;
+        }
+        if ITALIAN_ROOTS.iter().any(|r| low.starts_with(r)) {
+            return true;
+        }
+        // `non_empty`, `pre_flight`: davanti a un'altra parte questi non sono
+        // preposizioni ma prefissi inglesi, ed erano 11 dei 15 falsi positivi
+        // che la misura attribuiva a questa strada. È la stessa neutralizzazione
+        // che `compounds()` fa sul testo, applicata alle parti di un nome.
+        let is_prefix = ENGLISH_PREFIXES.contains(&low.as_str()) && i + 1 < parts.len();
+        words.contains(low.as_str()) && !is_prefix
     })
 }
 
@@ -226,6 +280,69 @@ mod tests {
         for name in ["state", "content", "counter", "mute", "question", "right",
                      "status", "format", "control", "query"] {
             assert!(!is_italian_name(name), "{name} non è italiano");
+        }
+    }
+
+    /// I nomi-frase dei test: nessun elenco di radici li vedrà mai tutti, e
+    /// sono la ragione del secondo criterio.
+    #[test]
+    fn a_sentence_shaped_name_is_caught_by_its_function_words() {
+        assert!(is_italian_name("una_consegna_valida_disarma_tutto"));
+        assert!(is_italian_name("il_gradino_si_annuncia_una_volta_sola"));
+        assert!(is_italian_name("senza_sessione_si_ricade_sul_percorso"));
+        assert!(is_italian_name("dopo_il_tetto_dei_rifiuti_il_gancio_si_arrende"));
+    }
+
+    /// `non` è preposizione in italiano e prefisso in inglese: davanti a
+    /// un'altra parte vince l'inglese, e da solo resta italiano.
+    #[test]
+    fn an_english_prefix_is_not_a_preposition() {
+        assert!(!is_italian_name("non_empty"));
+        assert!(!is_italian_name("NON_STANDARD"));
+        assert!(!is_italian_name("pre_flight"));
+        assert!(!is_italian_name("post_merge_check"));
+        assert!(is_italian_name("il_dubbio_non"));
+    }
+
+    /// Gli otto rimproveri a torto contati il 19/08/2026 sul corpus di
+    /// `~/.claude`: se tornano, il gate torna a segnalare codice inglese
+    /// corretto — ed è così che un controllo viene spento.
+    #[test]
+    fn the_eight_false_positives_the_measure_counted_stay_clear() {
+        for name in [
+            "FnMut",
+            "hasStatusline",
+            "stamp",
+            "c_cron_motivated",
+            "it_stamps_a_javascript_shaped_timestamp",
+            "the_journal_stamps_the_shape_python_writes",
+            "mutant_a_relative_path_is_not_a_home_path",
+            "mutant_a_scoped_rule_passes",
+        ] {
+            assert!(!is_italian_name(name), "{name} è inglese");
+        }
+        // Le radici non sono state tolte: l'italiano che le usa si vede ancora.
+        assert!(is_italian_name("stampa_riga"));
+        assert!(is_italian_name("mutazione_uccisa"));
+    }
+
+    /// Le sei radici che il solo corpus di casa dava per sicure e il dizionario
+    /// inglese ha scartato. Chi le riaggiunge guardando i conteggi rompe questo.
+    #[test]
+    fn the_roots_the_english_dictionary_rejected_stay_out() {
+        for name in ["rich_text", "campaign_id", "ferment_queue", "vivid_colour",
+                     "testable_unit", "corporate_plan"] {
+            assert!(!is_italian_name(name), "{name} è inglese");
+        }
+    }
+
+    /// Un campione delle 81 radici entrate il 19/08: i nomi corti del codice
+    /// vero, che le parole-funzione non vedono mai.
+    #[test]
+    fn the_short_names_of_real_code_are_seen() {
+        for name in ["soglie_opus5", "destinatario", "tetto_byte", "albero_di_lavoro",
+                     "gruppi", "sommario", "uscita_grezza"] {
+            assert!(is_italian_name(name), "{name} è italiano");
         }
     }
 
