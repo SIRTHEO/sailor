@@ -251,7 +251,13 @@ fn build_index() -> BTreeMap<String, Vec<PathBuf>> {
                     let file_name = e.file_name();
                     let file_name = file_name.to_string_lossy().to_string();
                     if p.is_dir() {
-                        if file_name.starts_with('.')
+                        // Le cartelle col punto si saltano, **tranne `.claude`**:
+                        // è lì che vivono gli script e i ganci che le memorie
+                        // citano di più, e saltarla dichiarava morto
+                        // `plancia.py` mentre sta in `gyver/work/.claude/scripts/`.
+                        // È la stessa eccezione che SocratiCode fa indicizzando
+                        // `.claude` come progetto a sé.
+                        if (file_name.starts_with('.') && file_name != ".claude")
                             || is_generated_dir(&file_name)
                             || is_generated(&p)
                         {
