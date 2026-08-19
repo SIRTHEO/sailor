@@ -256,7 +256,6 @@ fn scans_many_files(command: &str) -> bool {
     walk.is_match(command) && regex_use.is_match(command)
 }
 
-
 /// I nomi esportati dichiarati in un pezzo di sorgente.
 pub fn exported_names(src: &str) -> BTreeSet<String> {
     static DECL: OnceLock<Regex> = OnceLock::new();
@@ -355,6 +354,30 @@ fn message_search() -> String {
         "Se invece cerchi un identificatore ESATTO gia' noto, una error string letterale",
         "o una regex su pattern preciso: rilancia lo STESSO comando, ora passa",
         "(il gate si riarma ogni 30 ricerche). Regola: ~/.claude/rules/socraticode-first.md",
+    ]
+    .join("\n")
+}
+
+/// Il messaggio della ricerca concettuale, gemello di quello nel JavaScript.
+///
+/// Deve restare identico byte per byte all'altro: il confronto li mette uno
+/// accanto all'altro, ed e' l'unica cosa che tiene le due implementazioni
+/// indistinguibili quando il binario manca e tocca al ripiego.
+///
+/// Porta **cosa** cercavi, e non e' cosmesi: senza il pattern, chi legge il
+/// blocco non sa quale delle sue ricerche e' stata giudicata concettuale.
+fn message_concept(sought: &str) -> String {
+    [
+        "SocratiCode-first: questa e' una ricerca CONCETTUALE in un repo indicizzato.".to_string(),
+        format!("Cercavi: {sought}"),
+        "Il grep conta le occorrenze; non dice se una cosa e' viva, chi la importa,".to_string(),
+        "ne' dove vive il dominio. Per questa domanda la risposta sta altrove:".to_string(),
+        "  ToolSearch query \"select:codebase_search,codebase_symbol,codebase_flow\"".to_string(),
+        "  codebase_search \"<dominio>\"   -> dove vive, esiste gia'".to_string(),
+        "  codebase_graph_query          -> chi importa questo file (projectPath del REPO)".to_string(),
+        "La domanda si fa nella lingua in cui e' scritto cio' che cerchi.".to_string(),
+        "Se invece cerchi un identificatore ESATTO, una stringa d'errore letterale o".to_string(),
+        "una regex, riscrivi il pattern in quella forma: passa senza pedaggio.".to_string(),
     ]
     .join("\n")
 }
@@ -536,6 +559,27 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Ve
     if !is_indexed(ws, &path) {
         return Verdict::out_of_scope(); // non indicizzato → il grep è il ripiego giusto
     }
+
+    // IL PEDAGGIO LO PAGA CHI CERCA UN CONCETTO, non chi cerca una forma. Prima
+    // la quota colpiva a sorte, quindi un identificatore esatto — che la regola
+    // ammette per iscritto — poteva essere bloccato mentre una ricerca di
+    // dominio passava. Adesso la quota vale **solo** per il caso ammesso, dove
+    // resta come richiamo periodico; una ricerca concettuale non aspetta il
+    // proprio turno.
+    let pattern = if tool == "Grep" {
+        field(input, "pattern").to_string()
+    } else {
+        grep_pattern(field(input, "command")).unwrap_or_default()
+    };
+    if !allowed_search(&pattern) {
+        return Verdict {
+            decision: Decision::Block(message_concept(&pattern)),
+            reason: "ricerca-concettuale",
+            path: Some(target),
+            count: None,
+        };
+    }
+
     match throttle(ws, session, "search", 30) {
         Some(n) => Verdict::pass("sotto-quota-search").with_count(n),
         None => Verdict {
@@ -545,6 +589,100 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Ve
             count: None,
         },
     }
+}
+
+/// Questa ricerca è di quelle che la regola **ammette per iscritto**?
+///
+/// PERCHÉ SERVE UN GIUDIZIO, E NON BASTA LA QUOTA. Il gate blocca una ricerca
+/// ogni trenta, e quale cada nel blocco non ha niente a che vedere con cosa si
+/// cerca: `grep -c "ORCA_TAB_ID"` e una ricerca di dominio hanno la stessa
+/// probabilità. Misurato il 17/08/2026 in una sessione sola: **215 passaggi
+/// `sotto-quota-search` contro 5 blocchi**, e nel frattempo Theo ha dovuto
+/// correggere a mano l'uso dello strumento «almeno la decima volta oggi». Una
+/// lotteria fa pagare il pedaggio a chi cerca bene tanto quanto a chi cerca male.
+///
+/// LA REGOLA CHE QUESTA FUNZIONE RENDE ESEGUIBILE, dal `CLAUDE.md`: «Il grep
+/// resta giusto per identificatori esatti, stringhe d'errore, espressioni
+/// regolari e per filtrare l'output di un altro comando».
+///
+/// La lotteria esisteva perché il gate costava: 50,2 ms per chiamata in Node.
+/// Il porto in Rust misura **3,9 ms** sulla stessa macchina, tredici volte meno,
+/// quindi la ragione che la giustificava è scaduta e si può tornare a decidere.
+///
+/// NEL DUBBIO SI AMMETTE. Le violazioni chiare erano il 2,3% delle ricerche
+/// (misura del 10/08/2026, `docs/perche-queste-regole.md`): un giudizio troppo
+/// severo produrrebbe molti più falsi blocchi che veri, e un gate che dà
+/// fastidio a torto viene spento — che è il modo in cui un presidio smette di
+/// esistere.
+/// Il pattern dentro un `grep`/`rg` scritto a riga di comando.
+///
+/// Serve perché metà delle ricerche non passa dallo strumento `Grep` ma da
+/// `Bash`, e lì il pattern è un argomento fra gli altri. Si prende il primo
+/// pezzo non-opzione dopo il comando; se è fra virgolette si tolgono. `None`
+/// quando non si riesce a isolarlo, e chi chiama tratta `None` come «ammesso»:
+/// non aver capito la ricerca non è una ragione per negarla.
+pub fn grep_pattern(command: &str) -> Option<String> {
+    static CALL: OnceLock<Regex> = OnceLock::new();
+    let call = CALL.get_or_init(|| Regex::new(r"(?:^|;|&&|\|\|)\s*(?:rg|grep)\s+(.*)").unwrap());
+    let tail = call.captures(command)?.get(1)?.as_str();
+    for word in tail.split_whitespace() {
+        if word.starts_with('-') {
+            continue;
+        }
+        let cleaned = word.trim_matches(|c| c == '"' || c == '\'');
+        if cleaned.is_empty() {
+            continue;
+        }
+        return Some(cleaned.to_string());
+    }
+    None
+}
+
+pub fn allowed_search(pattern: &str) -> bool {
+    let p = pattern.trim();
+    if p.is_empty() {
+        return true;
+    }
+    // Metacaratteri: chi scrive una regex sta cercando una forma, non un
+    // concetto, e la ricerca semantica non sa rispondere a una forma.
+    if p.contains('\\')
+        || p.contains('[')
+        || p.contains('(')
+        || p.contains('|')
+        || p.contains('^')
+        || p.contains('$')
+        || p.contains(".*")
+        || p.contains("+")
+    {
+        return true;
+    }
+    // Un identificatore di codice: `snake_case`, `SCREAMING_CASE`, `camelCase`,
+    // `dotted.path`, `a::b`. Nessuna di queste forme è una parola di dominio.
+    let identifier = p.contains('_')
+        || p.contains("::")
+        || p.contains('.')
+        || (p.chars().any(|c| c.is_ascii_uppercase()) && p.chars().any(|c| c.is_ascii_lowercase()))
+        || p.chars().all(|c| c.is_ascii_uppercase() || c == '-' || c.is_ascii_digit());
+    if identifier {
+        return true;
+    }
+    // Una frase è la firma più netta di una ricerca concettuale — ma «frase» non
+    // è «più di una parola»: `def journal` e `fn record` sono due parole e sono
+    // il modo normale di cercare una definizione. La differenza è che una delle
+    // due è una parola chiave di linguaggio, non di dominio. Provato: senza
+    // questo elenco il caso preso da una ricerca vera falliva.
+    const KEYWORDS: [&str; 14] = [
+        "def", "fn", "class", "function", "const", "let", "var", "import",
+        "export", "pub", "struct", "enum", "interface", "type",
+    ];
+    let words: Vec<&str> = p.split_whitespace().collect();
+    if words.len() > 1 {
+        return words.iter().any(|w| KEYWORDS.contains(&w.to_lowercase().as_str()));
+    }
+    // Resta la parola singola tutta minuscola. È il caso ambiguo — `handoff`
+    // può essere un concetto o il nome di un file — e qui si ammette, perché
+    // fra i due errori possibili quello di bloccare a torto costa di più.
+    true
 }
 
 /// Gli ultimi `n` caratteri del percorso in base64url — lo stesso nome di
@@ -710,6 +848,63 @@ mod tests {
         );
         // e subito dopo si riarma: il rilancio consapevole passa sempre
         assert_eq!(throttle(&ws, "s1", "search", 30), Some(1));
+    }
+
+    /// I casi vengono dalle ricerche vere di una sessione del 17/08/2026, non
+    /// inventati: e' l'unico modo perche' la soglia fra «forma» e «concetto»
+    /// somigli a cio' che si scrive davvero invece che a cio' che si immagina.
+    #[test]
+    fn a_search_for_a_shape_is_always_allowed() {
+        for p in [
+            "ORCA_TERMINAL_HANDLE",
+            "CONSEGNA_TETTO_SESSIONI",
+            "def journal",
+            "fn record",
+            "socraticode-gate",
+            "codebase_search",
+            "workspaceStatus",
+            "paneKey",
+            "crate::shell",
+            "orca-cleanup.py",
+            r"\bgh\s+pr\s+create",
+            "in-review",
+            "MERGED",
+        ] {
+            assert!(allowed_search(p), "{p:?} e' una forma, deve passare");
+        }
+    }
+
+    #[test]
+    fn a_search_for_a_concept_pays_the_toll() {
+        for p in [
+            "duplicazione del codice",
+            "gestione degli errori",
+            "chiusura sessione",
+            "where the handoff is written",
+        ] {
+            assert!(!allowed_search(p), "{p:?} e' un concetto, deve fermarsi");
+        }
+    }
+
+    #[test]
+    fn a_single_lowercase_word_is_given_the_benefit_of_the_doubt() {
+        // Ambiguo per costruzione: `handoff` e' un concetto e anche il nome di
+        // un file. Fra i due errori, bloccare a torto costa di piu': un gate che
+        // da' fastidio a sproposito viene spento.
+        for p in ["handoff", "relay", "throttle", ""] {
+            assert!(allowed_search(p), "{p:?} e' ambiguo, si ammette");
+        }
+    }
+
+    #[test]
+    fn the_pattern_is_pulled_out_of_a_shell_search() {
+        assert_eq!(grep_pattern("grep -rn \"ORCA_TAB_ID\" src").as_deref(), Some("ORCA_TAB_ID"));
+        assert_eq!(grep_pattern("rg --hidden paneKey").as_deref(), Some("paneKey"));
+        // MUTANTE: le opzioni non sono il pattern, e prenderle vorrebbe dire
+        // giudicare `-rn` invece di cio' che si cerca.
+        assert_eq!(grep_pattern("grep -r -i -n handoff .").as_deref(), Some("handoff"));
+        // Nessun pattern isolabile: chi chiama tratta None come ammesso.
+        assert_eq!(grep_pattern("ls -la"), None);
     }
 
     #[test]
