@@ -369,8 +369,24 @@ pub fn symbol_at_line(source: &str, line: usize, lang: Lang) -> Option<String> {
 
 /// Le parole chiave che introducono una definizione, per linguaggio.
 const KEYWORDS: &[&str] = &[
-    "fn", "struct", "enum", "trait", "impl", "mod", "const", "static", "type", "union", "macro",
-    "def", "class", "function", "interface", "let", "var", "async",
+    "fn",
+    "struct",
+    "enum",
+    "trait",
+    "impl",
+    "mod",
+    "const",
+    "static",
+    "type",
+    "union",
+    "macro",
+    "def",
+    "class",
+    "function",
+    "interface",
+    "let",
+    "var",
+    "async",
 ];
 
 fn declares(line: &str, symbol: &str, lang: Lang) -> bool {
@@ -451,12 +467,24 @@ pub fn is_anchorable(source: &str, symbol: &str, lang: Lang) -> bool {
         return true; // primo livello: sempre buono
     }
     let first = line.split_whitespace().next().unwrap_or("");
-    let key = first.trim_start_matches("pub(crate)").trim_start_matches("pub");
+    let key = first
+        .trim_start_matches("pub(crate)")
+        .trim_start_matches("pub");
     // Rientrato: vale solo se lo introduce una parola che **definisce**.
     matches!(
         key,
-        "fn" | "def" | "class" | "struct" | "enum" | "trait" | "type" | "interface" | "impl"
-            | "function" | "async" | "static" | "mod"
+        "fn" | "def"
+            | "class"
+            | "struct"
+            | "enum"
+            | "trait"
+            | "type"
+            | "interface"
+            | "impl"
+            | "function"
+            | "async"
+            | "static"
+            | "mod"
     ) || declared_by_shape(line, lang)
 }
 
@@ -1014,7 +1042,10 @@ fn other() -> u8 {
                     e `relay.py` -> `claude-hooks/src/relay.rs`.";
         let c = citations(text);
         let paths: Vec<&str> = c.iter().map(|x| x.path.as_str()).collect();
-        assert_eq!(paths, vec!["guards/src/handoff.rs", "claude-hooks/src/relay.rs"]);
+        assert_eq!(
+            paths,
+            vec!["guards/src/handoff.rs", "claude-hooks/src/relay.rs"]
+        );
     }
 
     #[test]
@@ -1043,7 +1074,10 @@ fn other() -> u8 {
         let text = "Si passa da `guards::handoff::resolve_terminal_handle`, che parte da \
                     `ORCA_TAB_ID`. Non `src/relay.rs`, non `un po` di prosa, non `ab`.";
         let ids = identifiers(text);
-        assert!(ids.contains(&"resolve_terminal_handle".to_string()), "{ids:?}");
+        assert!(
+            ids.contains(&"resolve_terminal_handle".to_string()),
+            "{ids:?}"
+        );
         assert!(ids.contains(&"ORCA_TAB_ID".to_string()));
         assert!(!ids.iter().any(|i| i.contains('/')));
         assert!(!ids.contains(&"ab".to_string()));
