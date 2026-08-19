@@ -61,10 +61,11 @@ fn words_pattern() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?i)[a-zàèéìòù]+").unwrap())
 }
 
-/// I prefissi che in inglese si attaccano a un'altra parola. `non` è anche una
-/// preposizione italiana, e sono la ragione per cui l'elenco esiste: `non-OK`
-/// nel testo, `non_empty` in un nome.
-const ENGLISH_PREFIXES: &[&str] = &["non", "post", "pre", "multi", "inter", "extra", "sub", "super"];
+/// I prefissi che in inglese si attaccano a un'altra parola. `non` e `un` sono
+/// anche parole italiane, e sono la ragione per cui l'elenco esiste: `non-OK`
+/// nel testo, `non_empty` e `isUnParenthesizedName` in un nome. Valgono solo
+/// davanti a un'altra parte, quindi `il_dubbio_non` resta italiano.
+const ENGLISH_PREFIXES: &[&str] = &["non", "un", "post", "pre", "multi", "inter", "extra", "sub", "super"];
 
 /// `non-OK`, `non-failed`, `non-CV`: in inglese `non-` è un prefisso, e la
 /// parola dopo il trattino non è italiana.
@@ -121,11 +122,23 @@ const ITALIAN_ROOTS: &[&str] = &[
     // Entrate il 19/08/2026 con la misura in mano
     // (`docs/misura-vocabolario-lingua-2026-08-19/`): il vocabolario vedeva il
     // 35,5% degli identificatori italiani del corpus, e queste lo portano al
-    // 71,5% senza un falso positivo. Due filtri, non uno: zero collisioni nelle
-    // 40.000 dichiarazioni di `~/.claude` **e** zero parole del dizionario
-    // inglese di sistema fra le prime venti. Il secondo ha scartato `ric`
-    // (`rich`), `ferm` (`ferment`), `viv` (`vivid`), `camp` (`campaign`),
-    // `testa`, `corpo` — che il solo corpus di casa dava per sicure.
+    // 71,5%. Due filtri, non uno: zero collisioni nelle 40.000 dichiarazioni di
+    // `~/.claude` **e** nessuna parola del dizionario inglese fra le prime venti
+    // di ciascuna. Il secondo ha scartato `ric` (`rich`), `ferm` (`ferment`),
+    // `viv` (`vivid`), `camp` (`campaign`), `testa`, `corpo` — che il solo
+    // corpus di casa dava per sicure.
+    //
+    // «Nessun falso positivo» era una lettura troppo larga di quel filtro, ed è
+    // stata corretta il 19/08 dalla misura in
+    // `docs/2026-08-19-gate-lingua-falsi-positivi.md`: le prime venti parole non
+    // sono tutte le parole, e le radici **vecchie** non ci sono mai passate. Su
+    // tutto il dizionario le radici prendevano **1.574** parole inglesi, la
+    // grande maggioranza dalle vecchie (`cont`, `cas`, `prov`, `prim`, `stat`,
+    // `mut`, `stamp`). La scomposizione «1.426 vecchie + 124 nuove» che girava
+    // nei documenti non torna — le due parti non sommano al totale e una parola
+    // può cadere sotto più radici — quindi qui resta il solo numero misurato.
+    // La cura non è stata potare l'elenco ma `looks_english`, che filtra prima
+    // del confronto a prefisso.
     "agente", "agganciati", "agisci", "albero", "ambiente", "anelli", "archivio", "attuale",
     "avvio", "basso", "buoni", "cacciate", "carta", "catalogo", "cifre", "cresc",
     "decisioni", "degeneri", "dentro", "destinatario", "dett", "difetti", "divieti", "dop",
@@ -174,9 +187,110 @@ fn not_italian() -> &'static HashSet<&'static str> {
             // restano: `stampa` e `mutare` in italiano si continuano a vedere.
             "mut", "mutant", "mutants", "stamp", "stamps", "stamped",
             "statusline", "motivate", "motivated", "motivation",
+            // **Il lessico che il 1913 non poteva avere.** `looks_english`
+            // consulta il web2 di Webster, che è dell'edizione 1913: le parole
+            // dell'informatica non ci sono, e le radici corte se le prendono.
+            // `mutex` è il termine di concorrenza più comune in Rust — cioè nel
+            // linguaggio in cui è scritto questo gancio — e veniva negato dalla
+            // radice `mut`. Qui vanno le parole moderne che il dizionario non
+            // conosce, non i falsi positivi che il filtro già copre.
+            "mutex", "mutexes", "containerize", "containerized", "containerization",
+            "dopamine", "interop", "interoperable", "interoperability",
         ]
         .into_iter()
         .collect()
+    })
+}
+
+/// Il dizionario inglese di sistema, minuscolo.
+///
+/// Se il file manca, **solo `looks_english` si spegne** e torna a com'era prima
+/// di questo filtro: `un` fra i prefissi e le eccezioni `interop*` restano
+/// attive comunque. Su macOS il file c'è sempre; su Linux quasi mai — il
+/// pacchetto non è preinstallato — e senza avviso il gate retrocederebbe in
+/// silenzio al tasso di rimproveri a torto che questa correzione ha appena
+/// tolto. Perciò lo dice, una volta per processo.
+fn english_dictionary() -> &'static HashSet<String> {
+    static WORDS: OnceLock<HashSet<String>> = OnceLock::new();
+    WORDS.get_or_init(|| match std::fs::read_to_string(DICTIONARY_PATH) {
+        Ok(text) => text.lines().map(|w| w.trim().to_lowercase()).collect(),
+        Err(_) => {
+            eprintln!(
+                "code-language: no English dictionary at {DICTIONARY_PATH}, \
+                 falling back to root matching alone (expect false positives \
+                 on English names)"
+            );
+            HashSet::new()
+        }
+    })
+}
+
+/// Dove vive il dizionario. Costante e non configurabile di proposito: una
+/// valvola qui vorrebbe dire poter spegnere il filtro dall'esterno.
+const DICTIONARY_PATH: &str = "/usr/share/dict/words";
+
+/// Suffissi flessivi: `stamping` è `stamp` inglese, non l'inizio di «stampa».
+const INFLECTIONS: &[&str] = &["s", "es", "ed", "d", "ing", "er", "ers", "est", "ly", "ion", "ions"];
+
+/// Vero se una parte del nome è una parola inglese, o ci si riconduce togliendo
+/// un suffisso flessivo.
+///
+/// È il filtro che chiude la famiglia invece del singolo caso. `not_italian()`
+/// è a corrispondenza esatta e compilato a mano, quindi ogni flessione di un
+/// falso positivo già curato rientra dalla finestra: `container` era curato,
+/// `containers` no; `stamp` sì, `stamping` e `stampede` no.
+///
+/// **Non decide da solo sulle parole-funzione**: chi lo chiama deve prima
+/// chiedere a `italian_words()`. Il dizionario di sistema è il *web2* di
+/// Webster, edizione 1913, e contiene come voci proprie `con`, `che`, `chi`,
+/// `col`, `del`, `fra`, `non`, `poi`, `tra`, `tutti` — cioè quasi tutto
+/// l'elenco curato a mano. Senza quella precedenza il filtro le spegneva prima
+/// che l'elenco potesse vederle, e 13 identificatori italiani già scritti in
+/// `~/.claude` smettevano di essere riconosciuti: `con_barra`,
+/// `worktree_del_percorso`, `una_figlia_non_arma_e_tace`. Una soglia sulla
+/// lunghezza non basta: copriva `la` e `un` a due lettere, mai `con` e `del` a
+/// tre. La regola giusta non è quanto è corta la parola, è **chi l'ha scritta a
+/// mano**: un elenco curato batte un dizionario generico.
+fn looks_english(low: &str) -> bool {
+    let dict = english_dictionary();
+    if dict.is_empty() {
+        return false;
+    }
+    // Le cifre finali non cambiano la lingua: `toLowerCase2` è `case`.
+    let base = low.trim_end_matches(|c: char| c.is_ascii_digit());
+    // Una lettera sola non è una parola: nel web2 `a` e `i` sono voci.
+    if base.len() < 2 {
+        return false;
+    }
+    if dict.contains(base) {
+        return true;
+    }
+    INFLECTIONS.iter().any(|suffix| {
+        let Some(root) = base.strip_suffix(suffix) else {
+            return false;
+        };
+        if root.chars().count() < 3 {
+            return false;
+        }
+        if dict.contains(root) || dict.contains(&format!("{root}e")) {
+            return true;
+        }
+        // Il troncamento passa dai **caratteri**, mai dai byte: `&root[..len-1]`
+        // su un nome non ASCII taglia dentro un carattere e fa panico, e un
+        // gancio che va in errore rifiuta ogni strumento, non solo il proprio.
+        // Provato: `is_italian_name("もing")` — も è E3 82 82, ultimo e
+        // penultimo byte coincidono, quindi la vecchia riga credeva a una
+        // consonante raddoppiata e tagliava a metà del carattere.
+        let mut chars = root.chars();
+        let Some(last) = chars.next_back() else {
+            return false;
+        };
+        let shorter = chars.as_str();
+        // `stopped` → `stop`: la consonante che il suffisso aveva raddoppiato.
+        let doubled = shorter.chars().next_back() == Some(last);
+        // `primaries` → `primary`: la `y` diventata `i` davanti a `-es`.
+        let from_y = last == 'i' && dict.contains(&format!("{shorter}y"));
+        from_y || (doubled && dict.contains(shorter))
     })
 }
 
@@ -228,15 +342,44 @@ pub fn is_italian_name(name: &str) -> bool {
         if english.contains(low.as_str()) {
             return false;
         }
-        if ITALIAN_ROOTS.iter().any(|r| low.starts_with(r)) {
-            return true;
+        // **Le parole-funzione curate a mano decidono da sole**, senza chiedere
+        // al dizionario: `con`, `del`, `tra`, `tutti` sono anche voci del web2
+        // del 1913, e lasciarle giudicare da lì spegneva 13 nomi italiani già
+        // scritti in `~/.claude`. Un elenco curato batte un dizionario generico.
+        //
+        // Ma **solo in minuscolo**, che è lo stesso criterio con cui `is_italian`
+        // legge il testo: là `DEL-3` è il nome di una rotta, qui `Col` di
+        // `HTMLTableColElement` e `Non` di `maxProgramSizeForNonTsFiles` sono
+        // pezzi di camelCase inglese. L'italiano di questo repo scrive i
+        // nomi-frase in minuscolo con gli underscore, sempre.
+        if words.contains(low.as_str()) && is_lowercase(part) {
+            // `non_empty`, `pre_flight`, `un_wrap_value`: davanti a una parola
+            // **inglese** questi non sono preposizioni ma prefissi. La
+            // condizione sulla parte successiva non c'era, e senza di essa
+            // `un_valore` e `un_gruppo` diventavano inglesi: in inglese `un-` si
+            // attacca a una parola inglese, in italiano l'articolo precede una
+            // parola italiana, e questa è la differenza che si può guardare.
+            let followed_by_english = parts.get(i + 1).is_some_and(|next| {
+                let next = next.to_lowercase();
+                english.contains(next.as_str()) || looks_english(&next)
+            });
+            return !(ENGLISH_PREFIXES.contains(&low.as_str()) && followed_by_english);
         }
-        // `non_empty`, `pre_flight`: davanti a un'altra parte questi non sono
-        // preposizioni ma prefissi inglesi, ed erano 11 dei 15 falsi positivi
-        // che la misura attribuiva a questa strada. È la stessa neutralizzazione
-        // che `compounds()` fa sul testo, applicata alle parti di un nome.
-        let is_prefix = ENGLISH_PREFIXES.contains(&low.as_str()) && i + 1 < parts.len();
-        words.contains(low.as_str()) && !is_prefix
+        // Le **radici** cedono al dizionario, perché combaciano a prefisso senza
+        // confine di parola: tutto ciò che comincia per `stamp` sarebbe
+        // altrimenti italiano — `stamping`, `stamper`, `stampede`. Misurato il
+        // 19/08/2026: 1.574 parole del dizionario inglese giudicate italiane, e
+        // 33 nomi rifiutati a torto su 5.621 di codice inglese vero.
+        //
+        // Il dizionario si consulta **solo qui**, cioè solo quando una radice ha
+        // già combaciato: caricarlo costa ~25 ms e il gancio è un processo nuovo
+        // a ogni scrittura, quindi un file di codice inglese puro non lo apre
+        // mai. Chi sposta questa chiamata più in alto rimetta quel costo su ogni
+        // scrittura.
+        if ITALIAN_ROOTS.iter().any(|r| low.starts_with(r)) {
+            return !looks_english(&low);
+        }
+        false
     })
 }
 
@@ -343,6 +486,121 @@ mod tests {
         for name in ["soglie_opus5", "destinatario", "tetto_byte", "albero_di_lavoro",
                      "gruppi", "sommario", "uscita_grezza"] {
             assert!(is_italian_name(name), "{name} è italiano");
+        }
+    }
+
+    /// Le famiglie che l'elenco a corrispondenza esatta non poteva chiudere: il
+    /// confronto con le radici è a prefisso, quindi ogni flessione di un nome
+    /// inglese già curato rientrava dalla finestra. Sono 14 dei 283 rifiuti a
+    /// torto contati il 19/08/2026 su `typescript/lib` e `zod`.
+    #[test]
+    fn an_inflected_english_name_is_no_longer_read_as_an_italian_root() {
+        for name in [
+            "stamping", "stampede", "stamper", "containers", "toLowerCase2",
+            "statuses", "provideInlayHints", "contextualType", "primitives",
+            "extendStatics", "derived", "verification", "provenance", "interop",
+            "dope", "crescentIcon",
+            // `-ies` è la `y` che diventa `i` davanti al plurale: senza quel
+            // ramo `VideoColorPrimaries` restava preso dalla radice `prim`.
+            "VideoColorPrimaries", "dependencies", "boundaries",
+        ] {
+            assert!(!is_italian_name(name), "{name} è inglese");
+        }
+    }
+
+    /// In inglese `Un-` si attacca a un'altra parola come `non-`, e non era
+    /// nell'elenco dei prefissi: tre dei sette rifiuti residui venivano da qui.
+    #[test]
+    fn the_english_negative_prefix_is_not_the_italian_article() {
+        assert!(!is_italian_name("isUnParenthesizedName"));
+        assert!(!is_italian_name("parseUnQuoted"));
+        assert!(!is_italian_name("un_wrap_value"));
+    }
+
+    /// **Il costo del filtro, scritto perché non sia una sorpresa.** Queste
+    /// parole italiane stanno anche nel dizionario inglese di sistema e
+    /// arrivano da una *radice*, non dall'elenco curato: il gate ha smesso di
+    /// vederle. Misurati sul corpus di `~/.claude`: **8 nomi su 272**, contro
+    /// 32 rimproveri a torto tolti. Chi le rivuole le aggiunga a
+    /// `italian_words()`, che ha la precedenza sul dizionario — non tocchi
+    /// l'ordine dei controlli.
+    #[test]
+    fn the_italian_words_the_english_dictionary_also_has_are_the_price() {
+        for name in ["basso", "doppia", "misura", "nome", "prima", "punto",
+                     "filo_err", "filo_out"] {
+            assert!(!is_italian_name(name), "{name}: costo noto del filtro");
+        }
+    }
+
+    /// **Le parole-funzione curate a mano battono il dizionario.** Il web2 di
+    /// Webster è del 1913 e contiene `con`, `del`, `non`, `tra`, `tutti` come
+    /// voci proprie: senza questa precedenza il filtro le spegneva prima che
+    /// l'elenco italiano potesse vederle, e questi nomi — tutti già scritti in
+    /// `~/.claude` — smettevano di essere riconosciuti.
+    #[test]
+    fn a_curated_function_word_beats_the_system_dictionary() {
+        for name in [
+            "con_barra",
+            "worktree_del_percorso",
+            "una_figlia_non_arma_e_tace",
+            "con_tutti_i_freni_liberi_si_apre",
+            "il_dubbio_non",
+        ] {
+            assert!(is_italian_name(name), "{name} è italiano");
+        }
+        assert!(is_italian("se la cosa non torna"));
+    }
+
+    /// `un_valore` non è `un_wrap_value`: in inglese `un-` si attacca a una
+    /// parola inglese, in italiano l'articolo precede una parola italiana.
+    /// Senza la condizione sulla parte successiva, l'articolo spegneva quattro
+    /// nomi italiani veri.
+    #[test]
+    fn the_article_only_becomes_a_prefix_in_front_of_an_english_word() {
+        for name in ["un_valore", "un_gruppo", "un_tentativo"] {
+            assert!(is_italian_name(name), "{name} è italiano");
+        }
+        for name in ["un_wrap_value", "isUnParenthesizedName", "parseUnQuoted"] {
+            assert!(!is_italian_name(name), "{name} è inglese");
+        }
+        // Il limite, dichiarato: `un_numero` resta invisibile, ma non per
+        // l'articolo — `numero` è una voce del dizionario inglese, e nessuna
+        // radice lo copre. Si cura aggiungendo `numer` a `ITALIAN_ROOTS`, non
+        // toccando i prefissi.
+        assert!(!is_italian_name("un_numero"));
+    }
+
+    /// Le parole-funzione valgono **solo in minuscolo**, come sul testo, dove
+    /// `DEL-3` è il nome di una rotta. In camelCase inglese quelle stesse
+    /// lettere sono un pezzo di parola, non una preposizione.
+    #[test]
+    fn a_function_word_in_camel_case_is_a_word_fragment() {
+        for name in ["HTMLTableColElement", "maxProgramSizeForNonTsFiles",
+                     "previouslyAcceptedNonCuids", "NON_STANDARD"] {
+            assert!(!is_italian_name(name), "{name} è inglese");
+        }
+    }
+
+    /// **Il dizionario è del 1913 e non conosce l'informatica.** `mutex` è il
+    /// termine di concorrenza più comune in Rust — il linguaggio in cui questo
+    /// gancio è scritto — e la radice `mut` se lo prendeva senza che nessuna
+    /// voce del dizionario potesse smentirla.
+    #[test]
+    fn the_modern_words_the_1913_dictionary_never_had_stay_clear() {
+        for name in ["mutex", "Mutex", "mutexes", "containerize", "containerized",
+                     "dopamine"] {
+            assert!(!is_italian_name(name), "{name} è inglese");
+        }
+    }
+
+    /// Un gancio che va in errore **rifiuta ogni strumento**, non solo il
+    /// proprio: qui l'aritmetica sui byte tagliava dentro un carattere non
+    /// ASCII. `も` è `E3 82 82`, ultimo e penultimo byte coincidono, quindi il
+    /// controllo sulla consonante raddoppiata credeva di poter troncare.
+    #[test]
+    fn a_name_with_multibyte_characters_does_not_panic() {
+        for name in ["もing", "もs", "testもing", "日本語_stamping", "é_stamped"] {
+            let _ = is_italian_name(name);
         }
     }
 
