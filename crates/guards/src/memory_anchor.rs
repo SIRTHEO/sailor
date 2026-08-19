@@ -712,6 +712,37 @@ fn mapped_names(text: &str) -> std::collections::HashSet<String> {
     out
 }
 
+/// Vero se una nota di mappatura copre gia' questa citazione.
+///
+/// Chi scrive `` `relay.py` → `relay.rs` `` mappa **il file**, e si aspetta che
+/// valga per ogni forma con cui quel file e' nominato nel racconto:
+/// `relay.py:98-99`, `skills/hooks/relay.py`, `~/.claude/skills/hooks/relay.py`.
+/// Confrontare la stringa grezza obbligava invece a una riga di nota per ogni
+/// variante — successo il 19/08/2026 su cinque memorie di seguito, con la
+/// bonifica che sembrava non attaccare.
+fn is_mapped(token: &str, mapped: &std::collections::HashSet<String>) -> bool {
+    if mapped.contains(token) {
+        return true;
+    }
+    let (here, _) = split_locator(token);
+    mapped.iter().any(|m| {
+        let (there, _) = split_locator(m);
+        // Il confine di segmento e' obbligatorio: senza, `relay.rs` coprirebbe
+        // anche `parse-relay.rs`, che e' un altro file.
+        ends_at_segment(here, there) || ends_at_segment(there, here)
+    })
+}
+
+/// Vero se `whole` finisce con `tail` a confine di cartella.
+fn ends_at_segment(whole: &str, tail: &str) -> bool {
+    if whole == tail {
+        return true;
+    }
+    whole
+        .strip_suffix(tail)
+        .is_some_and(|head| head.ends_with('/'))
+}
+
 pub fn citations(text: &str) -> Vec<Citation> {
     let mut out: Vec<Citation> = Vec::new();
     // Le righe citate (`>`) sono la nota storica — «questo file viveva qui, ora
@@ -739,7 +770,7 @@ pub fn citations(text: &str) -> Vec<Citation> {
         if token.is_empty() || token.contains(' ') || token.len() > 200 {
             continue;
         }
-        if mapped.contains(token) {
+        if is_mapped(token, &mapped) {
             continue;
         }
         // Una classe di file non e' un file: `compare-*.py`, `skills/hooks/*.py`,
@@ -765,6 +796,14 @@ pub fn citations(text: &str) -> Vec<Citation> {
         // (`{timeline-section,note-composer}.tsx`), che nomina due file veri e
         // nessuno dei due si chiama cosi'.
         if token.contains('<') || token.contains('{') || token.contains("...") {
+            continue;
+        }
+        // Un nome di una lettera sola e' il segnaposto di chi spiega un gancio:
+        // `scripts/x.sh`, `src/webhook/x.ts`, `.claude/scripts/x.py` sono il
+        // file generico su cui si mostra cosa succede, non un file che qualcuno
+        // abbia mai scritto. Cinque delle 117 citazioni morte del 19/08/2026.
+        let stem = token.rsplit('/').next().unwrap_or(token);
+        if matches!(stem.split_once('.'), Some((name, _)) if name.len() == 1) {
             continue;
         }
         let (path_part, tail) = split_locator(token);
@@ -1148,6 +1187,32 @@ fn other() -> u8 {
     fn a_class_of_files_is_not_a_citation() {
         let text = "I banchi `compare-*.py` e i moduli `skills/hooks/*.py` sono spariti, \
                     e cosi' ogni `.py` di quella cartella. Resta `relay.rs`.";
+        let c = citations(text);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].path, "relay.rs");
+    }
+
+    #[test]
+    fn one_mapping_note_covers_every_form_of_the_same_name() {
+        // La nota mappa il file, non la stringa: chi la scrive ha gia' fatto il
+        // lavoro e non deve ripeterla per il percorso lungo e per il numero di
+        // riga. Ma `parse-relay.py` e' un altro file, e resta scoperto.
+        let text = "`relay.py` → `crates/claude-hooks/src/relay.rs`\n\n\
+                    Il gancio girava in `skills/hooks/relay.py`, e la riga che \
+                    contava era `relay.py:98`. Invece `parse-relay.py` non \
+                    c'entra niente.";
+        let dead: Vec<String> = citations(text).into_iter().map(|c| c.path).collect();
+        assert!(!dead.iter().any(|p| p.contains("skills/hooks/relay.py")));
+        assert!(!dead.iter().any(|p| p.starts_with("relay.py")));
+        assert!(dead.iter().any(|p| p == "parse-relay.py"));
+    }
+
+    #[test]
+    fn a_one_letter_name_is_a_placeholder_not_a_file() {
+        // Chi spiega un gancio scrive «un Write di `scripts/x.sh`»: quel nome
+        // non e' mai stato un file, e cercarlo lo dichiarava morto per sempre.
+        let text = "Un `Write` di `scripts/x.sh` non passa dal gate, mentre \
+                    `src/webhook/x.ts` si', e il vero file e' `relay.rs`.";
         let c = citations(text);
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].path, "relay.rs");
