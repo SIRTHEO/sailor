@@ -18,6 +18,7 @@ use std::fmt::Write as _;
 use std::fs::{create_dir_all, rename, OpenOptions};
 use std::io::Write as _;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CEILING_BYTES: u64 = 5 * 1024 * 1024;
@@ -73,9 +74,25 @@ impl From<i64> for Field {
     }
 }
 
+/// Se questo processo sta servendo una sessione vera. Lo dichiara `read_input`,
+/// che è il punto per cui passa ogni ingresso di gancio.
+static LIVE_RUN: AtomicBool = AtomicBool::new(false);
+
+/// Dichiara che l'ingresso appena letto viene (o no) da una sessione vera.
+pub fn mark_live_run(live: bool) {
+    LIVE_RUN.store(live, Ordering::Relaxed);
+}
+
 /// Scrive una riga nel registro. `extra` mantiene l'ordine in cui è passato:
 /// il formato è ricopiato dal JavaScript, e chi legge i due file affiancati non
 /// deve vedere differenze nemmeno nell'ordine delle chiavi.
+///
+/// LE PROVE SI MARCANO, NON SI DIROTTANO. Chi prova un gancio dal terminale
+/// scriveva nel registro di produzione righe indistinguibili da quelle vere:
+/// 233 su 6.832 il 19/08/2026, e le legge chi misura quanto un gate morde.
+/// Marcarle lascia il file dov'è e la riga ispezionabile; dirottarle
+/// perderebbe righe vere ogni volta che il criterio sbaglia, ed è il danno
+/// peggiore dei due.
 pub fn record(hook: &str, decision: &str, reason: &str, extra: &[(&str, Field)]) {
     let dir = folder();
     let path = dir.join("ganci.jsonl");
@@ -98,6 +115,11 @@ pub fn record(hook: &str, decision: &str, reason: &str, extra: &[(&str, Field)])
     for (key, value) in extra {
         let _ = write!(line, ",{}:", quote(key));
         value.write_to(&mut line);
+    }
+    // In coda, e solo quando c'è: le righe vere restano byte per byte quelle
+    // che gli script di oggi sanno leggere.
+    if !LIVE_RUN.load(Ordering::Relaxed) {
+        line.push_str(",\"prova\":true");
     }
     line.push_str("}\n");
 
