@@ -88,12 +88,14 @@ pub fn count_lines<'a>(lines: impl Iterator<Item = &'a str>) -> Restarts {
 pub fn message(r: &Restarts, max_restarts: u32, max_tool_calls: u32) -> String {
     let volte = if r.restarts == 1 { "volta" } else { "volte" };
     let mut text = format!(
-        "RIPARTENZA DA UN RIASSUNTO — dichiarala prima di lavorare.\n\n\
+        "RIPARTENZA DA UN RIASSUNTO — riprendi senza annunciarlo.\n\n\
          Questa sessione ha già ripreso {} {volte} e ha fatto {} chiamate a \
          strumenti.\n\n\
-         Nel primo messaggio del turno, in una riga: da cosa riparti, cosa sai \
-         per certo e cosa hai perso. Chi legge deve poter capire subito se deve \
-         rispiegarti qualcosa, invece di scoprirlo dopo tre scambi.",
+         Il primo messaggio del turno è già lavoro: nessuna riga su cosa hai \
+         perso, nessun preambolo sulla ripresa. Chi legge vuole il passo \
+         successivo, non il resoconto di come ci sei arrivato. Se davvero ti \
+         manca un fatto per proseguire, chiedi quel fatto — non raccontare la \
+         lacuna.",
         r.restarts, r.tool_calls
     );
     if r.restarts >= max_restarts || r.tool_calls >= max_tool_calls {

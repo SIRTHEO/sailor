@@ -45,6 +45,33 @@ fn is_session_suffix(rest: &str) -> bool {
         && tail.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase())
 }
 
+/// Lo spazio dei socket delle sessioni locali. Fuori di qui non si concede.
+const SOCKET_DIR: &str = "/tmp/cc-socks/";
+
+/// `uds:/tmp/cc-socks/24334.sock` — l'indirizzo che `ListAgents` stampa per una
+/// sessione locale, e la forma che il confronto sui nomi delle copie non vede.
+///
+/// Misurato il 19/08/2026: dei 256 messaggi fra sessioni di sette giorni, 143
+/// erano nomi di copia e 64 indirizzi come questo. Il gancio taceva su tutti e
+/// 64, e tacere lascia aperto il dialogo di permesso.
+///
+/// LA FORMA E' ESATTA, non un prefisso: una sottocartella o un `..` porterebbero
+/// fuori dallo spazio locale, e un percorso arbitrario concesso e' chiunque che
+/// parla con chiunque. Il binario di Claude Code usa la stessa cautela e la
+/// chiama «outside our socket namespace».
+fn is_local_socket(recipient: &str) -> bool {
+    let Some(path) = recipient.strip_prefix("uds:") else {
+        return false;
+    };
+    let Some(file) = path.strip_prefix(SOCKET_DIR) else {
+        return false;
+    };
+    let Some(stem) = file.strip_suffix(".sock") else {
+        return false;
+    };
+    !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit())
+}
+
 /// Il destinatario e' una sessione viva su questa macchina?
 ///
 /// `names` a `None` vuol dire «Orca non ha risposto», che **non** e' un insieme
@@ -61,6 +88,11 @@ pub fn is_local(recipient: &str, names: Option<&BTreeSet<String>>) -> Verdict {
     }
     if IN_PROCESS.contains(&recipient) {
         return yes("destinatario interno al processo".into());
+    }
+    // Prima del confronto sui nomi: un socket locale si riconosce dalla propria
+    // forma, senza chiedere niente a Orca. Vale anche quando Orca non risponde.
+    if is_local_socket(recipient) {
+        return yes("socket di una sessione locale".into());
     }
     let Some(names) = names else {
         return no("Orca non risponde: non si concede al buio");
@@ -132,6 +164,26 @@ mod tests {
     #[test]
     fn in_process_recipients_need_no_list() {
         assert!(is_local("main", None).allow);
+    }
+
+    #[test]
+    fn a_socket_in_the_local_namespace_is_granted_without_asking_orca() {
+        let v = is_local("uds:/tmp/cc-socks/24334.sock", None);
+        assert!(v.allow, "un socket locale si riconosce anche senza i nomi");
+        assert!(v.reason.contains("socket"));
+    }
+
+    #[test]
+    fn a_socket_outside_the_namespace_is_never_granted() {
+        // Un percorso arbitrario concesso e' chiunque che parla con chiunque.
+        assert!(!is_local_socket("uds:/tmp/altrove/24334.sock"));
+        assert!(!is_local_socket("uds:/tmp/cc-socks/../altrove/24334.sock"));
+        assert!(!is_local_socket("uds:/tmp/cc-socks/sotto/24334.sock"));
+        assert!(!is_local_socket("uds:/tmp/cc-socks/24334.txt"));
+        assert!(!is_local_socket("uds:/tmp/cc-socks/nome.sock")); // non numerico
+        assert!(!is_local_socket("uds:/tmp/cc-socks/.sock")); // vuoto
+        assert!(!is_local_socket("/tmp/cc-socks/24334.sock")); // senza schema
+        assert!(!is_local_socket("uds:"));
     }
 
     #[test]

@@ -246,7 +246,8 @@ fn resume_message() -> String {
         "RIPARTENZA AUTOMATICA (staffetta). La sessione precedente su questo \
 worktree ha consegnato ed e' stata rigenerata per non trascinare un contesto \
 gonfio. Riprendi da quell'handoff: leggi `{path}` e prosegui il piano gia' \
-autorizzato, dichiarando in una riga da cosa riparti. Non ricominciare da zero."
+autorizzato. Non ricominciare da zero, e **non annunciare la ripartenza**: il \
+primo messaggio del turno e' gia' il passo successivo del piano."
     );
     if punto.is_empty() && mandato.is_empty() {
         return base;
