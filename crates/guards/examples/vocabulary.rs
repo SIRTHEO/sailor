@@ -27,7 +27,10 @@ const SKIPPED: &[&str] = &[
     "/cache/", "/file-history/", "/paste-cache/", "/projects/", "/downloads/",
 ];
 
-fn walk(dir: &Path, names: &mut BTreeSet<String>, files: &mut usize) {
+/// Estensioni da leggere quando si salta il filtro delle famiglie.
+const SOURCE_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".mjs", ".py", ".rs", ".sh"];
+
+fn walk(dir: &Path, names: &mut BTreeSet<String>, files: &mut usize, watched_only: bool) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -39,10 +42,18 @@ fn walk(dir: &Path, names: &mut BTreeSet<String>, files: &mut usize) {
         }
         let Ok(kind) = entry.file_type() else { continue };
         if kind.is_dir() {
-            walk(&path, names, files);
+            walk(&path, names, files, watched_only);
             continue;
         }
-        if !kind.is_file() || family(&shown).is_none() || is_exempt(&shown) {
+        if !kind.is_file() {
+            continue;
+        }
+        let taken = if watched_only {
+            family(&shown).is_some() && !is_exempt(&shown)
+        } else {
+            SOURCE_EXTENSIONS.iter().any(|e| shown.ends_with(e))
+        };
+        if !taken {
             continue;
         }
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -54,12 +65,21 @@ fn walk(dir: &Path, names: &mut BTreeSet<String>, files: &mut usize) {
 }
 
 fn main() {
-    let root = std::env::args().nth(1).unwrap_or_else(|| {
-        format!("{}/.claude", std::env::var("HOME").unwrap_or_default())
-    });
+    // `--all` legge ogni sorgente invece dei soli file sorvegliati. Serve per il
+    // corpus di controllo: `family()` accetta i test e le cartelle di gate di
+    // casa, quindi su codice altrui — `typescript/lib`, `zod` — non prenderebbe
+    // niente, e senza un corpus inglese non si misura il verso che conta
+    // davvero, cioè quanti nomi inglesi il gate rimprovera a torto.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let watched_only = !args.iter().any(|a| a == "--all");
+    let root = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .cloned()
+        .unwrap_or_else(|| format!("{}/.claude", std::env::var("HOME").unwrap_or_default()));
     let mut names = BTreeSet::new();
     let mut files = 0usize;
-    walk(Path::new(&root), &mut names, &mut files);
+    walk(Path::new(&root), &mut names, &mut files, watched_only);
 
     let recognised: Vec<&String> = names.iter().filter(|n| is_italian_name(n)).collect();
     let report = serde_json::json!({
