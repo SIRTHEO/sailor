@@ -1048,10 +1048,15 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // 6. pulisci lo stato della sessione sostituita. Il pannello non si tocca:
     //    è lo stesso, e adesso ci vive la sessione nuova.
     let _ = fs::remove_file(live_dir().join(format!("{sess}.json")));
-    for family in [
-        "consegna-fatta", "consegna-blocchi", "consegna-stop",
-        "consegna-avvisata", "consegna-misura",
-    ] {
+    // LA LISTA È UNA SOLA, e vive in `register_session`. Qui ne esistevano due
+    // copie da cinque famiglie contro otto: mancavano `consegna-volontaria`,
+    // `consegna-fatta-ripartenze` e `consegna-ripartenze`. La prima costa cara —
+    // dice «questa consegna è stata una scelta, non un ordine della soglia», e
+    // `guards::handoff` la lascia scavalcare la guardia del «sotto soglia».
+    // Sopravvivendo alla rigenerazione restava vera per sempre: il 19/08/2026
+    // alle 15:38 ha fatto azzerare una sessione al 21% del budget (104.724 token).
+    // È lo stesso difetto che il commento di quella lista dichiarava chiuso.
+    for family in crate::register_session::MARKER_FAMILIES {
         let _ = fs::remove_file(state_dir().join(format!("{family}-{sess}")));
     }
     set_cooldown(&rec.worktree);
@@ -1228,10 +1233,15 @@ fn retire(rec: &Record, orca: OrcaFn) {
         return;
     }
     let _ = fs::remove_file(live_dir().join(format!("{sess}.json")));
-    for family in [
-        "consegna-fatta", "consegna-blocchi", "consegna-stop",
-        "consegna-avvisata", "consegna-misura",
-    ] {
+    // LA LISTA È UNA SOLA, e vive in `register_session`. Qui ne esistevano due
+    // copie da cinque famiglie contro otto: mancavano `consegna-volontaria`,
+    // `consegna-fatta-ripartenze` e `consegna-ripartenze`. La prima costa cara —
+    // dice «questa consegna è stata una scelta, non un ordine della soglia», e
+    // `guards::handoff` la lascia scavalcare la guardia del «sotto soglia».
+    // Sopravvivendo alla rigenerazione restava vera per sempre: il 19/08/2026
+    // alle 15:38 ha fatto azzerare una sessione al 21% del budget (104.724 token).
+    // È lo stesso difetto che il commento di quella lista dichiarava chiuso.
+    for family in crate::register_session::MARKER_FAMILIES {
         let _ = fs::remove_file(state_dir().join(format!("{family}-{sess}")));
     }
     set_cooldown(&rec.worktree);
