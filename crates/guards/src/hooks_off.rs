@@ -237,7 +237,9 @@ mod tests {
     /// Un repo vero in una cartella usa-e-getta, con `core.hooksPath` puntato a
     /// `.husky/_` come fanno i repo in carico.
     fn blank_repo(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("hooks-off-{name}"));
+        // La radice porta il pid del processo: due batterie simultanee sono due
+        // processi, e con un nome fisso si cancellavano il repo a vicenda.
+        let root = hook_io::testing::test_root().join(format!("hooks-off-{name}"));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join(".husky")).unwrap();
         for args in [

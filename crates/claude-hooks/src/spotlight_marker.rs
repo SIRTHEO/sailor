@@ -346,7 +346,9 @@ mod tests {
 
     impl Albero {
         fn nuovo(nome: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("spotlight-marker-prove-{nome}"));
+            // La radice porta il pid: senza, due batterie simultanee si
+            // cancellano le cartelle a vicenda (vedi `crate::test_home`).
+            let dir = crate::test_home::test_root().join(format!("spotlight-{nome}"));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
             Self(dir)

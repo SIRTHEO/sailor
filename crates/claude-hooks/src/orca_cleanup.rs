@@ -1353,8 +1353,15 @@ mod tests {
     }
 
     /// Le 46 righe dell'originale devono passare tutte anche qui.
+    ///
+    /// La casa isolata serve per il lucchetto, non per i file: `selftest`
+    /// dichiara `ORCA_TAB_ID` per provare che una scheda non chiude sé stessa, e
+    /// quella è una variabile di **processo** — un caso in parallelo che finiva
+    /// la sua `HomeIsolata` gliela toglieva a metà, e il rosso compariva a giri
+    /// alterni sul caso «my own tab».
     #[test]
-    fn le_prove_interne_dell_originale_passano() {
+    fn the_originals_own_tests_all_pass() {
+        let _home = crate::test_home::HomeIsolata::nuova("orca-cleanup-selftest");
         assert_eq!(selftest(), 0);
     }
 }

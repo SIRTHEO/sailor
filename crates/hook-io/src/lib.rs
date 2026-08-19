@@ -15,6 +15,7 @@ pub mod journal;
 pub mod local_time;
 pub mod observations;
 pub mod python_json;
+pub mod testing;
 
 use serde::Deserialize;
 use std::io::Read;

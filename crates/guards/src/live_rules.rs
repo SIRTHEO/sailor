@@ -521,12 +521,9 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// Una cartella temporanea senza dipendenze esterne: il nome porta il pid,
-    /// che basta perché le prove di un crate girano in un processo solo.
+    /// Una cartella temporanea senza dipendenze esterne, sotto la radice del
+    /// processo: il pid la separa dalle batterie che girano in parallelo.
     fn tempdir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("{tag}-{}", std::process::id()));
-        std::fs::remove_dir_all(&dir).ok();
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+        hook_io::testing::test_dir(tag)
     }
 }

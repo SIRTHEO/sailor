@@ -1070,7 +1070,7 @@ mod tests {
 
     #[test]
     fn only_the_module_that_ports_a_hook_marks_a_fallback() {
-        let dir = std::env::temp_dir().join(format!("reach-fb-{}", std::process::id()));
+        let dir = crate::test_home::test_root().join("reach-fb");
         let _ = std::fs::remove_dir_all(&dir);
         let src = dir.join("casa/rust/crates/x/src");
         std::fs::create_dir_all(&src).unwrap();
@@ -1104,7 +1104,7 @@ mod tests {
 
     #[test]
     fn the_walk_is_transitive_and_stops_at_orphans() {
-        let dir = std::env::temp_dir().join(format!("reach-walk-{}", std::process::id()));
+        let dir = crate::test_home::test_root().join("reach-walk");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("root.sh"), "bash a.sh\n").unwrap();
@@ -1131,7 +1131,7 @@ mod tests {
 
     #[test]
     fn a_root_is_what_fires_not_what_exists() {
-        let dir = std::env::temp_dir().join(format!("reach-roots-{}", std::process::id()));
+        let dir = crate::test_home::test_root().join("reach-roots");
         let _ = std::fs::remove_dir_all(&dir);
         let agents = dir.join("agents");
         let aut = dir.join("ws/.claude/automazioni");
@@ -1186,7 +1186,7 @@ mod tests {
 
     #[test]
     fn a_hook_outside_the_repo_is_still_a_root() {
-        let dir = std::env::temp_dir().join(format!("reach-hookspath-{}", std::process::id()));
+        let dir = crate::test_home::test_root().join("reach-hookspath");
         let _ = std::fs::remove_dir_all(&dir);
         let clone = dir.join("casa/skills/skills-di-monte");
         let altrove = dir.join("ganci-fuori");
