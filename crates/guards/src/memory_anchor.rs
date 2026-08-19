@@ -664,6 +664,26 @@ const CODE_EXT: &[&str] = &[
 /// Serve perché ancorare 151 memorie a mano non lo fa nessuno: il timbro parte
 /// da ciò che la memoria dice già, e il riferimento `file:riga` diventa
 /// `file#simbolo` quando il simbolo si trova.
+/// I nomi che la memoria dichiara superati, cioe' scritti a sinistra di una
+/// freccia: `` `vecchio.py` → `nuovo.rs` ``.
+///
+/// Legge il testo intero, blocchi citati compresi, perche' la nota di mappatura
+/// si scrive quasi sempre li'.
+fn mapped_names(text: &str) -> std::collections::HashSet<String> {
+    let pieces: Vec<&str> = text.split('`').collect();
+    let mut out = std::collections::HashSet::new();
+    for i in (1..pieces.len()).step_by(2) {
+        let follows_arrow = pieces
+            .get(i + 1)
+            .map(|after| after.trim_start())
+            .is_some_and(|a| a.starts_with('→') || a.starts_with("->"));
+        if follows_arrow {
+            out.insert(pieces[i].trim().to_string());
+        }
+    }
+    out
+}
+
 pub fn citations(text: &str) -> Vec<Citation> {
     let mut out: Vec<Citation> = Vec::new();
     // Le righe citate (`>`) sono la nota storica — «questo file viveva qui, ora
@@ -675,24 +695,23 @@ pub fn citations(text: &str) -> Vec<Citation> {
         .filter(|l| !l.trim_start().starts_with('>'))
         .collect::<Vec<_>>()
         .join("\n");
+    // A sinistra di una freccia c'e' il nome di ieri: la nota «dove vive oggi
+    // questo codice» si scrive `handoff_common.py` → `guards/src/handoff.rs`, e
+    // nomina il file vecchio **per dire che non c'e' piu'**. Chi la scrive ha
+    // gia' fatto il lavoro, quindi il nome mappato e' coperto **in tutto il
+    // file**, non solo su quella riga: il racconto sotto continua a nominarlo,
+    // ed e' giusto che lo faccia. Segnalarlo lo stesso rendeva la bonifica
+    // invisibile — sei memorie annotate a regola d'arte, morti da 24 a 22.
+    // La nota si scrive quasi sempre in un blocco citato, che il filtro qui
+    // sopra toglie di mezzo: la raccolta legge percio' il testo intero.
+    let mapped = mapped_names(text);
     let pieces: Vec<&str> = body.split('`').collect();
     for i in (1..pieces.len()).step_by(2) {
         let token = pieces[i].trim();
         if token.is_empty() || token.contains(' ') || token.len() > 200 {
             continue;
         }
-        // A sinistra di una freccia c'e' il nome di ieri: la nota «dove vive oggi
-        // questo codice» si scrive `handoff_common.py` → `guards/src/handoff.rs`,
-        // e nomina il file vecchio **per dire che non c'e' piu'**. Contarlo fra i
-        // rimandi vivi rende la bonifica invisibile — chi annota correttamente una
-        // memoria non vede scendere il conteggio, misurato il 19/08/2026 su sei
-        // memorie annotate: 24 morti prima, 22 dopo. Stesso guasto gia' curato
-        // per le righe citate (`>`), stessa cura.
-        if pieces
-            .get(i + 1)
-            .map(|after| after.trim_start())
-            .is_some_and(|a| a.starts_with('→') || a.starts_with("->"))
-        {
+        if mapped.contains(token) {
             continue;
         }
         // Una classe di file non e' un file: `compare-*.py`, `skills/hooks/*.py`,
@@ -989,6 +1008,17 @@ fn other() -> u8 {
         let c = citations(text);
         let paths: Vec<&str> = c.iter().map(|x| x.path.as_str()).collect();
         assert_eq!(paths, vec!["guards/src/handoff.rs", "claude-hooks/src/relay.rs"]);
+    }
+
+    #[test]
+    fn a_mapped_name_stays_covered_further_down_the_page() {
+        // La nota sta in un blocco citato, il racconto continua a nominare il
+        // file vecchio: e' proprio quello che deve fare, e non va segnalato.
+        let text = "> `handoff_common.py` → `rust/crates/guards/src/handoff.rs`\n\
+                    \n\
+                    In `handoff_common.py` la soglia era 200k, e `attese.py` non e' mappato.";
+        let paths: Vec<String> = citations(text).into_iter().map(|c| c.path).collect();
+        assert_eq!(paths, vec!["attese.py"], "{paths:?}");
     }
 
     #[test]
