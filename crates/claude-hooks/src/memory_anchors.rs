@@ -162,9 +162,7 @@ fn is_generated(path: &Path) -> bool {
 /// cartella `…/dist` mentre la si visita non ne ha una in coda: l'indice per
 /// nome ci entrava dentro e trovava `index.mjs` di una build.
 fn is_generated_dir(name: &str) -> bool {
-    GENERATED
-        .iter()
-        .any(|g| g.trim_matches('/') == name)
+    GENERATED.iter().any(|g| g.trim_matches('/') == name)
         || name == "node_modules"
         || name == "target"
 }
@@ -225,6 +223,90 @@ fn contains_in_order(haystack: &str, segments: &[String]) -> bool {
         }
     }
     true
+}
+
+/// Dove vive un file che sul disco non c'e', ma sta su un ramo remoto.
+///
+/// Un albero di lavoro sta quasi sempre su un ramo suo, indietro rispetto a
+/// `origin/develop`: chi cita un file fuso ieri non ha scritto niente di falso,
+/// e il rilevatore lo dichiarava morto lo stesso. Erano 16 delle 137 citazioni
+/// morte del 19/08/2026, e ognuna costava a chi bonificava un `git show` per
+/// scoprire che non c'era niente da correggere.
+fn on_a_remote_branch(path: &str) -> Option<String> {
+    static REMOTE: OnceLock<BTreeMap<String, Vec<String>>> = OnceLock::new();
+    // Sotto prova l'indice si rifa' ogni volta: una cache globale farebbe
+    // ereditare a una prova le radici di un'altra, come per `by_name`.
+    let built;
+    let index = if test_roots().is_some() {
+        built = build_remote_index();
+        &built
+    } else {
+        REMOTE.get_or_init(build_remote_index)
+    };
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let hits = index.get(name)?;
+    let segments: Vec<String> = path
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != ".")
+        .map(|s| s.to_string())
+        .collect();
+    let hit = if segments.len() > 1 {
+        hits.iter().find(|h| contains_in_order(h, &segments))?
+    } else {
+        hits.first()?
+    };
+    Some(hit.clone())
+}
+
+fn build_remote_index() -> BTreeMap<String, Vec<String>> {
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for root in roots() {
+        if !root.join(".git").exists() {
+            continue;
+        }
+        // `develop` e' il ramo d'integrazione dei repo Gyver, `main` quello
+        // della configurazione: si prova il primo che risponde, non tutti e
+        // due, perche' un albero fermo darebbe due volte lo stesso elenco.
+        let Some(listing) = ["origin/develop", "origin/main"]
+            .iter()
+            .find_map(|br| list_tree(&root, br))
+        else {
+            continue;
+        };
+        for line in listing.lines() {
+            let Some(name) = line.rsplit('/').next() else {
+                continue;
+            };
+            map.entry(name.to_string())
+                .or_default()
+                .push(format!("{}/{line}", tilde(&root)));
+        }
+    }
+    map
+}
+
+/// I file di un ramo remoto, o nulla se quel ramo li' non esiste.
+fn list_tree(repo: &Path, branch: &str) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args([
+            "-C",
+            &repo.to_string_lossy(),
+            "ls-tree",
+            "-r",
+            "--name-only",
+            branch,
+        ])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(out.stdout).ok()?;
+    if text.trim().is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 /// L'indice nome-di-file → percorsi, costruito una volta per esecuzione.
@@ -427,7 +509,12 @@ fn session_start() -> i32 {
         rows.len()
     );
     for r in alarming.iter().take(MAX_LINES_AT_STARTUP) {
-        println!("  [{}] {} — {}", r.verdict.label(), r.memory, r.anchor.render());
+        println!(
+            "  [{}] {} — {}",
+            r.verdict.label(),
+            r.memory,
+            r.anchor.render()
+        );
     }
     if alarming.len() > MAX_LINES_AT_STARTUP {
         println!("  … e altri {}", alarming.len() - MAX_LINES_AT_STARTUP);
@@ -898,6 +985,10 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
     // righe di `personal/switch` in cima all'elenco di cio' che c'e' da
     // bonificare — il 41% del residuo, e non bonificabile per definizione.
     let mut gone: BTreeMap<String, usize> = BTreeMap::new();
+    // I file che stanno su un ramo remoto e non su questo albero: non sono da
+    // bonificare, sono da aggiornare — ma chi legge deve saperlo senza andarlo
+    // a cercare con `git show`.
+    let mut elsewhere: BTreeMap<String, String> = BTreeMap::new();
     for file in files {
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
@@ -909,6 +1000,10 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
         let mut dead: Vec<String> = Vec::new();
         for cit in citations(&text) {
             if !resolve_all(&cit.path).is_empty() {
+                continue;
+            }
+            if let Some(remote) = on_a_remote_branch(&cit.path) {
+                elsewhere.insert(cit.path.clone(), remote);
                 continue;
             }
             if !dead.contains(&cit.path) {
@@ -928,10 +1023,15 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
                 format!("{{\"memory\":{},\"dead\":[{}]}}", quote(m), paths.join(","))
             })
             .collect();
+        let remote: Vec<String> = elsewhere
+            .iter()
+            .map(|(p, at)| format!("{{\"path\":{},\"at\":{}}}", quote(p), quote(at)))
+            .collect();
         println!(
-            "{{\"dead\":{total},\"memories\":{},\"items\":[{}]}}",
+            "{{\"dead\":{total},\"memories\":{},\"items\":[{}],\"onRemoteBranch\":[{}]}}",
             per_memory.len(),
-            items.join(",")
+            items.join(","),
+            remote.join(",")
         );
         return i32::from(total > 0);
     }
@@ -955,6 +1055,17 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
              esiste su questa macchina, quindi ogni loro percorso risulta \
              introvabile. Non c'e' niente da bonificare finche' non torna."
         );
+    }
+    if !elsewhere.is_empty() {
+        println!(
+            "\nFuori conteggio: {} file stanno su un ramo remoto e non su questo \
+             albero. Non c'e' niente da correggere nella memoria: e' il checkout \
+             che diverge.",
+            elsewhere.len()
+        );
+        for (path, at) in &elsewhere {
+            println!("  → {path}  ({at})");
+        }
     }
     i32::from(total > 0)
 }
@@ -1031,7 +1142,10 @@ mod tests {
         let slug: String = repo.to_string_lossy().replace('/', "-");
         let memory = dir.join("projects").join(&slug).join("memory");
         fs::create_dir_all(&memory).unwrap();
-        assert_eq!(project_repo(&memory.join("m.md")).as_deref(), Some(repo.as_path()));
+        assert_eq!(
+            project_repo(&memory.join("m.md")).as_deref(),
+            Some(repo.as_path())
+        );
     }
 
     #[test]
@@ -1056,6 +1170,36 @@ mod tests {
         assert!(resolve(".github/workflows/ci.yml").is_some());
         assert!(resolve("ci.yml").is_some());
         assert!(resolve("head.txt").is_none());
+    }
+
+    #[test]
+    fn a_file_only_on_the_integration_branch_is_not_dead() {
+        // Un albero di lavoro sta quasi sempre su un ramo suo: cio' che e' stato
+        // fuso ieri non c'e' ancora sul disco, e dichiararlo morto mandava chi
+        // bonificava a scoprirlo con un `git show`.
+        let dir = scratch("remote-branch");
+        let repo = dir.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(["-C", &repo.to_string_lossy()])
+                .args(args)
+                .output()
+                .unwrap();
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "prova@example.com"]);
+        git(&["config", "user.name", "prova"]);
+        fs::write(repo.join("merged.ts"), "export const a = 1;\n").unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", "seed"]);
+        git(&["update-ref", "refs/remotes/origin/develop", "HEAD"]);
+        // Il file torna a esistere solo sul ramo: sul disco non c'e' piu'.
+        fs::remove_file(repo.join("merged.ts")).unwrap();
+        with_roots(&repo);
+        assert!(resolve("merged.ts").is_none());
+        assert!(on_a_remote_branch("merged.ts").is_some());
+        assert!(on_a_remote_branch("never-committed.ts").is_none());
     }
 
     #[test]
@@ -1117,8 +1261,8 @@ mod tests {
 
     #[test]
     fn the_project_folder_comes_from_the_working_directory() {
-        let dir = project_memory_dir(r#"{"session_id":"x","cwd":"/Users/theo/orca/general"}"#)
-            .unwrap();
+        let dir =
+            project_memory_dir(r#"{"session_id":"x","cwd":"/Users/theo/orca/general"}"#).unwrap();
         assert!(
             dir.ends_with("projects/-Users-theo-orca-general/memory"),
             "{dir:?}"
