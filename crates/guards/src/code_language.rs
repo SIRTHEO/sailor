@@ -199,12 +199,13 @@ fn declared() -> &'static Regex {
     })
 }
 
-/// Gli identificatori italiani fra quelli **dichiarati** nel testo nuovo.
+/// Gli identificatori **dichiarati** nel testo, senza giudizio sulla lingua.
 ///
-/// Solo le dichiarazioni, non ogni occorrenza: chi *usa* un nome italiano
-/// scritto altrove non lo sta introducendo, e segnalarglielo sposterebbe la
-/// colpa sul chiamante invece che su chi lo ha creato.
-pub fn italian_names(text: &str) -> Vec<String> {
+/// Sta separato perché la copertura del vocabolario si misura sul denominatore:
+/// quanti nomi il gate vede in tutto, non solo quanti ne segnala. Lo strumento
+/// che la misura (`examples/vocabulary.rs`) chiama questa, così legge gli stessi
+/// nomi del gancio invece di una copia della regex destinata a divergerne.
+pub fn declared_names(text: &str) -> Vec<String> {
     let text = strip_comments(text);
     let mut found: Vec<String> = Vec::new();
     for m in declared().captures_iter(&text) {
@@ -222,11 +223,23 @@ pub fn italian_names(text: &str) -> Vec<String> {
         if name.chars().count() < 4 || (all_upper && name.chars().count() < 6) {
             continue;
         }
-        if is_italian_name(name) && !found.iter().any(|f| f == name) {
+        if !found.iter().any(|f| f == name) {
             found.push(name.to_string());
         }
     }
     found
+}
+
+/// Gli identificatori italiani fra quelli **dichiarati** nel testo nuovo.
+///
+/// Solo le dichiarazioni, non ogni occorrenza: chi *usa* un nome italiano
+/// scritto altrove non lo sta introducendo, e segnalarglielo sposterebbe la
+/// colpa sul chiamante invece che su chi lo ha creato.
+pub fn italian_names(text: &str) -> Vec<String> {
+    declared_names(text)
+        .into_iter()
+        .filter(|name| is_italian_name(name))
+        .collect()
 }
 
 /// Vero se il **nome del file** è italiano. Un file si rinomina una volta sola,
