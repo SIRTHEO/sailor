@@ -687,6 +687,17 @@ pub fn citations(text: &str) -> Vec<Citation> {
         if token.contains('*') || token.contains('?') || token.starts_with('.') {
             continue;
         }
+        // Un percorso con un segnaposto e' un modello, non una citazione:
+        // `<scratchpad>/consegna-effettiva.py`, `sessioni-vive/<sess>.json`,
+        // `state/sessioni-vive/{sess}.json`, `suite/.../a-client-claim.ts`.
+        // Nessuno di questi esistera' mai sul disco con quel nome, quindi il
+        // rilevatore li dichiarava morti per sempre: 20 righe su 439 il
+        // 19/08/2026, tutte a torto. Vale anche per l'espansione a graffe
+        // (`{timeline-section,note-composer}.tsx`), che nomina due file veri e
+        // nessuno dei due si chiama cosi'.
+        if token.contains('<') || token.contains('{') || token.contains("...") {
+            continue;
+        }
         let (path_part, tail) = split_locator(token);
         // Senza punto non c'è estensione, e `rsplit('.')` su un token senza
         // punto restituisce il token intero: `Bash` diventava «estensione bash»
@@ -954,6 +965,16 @@ fn other() -> u8 {
         assert_eq!(c[0].path, "relay.rs");
         assert_eq!(c[0].line, Some(1050));
         assert_eq!(c[1].symbol.as_deref(), Some("judge"));
+    }
+
+    #[test]
+    fn a_placeholder_in_the_path_is_a_template_not_a_citation() {
+        let text = "Lo strumento sta in `<scratchpad>/consegna-effettiva.py`, lo stato in \
+                    `state/sessioni-vive/{sess}.json`, la rotta in `suite/.../claim.ts`. \
+                    Il file vero è `relay.rs`.";
+        let c = citations(text);
+        assert_eq!(c.len(), 1, "{c:?}");
+        assert_eq!(c[0].path, "relay.rs");
     }
 
     #[test]
