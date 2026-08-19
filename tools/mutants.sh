@@ -90,6 +90,7 @@ trap restore EXIT
 survivors=0
 broken=0
 skipped=0
+fallbacks=0
 WHICH="${1:-tutte}"
 COMPARE=""
 
@@ -98,6 +99,29 @@ COMPARE=""
 # fronte all'originale, e l'unica cosa che può accorgersi di un mutante è la
 # batteria del modulo. Vuoto = si usa `COMPARE`, che resta la strada normale.
 ORACOLO=""
+
+# Vero se il comando dell'oracolo nomina uno script Python che sul disco non
+# c'e' piu'.
+#
+# GLI SCRIPT `tools/compare-*.py` SONO STATI CANCELLATI con la fine del porting
+# (`1db79a6`), e `python3` su un file inesistente esce **diverso da zero** — che
+# qui e' esattamente la firma di «ucciso». Ogni mutante che passava dal confronto
+# si dichiarava cosi' visto dalla batteria senza che nessuno lo guardasse: 10
+# sezioni su 13 lo facevano, comprese le due che il confronto lo chiamavano da
+# dentro `ORACOLO`. Una batteria che promuove se' stessa e' peggio di una che
+# tace, ed e' il difetto contro cui questo script e' stato scritto.
+oracolo_orfano() {
+  local tok
+  for tok in $1; do
+    case "$tok" in
+      *.py)
+        case "$tok" in tools/*) ;; *) tok="tools/$tok" ;; esac
+        [ -f "$ROOT/$tok" ] || return 0
+        ;;
+    esac
+  done
+  return 1
+}
 
 mutate() {
   local name="$1" file="$2" script="$3"
@@ -118,44 +142,41 @@ PY
     broken=$((broken + 1))
     return
   fi
-  if [ -n "$ORACOLO" ]; then
-    # Anche qui uno scartato non è un ucciso: un mutante che non compila fa
-    # fallire `cargo test` esattamente come lo farebbe un mutante visto, e senza
-    # questa separazione ogni errore di sintassi si conterebbe come successo.
-    if ! (cd "$ROOT" && cargo test -p guards --no-run >/dev/null 2>&1); then
-      echo "  SCARTATO    $name  <- non compila, quindi non e' stato provato"
-      skipped=$((skipped + 1))
-      return
-    fi
-    if (cd "$ROOT" && eval "$ORACOLO" >/dev/null 2>&1); then
-      echo "  SOPRAVVIVE  $name  <- la batteria non lo vede"
-      survivors=$((survivors + 1))
-    else
-      echo "  ucciso      $name"
-    fi
-    return
+  # L'oracolo di questo mutante: quello dichiarato dalla sezione, o il confronto
+  # col Python, che resta la strada normale dove lo script esiste ancora.
+  local oracolo="$ORACOLO" nota=""
+  [ -n "$oracolo" ] || oracolo="python3 tools/$COMPARE"
+  if oracolo_orfano "$oracolo"; then
+    # Il ripiego e' la batteria del workspace, ed e' un oracolo vero: un mutante
+    # che le sopravvive e' un punto cieco esattamente come lo era per il
+    # confronto. Si dichiara a ogni riga, perche' un giro letto fra sei mesi non
+    # deve dedurre da solo chi ha dato il verdetto.
+    oracolo="cargo test --release"
+    nota="  (oracolo: cargo test — il confronto dichiarato non esiste piu')"
+    fallbacks=$((fallbacks + 1))
   fi
-  if ! (cd "$ROOT" && cargo build --release >/dev/null 2>&1); then
-    # Uno scartato NON e' un ucciso, e va contato a parte: il 17/08/2026 un file
-    # rotto da un'altra sessione ha fatto fallire la compilazione dal terzo
-    # mutante in poi, e questo script ha stampato «tutti i mutanti uccisi» su un
-    # giro in cui nove non erano nemmeno stati provati. Un verdetto che si
-    # confonde col silenzio e' peggio di nessun verdetto.
+  # Uno scartato NON e' un ucciso, e va contato a parte: il 17/08/2026 un file
+  # rotto da un'altra sessione ha fatto fallire la compilazione dal terzo
+  # mutante in poi, e questo script ha stampato «tutti i mutanti uccisi» su un
+  # giro in cui nove non erano nemmeno stati provati. Un verdetto che si
+  # confonde col silenzio e' peggio di nessun verdetto. Si compilano anche i
+  # test, perche' un oracolo che li esegue fallirebbe qui per un errore di
+  # sintassi e quello si conterebbe come successo.
+  if ! (cd "$ROOT" && cargo test --release --no-run >/dev/null 2>&1); then
     echo "  SCARTATO    $name  <- non compila, quindi non e' stato provato"
     skipped=$((skipped + 1))
     return
   fi
-  # Senza virgolette di proposito: così `COMPARE` può portarsi dietro un
-  # argomento (`compare-live-rules.py 40`). Un confronto che gira su tutto il
-  # corpus per ognuno degli otto mutanti costa ore, e un giro che nessuno
+  # `eval` senza virgolette di proposito: così un oracolo può portarsi dietro i
+  # propri argomenti (`compare-live-rules.py 40`). Un confronto che gira su tutto
+  # il corpus per ognuno degli otto mutanti costa ore, e un giro che nessuno
   # aspetta non viene lanciato — che è il modo in cui una batteria smette di
   # esistere. I nomi dei file non hanno spazi, quindi qui non si perde niente.
-  # shellcheck disable=SC2086
-  if (cd "$ROOT" && python3 tools/$COMPARE >/dev/null 2>&1); then
-    echo "  SOPRAVVIVE  $name  <- la batteria non lo vede"
+  if (cd "$ROOT" && eval "$oracolo" >/dev/null 2>&1); then
+    echo "  SOPRAVVIVE  $name  <- la batteria non lo vede$nota"
     survivors=$((survivors + 1))
   else
-    echo "  ucciso      $name"
+    echo "  ucciso      $name$nota"
   fi
 }
 
@@ -1439,6 +1460,11 @@ fi
 if [ "$skipped" -gt 0 ]; then
   echo "$skipped mutanti scartati perche' l'albero non compila: NON sono stati provati,"
   echo "  e questo giro non dice niente su di loro. Ripara la compilazione e rilancia."
+fi
+if [ "$fallbacks" -gt 0 ]; then
+  echo "$fallbacks mutanti giudicati da 'cargo test' e non dal confronto dichiarato:"
+  echo "  gli script tools/compare-*.py non esistono piu'. Il verdetto vale, ma"
+  echo "  l'elenco COMPARE delle sezioni e' da riscrivere sulla batteria Rust."
 fi
 if [ "$survivors" -eq 0 ] && [ "$broken" -eq 0 ] && [ "$skipped" -eq 0 ]; then
   echo "tutti i mutanti uccisi: la batteria vede ciò che dichiara di vedere"
