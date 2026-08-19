@@ -12,7 +12,15 @@
 //! secondo modulo, altre due righe di prova sono comparse nel registro vero —
 //! ogni modulo rispettava il proprio lucchetto, e i due non si conoscevano.
 //! Un lucchetto per file dà l'aspetto dell'isolamento senza la sostanza.
+//!
+//! PERCHÉ LA RADICE PORTA IL PID. Il lucchetto vive dentro **un** processo, e
+//! due `cargo test` insieme sono due processi: il 19/08/2026 due batterie
+//! simultanee hanno prodotto 7 rossi su casi diversi, perché ognuna cancellava
+//! le cartelle dell'altra (i nomi erano fissi). Ogni sessione che compila e
+//! prova nello stesso repo ne apre una, quindi la corsa non è un caso di
+//! laboratorio: è il motivo per cui la batteria «mentiva a caso».
 
+pub use hook_io::testing::test_root;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -36,7 +44,7 @@ impl HomeIsolata {
         // comunque ricreata da zero.
         let lock = LUCCHETTO.lock().unwrap_or_else(|e| e.into_inner());
         let precedente = std::env::var("HOME").ok();
-        let dir = std::env::temp_dir().join(format!("claude-hooks-prove-{nome}"));
+        let dir = test_root().join(nome);
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::create_dir_all(dir.join(".claude").join("state"));
         std::env::set_var("HOME", &dir);

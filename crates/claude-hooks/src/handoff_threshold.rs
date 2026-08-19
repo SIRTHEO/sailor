@@ -379,7 +379,7 @@ mod tests {
 
     #[test]
     fn il_gradino_si_annuncia_una_volta_sola_e_poi_quello_dopo() {
-        let t = TmpIsolata::nuova("soglia-gradini");
+        let _t = TmpIsolata::nuova("soglia-gradini");
         let stato = state_file("provasog");
         assert!(!already_said("", 70));
         // Primo annuncio: il file nasce col gradino dentro.
