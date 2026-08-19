@@ -453,6 +453,12 @@ pub struct SessionFacts<'a> {
     /// alle soglie e non prima: le guardie che costano un `exists()` hanno già
     /// fermato tutto ciò che si poteva fermare gratis.
     pub worked_after_handoff: bool,
+    /// Secondi che mancano al risveglio che la sessione si è armata da sola.
+    ///
+    /// `None` = nessun appuntamento in agenda. Un `/loop` ne arma uno a ogni
+    /// giro, e quel risveglio muore col processo: chiudere la sessione mentre è
+    /// in attesa non passa il testimone, spegne il loop.
+    pub wakeup_in: Option<u64>,
     pub used: u64,
     pub thresholds: Option<&'a Thresholds>,
 }
@@ -592,9 +598,36 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
     // altro. Questo controllo sta QUI e non più in cima di proposito — dove
     // stava, rispondeva `Skip` anche a una sessione che non aveva ancora
     // consegnato, e quel `Skip` non chiudeva niente mai.
+    //
+    // E STA PRIMA DEL RISVEGLIO ARMATO, non dopo. Chi ha già un successore vivo
+    // ha già passato il testimone: il proprio appuntamento non serve più a
+    // nessuno, e onorarlo significherebbe due sessioni sullo stesso lavoro.
+    // Nell'ordine opposto — provato il 19/08/2026 e segnalato da un vaglio
+    // indipendente — una sessione in `/loop` con un successore già aperto
+    // rispondeva `Skip` e restava viva accanto a lui finché il risveglio non
+    // scadeva.
     if !f.armed_successor.is_empty() && live.iter().any(|h| h == f.armed_successor) {
         let short: String = f.armed_successor.chars().take(13).collect();
         return (Action::Retire, format!("{piena}; successore gia' vivo ({short})"));
+    }
+    // HA UN APPUNTAMENTO IN AGENDA. Il 19/08/2026 la sessione `23d89176` ha
+    // chiuso il giro di un `/loop` alle 01:30:23 armando un risveglio a 1500
+    // secondi, ed è stata rigenerata alle 01:30:27 — quattro secondi dopo —
+    // perché `tui-idle` diceva «non sta scrivendo adesso». Il risveglio vive nel
+    // processo chiuso e il mandato al successore parla solo della consegna:
+    // all'ora dell'appuntamento non è ripartito niente.
+    //
+    // La via d'uscita è la soglia, non il tempo: sopra `require` il contesto è
+    // davvero al limite e continuare costa più che ripartire, quindi si
+    // rigenera lo stesso — ed è `regenerate` che deve allora portarsi dietro il
+    // mandato del loop, altrimenti si torna a spegnerlo.
+    if let Some(left) = f.wakeup_in {
+        if f.used < t.require {
+            return (
+                Action::Skip,
+                format!("{piena}; ma ha un risveglio armato fra {left}s"),
+            );
+        }
     }
     (Action::Regenerate, piena)
 }
@@ -793,6 +826,54 @@ mod tests {
         assert_eq!(a, Action::Regenerate);
         assert!(why.contains("di proposito"), "{why}");
         assert!(why.contains("ambito chiuso"), "{why}");
+    }
+
+    #[test]
+    fn un_risveglio_armato_ferma_la_sostituzione() {
+        // Il caso vero del 19/08/2026: `23d89176` aveva chiuso il giro di un
+        // `/loop` armando un risveglio a 1500s, e quattro secondi dopo la
+        // staffetta l'ha rigenerata perché aveva consegnato ed era idle.
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 406_854;
+        f.handoff_deliberate = true;
+        f.wakeup_in = Some(1108);
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Skip);
+        assert!(why.contains("risveglio armato fra 1108s"), "{why}");
+    }
+
+    #[test]
+    fn un_successore_gia_vivo_batte_il_risveglio_armato() {
+        // Chi ha già passato il testimone non ha più un appuntamento da
+        // onorare: onorarlo lascerebbe due sessioni sullo stesso lavoro.
+        // Nell'ordine opposto questa rispondeva `Skip` e restava viva accanto
+        // al successore finché il risveglio non scadeva.
+        let live = vec!["term_x".to_string(), "term_nuovo".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 406_854;
+        f.handoff_deliberate = true;
+        f.wakeup_in = Some(1108);
+        f.armed_successor = "term_nuovo";
+        let (a, why) = evaluate(&f);
+        assert_eq!(a, Action::Retire);
+        assert!(why.contains("successore gia' vivo"), "{why}");
+    }
+
+    #[test]
+    fn un_risveglio_armato_non_protegge_un_contesto_al_limite() {
+        // La via d'uscita: sopra `require` continuare costa più che ripartire.
+        // Qui la staffetta rigenera lo stesso, ed è il segnale che il mandato
+        // del loop deve viaggiare col testimone.
+        let live = vec!["term_x".to_string()];
+        let t = soglie_opus5();
+        let mut f = sessione_piena(&live, &t);
+        f.used = 480_000; // 96%: oltre require
+        f.wakeup_in = Some(1108);
+        let (a, _) = evaluate(&f);
+        assert_eq!(a, Action::Regenerate);
     }
 
     #[test]
