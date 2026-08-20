@@ -689,11 +689,35 @@ fn looks_like_a_shape(p: &str) -> bool {
     if has_metachar {
         return true;
     }
-    p.contains('_')
+    if p.contains('_')
         || p.contains("::")
         || p.contains('.')
         || (p.chars().any(|c| c.is_ascii_uppercase()) && p.chars().any(|c| c.is_ascii_lowercase()))
         || p.chars().all(|c| c.is_ascii_uppercase() || c == '-' || c.is_ascii_digit())
+    {
+        return true;
+    }
+
+    // LE DUE FORME CHE IL MESSAGGIO DEL GATE PROMETTE E CHE NEGAVA LO STESSO.
+    // Aggiunte il 21/08/2026 dopo averci sbattuto due volte in una notte: il
+    // gate dice «una stringa d'errore letterale passa senza pedaggio» e poi
+    // negava `CONTESTO AL`, che è il principio di un messaggio suo. Un gate che
+    // contraddice il criterio che stampa insegna a non leggerlo.
+    //
+    // 1. Ogni parola tutta maiuscola: una stringa d'errore o una costante sono
+    //    quasi sempre più parole, e la condizione qui sopra le perdeva tutte
+    //    perché lo spazio non è né maiuscola né trattino. Una domanda di
+    //    dominio, che è ciò che il gate vuole fermare, si scrive in minuscolo.
+    let all_shouting = p
+        .split_whitespace()
+        .all(|w| w.chars().all(|c| c.is_ascii_uppercase() || c == '-' || c.is_ascii_digit()));
+    if all_shouting {
+        return true;
+    }
+    // 2. Frammento di codice ricopiato: virgolette e punteggiatura che nel
+    //    linguaggio naturale non compaiono. `"code-language" =>` era il secondo
+    //    caso negato, e non è una domanda: è una riga presa da un sorgente.
+    p.contains('"') || p.contains('\'') || p.contains("=>") || p.contains('{') || p.contains(';')
 }
 
 const SEARCH_KEYWORDS: [&str; 14] = [
@@ -952,6 +976,25 @@ mod tests {
             "MERGED",
         ] {
             assert!(allowed_search(p), "{p:?} e' una forma, deve passare");
+        }
+    }
+
+    /// I due casi che il messaggio del gate prometteva di lasciar passare e che
+    /// negava lo stesso. Presi dal vivo il 21/08/2026, in una notte sola.
+    #[test]
+    fn a_literal_error_string_and_a_code_fragment_pass_as_promised() {
+        for p in [
+            // Il principio di un messaggio scritto dal gancio della consegna:
+            // due parole, tutte maiuscole, e prima si fermava sullo spazio.
+            "CONTESTO AL",
+            "BLOCCATO (cd-guard)",
+            "SocratiCode-first: questa e' una ricerca CONCETTUALE",
+            // Frammenti ricopiati da un sorgente: virgolette e freccia.
+            "\"code-language\" =>",
+            "match self { Some(x)",
+            "return 0;",
+        ] {
+            assert!(allowed_search(p), "{p:?} e' letterale, deve passare");
         }
     }
 
