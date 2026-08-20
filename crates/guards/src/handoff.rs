@@ -180,6 +180,63 @@ pub fn context_used_found(lines: &[&str]) -> Option<u64> {
     None
 }
 
+/// Se l'ultimo record del transcript chiude un turno, o ne lascia uno aperto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnStatus {
+    /// L'ultima cosa scritta è la risposta finale dell'assistente: nessun
+    /// `tool_use` in attesa del suo risultato.
+    Ended,
+    /// Un `tool_use` senza il suo risultato, o un messaggio che aspetta ancora
+    /// una risposta: il turno non è chiuso.
+    InProgress,
+    /// L'ultima riga non si legge, o non si capisce di che tipo sia.
+    Unknown,
+}
+
+/// «FERMO» VUOL DIRE «ZITTO», NON «LIBERO». `tui-idle` dice solo che il
+/// pannello non sta scrivendo in questo istante, ed è vero anche a metà di un
+/// comando che dorme 300 secondi: misurato il 20/08/2026, `terminal wait --for
+/// tui-idle` rispondeva `satisfied: true` con l'ultima riga del prompt vuota su
+/// un turno ancora vivo. Qui si guarda l'ultimo record vero: un `tool_use`
+/// senza il suo risultato prova che il turno non è finito, non la quiete del
+/// terminale — che è solo silenzio, non libertà.
+///
+/// SI GUARDA SOLO L'ULTIMO RECORD, non l'intera storia: la domanda è «si può
+/// scrivere ORA», e un turno chiuso tre righe fa non conta se nel frattempo ne
+/// è arrivato un altro senza risposta. In dubbio — riga illeggibile, tipo
+/// sconosciuto — si risponde `Unknown`: «non lo so» pesa più di un'ipotesi.
+pub fn turn_status_from_lines(lines: &[&str]) -> TurnStatus {
+    let Some(last) = lines.iter().rev().find(|l| !l.trim().is_empty()) else {
+        return TurnStatus::Unknown;
+    };
+    let Ok(d) = serde_json::from_str::<serde_json::Value>(last) else {
+        return TurnStatus::Unknown;
+    };
+    match d.get("type").and_then(|v| v.as_str()) {
+        Some("assistant") => {
+            let pending = d
+                .get("message")
+                .and_then(|m| m.get("content"))
+                .and_then(|c| c.as_array())
+                .map(|parts| {
+                    parts
+                        .iter()
+                        .any(|p| p.get("type").and_then(|v| v.as_str()) == Some("tool_use"))
+                })
+                .unwrap_or(false);
+            if pending {
+                TurnStatus::InProgress
+            } else {
+                TurnStatus::Ended
+            }
+        }
+        // Un `user` in coda — vero o iniettato da un gancio — aspetta ancora
+        // una risposta: l'assistente non ha ancora parlato dopo di lui.
+        Some("user") => TurnStatus::InProgress,
+        _ => TurnStatus::Unknown,
+    }
+}
+
 /// Vero **solo** se questa chiamata è l'invocazione della skill `handoff`.
 ///
 /// Niente rilevamento da Write/Edit su un file che si chiama `consegna-*.md`:
@@ -405,6 +462,31 @@ pub fn resolve_terminal_handle(
         }
     }
     String::new()
+}
+
+/// L'handle di un successore già armato altrove, o vuoto se il marcatore che
+/// lo descrive è scaduto.
+///
+/// NON SI ADOTTA IL PANNELLO DEL VICINO. `terminal split` mette il successore
+/// nella STESSA tab di chi lo arma: due sessioni diverse condividono lo stesso
+/// `tab_id`. Se quella armata muore e sulla tab resta solo la sorella — magari
+/// la sessione originaria, rinata su un handle nuovo — `resolve_terminal_handle`
+/// trova un solo pannello per quella tab e lo darebbe per buono: è la lettura
+/// giusta quando si segue la STESSA sessione (`the_tab_finds_the_reborn_handle`
+/// qui sotto), sbagliata quando si verifica un marcatore su un'ALTRA sessione.
+/// Cinque dei nove fallimenti della staffetta del 19/08/2026 hanno mandato i
+/// tasti alla sessione sbagliata dello stesso albero così, e una di quelle ha
+/// letto la consegna altrui e ha risposto «Testimone raccolto».
+///
+/// Un manico registrato che non è più fra i vivi non prova che «l'handle è
+/// cambiato» — prova che QUESTO marcatore è scaduto: nessun pannello vivo porta
+/// più l'identità che aveva quando è stato scritto. Qui si risponde vuoto
+/// invece di indovinare quale sia il vicino.
+pub fn resolve_armed_successor(tab_id: &str, known_handle: &str, terminals: &[Terminal]) -> String {
+    if !known_handle.is_empty() && !terminals.iter().any(|t| t.handle == known_handle) {
+        return String::new();
+    }
+    resolve_terminal_handle(tab_id, "", known_handle, terminals)
 }
 
 /// Cosa la staffetta deve fare di una sessione registrata.
@@ -1131,6 +1213,60 @@ mod tests {
         );
     }
 
+    // ── il marcatore del successore armato: niente pannello del vicino ───────
+
+    #[test]
+    fn a_dead_recorded_handle_does_not_adopt_the_sibling_pane() {
+        // IL CASO VERO: `terminal split` mette il successore nella STESSA tab
+        // di chi lo arma. Se il successore muore e resta un'altra sessione da
+        // sola su quella tab, la ricerca per tab la troverebbe comunque — ed è
+        // esattamente il pannello del vicino che questa funzione rifiuta.
+        let vicino = vec![Terminal {
+            handle: "term_vicino".into(),
+            tab_id: "tab-1".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            resolve_armed_successor("tab-1", "term_successore_morto", &vicino),
+            ""
+        );
+    }
+
+    #[test]
+    fn a_live_recorded_handle_still_resolves_by_tab() {
+        // Il gemello positivo: il manico registrato è ancora fra i vivi, quindi
+        // il marcatore non è scaduto e la ricerca per tab può procedere.
+        let vivo = vec![Terminal {
+            handle: "term_vivo".into(),
+            tab_id: "tab-1".into(),
+            ..Default::default()
+        }];
+        assert_eq!(resolve_armed_successor("tab-1", "term_vivo", &vivo), "term_vivo");
+    }
+
+    #[test]
+    fn an_empty_recorded_handle_still_trusts_the_tab() {
+        // I marcatori scritti quando la regex non ha trovato il manico: senza
+        // niente da verificare, si torna al comportamento di sempre.
+        let vivo = vec![Terminal {
+            handle: "term_vivo".into(),
+            tab_id: "tab-1".into(),
+            ..Default::default()
+        }];
+        assert_eq!(resolve_armed_successor("tab-1", "", &vivo), "term_vivo");
+    }
+
+    #[test]
+    fn a_dead_recorded_handle_still_gets_the_two_pane_abstention() {
+        // Il manico morto non deve far scavalcare l'astensione sulla tab con
+        // due pannelli: `resolve_terminal_handle` deve restare l'unica strada.
+        let due_pannelli = vec![
+            Terminal { handle: "term_a".into(), tab_id: "tab-2".into(), ..Default::default() },
+            Terminal { handle: "term_b".into(), tab_id: "tab-2".into(), ..Default::default() },
+        ];
+        assert_eq!(resolve_armed_successor("tab-2", "term_morto", &due_pannelli), "");
+    }
+
     #[test]
     fn both_response_shapes_are_accepted() {
         // Annidata sotto `result`, e già come lista: la forma è cambiata una
@@ -1317,6 +1453,56 @@ mod tests {
     #[test]
     fn without_any_usage_the_context_is_zero() {
         assert_eq!(context_used_from_lines(&[r#"{"type":"user"}"#]), 0);
+    }
+
+    // ── turn_status_from_lines: «fermo» non è «libero» ────────────────────────
+
+    fn assistant_line(content: serde_json::Value) -> String {
+        serde_json::json!({"type": "assistant", "message": {"content": content}}).to_string()
+    }
+
+    #[test]
+    fn a_pending_tool_use_is_a_turn_in_progress() {
+        // IL CASO VERO: un `Bash` che dorme 300 secondi lascia il transcript
+        // fermo su un `tool_use` senza il suo `tool_result`. `tui-idle`
+        // risponde «fermo» lo stesso — è zitto, non libero.
+        let line = assistant_line(serde_json::json!([
+            {"type": "tool_use", "name": "Bash", "id": "t1", "input": {"command": "sleep 300"}}
+        ]));
+        assert_eq!(turn_status_from_lines(&[&line]), TurnStatus::InProgress);
+    }
+
+    #[test]
+    fn a_final_text_reply_ends_the_turn() {
+        let line = assistant_line(serde_json::json!([{"type": "text", "text": "fatto"}]));
+        assert_eq!(turn_status_from_lines(&[&line]), TurnStatus::Ended);
+    }
+
+    #[test]
+    fn a_trailing_user_message_is_still_in_progress() {
+        // Vero o iniettato da un gancio, un `user` in coda aspetta ancora una
+        // risposta: l'assistente non ha ancora parlato dopo di lui.
+        let line = serde_json::json!({"type": "user", "message": {"content": "ciao"}}).to_string();
+        assert_eq!(turn_status_from_lines(&[&line]), TurnStatus::InProgress);
+    }
+
+    #[test]
+    fn only_the_last_record_counts() {
+        // Un turno chiuso tre righe fa non basta se dopo è arrivato altro.
+        let closed = assistant_line(serde_json::json!([{"type": "text", "text": "primo"}]));
+        let then = assistant_line(serde_json::json!([
+            {"type": "tool_use", "name": "Bash", "id": "t1", "input": {}}
+        ]));
+        assert_eq!(turn_status_from_lines(&[&closed, &then]), TurnStatus::InProgress);
+    }
+
+    #[test]
+    fn an_unreadable_or_empty_tail_is_unknown() {
+        assert_eq!(turn_status_from_lines(&[]), TurnStatus::Unknown);
+        assert_eq!(turn_status_from_lines(&["", "   "]), TurnStatus::Unknown);
+        assert_eq!(turn_status_from_lines(&["ent\":\"x\"}]}}"]), TurnStatus::Unknown);
+        let unknown_type = serde_json::json!({"type": "summary"}).to_string();
+        assert_eq!(turn_status_from_lines(&[&unknown_type]), TurnStatus::Unknown);
     }
 
     #[test]
