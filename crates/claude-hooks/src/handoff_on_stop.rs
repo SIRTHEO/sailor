@@ -181,8 +181,10 @@ fn arm_successor(session: &str, used: u64, require: u64) -> bool {
     }
     matches!(
         // `true`: la pienezza l'ha già verificata la guardia qui sopra, ed è la
-        // condizione d'ingresso di questo percorso.
-        crate::successor::arm(&doc, session, "stop", true),
+        // condizione d'ingresso di questo percorso. `false`: qui non si arriva
+        // mai da un subagent, perché il gancio dello Stop esce prima di tutto
+        // se la chiamata viene da uno (vedi `handoff::in_subagent`).
+        crate::successor::arm(&doc, session, "stop", true, false),
         crate::successor::ArmOutcome::Open(_)
     )
 }
