@@ -339,6 +339,32 @@ pub fn is_throwaway(path: &str) -> bool {
         .is_match(path)
 }
 
+/// Un file di prova: qui la domanda sul riuso non ottiene niente.
+///
+/// FUORI PERIMETRO DAL 21/08/2026, per misura e non per gusto. Sul registro dei
+/// ganci, 11-20/08, 207 rifiuti veri di questo gate: chi stava creando un file
+/// di prova è andato a cercare 15 volte su 81 (18%) e ha rilanciato lo stesso
+/// file senza cercare 55 volte (67%). Chi stava scrivendo codice cerca nel 42%
+/// dei casi, chi scrive script nel 64%: lì il conto regge, e lì il gate resta.
+///
+/// Un suggeritore che sbaglia due volte su tre insegna a ignorarsi, e si porta
+/// dietro anche i casi in cui aveva ragione.
+///
+/// Il motivo per cui non ottiene niente sta nel mestiere, non nell'abitudine: un
+/// file di prova nasce accanto a ciò che prova, e la domanda «esiste già
+/// qualcosa del genere» ha per risposta il file che si sta per provare.
+///
+/// Decisione del capitano, 21/08/2026.
+pub fn is_test_file(path: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        // `\.(test|spec)\.` prende `x.test.ts` e `x.spec.tsx` e non `x.ts`; le
+        // cartelle prendono l'altra convenzione, quella per posizione.
+        Regex::new(r"(\.(test|spec)\.|/__tests__/|/tests?/)").unwrap()
+    })
+    .is_match(path)
+}
+
 /// Il primo percorso assoluto del comando — copre `S=/repo/… grep "$S/src"`.
 pub fn first_absolute_path(command: &str) -> Option<String> {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -485,7 +511,7 @@ fn judge_write(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Ver
     if file.is_empty() || !is_code_file(file) {
         return Verdict::out_of_scope(); // documenti, config, dati: non è riuso di codice
     }
-    if is_out_of_perimeter(file) || is_throwaway(file) {
+    if is_out_of_perimeter(file) || is_throwaway(file) || is_test_file(file) {
         return Verdict::out_of_scope();
     }
     if Path::new(file).exists() {
@@ -846,6 +872,24 @@ mod tests {
         assert!(is_throwaway("/tmp/a.ts"));
         assert!(is_out_of_perimeter("/repo/node_modules/x/index.js"));
         assert!(!is_out_of_perimeter("/repo/src/index.js"));
+    }
+
+    /// Differenziale a variabile unica: due percorsi identici tranne il nome.
+    #[test]
+    fn a_test_file_leaves_the_reuse_perimeter_and_its_sibling_does_not() {
+        // MUTANTE: tolto `is_test_file` da `judge_write`, la prima riga resta
+        // vera qui ma il gate torna a bloccare — per questo il caso vive anche
+        // sul binario, con lo stesso Write su due nomi.
+        assert!(is_test_file("/repo/src/lib/x.test.ts"));
+        assert!(is_test_file("/repo/src/lib/x.spec.tsx"));
+        assert!(is_test_file("/repo/src/__tests__/x.ts"));
+        assert!(is_test_file("/repo/tests/e2e/x.ts"));
+        assert!(is_test_file("/repo/test/x.ts"));
+        // E ciò che resta dentro: il file provato, e un nome che contiene
+        // «test» senza esserlo.
+        assert!(!is_test_file("/repo/src/lib/x.ts"));
+        assert!(!is_test_file("/repo/src/lib/latest.ts"));
+        assert!(!is_test_file("/repo/src/testing-utils.ts"));
     }
 
     #[test]
