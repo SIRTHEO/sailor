@@ -47,9 +47,10 @@
 //! con due mutanti che passavano su 36 prove su 36. Qui il chiamante entra come
 //! parametro: le prove registrano la sequenza e la confrontano.
 
-use guards::chain::{chain_verdict, ChainLimits, ChainLink, ChainVerdict};
+use guards::chain::{chain_verdict, ChainLimits, ChainLink, ChainVerdict, IDLE_RESET_SEC};
 use guards::handoff::{
-    evaluate, resolve_terminal_handle, state_key, Action, SessionFacts, Terminal,
+    evaluate, resolve_terminal_handle, round_half_to_even, state_key, Action, SessionFacts,
+    Terminal,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -210,6 +211,26 @@ fn blind_attempts_path(worktree: &str) -> PathBuf {
 /// averlo già detto.
 fn blind_stop_path(worktree: &str) -> PathBuf {
     state_dir().join(format!("staffetta-cieca-{}", state_key(worktree)))
+}
+
+/// Scadenza della resa cieca: le stesse ore di silenzio della catena
+/// (`guards::chain::IDLE_RESET_SEC`), non un numero nuovo.
+///
+/// MISURATO IL 20/08/2026: senza scadenza, tre alberi su quattro sono rimasti
+/// fermi venti ore da un arresto deciso in un'ora scarsa — tre `/clear` non
+/// confermati, un cooldown di cinque minuti l'uno. Un tentativo cieco non
+/// prova che il pannello sia morto per sempre; prova solo che in
+/// quell'ora nessuno l'ha raccolto.
+const BLIND_STOP_RESET_SEC: f64 = IDLE_RESET_SEC;
+
+/// Da quanto tempo la resa cieca è scritta, se esiste ed è leggibile.
+///
+/// La prima riga del marcatore è l'epoca in secondi, scritta apposta per
+/// questo confronto: il resto del file è testo per Theo, non per il codice.
+fn blind_stop_age_sec(worktree: &str, now: f64) -> Option<f64> {
+    let text = fs::read_to_string(blind_stop_path(worktree)).ok()?;
+    let at: f64 = text.lines().next()?.trim().parse().ok()?;
+    Some(now - at)
 }
 
 /// Il marcatore che dice «questa catena è stata fermata, ed ecco perché».
@@ -920,9 +941,27 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
 
     // 0-bis. si è già provato tre volte senza che nessuno rispondesse: da qui
     //        in poi il `/clear` è solo disturbo a un pannello che magari una
-    //        persona ha ripreso in mano.
+    //        persona ha ripreso in mano — MA SOLO FINCHÉ LA RESA È FRESCA. Oltre
+    //        `BLIND_STOP_RESET_SEC` si dimentica e si riprova, come la catena
+    //        dimentica il proprio freno dopo la stessa inattività: senza,
+    //        l'albero resta cieco per sempre dopo un'ora di guasto passeggero.
     if blind_stop_path(&rec.worktree).exists() {
-        return;
+        // Una resa scritta prima del 20/08/2026 non ha l'epoca in testa e la
+        // sua eta non si puo misurare: vale come scaduta, altrimenti resta li
+        // per sempre. Sul sistema vivo ce n'era una del 19/08.
+        let age = blind_stop_age_sec(&rec.worktree, now_epoch());
+        if age.is_some_and(|a| a < BLIND_STOP_RESET_SEC) {
+            return;
+        }
+        let _ = fs::remove_file(blind_stop_path(&rec.worktree));
+        let _ = fs::remove_file(blind_attempts_path(&rec.worktree));
+        log_line(&match age {
+            Some(a) => format!(
+                "sess={sess}: resa cieca scaduta dopo {} h, riprovo",
+                round_half_to_even(a / 3600.0)
+            ),
+            None => format!("sess={sess}: resa cieca senza data, la scarto e riprovo"),
+        });
     }
 
     if dry_run {
@@ -1137,17 +1176,23 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             let _ = fs::create_dir_all(state_dir());
             let _ = fs::write(
                 &marker,
+                // La prima riga è l'epoca in secondi: `blind_stop_age_sec` la
+                // legge per decidere quando la resa è scaduta. Il resto è
+                // testo per Theo, come prima.
                 format!(
-                    "{}\n{n} tentativi di sostituzione senza prova, di fila.\nalbero: {}\n\
+                    "{}\n{}\n{n} tentativi di sostituzione senza prova, di fila.\nalbero: {}\n\
                      ultima sessione: {sess}\npannello: {handle}\n",
+                    now_epoch(),
                     hook_io::local_time::now_local_iso8601(),
                     rec.worktree
                 ),
             );
             log_line(&format!(
                 "STAFFETTA CIECA su {}: {n} tentativi di fila senza prova che la \
-                 sostituzione sia avvenuta. NON provo piu'. Per ripartire: rm {} {}",
+                 sostituzione sia avvenuta. Riprovo da sola fra {} h. Per ripartire \
+                 subito: rm {} {}",
                 rec.worktree,
+                round_half_to_even(BLIND_STOP_RESET_SEC / 3600.0),
                 marker.display(),
                 blind_attempts_path(&rec.worktree).display()
             ));
@@ -1974,7 +2019,92 @@ mod tests {
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert_eq!(log.matches("STAFFETTA CIECA").count(), 1, "l'ha ripetuto: {log}");
-        assert!(log.contains("Per ripartire: rm "), "non dice come si riparte: {log}");
+        assert!(log.contains("Per ripartire subito: rm "), "non dice come si riparte: {log}");
+        assert!(log.contains("Riprovo da sola fra"), "non dice che decade da sola: {log}");
+    }
+
+    #[test]
+    fn a_stale_blind_stop_expires_and_retries() {
+        let _home = HomeIsolata::nuova("resa-cieca-scaduta");
+        // MUTANTE CHE QUESTA PROVA COGLIE: se il controllo torna a essere un
+        // semplice `.exists()` — com'era fino al 20/08/2026 — nessun `/clear`
+        // parte più nemmeno dopo la scadenza, e la prova fallisce sul conteggio.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let _ = fs::create_dir_all(state_dir());
+        let stale_at = now_epoch() - BLIND_STOP_RESET_SEC - 10.0;
+        fs::write(
+            blind_stop_path("wt-prova"),
+            format!("{stale_at}\nvecchio, di prova\nalbero: wt-prova\n"),
+        )
+        .unwrap();
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let clear = chiamate.borrow().iter().filter(|c| c.contains("/clear")).count();
+        assert_eq!(clear, 1, "la resa scaduta ha continuato a bloccare: {clear} /clear inviati");
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("resa cieca scaduta"), "{log}");
+    }
+
+    #[test]
+    fn a_fresh_blind_stop_still_blocks() {
+        let _home = HomeIsolata::nuova("resa-cieca-fresca");
+        // Il differenziale della prova sopra: stessa marca, età sotto la
+        // scadenza, e la staffetta non deve mandare nessun `/clear`.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let _ = fs::create_dir_all(state_dir());
+        let fresh_at = now_epoch() - 60.0;
+        fs::write(
+            blind_stop_path("wt-prova"),
+            format!("{fresh_at}\nfresco, di prova\nalbero: wt-prova\n"),
+        )
+        .unwrap();
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        assert!(chiamate.borrow().is_empty(), "ha chiamato orca con la resa ancora fresca");
+        assert!(blind_stop_path("wt-prova").exists(), "il marcatore fresco è sparito");
+    }
+
+    #[test]
+    fn a_blind_stop_without_a_date_is_dropped_and_retried() {
+        let _home = HomeIsolata::nuova("resa-cieca-senza-data");
+        // Il terzo caso del differenziale: stesso marcatore, ma nel formato
+        // scritto prima del 20/08/2026, senza epoca in testa. Non se ne puo
+        // misurare l'eta, quindi vale come scaduto — e il file va via, invece
+        // di restare a tenere cieco l'albero come e successo per venti ore.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let _ = fs::create_dir_all(state_dir());
+        fs::write(
+            blind_stop_path("wt-prova"),
+            "2026-08-19T19:17:21+0200\n3 tentativi di sostituzione senza prova, di fila.\n",
+        )
+        .unwrap();
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let clear = chiamate.borrow().iter().filter(|c| c.contains("/clear")).count();
+        assert_eq!(clear, 1, "la resa senza data ha continuato a bloccare");
+        assert!(
+            !blind_stop_path("wt-prova").exists(),
+            "il marcatore illeggibile e rimasto: al giro dopo blocca di nuovo"
+        );
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("resa cieca senza data"), "{log}");
     }
 
     #[test]
