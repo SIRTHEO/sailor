@@ -199,17 +199,58 @@ pub fn judge(command: &str) -> Decision {
              due chiamate, e git sa già lavorare altrove.\n  · scrivi:  git -C {target} {tail} …"
         ));
     }
+    // IL RAMO CHE AVVISA PROPONE UN SOSTITUTO, non spiega l'errore.
+    //
+    // Misurato il 21/08/2026 sul registro: dove questo gancio NEGA il gesto si
+    // ripete nel 48% dei casi entro dieci minuti; dove avvisa, nell'80% su 2.184
+    // righe. La differenza non è disciplina — è che il ramo che nega offre
+    // `git -C` e questo non offriva niente di eseguibile. I percorsi assoluti non
+    // servono a chi deve eseguire un comando *dentro* un'altra cartella, e il
+    // consiglio di fare `cd` da solo prometteva un effetto che non esiste: la
+    // working-dir viene ripristinata dopo ogni chiamata. Un messaggio che non
+    // chiede niente di eseguibile lo scavalcano tutti, anche chi conosce la
+    // regola — nella stessa notte l'hanno scavalcato il capitano e il macchinista.
+    //
+    // `env -C` fa ciò che serve ed è provato su questa macchina. Resta un avviso:
+    // se fra una settimana la percentuale non scende sotto il 50% con
+    // l'alternativa in mano, l'avviso è rumore e si toglie invece di rafforzarlo.
+    // Soglia fissata dal capitano il 21/08/2026.
     Decision::Warn(format!(
         "`cd {target} && …`: lo stato della shell non persiste fra due chiamate, \
-         e la working-dir sbagliata è già costata errori misurati.\n  · usa percorsi \
-         assoluti, o un prefisso — R={target}; <comando> \"$R/file\"\n  · `cd {target}` \
-         da solo, in una chiamata a parte, resta permesso."
+         e nemmeno `cd {target}` da solo serve — la working-dir torna indietro \
+         dopo ogni comando.\n  · scrivi:  env -C {target} <comando>\n  · oppure un \
+         prefisso, se il comando accetta percorsi — R={target}; <comando> \"$R/file\""
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Il ramo che avvisa deve dare un comando da eseguire, non una spiegazione.
+    ///
+    /// MUTANTE: rimesso il messaggio vecchio, questo caso va in rosso — ed era
+    /// proprio il messaggio vecchio a essere scavalcato quattro volte su cinque.
+    #[test]
+    fn the_warning_branch_offers_a_command_to_run() {
+        match judge("cd /repo && cargo test") {
+            Decision::Warn(m) => {
+                assert!(m.contains("env -C /repo"), "manca il sostituto: {m}");
+                // La vecchia via d'uscita prometteva un effetto che non esiste:
+                // `cd` da solo passa, ma la working-dir torna indietro subito.
+                assert!(
+                    !m.contains("resta permesso"),
+                    "non si suggerisce un gesto che non produce l'effetto: {m}"
+                );
+            }
+            other => panic!("atteso un avviso, non {other:?}"),
+        }
+        // Dove un sostituto specifico esiste già, resta quello e non `env -C`.
+        match judge("cd /repo && git status") {
+            Decision::Block(m) => assert!(m.contains("git -C /repo"), "{m}"),
+            other => panic!("atteso un blocco, non {other:?}"),
+        }
+    }
 
     /// Gli stessi tredici casi dell'originale, con gli stessi esiti attesi.
     #[test]
