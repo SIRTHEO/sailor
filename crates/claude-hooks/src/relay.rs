@@ -221,6 +221,21 @@ fn chain_blocked_path(worktree: &str) -> PathBuf {
     state_dir().join(format!("catena-bloccata-{}", state_key(worktree)))
 }
 
+/// Dimentica la catena di questo albero: il file e il marcatore del freno.
+///
+/// L'AZZERAMENTO VA ANCHE SUL DISCO. Azzerare la catena in memoria vale per un
+/// giro soltanto: se il giro esce prima di riscriverla — e ci esce ogni volta
+/// che la sessione non è da rigenerare — al minuto dopo si rilegge la stessa
+/// catena scaduta, il verdetto torna identico, e con lui la riga nel registro.
+/// Misurato il 20/08/2026: **206 righe uguali in due giorni**, una al minuto,
+/// su una catena ferma da diciassette ore. È lo stesso motivo per cui il ramo
+/// che ferma la catena scrive un marcatore per parlare una volta sola; qui
+/// mancava.
+fn forget_chain(worktree: &str) {
+    let _ = fs::remove_file(chain_blocked_path(worktree));
+    let _ = fs::remove_file(chain_path(worktree));
+}
+
 /// Il freno si spegne con un file, come `staffetta-off` accanto a cui vive:
 /// sotto launchd l'ambiente lo fissa il `.plist`, e una valvola che si accende
 /// solo riscrivendo un plist non la usa nessuno.
@@ -895,7 +910,7 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
                 // non si giudica coi numeri di ieri.
                 chain.clear();
                 if !dry_run {
-                    let _ = fs::remove_file(chain_blocked_path(&rec.worktree));
+                    forget_chain(&rec.worktree);
                 }
                 log_line(&format!("sess={sess}: {why}"));
             }
@@ -1623,6 +1638,38 @@ mod tests {
             transcript: String::new(),
             cwd: "/x".into(),
         }
+    }
+
+    #[test]
+    fn forgetting_a_chain_survives_the_next_read() {
+        let _home = HomeIsolata::nuova("dimentica-catena");
+        let tree = "/home/someone/orca/workspaces/prova";
+        write_chain(
+            tree,
+            &[ChainLink {
+                session: "s1".into(),
+                at: 1.0,
+                turns: 2,
+                writes: 3,
+                handoff: String::new(),
+            }],
+        );
+        let _ = fs::create_dir_all(state_dir());
+        let _ = fs::write(chain_blocked_path(tree), "fermata\n");
+        assert_eq!(read_chain(tree).len(), 1, "la catena non è stata scritta");
+
+        forget_chain(tree);
+
+        // IL PUNTO: azzerare in memoria non basta. Se la catena resta sul
+        // disco, il giro dopo la rilegge, ridà lo stesso verdetto e riscrive la
+        // stessa riga — una al minuto, per giorni. Qui si constata che dopo
+        // averla dimenticata una rilettura non la trova più.
+        assert!(read_chain(tree).is_empty(), "la catena è tornata dalla rilettura");
+        assert!(!chain_blocked_path(tree).exists(), "il marcatore del freno è rimasto");
+
+        // Idempotente: dimenticare due volte non è un errore.
+        forget_chain(tree);
+        assert!(read_chain(tree).is_empty());
     }
 
     #[test]
