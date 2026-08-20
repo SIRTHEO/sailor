@@ -167,6 +167,17 @@ fn is_generated_dir(name: &str) -> bool {
         || name == "target"
 }
 
+/// Vero se il percorso **citato** attraversa un albero rigenerato.
+///
+/// `is_generated` guarda un percorso assoluto trovato sul disco; qui si guarda
+/// quello scritto nella memoria, che comincia dove capita: `dist/main.js`,
+/// `.mastra/output/index.mjs`, `src/generated/prisma/client/schema.prisma`.
+/// Nessuno di questi file e' mai stato scritto a mano, quindi «non esiste» non
+/// e' una notizia da bonificare: erano 10 delle 94 citazioni del 20/08/2026.
+fn cites_a_build_artifact(path: &str) -> bool {
+    path.split('/').any(is_generated_dir)
+}
+
 fn resolve_all(path: &str) -> Vec<PathBuf> {
     let expanded = if let Some(rest) = path.strip_prefix("~/") {
         home().join(rest)
@@ -225,23 +236,27 @@ fn contains_in_order(haystack: &str, segments: &[String]) -> bool {
     true
 }
 
-/// Dove vive un file che sul disco non c'e', ma sta su un ramo remoto.
+/// Dove vive un file che sul disco non c'e', ma sta su un altro ramo.
 ///
-/// Un albero di lavoro sta quasi sempre su un ramo suo, indietro rispetto a
-/// `origin/develop`: chi cita un file fuso ieri non ha scritto niente di falso,
-/// e il rilevatore lo dichiarava morto lo stesso. Erano 16 delle 137 citazioni
-/// morte del 19/08/2026, e ognuna costava a chi bonificava un `git show` per
-/// scoprire che non c'era niente da correggere.
-fn on_a_remote_branch(path: &str) -> Option<String> {
+/// Un albero di lavoro sta quasi sempre su un ramo suo: chi cita un file fuso
+/// ieri, o scritto in un worktree accanto, non ha scritto niente di falso — e
+/// il rilevatore lo dichiarava morto lo stesso, costando a chi bonificava un
+/// `git show` per scoprire che non c'era niente da correggere.
+///
+/// Si guardano **tutti** i rami, non solo `origin/develop`: i file che
+/// mancavano il 20/08/2026 stavano su rami di lavoro mai fusi
+/// (`feat-scheda-offerta-mockup`) e su rami solo locali
+/// (`matteodimattia/descent`, `ci/linear-autoclose`).
+fn on_another_branch(path: &str) -> Option<String> {
     static REMOTE: OnceLock<BTreeMap<String, Vec<String>>> = OnceLock::new();
     // Sotto prova l'indice si rifa' ogni volta: una cache globale farebbe
     // ereditare a una prova le radici di un'altra, come per `by_name`.
     let built;
     let index = if test_roots().is_some() {
-        built = build_remote_index();
+        built = build_branch_index();
         &built
     } else {
-        REMOTE.get_or_init(build_remote_index)
+        REMOTE.get_or_init(build_branch_index)
     };
     let name = path.rsplit('/').next().unwrap_or(path);
     let hits = index.get(name)?;
@@ -258,34 +273,61 @@ fn on_a_remote_branch(path: &str) -> Option<String> {
     Some(hit.clone())
 }
 
-fn build_remote_index() -> BTreeMap<String, Vec<String>> {
+fn build_branch_index() -> BTreeMap<String, Vec<String>> {
     let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for root in roots() {
         if !root.join(".git").exists() {
             continue;
         }
-        // `develop` e' il ramo d'integrazione dei repo Gyver, `main` quello
-        // della configurazione: si prova il primo che risponde, non tutti e
-        // due, perche' un albero fermo darebbe due volte lo stesso elenco.
-        let Some(listing) = ["origin/develop", "origin/main"]
-            .iter()
-            .find_map(|br| list_tree(&root, br))
-        else {
-            continue;
-        };
-        for line in listing.lines() {
-            let Some(name) = line.rsplit('/').next() else {
+        for branch in branches(&root) {
+            let Some(listing) = list_tree(&root, &branch) else {
                 continue;
             };
-            map.entry(name.to_string())
-                .or_default()
-                .push(format!("{}/{line}", tilde(&root)));
+            for line in listing.lines() {
+                let Some(name) = line.rsplit('/').next() else {
+                    continue;
+                };
+                let at = format!("{}/{line}", tilde(&root));
+                let seen = map.entry(name.to_string()).or_default();
+                if !seen.contains(&at) {
+                    seen.push(at);
+                }
+            }
         }
     }
     map
 }
 
-/// I file di un ramo remoto, o nulla se quel ramo li' non esiste.
+/// I rami di un repo, locali e remoti.
+///
+/// Costa un `ls-tree` per ramo — su `suite` sono 76, un secondo e mezzo — ma si
+/// paga solo su `--dead`, che si lancia a mano: l'avvio di sessione passa da
+/// `rows_for` e non tocca questo indice.
+fn branches(repo: &Path) -> Vec<String> {
+    let Some(out) = std::process::Command::new("git")
+        .args(["-C", &repo.to_string_lossy()])
+        .args([
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/remotes",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+    else {
+        return Vec::new();
+    };
+    out.lines()
+        // `origin/HEAD` e' un rimando a un altro ramo: leggerlo raddoppia un
+        // elenco che gia' abbiamo.
+        .filter(|r| !r.ends_with("/HEAD"))
+        .map(|r| r.to_string())
+        .collect()
+}
+
+/// I file di un ramo, o nulla se quel ramo li' non esiste.
 fn list_tree(repo: &Path, branch: &str) -> Option<String> {
     let out = std::process::Command::new("git")
         .args([
@@ -985,10 +1027,13 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
     // righe di `personal/switch` in cima all'elenco di cio' che c'e' da
     // bonificare — il 41% del residuo, e non bonificabile per definizione.
     let mut gone: BTreeMap<String, usize> = BTreeMap::new();
-    // I file che stanno su un ramo remoto e non su questo albero: non sono da
+    // I file che stanno su un altro ramo e non su questo albero: non sono da
     // bonificare, sono da aggiornare — ma chi legge deve saperlo senza andarlo
     // a cercare con `git show`.
     let mut elsewhere: BTreeMap<String, String> = BTreeMap::new();
+    // Gli artefatti: `dist/main.js` non e' mai stato scritto da nessuno, e
+    // «non esiste» e' la sua condizione normale, non una notizia.
+    let mut artifacts: Vec<String> = Vec::new();
     for file in files {
         let Ok(text) = std::fs::read_to_string(file) else {
             continue;
@@ -1002,8 +1047,14 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
             if !resolve_all(&cit.path).is_empty() {
                 continue;
             }
-            if let Some(remote) = on_a_remote_branch(&cit.path) {
-                elsewhere.insert(cit.path.clone(), remote);
+            if cites_a_build_artifact(&cit.path) {
+                if !artifacts.contains(&cit.path) {
+                    artifacts.push(cit.path.clone());
+                }
+                continue;
+            }
+            if let Some(at) = on_another_branch(&cit.path) {
+                elsewhere.insert(cit.path.clone(), at);
                 continue;
             }
             if !dead.contains(&cit.path) {
@@ -1058,13 +1109,24 @@ fn dead_citations(files: &[PathBuf], json: bool) -> i32 {
     }
     if !elsewhere.is_empty() {
         println!(
-            "\nFuori conteggio: {} file stanno su un ramo remoto e non su questo \
+            "\nFuori conteggio: {} file stanno su un altro ramo e non su questo \
              albero. Non c'e' niente da correggere nella memoria: e' il checkout \
              che diverge.",
             elsewhere.len()
         );
         for (path, at) in &elsewhere {
             println!("  → {path}  ({at})");
+        }
+    }
+    if !artifacts.is_empty() {
+        artifacts.sort();
+        println!(
+            "\nFuori conteggio: {} artefatti di build. Nessuno li ha scritti a \
+             mano e nessuno li versiona: che non esistano e' normale.",
+            artifacts.len()
+        );
+        for path in &artifacts {
+            println!("  · {path}");
         }
     }
     i32::from(total > 0)
@@ -1173,6 +1235,24 @@ mod tests {
     }
 
     #[test]
+    fn a_build_artifact_is_not_a_file_anyone_wrote() {
+        // `dist/main.js` e `.mastra/output/index.mjs` non esistono per
+        // definizione fuori da una build: segnalarli chiedeva a chi bonificava
+        // di andare a leggere un `.gitignore` per concludere «niente da fare».
+        assert!(cites_a_build_artifact("dist/main.js"));
+        assert!(cites_a_build_artifact(".mastra/output/index.mjs"));
+        assert!(cites_a_build_artifact(
+            "src/generated/prisma/client/schema.prisma"
+        ));
+        assert!(cites_a_build_artifact(
+            "node_modules/@mastra/core/dist/x.json"
+        ));
+        // Ma `distribuzione.ts` non e' `dist`, e va confrontato per segmento.
+        assert!(!cites_a_build_artifact("src/distribuzione.ts"));
+        assert!(!cites_a_build_artifact("crates/guards/src/relay.rs"));
+    }
+
+    #[test]
     fn a_file_only_on_the_integration_branch_is_not_dead() {
         // Un albero di lavoro sta quasi sempre su un ramo suo: cio' che e' stato
         // fuso ieri non c'e' ancora sul disco, e dichiararlo morto mandava chi
@@ -1198,8 +1278,8 @@ mod tests {
         fs::remove_file(repo.join("merged.ts")).unwrap();
         with_roots(&repo);
         assert!(resolve("merged.ts").is_none());
-        assert!(on_a_remote_branch("merged.ts").is_some());
-        assert!(on_a_remote_branch("never-committed.ts").is_none());
+        assert!(on_another_branch("merged.ts").is_some());
+        assert!(on_another_branch("never-committed.ts").is_none());
     }
 
     #[test]
