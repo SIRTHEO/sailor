@@ -74,16 +74,26 @@ pub fn wants_run(event: &str, payload: &Value) -> bool {
     }
 }
 
-/// Quante righe dell'uscita dello script dicono di aver collegato qualcosa.
+/// Quante righe dell'uscita dello script dicono di aver fatto qualcosa.
 ///
-/// Lo script stampa una riga per copia di lavoro — `ok`, `FOUND` o `collegato` —
-/// e solo l'ultima forma è un lavoro fatto. Il gancio parla soltanto se questo
-/// numero è maggiore di zero: una passata che non trova niente da collegare, che
-/// è il caso normale, deve restare muta.
+/// Lo script stampa una riga per copia di lavoro — `ok`, `FOUND`, `linked` o
+/// `synced` — e solo le ultime due sono un lavoro fatto. Il gancio parla
+/// soltanto se questo numero è maggiore di zero: una passata che non trova
+/// niente da fare, che è il caso normale, deve restare muta.
+///
+/// LE FORME DA CONTARE SONO DUE DAL 21/08/2026, e la seconda è quella che porta
+/// le regole: `linked` per le voci collegate, `synced` per le regole ricopiate.
+/// Contare solo la prima farebbe dire «0 copie di lavoro» proprio nella passata
+/// che ne ha riparate dodici — un controllo che mente sul proprio lavoro. La
+/// forma italiana `collegato` non si conta più perché lo script non la stampa
+/// più: se ricomparisse sarebbe un binario vecchio, e vale zero come prima.
 pub fn linked_count(stdout: &str) -> usize {
     splitlines(stdout)
         .into_iter()
-        .filter(|r| strip(r).starts_with("collegato"))
+        .filter(|r| {
+            let r = strip(r);
+            r.starts_with("linked") || r.starts_with("synced")
+        })
         .count()
 }
 
@@ -213,19 +223,25 @@ mod tests {
     }
 
     #[test]
-    fn only_linked_lines_are_counted() {
+    fn only_lines_that_did_something_are_counted() {
         let uscita = "  ok        gyver/work/suite/x\n  \
-                      collegato gyver/work/suite/y : .claude/rules\n  \
+                      linked    gyver/work/suite/y : CLAUDE.md\n  \
                       FOUND     gyver/work/suite/z : CLAUDE.md\n  \
-                      collegato orca/workspaces/whatsapp/w :\n";
+                      synced    orca/workspaces/whatsapp/w : .claude/rules (21 rules)\n";
         assert_eq!(linked_count(uscita), 2);
         assert_eq!(linked_count(""), 0);
         assert_eq!(linked_count("  ok  a\n  ok  b\n"), 0);
+        // MUTANTE: contando solo `linked`, questo caso scende a 1. È la passata
+        // che ripara le regole, cioè quella che non deve mai risultare vuota.
+        assert_eq!(linked_count("  synced    a : .claude/rules (20 rules)\n"), 1);
         // Il confronto è su un prefisso, non su una parola intera: è
         // `startswith` anche nell'originale.
-        assert_eq!(linked_count("collegatoXYZ\n"), 1);
+        assert_eq!(linked_count("linkedXYZ\n"), 1);
         // Ma il prefisso deve stare in testa alla riga ripulita.
-        assert_eq!(linked_count("  ho collegato x\n"), 0);
+        assert_eq!(linked_count("  ho linked x\n"), 0);
+        // La forma italiana non si stampa più: se ricompare è un binario
+        // vecchio, e vale zero.
+        assert_eq!(linked_count("collegato a\n"), 0);
     }
 
     /// I due dettagli in cui Python non è Rust, e che cambiano un numero
@@ -233,18 +249,18 @@ mod tests {
     #[test]
     fn python_line_splitting_and_stripping_are_reproduced() {
         // `\x0b` spezza in Python, `lines()` di Rust no: sono due righe.
-        assert_eq!(linked_count("collegato a\u{b}collegato b"), 2);
-        assert_eq!(linked_count("collegato a\u{2028}collegato b"), 2);
+        assert_eq!(linked_count("linked a\u{b}synced b"), 2);
+        assert_eq!(linked_count("linked a\u{2028}synced b"), 2);
         // `\x1f` è spazio per `str.strip()` e non per `trim()`, ed è l'unico
         // dei quattro separatori che serva a provarlo: `\x1c`, `\x1d` e `\x1e`
         // sono anche fine riga, quindi `splitlines` se li mangia prima che
         // qualcuno ripulisca i bordi. Con `\x1c` al loro posto, il mutante che
         // mette `trim()` qui sopravvive — misurato al primo giro di mutanti.
-        assert_eq!(linked_count("\u{1f}collegato a\n"), 1);
-        assert_eq!(linked_count("\u{1c}collegato a\n"), 1);
-        assert_eq!(linked_count("\u{a0}collegato a\n"), 1);
+        assert_eq!(linked_count("\u{1f}linked a\n"), 1);
+        assert_eq!(linked_count("\u{1c}linked a\n"), 1);
+        assert_eq!(linked_count("\u{a0}linked a\n"), 1);
         // `\r\n` vale un salto solo, non due righe vuote in mezzo.
-        assert_eq!(linked_count("collegato a\r\ncollegato b\r\n"), 2);
+        assert_eq!(linked_count("linked a\r\nsynced b\r\n"), 2);
     }
 
     #[test]
