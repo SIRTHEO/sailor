@@ -23,6 +23,7 @@
 //! senza consegna il gancio si arrende comunque.
 
 use crate::handoff::{percent, thousands, Thresholds};
+use crate::handoff_required::over_lockout;
 
 /// Dopo tante forzature senza consegna il gancio si arrende e lascia fermare.
 pub const STOP_CAP: u32 = 3;
@@ -88,7 +89,9 @@ pub fn decide(f: &Facts) -> Decision {
     // Garanzia soddisfatta: ci si ferma. Ma una consegna descrive il lavoro di
     // quel momento, quindi `handoff_valid` è già falso se dopo la consegna la
     // sessione è ripartita — il chiamante lo sa, qui si prende il verdetto.
-    if f.handoff_valid {
+    // Non oltre il gradino di blocco, però: lì la consegna già scritta non
+    // basta più (`over_lockout`, gemello di `handoff_required`).
+    if f.handoff_valid && !over_lockout(f.used, f.thresholds.budget) {
         return Decision::Settle;
     }
 
@@ -115,6 +118,24 @@ pub fn decide(f: &Facts) -> Decision {
 /// per cui il secondo motivo esiste. Quando valgono entrambi vince quella delle
 /// ripartenze, che è la ragione meno visibile a chi legge.
 pub fn message(f: &Facts) -> String {
+    // `decide` arriva qui con `handoff_valid` vero solo se il contesto è
+    // sopra il gradino di blocco (altrimenti si è già fermata con `Settle`):
+    // non manca la consegna, va aggiornata. Via d'uscita in testa, non in
+    // coda — deve leggerla anche un agente senza nessuno a cui chiedere.
+    if f.handoff_valid {
+        let pct = percent(f.used, f.thresholds.budget);
+        return format!(
+            "Aggiorna la consegna e chiudi il turno: invoca di nuovo la skill \
+             `handoff`, poi fermati. CONTESTO AL {pct}% del budget di qualita' \
+             di {} ({} token, budget ~{}), oltre il gradino di blocco (96%): \
+             sopra questa soglia la consegna gia' scritta non e' piu' un \
+             lasciapassare permanente — decisione di Theo del 20/08/2026. Il \
+             prossimo stop passa liscio solo dopo la nuova consegna.",
+            f.thresholds.model,
+            thousands(f.used),
+            thousands(f.thresholds.budget)
+        );
+    }
     let head = if f.restarts >= f.restart_cap {
         format!(
             "SESSIONE ALLA {}ª RIPARTENZA (tetto {}) e stai per fermarti senza \
@@ -254,8 +275,10 @@ mod tests {
         // MUTANTE: rispondere `Pass` qui lascerebbe il presidio verde e inerte —
         // nessuno armerebbe il successore e nessuno chiuderebbe la scheda. È
         // esattamente il modo in cui il congedo è stato rotto il 16/08/2026.
+        // I due valori restano sotto il gradino di blocco (96%, qui 480_000):
+        // sopra, la consegna valida smette di bastare da sola.
         let t = soglie();
-        for used in [100_000, 480_000] {
+        for used in [100_000, 470_000] {
             let mut f = fatti(&t, used);
             f.handoff_valid = true;
             assert_eq!(decide(&f), Decision::Settle, "used={used}");
@@ -264,6 +287,53 @@ mod tests {
         f.handoff_valid = true;
         f.restarts = RESTART_CAP_DEFAULT + 3;
         assert_eq!(decide(&f), Decision::Settle, "consegnata anche se ripartita");
+    }
+
+    #[test]
+    fn above_the_lockout_step_a_valid_handoff_does_not_settle_anymore() {
+        // Il difetto misurato su 450 sessioni: fra 450k (obbligo) e 550k
+        // (compattazione) una sessione con `handoff_valid` saliva indisturbata.
+        // Sopra il gradino il gemello di `handoff_required` torna a bloccare
+        // anche lo Stop, e la via d'uscita sta in testa al messaggio.
+        let t = soglie();
+        let mut f = fatti(&t, 480_000);
+        f.handoff_valid = true;
+        match decide(&f) {
+            Decision::Block(m) => {
+                assert!(
+                    m.starts_with("Aggiorna la consegna e chiudi il turno"),
+                    "la via d'uscita va in testa, non in coda: {m}"
+                );
+                assert!(m.contains("`handoff`"), "{m}");
+                assert!(m.contains("480,000 token"), "{m}");
+            }
+            other => panic!("atteso un blocco anche a consegna fatta, non {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_lockout_step_triggers_on_the_exact_threshold_not_after() {
+        let t = soglie();
+        let mut f = fatti(&t, 479_999);
+        f.handoff_valid = true;
+        assert_eq!(decide(&f), Decision::Settle, "un token sotto: ci si ferma ancora");
+        f.used = 480_000;
+        assert!(matches!(decide(&f), Decision::Block(_)), "sul gradino esatto: nega");
+    }
+
+    #[test]
+    fn without_a_handoff_above_the_lockout_step_it_denies_as_before() {
+        // Nessuna regressione: senza consegna, il messaggio resta quello
+        // originale (contesto o ripartenze), non quello della consegna da
+        // aggiornare.
+        let t = soglie();
+        match decide(&fatti(&t, 480_000)) {
+            Decision::Block(m) => {
+                assert!(!m.starts_with("Aggiorna la consegna"), "{m}");
+                assert!(m.contains("CONTESTO AL 96%"), "{m}");
+            }
+            other => panic!("atteso un blocco, non {other:?}"),
+        }
     }
 
     #[test]
