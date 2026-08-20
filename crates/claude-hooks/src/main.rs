@@ -54,6 +54,10 @@ mod work_status;
 // sulle fusioni con schiacciamento, dove il ramo di partenza resta vivo e
 // divergente senza che nessun conflitto lo segnali.
 mod squash_orphans;
+// Il quinto: se l'indice semantico riflette il ramo giusto. Nasce da una
+// misura del 20/08/2026 dove tre canonici su quattro erano su rami di lavoro
+// altrui, e l'indicizzatore taceva — nessun errore, solo un «green» bugiardo.
+mod index_freshness;
 
 use hook_io::{Decision, Mode};
 
@@ -184,6 +188,7 @@ const ALL_HOOKS: &[&str] = &[
     "skill-nudge",
     "work-status",
     "squash-orphans",
+    "index-freshness",
     // Non e un gancio, come `json`: e lo strumento che risponde a «chi lancia
     // ancora questo controllo». Sta qui perche il dispatch e l'elenco si
     // controllano a vicenda, e il controllo ha fatto il suo mestiere — questa
@@ -374,6 +379,10 @@ fn has_module_test(name: &str) -> bool {
         ],
         "work-status" => &[include_str!("work_status.rs")],
         "squash-orphans" => &[include_str!("squash_orphans.rs")],
+        "index-freshness" => &[
+            include_str!("index_freshness.rs"),
+            include_str!("../../guards/src/index_freshness.rs"),
+        ],
         "reachability" => &[include_str!("reachability.rs")],
         "memory-anchors" => &[
             include_str!("memory_anchors.rs"),
@@ -1042,6 +1051,7 @@ fn run(which: &str) -> Result<i32, String> {
         "skill-nudge" => Ok(skill_nudge::run()),
         "work-status" => Ok(work_status::run()),
         "squash-orphans" => Ok(squash_orphans::run()),
+        "index-freshness" => Ok(index_freshness::run()),
         "allow-session-messages" => Ok(session_messages::run()),
         // Non e un gancio: e lo strumento che risponde a «chi lancia
         // ancora questo controllo». Sta nel dispatch perche il binario e
