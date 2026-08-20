@@ -54,8 +54,8 @@
 
 use guards::chain::{chain_verdict, ChainLimits, ChainLink, ChainVerdict, IDLE_RESET_SEC};
 use guards::handoff::{
-    evaluate, resolve_terminal_handle, round_half_to_even, state_key, Action, SessionFacts,
-    Terminal,
+    evaluate, resolve_armed_successor, resolve_terminal_handle, round_half_to_even, state_key,
+    turn_status_from_lines, Action, SessionFacts, Terminal, TurnStatus,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -474,8 +474,9 @@ fn write_chain(worktree: &str, links: &[ChainLink]) {
 /// L'handle del successore che un altro meccanismo ha già aperto, se ancora vivo.
 ///
 /// Si risolve dalla `tabId`; l'handle è la ricaduta per i marcatori scritti
-/// prima del 17/08/2026. L'handle registrato all'apertura invecchia al primo
-/// riattacco, e un freno che legge un identificatore scaduto non frena mai.
+/// prima del 17/08/2026. `resolve_armed_successor` rifiuta un manico morto
+/// invece di adottare il pannello vicino sulla stessa tab — dove vive il
+/// successore aperto da `terminal split`, accanto a chi lo arma.
 fn armed_successor(session_id: &str, terminals: &[Terminal]) -> String {
     if session_id.is_empty() {
         return String::new();
@@ -488,7 +489,7 @@ fn armed_successor(session_id: &str, terminals: &[Terminal]) -> String {
         return String::new();
     };
     let get = |k: &str| d.get(k).and_then(|v| v.as_str()).unwrap_or("");
-    resolve_terminal_handle(get("tabId"), "", get("handle"), terminals)
+    resolve_armed_successor(get("tabId"), get("handle"), terminals)
 }
 
 
@@ -894,6 +895,17 @@ fn progress(transcript: &str) -> (u64, u64) {
 pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     let sess = &rec.session;
 
+    // -1. FINISCI PRIMA QUELLO CHE HAI GIÀ INIZIATO. Un mandato rimasto in
+    //     sospeso da un giro precedente — il pannello era occupato quando si è
+    //     provato a consegnarlo — vince su ogni altra decisione: la sessione è
+    //     già stata azzerata, e lasciarla senza incarico è l'unico esito
+    //     davvero distruttivo di tutta la staffetta (vedi la testata del
+    //     file). Non conta come un nuovo giro: qui non si apre un anello della
+    //     catena, si chiude quello di prima.
+    if !dry_run && try_deliver_pending_boot(&rec.worktree, orca) {
+        return;
+    }
+
     // 0. IL FRENO, prima di ogni altra cosa e prima di spendere una chiamata a
     //    `orca`. Gli altri controlli guardano questa sessione adesso; questo
     //    guarda le rigenerazioni già fatte su questo albero, che è l'unica cosa
@@ -1014,7 +1026,13 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // evidenziata. Qui si legge cosa c'è scritto: senza la prova che il
     // prompt sia vuoto non si tocca un tasto — chiudere una domanda aperta al
     // posto di Theo è lo stesso danno di rispondergli.
-    match panel_readiness(&handle, orca) {
+    //
+    // E «FERMO» RESTA «ZITTO», NON «LIBERO», ANCHE COL PROMPT VUOTO. Un
+    // comando che dorme 300 secondi lascia l'ultima riga del pannello a `❯`
+    // vuoto — misurato il 20/08/2026 — perché il silenzio è quello che
+    // produce lui: il pannello sembra pulito, ma il turno è ancora aperto.
+    // `readiness` guarda anche la coda del transcript, non solo lo schermo.
+    match readiness(rec, &handle, orca) {
         PanelReadiness::Clear => {}
         PanelReadiness::Question => {
             log_line(&format!(
@@ -1025,6 +1043,12 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         PanelReadiness::Typing => {
             log_line(&format!(
                 "sess={sess}: la riga d'ingresso non e' vuota, non tocco i tasti: rimando"
+            ));
+            return;
+        }
+        PanelReadiness::TurnInProgress => {
+            log_line(&format!(
+                "sess={sess}: il transcript mostra un turno ancora in corso, non tocco i tasti: rimando"
             ));
             return;
         }
@@ -1178,19 +1202,41 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         }
         voce
     };
-    let (rc_send, _) = orca(&[
-        "terminal", "send", "--terminal", &handle, "--text", &avvio, "--enter",
+    // NON SI SPEDISCE ALLA CIECA. Fra il `/clear` e qui è passata l'attesa del
+    // pickup, e un pannello ancora occupato mette l'invio in coda — misurato il
+    // 20/08/2026: un `/clear` accodato è partito 16 minuti dopo, e l'avvio
+    // spedito subito dietro era già stato abbandonato da cinque. Si ricontrolla
+    // l'idle prima di scrivere; se non lo è, la marca resta per il giro dopo
+    // invece di fidarsi di una coda che non si vede.
+    let timeout = IDLE_TIMEOUT_MS.to_string();
+    let (rc_idle, _) = orca(&[
+        "terminal", "wait", "--terminal", &handle, "--for", "tui-idle",
+        "--timeout-ms", &timeout,
     ]);
-    log_line(&format!(
-        "sess={sess}: azzerata sul posto, mandato {} (avvio rc={rc_send}, \
-         sostituzione {})",
-        if raccolto { "raccolto dal segnale" } else { "dato a voce" },
-        match (&heir, raccolto) {
-            (Some(nuova), _) => format!("confermata dal record di {nuova}"),
-            (None, true) => "confermata dal segnale raccolto".to_string(),
-            (None, false) => "NON confermata".to_string(),
-        }
-    ));
+    let rc_send = if rc_idle == 0 {
+        orca(&["terminal", "send", "--terminal", &handle, "--text", &avvio, "--enter"]).0
+    } else {
+        rc_idle
+    };
+    if rc_idle != 0 || rc_send != 0 {
+        save_pending_boot(&rec.worktree, &handle, &avvio);
+        log_line(&format!(
+            "sess={sess}: pannello ancora occupato, l'avvio resta in sospeso su \
+             {handle} (mandato {}, si riprova al giro dopo)",
+            if raccolto { "raccolto dal segnale" } else { "dato a voce" }
+        ));
+    } else {
+        log_line(&format!(
+            "sess={sess}: azzerata sul posto, mandato {} (avvio rc={rc_send}, \
+             sostituzione {})",
+            if raccolto { "raccolto dal segnale" } else { "dato a voce" },
+            match (&heir, raccolto) {
+                (Some(nuova), _) => format!("confermata dal record di {nuova}"),
+                (None, true) => "confermata dal segnale raccolto".to_string(),
+                (None, false) => "NON confermata".to_string(),
+            }
+        ));
+    }
 
     // 6. pulisci lo stato della sessione sostituita — SOLO se è stata davvero
     //    sostituita. Il pannello non si tocca: è lo stesso, e adesso ci vive la
@@ -1316,6 +1362,80 @@ fn mark_blind_attempt(worktree: &str, session_id: &str) -> u32 {
     n
 }
 
+/// Oltre quest'età un avvio in sospeso si abbandona e si segnala, invece di
+/// riprovare in silenzio per sempre su un pannello che non si libera mai.
+const PENDING_BOOT_MAX_AGE_SEC: f64 = 3600.0;
+
+fn pending_boot_path(worktree: &str) -> PathBuf {
+    state_dir().join(format!("staffetta-avvio-sospeso-{}", state_key(worktree)))
+}
+
+/// Lascia detto che l'avvio non è ancora partito, con tutto ciò che serve a
+/// riprovarlo: l'handle esatto e il testo, così il giro dopo non deve
+/// ricostruirli.
+fn save_pending_boot(worktree: &str, handle: &str, boot_text: &str) {
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(
+        pending_boot_path(worktree),
+        serde_json::json!({ "handle": handle, "boot": boot_text, "at": now_epoch() }).to_string(),
+    );
+}
+
+/// Se c'è un avvio rimasto in sospeso su questo albero, prova a consegnarlo
+/// adesso. Vero se il giro finisce qui — consegnato o ancora da riprovare —
+/// perché finché quel mandato non è a posto non si apre un nuovo ciclo.
+///
+/// SI RICONTROLLA L'IDLE, non si spedisce alla cieca: è lo stesso motivo per
+/// cui l'invio originale l'ha lasciato in sospeso, e riprovare senza
+/// verificare rifarebbe la stessa corsa contro una coda che non si vede.
+fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
+    let path = pending_boot_path(worktree);
+    let Ok(text) = fs::read_to_string(&path) else {
+        return false; // niente in sospeso: si procede col giro normale
+    };
+    let Ok(d) = serde_json::from_str::<serde_json::Value>(&text) else {
+        let _ = fs::remove_file(&path); // illeggibile: non c'è niente da salvare
+        return false;
+    };
+    let handle = d.get("handle").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let boot_text = d.get("boot").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let at = d.get("at").and_then(|v| v.as_f64()).unwrap_or(0.0);
+    if handle.is_empty() || boot_text.is_empty() {
+        let _ = fs::remove_file(&path);
+        return false;
+    }
+    if now_epoch() - at > PENDING_BOOT_MAX_AGE_SEC {
+        log_line(&format!(
+            "AVVIO ABBANDONATO su {handle}: {} h senza riuscire a consegnarlo, mi fermo. \
+             Per riprovare: rm {}",
+            round_half_to_even(PENDING_BOOT_MAX_AGE_SEC / 3600.0),
+            path.display()
+        ));
+        let _ = fs::remove_file(&path);
+        return true; // il giro si ferma comunque qui: non si ricomincia alla cieca
+    }
+    let timeout = IDLE_TIMEOUT_MS.to_string();
+    let (rc_idle, _) = orca(&[
+        "terminal", "wait", "--terminal", &handle, "--for", "tui-idle",
+        "--timeout-ms", &timeout,
+    ]);
+    if rc_idle != 0 {
+        log_line(&format!("avvio in sospeso su {handle}: ancora occupato, rimando"));
+        return true;
+    }
+    let (rc_send, _) =
+        orca(&["terminal", "send", "--terminal", &handle, "--text", &boot_text, "--enter"]);
+    if rc_send == 0 {
+        let _ = fs::remove_file(&path);
+        log_line(&format!("avvio in sospeso su {handle}: consegnato"));
+    } else {
+        log_line(&format!(
+            "avvio in sospeso su {handle}: invio fallito di nuovo (rc={rc_send}), rimando"
+        ));
+    }
+    true
+}
+
 /// True se il successore ha raccolto il segnale di ripresa, entro il tempo.
 ///
 /// È l'unica conferma vera che il mandato sia arrivato: `register-session.py`
@@ -1433,6 +1553,9 @@ enum PanelReadiness {
     Question,
     /// La riga d'ingresso porta del testo non ancora inviato.
     Typing,
+    /// Il transcript mostra un turno ancora aperto: un `tool_use` senza il
+    /// suo risultato, o un messaggio che aspetta ancora una risposta.
+    TurnInProgress,
     /// Il pannello non si è letto, o non si è trovata la riga del prompt: non
     /// è la prova positiva che serve, quindi vale come non vuoto.
     Unknown,
@@ -1460,6 +1583,35 @@ fn panel_readiness(handle: &str, orca: OrcaFn) -> PanelReadiness {
         }
         Some(_) => PanelReadiness::Typing,
         None => PanelReadiness::Unknown,
+    }
+}
+
+/// Se il transcript della sessione bersaglio mostra un turno chiuso.
+///
+/// Riusa la stessa coda che `crate::handoff` legge già per le soglie e il
+/// punto di ripresa, invece di aprire una seconda strada verso lo stesso
+/// file: il giudizio puro sta in `guards::handoff::turn_status_from_lines`.
+fn turn_readiness(transcript: &str) -> PanelReadiness {
+    let tail = crate::handoff::transcript_tail(transcript);
+    match turn_status_from_lines(&tail.lines().collect::<Vec<_>>()) {
+        TurnStatus::Ended => PanelReadiness::Clear,
+        TurnStatus::InProgress => PanelReadiness::TurnInProgress,
+        TurnStatus::Unknown => PanelReadiness::Unknown,
+    }
+}
+
+/// La prova completa che si può scrivere sul pannello: lo schermo, e poi —
+/// solo se lo schermo è pulito — il transcript.
+///
+/// L'ORDINE CONTA. Il pannello si legge per primo perché una domanda in
+/// sospeso o del testo non inviato sono la prova più urgente da rispettare;
+/// solo quando lo schermo è pulito ha senso guardare oltre, perché `tui-idle`
+/// e un prompt vuoto dicono soltanto «silenzio adesso» — vero anche a metà di
+/// un comando che dorme 300 secondi — e non «turno chiuso».
+fn readiness(rec: &Record, handle: &str, orca: OrcaFn) -> PanelReadiness {
+    match panel_readiness(handle, orca) {
+        PanelReadiness::Clear => turn_readiness(&rec.transcript),
+        other => other,
     }
 }
 
@@ -1794,9 +1946,25 @@ mod tests {
             handle: "term_vecchio".into(),
             worktree: "wt-prova".into(),
             tab_id: "tab-1".into(),
-            transcript: String::new(),
+            transcript: ended_turn_transcript(),
             cwd: "/x".into(),
         }
+    }
+
+    /// Un transcript minimo il cui ultimo record è una risposta finale
+    /// dell'assistente, senza `tool_use` in sospeso: lo sfondo «turno chiuso»
+    /// per ogni prova che non parla esplicitamente del punto 1. Va chiamata
+    /// dopo `HomeIsolata::nuova`, perché scrive sotto la HOME di turno.
+    fn ended_turn_transcript() -> String {
+        let path = state_dir().join("transcript-di-prova.jsonl");
+        let _ = fs::create_dir_all(state_dir());
+        let line = serde_json::json!({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "fatto"}]}
+        })
+        .to_string();
+        let _ = fs::write(&path, line);
+        path.to_string_lossy().into_owned()
     }
 
     #[test]
@@ -1908,6 +2076,74 @@ mod tests {
         assert!(
             seq.iter().any(|x| x.contains("/clear")),
             "il prompt vuoto non ha fatto partire il /clear: {seq:?}"
+        );
+    }
+
+    /// Un transcript il cui ultimo record è un `tool_use` senza risultato: il
+    /// caso vero, un `Bash` che dorme 300 secondi.
+    fn in_progress_transcript() -> String {
+        let path = state_dir().join("transcript-turno-in-corso.jsonl");
+        let _ = fs::create_dir_all(state_dir());
+        let line = serde_json::json!({
+            "type": "assistant",
+            "message": {"content": [
+                {"type": "tool_use", "name": "Bash", "id": "t1", "input": {"command": "sleep 300"}}
+            ]}
+        })
+        .to_string();
+        let _ = fs::write(&path, line);
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn a_turn_in_progress_in_the_transcript_gets_no_keystroke() {
+        let _home = HomeIsolata::nuova("turno-in-corso");
+        // IL CASO PIÙ PULITO, misurato il 20/08/2026: un `Bash` che dorme 300
+        // secondi ammutolisce il pannello — `tui-idle` risponde libero e il
+        // prompt è vuoto — ma il transcript mostra il `tool_use` ancora senza
+        // il suo risultato. «Fermo» vuol dire «zitto», non «libero».
+        let rec = Record { transcript: in_progress_transcript(), ..test_record() };
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            (0, String::new())
+        };
+        regenerate(&rec, false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            !seq.iter().any(|x| x.contains("send")),
+            "ha battuto un tasto durante un turno in corso: {seq:?}"
+        );
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("turno ancora in corso"), "{log}");
+    }
+
+    #[test]
+    fn an_ended_turn_in_the_transcript_lets_the_clear_go_out() {
+        let _home = HomeIsolata::nuova("turno-chiuso");
+        // Il differenziale a variabile unica della prova sopra: stesso
+        // pannello silenzioso, stavolta l'ultimo record del transcript è la
+        // risposta finale dell'assistente — e il `/clear` parte.
+        let rec = Record { transcript: ended_turn_transcript(), ..test_record() };
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            (0, String::new())
+        };
+        regenerate(&rec, false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            seq.iter().any(|x| x.contains("/clear")),
+            "il turno chiuso non ha fatto partire il /clear: {seq:?}"
         );
     }
 
@@ -2064,6 +2300,92 @@ mod tests {
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("raccolto dal segnale"), "{log}");
         assert!(log.contains("RIGENERATA"), "{log}");
+    }
+
+    // ─── L'avvio non si abbandona in coda ────────────────────────────────────
+
+    #[test]
+    fn a_panel_still_busy_after_the_clear_keeps_the_boot_pending() {
+        let _home = HomeIsolata::nuova("avvio-in-coda");
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        // IL CASO MISURATO IL 20/08/2026: un `/clear` accodato è partito 16
+        // minuti dopo, e l'avvio spedito subito dietro era già stato
+        // abbandonato da cinque. Qui il primo `wait` (prima del `/clear`)
+        // trova il pannello libero; il secondo (prima dell'avvio) lo trova
+        // ancora occupato.
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            let prior_waits = c.borrow().iter().filter(|x| x.contains("wait")).count();
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            if args.contains(&"wait") {
+                return if prior_waits == 0 { (0, String::new()) } else { (1, String::new()) };
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        let send: Vec<&String> = seq.iter().filter(|x| x.contains("send")).collect();
+        assert_eq!(send.len(), 1, "ha spedito l'avvio a un pannello occupato: {seq:?}");
+        assert!(send[0].contains("/clear"), "{seq:?}");
+        assert!(
+            pending_boot_path("wt-prova").exists(),
+            "non ha lasciato la marca per riprovare l'avvio"
+        );
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("l'avvio resta in sospeso"), "{log}");
+    }
+
+    #[test]
+    fn a_pending_boot_is_delivered_later_without_repeating_the_clear() {
+        let _home = HomeIsolata::nuova("avvio-ripreso");
+        // Il caso buono del punto sopra: un giro successivo trova la marca,
+        // il pannello adesso è libero, e riprova SOLO l'avvio — non rifà tutto
+        // il ciclo del `/clear`.
+        save_pending_boot("wt-prova", "term_vecchio", "RIPARTENZA (staffetta)…");
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert_eq!(seq.len(), 2, "doveva solo riprovare l'avvio: {seq:?}");
+        assert!(seq[0].contains("wait") && seq[0].contains("term_vecchio"), "{seq:?}");
+        assert!(seq[1].contains("send") && seq[1].contains("term_vecchio"), "{seq:?}");
+        assert!(
+            !pending_boot_path("wt-prova").exists(),
+            "la marca doveva sparire dopo la consegna"
+        );
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("avvio in sospeso su term_vecchio: consegnato"), "{log}");
+    }
+
+    #[test]
+    fn a_stale_pending_boot_is_abandoned_and_logged() {
+        let _home = HomeIsolata::nuova("avvio-abbandonato");
+        let stale_at = now_epoch() - PENDING_BOOT_MAX_AGE_SEC - 10.0;
+        let _ = fs::create_dir_all(state_dir());
+        fs::write(
+            pending_boot_path("wt-prova"),
+            serde_json::json!({"handle": "term_vecchio", "boot": "x", "at": stale_at})
+                .to_string(),
+        )
+        .unwrap();
+        // Un'ora di silenzio senza consegna basta a fermarsi e a dirlo, invece
+        // di riprovare per sempre alla cieca su un pannello mai libero.
+        let mut orca = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
+        regenerate(&test_record(), false, &mut orca);
+        assert!(!pending_boot_path("wt-prova").exists());
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("AVVIO ABBANDONATO"), "{log}");
     }
 
     #[test]
@@ -2456,6 +2778,34 @@ mod tests {
         // E questo invece è l'erede.
         write_live_record("erede-000-0000", "tab-1", "clear", now + 5);
         assert_eq!(registered_heir(&rec, now_epoch()).as_deref(), Some("erede-00"));
+    }
+
+    // ─── Niente pannello del vicino ───────────────────────────────────────────
+
+    #[test]
+    fn armed_successor_does_not_adopt_the_sibling_pane() {
+        let _home = HomeIsolata::nuova("successore-vicino");
+        // Il marcatore che `note_successor` scrive quando `terminal split`
+        // apre il successore accanto a chi lo arma, sulla STESSA tab. Il suo
+        // manico è morto adesso, e su quella tab è rimasta soltanto la
+        // sessione vicina — non il successore che il marcatore descrive.
+        let _ = fs::create_dir_all(state_dir());
+        fs::write(
+            state_dir().join("successore-di-sessione-armata"),
+            serde_json::json!({"handle": "term_successore_morto", "tabId": "tab-1"})
+                .to_string(),
+        )
+        .unwrap();
+        let vicino = vec![Terminal {
+            handle: "term_vicino".into(),
+            tab_id: "tab-1".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            armed_successor("sessione-armata", &vicino),
+            "",
+            "ha adottato il pannello del vicino invece di dichiarare scaduto il marcatore"
+        );
     }
 
     #[test]
