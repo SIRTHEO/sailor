@@ -19,6 +19,7 @@ use std::fs::{create_dir_all, rename, OpenOptions};
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const CEILING_BYTES: u64 = 5 * 1024 * 1024;
@@ -83,6 +84,31 @@ pub fn mark_live_run(live: bool) {
     LIVE_RUN.store(live, Ordering::Relaxed);
 }
 
+/// La sessione che il processo sta servendo, negli otto caratteri con cui la
+/// scrivono i ganci che già la registrano.
+///
+/// PERCHÉ STA QUI E NON NEI CHIAMANTI. Il campo si scrive passandolo in `extra`,
+/// e sei ganci su dieci non lo passavano: 4.500 righe su 12.200 — il 37% del
+/// registro — non dicono a quale sessione appartengono, e fra queste stanno
+/// tutte le 2.182 di `cd-guard`. Senza quel campo la domanda «quante sessioni
+/// tocca questo guasto» non ha risposta, ed è la domanda con cui in questa casa
+/// si decide cosa riparare prima. Chiederlo a ogni chiamante avrebbe lasciato
+/// scoperto il prossimo gancio scritto; qui lo dichiara chi legge l'ingresso, che
+/// è un punto solo.
+static CURRENT_SESSION: Mutex<Option<String>> = Mutex::new(None);
+
+/// Dichiara quale sessione sta servendo questo processo. La chiamano i due punti
+/// che leggono il payload, insieme a `mark_live_run`.
+pub fn mark_session(session: &str) {
+    let s = session.trim();
+    if s.is_empty() {
+        return;
+    }
+    if let Ok(mut guard) = CURRENT_SESSION.lock() {
+        *guard = Some(s.chars().take(8).collect());
+    }
+}
+
 /// Scrive una riga nel registro. `extra` mantiene l'ordine in cui è passato:
 /// il formato è ricopiato dal JavaScript, e chi legge i due file affiancati non
 /// deve vedere differenze nemmeno nell'ordine delle chiavi.
@@ -112,9 +138,20 @@ pub fn record(hook: &str, decision: &str, reason: &str, extra: &[(&str, Field)])
     let _ = write!(line, ",\"gancio\":{}", quote(hook));
     let _ = write!(line, ",\"decisione\":{}", quote(decision));
     let _ = write!(line, ",\"motivo\":{}", quote(reason));
+    let mut has_session = false;
     for (key, value) in extra {
+        if *key == "session" {
+            has_session = true;
+        }
         let _ = write!(line, ",{}:", quote(key));
         value.write_to(&mut line);
+    }
+    // Solo se il chiamante non l'ha già scritta: chi la passa in `extra` la
+    // mette dove vuole nell'ordine, e quell'ordine è parte del formato.
+    if !has_session {
+        if let Some(s) = CURRENT_SESSION.lock().ok().and_then(|g| g.clone()) {
+            let _ = write!(line, ",\"session\":{}", quote(&s));
+        }
     }
     // In coda, e solo quando c'è: le righe vere restano byte per byte quelle
     // che gli script di oggi sanno leggere.

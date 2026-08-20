@@ -132,6 +132,9 @@ pub fn mark_live_from_payload(payload: &serde_json::Value) {
     journal::mark_live_run(transcript_is_real(
         payload.get("transcript_path").and_then(|v| v.as_str()),
     ));
+    if let Some(s) = payload.get("session_id").and_then(|v| v.as_str()) {
+        journal::mark_session(s);
+    }
 }
 
 /// Cosa il gancio ha deciso. `Warn` esiste perché un divieto senza una
@@ -186,6 +189,9 @@ pub fn read_input() -> Option<HookInput> {
     match serde_json::from_str::<HookInput>(&buf) {
         Ok(v) => {
             journal::mark_live_run(v.has_real_transcript());
+            if let Some(s) = v.session_id.as_deref() {
+                journal::mark_session(s);
+            }
             Some(v)
         }
         Err(e) => {
