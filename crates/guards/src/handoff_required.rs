@@ -24,6 +24,19 @@ use crate::handoff::{percent, thousands, Thresholds, HANDOFF_TOOLS};
 /// Dopo tanti rifiuti consecutivi il gancio si arrende e lascia passare.
 pub const BLOCK_CAP: u32 = 6;
 
+/// Sopra questa frazione del budget la consegna già scritta smette di essere
+/// un lasciapassare permanente. Decisione di Theo, 20/08/2026: fra l'obbligo
+/// (90%) e la compattazione automatica nessuno sorvegliava una sessione che
+/// aveva consegnato e continuava a lavorare — misurato su 450 sessioni, sale
+/// indisturbata dai 450k fino ai 550k.
+pub const LOCKOUT_FRACTION: f64 = 0.96;
+
+/// Il contesto è oltre il gradino di blocco: la garanzia della consegna non
+/// vale più come lasciapassare permanente.
+pub fn over_lockout(used: u64, budget: u64) -> bool {
+    used >= (budget as f64 * LOCKOUT_FRACTION) as u64
+}
+
 /// Cosa fa il gancio, una volta noti i fatti.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decision {
@@ -59,8 +72,10 @@ pub fn decide(f: &Facts) -> Decision {
     if f.used == 0 || f.used < f.thresholds.warn {
         return Decision::Silent;
     }
-    // Consegna già fatta e ancora attuale: garanzia soddisfatta, si lavora.
-    if f.handoff_valid {
+    // Consegna già fatta e ancora attuale: garanzia soddisfatta, si lavora —
+    // ma non oltre il gradino di blocco: lì la consegna non è più un
+    // lasciapassare permanente (vedi `LOCKOUT_FRACTION`).
+    if f.handoff_valid && !over_lockout(f.used, f.thresholds.budget) {
         return Decision::Silent;
     }
     let pct = percent(f.used, f.thresholds.budget);
@@ -97,6 +112,25 @@ pub fn decide(f: &Facts) -> Decision {
              lascia passare. Se stai per essere compattato senza consegna, il \
              lavoro lo ritrova solo chi rilegge il transcript.",
             f.blocks_so_far
+        ));
+    }
+
+    // Qui solo perché la consegna c'è già ma il contesto è sopra il gradino
+    // di blocco: non manca la consegna, va aggiornata. Via d'uscita in testa,
+    // leggibile anche da chi non può chiedere a Theo.
+    if f.handoff_valid {
+        return Decision::Block(format!(
+            "Aggiorna la consegna e chiudi il turno: invoca di nuovo la skill \
+             `handoff`, poi le due righe Stato / Procedo con. CONTESTO AL {pct}% \
+             del budget di qualita' di {model} ({} token, budget ~{}), oltre il \
+             gradino di blocco (96%): sopra questa soglia la consegna gia' \
+             scritta non e' piu' un lasciapassare permanente — decisione di \
+             Theo del 20/08/2026. `{}` non serve a consegnare, quindi non \
+             passa. Passano: Skill, Read, Write, Edit, Grep, Glob, SendMessage \
+             e gli strumenti delle lavorazioni.",
+            thousands(f.used),
+            thousands(budget),
+            f.tool
         ));
     }
 
@@ -170,12 +204,60 @@ mod tests {
     }
 
     #[test]
-    fn una_consegna_valida_disarma_tutto() {
+    fn a_valid_handoff_disarms_below_the_lockout_step() {
+        // Sotto il gradino (96%, qui 480_000) la consegna scritta basta ancora.
         let t = soglie();
-        for used in [400_000, 480_000, 900_000] {
+        for used in [400_000, 460_000, 479_999] {
             let mut f = fatti(&t, used, "Bash");
             f.handoff_valid = true;
             assert_eq!(decide(&f), Decision::Silent, "used={used}");
+        }
+    }
+
+    #[test]
+    fn above_the_lockout_step_a_valid_handoff_is_not_enough_anymore() {
+        // Il difetto misurato su 450 sessioni: `handoff_valid` era un
+        // lasciapassare a QUALUNQUE livello di contesto, e la sessione saliva
+        // indisturbata fino alla compattazione. Qui il presidio torna a
+        // negare, e la via d'uscita sta in testa al messaggio.
+        let t = soglie();
+        let mut f = fatti(&t, 480_000, "Bash");
+        f.handoff_valid = true;
+        match decide(&f) {
+            Decision::Block(m) => {
+                assert!(
+                    m.starts_with("Aggiorna la consegna e chiudi il turno"),
+                    "la via d'uscita va in testa, non in coda: {m}"
+                );
+                assert!(m.contains("`handoff`"), "{m}");
+                assert!(m.contains("480,000 token"), "{m}");
+            }
+            other => panic!("atteso un blocco anche a consegna fatta, non {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_lockout_step_triggers_on_the_exact_threshold_not_after() {
+        let t = soglie();
+        let mut f = fatti(&t, 479_999, "Bash");
+        f.handoff_valid = true;
+        assert_eq!(decide(&f), Decision::Silent, "un token sotto: ancora disarmata");
+        f.used = 480_000;
+        assert!(matches!(decide(&f), Decision::Block(_)), "sul gradino esatto: nega");
+    }
+
+    #[test]
+    fn without_a_handoff_above_the_lockout_step_it_denies_as_before() {
+        // Nessuna regressione sul caso che già funzionava: senza consegna, il
+        // messaggio resta quello originale, non quello della consegna da
+        // aggiornare.
+        let t = soglie();
+        match decide(&fatti(&t, 480_000, "Bash")) {
+            Decision::Block(m) => {
+                assert!(!m.starts_with("Aggiorna la consegna"), "{m}");
+                assert!(m.contains("Prima che il modello degradi va fatta la consegna"), "{m}");
+            }
+            other => panic!("atteso un blocco, non {other:?}"),
         }
     }
 
