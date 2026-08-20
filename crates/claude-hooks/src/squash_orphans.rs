@@ -104,8 +104,20 @@ fn report(branch: &str, orphans: &[Orphan]) -> String {
 /// richiesta del ramo corrente, e senza un numero non c'è modo di chiedere a
 /// GitHub l'istante preciso della fusione: senza quell'istante il confine
 /// temporale non esiste, e segnalare a tempo indovinato sarebbe il rumore che
-/// questo gancio deve evitare. Resta un limite noto, non silenzioso — vedi la
-/// consegna.
+/// questo gancio deve evitare.
+///
+/// **È un buco noto che non sanguina**, e il numero serve a non farlo chiudere
+/// per scrupolo da chi lo rileggerà. Misurato il 20/08/2026 su 3.363
+/// trascrizioni, contando i soli comandi davvero eseguiti — quelli dentro un
+/// `"command"` di uno strumento Bash, non le citazioni nelle regole e nei
+/// prompt, che erano oltre duemila e davano la risposta opposta:
+///
+///     gh pr merge <numero>     402
+///     gh pr merge --<opzione>    3   (due `--help`, uno con `--repo` e il numero dopo)
+///
+/// Zero fusioni vere nella forma cieca. Se un giorno comparisse, la misura si
+/// rifà con lo stesso criterio: cercare la forma dentro i comandi eseguiti,
+/// mai nel testo dei prompt.
 fn after_merge(payload: &Value) -> Py<Option<String>> {
     if !payload.is_object() {
         return Err("il payload non è un dizionario".into());
