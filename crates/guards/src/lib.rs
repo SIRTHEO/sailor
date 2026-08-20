@@ -25,6 +25,7 @@ pub mod socraticode_gate;
 pub mod handoff_required;
 pub mod handoff_on_stop;
 pub mod handoff_threshold;
+pub mod index_freshness;
 pub mod repo_tools;
 pub mod restart;
 pub mod scope_drift;
