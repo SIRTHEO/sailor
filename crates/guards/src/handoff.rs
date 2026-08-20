@@ -436,11 +436,29 @@ pub fn resolve_terminal_handle(
     }
     if !tab_id.is_empty() {
         let hits: Vec<&Terminal> = terminals.iter().filter(|t| t.tab_id == tab_id).collect();
-        return if hits.len() == 1 {
-            hits[0].handle.clone()
-        } else {
-            String::new()
-        };
+        if hits.len() == 1 {
+            return hits[0].handle.clone();
+        }
+        // SCHEDA AMBIGUA NON VUOL DIRE IDENTITÀ IGNOTA. Fino al 21/08/2026 qui
+        // si usciva a mani vuote in ogni caso, e il ripiego sotto — l'handle
+        // noto — non veniva mai raggiunto. Da quando le figure di guardia stanno
+        // in pannelli affiancati, la scheda `general` ne ha tre: il presidio si
+        // asteneva ogni minuto pur avendo in mano l'handle giusto, vivo e
+        // scritto nella scheda della sessione.
+        //
+        // SI CHIEDE CHE L'HANDLE SIA UNO DEI CANDIDATI, non solo che sia vivo, e
+        // la differenza non è formale: una scheda **sparita** (`hits` vuoto)
+        // significa che la sessione sta altrove, e un handle vivo di un'altra
+        // scheda è il pannello di qualcun altro — scriverci dentro costa i tasti
+        // di una sessione estranea. Con `hits` a più di uno l'handle scioglie
+        // l'ambiguità perché è uno di quei pannelli; con `hits` vuoto non
+        // scioglie niente, e lì si tace come prima.
+        if hits.len() > 1 && !known_handle.is_empty() {
+            if let Some(t) = hits.iter().find(|t| t.handle == known_handle) {
+                return t.handle.clone();
+            }
+        }
+        return String::new();
     }
     // Il ripiego per i record scritti prima che la tab venisse salvata: quel
     // vecchio handle vale se è ancora fra i vivi, altrimenti no. Senza,
@@ -1188,6 +1206,53 @@ mod tests {
         assert_eq!(
             resolve_terminal_handle("", "", "term_morto", &three_terminals()),
             ""
+        );
+    }
+
+    /// Una scheda ambigua non è un'identità ignota, se l'handle noto è vivo.
+    ///
+    /// IL CASO CHE NESSUNO COPRIVA, e che è costato un'ora di sessioni perse di
+    /// vista il 21/08/2026: le figure di guardia stanno in pannelli affiancati,
+    /// quindi la scheda `general` ne aveva **tre**, e il presidio si asteneva
+    /// ogni minuto pur avendo in mano l'handle giusto, vivo, scritto nella
+    /// scheda della sessione. Il test che copriva l'astensione passava un handle
+    /// noto **vuoto**: esercitava il ramo, non la domanda.
+    ///
+    /// MUTANTE: tolta la condizione «è vivo» dal ripiego, la seconda metà va in
+    /// rosso; tolto il ripiego, la prima.
+    #[test]
+    fn an_ambiguous_tab_falls_back_to_the_known_handle_when_it_is_live() {
+        let tre_pannelli = vec![
+            Terminal { handle: "term_a".into(), tab_id: "tab-2".into(), ..Default::default() },
+            Terminal { handle: "term_b".into(), tab_id: "tab-2".into(), ..Default::default() },
+            Terminal { handle: "term_c".into(), tab_id: "tab-2".into(), ..Default::default() },
+        ];
+        // Vivo: l'ambiguità della scheda è sciolta, e si risponde.
+        assert_eq!(
+            resolve_terminal_handle("tab-2", "", "term_b", &tre_pannelli),
+            "term_b"
+        );
+        // Non più vivo: l'identità torna incerta e si tace, come prima.
+        assert_eq!(
+            resolve_terminal_handle("tab-2", "", "term_morto", &tre_pannelli),
+            ""
+        );
+        // E il caso che la prima stesura di questa riparazione sbagliava, preso
+        // dalla batteria e non a mente: un handle vivo che sta in un'ALTRA
+        // scheda non scioglie niente — è il pannello di qualcun altro.
+        let altrove = {
+            let mut v = tre_pannelli.clone();
+            v.push(Terminal {
+                handle: "term_estraneo".into(),
+                tab_id: "tab-9".into(),
+                ..Default::default()
+            });
+            v
+        };
+        assert_eq!(
+            resolve_terminal_handle("tab-2", "", "term_estraneo", &altrove),
+            "",
+            "l'handle e' vivo ma appartiene a un'altra scheda: non e' nostro"
         );
     }
 
