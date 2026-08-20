@@ -360,6 +360,67 @@ pub fn report_opaque(targets: &[String]) -> String {
     )
 }
 
+/// Le righe di `new` assenti da `old`, come moltinsieme: una riga ripetuta due
+/// volte nel vecchio ne assorbe due uguali nel nuovo, le altre occorrenze
+/// restano come nuove. Si confrontano righe intere, non caratteri: un raffronto
+/// per carattere spezzerebbe `it("descrizione", …)` a metà, lasciando fuori
+/// dalla regex proprio l'`it(` che le serve per riconoscersi — e una riga
+/// modificata, anche di un solo carattere, non ha più un gemello nel vecchio,
+/// quindi resta.
+fn new_lines(old: &str, new: &str) -> String {
+    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for line in old.lines() {
+        *counts.entry(line).or_insert(0) += 1;
+    }
+    new.lines()
+        .filter(|line| match counts.get_mut(line) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Il testo appena scritto: su `Edit`/`MultiEdit` solo le righe assenti da
+/// `old_string`, su `Write` tutto il contenuto.
+///
+/// PRIMA leggeva `new_string` senza mai guardare `old_string`: un `Edit` porta
+/// per forza il contesto ricopiato attorno alla riga toccata, e bastava una
+/// descrizione di test o un identificatore italiano preesistente in quel
+/// contesto — non introdotto da questa scrittura — per negarla. Riprodotto il
+/// 20/08/2026: `old_string`/`new_string` identici salvo un numero, con una
+/// descrizione italiana ricopiata in entrambi, negava. Precedente in casa:
+/// `memory_citation_gate`, che nega solo le citazioni *nuove*, non quelle già
+/// sul file prima della scrittura.
+pub fn written_text(tool_input: &serde_json::Value) -> String {
+    if let Some(new) = tool_input.get("new_string").and_then(|v| v.as_str()) {
+        let old = tool_input
+            .get("old_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        return new_lines(old, new);
+    }
+    if let Some(edits) = tool_input.get("edits").and_then(|v| v.as_array()) {
+        return edits
+            .iter()
+            .map(|e| {
+                let new = e.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+                let old = e.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+                new_lines(old, new)
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    tool_input
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
 /// Il testo appena scritto: su `Edit` il nuovo, su `Write` tutto.
 /// Il gate nasceva cieco su Bash: guardava `Write|Edit|MultiEdit` e non vedeva
 /// `cat > file <<EOF`. La modalità operativa di alcune sessioni prescrive proprio
@@ -469,24 +530,60 @@ pub fn opaque_writes(command: &str) -> Vec<String> {
         return Vec::new();
     }
     let mut found: Vec<String> = Vec::new();
-    let mut raccogli = |corpo: &str| {
-        if !writes_a_file().is_match(corpo) {
+    // `require_parent`: vero solo per il corpo di uno script già sul disco —
+    // lì un candidato può essere un frammento di stringa (vedi `parent_exists`).
+    // L'interprete in linea e lo script creato-e-lanciato nello stesso comando
+    // restano senza filtro: il file che scrivono non esiste ancora per
+    // definizione, e provarne il genitore prenderebbe anche i casi veri.
+    let mut collect = |body: &str, require_parent: bool| {
+        if !writes_a_file().is_match(body) {
             return;
         }
-        for c in quoted_path().captures_iter(corpo) {
+        for c in quoted_path().captures_iter(body) {
             let path = c.get(1).map(|x| x.as_str()).unwrap_or("");
+            if require_parent && !parent_exists(path) {
+                continue;
+            }
             if family(path).is_some() && !found.iter().any(|f| f == path) {
                 found.push(path.to_string());
             }
         }
     };
     for m in inline_interpreter().find_iter(command) {
-        raccogli(&command[m.end()..]);
+        collect(&command[m.end()..], false);
     }
-    for corpo in script_bodies(command) {
-        raccogli(&corpo);
+    for (body, from_disk) in script_bodies(command) {
+        collect(&body, from_disk);
     }
     found
+}
+
+/// Vero se la cartella che contiene `path` esiste sul disco.
+///
+/// Un frammento di stringa dentro il sorgente di uno script — un pezzo di
+/// percorso senza `$HOME`, o dietro una variabile che la regex non espande
+/// (`~/`, `$VAR/`, `${VAR}/`, tagliata al primo carattere non ammesso) — non
+/// ha una cartella vera dietro, e non è un file che sta per nascere. Riprodotto
+/// il 20/08/2026: `python3 sessions.py --test` veniva negato perché nel
+/// sorgente compare `/.claude/scripts/nome.sh`, avanzo di
+/// `~/.claude/scripts/nome.sh` dopo che la regex ha scartato la tilde. Chi non
+/// è assoluto non ha un genitore verificabile: si tiene, un buco noto è meglio
+/// di un falso allarme.
+fn parent_exists(path: &str) -> bool {
+    let resolved = match path.strip_prefix("~/") {
+        Some(rest) => match std::env::var("HOME") {
+            Ok(home) => format!("{home}/{rest}"),
+            Err(_) => return true,
+        },
+        None => path.to_string(),
+    };
+    if !resolved.starts_with('/') {
+        return true;
+    }
+    std::path::Path::new(&resolved)
+        .parent()
+        .map(|p| p.exists())
+        .unwrap_or(true)
 }
 
 /// I corpi degli script che questo comando manda a un interprete.
@@ -505,7 +602,13 @@ pub fn opaque_writes(command: &str) -> Vec<String> {
 /// Il tetto di lettura è la cautela solita: un percorso qualunque preso da una
 /// riga di comando può essere un file da centinaia di MB, e un gate che si
 /// ingoia un log non risponde più.
-fn script_bodies(command: &str) -> Vec<String> {
+///
+/// Il booleano dice se il corpo viene da un file già sul disco: solo lì un
+/// candidato dentro il corpo può essere un frammento di stringa invece di un
+/// file vero (`opaque_writes` applica `parent_exists` solo in quel caso — un
+/// heredoc nello stesso comando scrive un file che non esiste ancora per
+/// definizione, e lì il filtro prenderebbe anche i casi veri).
+fn script_bodies(command: &str) -> Vec<(String, bool)> {
     const MAX_SCRIPT_BYTES: u64 = 256 * 1024;
     let mut bodies = Vec::new();
     for c in interpreter_with_script().captures_iter(command) {
@@ -513,7 +616,7 @@ fn script_bodies(command: &str) -> Vec<String> {
             continue;
         };
         if let Some(body) = heredoc_body_for(command, path) {
-            bodies.push(body);
+            bodies.push((body, false));
             continue;
         }
         let resolved = match path.strip_prefix("~/") {
@@ -528,7 +631,7 @@ fn script_bodies(command: &str) -> Vec<String> {
             .unwrap_or(false);
         if piccolo {
             if let Ok(text) = std::fs::read_to_string(&resolved) {
-                bodies.push(text);
+                bodies.push((text, true));
             }
         }
     }
@@ -603,24 +706,6 @@ fn quoted_path() -> &'static Regex {
     })
 }
 
-pub fn written_text(tool_input: &serde_json::Value) -> String {
-    if let Some(s) = tool_input.get("new_string").and_then(|v| v.as_str()) {
-        return s.to_string();
-    }
-    if let Some(edits) = tool_input.get("edits").and_then(|v| v.as_array()) {
-        return edits
-            .iter()
-            .map(|e| e.get("new_string").and_then(|v| v.as_str()).unwrap_or(""))
-            .collect::<Vec<_>>()
-            .join("\n");
-    }
-    tool_input
-        .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string()
-}
-
 /// Il rimprovero, o `None` se non c'è niente da dire.
 ///
 /// I nomi vengono prima: un identificatore sbagliato lo citeranno i ganci, le
@@ -686,12 +771,20 @@ mod tests {
     #[test]
     fn a_script_already_on_disk_is_read_before_it_runs() {
         let dir = std::env::temp_dir().join("gate-script-su-disco");
-        let _ = std::fs::create_dir_all(&dir);
+        // Il genitore del bersaglio deve esistere davvero, e stare sotto
+        // `crates/` perché `family` lo riconosca — `parent_exists` scarterebbe
+        // un percorso fittizio come un frammento di stringa.
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("scrive.py");
-        std::fs::write(&script, "import pathlib\npathlib.Path('/x/crates/a.rs').write_text(s)\n")
-            .unwrap();
+        let target = crates_dir.join("a.rs");
+        std::fs::write(
+            &script,
+            format!("import pathlib\npathlib.Path('{}').write_text(s)\n", target.display()),
+        )
+        .unwrap();
         let command = format!("python3 {}", script.display());
-        assert_eq!(opaque_writes(&command), ["/x/crates/a.rs"]);
+        assert_eq!(opaque_writes(&command), [target.display().to_string()]);
         let _ = std::fs::remove_file(&script);
     }
 
@@ -897,5 +990,102 @@ mod tests {
         assert!(suffix_is("/x/a.test.ts", ".ts"));
         assert!(!suffix_is("/x/a.test.ts", ".test"));
         assert!(!suffix_is("/x/.gitignore", ".gitignore"));
+    }
+
+    /// FALSO POSITIVO 1, riprodotto il 20/08/2026: `old_string`/`new_string`
+    /// identici salvo `toBe(1)` → `toBe(2)`, con la descrizione italiana
+    /// ricopiata in entrambi. Prima negava una scrittura che non la introduceva.
+    #[test]
+    fn an_edit_that_only_copies_context_is_not_reported() {
+        let tool_input = serde_json::json!({
+            "old_string": "it('restituisce il numero normalizzato', () => {\n  expect(f(1)).toBe(1);\n});",
+            "new_string": "it('restituisce il numero normalizzato', () => {\n  expect(f(1)).toBe(2);\n});",
+        });
+        assert!(strings(&written_text(&tool_input), Family::Test).is_empty());
+    }
+
+    /// Il caso vero che non deve smettere di funzionare: chi modifica la riga
+    /// italiana viene fermato lo stesso, perché quella riga non ha più un
+    /// gemello identico nel testo vecchio.
+    #[test]
+    fn an_edit_that_changes_the_italian_line_is_still_caught() {
+        let tool_input = serde_json::json!({
+            "old_string": "it('rifiuta le date future', () => {})",
+            "new_string": "it('rifiuta le date passate', () => {})",
+        });
+        assert_eq!(
+            strings(&written_text(&tool_input), Family::Test),
+            ["rifiuta le date passate"]
+        );
+    }
+
+    /// `MultiEdit`: ogni coppia si filtra sul proprio `old_string`, non su
+    /// quello delle altre.
+    #[test]
+    fn a_multi_edit_filters_each_pair_on_its_own_old_string() {
+        let tool_input = serde_json::json!({
+            "edits": [
+                {"old_string": "it('rifiuta le date future', () => {})",
+                 "new_string": "it('rifiuta le date future', () => {})"},
+                {"old_string": "it('accetta input', () => {})",
+                 "new_string": "it('accetta un valore nuovo', () => {})"},
+            ]
+        });
+        assert_eq!(
+            strings(&written_text(&tool_input), Family::Test),
+            ["accetta un valore nuovo"]
+        );
+    }
+
+    /// `Write` non ha `old_string`: tutto il contenuto resta giudicato, come
+    /// prima — non cambia niente per questo strumento.
+    #[test]
+    fn a_write_still_judges_the_whole_content() {
+        let tool_input =
+            serde_json::json!({"content": "it('rifiuta le date future', () => {})"});
+        assert_eq!(
+            strings(&written_text(&tool_input), Family::Test),
+            ["rifiuta le date future"]
+        );
+    }
+
+    /// FALSO POSITIVO 2, riprodotto il 20/08/2026 su `sessions.py`: la regex
+    /// scarta la tilde e lascia `/.claude/scripts/nome.sh`, un frammento senza
+    /// `$HOME` davanti. La sua cartella non esiste: non è un file che sta per
+    /// nascere, ed elencarlo nel rimprovero è anche incomprensibile a chi lo
+    /// riceve — il comando non lo tocca affatto.
+    #[test]
+    fn a_path_fragment_without_a_real_parent_is_not_a_target() {
+        let dir = std::env::temp_dir().join("gate-frammento-percorso");
+        let _ = std::fs::create_dir_all(&dir);
+        let script = dir.join("misura.py");
+        std::fs::write(
+            &script,
+            "print('to unmount: bash ~/.claude/scripts/smonta-finite-2026-08-18.sh')\n\
+             (STATE / 'x').write_text('y')\n",
+        )
+        .unwrap();
+        let command = format!("python3 {}", script.display());
+        assert!(opaque_writes(&command).is_empty());
+        let _ = std::fs::remove_file(&script);
+    }
+
+    /// Non allenta il caso vero: se il bersaglio ha una cartella reale dietro
+    /// — anche se il file stesso è nuovo — il gate nega ancora.
+    #[test]
+    fn a_real_target_with_an_existing_parent_is_still_caught() {
+        let dir = std::env::temp_dir().join("gate-bersaglio-vero");
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
+        let script = dir.join("scrive2.py");
+        let target = crates_dir.join("nuovo.rs");
+        std::fs::write(
+            &script,
+            format!("pathlib.Path('{}').write_text(s)\n", target.display()),
+        )
+        .unwrap();
+        let command = format!("python3 {}", script.display());
+        assert_eq!(opaque_writes(&command), [target.display().to_string()]);
+        let _ = std::fs::remove_file(&script);
     }
 }
