@@ -998,10 +998,16 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // registro, mentre il record portava `term_5407eace…`.
     let handle = handle_di_adesso(rec, orca);
     if handle.is_empty() {
-        // Il pannello non c'è più: non è un guasto, è una sessione finita per
-        // conto suo. Il record lo raccoglie `Action::Clean` al giro dopo.
+        // LA RIGA DICE CIÒ CHE SI SA, NON CIÒ CHE SI DEDUCE. Fino al 21/08/2026
+        // qui c'era scritto «il pannello non c'e' piu'», che è la risposta a una
+        // domanda diversa da quella appena posta: `handle_di_adesso` dice se il
+        // pannello si riesce a **identificare**, non se esiste. Le due divergono
+        // — per una scheda con più pannelli l'identificazione fallisce mentre il
+        // pannello lavora — e chi leggeva concludeva che la sessione era morta e
+        // smetteva di cercarla: il 21/08 tre sessioni vive sono state date per
+        // sparite per un'ora, con la riga scritta 29 volte in 16 minuti.
         log_line(&format!(
-            "sess={sess}: il pannello non c'e' piu', niente da azzerare"
+            "sess={sess}: non riesco a identificare il pannello, non azzero niente"
         ));
         return;
     }
