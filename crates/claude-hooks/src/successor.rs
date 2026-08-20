@@ -216,18 +216,8 @@ fn already_armed(path: &str, session: &str) -> bool {
 /// consegna si divide quello; senza handle — fuori da Orca — resta la scheda,
 /// che è meglio di nessuna ripresa.
 fn open_tab(path: &str, inherited: &str) -> (bool, String) {
-    let wait_s = std::env::var("CONSEGNA_ATTESA_S")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .unwrap_or(30);
-    // Il mandato entra in una stringa fra apici singoli della shell: l'unico
-    // carattere da neutralizzare è l'apice stesso.
-    let text = mandate(path, inherited).replace('\'', r"'\''");
-    let command = format!(
-        "printf '%s\\n\\n' '{text}'; \
-         printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
-         sleep {wait_s}; exec claude '{text}'"
-    );
+    let wait_s = wait_seconds(std::env::var("CONSEGNA_ATTESA_S").ok().as_deref());
+    let command = launch_command(&mandate(path, inherited), wait_s);
     // L'handle NON si prende dall'ambiente: `ORCA_TERMINAL_HANDLE` è catturato
     // all'avvio e non si aggiorna più, e proprio le sessioni lunghe — quelle in
     // cui questo gancio scatta — sono quelle che hanno riattaccato il terminale
@@ -251,18 +241,7 @@ fn open_tab(path: &str, inherited: &str) -> (bool, String) {
         ),
         None => String::new(),
     };
-    let args: Vec<String> = if handle.is_empty() {
-        ["terminal", "create", "--command", &command, "--title",
-         "consegna raccolta (parte da sola)", "--json"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
-    } else {
-        ["terminal", "split", "--terminal", &handle, "--command", &command, "--json"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
-    };
+    let args = terminal_args(&handle, &command);
     let out = std::process::Command::new("orca")
         .args(&args)
         // La figlia eredita il marchio di generazione: è il freno che le impedisce
@@ -282,6 +261,50 @@ fn open_tab(path: &str, inherited: &str) -> (bool, String) {
             (o.status.success(), text.chars().take(600).collect())
         }
         Err(e) => (false, e.to_string().chars().take(600).collect()),
+    }
+}
+
+/// L'attesa prima che il pannello parta da solo, letta dall'ambiente.
+///
+/// Un valore che non si legge come numero non è un errore da fermare: il
+/// gancio è FAIL-OPEN OVUNQUE, e qui vuol dire tornare al conto alla rovescia
+/// di sempre. Estratta il 20/08/2026 per poterla provare senza aprire un
+/// pannello vero.
+fn wait_seconds(raw: Option<&str>) -> u32 {
+    raw.and_then(|v| v.parse::<u32>().ok()).unwrap_or(30)
+}
+
+/// Il comando di shell che il pannello esegue: stampa il mandato, aspetta, poi
+/// avvia `claude` con lo stesso testo. Pura — nessun processo, nessun ambiente.
+///
+/// Estratta il 20/08/2026 per la stessa ragione di `wait_seconds`.
+fn launch_command(mandate_text: &str, wait_s: u32) -> String {
+    // Il mandato entra in una stringa fra apici singoli della shell: l'unico
+    // carattere da neutralizzare è l'apice stesso.
+    let text = mandate_text.replace('\'', r"'\''");
+    format!(
+        "printf '%s\\n\\n' '{text}'; \
+         printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
+         sleep {wait_s}; exec claude '{text}'"
+    )
+}
+
+/// Sceglie fra aprire una scheda nuova e dividere un pannello esistente.
+///
+/// Estratta il 20/08/2026 per la stessa ragione di `wait_seconds`: la scelta
+/// è pura, solo la sua esecuzione parla con `orca`.
+fn terminal_args(handle: &str, command: &str) -> Vec<String> {
+    if handle.is_empty() {
+        ["terminal", "create", "--command", command, "--title",
+         "consegna raccolta (parte da sola)", "--json"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        ["terminal", "split", "--terminal", handle, "--command", command, "--json"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
     }
 }
 
@@ -648,4 +671,433 @@ pub fn probe(verb: &str, a: &str, b: &str) -> i32 {
         }
     }
     0
+}
+
+// ─── La colla, non il giudizio ──────────────────────────────────────────────
+//
+// I trenta casi di `guards::successor` provano il giudizio puro (`decide`,
+// `is_handoff_doc`, il calcolo delle porte…). Qui si prova ciò che quei casi
+// non toccano: il ramo che legge un file vero, arma un marcatore vero, e —
+// nel caso nominale — parla con un `orca` vero (finto, per non aprire un
+// pannello reale a ogni `cargo test`).
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_home::HomeIsolata;
+    use std::os::unix::fs::PermissionsExt;
+    use std::sync::{Mutex, MutexGuard};
+
+    fn journal_lines(home: &std::path::Path) -> Vec<String> {
+        fs::read_to_string(home.join(".claude").join("state").join("ganci.jsonl"))
+            .unwrap_or_default()
+            .lines()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    // --- text_of / is_doc: lettura del file candidato ------------------------
+
+    #[test]
+    fn text_of_on_missing_file_does_not_panic() {
+        assert_eq!(text_of("/percorso/che/non/esiste/di-sicuro.md"), None);
+    }
+
+    #[test]
+    fn text_of_reads_the_real_content() {
+        let dir = crate::test_home::test_root().join("successor-text-of");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("nota.md");
+        fs::write(&file, "ciao mondo").unwrap();
+        assert_eq!(text_of(file.to_str().unwrap()), Some("ciao mondo".to_string()));
+    }
+
+    #[test]
+    fn is_doc_by_name_does_not_need_the_file() {
+        // Il percorso non esiste: se la via del nome dovesse leggerlo,
+        // troverebbe un file assente e non «vero» come qui.
+        assert!(is_doc("/percorso/inesistente/consegna-prova.md"));
+    }
+
+    #[test]
+    fn is_doc_outside_memory_is_false() {
+        assert!(!is_doc("/repo/src/main.rs"));
+    }
+
+    #[test]
+    fn is_doc_recognizes_the_handoff_from_the_body() {
+        let dir = crate::test_home::test_root()
+            .join("successor-is-doc-body")
+            .join("memory");
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("nota-argomento.md");
+        fs::write(
+            &file,
+            "---\ntype: project\n---\n\n## Stato\n\nx\n\n## Prossimi passi\n\ny\n",
+        )
+        .unwrap();
+        assert!(is_doc(file.to_str().unwrap()));
+    }
+
+    #[test]
+    fn is_doc_on_unwritten_memory_file_is_false() {
+        let path = crate::test_home::test_root()
+            .join("successor-is-doc-missing")
+            .join("memory")
+            .join("mai-scritta.md");
+        assert!(!is_doc(path.to_str().unwrap()));
+    }
+
+    // --- already_armed: il freno che si consuma leggendo ---------------------
+
+    #[test]
+    fn already_armed_arms_only_once() {
+        let _home = HomeIsolata::nuova("successor-already-armed");
+        assert!(!already_armed("/x/consegna.md", "sessione-armo"));
+        // Idempotenza: lo stesso path e la stessa sessione non riarmano.
+        assert!(already_armed("/x/consegna.md", "sessione-armo"));
+        let marker = state_dir().join(format!(
+            "successore-armato-{}",
+            guards::successor::armed_fingerprint("/x/consegna.md", "sessione-armo")
+        ));
+        assert!(marker.exists());
+    }
+
+    #[test]
+    fn already_armed_distinguishes_sessions() {
+        let _home = HomeIsolata::nuova("successor-already-armed-sessions");
+        assert!(!already_armed("/x/consegna.md", "sessione-a"));
+        assert!(!already_armed("/x/consegna.md", "sessione-b"));
+    }
+
+    // --- note_successor: il marcatore «quale scheda prosegue» ----------------
+
+    #[test]
+    fn note_successor_writes_handle_and_tab_id() {
+        let _home = HomeIsolata::nuova("successor-note-nominal");
+        note_successor(
+            "sessione-nota",
+            "term_deadbeef01 \"tabId\":\"11112222-3333-4444-5555-666677778888\"",
+        );
+        let raw =
+            fs::read_to_string(state_dir().join("successore-di-sessione-nota")).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["handle"], "term_deadbeef01");
+        assert_eq!(v["tabId"], "11112222-3333-4444-5555-666677778888");
+        assert!(!v["quando"].as_str().unwrap_or("").is_empty());
+    }
+
+    #[test]
+    fn note_successor_without_session_writes_nothing() {
+        let home = HomeIsolata::nuova("successor-note-no-session");
+        note_successor("", "term_deadbeef01");
+        let entries: Vec<_> = fs::read_dir(home.stato()).unwrap().collect();
+        assert!(entries.is_empty(), "{entries:?}");
+    }
+
+    #[test]
+    fn note_successor_on_detail_without_matches_does_not_panic() {
+        let _home = HomeIsolata::nuova("successor-note-malformed");
+        note_successor("sessione-malformata", "risposta senza nessuno dei due");
+        let raw = fs::read_to_string(state_dir().join("successore-di-sessione-malformata"))
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["handle"], "");
+        assert_eq!(v["tabId"], "");
+    }
+
+    // --- inherited_clause: l'inventario di ciò che è rimasto acceso ----------
+
+    #[test]
+    fn inherited_clause_on_unlikely_root_is_empty() {
+        // Nessun processo reale ha questa cwd: fail-open, nessuna clausola.
+        assert_eq!(
+            inherited_clause("/radice/inverosimile/su/questa/macchina/di-sicuro"),
+            ""
+        );
+    }
+
+    // --- Le variabili di processo: un lucchetto solo, come in `test_home` ----
+    //
+    // `PATH`, `CONSEGNA_ORA`, i tetti e la valvola del tetto globale sono
+    // variabili del PROCESSO: `cargo test` le fa girare in thread paralleli
+    // dentro lo stesso processo, e senza serializzare un caso legge il valore
+    // che un altro ha appena scritto — lo stesso difetto che ha portato il
+    // lucchetto di `test_home::HomeIsolata`. UN LUCCHETTO SOLO E NON UNO PER
+    // VARIABILE: due lucchetti diversi tenuti insieme dallo stesso caso, in
+    // thread diversi con ordine diverso, si bloccherebbero a vicenda.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[must_use = "keep it alive in a `let _env = …`: dropped early, the variables go back to the real ones mid-test"]
+    struct EnvOverrides {
+        _lock: MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvOverrides {
+        fn new() -> Self {
+            let lock = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            Self { _lock: lock, saved: Vec::new() }
+        }
+        fn set(mut self, key: &'static str, value: &str) -> Self {
+            self.saved.push((key, std::env::var(key).ok()));
+            std::env::set_var(key, value);
+            self
+        }
+        fn unset(mut self, key: &'static str) -> Self {
+            self.saved.push((key, std::env::var(key).ok()));
+            std::env::remove_var(key);
+            self
+        }
+    }
+
+    impl Drop for EnvOverrides {
+        // Si disfa a ritroso: chi tocca due volte la stessa chiave nella stessa
+        // catena, in ordine di inserimento si ritroverebbe il valore intermedio
+        // scritto sopra quello vero. Oggi nessun caso lo fa, e proprio per
+        // questo la trappola resterebbe invisibile fino al prossimo che riusa
+        // l'aiutante per cambiare un valore a metà prova.
+        fn drop(&mut self) {
+            for (key, value) in self.saved.drain(..).rev() {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    // --- hour_now: l'ora, o il banco che la sostituisce -----------------------
+
+    #[test]
+    fn hour_now_uses_the_bench_value_when_present() {
+        let _env = EnvOverrides::new().set("CONSEGNA_ORA", "5");
+        assert_eq!(hour_now(), 5);
+    }
+
+    #[test]
+    fn hour_now_on_unreadable_bench_falls_back_to_the_clock() {
+        // `< 24` da solo non prova niente: lo soddisfa anche una costante messa
+        // lì per sbaglio (il ripiego di ultima istanza è `12`). Si confronta con
+        // l'orologio letto dalla STESSA fonte del codice — due strade verso il
+        // fuso divergono, e il commento di `hour_now` dice perché — con un'ora
+        // di tolleranza, perché fra le due letture può scoccare l'ora.
+        let clock: u32 = hook_io::local_time::now_local_iso8601()[11..13]
+            .parse()
+            .expect("l'ora sono due cifre in posizione fissa");
+        let _env = EnvOverrides::new().set("CONSEGNA_ORA", "non-un-numero");
+        let fallback = hour_now();
+        assert!(
+            fallback == clock || fallback == (clock + 1) % 24,
+            "il ripiego ha dato {fallback}, l'orologio {clock}"
+        );
+    }
+
+    // --- session_is_full: la valvola, e il transcript assente -----------------
+
+    #[test]
+    fn session_is_full_with_the_valve_bypasses_everything() {
+        let _env = EnvOverrides::new().set("CONSEGNA_ANCHE_A_META", "1");
+        let input = hook_io::HookInput::default();
+        assert!(session_is_full(&input, "qualunque"));
+    }
+
+    #[test]
+    fn session_is_full_without_transcript_is_false() {
+        let _env = EnvOverrides::new().unset("CONSEGNA_ANCHE_A_META");
+        let input = hook_io::HookInput::default();
+        assert!(!session_is_full(&input, "qualunque"));
+    }
+
+    // --- session_cap: la valvola, il registro, il tetto forzato ---------------
+
+    #[test]
+    fn session_cap_off_writes_nothing() {
+        let home = HomeIsolata::nuova("successor-session-cap-off");
+        let _env = EnvOverrides::new().set("SESSION_CAP_GUARD", "off");
+        assert_eq!(session_cap("orca terminal create --agent x"), 0);
+        assert!(!home.stato().join("ganci.jsonl").exists());
+    }
+
+    #[test]
+    fn session_cap_on_non_opening_command_writes_nothing() {
+        let home = HomeIsolata::nuova("successor-session-cap-none");
+        let _env = EnvOverrides::new().unset("SESSION_CAP_GUARD");
+        assert_eq!(session_cap("ls -la"), 0);
+        assert!(!home.stato().join("ganci.jsonl").exists());
+    }
+
+    #[test]
+    fn session_cap_with_zero_cap_blocks_and_logs_it() {
+        let home = HomeIsolata::nuova("successor-session-cap-deny");
+        let _env = EnvOverrides::new()
+            .unset("SESSION_CAP_GUARD")
+            .set("SESSION_CAP_LIMIT", "0");
+        session_cap("orca terminal create --agent x");
+        let lines = journal_lines(&home.dir);
+        assert!(
+            lines.iter().any(|r| r.contains("\"gancio\":\"session-cap\"")
+                && r.contains("\"decisione\":\"ferma\"")
+                && r.contains("\"motivo\":\"aggiunta\"")
+                && r.contains("\"tetto\":0")),
+            "{lines:?}"
+        );
+    }
+
+    // --- arm(): i freni che si fermano senza aprire niente ---------------------
+
+    #[test]
+    fn arm_of_a_child_session_stays_quiet_and_opens_nothing() {
+        let home = HomeIsolata::nuova("successor-arm-child");
+        let _env = EnvOverrides::new().set(guards::successor::GENERATION_ENV, "1");
+        let outcome = arm("/x/consegna.md", "sessione-figlia", "scrittura", true);
+        assert_eq!(outcome, ArmOutcome::Stop(String::new()));
+        let lines = journal_lines(&home.dir);
+        assert!(
+            lines.iter().any(|r| r.contains("\"motivo\":\"seconda-generazione\"")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn arm_with_zero_session_cap_stops_and_speaks() {
+        let home = HomeIsolata::nuova("successor-arm-too-many-sessions");
+        let _env = EnvOverrides::new()
+            .unset(guards::successor::GENERATION_ENV)
+            .set("CONSEGNA_ORA", "12")
+            .set("CONSEGNA_TETTO_SESSIONI", "0");
+        let outcome = arm("/x/consegna.md", "sessione-tetto", "scrittura", true);
+        match outcome {
+            ArmOutcome::Stop(msg) => assert!(msg.contains("sessioni vive"), "{msg}"),
+            other => panic!("atteso Stop parlante, ottenuto {other:?}"),
+        }
+        let lines = journal_lines(&home.dir);
+        assert!(
+            lines.iter().any(|r| r.contains("\"motivo\":\"troppe-sessioni\"")
+                && r.contains("\"origine\":\"scrittura\"")),
+            "{lines:?}"
+        );
+    }
+
+    // --- launch_command / terminal_args / wait_seconds: la parte pura di
+    // `open_tab`, estratta per non dover aprire un pannello vero --------------
+
+    #[test]
+    fn wait_seconds_has_a_fallback_for_every_bad_input() {
+        assert_eq!(wait_seconds(None), 30);
+        assert_eq!(wait_seconds(Some("5")), 5);
+        assert_eq!(wait_seconds(Some("non-un-numero")), 30);
+    }
+
+    #[test]
+    fn launch_command_carries_the_mandate_and_the_wait() {
+        let cmd = launch_command("leggi qui", 7);
+        assert!(cmd.contains("sleep 7"), "{cmd}");
+        assert!(cmd.contains("leggi qui"), "{cmd}");
+    }
+
+    #[test]
+    fn launch_command_escapes_single_quotes() {
+        let cmd = launch_command("un mandato con 'apice'", 30);
+        // Senza l'escape, l'apice del mandato chiuderebbe la stringa di shell
+        // in anticipo: deve comparire come `'\''`, non come un apice nudo.
+        assert!(cmd.contains(r"'\''"), "{cmd}");
+    }
+
+    #[test]
+    fn terminal_args_without_handle_opens_a_new_tab() {
+        let args = terminal_args("", "il-comando");
+        assert_eq!(args[0], "terminal");
+        assert_eq!(args[1], "create");
+        assert!(args.contains(&"il-comando".to_string()));
+    }
+
+    #[test]
+    fn terminal_args_with_handle_splits_the_pane() {
+        let args = terminal_args("term_esistente", "il-comando");
+        assert_eq!(args[0], "terminal");
+        assert_eq!(args[1], "split");
+        assert!(args.contains(&"term_esistente".to_string()));
+    }
+
+    // --- speak(): entrambi i canali, o nessuno ---------------------------------
+
+    #[test]
+    fn speak_writes_to_both_channels() {
+        let json = speak("un avviso");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["systemMessage"], "un avviso");
+        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+        assert_eq!(v["hookSpecificOutput"]["additionalContext"], "un avviso");
+    }
+
+    // --- Il caso nominale vero: `run()` arma davvero, con un `orca` finto ------
+
+    /// Uno stub che non apre niente di vero: risponde vuoto a `terminal list`
+    /// e un JSON fisso a `terminal create`/`terminal split`. Serve SOLO al
+    /// caso che prova l'apertura fino in fondo — senza, provarla vorrebbe dire
+    /// aprire un pannello reale a ogni `cargo test`.
+    const FAKE_ORCA_SCRIPT: &str = "#!/bin/sh\ncase \"$1 $2\" in\n  \"terminal list\") printf '{\"result\":{\"terminals\":[]}}' ;;\n  \"terminal create\"|\"terminal split\") printf '{\"tabId\":\"11112222-3333-4444-5555-666677778888\",\"handle\":\"term_deadbeef01\"}' ;;\n  *) printf '{}' ;;\nesac\nexit 0\n";
+
+    fn install_fake_orca(dir: &std::path::Path) -> std::path::PathBuf {
+        let bin_dir = dir.join("fake-bin");
+        fs::create_dir_all(&bin_dir).expect("stub directory");
+        let script = bin_dir.join("orca");
+        fs::write(&script, FAKE_ORCA_SCRIPT).expect("stub script write");
+        let mut perms = fs::metadata(&script).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script, perms).expect("stub script permissions");
+        bin_dir
+    }
+
+    #[test]
+    fn run_really_arms_and_the_second_pass_does_not_double_it() {
+        let home = HomeIsolata::nuova("successor-run-nominal");
+        let bin_dir = install_fake_orca(&home.dir);
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let _env = EnvOverrides::new()
+            .set("PATH", &format!("{}:{}", bin_dir.display(), original_path))
+            .set("CONSEGNA_ORA", "12")
+            .set("CONSEGNA_ANCHE_A_META", "1")
+            .set("CONSEGNA_TETTO_SESSIONI", "999")
+            .set("CONSEGNA_TETTO_PANNELLI", "999")
+            .unset(guards::successor::GENERATION_ENV);
+
+        let doc = format!("{}/memory/consegna-prova-nominale.md", home.dir.display());
+        let input = hook_io::HookInput {
+            session_id: Some("sessione-run-nominale".to_string()),
+            tool_input: Some(serde_json::json!({ "file_path": doc })),
+            ..Default::default()
+        };
+
+        run(&input);
+
+        // Il segnale prodotto: il marcatore «quale scheda prosegue», con
+        // l'handle e la tabId che lo stub ha risposto.
+        let marker =
+            fs::read_to_string(state_dir().join("successore-di-sessione-run-nominale"))
+                .expect("the marker file must exist");
+        let v: serde_json::Value = serde_json::from_str(&marker).unwrap();
+        assert_eq!(v["handle"], "term_deadbeef01");
+        assert_eq!(v["tabId"], "11112222-3333-4444-5555-666677778888");
+
+        let count_opens = |lines: &[String]| {
+            lines
+                .iter()
+                .filter(|r| {
+                    r.contains("\"gancio\":\"consegna-arma-successore\"")
+                        && r.contains("\"decisione\":\"apre\"")
+                })
+                .count()
+        };
+        assert_eq!(count_opens(&journal_lines(&home.dir)), 1);
+
+        // Idempotenza: la stessa consegna, la stessa sessione, un secondo
+        // passaggio — non deve armare una seconda scheda.
+        run(&input);
+        assert_eq!(
+            count_opens(&journal_lines(&home.dir)),
+            1,
+            "the second pass must not re-arm"
+        );
+    }
 }

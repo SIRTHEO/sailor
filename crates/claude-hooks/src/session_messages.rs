@@ -130,43 +130,54 @@ fn record(recipient: &str, reason: &str, chars: usize) {
     }
 }
 
-pub fn run() -> i32 {
-    if is_off() {
-        return 0;
-    }
-    let mut raw = String::new();
-    if std::io::stdin().read_to_string(&mut raw).is_err() {
-        return 0;
-    }
-    let Ok(payload) = serde_json::from_str::<Value>(&raw) else {
-        return 0;
+/// Esito della colla pura, prima di ogni effetto sul mondo.
+#[derive(Debug, PartialEq)]
+enum Outcome {
+    /// Il payload non riguarda questo gancio: JSON non valido, non un oggetto,
+    /// non `SendMessage`, o senza `tool_input`.
+    NotApplicable,
+    /// UN DIFETTO DELL'ORIGINALE, RIPRODOTTO. Un `to` che c'e' ma non e' testo
+    /// (`{"to": 3}`) supera il controllo `if not destinatario`, non sta fra i
+    /// destinatari interni, e arriva a `destinatario.split(" [")`: li' Python
+    /// muore di `AttributeError`, cioe' uscita 1. Un `to` falso secondo Python
+    /// — `0`, `[]`, `""` — passa invece per «destinatario assente».
+    Malformed,
+    /// Un destinatario reale, ma non una sessione locale.
+    Denied,
+    /// Da registrare e da rispondere.
+    Grant { recipient: String, reason: String, chars: usize },
+}
+
+/// La colla pura: dal payload grezzo e dai nomi delle copie note (se Orca ha
+/// risposto) al verdetto, senza toccare stdin, l'ambiente o il registro.
+///
+/// Isolata per poterla provare senza chiamare `orca`: `run()` fa solo la
+/// lettura, la domanda a Orca e gli effetti; questa funzione fa tutta
+/// l'estrazione (`tool_name`, `tool_input.to`, `tool_input.message`) e il
+/// giudizio.
+fn extract_outcome(raw: &str, copies: Option<&BTreeSet<String>>) -> Outcome {
+    let Ok(payload) = serde_json::from_str::<Value>(raw) else {
+        return Outcome::NotApplicable;
     };
     let Some(payload) = payload.as_object() else {
-        return 0;
+        return Outcome::NotApplicable;
     };
     if payload.get("tool_name").and_then(|v| v.as_str()) != Some("SendMessage") {
-        return 0;
+        return Outcome::NotApplicable;
     }
     let Some(input) = payload.get("tool_input").and_then(|v| v.as_object()) else {
-        return 0;
+        return Outcome::NotApplicable;
     };
-    // UN DIFETTO DELL'ORIGINALE, RIPRODOTTO. Un `to` che c'e' ma non e' testo
-    // (`{"to": 3}`) supera il controllo `if not destinatario`, non sta fra i
-    // destinatari interni, e arriva a `destinatario.split(" [")`: li' Python
-    // muore di `AttributeError`, cioe' uscita 1 e niente su stdout. Un `to`
-    // falso secondo Python — `0`, `[]`, `""` — passa invece per «destinatario
-    // assente» e l'uscita resta 0. Il confronto ha trovato proprio questo caso,
-    // ed e' l'unica differenza che restava su 24.
     let raw_to = input.get("to");
     if let Some(v) = raw_to {
         if !v.is_string() && python_truthy(v) {
-            return 1;
+            return Outcome::Malformed;
         }
     }
     let recipient = raw_to.and_then(|v| v.as_str()).unwrap_or("");
-    let verdict = is_local(recipient, registered_copies().as_ref());
+    let verdict = is_local(recipient, copies);
     if !verdict.allow {
-        return 0;
+        return Outcome::Denied;
     }
     // La misura del messaggio e' `len(str(...))` nell'originale: un `message`
     // assente diventa la stringa vuota, non un errore.
@@ -175,19 +186,179 @@ pub fn run() -> i32 {
         .and_then(|v| v.as_str())
         .map(|s| s.chars().count())
         .unwrap_or(0);
-    record(recipient, &verdict.reason, chars);
-    let answer = format!(
-        "{{\"hookSpecificOutput\": {{\"hookEventName\": \"PermissionRequest\", \
-         \"decision\": {{\"behavior\": \"allow\"}}}}, \"systemMessage\": {}}}",
-        python_json_string_with(
-            &format!(
-                "messaggio a una sessione locale: {}. Chi riceve resta soggetto ai propri permessi.",
-                verdict.reason
-            ),
-            false
-        )
-    );
-    // Un gancio che muore scrivendo blocca il turno che doveva sbloccare.
-    let _ = writeln!(std::io::stdout(), "{answer}");
-    0
+    Outcome::Grant { recipient: recipient.to_string(), reason: verdict.reason, chars }
+}
+
+pub fn run() -> i32 {
+    if is_off() {
+        return 0;
+    }
+    let mut raw = String::new();
+    if std::io::stdin().read_to_string(&mut raw).is_err() {
+        return 0;
+    }
+    match extract_outcome(&raw, registered_copies().as_ref()) {
+        Outcome::NotApplicable | Outcome::Denied => 0,
+        Outcome::Malformed => 1,
+        Outcome::Grant { recipient, reason, chars } => {
+            record(&recipient, &reason, chars);
+            let answer = format!(
+                "{{\"hookSpecificOutput\": {{\"hookEventName\": \"PermissionRequest\", \
+                 \"decision\": {{\"behavior\": \"allow\"}}}}, \"systemMessage\": {}}}",
+                python_json_string_with(
+                    &format!(
+                        "messaggio a una sessione locale: {reason}. Chi riceve resta soggetto ai propri permessi."
+                    ),
+                    false
+                )
+            );
+            // Un gancio che muore scrivendo blocca il turno che doveva sbloccare.
+            let _ = writeln!(std::io::stdout(), "{answer}");
+            0
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn copies() -> BTreeSet<String> {
+        ["tautog", "general"].iter().map(|s| s.to_string()).collect()
+    }
+
+    fn payload(tool_name: &str, to: serde_json::Value, message: &str) -> String {
+        serde_json::json!({
+            "tool_name": tool_name,
+            "tool_input": {"to": to, "message": message},
+        })
+        .to_string()
+    }
+
+    /// Caso nominale: colla che deve concedere, con la ragione e i caratteri
+    /// giusti nel motivo di `is_local`.
+    ///
+    /// Rotto sostituendo `payload.get("tool_input")` con `payload.get("input")`
+    /// (il nome sbagliato): il test diventa ROSSO perché `Outcome::NotApplicable`
+    /// prende il posto di `Grant`. Ripristinato, torna VERDE.
+    #[test]
+    fn a_message_to_a_known_copy_is_granted() {
+        let raw = payload("SendMessage", serde_json::json!("tautog"), "ciao");
+        let outcome = extract_outcome(&raw, Some(&copies()));
+        assert_eq!(
+            outcome,
+            Outcome::Grant {
+                recipient: "tautog".to_string(),
+                reason: "sessione locale sulla copia `tautog`".to_string(),
+                chars: 4,
+            }
+        );
+    }
+
+    /// Il caso che protegge dal permesso concesso al buio: un destinatario che
+    /// non sta fra le copie note non concede, anche col resto del payload a
+    /// posto.
+    ///
+    /// Rotto sostituendo `if !verdict.allow { return Outcome::Denied; }` con
+    /// un ramo che concede comunque: il test diventa ROSSO perché
+    /// `qualcun-altro` riceverebbe un `Grant`. Ripristinato, torna VERDE.
+    #[test]
+    fn an_unrecognised_recipient_is_never_granted() {
+        let raw = payload("SendMessage", serde_json::json!("qualcun-altro"), "ciao");
+        assert_eq!(extract_outcome(&raw, Some(&copies())), Outcome::Denied);
+    }
+
+    /// Orca che non risponde non è un insieme vuoto: senza nomi non si concede
+    /// al buio, nemmeno a un destinatario dal nome plausibile.
+    ///
+    /// Rotto sostituendo il `copies` ricevuto con un elenco di riserva fisso
+    /// quando `None`: il test diventa ROSSO perché `tautog` viene concesso
+    /// invece di negato. Ripristinato, torna VERDE.
+    #[test]
+    fn silence_from_orca_denies_instead_of_guessing() {
+        let raw = payload("SendMessage", serde_json::json!("tautog"), "ciao");
+        assert_eq!(extract_outcome(&raw, None), Outcome::Denied);
+    }
+
+    /// JSON non valido, un array al posto di un oggetto, e un tool diverso da
+    /// `SendMessage`: niente panico, niente concessione per sbaglio.
+    #[test]
+    fn invalid_or_irrelevant_payloads_are_not_applicable() {
+        assert_eq!(extract_outcome("{questo non è json", Some(&copies())), Outcome::NotApplicable);
+        assert_eq!(extract_outcome("[1, 2, 3]", Some(&copies())), Outcome::NotApplicable);
+        assert_eq!(extract_outcome("null", Some(&copies())), Outcome::NotApplicable);
+        assert_eq!(extract_outcome("", Some(&copies())), Outcome::NotApplicable);
+        let raw = payload("Edit", serde_json::json!("tautog"), "ciao");
+        assert_eq!(extract_outcome(&raw, Some(&copies())), Outcome::NotApplicable);
+        // `tool_input` assente del tutto.
+        let raw = serde_json::json!({"tool_name": "SendMessage"}).to_string();
+        assert_eq!(extract_outcome(&raw, Some(&copies())), Outcome::NotApplicable);
+    }
+
+    /// Il difetto dell'originale, riprodotto: un `to` presente ma non testo, e
+    /// vero secondo Python, muore in Python — qui diventa `Malformed` e non un
+    /// `Grant` travestito da destinatario vuoto.
+    ///
+    /// Rotto togliendo `!v.is_string() &&` dalla condizione (lasciando solo
+    /// `python_truthy(v)`): il test diventa ROSSO perché un `to` **testuale**
+    /// come `"tautog"` (vero secondo Python) diventerebbe `Malformed` invece di
+    /// `Grant`. Ripristinato, torna VERDE.
+    #[test]
+    fn a_to_field_present_but_not_text_is_malformed() {
+        let raw = payload("SendMessage", serde_json::json!(3), "ciao");
+        assert_eq!(extract_outcome(&raw, Some(&copies())), Outcome::Malformed);
+
+        let raw = payload("SendMessage", serde_json::json!({"x": 1}), "ciao");
+        assert_eq!(extract_outcome(&raw, Some(&copies())), Outcome::Malformed);
+
+        // Falso secondo Python: passa per «destinatario assente», non malformato.
+        let raw = payload("SendMessage", serde_json::json!(0), "ciao");
+        assert_eq!(extract_outcome(&raw, Some(&copies())), Outcome::Denied);
+
+        // Un `to` testuale (vero secondo Python, ma già stringa) non entra in
+        // questo ramo: la condizione `!v.is_string()` lo esclude a monte.
+        let raw = payload("SendMessage", serde_json::json!("tautog"), "ciao");
+        assert_ne!(extract_outcome(&raw, Some(&copies())), Outcome::Malformed);
+    }
+
+    /// L'estrazione non deforma il destinatario: il riferimento fra parentesi
+    /// quadre e un suffisso di sessione arrivano a `is_local` per intero, non
+    /// troncati o ripuliti in anticipo dalla colla.
+    ///
+    /// Rotto anticipando nella colla lo `split(" [")` che spetta a `is_local`:
+    /// il test diventa ROSSO perché il destinatario registrato perde il
+    /// riferimento fra parentesi. Ripristinato, torna VERDE.
+    #[test]
+    fn recipient_extraction_keeps_the_ref_suffix_intact() {
+        let raw = payload("SendMessage", serde_json::json!("tautog-3a [c23e5e]"), "ciao");
+        let outcome = extract_outcome(&raw, Some(&copies()));
+        assert_eq!(
+            outcome,
+            Outcome::Grant {
+                recipient: "tautog-3a [c23e5e]".to_string(),
+                reason: "sessione locale sulla copia `tautog`".to_string(),
+                chars: 4,
+            }
+        );
+    }
+
+    /// `message` assente diventa zero caratteri, non un errore: la misura del
+    /// gancio è `len(str(...))` nell'originale, e un `message` mancante non
+    /// deve far cadere l'estrazione.
+    #[test]
+    fn a_missing_message_counts_as_zero_characters() {
+        let raw = serde_json::json!({
+            "tool_name": "SendMessage",
+            "tool_input": {"to": "tautog"},
+        })
+        .to_string();
+        assert_eq!(
+            extract_outcome(&raw, Some(&copies())),
+            Outcome::Grant {
+                recipient: "tautog".to_string(),
+                reason: "sessione locale sulla copia `tautog`".to_string(),
+                chars: 0,
+            }
+        );
+    }
 }

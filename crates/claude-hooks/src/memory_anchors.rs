@@ -1561,6 +1561,12 @@ mod tests {
         // `~/.harness-mem/runtime/harness-mem`. Nessun'altra radice li
         // raggiunge, quindi qui si guarda `roots()` vera — `with_roots` la
         // sostituirebbe e non proverebbe niente.
+        //
+        // Il lucchetto serve proprio perché qui `HOME` NON si sostituisce: senza,
+        // un caso isolato che gira in parallelo la tiene finta mentre questo
+        // legge, e le radici attese non ci sono. Rosso 2 volte su 8 prima di
+        // questa riga.
+        let _lock = crate::test_home::real_home_guard();
         let all = roots();
         assert!(all.contains(&home().join(".orca/agent-hooks")));
         assert!(all.contains(&home().join(".harness-mem/runtime/harness-mem")));
