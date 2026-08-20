@@ -102,7 +102,7 @@ fn merges_at(command: &str) -> Option<usize> {
         .map(|m| m.end())
 }
 
-fn merges_request(command: &str) -> bool {
+pub(crate) fn merges_request(command: &str) -> bool {
     merges_at(command).is_some()
 }
 
@@ -176,7 +176,7 @@ fn rango(state: &str) -> u8 {
 }
 
 /// La verità di Python: vuoto, zero, `false` e `null` sono falsi.
-fn truthy(v: &Value) -> bool {
+pub(crate) fn truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
         Value::Bool(b) => *b,
@@ -264,7 +264,7 @@ fn registra(decisione: &str, motivo: &str, extra: &[(&str, i64)]) {
 /// Una chiamata a Orca che risponde JSON. `None` = non ha risposto niente di
 /// leggibile. Il codice d'uscita **non si guarda**, come nell'originale: conta
 /// solo che su stdout ci sia del JSON.
-fn orca_json(args: &[&str]) -> Option<Value> {
+pub(crate) fn orca_json(args: &[&str]) -> Option<Value> {
     let out = Command::new(orca_bin())
         .args(args)
         .arg("--json")
@@ -316,7 +316,7 @@ fn worktree_del_percorso<'a>(path_: &str, listing: &'a [Value]) -> Py<Option<&'a
 /// e annota il guasto. Un porto che proseguisse a mani vuote darebbe lo stesso
 /// verdetto — non fare niente — ma perderebbe la traccia, e domani nessuno
 /// saprebbe che quel giro si è rotto invece di non avere niente da fare.
-fn worktrees_of(listing: &Value) -> Py<Vec<Value>> {
+pub(crate) fn worktrees_of(listing: &Value) -> Py<Vec<Value>> {
     if truthy(listing) && !listing.is_object() {
         return Err("la risposta di Orca non è un dizionario".into());
     }
@@ -400,7 +400,7 @@ fn abspath(p: &str, cwd: &str) -> String {
 /// I cambi di cartella si provano dall'ultimo al primo perché è l'ultimo a
 /// valere. Il `cwd` del gancio resta il ripiego, giusto quando il comando non
 /// cambia cartella affatto.
-fn worktree_of_command<'a>(
+pub(crate) fn worktree_of_command<'a>(
     command: &str,
     cwd: &str,
     listing: &'a [Value],
@@ -447,7 +447,7 @@ fn write_state(worktree: &Value, state: &str) -> Py<bool> {
 // --- modo 1: la sessione ha appena aperto una richiesta --------------------
 
 /// Il comando di un payload, con gli stessi punti in cui l'originale solleva.
-fn command_of(payload: &Value) -> Py<String> {
+pub(crate) fn command_of(payload: &Value) -> Py<String> {
     let ti = payload.get("tool_input");
     let command = match ti {
         Some(Value::Object(o)) => o.get("command").cloned().unwrap_or(Value::String(String::new())),
@@ -588,7 +588,7 @@ fn tace(command: &str, motivo: &str) -> Option<String> {
 ///
 /// Resta testo: serve solo a comporre una domanda a GitHub, e un intero
 /// costringerebbe a scegliere una larghezza dove il Python non ne ha nessuna.
-fn pull_number(command: &str) -> String {
+pub(crate) fn pull_number(command: &str) -> String {
     let Some(end) = merges_at(command) else {
         return String::new();
     };
@@ -614,8 +614,14 @@ fn repo_of_command(command: &str) -> String {
     }
 }
 
-/// (ramo, stato) della richiesta numerata. Vuoti se GitHub non risponde.
-fn pull_by_number(slug: &str, number: &str) -> (String, String) {
+/// (ramo, stato, istante della fusione) della richiesta numerata. Vuoti se
+/// GitHub non risponde.
+///
+/// Il terzo campo serve solo al gancio sulle fusioni con schiacciamento
+/// (`squash_orphans.rs`): è l'istante che traccia il confine fra «dentro lo
+/// schiacciamento» e «scritto dopo, e rimasto fuori». `merge_by_number` qui
+/// sotto continua a ignorarlo.
+pub(crate) fn pull_by_number(slug: &str, number: &str) -> (String, String, String) {
     let out = Command::new("gh")
         .args([
             "pr", "view", number, "--repo", slug, "--json",
@@ -623,27 +629,27 @@ fn pull_by_number(slug: &str, number: &str) -> (String, String) {
         ])
         .output();
     let Ok(o) = out else {
-        return (String::new(), String::new());
+        return (String::new(), String::new(), String::new());
     };
     if !o.status.success() {
-        return (String::new(), String::new());
+        return (String::new(), String::new(), String::new());
     }
     let Ok(r) = serde_json::from_slice::<Value>(&o.stdout) else {
-        return (String::new(), String::new());
+        return (String::new(), String::new(), String::new());
     };
     if !r.is_object() {
-        return (String::new(), String::new());
+        return (String::new(), String::new(), String::new());
     }
-    let merged = r
-        .get("mergedAt")
-        .map(|v| !v.is_null() && v != &Value::String(String::new()))
-        .unwrap_or(false);
-    let state = if merged {
+    let merged_at = match r.get("mergedAt") {
+        Some(Value::String(s)) if !s.is_empty() => s.clone(),
+        _ => String::new(),
+    };
+    let state = if !merged_at.is_empty() {
         "MERGED".to_string()
     } else {
         py_str(r.get("state"))
     };
-    (py_str(r.get("headRefName")), state)
+    (py_str(r.get("headRefName")), state, merged_at)
 }
 
 /// Le lavorazioni di quel repo su quel ramo.
@@ -670,6 +676,23 @@ fn copies_of_branch<'a>(worktrees: &'a [Value], slug: &str, branch: &str) -> Vec
     found
 }
 
+/// Il repo che il comando nomina, o quello della copia da cui è partito.
+///
+/// Estratta da `merge_by_number`: il gancio sulle fusioni con schiacciamento
+/// pone la stessa domanda ("di quale repo sto parlando?") prima di chiedere a
+/// GitHub l'istante della fusione, e una seconda copia di questa risoluzione
+/// sarebbe un candidato certo per il gancio sulle duplicazioni.
+pub(crate) fn resolve_repo_slug(command: &str, cwd: &str, worktrees: &[Value]) -> Py<String> {
+    let mut slug = repo_of_command(command);
+    if slug.is_empty() {
+        // Il repo non è nel comando: lo dice la cartella da cui si è fuso.
+        if let Some(near) = worktree_of_command(command, cwd, worktrees)? {
+            slug = slug_of_remote(&py_str(near.get("path")));
+        }
+    }
+    Ok(slug)
+}
+
 /// Marca la copia del ramo che quella richiesta porta, se ne esiste una sola.
 ///
 /// LE GUARDIE RESTANO TUTTE: si marca solo su MERGED confermato da GitHub, mai
@@ -683,13 +706,7 @@ fn merge_by_number(
     number: &str,
     cwd: &str,
 ) -> Py<Option<String>> {
-    let mut slug = repo_of_command(command);
-    if slug.is_empty() {
-        // Il repo non è nel comando: lo dice la cartella da cui si è fuso.
-        if let Some(near) = worktree_of_command(command, cwd, worktrees)? {
-            slug = slug_of_remote(&py_str(near.get("path")));
-        }
-    }
+    let slug = resolve_repo_slug(command, cwd, worktrees)?;
     if slug.is_empty() {
         return Ok(tace(
             command,
@@ -699,7 +716,7 @@ fn merge_by_number(
         ));
     }
 
-    let (branch, state) = pull_by_number(&slug, number);
+    let (branch, state, _merged_at) = pull_by_number(&slug, number);
     if state != "MERGED" {
         return Ok(tace(
             command,
@@ -1009,7 +1026,7 @@ fn state_richieste(repo_noti: &[String]) -> Py<(BTreeMap<String, String>, BTreeS
 }
 
 /// Una lettura da git. `None` = non letto, `Some("")` = letto e vuoto.
-fn read_git(path_: &str, args: &[&str]) -> Option<String> {
+pub(crate) fn read_git(path_: &str, args: &[&str]) -> Option<String> {
     let out = Command::new("git")
         .arg("-C")
         .arg(path_)
@@ -1020,6 +1037,31 @@ fn read_git(path_: &str, args: &[&str]) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Se il contenuto di un riferimento qualsiasi (`HEAD`, o un commit preciso) è
+/// già arrivato su un tronco, per contenuto e non per parentela. `None` = git
+/// non ha risposto per nessun tronco noto.
+///
+/// Prova `develop`/`main`/`master` in quest'ordine e si ferma al primo che
+/// risolve — la stessa scelta che c'era dentro `unlanded_commits`, quando era
+/// l'unico a porre questa domanda e solo su `HEAD`. Il gancio sulle fusioni con
+/// schiacciamento (`squash_orphans.rs`) pone la stessa domanda su un commit
+/// qualunque del ramo appena fuso, non solo sulla punta.
+pub(crate) fn content_landed(path_: &str, git_ref: &str) -> Option<bool> {
+    for ramo in ["develop", "main", "master"] {
+        let albero = read_git(path_, &["rev-parse", &format!("origin/{ramo}^{{tree}}")]);
+        let albero = match albero {
+            Some(a) if !a.is_empty() => a,
+            _ => continue,
+        };
+        let fuso = read_git(
+            path_,
+            &["merge-tree", "--write-tree", &format!("origin/{ramo}"), git_ref],
+        );
+        return Some(fuso.map(|f| !f.is_empty() && f == albero).unwrap_or(false));
+    }
+    None
 }
 
 /// Quanto lavoro di questa copia non è atterrato da nessun'altra parte.
@@ -1041,22 +1083,8 @@ fn unlanded_commits(path_: &str) -> Option<i64> {
     if quanti == 0 {
         return Some(0);
     }
-    for ramo in ["develop", "main", "master"] {
-        let albero = read_git(path_, &["rev-parse", &format!("origin/{ramo}^{{tree}}")]);
-        let albero = match albero {
-            Some(a) if !a.is_empty() => a,
-            _ => continue,
-        };
-        let fuso = read_git(
-            path_,
-            &["merge-tree", "--write-tree", &format!("origin/{ramo}"), "HEAD"],
-        );
-        if let Some(f) = fuso {
-            if !f.is_empty() && f == albero {
-                return Some(0);
-            }
-        }
-        break;
+    if content_landed(path_, "HEAD") == Some(true) {
+        return Some(0);
     }
     Some(quanti)
 }
