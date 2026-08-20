@@ -692,13 +692,24 @@ fn cat_piped_to_interpreter() -> &'static Regex {
 /// script.py < input.txt`) non ha questa forma: lì lo script arriva come
 /// argomento, e la redirezione riguarda l'input dello *script*, non
 /// dell'interprete — la regex lo esclude perché richiede `<` subito dopo il
-/// nome dell'interprete, senza un percorso in mezzo.
+/// nome dell'interprete (o subito dopo un `-` solitario), senza un percorso
+/// in mezzo.
+///
+/// IL BUCO VERIFICATO IL 20/08/2026: `python3 - < script.py` passava intatto
+/// — il `-` fra l'interprete e `<` è la forma con cui si dice esplicitamente
+/// «leggi da standard input», e prima bastava a rompere il confronto
+/// letterale con l'interprete. Coperto insieme a `python3 < script.py`,
+/// `node < script.js`, `bash < script.sh`, con spaziature diverse intorno a
+/// `<`. NON coperto per scelta: `<<` e `<<<` sono un'altra sintassi (il primo
+/// `<` non può essere seguito da un altro `<` dentro `[^\s<>|;&]+`, quindi
+/// `(?:-\s*)?<` da solo li esclude), e una redirezione in uscita (`>`, `>>`)
+/// è un'altra superficie, con un'altra decisione dietro.
 fn redirected_to_interpreter() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(concat!(
             r"<\s*([^\s<>|;&]+)\s+(?:python3?|node|bash|sh|zsh|ruby|perl)\b",
-            r"|\b(?:python3?|node|bash|sh|zsh|ruby|perl)\s*<\s*([^\s<>|;&]+)",
+            r"|\b(?:python3?|node|bash|sh|zsh|ruby|perl)\s*(?:-\s*)?<\s*([^\s<>|;&]+)",
         ))
         .unwrap()
     })
@@ -1196,6 +1207,54 @@ mod tests {
         let backward = format!("< {} python3", script.display());
         assert_eq!(opaque_writes(&backward), [target.display().to_string()]);
         let _ = std::fs::remove_file(&script);
+    }
+
+    /// IL BUCO CHE HA MOTIVATO QUESTA CORREZIONE, riprodotto il 20/08/2026:
+    /// `python3 - < script.py` passava intatto mentre `python3 script.py` e
+    /// `cat script.py | python3 -` erano già negati — lo stesso corpo, una
+    /// terza porta. Il `-` è la forma esplicita per «leggi da standard input»,
+    /// tanto per `python3` quanto per `node`/`bash`.
+    #[test]
+    fn a_dash_before_the_redirection_does_not_hide_the_script() {
+        let dir = std::env::temp_dir().join("gate-script-per-redirezione-trattino");
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
+        let script = dir.join("scrive5.py");
+        let target = crates_dir.join("a.rs");
+        std::fs::write(
+            &script,
+            format!("import pathlib\npathlib.Path('{}').write_text(s)\n", target.display()),
+        )
+        .unwrap();
+        let with_dash = format!("python3 - < {}", script.display());
+        assert_eq!(opaque_writes(&with_dash), [target.display().to_string()]);
+        // spaziature diverse intorno a `<`: nessuna, doppia, senza spazio dopo il trattino
+        let tight = format!("python3 -<{}", script.display());
+        assert_eq!(opaque_writes(&tight), [target.display().to_string()]);
+        let loose = format!("python3 -  <  {}", script.display());
+        assert_eq!(opaque_writes(&loose), [target.display().to_string()]);
+        let _ = std::fs::remove_file(&script);
+    }
+
+    /// Differenziale: due comandi che differiscono solo per `<<` invece di `<`
+    /// devono dare esiti opposti. `python3 - <<PY` è l'interprete in linea, già
+    /// coperto da `inline_interpreter`; la regex della redirezione da file non
+    /// deve confondersi e agganciare lo stesso comando una seconda volta con un
+    /// bersaglio inventato.
+    #[test]
+    fn a_double_redirection_is_not_mistaken_for_a_single_one() {
+        let single = "python3 - < /tmp/scrive.py";
+        let double = "python3 - <<PY\npathlib.Path('/x/crates/a.rs').write_text(x)\nPY";
+        assert!(redirected_to_interpreter().captures_iter(single).next().is_some());
+        assert!(redirected_to_interpreter().captures_iter(double).next().is_none());
+    }
+
+    /// Un flag come `-c` non è il trattino solitario che introduce la
+    /// redirezione da standard input: `-c` è seguito dal codice, non da `<`.
+    #[test]
+    fn a_flag_that_is_not_a_lone_dash_does_not_match() {
+        let command = "python3 -c 'print(1)'";
+        assert!(redirected_to_interpreter().captures_iter(command).next().is_none());
     }
 
     /// Non deve generalizzare «ogni pipe dopo `cat` è sospetta»: `grep` non è
