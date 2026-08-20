@@ -59,41 +59,60 @@ fn tronca(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
+/// Ciò che serve per registrare e rispondere a una concessione.
+struct Grant {
+    data: serde_json::Value,
+    command: String,
+    reason: String,
+}
+
+/// La colla pura: dal payload grezzo al verdetto, senza toccare disco né stdout.
+///
+/// Isolata per poterla provare senza stdin: `run()` fa solo la lettura e gli
+/// effetti, questa funzione fa tutta l'estrazione (`tool_name`, `tool_input`,
+/// `command`) e il giudizio. `None` copre sia il payload che non riguarda
+/// questo gancio sia il verdetto che non concede: chi chiama non deve
+/// distinguerli, deve solo sapere se c'è qualcosa da concedere.
+fn extract_grant(raw: &str, workspaces: &str, is_link: &dyn Fn(&str) -> bool) -> Option<Grant> {
+    let data = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    if data.get("tool_name").and_then(|v| v.as_str()) != Some("Bash") {
+        return None;
+    }
+    // Convertito subito in `String`: `command` altrimenti resta un prestito su
+    // `data`, e `Grant` vuole spostare `data` per intero nella stessa espressione.
+    let command = data
+        .get("tool_input")
+        .and_then(|v| v.get("command"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let verdetto = decide(&Facts { command: &command, workspaces, is_link });
+    let Verdict::Allow(reason) = verdetto else {
+        return None;
+    };
+    Some(Grant { data, command, reason })
+}
+
 pub fn run() -> i32 {
     let mut raw = String::new();
     if std::io::stdin().read_to_string(&mut raw).is_err() {
         return 0;
     }
-    let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return 0;
-    };
-    if data.get("tool_name").and_then(|v| v.as_str()) != Some("Bash") {
-        return 0;
-    }
-    let command = data
-        .get("tool_input")
-        .and_then(|v| v.get("command"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
     let root = workspaces();
-    let verdetto = decide(&Facts {
-        command,
-        workspaces: &root,
-        // L'unica domanda che va al disco. `symlink_metadata` e non `metadata`:
-        // il secondo segue il collegamento, che è esattamente ciò da cui questa
-        // guardia protegge.
-        is_link: &|p: &str| {
-            fs::symlink_metadata(p)
-                .map(|m| m.file_type().is_symlink())
-                .unwrap_or(false)
-        },
-    });
-    let Verdict::Allow(reason) = &verdetto else {
+    // L'unica domanda che va al disco. `symlink_metadata` e non `metadata`: il
+    // secondo segue il collegamento, che è esattamente ciò da cui questa
+    // guardia protegge.
+    let is_link = |p: &str| {
+        fs::symlink_metadata(p)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+    };
+    let Some(grant) = extract_grant(&raw, &root, &is_link) else {
         return 0;
     };
 
-    log_grant(&data, reason, command);
+    log_grant(&grant.data, &grant.reason, &grant.command);
     println!(
         "{}",
         hook_io::python_json::dumps(&serde_json::json!({
@@ -101,8 +120,117 @@ pub fn run() -> i32 {
                 "hookEventName": "PermissionRequest",
                 "decision": {"behavior": "allow"},
             },
-            "systemMessage": format!("cancellazione nel worktree usa-e-getta: {reason}"),
+            "systemMessage": format!("cancellazione nel worktree usa-e-getta: {}", grant.reason),
         }))
     );
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const W: &str = "/home/someone/orca/workspaces";
+
+    fn payload(tool_name: &str, command: serde_json::Value) -> String {
+        serde_json::json!({
+            "tool_name": tool_name,
+            "tool_input": {"command": command},
+            "session_id": "abc123",
+            "cwd": "/home/someone/orca/workspaces/repo/wt",
+        })
+        .to_string()
+    }
+
+    fn no_link(_: &str) -> bool {
+        false
+    }
+
+    /// Caso nominale: colla che deve concedere.
+    ///
+    /// Rotto togliendo `data.get("tool_input")` e leggendo `data.get("command")`
+    /// (un livello più in alto, come se il payload non fosse annidato): il test
+    /// diventa ROSSO perché il comando estratto è vuoto e `decide` risponde
+    /// "comando vuoto", non un `Allow`. Ripristinato, torna VERDE.
+    #[test]
+    fn a_grantable_bash_deletion_is_granted_with_its_reason() {
+        let raw = payload("Bash", serde_json::json!(format!("rm -rf {W}/repo/wt/dist")));
+        let grant = extract_grant(&raw, W, &no_link).expect("doveva concedere");
+        assert_eq!(grant.command, format!("rm -rf {W}/repo/wt/dist"));
+        assert!(grant.reason.contains("1 bersaglio/i"), "{}", grant.reason);
+    }
+
+    /// Il caso che protegge il lavoro: un bersaglio fuori dai worktree usa-e-getta
+    /// non concede, a prescindere da quanto il resto del payload sembri normale.
+    ///
+    /// Rotto sostituendo `Verdict::Allow(reason) = verdetto` con un'estrazione
+    /// che concede su qualunque verdetto (es. `let reason = verdetto.reason();`
+    /// incondizionato): il test diventa ROSSO perché `/etc/passwd` viene
+    /// concesso. Ripristinato, torna VERDE.
+    #[test]
+    fn a_target_outside_the_workspaces_is_never_granted() {
+        let raw = payload("Bash", serde_json::json!("rm -rf /etc/passwd"));
+        assert!(extract_grant(&raw, W, &no_link).is_none());
+    }
+
+    #[test]
+    fn a_non_bash_tool_is_ignored() {
+        let raw = payload("Edit", serde_json::json!(format!("rm -rf {W}/repo/wt/dist")));
+        assert!(extract_grant(&raw, W, &no_link).is_none());
+    }
+
+    /// JSON non valido: niente panico, niente concessione per sbaglio.
+    #[test]
+    fn invalid_json_does_not_panic_and_grants_nothing() {
+        assert!(extract_grant("{questo non è json", W, &no_link).is_none());
+        assert!(extract_grant("", W, &no_link).is_none());
+        assert!(extract_grant("null", W, &no_link).is_none());
+        // Un array valido come JSON, ma senza campi da leggere.
+        assert!(extract_grant("[1, 2, 3]", W, &no_link).is_none());
+    }
+
+    /// Campi mancanti o del tipo sbagliato: si tace, non si indovina.
+    ///
+    /// Rotto sostituendo `.unwrap_or("")` con un valore che sarebbe dentro i
+    /// worktree usa-e-getta (`rm -rf /home/someone/orca/workspaces/repo/wt/dist`):
+    /// il test diventa ROSSO perché un `tool_input` senza `command` concede lo
+    /// stesso. Ripristinato, torna VERDE.
+    #[test]
+    fn missing_or_mistyped_fields_grant_nothing() {
+        // Manca `tool_input` del tutto.
+        let raw = serde_json::json!({"tool_name": "Bash"}).to_string();
+        assert!(extract_grant(&raw, W, &no_link).is_none());
+
+        // `tool_input` c'è ma senza `command`.
+        let raw = serde_json::json!({"tool_name": "Bash", "tool_input": {}}).to_string();
+        assert!(extract_grant(&raw, W, &no_link).is_none());
+
+        // `command` c'è ma non è testo.
+        let raw = payload("Bash", serde_json::json!(42));
+        assert!(extract_grant(&raw, W, &no_link).is_none());
+
+        // Manca `tool_name`.
+        let raw = serde_json::json!({
+            "tool_input": {"command": format!("rm -rf {W}/repo/wt/dist")}
+        })
+        .to_string();
+        assert!(extract_grant(&raw, W, &no_link).is_none());
+    }
+
+    /// L'estrazione non deforma il comando: opzioni e virgolette davanti al
+    /// bersaglio arrivano al giudice esattamente come nel payload.
+    ///
+    /// Rotto aggiungendo `.replace('"', "")` sul comando estratto, come farebbe
+    /// una "sanificazione" ingenua: il test diventa ROSSO perché le virgolette
+    /// spariscono prima di raggiungere `decide`. Ripristinato, torna VERDE.
+    #[test]
+    fn quoting_and_leading_options_survive_extraction() {
+        let raw = payload(
+            "Bash",
+            serde_json::json!(format!(r#"rm -rf -- "{W}/repo/wt/dist""#)),
+        );
+        let grant = extract_grant(&raw, W, &no_link).expect("doveva concedere");
+        assert!(grant.command.contains("--"));
+        assert!(grant.command.contains('"'));
+    }
 }
