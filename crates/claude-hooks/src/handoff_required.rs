@@ -172,6 +172,20 @@ pub fn run() -> i32 {
         return 0;
     }
 
+    // DENTRO UN SUBAGENT SI ESCE SUBITO, e questa riga va prima di ogni altra
+    // cosa che tocchi il disco. Il giudizio la ripete (`Facts::in_subagent`),
+    // ma arrivarci costerebbe caro: qui sopra si scrivono il marcatore
+    // d'avviso, il contatore dei rifiuti e il memo della misura — tutti
+    // intestati alla MADRE, perché un subagent ne condivide la sessione. Erano
+    // le chiamate dei subagent a bruciare i sei rifiuti della madre e a
+    // lasciare il presidio arreso e verde.
+    //
+    // Ed è anche il grosso del costo: un `transcript_tail` legge 400 KB, e qui
+    // passava ogni chiamata di ogni subagent.
+    if crate::handoff::in_subagent(&data) {
+        return 0;
+    }
+
     // Se questo strumento È l'handoff, la garanzia è soddisfatta: da qui in poi
     // questo gancio e il gemello sullo Stop lasciano passare tutto.
     //
@@ -215,6 +229,9 @@ pub fn run() -> i32 {
     let fatti = Facts {
         tool,
         thresholds: &t,
+        // Falso per costruzione: sopra si è già usciti. Resta esplicito perché
+        // il giudizio è la sede del contratto, non questa funzione.
+        in_subagent: false,
         used,
         handoff_valid: valida,
         already_warned: !sotto_avviso && !disarma && used < t.require && already_warned(&session),

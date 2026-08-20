@@ -57,6 +57,9 @@ pub struct Facts<'a> {
     pub tool: &'a str,
     /// Il modello e le soglie, dal transcript.
     pub thresholds: &'a Thresholds,
+    /// Lo strumento è stato chiamato da un subagent, non dalla conversazione
+    /// principale. Il presidio non ha niente da dirgli: vedi `decide`.
+    pub in_subagent: bool,
     /// I token in contesto. Zero significa «non misurabile»: si tace.
     pub used: u64,
     /// La consegna c'è **ed è ancora quella del lavoro in corso**.
@@ -68,6 +71,22 @@ pub struct Facts<'a> {
 }
 
 pub fn decide(f: &Facts) -> Decision {
+    // DENTRO UN SUBAGENT SI TACE, e va prima di ogni altra cosa.
+    //
+    // Il payload di un subagent porta il transcript e la sessione della MADRE
+    // (misurato il 21/08/2026: budget 500k di `claude-opus-5` sulla madre contro
+    // i 400k di `claude-sonnet-5` del subagent, e il registro riportava la
+    // percentuale della madre). Quindi la misura è giusta, ma il destinatario è
+    // sbagliato: l'avviso arriva a chi non può consegnare, mentre chi deve
+    // consegnare non lo legge.
+    //
+    // Il danno non è il rumore, è il contatore: ogni chiamata di ogni subagent
+    // brucia un rifiuto, e dopo `BLOCK_CAP` il presidio si arrende per SEMPRE —
+    // anche per la madre. Il 21/08 il contatore era a 254 con la madre ferma:
+    // disarmato, ma verde.
+    if f.in_subagent {
+        return Decision::Silent;
+    }
     // Zero non è «vuoto», è «non misurabile»: senza misura non si giudica.
     if f.used == 0 || f.used < f.thresholds.warn {
         return Decision::Silent;
@@ -172,11 +191,47 @@ mod tests {
         Facts {
             tool,
             thresholds: t,
+            in_subagent: false,
             used,
             handoff_valid: false,
             already_warned: false,
             blocks_so_far: 0,
         }
+    }
+
+    #[test]
+    fn inside_a_subagent_the_guard_stays_silent() {
+        // MUTANTE: togliendo il ramo `in_subagent` da `decide`, questo caso e
+        // il suo gemello qui sotto vanno in rosso; nessun altro se ne accorge,
+        // perché tutti gli altri costruiscono i fatti con `in_subagent: false`.
+        let t = soglie();
+        for used in [400_000, 480_000, 526_975] {
+            let mut f = fatti(&t, used, "Bash");
+            f.in_subagent = true;
+            assert_eq!(
+                decide(&f),
+                Decision::Silent,
+                "a un subagent non si chiede la consegna della madre: used={used}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_subagent_never_burns_a_refusal_of_the_mother() {
+        // Il difetto vero del 20-21/08: non il rumore, ma il contatore. Con i
+        // rifiuti già a ridosso del tetto, una chiamata di subagent non deve
+        // né bloccare né far arrendere il presidio — quel tetto è della madre.
+        let t = soglie();
+        let mut f = fatti(&t, 480_000, "Bash");
+        f.blocks_so_far = BLOCK_CAP - 1;
+        f.in_subagent = true;
+        assert_eq!(decide(&f), Decision::Silent);
+        f.blocks_so_far = BLOCK_CAP;
+        assert_eq!(decide(&f), Decision::Silent, "nemmeno la resa e' sua");
+        // Differenziale a variabile unica: stessi fatti, solo la provenienza
+        // cambia, ed esce l'opposto.
+        f.in_subagent = false;
+        assert!(matches!(decide(&f), Decision::Surrender(_)));
     }
 
     #[test]
