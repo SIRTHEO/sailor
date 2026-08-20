@@ -56,6 +56,15 @@ pub enum Decision {
 pub struct Facts<'a> {
     /// Vero quando lo stop è già dentro un blocco indotto da un gancio.
     pub stop_hook_active: bool,
+    /// L'evento arriva da un subagent, non dalla conversazione principale.
+    ///
+    /// Oggi questo gancio è registrato sul solo `Stop`, che per i subagent non
+    /// scatta (loro hanno `SubagentStop`), quindi il campo è sempre falso in
+    /// servizio. Sta qui lo stesso perché il giorno che qualcuno lo registra
+    /// anche sull'altro evento — che porta `agent_id` come tutti — il presidio
+    /// comincerebbe a forzare la fine di ogni subagent, e nessuna prova se ne
+    /// accorgerebbe.
+    pub in_subagent: bool,
     /// Senza trascrizione non si misura niente, quindi non si giudica.
     ///
     /// È una cintura sul contratto, non un freno: i fatti che derivano da una
@@ -78,6 +87,12 @@ pub struct Facts<'a> {
 }
 
 pub fn decide(f: &Facts) -> Decision {
+    // Un subagent non consegna per la madre: si lascia fermare. Vale come per
+    // il gemello su PostToolUse — il payload porta la sessione e il transcript
+    // della madre, quindi la misura è di un altro e il destinatario è sbagliato.
+    if f.in_subagent {
+        return Decision::Pass;
+    }
     // Anti-loop primario: già dentro un blocco-stop indotto, non si riblocca.
     // Così si forza un giro per catena, non un ciclo.
     if f.stop_hook_active {
@@ -182,6 +197,7 @@ mod tests {
     fn fatti(t: &Thresholds, used: u64) -> Facts<'_> {
         Facts {
             stop_hook_active: false,
+            in_subagent: false,
             has_transcript: true,
             thresholds: t,
             used,
@@ -190,6 +206,21 @@ mod tests {
             restart_cap: RESTART_CAP_DEFAULT,
             stop_blocks_so_far: 0,
         }
+    }
+
+    #[test]
+    fn a_subagent_is_never_held_back_from_stopping() {
+        // MUTANTE: tolto il ramo `in_subagent`, questo caso va in rosso da solo.
+        // Differenziale a variabile unica: gli stessi fatti che forzano la madre
+        // lasciano fermare il subagent.
+        let t = soglie();
+        let mut f = fatti(&t, 480_000);
+        f.in_subagent = true;
+        assert_eq!(decide(&f), Decision::Pass);
+        f.restarts = RESTART_CAP_DEFAULT + 2;
+        assert_eq!(decide(&f), Decision::Pass, "nemmeno per le ripartenze");
+        f.in_subagent = false;
+        assert!(matches!(decide(&f), Decision::Block(_)));
     }
 
     #[test]

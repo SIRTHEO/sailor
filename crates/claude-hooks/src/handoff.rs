@@ -28,6 +28,32 @@ fn dirs_home() -> PathBuf {
     std::env::var("HOME").map(PathBuf::from).unwrap_or_default()
 }
 
+/// Il gancio sta girando dentro un subagent invece che nella conversazione
+/// principale.
+///
+/// SI GUARDA `agent_id`, E NON IL PERCORSO DEL TRANSCRIPT. Sul disco i subagent
+/// hanno un file loro — `<sessione>/subagents/agent-<id>.jsonl` — e sembra
+/// naturale riconoscerli da lì, ma nel payload quel percorso non arriva mai: la
+/// CLI costruisce `transcript_path` dall'id di **sessione**, che un subagent
+/// condivide con la madre. Misurato il 21/08/2026 su questa macchina: madre su
+/// `claude-opus-5` (budget 500k) e subagent su `claude-sonnet-5` (400k), stessa
+/// misura di 526.975 token, e il registro riportava 105% — cioè il budget della
+/// madre. Un riconoscimento fondato sul percorso sarebbe stato inerte e verde.
+///
+/// `agent_id` è invece il campo che la CLI documenta per questa domanda:
+/// «Present only when the hook fires from within a subagent. Absent for the main
+/// thread, even in --agent sessions. Use this field (not agent_type)».
+///
+/// Una stringa vuota vale come assente: è la forma che prende un campo perso in
+/// un giro di serializzazione, e prenderla per un subagent spegnerebbe il
+/// presidio sulla madre — cioè il danno peggiore dei due.
+pub fn in_subagent(payload: &serde_json::Value) -> bool {
+    payload
+        .get("agent_id")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.trim().is_empty())
+}
+
 /// Le ultime righe del transcript, vuoto in caso di errore.
 ///
 /// Si legge dalla coda perché un transcript di sessione lunga arriva a centinaia
@@ -403,6 +429,46 @@ pub fn measure(transcript: &str, session: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Il payload vero di un subagent: la sessione e il transcript sono quelli
+    /// della madre, e l'unica differenza è `agent_id`. I valori vengono dal caso
+    /// misurato il 21/08/2026.
+    #[test]
+    fn a_subagent_is_recognised_by_agent_id_not_by_the_transcript_path() {
+        let madre = serde_json::json!({
+            "session_id": "959336ae-b672-4f68-9a67-8648844453bb",
+            "transcript_path": "/Users/theo/.claude/projects/-Users-theo-orca-general/959336ae-b672-4f68-9a67-8648844453bb.jsonl",
+            "tool_name": "Bash",
+        });
+        assert!(!in_subagent(&madre));
+
+        // Stesso transcript, stessa sessione: cambia SOLO `agent_id`. Se il
+        // riconoscimento cercasse `/subagents/` nel percorso, questi due casi
+        // sarebbero indistinguibili e la cura sarebbe inerte.
+        let mut figlio = madre.clone();
+        figlio["agent_id"] = serde_json::json!("aea77ef9a390248c4");
+        assert!(in_subagent(&figlio));
+        assert_eq!(
+            madre["transcript_path"], figlio["transcript_path"],
+            "il percorso non distingue i due casi: e' il motivo per cui non lo si guarda"
+        );
+    }
+
+    #[test]
+    fn an_empty_or_missing_agent_id_is_the_main_thread() {
+        // Nel dubbio si presidia: un campo vuoto non deve poter spegnere il
+        // presidio sulla conversazione principale.
+        for valore in [
+            serde_json::json!(""),
+            serde_json::json!("   "),
+            serde_json::json!(null),
+            serde_json::json!(42),
+        ] {
+            let d = serde_json::json!({"agent_id": valore});
+            assert!(!in_subagent(&d), "agent_id = {d}");
+        }
+        assert!(!in_subagent(&serde_json::json!({})));
+    }
 
     #[test]
     fn transcript_timestamps_are_read_as_utc() {

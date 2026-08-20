@@ -222,7 +222,10 @@ pub fn run() -> i32 {
 
     // I due anti-loop si valutano prima di toccare il disco: senza, ogni catena
     // indotta lascerebbe dietro di sé i memo della misura e delle ripartenze.
-    if stop_hook_active || transcript.is_empty() {
+    // Per lo stesso motivo il subagent esce di qui: i marcatori che si
+    // scriverebbero sotto sono intestati alla madre. Vedi `handoff::in_subagent`
+    // per cui si guarda `agent_id` e non il percorso del transcript.
+    if stop_hook_active || transcript.is_empty() || crate::handoff::in_subagent(&data) {
         return 0;
     }
 
@@ -237,6 +240,8 @@ pub fn run() -> i32 {
 
     let fatti = Facts {
         stop_hook_active,
+        // Falso per costruzione: sopra si è già usciti.
+        in_subagent: false,
         has_transcript: true,
         thresholds: &t,
         used,
