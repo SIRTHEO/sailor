@@ -525,6 +525,13 @@ pub fn writes_from_bash(command: &str) -> Vec<(String, String)> {
 /// `python3 - <<PY … write_text …` e i percorsi dei file toccati. Un comando che
 /// parla di una scrittura non è una scrittura, e la differenza sta nel dove:
 /// ciò che conta è il corpo che l'interprete eseguirà.
+///
+/// IL BUCO CHE RESTA, per scelta: `curl … | python3 -`, una sostituzione di
+/// comando, o qualunque pipe che non nomini un file leggibile. Lì non c'è
+/// niente sul disco né nel comando da leggere — non solo il contenuto, anche
+/// l'esistenza di un bersaglio è ignota — e negare sul solo pattern «pipe verso
+/// un interprete» prenderebbe anche `curl https://sh.rustup.rs | sh`. Si tace,
+/// non si nega: un buco dichiarato costa meno di un rimprovero a torto.
 pub fn opaque_writes(command: &str) -> Vec<String> {
     if command.is_empty() {
         return Vec::new();
@@ -619,23 +626,82 @@ fn script_bodies(command: &str) -> Vec<(String, bool)> {
             bodies.push((body, false));
             continue;
         }
-        let resolved = match path.strip_prefix("~/") {
-            Some(rest) => match std::env::var("HOME") {
-                Ok(home) => format!("{home}/{rest}"),
-                Err(_) => path.to_string(),
-            },
-            None => path.to_string(),
+        if let Some(text) = read_script_body(path, MAX_SCRIPT_BYTES) {
+            bodies.push((text, true));
+        }
+    }
+    // IL BUCO VERIFICATO IL 20/08/2026: `python3 script.py` negava, `cat
+    // script.py | python3 -` passava intatto — la pipe bastava ad aggirare il
+    // divieto per intero. `cat` e la redirezione leggono un file che deve
+    // esistere per forza, quindi valgono la stessa lettura e la stessa
+    // protezione (`require_parent`) dello script dato come argomento: non si
+    // allarga il perimetro, si aggiungono due porte allo stesso corridoio.
+    for c in cat_piped_to_interpreter()
+        .captures_iter(command)
+        .chain(redirected_to_interpreter().captures_iter(command))
+    {
+        let Some(path) = c.get(1).or_else(|| c.get(2)).map(|m| m.as_str()) else {
+            continue;
         };
-        let piccolo = std::fs::metadata(&resolved)
-            .map(|m| m.len() <= MAX_SCRIPT_BYTES)
-            .unwrap_or(false);
-        if piccolo {
-            if let Ok(text) = std::fs::read_to_string(&resolved) {
-                bodies.push((text, true));
-            }
+        if let Some(text) = read_script_body(path, MAX_SCRIPT_BYTES) {
+            bodies.push((text, true));
         }
     }
     bodies
+}
+
+/// Risolve `~` e legge un file già sul disco, sotto lo stesso tetto di byte
+/// per tutte le vie che portano un corpo a un interprete: un percorso preso da
+/// una riga di comando può essere un log di centinaia di MB, e un gate che se
+/// lo ingoia non risponde più.
+fn read_script_body(path: &str, max_bytes: u64) -> Option<String> {
+    let resolved = match path.strip_prefix("~/") {
+        Some(rest) => match std::env::var("HOME") {
+            Ok(home) => format!("{home}/{rest}"),
+            Err(_) => path.to_string(),
+        },
+        None => path.to_string(),
+    };
+    let piccolo = std::fs::metadata(&resolved)
+        .map(|m| m.len() <= max_bytes)
+        .unwrap_or(false);
+    if piccolo {
+        std::fs::read_to_string(&resolved).ok()
+    } else {
+        None
+    }
+}
+
+/// `cat script.py | python3 -` e `cat script.py | python3`: lo stesso corpo di
+/// `python3 script.py`, con una pipe in mezzo. `cat` legge un file che deve
+/// esistere sul disco per forza, quindi il bersaglio è leggibile quanto lo
+/// script dato come argomento — non si prova a leggere ciò che sta a sinistra
+/// di una pipe qualunque, solo questa forma nominata.
+fn cat_piped_to_interpreter() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"\bcat\s+([^\s|]+)\s*\|\s*(?:python3?|node|bash|sh|zsh|ruby|perl)\b(?:\s*-)?")
+            .unwrap()
+    })
+}
+
+/// `< script.py python3` e `python3 < script.py`: il corpo arriva per
+/// redirezione invece che per argomento o per pipe — la terza forma con cui
+/// uno script già sul disco finisce dentro un interprete senza passare da
+/// `Write`/`Edit`. Un `<` fra l'interprete e un altro argomento (`python3
+/// script.py < input.txt`) non ha questa forma: lì lo script arriva come
+/// argomento, e la redirezione riguarda l'input dello *script*, non
+/// dell'interprete — la regex lo esclude perché richiede `<` subito dopo il
+/// nome dell'interprete, senza un percorso in mezzo.
+fn redirected_to_interpreter() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(concat!(
+            r"<\s*([^\s<>|;&]+)\s+(?:python3?|node|bash|sh|zsh|ruby|perl)\b",
+            r"|\b(?:python3?|node|bash|sh|zsh|ruby|perl)\s*<\s*([^\s<>|;&]+)",
+        ))
+        .unwrap()
+    })
 }
 
 /// Il corpo dell'heredoc che, dentro questo stesso comando, crea quel file.
@@ -1068,6 +1134,111 @@ mod tests {
         let command = format!("python3 {}", script.display());
         assert!(opaque_writes(&command).is_empty());
         let _ = std::fs::remove_file(&script);
+    }
+
+    /// IL BUCO VERIFICATO IL 20/08/2026: `python3 script.py` negava,
+    /// `cat script.py | python3 -` passava con `exit=0`. `cat` legge un file
+    /// che deve esistere per forza: vale la stessa lettura dello script dato
+    /// come argomento, con o senza il `-` finale.
+    #[test]
+    fn a_script_piped_through_cat_is_read_like_one_given_as_an_argument() {
+        let dir = std::env::temp_dir().join("gate-script-per-pipe");
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
+        let script = dir.join("scrive3.py");
+        let target = crates_dir.join("a.rs");
+        std::fs::write(
+            &script,
+            format!("import pathlib\npathlib.Path('{}').write_text(s)\n", target.display()),
+        )
+        .unwrap();
+        let with_dash = format!("cat {} | python3 -", script.display());
+        assert_eq!(opaque_writes(&with_dash), [target.display().to_string()]);
+        let without_dash = format!("cat {} | python3", script.display());
+        assert_eq!(opaque_writes(&without_dash), [target.display().to_string()]);
+        let _ = std::fs::remove_file(&script);
+    }
+
+    /// La stessa forma con `node`, l'altro interprete del mandato: prova che
+    /// l'elenco degli interpreti dentro la regex, non solo `python3`, sia
+    /// coperto — con `writeFileSync`, il gesto che `writes_a_file` riconosce.
+    #[test]
+    fn a_node_script_piped_through_cat_is_read_too() {
+        let dir = std::env::temp_dir().join("gate-script-node-per-pipe");
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
+        let script = dir.join("scrive.js");
+        let target = crates_dir.join("a.rs");
+        std::fs::write(
+            &script,
+            format!("fs.writeFileSync('{}', s)\n", target.display()),
+        )
+        .unwrap();
+        let command = format!("cat {} | node -", script.display());
+        assert_eq!(opaque_writes(&command), [target.display().to_string()]);
+        let _ = std::fs::remove_file(&script);
+    }
+
+    #[test]
+    fn a_script_redirected_into_an_interpreter_is_read_too() {
+        let dir = std::env::temp_dir().join("gate-script-per-redirezione");
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
+        let script = dir.join("scrive4.py");
+        let target = crates_dir.join("a.rs");
+        std::fs::write(
+            &script,
+            format!("import pathlib\npathlib.Path('{}').write_text(s)\n", target.display()),
+        )
+        .unwrap();
+        let forward = format!("python3 < {}", script.display());
+        assert_eq!(opaque_writes(&forward), [target.display().to_string()]);
+        let backward = format!("< {} python3", script.display());
+        assert_eq!(opaque_writes(&backward), [target.display().to_string()]);
+        let _ = std::fs::remove_file(&script);
+    }
+
+    /// Non deve generalizzare «ogni pipe dopo `cat` è sospetta»: `grep` non è
+    /// un interprete, e questa forma è la più comune di tutte.
+    #[test]
+    fn an_innocuous_pipe_through_cat_is_left_alone() {
+        // Un file vero, non un percorso inventato: se `grep` finisse per
+        // sbaglio nell'elenco degli interpreti, il file esisterebbe comunque
+        // e la prova lo scoprirebbe — un percorso assente lo nasconderebbe.
+        let dir = std::env::temp_dir().join("gate-pipe-innocua");
+        let _ = std::fs::create_dir_all(&dir);
+        let log = dir.join("qualcosa.log");
+        std::fs::write(&log, "errore: connessione rifiutata\n").unwrap();
+        let command = format!("cat {} | grep errore", log.display());
+        assert!(cat_piped_to_interpreter().captures_iter(&command).next().is_none());
+        assert!(opaque_writes(&command).is_empty());
+        let _ = std::fs::remove_file(&log);
+    }
+
+    /// Non deve prendere lo script dato come argomento quando la redirezione
+    /// riguarda l'*input dello script*, non il corpo dell'interprete: qui
+    /// `python3 script.py` è già letto da `interpreter_with_script`, e
+    /// `< input.txt` non deve aggiungere un secondo bersaglio fantasma.
+    #[test]
+    fn a_redirection_after_the_script_argument_is_not_a_second_source() {
+        let command = "python3 /tmp/analizza.py < /tmp/dati.csv";
+        assert!(redirected_to_interpreter().captures_iter(command).next().is_none());
+    }
+
+    /// Deciso il 20/08/2026: il corpo che arriva da `curl` o da una
+    /// sostituzione di comando non sta né sul disco né nel comando — non c'è
+    /// niente da leggere, e negare sul solo pattern «pipe verso un
+    /// interprete» prenderebbe anche `curl https://sh.rustup.rs | sh`. Si
+    /// tace: un buco dichiarato costa meno di un rimprovero a torto.
+    #[test]
+    fn a_body_arriving_from_an_unreadable_source_is_left_alone() {
+        // Verifica sulla regex, non solo sull'esito finale: un file inesistente
+        // renderebbe `opaque_writes` vuoto comunque, mascherando una regex
+        // allargata per sbaglio a «qualunque cosa prima di una pipe».
+        let command = "curl https://example.com/setup.py | python3 -";
+        assert!(cat_piped_to_interpreter().captures_iter(command).next().is_none());
+        assert!(opaque_writes(command).is_empty());
+        assert!(opaque_writes("python3 -c \"$(cat /tmp/a.py)\"").is_empty());
     }
 
     /// Non allenta il caso vero: se il bersaglio ha una cartella reale dietro
