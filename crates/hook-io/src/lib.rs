@@ -38,6 +38,35 @@ pub struct HookInput {
     /// Stop: è la fonte con cui si misura quanto è piena la sessione.
     #[serde(default)]
     pub transcript_path: Option<String>,
+    /// Presente **solo** quando il gancio parte da dentro un subagent.
+    ///
+    /// Mancava fino al 21/08/2026, e la mancanza era il difetto: un gancio
+    /// costruito su questa struttura non poteva accorgersi di stare in un
+    /// subagent nemmeno volendo, perché il campo non gli arrivava. Vedi
+    /// `in_subagent`.
+    #[serde(default)]
+    pub agent_id: Option<String>,
+}
+
+/// Il gancio sta girando dentro un subagent invece che nella conversazione
+/// principale.
+///
+/// LA REGOLA STA QUI E IN UN POSTO SOLO, perché il payload arriva in due forme —
+/// tipizzata (`HookInput`) e grezza (`serde_json::Value`) — e due copie della
+/// stessa condizione divergono alla prima correzione.
+///
+/// SI GUARDA `agent_id`, E NON IL PERCORSO DEL TRANSCRIPT: la CLI costruisce
+/// `transcript_path` dall'id di **sessione**, che un subagent condivide con la
+/// madre, quindi nel payload di un figlio arriva il percorso della madre.
+/// Misurato il 21/08/2026: madre su `claude-opus-5` (budget 500k) e subagent su
+/// `claude-sonnet-5` (400k), stessa misura di 526.975 token e registro al 105% —
+/// cioè il budget della madre.
+///
+/// Una stringa vuota vale come assente: è la forma che prende un campo perso in
+/// un giro di serializzazione, e prenderla per un subagent spegnerebbe il
+/// presidio sulla conversazione principale, cioè il danno peggiore dei due.
+pub fn agent_id_says_subagent(agent_id: Option<&str>) -> bool {
+    agent_id.is_some_and(|s| !s.trim().is_empty())
 }
 
 impl HookInput {
@@ -52,6 +81,18 @@ impl HookInput {
 
     pub fn is_tool(&self, name: &str) -> bool {
         self.tool_name.as_deref() == Some(name)
+    }
+
+    /// Questa chiamata viene da un subagent, non dalla conversazione principale.
+    ///
+    /// Lo chiede il gancio che accumula o misura qualcosa **della sessione**: un
+    /// subagent ne condivide l'identificativo, quindi ciò che scrive finisce
+    /// intestato alla madre e ciò che dice lo legge chi non può agire. Il gancio
+    /// che invece giudica l'azione in sé — dove si scrive, in che lingua, con
+    /// quale comando — non deve chiederlo: quei divieti valgono per chiunque
+    /// scriva.
+    pub fn in_subagent(&self) -> bool {
+        agent_id_says_subagent(self.agent_id.as_deref())
     }
 
     /// Vero se questo ingresso viene da una sessione vera, cioè se dichiara un

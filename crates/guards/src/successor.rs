@@ -401,6 +401,8 @@ pub struct ArmFacts {
     pub already_armed: bool,
     /// La sessione è davvero al capolinea, non a metà lavoro.
     pub enough_used: bool,
+    /// La scrittura viene da un subagent, non dalla conversazione principale.
+    pub in_subagent: bool,
 }
 
 /// L'ordine dei freni è comportamento, non stile.
@@ -412,6 +414,17 @@ pub struct ArmFacts {
 /// scriverlo per poi fermarsi su un altro freno brucerebbe l'unica arma di
 /// quella sessione senza aprire niente.
 pub fn decide(f: &ArmFacts) -> Outcome {
+    // UN SUBAGENT NON ARMA NIENTE, e il freno viene prima di tutti perché tutti
+    // gli altri guardano fatti della MADRE: un figlio ne condivide la sessione,
+    // quindi i pannelli contati, il marcatore del già-armato e la misura della
+    // pienezza sono di lei. Una consegna scritta da un figlio dentro il suo
+    // perimetro non è la fine del lavoro della sessione.
+    //
+    // Tace, come la seconda generazione: chi non può armare non deve nemmeno
+    // spiegare perché non ha armato.
+    if f.in_subagent {
+        return Outcome::StopQuiet("subagent");
+    }
     if f.second_generation {
         return Outcome::StopQuiet("seconda-generazione");
     }
@@ -710,6 +723,32 @@ mod tests {
             enough_used: true,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_subagent_never_arms_a_successor_for_its_mother() {
+        // Differenziale a variabile unica: via libera su tutti gli altri freni,
+        // cambia solo la provenienza, e l'esito si ribalta.
+        // MUTANTE: tolto il primo ramo di `decide`, questo caso va in rosso da
+        // solo — nessun altro costruisce i fatti con `in_subagent: true`.
+        let f = ArmFacts { in_subagent: true, ..via_libera() };
+        assert_eq!(decide(&f), Outcome::StopQuiet("subagent"));
+        let f = ArmFacts { in_subagent: false, ..via_libera() };
+        assert_eq!(decide(&f), Outcome::Open, "dalla madre si arma come prima");
+    }
+
+    #[test]
+    fn the_subagent_brake_comes_before_the_one_that_writes_the_marker() {
+        // Il freno della pienezza SCRIVE il marcatore del consumo: se venisse
+        // prima, la chiamata di un figlio brucerebbe l'arma della madre senza
+        // che nessuno apra niente — lo stesso danno del contatore dei rifiuti.
+        let f = ArmFacts {
+            in_subagent: true,
+            enough_used: false,
+            second_generation: true,
+            ..via_libera()
+        };
+        assert_eq!(decide(&f), Outcome::StopQuiet("subagent"));
     }
 
     #[test]
