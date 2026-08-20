@@ -43,6 +43,10 @@ mod memory_citation_gate;
 mod orca_cleanup;
 mod reachability;
 mod register_session;
+// Il terzo, portato il 20/08/2026 perché il gate della lingua non lascia più
+// eseguire il suo gemello Python: uno strumento di sola lettura che nessuno può
+// lanciare è un rosso che nessuno può ispezionare.
+mod stale_facts;
 mod session_messages;
 mod skill_nudge;
 mod work_status;
@@ -182,6 +186,7 @@ const ALL_HOOKS: &[&str] = &[
     "reachability",
     "memory-anchors",
     "memory-citation-gate",
+    "stale-facts",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -215,6 +220,7 @@ const NOT_HOOKS: &[&str] = &[
     "relay-sweep",
     "restart-count",
     "successor-probe",
+    "stale-facts",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -368,6 +374,10 @@ fn has_module_test(name: &str) -> bool {
             include_str!("../../guards/src/memory_anchor.rs"),
         ],
         "memory-citation-gate" => &[include_str!("memory_citation_gate.rs")],
+        "stale-facts" => &[
+            include_str!("stale_facts.rs"),
+            include_str!("../../guards/src/stale_facts.rs"),
+        ],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -1040,6 +1050,10 @@ fn run(which: &str) -> Result<i32, String> {
         // `comment-refs`: guarda il testo che sta per essere scritto e nega
         // prima, perché un avviso dopo lascia la citazione morta sul file.
         "memory-citation-gate" => Ok(memory_citation_gate::run()),
+        // Non è un gancio: è lo strumento che risponde a «quali affermazioni
+        // dicono di aver misurato qualcosa, e quando». Sta qui perché il suo
+        // gemello Python non è più eseguibile da dentro una sessione.
+        "stale-facts" => Ok(stale_facts::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
