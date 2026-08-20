@@ -20,7 +20,7 @@
 //! rifiuta ogni strumento, `Read` compreso.
 
 use guards::handoff::{is_handoff_call, thresholds_from_lines};
-use guards::handoff_required::{decide, Decision, Facts};
+use guards::handoff_required::{decide, over_lockout, Decision, Facts};
 use hook_io::journal::{self, Field};
 use std::fs;
 use std::io::Read;
@@ -208,13 +208,17 @@ pub fn run() -> i32 {
     // venti con un memo scritto da chi non ci sarebbe mai arrivato.
     let sotto_avviso = used < t.warn;
     let valida = !sotto_avviso && handoff_valid(transcript, &session);
+    // Sopra il gradino di blocco la consegna valida non disarma più il
+    // presidio (`decide` la tratta come le sessioni senza consegna), quindi
+    // qui il contatore dei rifiuti va letto e non azzerato.
+    let disarma = valida && !over_lockout(used, t.budget);
     let fatti = Facts {
         tool,
         thresholds: &t,
         used,
         handoff_valid: valida,
-        already_warned: !sotto_avviso && !valida && used < t.require && already_warned(&session),
-        blocks_so_far: if sotto_avviso || valida || used < t.require {
+        already_warned: !sotto_avviso && !disarma && used < t.require && already_warned(&session),
+        blocks_so_far: if sotto_avviso || disarma || used < t.require {
             0
         } else {
             blocks_so_far(&session, false)
