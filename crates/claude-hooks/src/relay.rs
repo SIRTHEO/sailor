@@ -8,7 +8,12 @@
 //! ```text
 //!   0. il freno della catena          la storia, prima del momento: guarda
 //!                                     `guards::chain`
-//!   1. wait  tui-idle sulla vecchia   non si tronca un turno a metà
+//!      risolvi l'handle una volta     lo stesso pannello per l'attesa e per
+//!                                     l'invio, non due ririsoluzioni diverse
+//!   1. wait  tui-idle sullo stesso    non si tronca un turno a metà
+//!      handle
+//!   1bis. read del pannello           prova positiva del prompt vuoto: mai
+//!                                     un tasto su una domanda in sospeso
 //!   2. write riprendi-da/<worktree>   il testimone — consegna, punto di
 //!                                     ripresa e mandato — prima di agire
 //!   3. send  /clear allo stesso       la sessione riparte vuota sul posto:
@@ -972,15 +977,63 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         return;
     }
 
+    // L'HANDLE SI RISOLVE UNA VOLTA SOLA, e serve sia all'attesa sia
+    // all'invio. Fino al 20/08/2026 l'attesa leggeva `rec.handle` — quello
+    // scritto nel record a inizio giro, che può essere scaduto — mentre
+    // l'invio ririsolveva da capo poco più sotto: la staffetta poteva
+    // certificare fermo un pannello e scriverne un altro. Misurato il
+    // 20/08/2026 alle 15:02:39: `/clear inviato a term_ce14b1fd…` nel
+    // registro, mentre il record portava `term_5407eace…`.
+    let handle = handle_di_adesso(rec, orca);
+    if handle.is_empty() {
+        // Il pannello non c'è più: non è un guasto, è una sessione finita per
+        // conto suo. Il record lo raccoglie `Action::Clean` al giro dopo.
+        log_line(&format!(
+            "sess={sess}: il pannello non c'e' piu', niente da azzerare"
+        ));
+        return;
+    }
+
     // 1. non troncare un turno: attendi che la vecchia sia idle
     let timeout = IDLE_TIMEOUT_MS.to_string();
     let (rc, _) = orca(&[
-        "terminal", "wait", "--terminal", &rec.handle, "--for", "tui-idle",
+        "terminal", "wait", "--terminal", &handle, "--for", "tui-idle",
         "--timeout-ms", &timeout,
     ]);
     if rc != 0 {
         log_line(&format!("sess={sess}: non idle (rc={rc}), rimando"));
         return;
+    }
+
+    // 1-bis. PROVA POSITIVA DEL PROMPT VUOTO, non solo `tui-idle`. `tui-idle`
+    // dice soltanto «non sta scrivendo in questo istante», ed è vero anche a
+    // modale aperta: misurato il 20/08/2026, un `terminal wait --for
+    // tui-idle` su un pannello con una `AskUserQuestion` in coda ha dato
+    // `rc=0`. Alle 13:02:40 di quel giorno l'Invio della staffetta ha
+    // risposto a quella domanda al posto di Theo, selezionando l'opzione
+    // evidenziata. Qui si legge cosa c'è scritto: senza la prova che il
+    // prompt sia vuoto non si tocca un tasto — chiudere una domanda aperta al
+    // posto di Theo è lo stesso danno di rispondergli.
+    match panel_readiness(&handle, orca) {
+        PanelReadiness::Clear => {}
+        PanelReadiness::Question => {
+            log_line(&format!(
+                "sess={sess}: una scelta e' in sospeso sul pannello, non tocco i tasti: rimando"
+            ));
+            return;
+        }
+        PanelReadiness::Typing => {
+            log_line(&format!(
+                "sess={sess}: la riga d'ingresso non e' vuota, non tocco i tasti: rimando"
+            ));
+            return;
+        }
+        PanelReadiness::Unknown => {
+            log_line(&format!(
+                "sess={sess}: il pannello non si e' letto con prova certa, non tocco i tasti: rimando"
+            ));
+            return;
+        }
     }
 
     // 2. lascia il segnale di ripresa per il successore
@@ -1057,19 +1110,10 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // morto. Nessuno di quei rami esiste più: non c'è niente da creare e niente
     // da chiudere.
     //
-    // L'HANDLE SI RIRISOLVE COMUNQUE, ed è l'unica cautela che resta: fra la
-    // lettura di inizio giro e questo istante Orca può aver riattaccato il
-    // pannello, e mandare `/clear` all'handle sbagliato azzera la sessione di
-    // qualcun altro.
-    let handle = handle_di_adesso(rec, orca);
-    if handle.is_empty() {
-        // Il pannello non c'è più: non è un guasto, è una sessione finita per
-        // conto suo. Il record lo raccoglie `Action::Clean` al giro dopo.
-        log_line(&format!(
-            "sess={sess}: il pannello non c'e' piu', niente da azzerare"
-        ));
-        return;
-    }
+    // `handle` è già quello risolto sopra, lo stesso su cui si è aspettato
+    // l'idle e letto il prompt: un'ulteriore ririsoluzione qui è proprio la
+    // seconda chiamata che ha fatto divergere attesa e invio il 20/08/2026.
+    //
     // L'istante del `/clear` separa il record del successore da quello di una
     // sessione che viveva su questa tab prima d'ora: i record vecchi restano
     // sul disco finché non li raccoglie qualcuno, e senza data un predecessore
@@ -1164,7 +1208,7 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         // contarlo farebbe mordere il freno mentre non si sostituisce niente.
         // Il conto lo tiene un contatore suo, che ha il proprio tetto.
         set_cooldown(&rec.worktree);
-        let n = mark_blind_attempt(&rec.worktree);
+        let n = mark_blind_attempt(&rec.worktree, &rec.session_id);
         log_line(&format!(
             "RIGENERAZIONE NON CONFERMATA sess={sess} ({n}/{MAX_BLIND_ATTEMPTS}): \
              /clear inviato a {handle}, ma il segnale non e' stato raccolto e \
@@ -1241,15 +1285,34 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
 /// Un file di stato e non la memoria del processo: la staffetta è un comando che
 /// launchd rilancia ogni sessanta secondi, e fra un giro e l'altro non
 /// sopravvive niente.
-fn mark_blind_attempt(worktree: &str) -> u32 {
+///
+/// LEGATO ANCHE ALLA SESSIONE, non solo all'albero. Sotto il tetto della resa
+/// cieca il conteggio non ha scadenza propria — solo `blind_stop_path` scade,
+/// e solo quando lo tocca — quindi un residuo lasciato da una sessione mai
+/// tornata resta sul disco e lo eredita la prossima registrata sullo stesso
+/// albero. Misurato il 19-20/08/2026: un residuo a tre ha fatto uscire il
+/// primo tentativo di una sessione nuova come «4 su 3», riaccecando l'albero
+/// per sei ore dopo un solo colpo suo. Una sessione con un `session_id` diverso
+/// da quello che ha lasciato il residuo riparte sempre da uno.
+fn mark_blind_attempt(worktree: &str, session_id: &str) -> u32 {
     let path = blind_attempts_path(worktree);
-    let n = fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| s.trim().parse::<u32>().ok())
-        .unwrap_or(0)
-        + 1;
+    let previous = fs::read_to_string(&path).ok();
+    let same_session = previous
+        .as_deref()
+        .and_then(|s| s.lines().nth(1))
+        .is_some_and(|s| s == session_id);
+    let n = if same_session {
+        previous
+            .as_deref()
+            .and_then(|s| s.lines().next())
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .unwrap_or(0)
+            + 1
+    } else {
+        1
+    };
     let _ = fs::create_dir_all(state_dir());
-    let _ = fs::write(&path, n.to_string());
+    let _ = fs::write(&path, format!("{n}\n{session_id}"));
     n
 }
 
@@ -1350,6 +1413,53 @@ fn handle_di_adesso(rec: &Record, orca: OrcaFn) -> String {
     match read_terminals(orca) {
         Some(ts) => resolve_terminal_handle(&rec.tab_id, &rec.worktree, &rec.handle, &ts),
         None => rec.handle.clone(),
+    }
+}
+
+/// Righe di coda lette dal pannello prima di giudicarlo: bastano poche, la
+/// firma di una domanda in sospeso e la riga del prompt sono sempre l'ultima
+/// cosa scritta prima che il pannello si fermi.
+const PANEL_READ_LINES: &str = "60";
+
+/// La firma che il TUI stampa sotto una `AskUserQuestion` ancora aperta.
+const OPEN_QUESTION_SIGNATURE: &str = "Enter to select";
+
+/// Cosa dice il pannello adesso, letto per davvero e non dedotto da
+/// `tui-idle` — che risponde «fermo» anche a modale aperta.
+enum PanelReadiness {
+    /// Nessuna domanda in coda, riga d'ingresso vuota: si può scrivere.
+    Clear,
+    /// Una scelta è ancora aperta e aspetta una risposta.
+    Question,
+    /// La riga d'ingresso porta del testo non ancora inviato.
+    Typing,
+    /// Il pannello non si è letto, o non si è trovata la riga del prompt: non
+    /// è la prova positiva che serve, quindi vale come non vuoto.
+    Unknown,
+}
+
+/// Legge la coda del pannello e giudica se è il caso di scriverci.
+///
+/// LA RIGA DEL PROMPT È L'ULTIMA CHE COMINCIA CON `❯`. Nello scorrimento
+/// compaiono anche i vecchi messaggi dell'utente con lo stesso segno davanti
+/// — sono scrollback, non il prompt — ma quello vero è sempre il più recente,
+/// cioè il più vicino alla fine del testo: da qui la ricerca all'indietro.
+fn panel_readiness(handle: &str, orca: OrcaFn) -> PanelReadiness {
+    let (rc, out) = orca(&[
+        "terminal", "read", "--terminal", handle, "--limit", PANEL_READ_LINES,
+    ]);
+    if rc != 0 || out.is_empty() {
+        return PanelReadiness::Unknown;
+    }
+    if out.contains(OPEN_QUESTION_SIGNATURE) {
+        return PanelReadiness::Question;
+    }
+    match out.lines().rev().find(|l| l.trim_start().starts_with('❯')) {
+        Some(l) if l.trim_start().trim_start_matches('❯').trim().is_empty() => {
+            PanelReadiness::Clear
+        }
+        Some(_) => PanelReadiness::Typing,
+        None => PanelReadiness::Unknown,
     }
 }
 
@@ -1662,6 +1772,10 @@ mod tests {
 
     use crate::test_home::HomeIsolata;
 
+    /// Un pannello «fermo», per le prove che non parlano del suo contenuto:
+    /// nessuna domanda in coda, riga d'ingresso vuota.
+    const PROMPT_LIBERO: &str = "──────\n❯\n──────\n";
+
     #[test]
     fn the_cut_counts_characters_not_bytes() {
         // Lo slicing di Python conta caratteri: su un messaggio accentato un
@@ -1729,6 +1843,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         regenerate(&test_record(), false, &mut orca);
@@ -1737,6 +1854,124 @@ mod tests {
         assert!(!seq.iter().any(|c| c.contains("close")), "ha chiuso: {seq:?}");
         let clear = seq.iter().find(|c| c.contains("/clear")).expect("nessun /clear");
         assert!(clear.contains("term_vecchio"), "azzerata la sessione sbagliata: {clear}");
+    }
+
+    #[test]
+    fn a_pending_question_gets_no_keystroke() {
+        let _home = HomeIsolata::nuova("domanda-in-sospeso");
+        // IL DIFETTO PIÙ GRAVE, misurato il 20/08/2026 alle 13:02:40: l'Invio
+        // della staffetta ha risposto a una `AskUserQuestion` al posto di
+        // Theo, selezionando l'opzione evidenziata. `tui-idle` diceva
+        // «fermo» anche a modale aperta: qui si legge il pannello, e la
+        // firma della domanda ferma ogni tasto.
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (
+                    0,
+                    "❯ 1. Chiudo qui la sessione (consigliato)\n  2. Continua\n\
+                     Enter to select · ↑/↓ to navigate · Esc to cancel\n"
+                        .to_string(),
+                );
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            !seq.iter().any(|x| x.contains("send")),
+            "ha battuto un tasto su una domanda in sospeso: {seq:?}"
+        );
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(log.contains("sospeso"), "{log}");
+    }
+
+    #[test]
+    fn a_clear_prompt_lets_the_clear_go_out() {
+        let _home = HomeIsolata::nuova("prompt-libero");
+        // Il differenziale della prova sopra: stesso pannello fermo secondo
+        // `tui-idle`, ma stavolta il prompt e' davvero vuoto — e il `/clear`
+        // parte.
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            seq.iter().any(|x| x.contains("/clear")),
+            "il prompt vuoto non ha fatto partire il /clear: {seq:?}"
+        );
+    }
+
+    #[test]
+    fn typed_text_left_in_the_prompt_gets_no_keystroke() {
+        let _home = HomeIsolata::nuova("testo-non-inviato");
+        // La seconda firma che il punto 1 chiede di rifiutare: non solo una
+        // domanda in coda, anche una riga d'ingresso che qualcuno ha già
+        // iniziato a scrivere.
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, "──────\n❯ non ancora inviato\n──────\n".to_string());
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        assert!(
+            !seq.iter().any(|x| x.contains("send")),
+            "ha battuto un tasto su una riga d'ingresso non vuota: {seq:?}"
+        );
+    }
+
+    #[test]
+    fn the_wait_and_the_clear_share_one_resolved_handle() {
+        let _home = HomeIsolata::nuova("handle-unico-attesa-e-invio");
+        // MUTANTE CHE QUESTA PROVA COGLIE: se l'handle si ririsolve una
+        // seconda volta prima del `/clear` — com'era fino al 20/08/2026 —
+        // l'attesa e l'invio possono finire su due pannelli diversi fra
+        // loro. Qui il secondo `terminal list` risponde con un altro
+        // pannello apposta: se il codice lo richiamasse, l'attesa userebbe
+        // il primo e l'invio il secondo.
+        let rec = Record { handle: "term_scaduto".into(), tab_id: "tab-1".into(), ..test_record() };
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            if args.contains(&"list") {
+                let seen = c.borrow().iter().filter(|x| x.contains("list")).count();
+                return if seen <= 1 {
+                    (0, r#"{"result":{"terminals":[{"handle":"term_primo","tabId":"tab-1"}]}}"#
+                        .to_string())
+                } else {
+                    (0, r#"{"result":{"terminals":[{"handle":"term_secondo","tabId":"tab-1"}]}}"#
+                        .to_string())
+                };
+            }
+            (0, String::new())
+        };
+        regenerate(&rec, false, &mut orca);
+        let seq = chiamate.borrow().clone();
+        let wait = seq.iter().find(|x| x.contains("wait")).expect("nessuna attesa");
+        let clear = seq.iter().find(|x| x.contains("/clear")).expect("nessun /clear");
+        assert!(wait.contains("term_primo"), "{wait}");
+        assert!(
+            clear.contains("term_primo"),
+            "l'invio ha usato un handle ririsolto una seconda volta: {clear}"
+        );
     }
 
     #[test]
@@ -1749,7 +1984,13 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
-            if args.contains(&"/clear") { (1, "boom".into()) } else { (0, String::new()) }
+            if args.contains(&"read") {
+                (0, PROMPT_LIBERO.to_string())
+            } else if args.contains(&"/clear") {
+                (1, "boom".into())
+            } else {
+                (0, String::new())
+            }
         };
         regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
@@ -1763,8 +2004,9 @@ mod tests {
     #[test]
     fn a_session_that_is_not_idle_is_left_alone() {
         let _home = HomeIsolata::nuova("non-idle");
-        // Primo comando: `wait`. Se fallisce, non deve seguire nient'altro —
-        // troncare un turno a metà costa il lavoro in corso.
+        // Primi due comandi: la lista per risolvere l'handle, poi il `wait`.
+        // Se `wait` fallisce, non deve seguire nient'altro — troncare un
+        // turno a metà costa il lavoro in corso.
         let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
@@ -1773,8 +2015,9 @@ mod tests {
         };
         regenerate(&test_record(), false, &mut orca);
         let seq = chiamate.borrow().clone();
-        assert_eq!(seq.len(), 1, "dopo un wait fallito non si fa altro: {seq:?}");
-        assert!(seq[0].contains("wait"));
+        assert_eq!(seq.len(), 2, "dopo un wait fallito non si fa altro: {seq:?}");
+        assert!(seq[0].contains("list"), "{seq:?}");
+        assert!(seq[1].contains("wait"), "{seq:?}");
     }
 
     #[test]
@@ -1794,6 +2037,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             if args.contains(&"/clear") {
                 // La sessione riparte e raccoglie: è ciò che fa il gancio di
                 // avvio, qui al momento giusto invece che da un altro processo.
@@ -1850,7 +2096,13 @@ mod tests {
             transcript: transcript.to_string_lossy().into_owned(),
             ..test_record()
         };
-        let mut orca = |_: &[&str]| -> (i32, String) { (0, String::new()) };
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                (0, PROMPT_LIBERO.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
         regenerate(&rec, false, &mut orca);
         // Il segnale resta sul disco: nessuno l'ha raccolto in questo caso.
         let corpo = fs::read_to_string(
@@ -1877,6 +2129,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         regenerate(&test_record(), false, &mut orca);
@@ -1931,6 +2186,9 @@ mod tests {
         std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
         write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
         let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             if args.contains(&"/clear") {
                 write_live_record("erede-000-0000", "tab-1", "clear", now_epoch() as u64);
             }
@@ -2008,6 +2266,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         for _ in 0..5 {
@@ -2041,6 +2302,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         regenerate(&test_record(), false, &mut orca);
@@ -2068,6 +2332,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         regenerate(&test_record(), false, &mut orca);
@@ -2093,6 +2360,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         regenerate(&test_record(), false, &mut orca);
@@ -2114,7 +2384,13 @@ mod tests {
         // giornata, poi uno riuscito, non devono lasciare la staffetta a un
         // passo dal proprio tetto.
         std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
-        let mut unanswered = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
+        let mut unanswered = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                (0, PROMPT_LIBERO.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
         regenerate(&test_record(), false, &mut unanswered);
         regenerate(&test_record(), false, &mut unanswered);
         assert!(blind_attempts_path("wt-prova").exists());
@@ -2123,6 +2399,36 @@ mod tests {
         assert!(
             !blind_attempts_path("wt-prova").exists(),
             "la serie non si è azzerata dopo una sostituzione provata"
+        );
+    }
+
+    #[test]
+    fn a_stale_count_from_another_session_does_not_carry_over() {
+        let _home = HomeIsolata::nuova("conteggio-non-ereditato");
+        // MISURATO IL 19-20/08/2026: un residuo lasciato da una sessione mai
+        // tornata ha fatto uscire il primo tentativo di una sessione diversa
+        // come «4 su 3», riaccecando l'albero dopo un solo colpo suo. Qui il
+        // residuo è di una sessione con un altro `session_id`: il primo
+        // tentativo della sessione di prova deve contare come «1», non
+        // ereditare il due lasciato da ieri.
+        let _ = fs::create_dir_all(state_dir());
+        fs::write(blind_attempts_path("wt-prova"), "2\nsessione-di-ieri").unwrap();
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                (0, PROMPT_LIBERO.to_string())
+            } else {
+                (0, String::new())
+            }
+        };
+        regenerate(&test_record(), false, &mut orca);
+        let count_file = fs::read_to_string(blind_attempts_path("wt-prova")).unwrap();
+        assert!(
+            count_file.starts_with('1'),
+            "il conteggio ha ereditato il residuo di un'altra sessione: {count_file}"
+        );
+        assert!(
+            !blind_stop_path("wt-prova").exists(),
+            "una sessione nuova e' stata accecata al primo colpo"
         );
     }
 
@@ -2162,7 +2468,9 @@ mod tests {
         let mut rec = test_record();
         rec.worktree = "9591c8dd-9b12::/Users/theo/gyver/work/suite".into();
         let mut orca = |args: &[&str]| -> (i32, String) {
-            if args.contains(&"create") {
+            if args.contains(&"read") {
+                (0, PROMPT_LIBERO.to_string())
+            } else if args.contains(&"create") {
                 (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
             } else {
                 (0, String::new())
@@ -2194,6 +2502,9 @@ mod tests {
         let c = chiamate.clone();
         let mut orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             (0, String::new())
         };
         regenerate(&test_record(), true, &mut orca);
@@ -2321,6 +2632,9 @@ mod tests {
         let c = chiamate.clone();
         let orca = move |args: &[&str]| -> (i32, String) {
             c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
             if args.contains(&"/clear") {
                 the_heir_registers_itself();
             }
@@ -2385,7 +2699,9 @@ mod tests {
         let orca = move |args: &[&str]| -> (i32, String) {
             let chiuso = c.borrow().iter().any(|x| x.contains("close"));
             c.borrow_mut().push(args.join(" "));
-            if args.contains(&"list") {
+            if args.contains(&"read") {
+                (0, PROMPT_LIBERO.to_string())
+            } else if args.contains(&"list") {
                 (0, if chiuso { dopo.to_string() } else { prima.to_string() })
             } else if args.contains(&"create") {
                 (0, r#"{"result":{"terminal":{"handle":"term_nuovo"}}}"#.to_string())
