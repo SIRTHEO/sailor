@@ -360,6 +360,14 @@ pub fn state_key(worktree_id: &str) -> String {
 ///
 /// L'ordine delle tre vie è comportamento, non stile: la tab batte l'handle noto,
 /// che batte il worktree. Chi lo inverte fa rispondere l'handle scaduto per primo.
+///
+/// UNA TAB PUÒ AVERE PIÙ PANNELLI. `terminal split` ne affianca un secondo
+/// nella stessa tab, e allora `tab_id` non basta più a scegliere: prima si
+/// prendeva il primo trovato, e la tab reale `2ae72849` — due pannelli — non
+/// dava modo di sapere quale fosse quello giusto. Qui si segue la stessa forma
+/// del ramo sul worktree qui sotto: se il candidato non è unico, si tace.
+/// Astenersi costa un giro saltato; scrivere sul pannello sbagliato costa i
+/// tasti di una sessione estranea.
 pub fn resolve_terminal_handle(
     tab_id: &str,
     worktree_id: &str,
@@ -370,11 +378,12 @@ pub fn resolve_terminal_handle(
         return String::new();
     }
     if !tab_id.is_empty() {
-        return terminals
-            .iter()
-            .find(|t| t.tab_id == tab_id)
-            .map(|t| t.handle.clone())
-            .unwrap_or_default();
+        let hits: Vec<&Terminal> = terminals.iter().filter(|t| t.tab_id == tab_id).collect();
+        return if hits.len() == 1 {
+            hits[0].handle.clone()
+        } else {
+            String::new()
+        };
     }
     // Il ripiego per i record scritti prima che la tab venisse salvata: quel
     // vecchio handle vale se è ancora fra i vivi, altrimenti no. Senza,
@@ -1098,6 +1107,18 @@ mod tests {
             resolve_terminal_handle("", "", "term_morto", &three_terminals()),
             ""
         );
+    }
+
+    #[test]
+    fn a_tab_with_two_panes_answers_for_neither() {
+        // La tab reale `2ae72849` aveva due pannelli: prima si prendeva il
+        // primo trovato, e un `/clear` poteva finire su quello sbagliato.
+        // Come il ramo del worktree qui sotto, l'ambiguità si astiene.
+        let due_pannelli = vec![
+            Terminal { handle: "term_a".into(), tab_id: "tab-2".into(), ..Default::default() },
+            Terminal { handle: "term_b".into(), tab_id: "tab-2".into(), ..Default::default() },
+        ];
+        assert_eq!(resolve_terminal_handle("tab-2", "", "", &due_pannelli), "");
     }
 
     #[test]
