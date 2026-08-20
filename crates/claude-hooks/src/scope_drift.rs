@@ -183,6 +183,26 @@ pub fn run() -> i32 {
     let Ok(ev) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return 0;
     };
+    process(&ev)
+}
+
+/// Il gancio a valle di stdin, così la provenienza si può provare in batteria.
+fn process(ev: &serde_json::Value) -> i32 {
+    // DENTRO UN SUBAGENT SI TACE, e va prima di ogni cosa che tocchi il disco.
+    //
+    // Le aree si contano **per sessione**, e un subagent condivide la sessione
+    // della madre: le sue aree finivano nel conto di lei. Il danno non è il
+    // conto gonfiato, è che questo avviso esce **una volta sola** — scritto
+    // `detto: true`, non torna più. Misurato il 21/08/2026 sul binario in
+    // servizio: chiamata da subagent e chiamata dalla madre con le stesse tre
+    // aree, la prima riceve l'avviso e la seconda tace. Cioè lo legge chi non
+    // può chiudere la sessione, e chi può non lo vede mai.
+    //
+    // È lo stesso difetto del presidio della consegna, in un altro punto: il
+    // controllo giusto applicato al soggetto sbagliato.
+    if crate::handoff::in_subagent(ev) {
+        return 0;
+    }
 
     let session = session_id(ev.get("session_id"));
     let Some(args) = ev.get("tool_input").filter(|v| v.is_object()) else {
@@ -321,5 +341,39 @@ mod tests {
         );
         // MUTANTE: con `journal::record` qui non ci sarebbe nessuno spazio.
         assert!(!riga.contains(r#""gancio":"scope-drift""#), "{riga}");
+    }
+
+    /// Differenziale a variabile unica: cambia solo `agent_id`, e l'esito si
+    /// ribalta. Senza il caso dalla madre, un gancio spento del tutto passerebbe.
+    #[test]
+    fn inside_a_subagent_the_hook_writes_no_state_of_the_mother() {
+        let _home = HomeIsolata::nuova("scope-drift-subagent");
+        let event = |agent: Option<&str>| {
+            let mut ev = serde_json::json!({
+                "session_id": "S9",
+                "tool_name": "Bash",
+                "tool_input": {
+                    "file_path": "/home/someone/other-repo/work/suite/src/x.ts",
+                    "command": "pnpm --dir /home/someone/other-repo/work/a-service test \
+                                /home/someone/other-repo/work/a-client/src",
+                },
+            });
+            if let Some(a) = agent {
+                ev["agent_id"] = serde_json::json!(a);
+            }
+            ev
+        };
+        // MUTANTE: tolto il ramo `in_subagent` da `process`, questo caso va in rosso.
+        assert_eq!(process(&event(Some("agent-figlio"))), 0);
+        assert!(
+            !state_file("S9").exists(),
+            "le aree di un subagent non entrano nel conto della madre"
+        );
+        // Stessi identici fatti, solo la provenienza cambia: qui lo stato nasce.
+        assert_eq!(process(&event(None)), 0);
+        assert!(
+            state_file("S9").exists(),
+            "dalla conversazione principale il gancio lavora come prima"
+        );
     }
 }
