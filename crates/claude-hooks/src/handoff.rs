@@ -48,10 +48,10 @@ fn dirs_home() -> PathBuf {
 /// un giro di serializzazione, e prenderla per un subagent spegnerebbe il
 /// presidio sulla madre — cioè il danno peggiore dei due.
 pub fn in_subagent(payload: &serde_json::Value) -> bool {
-    payload
-        .get("agent_id")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.trim().is_empty())
+    // La condizione vive in `hook_io` e questa è solo la porta per il payload
+    // grezzo: il 21/08/2026 la stessa domanda serviva anche ai ganci costruiti
+    // su `HookInput`, e due copie divergono alla prima correzione.
+    hook_io::agent_id_says_subagent(payload.get("agent_id").and_then(|v| v.as_str()))
 }
 
 /// Le ultime righe del transcript, vuoto in caso di errore.

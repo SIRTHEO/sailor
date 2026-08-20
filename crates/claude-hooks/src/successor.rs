@@ -428,7 +428,13 @@ pub enum ArmOutcome {
 /// registro non ha più una sola riga. Il freno più frequente — `troppe-sessioni`,
 /// 186 righe storiche — scattava invisibile. Nessun confronto se n'era accorto
 /// perché `compare-successor.py` non guardava il registro.
-pub fn arm(path: &str, session: &str, origin: &str, enough_used: bool) -> ArmOutcome {
+pub fn arm(
+    path: &str,
+    session: &str,
+    origin: &str,
+    enough_used: bool,
+    in_subagent: bool,
+) -> ArmOutcome {
     // La cwd del PROCESSO, non quella dichiarata nel payload. Il Python usa
     // `os.getcwd()`, e le due coincidono quasi sempre — per questo il confronto
     // non se ne era accorto: i casi passavano la cwd vera in entrambi i campi.
@@ -450,6 +456,7 @@ pub fn arm(path: &str, session: &str, origin: &str, enough_used: bool) -> ArmOut
         pane_cap: cap("CONSEGNA_TETTO_PANNELLI", 2),
         already_armed: false,
         enough_used,
+        in_subagent,
     };
     // Il consumo si valuta per ultimo perché SCRIVE il marcatore: chiederlo prima
     // brucerebbe l'unica arma di questa sessione anche quando un altro freno
@@ -566,6 +573,20 @@ fn session_is_full(input: &hook_io::HookInput, session: &str) -> bool {
 /// Fail-open in ogni ramo: l'uscita è sempre 0. Un gancio che rompe la scrittura
 /// di una consegna è peggio del problema che risolve.
 pub fn run(input: &hook_io::HookInput) -> i32 {
+    // DENTRO UN SUBAGENT NON SI ARMA NIENTE, e va prima di tutto il resto.
+    //
+    // Questo gancio apre una scheda vera con dentro un mandato, e la intesta
+    // alla sessione del payload — che per un subagent è quella della MADRE. Un
+    // documento di consegna scritto da un figlio nel suo perimetro non è la
+    // consegna della sessione: il successore che ne nascerebbe erediterebbe un
+    // lavoro che nessuno ha chiuso, e i freni davanti (tetto dei pannelli, già
+    // armato) contano pannelli e marcatori che sono della madre.
+    //
+    // Il campo `agent_id` è arrivato in `HookInput` il 21/08/2026: prima questa
+    // difesa non era esprimibile, perché il dato non passava di qui.
+    if input.in_subagent() {
+        return 0;
+    }
     let path = input
         .tool_input
         .as_ref()
@@ -576,7 +597,13 @@ pub fn run(input: &hook_io::HookInput) -> i32 {
         return 0;
     }
     let session = input.session_id.clone().unwrap_or_default();
-    match arm(path, &session, "scrittura", session_is_full(input, &session)) {
+    match arm(
+        path,
+        &session,
+        "scrittura",
+        session_is_full(input, &session),
+        input.in_subagent(),
+    ) {
         ArmOutcome::Stop(m) | ArmOutcome::Open(m) | ArmOutcome::Failed(m) => {
             // Un freno silenzioso resta silenzioso: stampare un JSON vuoto
             // riempirebbe di rumore ogni consegna scritta.
@@ -949,7 +976,7 @@ mod tests {
     fn arm_of_a_child_session_stays_quiet_and_opens_nothing() {
         let home = HomeIsolata::nuova("successor-arm-child");
         let _env = EnvOverrides::new().set(guards::successor::GENERATION_ENV, "1");
-        let outcome = arm("/x/consegna.md", "sessione-figlia", "scrittura", true);
+        let outcome = arm("/x/consegna.md", "sessione-figlia", "scrittura", true, false);
         assert_eq!(outcome, ArmOutcome::Stop(String::new()));
         let lines = journal_lines(&home.dir);
         assert!(
@@ -965,7 +992,7 @@ mod tests {
             .unset(guards::successor::GENERATION_ENV)
             .set("CONSEGNA_ORA", "12")
             .set("CONSEGNA_TETTO_SESSIONI", "0");
-        let outcome = arm("/x/consegna.md", "sessione-tetto", "scrittura", true);
+        let outcome = arm("/x/consegna.md", "sessione-tetto", "scrittura", true, false);
         match outcome {
             ArmOutcome::Stop(msg) => assert!(msg.contains("sessioni vive"), "{msg}"),
             other => panic!("atteso Stop parlante, ottenuto {other:?}"),
