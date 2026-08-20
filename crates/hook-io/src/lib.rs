@@ -105,12 +105,33 @@ impl HookInput {
     /// sessioni vere ne hanno tre forme diverse, compresi 913 `ignota`. Il
     /// trascritto sì: una prova a mano non ne ha uno, e uno finto non esiste.
     pub fn has_real_transcript(&self) -> bool {
-        self.transcript_path
-            .as_deref()
-            .filter(|p| !p.is_empty())
-            .map(|p| std::path::Path::new(p).exists())
-            .unwrap_or(false)
+        transcript_is_real(self.transcript_path.as_deref())
     }
+}
+
+/// La regola di sopra, in un punto solo, per i due modi in cui un gancio legge
+/// il payload: tipizzato e grezzo.
+///
+/// SETTE GANCI LEGGONO STDIN DA SÉ e non passano da `read_input`, quindi non
+/// dichiaravano mai il giro vero: ogni loro riga usciva marcata come prova.
+/// Misurato dal capitano il 21/08/2026: 332 righe della sessione viva
+/// `959336ae` — col contatore dei rifiuti che saliva mentre il presidio negava
+/// davvero — portavano `"prova": true`. Chi misura quanto un gate morde le
+/// scartava tutte, e la misura veniva sbagliata in difetto proprio sui ganci che
+/// mordono di più.
+pub fn transcript_is_real(path: Option<&str>) -> bool {
+    path.filter(|p| !p.is_empty())
+        .map(|p| std::path::Path::new(p).exists())
+        .unwrap_or(false)
+}
+
+/// Dichiara il giro vero leggendo il payload grezzo: la porta dei ganci che si
+/// leggono stdin da soli. Va chiamata **subito dopo il parse**, prima di
+/// qualunque riga di registro, altrimenti le prime righe escono marcate prova.
+pub fn mark_live_from_payload(payload: &serde_json::Value) {
+    journal::mark_live_run(transcript_is_real(
+        payload.get("transcript_path").and_then(|v| v.as_str()),
+    ));
 }
 
 /// Cosa il gancio ha deciso. `Warn` esiste perché un divieto senza una
