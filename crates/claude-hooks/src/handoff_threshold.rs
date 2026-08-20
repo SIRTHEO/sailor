@@ -26,34 +26,11 @@
 
 use guards::handoff::TAIL_BYTES;
 use guards::handoff_threshold::{
-    already_said, declared_window, message, percent, step_reached, DEFAULT_WINDOW,
+    already_said, declared_window, message, percent, step_reached,
 };
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-
-/// Le due variabili che dichiarano la finestra, nell'ordine dell'originale.
-///
-/// L'ORDINE È COMPORTAMENTO: lo scavalco manuale batte la sessione. Invertirlo
-/// renderebbe impossibile provare il gancio su una sessione vera, che è l'unica
-/// ragione per cui `SOGLIA_FINESTRA` esiste.
-const WINDOW_VARS: [&str; 2] = ["SOGLIA_FINESTRA", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"];
-
-/// Quanto contesto ha questa sessione, secondo chi lo sa.
-///
-/// Il nome del modello non serve e non basta: nei 23.481 usi registrati compare
-/// sempre come `claude-opus-5`, mai con la variante `[1m]`, quindi da lì la
-/// finestra non si deduce.
-fn window() -> u128 {
-    for var in WINDOW_VARS {
-        if let Ok(raw) = std::env::var(var) {
-            if let Some(v) = declared_window(&raw) {
-                return v;
-            }
-        }
-    }
-    DEFAULT_WINDOW
-}
 
 /// I token in contesto all'ultima risposta, leggendo solo la coda del file.
 ///
@@ -327,18 +304,15 @@ mod tests {
     }
 
     #[test]
-    fn la_finestra_la_dichiara_prima_lo_scavalco_poi_la_sessione() {
-        let _t = TmpIsolata::nuova("soglia-finestra");
-        assert_eq!(window(), 200_000);
-        std::env::set_var("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "1000000");
-        assert_eq!(window(), 1_000_000);
-        std::env::set_var("SOGLIA_FINESTRA", "200000");
-        assert_eq!(window(), 200_000, "lo scavalco manuale deve vincere");
-        // Illeggibile: si ripiega sulla variabile dopo, non sul valore storico.
-        std::env::set_var("SOGLIA_FINESTRA", "boh");
-        assert_eq!(window(), 1_000_000);
-        std::env::remove_var("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
-        assert_eq!(window(), DEFAULT_WINDOW);
+    fn an_unreadable_override_falls_back_instead_of_guessing() {
+        // `run()` legge `SOGLIA_FINESTRA` da se' e, quando manca o non si
+        // legge, calcola il budget dal transcript: la finestra dichiarata non
+        // entra piu' nel conto. Qui resta provato il pezzo che quel percorso
+        // usa davvero — leggere il numero — perche' il resto di `run()` prende
+        // da stdin e non e' raggiungibile da una prova.
+        assert_eq!(declared_window("200000"), Some(200_000));
+        assert_eq!(declared_window("boh"), None);
+        assert_eq!(declared_window(""), None);
     }
 
     #[test]
