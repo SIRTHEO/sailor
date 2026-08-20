@@ -60,6 +60,21 @@ impl HomeIsolata {
     }
 }
 
+/// Il lucchetto senza sostituire `HOME`, per i casi che devono leggere quella vera.
+///
+/// PERCHÉ SERVE. Un caso che guarda `$HOME` **vera** — perché prova proprio le
+/// radici che stanno fuori da `.claude` — non ha niente da isolare, ma corre lo
+/// stesso rischio al contrario: mentre lui legge, un altro caso può avere la
+/// casa finta impostata, e allora vede un albero che non è quello di nessuno.
+/// Misurato il 20/08/2026: `cargo test -p claude-hooks` era rosso 2 volte su 8,
+/// sempre sullo stesso caso, dopo che undici case isolate nuove hanno allargato
+/// la finestra in cui `HOME` è sostituita. Prendere il lucchetto senza toccare
+/// niente costa quanto un'attesa e chiude la corsa.
+#[must_use = "tienila viva in un `let _lock = …`: rilasciata subito, non serve a niente"]
+pub fn real_home_guard() -> MutexGuard<'static, ()> {
+    LUCCHETTO.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 impl Drop for HomeIsolata {
     fn drop(&mut self) {
         std::env::remove_var("RELAY_PICKUP_TIMEOUT_SEC");
