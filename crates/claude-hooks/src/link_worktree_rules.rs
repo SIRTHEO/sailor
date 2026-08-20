@@ -205,8 +205,8 @@ mod tests {
         let casa = HomeIsolata::nuova("link-worktree-conta");
         let p = falso_script(
             &casa,
-            "echo '  ok        a'\necho '  collegato b : .claude/rules'\n\
-             echo '  collegato c : CLAUDE.md'\necho '  FOUND     d : x'\n",
+            "echo '  ok        a'\necho '  synced    b : .claude/rules (20 rules)'\n\
+             echo '  linked    c : CLAUDE.md'\necho '  FOUND     d : x'\n",
         );
         let uscita = link(&p).unwrap();
         assert_eq!(linked_count(&uscita), 2);
@@ -227,7 +227,7 @@ mod tests {
         let casa = HomeIsolata::nuova("link-worktree-stderr");
         let p = falso_script(
             &casa,
-            "echo 'rumore' >&2\necho '  collegato b :'\nexit 3\n",
+            "echo 'rumore' >&2\necho '  synced    b : .claude/rules (20 rules)'\nexit 3\n",
         );
         assert_eq!(linked_count(&link(&p).unwrap()), 1);
     }
