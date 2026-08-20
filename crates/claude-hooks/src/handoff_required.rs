@@ -157,6 +157,9 @@ pub fn run() -> i32 {
     let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return 0;
     };
+    // Chi legge stdin da sé deve dichiararlo, o ogni sua riga di registro esce
+    // marcata come prova — e questo gancio è fra quelli che mordono di più.
+    hook_io::mark_live_from_payload(&data);
     let campo = |k: &str| data.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let session_intero = data
         .get("session_id")

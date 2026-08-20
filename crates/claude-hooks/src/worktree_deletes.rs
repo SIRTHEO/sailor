@@ -99,6 +99,13 @@ pub fn run() -> i32 {
     if std::io::stdin().read_to_string(&mut raw).is_err() {
         return 0;
     }
+    // Chi legge stdin da sé deve dichiararlo, o ogni sua riga di registro esce
+    // marcata come prova. Qui il payload si rilegge — `extract_grant` lo analizza
+    // per conto suo e non torna indietro — ma è un oggetto piccolo, e la
+    // dichiarazione deve precedere qualunque riga scritta.
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+        hook_io::mark_live_from_payload(&v);
+    }
     let root = workspaces();
     // L'unica domanda che va al disco. `symlink_metadata` e non `metadata`: il
     // secondo segue il collegamento, che è esattamente ciò da cui questa
