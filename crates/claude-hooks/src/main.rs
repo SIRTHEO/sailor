@@ -15,19 +15,19 @@
 
 mod duplication;
 mod handoff;
+mod handoff_on_stop;
+mod handoff_required;
 mod linear;
 mod live_rules;
 mod preflight;
-mod handoff_required;
-mod handoff_on_stop;
-mod worktree_deletes;
 mod relay;
+mod relay_eval;
 mod restart;
 mod scope_drift;
+mod successor;
 #[cfg(test)]
 mod test_home;
-mod successor;
-mod relay_eval;
+mod worktree_deletes;
 // I quattro porti aperti il 17/08/2026. Registrati come scheletri prima di
 // essere scritti, così ogni porto tocca un file solo e il binario compila a
 // ogni passo.
@@ -36,15 +36,16 @@ mod hook_census;
 mod link_worktree_rules;
 mod spotlight_marker;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
+mod ai_personal_data;
+mod json_tool;
+mod memory_anchors;
+mod memory_citation_gate;
 mod orca_cleanup;
+mod reachability;
 mod register_session;
+mod session_messages;
 mod skill_nudge;
 mod work_status;
-mod json_tool;
-mod session_messages;
-mod reachability;
-mod memory_anchors;
-mod ai_personal_data;
 
 use hook_io::{Decision, Mode};
 
@@ -63,7 +64,11 @@ fn main() {
         // chi legge l'elenco non distingue un gancio spento da uno strumento che
         // si invoca a mano, e i due casi hanno cure opposte.
         for name in ALL_HOOKS {
-            let covered = if is_covered(name) { "provato" } else { "senza caso" };
+            let covered = if is_covered(name) {
+                "provato"
+            } else {
+                "senza caso"
+            };
             let kind = if is_hook(name) { "gancio" } else { "strumento" };
             println!("{name}\t{covered}\t{kind}");
         }
@@ -161,6 +166,7 @@ const ALL_HOOKS: &[&str] = &[
     // riga mancava, e il workspace non passava piu.
     "reachability",
     "memory-anchors",
+    "memory-citation-gate",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -229,6 +235,10 @@ const COVERED_APART: &[&str] = &[
     // 19 prove fra logica e braccio: l'impronta che non si muove quando cambia
     // solo il commento, e quella che si muove quando cambia il codice.
     "memory-anchors",
+    // Nega una citazione nuova che non si risolve, non una vecchia: la prova
+    // che regge il confronto e' `an_old_citation_survives_an_unrelated_edit`.
+    // Otto prove in tutto, la ricostruzione di Write/Edit/MultiEdit compresa.
+    "memory-citation-gate",
 ];
 
 fn is_covered(name: &str) -> bool {
@@ -327,11 +337,8 @@ fn self_check() -> i32 {
         "it('rifiuta le date future', () => {})",
         true,
     );
-    let english = guards::code_language::judge(
-        "/x/a.test.ts",
-        "it('rejects future dates', () => {})",
-        true,
-    );
+    let english =
+        guards::code_language::judge("/x/a.test.ts", "it('rejects future dates', () => {})", true);
     if italian.is_none() || english.is_some() {
         eprintln!("code-language: non distingue una descrizione italiana da una inglese");
         failures += 1;
@@ -446,7 +453,11 @@ fn self_check() -> i32 {
         // fida di questa riga prima di far puntare la configurazione al
         // binario, quindi la riga deve dire la copertura, non il totale dei
         // provati (17/08/2026).
-        let covered: Vec<&str> = ALL_HOOKS.iter().copied().filter(|h| is_covered(h)).collect();
+        let covered: Vec<&str> = ALL_HOOKS
+            .iter()
+            .copied()
+            .filter(|h| is_covered(h))
+            .collect();
         let uncovered: Vec<&str> = ALL_HOOKS
             .iter()
             .copied()
@@ -634,8 +645,7 @@ fn run(which: &str) -> Result<i32, String> {
                 let command = input.bash_command();
                 for (target, body) in guards::code_language::writes_from_bash(&command) {
                     let exists = std::path::Path::new(&target).exists();
-                    let Some(message) = guards::code_language::judge(&target, &body, exists)
-                    else {
+                    let Some(message) = guards::code_language::judge(&target, &body, exists) else {
                         continue;
                     };
                     if phase == "pre" {
@@ -680,7 +690,9 @@ fn run(which: &str) -> Result<i32, String> {
             // Senza prefisso: il messaggio è già un rapporto intero, e la prima
             // riga dice da sola di che si tratta.
             match decision {
-                hook_io::Decision::Deny(m) => Ok(hook_io::emit("code-language", &hook_io::Decision::Deny(m))),
+                hook_io::Decision::Deny(m) => {
+                    Ok(hook_io::emit("code-language", &hook_io::Decision::Deny(m)))
+                }
                 hook_io::Decision::Block(m) => {
                     eprintln!("{m}");
                     Ok(2)
@@ -724,8 +736,7 @@ fn run(which: &str) -> Result<i32, String> {
             let exempt = std::fs::read_to_string(path)
                 .map(|c| guards::comment_refs::declares_marker(&c))
                 .unwrap_or(false);
-            let hook_io::Decision::Deny(message) =
-                guards::comment_refs::judge(path, &text, exempt)
+            let hook_io::Decision::Deny(message) = guards::comment_refs::judge(path, &text, exempt)
             else {
                 return Ok(0);
             };
@@ -780,7 +791,10 @@ fn run(which: &str) -> Result<i32, String> {
             let Some(transcript) = args.next() else {
                 return Err("handoff-measure vuole il percorso di un transcript".into());
             };
-            Ok(handoff::measure(&transcript, &args.next().unwrap_or_default()))
+            Ok(handoff::measure(
+                &transcript,
+                &args.next().unwrap_or_default(),
+            ))
         }
         // Stessa ragione: l'elenco dei pannelli arriva da stdin perché le due
         // implementazioni devono giudicare lo stesso elenco, non due letture a
@@ -885,6 +899,11 @@ fn run(which: &str) -> Result<i32, String> {
         // del codice di adesso?», e nessuna radice lo invoca. Chi lo lancia è un
         // servizio settimanale o una sessione che sta per agire su una memoria.
         "memory-anchors" => Ok(memory_anchors::run()),
+        // Nega una scrittura su una memoria se introduce una citazione a un
+        // file che non si trova su nessuna radice. Stesso involucro di
+        // `comment-refs`: guarda il testo che sta per essere scritto e nega
+        // prima, perché un avviso dopo lascia la citazione morta sul file.
+        "memory-citation-gate" => Ok(memory_citation_gate::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
@@ -987,7 +1006,11 @@ mod catalogo {
     /// GIUDICANO — e restano ganci anche mentre nessuna radice li accende.
     #[test]
     fn whatever_judges_stays_a_hook_even_while_switched_off() {
-        for name in ["block-worktree-create", "comment-refs", "allow-session-messages"] {
+        for name in [
+            "block-worktree-create",
+            "comment-refs",
+            "allow-session-messages",
+        ] {
             assert!(
                 is_hook(name),
                 "{name} giudica: toglierlo dai ganci spegnerebbe la domanda invece di rispondere"

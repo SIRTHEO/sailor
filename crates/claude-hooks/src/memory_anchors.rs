@@ -85,6 +85,12 @@ fn roots() -> Vec<PathBuf> {
         h.join(".claude/rust"),
         h.join(".claude/scripts"),
         h.join("orca/general"),
+        // `claude-hook.sh` non vive sotto nessuna radice sopra: sta a se',
+        // fuori da `.claude`.
+        h.join(".orca/agent-hooks"),
+        // `ingest-coordinator.ts` e `memory-server/src/index.ts` idem: il
+        // servizio gira da qui, non da un repo sotto un ombrello.
+        h.join(".harness-mem/runtime/harness-mem"),
     ];
     out.extend(umbrellas.iter().cloned());
     // I repo sotto l'ombrello: `suite/src/...` si risolve dall'ombrello, ma
@@ -124,6 +130,37 @@ fn test_roots() -> Option<Vec<PathBuf>> {
 thread_local! {
     static TEST_ROOTS: std::cell::RefCell<Option<Vec<PathBuf>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// Le stesse radici-per-thread, aperte a `memory_citation_gate`: le sue prove
+/// devono poter isolare il disco esattamente come fanno queste, senza
+/// duplicare il meccanismo del thread-local.
+///
+/// **Il valore va restituito e tenuto vivo**: al `Drop` le radici tornano
+/// com'erano. Senza, le radici finte restano appese al thread, e siccome
+/// `cargo test` riusa i thread del suo pool, la prova che capita dopo sullo
+/// stesso thread le eredita. Successo il 20/08/2026: un caso che passava da
+/// solo e in `--test-threads=1` falliva in parallelo, cioe' il modo peggiore —
+/// un rosso che sembra un caso e invece e' un difetto.
+#[cfg(test)]
+pub(crate) fn set_test_roots(dirs: Vec<PathBuf>) -> TestRootsGuard {
+    let before = TEST_ROOTS.with(|r| r.borrow().clone());
+    TEST_ROOTS.with(|r| *r.borrow_mut() = Some(dirs));
+    TestRootsGuard { before }
+}
+
+/// Rimette le radici di prima quando esce di scena.
+#[cfg(test)]
+#[must_use = "tienila viva in un `let _roots = …`: buttata subito, le radici tornano quelle vere"]
+pub(crate) struct TestRootsGuard {
+    before: Option<Vec<PathBuf>>,
+}
+
+#[cfg(test)]
+impl Drop for TestRootsGuard {
+    fn drop(&mut self) {
+        TEST_ROOTS.with(|r| *r.borrow_mut() = self.before.take());
+    }
 }
 
 /// Da come è scritto nella memoria al file sul disco.
@@ -174,11 +211,16 @@ fn is_generated_dir(name: &str) -> bool {
 /// `.mastra/output/index.mjs`, `src/generated/prisma/client/schema.prisma`.
 /// Nessuno di questi file e' mai stato scritto a mano, quindi «non esiste» non
 /// e' una notizia da bonificare: erano 10 delle 94 citazioni del 20/08/2026.
-fn cites_a_build_artifact(path: &str) -> bool {
+// `pub(crate)`: il gancio `memory_citation_gate` la riusa per non riscrivere
+// da capo la stessa domanda («e' un artefatto di build?») su una memoria
+// appena scritta.
+pub(crate) fn cites_a_build_artifact(path: &str) -> bool {
     path.split('/').any(is_generated_dir)
 }
 
-fn resolve_all(path: &str) -> Vec<PathBuf> {
+// `pub(crate)`, stessa ragione: `memory_citation_gate` deve risolvere una
+// citazione nuova esattamente come fa `--dead`, o le due risposte divergono.
+pub(crate) fn resolve_all(path: &str) -> Vec<PathBuf> {
     let expanded = if let Some(rest) = path.strip_prefix("~/") {
         home().join(rest)
     } else {
@@ -247,7 +289,14 @@ fn contains_in_order(haystack: &str, segments: &[String]) -> bool {
 /// mancavano il 20/08/2026 stavano su rami di lavoro mai fusi
 /// (`feat-scheda-offerta-mockup`) e su rami solo locali
 /// (`matteodimattia/descent`, `ci/linear-autoclose`).
-fn on_another_branch(path: &str) -> Option<String> {
+///
+/// COSTA SEI SECONDI, perche' elenca l'albero di ogni ramo di ogni repo — 76
+/// solo su `suite`. Va bene per `--dead`, che si lancia a mano e ne controlla
+/// cinquanta in un colpo; **non** per un gancio, che ne controlla una alla
+/// volta e farebbe aspettare chi scrive. Per quel caso c'e'
+/// [`branch_holding`], che chiede a git il solo nome che serve.
+// `pub(crate)`, stessa ragione delle due sopra.
+pub(crate) fn on_another_branch(path: &str) -> Option<String> {
     static REMOTE: OnceLock<BTreeMap<String, Vec<String>>> = OnceLock::new();
     // Sotto prova l'indice si rifa' ogni volta: una cache globale farebbe
     // ereditare a una prova le radici di un'altra, come per `by_name`.
@@ -296,6 +345,49 @@ fn build_branch_index() -> BTreeMap<String, Vec<String>> {
         }
     }
     map
+}
+
+/// Come [`on_another_branch`], ma per una citazione sola.
+///
+/// Invece di elencare ogni albero, chiede a git dove quel nome e' comparso:
+/// `log --all --diff-filter=A -- '*<nome>'` costa otto centesimi per repo
+/// contro i sei secondi dell'indice. La differenza non e' di stile — un gancio
+/// che intercetta ogni scrittura non puo' far aspettare nove secondi, e la
+/// prima versione lo faceva.
+///
+/// In cambio e' meno preciso: dice che quel nome e' **esistito** su un ramo,
+/// non che ci viva adesso. Per negare o lasciar passare una scrittura basta,
+/// perche' nel dubbio si lascia passare; per il rendiconto di `--dead`, che
+/// deve stampare dove andare a guardare, no.
+pub(crate) fn branch_holding(path: &str) -> Option<String> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if name.is_empty() {
+        return None;
+    }
+    for root in roots() {
+        if !root.join(".git").exists() {
+            continue;
+        }
+        let out = std::process::Command::new("git")
+            .args(["-C", &root.to_string_lossy()])
+            .args([
+                "log",
+                "--all",
+                "--format=",
+                "--name-only",
+                "--diff-filter=A",
+            ])
+            .args(["--", &format!("*{name}")])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok());
+        let Some(text) = out else { continue };
+        if let Some(line) = text.lines().find(|l| !l.trim().is_empty()) {
+            return Some(format!("{}/{line}", tilde(&root)));
+        }
+    }
+    None
 }
 
 /// I rami di un repo, locali e remoti.
@@ -1460,5 +1552,17 @@ mod tests {
         // Timbrato bene, l'allarme si spegne.
         restamp_anchors(&[memory.clone()], true);
         assert_eq!(check(&[memory], true), 0);
+    }
+
+    #[test]
+    fn roots_reach_the_hook_script_and_the_ingest_runtime() {
+        // `claude-hook.sh` vive fuori da `.claude`, in `~/.orca/agent-hooks`;
+        // `ingest-coordinator.ts` e `memory-server/src/index.ts` vivono sotto
+        // `~/.harness-mem/runtime/harness-mem`. Nessun'altra radice li
+        // raggiunge, quindi qui si guarda `roots()` vera — `with_roots` la
+        // sostituirebbe e non proverebbe niente.
+        let all = roots();
+        assert!(all.contains(&home().join(".orca/agent-hooks")));
+        assert!(all.contains(&home().join(".harness-mem/runtime/harness-mem")));
     }
 }
