@@ -1266,6 +1266,9 @@ pub fn run() -> i32 {
     let Ok(payload) = serde_json::from_str::<Value>(&raw) else {
         return 0;
     };
+    // Chi legge stdin da sé deve dichiararlo, o ogni sua riga di registro esce
+    // marcata come prova.
+    hook_io::mark_live_from_payload(&payload);
     for (name, step) in [
         ("dopo-richiesta", dopo_richiesta as fn(&Value) -> Py<Option<String>>),
         ("dopo-fusione", dopo_fusione),
