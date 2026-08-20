@@ -63,6 +63,11 @@ fn main() {
         // La terza colonna risponde a «questo va acceso in una radice?». Senza,
         // chi legge l'elenco non distingue un gancio spento da uno strumento che
         // si invoca a mano, e i due casi hanno cure opposte.
+        // Le colonne 4 e 5 separano le due domande che la seconda fondeva:
+        // «il binario si prova da sé qui dentro» (self_check) non è la stessa
+        // cosa di «esiste un test altrove» (modulo o crate delegato). La
+        // colonna 2 resta l'unione delle due, per chi vuole solo sì/no e per
+        // non rompere chi la legge già (`accettazione.py`, indice 1).
         for name in ALL_HOOKS {
             let covered = if is_covered(name) {
                 "provato"
@@ -70,7 +75,17 @@ fn main() {
                 "senza caso"
             };
             let kind = if is_hook(name) { "gancio" } else { "strumento" };
-            println!("{name}\t{covered}\t{kind}");
+            let self_checked = if self_check_covers(name) {
+                "autoverifica"
+            } else {
+                "senza autoverifica"
+            };
+            let module_tested = if has_module_test(name) {
+                "test-modulo"
+            } else {
+                "senza test-modulo"
+            };
+            println!("{name}\t{covered}\t{kind}\t{self_checked}\t{module_tested}");
         }
         return;
     }
@@ -206,43 +221,158 @@ fn is_hook(name: &str) -> bool {
     !NOT_HOOKS.contains(&name)
 }
 
-/// Ganci con un caso di prova in `self_check`, oltre a quelli di SMOKE: qui
-/// stanno quelli che non giudicano un comando e hanno un controllo scritto a
-/// parte, più sotto.
-const COVERED_APART: &[&str] = &[
-    // I due del 18/08: nessun caso in `self_check`, ma un confronto
-    // d'equivalenza col Python a parte — 28 casi e 3 mutanti uccisi per il
-    // primo, 126 casi e 2 mutanti per il secondo.
-    "allow-session-messages",
-    "json",
+/// Ganci con un blocco dedicato dentro `self_check()`, oltre a quelli della
+/// tabella SMOKE: giudicano una coppia di dati (non un comando singolo) e per
+/// quello hanno un pezzo di codice scritto a parte, più sotto in questo file.
+///
+/// Elenco a mano perché il corpo di `self_check()` non è un dato strutturato:
+/// il test `ogni_extra_ha_un_blocco_in_self_check` lo tiene onesto contando le
+/// occorrenze del nome nel sorgente della funzione.
+const SELF_CHECK_EXTRA: &[&str] = &[
     "code-language",
-    // Aggiunto il 18/08/2026. `is_blind` non aveva un caso — si provava solo
-    // `targets`, cioe' l'estrazione — e per questo il censimento lo elencava
-    // fra i ganci di cui non si sa niente. Ora ha quattro prove sul giudizio
-    // (albero cieco, albero sano, repo senza controlli, push) e quattro mutanti
-    // uccisi. Non entra in SMOKE perche' la sua decisione vuole un repo vero
-    // sul disco, e un caso finto qui direbbe una cosa non vera.
-    "hooks-off",
     "comment-refs",
     "duplication",
     "orca-cleanup",
     "spotlight-marker",
     "work-status",
-    // 14 prove nel modulo, piu 10 mutanti uccisi: la copertura c'e', ma non
-    // passa da `self_check`, che giudica un comando e qui non c'e niente da
-    // giudicare.
-    "reachability",
-    // 19 prove fra logica e braccio: l'impronta che non si muove quando cambia
-    // solo il commento, e quella che si muove quando cambia il codice.
-    "memory-anchors",
-    // Nega una citazione nuova che non si risolve, non una vecchia: la prova
-    // che regge il confronto e' `an_old_citation_survives_an_unrelated_edit`.
-    // Otto prove in tutto, la ricostruzione di Write/Edit/MultiEdit compresa.
-    "memory-citation-gate",
 ];
 
+/// «Il binario sa provarsi da solo su questo gancio»: gira dentro
+/// `self_check()`, con un comando vero o un caso scritto a mano — non solo un
+/// nome citato in un elenco.
+fn self_check_covers(name: &str) -> bool {
+    SMOKE.iter().any(|(n, _, _)| *n == name) || SELF_CHECK_EXTRA.contains(&name)
+}
+
+/// La domanda pura, isolata dal resto: un sorgente contiene un caso di prova?
+/// Separata da `has_module_test` per poterla provare senza toccare nessun file
+/// del disco.
+fn source_contains_test(source: &str) -> bool {
+    source.contains("#[test]")
+}
+
+/// «Esiste una prova che copre questo gancio»: un `#[test]` nel modulo che lo
+/// implementa in questo crate, o nel modulo del crate `guards`/`hook-io` a cui
+/// delega. I sorgenti si leggono a tempo di compilazione con `include_str!`,
+/// così un test tolto o aggiunto altrove si vede da solo alla build
+/// successiva, senza un booleano scritto a mano che invecchia in silenzio —
+/// il difetto che questa colonna corregge. Resta a mano solo la mappa
+/// gancio→file: cambia molto più di rado di quanto cambino i test, ed è
+/// tenuta onesta dal test `ogni_gancio_ha_una_voce_nella_mappa_dei_test`.
+/// Costo: alcuni file (`relay.rs`, `successor.rs`, `handoff.rs`) sono citati
+/// da più ganci e finiscono embedded più volte nel binario — qualche centinaio
+/// di KB in più, accettabile per uno strumento locale.
+fn has_module_test(name: &str) -> bool {
+    let sources: &[&str] = match name {
+        "ai-personal-data" => &[include_str!("ai_personal_data.rs")],
+        "allow-worktree-deletes" => &[
+            include_str!("worktree_deletes.rs"),
+            include_str!("../../guards/src/worktree_deletes.rs"),
+        ],
+        "allow-session-messages" => &[
+            include_str!("session_messages.rs"),
+            include_str!("../../guards/src/session_messages.rs"),
+        ],
+        "json" => &[include_str!("json_tool.rs")],
+        "block-pr-merge-admin" => &[include_str!("../../guards/src/pr_merge_admin.rs")],
+        "block-worktree-create" => &[include_str!("../../guards/src/worktree_create.rs")],
+        "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
+        "code-language" => &[include_str!("../../guards/src/code_language.rs")],
+        "comment-refs" => &[include_str!("../../guards/src/comment_refs.rs")],
+        "duplication" => &[
+            include_str!("duplication.rs"),
+            include_str!("../../guards/src/duplication.rs"),
+        ],
+        "handoff-arms-successor" => &[include_str!("successor.rs")],
+        "handoff-measure" => &[include_str!("handoff.rs")],
+        "handoff-on-stop" => &[
+            include_str!("handoff_on_stop.rs"),
+            include_str!("../../guards/src/handoff_on_stop.rs"),
+        ],
+        "handoff-required" => &[
+            include_str!("handoff_required.rs"),
+            include_str!("../../guards/src/handoff_required.rs"),
+        ],
+        "handoff-latest" => &[include_str!("relay.rs")],
+        "repo-tools" => &[include_str!("../../guards/src/repo_tools.rs")],
+        "handoff-resolve" => &[include_str!("handoff.rs")],
+        "hooks-off" => &[include_str!("../../guards/src/hooks_off.rs")],
+        "linear-readonly" => &[
+            include_str!("linear.rs"),
+            include_str!("../../guards/src/linear_readonly.rs"),
+        ],
+        "live-rules" => &[
+            include_str!("live_rules.rs"),
+            include_str!("../../guards/src/live_rules.rs"),
+        ],
+        "observe" => &[include_str!("../../hook-io/src/observations.rs")],
+        "pr-title" => &[include_str!("../../guards/src/pr_title.rs")],
+        "relay" => &[include_str!("relay.rs")],
+        "relay-evaluate" => &[
+            include_str!("relay_eval.rs"),
+            include_str!("handoff.rs"),
+            include_str!("../../guards/src/handoff.rs"),
+        ],
+        "relay-chain" => &[
+            include_str!("relay_eval.rs"),
+            include_str!("../../guards/src/chain.rs"),
+        ],
+        "relay-read-chain" => &[
+            include_str!("relay_eval.rs"),
+            include_str!("relay.rs"),
+            include_str!("../../guards/src/chain.rs"),
+        ],
+        "relay-sweep" => &[include_str!("relay_eval.rs"), include_str!("relay.rs")],
+        "restart-count" => &[
+            include_str!("restart.rs"),
+            include_str!("../../guards/src/restart.rs"),
+        ],
+        "restart-notice" => &[include_str!("restart.rs")],
+        "scope-drift" => &[
+            include_str!("scope_drift.rs"),
+            include_str!("../../guards/src/scope_drift.rs"),
+        ],
+        "socraticode-gate" => &[include_str!("../../guards/src/socraticode_gate.rs")],
+        "successor-probe" => &[
+            include_str!("successor.rs"),
+            include_str!("../../guards/src/successor.rs"),
+        ],
+        "handoff-threshold" => &[
+            include_str!("handoff_threshold.rs"),
+            include_str!("../../guards/src/handoff_threshold.rs"),
+        ],
+        "hook-census" => &[include_str!("hook_census.rs")],
+        "link-worktree-rules" => &[
+            include_str!("link_worktree_rules.rs"),
+            include_str!("../../guards/src/link_worktree_rules.rs"),
+        ],
+        "spotlight-marker" => &[
+            include_str!("spotlight_marker.rs"),
+            include_str!("../../guards/src/spotlight_marker.rs"),
+        ],
+        "orca-cleanup" => &[include_str!("orca_cleanup.rs")],
+        "register-session" => &[include_str!("register_session.rs")],
+        "skill-nudge" => &[
+            include_str!("skill_nudge.rs"),
+            include_str!("../../guards/src/skill_nudge.rs"),
+        ],
+        "work-status" => &[include_str!("work_status.rs")],
+        "reachability" => &[include_str!("reachability.rs")],
+        "memory-anchors" => &[
+            include_str!("memory_anchors.rs"),
+            include_str!("../../guards/src/memory_anchor.rs"),
+        ],
+        "memory-citation-gate" => &[include_str!("memory_citation_gate.rs")],
+        _ => &[],
+    };
+    sources.iter().any(|s| source_contains_test(s))
+}
+
+/// La colonna larga di `--list`: «esiste una prova, di qualunque tipo, che
+/// copre questo gancio». Unione delle due letture — non sostituisce le
+/// colonne che le distinguono, le riassume per chi vuole solo sì/no.
 fn is_covered(name: &str) -> bool {
-    SMOKE.iter().any(|(n, _, _)| *n == name) || COVERED_APART.contains(&name)
+    self_check_covers(name) || has_module_test(name)
 }
 
 const SMOKE: &[(&str, &str, &str)] = &[
@@ -449,27 +579,28 @@ fn self_check() -> i32 {
     if failures == 0 {
         // Il messaggio diceva «N ganci, tutti rispondono come devono» contando
         // i soli provati: chi lo leggeva capiva «tutto il binario è a posto»,
-        // mentre 17 ganci su 22 non avevano nessun caso. `adopt-hook.py` si
-        // fida di questa riga prima di far puntare la configurazione al
-        // binario, quindi la riga deve dire la copertura, non il totale dei
-        // provati (17/08/2026).
-        let covered: Vec<&str> = ALL_HOOKS
-            .iter()
-            .copied()
-            .filter(|h| is_covered(h))
-            .collect();
+        // mentre 17 ganci su 22 non avevano nessun caso. Poi si è scoperto che
+        // quel 17 fondeva due domande diverse (20/08/2026): quante righe qui
+        // sotto le stampano separate, con la propria definizione.
+        let self_checked = ALL_HOOKS.iter().filter(|h| self_check_covers(h)).count();
+        let module_tested = ALL_HOOKS.iter().filter(|h| has_module_test(h)).count();
         let uncovered: Vec<&str> = ALL_HOOKS
             .iter()
             .copied()
             .filter(|h| !is_covered(h))
             .collect();
         println!(
-            "{} ganci su {} controllati, e rispondono come devono",
-            covered.len(),
+            "{self_checked} su {} passano un caso dentro self_check (tabella SMOKE + blocchi dedicati)",
             ALL_HOOKS.len()
         );
-        if !uncovered.is_empty() {
-            println!("senza caso di prova: {}", uncovered.join(", "));
+        println!(
+            "{module_tested} su {} hanno un #[test] nel proprio modulo o nel crate a cui delegano",
+            ALL_HOOKS.len()
+        );
+        if uncovered.is_empty() {
+            println!("nessun gancio è scoperto da entrambe le letture");
+        } else {
+            println!("senza nessuna delle due: {}", uncovered.join(", "));
         }
         0
     } else {
@@ -1019,21 +1150,21 @@ mod catalogo {
     }
 
     #[test]
-    fn i_ganci_dichiarati_provati_hanno_davvero_un_caso() {
-        for name in COVERED_APART {
+    fn hooks_declared_self_checked_have_a_real_case() {
+        for name in SELF_CHECK_EXTRA {
             assert!(
                 ALL_HOOKS.contains(name),
                 "{name} è dichiarato provato ma non è un gancio"
             );
             assert!(
                 !SMOKE.iter().any(|(n, _, _)| n == name),
-                "{name} è contato due volte: sta in SMOKE e in COVERED_APART"
+                "{name} è contato due volte: sta in SMOKE e in SELF_CHECK_EXTRA"
             );
         }
     }
 
     #[test]
-    fn l_autoverifica_passa_da_qui() {
+    fn self_check_runs_from_here() {
         // `self_check()` girava solo dentro il binario: togliere il caso di un
         // gancio lasciava i test verdi, e se ne accorgeva soltanto chi lanciava
         // `--check` a mano. Ora la stessa domanda la fa anche `cargo test`.
@@ -1041,13 +1172,107 @@ mod catalogo {
     }
 
     #[test]
-    fn la_copertura_non_e_totale_e_lo_si_dice() {
-        // Se un giorno saranno tutti coperti questo test cadrà, ed è il momento
-        // giusto per toglierlo: finché non succede, difende la riga onesta.
-        let covered = ALL_HOOKS.iter().filter(|h| is_covered(h)).count();
+    fn self_check_is_not_total_and_says_so() {
+        // Solo 11 ganci girano dentro `self_check()`: gli altri hanno prove nel
+        // modulo, non un caso qui. Se un giorno self_check li esercitasse tutti
+        // questo test cadrà, ed è il momento giusto per toglierlo.
+        let n = ALL_HOOKS.iter().filter(|h| self_check_covers(h)).count();
         assert!(
-            covered < ALL_HOOKS.len(),
-            "copertura totale raggiunta: togli questo test e il ramo «senza caso di prova»"
+            n < ALL_HOOKS.len(),
+            "self_check ora esercita ogni gancio: togli questo test"
         );
+    }
+
+    #[test]
+    fn every_self_check_extra_has_a_block_in_self_check() {
+        // Il nome deve comparire nel corpo di `self_check()`: tiene onesto
+        // SELF_CHECK_EXTRA contro il caso «dichiarato ma il blocco è stato
+        // tolto». Mutazione che l'ha ucciso: togliere "work-status" da questo
+        // sorgente lasciandolo in `SELF_CHECK_EXTRA` fa rossire questo test.
+        let source = include_str!("main.rs");
+        let body = source
+            .split_once("fn self_check() -> i32")
+            .expect("la firma di self_check() è cambiata: aggiorna questo test")
+            .1
+            .split_once("fn run(which: &str)")
+            .expect("la fine di self_check() è cambiata: aggiorna questo test")
+            .0;
+        for name in SELF_CHECK_EXTRA {
+            assert!(
+                body.contains(name),
+                "{name} è in SELF_CHECK_EXTRA ma il suo blocco non è più in self_check()"
+            );
+        }
+    }
+
+    #[test]
+    fn source_reader_recognises_a_test() {
+        // La logica pura di `has_module_test`, isolata dal disco: prova diretta
+        // sul riconoscimento del marcatore, non sulla mappa gancio→file.
+        assert!(source_contains_test("fn f() {}\n#[test]\nfn g() {}"));
+        assert!(!source_contains_test("fn f() {}\nfn g() {}"));
+    }
+
+    #[test]
+    fn every_hook_has_an_entry_in_the_test_map() {
+        // Stessa tecnica di `hooks_in_dispatch`: legge il proprio sorgente
+        // invece di ripetere l'elenco, così un gancio nuovo senza voce qui
+        // dentro si vede da sé invece di cadere silenziosamente nel `_ => &[]`
+        // finale e risultare sempre «senza test-modulo».
+        let source = include_str!("main.rs");
+        let body = source
+            .split_once("fn has_module_test(name: &str) -> bool {")
+            .expect("la firma di has_module_test() è cambiata: aggiorna questo test")
+            .1
+            .split_once("\n    };\n")
+            .expect("il match di has_module_test() è cambiato: aggiorna questo test")
+            .0;
+        let mut found = Vec::new();
+        for line in body.lines() {
+            let t = line.trim();
+            let Some(rest) = t.strip_prefix('"') else {
+                continue;
+            };
+            let Some((name, after)) = rest.split_once('"') else {
+                continue;
+            };
+            if after.trim_start().starts_with("=>") {
+                found.push(name.to_string());
+            }
+        }
+        found.sort();
+        let mut expected: Vec<String> = ALL_HOOKS.iter().map(|h| h.to_string()).collect();
+        expected.sort();
+        assert_eq!(
+            found, expected,
+            "la mappa gancio→sorgente in has_module_test non elenca esattamente ALL_HOOKS"
+        );
+    }
+
+    #[test]
+    fn known_modules_have_a_real_test() {
+        // Ancoraggio ai nove porti che avevano prove non collegate qui, più
+        // quelli scritti da allora: se un domani perdessero i test il rapporto
+        // dovrebbe dirlo, non tacerlo.
+        for name in [
+            "register-session",
+            "skill-nudge",
+            "handoff-threshold",
+            "scope-drift",
+            "restart-notice",
+            "observe",
+            "link-worktree-rules",
+            "handoff-on-stop",
+            "handoff-required",
+            "hook-census",
+            "handoff-arms-successor",
+            "allow-worktree-deletes",
+            "allow-session-messages",
+        ] {
+            assert!(
+                has_module_test(name),
+                "{name} risultava senza test nel modulo: ha perso il suo #[test]?"
+            );
+        }
     }
 }
