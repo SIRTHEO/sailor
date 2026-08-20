@@ -50,6 +50,10 @@ mod stale_facts;
 mod session_messages;
 mod skill_nudge;
 mod work_status;
+// Il quarto porto della stessa ondata, il 20/08/2026: il controllo che manca
+// sulle fusioni con schiacciamento, dove il ramo di partenza resta vivo e
+// divergente senza che nessun conflitto lo segnali.
+mod squash_orphans;
 
 use hook_io::{Decision, Mode};
 
@@ -179,6 +183,7 @@ const ALL_HOOKS: &[&str] = &[
     "register-session",
     "skill-nudge",
     "work-status",
+    "squash-orphans",
     // Non e un gancio, come `json`: e lo strumento che risponde a «chi lancia
     // ancora questo controllo». Sta qui perche il dispatch e l'elenco si
     // controllano a vicenda, e il controllo ha fatto il suo mestiere — questa
@@ -368,6 +373,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("../../guards/src/skill_nudge.rs"),
         ],
         "work-status" => &[include_str!("work_status.rs")],
+        "squash-orphans" => &[include_str!("squash_orphans.rs")],
         "reachability" => &[include_str!("reachability.rs")],
         "memory-anchors" => &[
             include_str!("memory_anchors.rs"),
@@ -1035,6 +1041,7 @@ fn run(which: &str) -> Result<i32, String> {
         "register-session" => Ok(register_session::run()),
         "skill-nudge" => Ok(skill_nudge::run()),
         "work-status" => Ok(work_status::run()),
+        "squash-orphans" => Ok(squash_orphans::run()),
         "allow-session-messages" => Ok(session_messages::run()),
         // Non e un gancio: e lo strumento che risponde a «chi lancia
         // ancora questo controllo». Sta nel dispatch perche il binario e
