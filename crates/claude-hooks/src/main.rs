@@ -278,7 +278,12 @@ fn has_module_test(name: &str) -> bool {
         "block-worktree-create" => &[include_str!("../../guards/src/worktree_create.rs")],
         "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
         "code-language" => &[include_str!("../../guards/src/code_language.rs")],
-        "comment-refs" => &[include_str!("../../guards/src/comment_refs.rs")],
+        // Il secondo file prova la colla, non il giudizio: senza, il rapporto
+        // conterebbe coperto un gancio di cui è provata solo metà.
+        "comment-refs" => &[
+            include_str!("../../guards/src/comment_refs.rs"),
+            include_str!("../tests/comment_refs_glue.rs"),
+        ],
         "duplication" => &[
             include_str!("duplication.rs"),
             include_str!("../../guards/src/duplication.rs"),
