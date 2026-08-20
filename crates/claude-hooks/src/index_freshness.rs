@@ -20,12 +20,45 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
 
-/// Il ramo su cui questi repo integrano il lavoro. Fisso, non dedotto da
+/// Il ramo su cui questi repo integrano il lavoro. **Non** dedotto da
 /// `origin/HEAD`: quel simbolico punta altrove a seconda del repo — misurato
 /// il 20/08/2026, `origin/HEAD` risolve a `staging` per whatsapp e
 /// matching-engine, a `main` per packages, e solo per suite a `develop`.
 /// Leggerlo da lì capovolgerebbe il verdetto in tre casi su quattro.
 const INTEGRATION_BRANCH: &str = "develop";
+
+/// I ripieghi, provati in quest'ordine quando il preferito non esiste.
+///
+/// MISURATO ALLA PRIMA ESECUZIONE VERA, il 20/08/2026: con `develop` scritto
+/// fisso, tre repo su quattro campionati rispondevano «non verificabile» — fra
+/// questi `~/.claude`, cioè il repo dove questo controllo vive. Un controllo
+/// che non sa giudicare la casa propria non è prudente, è cieco.
+const INTEGRATION_FALLBACKS: &[&str] = &["main", "master"];
+
+/// Il primo ramo d'integrazione che esiste davvero su `origin`, fra il
+/// preferito e i ripieghi. Nessuno esiste → si torna al preferito, così il
+/// verdetto resta «non verificabile» e dice quale ramo ha cercato.
+fn integration_for(toplevel: &Path, preferred: &str) -> String {
+    for branch in std::iter::once(preferred).chain(INTEGRATION_FALLBACKS.iter().copied()) {
+        if has_remote_branch(toplevel, branch) {
+            return branch.to_string();
+        }
+    }
+    preferred.to_string()
+}
+
+fn has_remote_branch(toplevel: &Path, branch: &str) -> bool {
+    git_output(
+        toplevel,
+        &[
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/remotes/origin/{branch}"),
+        ],
+    )
+    .is_some()
+}
 
 fn home() -> PathBuf {
     std::env::var_os("HOME")
@@ -120,6 +153,10 @@ fn observe(toplevel: &Path, integration: &str) -> Observation {
 /// Una riga per repo, deduplicata per checkout canonico. Presa fuori da
 /// `run()` perché è la parte che vale la pena provare: dato un elenco di
 /// radici (vere o di prova), quali righe escono.
+///
+/// `integration` è il ramo **preferito**, non un obbligo: ogni repo prende il
+/// primo che esiste fra quello e i ripieghi, perché la suite integra su
+/// `develop` mentre `~/.claude` e `sailor` stanno su `main`.
 pub fn report(roots: &[PathBuf], integration: &str) -> Vec<String> {
     let mut seen: Vec<PathBuf> = Vec::new();
     let mut lines = Vec::new();
@@ -131,7 +168,7 @@ pub fn report(roots: &[PathBuf], integration: &str) -> Vec<String> {
             continue; // stesso repo dichiarato da più radici
         }
         seen.push(top.clone());
-        let obs = observe(&top, integration);
+        let obs = observe(&top, &integration_for(&top, integration));
         lines.push(format_line(&obs, &judge(&obs)));
     }
     lines
@@ -143,9 +180,8 @@ pub fn run() -> i32 {
     if lines.is_empty() {
         return 0; // nessun repo indicizzato: niente da dire
     }
-    println!(
-        "SocratiCode: affidabilità degli indici (ramo d'integrazione: {INTEGRATION_BRANCH})"
-    );
+    // Il ramo lo nomina ogni riga, perché non è più uno solo per tutti.
+    println!("SocratiCode: affidabilità degli indici");
     for line in &lines {
         println!("  {line}");
     }
@@ -200,6 +236,57 @@ mod tests {
         git(&work, &["remote", "add", "origin", bare.to_string_lossy().as_ref()]);
         git(&work, &["push", "-q", "-u", "origin", "develop"]);
         work
+    }
+
+    /// Un repo che integra su `main`, come `~/.claude` e `sailor`: nessun
+    /// `develop` da nessuna parte.
+    fn repo_on_main(base: &Path) -> PathBuf {
+        let bare = base.join("origin.git");
+        let work = base.join("work");
+        fs::create_dir_all(&bare).unwrap();
+        git(&bare, &["init", "--bare", "-q"]);
+        git(&bare, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        fs::create_dir_all(&work).unwrap();
+        git(&work, &["init", "-q"]);
+        git(&work, &["config", "user.email", "t@example.com"]);
+        git(&work, &["config", "user.name", "t"]);
+        fs::write(work.join("a.txt"), "1").unwrap();
+        git(&work, &["add", "."]);
+        git(&work, &["commit", "-q", "-m", "c1"]);
+        git(&work, &["branch", "-M", "main"]);
+        git(&work, &["remote", "add", "origin", bare.to_string_lossy().as_ref()]);
+        git(&work, &["push", "-q", "-u", "origin", "main"]);
+        work
+    }
+
+    #[test]
+    fn a_repo_that_integrates_on_main_is_judged_on_main() {
+        // MISURATO IL 20/08/2026: col ramo scritto fisso, `~/.claude` — il repo
+        // dove questo controllo vive — rispondeva «non verificabile».
+        // MUTANTE: rimettere `observe(&top, integration)` senza `integration_for`.
+        let base = scratch("su_main");
+        let work = repo_on_main(&base);
+        let lines = report(&[work], "develop");
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("AFFIDABILE"), "line={}", lines[0]);
+        assert!(
+            !lines[0].contains("NON VERIFICABILE"),
+            "ha cercato develop su un repo che sta su main: {}",
+            lines[0]
+        );
+    }
+
+    #[test]
+    fn develop_wins_over_main_when_both_exist() {
+        // La suite ha entrambi: il preferito deve battere il ripiego, altrimenti
+        // il verdetto si sposta sul ramo sbagliato proprio dove conta.
+        let base = scratch("develop_e_main");
+        let work = repo_on_develop(&base);
+        git(&work, &["push", "-q", "origin", "develop:main"]);
+        git(&work, &["fetch", "-q"]);
+        let lines = report(&[work], "develop");
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("develop"), "line={}", lines[0]);
     }
 
     #[test]
