@@ -31,5 +31,6 @@ pub mod scope_drift;
 pub mod session_messages;
 pub mod skill_nudge;
 pub mod spotlight_marker;
+pub mod stale_facts;
 pub mod worktree_create;
 pub mod worktree_deletes;
