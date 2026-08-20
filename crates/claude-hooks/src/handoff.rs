@@ -153,11 +153,17 @@ pub fn wakeup_pending(transcript: &str, now: f64) -> Option<u64> {
 
 /// Il punto di ripresa dichiarato dalla sessione uscente, se l'ha dichiarato.
 ///
-/// LA RIGA ESISTE GIÀ, E NESSUNO LA LEGGEVA. Il `CLAUDE.md` prescrive che ogni
-/// turno chiuda con «**Procedo con** — <il passo successivo>»: è il punto di
-/// ripresa scritto da chi lavorava, nel momento in cui lo sapeva. Il mandato al
-/// successore invece diceva soltanto «leggi la consegna e prosegui», cioè gli
-/// chiedeva di ricavarsi da un documento una cosa che era già scritta in chiaro.
+/// NASCE PER LEGGERE UNA RIGA CHE ESISTEVA GIÀ, e che nel frattempo si è
+/// diradata. Allora il `CLAUDE.md` prescriveva di chiudere ogni turno con
+/// «**Procedo con** — <il passo successivo>»: era il punto di ripresa scritto da
+/// chi lavorava, nel momento in cui lo sapeva, mentre il mandato al successore
+/// diceva soltanto «leggi la consegna e prosegui».
+///
+/// Oggi quella regola prescrive un'altra chiusura, e la riga si scrive solo
+/// quando il turno chiude davvero. Misurato il 20/08/2026 sulle sessioni vere
+/// toccate in 48 ore: **262 su 348 non la contengono**, e per quelle il mandato
+/// torna a essere quello vago. Finché la ripresa dipende da una formula in
+/// prosa, dipende da qualcosa che nessun controllo garantisce.
 ///
 /// Si prende dall'**ultimo** turno che la contiene, e si taglia a 600 caratteri:
 /// oltre non è più un punto di ripresa, è un rendiconto.
