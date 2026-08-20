@@ -7,6 +7,14 @@
 //! installata, e quella arriva come richiamo (`exists`) — così il catalogo, che
 //! legge dal disco, resta dall'altra parte del confine.
 //!
+//! UN SUGGERITORE DI COMPETENZE SUGGERISCE COMPETENZE. Misura del 20/08/2026 su
+//! 1.213 righe di registro in nove giorni: il 66% nominava `Agent` o
+//! `SendMessage`, che sono strumenti, e il 9,6% nominava una competenza non
+//! raggiungibile (il prefisso `mattpocock-skills:`, e due nomi — `indaga`,
+//! `reuse-first` — già rimossi dalla tavola prima di questo turno). Qui i nomi
+//! sono nudi, e gli strumenti non vanno più fra apici: solo così il registro del
+//! chiamante, che cita ogni backtick come competenza, non li conta più.
+//!
 //! IL CASO NORMALE È IL SILENZIO. Un promemoria che compare a ogni turno si
 //! smette di leggere in due giorni e diventa contesto sprecato a ogni richiesta,
 //! cioè esattamente il difetto che vorrebbe curare. Gli schemi sono stretti di
@@ -56,19 +64,26 @@ pub struct Skill {
 /// L'ORDINE È PARTE DEL COMPORTAMENTO: si prendono le prime due che agganciano e
 /// si smette. Un elenco lungo è rumore e viene saltato come tutto il resto.
 pub static SKILLS: &[Skill] = &[
+    // NOME NUDO, non `mattpocock-skills:`: il prefisso non è mai stato
+    // invocabile — misurato il 20/08/2026, 20 suggerimenti su 1.213 puntavano
+    // lì. Il catalogo del chiamante vede sia il collegamento nudo sotto
+    // `~/.claude/skills/` sia la cartella sorgente `mattpocock-skills/skills/`:
+    // solo il primo è il nome vero, e dove manca (`tdd`,
+    // `improve-codebase-architecture`) la riga tace da sola invece di indicare
+    // un nome fantasma.
     // Il secondo tentativo fallito, che è dove il CLAUDE.md vuole la diagnosi.
     // Serve il segno che si è già provato: «non funziona» da solo è la metà dei
     // messaggi di lavoro.
     Skill {
         pattern: r"\b((ho |abbiamo |)(già |gia |)provat[oi]( \w+){0,3} (ma|e) (non|ancora)|(continua|continuano) a (fallire|non funzionare|dare errore)|(ancora|sempre) (lo stesso|il medesimo) (errore|problema)|(non|nn) (riesco|riusciamo) a (capire|trovare) (perch|il motivo|la causa))",
-        name: "mattpocock-skills:diagnosing-bugs",
+        name: "diagnosing-bugs",
         when: "un difetto che resiste al secondo tentativo",
     },
     // La prova prima del codice. `tdd` da solo è una sigla che compare nei
     // documenti; serve la richiesta di scriverla o l'ordine esplicito.
     Skill {
         pattern: r"\b((scrivi|scriviamo|aggiungi|aggiungiamo) (una |il |i |le |un |)(prova|prove|test)( \w+){0,3} (prima|per prima)|(prova|test) (prima del|prima di scrivere il) codice|(in |con |a )(tdd|prova.per.prima)\b|test.driven)",
-        name: "mattpocock-skills:tdd",
+        name: "tdd",
         when: "una funzione o una correzione prova-per-prima",
     },
     // I conflitti di unione NON hanno più una voce qui. La competenza a monte
@@ -82,13 +97,13 @@ pub static SKILLS: &[Skill] = &[
     // sbagliato, e costa più di ogni difetto di codice.
     Skill {
         pattern: r"\b((cosa|che cosa) (intendiamo|intendi) (per|con)|(il termine|la parola|il nome) \S+ (è|e) ambigu|(chiamiamo|chiamarlo) (in |allo )(stesso |)(modo|nome)( diverso|)|non (è|e) chiaro (cosa|che cosa) (sia|significa|intendiamo))",
-        name: "mattpocock-skills:domain-modeling",
+        name: "domain-modeling",
         when: "le parole del dominio ambigue",
     },
     // Le riscritture profonde, che il CLAUDE.md indirizza già a questa.
     Skill {
         pattern: r"\b((riscriv|ristruttur|rifattorizz|refactor)\w* (l.architettura|in profondità|in profondita|tutto il modulo|il modulo intero)|(l.architettura|la struttura) (di questo|del) \w+ (non va|è sbagliata|e sbagliata))",
-        name: "mattpocock-skills:improve-codebase-architecture",
+        name: "improve-codebase-architecture",
         when: "una riscrittura di architettura",
     },
     // Portare un mockup dentro un prodotto che esiste già. Lo schema vuole due
@@ -103,7 +118,7 @@ pub static SKILLS: &[Skill] = &[
     // invece di un piano che finge di sapere.
     Skill {
         pattern: r"\b((è|e) (un lavoro |una cosa |)(più|piu) (grande|grosso|lungo) di una sessione|(progetto|lavoro) (lungo|di più giorni|di piu giorni|di settimane)|non (si chiude|lo chiudiamo) (oggi|in una sessione))",
-        name: "mattpocock-skills:wayfinder",
+        name: "wayfinder",
         when: "un lavoro più grande di una sessione",
     },
     // La consegna, che è il mandato dell'11/08: mai più compattazione.
@@ -129,9 +144,14 @@ pub static SKILLS: &[Skill] = &[
     },
     // La scansione di sicurezza di un repo intero, distinta dal vaglio su una
     // modifica: quella la fa l'agente `security-reviewer`.
+    //
+    // NOME CORRETTO: il nome della competenza (`claude-security`) ha
+    // `disable-model-invocation: true`, quindi il catalogo vero non la trova
+    // mai e la riga taceva per sempre. L'invocabile è lo slash `/claude-security`,
+    // che passa sempre perché lì serve la CLI, non il catalogo.
     Skill {
         pattern: r"\b((analisi|scansione|audit) di sicurezza (di |su |del |sul )(tutto |l.intero |)(repo|repository|progetto|codice)|(cerca|trova) vulnerabilit\w+ (in|nel|su) (tutto|questo repo))",
-        name: "claude-security:claude-security",
+        name: "/claude-security",
         when: "la scansione di sicurezza di un repo intero",
     },
     // Serve la coppia «cosa» + «com'è andata»: elencare le sole cose (ci, build,
@@ -375,11 +395,16 @@ pub fn lines(
 
     let is_ack = ack().is_match(p);
 
-    // 1. La competenza che copre questo lavoro. Al massimo due.
+    // 1. La competenza che copre questo lavoro. Al massimo due, NOMI DISTINTI:
+    //    due voci della tavola possono puntare allo stesso invocabile (es.
+    //    l'audit sul repo intero e l'analisi di sicurezza generica finiscono
+    //    entrambe su `/claude-security`), e senza questo controllo il
+    //    duplicato occupava un posto che spettava a una terza competenza più
+    //    pertinente.
     if !is_ack {
         let mut matched: Vec<&Skill> = Vec::new();
         for (skill, re) in SKILLS.iter().zip(skill_regexes()) {
-            if re.is_match(p) {
+            if re.is_match(p) && !matched.iter().any(|s| s.name == skill.name) {
                 matched.push(skill);
             }
             if matched.len() == 2 {
@@ -427,11 +452,13 @@ puntato dei cambiamenti previsti prima di toccare qualcosa."
     //    e verificato in ui?» contiene un verbo di compito al participio.
     let is_question = p.trim_end().ends_with('?');
     if mb >= threshold && !already_said && !is_question && (task().is_match(p) || is_ack) {
-        // `Agent` e `SendMessage` sono strumenti e ci sono sempre; `handoff` è
-        // una competenza, e una competenza va chiesta al catalogo come tutte le
-        // altre. Fino al 19/08/2026 era nominata a scatola chiusa, ed è
-        // esattamente il modo in cui il rimando a `indaga` è sopravvissuto a sé
-        // stesso per una settimana.
+        // Agent e SendMessage sono strumenti, non competenze: SENZA apici
+        // rovesci, perché il registro del chiamante cita ogni nome fra
+        // backtick come «competenza suggerita» — misurato il 20/08/2026,
+        // erano il 66% dei 1.213 suggerimenti di nove giorni. `handoff`
+        // invece è una vera competenza e resta fra apici, ma solo dopo averla
+        // chiesta al catalogo: fino al 19/08/2026 era nominata a scatola
+        // chiusa, come `indaga`.
         let closing = if exists("handoff")? {
             " Se invece va chiusa, la consegna si scrive con `handoff`."
         } else {
@@ -442,7 +469,7 @@ puntato dei cambiamenti previsti prima di toccare qualcosa."
             format!(
                 "Questa sessione ha già prodotto {mb} MB di registro, nella fascia che \
 consuma l'82% della cache riletta. Se il lavoro che arriva è separabile, passalo: \
-`Agent` per un contesto nuovo, `SendMessage` per una sessione già viva.{closing}"
+Agent per un contesto nuovo, SendMessage per una sessione già viva.{closing}"
             ),
         ));
     }
@@ -491,15 +518,12 @@ mod tests {
         .unwrap();
         assert!(rows.len() >= 2, "servono almeno due righe: {rows:?}");
 
-        // Gli strumenti dell'harness non sono competenze e non stanno in nessun
-        // catalogo: sono l'elenco chiuso delle eccezioni.
-        let tools = ["Agent", "SendMessage"];
+        // Nessuna eccezione: da quando Agent e SendMessage non stanno più fra
+        // apici (20/08/2026), ogni nome citato È una competenza chiesta al
+        // catalogo.
         let looked_up = asked.borrow().clone();
         for (reason, text) in &rows {
             for name in quoted(text) {
-                if tools.contains(&name.as_str()) {
-                    continue;
-                }
                 assert!(
                     looked_up.contains(&name),
                     "la riga «{reason}» nomina `{name}` senza chiederlo al catalogo"
@@ -656,6 +680,108 @@ mod tests {
         // Il freno: già detto una volta, non lo ripete.
         let out = lines("implementa la funzione", 20, true, 6, &mut all_exist).unwrap();
         assert!(!out.iter().any(|(r, _)| *r == PASSARE));
+    }
+
+    /// Agent e SendMessage restano nominati, ma senza apici: senza questo, il
+    /// registro del chiamante (che cita ogni backtick come una competenza
+    /// suggerita) torna a contarli come tali — erano il 66% delle 1.213 righe
+    /// misurate il 20/08/2026.
+    #[test]
+    fn tools_are_named_without_backticks_in_the_pass_it_on_line() {
+        let rows = lines("implementa la funzione", 20, false, DEFAULT_THRESHOLD_MB, &mut all_exist)
+            .unwrap();
+        let (_, text) = rows
+            .iter()
+            .find(|(r, _)| *r == PASSARE)
+            .expect("la riga «passare» deve esserci sopra soglia");
+        assert!(text.contains("Agent"), "Agent deve restare nominato: {text}");
+        assert!(text.contains("SendMessage"), "SendMessage deve restare nominato: {text}");
+        assert!(!text.contains("`Agent`"), "Agent non è una competenza: {text}");
+        assert!(!text.contains("`SendMessage`"), "SendMessage non è una competenza: {text}");
+    }
+
+    /// Il prefisso `mattpocock-skills:` non è mai stato un nome invocabile
+    /// (CLAUDE.md, 20/08/2026): nessuna voce della tavola può più portarlo.
+    /// Struttrale, non su una singola frase — copre anche le voci future.
+    #[test]
+    fn no_skill_name_carries_the_mattpocock_prefix() {
+        for skill in SKILLS {
+            assert!(
+                !skill.name.starts_with("mattpocock-skills:"),
+                "il prefisso non si invoca: {}",
+                skill.name
+            );
+        }
+    }
+
+    /// Le competenze esposte con un collegamento nudo sotto `~/.claude/skills/`
+    /// restano suggerite col loro nome vero; quelle che esistono solo dentro
+    /// `mattpocock-skills/skills/…` (`tdd`) non hanno un nome invocabile e la
+    /// riga tace, invece di indicare un fantasma.
+    #[test]
+    fn a_skill_without_a_bare_symlink_stays_silent() {
+        let bare_exposed = ["diagnosing-bugs", "domain-modeling", "wayfinder", "handoff"];
+        let mut catalog_like = |name: &str| -> Option<bool> { Some(bare_exposed.contains(&name)) };
+
+        let found = lines(
+            "ho già provato ma non funziona ancora",
+            1,
+            false,
+            6,
+            &mut catalog_like,
+        )
+        .unwrap();
+        assert!(
+            found.iter().any(|(r, t)| *r == COMPETENZA && t.contains("`diagnosing-bugs`")),
+            "il nome nudo esposto deve restare suggerito: {found:?}"
+        );
+
+        let silent = lines("scrivi i test prima del codice", 1, false, 6, &mut catalog_like).unwrap();
+        assert!(
+            silent.iter().all(|(r, _)| *r != COMPETENZA),
+            "`tdd` non ha un collegamento nudo, e non va indicato: {silent:?}"
+        );
+    }
+
+    /// `claude-security` ha `disable-model-invocation: true`: il catalogo vero
+    /// non la trova mai, e prima di oggi la riga taceva per sempre. Lo slash
+    /// `/claude-security` passa sempre, perché lì serve la CLI e non il
+    /// catalogo — mutazione: tornando al nome disattivato, questa prova cade.
+    #[test]
+    fn the_whole_repo_audit_pattern_points_at_something_invocable() {
+        let mut catalog_like = |name: &str| -> Option<bool> {
+            if name.starts_with('/') {
+                return Some(true);
+            }
+            Some(name != "claude-security:claude-security")
+        };
+        let rows = lines("fai una scansione di sicurezza del repo", 1, false, 6, &mut catalog_like)
+            .unwrap();
+        assert!(
+            rows.iter().any(|(r, t)| *r == COMPETENZA && t.contains("/claude-security")),
+            "deve puntare al comando slash, sempre raggiungibile: {rows:?}"
+        );
+    }
+
+    /// Due voci della tavola («audit sul repo intero» e «analisi di sicurezza
+    /// generica») puntano allo stesso invocabile: senza deduplica per nome,
+    /// entrambe agganciano questa frase e `/claude-security` compare due
+    /// volte, consumando anche il posto di una terza competenza.
+    #[test]
+    fn overlapping_security_entries_name_claude_security_once() {
+        let rows = lines(
+            "cerca vulnerabilità in tutto questo repo",
+            1,
+            false,
+            6,
+            &mut all_exist,
+        )
+        .unwrap();
+        let hits = rows
+            .iter()
+            .filter(|(r, t)| *r == COMPETENZA && t.contains("/claude-security"))
+            .count();
+        assert_eq!(hits, 1, "/claude-security deve comparire una sola volta: {rows:?}");
     }
 
     /// L'ambiente storto non deve spostare la soglia in un posto qualunque.
