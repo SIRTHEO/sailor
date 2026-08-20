@@ -591,11 +591,51 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
 /// pezzo non-opzione dopo il comando; se è fra virgolette si tolgono. `None`
 /// quando non si riesce a isolarlo, e chi chiama tratta `None` come «ammesso»:
 /// non aver capito la ricerca non è una ragione per negarla.
+/// Divide una riga di comando in parole, ma tiene insieme cio' che sta fra
+/// virgolette.
+///
+/// Serve perche' `split_whitespace()` spezzava
+/// `grep -rn "dove si gestisce il pagamento fallito" src` alla prima parola, e
+/// `grep_pattern` restituiva `dove`: una domanda concettuale diventava un
+/// identificatore e passava. Il difetto non mordeva finche' il gate contava le
+/// ricerche invece di leggerle; da quando il giudizio guarda il pattern, meta'
+/// delle ricerche — quelle che passano da `Bash` — sfuggivano tutte.
+fn split_respecting_quotes(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for c in s.chars() {
+        match quote {
+            Some(q) => {
+                cur.push(c);
+                if c == q {
+                    quote = None;
+                }
+            }
+            None if c == '"' || c == '\'' => {
+                quote = Some(c);
+                cur.push(c);
+            }
+            None if c.is_whitespace() => {
+                if !cur.is_empty() {
+                    out.push(std::mem::take(&mut cur));
+                }
+            }
+            None => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
 pub fn grep_pattern(command: &str) -> Option<String> {
     static CALL: OnceLock<Regex> = OnceLock::new();
     let call = CALL.get_or_init(|| Regex::new(r"(?:^|;|&&|\|\|)\s*(?:rg|grep)\s+(.*)").unwrap());
     let tail = call.captures(command)?.get(1)?.as_str();
-    for word in tail.split_whitespace() {
+    for word in split_respecting_quotes(tail) {
+        let word = word.as_str();
         if word.starts_with('-') {
             continue;
         }
@@ -1015,6 +1055,58 @@ mod tests {
                 "{word:?} e' un identificatore ammesso da solo, deve passare anche in fila"
             );
         }
+    }
+
+    fn bash_input(cwd: &Path, command: &str) -> hook_io::HookInput {
+        hook_io::HookInput {
+            session_id: Some("s-bash".to_string()),
+            cwd: Some(cwd.to_string_lossy().into_owned()),
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(serde_json::json!({ "command": command })),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_quoted_question_in_a_bash_grep_is_read_whole() {
+        // Meta' delle ricerche non passa dallo strumento Grep ma da Bash. Li'
+        // il pattern veniva spezzato sugli spazi, quindi la frase diventava la
+        // sua prima parola — un identificatore, che passa sempre.
+        // MUTANTE: rimettere `tail.split_whitespace()` in grep_pattern.
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        let cmd = format!(
+            "grep -rn \"dove si gestisce il pagamento fallito\" {}",
+            repo.display()
+        );
+        let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
+        assert!(
+            matches!(verdict.decision, Decision::Block(_)),
+            "la domanda via Bash e' sfuggita al giudizio: {:?}",
+            verdict.reason
+        );
+    }
+
+    #[test]
+    fn a_quoted_identifier_in_a_bash_grep_still_passes() {
+        // Il differenziale della prova sopra, una variabile sola: stesso
+        // strumento e stesse virgolette, ma dentro c'e' un identificatore.
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        let cmd = format!(
+            "grep -rn \"pinnedSections\\|pinned_sections\" {} --include=*.ts -l",
+            repo.display()
+        );
+        let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
+        assert!(
+            matches!(verdict.decision, Decision::Pass),
+            "un identificatore esatto non deve pagare pedaggio: {:?}",
+            verdict.reason
+        );
     }
 
     /// Una cartella temporanea che si cancella da sé: i test non devono poter
