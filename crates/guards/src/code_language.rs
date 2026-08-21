@@ -340,6 +340,26 @@ pub fn report_names(names: &[String], filename: Option<&str>) -> String {
 /// `Write`/`Edit` non è un capriccio di forma: lì il testo arriva al gate prima
 /// di toccare il disco, che è l'unico momento in cui un rimprovero costa una
 /// riscrittura invece di un commit.
+///
+/// DICEVA «NON LEGGIBILI», E QUELLO ERA FALSO SUL MONDO. Il 21/08/2026 il
+/// capitano ha provato a collaudare lo script che toglie a Theo le
+/// autorizzazioni a mano e si è visto negare il gesto con questo elenco dentro:
+/// un file che esiste, si apre e si legge — `test -r` diceva sì — e che nessuno
+/// aveva chiesto di aprire. Chi legge un messaggio così va a cercare un file
+/// mancante, non lo trova mancante, e conclude che ha sbagliato lui.
+///
+/// **Questo gate non apre niente**: guarda il corpo che l'interprete eseguirà e
+/// ne raccoglie i percorsi sorvegliati. Ciò che non riesce a leggere non è il
+/// file: è **il testo che ci finirà dentro**, che a quel punto non esiste ancora
+/// da nessuna parte. Le parole ora lo dicono.
+///
+/// E L'ELENCO SONO CANDIDATI, NON BERSAGLI. I percorsi si raccolgono dal codice
+/// per nome, quindi un file che compare come **dato** — il valore di una chiave
+/// JSON, un argomento da passare a qualcun altro — sta nell'elenco accanto a
+/// quello che verrà davvero scritto, e i due non si distinguono. Distinguerli
+/// vorrebbe dire capire il programma; dirlo costa una riga. È la stessa forma di
+/// errore che questa casa conta da sedici occorrenze — un nome citato preso per
+/// un nome agito — e finché resta, va dichiarata a chi legge invece che subita.
 pub fn report_opaque(targets: &[String]) -> String {
     let lines: Vec<String> = targets
         .iter()
@@ -349,7 +369,12 @@ pub fn report_opaque(targets: &[String]) -> String {
     format!(
         "Questo comando scrive un file sorvegliato passando da un interprete, e \
          da lì il gate della lingua non vede cosa ci finisce dentro.\n\n\
-         Non leggibili:\n\n{}\n\n\
+         Non si legge il TESTO FUTURO, non il file: questi esistono e si aprono \
+         benissimo. Sono i file sorvegliati nominati nel codice, e almeno uno di \
+         loro sta per essere scritto — quale, da qui non si sa: un percorso che \
+         compare come dato (un valore JSON, un argomento da passare) è \
+         indistinguibile da un bersaglio.\n\n\
+         Nominati qui dentro:\n\n{}\n\n\
          Riscrivilo con `Write` o `Edit`: il testo passa dal controllo prima di \
          toccare il disco. Misurato il 19/08/2026: un'intera nottata di codice \
          e' passata da `python3 - <<PY … write_text …` senza che il gate \
@@ -1442,6 +1467,29 @@ mod tests {
             "il bersaglio scritto in codice si vede ancora, e i due citati no"
         );
         let _ = std::fs::remove_file(&script);
+    }
+
+    /// Il rimprovero diceva «Non leggibili» di file che si aprono benissimo, e
+    /// il 21/08/2026 ha mandato il capitano a cercare un file mancante che non
+    /// mancava. Il gate non apre niente: quello che non legge è il testo futuro.
+    ///
+    /// MUTANTE: rimettere la parola «Non leggibili» al posto di «Nominati qui
+    /// dentro» fa cadere questo caso e nient'altro.
+    #[test]
+    fn the_opaque_report_does_not_claim_the_files_cannot_be_opened() {
+        let m = report_opaque(&["/Users/x/.claude/scripts/a.sh".to_string()]);
+        assert!(m.contains("/Users/x/.claude/scripts/a.sh"), "{m}");
+        assert!(
+            !m.contains("Non leggibili"),
+            "il file si apre: il messaggio non deve dire il contrario:\n{m}"
+        );
+        assert!(
+            m.contains("TESTO FUTURO"),
+            "deve dire cosa non riesce a leggere davvero:\n{m}"
+        );
+        // E che l'elenco sono nomi raccolti dal codice, non bersagli accertati:
+        // un percorso che compare come dato ci finisce accanto a quello vero.
+        assert!(m.contains("dato"), "{m}");
     }
 
     #[test]
