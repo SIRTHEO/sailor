@@ -117,6 +117,84 @@ fn roles_dir() -> PathBuf {
     state_dir().join("ruoli")
 }
 
+/// Il registro degli avvistamenti: per ogni sessione, l'ultimo mestiere che le
+/// si è visto addosso.
+///
+/// NON STA DENTRO `ruoli/`, nemmeno come file nascosto. Tre programmi elencano
+/// quella cartella per contare chi è di guardia (`queue-patrol.sh`,
+/// `tab-role-title.sh`, `main.rs`), e `read_dir` non salta i nomi che
+/// cominciano per punto: una figura in più lì dentro coprirebbe un posto che
+/// nessuno occupa, che è il guasto opposto a quello riparato qui.
+fn role_sightings_dir() -> PathBuf {
+    state_dir().join("ruoli-visti")
+}
+
+/// Oltre questa età un avvistamento si butta. Serve solo all'igiene della
+/// cartella: la correttezza non dipende dal tempo, perché la chiave è
+/// l'identificativo di una sessione e quelli non si riciclano.
+const SIGHTING_MAX_AGE_SEC: f64 = 7.0 * 24.0 * 3600.0;
+
+/// Fotografa i mestieri dichiarati adesso, e pota i più vecchi.
+///
+/// GIRA A OGNI PASSATA DELLA STAFFETTA, ed è il pezzo che rende possibile la
+/// trasmissione del mestiere a chi ha consegnato. Il mandato di guardia
+/// prescrive alla figura che consegna di cancellare il proprio file di ruolo —
+/// per un buon motivo, un nome che resta copre il proprio posto per dodici ore.
+/// Ma la staffetta rigenera **dopo** quel gesto, e trova il posto già vuoto:
+/// dal disco «non ha mai avuto un mestiere» e «lo ha appena congedato» sono
+/// indistinguibili, e le due riparazioni si annullavano esattamente nel caso
+/// per cui la seconda esiste (voce del 21/08/2026, `ce667b14`).
+///
+/// GLI AVVISTAMENTI NON SI CANCELLANO QUANDO IL FILE VIVO SPARISCE: è tutto il
+/// punto. Una fotografia che si aggiorna a specchio perderebbe il mestiere
+/// nello stesso istante in cui la figura lo congeda.
+///
+/// IL CASO DEGENERE È DICHIARATO: una figura che si dichiara e consegna dentro
+/// la stessa passata non viene mai fotografata, e il suo ricambio nasce senza
+/// mestiere come prima. Vive minuti, non ore, e nessuna figura di guardia ha
+/// mai avuto quella durata.
+fn record_role_sightings(now: f64) {
+    let Ok(entries) = fs::read_dir(roles_dir()) else {
+        return;
+    };
+    let _ = fs::create_dir_all(role_sightings_dir());
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Ok(role) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if role.trim().is_empty() {
+            continue;
+        }
+        let _ = fs::write(role_sightings_dir().join(name), &role);
+    }
+    prune_role_sightings(now);
+}
+
+/// Butta gli avvistamenti più vecchi di `SIGHTING_MAX_AGE_SEC`.
+fn prune_role_sightings(now: f64) {
+    let Ok(entries) = fs::read_dir(role_sightings_dir()) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let age = fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| now - d.as_secs_f64());
+        if age.map(|a| a > SIGHTING_MAX_AGE_SEC).unwrap_or(false) {
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
 /// Una riga nel registro, con la data locale davanti.
 ///
 /// Muto in caso di errore, come l'originale: gira da launchd, dove un errore di
@@ -1759,12 +1837,34 @@ fn registered_heir(rec: &Record, clear_at: f64) -> Option<String> {
 /// perso da entrambe le parti no.
 fn hand_over_role(outgoing: &str, incoming: &str) {
     let from = roles_dir().join(outgoing);
-    let Ok(role) = fs::read_to_string(&from) else {
-        return;
+    // IL RIPIEGO SERVE AL CASO PRINCIPALE, NON A UN CASO LIMITE: chi consegna
+    // cancella il proprio file di ruolo come ultimo gesto, quindi la lettura
+    // qui sopra fallisce **proprio** per la figura che ha chiuso il suo lavoro
+    // e passa la mano. Il registro degli avvistamenti tiene l'ultimo mestiere
+    // visto addosso a quella sessione, e non si svuota quando lei si congeda.
+    //
+    // A CHI NON HA MAI AVUTO UN MESTIERE NON NE ARRIVA UNO LO STESSO: nel
+    // registro entra solo chi è stato visto dichiarato almeno una passata, e
+    // una sessione di Theo non compare mai. È la decisione del capitano del
+    // 21/08/2026 delle 15:53, e resta in piedi.
+    let role = match fs::read_to_string(&from) {
+        Ok(r) => r,
+        Err(_) => match fs::read_to_string(role_sightings_dir().join(outgoing)) {
+            Ok(r) => r,
+            Err(_) => return,
+        },
     };
+    if role.trim().is_empty() {
+        return;
+    }
     let _ = fs::create_dir_all(roles_dir());
     if fs::write(roles_dir().join(incoming), role).is_ok() {
+        // La cancellazione resta condizionata alla scrittura riuscita: un
+        // mestiere duplicato costa una domanda, un mestiere perso da entrambe
+        // le parti no. Se il file vivo non c'era, `remove_file` non trova
+        // niente e va bene così.
         let _ = fs::remove_file(&from);
+        let _ = fs::remove_file(role_sightings_dir().join(outgoing));
     }
 }
 
@@ -2054,6 +2154,19 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
         return 0;
     }
     let now = now_epoch();
+    // PRIMA DI OGNI DECISIONE, MA NON A SECCO. Avevo scritto il contrario, e il
+    // verdetto del 21/08/2026 l'ha bocciato con la riga giusta: `--secco` è lo
+    // strumento con cui si guarda cosa farebbe la staffetta senza farglielo
+    // fare, e qui non si scrive soltanto — `prune_role_sightings` **cancella**.
+    // Un'osservazione che elimina stato vero è il guasto che questa casa ha già
+    // pagato con `relay.py`, dove un giro a secco chiudeva e smontava davvero.
+    //
+    // La ragione che avevo dato — «a secco il registro resta indietro» — non
+    // regge: il giro vero passa ogni minuto e lo riporta in pari, mentre a
+    // secco l'unica cosa che deve restare indietro è il mondo.
+    if !dry_run {
+        record_role_sightings(now);
+    }
     let terminals = read_terminals(orca);
     let live: Option<Vec<String>> = terminals
         .as_ref()
@@ -2858,6 +2971,131 @@ mod tests {
         assert!(
             !roles_dir().join("erede-00").exists(),
             "e' nato un file di mestiere per chi non ne aveva dichiarato uno"
+        );
+    }
+
+    #[test]
+    fn a_dry_run_neither_records_nor_prunes_the_sightings() {
+        let _home = HomeIsolata::nuova("secco-non-tocca-gli-avvistamenti");
+        // LA RISERVA DEL VERDETTO DEL 21/08/2026, e il vincolo che difende è
+        // già scritto in questo file: un giro a secco guarda cosa farebbe la
+        // staffetta senza farglielo fare. Qui non si trattava solo di una
+        // scrittura in più — `prune_role_sightings` cancella per davvero, e
+        // un'osservazione che elimina stato vero è il guasto di `relay.py`.
+        let _ = fs::create_dir_all(roles_dir());
+        fs::write(roles_dir().join("provarel"), "MACCHINISTA\n").unwrap();
+        // UN AVVISTAMENTO VECCHIO DAVVERO, e l'età va messa a mano: scritto con
+        // l'ora corrente aveva zero secondi di vita, quindi la potatura non
+        // l'avrebbe toccato nemmeno girando — il controllo qui sotto passava col
+        // guasto acceso. Riserva del secondo verdetto, 21/08/2026.
+        let _ = fs::create_dir_all(role_sightings_dir());
+        let stale_path = role_sightings_dir().join("vecchio-00");
+        let stale_file = fs::File::create(&stale_path).unwrap();
+        {
+            use std::io::Write;
+            (&stale_file).write_all(b"CAPITANO\n").unwrap();
+        }
+        let expired_at = std::time::SystemTime::now()
+            - std::time::Duration::from_secs_f64(SIGHTING_MAX_AGE_SEC + 86_400.0);
+        stale_file.set_modified(expired_at).unwrap();
+        // SENZA QUESTA RIGA IL CASO NON PROVA NIENTE, e me ne sono accorto solo
+        // perché il mutante non lo faceva cadere: `step_with` esce alla prima
+        // riga quando la cartella delle sessioni vive non esiste, quindi non
+        // arrivava mai alla fotografia. Un caso che passa col meccanismo spento
+        // è un caso che non guarda.
+        write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
+        let mut orca = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
+
+        step_with(true, &mut orca);
+
+        assert!(
+            !role_sightings_dir().join("provarel").exists(),
+            "il giro a secco ha fotografato un mestiere: l'osservazione ha cambiato il mondo"
+        );
+        assert!(
+            role_sightings_dir().join("vecchio-00").exists(),
+            "il giro a secco è passato dalla potatura"
+        );
+    }
+
+    #[test]
+    fn a_figure_that_handed_back_its_trade_still_passes_it_to_the_heir() {
+        let _home = HomeIsolata::nuova("mestiere-congedato-passa-lo-stesso");
+        // IL BRACCIO CHE OGGI FALLIVA, e il caso non è raro: è quello di ogni
+        // figura di guardia che consegna. Il mandato le prescrive di cancellare
+        // il proprio file di ruolo come ultimo gesto, la staffetta rigenera
+        // dopo, e trovava il posto vuoto. Misurato addosso a `ce667b14` il
+        // 21/08/2026 alle 19:27:49, col binario giusto in servizio.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
+        let _ = fs::create_dir_all(roles_dir());
+        fs::write(roles_dir().join("provarel"), "MACCHINISTA\n").unwrap();
+        // Una passata della staffetta mentre la figura è ancora dichiarata.
+        record_role_sightings(now_epoch());
+        // Il congedo: l'ultimo gesto della consegna.
+        fs::remove_file(roles_dir().join("provarel")).unwrap();
+
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            if args.contains(&"/clear") {
+                write_live_record("erede-000-0000", "tab-1", "clear", now_epoch() as u64);
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+
+        assert_eq!(
+            fs::read_to_string(roles_dir().join("erede-00")).unwrap_or_default(),
+            "MACCHINISTA\n",
+            "chi ha consegnato ha portato via il mestiere al proprio ricambio"
+        );
+        assert!(
+            !role_sightings_dir().join("provarel").exists(),
+            "l'avvistamento della figura uscente è rimasto dopo il passaggio"
+        );
+    }
+
+    #[test]
+    fn a_sighting_outlives_the_role_file_it_was_taken_from() {
+        let _home = HomeIsolata::nuova("avvistamento-sopravvive-al-file");
+        // È TUTTO IL PUNTO DEL REGISTRO: una fotografia che si aggiorna a
+        // specchio perderebbe il mestiere nello stesso istante in cui la figura
+        // lo congeda, cioè proprio quando serve.
+        let _ = fs::create_dir_all(roles_dir());
+        fs::write(roles_dir().join("provarel"), "MACCHINISTA\n").unwrap();
+        record_role_sightings(now_epoch());
+        fs::remove_file(roles_dir().join("provarel")).unwrap();
+
+        record_role_sightings(now_epoch());
+
+        assert_eq!(
+            fs::read_to_string(role_sightings_dir().join("provarel")).unwrap_or_default(),
+            "MACCHINISTA\n",
+            "la passata successiva al congedo ha cancellato l'avvistamento"
+        );
+    }
+
+    #[test]
+    fn an_expired_sighting_hands_over_nothing() {
+        let _home = HomeIsolata::nuova("avvistamento-scaduto-non-passa-niente");
+        // Il braccio che tiene in piedi la decisione del capitano delle 15:53:
+        // a chi non ha un mestiere non ne arriva uno. Qui l'avvistamento c'è
+        // stato ma è vecchio oltre il tetto, quindi la potatura l'ha già tolto
+        // — ed è indistinguibile da chi non è mai stato dichiarato.
+        let _ = fs::create_dir_all(roles_dir());
+        fs::write(roles_dir().join("provarel"), "MACCHINISTA\n").unwrap();
+        record_role_sightings(now_epoch());
+        fs::remove_file(roles_dir().join("provarel")).unwrap();
+
+        // La passata di otto giorni dopo: la potatura butta l'avvistamento.
+        prune_role_sightings(now_epoch() + SIGHTING_MAX_AGE_SEC + 3600.0);
+        hand_over_role("provarel", "erede-00");
+
+        assert!(
+            !roles_dir().join("erede-00").exists(),
+            "un avvistamento scaduto ha attribuito un mestiere a chi non ne aveva"
         );
     }
 
