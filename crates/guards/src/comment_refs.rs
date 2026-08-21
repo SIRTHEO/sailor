@@ -150,10 +150,19 @@ pub fn comment_spans(text: &str, path: &str) -> Vec<(usize, String)> {
                     }
                 }
             };
-            consider(rest.find("/*"), "/*");
-            consider(rest.find("//"), "//");
+            // I COMMENTI A BLOCCHI NON ESISTONO DOVE SI COMMENTA CON `#`, e
+            // cercarli lì costa caro: in uno script shell la sequenza che apre
+            // un glob su una cartella viene letta come apertura di blocco, la
+            // chiusura non arriva mai, e da quel punto **tutto il resto del
+            // file** conta come commento — negando parole che stanno dentro il
+            // codice. Misurato il 21/08/2026 sul binario in servizio col
+            // controllo negativo: tolta la barra davanti all'asterisco, lo
+            // stesso identico file passa.
             if hash {
                 consider(rest.find('#'), "#");
+            } else {
+                consider(rest.find("/*"), "/*");
+                consider(rest.find("//"), "//");
             }
             consider(rest.find('"'), "\"");
             consider(rest.find('\''), "'");
@@ -253,9 +262,37 @@ mod tests {
 
     const TS: &str = "/x/src/a.ts";
     const PY: &str = "/x/scripts/a.py";
+    const SH: &str = "/x/scripts/a.sh";
 
     fn denies(text: &str, path: &str) -> bool {
         matches!(judge(path, text, false), Decision::Deny(_))
+    }
+
+    /// Un glob su una cartella non apre un commento a blocchi.
+    ///
+    /// I DUE CASI VANNO INSIEME: da soli non provano niente, perché il secondo
+    /// passerebbe anche con un gate cieco. È la differenza fra i due — un
+    /// carattere — che dice se il gate distingue.
+    ///
+    /// MUTANTE: rimettere la ricerca di `/*` fuori dal ramo, cioè anche dove si
+    /// commenta con `#`. Il primo caso torna negato: la sequenza del glob apre
+    /// un blocco che in uno script shell non si chiude mai, e da lì tutto il
+    /// file conta come commento. Riprodotto sul binario in servizio il
+    /// 21/08/2026, e latente su due punti del giro che sorveglia la coda.
+    #[test]
+    fn a_directory_glob_does_not_open_a_block_comment() {
+        let with_glob = "for f in \"$DIR\"/*.md; do\n  case \"$f\" in *README.md) continue ;; esac\ndone\n";
+        assert!(!denies(with_glob, SH), "il glob non apre un commento");
+
+        let without_glob = "for f in \"$DIR\"*.md; do\n  case \"$f\" in *README.md) continue ;; esac\ndone\n";
+        assert!(!denies(without_glob, SH));
+    }
+
+    /// E il gate deve restare capace di negare in uno script shell, altrimenti
+    /// la riparazione qui sopra l'avrebbe semplicemente spento su `.sh`.
+    #[test]
+    fn a_hash_comment_in_a_shell_script_is_still_judged() {
+        assert!(denies("# Account-linking scoped a Google (ADR 2026-07-01)\nls\n", SH));
     }
 
     #[test]
