@@ -898,12 +898,63 @@ mod tests {
         assert!(!is_out_of_perimeter("/repo/src/index.js"));
     }
 
+    /// Il differenziale sul gate vero, non sulla funzione che lo alimenta.
+    ///
+    /// PERCHÉ ESISTE: il caso qui sotto dichiarava un mutante su `judge_write`
+    /// e non lo poteva prendere, perché non chiama `judge_write` — controlla
+    /// solo `is_test_file`. Mutare una funzione e provarne un'altra lascia
+    /// verde qualunque cosa. Trovato il 21/08/2026 censendo le mutazioni
+    /// dichiarate: una promessa che occupa il posto della prova è peggio di una
+    /// prova assente, perché chi legge crede che quella riga sia protetta.
+    ///
+    /// MUTANTE: togliere `is_test_file` dalla condizione di `judge_write`. Il
+    /// file di prova smette di essere fuori perimetro e il gate lo giudica —
+    /// questo caso va rosso, e stavolta davvero.
+    #[test]
+    fn the_gate_itself_lets_a_test_file_through_and_judges_its_sibling() {
+        // I PERCORSI SONO FINTI DI PROPOSITO, e non è una scorciatoia: il banco
+        // di prova vive sotto la cartella temporanea, che il gate scarta come
+        // usa-e-getta *prima* di guardare qualunque altra cosa. Un file vero
+        // creato lì uscirebbe fuori perimetro per il motivo sbagliato, e la
+        // prova direbbe di sì senza aver provato niente — è il motivo per cui
+        // fino al 21/08/2026 nessun caso chiamava questa parte del gate.
+        // L'indice si dichiara nello stato, che è l'altra via che il gate legge.
+        let (ws, _keep) = workspace();
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            "/repo\n",
+        )
+        .unwrap();
+
+        let write_input = |path: &str| hook_io::HookInput {
+            session_id: Some("s-write".to_string()),
+            cwd: Some("/repo".to_string()),
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(serde_json::json!({ "file_path": path })),
+            ..Default::default()
+        };
+
+        // Il file di prova esce dal perimetro: il verdetto non si registra
+        // nemmeno, ed è il segno che il gate non se ne è occupato.
+        let spared = judge(&ws, &write_input("/repo/src/x.test.ts"));
+        assert!(!spared.is_recorded(), "un file di prova sta fuori dal riuso");
+
+        // Il fratello, identico tranne il nome, il gate lo guarda e lo ferma.
+        let judged = judge(&ws, &write_input("/repo/src/x.ts"));
+        assert!(
+            matches!(judged.decision, Decision::Block(_)),
+            "un file nuovo in una cartella indicizzata e' di competenza del gate (reason: {:?})",
+            judged.reason
+        );
+    }
+
     /// Differenziale a variabile unica: due percorsi identici tranne il nome.
     #[test]
     fn a_test_file_leaves_the_reuse_perimeter_and_its_sibling_does_not() {
-        // MUTANTE: tolto `is_test_file` da `judge_write`, la prima riga resta
-        // vera qui ma il gate torna a bloccare — per questo il caso vive anche
-        // sul binario, con lo stesso Write su due nomi.
+        // Questo caso prova SOLO come si riconosce il nome di un file di prova.
+        // Il mutante su `judge_write` lo prende il caso qui sopra, che il gate
+        // lo chiama davvero: qui il commento prometteva una copertura che non
+        // c'era.
         assert!(is_test_file("/repo/src/lib/x.test.ts"));
         assert!(is_test_file("/repo/src/lib/x.spec.tsx"));
         assert!(is_test_file("/repo/src/__tests__/x.ts"));
