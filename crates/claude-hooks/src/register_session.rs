@@ -52,6 +52,11 @@ pub(crate) const MARKER_FAMILIES: &[&str] = &[
     // Trovata da un caso di `marker_sweep`, non a occhio — ed è la ragione per
     // cui l'elenco ora ha un test che lo confronta coi sorgenti che scrivono.
     "consegna-stop-riferimento",
+    // AGGIUNTA IL 21/08/2026, stesso schema del gemello qui sopra ma per il
+    // presidio PostToolUse: la scrive `handoff_required::lockout_reference`,
+    // il riferimento di crescita sopra il gradino di blocco (punto 1 della
+    // segnalazione «il gancio della consegna non si sblocca»).
+    "consegna-riferimento-lockout",
 ];
 
 /// `successore-di-` fa eccezione: porta l'identificativo **intero**, non i primi

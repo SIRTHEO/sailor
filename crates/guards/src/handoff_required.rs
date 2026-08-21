@@ -37,6 +37,22 @@ pub fn over_lockout(used: u64, budget: u64) -> bool {
     used >= (budget as f64 * LOCKOUT_FRACTION) as u64
 }
 
+/// Il contesto è cresciuto abbastanza, dal riferimento registrato, da rendere
+/// di nuovo insufficiente una consegna già scritta sopra il gradino.
+///
+/// Stessa frazione del gemello sullo Stop
+/// (`handoff_on_stop::LOCKOUT_GROWTH_FRACTION`, importata da lì: qui non si
+/// ridefinisce il numero, solo la funzione, perché quella del gemello non è
+/// pubblica e questo lavoro non tocca quel file). `reference == 0` significa
+/// «nessun riferimento ancora per questa consegna»: non è ancora crescita.
+fn grown_significantly(used: u64, reference: u64, budget: u64) -> bool {
+    if reference == 0 {
+        return false;
+    }
+    let threshold = (budget as f64 * crate::handoff_on_stop::LOCKOUT_GROWTH_FRACTION) as u64;
+    used.saturating_sub(reference) >= threshold
+}
+
 /// Cosa fa il gancio, una volta noti i fatti.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Decision {
@@ -65,6 +81,11 @@ pub struct Facts<'a> {
     pub used: u64,
     /// La consegna c'è **ed è ancora quella del lavoro in corso**.
     pub handoff_valid: bool,
+    /// Il contesto registrato quando questa consegna ha cominciato a valere
+    /// sopra il gradino di blocco. Zero quando non c'è ancora un riferimento
+    /// per questa consegna: il chiamante lo registra al primo giro in cui
+    /// serve, stesso contratto del gemello sullo Stop.
+    pub context_at_handoff: u64,
     /// Si era già avvisato per questa sessione.
     pub already_warned: bool,
     /// Quanti rifiuti sono già stati opposti.
@@ -93,10 +114,18 @@ pub fn decide(f: &Facts) -> Decision {
         return Decision::Silent;
     }
     // Consegna già fatta e ancora attuale: garanzia soddisfatta, si lavora —
-    // ma non oltre il gradino di blocco: lì la consegna non è più un
-    // lasciapassare permanente (vedi `LOCKOUT_FRACTION`).
-    if f.handoff_valid && !over_lockout(f.used, f.thresholds.budget) {
-        return Decision::Silent;
+    // ma non oltre il gradino di blocco: lì la consegna non basta più a
+    // vita, e non da subito. Sotto il gradino basta sempre. Sopra, basta
+    // finché il contesto non è cresciuto in modo significativo dal
+    // riferimento — che qui, alla prima volta (`context_at_handoff == 0`),
+    // si sta registrando: vedi `grown_significantly`.
+    if f.handoff_valid {
+        let past_lockout = over_lockout(f.used, f.thresholds.budget);
+        if !past_lockout
+            || !grown_significantly(f.used, f.context_at_handoff, f.thresholds.budget)
+        {
+            return Decision::Silent;
+        }
     }
     let pct = percent(f.used, f.thresholds.budget);
     let model = &f.thresholds.model;
@@ -143,14 +172,16 @@ pub fn decide(f: &Facts) -> Decision {
             "Aggiorna la consegna e chiudi il turno: invoca di nuovo la skill \
              `handoff`, poi le due righe Stato / Procedo con. CONTESTO AL {pct}% \
              del budget di qualita' di {model} ({} token, budget ~{}), oltre il \
-             gradino di blocco (96%): sopra questa soglia la consegna gia' \
-             scritta non e' piu' un lasciapassare permanente — decisione di \
-             Theo del 20/08/2026. `{}` e' passato: e' un richiamo, non un \
-             divieto. Passano: Skill, Read, Write, Edit, Grep, Glob, SendMessage \
-             e gli strumenti delle lavorazioni.",
+             gradino di blocco (96%) e cresciuto ancora in modo significativo \
+             da quando la consegna vale: quella scritta prima non basta piu' \
+             — decisione di Theo del 20/08/2026. `{}` e' passato: e' un \
+             richiamo, non un divieto. Passano: Skill, Read, Write, Edit, \
+             Grep, Glob, SendMessage e gli strumenti delle lavorazioni. Il \
+             gancio chiede ancora, poi si arrende (dopo {} rifiuti).",
             thousands(f.used),
             thousands(budget),
-            f.tool
+            f.tool,
+            BLOCK_CAP
         ));
     }
 
@@ -196,6 +227,7 @@ mod tests {
             in_subagent: false,
             used,
             handoff_valid: false,
+            context_at_handoff: 0,
             already_warned: false,
             blocks_so_far: 0,
         }
@@ -272,14 +304,35 @@ mod tests {
     }
 
     #[test]
-    fn above_the_lockout_step_a_valid_handoff_is_not_enough_anymore() {
-        // Il difetto misurato su 450 sessioni: `handoff_valid` era un
-        // lasciapassare a QUALUNQUE livello di contesto, e la sessione saliva
-        // indisturbata fino alla compattazione. Qui il presidio torna a
-        // negare, e la via d'uscita sta in testa al messaggio.
+    fn crossing_the_lockout_step_the_first_time_still_stays_silent() {
+        // Il difetto misurato su 450 sessioni riguardava l'assenza totale di
+        // un presidio sopra il gradino, non questo caso — ma senza un
+        // riferimento ancora registrato (`context_at_handoff == 0`) il primo
+        // giro sopra il gradino non è ancora «crescita»: è il momento in cui
+        // il chiamante lo registra. Bloccare qui vorrebbe dire negare una
+        // consegna appena diventata valida un istante prima.
         let t = soglie();
         let mut f = fatti(&t, 480_000, "Bash");
         f.handoff_valid = true;
+        assert_eq!(decide(&f), Decision::Silent, "nessun riferimento ancora: prima volta");
+    }
+
+    #[test]
+    fn above_the_lockout_step_a_valid_handoff_is_not_enough_after_growth() {
+        // Il difetto misurato su 450 sessioni: `handoff_valid` era un
+        // lasciapassare a QUALUNQUE livello di contesto, e la sessione saliva
+        // indisturbata fino alla compattazione. Qui il presidio torna a
+        // negare — ma solo dopo che il contesto è cresciuto in modo
+        // significativo dal riferimento registrato, non al primo token sopra
+        // il gradino — e la via d'uscita sta in testa al messaggio.
+        let t = soglie();
+        let mut f = fatti(&t, 480_000, "Bash");
+        f.handoff_valid = true;
+        f.context_at_handoff = 480_000;
+        assert_eq!(decide(&f), Decision::Silent, "nessuna crescita ancora");
+        f.used = 494_999; // +14_999: sotto la soglia del 3% di 500_000 (15_000)
+        assert_eq!(decide(&f), Decision::Silent, "cresciuto, ma non abbastanza");
+        f.used = 495_000; // +15_000: esattamente la soglia
         match decide(&f) {
             Decision::Block(m) => {
                 assert!(
@@ -287,20 +340,30 @@ mod tests {
                     "la via d'uscita va in testa, non in coda: {m}"
                 );
                 assert!(m.contains("`handoff`"), "{m}");
-                assert!(m.contains("480,000 token"), "{m}");
+                assert!(m.contains("495,000 token"), "{m}");
             }
-            other => panic!("atteso un blocco anche a consegna fatta, non {other:?}"),
+            other => panic!("atteso un blocco dopo la crescita, non {other:?}"),
         }
     }
 
     #[test]
-    fn the_lockout_step_triggers_on_the_exact_threshold_not_after() {
+    fn the_update_handoff_message_names_the_cap_and_the_surrender() {
+        // Il ramo che scatta proprio nello scenario del guasto (consegna
+        // valida ma invecchiata sopra il gradino) doveva dire il vero: quante
+        // volte insiste, e che poi si arrende. Prima non lo diceva, ed era la
+        // sola differenza fra questo messaggio e quello senza consegna, che
+        // il tetto lo cita già.
         let t = soglie();
-        let mut f = fatti(&t, 479_999, "Bash");
+        let mut f = fatti(&t, 495_000, "Bash");
         f.handoff_valid = true;
-        assert_eq!(decide(&f), Decision::Silent, "un token sotto: ancora disarmata");
-        f.used = 480_000;
-        assert!(matches!(decide(&f), Decision::Block(_)), "sul gradino esatto: nega");
+        f.context_at_handoff = 480_000;
+        match decide(&f) {
+            Decision::Block(m) => {
+                assert!(m.contains("si arrende"), "manca la resa: {m}");
+                assert!(m.contains("dopo 6 rifiuti"), "manca il numero del tetto: {m}");
+            }
+            other => panic!("atteso un blocco, non {other:?}"),
+        }
     }
 
     #[test]
