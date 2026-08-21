@@ -1276,11 +1276,13 @@ mod tests {
     }
 
     /// Una cartella usa-e-getta con una memoria e un sorgente dentro.
+    ///
+    /// Sotto `hook_io::testing::test_dir`, che porta il pid del processo nella
+    /// radice: un nome fisso sotto `/tmp` collideva fra due `cargo test`
+    /// lanciati insieme sullo stesso repo, e uno si portava via i file
+    /// dell'altro a metà prova.
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("memory-anchors-{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        hook_io::testing::test_dir(name)
     }
 
     #[test]
