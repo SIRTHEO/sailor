@@ -202,6 +202,11 @@ const ALL_HOOKS: &[&str] = &[
     // leggendo `state/autorizzazioni.jsonl`. Non giudica un evento della
     // sessione, quindi non e' acceso da nessuna radice — sta in NOT_HOOKS.
     "authorization-check",
+    // La penna dello stesso registro, aggiunta lo stesso giorno: scrive una
+    // riga in coda. Stessa ragione della voce sopra: non e' un gancio,
+    // nessuna radice lo accende, sta in NOT_HOOKS — lo digita solo il
+    // capitano.
+    "captain-authorize",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -237,6 +242,7 @@ const NOT_HOOKS: &[&str] = &[
     "successor-probe",
     "stale-facts",
     "authorization-check",
+    "captain-authorize",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -400,6 +406,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("../../guards/src/stale_facts.rs"),
         ],
         "authorization-check" => &[include_str!("authorizations.rs")],
+        "captain-authorize" => &[include_str!("authorizations.rs")],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -1082,6 +1089,11 @@ fn run(which: &str) -> Result<i32, String> {
         // registro che il capitano scrive, senza che chi esegue debba
         // chiedere a nessuno. La chiave arriva come argomento.
         "authorization-check" => Ok(authorizations::run()),
+        // La penna dello stesso registro: SCRIVE SOLO IL CAPITANO. Non è un
+        // gancio, nessuna radice lo invoca — lo digita a mano chi ha appena
+        // ricevuto una decisione di Theo da trascrivere. La procedura sta in
+        // `docs/procedura-autorizzazioni.md`.
+        "captain-authorize" => Ok(authorizations::run_write()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
