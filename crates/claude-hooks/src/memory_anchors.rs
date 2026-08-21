@@ -88,9 +88,6 @@ fn roots() -> Vec<PathBuf> {
         // `claude-hook.sh` non vive sotto nessuna radice sopra: sta a se',
         // fuori da `.claude`.
         h.join(".orca/agent-hooks"),
-        // `ingest-coordinator.ts` e `memory-server/src/index.ts` idem: il
-        // servizio gira da qui, non da un repo sotto un ombrello.
-        h.join(".harness-mem/runtime/harness-mem"),
     ];
     out.extend(umbrellas.iter().cloned());
     // I repo sotto l'ombrello: `suite/src/...` si risolve dall'ombrello, ma
@@ -1555,12 +1552,16 @@ mod tests {
     }
 
     #[test]
-    fn roots_reach_the_hook_script_and_the_ingest_runtime() {
-        // `claude-hook.sh` vive fuori da `.claude`, in `~/.orca/agent-hooks`;
-        // `ingest-coordinator.ts` e `memory-server/src/index.ts` vivono sotto
-        // `~/.harness-mem/runtime/harness-mem`. Nessun'altra radice li
-        // raggiunge, quindi qui si guarda `roots()` vera — `with_roots` la
-        // sostituirebbe e non proverebbe niente.
+    fn roots_reach_the_hook_script_outside_dot_claude() {
+        // `claude-hook.sh` vive fuori da `.claude`, in `~/.orca/agent-hooks`, e
+        // nessun'altra radice ci arriva: qui si guarda `roots()` vera, perche'
+        // `with_roots` la sostituirebbe e non proverebbe niente.
+        //
+        // Qui viveva anche la radice del componente di memoria di terze parti.
+        // E' stata tolta il 21/08/2026 col componente stesso, per decisione di
+        // Theo: produceva 1.515 iniezioni di contesto e ne consegnava zero.
+        // Nessuna memoria ci ancorava — verificato prima di togliere, cercando
+        // gli ancoraggi nella loro forma e non le citazioni in prosa.
         //
         // Il lucchetto serve proprio perché qui `HOME` NON si sostituisce: senza,
         // un caso isolato che gira in parallelo la tiene finta mentre questo
@@ -1569,6 +1570,6 @@ mod tests {
         let _lock = crate::test_home::real_home_guard();
         let all = roots();
         assert!(all.contains(&home().join(".orca/agent-hooks")));
-        assert!(all.contains(&home().join(".harness-mem/runtime/harness-mem")));
+        assert!(!all.iter().any(|r| r.ends_with("runtime/harness-mem")));
     }
 }
