@@ -104,9 +104,186 @@ pub fn valve_in_front(command: &str, valve: &str) -> bool {
     })
 }
 
+/// Dove finisce un comando e comincia il successivo, **senza spezzare dentro
+/// una stringa**.
+///
+/// PERCHÉ UN FRENO CHE NEGA NE HA BISOGNO. Il bersaglio che un rifiuto nomina
+/// dev'essere un argomento vero di *quel* comando. Il freno di terze parti
+/// prende ciò che segue la parola di cancellazione fino alla fine del testo, e
+/// il 21/08/2026 ha negato sei volte accusando un file che il comando stava
+/// soltanto **leggendo**. Non conoscere i separatori e non conoscere le
+/// virgolette sono lo stesso difetto visto da due lati.
+///
+/// COSA CONTA COME CONFINE: `&&`, `||`, `;`, `|`, l'a capo, e l'apertura e la
+/// chiusura di una sostituzione (`$(…)`, backtick) — perché lì dentro c'è un
+/// comando vero. `&` da solo NON spezza: in `rm -rf x 2>&1` spezzerebbe una
+/// redirezione a metà, e il rifiuto finirebbe per nominare `1`.
+///
+/// I FRAMMENTI DI STRINGA ESCONO DALL'ELENCO. In `echo "$(date) rm -rf /x"` la
+/// coda dopo la sostituzione è testo dentro le virgolette, non un comando:
+/// giudicarla è esattamente il falso positivo che si sta togliendo a monte.
+///
+/// `worktree_deletes` ha un separatore suo e resta dov'è: quello è il porto di
+/// una `re.split` del Python e il suo pregio è essere identico all'originale.
+pub fn split_segments(command: &str) -> Vec<String> {
+    #[derive(PartialEq)]
+    enum Ctx {
+        /// Virgolette doppie: i separatori tacciono, le sostituzioni no.
+        Dq,
+        /// Dentro `$(…)`: si torna a un comando a tutti gli effetti.
+        Subst,
+        Tick,
+    }
+    // Una bandierina sola non regge `"… $( … " … " … ) …"`: serve una pila.
+    let mut stack: Vec<Ctx> = Vec::new();
+    // Vero se, al livello di comando corrente, c'è una virgoletta doppia aperta.
+    let in_string = |s: &Vec<Ctx>| {
+        s.iter()
+            .rev()
+            .take_while(|c| **c == Ctx::Dq)
+            .any(|c| *c == Ctx::Dq)
+    };
+
+    let mut out: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut literal = false;
+    let chars: Vec<char> = command.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' && i + 1 < chars.len() {
+            current.push(c);
+            current.push(chars[i + 1]);
+            i += 2;
+            continue;
+        }
+        // Fra apici singoli non è attivo niente: si copia fino alla chiusura.
+        if c == '\'' && stack.last() != Some(&Ctx::Dq) {
+            current.push(c);
+            i += 1;
+            while i < chars.len() && chars[i] != '\'' {
+                current.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                current.push('\'');
+                i += 1;
+            }
+            continue;
+        }
+        if c == '$' && chars.get(i + 1) == Some(&'(') {
+            if !literal {
+                out.push(std::mem::take(&mut current));
+            } else {
+                current.clear();
+            }
+            stack.push(Ctx::Subst);
+            literal = false;
+            i += 2;
+            continue;
+        }
+        if c == ')' && stack.last() == Some(&Ctx::Subst) {
+            stack.pop();
+            if !literal {
+                out.push(std::mem::take(&mut current));
+            } else {
+                current.clear();
+            }
+            literal = in_string(&stack);
+            i += 1;
+            continue;
+        }
+        if c == '`' {
+            if stack.last() == Some(&Ctx::Tick) {
+                stack.pop();
+            } else {
+                stack.push(Ctx::Tick);
+            }
+            if !literal {
+                out.push(std::mem::take(&mut current));
+            } else {
+                current.clear();
+            }
+            literal = in_string(&stack);
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            if stack.last() == Some(&Ctx::Dq) {
+                stack.pop();
+            } else {
+                stack.push(Ctx::Dq);
+            }
+            current.push(c);
+            i += 1;
+            continue;
+        }
+        if stack.last() != Some(&Ctx::Dq) {
+            if (c == '&' || c == '|') && chars.get(i + 1) == Some(&c) {
+                if !literal {
+                    out.push(std::mem::take(&mut current));
+                } else {
+                    current.clear();
+                }
+                literal = false;
+                i += 2;
+                continue;
+            }
+            if matches!(c, ';' | '\n' | '|') {
+                if !literal {
+                    out.push(std::mem::take(&mut current));
+                } else {
+                    current.clear();
+                }
+                literal = false;
+                i += 1;
+                continue;
+            }
+        }
+        current.push(c);
+        i += 1;
+    }
+    if !literal {
+        out.push(current);
+    }
+    out.into_iter().filter(|s| !s.trim().is_empty()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn it_splits_a_compound_command_into_its_commands() {
+        assert_eq!(split_segments("a && b || c ; d | e\nf"), vec!["a ", " b ", " c ", " d ", " e", "f"]);
+    }
+
+    #[test]
+    fn a_separator_inside_quotes_is_text_and_does_not_split() {
+        assert_eq!(split_segments(r#"echo "a && b; c""#), vec![r#"echo "a && b; c""#]);
+        assert_eq!(split_segments("echo 'a | b'"), vec!["echo 'a | b'"]);
+    }
+
+    /// `2>&1` va tenuto intero: spezzarlo lascerebbe un `1` che il chiamante
+    /// scambia per un bersaglio, ed è così che si nomina il file sbagliato.
+    #[test]
+    fn a_lone_ampersand_does_not_split_a_redirection() {
+        assert_eq!(split_segments("rm -rf /x 2>&1"), vec!["rm -rf /x 2>&1"]);
+    }
+
+    #[test]
+    fn a_substitution_is_a_command_of_its_own() {
+        assert_eq!(split_segments("X=$(rm -rf /y)"), vec!["X=", "rm -rf /y"]);
+        assert_eq!(split_segments("echo `rm -rf /y`"), vec!["echo ", "rm -rf /y"]);
+    }
+
+    /// Il caso che separa questo separatore da uno ingenuo: dopo la
+    /// sostituzione la coda è ancora dentro le virgolette, quindi è testo.
+    #[test]
+    fn the_tail_of_a_string_after_a_substitution_is_not_a_command() {
+        assert_eq!(split_segments(r#"echo "$(date) rm -rf /x""#), vec![r#"echo ""#, "date"]);
+    }
 
     #[test]
     fn a_valve_counts_in_front_of_the_command_and_nowhere_else() {
