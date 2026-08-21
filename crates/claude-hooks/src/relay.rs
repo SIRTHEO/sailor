@@ -88,8 +88,11 @@ const LOG_KEEP_LINES: usize = 2000;
 /// Chi parla con Orca. Iniettabile perché le prove possano registrarlo.
 pub type OrcaFn<'a> = &'a mut dyn FnMut(&[&str]) -> (i32, String);
 
+/// Stesso ripiego di `main.rs::roles_dir` quando `HOME` non è impostata: senza
+/// questo allineamento, in quel caso raro le due funzioni scrivevano in due
+/// posti diversi — una nella casa vera, l'altra in un percorso relativo vuoto.
 fn home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_default())
+    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/home/someone".into()))
 }
 
 fn state_dir() -> PathBuf {
@@ -102,6 +105,16 @@ fn live_dir() -> PathBuf {
 
 fn resume_dir() -> PathBuf {
     state_dir().join("riprendi-da")
+}
+
+/// La cartella dove ogni figura viva dichiara il proprio mestiere.
+///
+/// C'È GIÀ UNA COPIA in `main.rs::roles_dir`: stesso percorso, funzione
+/// privata a quel file. Non le ho unite perché il mio perimetro è solo
+/// `relay.rs`; il ripiego di `HOME` sopra è allineato apposta, così le due
+/// almeno non divergono più su dove scrivono.
+fn roles_dir() -> PathBuf {
+    state_dir().join("ruoli")
 }
 
 /// Una riga nel registro, con la data locale davanti.
@@ -1270,6 +1283,12 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // `sessioni-vive/<nuovo>.json` con `source: "clear"` sulla stessa tab — e
     // fino al 19/08/2026 non la leggeva nessuno.
     let heir = registered_heir(rec, clear_at);
+    // IL MESTIERE VIAGGIA SOLO QUI: `heir` è l'unico punto in cui si sa per
+    // certo che la sessione nuova è la stessa figura, non una qualunque
+    // apparsa nel frattempo sulla stessa tab.
+    if let Some(nuova) = &heir {
+        hand_over_role(sess, nuova);
+    }
     let swapped = raccolto || heir.is_some();
 
     // 5. FALLA PARTIRE. Il contesto iniettato da un gancio non avvia nessun
@@ -1719,6 +1738,34 @@ fn registered_heir(rec: &Record, clear_at: f64) -> Option<String> {
         }
     }
     None
+}
+
+/// Passa il mestiere dalla figura uscente a quella entrante, e toglie il
+/// vecchio file — mai lasciarlo accanto al nuovo, o un posto risulta coperto
+/// due volte.
+///
+/// SENZA MESTIERE DICHIARATO NON NASCE NIENTE: `fs::read_to_string` fallisce
+/// se `outgoing` non ha mai scritto il proprio file, e la funzione esce prima
+/// di toccare `incoming`. Attribuirne uno a chi non ce l'ha trasformerebbe una
+/// sessione di Theo in una figura di guardia — il falso fuoco che il capitano
+/// ha deciso di non volere (voce del 21/08/2026 delle 15:53).
+///
+/// LA CANCELLAZIONE È CONDIZIONATA ALLA SCRITTURA RIUSCITA. Toglierla a
+/// prescindere fa sparire il mestiere da entrambi i posti quando la
+/// destinazione non è scrivibile — riprodotto mettendo una cartella al posto
+/// del file di arrivo — e quello è esattamente il guasto silenzioso che
+/// questa riparazione esiste per chiudere. Se la scrittura fallisce il file
+/// vecchio resta: un mestiere duplicato costa una domanda in più, un mestiere
+/// perso da entrambe le parti no.
+fn hand_over_role(outgoing: &str, incoming: &str) {
+    let from = roles_dir().join(outgoing);
+    let Ok(role) = fs::read_to_string(&from) else {
+        return;
+    };
+    let _ = fs::create_dir_all(roles_dir());
+    if fs::write(roles_dir().join(incoming), role).is_ok() {
+        let _ = fs::remove_file(&from);
+    }
 }
 
 /// L'handle su cui vive **adesso** la sessione del record, o vuoto se non c'è.
@@ -2757,6 +2804,82 @@ mod tests {
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("confermata dal record di erede-00"), "{log}");
+    }
+
+    #[test]
+    fn the_declared_role_moves_to_the_heir_and_the_old_file_is_gone() {
+        let _home = HomeIsolata::nuova("mestiere-passa-all-erede");
+        // Il braccio positivo della voce del 21/08/2026 (15:53): la figura
+        // uscente ha dichiarato un mestiere, l'erede sulla stessa tab lo
+        // riceve, e il file vecchio non resta accanto al nuovo.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
+        let _ = fs::create_dir_all(roles_dir());
+        fs::write(roles_dir().join("provarel"), "MACCHINISTA\n").unwrap();
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            if args.contains(&"/clear") {
+                write_live_record("erede-000-0000", "tab-1", "clear", now_epoch() as u64);
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        assert_eq!(
+            fs::read_to_string(roles_dir().join("erede-00")).unwrap_or_default(),
+            "MACCHINISTA\n",
+            "il mestiere non e' arrivato alla sessione nuova"
+        );
+        assert!(
+            !roles_dir().join("provarel").exists(),
+            "il file vecchio e' rimasto accanto al nuovo: il posto risulta coperto due volte"
+        );
+    }
+
+    #[test]
+    fn a_session_with_no_declared_role_hands_over_nothing() {
+        let _home = HomeIsolata::nuova("nessun-mestiere-nessun-file");
+        // Il braccio che impedisce il falso fuoco: una sessione di Theo, senza
+        // mestiere dichiarato, non deve diventare una figura di guardia solo
+        // perche' e' stata rigenerata.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        write_live_record("provarel-0000-0000", "tab-1", "startup", now_epoch() as u64);
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            if args.contains(&"/clear") {
+                write_live_record("erede-000-0000", "tab-1", "clear", now_epoch() as u64);
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        assert!(
+            !roles_dir().join("erede-00").exists(),
+            "e' nato un file di mestiere per chi non ne aveva dichiarato uno"
+        );
+    }
+
+    #[test]
+    fn a_write_failure_leaves_the_old_role_file_in_place() {
+        let _home = HomeIsolata::nuova("scrittura-fallita-file-vecchio-resta");
+        // IL CASO CHE SA FALLIRE: una cartella al posto del file di arrivo fa
+        // fallire `fs::write` (IsADirectory). Cancellare comunque il file
+        // vecchio farebbe sparire il mestiere da entrambi i posti in
+        // silenzio — il guasto esatto che questa riparazione esiste per
+        // chiudere, non solo «due file per lo stesso mestiere».
+        let _ = fs::create_dir_all(roles_dir());
+        fs::write(roles_dir().join("provarel"), "MACCHINISTA\n").unwrap();
+        fs::create_dir_all(roles_dir().join("erede-00")).unwrap();
+
+        hand_over_role("provarel", "erede-00");
+
+        assert_eq!(
+            fs::read_to_string(roles_dir().join("provarel")).unwrap_or_default(),
+            "MACCHINISTA\n",
+            "il file vecchio e' sparito nonostante la scrittura fallita"
+        );
     }
 
     #[test]
