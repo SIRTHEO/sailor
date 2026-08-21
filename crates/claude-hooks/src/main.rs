@@ -59,6 +59,10 @@ mod squash_orphans;
 // misura del 20/08/2026 dove tre canonici su quattro erano su rami di lavoro
 // altrui, e l'indicizzatore taceva — nessun errore, solo un «green» bugiardo.
 mod index_freshness;
+// Il raccoglitore dei marcatori, 21/08/2026: il congedo li butta una volta sola,
+// e ciò che in quell'istante non si sapeva vivo restava sul disco per sempre.
+// NON È IN SERVIZIO: nessuna radice lo invoca, nessun servizio lo sveglia.
+mod marker_sweep;
 
 use hook_io::{Decision, Mode};
 
@@ -207,6 +211,10 @@ const ALL_HOOKS: &[&str] = &[
     // nessuna radice lo accende, sta in NOT_HOOKS — lo digita solo il
     // capitano.
     "captain-authorize",
+    // Il settimo, il 21/08/2026: ripassa i marcatori che il congedo di una
+    // sessione non ha potuto buttare. Non giudica nessun evento, quindi sta in
+    // NOT_HOOKS — e per ora non lo invoca nemmeno un servizio.
+    "marker-sweep",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -243,6 +251,7 @@ const NOT_HOOKS: &[&str] = &[
     "stale-facts",
     "authorization-check",
     "captain-authorize",
+    "marker-sweep",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -407,6 +416,13 @@ fn has_module_test(name: &str) -> bool {
         ],
         "authorization-check" => &[include_str!("authorizations.rs")],
         "captain-authorize" => &[include_str!("authorizations.rs")],
+        // Il secondo file è dove vive il giudizio che la passata riusa: se
+        // qualcuno togliesse i casi di `should_remove`, questa colonna deve
+        // accorgersene anche per il raccoglitore.
+        "marker-sweep" => &[
+            include_str!("marker_sweep.rs"),
+            include_str!("register_session.rs"),
+        ],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -697,8 +713,20 @@ fn run(which: &str) -> Result<i32, String> {
             let decision = guards::pr_merge_admin::judge(input.bash_command());
             Ok(emit_with_legacy_prefix("block-pr-merge-admin", &decision))
         }
-        // `observe` non decide niente: registra e sveglia l'osservatore. È il
-        // gancio più caldo di tutti, perché gira due volte per ogni chiamata.
+        // `observe` registra e sveglia l'osservatore. È il gancio più caldo di
+        // tutti, perché gira due volte per ogni chiamata.
+        //
+        // E DA OGGI DECIDE UNA COSA SOLA, per una ragione che va scritta o
+        // sembrerà un abuso: **è l'unico gancio chiamato su ogni strumento**, e
+        // il controllo che serviva riguarda `AskUserQuestion`, che nessun altro
+        // gancio vede. L'alternativa era una riga nuova in `settings.json` —
+        // file che nessuna sessione può scrivere, per costruzione. Metterlo qui
+        // è ciò che rende il controllo **eseguibile senza la mano di Theo**, che
+        // è esattamente il collo di bottiglia che il controllo esiste per
+        // togliere.
+        //
+        // Il giudizio è cablato per uscire subito su qualunque altro strumento:
+        // un errore qui fermerebbe la nave intera, non una domanda.
         "observe" => {
             let phase = std::env::args().nth(2).unwrap_or_else(|| "post".into());
             let mut raw = String::new();
@@ -706,6 +734,12 @@ fn run(which: &str) -> Result<i32, String> {
             let _ = std::io::stdin().read_to_string(&mut raw);
             hook_io::observations::record(&phase, &raw);
             hook_io::observations::wake_observer();
+            if phase == "pre" {
+                let verdict = ask_routing_verdict(&raw);
+                if verdict != Decision::Pass {
+                    return Ok(hook_io::emit("ask-routing", &verdict));
+                }
+            }
             Ok(0)
         }
         "pr-title" => {
@@ -1094,6 +1128,11 @@ fn run(which: &str) -> Result<i32, String> {
         // ricevuto una decisione di Theo da trascrivere. La procedura sta in
         // `docs/procedura-autorizzazioni.md`.
         "captain-authorize" => Ok(authorizations::run_write()),
+        // Non è un gancio: ripassa i marcatori che il congedo di una sessione
+        // non ha potuto buttare, col GIUDIZIO DEL CONGEDO e non con l'età nuda.
+        // Senza `--delete` racconta e basta. NON È IN SERVIZIO: la sveglia
+        // periodica la mette il capitano, dopo un verdetto indipendente.
+        "marker-sweep" => Ok(marker_sweep::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
@@ -1108,6 +1147,64 @@ fn run(which: &str) -> Result<i32, String> {
 /// rimandi senza migliorare niente.
 fn emit_with_legacy_prefix(hook: &str, decision: &Decision) -> i32 {
     hook_io::emit(hook, decision)
+}
+
+/// La cartella dove ogni figura viva dichiara il proprio mestiere.
+fn roles_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/theo".into());
+    std::path::PathBuf::from(home).join(".claude").join("state").join("ruoli")
+}
+
+/// Il mestiere della sessione, se ne ha dichiarato uno.
+fn role_of(session: &str) -> Option<String> {
+    if session.is_empty() {
+        return None;
+    }
+    let short: String = session.chars().take(8).collect();
+    let raw = std::fs::read_to_string(roles_dir().join(short)).ok()?;
+    let first = raw.lines().next()?.trim().to_string();
+    (!first.is_empty()).then_some(first)
+}
+
+/// L'identificativo del capitano vivo, se c'è.
+///
+/// Si guardano **solo** i file intestati a una sessione — otto cifre esadecimali
+/// — e non quelli intestati al mestiere: questi ultimi contengono un
+/// identificativo, non un ruolo, e scambiarli fa rispondere il nome sbagliato.
+fn live_captain() -> Option<String> {
+    let entries = std::fs::read_dir(roles_dir()).ok()?;
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        let is_session = name.len() == 8 && name.chars().all(|c| c.is_ascii_hexdigit());
+        if !is_session {
+            continue;
+        }
+        let Ok(raw) = std::fs::read_to_string(e.path()) else { continue };
+        if raw.trim_start().starts_with("CAPITANO") {
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Il verdetto sull'apertura di un modulo, letto il payload del gancio.
+///
+/// FAIL-OPEN OVUNQUE, e non è pigrizia: questo gira davanti a **ogni** strumento
+/// di **ogni** sessione. Un payload che non si legge, una cartella che non
+/// risponde, un campo assente — tutto lascia passare. Il costo di un falso
+/// diniego qui è la nave ferma; quello di un falso permesso è una domanda di
+/// troppo a Theo, che è il difetto che si sta curando, non un disastro.
+fn ask_routing_verdict(raw: &str) -> Decision {
+    let Ok(data) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Decision::Pass;
+    };
+    let tool = data.get("tool_name").and_then(|v| v.as_str()).unwrap_or("");
+    if tool != "AskUserQuestion" {
+        return Decision::Pass; // il caso normale esce qui, prima di toccare il disco
+    }
+    let session = data.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+    let role = role_of(session);
+    guards::ask_routing::judge(tool, role.as_deref(), live_captain().as_deref())
 }
 
 #[cfg(test)]
