@@ -250,6 +250,153 @@ pub fn split_segments(command: &str) -> Vec<String> {
     out.into_iter().filter(|s| !s.trim().is_empty()).collect()
 }
 
+// ── Il verbo di un segmento ─────────────────────────────────────────────────
+//
+// Estratto qui e non nel gancio che lo usa perché due letture divergono al
+// primo caso nuovo: un divieto (`linear_readonly`) e una concessione
+// (`read_only_allow`) guardano lo stesso «chi comanda in questo pezzo di
+// shell», in direzioni opposte. `sed` imparato in un elenco e non nell'altro
+// era già successo prima che questa funzione esistesse.
+
+/// I costrutti di shell: mai un verbo. Un segmento che comincia con uno di
+/// questi non ha niente da eseguire, e non si guarda cosa segue — per un
+/// ciclo o un condizionale non sappiamo dire se il resto del segmento è
+/// davvero il corpo o solo un pezzo tagliato a metà da un separatore che il
+/// costrutto non intendeva come tale.
+const CONSTRUCTS: &[&str] = &[
+    "cd", "for", "while", "until", "if", "do", "done", "then", "fi", "case", "set", "export",
+];
+
+/// Cosa si è capito del verbo di un segmento.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Verb {
+    /// Il segmento era solo costrutti e assegnazioni: non c'è niente da
+    /// eseguire.
+    None,
+    /// Il verbo vero, col sottocomando quando ce n'è uno riconoscibile e il
+    /// resto degli argomenti per chi deve giudicarli.
+    Known {
+        head: String,
+        sub: Option<String>,
+        rest: Vec<String>,
+    },
+    /// Non si sa dire: una sostituzione, una virgoletta aperta, o un verbo
+    /// che è una variabile invece di un nome.
+    Unknown,
+}
+
+fn looks_like_assignment(word: &str) -> bool {
+    let Some((name, _)) = word.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && name
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic() || c == '_')
+            .unwrap_or(false)
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Salta assegnazioni in testa (`VAR=x`) e l'`env` che ne introduce altre
+/// (`env VAR=x cmd`), fino al primo token che è davvero un comando o un
+/// costrutto. `env` nudo, senza niente dopo da eseguire, resta lui il verbo.
+fn skip_prefixes(words: &[String]) -> usize {
+    let mut i = 0;
+    loop {
+        match words.get(i) {
+            Some(w) if looks_like_assignment(w) => i += 1,
+            Some(w) if w == "env" => {
+                let mut j = i + 1;
+                while words.get(j).map(|w| looks_like_assignment(w)).unwrap_or(false) {
+                    j += 1;
+                }
+                if j < words.len() {
+                    i = j;
+                } else {
+                    return i;
+                }
+            }
+            _ => return i,
+        }
+    }
+}
+
+/// Le opzioni globali di git che precedono il sottocomando: saltarle è
+/// necessario perché `git -C <repo> <sottocomando>` è il 96% del git scritto
+/// in questa casa, e senza saltarle `<repo>` verrebbe letto come sottocomando.
+fn skip_git_globals(words: &[String], mut i: usize) -> usize {
+    while i < words.len() {
+        let takes_value = matches!(words[i].as_str(), "-C" | "-c" | "--git-dir" | "--work-tree");
+        if takes_value {
+            // Il flag c'è ma l'argomento no: ci si ferma qui invece di
+            // saltare oltre la fine del vettore. Col profilo di rilascio a
+            // `panic = "abort"` un indice fuori intervallo qui non è un
+            // errore che si propaga — è il binario che si ferma, il
+            // contrario del «fallisce chiuso» che questo modulo promette.
+            if i + 1 >= words.len() {
+                return i + 1;
+            }
+            i += 2;
+            continue;
+        }
+        match words[i].as_str() {
+            "--no-pager" => i += 1,
+            w if w.starts_with("--git-dir=") || w.starts_with("--work-tree=") => i += 1,
+            _ => break,
+        }
+    }
+    i
+}
+
+/// Il verbo vero di un segmento — quello che deciderà se legge o scrive.
+///
+/// Non giudica: chi chiama decide cosa fare di `Known`, e deve trattare
+/// `Unknown` diversamente da `None`. Un divieto e una concessione leggono lo
+/// stesso «non lo so» in direzioni opposte — l'uno nega, l'altro tace — e
+/// sbagliano entrambi se lo confondono con «non c'è verbo».
+pub fn segment_verb(segment: &str) -> Verb {
+    if segment.contains("$(")
+        || segment.contains('`')
+        || segment.contains("<(")
+        || segment.contains(">(")
+    {
+        return Verb::Unknown;
+    }
+    let Some(words) = split_words(segment) else {
+        return Verb::Unknown;
+    };
+    let i = skip_prefixes(&words);
+    let Some(head) = words.get(i) else {
+        return Verb::None;
+    };
+    if CONSTRUCTS.contains(&head.as_str()) {
+        return Verb::None;
+    }
+    if head.starts_with('$') {
+        return Verb::Unknown;
+    }
+    // Clamp difensivo: `skip_git_globals` non dovrebbe più restituire un
+    // indice fuori dal vettore, ma un secondo cancello qui non costa niente
+    // ed è quello che tiene fuori il panico se la funzione cambia domani.
+    let after_head = if head == "git" {
+        skip_git_globals(&words, i + 1)
+    } else {
+        i + 1
+    }
+    .min(words.len());
+    let sub = words
+        .get(after_head)
+        .filter(|w| !w.starts_with('-'))
+        .cloned();
+    let rest_start = if sub.is_some() { after_head + 1 } else { after_head };
+    Verb::Known {
+        head: head.clone(),
+        sub,
+        rest: words[rest_start..].to_vec(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,5 +478,102 @@ mod tests {
         assert_eq!(split_words(r#""a\nb""#).unwrap(), vec![r"a\nb"]);
         assert_eq!(split_words(r#""costa \$5""#).unwrap(), vec!["costa $5"]);
         assert_eq!(split_words(r#""a\\b""#).unwrap(), vec![r"a\b"]);
+    }
+
+    #[test]
+    fn git_dash_c_before_the_subcommand_is_the_case_that_matters_most() {
+        assert_eq!(
+            segment_verb("git -C /x log --oneline"),
+            Verb::Known {
+                head: "git".to_string(),
+                sub: Some("log".to_string()),
+                rest: vec!["--oneline".to_string()],
+            }
+        );
+        assert_eq!(
+            segment_verb("git -C /x -c user.name=y log"),
+            Verb::Known {
+                head: "git".to_string(),
+                sub: Some("log".to_string()),
+                rest: vec![],
+            }
+        );
+        assert_eq!(
+            segment_verb("git --no-pager -C /x diff"),
+            Verb::Known {
+                head: "git".to_string(),
+                sub: Some("diff".to_string()),
+                rest: vec![],
+            }
+        );
+        assert_eq!(
+            segment_verb(r#"git -C "$R" show"#),
+            Verb::Known {
+                head: "git".to_string(),
+                sub: Some("show".to_string()),
+                rest: vec![],
+            }
+        );
+    }
+
+    /// Il difetto 7 del secondo verdetto: `-C`/`-c`/`--git-dir`/`--work-tree`
+    /// come ultimo token facevano affettare il vettore oltre la sua fine.
+    /// Col profilo di rilascio a `panic = "abort"` questo abortiva il
+    /// binario, non falliva chiuso come il commento prometteva.
+    #[test]
+    fn a_global_flag_missing_its_argument_does_not_panic() {
+        for cmd in ["git -C", "git -c", "git --git-dir", "git --work-tree"] {
+            assert_eq!(
+                segment_verb(cmd),
+                Verb::Known {
+                    head: "git".to_string(),
+                    sub: None,
+                    rest: vec![],
+                },
+                "cmd: {cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn cd_is_a_construct_with_no_verb_after_it() {
+        assert_eq!(segment_verb("cd /x"), Verb::None);
+    }
+
+    /// Il caso che ha insegnato la distinzione fra i tre esiti: un ciclo non
+    /// si capisce dai suoi pezzi, e il pezzo dopo `do` non va promosso a
+    /// verbo solo perché somiglia a uno.
+    #[test]
+    fn a_loop_construct_swallows_its_own_line_without_looking_past_it() {
+        assert_eq!(segment_verb("for f in *"), Verb::None);
+        assert_eq!(segment_verb("do cat $f"), Verb::None);
+        assert_eq!(segment_verb("done"), Verb::None);
+    }
+
+    #[test]
+    fn env_unwraps_to_the_real_verb() {
+        assert_eq!(
+            segment_verb("env FOO=1 cat f.rs"),
+            Verb::Known {
+                head: "cat".to_string(),
+                sub: Some("f.rs".to_string()),
+                rest: vec![],
+            }
+        );
+        assert_eq!(
+            segment_verb("env"),
+            Verb::Known {
+                head: "env".to_string(),
+                sub: None,
+                rest: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn a_variable_or_a_substitution_as_the_verb_is_unknown_not_absent() {
+        assert_eq!(segment_verb("$CMD arg"), Verb::Unknown);
+        assert_eq!(segment_verb("echo $(rm -rf /x)"), Verb::Unknown);
+        assert_eq!(segment_verb(r#"git commit -m "aperta"#), Verb::Unknown);
     }
 }
