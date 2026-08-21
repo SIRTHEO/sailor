@@ -312,11 +312,99 @@ fn own_markers(sess: &str, full_id: &str) -> Vec<PathBuf> {
     paths
 }
 
-/// `SessionEnd`: la sessione cancella il proprio record, e nessuno indovina.
+/// Cosa si sa della sessione che ha appena mandato `SessionEnd`.
+///
+/// Tre esiti, non due: il campo del processo è nato alle 11:30 del 21/08/2026 e
+/// i record scritti prima non lo portano. Un campo **assente** dice «non lo so»,
+/// e leggerlo come «morta» è l'errore che ha cancellato il registro di una
+/// sessione viva.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SessionLiveness {
+    /// Il record porta un processo, e quel processo è un `claude` che gira.
+    Alive,
+    /// Il record porta un processo, e quel processo non c'è più.
+    Gone,
+    /// Non c'è il record, o non porta il processo: la domanda non ha risposta.
+    Unknown,
+}
+
+/// Quanto si aspetta prima di buttare ciò che riguarda una sessione di cui non
+/// si sa se è viva. Non è una stima del tempo che vive una sessione: è il tempo
+/// oltre il quale la sporcizia costa più del rischio — il 18/08/2026 sul disco
+/// c'erano 176 marcatori fermi da quattro giorni.
+const UNKNOWN_GRACE_SECS: u64 = 24 * 60 * 60;
+
+/// PURA: si cancella questo file? Dipende da cosa si sa e da quanto è vecchio.
+///
+/// La regola in una riga: **si butta solo ciò che si sa morto, o ciò che è
+/// abbastanza vecchio da non poter più servire a nessuno.** Il caso che questa
+/// funzione esiste per impedire è il primo — una sessione viva che si ritrova il
+/// proprio registro cancellato e sparisce da chi conta chi è di guardia.
+fn should_remove(liveness: SessionLiveness, file_age_secs: u64) -> bool {
+    match liveness {
+        SessionLiveness::Alive => false,
+        SessionLiveness::Gone => true,
+        SessionLiveness::Unknown => file_age_secs >= UNKNOWN_GRACE_SECS,
+    }
+}
+
+/// PURA: cosa dice il record, dato il processo che ci sta scritto e l'esito
+/// della verifica su quel processo. Separata dal sistema apposta, così i tre
+/// esiti si provano senza processi veri.
+fn liveness_from(pid: Option<u32>, process_is_claude: Option<bool>) -> SessionLiveness {
+    match (pid, process_is_claude) {
+        (None, _) => SessionLiveness::Unknown,
+        (Some(_), Some(true)) => SessionLiveness::Alive,
+        (Some(_), Some(false) | None) => SessionLiveness::Gone,
+    }
+}
+
+/// Il processo scritto nel record è vivo? L'IMPURITÀ VIVE SOLO QUI.
+///
+/// Non basta che il pid esista: un numero si ricicla, e un pid riassegnato a un
+/// altro programma dichiarerebbe viva una sessione finita. Si guarda il nome,
+/// con lo stesso confronto che usa chi il pid l'ha scritto.
+fn session_process_is_claude(pid: u32) -> Option<bool> {
+    match process_info(pid) {
+        Some((_, _, comm)) => Some(is_claude_process(&comm)),
+        None => Some(false),
+    }
+}
+
+/// Cosa si sa della sessione, leggendo il suo record sul disco.
+fn liveness_of(sess: &str) -> SessionLiveness {
+    let Ok(raw) = fs::read_to_string(live_dir().join(format!("{sess}.json"))) else {
+        return SessionLiveness::Unknown; // niente record: non si sa niente
+    };
+    let Ok(record) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return SessionLiveness::Unknown;
+    };
+    let pid = record.get("session_pid").and_then(|v| v.as_u64()).map(|p| p as u32);
+    let verdict = pid.and_then(session_process_is_claude);
+    liveness_from(pid, verdict)
+}
+
+/// Da quanti secondi non si tocca questo file. `None` se non esiste o se
+/// l'orologio non risponde: un'età che non si sa non è un'età zero.
+fn file_age_secs(path: &std::path::Path) -> Option<u64> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    SystemTime::now().duration_since(modified).ok().map(|d| d.as_secs())
+}
+
+/// `SessionEnd`: la sessione cancella il proprio record — ma solo se è davvero
+/// finita.
 ///
 /// Chi ha scritto un marcatore sa quando scade, e lo butta lui. Un raccoglitore
 /// che passa dopo dovrebbe indovinare un'età massima, cioè scegliere fra
 /// cancellare troppo presto e non cancellare mai.
+///
+/// PERCHÉ NON SI CANCELLA PIÙ A OCCHI CHIUSI. `SessionEnd` arriva anche mentre
+/// la sessione continua a lavorare: misurato il 21/08/2026 su due sessioni, la
+/// trascrizione dell'una proseguiva per altri dodici minuti dopo il proprio
+/// congedo. Il registro delle sessioni vive ne portava il segno — cinque
+/// processi `claude` vivi contro quattro record — e chi conta di lì per sapere
+/// se una figura è di guardia concludeva che il posto era vuoto, aprendo un
+/// secondo pannello sopra chi stava lavorando.
 fn forget_session(data: &serde_json::Value) {
     let full = data
         .get("session_id")
@@ -327,8 +415,32 @@ fn forget_session(data: &serde_json::Value) {
     if sess.is_empty() {
         return;
     }
-    for path in own_markers(&sess, &full) {
-        let _ = fs::remove_file(path);
+    forget_with(&sess, &full, liveness_of(&sess));
+}
+
+/// La parte che decide cosa sparisce, separata da chi guarda i processi: così i
+/// tre esiti si provano tutti e tre, compreso quello che sul banco di prova non
+/// si può costruire — una sessione viva si chiama `claude`, e la batteria no.
+fn forget_with(sess: &str, full: &str, liveness: SessionLiveness) {
+    if liveness == SessionLiveness::Alive {
+        // Il congedo di una sessione che sta ancora lavorando è un fatto, non
+        // rumore: si registra, perché è la traccia con cui si è capito il difetto.
+        journal::record(
+            "register-session",
+            "salta",
+            "congedo-a-sessione-viva",
+            &[("session", Field::Text(sess.to_string()))],
+        );
+        return;
+    }
+    for path in own_markers(sess, full) {
+        // Un file senza età leggibile non esiste: `remove_file` fallirebbe
+        // comunque, e saltarlo evita di buttare ciò che non si è potuto guardare.
+        if let Some(age) = file_age_secs(&path) {
+            if should_remove(liveness, age) {
+                let _ = fs::remove_file(path);
+            }
+        }
     }
 }
 
@@ -506,7 +618,13 @@ mod tests {
         for n in miei.iter().chain(altrui.iter()) {
             std::fs::write(state.join(n), "x").unwrap();
         }
-        std::fs::write(state.join("sessioni-vive/11112222.json"), "{}").unwrap();
+        // Un pid che su macOS non puo' esistere (il massimo e' 99998): la
+        // sessione risulta finita davvero, che e' il caso normale di un congedo.
+        std::fs::write(
+            state.join("sessioni-vive/11112222.json"),
+            r#"{"session_pid": 999999}"#,
+        )
+        .unwrap();
 
         forget_session(&event("SessionEnd", "11112222-3333-4444-5555-666677778888"));
 
@@ -517,6 +635,90 @@ mod tests {
             assert!(state.join(n).exists(), "{n} non e' suo e doveva restare");
         }
         assert!(!state.join("sessioni-vive/11112222.json").exists());
+    }
+
+    #[test]
+    fn a_farewell_from_a_session_that_is_still_working_takes_nothing_away() {
+        // Il difetto vero, misurato il 21/08/2026: `SessionEnd` arriva mentre la
+        // sessione lavora, e chi conta chi e' di guardia trova il posto vuoto.
+        let home = HomeIsolata::nuova("fine-sessione-viva");
+        let state = home.dir.join(".claude/state");
+        std::fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        let hers = ["consegna-misura-11112222", "consegna-fatta-11112222"];
+        for n in hers {
+            std::fs::write(state.join(n), "x").unwrap();
+        }
+        std::fs::write(state.join("sessioni-vive/11112222.json"), "{}").unwrap();
+
+        forget_with(
+            "11112222",
+            "11112222-3333-4444-5555-666677778888",
+            SessionLiveness::Alive,
+        );
+
+        for n in hers {
+            assert!(state.join(n).exists(), "{n}: la sessione lavora ancora");
+        }
+        assert!(
+            state.join("sessioni-vive/11112222.json").exists(),
+            "il registro di una sessione viva non si cancella"
+        );
+        // E il fatto va lasciato scritto, altrimenti il difetto torna
+        // invisibile: e' proprio dalla traccia che lo si e' capito. Senza questa
+        // riga il caso non distingue il ramo, perche' la difesa e' doppia —
+        // provato togliendo il ramo: la batteria restava tutta verde.
+        let lines = journal_lines(&home);
+        assert!(
+            lines.contains("congedo-a-sessione-viva") && lines.contains("11112222"),
+            "il congedo a una sessione viva deve lasciare traccia: {lines}"
+        );
+    }
+
+    #[test]
+    fn what_is_not_known_waits_instead_of_being_guessed() {
+        // Un record scritto prima delle 11:30 del 21/08/2026 non porta il
+        // processo: la domanda non ha risposta, e i suoi marcatori freschi
+        // restano finche' non sono abbastanza vecchi da non servire piu'.
+        let home = HomeIsolata::nuova("fine-sessione-ignota");
+        let state = home.dir.join(".claude/state");
+        std::fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        std::fs::write(state.join("consegna-fatta-11112222"), "x").unwrap();
+        std::fs::write(state.join("sessioni-vive/11112222.json"), "{}").unwrap();
+
+        forget_session(&event("SessionEnd", "11112222-3333-4444-5555-666677778888"));
+
+        assert!(
+            state.join("consegna-fatta-11112222").exists(),
+            "senza il processo non si sa niente, e non si butta niente di fresco"
+        );
+    }
+
+    #[test]
+    fn the_three_answers_are_three_and_a_missing_field_is_not_a_death() {
+        assert_eq!(liveness_from(None, None), SessionLiveness::Unknown);
+        assert_eq!(liveness_from(None, Some(true)), SessionLiveness::Unknown);
+        assert_eq!(liveness_from(Some(42), Some(true)), SessionLiveness::Alive);
+        assert_eq!(liveness_from(Some(42), Some(false)), SessionLiveness::Gone);
+        assert_eq!(liveness_from(Some(42), None), SessionLiveness::Gone);
+    }
+
+    #[test]
+    fn only_what_is_known_dead_or_old_enough_goes() {
+        let one_day = UNKNOWN_GRACE_SECS;
+        assert!(!should_remove(SessionLiveness::Alive, one_day * 30));
+        assert!(should_remove(SessionLiveness::Gone, 0));
+        assert!(!should_remove(SessionLiveness::Unknown, one_day - 1));
+        assert!(should_remove(SessionLiveness::Unknown, one_day));
+    }
+
+    #[test]
+    fn a_pid_that_cannot_exist_is_not_a_live_session() {
+        // Il verso che conta: se `ps` non risponde, la risposta e' «non c'e'»,
+        // non «non lo so» — altrimenti nessun record verrebbe mai buttato.
+        assert_eq!(session_process_is_claude(999_999), Some(false));
+        // E il processo di questa batteria esiste ma non si chiama `claude`:
+        // un pid vivo non basta, il nome discrimina.
+        assert_eq!(session_process_is_claude(std::process::id()), Some(false));
     }
 
     /// Un segnale di ripresa fresco, nella forma che scrive la staffetta.
