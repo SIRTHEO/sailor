@@ -113,6 +113,89 @@ fn inside_orca() -> bool {
     !env("ORCA_AGENT_HOOK_PORT").trim().is_empty()
 }
 
+/// Il tetto ai salti quando si risale la catena dei padri: abbastanza per
+/// superare una shell interposta fra il gancio e `claude` (`sh -c "..."`),
+/// non tanto da rischiare di prendere un `claude` che non è il nostro, più su
+/// nell'albero di Orca.
+const MAX_ANCESTOR_HOPS: usize = 4;
+
+/// Un anello della catena dei padri: pid e nome del comando così come lo dà
+/// `ps -o comm=`. Misurato risalendo da questo terminale il 21/08/2026: a
+/// volte è il nome corto (`claude`), a volte il percorso intero di un app
+/// bundle con spazi dentro (`Orca Helper`) — mai una via di mezzo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProcessLink {
+    pid: u32,
+    comm: String,
+}
+
+/// Il comando è il processo della sessione? Si confronta l'ultimo pezzo del
+/// percorso, perché `comm` arriva ora corto ora intero.
+fn is_claude_process(comm: &str) -> bool {
+    comm.rsplit('/').next().unwrap_or(comm) == "claude"
+}
+
+/// Quale pid scrivere, data la catena dei padri già letta. PURA: non tocca il
+/// sistema, quindi si prova senza processi veri. Si ferma al primo `claude`
+/// entro `max_hops`; oltre il tetto, o se non c'è affatto, non lo sa — e
+/// «non lo sa» è un esito legittimo, non un errore.
+fn choose_session_pid(chain: &[ProcessLink], max_hops: usize) -> Option<u32> {
+    chain.iter().take(max_hops).find(|p| is_claude_process(&p.comm)).map(|p| p.pid)
+}
+
+/// Pid, pid del padre e nome del comando di un processo, letti da `ps`.
+/// `None` se il pid non esiste (più): la catena si legge mentre il mondo dei
+/// processi cambia sotto i piedi, e un padre può essere già morto.
+fn process_info(pid: u32) -> Option<(u32, u32, String)> {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "pid=,ppid=,comm=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let line = String::from_utf8_lossy(&output.stdout);
+    let mut fields = line.trim_start().splitn(2, char::is_whitespace);
+    let read_pid: u32 = fields.next()?.parse().ok()?;
+    let mut fields = fields.next()?.trim_start().splitn(2, char::is_whitespace);
+    let ppid: u32 = fields.next()?.parse().ok()?;
+    let comm = fields.next()?.trim().to_string();
+    if comm.is_empty() {
+        return None;
+    }
+    Some((read_pid, ppid, comm))
+}
+
+/// Risale i padri di `start_pid` leggendo `ps`, fino a `max_hops` anelli o al
+/// capostipite (`launchd`, ppid 0). L'IMPURITÀ VIVE SOLO QUI: `choose_session_pid`
+/// decide, questa funzione si limita a guardare.
+fn ancestor_chain(start_pid: u32, max_hops: usize) -> Vec<ProcessLink> {
+    let mut chain = Vec::new();
+    let Some((_, mut next_pid, _)) = process_info(start_pid) else {
+        return chain;
+    };
+    for _ in 0..max_hops {
+        if next_pid == 0 {
+            break;
+        }
+        let Some((pid, ppid, comm)) = process_info(next_pid) else {
+            break;
+        };
+        chain.push(ProcessLink { pid, comm });
+        if ppid == pid {
+            break; // capostipite padre di se stesso: non risalire in loop
+        }
+        next_pid = ppid;
+    }
+    chain
+}
+
+/// Il pid della sessione, risalendo dal processo del gancio fino a `claude`.
+fn session_pid() -> Option<u32> {
+    let chain = ancestor_chain(std::process::id(), MAX_ANCESTOR_HOPS);
+    choose_session_pid(&chain, MAX_ANCESTOR_HOPS)
+}
+
 fn record_session(data: &serde_json::Value) {
     let full = data
         .get("session_id")
@@ -164,14 +247,22 @@ fn record_session(data: &serde_json::Value) {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
     };
-    // L'ordine delle chiavi è quello del dizionario Python, e conta: il file è
-    // confrontato byte per byte dal test di equivalenza. `serde_json` lo tiene
-    // grazie a `preserve_order`.
+    // L'ordine delle chiavi era quello del dizionario Python, confrontato
+    // byte per byte da un test di equivalenza: rimosso il 19/08/2026 insieme
+    // all'originale Python che confrontava (commit 25fc2617), perché quel
+    // Python non esiste più. Nessun lettore noto di questo file dipende
+    // dall'ordine oggi; lo si tiene comunque, `serde_json` lo mantiene gratis
+    // con `preserve_order`, e cambiarlo senza motivo è un rischio che non
+    // rende niente.
+    //
+    // `session_pid`: `None` diventa `null`, distinto da qualunque pid vero —
+    // «non l'ho saputo» non è «morto», ed è chi legge poi a scoprire quello.
     let record = serde_json::json!({
         "session_id": full,
         "terminal_handle": handle,
         "worktree_id": worktree,
         "tab_id": tab,
+        "session_pid": session_pid(),
         "transcript_path": data.get("transcript_path").and_then(|v| v.as_str()).unwrap_or(""),
         "cwd": cwd,
         "source": data.get("source").and_then(|v| v.as_str()).unwrap_or(""),
@@ -652,5 +743,53 @@ mod tests {
             "fuori da Orca non c'è niente da denunciare: {}",
             journal_lines(&home)
         );
+    }
+
+    /// Un anello di prova: solo `pid` e `comm` contano per la scelta.
+    fn link(pid: u32, comm: &str) -> ProcessLink {
+        ProcessLink { pid, comm: comm.to_string() }
+    }
+
+    #[test]
+    fn the_direct_parent_already_being_claude_is_chosen() {
+        let chain = [link(111, "claude"), link(222, "/bin/zsh")];
+        assert_eq!(choose_session_pid(&chain, MAX_ANCESTOR_HOPS), Some(111));
+    }
+
+    #[test]
+    fn a_shell_interposed_before_claude_is_skipped_over() {
+        // Il gancio può essere lanciato via `sh -c "..."`: il padre diretto
+        // muore subito, `claude` è un anello più su.
+        let chain = [link(333, "/bin/sh"), link(111, "claude"), link(222, "/bin/zsh")];
+        assert_eq!(choose_session_pid(&chain, MAX_ANCESTOR_HOPS), Some(111));
+    }
+
+    #[test]
+    fn a_chain_without_claude_at_all_says_it_does_not_know() {
+        let chain = [link(333, "/bin/sh"), link(222, "/bin/zsh"), link(1, "/sbin/launchd")];
+        assert_eq!(choose_session_pid(&chain, MAX_ANCESTOR_HOPS), None);
+    }
+
+    #[test]
+    fn claude_beyond_the_cap_is_not_found() {
+        // `claude` c'è, ma al quinto anello: con un tetto di quattro non lo si
+        // deve trovare, altrimenti il tetto non tetta niente.
+        let chain = [
+            link(9, "a"),
+            link(8, "b"),
+            link(7, "c"),
+            link(6, "d"),
+            link(111, "claude"),
+        ];
+        assert_eq!(choose_session_pid(&chain, 4), None);
+    }
+
+    #[test]
+    fn a_full_bundle_path_is_matched_on_its_last_component() {
+        // `comm` arriva come percorso intero per gli app bundle: si confronta
+        // l'ultimo pezzo, non la stringa intera.
+        assert!(is_claude_process("claude"));
+        assert!(!is_claude_process("/Applications/Orca.app/Contents/MacOS/Orca"));
+        assert!(!is_claude_process("/bin/zsh"));
     }
 }
