@@ -1118,6 +1118,18 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             );
             return;
         }
+        PanelReadiness::TranscriptUnknown => {
+            // Chiave di guasto diversa, non solo testo diverso: chi conta le
+            // ripetizioni tiene due conti separati, e due cause che si sommano
+            // in un numero solo nascondono quella piu' rara.
+            log_guasto(
+                "turno-non-letto",
+                &format!(
+                    "sess={sess}: lo schermo era pulito ma il turno non si e' letto dal transcript, non tocco i tasti: rimando"
+                ),
+            );
+            return;
+        }
     }
 
     // 2. lascia il segnale di ripresa per il successore
@@ -1641,6 +1653,7 @@ const OPEN_QUESTION_SIGNATURE: &str = "Enter to select";
 
 /// Cosa dice il pannello adesso, letto per davvero e non dedotto da
 /// `tui-idle` — che risponde «fermo» anche a modale aperta.
+#[derive(Debug, PartialEq, Eq)]
 enum PanelReadiness {
     /// Nessuna domanda in coda, riga d'ingresso vuota: si può scrivere.
     Clear,
@@ -1654,6 +1667,15 @@ enum PanelReadiness {
     /// Il pannello non si è letto, o non si è trovata la riga del prompt: non
     /// è la prova positiva che serve, quindi vale come non vuoto.
     Unknown,
+    /// Lo schermo era pulito, ma il **transcript** non si è potuto giudicare.
+    ///
+    /// SEPARATA DA `Unknown` PERCHÉ IL MESSAGGIO MANDA CHI INDAGA. Fino al
+    /// 21/08/2026 le due cause scrivevano la stessa riga — «il pannello non si
+    /// è letto» — e siccome la prova sullo schermo viene prima, quando quella
+    /// riga compariva il pannello **stava benissimo** nella quasi totalità dei
+    /// casi. Una segnalazione nata da 588 di quelle righe accusava il pannello,
+    /// e chi ha indagato ha dovuto escluderlo prima di poter cercare altrove.
+    TranscriptUnknown,
 }
 
 /// Legge la coda del pannello e giudica se è il caso di scriverci.
@@ -1691,7 +1713,9 @@ fn turn_readiness(transcript: &str) -> PanelReadiness {
     match turn_status_from_lines(&tail.lines().collect::<Vec<_>>()) {
         TurnStatus::Ended => PanelReadiness::Clear,
         TurnStatus::InProgress => PanelReadiness::TurnInProgress,
-        TurnStatus::Unknown => PanelReadiness::Unknown,
+        // Non `Unknown`: qui lo schermo era pulito e a non essersi letto è il
+        // transcript. Chi legge la riga deve andare nel posto giusto.
+        TurnStatus::Unknown => PanelReadiness::TranscriptUnknown,
     }
 }
 
@@ -2956,6 +2980,28 @@ mod tests {
             })
             .unwrap_or(0);
         assert_eq!(tregua, 1, "la tregua non è stata scritta");
+    }
+
+    #[test]
+    fn an_unreadable_transcript_does_not_accuse_the_panel() {
+        // 588 righe in dieci ore hanno accusato il pannello mentre il pannello
+        // stava benissimo: si arriva a guardare il transcript SOLO quando lo
+        // schermo e' pulito, quindi quel messaggio mandava chi indaga nel posto
+        // sbagliato — ed e' successo davvero.
+        let home = HomeIsolata::nuova("transcript-illeggibile");
+        let t = home.dir.join("t.jsonl");
+        std::fs::write(&t, "{\"type\":\"assis").unwrap();
+        assert_eq!(
+            turn_readiness(t.to_str().unwrap()),
+            PanelReadiness::TranscriptUnknown,
+            "a non essersi letto e' il transcript, non il pannello"
+        );
+
+        // E il verso opposto resta quello di prima: un pannello che non si
+        // legge accusa il pannello. Senza questo braccio la separazione
+        // potrebbe essere solo un'etichetta nuova sullo stesso esito.
+        let mut orca = |_: &[&str]| -> (i32, String) { (1, String::new()) };
+        assert_eq!(panel_readiness("term_x", &mut orca), PanelReadiness::Unknown);
     }
 
     #[test]
