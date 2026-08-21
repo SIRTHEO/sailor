@@ -132,6 +132,29 @@ fn log_line(line: &str) {
     }
 }
 
+/// La stessa riga di `log_line`, ma marcata come guasto.
+///
+/// LA FORMA VIENE DAL REGISTRO DEI GANCI, dove `decisione: "guasto"` più un
+/// `motivo` in kebab-case dicono insieme «qui è andata storta, ed ecco quale».
+/// Qui i due campi stanno in uno solo, `[guasto=<motivo>]`, perché questo
+/// registro è prosa e non JSON. È additivo: compare solo quando c'è, e una riga
+/// senza marcatore resta cronaca come prima.
+///
+/// STA IN TESTA AL CORPO, NON IN CODA, e non è estetica: certe righe finiscono
+/// con l'uscita di un comando (`out=…`), e un marcatore annegato lì dentro
+/// sarebbe indistinguibile da uno vero. Subito dopo l'orario nessun testo
+/// altrui può arrivarci.
+///
+/// IL CRITERIO PER SCEGLIERE CHI LO PORTA È UNO SOLO: **la condizione può
+/// cadere da sola?** Un turno ancora in corso e una scelta in sospeso passano
+/// col tempo, e restano cronaca. Una riga battuta e mai inviata, un pannello che
+/// non si riesce a leggere, un invio fallito: quelli non cadono aspettando, si
+/// ripetono ogni minuto per sempre, e un rinvio che non scade non è un rinvio —
+/// è un blocco. Chi legge il registro non deve dedurlo: c'è scritto.
+fn log_guasto(nome: &str, line: &str) {
+    log_line(&format!("[guasto={nome}] {line}"));
+}
+
 fn is_off() -> bool {
     state_dir().join("staffetta-off").exists()
 }
@@ -1006,9 +1029,15 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         // pannello lavora — e chi leggeva concludeva che la sessione era morta e
         // smetteva di cercarla: il 21/08 tre sessioni vive sono state date per
         // sparite per un'ora, con la riga scritta 29 volte in 16 minuti.
-        log_line(&format!(
-            "sess={sess}: non riesco a identificare il pannello, non azzero niente"
-        ));
+        //
+        // ED È UN GUASTO, non un rinvio: l'identificazione non si ripara
+        // aspettando — o la scheda ha più pannelli, o l'elenco non si legge, e
+        // nessuna delle due passa da sola. Da qui la sessione non è più
+        // rigenerabile finché non interviene qualcuno.
+        log_guasto(
+            "pannello-non-identificato",
+            &format!("sess={sess}: non riesco a identificare il pannello, non azzero niente"),
+        );
         return;
     }
 
@@ -1038,6 +1067,20 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // vuoto — misurato il 20/08/2026 — perché il silenzio è quello che
     // produce lui: il pannello sembra pulito, ma il turno è ancora aperto.
     // `readiness` guarda anche la coda del transcript, non solo lo schermo.
+    //
+    // I QUATTRO RINVII NON SONO LA STESSA COSA, e da qui in poi il registro lo
+    // dice. Si dividono su una domanda sola: **la condizione può cadere da
+    // sola?** Una domanda in attesa di risposta e un turno in corso finiscono
+    // col tempo, e chi si astiene ha solo da aspettare — cronaca. Una riga
+    // battuta e mai inviata non se ne va da sola, e un pannello che non si
+    // riesce a leggere nemmeno: quelle due si ripetono ogni minuto per sempre e
+    // la sessione resta irrigenerabile finché non passa qualcuno — guasti.
+    // Misurato sul registro il 21/08/2026: le sequenze di rinvii che poi si sono
+    // sbloccate arrivano a 27; quelle mai finite stanno a 316 e 495.
+    //
+    // Il comportamento non cambia di una virgola: si rinvia negli stessi quattro
+    // casi di prima, con le stesse parole. Cambia solo che due righe portano il
+    // proprio nome.
     match readiness(rec, &handle, orca) {
         PanelReadiness::Clear => {}
         PanelReadiness::Question => {
@@ -1047,9 +1090,12 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             return;
         }
         PanelReadiness::Typing => {
-            log_line(&format!(
-                "sess={sess}: la riga d'ingresso non e' vuota, non tocco i tasti: rimando"
-            ));
+            log_guasto(
+                "riga-battuta-mai-inviata",
+                &format!(
+                    "sess={sess}: la riga d'ingresso non e' vuota, non tocco i tasti: rimando"
+                ),
+            );
             return;
         }
         PanelReadiness::TurnInProgress => {
@@ -1059,9 +1105,12 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             return;
         }
         PanelReadiness::Unknown => {
-            log_line(&format!(
-                "sess={sess}: il pannello non si e' letto con prova certa, non tocco i tasti: rimando"
-            ));
+            log_guasto(
+                "pannello-non-letto",
+                &format!(
+                    "sess={sess}: il pannello non si e' letto con prova certa, non tocco i tasti: rimando"
+                ),
+            );
             return;
         }
     }
@@ -1155,12 +1204,18 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     if rc_clear != 0 {
         // NON si è perso niente: la sessione vecchia è ancora lì col suo
         // contesto e la sua consegna già scritta. Si raffredda e si riprova.
+        // Guasto e non rinvio: un invio rifiutato non diventa accettato
+        // aspettando. La tregua fa riprovare, ma se la causa resta la riga
+        // torna a ogni giro.
         set_cooldown(&rec.worktree);
-        log_line(&format!(
-            "sess={sess}: /clear non inviato (rc={rc_clear}), la sessione resta \
-             com'era (cooldown {COOLDOWN_SEC}s). out={}",
-            cut(&out, 400)
-        ));
+        log_guasto(
+            "clear-non-inviato",
+            &format!(
+                "sess={sess}: /clear non inviato (rc={rc_clear}), la sessione resta \
+                 com'era (cooldown {COOLDOWN_SEC}s). out={}",
+                cut(&out, 400)
+            ),
+        );
         return;
     }
 
@@ -1261,12 +1316,20 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         // Il conto lo tiene un contatore suo, che ha il proprio tetto.
         set_cooldown(&rec.worktree);
         let n = mark_blind_attempt(&rec.worktree, &rec.session_id);
-        log_line(&format!(
-            "RIGENERAZIONE NON CONFERMATA sess={sess} ({n}/{MAX_BLIND_ATTEMPTS}): \
-             /clear inviato a {handle}, ma il segnale non e' stato raccolto e \
-             nessuna sessione nuova si e' registrata qui. Stato e marcatori \
-             restano dov'erano, si riprova fra {COOLDOWN_SEC}s."
-        ));
+        // Il `/clear` è partito e nessuno si è fatto vivo: il codice non è
+        // riuscito a concludere, ed è la definizione stessa di guasto. La riga
+        // marcata è questa e non quella del passo 5, che descrive lo stesso
+        // evento poche righe sopra: marcarle tutte e due conterebbe due volte
+        // un guasto solo.
+        log_guasto(
+            "rigenerazione-non-confermata",
+            &format!(
+                "RIGENERAZIONE NON CONFERMATA sess={sess} ({n}/{MAX_BLIND_ATTEMPTS}): \
+                 /clear inviato a {handle}, ma il segnale non e' stato raccolto e \
+                 nessuna sessione nuova si e' registrata qui. Stato e marcatori \
+                 restano dov'erano, si riprova fra {COOLDOWN_SEC}s."
+            ),
+        );
         if n >= MAX_BLIND_ATTEMPTS {
             let marker = blind_stop_path(&rec.worktree);
             let _ = fs::create_dir_all(state_dir());
@@ -1283,15 +1346,18 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
                     rec.worktree
                 ),
             );
-            log_line(&format!(
-                "STAFFETTA CIECA su {}: {n} tentativi di fila senza prova che la \
-                 sostituzione sia avvenuta. Riprovo da sola fra {} h. Per ripartire \
-                 subito: rm {} {}",
-                rec.worktree,
-                round_half_to_even(BLIND_STOP_RESET_SEC / 3600.0),
-                marker.display(),
-                blind_attempts_path(&rec.worktree).display()
-            ));
+            log_guasto(
+                "staffetta-cieca",
+                &format!(
+                    "STAFFETTA CIECA su {}: {n} tentativi di fila senza prova che la \
+                     sostituzione sia avvenuta. Riprovo da sola fra {} h. Per ripartire \
+                     subito: rm {} {}",
+                    rec.worktree,
+                    round_half_to_even(BLIND_STOP_RESET_SEC / 3600.0),
+                    marker.display(),
+                    blind_attempts_path(&rec.worktree).display()
+                ),
+            );
         }
         return;
     }
@@ -1411,12 +1477,18 @@ fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
         return false;
     }
     if now_epoch() - at > PENDING_BOOT_MAX_AGE_SEC {
-        log_line(&format!(
-            "AVVIO ABBANDONATO su {handle}: {} h senza riuscire a consegnarlo, mi fermo. \
-             Per riprovare: rm {}",
-            round_half_to_even(PENDING_BOOT_MAX_AGE_SEC / 3600.0),
-            path.display()
-        ));
+        // Il codice si arrende: ore di tentativi e il mandato non è mai
+        // arrivato. Uno stato che non dovrebbe esistere, e che aspettando
+        // peggiora.
+        log_guasto(
+            "avvio-abbandonato",
+            &format!(
+                "AVVIO ABBANDONATO su {handle}: {} h senza riuscire a consegnarlo, mi fermo. \
+                 Per riprovare: rm {}",
+                round_half_to_even(PENDING_BOOT_MAX_AGE_SEC / 3600.0),
+                path.display()
+            ),
+        );
         let _ = fs::remove_file(&path);
         return true; // il giro si ferma comunque qui: non si ricomincia alla cieca
     }
@@ -1435,9 +1507,15 @@ fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
         let _ = fs::remove_file(&path);
         log_line(&format!("avvio in sospeso su {handle}: consegnato"));
     } else {
-        log_line(&format!(
-            "avvio in sospeso su {handle}: invio fallito di nuovo (rc={rc_send}), rimando"
-        ));
+        // «Ancora occupato» qui sopra è cronaca: un pannello occupato si libera.
+        // Un invio rifiutato su un pannello che *era* libero no, e a forza di
+        // ripetersi arriva all'abbandono qui sopra.
+        log_guasto(
+            "avvio-invio-fallito",
+            &format!(
+                "avvio in sospeso su {handle}: invio fallito di nuovo (rc={rc_send}), rimando"
+            ),
+        );
     }
     true
 }
@@ -1652,17 +1730,27 @@ fn close_old_panel(rec: &Record, sess: &str, orca: OrcaFn) -> Chiusura {
             // ramo in cui si crede a un `rc`, e si crede solo a quello — un
             // `rc` diverso da zero qui è un fallimento dichiarato, non un
             // dubbio.
-            log_line(&format!(
-                "sess={sess}: chiusa la scheda {handle} (rc={rc}), esito non verificabile"
-            ));
+            // L'elenco dei pannelli non si legge: la stessa cecità che tiene
+            // ferma la staffetta altrove, e non si cura aspettando.
+            log_guasto(
+                "esito-chiusura-non-verificabile",
+                &format!(
+                    "sess={sess}: chiusa la scheda {handle} (rc={rc}), esito non verificabile"
+                ),
+            );
             if rc == 0 { Chiusura::Fatta } else { Chiusura::Fallita }
         }
         Some(ts) if ts.iter().any(|t| t.handle == handle) => {
-            log_line(&format!(
-                "sess={sess}: LA SCHEDA {handle} NON SI E' CHIUSA (rc={rc}): \
-                 restano due sessioni su {}",
-                rec.worktree
-            ));
+            // Due sessioni sullo stesso albero sono uno stato che non dovrebbe
+            // esistere: guasto per definizione.
+            log_guasto(
+                "scheda-non-chiusa",
+                &format!(
+                    "sess={sess}: LA SCHEDA {handle} NON SI E' CHIUSA (rc={rc}): \
+                     restano due sessioni su {}",
+                    rec.worktree
+                ),
+            );
             Chiusura::Fallita
         }
         Some(_) => Chiusura::Fatta,
