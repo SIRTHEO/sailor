@@ -546,7 +546,16 @@ pub fn opaque_writes(command: &str) -> Vec<String> {
         if !writes_a_file().is_match(body) {
             return;
         }
-        for c in quoted_path().captures_iter(body) {
+        // I BERSAGLI SI CERCANO NEL CODICE, NON NEI COMMENTI. Un programma che
+        // *nomina* un altro programma nella sua descrizione veniva letto come un
+        // programma che lo *scrive*, e il gate negava di leggerne l'aiuto:
+        // riprodotto il 21/08/2026 su `close-finished-worktrees.py`, la cui
+        // prima riga di documentazione dice di non duplicare un file omonimo. È
+        // la stessa forma di errore di `comment-refs` in senso opposto — un
+        // percorso citato scambiato per un percorso agito — e qui pesa il doppio
+        // perché a essere impedita è una lettura.
+        let code = code_without_comments(body);
+        for c in quoted_path().captures_iter(&code) {
             let path = c.get(1).map(|x| x.as_str()).unwrap_or("");
             if require_parent && !parent_exists(path) {
                 continue;
@@ -563,6 +572,79 @@ pub fn opaque_writes(command: &str) -> Vec<String> {
         collect(&body, from_disk);
     }
     found
+}
+
+/// Il corpo senza commenti e senza documentazione, con le stringhe intatte.
+///
+/// Serve a una domanda sola: quali percorsi questo programma **tocca**. Un
+/// percorso che compare in un commento o in una docstring è nominato, non
+/// agito, e contarlo fa negare comandi che non scrivono niente.
+///
+/// LE STRINGHE RESTANO, ed è la metà che conta: un bersaglio di scrittura vive
+/// quasi sempre dentro una stringa (`open("/x/a.ts", "w")`), e un `#` o un `//`
+/// dentro quella stringa — un frammento di URL, un colore, uno shebang citato —
+/// taglierebbe via proprio la riga che si vuole leggere. Per questo una stringa
+/// si attraversa copiandola invece di saltarla.
+///
+/// IL BUCO CHE RESTA, dichiarato: una stringa aperta e mai chiusa sulla stessa
+/// riga smette di essere trattata come tale a fine riga. Sbaglia tenendo il
+/// testo, non buttandolo, e quindi al più fa cercare un percorso in più.
+fn code_without_comments(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut i = 0usize;
+    while i < body.len() {
+        let rest = &body[i..];
+        // La documentazione di Python, che è una stringa tripla e può coprire
+        // decine di righe: è il caso che ha prodotto il falso allarme.
+        if let Some(delim) = ["\"\"\"", "'''"].iter().find(|d| rest.starts_with(**d)) {
+            i += match rest[3..].find(*delim) {
+                Some(end) => 3 + end + 3,
+                None => rest.len(),
+            };
+            continue;
+        }
+        if rest.starts_with("/*") {
+            i += match rest[2..].find("*/") {
+                Some(end) => 2 + end + 2,
+                None => rest.len(),
+            };
+            continue;
+        }
+        if rest.starts_with('#') || rest.starts_with("//") {
+            // L'a capo si tiene: senza, due righe si saldano e nascono percorsi
+            // che nel file non ci sono.
+            i += rest.find('\n').unwrap_or(rest.len());
+            continue;
+        }
+        if rest.starts_with('"') || rest.starts_with('\'') {
+            let quote = rest.as_bytes()[0];
+            out.push(quote as char);
+            let mut j = 1;
+            let mut escaped = false;
+            while j < rest.len() {
+                let b = rest.as_bytes()[j];
+                if b == b'\n' {
+                    break; // stringa non chiusa: si torna al testo normale
+                }
+                let ch = rest[j..].chars().next().unwrap_or('\n');
+                out.push(ch);
+                j += ch.len_utf8();
+                if escaped {
+                    escaped = false;
+                } else if b == b'\\' {
+                    escaped = true;
+                } else if b == quote {
+                    break;
+                }
+            }
+            i += j;
+            continue;
+        }
+        let ch = rest.chars().next().unwrap_or('\n');
+        out.push(ch);
+        i += ch.len_utf8();
+    }
+    out
 }
 
 /// Vero se la cartella che contiene `path` esiste sul disco.
@@ -1317,5 +1399,77 @@ mod tests {
         let command = format!("python3 {}", script.display());
         assert_eq!(opaque_writes(&command), [target.display().to_string()]);
         let _ = std::fs::remove_file(&script);
+    }
+
+    /// IL CASO RIPRODOTTO IL 21/08/2026: `python3 <script> --help` negato perché
+    /// la documentazione dello script **nomina** un altro programma. Chiedere
+    /// l'aiuto di un comando è una lettura, e un controllo che impedisce di
+    /// guardare costa più del difetto che sorveglia.
+    ///
+    /// DIFFERENZIALE — i due bracci cambiano solo per la riga di codice che
+    /// scrive. Il primo pretende il silenzio, il secondo pretende il bersaglio
+    /// vero: togliere le stringhe insieme ai commenti farebbe cadere il secondo,
+    /// togliere niente farebbe cadere il primo. Nessuna delle due mutazioni
+    /// passa.
+    #[test]
+    fn a_path_named_in_the_documentation_is_not_a_path_written() {
+        let dir = std::env::temp_dir().join("gate-percorso-nominato");
+        let crates_dir = dir.join("crates");
+        let _ = std::fs::create_dir_all(&crates_dir);
+        let script = dir.join("nomina.py");
+        let target = crates_dir.join("a.rs");
+        let doc = "\"\"\"Chiude le copie finite.\n\n\
+                   NON DUPLICA gyver/work/.claude/scripts/close-finished.py, e il\n\
+                   confine e' netto: quello sceglie da solo chi smontare.\n\"\"\"\n\
+                   # vedi anche tools/altro.py\n";
+
+        std::fs::write(&script, format!("{doc}import shutil\nshutil.copy2(a, b)\n")).unwrap();
+        let command = format!("python3 {} --help", script.display());
+        assert!(
+            opaque_writes(&command).is_empty(),
+            "un percorso citato nella documentazione non è un bersaglio: {:?}",
+            opaque_writes(&command)
+        );
+
+        std::fs::write(
+            &script,
+            format!("{doc}pathlib.Path('{}').write_text(s)\n", target.display()),
+        )
+        .unwrap();
+        assert_eq!(
+            opaque_writes(&command),
+            [target.display().to_string()],
+            "il bersaglio scritto in codice si vede ancora, e i due citati no"
+        );
+        let _ = std::fs::remove_file(&script);
+    }
+
+    #[test]
+    fn a_comment_marker_inside_a_string_does_not_cut_the_line() {
+        // Il rischio della pulizia: `#` e `//` vivono anche dentro le stringhe —
+        // uno shebang citato, un frammento di URL, un colore. Se tagliassero lì,
+        // sparirebbe proprio la riga che porta il bersaglio.
+        let body = "header = \"#!/bin/sh # x\"\nopen('/x/crates/a.rs', 'w')\n";
+        let code = code_without_comments(body);
+        assert!(code.contains("/x/crates/a.rs"), "{code}");
+        assert!(code.contains("#!/bin/sh"), "{code}");
+    }
+
+    #[test]
+    fn comments_and_docstrings_leave_the_code_behind() {
+        let body = "\"\"\"doc con a/b/uno.py\"\"\"\n\
+                    x = 1  # coda con due.py\n\
+                    /* blocco con tre.py */\n\
+                    // riga con quattro.py\n\
+                    open('cinque.py', 'w')\n";
+        let code = code_without_comments(body);
+        for named in ["uno.py", "due.py", "tre.py", "quattro.py"] {
+            assert!(!code.contains(named), "{named} doveva sparire:\n{code}");
+        }
+        assert!(code.contains("cinque.py"), "{code}");
+        // Le righe non si saldano fra loro: senza l'a capo, il codice rimasto a
+        // sinistra di un commento e la riga dopo genererebbero un percorso che
+        // nel file non esiste.
+        assert!(code.lines().any(|l| l.trim() == "x = 1"), "{code}");
     }
 }
