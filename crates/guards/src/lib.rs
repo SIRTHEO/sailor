@@ -19,6 +19,7 @@ pub mod link_worktree_rules;
 pub mod live_rules;
 pub mod pr_merge_admin;
 pub mod pr_title;
+pub mod queue_clock;
 pub mod shell;
 pub mod successor;
 pub mod socraticode_gate;
