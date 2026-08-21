@@ -47,6 +47,11 @@ pub(crate) const MARKER_FAMILIES: &[&str] = &[
     // AGGIUNTA IL 18/08/2026, e il commento qui sopra la contava già fra i 176
     // marcatori rimasti sul disco: era stata guardata e non aggiunta.
     "consegna-volontaria",
+    // AGGIUNTA IL 21/08/2026, stesso difetto per la terza volta: la scrive
+    // `handoff_on_stop::lockout_reference` da giorni e nessuno l'ha mai buttata.
+    // Trovata da un caso di `marker_sweep`, non a occhio — ed è la ragione per
+    // cui l'elenco ora ha un test che lo confronta coi sorgenti che scrivono.
+    "consegna-stop-riferimento",
 ];
 
 /// `successore-di-` fa eccezione: porta l'identificativo **intero**, non i primi
@@ -61,7 +66,7 @@ const FULL_ID_FAMILIES: &[&str] = &["successore-di"];
 /// sul disco. Derivabile significa cancellabile.
 const FINGERPRINT_FAMILIES: &[&str] = &["successore-armato"];
 
-fn state_dir() -> PathBuf {
+pub(crate) fn state_dir() -> PathBuf {
     // La HOME si legge dall'ambiente come nell'originale (`Path.home()`), così
     // il confronto di equivalenza può spostarla senza toccare nessuno dei due.
     let home = std::env::var("HOME").unwrap_or_else(|_| "/home/someone".into());
@@ -319,7 +324,7 @@ fn own_markers(sess: &str, full_id: &str) -> Vec<PathBuf> {
 /// e leggerlo come «morta» è l'errore che ha cancellato il registro di una
 /// sessione viva.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SessionLiveness {
+pub(crate) enum SessionLiveness {
     /// Il record porta un processo, e quel processo è un `claude` che gira.
     Alive,
     /// Il record porta un processo, e quel processo non c'è più.
@@ -341,10 +346,14 @@ enum SessionLiveness {
 ///
 /// È una scelta, non una svista, ed è asimmetrica apposta: un marcatore orfano
 /// costa spazio e nessuno lo interroga, mentre cancellare quello di una sessione
-/// viva le toglie la consegna e ferma il ricambio. Il raccoglitore che chiuderebbe
-/// l'altra metà è depositato in coda: è un presidio che cancella, e passa da un
-/// verdetto suo prima di essere scritto.
-const UNKNOWN_GRACE_SECS: u64 = 24 * 60 * 60;
+/// viva le toglie la consegna e ferma il ricambio.
+///
+/// La passata che ripassa esiste da oggi — `marker_sweep`, e usa **questo**
+/// giudizio, non l'età nuda — ma NON È IN SERVIZIO: nessuna radice la invoca e
+/// nessun servizio la sveglia, quindi la frase qui sopra descrive ancora il
+/// presente. Chi la mette in servizio corregga questo commento nello stesso
+/// turno.
+pub(crate) const UNKNOWN_GRACE_SECS: u64 = 24 * 60 * 60;
 
 /// PURA: si cancella questo file? Dipende da cosa si sa e da quanto è vecchio.
 ///
@@ -352,7 +361,11 @@ const UNKNOWN_GRACE_SECS: u64 = 24 * 60 * 60;
 /// abbastanza vecchio da non poter più servire a nessuno.** Il caso che questa
 /// funzione esiste per impedire è il primo — una sessione viva che si ritrova il
 /// proprio registro cancellato e sparisce da chi conta chi è di guardia.
-fn should_remove(liveness: SessionLiveness, file_age_secs: u64) -> bool {
+///
+/// È IL GIUDIZIO DI TUTTI E DUE. Il congedo e la passata di `marker_sweep`
+/// chiamano questa e nessun'altra: una seconda regola scritta altrove sarebbe
+/// libera di scendere sotto il giorno di grazia alla prima voglia di pulizia.
+pub(crate) fn should_remove(liveness: SessionLiveness, file_age_secs: u64) -> bool {
     match liveness {
         SessionLiveness::Alive => false,
         SessionLiveness::Gone => true,
@@ -419,7 +432,7 @@ fn look_up_session_process(pid: u32) -> ProcessLookup {
 }
 
 /// Cosa si sa della sessione, leggendo il suo record sul disco.
-fn liveness_of(sess: &str) -> SessionLiveness {
+pub(crate) fn liveness_of(sess: &str) -> SessionLiveness {
     let Ok(raw) = fs::read_to_string(live_dir().join(format!("{sess}.json"))) else {
         return SessionLiveness::Unknown; // niente record: non si sa niente
     };
@@ -433,7 +446,7 @@ fn liveness_of(sess: &str) -> SessionLiveness {
 
 /// Da quanti secondi non si tocca questo file. `None` se non esiste o se
 /// l'orologio non risponde: un'età che non si sa non è un'età zero.
-fn file_age_secs(path: &std::path::Path) -> Option<u64> {
+pub(crate) fn file_age_secs(path: &std::path::Path) -> Option<u64> {
     let modified = fs::metadata(path).ok()?.modified().ok()?;
     SystemTime::now().duration_since(modified).ok().map(|d| d.as_secs())
 }
@@ -632,6 +645,61 @@ mod tests {
 
     fn event(nome: &str, sess: &str) -> serde_json::Value {
         serde_json::json!({ "hook_event_name": nome, "session_id": sess })
+    }
+
+    /// I nomi di marcatore che i sorgenti costruiscono davvero, letti a tempo di
+    /// compilazione. La forma è sempre `format!("<famiglia>-{...`.
+    fn families_written_in(source: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for piece in source.split("format!(\"consegna-").skip(1) {
+            let Some(name) = piece.split('"').next() else {
+                continue;
+            };
+            // La coda variabile comincia alla graffa: `consegna-stop-{session}`
+            // e `consegna-fatta-{}` danno la stessa famiglia.
+            let Some((family, _)) = name.split_once("-{") else {
+                continue;
+            };
+            found.push(format!("consegna-{family}"));
+        }
+        found
+    }
+
+    /// L'ELENCO CHIUSO NON SI FIDA PIÙ DI CHI LO RICOPIA A MANO.
+    ///
+    /// Tre volte la stessa perdita: `consegna-volontaria` aggiunta il 18/08 dopo
+    /// che 176 marcatori erano rimasti sul disco, `consegna-stop-riferimento` il
+    /// 21/08 dopo che nessuno l'aveva mai buttata. Chi scrive un marcatore nuovo
+    /// non ha nessun motivo di venire a leggere questa costante, e finora niente
+    /// glielo diceva. Ora il confronto lo fa la batteria, sui sorgenti veri.
+    #[test]
+    fn every_family_a_source_writes_is_one_the_farewell_sweeps() {
+        let sources = [
+            include_str!("handoff_on_stop.rs"),
+            include_str!("handoff_required.rs"),
+            include_str!("handoff.rs"),
+            include_str!("relay.rs"),
+            include_str!("register_session.rs"),
+        ];
+        let mut seen = Vec::new();
+        for source in sources {
+            for family in families_written_in(source) {
+                assert!(
+                    MARKER_FAMILIES.contains(&family.as_str()),
+                    "«{family}» viene scritta e non sta in MARKER_FAMILIES: \
+nessuno la butterà mai"
+                );
+                if !seen.contains(&family) {
+                    seen.push(family);
+                }
+            }
+        }
+        // E il caso deve poter fallire: se la ricerca non trovasse niente,
+        // l'asserzione qui sopra sarebbe verde a elenco vuoto.
+        assert!(
+            seen.len() >= 8,
+            "le famiglie trovate nei sorgenti sono troppo poche: {seen:?}"
+        );
     }
 
     #[test]
