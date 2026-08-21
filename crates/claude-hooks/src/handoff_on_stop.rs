@@ -20,13 +20,66 @@
 
 use guards::handoff::{resolve_terminal_handle, Terminal};
 use guards::handoff_on_stop::{decide, Decision, Facts, RESTART_CAP_DEFAULT};
+use guards::handoff_required::over_lockout;
 use hook_io::journal::{self, Field};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
+use std::time::UNIX_EPOCH;
 
 use crate::handoff::state_dir;
 use crate::handoff_required::{handoff_valid, restarts};
+
+/// Da quando data il marcatore della consegna corrente, in nanosecondi
+/// dall'epoca — 0 se illeggibile.
+///
+/// Il marcatore (`consegna-fatta-{session}`) è lo stesso che `handoff_valid`
+/// già richiede per esistere: una data di modifica diversa da quella salvata
+/// vuol dire che nel frattempo è stata scritta una consegna nuova, quindi il
+/// riferimento sotto va rifatto da capo. Precisione al nanosecondo, non al
+/// secondo: due consegne scritte nello stesso secondo — normale in prova, e
+/// non impossibile in servizio — non devono sembrare la stessa. Stesso
+/// percorso di `handoff_required::mark_done`, che qui non si importa: è
+/// privato al suo modulo, e leggere una data di modifica non è scrivere
+/// quel file.
+fn handoff_marker_epoch(session: &str) -> u64 {
+    state_dir()
+        .join(format!("consegna-fatta-{session}"))
+        .metadata()
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
+}
+
+/// Il contesto registrato quando l'attuale consegna ha cominciato a valere
+/// sopra il gradino di blocco — 0 se non c'è ancora, o se nel frattempo è
+/// arrivata una consegna diversa da quella per cui era stato registrato.
+///
+/// Aggiorna il file appena scopre che il riferimento non vale più: la
+/// registrazione ("nel momento in cui la consegna vale, si segna quanto
+/// contesto c'era") avviene qui, al primo Stop che la osserva sopra il
+/// gradino — non c'è un evento più vicino nel perimetro di questo gancio.
+fn lockout_reference(session: &str, used: u64) -> u64 {
+    let marker_epoch = handoff_marker_epoch(session);
+    let path = state_dir().join(format!("consegna-stop-riferimento-{session}"));
+    if let Ok(text) = fs::read_to_string(&path) {
+        let parts: Vec<&str> = text.split_whitespace().collect();
+        if let [saved_epoch, saved_used] = parts[..] {
+            if let (Ok(saved_epoch), Ok(saved_used)) =
+                (saved_epoch.parse::<u64>(), saved_used.parse::<u64>())
+            {
+                if saved_epoch == marker_epoch {
+                    return saved_used;
+                }
+            }
+        }
+    }
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(&path, format!("{marker_epoch} {used}"));
+    0
+}
 
 /// Quante forzature si sono già opposte; con `increment`, ne conta una in più.
 fn stop_blocks(session: &str, increment: bool) -> u32 {
@@ -242,6 +295,15 @@ pub fn run() -> i32 {
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(RESTART_CAP_DEFAULT);
+    // Il riferimento si legge (e si registra, se manca) solo quando può
+    // servire: sotto il gradino o senza consegna valida `decide` non lo
+    // guarda, e leggerlo comunque scriverebbe un file per sessione a ogni
+    // Stop di lavoro normale.
+    let context_at_handoff = if valida && over_lockout(used, t.budget) {
+        lockout_reference(&session, used)
+    } else {
+        0
+    };
 
     let fatti = Facts {
         stop_hook_active,
@@ -251,6 +313,7 @@ pub fn run() -> i32 {
         thresholds: &t,
         used,
         handoff_valid: valida,
+        context_at_handoff,
         restarts: n_restarts,
         restart_cap,
         // Il contatore si legge senza incrementare: l'incremento è l'effetto di
@@ -404,5 +467,43 @@ mod tests {
             ""
         );
         assert_eq!(successor_alive("", Some(&[term("term_a", "tab-1")])), "");
+    }
+
+    /// Il riferimento si registra una volta e resta fermo finché il
+    /// marcatore della consegna non cambia — non a ogni chiamata.
+    ///
+    /// MUTANTE: se `lockout_reference` restituisse `used` invece del valore
+    /// salvato al momento della registrazione, la seconda riga passerebbe lo
+    /// stesso ma con un numero diverso da quello atteso; è la terza riga,
+    /// dopo la consegna nuova, a morire da sola se il confronto sull'istante
+    /// del marcatore sparisce.
+    #[test]
+    fn lockout_reference_registers_once_then_holds_until_the_handoff_changes() {
+        let home = HomeIsolata::nuova("riferimento-registra");
+        let marker = home.stato().join("consegna-fatta-S9");
+        fs::write(&marker, "1").unwrap();
+        assert_eq!(lockout_reference("S9", 480_000), 0, "prima volta: si registra ora");
+        assert_eq!(
+            lockout_reference("S9", 495_000),
+            480_000,
+            "il riferimento resta quello della registrazione, non l'used corrente"
+        );
+        // Una consegna nuova tocca il marcatore: il vecchio riferimento non vale più.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        fs::write(&marker, "1").unwrap();
+        assert_eq!(
+            lockout_reference("S9", 495_000),
+            0,
+            "consegna nuova: si registra di nuovo"
+        );
+        assert_eq!(lockout_reference("S9", 500_000), 495_000);
+    }
+
+    /// Senza marcatore la data vale zero: non si spaccia un errore per un
+    /// riferimento legittimo.
+    #[test]
+    fn a_missing_marker_gives_a_zero_stamp() {
+        let _home = HomeIsolata::nuova("riferimento-senza-marcatore");
+        assert_eq!(handoff_marker_epoch("nessuno"), 0);
     }
 }
