@@ -33,12 +33,21 @@ fn folder() -> PathBuf {
     home.join(".claude").join("homunculus")
 }
 
-/// Quale fase: `pre` produce `tool_start`, tutto il resto `tool_complete`.
+/// Quale fase: `pre` produce `tool_start`, `permission` la richiesta di
+/// permesso, tutto il resto `tool_complete`.
+///
+/// LA FASE DEL PERMESSO HA UN NOME PROPRIO, e non è cosmesi. Con due sole fasi
+/// una richiesta di permesso finiva registrata come `tool_complete`, cioè
+/// **indistinguibile dal traffico normale** — e il file ne conta a migliaia.
+/// Chi poi contasse «quanti prompt di permesso e per quale comando» leggerebbe
+/// zero: non perché i prompt manchino, ma perché nessuno li riconosce. Misurato
+/// il 21/08/2026 dando in pasto al binario in servizio un payload di
+/// `PermissionRequest` vero.
 pub fn event_name(phase: &str) -> &'static str {
-    if phase == "pre" {
-        "tool_start"
-    } else {
-        "tool_complete"
+    match phase {
+        "pre" => "tool_start",
+        "permission" => "permission_request",
+        _ => "tool_complete",
     }
 }
 
@@ -162,7 +171,13 @@ pub fn record(phase: &str, raw: &str) {
     ];
     // Il corpo non si registra su entrambe le fasi: gonfierebbe il file di un
     // centinaio di megabyte al mese senza aggiungere niente.
-    if event == "tool_start" {
+    //
+    // LA RICHIESTA DI PERMESSO PORTA L'INGRESSO, NON L'ESITO, e senza quello la
+    // riga non serve a niente: l'esito lì è vuoto per forza — il permesso non è
+    // ancora stato dato — mentre la domanda che si vuole contare è **quale
+    // comando** ha fatto comparire il prompt. Misurato il 21/08/2026: la riga
+    // usciva con l'esito vuoto e il comando da nessuna parte.
+    if event == "tool_start" || event == "permission_request" {
         fields.push(("input", Field::Text(truncate(&input, MAX_BODY))));
     } else {
         fields.push(("output", Field::Text(truncate(&output, MAX_BODY))));
@@ -278,5 +293,20 @@ mod tests {
     fn it_truncates_on_characters_not_bytes() {
         let accented = Value::String("è".repeat(10));
         assert_eq!(truncate(&accented, 4).chars().count(), 4);
+    }
+
+    /// La fase del permesso ha un nome suo, e le altre due non cambiano.
+    ///
+    /// MUTANTE: rimettendo `permission` nel ramo di scarto, la sua riga torna a
+    /// chiamarsi `tool_complete` e questo caso va rosso. Senza, una richiesta di
+    /// permesso resta indistinguibile dal traffico normale e chi conta i prompt
+    /// legge zero.
+    #[test]
+    fn a_permission_request_is_not_a_completed_tool() {
+        assert_eq!(event_name("permission"), "permission_request");
+        assert_eq!(event_name("pre"), "tool_start");
+        assert_eq!(event_name("post"), "tool_complete");
+        // Una fase che nessuno conosce resta il completamento, com'era.
+        assert_eq!(event_name("qualunque-altra"), "tool_complete");
     }
 }
