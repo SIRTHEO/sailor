@@ -273,9 +273,24 @@ fn append_record(path: &Path, record: &AuthorizationRecord) -> std::io::Result<(
 
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
+    // Il contatore rende unico il NOME DEL TEMPORANEO, e solo quello. Da solo
+    // basta: `fetch_add` non restituisce mai due volte lo stesso valore, e
+    // numero di processo e istante restano per leggibilità. L'istante da solo
+    // non bastava: due thread che ci arrivano nello stesso nanosecondo
+    // ottengono lo stesso nome, e chi rinomina per primo porta via il
+    // temporaneo dell'altro.
+    //
+    // QUELLO CHE NON PROTEGGE, e va detto qui perché il nome del temporaneo
+    // sembra chiuderlo: due scritture sullo STESSO registro restano non
+    // sincronizzate. Questa funzione legge tutto il file, ricompone il
+    // contenuto e rinomina sopra — quindi chi rinomina per ultimo cancella la
+    // riga di chi ha rinominato per primo, senza errore e con uscita zero.
+    // Misurato su una riproduzione fedele: 300 righe perse su 600.
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let tmp_path = dir.join(format!(
-        ".autorizzazioni.{}.{}.tmp",
+        ".autorizzazioni.{}.{}.{}.tmp",
         std::process::id(),
+        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
@@ -736,6 +751,42 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(verdict, Verdict::Authorized(record));
         let _ = std::fs::remove_file(&path);
+    }
+
+    // Due scritture in parallelo non devono contendersi lo stesso file
+    // temporaneo. Il nome lo teneva distinto solo l'istante: due thread che
+    // ci arrivano nello stesso nanosecondo ne ottengono uno solo, e chi
+    // rinomina per primo porta via il file dell'altro — o il registro finisce
+    // con la riga sbagliata, o la `rename` non trova più niente.
+    // Mutazione che lo fa rosso: togliere il contatore dal nome del
+    // temporaneo in `append_record`.
+    #[test]
+    fn two_parallel_appends_do_not_share_the_temporary_file() {
+        // La barriera a ogni giro è ciò che rende la prova capace di
+        // fallire: senza, i due thread scivolano e la collisione si vede
+        // tre volte su cinque, che è il modo peggiore di provare qualcosa.
+        let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|slot| {
+                let gate = std::sync::Arc::clone(&gate);
+                std::thread::spawn(move || {
+                    for round in 0..200 {
+                        gate.wait();
+                        let path = temp_registry_path(&format!("parallel-{slot}-{round}"));
+                        let record =
+                            sample_record(&format!("prova:parallela-{slot}-{round}"), false);
+                        append_record(&path, &record).expect("la scrittura deve riuscire");
+                        let content = read_registry(&path).expect("il registro deve rileggersi");
+                        let (verdict, _) = check(Some(&content), &record.key);
+                        assert_eq!(verdict, Verdict::Authorized(record));
+                        let _ = std::fs::remove_file(&path);
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().expect("nessuno dei due thread deve cadere");
+        }
     }
 
     // Una seconda riga che revoca la prima, scritta e riletta da disco: la
