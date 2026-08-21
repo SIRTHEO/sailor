@@ -122,6 +122,24 @@ impl Date {
     pub fn iso(&self) -> String {
         format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
     }
+
+    /// L'inverso di `days()`: dai giorni dall'epoca civile alla data di
+    /// calendario. Serve a chi cammina sul disco per confrontare la data di
+    /// una misura con l'ultima modifica del file che la contiene — stesso
+    /// algoritmo `civil_from_days` di Howard Hinnant, sorella di `days()`.
+    pub fn from_days(z: i64) -> Date {
+        let z = z + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = if m <= 2 { y + 1 } else { y };
+        Date { year, month: m, day: d }
+    }
 }
 
 /// La riga con percorsi e indirizzi sostituiti da spazi, lunghezza invariata.
@@ -186,20 +204,17 @@ pub struct Claim {
     pub days: i64,
 }
 
-/// Ogni misura più vecchia della soglia, con la riga da cui viene.
+/// Ogni misura datata su ogni riga, senza filtro d'età.
 ///
 /// Serve una parola che dichiari la misura **e** una data sulla stessa riga:
 /// una data da sola non basta, perché `createdAt` e le scadenze non affermano
-/// niente su cosa vale adesso.
-pub fn stale_claims(text: &str, today: Date, months: i64) -> Vec<Claim> {
-    let cutoff = today.days() - months * 30;
+/// niente su cosa vale adesso. La soglia si applica dopo — in `stale_claims`
+/// per il criterio storico, in `categorize` per il segnale nuovo — perché un
+/// file toccato dopo la misura conta anche quando la misura è di ieri.
+pub fn all_claims(text: &str, today: Date) -> Vec<Claim> {
     let mut out = Vec::new();
     for (i, line) in text.lines().enumerate() {
-        let stale: Vec<Date> = dated_claims(line)
-            .into_iter()
-            .filter(|d| d.days() < cutoff)
-            .collect();
-        if let Some(date) = stale.into_iter().min() {
+        if let Some(date) = dated_claims(line).into_iter().min() {
             let trimmed: String = line.trim().chars().take(110).collect();
             out.push(Claim {
                 line_no: i + 1,
@@ -210,6 +225,51 @@ pub fn stale_claims(text: &str, today: Date, months: i64) -> Vec<Claim> {
         }
     }
     out
+}
+
+/// Ogni misura più vecchia della soglia, con la riga da cui viene.
+///
+/// Il criterio storico, invariato: guarda solo l'età, non se il file è
+/// cambiato — per quello c'è `categorize`. Filtra `all_claims`, e per una
+/// riga con più date sceglie la stessa: quella più vecchia di tutte sul rigo
+/// resta la più vecchia anche fra le sole scadute, quindi il filtro dopo dà
+/// lo stesso risultato del filtro prima.
+pub fn stale_claims(text: &str, today: Date, months: i64) -> Vec<Claim> {
+    all_claims(text, today)
+        .into_iter()
+        .filter(|c| c.days > months * 30)
+        .collect()
+}
+
+/// Il segnale nuovo, alternativo all'età: non quanti mesi sono passati, ma se
+/// il mondo che la misura descriveva è cambiato sotto di lei.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Category {
+    /// Il file è cambiato dopo la misura: segnale forte, non aspetta soglie.
+    Suspect,
+    /// Solo l'età supera la soglia, il file è fermo da prima: segnale debole.
+    StaleOnly,
+}
+
+/// Colloca una misura in una delle due categorie, o la lascia fuori.
+///
+/// `file_modified` è l'ultima data di cambiamento del file che contiene la
+/// misura — la procura chi cammina sul disco (git, o il filesystem quando il
+/// file non è tracciato), perché qui non si tocca. Se il file è cambiato
+/// dopo la misura è sospetta anche se è di ieri; altrimenti conta solo l'età,
+/// con la soglia in giorni decisa da chi chiama.
+pub fn categorize(
+    claim: &Claim,
+    file_modified: Option<Date>,
+    threshold_days: i64,
+) -> Option<Category> {
+    if file_modified.is_some_and(|m| m > claim.date) {
+        Some(Category::Suspect)
+    } else if claim.days > threshold_days {
+        Some(Category::StaleOnly)
+    } else {
+        None
+    }
 }
 
 fn test_file_re() -> &'static Regex {
@@ -463,5 +523,55 @@ mod tests {
         assert!(Date::new(2026, 2, 29).is_none());
         assert!(Date::new(2024, 2, 29).is_some());
         assert!(Date::new(2026, 13, 1).is_none());
+    }
+
+    #[test]
+    fn from_days_is_the_exact_inverse_of_days() {
+        for (y, m, d) in [(1970, 1, 1), (2024, 1, 1), (2024, 3, 2), (2026, 8, 20), (1969, 12, 31)] {
+            let date = Date::new(y, m, d).unwrap();
+            assert_eq!(Date::from_days(date.days()), date, "round trip su {y}-{m}-{d}");
+        }
+    }
+
+    #[test]
+    fn all_claims_keeps_the_recent_ones_that_stale_claims_would_drop() {
+        // Una misura di ieri non entra in `stale_claims`, ma deve restare
+        // visibile a `categorize`: e' il caso "va guardata anche se e' di
+        // ieri" quando il file e' cambiato dopo.
+        let out = all_claims("misurato il 2026-08-19", today());
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].date.iso(), "2026-08-19");
+        assert!(stale_claims("misurato il 2026-08-19", today(), DEFAULT_MONTHS).is_empty());
+    }
+
+    #[test]
+    fn categorize_flags_a_fresh_measure_as_suspect_when_the_file_moved_after() {
+        let claim = &all_claims("misurato il 2026-08-19", today())[0];
+        let file_touched_after = Some(Date::new(2026, 8, 20).unwrap());
+        assert_eq!(categorize(claim, file_touched_after, 90), Some(Category::Suspect));
+    }
+
+    #[test]
+    fn categorize_leaves_a_fresh_untouched_measure_out() {
+        let claim = &all_claims("misurato il 2026-08-19", today())[0];
+        let file_touched_before = Some(Date::new(2026, 1, 1).unwrap());
+        assert_eq!(categorize(claim, file_touched_before, 90), None);
+    }
+
+    #[test]
+    fn categorize_falls_back_to_age_when_the_file_is_untouched() {
+        let claim = &all_claims("misurato il 2026-01-10", today())[0];
+        let file_touched_before = Some(Date::new(2025, 12, 1).unwrap());
+        assert_eq!(categorize(claim, file_touched_before, 90), Some(Category::StaleOnly));
+        // Sotto la soglia, la stessa misura non entra in nessuna categoria.
+        assert_eq!(categorize(claim, file_touched_before, 400), None);
+    }
+
+    #[test]
+    fn categorize_without_a_file_date_falls_back_to_age_too() {
+        // Nessuna storia (ne' git ne' filesystem): non e' sospetta di suo,
+        // conta solo l'eta'.
+        let claim = &all_claims("misurato il 2026-01-10", today())[0];
+        assert_eq!(categorize(claim, None, 90), Some(Category::StaleOnly));
     }
 }
