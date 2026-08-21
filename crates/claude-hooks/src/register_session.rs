@@ -148,6 +148,24 @@ fn choose_session_pid(chain: &[ProcessLink], max_hops: usize) -> Option<u32> {
     chain.iter().take(max_hops).find(|p| is_claude_process(&p.comm)).map(|p| p.pid)
 }
 
+/// PURA: i tre campi di una riga di `ps -o pid=,ppid=,comm=`.
+///
+/// DUE TRAPPOLE INSIEME, e chi le prende una per volta ne lascia sempre una.
+/// `ps` allinea il pid a destra su cinque caratteri, quindi sotto le cinque
+/// cifre fra i campi c'è più di uno spazio e la riga comincia con spazi; e il
+/// nome del comando può contenere spazi a sua volta (`Orca Helper`). Perciò
+/// non si spezza a ogni spazio — `splitn(3, char::is_whitespace)` prendeva
+/// `7969 claude` per nome di comando, e `split_whitespace().nth(2)` taglierebbe
+/// `Orca Helper` a `Orca`. Si saltano due campi e si prende tutto il resto.
+///
+/// UNICO LETTORE DELLE COLONNE DI `ps` in questo modulo: il difetto del
+/// 21/08/2026 è nato dall'averne avuti due, uno riparato e l'altro no.
+fn ps_fields(line: &str) -> Option<(u32, u32, &str)> {
+    let (pid, rest) = line.trim_start().split_once(char::is_whitespace)?;
+    let (ppid, rest) = rest.trim_start().split_once(char::is_whitespace)?;
+    Some((pid.parse().ok()?, ppid.parse().ok()?, rest.trim()))
+}
+
 /// Pid, pid del padre e nome del comando di un processo, letti da `ps`.
 /// `None` se il pid non esiste (più): la catena si legge mentre il mondo dei
 /// processi cambia sotto i piedi, e un padre può essere già morto.
@@ -160,15 +178,11 @@ fn process_info(pid: u32) -> Option<(u32, u32, String)> {
         return None;
     }
     let line = String::from_utf8_lossy(&output.stdout);
-    let mut fields = line.trim_start().splitn(2, char::is_whitespace);
-    let read_pid: u32 = fields.next()?.parse().ok()?;
-    let mut fields = fields.next()?.trim_start().splitn(2, char::is_whitespace);
-    let ppid: u32 = fields.next()?.parse().ok()?;
-    let comm = fields.next()?.trim().to_string();
+    let (read_pid, ppid, comm) = ps_fields(&line)?;
     if comm.is_empty() {
         return None;
     }
-    Some((read_pid, ppid, comm))
+    Some((read_pid, ppid, comm.to_string()))
 }
 
 /// Risale i padri di `start_pid` leggendo `ps`, fino a `max_hops` anelli o al
@@ -376,12 +390,23 @@ pub(crate) fn should_remove(liveness: SessionLiveness, file_age_secs: u64) -> bo
 /// PURA: cosa dice il record, dato il processo che ci sta scritto e l'esito
 /// della verifica su quel processo. Separata dal sistema apposta, così i tre
 /// esiti si provano senza processi veri.
+///
+/// UNA SOLA RISPOSTA È UNA MORTE, ed è `NotFound`: `ps` ha girato e quel pid
+/// non esiste. Tutto il resto è un «non lo so», e il giorno di grazia decide.
+///
+/// `OtherProgram` valeva `Gone` fino al 21/08/2026, ed era un'inferenza — «il
+/// nome non è `claude`, dunque il pid è stato riciclato» — travestita da
+/// osservazione. Chi legge male la riga di `ps` finisce lì dentro, e ci è
+/// finito: due sessioni vive su sei si cancellavano i propri marcatori al
+/// congedo. Con la distinzione al posto giusto, lo stesso difetto sarebbe
+/// costato ventiquattr'ore di polvere invece di due registri vivi.
 fn liveness_from(pid: Option<u32>, lookup: ProcessLookup) -> SessionLiveness {
     match (pid, lookup) {
         (None, _) => SessionLiveness::Unknown,
         (Some(_), ProcessLookup::Unavailable) => SessionLiveness::Unknown,
         (Some(_), ProcessLookup::IsClaude) => SessionLiveness::Alive,
-        (Some(_), ProcessLookup::NotFound | ProcessLookup::OtherProgram) => SessionLiveness::Gone,
+        (Some(_), ProcessLookup::OtherProgram) => SessionLiveness::Unknown,
+        (Some(_), ProcessLookup::NotFound) => SessionLiveness::Gone,
     }
 }
 
@@ -397,7 +422,8 @@ fn liveness_from(pid: Option<u32>, lookup: ProcessLookup) -> SessionLiveness {
 enum ProcessLookup {
     /// Il processo c'è e si chiama `claude`.
     IsClaude,
-    /// Il processo c'è ma è un altro programma: il pid è stato riciclato.
+    /// Il processo c'è e non si chiama `claude`. Sembra «pid riciclato», ma è
+    /// un «non lo so»: anche una riga letta storta arriva qui.
     OtherProgram,
     /// `ps` ha risposto, e quel pid non esiste.
     NotFound,
@@ -421,11 +447,18 @@ fn look_up_session_process(pid: u32) -> ProcessLookup {
         return ProcessLookup::NotFound; // ha risposto: quel pid non c'è
     }
     let line = String::from_utf8_lossy(&output.stdout);
-    let comm = line.trim_start().splitn(3, char::is_whitespace).nth(2).map(str::trim);
-    match comm {
-        Some(c) if c.is_empty() => ProcessLookup::Unavailable,
+    classify_ps_line(&line)
+}
+
+/// PURA: cosa dice una riga di `ps` sul processo che ci sta scritto. Separata
+/// da chi lancia `ps` perché il caso che conta — un `claude` con pid a meno di
+/// cinque cifre — non si può fabbricare sul banco di prova: nessuno sceglie il
+/// pid che il sistema gli assegna.
+fn classify_ps_line(line: &str) -> ProcessLookup {
+    match ps_fields(line).map(|(_, _, comm)| comm) {
         // Ha risposto ma la riga non si legge: nemmeno questo è un «no».
         None => ProcessLookup::Unavailable,
+        Some(c) if c.is_empty() => ProcessLookup::Unavailable,
         Some(c) if is_claude_process(c) => ProcessLookup::IsClaude,
         Some(_) => ProcessLookup::OtherProgram,
     }
@@ -817,11 +850,29 @@ nessuno la butterà mai"
         assert_eq!(liveness_from(None, ProcessLookup::IsClaude), SessionLiveness::Unknown);
         assert_eq!(liveness_from(Some(42), ProcessLookup::IsClaude), SessionLiveness::Alive);
         assert_eq!(liveness_from(Some(42), ProcessLookup::NotFound), SessionLiveness::Gone);
-        // Un pid riciclato da un altro programma non e' la sessione.
+    }
+
+    #[test]
+    fn an_unrecognised_program_is_a_dont_know_not_a_death() {
+        // Un nome che non riconosco non e' un'osservazione di morte: e' un pid
+        // riciclato OPPURE una riga letta storta, e dal di dentro non si
+        // distinguono. Valeva Gone, e il difetto della lettura di `ps` e'
+        // passato di qui a cancellare i marcatori di due sessioni vive.
         assert_eq!(
             liveness_from(Some(42), ProcessLookup::OtherProgram),
-            SessionLiveness::Gone
+            SessionLiveness::Unknown,
+            "un nome che non riconosco non e' una morte osservata"
         );
+        // La differenza che costa: il giorno di grazia c'e' per l'uno e non
+        // per l'altro. Un errore di lettura ora costa polvere, non un registro.
+        assert!(!should_remove(
+            liveness_from(Some(42), ProcessLookup::OtherProgram),
+            60
+        ));
+        assert!(should_remove(
+            liveness_from(Some(42), ProcessLookup::NotFound),
+            60
+        ));
     }
 
     #[test]
@@ -858,6 +909,81 @@ nessuno la butterà mai"
         assert_eq!(
             look_up_session_process(std::process::id()),
             ProcessLookup::OtherProgram
+        );
+    }
+
+    /// La riga di `ps -o pid=,ppid=,comm=` e il nome del comando visto da solo,
+    /// per lo stesso pid: `ps` fa da giudice a se stesso, e il nome chiesto da
+    /// solo non ha colonne accanto in cui inciampare.
+    fn ps_line_and_comm(pid: u32) -> (String, String) {
+        let three = std::process::Command::new("ps")
+            .args(["-o", "pid=,ppid=,comm=", "-p", &pid.to_string()])
+            .output()
+            .expect("ps must run");
+        let one = std::process::Command::new("ps")
+            .args(["-o", "comm=", "-p", &pid.to_string()])
+            .output()
+            .expect("ps must run");
+        assert!(three.status.success() && one.status.success(), "pid {pid} must exist");
+        (
+            String::from_utf8_lossy(&three.stdout).to_string(),
+            String::from_utf8_lossy(&one.stdout).trim().to_string(),
+        )
+    }
+
+    #[test]
+    fn a_short_pid_and_a_long_one_read_the_same_command() {
+        // IL CASO CHE MANCAVA, e senza il quale dieci prove verdi convivevano
+        // col difetto: l'unica che interrogava `ps` chiedeva il pid della
+        // batteria e si aspettava `OtherProgram`, cioe' la stessa risposta che
+        // dava il difetto. Non poteva fallire.
+        //
+        // BRACCIO CORTO: il pid 1 c'e' su qualunque Unix ed e' largo una cifra.
+        let (short_line, short_comm) = ps_line_and_comm(1);
+        // Se questa cade, il differenziale qui sotto non prova piu' niente:
+        // vuol dire che `ps` ha smesso di allineare a destra, e il caso da
+        // coprire e' un altro.
+        assert!(
+            short_line.starts_with(char::is_whitespace),
+            "ps deve allineare a destra il pid corto, altrimenti la prova e' vuota: {short_line:?}"
+        );
+        assert_eq!(
+            ps_fields(&short_line).map(|(_, _, c)| c),
+            Some(short_comm.as_str()),
+            "con un pid corto i campi slittavano: il ppid finiva dentro il nome"
+        );
+
+        // BRACCIO LUNGO: il processo di questa batteria, stessa domanda.
+        let me = std::process::id();
+        let (long_line, long_comm) = ps_line_and_comm(me);
+        assert_eq!(
+            ps_fields(&long_line).map(|(_, _, c)| c),
+            Some(long_comm.as_str()),
+            "con un pid lungo la lettura era gia' giusta e deve restarlo"
+        );
+        assert_eq!(ps_fields(&long_line).map(|(p, _, _)| p), Some(me));
+    }
+
+    #[test]
+    fn a_session_with_a_short_pid_is_as_alive_as_one_with_a_long_pid() {
+        // Le due righe sono quelle vere del 21/08/2026, prese da `ps` su questa
+        // macchina: due sessioni `claude`, una col pid a cinque cifre e una a
+        // quattro. Stesso programma, stessa risposta — e non lo era: la seconda
+        // dava `OtherProgram`, e al congedo la sessione viva si cancellava i
+        // propri marcatori, cosi' che «ha consegnato» tornava falso.
+        //
+        // Un `claude` con pid corto non si fabbrica sul banco di prova: il pid
+        // lo assegna il sistema. Per questo il caso vive sulle righe, e la
+        // prova che le righe siano fedeli sta nel caso qui sopra, che `ps` lo
+        // interroga davvero a tutte e due le larghezze.
+        assert_eq!(classify_ps_line("22211 22069 claude\n"), ProcessLookup::IsClaude);
+        assert_eq!(classify_ps_line(" 8027  7969 claude\n"), ProcessLookup::IsClaude);
+        assert_eq!(classify_ps_line("    1     0 claude\n"), ProcessLookup::IsClaude);
+        // E un nome col dentro uno spazio resta intero: spezzare a ogni spazio
+        // lo taglierebbe a `/Applications/Orca` e cambierebbe il verdetto.
+        assert_eq!(
+            ps_fields(" 8027  7969 /Applications/Orca Helper\n").map(|(_, _, c)| c),
+            Some("/Applications/Orca Helper")
         );
     }
 
