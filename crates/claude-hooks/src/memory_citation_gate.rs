@@ -178,11 +178,12 @@ mod tests {
     use std::path::PathBuf;
 
     /// Una cartella usa-e-getta, isolata dal disco vero.
+    ///
+    /// Sotto `hook_io::testing::test_dir`, che porta il pid del processo nella
+    /// radice: un nome fisso sotto `/tmp` collideva fra due `cargo test`
+    /// lanciati insieme sullo stesso repo (stesso precedente di `memory_anchors`).
     fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("memory-citation-gate-{name}"));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+        hook_io::testing::test_dir(&format!("memory-citation-gate-{name}"))
     }
 
     #[test]
