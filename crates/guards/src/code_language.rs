@@ -369,11 +369,13 @@ pub fn report_opaque(targets: &[String]) -> String {
     format!(
         "Questo comando scrive un file sorvegliato passando da un interprete, e \
          da lì il gate della lingua non vede cosa ci finisce dentro.\n\n\
-         Non si legge il TESTO FUTURO, non il file: questi esistono e si aprono \
-         benissimo. Sono i file sorvegliati nominati nel codice, e almeno uno di \
-         loro sta per essere scritto — quale, da qui non si sa: un percorso che \
-         compare come dato (un valore JSON, un argomento da passare) è \
-         indistinguibile da un bersaglio.\n\n\
+         Non si legge il TESTO FUTURO, non il file: nessuno di questi è stato \
+         aperto, e se qui sotto ne vedi uno che non esiste — o che comincia con \
+         il nome di una variabile — è perché il percorso è preso dal codice \
+         com'è scritto, senza espandere niente. Sono i nomi sorvegliati che \
+         compaiono nel codice, e almeno uno sta per essere scritto: quale, da \
+         qui non si sa. Un percorso che compare come dato — un valore JSON, un \
+         argomento da passare — è indistinguibile da un bersaglio.\n\n\
          Nominati qui dentro:\n\n{}\n\n\
          Riscrivilo con `Write` o `Edit`: il testo passa dal controllo prima di \
          toccare il disco. Misurato il 19/08/2026: un'intera nottata di codice \
