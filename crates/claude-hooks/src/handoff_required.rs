@@ -115,6 +115,51 @@ fn mark_done(session: &str) {
     let _ = fs::create_dir_all(state_dir());
     let _ = fs::write(state_dir().join(format!("consegna-fatta-{session}")), "1");
     let _ = fs::remove_file(state_dir().join(format!("consegna-fatta-ripartenze-{session}")));
+    // Una nuova consegna descrive il lavoro di adesso: il riferimento di
+    // crescita sopra il gradino appartiene alla consegna vecchia, e va tolto
+    // perché il prossimo giro sopra il gradino registri quello nuovo.
+    let _ = fs::remove_file(state_dir().join(format!("consegna-riferimento-lockout-{session}")));
+}
+
+/// Il contesto registrato quando la consegna ha cominciato a valere sopra il
+/// gradino di blocco, o zero se non c'è ancora un riferimento.
+///
+/// Stesso schema di [`handoff_valid`]/[`restarts`] qui sopra: si registra
+/// alla prima volta che serve, non a ogni giro — altrimenti il riferimento
+/// scorrerebbe insieme al contesto e la crescita non si misurerebbe mai.
+fn lockout_reference(session: &str, used: u64) -> u64 {
+    let marker = state_dir().join(format!("consegna-riferimento-lockout-{session}"));
+    match fs::read_to_string(&marker)
+        .ok()
+        .and_then(|t| t.trim().parse::<u64>().ok())
+    {
+        Some(v) => v,
+        None => {
+            let _ = fs::create_dir_all(state_dir());
+            let _ = fs::write(&marker, used.to_string());
+            0
+        }
+    }
+}
+
+/// Sopra il gradino di blocco, un gesto che passa (`Decision::Pass`) su una
+/// consegna **già scritta** non è un passo verso l'aggiornarla: consuma
+/// comunque un giro dal tetto dei rifiuti, o chi obbedisce — invocando
+/// `Skill`, `Read`, `Write` — non si avvicina mai alla resa, e ci si avvicina
+/// solo riprovando un comando negato (il difetto nº2 della segnalazione del
+/// 21/08/2026).
+///
+/// SOLO CON `handoff_valid`. Senza una consegna, il segnale d'uscita resta
+/// quello che già funzionava: i `Decision::Block` sulle chiamate negate.
+/// Il verdetto del revisore del 21/08/2026: senza questo controllo, sei
+/// `Read`/`Grep`/`Glob` qualunque sopra il gradino — in un turno solo, senza
+/// che sia mai comparso un rifiuto — esaurivano `BLOCK_CAP` e arrendevano il
+/// gancio per sempre, `Bash` compreso, su una sessione che non aveva
+/// consegnato niente.
+fn count_a_passing_turn(session: &str, used: u64, budget: u64, handoff_valid: bool) {
+    if handoff_valid && over_lockout(used, budget) {
+        blocks_so_far(session, true);
+    }
 }
 
 /// Segna che la consegna è stata una **scelta**, non un ordine del presidio.
@@ -229,6 +274,14 @@ pub fn run() -> i32 {
     // presidio (`decide` la tratta come le sessioni senza consegna), quindi
     // qui il contatore dei rifiuti va letto e non azzerato.
     let disarma = valida && !over_lockout(used, t.budget);
+    // Il riferimento di crescita ha senso solo per una consegna valida sopra
+    // il gradino: altrove il giudizio non lo guarda, e leggerlo a vuoto
+    // scriverebbe un marcatore per sessioni che non ci arriveranno mai.
+    let context_at_handoff = if valida && !disarma {
+        lockout_reference(&session, used)
+    } else {
+        0
+    };
     let fatti = Facts {
         tool,
         thresholds: &t,
@@ -237,6 +290,7 @@ pub fn run() -> i32 {
         in_subagent: false,
         used,
         handoff_valid: valida,
+        context_at_handoff,
         already_warned: !sotto_avviso && !disarma && used < t.require && already_warned(&session),
         blocks_so_far: if sotto_avviso || disarma || used < t.require {
             0
@@ -263,6 +317,9 @@ pub fn run() -> i32 {
             say(avviso(&testo))
         }
         Decision::Pass => {
+            // Sopra il gradino un gesto che passa non è un passo verso la
+            // consegna: vedi `count_a_passing_turn`.
+            count_a_passing_turn(&session, used, t.budget, valida);
             journal::record(
                 "consegna-obbligatoria",
                 "passa",
@@ -338,5 +395,102 @@ mod tests {
             payload["hookSpecificOutput"]["hookEventName"],
             "PostToolUse"
         );
+    }
+
+    #[test]
+    fn lockout_reference_registers_once_and_then_holds() {
+        // Stesso schema di `handoff_valid`/`restarts`: la prima lettura
+        // registra il valore corrente e risponde zero (non ancora crescita),
+        // le successive rispondono il valore fissato allora, non quello
+        // corrente — altrimenti la crescita non si misurerebbe mai.
+        let home = crate::test_home::HomeIsolata::nuova("lockout-reference-registers");
+        assert_eq!(lockout_reference("sess1", 480_000), 0, "prima volta: nessun riferimento");
+        assert_eq!(
+            lockout_reference("sess1", 495_000),
+            480_000,
+            "il riferimento resta quello della prima chiamata"
+        );
+        drop(home);
+    }
+
+    #[test]
+    fn mark_done_clears_the_lockout_reference() {
+        // Una nuova consegna descrive il lavoro di adesso: il riferimento
+        // vecchio va tolto, o il prossimo giro sopra il gradino confronterebbe
+        // la crescita con una consegna che non c'è più.
+        let home = crate::test_home::HomeIsolata::nuova("lockout-reference-mark-done");
+        lockout_reference("sess2", 480_000);
+        assert!(home
+            .stato()
+            .join("consegna-riferimento-lockout-sess2")
+            .exists());
+        mark_done("sess2");
+        assert!(
+            !home.stato().join("consegna-riferimento-lockout-sess2").exists(),
+            "il riferimento vecchio non deve sopravvivere a una nuova consegna"
+        );
+    }
+
+    #[test]
+    fn a_passing_turn_counts_toward_the_cap_only_above_the_lockout_step() {
+        // Il difetto della segnalazione del 21/08/2026: gli strumenti che
+        // passano su una consegna già scritta non toccavano mai il tetto dei
+        // rifiuti, quindi chi obbedisce (Skill, Read, Write...) non si
+        // avvicinava mai alla resa. Sopra il gradino anche un gesto che passa
+        // consuma un giro; sotto, no. `handoff_valid = true`: è lo scenario
+        // del punto 3a, dove la consegna c'è ed è quella che invecchia.
+        let home = crate::test_home::HomeIsolata::nuova("passing-turn-cap");
+        let budget = 500_000;
+        count_a_passing_turn("sess3", 400_000, budget, true); // sotto il gradino (96%)
+        assert_eq!(blocks_so_far("sess3", false), 0, "sotto il gradino non si conta");
+        count_a_passing_turn("sess3", 480_000, budget, true); // sul gradino esatto
+        assert_eq!(blocks_so_far("sess3", false), 1, "sul gradino si conta");
+        count_a_passing_turn("sess3", 481_000, budget, true);
+        assert_eq!(blocks_so_far("sess3", false), 2, "ogni giro sopra il gradino ne consuma uno");
+        drop(home);
+    }
+
+    #[test]
+    fn passing_turns_without_a_handoff_never_move_the_cap() {
+        // Il difetto trovato dal revisore del 21/08/2026: `count_a_passing_turn`
+        // chiamata senza guardare `handoff_valid` esauriva `BLOCK_CAP` (6) con
+        // sei `Read` qualunque sopra il gradino, senza che comparisse mai un
+        // `Decision::Block` — e il gancio si arrendeva per sempre su una
+        // sessione che non aveva consegnato niente. Qui si passa **da
+        // `decide()`**, con `handoff_valid = false`, per dieci giri (più del
+        // tetto): il contatore deve restare fermo, perché il segnale d'uscita
+        // di una sessione senza consegna resta quello dei `Decision::Block`
+        // su `Bash`, non le chiamate che passano comunque.
+        let home = crate::test_home::HomeIsolata::nuova("passing-turn-no-handoff");
+        let t = guards::handoff::Thresholds {
+            model: "claude-opus-5".into(),
+            budget: 500_000,
+            warn: 390_000,
+            require: 450_000,
+        };
+        let facts = Facts {
+            tool: "Read",
+            thresholds: &t,
+            in_subagent: false,
+            used: 490_000, // sopra il gradino (96% di 500_000 = 480_000)
+            handoff_valid: false,
+            context_at_handoff: 0,
+            already_warned: false,
+            blocks_so_far: 0,
+        };
+        for _ in 0..10 {
+            assert_eq!(
+                decide(&facts),
+                Decision::Pass,
+                "senza consegna, uno strumento della lista passa comunque"
+            );
+            count_a_passing_turn("sess4", facts.used, t.budget, facts.handoff_valid);
+        }
+        assert_eq!(
+            blocks_so_far("sess4", false),
+            0,
+            "senza handoff_valid il tetto non deve mai muoversi"
+        );
+        drop(home);
     }
 }
