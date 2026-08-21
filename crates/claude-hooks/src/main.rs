@@ -22,6 +22,7 @@ mod linear;
 mod live_rules;
 mod preflight;
 mod relay;
+mod destructive_commands;
 mod relay_eval;
 mod restart;
 mod scope_drift;
@@ -35,6 +36,7 @@ mod worktree_deletes;
 mod handoff_threshold;
 mod hook_census;
 mod link_worktree_rules;
+mod permission_stall;
 mod spotlight_marker;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
 mod ai_personal_data;
@@ -156,6 +158,7 @@ const ALL_HOOKS: &[&str] = &[
     "allow-worktree-deletes",
     "allow-session-messages",
     "json",
+    "block-destructive",
     "block-pr-merge-admin",
     "block-worktree-create",
     "cd-guard",
@@ -215,6 +218,10 @@ const ALL_HOOKS: &[&str] = &[
     // sessione non ha potuto buttare. Non giudica nessun evento, quindi sta in
     // NOT_HOOKS — e per ora non lo invoca nemmeno un servizio.
     "marker-sweep",
+    // L'ottavo, il 21/08/2026: legge i marcatori che `observe permission`
+    // scrive e dice quali sessioni sono ferme su un permesso. Non giudica un
+    // evento — lo si interroga da fuori — quindi sta in NOT_HOOKS.
+    "permission-stall",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -252,6 +259,7 @@ const NOT_HOOKS: &[&str] = &[
     "authorization-check",
     "captain-authorize",
     "marker-sweep",
+    "permission-stall",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -311,6 +319,13 @@ fn has_module_test(name: &str) -> bool {
             include_str!("../../guards/src/session_messages.rs"),
         ],
         "json" => &[include_str!("json_tool.rs")],
+        // Due file: il giudizio e la colla che gli porta il ramo vero. Senza il
+        // secondo il rapporto conterebbe coperto un gancio di cui è provata
+        // solo metà.
+        "block-destructive" => &[
+            include_str!("destructive_commands.rs"),
+            include_str!("../../guards/src/destructive_commands.rs"),
+        ],
         "block-pr-merge-admin" => &[include_str!("../../guards/src/pr_merge_admin.rs")],
         "block-worktree-create" => &[include_str!("../../guards/src/worktree_create.rs")],
         "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
@@ -423,6 +438,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("marker_sweep.rs"),
             include_str!("register_session.rs"),
         ],
+        "permission-stall" => &[include_str!("permission_stall.rs")],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -452,6 +468,15 @@ const SMOKE: &[(&str, &str, &str)] = &[
         "block-pr-merge-admin",
         "gh pr merge 262 --admin",
         "gh pr merge 262 --squash",
+    ),
+    (
+        // Scritto in chiaro, al contrario dei due sopra, ed è una proprietà del
+        // freno e non una svista: questo gancio giudica il **gesto**, e un
+        // comando che si limita a nominare una cancellazione non è un gesto. Il
+        // caso che passa lo dimostra proprio nominando quello che blocca.
+        "block-destructive",
+        "rm -rf /home/someone/personal/sailor/src",
+        "grep -n 'rm -rf' /home/someone/personal/sailor/src",
     ),
     (
         // anche questo a pezzi, e per lo stesso motivo: scritto in chiaro, il
@@ -486,6 +511,19 @@ fn self_check() -> i32 {
                 "cd-guard" => guards::cd_guard::judge(command),
                 "block-worktree-create" => guards::worktree_create::judge(command),
                 "block-pr-merge-admin" => guards::pr_merge_admin::judge(command),
+                // I fatti sono fissati qui: il caso deve dare lo stesso esito su
+                // qualunque macchina, e un ramo letto dal disco lo renderebbe
+                // dipendente da dove gira il controllo.
+                "block-destructive" => {
+                    guards::destructive_commands::judge(&guards::destructive_commands::Facts {
+                        command,
+                        cwd: "/home/someone/orca/general",
+                        workspaces: "/home/someone/orca/workspaces",
+                        home: "/home/someone",
+                        is_link: &|_| false,
+                        current_branch: &|_| None,
+                    })
+                }
                 // Il rifiuto viaggia sull'altro canale (`deny` su stdout,
                 // uscita 0), quindi qui si guarda che il giudizio ci sia — non
                 // che il gancio esca con codice 2.
@@ -727,6 +765,13 @@ fn run(which: &str) -> Result<i32, String> {
         //
         // Il giudizio è cablato per uscire subito su qualunque altro strumento:
         // un errore qui fermerebbe la nave intera, non una domanda.
+        //
+        // LA FASE `permission` DICHIARA UNA SESSIONE FERMA, `pre`/`post` LA
+        // SGOMBERANO: nessuna delle due decide niente (nessun exit code, nessun
+        // messaggio), quindi «decide una cosa sola» resta vero — qui si scrive
+        // solo un marcatore che `permission-stall` legge da fuori. La fase
+        // `permission` non è ancora cablata in `settings.json`: nessuna sessione
+        // può scriverlo, quindi il gesto aspetta Theo.
         "observe" => {
             let phase = std::env::args().nth(2).unwrap_or_else(|| "post".into());
             let mut raw = String::new();
@@ -734,6 +779,11 @@ fn run(which: &str) -> Result<i32, String> {
             let _ = std::io::stdin().read_to_string(&mut raw);
             hook_io::observations::record(&phase, &raw);
             hook_io::observations::wake_observer();
+            match phase.as_str() {
+                "permission" | "PermissionRequest" => permission_stall::declare(&raw),
+                "pre" | "PreToolUse" | "post" | "PostToolUse" => permission_stall::clear(&raw),
+                _ => {}
+            }
             if phase == "pre" {
                 let verdict = ask_routing_verdict(&raw);
                 if verdict != Decision::Pass {
@@ -1028,6 +1078,10 @@ fn run(which: &str) -> Result<i32, String> {
         "handoff-required" => Ok(handoff_required::run()),
         "handoff-on-stop" => Ok(handoff_on_stop::run()),
         "allow-worktree-deletes" => Ok(worktree_deletes::run()),
+        // Il gemello dal lato che nega. Nessuna valvola d'ambiente: quella che
+        // c'è sta sulla riga di comando, dove resta scritta nel registro invece
+        // di disarmare in silenzio tutto ciò che viene dopo un export.
+        "block-destructive" => Ok(destructive_commands::run()),
         // La sessione che cambia mestiere in corsa. Sta su PostToolUse `*`,
         // quindi è insieme a `observe` il gancio che parte più spesso: il suo
         // lavoro è quasi niente, e quasi tutto il costo era l'avvio di Python.
@@ -1133,6 +1187,10 @@ fn run(which: &str) -> Result<i32, String> {
         // Senza `--delete` racconta e basta. NON È IN SERVIZIO: la sveglia
         // periodica la mette il capitano, dopo un verdetto indipendente.
         "marker-sweep" => Ok(marker_sweep::run()),
+        // Non è un gancio: legge i marcatori che `observe permission` scrive
+        // e stampa quali sessioni sono ferme su un permesso — il comando da
+        // riga di comando che risponde a «è bloccata?» da fuori.
+        "permission-stall" => Ok(permission_stall::run_report()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
