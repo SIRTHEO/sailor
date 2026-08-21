@@ -205,28 +205,38 @@ pub(crate) struct LegacyArmedMarker {
     pub path: Option<String>,
 }
 
+/// Un marcatore armato del formato vecchio, letto **da un nome solo**.
+///
+/// `None` se non c'è, se non è un file, se il nome non è di questa famiglia, o
+/// se il contenuto è già nel formato nuovo — che il censimento normale giudica
+/// da sé.
+fn legacy_marker_at(dir: &Path, name: &str) -> Option<LegacyArmedMarker> {
+    let hex = name.strip_prefix(ARMED_PREFIX)?.to_string();
+    let file = dir.join(name);
+    if !file.is_file() {
+        return None;
+    }
+    let raw = fs::read_to_string(&file).unwrap_or_default();
+    let path = match parse_armed_content(&raw) {
+        ArmedContent::Legacy { path } => Some(path),
+        ArmedContent::Unreadable => None,
+        ArmedContent::New { .. } => return None,
+    };
+    Some(LegacyArmedMarker { name: name.to_string(), hex, path })
+}
+
 /// I marcatori armati che non portano l'identificativo.
 pub(crate) fn legacy_armed_markers(dir: &Path) -> Vec<LegacyArmedMarker> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
     };
-    let mut found = Vec::new();
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(hex) = name.strip_prefix(ARMED_PREFIX).map(str::to_string) else {
-            continue;
-        };
-        if !entry.path().is_file() {
-            continue;
-        }
-        let raw = fs::read_to_string(entry.path()).unwrap_or_default();
-        let path = match parse_armed_content(&raw) {
-            ArmedContent::Legacy { path } => Some(path),
-            ArmedContent::Unreadable => None,
-            ArmedContent::New { .. } => continue, // formato nuovo: non è compito suo
-        };
-        found.push(LegacyArmedMarker { name, hex, path });
-    }
+    let mut found: Vec<LegacyArmedMarker> = entries
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            legacy_marker_at(dir, &name)
+        })
+        .collect();
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found
 }
@@ -254,7 +264,23 @@ fn live_full_session_ids(state: &Path) -> Option<Vec<String>> {
     let live_dir = state.join("sessioni-vive");
     let entries = match fs::read_dir(&live_dir) {
         Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(Vec::new()),
+        // LA CARTELLA CHE NON C'È È «NON SO», NON «NESSUNO».
+        //
+        // Qui rispondeva `Some(vec![])`, cioè lo stesso valore che dà una
+        // cartella vuota — e il commento sopra prometteva il contrario. La
+        // differenza non è teorica: con zero sessioni vive nessuna impronta
+        // combacia, quindi **ogni** marcatore del formato vecchio risulta
+        // orfano, e un orfano si cancella senza grazia, a età zero. Il
+        // verdetto del 21/08/2026 l'ha riprodotto: cartella assente, marcatore
+        // scritto un secondo prima, `1 orphan` e con `--delete` sparisce.
+        //
+        // Una cartella che non c'è non è un caso esotico: è l'ambiente nuovo,
+        // la macchina diversa, o qualcuno che sposta a mano una cartella di
+        // stato durante una manutenzione — già successo il 18/08/2026. Ed è
+        // meno grave della cartella illeggibile per altra via, che invece
+        // rispondeva già «non so»: lo stesso nulla dava due esiti opposti a
+        // seconda della forma dell'errore, e quello trattato con fiducia era
+        // il più probabile dei due.
         Err(_) => return None,
     };
     let mut records = Vec::new();
@@ -346,6 +372,20 @@ pub(crate) struct FingerprintTally {
     pub unmatched_fresh: usize,
     pub unmatched_stale: usize,
     pub removed: usize,
+    /// Condannati al censimento e risparmiati alla rilettura, **perché il
+    /// verdetto è cambiato**. Zero è il caso normale; un numero qui dice che
+    /// fra il censimento e la cancellazione il mondo è cambiato, o che l'elenco
+    /// dei vivi ha smesso di rispondere.
+    pub spared_on_recheck: usize,
+    /// Condannati che alla rilettura **non c'erano più**. Tenuto separato dai
+    /// risparmiati perché non è la stessa cosa: qui non è stato salvato niente,
+    /// il file se n'era già andato per conto suo. Sommarli farebbe salire un
+    /// numero che si legge come «la passata sta girando addosso a qualcuno».
+    pub vanished: usize,
+    /// Condannati che la passata **non è riuscita** a togliere, e che sono
+    /// ancora sul disco. Zero è il caso normale; qualunque altro numero è un
+    /// guasto da guardare, non una statistica.
+    pub remove_failed: usize,
 }
 
 pub(crate) fn tally_fingerprint(owners: &[(String, LegacyVerdict)]) -> FingerprintTally {
@@ -364,13 +404,28 @@ pub(crate) fn tally_fingerprint(owners: &[(String, LegacyVerdict)]) -> Fingerpri
 
 /// Cancella i marcatori orfani e quelli "non abbinabili" ormai vecchi.
 ///
-/// NIENTE RILETTURA DI SICUREZZA, a differenza di `apply`: questi marcatori
-/// sono scritti una volta sola da `already_armed`, che non riscrive mai un
-/// file già esistente — non c'è una sessione che li aggiorna sotto i piedi
-/// della passata, quindi non c'è una corsa da cui proteggersi.
+/// LA RILETTURA DI SICUREZZA C'È ANCHE QUI, dal 21/08/2026. Prima non c'era, e
+/// la motivazione scritta qui — «questi marcatori li scrive una volta sola
+/// `already_armed`, che non riscrive mai un file esistente» — era vera e
+/// insufficiente: descriveva l'unica corsa che `apply` teme, non l'unica che
+/// esiste. **Quello che cambia sotto i piedi della passata non è il file: è
+/// l'elenco delle sessioni vive.** Un elenco che al censimento si legge e un
+/// istante dopo non risponde più fa risultare orfano ogni marcatore del
+/// formato vecchio — e un orfano si cancella senza grazia, a età zero.
+///
+/// Quindi i vivi si rileggono **adesso** — `live` è la lettura fresca, non
+/// quella del censimento — e se la risposta è «non so» non si cancella niente:
+/// tutti i condannati risultano risparmiati alla rilettura, e il rapporto lo
+/// dice. È lo stesso terzo esito che regge tutto il modulo: «zero perché non
+/// c'è nessuno» e «zero perché non ho potuto guardare» non sono la stessa cosa.
+///
+/// L'elenco ARRIVA DA FUORI e non si legge qui dentro, come ovunque in questo
+/// modulo: chi giudica resta separato da chi tocca il sistema, altrimenti un
+/// caso di prova non può più dire *quale* mondo sta provando.
 pub(crate) fn apply_fingerprint(
     dir: &Path,
     owners: &[(String, LegacyVerdict)],
+    live: Option<&[String]>,
     t: &mut FingerprintTally,
 ) {
     for (name, verdict) in owners {
@@ -381,9 +436,76 @@ pub(crate) fn apply_fingerprint(
         if !remove {
             continue;
         }
-        if fs::remove_file(dir.join(name)).is_ok() {
-            t.removed += 1;
+        match remove_if_still_condemned(dir, name, live.as_deref()) {
+            RecheckOutcome::Removed => t.removed += 1,
+            RecheckOutcome::Spared => t.spared_on_recheck += 1,
+            RecheckOutcome::Vanished => t.vanished += 1,
+            RecheckOutcome::RemoveFailed => t.remove_failed += 1,
         }
+    }
+}
+
+/// Cancella un marcatore del formato vecchio solo se **adesso** è ancora
+/// condannato.
+///
+/// LE ALTRE FAMIGLIE LO FACEVANO GIÀ, QUESTA NO. `apply` rilegge l'età un
+/// istante prima di togliere il file, perché fra il censimento e la
+/// cancellazione la sessione può aver riscritto il proprio marcatore. Qui si
+/// cancellava sulla fotografia del censimento, e la differenza fra le due
+/// famiglie non era difendibile (verdetto del 21/08/2026).
+///
+/// SI RILEGGE IL VERDETTO, NON L'ETÀ, e la differenza sta in cosa può essere
+/// cambiato: l'elenco delle sessioni vive, che qui arriva riletto. Il giudizio
+/// si rifà con la funzione del censimento, non con una copia — due letture
+/// dello stesso dato divergono alla prima correzione.
+///
+/// SI RILEGGE UN FILE SOLO, non tutta la cartella. La prima versione richiamava
+/// `legacy_armed_markers`, cioè leggeva M file per giudicarne uno, N volte
+/// (riserva del verdetto del 21/08/2026). Su venti marcatori era invisibile, ma
+/// è un disegno che non regge da nessun'altra parte.
+///
+/// `Vanished` non è un risparmio, ed è la seconda riserva dello stesso verdetto:
+/// un file già sparito non è stato salvato da niente, e contarlo insieme ai
+/// salvataggi veri farebbe salire un numero che qualcuno leggerà come «la
+/// passata sta girando addosso a qualcuno».
+/// UNA CANCELLAZIONE FALLITA NON È UN FILE SPARITO, ed è la rifinitura del
+/// secondo verdetto: un `remove_file` che non riesce su un file **ancora
+/// presente** è un guasto — permessi, disco in sola lettura durante una
+/// manutenzione — e il marcatore resta lì, orfano. Chiamarlo «già sparito»
+/// sarebbe la stessa bugia tranquillizzante che questo modulo evita altrove.
+enum RecheckOutcome {
+    Removed,
+    Spared,
+    Vanished,
+    RemoveFailed,
+}
+
+fn remove_if_still_condemned(dir: &Path, name: &str, live: Option<&[String]>) -> RecheckOutcome {
+    let Some(still) = legacy_marker_at(dir, name) else {
+        return RecheckOutcome::Vanished;
+    };
+    // `fingerprint_owners` mappa uno a uno e non filtra mai, quindi su un
+    // elemento solo la risposta c'è sempre: nessun ramo per il vuoto.
+    let (_, verdict) = fingerprint_owners(dir, &[still], live)
+        .into_iter()
+        .next()
+        .expect("fingerprint_owners maps one to one");
+    if !matches!(
+        verdict,
+        LegacyVerdict::Orphan | LegacyVerdict::Unmatched { stale: true }
+    ) {
+        return RecheckOutcome::Spared;
+    }
+    let file = dir.join(name);
+    if fs::remove_file(&file).is_ok() {
+        return RecheckOutcome::Removed;
+    }
+    // Si chiede al disco quale dei due casi è: il file portato via da qualcun
+    // altro fra la rilettura e adesso, oppure una cancellazione che non riesce.
+    if file.exists() {
+        RecheckOutcome::RemoveFailed
+    } else {
+        RecheckOutcome::Vanished
     }
 }
 
@@ -404,7 +526,10 @@ pub(crate) fn report_fingerprint(t: &FingerprintTally, deleting: bool) -> String
     if !deleting {
         return format!("{head}\n  report only -- pass --delete to remove orphans and stale unmatched ones");
     }
-    format!("{head}\n  removed {}", t.removed)
+    format!(
+        "{head}\n  removed {}, spared on recheck {}, already gone {}, could not remove {}",
+        t.removed, t.spared_on_recheck, t.vanished, t.remove_failed
+    )
 }
 
 /// Quanti marcatori per ciascun esito. Serve al rapporto e al registro.
@@ -571,7 +696,12 @@ pub fn run() -> i32 {
     let owners = fingerprint_owners(&dir, &legacy, live.as_deref());
     let mut ft = tally_fingerprint(&owners);
     if deleting {
-        apply_fingerprint(&dir, &owners, &mut ft);
+        // I VIVI SI RILEGGONO QUI, e non si riusa `live` del censimento: fra
+        // il giudizio e la cancellazione la cartella può aver smesso di
+        // rispondere, e cancellare sulla fotografia di prima è il difetto che
+        // il verdetto del 21/08/2026 ha trovato.
+        let live_now = live_full_session_ids(&dir);
+        apply_fingerprint(&dir, &owners, live_now.as_deref(), &mut ft);
     }
     journal::record(
         "marker-sweep",
@@ -585,6 +715,9 @@ pub fn run() -> i32 {
             ("non_abbinabili_freschi", Field::Number(ft.unmatched_fresh as i64)),
             ("non_abbinabili_scaduti", Field::Number(ft.unmatched_stale as i64)),
             ("cancellati", Field::Number(ft.removed as i64)),
+            ("risparmiati", Field::Number(ft.spared_on_recheck as i64)),
+            ("gia_spariti", Field::Number(ft.vanished as i64)),
+            ("non_rimossi", Field::Number(ft.remove_failed as i64)),
         ],
     );
     println!("{}", report_fingerprint(&ft, deleting));
@@ -864,11 +997,160 @@ mod tests {
     }
 
     #[test]
-    fn live_full_session_ids_on_a_missing_directory_is_an_empty_list() {
+    fn live_full_session_ids_on_a_missing_directory_is_unknown() {
         let home = HomeIsolata::nuova("ricalcolo-cartella-assente");
-        // Nessuna `sessioni-vive/`: è la casa appena isolata, non un errore —
-        // il primo esito, non il terzo.
-        assert_eq!(live_full_session_ids(&home.stato()), Some(Vec::new()));
+        // IL CONTRATTO È CAMBIATO IL 21/08/2026, e questo caso diceva il
+        // contrario: la cartella assente valeva «letta, nessuno». Ma quel
+        // valore fa risultare orfano ogni marcatore del formato vecchio, e un
+        // orfano si cancella senza grazia. Una cartella che non c'è è
+        // l'ambiente nuovo o una manutenzione in corso, non una macchina
+        // deserta: è il terzo esito.
+        assert_eq!(live_full_session_ids(&home.stato()), None);
+    }
+
+    #[test]
+    fn a_missing_live_directory_spares_a_fresh_legacy_marker() {
+        let home = HomeIsolata::nuova("cartella-assente-non-cancella");
+        let state = home.stato();
+        // IL CASO DEL VERDETTO DEL 21/08/2026, dal principio alla fine invece
+        // che sulla sola funzione che legge: cartella delle sessioni vive
+        // assente, un marcatore del formato vecchio scritto adesso. Prima
+        // usciva `1 orphan` e con `--delete` spariva a età zero, perché
+        // «cartella che non c'è» valeva «nessuno è vivo».
+        let hex = guards::successor::armed_fingerprint("/x/consegna.md", "1111-viva");
+        let name = format!("successore-armato-{hex}");
+        fs::write(state.join(&name), "2026-08-21T19:00:00.000000\n/x/consegna.md\n").unwrap();
+        assert!(!state.join("sessioni-vive").exists(), "la casa isolata non deve avere l'elenco");
+
+        let legacy = legacy_armed_markers(&state);
+        let live = live_full_session_ids(&state);
+        let owners = fingerprint_owners(&state, &legacy, live.as_deref());
+        let mut t = tally_fingerprint(&owners);
+
+        assert_eq!(t.unknown, 1, "senza elenco dei vivi il verdetto deve essere «non so»");
+        assert_eq!(t.orphan, 0, "un marcatore è risultato orfano senza che nessuno abbia guardato");
+
+        apply_fingerprint(&state, &owners, live.as_deref(), &mut t);
+
+        assert_eq!(t.removed, 0);
+        assert!(
+            state.join(&name).exists(),
+            "cancellato un marcatore fresco perché l'elenco dei vivi non c'era"
+        );
+    }
+
+    #[test]
+    fn an_orphan_whose_session_shows_up_again_is_spared() {
+        let home = HomeIsolata::nuova("orfano-che-torna-vivo");
+        let state = home.stato();
+        // IL CASO PER CUI LA RILETTURA ESISTE, e mancava: al censimento la
+        // sessione non risulta viva, quindi il marcatore è orfano — e un orfano
+        // si cancella senza grazia. Un istante dopo la stessa sessione risulta
+        // viva, e la rilettura deve salvarlo. Gli altri due casi provano solo
+        // l'esito «non so»; questo prova il passaggio da condannato ad assolto.
+        let owner = "11112222-3333-4444-5555-666677778888".to_string();
+        let hex = guards::successor::armed_fingerprint("/x/consegna.md", &owner);
+        let name = format!("successore-armato-{hex}");
+        fs::write(state.join(&name), "2026-08-18T02:53:41.589486\n/x/consegna.md\n").unwrap();
+
+        let legacy = legacy_armed_markers(&state);
+        let owners = fingerprint_owners(&state, &legacy, Some(&[]));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.orphan, 1, "{owners:?}");
+
+        // La rilettura vede la sessione che al censimento non c'era.
+        let live_now = vec![owner];
+        apply_fingerprint(&state, &owners, Some(&live_now), &mut t);
+
+        assert_eq!(t.removed, 0);
+        assert_eq!(t.spared_on_recheck, 1, "il salvataggio non è stato contato");
+        assert_eq!(t.vanished, 0, "un salvataggio è stato scambiato per un file sparito");
+        assert!(state.join(&name).exists(), "tolto a una sessione tornata viva");
+    }
+
+    #[test]
+    fn a_marker_that_vanished_is_not_counted_as_a_rescue() {
+        let home = HomeIsolata::nuova("sparito-non-e-risparmiato");
+        let state = home.stato();
+        // I DUE NUMERI NON DICONO LA STESSA COSA. Un file già sparito non è
+        // stato salvato da niente: contarlo insieme ai salvataggi veri fa
+        // salire un numero che si legge come «la passata sta girando addosso a
+        // qualcuno» (riserva del verdetto, 21/08/2026).
+        let hex = guards::successor::armed_fingerprint("/x/morta.md", "9999-morta");
+        let name = format!("successore-armato-{hex}");
+        fs::write(state.join(&name), "2026-08-18T02:53:41.589486\n/x/morta.md\n").unwrap();
+
+        let legacy = legacy_armed_markers(&state);
+        let owners = fingerprint_owners(&state, &legacy, Some(&["1111-viva".to_string()]));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.orphan, 1, "{owners:?}");
+
+        // Fra il giudizio e la cancellazione il file se ne va per conto suo.
+        fs::remove_file(state.join(&name)).unwrap();
+        apply_fingerprint(&state, &owners, Some(&["1111-viva".to_string()]), &mut t);
+
+        assert_eq!(t.removed, 0);
+        assert_eq!(t.vanished, 1, "il file sparito non è stato contato per quello che è");
+        assert_eq!(t.spared_on_recheck, 0, "un file sparito è stato contato come salvataggio");
+    }
+
+    #[test]
+    fn a_removal_that_fails_is_not_called_a_vanished_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = HomeIsolata::nuova("cancellazione-fallita-non-e-sparizione");
+        let state = home.stato();
+        // IL TERZO RAMO, che il secondo verdetto ha trovato scoperto: il file
+        // c'è ancora e la cancellazione non riesce. Chiamarlo «già sparito»
+        // sarebbe tranquillizzante e falso — il marcatore orfano resta lì.
+        let hex = guards::successor::armed_fingerprint("/x/morta.md", "9999-morta");
+        let name = format!("successore-armato-{hex}");
+        fs::write(state.join(&name), "2026-08-18T02:53:41.589486\n/x/morta.md\n").unwrap();
+
+        let legacy = legacy_armed_markers(&state);
+        let live = vec!["1111-viva".to_string()];
+        let owners = fingerprint_owners(&state, &legacy, Some(&live));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.orphan, 1, "{owners:?}");
+
+        // Una cartella in sola lettura fa fallire la rimozione senza toccare
+        // il file: è la forma che questa casa ha già incontrato durante una
+        // manutenzione del disco.
+        let before = fs::metadata(&state).unwrap().permissions();
+        fs::set_permissions(&state, fs::Permissions::from_mode(0o555)).unwrap();
+        apply_fingerprint(&state, &owners, Some(&live), &mut t);
+        fs::set_permissions(&state, before).unwrap();
+
+        assert_eq!(t.removed, 0);
+        assert_eq!(t.vanished, 0, "una cancellazione fallita è stata contata come sparizione");
+        assert_eq!(t.remove_failed, 1, "il guasto di cancellazione non è stato contato");
+        assert!(state.join(&name).exists(), "il file doveva restare: la rimozione non è riuscita");
+    }
+
+    #[test]
+    fn a_live_list_that_stops_answering_spares_the_condemned() {
+        let home = HomeIsolata::nuova("elenco-sparito-fra-giudizio-e-taglio");
+        let state = home.stato();
+        // LA CORSA CHE `apply` COPRIVA E QUESTA FAMIGLIA NO: il censimento
+        // legge l'elenco e giudica orfano, poi fra il giudizio e la
+        // cancellazione l'elenco smette di rispondere. Cancellare sulla
+        // fotografia di prima è il difetto; qui la rilettura fresca dice «non
+        // so» e il file resta.
+        let orphan_hex = guards::successor::armed_fingerprint("/x/morta.md", "9999-morta");
+        let name = format!("successore-armato-{orphan_hex}");
+        fs::write(state.join(&name), "2026-08-18T02:53:41.589486\n/x/morta.md\n").unwrap();
+
+        let legacy = legacy_armed_markers(&state);
+        let live_at_census = vec!["1111-viva".to_string()];
+        let owners = fingerprint_owners(&state, &legacy, Some(&live_at_census));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.orphan, 1, "{owners:?}");
+
+        // La rilettura di adesso non risponde più.
+        apply_fingerprint(&state, &owners, None, &mut t);
+
+        assert_eq!(t.removed, 0);
+        assert_eq!(t.spared_on_recheck, 1, "il risparmio non è stato contato");
+        assert!(state.join(&name).exists(), "cancellato mentre l'elenco non rispondeva");
     }
 
     #[test]
@@ -911,12 +1193,13 @@ mod tests {
         let legacy = legacy_armed_markers(&state);
         assert_eq!(legacy.len(), 2, "{legacy:?}");
 
-        let owners = fingerprint_owners(&state, &legacy, Some(&[live_full]));
+        let live = vec![live_full];
+        let owners = fingerprint_owners(&state, &legacy, Some(&live));
         let mut t = tally_fingerprint(&owners);
         assert_eq!(t.alive, 1, "{owners:?}");
         assert_eq!(t.orphan, 1, "{owners:?}");
 
-        apply_fingerprint(&state, &owners, &mut t);
+        apply_fingerprint(&state, &owners, Some(&live), &mut t);
 
         assert_eq!(t.removed, 1);
         assert!(
@@ -979,7 +1262,7 @@ mod tests {
         let mut t = tally_fingerprint(&owners);
         assert_eq!(t.unmatched_fresh, 1, "{owners:?}");
         assert_eq!(t.orphan, 0, "{owners:?}");
-        apply_fingerprint(&state, &owners, &mut t);
+        apply_fingerprint(&state, &owners, Some(&live), &mut t);
         assert_eq!(t.removed, 0);
         assert!(state.join(&name).exists(), "il freno appena armato non deve sparire");
 
@@ -993,7 +1276,7 @@ mod tests {
         let owners = fingerprint_owners(&state, &legacy, Some(&live));
         let mut t = tally_fingerprint(&owners);
         assert_eq!(t.unmatched_stale, 1, "{owners:?}");
-        apply_fingerprint(&state, &owners, &mut t);
+        apply_fingerprint(&state, &owners, Some(&live), &mut t);
         assert_eq!(t.removed, 1);
         assert!(!state.join(&name).exists(), "scaduta la grazia doveva sparire");
     }
@@ -1016,7 +1299,7 @@ mod tests {
         let owners = fingerprint_owners(&state, &legacy, Some(&[]));
         let mut t = tally_fingerprint(&owners);
         assert_eq!(t.unmatched_fresh, 1, "{owners:?}");
-        apply_fingerprint(&state, &owners, &mut t);
+        apply_fingerprint(&state, &owners, Some(&[]), &mut t);
         assert_eq!(t.removed, 0, "appena scritto, non ancora scaduto");
         assert!(state.join(name).exists());
 
@@ -1027,7 +1310,7 @@ mod tests {
         let legacy = legacy_armed_markers(&state);
         let owners = fingerprint_owners(&state, &legacy, Some(&[]));
         let mut t = tally_fingerprint(&owners);
-        apply_fingerprint(&state, &owners, &mut t);
+        apply_fingerprint(&state, &owners, Some(&[]), &mut t);
         assert_eq!(t.removed, 1);
         assert!(!state.join(name).exists());
     }
