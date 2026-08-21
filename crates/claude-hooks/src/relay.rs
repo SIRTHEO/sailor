@@ -998,8 +998,15 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         if age.is_some_and(|a| a < BLIND_STOP_RESET_SEC) {
             return;
         }
-        let _ = fs::remove_file(blind_stop_path(&rec.worktree));
-        let _ = fs::remove_file(blind_attempts_path(&rec.worktree));
+        // IL GIRO A SECCO NON MUTA NIENTE. `--secco` è lo strumento con cui si
+        // guarda cosa farebbe la staffetta senza farglielo fare: cancellare qui
+        // il marcatore e il conteggio significa che l'osservazione cambia ciò
+        // che osserva, e chi lancia un giro a secco per capire perché la resa
+        // non scade la fa scadere lui stesso lanciandolo.
+        if !dry_run {
+            let _ = fs::remove_file(blind_stop_path(&rec.worktree));
+            let _ = fs::remove_file(blind_attempts_path(&rec.worktree));
+        }
         log_line(&match age {
             Some(a) => format!(
                 "sess={sess}: resa cieca scaduta dopo {} h, riprovo",
@@ -2962,6 +2969,67 @@ mod tests {
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("resa cieca scaduta"), "{log}");
+    }
+
+    #[test]
+    fn a_dry_run_does_not_erase_a_stale_blind_stop() {
+        let _home = HomeIsolata::nuova("secco-resa-scaduta");
+        // MUTANTE CHE QUESTA PROVA COGLIE: togliere `if !dry_run` davanti alle
+        // due `fs::remove_file` del passo 0-bis — com'era prima — fa sparire
+        // marcatore e conteggio anche a un giro `--secco`, cioè un'osservazione
+        // che cambia ciò che osserva.
+        let _ = fs::create_dir_all(state_dir());
+        let stale_at = now_epoch() - BLIND_STOP_RESET_SEC - 10.0;
+        fs::write(
+            blind_stop_path("wt-prova"),
+            format!("{stale_at}\nvecchio, di prova\nalbero: wt-prova\n"),
+        )
+        .unwrap();
+        fs::write(blind_attempts_path("wt-prova"), "3\nsess-vecchia").unwrap();
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            panic!("il giro a secco non deve chiamare orca: {args:?}");
+        };
+        regenerate(&test_record(), true, &mut orca);
+        assert!(
+            blind_stop_path("wt-prova").exists(),
+            "il giro a secco ha cancellato il marcatore della resa"
+        );
+        assert!(
+            blind_attempts_path("wt-prova").exists(),
+            "il giro a secco ha cancellato il conteggio dei tentativi ciechi"
+        );
+    }
+
+    #[test]
+    fn a_real_run_still_erases_a_stale_blind_stop() {
+        let _home = HomeIsolata::nuova("vero-resa-scaduta");
+        // Il differenziale della prova sopra: stessa resa scaduta, ma un giro
+        // vero. Se si sposta il controllo del secco troppo in alto invece di
+        // limitarlo alle due `remove_file`, questa prova diventa rossa: la
+        // resa non scadrebbe mai davvero e l'albero resterebbe cieco per sempre.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let _ = fs::create_dir_all(state_dir());
+        let stale_at = now_epoch() - BLIND_STOP_RESET_SEC - 10.0;
+        fs::write(
+            blind_stop_path("wt-prova"),
+            format!("{stale_at}\nvecchio, di prova\nalbero: wt-prova\n"),
+        )
+        .unwrap();
+        fs::write(blind_attempts_path("wt-prova"), "3\nsess-vecchia").unwrap();
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        assert!(
+            !blind_stop_path("wt-prova").exists(),
+            "il giro vero non ha cancellato la resa scaduta"
+        );
+        // Il conteggio vecchio sparisce con la resa; quello nuovo, se c'è, è di
+        // `mark_blind_attempt` per un guasto successivo e non è questa la prova
+        // che lo copre.
     }
 
     #[test]
