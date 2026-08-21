@@ -24,6 +24,7 @@
 //! rompe l'avvio di una sessione fa più danno del problema che risolve.
 
 use guards::handoff::state_key;
+use hook_io::journal::{self, Field};
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -86,6 +87,32 @@ fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
 
+/// Le chiavi d'ambiente che mancano per poter registrare. Elenco vuoto: si
+/// registra.
+///
+/// Sta a parte perché è la condizione che faceva sparire sessioni vive senza
+/// dirlo, e una condizione che si può provare solo dal vivo non si prova. Le
+/// due chiavi del pannello si contano insieme: ne basta una, ed è già scritto
+/// in testa al modulo perché.
+pub(crate) fn missing_panel_keys(worktree: &str, handle: &str, tab: &str) -> Vec<&'static str> {
+    let mut missing = Vec::new();
+    if worktree.trim().is_empty() {
+        missing.push("ORCA_WORKTREE_ID");
+    }
+    if handle.trim().is_empty() && tab.trim().is_empty() {
+        missing.push("ORCA_TAB_ID|ORCA_TERMINAL_HANDLE");
+    }
+    missing
+}
+
+/// Se questa sessione gira dentro Orca. La porta del gancio di Orca è l'unico
+/// segno che c'è **prima** delle chiavi che si stanno cercando: usare una di
+/// quelle per dire «siamo dentro Orca» renderebbe la condizione circolare, e il
+/// caso da denunciare — dentro Orca, chiavi assenti — non uscirebbe mai.
+fn inside_orca() -> bool {
+    !env("ORCA_AGENT_HOOK_PORT").trim().is_empty()
+}
+
 fn record_session(data: &serde_json::Value) {
     let full = data
         .get("session_id")
@@ -100,7 +127,35 @@ fn record_session(data: &serde_json::Value) {
     let worktree = env("ORCA_WORKTREE_ID");
     let tab = env("ORCA_TAB_ID");
     // Basta UNA delle due chiavi; fuori da Orca non c'è niente da rigenerare.
-    if worktree.is_empty() || (handle.is_empty() && tab.is_empty()) {
+    //
+    // QUI SI USCIVA MUTI, e il registro delle sessioni vive ne portava il segno:
+    // la notte del 21/08/2026 conteneva quattro record contro sei sessioni vere,
+    // e chi conta da lì chiude un pannello vivo credendolo morto. Dentro Orca la
+    // mancanza è un guasto e va detta; fuori da Orca è il caso normale e resta
+    // muta, altrimenti ogni sessione aperta da un terminale qualunque scriverebbe
+    // una riga inutile.
+    let missing = missing_panel_keys(&worktree, &handle, &tab);
+    if !missing.is_empty() {
+        if inside_orca() {
+            journal::record(
+                "register-session",
+                "salta",
+                "chiavi-del-pannello-mancanti",
+                &[
+                    ("session", Field::Text(sess.clone())),
+                    ("mancanti", Field::Text(missing.join(" "))),
+                    (
+                        "cwd",
+                        Field::Text(
+                            data.get("cwd")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        ),
+                    ),
+                ],
+            );
+        }
         return;
     }
     let cwd = match data.get("cwd").and_then(|v| v.as_str()) {
@@ -304,6 +359,9 @@ pub fn run() -> i32 {
     let Ok(data) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return 0; // stdin non è JSON: si esce muti, come l'originale
     };
+    // Prima di qualunque riga di registro, altrimenti esce marcata come prova e
+    // chi conta quanto un gancio morde la scarta.
+    hook_io::mark_live_from_payload(&data);
     let args: Vec<String> = std::env::args().collect();
     if is_session_end(&data, &args) {
         forget_session(&data);
@@ -501,5 +559,98 @@ mod tests {
         std::fs::write(state.join("consegna-misura-77776666"), "x").unwrap();
         forget_session(&event("SessionEnd", ""));
         assert!(state.join("consegna-misura-77776666").exists());
+    }
+
+    #[test]
+    fn one_panel_key_is_enough_and_the_worktree_is_never_optional() {
+        assert!(missing_panel_keys("wt", "term", "tab").is_empty());
+        assert!(missing_panel_keys("wt", "", "tab").is_empty());
+        assert!(missing_panel_keys("wt", "term", "").is_empty());
+        assert_eq!(
+            missing_panel_keys("wt", "", ""),
+            vec!["ORCA_TAB_ID|ORCA_TERMINAL_HANDLE"]
+        );
+        assert_eq!(missing_panel_keys("", "term", "tab"), vec!["ORCA_WORKTREE_ID"]);
+        // Una variabile esportata piena di spazi è assente quanto una che non
+        // c'è: `env()` restituisce la stringa così com'è, e il confronto con la
+        // stringa vuota da solo la lascerebbe passare per buona.
+        assert_eq!(missing_panel_keys("  ", "term", "tab"), vec!["ORCA_WORKTREE_ID"]);
+    }
+
+    /// Il payload di un avvio, nella forma che il gancio riceve.
+    fn start(session: &str) -> serde_json::Value {
+        serde_json::json!({
+            "hook_event_name": "SessionStart",
+            "session_id": session,
+            "transcript_path": "",
+            "cwd": "/prova/albero",
+            "source": "startup",
+        })
+    }
+
+    /// Le righe del registro dei ganci scritte finora nella casa isolata.
+    fn journal_lines(home: &HomeIsolata) -> String {
+        std::fs::read_to_string(home.stato().join("ganci.jsonl")).unwrap_or_default()
+    }
+
+    /// Il caso che conta: dentro Orca una chiave mancante non fa più sparire la
+    /// sessione in silenzio.
+    ///
+    /// DIFFERENZIALE A VARIABILE UNICA — i due bracci cambiano solo per
+    /// `ORCA_WORKTREE_ID`. La prova «il record c'è / non c'è» da sola non
+    /// basterebbe: togliendo la riga di registro dal ramo, il record continua a
+    /// mancare in entrambi i modi e la mutazione passerebbe. Quello che separa
+    /// il guasto muto dal guasto detto è la riga, e qui si guarda quella.
+    #[test]
+    fn inside_orca_a_missing_key_leaves_a_line_instead_of_silence() {
+        let home = HomeIsolata::nuova("registro-sessione-muta");
+        std::env::set_var("ORCA_AGENT_HOOK_PORT", "49571");
+        std::env::set_var("ORCA_TAB_ID", "tab-1");
+        std::env::set_var("ORCA_TERMINAL_HANDLE", "term-1");
+
+        std::env::set_var("ORCA_WORKTREE_ID", "repo::/prova/albero");
+        record_session(&start("aaaaaaaa-1111-2222-3333-444444444444"));
+        assert!(
+            home.stato().join("sessioni-vive/aaaaaaaa.json").exists(),
+            "con tutte le chiavi il record deve esserci"
+        );
+        assert!(
+            !journal_lines(&home).contains("register-session"),
+            "una registrazione riuscita non lascia righe: {}",
+            journal_lines(&home)
+        );
+
+        std::env::remove_var("ORCA_WORKTREE_ID");
+        record_session(&start("bbbbbbbb-1111-2222-3333-444444444444"));
+        assert!(
+            !home.stato().join("sessioni-vive/bbbbbbbb.json").exists(),
+            "senza la chiave dell'albero non si registra, e resta così"
+        );
+        let lines = journal_lines(&home);
+        assert!(lines.contains("\"gancio\":\"register-session\""), "{lines}");
+        assert!(lines.contains("chiavi-del-pannello-mancanti"), "{lines}");
+        assert!(lines.contains("ORCA_WORKTREE_ID"), "{lines}");
+        assert!(lines.contains("\"session\":\"bbbbbbbb\""), "{lines}");
+    }
+
+    /// Fuori da Orca la stessa mancanza è il caso normale e resta muta:
+    /// altrimenti ogni sessione aperta da un terminale qualunque scriverebbe una
+    /// riga, e il registro che serve a contare i guasti conterebbe il normale.
+    #[test]
+    fn outside_orca_the_same_absence_stays_silent() {
+        let home = HomeIsolata::nuova("registro-fuori-da-orca");
+        std::env::remove_var("ORCA_AGENT_HOOK_PORT");
+        std::env::remove_var("ORCA_WORKTREE_ID");
+        std::env::remove_var("ORCA_TAB_ID");
+        std::env::remove_var("ORCA_TERMINAL_HANDLE");
+
+        record_session(&start("cccccccc-1111-2222-3333-444444444444"));
+
+        assert!(!home.stato().join("sessioni-vive/cccccccc.json").exists());
+        assert!(
+            !journal_lines(&home).contains("register-session"),
+            "fuori da Orca non c'è niente da denunciare: {}",
+            journal_lines(&home)
+        );
     }
 }
