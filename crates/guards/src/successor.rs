@@ -234,6 +234,43 @@ pub fn armed_fingerprint(path: &str, session: &str) -> String {
         .collect()
 }
 
+/// A chi appartiene un'impronta, quando il nome del marcatore non porta
+/// l'identificativo e va ricalcolata in avanti. Decisione del capitano,
+/// 21/08/2026 15:55: i marcatori nati prima che si scrivesse anche la
+/// sessione non hanno altra via per sapere di chi sono.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FingerprintOwner {
+    /// L'impronta combacia con quella di una sessione viva adesso.
+    Alive,
+    /// Nessuna sessione viva la riproduce, e l'elenco si è potuto leggere:
+    /// non appartiene a nessun vivo.
+    Orphan,
+    /// L'elenco delle sessioni vive non si è potuto leggere: non si sa, e
+    /// un «non si sa» non si tratta come un elenco vuoto.
+    Unknown,
+}
+
+/// PURA: ricalcola l'impronta per ogni sessione viva data da fuori, e dice a
+/// chi appartiene il marcatore. `live_full_ids: None` è il terzo esito —
+/// l'elenco non letto, non l'elenco letto e vuoto.
+pub fn recalculate_fingerprint_owner(
+    marker_hex: &str,
+    marker_path: &str,
+    live_full_ids: Option<&[String]>,
+) -> FingerprintOwner {
+    let Some(ids) = live_full_ids else {
+        return FingerprintOwner::Unknown;
+    };
+    if ids
+        .iter()
+        .any(|id| armed_fingerprint(marker_path, id) == marker_hex)
+    {
+        FingerprintOwner::Alive
+    } else {
+        FingerprintOwner::Orphan
+    }
+}
+
 /// Un processo in ascolto su una porta, come lo riporta `lsof`.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Listener {
@@ -699,6 +736,43 @@ mod tests {
         // il verso giusto in cui sbagliare.
         let a = armed_fingerprint("/x/consegna.md", "");
         assert_ne!(a, armed_fingerprint("/x/altra.md", ""));
+    }
+
+    // --- recalculate_fingerprint_owner: la prova a due bracci del capitano,
+    // 21/08/2026 15:55 — un marcatore di una sessione viva sopravvive, uno di
+    // una morta no, e un elenco non leggibile protegge tutti e due.
+
+    #[test]
+    fn arm_one_a_live_session_reproduces_its_own_fingerprint() {
+        let live = "11112222-3333-4444-5555-666677778888".to_string();
+        let hex = armed_fingerprint("/x/consegna.md", &live);
+        assert_eq!(
+            recalculate_fingerprint_owner(&hex, "/x/consegna.md", Some(&[live])),
+            FingerprintOwner::Alive
+        );
+    }
+
+    #[test]
+    fn arm_two_no_live_session_reproduces_a_dead_ones_fingerprint() {
+        let dead = "99998888-7777-6666-5555-444433332222";
+        let hex = armed_fingerprint("/x/consegna.md", dead);
+        let live = vec!["11112222-3333-4444-5555-666677778888".to_string()];
+        assert_eq!(
+            recalculate_fingerprint_owner(&hex, "/x/consegna.md", Some(&live)),
+            FingerprintOwner::Orphan
+        );
+    }
+
+    #[test]
+    fn an_unreadable_list_protects_even_what_looks_orphaned() {
+        // Lo stesso caso del secondo braccio, ma l'elenco non si è potuto
+        // leggere: il terzo esito vince su qualunque impronta.
+        let dead = "99998888-7777-6666-5555-444433332222";
+        let hex = armed_fingerprint("/x/consegna.md", dead);
+        assert_eq!(
+            recalculate_fingerprint_owner(&hex, "/x/consegna.md", None),
+            FingerprintOwner::Unknown
+        );
     }
 
     #[test]

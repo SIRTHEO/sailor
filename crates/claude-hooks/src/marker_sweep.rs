@@ -23,11 +23,23 @@
 //! casa hanno già ingannato qualcuno — `--secco`, che chiudeva davvero, e
 //! `--esegui`, che ha smontato cinque alberi altrui — non si riusano.
 //!
-//! COSA NON GUARDA, E PERCHÉ. `successore-armato-<impronta>` porta il digest
-//! della sessione, non il suo nome: da lì non si risale a nessun record, quindi
-//! l'unico criterio possibile sarebbe l'età nuda — cioè proprio la cosa che
-//! questo modulo esiste per non fare. Restano al congedo, che l'impronta la sa
-//! calcolare.
+//! `successore-armato-<impronta>`: DUE FORMATI, DUE VIE. Il nome porta il
+//! digest della sessione e mai il suo identificativo, quindi non si risale a
+//! un record come per le altre famiglie. Chi arma il marcatore da questa
+//! consegna in poi (21/08/2026, decisione del capitano delle 15:55) scrive
+//! anche l'identificativo dentro: quei marcatori entrano nel censimento
+//! normale, con lo stesso criterio a tre esiti degli altri. I venti nati
+//! prima non lo portano: per loro il ricalcolo confronta l'impronta con ogni
+//! sessione viva di adesso, senza soglia d'età — l'età non dice niente
+//! sull'appartenenza quando la si può ricostruire.
+//!
+//! DUE CASI CHE IL RICALCOLO NON PUÒ RISOLVERE (riserve del revisore
+//! indipendente, 21/08/2026), e per quelli sì che conta l'età: un'impronta
+//! nata da sessione vuota non potrà mai combaciare con l'id di una sessione
+//! viva (nessun id è vuoto), e un contenuto troncato non porta né percorso né
+//! sessione. Dichiararli orfani a vista li cancellerebbe anche appena
+//! scritti; ignorarli li lascerebbe sul disco per sempre. Prendono la stessa
+//! grazia di 24 ore delle altre famiglie — vedi `LegacyVerdict::Unmatched`.
 
 use crate::register_session::{
     file_age_secs, liveness_of, should_remove, state_dir, SessionLiveness, MARKER_FAMILIES,
@@ -70,6 +82,46 @@ pub(crate) fn split_marker(name: &str) -> Option<(&'static str, &str)> {
     best
 }
 
+/// Il prefisso della famiglia che porta l'impronta invece del nome.
+const ARMED_PREFIX: &str = "successore-armato-";
+
+/// Cosa c'è scritto in un marcatore `successore-armato-*`, nelle due forme
+/// che convivono sul disco.
+///
+/// IL FORMATO VECCHIO (Python, 18/08/2026) porta l'orario e poi il percorso;
+/// un marcatore con una sola riga porta solo il percorso. Quello nuovo — da
+/// questa consegna in poi (decisione del capitano, 21/08/2026 15:55) — porta
+/// il percorso e poi l'identificativo intero della sessione. Si distinguono
+/// dalla prima riga: un orario comincia con quattro cifre e un trattino, un
+/// percorso no.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ArmedContent {
+    New { path: String, session: String },
+    Legacy { path: String },
+    Unreadable,
+}
+
+fn parse_armed_content(raw: &str) -> ArmedContent {
+    let lines: Vec<&str> = raw.lines().filter(|l| !l.is_empty()).collect();
+    match lines.as_slice() {
+        [] => ArmedContent::Unreadable,
+        [only] => ArmedContent::Legacy { path: only.to_string() },
+        [first, second, ..] => {
+            let looks_like_timestamp = first.len() >= 5
+                && first.as_bytes()[..4].iter().all(u8::is_ascii_digit)
+                && first.as_bytes()[4] == b'-';
+            if looks_like_timestamp {
+                ArmedContent::Legacy { path: second.to_string() }
+            } else {
+                ArmedContent::New {
+                    path: first.to_string(),
+                    session: second.to_string(),
+                }
+            }
+        }
+    }
+}
+
 /// Un marcatore censito: com'è fatto, di chi è, e cosa se ne sa.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Marker {
@@ -85,6 +137,10 @@ pub(crate) struct Marker {
 /// domanda costa un `ps`, e una sessione lascia fino a nove marcatori. Chiederla
 /// per file darebbe anche risposte diverse dentro la stessa passata, e allora
 /// due marcatori della stessa sessione finirebbero uno tenuto e uno buttato.
+///
+/// `successore-armato-*` col formato nuovo entra qui come tutti gli altri,
+/// leggendo la sessione dal contenuto invece che dal nome; col formato
+/// vecchio resta fuori, ed è compito di `legacy_armed_markers`.
 pub(crate) fn census(dir: &Path) -> Vec<Marker> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
@@ -93,19 +149,31 @@ pub(crate) fn census(dir: &Path) -> Vec<Marker> {
     let mut markers = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        let Some((_, session)) = split_marker(&name) else {
-            continue;
-        };
         // Una cartella che si chiama come un marcatore non è un marcatore: la
         // passata cancella file, e `remove_file` su una cartella fallirebbe
         // lasciando il conteggio bugiardo.
         if !entry.path().is_file() {
             continue;
         }
+        let session = if name.starts_with(ARMED_PREFIX) {
+            let raw = fs::read_to_string(entry.path()).unwrap_or_default();
+            match parse_armed_content(&raw) {
+                ArmedContent::New { session, .. } if !session.is_empty() => {
+                    session.chars().take(8).collect()
+                }
+                // Formato vecchio o illeggibile: non c'è sessione da leggere
+                // dal nome né dal contenuto, se ne occupa il ricalcolo.
+                _ => continue,
+            }
+        } else {
+            let Some((_, session)) = split_marker(&name) else {
+                continue;
+            };
+            session.to_string()
+        };
         let Some(age_secs) = file_age_secs(&entry.path()) else {
             continue; // età illeggibile: non si giudica ciò che non si è guardato
         };
-        let session = session.to_string();
         let liveness = *known
             .entry(session.clone())
             .or_insert_with(|| liveness_of(&session));
@@ -113,6 +181,230 @@ pub(crate) fn census(dir: &Path) -> Vec<Marker> {
     }
     markers.sort_by(|a, b| a.name.cmp(&b.name));
     markers
+}
+
+// ─── Il ricalcolo in avanti, per i marcatori nati senza identificativo ─────
+//
+// Decisione del capitano, 21/08/2026 15:55: i venti marcatori `successore-
+// armato-<impronta>` scritti prima di questa consegna non portano la
+// sessione, né nel nome né nel contenuto. L'unica via è ricalcolare
+// l'impronta per ogni sessione viva di adesso — senza guardare l'età, perché
+// per questa famiglia l'età non dice niente sull'appartenenza.
+
+/// Un marcatore armato nel formato vecchio: impronta e, quando c'è, il
+/// percorso. Solo questi passano dal ricalcolo — i nuovi li legge già il
+/// censimento normale.
+///
+/// `path: None` è un file troncato o vuoto (riserva b, revisore indipendente
+/// 21/08/2026): niente da rileggere, ma il nome resta un marcatore vero e va
+/// giudicato lo stesso — non ignorato per sempre.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LegacyArmedMarker {
+    pub name: String,
+    pub hex: String,
+    pub path: Option<String>,
+}
+
+/// I marcatori armati che non portano l'identificativo.
+pub(crate) fn legacy_armed_markers(dir: &Path) -> Vec<LegacyArmedMarker> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(hex) = name.strip_prefix(ARMED_PREFIX).map(str::to_string) else {
+            continue;
+        };
+        if !entry.path().is_file() {
+            continue;
+        }
+        let raw = fs::read_to_string(entry.path()).unwrap_or_default();
+        let path = match parse_armed_content(&raw) {
+            ArmedContent::Legacy { path } => Some(path),
+            ArmedContent::Unreadable => None,
+            ArmedContent::New { .. } => continue, // formato nuovo: non è compito suo
+        };
+        found.push(LegacyArmedMarker { name, hex, path });
+    }
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    found
+}
+
+/// PURA: gli identificativi interi delle sole sessioni il cui record dice
+/// "viva". Separata da chi legge il disco e chiama `ps`, per lo stesso
+/// motivo per cui il resto di questo modulo tiene il giudizio lontano dal
+/// sistema: una sessione viva si chiama `claude`, e la batteria no.
+fn alive_full_ids(records: &[(SessionLiveness, serde_json::Value)]) -> Vec<String> {
+    records
+        .iter()
+        .filter(|(liveness, _)| *liveness == SessionLiveness::Alive)
+        .filter_map(|(_, v)| v.get("session_id").and_then(|x| x.as_str()))
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// Gli identificativi interi delle sessioni vive adesso: la materia prima
+/// del ricalcolo in avanti. `None` se la cartella non si è potuta leggere —
+/// un elenco vuoto perché non risponde e uno vuoto perché non c'è nessuno
+/// restano distinguibili, perché confonderli costerebbe la consegna di una
+/// sessione viva (la stessa trappola del registro delle autorizzazioni).
+fn live_full_session_ids(state: &Path) -> Option<Vec<String>> {
+    let live_dir = state.join("sessioni-vive");
+    let entries = match fs::read_dir(&live_dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Some(Vec::new()),
+        Err(_) => return None,
+    };
+    let mut records = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(sess) = name.strip_suffix(".json") else {
+            continue;
+        };
+        let Ok(raw) = fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        records.push((liveness_of(sess), v));
+    }
+    Some(alive_full_ids(&records))
+}
+
+/// Il giudizio su un marcatore del formato vecchio. Due bracci in più
+/// rispetto a `FingerprintOwner`, per le due riserve del revisore
+/// indipendente (21/08/2026):
+///
+/// - RISERVA (a): un'impronta calcolata su sessione vuota (`armed_fingerprint
+///   (path, "")`) non può MAI combaciare con l'id di una sessione viva — la
+///   formula usa il percorso solo quando la sessione è vuota, e nessuna
+///   sessione viva ha un id vuoto. Dichiararla `Orphan` la cancellerebbe
+///   sempre, anche appena scritta: non è un giudizio sulla sua appartenenza,
+///   è una domanda a cui la sessione non può rispondere.
+/// - RISERVA (b): un contenuto troncato o vuoto non porta né percorso né
+///   sessione: non c'è niente da ricalcolare, ma il file esiste e va
+///   giudicato — non ignorato per sempre.
+///
+/// Per tutti e due, `Unmatched` giudica sull'età con la stessa grazia delle
+/// altre famiglie (`UNKNOWN_GRACE_SECS`): non è "orfano", è "non so".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LegacyVerdict {
+    Alive,
+    Orphan,
+    Unknown,
+    Unmatched { stale: bool },
+}
+
+/// A chi appartiene ciascun marcatore, ricalcolando l'impronta — o,
+/// quando il ricalcolo non può rispondere per costruzione, giudicando
+/// sull'età.
+pub(crate) fn fingerprint_owners(
+    dir: &Path,
+    markers: &[LegacyArmedMarker],
+    live: Option<&[String]>,
+) -> Vec<(String, LegacyVerdict)> {
+    markers
+        .iter()
+        .map(|m| {
+            let verdict = match &m.path {
+                // Riserva (b): niente percorso da ricalcolare.
+                None => {
+                    let age = file_age_secs(&dir.join(&m.name)).unwrap_or(0);
+                    LegacyVerdict::Unmatched { stale: age >= UNKNOWN_GRACE_SECS }
+                }
+                // Riserva (a): l'impronta è quella di una sessione vuota, e
+                // nessuna sessione viva potrà mai riprodurla.
+                Some(path) if guards::successor::armed_fingerprint(path, "") == m.hex => {
+                    let age = file_age_secs(&dir.join(&m.name)).unwrap_or(0);
+                    LegacyVerdict::Unmatched { stale: age >= UNKNOWN_GRACE_SECS }
+                }
+                Some(path) => {
+                    match guards::successor::recalculate_fingerprint_owner(&m.hex, path, live) {
+                        guards::successor::FingerprintOwner::Alive => LegacyVerdict::Alive,
+                        guards::successor::FingerprintOwner::Orphan => LegacyVerdict::Orphan,
+                        guards::successor::FingerprintOwner::Unknown => LegacyVerdict::Unknown,
+                    }
+                }
+            };
+            (m.name.clone(), verdict)
+        })
+        .collect()
+}
+
+/// Quanti marcatori per ciascun esito del ricalcolo. Un conteggio a parte
+/// dal `Tally` delle altre famiglie: la parte ricalcolata per impronta non
+/// conosce età, quella "non abbinabile" (riserve a/b) sì.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FingerprintTally {
+    pub seen: usize,
+    pub alive: usize,
+    pub orphan: usize,
+    pub unknown: usize,
+    pub unmatched_fresh: usize,
+    pub unmatched_stale: usize,
+    pub removed: usize,
+}
+
+pub(crate) fn tally_fingerprint(owners: &[(String, LegacyVerdict)]) -> FingerprintTally {
+    let mut t = FingerprintTally { seen: owners.len(), ..FingerprintTally::default() };
+    for (_, verdict) in owners {
+        match verdict {
+            LegacyVerdict::Alive => t.alive += 1,
+            LegacyVerdict::Orphan => t.orphan += 1,
+            LegacyVerdict::Unknown => t.unknown += 1,
+            LegacyVerdict::Unmatched { stale: false } => t.unmatched_fresh += 1,
+            LegacyVerdict::Unmatched { stale: true } => t.unmatched_stale += 1,
+        }
+    }
+    t
+}
+
+/// Cancella i marcatori orfani e quelli "non abbinabili" ormai vecchi.
+///
+/// NIENTE RILETTURA DI SICUREZZA, a differenza di `apply`: questi marcatori
+/// sono scritti una volta sola da `already_armed`, che non riscrive mai un
+/// file già esistente — non c'è una sessione che li aggiorna sotto i piedi
+/// della passata, quindi non c'è una corsa da cui proteggersi.
+pub(crate) fn apply_fingerprint(
+    dir: &Path,
+    owners: &[(String, LegacyVerdict)],
+    t: &mut FingerprintTally,
+) {
+    for (name, verdict) in owners {
+        let remove = matches!(
+            verdict,
+            LegacyVerdict::Orphan | LegacyVerdict::Unmatched { stale: true }
+        );
+        if !remove {
+            continue;
+        }
+        if fs::remove_file(dir.join(name)).is_ok() {
+            t.removed += 1;
+        }
+    }
+}
+
+/// Il rapporto del ricalcolo in avanti, separato dal resto.
+pub(crate) fn report_fingerprint(t: &FingerprintTally, deleting: bool) -> String {
+    let head = format!(
+        "marker-sweep (successore-armato, ricalcolo): {} markers, {} held (session alive), \
+{} orphan, {} unknown (live list unreadable), {} unmatched fresh, {} unmatched stale \
+(grace {}h)",
+        t.seen,
+        t.alive,
+        t.orphan,
+        t.unknown,
+        t.unmatched_fresh,
+        t.unmatched_stale,
+        UNKNOWN_GRACE_SECS / 3600
+    );
+    if !deleting {
+        return format!("{head}\n  report only -- pass --delete to remove orphans and stale unmatched ones");
+    }
+    format!("{head}\n  removed {}", t.removed)
 }
 
 /// Quanti marcatori per ciascun esito. Serve al rapporto e al registro.
@@ -273,6 +565,29 @@ pub fn run() -> i32 {
         ],
     );
     println!("{}", report(&t, deleting));
+
+    let legacy = legacy_armed_markers(&dir);
+    let live = live_full_session_ids(&dir);
+    let owners = fingerprint_owners(&dir, &legacy, live.as_deref());
+    let mut ft = tally_fingerprint(&owners);
+    if deleting {
+        apply_fingerprint(&dir, &owners, &mut ft);
+    }
+    journal::record(
+        "marker-sweep",
+        if deleting { "passata" } else { "rapporto" },
+        "successore-armato-ricalcolo",
+        &[
+            ("visti", Field::Number(ft.seen as i64)),
+            ("vivi", Field::Number(ft.alive as i64)),
+            ("orfani", Field::Number(ft.orphan as i64)),
+            ("ignoti", Field::Number(ft.unknown as i64)),
+            ("non_abbinabili_freschi", Field::Number(ft.unmatched_fresh as i64)),
+            ("non_abbinabili_scaduti", Field::Number(ft.unmatched_stale as i64)),
+            ("cancellati", Field::Number(ft.removed as i64)),
+        ],
+    );
+    println!("{}", report_fingerprint(&ft, deleting));
     0
 }
 
@@ -510,5 +825,238 @@ mod tests {
         assert!(text.contains("28 stale"), "{text}");
         assert!(text.contains("--delete"), "{text}");
         assert!(!report(&t, true).contains("report only"));
+    }
+
+    // ─── Il ricalcolo in avanti: `successore-armato-*` ─────────────────────
+    // Decisione del capitano, 21/08/2026 15:55.
+
+    #[test]
+    fn parse_armed_content_reads_the_three_shapes() {
+        assert_eq!(
+            parse_armed_content("/x/consegna.md\n"),
+            ArmedContent::Legacy { path: "/x/consegna.md".to_string() }
+        );
+        assert_eq!(
+            parse_armed_content("2026-08-18T02:53:35.905854\n/x/consegna.md\n"),
+            ArmedContent::Legacy { path: "/x/consegna.md".to_string() }
+        );
+        assert_eq!(
+            parse_armed_content("/x/consegna.md\n11112222-3333-4444-5555-666677778888\n"),
+            ArmedContent::New {
+                path: "/x/consegna.md".to_string(),
+                session: "11112222-3333-4444-5555-666677778888".to_string(),
+            }
+        );
+        assert_eq!(parse_armed_content(""), ArmedContent::Unreadable);
+    }
+
+    #[test]
+    fn alive_full_ids_keeps_only_the_live_records() {
+        let alive = serde_json::json!({"session_id": "11112222-aaaa"});
+        let gone = serde_json::json!({"session_id": "99998888-bbbb"});
+        let unknown = serde_json::json!({"session_id": "77776666-cccc"});
+        let records = vec![
+            (SessionLiveness::Alive, alive),
+            (SessionLiveness::Gone, gone),
+            (SessionLiveness::Unknown, unknown),
+        ];
+        assert_eq!(alive_full_ids(&records), vec!["11112222-aaaa".to_string()]);
+    }
+
+    #[test]
+    fn live_full_session_ids_on_a_missing_directory_is_an_empty_list() {
+        let home = HomeIsolata::nuova("ricalcolo-cartella-assente");
+        // Nessuna `sessioni-vive/`: è la casa appena isolata, non un errore —
+        // il primo esito, non il terzo.
+        assert_eq!(live_full_session_ids(&home.stato()), Some(Vec::new()));
+    }
+
+    #[test]
+    fn live_full_session_ids_on_an_unreadable_directory_is_unknown() {
+        let home = HomeIsolata::nuova("ricalcolo-cartella-illeggibile");
+        let state = home.stato();
+        // Un file al posto della cartella: `read_dir` fallisce, ma non con
+        // `NotFound` — è il terzo esito, non l'elenco vuoto.
+        fs::write(state.join("sessioni-vive"), "non e' una cartella").unwrap();
+        assert_eq!(live_full_session_ids(&state), None);
+    }
+
+    /// PROVA A DUE BRACCI (capitano, 21/08/2026 15:55). Un marcatore del
+    /// vecchio formato la cui impronta combacia con una sessione viva
+    /// sopravvive; uno la cui impronta non combacia con nessuna sparisce —
+    /// nello stesso censimento, senza guardare l'età di nessuno dei due.
+    #[test]
+    fn the_forward_recalculation_keeps_the_live_one_and_drops_the_orphan() {
+        let home = HomeIsolata::nuova("ricalcolo-due-bracci");
+        let state = home.stato();
+        let live_full = "11112222-3333-4444-5555-666677778888".to_string();
+
+        let live_hex = guards::successor::armed_fingerprint("/x/consegna-viva.md", &live_full);
+        let orphan_hex =
+            guards::successor::armed_fingerprint("/x/consegna-morta.md", "99998888-morta");
+
+        // Il formato vecchio vero: una riga di orario e poi il percorso —
+        // quello dei venti marcatori trovati sul disco il 21/08/2026.
+        fs::write(
+            state.join(format!("successore-armato-{live_hex}")),
+            "2026-08-18T02:53:35.905854\n/x/consegna-viva.md\n",
+        )
+        .unwrap();
+        fs::write(
+            state.join(format!("successore-armato-{orphan_hex}")),
+            "2026-08-18T02:53:41.589486\n/x/consegna-morta.md\n",
+        )
+        .unwrap();
+
+        let legacy = legacy_armed_markers(&state);
+        assert_eq!(legacy.len(), 2, "{legacy:?}");
+
+        let owners = fingerprint_owners(&state, &legacy, Some(&[live_full]));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.alive, 1, "{owners:?}");
+        assert_eq!(t.orphan, 1, "{owners:?}");
+
+        apply_fingerprint(&state, &owners, &mut t);
+
+        assert_eq!(t.removed, 1);
+        assert!(
+            state.join(format!("successore-armato-{live_hex}")).exists(),
+            "il marcatore della sessione viva doveva restare"
+        );
+        assert!(
+            !state.join(format!("successore-armato-{orphan_hex}")).exists(),
+            "il marcatore orfano doveva sparire"
+        );
+    }
+
+    /// Lo stesso caso, ma l'elenco delle sessioni vive non si è potuto
+    /// leggere: il terzo esito protegge anche l'orfano, e nessuno dei due
+    /// sparisce — è il vincolo che non si tocca.
+    #[test]
+    fn an_unreadable_live_list_removes_nothing_at_all() {
+        let live_full = "11112222-3333-4444-5555-666677778888".to_string();
+        let orphan_hex =
+            guards::successor::armed_fingerprint("/x/consegna-morta.md", "99998888-morta");
+        let legacy = vec![LegacyArmedMarker {
+            name: format!("successore-armato-{orphan_hex}"),
+            hex: orphan_hex,
+            path: Some("/x/consegna-morta.md".to_string()),
+        }];
+        let owners = fingerprint_owners(Path::new("/inesistente"), &legacy, None);
+        let t = tally_fingerprint(&owners);
+        assert_eq!(t.unknown, 1);
+        assert_eq!(t.orphan, 0);
+        let _ = live_full; // solo a mostrare che non serve nemmeno passarlo
+    }
+
+    /// RISERVA (a) del revisore indipendente, 21/08/2026: `already_armed`
+    /// chiamato con una sessione vuota — `input.session_id` è `None` — arma
+    /// un marcatore la cui impronta è quella del solo percorso. Nessuna
+    /// sessione viva potrà mai riprodurla (nessun id è vuoto): il ricalcolo
+    /// non deve dichiararlo orfano a vista, o il freno anti-doppione
+    /// sparirebbe appena scritto — il cui difetto è riarmare un secondo
+    /// pannello. Prende la stessa grazia di 24 ore delle altre famiglie.
+    #[test]
+    fn a_session_less_marker_survives_fresh_and_falls_after_the_grace() {
+        let home = HomeIsolata::nuova("armato-sessione-vuota");
+        let state = home.stato();
+
+        // La chiamata vera, con la sessione vuota che genera la riserva.
+        assert!(!crate::successor::already_armed("/x/consegna-empty-session.md", ""));
+
+        let hex = guards::successor::armed_fingerprint("/x/consegna-empty-session.md", "");
+        let name = format!("successore-armato-{hex}");
+        assert!(state.join(&name).exists());
+
+        let legacy = legacy_armed_markers(&state);
+        assert_eq!(legacy.len(), 1, "{legacy:?}");
+        assert_eq!(legacy[0].path.as_deref(), Some("/x/consegna-empty-session.md"));
+
+        // Appena scritto: nessuna sessione viva può mai riprodurre questa
+        // impronta, ma è fresco — deve sopravvivere, non sparire a vista.
+        let live = vec!["11112222-3333-4444-5555-666677778888".to_string()];
+        let owners = fingerprint_owners(&state, &legacy, Some(&live));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.unmatched_fresh, 1, "{owners:?}");
+        assert_eq!(t.orphan, 0, "{owners:?}");
+        apply_fingerprint(&state, &owners, &mut t);
+        assert_eq!(t.removed, 0);
+        assert!(state.join(&name).exists(), "il freno appena armato non deve sparire");
+
+        // Invecchiato oltre la grazia: stessa impronta, adesso si toglie —
+        // la stessa sorte di "non so" in tutte le altre famiglie.
+        let old = SystemTime::now() - Duration::from_secs(UNKNOWN_GRACE_SECS + 1);
+        let file = fs::File::options().write(true).open(state.join(&name)).unwrap();
+        file.set_modified(old).unwrap();
+
+        let legacy = legacy_armed_markers(&state);
+        let owners = fingerprint_owners(&state, &legacy, Some(&live));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.unmatched_stale, 1, "{owners:?}");
+        apply_fingerprint(&state, &owners, &mut t);
+        assert_eq!(t.removed, 1);
+        assert!(!state.join(&name).exists(), "scaduta la grazia doveva sparire");
+    }
+
+    /// RISERVA (b) del revisore indipendente, 21/08/2026: un marcatore
+    /// troncato — scrittura interrotta a metà — non porta niente da
+    /// ricalcolare, ma esiste ed è un marcatore vero: prima veniva ignorato
+    /// per sempre da tutte e due le passate.
+    #[test]
+    fn a_truncated_marker_is_no_longer_invisible() {
+        let home = HomeIsolata::nuova("armato-troncato");
+        let state = home.stato();
+        let name = "successore-armato-0000000000000000";
+        fs::write(state.join(name), "").unwrap(); // scrittura interrotta: niente dentro
+
+        let legacy = legacy_armed_markers(&state);
+        assert_eq!(legacy.len(), 1, "{legacy:?}");
+        assert_eq!(legacy[0].path, None);
+
+        let owners = fingerprint_owners(&state, &legacy, Some(&[]));
+        let mut t = tally_fingerprint(&owners);
+        assert_eq!(t.unmatched_fresh, 1, "{owners:?}");
+        apply_fingerprint(&state, &owners, &mut t);
+        assert_eq!(t.removed, 0, "appena scritto, non ancora scaduto");
+        assert!(state.join(name).exists());
+
+        // Invecchiato oltre la grazia: sparisce, non resta lì per sempre.
+        let old = SystemTime::now() - Duration::from_secs(UNKNOWN_GRACE_SECS + 1);
+        let file = fs::File::options().write(true).open(state.join(name)).unwrap();
+        file.set_modified(old).unwrap();
+        let legacy = legacy_armed_markers(&state);
+        let owners = fingerprint_owners(&state, &legacy, Some(&[]));
+        let mut t = tally_fingerprint(&owners);
+        apply_fingerprint(&state, &owners, &mut t);
+        assert_eq!(t.removed, 1);
+        assert!(!state.join(name).exists());
+    }
+
+    /// Il formato nuovo scritto dal vero `already_armed`, non da un
+    /// contenuto fabbricato a mano: prova l'aggancio fra chi scrive e chi
+    /// legge, non solo la meccanica di lettura.
+    #[test]
+    fn a_marker_from_the_real_writer_is_read_directly_by_the_census() {
+        let home = HomeIsolata::nuova("armato-formato-nuovo-scrittura-vera");
+        let state = home.stato();
+        let full = "aaaa1111-2222-3333-4444-555566667777";
+
+        assert!(!crate::successor::already_armed("/x/consegna.md", full));
+
+        let hex = guards::successor::armed_fingerprint("/x/consegna.md", full);
+        let name = format!("successore-armato-{hex}");
+        assert!(state.join(&name).exists(), "il marcatore vero deve esistere");
+
+        // Il ricalcolo non ha niente da fare: il formato nuovo non è suo.
+        assert!(legacy_armed_markers(&state).is_empty());
+
+        // Il censimento normale lo legge diretto, sessione compresa.
+        let markers = census(&state);
+        let found = markers.iter().find(|m| m.name == name);
+        assert_eq!(
+            found.map(|m| m.session.as_str()),
+            Some(&full[..8]),
+            "{markers:?}"
+        );
     }
 }
