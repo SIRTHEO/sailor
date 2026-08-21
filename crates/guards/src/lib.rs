@@ -10,6 +10,7 @@ pub mod cd_guard;
 pub mod chain;
 pub mod code_language;
 pub mod comment_refs;
+pub mod destructive_commands;
 pub mod duplication;
 pub mod handoff;
 pub mod hooks_off;
