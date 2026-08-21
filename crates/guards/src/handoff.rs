@@ -201,40 +201,61 @@ pub enum TurnStatus {
 /// senza il suo risultato prova che il turno non è finito, non la quiete del
 /// terminale — che è solo silenzio, non libertà.
 ///
-/// SI GUARDA SOLO L'ULTIMO RECORD, non l'intera storia: la domanda è «si può
-/// scrivere ORA», e un turno chiuso tre righe fa non conta se nel frattempo ne
-/// è arrivato un altro senza risposta. In dubbio — riga illeggibile, tipo
-/// sconosciuto — si risponde `Unknown`: «non lo so» pesa più di un'ipotesi.
+/// SI GUARDA L'ULTIMO RECORD **DI TURNO**, non l'ultima riga del file: la
+/// domanda è «si può scrivere ORA», e un turno chiuso tre righe fa non conta se
+/// nel frattempo ne è arrivato un altro senza risposta. In dubbio — riga
+/// illeggibile — si risponde `Unknown`: «non lo so» pesa più di un'ipotesi.
+///
+/// UN'ANNOTAZIONE IN CODA NON È UN TURNO, E QUESTA DISTINZIONE VALEVA LA
+/// STAFFETTA. Fino al 21/08/2026 qualunque tipo diverso da `assistant` e `user`
+/// dava `Unknown`, e i ganci di questa casa appendono in coda record che turni
+/// non sono — `system`, `attachment`, `atis-latch`, `pr-link`. L'esito non era
+/// «non lo so per ora» ma «non lo so mai più»: la condizione non poteva cadere
+/// da sola, perché la riga in coda non cambia da sé. Misurato lo stesso giorno:
+/// **588 rinvii identici in dieci ore** su una sessione, e nessuna sostituzione
+/// riuscita in ventun ore — quattro sessioni vive su quattro, tutte illeggibili
+/// per questa stessa ragione. Ora quelle righe si scavalcano e si cerca il
+/// turno vero sotto.
 pub fn turn_status_from_lines(lines: &[&str]) -> TurnStatus {
-    let Some(last) = lines.iter().rev().find(|l| !l.trim().is_empty()) else {
-        return TurnStatus::Unknown;
-    };
-    let Ok(d) = serde_json::from_str::<serde_json::Value>(last) else {
-        return TurnStatus::Unknown;
-    };
-    match d.get("type").and_then(|v| v.as_str()) {
-        Some("assistant") => {
-            let pending = d
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|c| c.as_array())
-                .map(|parts| {
-                    parts
-                        .iter()
-                        .any(|p| p.get("type").and_then(|v| v.as_str()) == Some("tool_use"))
-                })
-                .unwrap_or(false);
-            if pending {
-                TurnStatus::InProgress
-            } else {
-                TurnStatus::Ended
-            }
+    for line in lines.iter().rev() {
+        if line.trim().is_empty() {
+            continue;
         }
-        // Un `user` in coda — vero o iniettato da un gancio — aspetta ancora
-        // una risposta: l'assistente non ha ancora parlato dopo di lui.
-        Some("user") => TurnStatus::InProgress,
-        _ => TurnStatus::Unknown,
+        // Una riga che non si legge ferma la scansione invece di lasciarla
+        // proseguire: potrebbe essere un turno troncato a metà scrittura, e
+        // scavalcarla vorrebbe dire rispondere su ciò che c'era prima.
+        let Ok(d) = serde_json::from_str::<serde_json::Value>(line) else {
+            return TurnStatus::Unknown;
+        };
+        match d.get("type").and_then(|v| v.as_str()) {
+            Some("assistant") => {
+                let pending = d
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                    .map(|parts| {
+                        parts
+                            .iter()
+                            .any(|p| p.get("type").and_then(|v| v.as_str()) == Some("tool_use"))
+                    })
+                    .unwrap_or(false);
+                return if pending {
+                    TurnStatus::InProgress
+                } else {
+                    TurnStatus::Ended
+                };
+            }
+            // Un `user` in coda — vero o iniettato da un gancio — aspetta ancora
+            // una risposta: l'assistente non ha ancora parlato dopo di lui.
+            Some("user") => return TurnStatus::InProgress,
+            // Tutto il resto è annotazione, e si scavalca. NON è un elenco
+            // chiuso di tipi noti apposta: l'elenco chiuso è quello dei due tipi
+            // che un turno lo sono davvero, e un tipo nuovo inventato domani
+            // sarebbe di nuovo un blocco che non cade.
+            _ => continue,
+        }
     }
+    TurnStatus::Unknown
 }
 
 /// Vero **solo** se questa chiamata è l'invocazione della skill `handoff`.
@@ -1662,6 +1683,70 @@ mod tests {
         assert_eq!(turn_status_from_lines(&["ent\":\"x\"}]}}"]), TurnStatus::Unknown);
         let unknown_type = serde_json::json!({"type": "summary"}).to_string();
         assert_eq!(turn_status_from_lines(&[&unknown_type]), TurnStatus::Unknown);
+    }
+
+    #[test]
+    fn a_note_appended_by_a_hook_does_not_hide_the_turn_underneath() {
+        // IL CASO CHE HA FERMATO LA STAFFETTA PER VENTUN ORE. I ganci appendono
+        // in coda record che turni non sono, e il giudizio si fermava lì
+        // dicendo «non lo so» — per sempre, perche' quella riga non cambia da
+        // se'. Il turno vero e' sotto, ed e' chiuso.
+        let ended = assistant_line(serde_json::json!([{"type": "text", "text": "fatto"}]));
+        let notes = [
+            serde_json::json!({"type": "system", "content": "hook output"}).to_string(),
+            serde_json::json!({"type": "attachment", "path": "x.png"}).to_string(),
+            serde_json::json!({"type": "atis-latch"}).to_string(),
+            serde_json::json!({"type": "pr-link", "url": "https://x"}).to_string(),
+        ];
+        for note in &notes {
+            assert_eq!(
+                turn_status_from_lines(&[&ended, note]),
+                TurnStatus::Ended,
+                "un record `{note}` in coda non e' un turno"
+            );
+        }
+        // E in fila tutte insieme, che e' la forma vera sul disco.
+        let tail: Vec<&str> = std::iter::once(ended.as_str())
+            .chain(notes.iter().map(|s| s.as_str()))
+            .collect();
+        assert_eq!(turn_status_from_lines(&tail), TurnStatus::Ended);
+    }
+
+    #[test]
+    fn skipping_the_notes_does_not_declare_free_a_turn_still_running() {
+        // Il verso pericoloso: scavalcare le annotazioni non deve trasformare un
+        // turno vivo in un turno chiuso, altrimenti la staffetta scriverebbe
+        // addosso a chi sta lavorando — che e' peggio del blocco appena tolto.
+        let running = assistant_line(serde_json::json!([
+            {"type": "tool_use", "name": "Bash", "id": "t1", "input": {"command": "sleep 300"}}
+        ]));
+        let note = serde_json::json!({"type": "system", "content": "hook"}).to_string();
+        assert_eq!(turn_status_from_lines(&[&running, &note]), TurnStatus::InProgress);
+
+        let waiting = serde_json::json!({"type": "user", "message": {"content": "ciao"}}).to_string();
+        assert_eq!(turn_status_from_lines(&[&waiting, &note]), TurnStatus::InProgress);
+    }
+
+    #[test]
+    fn a_truncated_line_stops_the_scan_instead_of_being_stepped_over() {
+        // Una riga a meta' scrittura potrebbe essere il turno vero: scavalcarla
+        // vorrebbe dire rispondere su cio' che c'era prima, cioe' su un passato.
+        let ended = assistant_line(serde_json::json!([{"type": "text", "text": "fatto"}]));
+        assert_eq!(
+            turn_status_from_lines(&[&ended, "{\"type\":\"assis"]),
+            TurnStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn nothing_but_notes_is_still_unknown() {
+        // Senza nessun turno sotto non si sa niente, e resta «non lo so».
+        let notes = [
+            serde_json::json!({"type": "system"}).to_string(),
+            serde_json::json!({"type": "attachment"}).to_string(),
+        ];
+        let tail: Vec<&str> = notes.iter().map(|s| s.as_str()).collect();
+        assert_eq!(turn_status_from_lines(&tail), TurnStatus::Unknown);
     }
 
     #[test]
