@@ -100,10 +100,12 @@ mod tests {
         }
     }
 
-    /// MUTANTE: sostituire `if !out.status.success() { return None; }` con
-    /// `let _ = out.status;`. Eseguito: questa prova diventa rossa, perché su una
-    /// cartella che non esiste git esce con errore e stdout vuoto — e senza il
-    /// controllo si tornerebbe `Some("")`. Ripristinato.
+    /// MUTANTE DICHIARATO: sostituire `if !out.status.success() { return None; }`
+    /// con `let _ = out.status;`. Eseguito. **NON UCCIDE**, e lo scrivo invece
+    /// di sostituirlo: quando git fallisce non stampa niente su stdout, quindi è
+    /// il controllo sul nome vuoto a fermare il caso. Il controllo sul codice di
+    /// uscita è quindi una **ridondanza voluta** — la prima linea su un dato che
+    /// decide un blocco — non una riga che regge questa prova.
     #[test]
     fn a_directory_that_is_not_a_repository_has_no_branch() {
         assert!(current_branch("/questo/percorso/non/esiste").is_none());
