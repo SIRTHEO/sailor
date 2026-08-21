@@ -13,6 +13,7 @@
 //!     claude-hooks cd-guard      legge il JSON del gancio da stdin
 //!     claude-hooks --list        i ganci disponibili
 
+mod authorizations;
 mod duplication;
 mod handoff;
 mod handoff_on_stop;
@@ -197,6 +198,10 @@ const ALL_HOOKS: &[&str] = &[
     "memory-anchors",
     "memory-citation-gate",
     "stale-facts",
+    // Il sesto porto, il 21/08/2026: risponde a «questa cosa è autorizzata?»
+    // leggendo `state/autorizzazioni.jsonl`. Non giudica un evento della
+    // sessione, quindi non e' acceso da nessuna radice — sta in NOT_HOOKS.
+    "authorization-check",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -231,6 +236,7 @@ const NOT_HOOKS: &[&str] = &[
     "restart-count",
     "successor-probe",
     "stale-facts",
+    "authorization-check",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -393,6 +399,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("stale_facts.rs"),
             include_str!("../../guards/src/stale_facts.rs"),
         ],
+        "authorization-check" => &[include_str!("authorizations.rs")],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -1071,6 +1078,10 @@ fn run(which: &str) -> Result<i32, String> {
         // dicono di aver misurato qualcosa, e quando». Sta qui perché il suo
         // gemello Python non è più eseguibile da dentro una sessione.
         "stale-facts" => Ok(stale_facts::run()),
+        // Non è un gancio: risponde a «questa cosa è autorizzata?» leggendo il
+        // registro che il capitano scrive, senza che chi esegue debba
+        // chiedere a nessuno. La chiave arriva come argomento.
+        "authorization-check" => Ok(authorizations::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
