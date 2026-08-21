@@ -21,12 +21,43 @@
 //! la sessione per sempre, che è peggio della compattazione che evita:
 //! `stop_hook_active` ferma la catena al primo giro, e dopo `STOP_CAP` forzature
 //! senza consegna il gancio si arrende comunque.
+//!
+//! SOPRA IL GRADINO, LA CONSEGNA VALE FINCHÉ NON RIPRENDE A CRESCERE. Il
+//! gradino di blocco (96%) non scende mai da solo: bloccare sempre lì rendeva
+//! inutile ogni consegna scritta dopo — misurato, tre consegne corrette e
+//! zero effetto. Ora si registra il contesto di quando la consegna vale
+//! (`context_at_handoff`), e si torna a chiedere solo dopo una crescita
+//! significativa da lì (`LOCKOUT_GROWTH_FRACTION`) — decisione di Theo del
+//! 21/08/2026.
 
 use crate::handoff::{percent, thousands, Thresholds};
 use crate::handoff_required::over_lockout;
 
 /// Dopo tante forzature senza consegna il gancio si arrende e lascia fermare.
 pub const STOP_CAP: u32 = 3;
+
+/// Sopra il gradino di blocco, quanto deve crescere il contesto — come
+/// frazione del budget — prima che una consegna già scritta smetta di
+/// bastare di nuovo.
+///
+/// Fra il gradino (96%) e la compattazione automatica corre una fascia larga
+/// circa il 14% del budget (misurato: da 480k a ~550k su un budget di
+/// 500k). Un quinto di quella fascia lascia margine per continuare a
+/// lavorare senza chiedere una consegna a ogni turno, restando ben dentro il
+/// margine prima della compattazione.
+pub const LOCKOUT_GROWTH_FRACTION: f64 = 0.03;
+
+/// Il contesto è cresciuto abbastanza, dal riferimento registrato, da rendere
+/// di nuovo insufficiente una consegna già scritta. `reference == 0` significa
+/// «nessun riferimento ancora per questa consegna»: è il momento stesso della
+/// registrazione, quindi non è ancora crescita.
+fn grown_significantly(used: u64, reference: u64, budget: u64) -> bool {
+    if reference == 0 {
+        return false;
+    }
+    let threshold = (budget as f64 * LOCKOUT_GROWTH_FRACTION) as u64;
+    used.saturating_sub(reference) >= threshold
+}
 
 /// Il tetto di ripartenze predefinito, quando l'ambiente non ne impone un altro.
 ///
@@ -78,6 +109,12 @@ pub struct Facts<'a> {
     pub used: u64,
     /// La consegna c'è **ed è ancora quella del lavoro in corso**.
     pub handoff_valid: bool,
+    /// Il contesto registrato quando questa consegna ha cominciato a valere
+    /// sopra il gradino di blocco. Zero quando non c'è ancora un riferimento:
+    /// il chiamante lo registra nel momento in cui `decide` risponde
+    /// `Settle` in quello stato, così la crescita si misura da lì. Non
+    /// significa niente sotto il gradino, dove la consegna basta comunque.
+    pub context_at_handoff: u64,
     /// Quante volte la sessione è ripartita da un riassunto.
     pub restarts: u32,
     /// Il tetto oltre il quale le ripartenze da sole obbligano alla consegna.
@@ -104,10 +141,17 @@ pub fn decide(f: &Facts) -> Decision {
     // Garanzia soddisfatta: ci si ferma. Ma una consegna descrive il lavoro di
     // quel momento, quindi `handoff_valid` è già falso se dopo la consegna la
     // sessione è ripartita — il chiamante lo sa, qui si prende il verdetto.
-    // Non oltre il gradino di blocco, però: lì la consegna già scritta non
-    // basta più (`over_lockout`, gemello di `handoff_required`).
-    if f.handoff_valid && !over_lockout(f.used, f.thresholds.budget) {
-        return Decision::Settle;
+    if f.handoff_valid {
+        // Sotto il gradino di blocco la consegna basta sempre. Sopra, basta
+        // finché il contesto non è cresciuto in modo significativo dal
+        // riferimento — che qui, alla prima volta (`context_at_handoff == 0`),
+        // si sta registrando: vedi `grown_significantly`.
+        let past_lockout = over_lockout(f.used, f.thresholds.budget);
+        if !past_lockout
+            || !grown_significantly(f.used, f.context_at_handoff, f.thresholds.budget)
+        {
+            return Decision::Settle;
+        }
     }
 
     // Zero non è «contesto vuoto», è «non misurabile»: senza misura questo
@@ -134,21 +178,25 @@ pub fn decide(f: &Facts) -> Decision {
 /// ripartenze, che è la ragione meno visibile a chi legge.
 pub fn message(f: &Facts) -> String {
     // `decide` arriva qui con `handoff_valid` vero solo se il contesto è
-    // sopra il gradino di blocco (altrimenti si è già fermata con `Settle`):
-    // non manca la consegna, va aggiornata. Via d'uscita in testa, non in
+    // sopra il gradino di blocco E cresciuto in modo significativo dal
+    // riferimento registrato quando la consegna ha cominciato a valere lì:
+    // non manca la consegna, è invecchiata. Via d'uscita in testa, non in
     // coda — deve leggerla anche un agente senza nessuno a cui chiedere.
     if f.handoff_valid {
         let pct = percent(f.used, f.thresholds.budget);
         return format!(
-            "Aggiorna la consegna e chiudi il turno: invoca di nuovo la skill \
-             `handoff`, poi fermati. CONTESTO AL {pct}% del budget di qualita' \
-             di {} ({} token, budget ~{}), oltre il gradino di blocco (96%): \
-             sopra questa soglia la consegna gia' scritta non e' piu' un \
-             lasciapassare permanente — decisione di Theo del 20/08/2026. Il \
-             prossimo stop passa liscio solo dopo la nuova consegna.",
+            "Aggiorna la consegna e continua a lavorare: invoca `handoff`. \
+             CONTESTO AL {pct}% del budget di qualita' di {} ({} token, \
+             budget ~{}), oltre il gradino di blocco (96%) e cresciuto ancora \
+             in modo significativo da quando la consegna vale: quella \
+             scritta prima non basta piu'. Una consegna scritta ADESSO passa \
+             il prossimo stop, finche' il contesto non riprende a crescere \
+             cosi' — decisione di Theo del 21/08/2026. Il gancio forza \
+             ancora, poi si arrende (dopo {} forzature).",
             f.thresholds.model,
             thousands(f.used),
-            thousands(f.thresholds.budget)
+            thousands(f.thresholds.budget),
+            STOP_CAP
         );
     }
     let head = if f.restarts >= f.restart_cap {
@@ -202,6 +250,7 @@ mod tests {
             thresholds: t,
             used,
             handoff_valid: false,
+            context_at_handoff: 0,
             restarts: 0,
             restart_cap: RESTART_CAP_DEFAULT,
             stop_blocks_so_far: 0,
@@ -306,8 +355,8 @@ mod tests {
         // MUTANTE: rispondere `Pass` qui lascerebbe il presidio verde e inerte —
         // nessuno armerebbe il successore e nessuno chiuderebbe la scheda. È
         // esattamente il modo in cui il congedo è stato rotto il 16/08/2026.
-        // I due valori restano sotto il gradino di blocco (96%, qui 480_000):
-        // sopra, la consegna valida smette di bastare da sola.
+        // I due valori restano sotto il gradino di blocco (96%, qui 480_000),
+        // dove la consegna valida basta senza bisogno di un riferimento.
         let t = soglie();
         for used in [100_000, 470_000] {
             let mut f = fatti(&t, used);
@@ -321,35 +370,51 @@ mod tests {
     }
 
     #[test]
-    fn above_the_lockout_step_a_valid_handoff_does_not_settle_anymore() {
-        // Il difetto misurato su 450 sessioni: fra 450k (obbligo) e 550k
-        // (compattazione) una sessione con `handoff_valid` saliva indisturbata.
-        // Sopra il gradino il gemello di `handoff_required` torna a bloccare
-        // anche lo Stop, e la via d'uscita sta in testa al messaggio.
-        let t = soglie();
-        let mut f = fatti(&t, 480_000);
-        f.handoff_valid = true;
-        match decide(&f) {
-            Decision::Block(m) => {
-                assert!(
-                    m.starts_with("Aggiorna la consegna e chiudi il turno"),
-                    "la via d'uscita va in testa, non in coda: {m}"
-                );
-                assert!(m.contains("`handoff`"), "{m}");
-                assert!(m.contains("480,000 token"), "{m}");
-            }
-            other => panic!("atteso un blocco anche a consegna fatta, non {other:?}"),
-        }
-    }
-
-    #[test]
-    fn the_lockout_step_triggers_on_the_exact_threshold_not_after() {
+    fn crossing_the_lockout_step_settles_once_more_and_registers_a_reference() {
+        // Il difetto misurato: fra il gradino (96%) e la compattazione una
+        // consegna scritta lì non serviva a niente, perché bloccava comunque.
+        // Adesso il primo giro sopra il gradino registra il riferimento e si
+        // ferma — è la garanzia che la consegna scritta lì vale davvero.
         let t = soglie();
         let mut f = fatti(&t, 479_999);
         f.handoff_valid = true;
-        assert_eq!(decide(&f), Decision::Settle, "un token sotto: ci si ferma ancora");
+        assert_eq!(decide(&f), Decision::Settle, "un token sotto: bastava già");
         f.used = 480_000;
-        assert!(matches!(decide(&f), Decision::Block(_)), "sul gradino esatto: nega");
+        assert_eq!(
+            decide(&f),
+            Decision::Settle,
+            "sul gradino esatto, senza riferimento ancora: si registra e si ferma"
+        );
+    }
+
+    #[test]
+    fn growth_from_the_registered_reference_blocks_again() {
+        // Con un riferimento già registrato (consegna confermata sopra il
+        // gradino a 480_000), il blocco torna solo dopo una crescita
+        // significativa da lì — non al primo token in più.
+        let t = soglie();
+        let mut f = fatti(&t, 480_000);
+        f.handoff_valid = true;
+        f.context_at_handoff = 480_000;
+        assert_eq!(decide(&f), Decision::Settle, "nessuna crescita ancora");
+        f.used = 494_999; // +14_999: sotto la soglia del 3% di 500_000 (15_000)
+        assert_eq!(decide(&f), Decision::Settle, "cresciuto, ma non abbastanza");
+        f.used = 495_000; // +15_000: esattamente la soglia
+        match decide(&f) {
+            Decision::Block(m) => {
+                assert!(
+                    m.starts_with("Aggiorna la consegna"),
+                    "la via d'uscita va in testa, non in coda: {m}"
+                );
+                assert!(m.contains("`handoff`"), "{m}");
+                assert!(m.contains("495,000 token"), "{m}");
+                assert!(
+                    m.contains("passa il prossimo stop"),
+                    "una consegna nuova adesso deve promettere di bastare: {m}"
+                );
+            }
+            other => panic!("atteso un blocco dopo la crescita, non {other:?}"),
+        }
     }
 
     #[test]
