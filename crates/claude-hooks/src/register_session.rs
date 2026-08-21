@@ -332,6 +332,18 @@ enum SessionLiveness {
 /// si sa se è viva. Non è una stima del tempo che vive una sessione: è il tempo
 /// oltre il quale la sporcizia costa più del rischio — il 18/08/2026 sul disco
 /// c'erano 176 marcatori fermi da quattro giorni.
+///
+/// QUESTA SOGLIA MORDE UNA VOLTA SOLA, E VA SAPUTO. `forget_session` gira al
+/// `SessionEnd` di quella sessione e mai più: **nessuno ripassa a ricontrollare
+/// l'età**, perché in questa casa non esiste un raccoglitore — chi scrive un
+/// marcatore lo butta lui. Quindi ciò che al proprio congedo è ancora fresco e
+/// non si sa vivo resta sul disco per sempre, non per un giorno.
+///
+/// È una scelta, non una svista, ed è asimmetrica apposta: un marcatore orfano
+/// costa spazio e nessuno lo interroga, mentre cancellare quello di una sessione
+/// viva le toglie la consegna e ferma il ricambio. Il raccoglitore che chiuderebbe
+/// l'altra metà è depositato in coda: è un presidio che cancella, e passa da un
+/// verdetto suo prima di essere scritto.
 const UNKNOWN_GRACE_SECS: u64 = 24 * 60 * 60;
 
 /// PURA: si cancella questo file? Dipende da cosa si sa e da quanto è vecchio.
@@ -351,23 +363,58 @@ fn should_remove(liveness: SessionLiveness, file_age_secs: u64) -> bool {
 /// PURA: cosa dice il record, dato il processo che ci sta scritto e l'esito
 /// della verifica su quel processo. Separata dal sistema apposta, così i tre
 /// esiti si provano senza processi veri.
-fn liveness_from(pid: Option<u32>, process_is_claude: Option<bool>) -> SessionLiveness {
-    match (pid, process_is_claude) {
+fn liveness_from(pid: Option<u32>, lookup: ProcessLookup) -> SessionLiveness {
+    match (pid, lookup) {
         (None, _) => SessionLiveness::Unknown,
-        (Some(_), Some(true)) => SessionLiveness::Alive,
-        (Some(_), Some(false) | None) => SessionLiveness::Gone,
+        (Some(_), ProcessLookup::Unavailable) => SessionLiveness::Unknown,
+        (Some(_), ProcessLookup::IsClaude) => SessionLiveness::Alive,
+        (Some(_), ProcessLookup::NotFound | ProcessLookup::OtherProgram) => SessionLiveness::Gone,
     }
 }
 
-/// Il processo scritto nel record è vivo? L'IMPURITÀ VIVE SOLO QUI.
+/// Cosa ha risposto la domanda «questo processo è la sessione?».
+///
+/// I due modi di non avere risposta sono DIVERSI e per due giorni sono stati lo
+/// stesso: `ps` che gira e dice che il pid non c'è è **una risposta** («morto»);
+/// `ps` che non parte affatto — sandbox, risorse esaurite, `PATH` svuotato — non
+/// lo è. Confonderli rimetteva in piedi il difetto che questo modulo esiste per
+/// chiudere: bastava che `ps` non partisse per cancellare il registro di una
+/// sessione viva, e senza nemmeno il giorno di grazia.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessLookup {
+    /// Il processo c'è e si chiama `claude`.
+    IsClaude,
+    /// Il processo c'è ma è un altro programma: il pid è stato riciclato.
+    OtherProgram,
+    /// `ps` ha risposto, e quel pid non esiste.
+    NotFound,
+    /// Non si è potuto chiedere: non è un «no», è un «non lo so».
+    Unavailable,
+}
+
+/// Il processo scritto nel record è la sessione? L'IMPURITÀ VIVE SOLO QUI.
 ///
 /// Non basta che il pid esista: un numero si ricicla, e un pid riassegnato a un
 /// altro programma dichiarerebbe viva una sessione finita. Si guarda il nome,
 /// con lo stesso confronto che usa chi il pid l'ha scritto.
-fn session_process_is_claude(pid: u32) -> Option<bool> {
-    match process_info(pid) {
-        Some((_, _, comm)) => Some(is_claude_process(&comm)),
-        None => Some(false),
+fn look_up_session_process(pid: u32) -> ProcessLookup {
+    let Ok(output) = std::process::Command::new("ps")
+        .args(["-o", "pid=,ppid=,comm=", "-p", &pid.to_string()])
+        .output()
+    else {
+        return ProcessLookup::Unavailable; // `ps` non è partito: non si sa niente
+    };
+    if !output.status.success() {
+        return ProcessLookup::NotFound; // ha risposto: quel pid non c'è
+    }
+    let line = String::from_utf8_lossy(&output.stdout);
+    let comm = line.trim_start().splitn(3, char::is_whitespace).nth(2).map(str::trim);
+    match comm {
+        Some(c) if c.is_empty() => ProcessLookup::Unavailable,
+        // Ha risposto ma la riga non si legge: nemmeno questo è un «no».
+        None => ProcessLookup::Unavailable,
+        Some(c) if is_claude_process(c) => ProcessLookup::IsClaude,
+        Some(_) => ProcessLookup::OtherProgram,
     }
 }
 
@@ -380,8 +427,8 @@ fn liveness_of(sess: &str) -> SessionLiveness {
         return SessionLiveness::Unknown;
     };
     let pid = record.get("session_pid").and_then(|v| v.as_u64()).map(|p| p as u32);
-    let verdict = pid.and_then(session_process_is_claude);
-    liveness_from(pid, verdict)
+    let lookup = pid.map_or(ProcessLookup::Unavailable, look_up_session_process);
+    liveness_from(pid, lookup)
 }
 
 /// Da quanti secondi non si tocca questo file. `None` se non esiste o se
@@ -695,11 +742,33 @@ mod tests {
 
     #[test]
     fn the_three_answers_are_three_and_a_missing_field_is_not_a_death() {
-        assert_eq!(liveness_from(None, None), SessionLiveness::Unknown);
-        assert_eq!(liveness_from(None, Some(true)), SessionLiveness::Unknown);
-        assert_eq!(liveness_from(Some(42), Some(true)), SessionLiveness::Alive);
-        assert_eq!(liveness_from(Some(42), Some(false)), SessionLiveness::Gone);
-        assert_eq!(liveness_from(Some(42), None), SessionLiveness::Gone);
+        assert_eq!(
+            liveness_from(None, ProcessLookup::Unavailable),
+            SessionLiveness::Unknown
+        );
+        assert_eq!(liveness_from(None, ProcessLookup::IsClaude), SessionLiveness::Unknown);
+        assert_eq!(liveness_from(Some(42), ProcessLookup::IsClaude), SessionLiveness::Alive);
+        assert_eq!(liveness_from(Some(42), ProcessLookup::NotFound), SessionLiveness::Gone);
+        // Un pid riciclato da un altro programma non e' la sessione.
+        assert_eq!(
+            liveness_from(Some(42), ProcessLookup::OtherProgram),
+            SessionLiveness::Gone
+        );
+    }
+
+    #[test]
+    fn a_question_that_could_not_be_asked_is_not_an_answer() {
+        // IL DIFETTO TROVATO DAL VERDETTO INDIPENDENTE. `ps` che risponde «quel
+        // pid non c'e'» e `ps` che non parte affatto erano la stessa cosa, e
+        // quella cosa era «morta»: bastava un `PATH` svuotato per cancellare il
+        // registro di una sessione viva, senza nemmeno il giorno di grazia.
+        assert_eq!(
+            liveness_from(Some(42), ProcessLookup::Unavailable),
+            SessionLiveness::Unknown,
+            "non aver potuto chiedere non e' una morte"
+        );
+        // E il giorno di grazia protegge cio' che e' fresco, invece di buttarlo.
+        assert!(!should_remove(SessionLiveness::Unknown, 60));
     }
 
     #[test]
@@ -713,12 +782,15 @@ mod tests {
 
     #[test]
     fn a_pid_that_cannot_exist_is_not_a_live_session() {
-        // Il verso che conta: se `ps` non risponde, la risposta e' «non c'e'»,
-        // non «non lo so» — altrimenti nessun record verrebbe mai buttato.
-        assert_eq!(session_process_is_claude(999_999), Some(false));
+        // Il verso che conta: se `ps` gira e dice che quel pid non c'e', quella
+        // e' una risposta — altrimenti nessun record verrebbe mai buttato.
+        assert_eq!(look_up_session_process(999_999), ProcessLookup::NotFound);
         // E il processo di questa batteria esiste ma non si chiama `claude`:
         // un pid vivo non basta, il nome discrimina.
-        assert_eq!(session_process_is_claude(std::process::id()), Some(false));
+        assert_eq!(
+            look_up_session_process(std::process::id()),
+            ProcessLookup::OtherProgram
+        );
     }
 
     /// Un segnale di ripresa fresco, nella forma che scrive la staffetta.
