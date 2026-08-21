@@ -190,7 +190,18 @@ use crate::handoff::state_dir;
 /// consumandosi. Separare le due cose introdurrebbe una finestra in cui due
 /// eventi ravvicinati passano entrambi, ed è esattamente il caso che questo
 /// freno esiste per chiudere.
-fn already_armed(path: &str, session: &str) -> bool {
+///
+/// SCRIVE ANCHE LA SESSIONE, non solo il percorso — decisione del capitano,
+/// 21/08/2026 15:55. Il nome del marcatore porta solo l'impronta, e
+/// dall'impronta non si torna indietro: senza l'identificativo dentro, chi
+/// raccoglie questi marcatori non ha altra via che ricalcolarla per ogni
+/// sessione viva. Con l'identificativo accanto al percorso, il marcatore
+/// diventa raccoglibile diretto, come tutti gli altri.
+///
+/// `pub(crate)` perché il collaudo del raccoglitore vuole scrivere un
+/// marcatore vero — non un contenuto fabbricato a mano — per provare che chi
+/// legge e chi scrive concordano sul formato.
+pub(crate) fn already_armed(path: &str, session: &str) -> bool {
     let marker = state_dir().join(format!(
         "successore-armato-{}",
         guards::successor::armed_fingerprint(path, session)
@@ -199,7 +210,7 @@ fn already_armed(path: &str, session: &str) -> bool {
         return true;
     }
     let _ = fs::create_dir_all(state_dir());
-    let _ = fs::write(&marker, format!("{path}\n"));
+    let _ = fs::write(&marker, format!("{path}\n{session}\n"));
     false
 }
 
