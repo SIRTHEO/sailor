@@ -153,8 +153,9 @@ mod tests {
 
     #[test]
     fn an_iso_future_time_is_rejected() {
-        // Mutazione che lo rende verde: cambiare `delta > tolerance_minutes`
-        // in `delta > tolerance_minutes + 1000`.
+        // Mutazione che lo rende rosso: cambiare `delta > tolerance_minutes`
+        // in `delta > tolerance_minutes + 1000`. (Diceva «verde», ed era la
+        // parola sbagliata: eseguita, la mutazione fa cadere sei casi.)
         let text = frontmatter_doc("quando: 2026-08-21 12:05");
         let msg = judge_frontmatter_times(&text, now(), TOLERANCE_MINUTES);
         assert!(msg.is_some());
@@ -163,9 +164,10 @@ mod tests {
 
     #[test]
     fn a_slash_future_time_is_rejected() {
-        // Mutazione che lo rende verde: far restituire sempre `None` da
+        // Mutazione che lo rende rosso: far restituire sempre `None` da
         // `slash_dt_re()` invece della regex vera, così il secondo formato
-        // smette di essere riconosciuto.
+        // smette di essere riconosciuto. (Diceva «verde», ed era la parola
+        // sbagliata: eseguita, il caso cade.)
         let text = frontmatter_doc("presa: 21/08/2026, ore 12:05");
         assert!(judge_frontmatter_times(&text, now(), TOLERANCE_MINUTES).is_some());
     }
@@ -189,8 +191,14 @@ mod tests {
 
     #[test]
     fn an_unreadable_date_is_silently_accepted() {
-        // Mutazione che lo rende rosso: far riconoscere come ora un valore
-        // qualunque, cioè togliere il fallimento di `parse_timestamp`.
+        // Mutazione che lo rende rosso: far restituire a `parse_timestamp` un
+        // istante **futuro** fisso invece di fallire.
+        //
+        // Il «futuro» non è un dettaglio, ed è una correzione a me stesso: qui
+        // c'era scritto «un valore qualunque», e con un istante passato il caso
+        // resta verde — perché a negare è il verso, non il riconoscimento. Una
+        // dichiarazione vaga sul punto che conta è lo stesso difetto che questo
+        // commento denuncia due righe sotto, commesso nel gesto di ripararlo.
         //
         // NON PROVA L'ANCORAGGIO, e il suo commento diceva di sì: questo testo
         // non ha una sola cifra, quindi resta muto anche con le espressioni
