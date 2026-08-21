@@ -1075,8 +1075,13 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // battuta e mai inviata non se ne va da sola, e un pannello che non si
     // riesce a leggere nemmeno: quelle due si ripetono ogni minuto per sempre e
     // la sessione resta irrigenerabile finché non passa qualcuno — guasti.
-    // Misurato sul registro il 21/08/2026: le sequenze di rinvii che poi si sono
-    // sbloccate arrivano a 27; quelle mai finite stanno a 316 e 495.
+    //
+    // Il caso vivo, misurato il 21/08/2026 alle 09:47 e ancora in corso mentre
+    // si scrive: una sessione ferma sul quarto ramo da **535 giri consecutivi**,
+    // nove ore, senza che il rinvio si avvicini di un passo a scadere. Un
+    // rinvio che si ripete su una condizione che non scade non è un rinvio.
+    // (Una misura più fine è stata provata e non si è riprodotta fra due
+    // metodi: qui resta l'ordine di grandezza, che regge a entrambi.)
     //
     // Il comportamento non cambia di una virgola: si rinvia negli stessi quattro
     // casi di prima, con le stesse parole. Cambia solo che due righe portano il
@@ -1346,12 +1351,18 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
                     rec.worktree
                 ),
             );
+            // LA RIGA PORTA `sess=`, e non è cosmesi. Chi conta le ripetizioni
+            // separa un guasto dall'altro col soggetto che trova scritto, e
+            // l'albero da solo non basta: senza il nome della sessione, rese
+            // cieche di alberi diversi finivano tutte nella stessa voce. È il
+            // guasto più raro e il più serio, quindi è quello che meno può
+            // permettersi di essere confuso con un altro.
             log_guasto(
                 "staffetta-cieca",
                 &format!(
-                    "STAFFETTA CIECA su {}: {n} tentativi di fila senza prova che la \
-                     sostituzione sia avvenuta. Riprovo da sola fra {} h. Per ripartire \
-                     subito: rm {} {}",
+                    "STAFFETTA CIECA sess={sess} su {}: {n} tentativi di fila senza prova \
+                     che la sostituzione sia avvenuta. Riprovo da sola fra {} h. Per \
+                     ripartire subito: rm {} {}",
                     rec.worktree,
                     round_half_to_even(BLIND_STOP_RESET_SEC / 3600.0),
                     marker.display(),
