@@ -43,10 +43,16 @@ fn folder() -> PathBuf {
 /// zero: non perché i prompt manchino, ma perché nessuno li riconosce. Misurato
 /// il 21/08/2026 dando in pasto al binario in servizio un payload di
 /// `PermissionRequest` vero.
+/// IL NOME DELL'EVENTO VALE QUANTO LA PAROLA CORTA, e non è tolleranza gratuita:
+/// il cablaggio di questa fase non è ancora stato scritto, e l'altro gancio che
+/// riceve una fase (`comment-refs`) passa `PreToolUse`/`PostToolUse` così come
+/// arrivano. Chi cablerà seguendo quello schema scriverebbe `PermissionRequest`,
+/// cadrebbe nel ripiego qui sotto **senza un errore**, e il registro conterebbe
+/// zero prompt: un silenzio che si legge come «i prompt non ci sono».
 pub fn event_name(phase: &str) -> &'static str {
     match phase {
-        "pre" => "tool_start",
-        "permission" => "permission_request",
+        "pre" | "PreToolUse" => "tool_start",
+        "permission" | "PermissionRequest" => "permission_request",
         _ => "tool_complete",
     }
 }
@@ -111,6 +117,29 @@ fn truncate(v: &Value, max: usize) -> String {
     text.chars().take(max).collect()
 }
 
+/// Quale corpo porta la riga: l'ingresso o l'esito, mai tutti e due.
+///
+/// Il corpo non si registra su entrambe le fasi: gonfierebbe il file di un
+/// centinaio di megabyte al mese senza aggiungere niente.
+///
+/// LA RICHIESTA DI PERMESSO PORTA L'INGRESSO, NON L'ESITO, e senza quello la
+/// riga non serve a niente: l'esito lì è vuoto per forza — il permesso non è
+/// ancora stato dato — mentre la domanda che si vuole contare è **quale
+/// comando** ha fatto comparire il prompt. Misurato il 21/08/2026: la riga
+/// usciva con l'esito vuoto e il comando da nessuna parte.
+///
+/// Sta fuori da `record` per una ragione sola: `record` scrive su disco sotto
+/// `HOME` e una prova che lo chiami dovrebbe spostare `HOME` a tutti i casi che
+/// girano insieme. Così la scelta si prova per quello che è — una decisione su
+/// due valori — e il caso che la copre può diventare rosso.
+fn body_field(event: &str, input: &Value, output: &Value) -> (&'static str, Field) {
+    if event == "tool_start" || event == "permission_request" {
+        ("input", Field::Text(truncate(input, MAX_BODY)))
+    } else {
+        ("output", Field::Text(truncate(output, MAX_BODY)))
+    }
+}
+
 /// Registra la chiamata. Un ingresso illeggibile non si perde: si scrive come
 /// `parse_error`, perché un buco nella raccolta è indistinguibile da un periodo
 /// in cui non è successo niente.
@@ -169,19 +198,7 @@ pub fn record(phase: &str, raw: &str) {
         ("tool", Field::Text(tool)),
         ("session", Field::Text(session)),
     ];
-    // Il corpo non si registra su entrambe le fasi: gonfierebbe il file di un
-    // centinaio di megabyte al mese senza aggiungere niente.
-    //
-    // LA RICHIESTA DI PERMESSO PORTA L'INGRESSO, NON L'ESITO, e senza quello la
-    // riga non serve a niente: l'esito lì è vuoto per forza — il permesso non è
-    // ancora stato dato — mentre la domanda che si vuole contare è **quale
-    // comando** ha fatto comparire il prompt. Misurato il 21/08/2026: la riga
-    // usciva con l'esito vuoto e il comando da nessuna parte.
-    if event == "tool_start" || event == "permission_request" {
-        fields.push(("input", Field::Text(truncate(&input, MAX_BODY))));
-    } else {
-        fields.push(("output", Field::Text(truncate(&output, MAX_BODY))));
-    }
+    fields.push(body_field(event, &input, &output));
     if let Some(ok) = ok {
         fields.push(("ok", Field::Bool(ok)));
     }
@@ -308,5 +325,44 @@ mod tests {
         assert_eq!(event_name("post"), "tool_complete");
         // Una fase che nessuno conosce resta il completamento, com'era.
         assert_eq!(event_name("qualunque-altra"), "tool_complete");
+    }
+
+    /// Il nome dell'evento vale quanto la parola corta.
+    ///
+    /// MUTANTE: togliendo `PermissionRequest` dal suo ramo, la riga torna a
+    /// chiamarsi `tool_complete` e questo caso va rosso. Serve perché il
+    /// cablaggio di questa fase non è ancora scritto, e l'altro gancio che
+    /// riceve una fase passa il nome dell'evento tale e quale: chi cablasse così
+    /// avrebbe un registro muto **senza nessun errore**.
+    #[test]
+    fn the_event_name_works_as_well_as_the_short_word() {
+        assert_eq!(event_name("PermissionRequest"), "permission_request");
+        assert_eq!(event_name("PreToolUse"), "tool_start");
+        assert_eq!(event_name("PostToolUse"), "tool_complete");
+    }
+
+    /// La riga del permesso porta il comando, quella del completamento l'esito.
+    ///
+    /// MUTANTE: togliendo `|| event == "permission_request"` da `body_field`, la
+    /// richiesta di permesso finisce nel ramo dell'esito — che lì è vuoto per
+    /// forza — e questo caso va rosso. Senza di lui quella riga non era coperta
+    /// da niente: si poteva disfare la metà utile della modifica e la batteria
+    /// restava tutta verde.
+    #[test]
+    fn the_permission_line_carries_the_command_not_the_outcome() {
+        let input = json!({"command": "scw instance server list"});
+        let output = json!("ok");
+
+        let (name, value) = body_field("permission_request", &input, &output);
+        assert_eq!(name, "input");
+        let mut written = String::new();
+        value.write_to(&mut written);
+        assert!(
+            written.contains("scw instance server list"),
+            "il comando deve stare nella riga: {written}"
+        );
+
+        assert_eq!(body_field("tool_complete", &input, &output).0, "output");
+        assert_eq!(body_field("tool_start", &input, &output).0, "input");
     }
 }
