@@ -1881,6 +1881,12 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
     let live: Option<Vec<String>> = terminals
         .as_ref()
         .map(|ts| ts.iter().map(|t| t.handle.clone()).collect());
+    // Le schede vive escono dalla STESSA lettura dei manici, e portano con sé lo
+    // stesso «non si è potuto leggere»: chiederle a parte aprirebbe la finestra
+    // in cui i manici sono di adesso e le schede di un istante fa.
+    let live_tabs: Option<Vec<String>> = terminals
+        .as_ref()
+        .map(|ts| ts.iter().map(|t| t.tab_id.clone()).collect());
 
     let mut files: Vec<PathBuf> = fs::read_dir(live_dir())
         .map(|d| {
@@ -1933,7 +1939,9 @@ pub fn step_with(dry_run: bool, orca: OrcaFn) -> i32 {
                     session: &rec.session,
                     handle: &rec.handle,
                     worktree: &rec.worktree,
+                    tab_id: &rec.tab_id,
                     live_handles: live.as_deref(),
+                    live_tabs: live_tabs.as_deref(),
                     opted_out,
                     in_cooldown,
                     armed_successor: &armed,

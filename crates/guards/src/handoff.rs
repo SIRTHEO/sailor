@@ -542,10 +542,29 @@ pub struct SessionFacts<'a> {
     pub session: &'a str,
     pub handle: &'a str,
     pub worktree: &'a str,
+    /// La scheda su cui vive la sessione, vuota per i record scritti prima che
+    /// venisse salvata.
+    ///
+    /// È L'IDENTITÀ CHE SOPRAVVIVE, e il manico no: `ORCA_TERMINAL_HANDLE` è la
+    /// fotografia dell'incarnazione che c'era all'avvio, e dopo un riattacco
+    /// Orca ne conia un altro. Chi *scrive* il record lo sa e lo dichiara — è il
+    /// motivo per cui il record porta anche la scheda — e fino al 21/08/2026 chi
+    /// *cancellava* guardava solo il manico: la sessione `04985c6a` è sparita
+    /// dal registro alle 08:57 mentre lavorava.
+    ///
+    /// **NON È SOLO DEI RECORD VECCHI, ed è la riga che manca a chi si fida di
+    /// questa protezione**: chi scrive il record si accontenta di *una* delle due
+    /// chiavi del pannello, quindi una sessione nata oggi a cui Orca passa solo
+    /// il manico ha la scheda vuota e resta esposta al difetto originale. La
+    /// protezione copre un sottoinsieme dei record, non tutti quelli nuovi.
+    pub tab_id: &'a str,
     /// `None` = l'elenco dei pannelli **non si è potuto leggere**. Non è «sono
     /// morti tutti»: la differenza vale un registro di sessioni cancellato ogni
     /// minuto, ed è già costata 276 giri tutti «riusciti».
     pub live_handles: Option<&'a [String]>,
+    /// Le schede vive adesso, con lo stesso contratto di `live_handles`: `None`
+    /// = **non si è potuto leggere**, mai «sono morte tutte».
+    pub live_tabs: Option<&'a [String]>,
     pub opted_out: bool,
     pub in_cooldown: bool,
     /// L'handle del successore che un altro meccanismo ha già aperto, se vivo.
@@ -642,7 +661,26 @@ pub fn evaluate(f: &SessionFacts) -> (Action, String) {
     let Some(live) = f.live_handles else {
         return (Action::Skip, "elenco dei terminali illeggibile".into());
     };
-    if !live.iter().any(|h| h == f.handle) {
+    // SI GUARDANO TUTTE E DUE LE IDENTITÀ, e si cancella solo se nessuna delle
+    // due risulta viva. Il manico da solo è una fotografia che scade a ogni
+    // riattacco (vedi `tab_id` qui sopra): il 21/08/2026 una sessione di guardia
+    // è diventata invisibile mentre lavorava, e la sua scheda era lì nel record.
+    // Il caso che il chiamante non ripara ririsolvendo il manico è la scheda con
+    // più pannelli — `terminal split` — dove il candidato non è unico e
+    // `resolve_terminal_handle` tace apposta.
+    //
+    // ILLEGGIBILE NON È «MORTA»: se l'elenco delle schede non si è potuto
+    // leggere, la scheda del record vale come viva e il record resta. È la
+    // stessa prudenza di `live_handles` due righe sopra, e lo stesso verso in
+    // cui sbagliare — un record di troppo si riesamina al giro dopo, uno
+    // cancellato per errore rende la sessione invisibile per sempre, perché
+    // `sessioni-vive/<sess>.json` si riscrive solo a `SessionStart`.
+    let tab_alive = !f.tab_id.is_empty()
+        && match f.live_tabs {
+            None => true,
+            Some(tabs) => tabs.iter().any(|t| t == f.tab_id),
+        };
+    if !live.iter().any(|h| h == f.handle) && !tab_alive {
         return (Action::Clean, "terminale non piu' vivo".into());
     }
     if f.in_cooldown {
@@ -1046,6 +1084,62 @@ mod tests {
         f.live_handles = None;
         assert_eq!(evaluate(&f).0, Action::Skip);
         f.live_handles = Some(&live);
+        assert_eq!(evaluate(&f).0, Action::Clean);
+    }
+
+    #[test]
+    fn a_live_tab_saves_the_record_of_a_dead_handle() {
+        // DUE RECORD UGUALI TRANNE LA SCHEDA, e il manico morto in tutti e due:
+        // quello con la scheda viva resta, l'altro se ne va. È il caso vero del
+        // 21/08/2026 — la sessione `04985c6a`, cancellata alle 08:57 mentre
+        // lavorava perché il suo pannello era rinato con un manico nuovo.
+        //
+        // L'elenco delle schede ne porta più di una di proposito: con una sola,
+        // scambiare `any` per `all` non farebbe rosso nessuno di questi casi, e
+        // la condizione passerebbe da «una qualunque combacia» a «tutte devono»
+        // senza che niente lo denunci. Con l'elenco a una voce sola le due cose
+        // sono indistinguibili.
+        let t = opus5_thresholds();
+        let live = vec!["term_altro".to_string()];
+        let tabs = vec!["tab-di-un-altro".to_string(), "tab-viva".to_string()];
+        let mut f = full_session(&live, &t);
+        f.handle = "term_morto";
+        f.live_tabs = Some(&tabs);
+
+        f.tab_id = "tab-viva";
+        assert_ne!(evaluate(&f).0, Action::Clean, "la scheda viva salva il record");
+
+        f.tab_id = "tab-morta";
+        assert_eq!(evaluate(&f).0, Action::Clean, "ne' manico ne' scheda: si butta");
+    }
+
+    #[test]
+    fn an_unreadable_tab_list_does_not_mean_all_tabs_are_dead() {
+        // La stessa prudenza di `live_handles`: «non ho potuto leggere» non è
+        // «sono morte tutte». Con l'elenco assente il record resta.
+        let t = opus5_thresholds();
+        let live = vec!["term_altro".to_string()];
+        let mut f = full_session(&live, &t);
+        f.handle = "term_morto";
+        f.tab_id = "tab-qualunque";
+        f.live_tabs = None;
+        assert_ne!(evaluate(&f).0, Action::Clean);
+    }
+
+    #[test]
+    fn a_record_without_a_tab_is_still_judged_on_the_handle() {
+        // I record scritti prima che la scheda venisse salvata non hanno niente
+        // che li protegga, e devono continuare a comportarsi come prima:
+        // altrimenti il registro non si ripulisce più.
+        let t = opus5_thresholds();
+        let live = vec!["term_altro".to_string()];
+        let tabs = vec!["tab-viva".to_string()];
+        let mut f = full_session(&live, &t);
+        f.handle = "term_morto";
+        f.tab_id = "";
+        f.live_tabs = Some(&tabs);
+        assert_eq!(evaluate(&f).0, Action::Clean);
+        f.live_tabs = None;
         assert_eq!(evaluate(&f).0, Action::Clean);
     }
 

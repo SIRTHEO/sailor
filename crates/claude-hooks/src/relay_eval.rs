@@ -22,8 +22,14 @@ use std::io::Read;
 /// morti tutti». La distinzione è il cuore di ciò che si sta confrontando, e
 /// `null` deve arrivare fin qui senza diventare una lista vuota per strada.
 fn live_handles(case: &serde_json::Value) -> Option<Vec<String>> {
-    let v = case.get("live")?;
-    let items = v.as_array()?;
+    strings(case, "live")
+}
+
+/// Stesso contratto per le schede vive, sotto la chiave `tabs`: assente o
+/// `null` = elenco **illeggibile**, e la distinzione deve arrivare intatta fino
+/// a `evaluate`, che su di essa decide se un record si cancella.
+fn strings(case: &serde_json::Value, key: &str) -> Option<Vec<String>> {
+    let items = case.get(key)?.as_array()?;
     Some(
         items
             .iter()
@@ -55,11 +61,14 @@ pub fn run() -> i32 {
         let t = crate::handoff::thresholds(transcript);
         let used = crate::handoff::context_used(transcript, text(&case, "memo_session"));
         let live = live_handles(&case);
+        let tabs = strings(&case, "tabs");
         let facts = SessionFacts {
             session: text(&case, "session"),
             handle: text(&case, "handle"),
             worktree: text(&case, "worktree"),
+            tab_id: text(&case, "tab"),
             live_handles: live.as_deref(),
+            live_tabs: tabs.as_deref(),
             opted_out: flag(&case, "opted_out"),
             in_cooldown: flag(&case, "in_cooldown"),
             armed_successor: text(&case, "armed"),
