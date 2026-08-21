@@ -623,7 +623,49 @@ pub const PORTED_FALLBACK: &str = "part of a ported fallback";
 pub const DISABLED_AUTOMATION: &str = "automation switched off";
 pub const DORMANT: &str = "reachable only from a switched-off root";
 pub const ONE_SHOT: &str = "one-shot tool";
+pub const MANUAL: &str = "manual tool (documents its own usage)";
+pub const TEST_COMPANION: &str = "test suite of a live node";
 pub const ORPHAN: &str = "orphan";
+
+/// Le forme che qui segnano la batteria di prova di un altro nodo, con
+/// l'estensione che il compagno porta invece del suffisso di prova. Solo le
+/// forme viste davvero in questa casa: `_test.py` e `.spec.*` non compaiono in
+/// nessun file sotto `scripts/` o `skills/hooks`, e un suffisso mai usato non
+/// protegge niente — allargarlo a scommessa costerebbe un falso «non è un
+/// residuo» il giorno che qualcuno lo introduce sul serio.
+const TEST_SUFFIXES: &[(&str, &str)] = &[(".test.sh", ".sh"), (".test.py", ".py")];
+
+/// Il nome del nodo che questo file prova, se il suo nome porta un suffisso di
+/// prova riconosciuto. Non guarda il disco: chi chiama decide se quel nome è
+/// davvero un nodo vivo del grafo, perché è li' che sta la differenza fra una
+/// batteria in servizio e un residuo che porta ancora il nome di uno script
+/// già tolto.
+pub fn test_companion_name(name: &str) -> Option<String> {
+    TEST_SUFFIXES
+        .iter()
+        .find_map(|(suffix, companion_ext)| {
+            name.strip_suffix(suffix).map(|base| format!("{base}{companion_ext}"))
+        })
+}
+
+/// I marcatori che uno script scrive per rifiutare un argomento sconosciuto o
+/// per spiegare come lanciarsi: la firma di un contratto a riga di comando
+/// pensato per un umano che sceglie gli argomenti, non di un gancio che riceve
+/// solo cio' che gli passa un chiamante fisso (`release-hooks.sh` è il caso che
+/// ha aperto la domanda: nessuno lo cita da codice, ma valida i propri `--dry-run`
+/// e `--skip-tests` e rifiuta il resto per nome). `uso:` sta accanto a
+/// `usage:` perché qui i commenti sono in italiano: uno spoglio dei nodi vivi
+/// mostra la stessa intestazione, solo tradotta, su una ventina di essi. Non è
+/// un elenco di nomi di file: smette di valere quando lo script smette di
+/// validare i propri argomenti, non quando qualcuno lo rinomina o lo sposta.
+const MANUAL_MARKERS: &[&str] = &[
+    "usage:", "uso:", "--help", "unknown option", "unrecognized option", "invalid option",
+];
+
+pub fn documents_its_own_usage(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    MANUAL_MARKERS.iter().any(|m| lower.contains(m))
+}
 
 /// Gli slug che una radice viva esegue attraverso il binario Rust.
 ///
@@ -798,6 +840,15 @@ pub fn measure() -> Measure {
     let (dormant_reached, _) = walk(&dormant_roots(&loaded), &node_paths);
 
     let fallbacks = ported_fallback_names(&node_paths, &ported);
+    // Letto qui e non dentro `why_unreachable`: quella funzione lavora sul nome,
+    // questa sul contenuto, e va valutata sul file vero solo per chi altrimenti
+    // finirebbe fra i difetti — leggerlo per tutti i nodi raggiunti sarebbe
+    // lavoro sprecato sui file che contano già come vivi.
+    let manual_tools: BTreeSet<String> = node_paths
+        .iter()
+        .filter(|(name, path)| !reached.contains(*name) && documents_its_own_usage(&safe_read(path)))
+        .map(|(name, _)| name.clone())
+        .collect();
 
     let mut orphans = Vec::new();
     for (name, path) in &node_paths {
@@ -812,6 +863,15 @@ pub fn measure() -> Measure {
         let mut reason = classify(name, &stem, &ported, &off, &dormant_reached);
         if reason == ORPHAN && fallbacks.contains(name) {
             reason = PORTED_FALLBACK.into();
+        } else if reason == ORPHAN && manual_tools.contains(name) {
+            reason = MANUAL.into();
+        } else if reason == ORPHAN
+            && test_companion_name(name).is_some_and(|c| node_paths.contains_key(&c))
+        {
+            // Il compagno e' un nodo del grafo — lo stesso registro che walk()
+            // cammina — non un file qualunque sul disco: una batteria il cui
+            // script e' gia' stato tolto resta ORPHAN, com'e' giusto che sia.
+            reason = TEST_COMPANION.into();
         }
         orphans.push(Orphan {
             file: name.clone(),
@@ -870,7 +930,7 @@ fn report(m: &Measure) -> i32 {
         m.orphans.len()
     );
 
-    for reason in [PORTED, PORTED_FALLBACK, DISABLED_AUTOMATION, DORMANT, ONE_SHOT] {
+    for reason in [PORTED, PORTED_FALLBACK, DISABLED_AUTOMATION, DORMANT, ONE_SHOT, MANUAL, TEST_COMPANION] {
         let group: Vec<&Orphan> = m.orphans.iter().filter(|o| o.reason == reason).collect();
         if group.is_empty() {
             continue;
@@ -1048,6 +1108,85 @@ mod tests {
             ONE_SHOT
         );
         assert_eq!(why_unreachable("cross-repo.py", "cross-repo", &ported, &off), ORPHAN);
+    }
+
+    #[test]
+    fn a_usage_contract_marks_a_manual_tool() {
+        // Il caso vero che ha aperto la domanda: nessuna radice cita
+        // `release-hooks.sh`, ma rifiuta un argomento sconosciuto per nome.
+        assert!(documents_its_own_usage(
+            "case \"$arg\" in --dry-run) ;; *) echo unknown option \"$arg\" ;; esac"
+        ));
+        assert!(documents_its_own_usage("echo \"usage: tool.sh <path>\""));
+        assert!(documents_its_own_usage("-h|--help) show_help ;;"));
+        // La forma italiana ricorre quanto quella inglese in questo repository.
+        assert!(documents_its_own_usage("# Uso:\n#   tool.sh <percorso>"));
+        // Un gancio che riceve solo cio' che gli passa un chiamante fisso non
+        // spiega come si lancia: non deve risultare manuale per caso.
+        assert!(!documents_its_own_usage("print('ciao mondo')\nrun()\n"));
+    }
+
+    #[test]
+    fn a_test_suffix_names_its_companion() {
+        assert_eq!(test_companion_name("role-claim.test.sh"), Some("role-claim.sh".into()));
+        assert_eq!(
+            test_companion_name("close-finished-worktrees.test.py"),
+            Some("close-finished-worktrees.py".into())
+        );
+        // Nessun suffisso di prova riconosciuto: non è una batteria.
+        assert_eq!(test_companion_name("role-claim.sh"), None);
+        assert_eq!(test_companion_name("notify-rule.py"), None);
+        // Una forma mai vista in questa casa non basta da sola a farlo passare:
+        // l'elenco è quello osservato, non ogni suffisso immaginabile.
+        assert_eq!(test_companion_name("role-claim_test.py"), None);
+    }
+
+    #[test]
+    fn a_test_suite_is_not_a_defect_only_if_its_script_still_exists() {
+        // Nessuna radice viva in questa casa isolata: ogni nodo trovato parte
+        // ORPHAN, ed è esattamente il terreno su cui il compagno deve fare la
+        // differenza.
+        let dir = crate::test_home::test_root().join("reach-testcompanion");
+        let _ = std::fs::remove_dir_all(&dir);
+        let scripts = dir.join("casa/scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(scripts.join("tool-a.sh"), "echo tool-a\n").unwrap();
+        std::fs::write(scripts.join("tool-a.test.sh"), "echo prova tool-a\n").unwrap();
+        // Il compagno "orphan-tool.sh" non esiste da nessuna parte: la sua
+        // batteria non prova più niente ed è un residuo vero.
+        std::fs::write(scripts.join("orphan-tool.test.sh"), "echo prova fantasma\n").unwrap();
+
+        // SAFETY: `ambiente()` serializza le prove che scrivono `std::env`, e
+        // ognuna rimette le variabili com'erano prima di uscire.
+        let _guard = ambiente();
+        unsafe {
+            std::env::set_var("REACH_LAUNCH_AGENTS", dir.join("agenti-vuoti"));
+            std::env::set_var("REACH_WORKSPACE", dir.join("ws-vuoto"));
+            std::env::set_var("REACH_HOME_CLAUDE", dir.join("casa"));
+        }
+
+        let m = measure();
+        let reason_of = |name: &str| -> String {
+            m.orphans
+                .iter()
+                .find(|o| o.file == name)
+                .map(|o| o.reason.clone())
+                .unwrap_or_else(|| panic!("{name} non è fra gli irraggiungibili"))
+        };
+        assert_eq!(reason_of("tool-a.test.sh"), TEST_COMPANION, "il compagno esiste");
+        assert_eq!(
+            reason_of("orphan-tool.test.sh"),
+            ORPHAN,
+            "il compagno non esiste: la batteria resta un residuo vero"
+        );
+        assert_eq!(reason_of("tool-a.sh"), ORPHAN, "lo script provato resta giudicato per sé");
+
+        unsafe {
+            std::env::remove_var("REACH_LAUNCH_AGENTS");
+            std::env::remove_var("REACH_WORKSPACE");
+            std::env::remove_var("REACH_HOME_CLAUDE");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
