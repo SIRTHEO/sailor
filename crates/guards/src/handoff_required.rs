@@ -48,7 +48,8 @@ pub enum Decision {
     Pass,
     /// Sopra l'obbligo e oltre il tetto dei rifiuti: si lascia passare, dicendolo.
     Surrender(String),
-    /// Sopra l'obbligo: lo strumento non passa.
+    /// Sopra l'obbligo: lo strumento e' gia' passato (siamo dopo l'esecuzione),
+    /// ma il gancio lo segnala e chiede la consegna.
     Block(String),
 }
 
@@ -144,8 +145,8 @@ pub fn decide(f: &Facts) -> Decision {
              del budget di qualita' di {model} ({} token, budget ~{}), oltre il \
              gradino di blocco (96%): sopra questa soglia la consegna gia' \
              scritta non e' piu' un lasciapassare permanente — decisione di \
-             Theo del 20/08/2026. `{}` non serve a consegnare, quindi non \
-             passa. Passano: Skill, Read, Write, Edit, Grep, Glob, SendMessage \
+             Theo del 20/08/2026. `{}` e' passato: e' un richiamo, non un \
+             divieto. Passano: Skill, Read, Write, Edit, Grep, Glob, SendMessage \
              e gli strumenti delle lavorazioni.",
             thousands(f.used),
             thousands(budget),
@@ -162,15 +163,16 @@ pub fn decide(f: &Facts) -> Decision {
          puntatore in MEMORY.md, che la prossima sessione ricarica da sola. Cita \
          specifiche, piani e commit per percorso invece di ricopiarli.\n\
          2. Chiudi il turno con le due righe: Stato / Procedo con.\n\n\
-         Fatto l'handoff il gancio si sblocca e si torna a lavorare: il blocco \
-         serve solo a garantire che la consegna sia scritta una volta.\n\
-         `{}` non serve a consegnare, quindi non passa. Passano: Skill, Read, \
-         Write, Edit, Grep, Glob, SendMessage e gli strumenti delle lavorazioni.\n\
+         Fatto l'handoff il richiamo smette. `{}` e' gia' passato: e' un \
+         promemoria, non un divieto, che torna finche' non consegni, poi si \
+         arrende (dopo {} rifiuti). Passano: Skill, Read, Write, Edit, Grep, \
+         Glob, SendMessage e gli strumenti delle lavorazioni.\n\
          Se il lavoro puo' chiudersi adesso, chiudilo: una consegna scritta per \
          rimandare l'ultimo passo costa due volte.",
         thousands(f.used),
         thousands(budget),
-        f.tool
+        f.tool,
+        BLOCK_CAP
     ))
 }
 
@@ -344,7 +346,8 @@ mod tests {
         let t = soglie();
         match decide(&fatti(&t, 480_000, "WebFetch")) {
             Decision::Block(m) => {
-                assert!(m.contains("`WebFetch` non serve a consegnare"), "{m}");
+                assert!(m.contains("`WebFetch` e' gia' passato"), "{m}");
+                assert!(m.contains("non un divieto"), "non deve dichiarare un divieto: {m}");
                 assert!(m.contains("480,000 token"), "le migliaia con la virgola: {m}");
                 assert!(m.contains("budget ~500,000"), "{m}");
             }
