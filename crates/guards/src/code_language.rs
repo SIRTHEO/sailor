@@ -929,7 +929,7 @@ mod tests {
 
     #[test]
     fn a_script_already_on_disk_is_read_before_it_runs() {
-        let dir = std::env::temp_dir().join("gate-script-su-disco");
+        let dir = hook_io::testing::test_dir("gate-script-su-disco");
         // Il genitore del bersaglio deve esistere davvero, e stare sotto
         // `crates/` perché `family` lo riconosca — `parent_exists` scarterebbe
         // un percorso fittizio come un frammento di stringa.
@@ -1215,7 +1215,7 @@ mod tests {
     /// riceve — il comando non lo tocca affatto.
     #[test]
     fn a_path_fragment_without_a_real_parent_is_not_a_target() {
-        let dir = std::env::temp_dir().join("gate-frammento-percorso");
+        let dir = hook_io::testing::test_dir("gate-frammento-percorso");
         let _ = std::fs::create_dir_all(&dir);
         let script = dir.join("misura.py");
         std::fs::write(
@@ -1235,7 +1235,7 @@ mod tests {
     /// come argomento, con o senza il `-` finale.
     #[test]
     fn a_script_piped_through_cat_is_read_like_one_given_as_an_argument() {
-        let dir = std::env::temp_dir().join("gate-script-per-pipe");
+        let dir = hook_io::testing::test_dir("gate-script-per-pipe");
         let crates_dir = dir.join("crates");
         let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("scrive3.py");
@@ -1257,7 +1257,7 @@ mod tests {
     /// coperto — con `writeFileSync`, il gesto che `writes_a_file` riconosce.
     #[test]
     fn a_node_script_piped_through_cat_is_read_too() {
-        let dir = std::env::temp_dir().join("gate-script-node-per-pipe");
+        let dir = hook_io::testing::test_dir("gate-script-node-per-pipe");
         let crates_dir = dir.join("crates");
         let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("scrive.js");
@@ -1274,7 +1274,7 @@ mod tests {
 
     #[test]
     fn a_script_redirected_into_an_interpreter_is_read_too() {
-        let dir = std::env::temp_dir().join("gate-script-per-redirezione");
+        let dir = hook_io::testing::test_dir("gate-script-per-redirezione");
         let crates_dir = dir.join("crates");
         let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("scrive4.py");
@@ -1298,7 +1298,7 @@ mod tests {
     /// tanto per `python3` quanto per `node`/`bash`.
     #[test]
     fn a_dash_before_the_redirection_does_not_hide_the_script() {
-        let dir = std::env::temp_dir().join("gate-script-per-redirezione-trattino");
+        let dir = hook_io::testing::test_dir("gate-script-per-redirezione-trattino");
         let crates_dir = dir.join("crates");
         let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("scrive5.py");
@@ -1346,7 +1346,7 @@ mod tests {
         // Un file vero, non un percorso inventato: se `grep` finisse per
         // sbaglio nell'elenco degli interpreti, il file esisterebbe comunque
         // e la prova lo scoprirebbe — un percorso assente lo nasconderebbe.
-        let dir = std::env::temp_dir().join("gate-pipe-innocua");
+        let dir = hook_io::testing::test_dir("gate-pipe-innocua");
         let _ = std::fs::create_dir_all(&dir);
         let log = dir.join("qualcosa.log");
         std::fs::write(&log, "errore: connessione rifiutata\n").unwrap();
@@ -1386,7 +1386,7 @@ mod tests {
     /// — anche se il file stesso è nuovo — il gate nega ancora.
     #[test]
     fn a_real_target_with_an_existing_parent_is_still_caught() {
-        let dir = std::env::temp_dir().join("gate-bersaglio-vero");
+        let dir = hook_io::testing::test_dir("gate-bersaglio-vero");
         let crates_dir = dir.join("crates");
         let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("scrive2.py");
@@ -1413,7 +1413,7 @@ mod tests {
     /// passa.
     #[test]
     fn a_path_named_in_the_documentation_is_not_a_path_written() {
-        let dir = std::env::temp_dir().join("gate-percorso-nominato");
+        let dir = hook_io::testing::test_dir("gate-percorso-nominato");
         let crates_dir = dir.join("crates");
         let _ = std::fs::create_dir_all(&crates_dir);
         let script = dir.join("nomina.py");
