@@ -262,7 +262,140 @@ fn record_to_line(record: &AuthorizationRecord) -> String {
 /// locale di poche righe, in cambio della garanzia che conta. Se un passo
 /// fallisce (cartella non creabile, disco pieno, permessi) il registro
 /// originale resta intatto e l'errore risale a chi ha chiamato.
+/// Il lucchetto accanto al registro, tenuto per tutta la durata di una
+/// scrittura. Serve perché `append_record` non aggiunge: legge tutto,
+/// ricompone e rinomina sopra — quindi due scritture che si sovrappongono si
+/// cancellano a vicenda, **senza errore e con uscita zero**.
+///
+/// `create_new` è l'unica esclusione che funziona anche fra processi diversi
+/// senza portarsi dietro una libreria: fallisce se il file c'è già, e la
+/// creazione è atomica per il sistema. `Drop` lo toglie anche se chi scrive
+/// va in panico a metà.
+///
+/// IL LUCCHETTO ABBANDONATO è il difetto che ogni lucchetto si porta dietro:
+/// un processo ucciso fra la presa e il rilascio bloccherebbe tutti per sempre,
+/// quindi dopo l'attesa massima si forza. Ma **si forza solo il lucchetto che si
+/// sta guardando da dieci secondi**, e questo è il pezzo che regge tutto.
+///
+/// PERCHÉ, misurato da un verdetto su processi veri: due scrittori che aspettano
+/// lo stesso lucchetto abbandonato arrivano a scadenza a pochi millisecondi di
+/// distanza. Il primo forza e ne crea uno suo, legittimo; il secondo — scaduto
+/// anche lui — trovava «occupato» e **forzava il lucchetto vivo del primo**. Da
+/// lì i due tornavano senza esclusione, e chi rinominava per ultimo cancellava la
+/// riga dell'altro: **due `AUTORIZZATA` stampati, due uscite zero, una riga sola
+/// su disco.** Due volte su dodici tentativi reali.
+///
+/// La cura è guardare *quale* lucchetto: se il contenuto è cambiato mentre si
+/// aspettava, qualcuno l'ha preso adesso e l'attesa riparte da capo. Si forza
+/// solo ciò che è rimasto immobile per tutta la finestra.
+struct RegistryLock {
+    path: PathBuf,
+    /// Il proprio nome dentro il lucchetto: unico per processo **e** per
+    /// chiamata, perché due thread condividono il numero di processo.
+    token: String,
+}
+
+/// Distingue due gesti dello stesso processo — il nome del file temporaneo e il
+/// nome dentro il lucchetto. Sta qui e non dentro una funzione perché lo usano
+/// in due, e due contatori separati darebbero gli stessi numeri.
+static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Quanto si aspetta prima di considerare abbandonato un lucchetto immobile.
+/// Dev'essere più lungo della sezione critica, che qui è una lettura, una
+/// scrittura e una rinomina su un file di poche righe.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+impl RegistryLock {
+    fn acquire(registry: &Path) -> std::io::Result<Self> {
+        Self::acquire_waiting(registry, LOCK_WAIT)
+    }
+
+    /// L'attesa è un parametro **solo** perché la corsa fra due che forzano si
+    /// possa provare in un decimo di secondo invece che in venti: una prova che
+    /// costa venti secondi non la lancia più nessuno, e allora non prova niente.
+    fn acquire_waiting(registry: &Path, wait: std::time::Duration) -> std::io::Result<Self> {
+        let dir = registry.parent().unwrap_or_else(|| Path::new("."));
+        let name = registry
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "autorizzazioni".to_string());
+        let path = dir.join(format!(".{name}.lock"));
+        let token = format!(
+            "{}.{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        let mut deadline = std::time::Instant::now() + wait;
+        let mut seen = std::fs::read_to_string(&path).ok();
+        loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(mut file) => {
+                    file.write_all(token.as_bytes())?;
+                    file.sync_all()?;
+                    return Ok(Self { path, token });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    let now = std::fs::read_to_string(&path).ok();
+                    if now != seen {
+                        // Non è più il lucchetto che stavo aspettando: qualcuno
+                        // l'ha preso adesso, e il suo tempo comincia ora.
+                        //
+                        // QUESTO RAMO NON È COPERTO DA UNA PROVA, e va detto
+                        // invece di lasciarlo credere coperto: la prova
+                        // `two_forcers_do_not_both_get_in` resta verde anche
+                        // togliendolo, perché il caso che riproduce lo chiude
+                        // già la riga di sotto. Serve per lo scenario diverso —
+                        // il lucchetto cambia padrone *mentre* aspetto — e chi
+                        // ci mette mano lo verifichi prima di fidarsi.
+                        seen = now;
+                        deadline = std::time::Instant::now() + wait;
+                    } else if std::time::Instant::now() >= deadline {
+                        // SI FORZA, E SI RIPARTE CON L'ATTESA PIENA. È la riga
+                        // che chiude la corsa misurata: senza, chi ha appena
+                        // forzato ha il tempo già scaduto e forza di nuovo un
+                        // istante dopo — stavolta il lucchetto **vivo** di chi
+                        // gli è arrivato davanti.
+                        let _ = std::fs::remove_file(&path);
+                        deadline = std::time::Instant::now() + wait;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(2));
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+}
+
+impl Drop for RegistryLock {
+    /// SI TOGLIE IL PROPRIO LUCCHETTO, non il file che sta lì.
+    ///
+    /// Prima si rimuoveva il percorso e basta: se nel frattempo il lucchetto era
+    /// stato forzato e ricreato da un altro, questo `Drop` **cancellava il
+    /// lucchetto vivo di quell'altro** e rompeva l'esclusione senza che nessuno
+    /// se ne accorgesse. Riprodotto in modo deterministico da un verdetto con
+    /// uno scrittore lento. Il nome dentro il file c'era già e non lo rileggeva
+    /// nessuno: era una diligenza apparente.
+    fn drop(&mut self) {
+        match std::fs::read_to_string(&self.path) {
+            Ok(content) if content == self.token => {
+                let _ = std::fs::remove_file(&self.path);
+            }
+            // Non è più mio: chi ce l'ha adesso lo toglierà da sé.
+            _ => {}
+        }
+    }
+}
+
 fn append_record(path: &Path, record: &AuthorizationRecord) -> std::io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    // Preso prima della lettura, tenuto fino dopo la rinomina: è la sequenza
+    // intera a dover essere indivisibile, non i singoli passi.
+    let _lock = RegistryLock::acquire(path)?;
     let existing = std::fs::read_to_string(path).unwrap_or_default();
     let mut new_content = existing;
     if !new_content.is_empty() && !new_content.ends_with('\n') {
@@ -271,8 +404,6 @@ fn append_record(path: &Path, record: &AuthorizationRecord) -> std::io::Result<(
     new_content.push_str(&record_to_line(record));
     new_content.push('\n');
 
-    let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(dir)?;
     // Il contatore rende unico il NOME DEL TEMPORANEO, e solo quello. Da solo
     // basta: `fetch_add` non restituisce mai due volte lo stesso valore, e
     // numero di processo e istante restano per leggibilità. L'istante da solo
@@ -280,13 +411,10 @@ fn append_record(path: &Path, record: &AuthorizationRecord) -> std::io::Result<(
     // ottengono lo stesso nome, e chi rinomina per primo porta via il
     // temporaneo dell'altro.
     //
-    // QUELLO CHE NON PROTEGGE, e va detto qui perché il nome del temporaneo
-    // sembra chiuderlo: due scritture sullo STESSO registro restano non
-    // sincronizzate. Questa funzione legge tutto il file, ricompone il
-    // contenuto e rinomina sopra — quindi chi rinomina per ultimo cancella la
-    // riga di chi ha rinominato per primo, senza errore e con uscita zero.
-    // Misurato su una riproduzione fedele: 300 righe perse su 600.
-    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    // Due scritture sullo stesso registro le tiene separate il lucchetto qui
+    // sopra, non questo nome: prima che ci fosse, chi rinominava per ultimo
+    // cancellava la riga dell'altro senza errore — 50 righe perse su 100,
+    // misurate tre volte con lo stesso esito.
     let tmp_path = dir.join(format!(
         ".autorizzazioni.{}.{}.{}.tmp",
         std::process::id(),
@@ -787,6 +915,149 @@ mod tests {
         for handle in handles {
             handle.join().expect("nessuno dei due thread deve cadere");
         }
+    }
+
+    // Chi lascia il lucchetto toglie IL PROPRIO, non il file che sta lì.
+    //
+    // Il caso, riprodotto da un verdetto su uno scrittore lento: A prende il
+    // lucchetto e ci mette più dell'attesa massima; B aspetta, alla scadenza lo
+    // forza e ne crea uno suo; poi A finisce e il suo `Drop` cancella **il
+    // lucchetto vivo di B**. Da lì i due scrivono senza esclusione e una riga
+    // sparisce. Il nome dentro il file c'era già e non lo rileggeva nessuno.
+    // Mutazione che lo fa rosso: in `Drop`, rimuovere senza confrontare il nome.
+    #[test]
+    fn dropping_a_lock_that_is_no_longer_ours_leaves_it_alone() {
+        let registry = temp_registry_path("lucchetto-altrui");
+        let mine = RegistryLock::acquire(&registry).expect("il primo lo prende");
+        // Qualcun altro lo forza e ci mette il proprio nome, come farebbe un
+        // secondo scrittore alla scadenza.
+        std::fs::write(&mine.path, "un-altro-processo").expect("la forzatura scrive");
+        let path = mine.path.clone();
+        drop(mine);
+        assert_eq!(
+            std::fs::read_to_string(&path).ok().as_deref(),
+            Some("un-altro-processo"),
+            "il lucchetto di un altro non si tocca uscendo"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // DUE CHE FORZANO INSIEME NON DEVONO ENTRARE INSIEME.
+    //
+    // Lo scenario che un verdetto ha riprodotto su processi veri, due volte su
+    // dodici: un lucchetto abbandonato, due scrittori che lo aspettano e
+    // arrivano a scadenza a pochi millisecondi di distanza. Il primo forza e ne
+    // crea uno suo; il secondo, scaduto anche lui, forzava **quello vivo** — e
+    // da lì i due scrivevano senza esclusione, con due `AUTORIZZATA` stampati e
+    // una riga sola su disco.
+    //
+    // La cura è guardare QUALE lucchetto si sta forzando: se il contenuto è
+    // cambiato mentre si aspettava, l'attesa riparte.
+    // Mutazione che lo fa rosso: in `acquire_waiting`, togliere il ramo
+    // `if now != seen` che azzera la scadenza.
+    #[test]
+    fn two_forcers_do_not_both_get_in() {
+        let registry = temp_registry_path("due-forzatori");
+        let lock_path = registry
+            .parent()
+            .unwrap()
+            .join(format!(".{}.lock", registry.file_name().unwrap().to_string_lossy()));
+        let wait = std::time::Duration::from_millis(80);
+        let inside = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let worst = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        for round in 0..15 {
+            // Un lucchetto abbandonato da un processo che non c'è più.
+            std::fs::write(&lock_path, format!("orfano-{round}")).expect("il finto orfano");
+            let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+            let handles: Vec<_> = (0..2)
+                .map(|_| {
+                    let (gate, inside, worst) = (
+                        std::sync::Arc::clone(&gate),
+                        std::sync::Arc::clone(&inside),
+                        std::sync::Arc::clone(&worst),
+                    );
+                    let registry = registry.clone();
+                    std::thread::spawn(move || {
+                        gate.wait();
+                        let lock = RegistryLock::acquire_waiting(&registry, wait)
+                            .expect("il lucchetto si prende");
+                        let now = inside.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        worst.fetch_max(now, std::sync::atomic::Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        inside.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                        drop(lock);
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().expect("nessuno dei due deve cadere");
+            }
+        }
+        let _ = std::fs::remove_file(&lock_path);
+        assert_eq!(
+            worst.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "due scrittori sono stati dentro il lucchetto nello stesso momento"
+        );
+    }
+
+    // E il caso normale resta: il proprio lucchetto si toglie, o il prossimo
+    // aspetta dieci secondi per niente.
+    #[test]
+    fn dropping_our_own_lock_removes_it() {
+        let registry = temp_registry_path("lucchetto-proprio");
+        let mine = RegistryLock::acquire(&registry).expect("lo prende");
+        let path = mine.path.clone();
+        drop(mine);
+        assert!(!path.exists(), "il proprio lucchetto si toglie uscendo");
+    }
+
+    // Due scritture sullo STESSO registro devono esserci tutte e due. È il
+    // caso reale, non uno di scuola: `registry_path()` restituisce sempre lo
+    // stesso file, quindi due `captain-authorize` in parallelo — o due thread —
+    // ci arrivano insieme. Senza serializzazione questa funzione legge tutto,
+    // ricompone e rinomina sopra: chi rinomina per ultimo cancella la riga
+    // dell'altro **senza errore e con uscita zero**, che è la forma peggiore.
+    // Mutazione che lo fa rosso: togliere il lock da `append_record`.
+    #[test]
+    fn two_writers_on_the_same_registry_both_survive() {
+        let path = temp_registry_path("stesso-registro");
+        let _ = std::fs::remove_file(&path);
+        let gate = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|slot| {
+                let gate = std::sync::Arc::clone(&gate);
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    for round in 0..50 {
+                        let record =
+                            sample_record(&format!("prova:condivisa-{slot}-{round}"), false);
+                        gate.wait();
+                        append_record(&path, &record).expect("la scrittura deve riuscire");
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().expect("nessuno dei due thread deve cadere");
+        }
+        let content = read_registry(&path).expect("il registro deve rileggersi");
+        let mut mancanti = Vec::new();
+        for slot in 0..2 {
+            for round in 0..50 {
+                let key = format!("prova:condivisa-{slot}-{round}");
+                if !matches!(check(Some(&content), &key).0, Verdict::Authorized(_)) {
+                    mancanti.push(key);
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            mancanti.is_empty(),
+            "{} righe su 100 sono sparite senza errore, la prima è {}",
+            mancanti.len(),
+            mancanti[0]
+        );
     }
 
     // Una seconda riga che revoca la prima, scritta e riletta da disco: la
