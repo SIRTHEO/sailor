@@ -151,6 +151,11 @@ fn log_line(line: &str) {
 /// non si riesce a leggere, un invio fallito: quelli non cadono aspettando, si
 /// ripetono ogni minuto per sempre, e un rinvio che non scade non è un rinvio —
 /// è un blocco. Chi legge il registro non deve dedurlo: c'è scritto.
+///
+/// E CHI PORTA IL MARCATORE SU UN RINVIO PASSA DA `defer_and_count`, non da
+/// qui: il marcatore dice che la condizione non cade da sola, e allora il rinvio
+/// va contato e a un certo punto va smesso. Questa funzione resta per i guasti
+/// che non rimandano niente.
 fn log_guasto(nome: &str, line: &str) {
     log_line(&format!("[guasto={nome}] {line}"));
 }
@@ -1034,7 +1039,8 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         // aspettando — o la scheda ha più pannelli, o l'elenco non si legge, e
         // nessuna delle due passa da sola. Da qui la sessione non è più
         // rigenerabile finché non interviene qualcuno.
-        log_guasto(
+        defer_and_count(
+            rec,
             "pannello-non-identificato",
             &format!("sess={sess}: non riesco a identificare il pannello, non azzero niente"),
         );
@@ -1095,7 +1101,8 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             return;
         }
         PanelReadiness::Typing => {
-            log_guasto(
+            defer_and_count(
+                rec,
                 "riga-battuta-mai-inviata",
                 &format!(
                     "sess={sess}: la riga d'ingresso non e' vuota, non tocco i tasti: rimando"
@@ -1110,7 +1117,8 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             return;
         }
         PanelReadiness::Unknown => {
-            log_guasto(
+            defer_and_count(
+                rec,
                 "pannello-non-letto",
                 &format!(
                     "sess={sess}: il pannello non si e' letto con prova certa, non tocco i tasti: rimando"
@@ -1121,8 +1129,12 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         PanelReadiness::TranscriptUnknown => {
             // Chiave di guasto diversa, non solo testo diverso: chi conta le
             // ripetizioni tiene due conti separati, e due cause che si sommano
-            // in un numero solo nascondono quella piu' rara.
-            log_guasto(
+            // in un numero solo nascondono quella piu' rara. Le due serie sono
+            // separate nel registro; il tetto della resa invece è uno solo per
+            // albero, perché la domanda a cui risponde è «quanti giri di fila
+            // senza concludere», non «per quale ragione».
+            defer_and_count(
+                rec,
                 "turno-non-letto",
                 &format!(
                     "sess={sess}: lo schermo era pulito ma il turno non si e' letto dal transcript, non tocco i tasti: rimando"
@@ -1223,9 +1235,11 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         // contesto e la sua consegna già scritta. Si raffredda e si riprova.
         // Guasto e non rinvio: un invio rifiutato non diventa accettato
         // aspettando. La tregua fa riprovare, ma se la causa resta la riga
-        // torna a ogni giro.
-        set_cooldown(&rec.worktree);
-        log_guasto(
+        // torna a ogni giro — e allora il conto arriva al tetto e si smette,
+        // come per ogni altro rinvio che non può cadere da solo. La tregua la
+        // mette `defer_and_count`, non serve rimetterla qui.
+        defer_and_count(
+            rec,
             "clear-non-inviato",
             &format!(
                 "sess={sess}: /clear non inviato (rc={rc_clear}), la sessione resta \
@@ -1348,38 +1362,13 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             ),
         );
         if n >= MAX_BLIND_ATTEMPTS {
-            let marker = blind_stop_path(&rec.worktree);
-            let _ = fs::create_dir_all(state_dir());
-            let _ = fs::write(
-                &marker,
-                // La prima riga è l'epoca in secondi: `blind_stop_age_sec` la
-                // legge per decidere quando la resa è scaduta. Il resto è
-                // testo per Theo, come prima.
-                format!(
-                    "{}\n{}\n{n} tentativi di sostituzione senza prova, di fila.\nalbero: {}\n\
-                     ultima sessione: {sess}\npannello: {handle}\n",
-                    now_epoch(),
-                    hook_io::local_time::now_local_iso8601(),
-                    rec.worktree
-                ),
-            );
-            // LA RIGA PORTA `sess=`, e non è cosmesi. Chi conta le ripetizioni
-            // separa un guasto dall'altro col soggetto che trova scritto, e
-            // l'albero da solo non basta: senza il nome della sessione, rese
-            // cieche di alberi diversi finivano tutte nella stessa voce. È il
-            // guasto più raro e il più serio, quindi è quello che meno può
-            // permettersi di essere confuso con un altro.
-            log_guasto(
+            write_blind_stop(
+                rec,
+                n,
                 "staffetta-cieca",
-                &format!(
-                    "STAFFETTA CIECA sess={sess} su {}: {n} tentativi di fila senza prova \
-                     che la sostituzione sia avvenuta. Riprovo da sola fra {} h. Per \
-                     ripartire subito: rm {} {}",
-                    rec.worktree,
-                    round_half_to_even(BLIND_STOP_RESET_SEC / 3600.0),
-                    marker.display(),
-                    blind_attempts_path(&rec.worktree).display()
-                ),
+                "STAFFETTA CIECA",
+                "tentativi di sostituzione senza prova che sia avvenuta",
+                &format!("pannello: {handle}\n"),
             );
         }
         return;
@@ -1421,11 +1410,110 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     ));
 }
 
+/// Scrive la resa cieca e la riga contabile che la dichiara.
+///
+/// UNA FUNZIONE SOLA PER I DUE MODI DI ARRIVARCI — la sostituzione mai
+/// confermata e il rinvio che non scade — perché il marcatore ha **un formato
+/// solo**: la prima riga è l'epoca, e `blind_stop_age_sec` legge quella per
+/// sapere quando dimenticare. Ricopiare il formato significa che il secondo
+/// autore scrive la data altrove, `blind_stop_age_sec` non la trova, e la resa
+/// non scade più: è già successo con le rese scritte prima del 20/08/2026, che
+/// hanno tenuto ciechi tre alberi su quattro per venti ore.
+///
+/// `guasto` e `titolo` restano di chi chiama: due cause che finiscono nella
+/// stessa chiave si sommano in un numero solo, e chi conta le ripetizioni perde
+/// la più rara delle due.
+fn write_blind_stop(rec: &Record, n: u32, guasto: &str, titolo: &str, cosa: &str, coda: &str) {
+    let sess = &rec.session;
+    let marker = blind_stop_path(&rec.worktree);
+    let _ = fs::create_dir_all(state_dir());
+    let _ = fs::write(
+        &marker,
+        format!(
+            "{}\n{}\n{n} {cosa}, di fila.\nalbero: {}\nultima sessione: {sess}\n{coda}",
+            now_epoch(),
+            hook_io::local_time::now_local_iso8601(),
+            rec.worktree
+        ),
+    );
+    // LA RIGA PORTA `sess=`, e non è cosmesi. Chi conta le ripetizioni separa un
+    // guasto dall'altro col soggetto che trova scritto, e l'albero da solo non
+    // basta: senza il nome della sessione, rese cieche di alberi diversi
+    // finivano tutte nella stessa voce.
+    log_guasto(
+        guasto,
+        &format!(
+            "{titolo} sess={sess} su {}: {n} {cosa}, di fila. Riprovo da sola fra {} h. \
+             Per ripartire subito: rm {} {}",
+            rec.worktree,
+            round_half_to_even(BLIND_STOP_RESET_SEC / 3600.0),
+            marker.display(),
+            blind_attempts_path(&rec.worktree).display()
+        ),
+    );
+}
+
+/// Un rinvio che **non può cadere da solo**: si conta, si raffredda, e oltre il
+/// tetto si smette.
+///
+/// LA REGOLA PER SAPERE CHI PASSA DI QUI, invece di un elenco che resta sempre
+/// indietro di un caso: **ogni rinvio che porta un marcatore di guasto**. È lo
+/// stesso criterio già scritto sopra `log_guasto` — la condizione può cadere da
+/// sola? — quindi la scelta è già stata fatta una volta e non si rifà qui. Un
+/// rinvio di cronaca (una domanda in sospeso, un turno in corso) tiene il suo
+/// ritorno nudo: quello scade aspettando, e aspettare è la risposta giusta.
+///
+/// MISURATO IL 21/08/2026: «il pannello non si e' letto» ha scritto **588 righe
+/// identiche in dieci ore** su una sessione sola, una al minuto, senza che il
+/// rinvio si avvicinasse di un passo a scadere — più le 588 righe di
+/// «candidato» che le fanno compagnia, il 21% dell'intero registro da una
+/// sessione sola. Quello che mancava non era l'azione: era il costo. Un rinvio
+/// che non costa niente a nessuno non lo guarda nessuno.
+///
+/// IL VERSO, che è la parte facile da sbagliare. La resa **non** fa scrivere la
+/// staffetta addosso a una sessione che non si è riusciti a leggere: le fa
+/// smettere di ritentare in silenzio. Chi esce di qui non ha toccato un tasto, e
+/// non lo toccherà per `BLIND_STOP_RESET_SEC`, perché il giro dopo esce al passo
+/// 0-bis prima ancora di chiamare `orca`. Quello che resta è una riga contabile,
+/// che è esattamente ciò che è mancato per ventun ore.
+fn defer_and_count(rec: &Record, guasto: &str, riga: &str) {
+    let n = mark_blind_attempt(&rec.worktree, &rec.session_id);
+    log_guasto(guasto, &format!("{riga} ({n}/{MAX_BLIND_ATTEMPTS})"));
+    // La tregua vale già da sola, prima ancora che il tetto morda: da una riga
+    // al minuto a una ogni cinque.
+    set_cooldown(&rec.worktree);
+    if n < MAX_BLIND_ATTEMPTS {
+        return;
+    }
+    write_blind_stop(
+        rec,
+        n,
+        "rinvio-senza-scadenza",
+        "RINVIO SENZA SCADENZA",
+        &format!("rinvii su «{guasto}», una condizione che non cade da sola"),
+        "",
+    );
+}
+
 /// Segna un tentativo rimasto senza prova e ritorna a quanti si è arrivati.
 ///
 /// Un file di stato e non la memoria del processo: la staffetta è un comando che
 /// launchd rilancia ogni sessanta secondi, e fra un giro e l'altro non
 /// sopravvive niente.
+///
+/// IL CONTO È UNO PER ALBERO, e lo condividono la sostituzione mai confermata e
+/// i rinvii che non scadono. Non è una svista: sono la stessa domanda — quanti
+/// giri di fila questa staffetta ha speso su quest'albero senza concludere — e
+/// tenerne due significherebbe che sei tentativi a vuoto alternati non arrivano
+/// mai a un tetto.
+///
+/// SI SBAGLIA PER DIFETTO, ed è il verso giusto. La lettura-modifica-scrittura
+/// non è atomica: due processi sovrapposti perdono un incremento, e chi legge il
+/// file a metà scrittura non riconosce la sessione e riparte da uno. Entrambi
+/// gli esiti fanno mordere il freno **più tardi**, mai prima — e per un freno la
+/// cui azione è smettere di agire, tardi è il verso sicuro. Che poi non
+/// succeda è misurato: launchd tiene una sola istanza per etichetta, e le 588
+/// righe del 21/08 cadono in 588 minuti distinti, nessuno con due giri dentro.
 ///
 /// LEGATO ANCHE ALLA SESSIONE, non solo all'albero. Sotto il tetto della resa
 /// cieca il conteggio non ha scadenza propria — solo `blind_stop_path` scade,
@@ -2741,6 +2829,108 @@ mod tests {
         assert_eq!(log.matches("STAFFETTA CIECA").count(), 1, "l'ha ripetuto: {log}");
         assert!(log.contains("Per ripartire subito: rm "), "non dice come si riparte: {log}");
         assert!(log.contains("Riprovo da sola fra"), "non dice che decade da sola: {log}");
+    }
+
+    /// Un apparecchio il cui pannello non si legge mai: `read` risponde `rc=0`
+    /// con lo schermo vuoto, che è il caso vero del 21/08/2026 — non un errore,
+    /// una lettura che non prova niente.
+    fn orca_with_unreadable_panel(
+    ) -> (std::rc::Rc<std::cell::RefCell<Vec<String>>>, impl FnMut(&[&str]) -> (i32, String)) {
+        let calls = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = calls.clone();
+        let orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            (0, String::new())
+        };
+        (calls, orca)
+    }
+
+    #[test]
+    fn a_deferral_that_cannot_expire_gives_up_and_leaves_a_line() {
+        let _home = HomeIsolata::nuova("rinvio-senza-scadenza");
+        // MISURATO IL 21/08/2026: 588 giri identici in dieci ore su una sessione
+        // sola, uno al minuto, e nessuno se n'è accorto finché un'automazione non
+        // li ha contati. Il rinvio usciva con un ritorno nudo: nessun contatore,
+        // nessuna tregua, nessuna resa.
+        //
+        // MUTANTE CHE QUESTA PROVA COGLIE: rimettere al braccio del pannello
+        // illeggibile `log_guasto("pannello-non-letto", …)` più il `return` nudo
+        // — lo stato esatto di prima. Le righe di rinvio tornano sei invece di
+        // tre e il marcatore della resa non si scrive.
+        let (calls, mut orca) = orca_with_unreadable_panel();
+        for _ in 0..6 {
+            regenerate(&test_record(), false, &mut orca);
+        }
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        // IL VERSO. La resa non fa scrivere la staffetta addosso a una sessione
+        // che non si è riusciti a leggere: le fa smettere di provarci. Se questa
+        // riga cade, la riparazione ha fatto il danno che doveva impedire.
+        let clear = calls.borrow().iter().filter(|c| c.contains("/clear")).count();
+        assert_eq!(clear, 0, "la resa ha fatto agire invece di far smettere: {clear} /clear");
+        assert_eq!(
+            log.matches("[guasto=pannello-non-letto]").count(),
+            3,
+            "il rinvio non ha smesso al tetto: {log}"
+        );
+        assert!(blind_stop_path("wt-prova").exists(), "manca la traccia per Theo");
+        // Una riga contabile, e una sola: col soggetto per separarla dai rinvii
+        // di un altro albero, e col conteggio, che è ciò che è mancato per
+        // ventun ore.
+        assert_eq!(
+            log.matches("RINVIO SENZA SCADENZA").count(),
+            1,
+            "l'ha ripetuta a ogni giro: {log}"
+        );
+        assert!(log.contains("sess=provarel"), "la riga non dice su chi: {log}");
+        assert!(log.contains("(3/3)"), "la riga non porta il conteggio: {log}");
+        // E poi ha smesso davvero: dal quarto giro in poi non chiama nemmeno
+        // `orca`, perché esce al passo 0-bis. Tre giri hanno letto il pannello,
+        // gli altri tre no.
+        let letture = calls.borrow().iter().filter(|c| c.contains("read")).count();
+        assert_eq!(letture, 3, "ha continuato a interrogare il pannello: {letture} letture");
+    }
+
+    #[test]
+    fn below_the_ceiling_the_deferral_still_defers() {
+        let _home = HomeIsolata::nuova("rinvio-sotto-soglia");
+        // IL DIFFERENZIALE DELLA PROVA SOPRA, a una variabile di distanza: stesso
+        // apparecchio, due giri invece di sei. Sotto il tetto il rinvio deve
+        // restare un rinvio — la resa che scattasse subito sarebbe una staffetta
+        // che si arrende al primo pannello lento.
+        //
+        // ABBASSARE IL TETTO (`n < MAX_BLIND_ATTEMPTS` → `n < 1`) UCCIDE TUTTE E
+        // DUE, provato: non è il mutante che separa questo caso dall'altro, ed
+        // è stato scritto qui per un giro sostenendo il contrario. Quello che
+        // questo caso coglie da solo è **la tregua**: togliere `set_cooldown` da
+        // `defer_and_count` lascia verde la prova del tetto e rossa questa. Ed è
+        // il terzo dei tre pezzi che mancavano al rinvio — contatore, tregua,
+        // resa — quindi l'unico che senza questa riga nessuno proverebbe.
+        let (_calls, mut orca) = orca_with_unreadable_panel();
+        for _ in 0..2 {
+            regenerate(&test_record(), false, &mut orca);
+        }
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert_eq!(
+            log.matches("[guasto=pannello-non-letto]").count(),
+            2,
+            "ha smesso di rimandare prima del tetto: {log}"
+        );
+        assert!(
+            !blind_stop_path("wt-prova").exists(),
+            "si è arresa sotto il tetto: {log}"
+        );
+        assert!(!log.contains("RINVIO SENZA SCADENZA"), "resa dichiarata sotto il tetto: {log}");
+        let conto = fs::read_to_string(blind_attempts_path("wt-prova")).unwrap_or_default();
+        assert!(conto.starts_with('2'), "il conto non è arrivato a due: {conto}");
+        // LA TREGUA, che è ciò che porta 588 righe al minuto a una ogni cinque
+        // anche prima che il tetto morda. Senza, il conto arriva al tetto in tre
+        // minuti e l'albero si acceca per sei ore per un pannello lento.
+        assert!(
+            in_cooldown("wt-prova", now_epoch()),
+            "il rinvio non ha messo la tregua: riprova al minuto dopo"
+        );
     }
 
     #[test]
