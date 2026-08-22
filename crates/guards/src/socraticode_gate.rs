@@ -327,10 +327,18 @@ pub fn is_code_file(path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// `plugins/cache` accanto agli altri: un plugin installato dal marketplace è
+/// vendorizzato quanto `node_modules`, a versione fissata. Cercare una
+/// stringa letterale lì dentro non è una domanda sul dominio di questo
+/// workspace, ed è il motivo per cui `judge_search` lo esclude allo stesso
+/// modo (21/08/2026, «touched by other sessions» bloccato dentro
+/// `claude-code-harness-marketplace`).
 pub fn is_out_of_perimeter(path: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(^|/)(node_modules|dist|build|\.next|coverage|\.git)/").unwrap())
-        .is_match(path)
+    RE.get_or_init(|| {
+        Regex::new(r"(^|/)(node_modules|dist|build|\.next|coverage|\.git|plugins/cache)/").unwrap()
+    })
+    .is_match(path)
 }
 
 pub fn is_throwaway(path: &str) -> bool {
@@ -557,6 +565,10 @@ fn judge_write(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Ver
 fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
     let tool = input.tool_name.as_deref().unwrap_or("");
     let cwd = input.cwd.clone().unwrap_or_default();
+    // Vuoto per il tool `Grep`, che non passa da una riga di comando: le
+    // funzioni che lo leggono (`explicit_target_count`) restituiscono 0 e non
+    // contano nulla, il che è corretto per quel caso.
+    let command = field(input, "command");
     let (raw_target, pattern) = if tool == "Grep" {
         let p = field(input, "path");
         (
@@ -564,7 +576,6 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
             field(input, "pattern").to_string(),
         )
     } else {
-        let command = field(input, "command");
         if !is_code_search(command) {
             return Verdict::out_of_scope();
         }
@@ -589,8 +600,23 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
     }
     let target = path.to_string_lossy().into_owned();
 
+    // Codice vendorizzato (un plugin installato, non scritto qui) non è mai
+    // la domanda «dove vive nel nostro dominio»: lo stesso motivo per cui
+    // `judge_write` lo tiene fuori dal riuso.
+    if is_out_of_perimeter(&target) {
+        return Verdict::out_of_scope();
+    }
+
     if !is_indexed(ws, &path) {
         return Verdict::out_of_scope(); // non indicizzato → il grep è il ripiego giusto
+    }
+
+    // Due o più bersagli scritti a mano nella stessa chiamata: chi cerca ha
+    // già scelto dove guardare, sta contando le occorrenze di qualcosa di
+    // preciso. Solo su `Bash`: il tool `Grep` porta un `path` solo per
+    // costruzione, e un bersaglio solo resta ambiguo apposta (vedi test).
+    if tool != "Grep" && explicit_target_count(command) >= 2 {
+        return Verdict::out_of_scope();
     }
 
     // IL GIUDIZIO GUARDA LA DOMANDA, NON UN CONTATORE. Un identificatore
@@ -656,10 +682,18 @@ fn split_respecting_quotes(s: &str) -> Vec<String> {
     out
 }
 
-pub fn grep_pattern(command: &str) -> Option<String> {
+/// Tutto ciò che segue `grep`/`rg` sulla riga di comando dove inizia
+/// l'invocazione. `.*` non attraversa un `\n`: se il comando incolla più
+/// righe con `grep` su una e `echo`/un altro comando sulla successiva, la
+/// coda si ferma alla fine della riga giusta.
+fn grep_invocation_tail(command: &str) -> Option<&str> {
     static CALL: OnceLock<Regex> = OnceLock::new();
     let call = CALL.get_or_init(|| Regex::new(r"(?:^|;|&&|\|\|)\s*(?:rg|grep)\s+(.*)").unwrap());
-    let tail = call.captures(command)?.get(1)?.as_str();
+    Some(call.captures(command)?.get(1)?.as_str())
+}
+
+pub fn grep_pattern(command: &str) -> Option<String> {
+    let tail = grep_invocation_tail(command)?;
     for word in split_respecting_quotes(tail) {
         let word = word.as_str();
         if word.starts_with('-') {
@@ -674,6 +708,42 @@ pub fn grep_pattern(command: &str) -> Option<String> {
     None
 }
 
+/// Quanti bersagli scritti a mano seguono il pattern, nella STESSA
+/// invocazione — non nell'intero comando: fra loro può starci un `;`, un
+/// `|`, una redirezione, ed è già un comando diverso.
+///
+/// Due o più dicono «so già dove guardare, sto contando le occorrenze», non
+/// «dove vive questa cosa»: è la restrizione che il messaggio del gate
+/// promette («un file solo, poche righe») generalizzata a una manciata di
+/// percorsi nominati invece che all'intero repo implicito. Un solo bersaglio
+/// resta ambiguo — anche una domanda concettuale si scrive spesso contro una
+/// cartella sola — e non basta da solo (vedi il caso della cartella singola
+/// nei test).
+fn explicit_target_count(command: &str) -> usize {
+    let Some(tail) = grep_invocation_tail(command) else {
+        return 0;
+    };
+    let mut seen_pattern = false;
+    let mut count = 0;
+    for word in split_respecting_quotes(tail) {
+        let word = word.as_str();
+        if word.starts_with('-') {
+            continue; // un'opzione, non il pattern né un bersaglio
+        }
+        if !seen_pattern {
+            seen_pattern = true; // questo pezzo è il pattern
+            continue;
+        }
+        // Pipe, `;`, redirezione: da qui in poi è un altro comando, non un
+        // altro bersaglio della stessa ricerca.
+        if word.chars().any(|c| "|;&<>".contains(c)) {
+            break;
+        }
+        count += 1;
+    }
+    count
+}
+
 /// Metacaratteri di regex, o la sagoma di un identificatore di codice
 /// (`snake_case`, `SCREAMING_CASE`, `camelCase`, `dotted.path`, `a::b`).
 /// Nessuna di queste forme è una parola di dominio.
@@ -685,7 +755,16 @@ fn looks_like_a_shape(p: &str) -> bool {
         || p.contains('^')
         || p.contains('$')
         || p.contains(".*")
-        || p.contains('+');
+        || p.contains('+')
+        // `<`, `>`, `=`, `#`: nessuna frase in lingua li usa. Aggiunti il
+        // 22/08/2026 perché `<<<<<<< HEAD` — un marcatore di conflitto, non
+        // una domanda — restava fuori da ogni condizione qui sotto: tutto
+        // maiuscolo sì, ma con `<` di mezzo, che non è né maiuscola né
+        // trattino, e la frase falliva anche il conteggio delle parole.
+        || p.contains('<')
+        || p.contains('>')
+        || p.contains('=')
+        || p.contains('#');
     if has_metachar {
         return true;
     }
@@ -720,9 +799,12 @@ fn looks_like_a_shape(p: &str) -> bool {
     p.contains('"') || p.contains('\'') || p.contains("=>") || p.contains('{') || p.contains(';')
 }
 
-const SEARCH_KEYWORDS: [&str; 14] = [
+// `git` in coda: non è una parola chiave di un linguaggio, ma di un
+// programma — `grep -rn "git commit"` cerca un'invocazione, non chiede dove
+// vive un concetto, esattamente come `def journal`.
+const SEARCH_KEYWORDS: [&str; 15] = [
     "def", "fn", "class", "function", "const", "let", "var", "import", "export", "pub", "struct",
-    "enum", "interface", "type",
+    "enum", "interface", "type", "git",
 ];
 
 /// Una frase è la firma più netta di una ricerca concettuale — ma «frase» non
@@ -896,6 +978,11 @@ mod tests {
         assert!(is_throwaway("/tmp/a.ts"));
         assert!(is_out_of_perimeter("/repo/node_modules/x/index.js"));
         assert!(!is_out_of_perimeter("/repo/src/index.js"));
+        // Un plugin installato dal marketplace, a versione fissata: preso
+        // dal vivo il 21/08/2026 in `claude-code-harness-marketplace`.
+        assert!(is_out_of_perimeter(
+            "/home/someone/.claude/plugins/cache/claude-code-harness-marketplace/claude-code-harness/5.2.0"
+        ));
     }
 
     /// Il differenziale sul gate vero, non sulla funzione che lo alimenta.
@@ -1045,6 +1132,20 @@ mod tests {
             "match self { Some(x)",
             "return 0;",
         ] {
+            assert!(allowed_search(p), "{p:?} e' letterale, deve passare");
+        }
+    }
+
+    /// Quattro dei 108 blocchi della settimana 15-22/08/2026, ripescati dal
+    /// «Cercavi:» che il gate stesso stampa nei transcript. Il messaggio
+    /// prometteva che un marcatore o un'invocazione letterale passassero
+    /// senza pedaggio, e non succedeva: `<<<<<<< HEAD` falliva sia il test
+    /// dei metacaratteri (nessuno dei simboli controllati) sia quello «tutto
+    /// maiuscolo» (`<` non è né maiuscola né trattino); `git commit` non ha
+    /// nessuna parola chiave di linguaggio nell'elenco.
+    #[test]
+    fn a_conflict_marker_and_a_cli_invocation_pass_as_promised() {
+        for p in ["<<<<<<< HEAD", "git commit"] {
             assert!(allowed_search(p), "{p:?} e' letterale, deve passare");
         }
     }
@@ -1243,6 +1344,89 @@ mod tests {
         assert!(
             matches!(verdict.decision, Decision::Pass),
             "un identificatore esatto non deve pagare pedaggio: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// `destructive delete`, bloccato il 21/08/2026 mentre cercava dentro
+    /// `plugins`, `scripts`, `rust/crates` e `*.sh` — quattro bersagli scritti
+    /// a mano. Due o più dicono «so già dove guardare»: passa anche se la
+    /// frase, presa da sola, avrebbe l'aria di un concetto.
+    /// MUTANTE: abbassare la soglia di `explicit_target_count` a 1 — questo
+    /// caso resterebbe verde ma diventerebbe indistinguibile dal prossimo,
+    /// che deve restare rosso.
+    #[test]
+    fn two_or_more_named_targets_skip_the_concept_judgment() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        let cmd = format!(
+            "grep -rl \"destructive delete\" {}/plugins {}/scripts {}/rust {}/tools 2>/dev/null | head",
+            repo.display(), repo.display(), repo.display(), repo.display()
+        );
+        let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
+        assert!(
+            matches!(verdict.decision, Decision::Pass),
+            "quattro bersagli nominati: chi cerca sa gia' dove, deve passare: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// Il differenziale a soglia: stessa frase, un solo bersaglio. Una
+    /// domanda concettuale vera si scrive quasi sempre contro una cartella
+    /// sola — è il caso di `a_quoted_question_in_a_bash_grep_is_read_whole` —
+    /// quindi un bersaglio solo non può bastare da sé.
+    #[test]
+    fn a_single_named_target_does_not_reach_the_threshold() {
+        assert_eq!(
+            explicit_target_count("grep -rl \"destructive delete\" /repo/plugins 2>/dev/null"),
+            1
+        );
+        assert_eq!(
+            explicit_target_count(
+                "grep -rl \"destructive delete\" /repo/plugins /repo/scripts /repo/rust"
+            ),
+            3
+        );
+    }
+
+    /// `touched by other sessions`, bloccato il 21/08/2026 mentre cercava
+    /// dentro un plugin installato dal marketplace: il bersaglio non è mai il
+    /// dominio di questo workspace, letterale o concettuale che sia il
+    /// pattern. Passa perché la cartella è fuori perimetro, prima ancora di
+    /// guardare la frase.
+    /// MUTANTE: togliere `plugins/cache` da `is_out_of_perimeter` — questo
+    /// caso tornerebbe a bloccarsi con `ricerca-concettuale`.
+    #[test]
+    fn a_search_inside_a_vendored_plugin_is_out_of_scope() {
+        let (ws, keep) = workspace();
+        let vendored = keep
+            .path()
+            .join("home")
+            .join(".claude")
+            .join("plugins")
+            .join("cache")
+            .join("claude-code-harness-marketplace")
+            .join("claude-code-harness")
+            .join("5.2.0");
+        std::fs::create_dir_all(&vendored).unwrap();
+        // Radice indicizzata: senza questa dichiarazione il gate uscirebbe
+        // out-of-scope per un altro motivo (non indicizzato) e la prova non
+        // proverebbe che e' il perimetro vendorizzato a farlo passare.
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            format!("{}\n", ws.home.join(".claude").display()),
+        )
+        .unwrap();
+        let cmd = format!(
+            "grep -rl \"touched by other sessions\" {} 2>/dev/null | head -3",
+            vendored.display()
+        );
+        let verdict = judge_search(&ws, &bash_input(&vendored, &cmd));
+        assert!(
+            !verdict.is_recorded(),
+            "un plugin vendorizzato e' fuori dal perimetro del gate, non di sua competenza: {:?}",
             verdict.reason
         );
     }
