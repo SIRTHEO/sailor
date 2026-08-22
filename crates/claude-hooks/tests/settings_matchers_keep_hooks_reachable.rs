@@ -96,8 +96,8 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "giudica `git worktree add` fuori dai percorsi Orca; la riga che lo accende la scrive solo Theo",
     ),
     (
-        "block-destructive",
-        "giudica i comandi distruttivi; stessa ragione, e il gemello in shell non copre né `~/.claude` né `~/orca/general`",
+        "message-budget",
+        "giudica `SendMessage` oltre i 600 caratteri; scritto il 22/08 (`50a2e13`), la riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`)",
     ),
     (
         "squash-orphans",
