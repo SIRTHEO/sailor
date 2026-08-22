@@ -186,9 +186,52 @@ fn is_pure_mktemp(inner: &str) -> bool {
     true
 }
 
-/// Le variabili che il comando assegna da un `mktemp` puro: non risolvibili
-/// a un valore letterale, ma risolvibili a «sotto una radice di riserva» —
-/// che è tutto ciò che serve per giudicarle.
+/// La cartella in cui un `mktemp` **con modello assoluto** (o `-p`/`--tmpdir`)
+/// scriverà: il genitore del modello. Dentro il perimetro di sessione la
+/// cartella temporanea di sistema non è scrivibile, quindi questa è l'unica
+/// forma di `mktemp` che funziona lì — e va giudicata sul percorso, come ogni
+/// altro bersaglio. `None` appena compare qualcosa che non si legge a tavolino:
+/// un modello relativo, una variabile o una sostituzione dentro il percorso.
+fn mktemp_template_dir(inner: &str) -> Option<String> {
+    let words = split_words(inner)?;
+    if !ends_with_command(words.first()?, "mktemp") {
+        return None;
+    }
+    let mut dir: Option<String> = None;
+    let mut i = 1;
+    while i < words.len() {
+        let w = words[i].as_str();
+        match w {
+            "-d" | "-q" | "-u" | "--directory" => {}
+            "-t" => i += 1,
+            "-p" => {
+                i += 1;
+                dir = Some(words.get(i)?.clone());
+            }
+            _ if w.starts_with("--tmpdir=") => dir = Some(w["--tmpdir=".len()..].to_string()),
+            _ if w.starts_with('-') => return None,
+            // Un modello con la barra dice da sé dove sta; uno senza è un nome
+            // dentro la cartella di `-p`/`--tmpdir`, se c'è — altrimenti è
+            // relativo a dove gira il comando, e non si legge.
+            _ => match w.rsplit_once('/') {
+                Some((parent, _)) => dir = Some(parent.to_string()),
+                None if dir.is_some() => {}
+                None => return None,
+            },
+        }
+        i += 1;
+    }
+    let dir = dir?;
+    if !dir.starts_with('/') || dir.contains('$') || dir.contains('`') {
+        return None;
+    }
+    Some(dir)
+}
+
+/// Le variabili che il comando assegna da un `mktemp`: non risolvibili a un
+/// valore letterale, ma risolvibili a «sotto una cartella nota» — la radice di
+/// riserva se puro, il genitore del modello se ne ha uno — che è tutto ciò che
+/// serve per giudicarle.
 fn mktemp_variables(command: &str) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for line in command.replace(';', "\n").split('\n') {
@@ -196,11 +239,12 @@ fn mktemp_variables(command: &str) -> HashMap<String, String> {
             continue;
         };
         let inner = c.get(2).or_else(|| c.get(3)).map(|m| m.as_str()).unwrap_or("");
-        if !is_pure_mktemp(inner) {
-            continue;
-        }
         let name = &c[1];
-        out.insert(name.to_string(), format!("{}mktemp-{name}", SCRATCH_ROOTS[0]));
+        if is_pure_mktemp(inner) {
+            out.insert(name.to_string(), format!("{}mktemp-{name}", SCRATCH_ROOTS[0]));
+        } else if let Some(dir) = mktemp_template_dir(inner) {
+            out.insert(name.to_string(), format!("{dir}/mktemp-{name}"));
+        }
     }
     out
 }
@@ -982,6 +1026,33 @@ mod tests {
         // isola il caso in cui il comando dentro le parentesi non è leggibile.
         assert!(blocked("D=$(uuidgen); rm -rf \"$D\""));
         assert!(blocked("D=$(cat /Users/theo/percorso-segreto); rm -rf \"$D\""));
+    }
+
+    /// Dentro il perimetro `mktemp` senza modello non scrive (la cartella di
+    /// sistema non è fra le scrivibili), quindi in sessione si usa sempre un
+    /// modello nello scratchpad: il genitore del modello è noto e si giudica
+    /// come un percorso qualunque. Un modello fuori dalle radici di riserva
+    /// resta bloccato (`a_non_scratch_path_via_a_variable_stays_blocked`).
+    ///
+    /// MUTANTE: in `mktemp_variables`, togliere il ramo `else if let Some(dir)`.
+    /// Eseguito: questa prova diventa rossa e solo questa. Ripristinato.
+    #[test]
+    fn a_variable_from_mktemp_with_a_scratch_template_is_disposable() {
+        let s = "/private/tmp/claude-501/-Users-theo-orca-general/abc/scratchpad";
+        assert!(!blocked(&format!("D=$(mktemp -d {s}/prova.XXXXXX); rm -rf \"$D\"")));
+        assert!(!blocked(&format!("D=$(mktemp -d -p {s}); rm -rf \"$D\"")));
+        assert!(!blocked(&format!("D=$(mktemp --tmpdir={s} x.XXXXXX); rm -rf \"$D\"")));
+        assert!(!blocked(&format!("F=$(mktemp {s}/f.XXXXXX); rm -rf \"$F\"")));
+    }
+
+    /// Ciò che non si legge a tavolino resta non letto: modello relativo,
+    /// variabile o sostituzione nel percorso.
+    #[test]
+    fn a_mktemp_template_that_cannot_be_read_stays_blocked() {
+        assert!(blocked("D=$(mktemp -d prova.XXXXXX); rm -rf \"$D\""));
+        assert!(blocked("D=$(mktemp -d $TMPDIR/prova.XXXXXX); rm -rf \"$D\""));
+        assert!(blocked("D=$(mktemp -d -p $HOME); rm -rf \"$D\""));
+        assert!(blocked("D=$(mktemp -d --tmpdir=/Users/theo/.claude x.XXXXXX); rm -rf \"$D\""));
     }
 
     /// Isola il controllo sulla barra: senza, il valore di `-t` verrebbe
