@@ -221,8 +221,8 @@ fn farewell(session: &str, terminals: Option<&[Terminal]>, orca: crate::relay::O
 /// proseguiva senza toccare file non armava mai niente — trovata così una
 /// sessione al 106% del budget di Opus 5, consegna fatta, ancora viva.
 fn arm_successor(session: &str, used: u64, require: u64) -> bool {
-    if used == 0 || used < require {
-        return false; // consegnata ma non piena: non si rigenera per sport
+    if blocked_as_shallow(used, require, was_voluntary_handoff(session)) {
+        return false;
     }
     let cwd = std::env::current_dir()
         .unwrap_or_default()
@@ -233,13 +233,36 @@ fn arm_successor(session: &str, used: u64, require: u64) -> bool {
         return false;
     }
     matches!(
-        // `true`: la pienezza l'ha già verificata la guardia qui sopra, ed è la
-        // condizione d'ingresso di questo percorso. `false`: qui non si arriva
-        // mai da un subagent, perché il gancio dello Stop esce prima di tutto
-        // se la chiamata viene da uno (vedi `handoff::in_subagent`).
-        crate::successor::arm(&doc, session, "stop", true, false),
+        // `true`, `true`: la pienezza e la dichiarazione le ha già verificate
+        // la guardia qui sopra, ed è la condizione d'ingresso di questo
+        // percorso (`Decision::Settle` pretende `handoff_valid`). `false`: qui
+        // non si arriva mai da un subagent, perché il gancio dello Stop esce
+        // prima di tutto se la chiamata viene da uno (vedi `handoff::in_subagent`).
+        crate::successor::arm(&doc, session, "stop", true, false, true),
         crate::successor::ArmOutcome::Open(_)
     )
+}
+
+/// La consegna sotto la soglia d'obbligo arma comunque se `voluntary` dice
+/// che è stata una scelta, non un lavoro lasciato a metà.
+///
+/// Estratta per poterla provare senza aprire un pannello vero: `arm_successor`
+/// da qui in poi parla con `orca` e il disco.
+fn blocked_as_shallow(used: u64, require: u64, voluntary: bool) -> bool {
+    used == 0 || (used < require && !voluntary)
+}
+
+/// La consegna corrente è stata dichiarata sotto soglia per scelta —
+/// `handoff_required::mark_deliberate` (`handoff_required.rs:170`) scrive
+/// questo marcatore solo quando la consegna chiude PRIMA della soglia
+/// d'obbligo. Copre il solo caso per cui esisteva ancora il percorso Write di
+/// questo gancio: una consegna deliberata a metà lavoro, sotto la soglia che
+/// altrimenti la tratterebbe come «non ancora finita».
+fn was_voluntary_handoff(session: &str) -> bool {
+    let short: String = session.chars().take(8).collect();
+    state_dir()
+        .join(format!("consegna-volontaria-{short}"))
+        .exists()
 }
 
 fn orca_real(args: &[&str]) -> (i32, String) {
@@ -505,5 +528,37 @@ mod tests {
     fn a_missing_marker_gives_a_zero_stamp() {
         let _home = HomeIsolata::nuova("riferimento-senza-marcatore");
         assert_eq!(handoff_marker_epoch("nessuno"), 0);
+    }
+
+    /// Sotto soglia una consegna deliberata arma comunque; senza la scelta, no.
+    ///
+    /// MUTANTE: tolto `!voluntary` dalla condizione, questo caso va in rosso
+    /// da solo — nessun altro prova `voluntary: true` sotto soglia.
+    #[test]
+    fn blocked_as_shallow_lets_a_deliberate_handoff_through() {
+        assert!(
+            blocked_as_shallow(300_000, 450_000, false),
+            "sotto soglia e non voluta: ferma"
+        );
+        assert!(
+            !blocked_as_shallow(300_000, 450_000, true),
+            "sotto soglia ma voluta: passa"
+        );
+        assert!(
+            blocked_as_shallow(0, 450_000, true),
+            "zero non e' mai abbastanza, nemmeno voluta"
+        );
+        assert!(
+            !blocked_as_shallow(500_000, 450_000, false),
+            "piena: passa come prima"
+        );
+    }
+
+    #[test]
+    fn was_voluntary_handoff_reads_the_marker_written_by_mark_deliberate() {
+        let home = HomeIsolata::nuova("volontaria-marcatore");
+        assert!(!was_voluntary_handoff("sessione-lunga-1234"));
+        fs::write(home.stato().join("consegna-volontaria-sessione"), "1").unwrap();
+        assert!(was_voluntary_handoff("sessione-lunga-1234"));
     }
 }
