@@ -1216,4 +1216,68 @@ mod tests {
             .count();
         assert_eq!(opens, 0, "senza consegna dichiarata non deve armare niente");
     }
+
+    /// Gemella della prova sopra: qui la consegna È dichiarata
+    /// (`consegna-fatta-*` esiste), ma un messaggio dell'utente nel
+    /// transcript arriva DOPO quel marcatore — `worked_after_handoff`
+    /// (`handoff.rs:96`) lo vede, e la dichiarazione non basta più: il
+    /// lavoro è proseguito.
+    ///
+    /// MUTANTE: se `is_declared` diventasse `handoff_valid || !worked_after`
+    /// invece di `&&`, o perdesse `!worked_after_handoff` del tutto, questo
+    /// caso arma comunque — `handoff_valid` da solo è già vero.
+    #[test]
+    fn a_declared_handoff_followed_by_more_work_never_arms() {
+        let home = HomeIsolata::nuova("successor-run-worked-after");
+        let bin_dir = install_fake_orca(&home.dir);
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let _env = EnvOverrides::new()
+            .set("PATH", &format!("{}:{}", bin_dir.display(), original_path))
+            .set("CONSEGNA_ORA", "12")
+            .set("CONSEGNA_TETTO_SESSIONI", "999")
+            .set("CONSEGNA_TETTO_PANNELLI", "999")
+            .unset("CONSEGNA_ANCHE_A_META")
+            .unset(guards::successor::GENERATION_ENV);
+
+        // La sessione "sessione-lavorata-dopo" ha gia' consegnato: il
+        // marcatore esiste PRIMA che il transcript porti il messaggio
+        // successivo.
+        fs::write(home.stato().join("consegna-fatta-sessione"), "1").unwrap();
+
+        let doc = format!(
+            "{}/memory/consegna-prova-lavorata-dopo.md",
+            home.dir.display()
+        );
+        let transcript = home.dir.join("transcript.jsonl");
+        fs::write(
+            &transcript,
+            format!(
+                "{}\n{}",
+                r#"{"type":"assistant","message":{"model":"claude-fable-5","usage":{"input_tokens":234873}}}"#,
+                r#"{"type":"user","timestamp":"2100-01-01T00:00:00.000Z","message":{"content":[{"type":"text","text":"continua il lavoro"}]}}"#,
+            ),
+        )
+        .unwrap();
+
+        let input = hook_io::HookInput {
+            session_id: Some("sessione-lavorata-dopo".to_string()),
+            transcript_path: Some(transcript.to_string_lossy().into_owned()),
+            tool_input: Some(serde_json::json!({ "file_path": doc })),
+            ..Default::default()
+        };
+
+        run(&input);
+
+        let opens = journal_lines(&home.dir)
+            .iter()
+            .filter(|r| {
+                r.contains("\"gancio\":\"consegna-arma-successore\"")
+                    && r.contains("\"decisione\":\"apre\"")
+            })
+            .count();
+        assert_eq!(
+            opens, 0,
+            "dichiarata ma con lavoro dopo non deve armare niente"
+        );
+    }
 }
