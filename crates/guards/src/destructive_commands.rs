@@ -123,6 +123,88 @@ fn redirection() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"^(\d*(>>?|<)&?\d*|&>>?|\d*>&\d*)$").unwrap())
 }
 
+/// Un'assegnazione il cui valore è una sostituzione di comando: `X=$(…)` o
+/// `` X=`…` ``. `assignments()` la scarta di proposito — il valore non si
+/// legge — ma qui serve isolarla per riconoscere il solo caso in cui il
+/// comando dentro è `mktemp`.
+fn command_substitution_assignment() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"^\s*([A-Za-z_][A-Za-z0-9_]*)=(?:\$\(([^()]*)\)|`([^`]*)`)\s*$").unwrap()
+    })
+}
+
+/// Misurato sui sette giorni al 22/08/2026: 90 delle 127 cancellazioni
+/// ricorsive avevano il bersaglio in una variabile, quasi sempre una cartella
+/// nata da `mktemp`/`mktemp -d` nella stessa riga. Il valore vero non si
+/// conosce a tavolino, ma la sua posizione sì: `mktemp` **senza** un modello
+/// di percorso esplicito scrive per costruzione sotto la cartella temporanea
+/// del sistema. Un modello (`mktemp /altrove/x.XXXXXX`) o `-p`/`--tmpdir`
+/// scavalcano quella garanzia, e allora si resta senza risposta.
+fn is_pure_mktemp(inner: &str) -> bool {
+    let Some(words) = split_words(inner) else {
+        return false;
+    };
+    let Some(head) = words.first() else {
+        return false;
+    };
+    if !ends_with_command(head, "mktemp") {
+        return false;
+    }
+    let mut i = 1;
+    while i < words.len() {
+        let w = &words[i];
+        // Ridondanza voluta e misurata: da sola questa riga non fa cadere
+        // nessuna prova — il ramo di riserva del `match` rifiuta comunque
+        // `-p`, `--tmpdir` e un modello senza barra — e da sola nemmeno
+        // quel ramo basta, perché tolto lui il token successivo (il
+        // percorso vero) arriva comunque qui. Tolte insieme,
+        // `a_non_scratch_path_via_a_variable_stays_blocked` cade: è un gate
+        // che concede, e lì la prima linea dev'essere esplicita.
+        if w.contains('/') {
+            return false;
+        }
+        match w.as_str() {
+            "-d" | "-q" | "-u" | "--directory" => i += 1,
+            // `-t prefisso` (macOS) resta sotto la cartella temporanea: solo
+            // il prefisso cambia nome, non la radice. Il valore consumato qui
+            // sfugge al controllo sulla barra fatto in testa al ciclo — va
+            // ripetuto, o un prefisso che nomina un percorso passerebbe per
+            // un nome nudo.
+            "-t" => {
+                i += 1;
+                match words.get(i) {
+                    Some(prefix) if prefix.starts_with('-') => {}
+                    Some(prefix) if prefix.contains('/') => return false,
+                    Some(_) => i += 1,
+                    None => {}
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+/// Le variabili che il comando assegna da un `mktemp` puro: non risolvibili
+/// a un valore letterale, ma risolvibili a «sotto una radice di riserva» —
+/// che è tutto ciò che serve per giudicarle.
+fn mktemp_variables(command: &str) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for line in command.replace(';', "\n").split('\n') {
+        let Some(c) = command_substitution_assignment().captures(line) else {
+            continue;
+        };
+        let inner = c.get(2).or_else(|| c.get(3)).map(|m| m.as_str()).unwrap_or("");
+        if !is_pure_mktemp(inner) {
+            continue;
+        }
+        let name = &c[1];
+        out.insert(name.to_string(), format!("{}mktemp-{name}", SCRATCH_ROOTS[0]));
+    }
+    out
+}
+
 /// I fatti che il giudizio non può inventarsi.
 pub struct Facts<'a> {
     pub command: &'a str,
@@ -172,7 +254,8 @@ fn first_danger(command: &str, f: &Facts, depth: usize) -> Option<Danger> {
     if depth > MAX_NESTING {
         return None;
     }
-    let variables = assignments(command);
+    let mut variables = assignments(command);
+    variables.extend(mktemp_variables(command));
     for segment in split_segments(command) {
         if let Some(d) = judge_segment(&segment, &variables, f, depth) {
             return Some(d);
@@ -843,6 +926,74 @@ mod tests {
         assert!(!blocked("npm run rm-rf-helper"));
         assert!(!blocked("ls -R /Users/theo/personal/sailor"));
         assert!(!blocked("cp -r /Users/theo/a /Users/theo/b"));
+    }
+
+    // ── Il settimo caso: la variabile nata da `mktemp` ──────────────────────
+
+    /// Il difetto misurato il 22/08/2026: 90 delle 127 cancellazioni ricorsive
+    /// di sette giorni avevano il bersaglio in una variabile, e il valore era
+    /// quasi sempre una cartella temporanea appena creata.
+    ///
+    /// MUTANTE: in `is_pure_mktemp`, sostituire `ends_with_command(head,
+    /// "mktemp")` con `true`. Eseguito: questa prova resta verde (il verbo
+    /// resta comunque `mktemp`), ma `a_non_scratch_path_via_a_variable_stays_
+    /// blocked` diventa rossa, perché `D=$(qualcosa)` verrebbe letto come
+    /// scratch. Ripristinato.
+    ///
+    /// UN SECONDO MUTANTE, PIÙ DEBOLE, NON UCCIDE NIENTE E LO SCRIVO PERCHÉ SI
+    /// VEDA: togliere il controllo sulla barra in testa al ciclo — quello
+    /// prima del `match` — non fa arrossire nessuna prova di questo file,
+    /// nemmeno `a_non_scratch_path_via_a_variable_stays_blocked`: ogni parola
+    /// coi due punti che nomina un percorso finisce comunque nel ramo di
+    /// riserva del `match`, che non la riconosce come `-d`, `-q`, `-u`,
+    /// `--directory` o `-t`. È ridondanza voluta (vedi il commento lì), non
+    /// una riga che regge una prova. Il controllo che regge davvero è quello
+    /// dentro il ramo `-t`, isolato da `a_slash_after_dash_t_is_not_a_bare_
+    /// prefix` qui sotto.
+    #[test]
+    fn a_variable_assigned_from_a_bare_mktemp_call_is_disposable() {
+        assert!(!blocked("D=$(mktemp -d); rm -rf \"$D\""));
+        assert!(!blocked("D=$(mktemp -d)\nrm -rf \"$D\""));
+        assert!(!blocked("D=$(mktemp -d); rm -rf $D"));
+        assert!(!blocked("D=$(mktemp -d); rm -rf \"${D}/sub\""));
+        assert!(!blocked("D=`mktemp -d`; rm -rf \"$D\""));
+        assert!(!blocked("F=$(mktemp); rm -rf \"$F\""));
+        assert!(!blocked("D=$(mktemp -d -t sessione); rm -rf \"$D\""));
+    }
+
+    /// Un modello di percorso esplicito, o `-p`/`--tmpdir`, tolgono la
+    /// garanzia: `mktemp` può scrivere dove gli si dice. Resta bloccato come
+    /// prima di questa correzione.
+    ///
+    /// MISURATO, non un solo mutante: le prime tre righe sono protette due
+    /// volte (il controllo sulla barra in testa al ciclo, e il ramo di
+    /// riserva del `match`), e nessuno dei due da solo le fa cadere — tolti
+    /// insieme sì. Le ultime due dipendono da un controllo diverso, isolato
+    /// da `a_variable_assigned_from_a_bare_mktemp_call_is_disposable`.
+    #[test]
+    fn a_non_scratch_path_via_a_variable_stays_blocked() {
+        assert!(blocked(
+            "D=$(mktemp -d /Users/theo/personal/sailor/x.XXXXXX); rm -rf \"$D\""
+        ));
+        assert!(blocked("D=$(mktemp -p /Users/theo/.claude); rm -rf \"$D\""));
+        assert!(blocked("D=$(mktemp --tmpdir=/Users/theo/.claude); rm -rf \"$D\""));
+        // Un valore reale, non da mktemp, assegnato per esteso: già coperto da
+        // `a_variable_the_command_defines_is_resolved_before_judging`, qui si
+        // isola il caso in cui il comando dentro le parentesi non è leggibile.
+        assert!(blocked("D=$(uuidgen); rm -rf \"$D\""));
+        assert!(blocked("D=$(cat /Users/theo/percorso-segreto); rm -rf \"$D\""));
+    }
+
+    /// Isola il controllo sulla barra: senza, il valore di `-t` verrebbe
+    /// consumato senza guardarlo, e un prefisso che nomina un percorso
+    /// passerebbe come se fosse un nome nudo.
+    ///
+    /// MUTANTE: in `is_pure_mktemp`, nel ramo `-t`, togliere
+    /// `Some(prefix) if prefix.contains('/') => return false`. Eseguito:
+    /// questa prova diventa rossa e **solo** questa. Ripristinato.
+    #[test]
+    fn a_slash_after_dash_t_is_not_a_bare_prefix() {
+        assert!(blocked("D=$(mktemp -t /Users/theo/.claude); rm -rf \"$D\""));
     }
 
     /// La via d'uscita che esisteva prima non si chiude: è la stessa funzione a
