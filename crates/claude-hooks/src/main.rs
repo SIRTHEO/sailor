@@ -162,6 +162,7 @@ const ALL_HOOKS: &[&str] = &[
     "block-pr-merge-admin",
     "block-worktree-create",
     "cd-guard",
+    "instincts",
     "code-language",
     "comment-refs",
     "duplication",
@@ -330,6 +331,7 @@ fn has_module_test(name: &str) -> bool {
         "block-pr-merge-admin" => &[include_str!("../../guards/src/pr_merge_admin.rs")],
         "block-worktree-create" => &[include_str!("../../guards/src/worktree_create.rs")],
         "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
+        "instincts" => &[include_str!("../../guards/src/instincts.rs")],
         "code-language" => &[include_str!("../../guards/src/code_language.rs")],
         "message-budget" => &[include_str!("../../guards/src/message_budget.rs")],
         // Il secondo file prova la colla, non il giudizio: senza, il rapporto
@@ -724,6 +726,41 @@ fn run(which: &str) -> Result<i32, String> {
             }
             let decision = mode.soften(guards::cd_guard::judge(input.bash_command()));
             Ok(emit_with_legacy_prefix("cd-guard", &decision))
+        }
+        "instincts" => {
+            // Porto di `inject-instincts.sh`: stesso interruttore, stessa
+            // cartella, ma la scelta di cosa iniettare è in `guards::instincts`.
+            // Nessuno stdin da leggere: SessionStart non ne manda uno che serva.
+            let home = std::env::var("HOME").unwrap_or_default();
+            let base = std::path::PathBuf::from(&home).join(".claude/homunculus");
+            if base.join("disabled").exists() {
+                return Ok(0);
+            }
+            let Ok(entries) = std::fs::read_dir(base.join("instincts/personal")) else {
+                return Ok(0);
+            };
+            // `None` è un file trovato ma non leggibile: passa lo stesso a
+            // `select`, che lo conta come «senza misura» invece di perderlo.
+            let mut instincts: Vec<(String, Option<String>)> = entries
+                .flatten()
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+                .map(|e| {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    let text = std::fs::read_to_string(e.path()).ok();
+                    (name, text)
+                })
+                .collect();
+            if instincts.is_empty() {
+                return Ok(0);
+            }
+            instincts.sort_by(|a, b| a.0.cmp(&b.0));
+            let today: String = hook_io::local_time::now_local_iso8601()
+                .chars()
+                .take(10)
+                .collect();
+            let rendered = guards::instincts::select(&instincts, &today);
+            println!("{}", json_tool::context("SessionStart", &rendered.text));
+            Ok(0)
         }
         "message-budget" => {
             let mode = Mode::from_env("MESSAGE_BUDGET");
