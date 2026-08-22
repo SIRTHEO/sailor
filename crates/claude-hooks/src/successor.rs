@@ -422,7 +422,7 @@ pub enum ArmOutcome {
     Failed(String),
 }
 
-/// I quattro freni e, se passano tutti, la scheda che parte da sola.
+/// Gli otto freni e, se passano tutti, la scheda che parte da sola.
 ///
 /// ESTRATTA PER UN SECONDO CHIAMANTE, come nell'originale: fino al 16/08/2026
 /// l'unico innesco era la **scrittura** di una consegna, quindi una sessione
@@ -445,6 +445,7 @@ pub fn arm(
     origin: &str,
     enough_used: bool,
     in_subagent: bool,
+    declared: bool,
 ) -> ArmOutcome {
     // La cwd del PROCESSO, non quella dichiarata nel payload. Il Python usa
     // `os.getcwd()`, e le due coincidono quasi sempre — per questo il confronto
@@ -468,6 +469,10 @@ pub fn arm(
         already_armed: false,
         enough_used,
         in_subagent,
+        // Lo Stop ha già verificato `handoff_valid` prima di chiamare qui
+        // (`handoff_on_stop::arm_successor`): per quell'origine la dichiarazione
+        // è vera per costruzione, non un fatto da ridiscutere.
+        declared: declared || origin == "stop",
     };
     // Il consumo si valuta per ultimo perché SCRIVE il marcatore: chiederlo prima
     // brucerebbe l'unica arma di questa sessione anche quando un altro freno
@@ -579,6 +584,23 @@ fn session_is_full(input: &hook_io::HookInput, session: &str) -> bool {
     guards::successor::is_full_enough(used, t.warn)
 }
 
+/// La consegna appena scritta è stata dichiarata chiusa, e nessuno ha
+/// lavorato dopo? Stessa fonte di `session_is_full`: il transcript del
+/// payload.
+///
+/// Senza transcript non si sa: `handoff_valid` risponde `false` di suo (nessun
+/// marcatore da leggere), e questo gancio resta muto — è il verso giusto in
+/// cui sbagliare per un innesco che ARMA una scheda, non uno che la nega.
+fn is_declared(input: &hook_io::HookInput, session: &str) -> bool {
+    let transcript = input.transcript_path.clone().unwrap_or_default();
+    if transcript.is_empty() {
+        return false;
+    }
+    let short: String = session.chars().take(8).collect();
+    crate::handoff_required::handoff_valid(&transcript, &short)
+        && !crate::handoff::worked_after_handoff(&transcript, &short)
+}
+
 /// Il gancio vero: PostToolUse, decide e — se tutti i freni sono liberi — apre.
 ///
 /// Fail-open in ogni ramo: l'uscita è sempre 0. Un gancio che rompe la scrittura
@@ -614,6 +636,7 @@ pub fn run(input: &hook_io::HookInput) -> i32 {
         "scrittura",
         session_is_full(input, &session),
         input.in_subagent(),
+        is_declared(input, &session),
     ) {
         ArmOutcome::Stop(m) | ArmOutcome::Open(m) | ArmOutcome::Failed(m) => {
             // Un freno silenzioso resta silenzioso: stampare un JSON vuoto
@@ -987,7 +1010,7 @@ mod tests {
     fn arm_of_a_child_session_stays_quiet_and_opens_nothing() {
         let home = HomeIsolata::nuova("successor-arm-child");
         let _env = EnvOverrides::new().set(guards::successor::GENERATION_ENV, "1");
-        let outcome = arm("/x/consegna.md", "sessione-figlia", "scrittura", true, false);
+        let outcome = arm("/x/consegna.md", "sessione-figlia", "scrittura", true, false, true);
         assert_eq!(outcome, ArmOutcome::Stop(String::new()));
         let lines = journal_lines(&home.dir);
         assert!(
@@ -1003,7 +1026,7 @@ mod tests {
             .unset(guards::successor::GENERATION_ENV)
             .set("CONSEGNA_ORA", "12")
             .set("CONSEGNA_TETTO_SESSIONI", "0");
-        let outcome = arm("/x/consegna.md", "sessione-tetto", "scrittura", true, false);
+        let outcome = arm("/x/consegna.md", "sessione-tetto", "scrittura", true, false, true);
         match outcome {
             ArmOutcome::Stop(msg) => assert!(msg.contains("sessioni vive"), "{msg}"),
             other => panic!("atteso Stop parlante, ottenuto {other:?}"),
@@ -1100,9 +1123,17 @@ mod tests {
             .set("CONSEGNA_TETTO_PANNELLI", "999")
             .unset(guards::successor::GENERATION_ENV);
 
+        // Il caso nominale simula `/handoff` già invocato — il tool-use che
+        // scrive `consegna-fatta-*` — prima che lo strumento scriva il
+        // documento di memoria che arma il successore.
+        fs::write(home.stato().join("consegna-fatta-sessione"), "1").unwrap();
+        let transcript = home.dir.join("transcript.jsonl");
+        fs::write(&transcript, "").unwrap();
+
         let doc = format!("{}/memory/consegna-prova-nominale.md", home.dir.display());
         let input = hook_io::HookInput {
             session_id: Some("sessione-run-nominale".to_string()),
+            transcript_path: Some(transcript.to_string_lossy().into_owned()),
             tool_input: Some(serde_json::json!({ "file_path": doc })),
             ..Default::default()
         };
@@ -1137,5 +1168,52 @@ mod tests {
             1,
             "the second pass must not re-arm"
         );
+    }
+
+    /// Il caso del 22/08/2026: un documento che SEMBRA una consegna, un vero
+    /// consumo di token oltre l'avviso (78% di 300k su fable-5 sono 234.000),
+    /// e nessun marcatore `consegna-fatta-*` — nessuno ha mai dichiarato
+    /// chiusa la garanzia. Prima della correzione questo apre comunque.
+    #[test]
+    fn a_document_that_looks_like_a_handoff_but_was_never_declared_never_arms() {
+        let home = HomeIsolata::nuova("successor-run-not-declared");
+        let bin_dir = install_fake_orca(&home.dir);
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let _env = EnvOverrides::new()
+            .set("PATH", &format!("{}:{}", bin_dir.display(), original_path))
+            .set("CONSEGNA_ORA", "12")
+            .set("CONSEGNA_TETTO_SESSIONI", "999")
+            .set("CONSEGNA_TETTO_PANNELLI", "999")
+            .unset("CONSEGNA_ANCHE_A_META")
+            .unset(guards::successor::GENERATION_ENV);
+
+        let doc = format!(
+            "{}/memory/consegna-prova-non-dichiarata.md",
+            home.dir.display()
+        );
+        let transcript = home.dir.join("transcript.jsonl");
+        fs::write(
+            &transcript,
+            r#"{"type":"assistant","message":{"model":"claude-fable-5","usage":{"input_tokens":234873}}}"#,
+        )
+        .unwrap();
+
+        let input = hook_io::HookInput {
+            session_id: Some("sessione-non-dichiarata".to_string()),
+            transcript_path: Some(transcript.to_string_lossy().into_owned()),
+            tool_input: Some(serde_json::json!({ "file_path": doc })),
+            ..Default::default()
+        };
+
+        run(&input);
+
+        let opens = journal_lines(&home.dir)
+            .iter()
+            .filter(|r| {
+                r.contains("\"gancio\":\"consegna-arma-successore\"")
+                    && r.contains("\"decisione\":\"apre\"")
+            })
+            .count();
+        assert_eq!(opens, 0, "senza consegna dichiarata non deve armare niente");
     }
 }
