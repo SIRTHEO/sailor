@@ -165,6 +165,7 @@ const ALL_HOOKS: &[&str] = &[
     "code-language",
     "comment-refs",
     "duplication",
+    "message-budget",
     "handoff-arms-successor",
     "handoff-measure",
     "handoff-on-stop",
@@ -330,6 +331,7 @@ fn has_module_test(name: &str) -> bool {
         "block-worktree-create" => &[include_str!("../../guards/src/worktree_create.rs")],
         "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
         "code-language" => &[include_str!("../../guards/src/code_language.rs")],
+        "message-budget" => &[include_str!("../../guards/src/message_budget.rs")],
         // Il secondo file prova la colla, non il giudizio: senza, il rapporto
         // conterebbe coperto un gancio di cui è provata solo metà.
         "comment-refs" => &[
@@ -722,6 +724,31 @@ fn run(which: &str) -> Result<i32, String> {
             }
             let decision = mode.soften(guards::cd_guard::judge(input.bash_command()));
             Ok(emit_with_legacy_prefix("cd-guard", &decision))
+        }
+        "message-budget" => {
+            let mode = Mode::from_env("MESSAGE_BUDGET");
+            if mode == Mode::Off {
+                return Ok(0);
+            }
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0); // invocato fuori contesto
+            };
+            if !input.is_tool("SendMessage") {
+                return Ok(0);
+            }
+            let message = input
+                .tool_input
+                .as_ref()
+                .and_then(|v| v.get("message"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            // `soften` ammorbidisce solo un blocco; qui il verdetto è un
+            // diniego di permesso, quindi la valvola `avvisa` si applica a mano.
+            let decision = match (mode, guards::message_budget::judge(message)) {
+                (Mode::WarnOnly, Decision::Deny(m)) => Decision::Warn(m),
+                (_, d) => d,
+            };
+            Ok(emit_with_legacy_prefix("message-budget", &decision))
         }
         "block-worktree-create" => {
             let mode = Mode::from_env("BLOCK_WORKTREE_CREATE");

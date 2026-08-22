@@ -17,6 +17,7 @@ pub mod hooks_off;
 pub mod language;
 pub mod linear_readonly;
 pub mod memory_anchor;
+pub mod message_budget;
 pub mod link_worktree_rules;
 pub mod live_rules;
 pub mod pr_merge_admin;
