@@ -327,6 +327,17 @@ pub fn is_code_file(path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Una competenza o uno script di shell: dal 22/08/2026 la domanda «esiste
+/// già?» vale anche qui, perché è qui che si affianca di più. Il censimento del
+/// 20/08 contava 45 competenze su 67 mai invocate, e 35 dei 52 file di
+/// `scripts/` sono `.sh`, che `is_code_file` non vede. Il manifesto
+/// `SKILL.md` è l'unico `.md` giudicato: un documento qualsiasi resta fuori.
+pub fn is_skill_or_script(path: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(/skills/[^/]+/SKILL\.md$|\.(sh|bash|zsh)$)").unwrap())
+        .is_match(path)
+}
+
 /// `plugins/cache` accanto agli altri: un plugin installato dal marketplace è
 /// vendorizzato quanto `node_modules`, a versione fissata. Cercare una
 /// stringa letterale lì dentro non è una domanda sul dominio di questo
@@ -425,6 +436,20 @@ fn message_impact(lost: &[String]) -> String {
     )
 }
 
+/// Il consiglio dato quando il pattern e' la sagoma di una definizione:
+/// l'indice la risolve in una chiamata, non un pedaggio sul singolo grep.
+fn message_definition(pattern: &str) -> String {
+    let ident = definition_identifier(pattern).unwrap_or_else(|| pattern.trim().to_string());
+    format!(
+        "SocratiCode-first: \"{pattern}\" e' una ricerca di DEFINIZIONE in un repo\n\
+         indicizzato: l'indice la risolve in una chiamata, il grep in tre.\n\
+         \x20 ToolSearch \"select:codebase_symbol,codebase_search\"\n\
+         \x20 codebase_symbol \"{ident}\"   (projectPath del repo)\n\
+         Se vuoi contare le occorrenze di oggi, aggiungi -c o cerca l'identificatore\n\
+         nudo: passa."
+    )
+}
+
 fn message_reuse(file: &str) -> String {
     format!(
         "SocratiCode-first: stai creando un file di codice NUOVO senza aver cercato riuso.\n\
@@ -516,7 +541,7 @@ fn judge_edit(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Verd
 
 fn judge_write(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Verdict {
     let file = field(input, "file_path");
-    if file.is_empty() || !is_code_file(file) {
+    if file.is_empty() || !(is_code_file(file) || is_skill_or_script(file)) {
         return Verdict::out_of_scope(); // documenti, config, dati: non è riuso di codice
     }
     if is_out_of_perimeter(file) || is_throwaway(file) || is_test_file(file) {
@@ -617,6 +642,23 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
     // costruzione, e un bersaglio solo resta ambiguo apposta (vedi test).
     if tool != "Grep" && explicit_target_count(command) >= 2 {
         return Verdict::out_of_scope();
+    }
+
+    // Ricerca di DEFINIZIONE («dov'e' fn judge») in un repo di codice: qui
+    // l'identificatore esatto passerebbe sempre sotto `allowed_search`, ma
+    // l'indice la risolve in una chiamata contro tre grep. `-c`/`output_mode:
+    // count` restano il VALORE DI OGGI (quante occorrenze) e non pagano
+    // pedaggio, ne' un bersaglio fuori da codice (`docs/`, `.md`).
+    if is_code_target(&target)
+        && !wants_count(tool, input, command)
+        && looks_like_a_definition_lookup(&pattern)
+    {
+        return Verdict {
+            decision: Decision::Block(message_definition(&pattern)),
+            reason: "ricerca-di-definizione",
+            path: Some(target),
+            count: None,
+        };
     }
 
     // IL GIUDIZIO GUARDA LA DOMANDA, NON UN CONTATORE. Un identificatore
@@ -815,6 +857,86 @@ const SEARCH_KEYWORDS: [&str; 15] = [
 fn is_keyword_phrase(p: &str) -> bool {
     let words: Vec<&str> = p.split_whitespace().collect();
     words.len() > 1 && words.iter().any(|w| SEARCH_KEYWORDS.contains(&w.to_lowercase().as_str()))
+}
+
+/// Un conteggio (`grep -c`, o `output_mode: "count"` per lo strumento
+/// `Grep`) e' domanda sul VALORE DI OGGI — quante occorrenze adesso — anche
+/// quando il pattern ha la sagoma di una definizione: li' il grep resta lo
+/// strumento giusto, l'indice non conta occorrenze.
+fn wants_count(tool: &str, input: &hook_io::HookInput, command: &str) -> bool {
+    if tool == "Grep" {
+        return field(input, "output_mode") == "count";
+    }
+    let Some(tail) = grep_invocation_tail(command) else {
+        return false;
+    };
+    // Le opzioni possono seguire il pattern (`grep "fn x" -c .`): si
+    // scandisce tutta l'invocazione, forma lunga compresa.
+    split_respecting_quotes(tail).into_iter().any(|word| {
+        word == "--count" || (word.starts_with('-') && !word.starts_with("--") && word[1..].contains('c'))
+    })
+}
+
+/// Il bersaglio e' codice: un file con estensione da codice, o una cartella
+/// che contiene uno dei segmenti tipici di un repo (`rust`, `src`, `crates`,
+/// `lib`, `app`). Un `grep "fn "` dentro `docs/` o un `.md` resta un grep
+/// qualsiasi: li' non c'e' una definizione da risolvere nell'indice.
+fn is_code_target(target: &str) -> bool {
+    if is_code_file(target) {
+        return true;
+    }
+    Path::new(target).components().any(|c| {
+        matches!(
+            c.as_os_str().to_str(),
+            Some("rust" | "src" | "crates" | "lib" | "app")
+        )
+    })
+}
+
+/// La sagoma di una ricerca di DEFINIZIONE: parola chiave del linguaggio,
+/// poi — se c'e' — l'identificatore. Il nome resta opzionale apposta:
+/// `^fn ` da solo enumera ogni funzione di un file, la stessa domanda
+/// strutturale con o senza un nome pinnato. Condivisa dal giudizio booleano
+/// e dall'estrazione del nome per il messaggio, cosi' non divergono.
+fn definition_lookup_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            // Il `\b` dopo la parola chiave: `constructor` e `typescript` sono
+            // identificatori nudi, non `const`/`type` con un nome.
+            r"^(?:(?:pub(?:\(crate\))?\s+)?(?:fn|struct|enum|trait|type|const|static|mod|impl)\b(?:\s+(?P<a>\w+))?|(?:export\s+)?(?:async\s+)?(?:function|class|interface|def|const|let)\b(?:\s+(?P<b>\w+))?|fn\s+(?P<c>\w+)\s*\()",
+        )
+        .unwrap()
+    })
+}
+
+/// Vero se il pattern e' una ricerca di DEFINIZIONE: comincia con una parola
+/// chiave, non con un identificatore nudo — quello resta un grep legittimo,
+/// cerca il valore di oggi. Un'alternativa (`|`) conta solo se OGNI ramo lo
+/// e': nel dubbio, falso.
+fn looks_like_a_definition_lookup(pattern: &str) -> bool {
+    let unquoted = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
+    if unquoted.is_empty() {
+        return false;
+    }
+    unquoted.split('|').all(|branch| {
+        let b = branch.trim().trim_start_matches('^');
+        !b.is_empty() && definition_lookup_regex().is_match(b)
+    })
+}
+
+/// Il nome che segue la parola chiave, per il messaggio del gate. `None`
+/// quando il pattern non ne porta uno (`^fn ` da solo): il messaggio ripiega
+/// sul pattern intero.
+fn definition_identifier(pattern: &str) -> Option<String> {
+    let unquoted = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
+    let first_branch = unquoted.split('|').next()?;
+    let b = first_branch.trim().trim_start_matches('^');
+    let caps = definition_lookup_regex().captures(b)?;
+    caps.name("a")
+        .or_else(|| caps.name("b"))
+        .or_else(|| caps.name("c"))
+        .map(|m| m.as_str().to_string())
 }
 
 /// Questa ricerca è di quelle che la regola **ammette per iscritto**?
@@ -1033,6 +1155,39 @@ mod tests {
             "un file nuovo in una cartella indicizzata e' di competenza del gate (reason: {:?})",
             judged.reason
         );
+    }
+
+    /// MUTANTE: togliere `is_skill_or_script` dalla condizione di `judge_write`,
+    /// o restringere la regex a `SKILL.md` solo. Il manifesto e lo script
+    /// tornano fuori perimetro e i due blocchi sotto diventano silenzio.
+    #[test]
+    fn a_new_skill_manifest_and_a_shell_script_are_judged_a_plain_document_is_not() {
+        let (ws, _keep) = workspace();
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            "/repo\n",
+        )
+        .unwrap();
+        let write_input = |path: &str| hook_io::HookInput {
+            session_id: Some("s-skill".to_string()),
+            cwd: Some("/repo".to_string()),
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(serde_json::json!({ "file_path": path })),
+            ..Default::default()
+        };
+
+        for path in ["/repo/skills/nuova/SKILL.md", "/repo/scripts/nuovo.sh"] {
+            let v = judge(&ws, &write_input(path));
+            assert!(
+                matches!(v.decision, Decision::Block(_)),
+                "{path} e' di competenza del gate (reason: {:?})",
+                v.reason
+            );
+        }
+        let doc = judge(&ws, &write_input("/repo/docs/nota.md"));
+        assert!(!doc.is_recorded(), "un documento qualsiasi resta fuori");
+        let nested = judge(&ws, &write_input("/repo/skills/nuova/README.md"));
+        assert!(!nested.is_recorded(), "solo il manifesto conta, non ogni .md della skill");
     }
 
     /// Differenziale a variabile unica: due percorsi identici tranne il nome.
@@ -1427,6 +1582,163 @@ mod tests {
         assert!(
             !verdict.is_recorded(),
             "un plugin vendorizzato e' fuori dal perimetro del gate, non di sua competenza: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// (1) definizione con nome esatto: l'indice la risolve in una chiamata.
+    /// MUTANTE (rotto così → rosso): far tornare `false` sempre da
+    /// `looks_like_a_definition_lookup` — il blocco sparisce e la ricerca passa.
+    #[test]
+    fn a_definition_lookup_with_an_exact_name_is_blocked() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("crates").join("guards").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let input = grep_input(&src, &src, "pub fn judge");
+        let verdict = judge_search(&ws, &input);
+        match verdict.decision {
+            Decision::Block(msg) => assert!(
+                msg.contains("codebase_symbol \"judge\""),
+                "il messaggio deve dare l'identificatore da cercare: {msg}"
+            ),
+            _ => panic!("una ricerca di definizione con nome esatto deve fermarsi"),
+        }
+        assert_eq!(verdict.reason, "ricerca-di-definizione");
+    }
+
+    /// (2) l'identificatore nudo resta un grep legittimo: cerca il valore di
+    /// oggi, non dov'e' la definizione.
+    /// MUTANTE (rotto così → rosso): rendere `looks_like_a_definition_lookup`
+    /// vera per qualunque parola — bloccherebbe anche `judge` da solo.
+    #[test]
+    fn a_bare_identifier_is_not_a_definition_lookup() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("crates").join("guards").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let input = grep_input(&src, &src, "judge");
+        let verdict = judge_search(&ws, &input);
+        assert!(matches!(verdict.decision, Decision::Pass));
+    }
+
+    /// (3) `-c` conta le occorrenze di oggi: anche una sagoma di definizione
+    /// passa, la domanda non e' "dove vive" ma "quante volte c'e' adesso".
+    /// MUTANTE (rotto così → rosso): togliere `!wants_count(...)` dal
+    /// giudizio — la stessa ricerca finirebbe bloccata.
+    #[test]
+    fn a_count_flag_bypasses_the_definition_block() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let verdict = judge_search(&ws, &bash_input(&src, "grep -rc \"fn judge\" ."));
+        assert!(
+            matches!(verdict.decision, Decision::Pass),
+            "-c conta il valore di oggi, non deve bloccarsi: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// (3b) `-c` dopo il pattern e la forma lunga `--count` valgono quanto
+    /// `-rc` davanti: il messaggio promette «aggiungi -c … passa».
+    /// MUTANTE (rotto così → rosso): in `wants_count` fermarsi al primo
+    /// token che non comincia per `-`, o escludere `--count`.
+    #[test]
+    fn a_count_flag_after_the_pattern_bypasses_the_definition_block() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        for cmd in ["grep -r \"fn judge\" -c .", "grep --count \"fn judge\" ."] {
+            let verdict = judge_search(&ws, &bash_input(&src, cmd));
+            assert!(
+                matches!(verdict.decision, Decision::Pass),
+                "{cmd}: conta il valore di oggi, non deve bloccarsi: {:?}",
+                verdict.reason
+            );
+        }
+    }
+
+    /// (2b) un identificatore che COMINCIA per una parola chiave
+    /// (`constructor`, `typescript`, `structured_logging`) resta nudo: la
+    /// sagoma vuole la parola intera, non il prefisso.
+    /// MUTANTE (rotto così → rosso): togliere i `\b` da
+    /// `definition_lookup_regex`.
+    #[test]
+    fn a_keyword_prefixed_identifier_is_not_a_definition_lookup() {
+        for id in ["constructor", "typescript", "structured_logging", "letters", "implementation"] {
+            assert!(!looks_like_a_definition_lookup(id), "{id} è un identificatore nudo");
+        }
+        assert!(looks_like_a_definition_lookup("const FOO"));
+        assert!(looks_like_a_definition_lookup("^pub fn"));
+    }
+
+    /// (4) fuori da un bersaglio di codice (`docs/`, `.md`) non c'e' una
+    /// definizione da risolvere nell'indice: il grep resta quello giusto.
+    /// MUTANTE (rotto così → rosso): togliere `is_code_target(...)` dal
+    /// giudizio — un `fn ` dentro `docs/` si bloccherebbe comunque.
+    #[test]
+    fn a_definition_shaped_pattern_outside_code_passes() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let docs = repo.join("docs");
+        std::fs::create_dir_all(&docs).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        let note = docs.join("note.md");
+        std::fs::write(&note, "").unwrap();
+
+        let input = grep_input(&docs, &note, "fn judge");
+        let verdict = judge_search(&ws, &input);
+        assert!(matches!(verdict.decision, Decision::Pass));
+    }
+
+    /// (5) due sagome di definizione in alternativa, senza nome pinnato:
+    /// `^fn ` da solo enumera ogni funzione, la stessa domanda strutturale.
+    /// MUTANTE (rotto così → rosso): richiedere sempre un identificatore
+    /// dopo la parola chiave — questo pattern non ne porta e passerebbe.
+    #[test]
+    fn a_bare_keyword_alternation_is_still_a_definition_lookup() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let input = grep_input(&src, &src, "^pub fn|^fn ");
+        let verdict = judge_search(&ws, &input);
+        assert!(
+            matches!(verdict.decision, Decision::Block(_)),
+            "due sagome di definizione in alternativa devono fermarsi: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// (6) un ramo dell'alternativa non e' una definizione (`TODO`): basta
+    /// un ramo qualunque perche' non sia piu' "ogni ramo e' una definizione".
+    /// MUTANTE (rotto così → rosso): bastare UN ramo invece di TUTTI (`.any`
+    /// al posto di `.all`) — questo pattern si bloccherebbe.
+    #[test]
+    fn one_non_definition_branch_lets_the_alternation_pass() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let input = grep_input(&src, &src, "fn judge\\|TODO");
+        let verdict = judge_search(&ws, &input);
+        assert!(
+            matches!(verdict.decision, Decision::Pass),
+            "un ramo non-definizione ammette l'intera alternativa: {:?}",
             verdict.reason
         );
     }
