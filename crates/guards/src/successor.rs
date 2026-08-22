@@ -372,7 +372,7 @@ pub fn inherited_clause(here: &[Listener]) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "\n\nTERZA REGOLA: in questo albero e' rimasto acceso del lavoro della \
+        "\n\nSECONDA REGOLA: in questo albero e' rimasto acceso del lavoro della \
          sessione precedente — {listed}. Non riavviarli alla cieca e non spegnerli \
          per abitudine: prima verifica che rispondano davvero \
          (`lsof -nP -iTCP:<porta> -sTCP:LISTEN`). Una seconda copia sulla stessa \
@@ -382,26 +382,20 @@ pub fn inherited_clause(here: &[Listener]) -> String {
 
 /// Il testo che il successore riceve come primo prompt.
 ///
-/// Le clausole sono ricopiate apposta, e nessuna è oziosa: una sessione
-/// aperta in automatico parte senza nessuno che la corregga al primo turno,
-/// quindi ciò che non sta qui non lo fa. Il 13/08/2026 una sessione aperta così
-/// ha risposto al bollettino del monitor pur avendo in contesto la regola che lo
-/// vieta — regola ricevuta, regola non applicata.
+/// Le clausole sono ricopiate apposta: una sessione aperta in automatico parte
+/// senza nessuno che la corregga al primo turno, quindi ciò che non sta qui
+/// non lo fa. Fino al 22/08/2026 c'era una clausola in più, contro il
+/// «bollettino del monitor»: era il `Monitor` del plugin `claude-code-harness`,
+/// spento quel giorno, e una difesa contro un evento che non arriva più costa
+/// tre righe a ogni figura (piano `docs/plans/2026-08-22-sette-cambiamenti-…`).
 ///
-/// `inherited` è vuoto quando non c'è niente acceso, e allora la terza clausola
-/// non compare: un inventario vuoto scritto ogni volta insegna a saltare il
-/// paragrafo, e il giorno che elenca qualcosa nessuno lo legge.
+/// `inherited` è vuoto quando non c'è niente acceso, e allora la seconda
+/// clausola non compare: un inventario vuoto scritto ogni volta insegna a
+/// saltare il paragrafo, e il giorno che elenca qualcosa nessuno lo legge.
 pub fn mandate(path: &str, inherited: &str) -> String {
     format!(
         "Leggi {path} e riprendi da li'.\n\n\
-         PRIMA REGOLA, prima di qualunque altra cosa: se il primo messaggio che \
-         ricevi e' una notifica automatica di stato (bollettino del monitor, \
-         avvio sessione, salute di un servizio), NON e' il tuo compito e non si \
-         risponde. Il tuo compito e' la consegna qui sopra. \
-         (Questa clausola e' ricopiata apposta: il 13/08/2026 una sessione \
-         aperta cosi' ha risposto al bollettino pur avendo la regola in contesto.)\
-         \n\n\
-         SECONDA REGOLA: prima di leggere codice o scrivere qualunque cosa, \
+         PRIMA REGOLA: prima di leggere codice o scrivere qualunque cosa, \
          `git fetch --all --prune` e verifica di essere allineato col ramo \
          d'integrazione. Su questi repo lavorano anche altri, con richieste di \
          modifica e aggiornamenti che arrivano mentre tu non c'eri: la consegna \
@@ -678,7 +672,7 @@ mod tests {
     fn senza_niente_acceso_la_terza_clausola_non_compare() {
         assert_eq!(inherited_clause(&[]), "");
         let m = mandate("/x/consegna.md", "");
-        assert!(!m.contains("TERZA REGOLA"), "{m}");
+        assert!(!m.contains("SECONDA REGOLA"), "{m}");
     }
 
     #[test]
@@ -690,7 +684,11 @@ mod tests {
         assert!(!c.contains("spegnili"), "{c}");
         assert!(c.contains("lsof"), "deve dire come verificare: {c}");
         // E la clausola arriva davvero nel mandato.
-        assert!(mandate("/x/consegna.md", &c).contains("TERZA REGOLA"));
+        assert!(mandate("/x/consegna.md", &c).contains("SECONDA REGOLA"));
+        // La clausola sul bollettino del monitor non esiste più dal 22/08/2026:
+        // la sua fonte è spenta, e un mandato non difende da un evento che non
+        // arriva. Rimessa, questo caso va in rosso.
+        assert!(!mandate("/x/consegna.md", &c).contains("bollettino"));
     }
 
     #[test]
@@ -776,11 +774,12 @@ mod tests {
     }
 
     #[test]
-    fn il_mandato_porta_le_due_clausole() {
+    fn the_mandate_carries_the_handoff_and_the_fetch_rule() {
         let m = mandate("/x/consegna.md", "");
         assert!(m.contains("/x/consegna.md"));
-        assert!(m.contains("notifica automatica"));
         assert!(m.contains("git fetch --all --prune"));
+        // La clausola sul bollettino è stata tolta il 22/08/2026: rimessa, rosso.
+        assert!(!m.contains("notifica automatica"), "{m}");
     }
 
     fn via_libera() -> ArmFacts {
