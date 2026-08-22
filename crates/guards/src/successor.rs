@@ -416,7 +416,7 @@ pub enum Outcome {
     Open,
 }
 
-/// I fatti che i cinque freni guardano, già raccolti.
+/// I fatti che gli otto freni guardano, già raccolti.
 #[derive(Debug, Default)]
 pub struct ArmFacts {
     /// Questa sessione è nata a sua volta da una consegna.
@@ -434,6 +434,12 @@ pub struct ArmFacts {
     pub enough_used: bool,
     /// La scrittura viene da un subagent, non dalla conversazione principale.
     pub in_subagent: bool,
+    /// La consegna è stata DICHIARATA chiusa (`handoff_required::mark_done`) e
+    /// nessuno ha lavorato dopo (`handoff::worked_after_handoff`) — non solo un
+    /// documento che *sembra* una consegna. Il 22/08/2026 un documento di
+    /// memoria scritto a mano ha armato un gemello proprio perché niente
+    /// guardava questo fatto.
+    pub declared: bool,
 }
 
 /// L'ordine dei freni è comportamento, non stile.
@@ -441,7 +447,9 @@ pub struct ArmFacts {
 /// La generazione viene per prima perché è l'unica che deve tacere sempre: una
 /// figlia che si lamenta di non poter armare riempirebbe il contesto di ogni
 /// sessione nata così. L'orario prima del carico perché costa meno di una
-/// chiamata esterna. Il consumo per ultimo perché **scrive** il marcatore, e
+/// chiamata esterna. La dichiarazione prima della pienezza perché sapere
+/// quanto contesto resta non serve a niente se nessuno ha mai chiuso la
+/// consegna. Il consumo per ultimo perché **scrive** il marcatore, e
 /// scriverlo per poi fermarsi su un altro freno brucerebbe l'unica arma di
 /// quella sessione senza aprire niente.
 pub fn decide(f: &ArmFacts) -> Outcome {
@@ -461,6 +469,14 @@ pub fn decide(f: &ArmFacts) -> Outcome {
     }
     if !within_hours(f.hour) {
         return Outcome::StopQuiet("fuori-orario");
+    }
+    // UN DOCUMENTO CHE SEMBRA UNA CONSEGNA NON È UNA CONSEGNA DICHIARATA. Senza
+    // questo freno, il 22/08/2026 una nota di memoria scritta a mano ha armato
+    // un gemello mentre l'autrice lavorava ancora: nessuno aveva mai chiuso la
+    // garanzia (`handoff_required::mark_done`), e nessuno guardava se qualcuno
+    // aveva lavorato dopo (`handoff::worked_after_handoff`).
+    if !f.declared {
+        return Outcome::StopQuiet("non-dichiarata");
     }
     // SCRIVERE UNA CONSEGNA NON SIGNIFICA AVER FINITO. `/handoff` si invoca
     // anche a metà lavoro, e fino al 17/08/2026 questo bastava ad aprire il
@@ -794,6 +810,8 @@ mod tests {
             // motivo sbagliato, che è il modo in cui una batteria smette di
             // guardare.
             enough_used: true,
+            // Stesso motivo: questi casi provano gli ALTRI freni, non questo.
+            declared: true,
             ..Default::default()
         }
     }
@@ -822,6 +840,19 @@ mod tests {
             ..via_libera()
         };
         assert_eq!(decide(&f), Outcome::StopQuiet("subagent"));
+    }
+
+    #[test]
+    fn a_handoff_not_declared_never_arms() {
+        // Il caso vero del 22/08/2026: un documento che sembra una consegna,
+        // ma nessuno l'ha mai dichiarata chiusa (o ha continuato a lavorare
+        // dopo). Via libera su tutti gli altri freni, cambia solo `declared`.
+        // MUTANTE: tolto il controllo su `declared`, questo caso va in rosso
+        // da solo — nessun altro costruisce i fatti con `declared: false`.
+        let f = ArmFacts { declared: false, ..via_libera() };
+        assert_eq!(decide(&f), Outcome::StopQuiet("non-dichiarata"));
+        let f = ArmFacts { declared: true, ..via_libera() };
+        assert_eq!(decide(&f), Outcome::Open, "dichiarata arma come prima");
     }
 
     #[test]
