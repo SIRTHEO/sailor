@@ -14,6 +14,7 @@ pub mod destructive_commands;
 pub mod duplication;
 pub mod handoff;
 pub mod hooks_off;
+pub mod instincts;
 pub mod language;
 pub mod linear_readonly;
 pub mod memory_anchor;
