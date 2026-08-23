@@ -768,9 +768,37 @@ mod tests {
         lines
     }
 
+    /// Il campione più povero che il canarino accetta di giudicare: esattamente
+    /// `MIN_ASSISTANT` turni `assistant` e `MIN_USER` record `user`. Le due
+    /// soglie si provano sul numero esatto — con un campione più ricco un `<=`
+    /// al posto del `<` passa inosservato in tutte e due le direzioni.
+    fn minimal_sample() -> Vec<String> {
+        let full = healthy_sample();
+        let of_kind = |kind: &str, how_many: usize| -> Vec<String> {
+            full.iter()
+                .filter(|l| l.contains(&format!("\"type\":\"{kind}\"")))
+                .take(how_many)
+                .cloned()
+                .collect()
+        };
+        [of_kind("assistant", MIN_ASSISTANT), of_kind("user", MIN_USER)].concat()
+    }
+
     fn check_owned(lines: &[String]) -> Report {
         check(&lines.iter().map(String::as_str).collect::<Vec<_>>())
     }
+
+    /// Lo stesso campione sano con un solo timestamp riscritto: le forme storte
+    /// si provano una per volta, su una riga sola, così il difetto ha un numero.
+    fn with_timestamp(replacement: &str) -> Vec<String> {
+        healthy_sample()
+            .iter()
+            .map(|l| l.replace(HEALTHY_TIMESTAMP, replacement))
+            .collect()
+    }
+
+    /// Il timestamp del primo record `user` del campione sano.
+    const HEALTHY_TIMESTAMP: &str = "2026-08-24T01:07:11.123Z";
 
     fn rewritten(from: &str, to: &str) -> Vec<String> {
         healthy_sample().iter().map(|l| l.replace(from, to)).collect()
@@ -778,11 +806,163 @@ mod tests {
 
     #[test]
     fn a_healthy_sample_keeps_the_canary_alive() {
-        let report = check_owned(&healthy_sample());
+        let sample = healthy_sample();
+        let report = check_owned(&sample);
         assert_eq!(report.verdict(), Verdict::Alive, "{}", render(&report));
         assert_eq!(report.assistant, 6);
         assert_eq!(report.user, 2);
         assert!(report.notes.is_empty(), "{:?}", report.notes);
+        // rotto così → rosso: conteggi in testa che restano a zero fanno dire
+        // «0 righe, 0 record» in cima a un rapporto pieno
+        assert_eq!((report.lines, report.records), (sample.len(), sample.len()));
+        assert_eq!(report.unreadable, 0);
+    }
+
+    /// Le due soglie del verdetto si provano sul numero esatto che ammettono.
+    #[test]
+    fn the_smallest_sample_the_canary_will_judge_is_alive() {
+        let report = check_owned(&minimal_sample());
+        assert_eq!((report.assistant, report.user), (MIN_ASSISTANT, MIN_USER));
+        // rotto così → rosso: `<=` su una delle due soglie dichiara «non
+        // misurato» proprio il campione che le soglie ammettono
+        assert_eq!(report.verdict(), Verdict::Alive, "{}", render(&report));
+    }
+
+    /// E sul campione minimo la verifica d'insieme deve girare davvero: è lì che
+    /// si vede un campo rinominato, che riga per riga non lascia traccia.
+    #[test]
+    fn the_smallest_sample_still_condemns_a_vanished_field() {
+        let sample: Vec<String> =
+            minimal_sample().iter().map(|l| l.replace("\"usage\"", "\"tokenUsage\"")).collect();
+        let report = check_owned(&sample);
+        // rotto così → rosso: una soglia `<=` fa uscire subito la verifica
+        // d'insieme, e il campo sparito passa per un campione sano
+        assert_eq!(report.verdict(), Verdict::Dead, "{}", render(&report));
+        assert!(report.findings.iter().any(|f| f.assumption == "usage"), "{:?}", report.findings);
+    }
+
+    /// `"type": ""` è una stringa, ma non è un tipo di record: chi legge non
+    /// riconosce più né i turni `assistant` né gli `user`.
+    #[test]
+    fn an_empty_record_type_kills_the_canary() {
+        let mut sample = healthy_sample();
+        sample[1] = sample[1].replace("\"type\":\"assistant\"", "\"type\":\"\"");
+        let report = check_owned(&sample);
+        // rotto così → rosso: accettare la stringa vuota fa passare il record
+        // per un'annotazione qualunque, e nessuno dice che `type` è cambiato
+        assert_eq!(report.verdict(), Verdict::Dead, "{}", render(&report));
+        let finding = &report.findings[0];
+        assert_eq!((finding.assumption, finding.line), ("type", Some(2)));
+    }
+
+    /// `message.id` e `message.model` non si scambiano: se sparisce il modello,
+    /// il rapporto deve nominare il modello.
+    #[test]
+    fn a_vanished_model_is_named_instead_of_the_id() {
+        let sample: Vec<String> = healthy_sample()
+            .iter()
+            .map(|l| l.replace("\"model\":", "\"modelName\":"))
+            .collect();
+        let report = check_owned(&sample);
+        assert_eq!(report.verdict(), Verdict::Dead, "{}", render(&report));
+        // rotto così → rosso: scambiare i due campi dichiara sparito quello che
+        // c'è, e sano quello che manca
+        assert!(
+            report.findings.iter().any(|f| f.assumption == "message-model"),
+            "{:?}",
+            report.findings
+        );
+        assert!(
+            !report.findings.iter().any(|f| f.assumption == "message-id"),
+            "{:?}",
+            report.findings
+        );
+    }
+
+    /// Un blocco `tool_use` col nome ma senza `input`: manca proprio ciò che i
+    /// lettori vanno a prendere là dentro.
+    #[test]
+    fn a_tool_use_without_its_input_kills_the_canary() {
+        let mut sample = healthy_sample();
+        sample[0] = sample[0].replace(r#","input":{"command":"ls"}"#, "");
+        let report = check_owned(&sample);
+        // rotto così → rosso: `nome oppure input` conta per buono un blocco
+        // dimezzato, e la nota «nessun tool_use» non arriva perché uno c'era
+        assert_eq!(report.verdict(), Verdict::Dead, "{}", render(&report));
+        let finding = &report.findings[0];
+        assert_eq!(finding.assumption, "block-tool-use");
+        assert_eq!(finding.field, "message.content[].input");
+        assert_eq!(finding.line, Some(1));
+    }
+
+    /// Un separatore fuori posto per volta. Ognuno di questi timestamp diventa
+    /// `None` in `epoch_from_iso`, e la guardia che lo usa si spegne restando
+    /// scritta: il canarino deve gridare su tutti e cinque.
+    #[test]
+    fn a_timestamp_broken_at_any_separator_kills_the_canary() {
+        for position in [4, 7, 10, 13, 16] {
+            let mut bad: Vec<char> = HEALTHY_TIMESTAMP.chars().collect();
+            bad[position] = 'X';
+            let bad: String = bad.into_iter().collect();
+            let report = check_owned(&with_timestamp(&bad));
+            // rotto così → rosso: un `&&` al posto di un `||` fa bastare due
+            // separatori storti insieme, e uno solo non condanna più
+            assert_eq!(report.verdict(), Verdict::Dead, "byte {position}: {}", render(&report));
+            assert!(
+                report.findings.iter().any(|f| f.assumption == "timestamp"),
+                "byte {position}: {:?}",
+                report.findings
+            );
+        }
+    }
+
+    /// Ora, minuto e secondo fuori scala: la data è scritta bene ma non esiste.
+    #[test]
+    fn a_time_out_of_range_kills_the_canary() {
+        for bad in [
+            "2026-08-24T99:07:11.123Z",
+            "2026-08-24T01:99:11.123Z",
+            "2026-08-24T01:07:99.123Z",
+        ] {
+            let report = check_owned(&with_timestamp(bad));
+            // rotto così → rosso: un `||` al posto di un `&&` fa bastare che uno
+            // solo dei tre sia in scala
+            assert_eq!(report.verdict(), Verdict::Dead, "«{bad}»: {}", render(&report));
+        }
+    }
+
+    /// Diciannove byte sono la forma più corta che `epoch_from_iso` legge
+    /// ancora: il canarino non deve gridare su un transcript sano che li porta.
+    #[test]
+    fn a_timestamp_of_exactly_nineteen_bytes_is_still_read() {
+        let report = check_owned(&with_timestamp("2026-08-24T01:07:11"));
+        // rotto così → rosso: `<= 19` rifiuta il caso limite e il canarino
+        // muore su un campione che i lettori interpretano benissimo
+        assert_eq!(report.verdict(), Verdict::Alive, "{}", render(&report));
+        // Sotto quella soglia l'ora non c'è più, e quello è un difetto vero.
+        let report = check_owned(&with_timestamp("2026-08-24"));
+        assert_eq!(report.verdict(), Verdict::Dead, "{}", render(&report));
+    }
+
+    /// Il tetto per assunzione non scatta quando non ha nascosto niente: tre
+    /// righe cadute sono tre righe stampate, e nessun conto in fondo.
+    #[test]
+    fn exactly_three_repeats_are_all_shown_without_a_tally_line() {
+        let mut sample = healthy_sample();
+        for line in sample.iter_mut().take(MAX_LINES_PER_ASSUMPTION) {
+            *line = line.replace("\"input_tokens\":10", "\"input_tokens\":\"10\"");
+        }
+        let report = check_owned(&sample);
+        assert_eq!(report.findings.len(), MAX_LINES_PER_ASSUMPTION, "{}", render(&report));
+        let text = render(&report);
+        // rotto così → rosso: `>=` aggiunge «… e altre 0 righe» proprio quando
+        // il tetto non ha tagliato niente
+        assert!(!text.contains("e altre"), "{text}");
+        assert_eq!(
+            text.matches("message.usage.input_tokens").count(),
+            MAX_LINES_PER_ASSUMPTION,
+            "{text}"
+        );
     }
 
     #[test]
@@ -792,6 +972,11 @@ mod tests {
         let text = render(&report);
         assert!(text.contains("message.usage"), "{text}");
         assert!(text.contains("input_tokens"), "{text}");
+        // rotto così → rosso: cercare in tabella l'id **diverso** da quello
+        // caduto stampa i lettori di un'altra assunzione, e il rapporto accusa
+        // chi non si rompe
+        let usage = ASSUMPTIONS.iter().find(|a| a.id == "usage").expect("assunzione censita");
+        assert!(text.contains(&format!("si rompono: {}", usage.readers)), "{text}");
     }
 
     #[test]
