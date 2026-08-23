@@ -19,6 +19,25 @@
 set -uo pipefail
 
 ROOT="$HOME/.claude/rust"
+
+# Un nome che nessuna sezione riconosce esegue zero mutanti, e il verdetto in
+# fondo leggeva quello zero come «nessun sopravvissuto»: verde su niente. Si
+# ferma prima di toccare qualunque cosa. I nomi si rileggono da questo stesso
+# file, cosi' una sezione nuova entra nell'elenco senza doverlo ricopiare.
+SELF="$ROOT/tools/mutants.sh"
+known_sections() {
+  grep -oE '^if \[ "\$WHICH" = "[A-Za-z0-9_-]+"' "$SELF" | sed -E 's/^.*= "//; s/"$//' | sort -u
+}
+WHICH="${1:-tutte}"
+if [ "$WHICH" != "tutte" ] && ! known_sections | grep -qx "$WHICH"; then
+  {
+    echo "mutants.sh: modulo sconosciuto: '$WHICH' — nessun mutante da eseguire."
+    echo "  sezioni disponibili (oppure 'tutte'):"
+    known_sections | sed 's/^/    /'
+  } >&2
+  exit 2
+fi
+
 # Senza copia di sicurezza i mutanti finirebbero sui sorgenti veri e il
 # ripristino fallirebbe in silenzio: successo il 23/08/2026 in una sandbox che
 # nega /var/folders. Qui ci si ferma prima.
@@ -55,6 +74,7 @@ FILES=(
   "crates/claude-hooks/src/relay.rs"
   "crates/guards/src/phase_router.rs"
   "crates/claude-hooks/src/phase_router.rs"
+  "crates/guards/src/instincts.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -99,7 +119,9 @@ survivors=0
 broken=0
 skipped=0
 fallbacks=0
-WHICH="${1:-tutte}"
+# Quanti mutanti questo giro ha davvero provato: la rete dietro il controllo sul
+# nome, per la sezione che esiste ma non contiene nemmeno una chiamata.
+attempted=0
 COMPARE=""
 
 # L'oracolo alternativo, per le guardie che un confronto col Python ancora non ce
@@ -133,6 +155,7 @@ oracolo_orfano() {
 
 mutate() {
   local name="$1" file="$2" script="$3"
+  attempted=$((attempted + 1))
   restore_touched
   case " $TOUCHED " in *" $file "*) ;; *) TOUCHED="$TOUCHED $file" ;; esac
   # Un mutante che non muta niente risulterebbe «sopravvissuto» senza aver mai
@@ -1542,7 +1565,86 @@ if [ "$WHICH" = "phase-router" ] || [ "$WHICH" = "tutte" ]; then
   ORACOLO=""
 fi
 
+# ── instincts ───────────────────────────────────────────────────────────────
+if [ "$WHICH" = "instincts" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su instincts.rs (i due tetti del blocco iniettato):"
+  # I dodici del correttivo `6319f7c`, applicati a mano quel giorno e qui resi
+  # ripetibili. L'oracolo e' la batteria del modulo: `select()` e' un giudizio
+  # puro, non c'e' nessun Python da mettergli di fronte.
+  ORACOLO="cargo test --release -p guards instincts"
+  I="crates/guards/src/instincts.rs"
+
+  # IL MUTANTE PER CUI IL TETTO ERA STATO RESPINTO: senza accumulatore ogni
+  # corpo si misura da solo, nessuno sfonda, e tutti entrano. Il caso che lo
+  # vede sono corpi piccoli che sfondano solo insieme.
+  mutate "accumulatore dei byte rimosso" "$I" \
+    's = s.replace("let candidate_bytes = bytes_so_far + separator + body.len();", "let candidate_bytes = separator + body.len();", 1)'
+
+  # Stesso buco per l altra strada: l accumulatore c e ma riparte da zero a ogni
+  # giro.
+  mutate "accumulatore azzerato a ogni corpo" "$I" \
+    's = s.replace("        bytes_so_far = candidate_bytes;", "        bytes_so_far = 0;", 1)'
+
+  # I due byte fra un corpo e l altro escono dal conto: cinque corpi da 700
+  # fanno esattamente il tetto, e sono gli otto byte dei separatori a decidere.
+  mutate "separatore fisso a zero" "$I" \
+    's = s.replace("let separator = if included.is_empty() { 0 } else { 2 };", "let separator = 0;", 1)'
+
+  # Un carattere sul confine: il corpo lungo quanto il tetto smette di entrare.
+  mutate "confine del tetto con >= invece di >" "$I" \
+    's = s.replace("if candidate_bytes > live_budget {", "if candidate_bytes >= live_budget {", 1)'
+
+  # La testa conta gli iniettati invece dei vivi: «Vivi: 8» a fronte di nove
+  # istinti vivi, cioe' il numero che serve a sapere quanto e' stato tagliato.
+  mutate "testa scritta su included.len()" "$I" \
+    's = s.replace("\"Vivi: {live_count} · scaduti: {expired_count} · senza misura: {undated_count}\"", "\"Vivi: {} · scaduti: {expired_count} · senza misura: {undated_count}\", included.len()", 1)'
+
+  # Il distacco davanti alla coda torna a dipendere dai vivi invece che da cio'
+  # che e' entrato: con niente iniettato si stampa una riga vuota di troppo.
+  mutate "distacco deciso su live_count" "$I" \
+    's = s.replace("if !included.is_empty() {", "if live_count > 0 {", 1)'
+
+  # La causa del taglio si stampa sempre: a taglio zero il blocco dichiara
+  # «tagliati dal tetto: 0 ()», che e' un allarme falso a ogni sessione.
+  mutate "causa del taglio stampata anche a zero" "$I" \
+    's = s.replace("if excluded_by_cap > 0 {", "if true {", 1)'
+
+  # Il difetto che la revisione aveva trovato: il primo corpo troppo grosso
+  # chiude l elenco per tutti quelli dietro, che nel budget rimasto ci stavano.
+  mutate "break invece di continue sul corpo troppo grosso" "$I" \
+    's = s.replace("            cut_by_bytes += 1;\n            continue;", "            cut_by_bytes += 1;\n            break;", 1)'
+
+  # La coda «Da rimisurare» torna fuori da ogni limite: 40 istinti scaduti fanno
+  # 10.053 byte, il triplo del blocco intero.
+  mutate "coda resa intera" "$I" \
+    's = s.replace("        if out.len() + separator + line.len() + OVERFLOW_LINE_MAX > MAX_REMEASURE_BYTES {\n            break;\n        }\n", "", 1)'
+
+  # La coda si prende un budget suo invece di toglierlo ai corpi vivi: il tetto
+  # smette di valere sul blocco emesso e vale solo su meta'.
+  mutate "budget della coda fuori dal conto" "$I" \
+    's = s.replace("MAX_LIVE_BYTES.saturating_sub(remeasure_text.len() + joint)", "MAX_LIVE_BYTES.saturating_sub(joint)", 1)'
+
+  # `confidence: 0,95` torna a cadere a 0.0 in silenzio: l istinto si inietta
+  # ultimo in classifica e la testa gli attribuisce una causa che non e' la sua.
+  mutate "confidence illeggibile riportata a 0.0" "$I" \
+    's = s.replace("                fm.confidence = match value.parse::<f64>() {\n                    Ok(v) if v.is_finite() => Confidence::Value(v),\n                    _ => Confidence::Unreadable(value.to_string()),\n                }", "                fm.confidence = Confidence::Value(value.parse::<f64>().unwrap_or(0.0));", 1)'
+
+  # La soglia torna scritta a mano nel messaggio: cambiare la costante non
+  # cambierebbe piu' il testo, e il blocco direbbe un numero falso.
+  mutate "soglia del conteggio scritta a mano" "$I" \
+    's = s.replace("{cut_by_count} oltre le prime {MAX_LIVE_COUNT} per confidence", "{cut_by_count} oltre le prime 5 per confidence", 1)'
+
+  ORACOLO=""
+fi
+
 echo
+# Zero provati non e' zero sopravvissuti: qui il giro non sa niente di niente, e
+# il verde di sotto sarebbe una dichiarazione senza misura.
+if [ "$attempted" -eq 0 ]; then
+  echo "nessun mutante eseguito su '$WHICH': la sezione non ne contiene nemmeno uno."
+  echo "  Questo giro non dice niente sulla batteria: aggiungi i mutanti, poi rilancia."
+  exit 2
+fi
 if [ "$broken" -gt 0 ]; then
   echo "$broken mutanti non applicati: correggi lo script prima di leggere il resto"
 fi
