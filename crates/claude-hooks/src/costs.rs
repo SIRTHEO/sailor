@@ -907,6 +907,62 @@ mod tests {
     }
 
     #[test]
+    fn review_a_hook_batch_spanning_utc_midnight_leaves_a_double_counted_gap() {
+        // Un solo giro del gancio legge DUE turni a cavallo della mezzanotte
+        // UTC. Il gancio li aggrega in una riga sola con `first_ts` sul primo
+        // giorno: la copertura deve estendersi anche al giorno del secondo
+        // turno, o `backfill` (che raggruppa per turno) trova il turno delle
+        // 00:01 in un giorno scoperto e lo riconta.
+        let home = HomeIsolata::nuova("costs-review-midnight-gap");
+        let projects = home.dir.join(".claude").join("projects").join("slug");
+        fs::create_dir_all(&projects).unwrap();
+        let transcript = projects.join("sess1.jsonl");
+        fs::write(
+            &transcript,
+            format!(
+                "{}\n{}\n",
+                assistant_line("m1", 50, "2026-08-19T23:59:00.000Z"),
+                assistant_line("m2", 30, "2026-08-20T00:01:00.000Z"),
+            ),
+        )
+        .unwrap();
+
+        let payload = serde_json::json!({
+            "hook_event_name": "Stop",
+            "session_id": "sess1",
+            "transcript_path": transcript.to_string_lossy(),
+        })
+        .to_string();
+        record_from_payload(&payload).expect("un solo giro legge entrambi i turni");
+
+        let hook_rows: Vec<_> = fs::read_to_string(ledger_path())
+            .unwrap_or_default()
+            .lines()
+            .filter_map(cost_ledger::parse_ledger_line)
+            .collect();
+        assert_eq!(hook_rows.len(), 1, "un solo modello, un solo giro: una riga aggregata");
+        assert_eq!(hook_rows[0].turns, 2, "la riga hook include già entrambi i turni");
+        assert_eq!(hook_rows[0].output_tokens, 80, "50 + 30, entrambi già dentro la riga hook");
+
+        assert_eq!(backfill(&["--days".to_string(), "30".to_string()]), 0);
+        let backfill_rows: Vec<_> = fs::read_to_string(backfill_path())
+            .unwrap_or_default()
+            .lines()
+            .filter_map(cost_ledger::parse_ledger_line)
+            .collect();
+
+        let mut all_rows = hook_rows;
+        all_rows.extend(backfill_rows);
+        let (kept, _discarded) = cost_ledger::dedupe_backfill_covered_by_hook(all_rows);
+        let total_turns: u64 = kept.iter().map(|r| r.turns).sum();
+        let total_output: u64 = kept.iter().map(|r| r.output_tokens).sum();
+        // Due turni veri, 80 token di uscita in tutto: la dedup scarta
+        // entrambe le righe di backfill, già coperte dal gancio.
+        assert_eq!(total_turns, 2, "solo i due turni veri, non il turno delle 00:01 anche una seconda volta");
+        assert_eq!(total_output, 80, "50 + 30, non 50 + 30 + 30 col turno di mezzanotte raddoppiato");
+    }
+
+    #[test]
     fn each_transcript_gets_its_own_cursor_file() {
         let home = HomeIsolata::nuova("costs-cursor-per-file");
         let projects = home.dir.join(".claude").join("projects").join("slug");
