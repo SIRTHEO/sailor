@@ -71,6 +71,10 @@ mod marker_sweep;
 // acceso (`docs/2026-08-22-gesto-message-budget.md`); `backfill` e `report`
 // sono strumenti da riga di comando.
 mod costs;
+// Il router di fase, 23/08/2026 (gradino 5 della scala): un `PreToolUse` su
+// `Agent` che sceglie il modello dal mestiere. Non ancora acceso
+// (`docs/2026-08-22-gesto-message-budget.md`).
+mod phase_router;
 
 use hook_io::{Decision, Mode};
 
@@ -238,6 +242,9 @@ const ALL_HOOKS: &[&str] = &[
     // slug porta anche `backfill` e `report` (strumenti) — stessa forma di
     // `duplication`, che mescola un gancio e i suoi verbi da riga di comando.
     "costs",
+    // Il nono, il 23/08/2026 (gradino 5): riscrive il modello di un `Agent`
+    // dal mestiere. `PreToolUse`/`Agent`, quindi NON sta in NOT_HOOKS.
+    "phase-router",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -464,6 +471,10 @@ fn has_module_test(name: &str) -> bool {
         "costs" => &[
             include_str!("costs.rs"),
             include_str!("../../guards/src/cost_ledger.rs"),
+        ],
+        "phase-router" => &[
+            include_str!("phase_router.rs"),
+            include_str!("../../guards/src/phase_router.rs"),
         ],
         _ => &[],
     };
@@ -1295,6 +1306,9 @@ fn run(which: &str) -> Result<i32, String> {
                 }
             }
         }
+        // Il router di fase: `PreToolUse`/`Agent`, mai un diniego — o riscrive
+        // `model` nell'input o non stampa niente.
+        "phase-router" => Ok(phase_router::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco

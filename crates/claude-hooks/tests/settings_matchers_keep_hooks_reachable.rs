@@ -103,6 +103,10 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "squash-orphans",
         "giudica le fusioni con schiacciamento; nato il 20/08, mai acceso",
     ),
+    (
+        "phase-router",
+        "sceglie il modello di un `Agent` dal mestiere; scritto il 23/08 (gradino 5), la riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`)",
+    ),
 ];
 
 /// Le porte che decidono su un nome di strumento **dentro una funzione** che il
