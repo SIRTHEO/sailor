@@ -35,6 +35,7 @@ mod worktree_deletes;
 // ogni passo.
 mod handoff_threshold;
 mod hook_census;
+mod long_session;
 mod link_worktree_rules;
 mod permission_stall;
 mod spotlight_marker;
@@ -65,6 +66,11 @@ mod index_freshness;
 // e ciò che in quell'istante non si sapeva vivo restava sul disco per sempre.
 // NON È IN SERVIZIO: nessuna radice lo invoca, nessun servizio lo sveglia.
 mod marker_sweep;
+// Il registro dei costi, 23/08/2026 (gradino 4 della scala): non è un porto —
+// nasce già in Rust. `record` è un gancio su `Stop`/`SubagentStop`, non ancora
+// acceso (`docs/2026-08-22-gesto-message-budget.md`); `backfill` e `report`
+// sono strumenti da riga di comando.
+mod costs;
 
 use hook_io::{Decision, Mode};
 
@@ -190,6 +196,9 @@ const ALL_HOOKS: &[&str] = &[
     "socraticode-gate",
     "successor-probe",
     "handoff-threshold",
+    // Il contatore dei turni del 23/08/2026 (gradino 1, contesto corto): la
+    // riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`).
+    "long-session",
     "hook-census",
     "link-worktree-rules",
     "spotlight-marker",
@@ -224,6 +233,11 @@ const ALL_HOOKS: &[&str] = &[
     // scrive e dice quali sessioni sono ferme su un permesso. Non giudica un
     // evento — lo si interroga da fuori — quindi sta in NOT_HOOKS.
     "permission-stall",
+    // Il registro dei costi, 23/08/2026: `record` è un gancio vero su
+    // `Stop`/`SubagentStop`, quindi NON sta in NOT_HOOKS anche se lo stesso
+    // slug porta anche `backfill` e `report` (strumenti) — stessa forma di
+    // `duplication`, che mescola un gancio e i suoi verbi da riga di comando.
+    "costs",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -402,6 +416,10 @@ fn has_module_test(name: &str) -> bool {
             include_str!("handoff_threshold.rs"),
             include_str!("../../guards/src/handoff_threshold.rs"),
         ],
+        "long-session" => &[
+            include_str!("long_session.rs"),
+            include_str!("../../guards/src/long_session.rs"),
+        ],
         "hook-census" => &[include_str!("hook_census.rs")],
         "link-worktree-rules" => &[
             include_str!("link_worktree_rules.rs"),
@@ -443,6 +461,10 @@ fn has_module_test(name: &str) -> bool {
             include_str!("register_session.rs"),
         ],
         "permission-stall" => &[include_str!("permission_stall.rs")],
+        "costs" => &[
+            include_str!("costs.rs"),
+            include_str!("../../guards/src/cost_ledger.rs"),
+        ],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -1209,6 +1231,7 @@ fn run(which: &str) -> Result<i32, String> {
         // uccisi. L'ordine è quello di `adopt-hook.py`: prima si dimostra, poi
         // si registra.
         "handoff-threshold" => Ok(handoff_threshold::run()),
+        "long-session" => Ok(long_session::run()),
         "hook-census" => Ok(hook_census::run()),
         "link-worktree-rules" => Ok(link_worktree_rules::run()),
         "spotlight-marker" => Ok(spotlight_marker::run()),
@@ -1255,6 +1278,23 @@ fn run(which: &str) -> Result<i32, String> {
         // e stampa quali sessioni sono ferme su un permesso — il comando da
         // riga di comando che risponde a «è bloccata?» da fuori.
         "permission-stall" => Ok(permission_stall::run_report()),
+        // Il registro dei costi. `record` legge stdin come ogni gancio; gli
+        // altri due verbi leggono i loro argomenti da riga di comando e non
+        // aspettano niente su stdin — chiamarli senza un verbo noto non deve
+        // bloccarsi in attesa di un ingresso che non arriva, quindi il ramo
+        // di ripiego risponde ed esce invece di provare a leggere stdin.
+        "costs" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            match args.first().map(String::as_str) {
+                Some("backfill") => Ok(costs::backfill(&args[1..])),
+                Some("report") => Ok(costs::report(&args[1..])),
+                Some("record") | None => Ok(costs::record()),
+                Some(other) => {
+                    eprintln!("costs: unknown verb {other:?} (record | backfill | report)");
+                    Ok(0)
+                }
+            }
+        }
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
