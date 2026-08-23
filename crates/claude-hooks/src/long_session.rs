@@ -29,35 +29,33 @@ fn session_id(v: Option<&serde_json::Value>) -> String {
     }
 }
 
-pub fn run() -> i32 {
+/// Dal payload del gancio alla riga da dire, se c'è. Tocca il transcript e il
+/// file di stato; stdin e stdout restano fuori, così si prova due volte di fila.
+fn decide(raw: &str) -> Option<String> {
     if Mode::from_env("LONG_SESSION") == Mode::Off {
-        return 0;
+        return None;
     }
+    let payload = serde_json::from_str::<serde_json::Value>(raw).ok()?;
+    let obj = payload.as_object()?;
+    let path = obj.get("transcript_path")?.as_str()?;
+    let transcript = fs::read_to_string(path).ok()?;
+    let state = state_file(&session_id(obj.get("session_id")));
+    let said = fs::read_to_string(&state).unwrap_or_default();
+    let (step, line) = guards::long_session::judge(&transcript, &said)?;
+    // La scrittura precede l'avviso e i suoi errori si ingoiano: se il file non
+    // si può scrivere il gancio parla lo stesso, e al massimo si ripeterà.
+    let _ = fs::write(&state, step.to_string());
+    Some(line)
+}
+
+pub fn run() -> i32 {
     let mut raw = String::new();
     if std::io::stdin().read_to_string(&mut raw).is_err() {
         return 0;
     }
-    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return 0;
-    };
-    let Some(obj) = payload.as_object() else {
-        return 0;
-    };
-    let Some(path) = obj.get("transcript_path").and_then(|v| v.as_str()) else {
-        return 0;
-    };
-    let Ok(transcript) = fs::read_to_string(path) else {
-        return 0;
-    };
-    let state = state_file(&session_id(obj.get("session_id")));
-    let said = fs::read_to_string(&state).unwrap_or_default();
-    let Some((step, line)) = guards::long_session::judge(&transcript, &said) else {
-        return 0;
-    };
-    // La scrittura precede l'avviso e i suoi errori si ingoiano: se il file non
-    // si può scrivere il gancio parla lo stesso, e al massimo si ripeterà.
-    let _ = fs::write(&state, step.to_string());
-    println!("{line}");
+    if let Some(line) = decide(&raw) {
+        println!("{line}");
+    }
     0
 }
 
@@ -67,15 +65,78 @@ mod tests {
 
     #[test]
     fn the_state_lives_in_tmpdir_under_the_session_name() {
-        let home = crate::test_home::HomeIsolata::nuova("sessione-lunga-percorso");
-        let previous = std::env::var("TMPDIR").ok();
-        std::env::set_var("TMPDIR", &home.dir);
-        let p = state_file("abcdefgh");
-        match previous {
-            Some(v) => std::env::set_var("TMPDIR", v),
-            None => std::env::remove_var("TMPDIR"),
+        let t = IsolatedTmp::new("sessione-lunga-percorso");
+        assert_eq!(state_file("abcdefgh"), t.dir.join("sessione-lunga-abcdefgh.stato"));
+    }
+
+    /// Una `TMPDIR` usa-e-getta sotto una casa isolata (che tiene il lucchetto
+    /// sulle variabili d'ambiente), rimessa com'era alla fine.
+    struct IsolatedTmp {
+        _home: crate::test_home::HomeIsolata,
+        previous: Vec<(&'static str, Option<String>)>,
+        dir: PathBuf,
+    }
+
+    impl IsolatedTmp {
+        fn new(name: &str) -> Self {
+            let home = crate::test_home::HomeIsolata::nuova(name);
+            let dir = home.dir.join("tmp");
+            let _ = fs::create_dir_all(&dir);
+            let previous = ["TMPDIR", "LONG_SESSION"]
+                .iter()
+                .map(|k| (*k, std::env::var(k).ok()))
+                .collect();
+            std::env::set_var("TMPDIR", &dir);
+            std::env::remove_var("LONG_SESSION");
+            Self { _home: home, previous, dir }
         }
-        assert_eq!(p, home.dir.join("sessione-lunga-abcdefgh.stato"));
+    }
+
+    impl Drop for IsolatedTmp {
+        fn drop(&mut self) {
+            for (key, value) in &self.previous {
+                match value {
+                    Some(v) => std::env::set_var(key, v),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn payload(dir: &PathBuf, turns: usize) -> String {
+        let lines: Vec<String> = (0..turns)
+            .map(|i| format!(r#"{{"type":"assistant","message":{{"id":"m{i}","usage":{{"input_tokens":1}}}}}}"#))
+            .collect();
+        let p = dir.join("t.jsonl");
+        fs::write(&p, lines.join("\n")).unwrap();
+        serde_json::json!({"session_id": "abcdef01-2345", "transcript_path": p})
+            .to_string()
+    }
+
+    #[test]
+    fn it_speaks_once_per_hundred_and_remembers_on_disk() {
+        let t = IsolatedTmp::new("sessione-lunga-freno");
+        assert_eq!(decide(&payload(&t.dir, 99)), None);
+        let said = decide(&payload(&t.dir, 100)).expect("must speak at 100");
+        assert!(said.starts_with("sessione a 100 turni"));
+        assert_eq!(fs::read_to_string(t.dir.join("sessione-lunga-abcdef01.stato")).unwrap(), "100");
+        assert_eq!(decide(&payload(&t.dir, 150)), None);
+        assert!(decide(&payload(&t.dir, 200)).is_some());
+    }
+
+    #[test]
+    fn the_valve_silences_it() {
+        let t = IsolatedTmp::new("sessione-lunga-valvola");
+        std::env::set_var("LONG_SESSION", "off");
+        assert_eq!(decide(&payload(&t.dir, 300)), None);
+        assert!(!t.dir.join("sessione-lunga-abcdef01.stato").exists());
+    }
+
+    #[test]
+    fn a_missing_transcript_is_silence() {
+        let _t = IsolatedTmp::new("sessione-lunga-assente");
+        assert_eq!(decide(r#"{"session_id":"x","transcript_path":"/nessuno/qui"}"#), None);
+        assert_eq!(decide("non json"), None);
     }
 
     #[test]
