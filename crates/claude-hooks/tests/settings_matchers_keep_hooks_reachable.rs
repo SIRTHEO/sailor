@@ -96,10 +96,6 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "giudica `git worktree add` fuori dai percorsi Orca; la riga che lo accende la scrive solo Theo",
     ),
     (
-        "message-budget",
-        "giudica `SendMessage` oltre i 600 caratteri; scritto il 22/08 (`50a2e13`), la riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`)",
-    ),
-    (
         "squash-orphans",
         "giudica le fusioni con schiacciamento; nato il 20/08, mai acceso",
     ),
@@ -182,19 +178,25 @@ const DENIES_WITHOUT_STOPPING: &[(&str, &str)] = &[(
 /// I ganci **accesi** che nessuna porta leggibile difende: il loro codice non
 /// dice su quale strumento lavora, quindi cambiare il loro `matcher` non fa
 /// rossire niente. Sta qui e non nel rapporto di chi l'ha scritto perché il
-/// numero deve stare dove sta il verde: **quattordici**. (Quanti siano in tutto
+/// numero deve stare dove sta il verde: **sedici**. (Quanti siano in tutto
 /// non lo scrivo: sarebbe un numero che nessun caso tiene onesto.)
+///
+/// `costs` e `long-session` sono gli ultimi due, accesi da Theo il 23/08:
+/// vivono su eventi che non portano nessuno strumento — `Stop`, `SubagentStop`,
+/// `UserPromptSubmit` — dove un `matcher` non significa niente.
 ///
 /// Non è un permesso e non invecchia da solo: un nome che perde l'accensione o
 /// che acquista una porta fa cadere `the_uncovered_hooks_are_named_here`.
 const WIRED_WITHOUT_A_READABLE_GATE: &[&str] = &[
     "comment-refs",
+    "costs",
     "handoff-arms-successor",
     "handoff-on-stop",
     "handoff-threshold",
     "hook-census",
     "linear-readonly",
     "live-rules",
+    "long-session",
     "observe",
     "orca-cleanup",
     "register-session",
@@ -814,11 +816,11 @@ fn a_hook_that_denies_keeps_an_event_where_the_denial_bites() {
     let registered = registrations(&settings());
     let denying = hooks_that_can_deny();
     assert!(
-        // Tredici sanno rifiutare; otto sono accesi su un evento di strumento e
-        // passano di qui, uno è la riga scusata, gli altri quattro non li accende
-        // nessuno o vivono sullo `Stop`.
-        denying.len() >= 13,
-        "only {} hooks look able to deny, 13 were found when this line was written: if one lost \
+        // Quindici sanno rifiutare, misurati il 24/08: dodici sono accesi su un
+        // evento di strumento — undici passano di qui, il dodicesimo è la riga
+        // scusata — e gli altri tre non li accende nessuno o vivono sullo `Stop`.
+        denying.len() >= 15,
+        "only {} hooks look able to deny, 15 were found when this line was written: if one lost \
          its refusal on purpose lower the number, otherwise the source reader is broken",
         denying.len()
     );
