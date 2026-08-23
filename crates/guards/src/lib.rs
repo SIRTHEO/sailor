@@ -36,6 +36,7 @@ pub mod handoff_threshold;
 pub mod index_freshness;
 pub mod repo_tools;
 pub mod restart;
+pub mod ronda_trigger;
 pub mod scope_drift;
 pub mod session_messages;
 pub mod skill_nudge;
