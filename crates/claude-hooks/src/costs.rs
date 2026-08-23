@@ -443,7 +443,7 @@ fn now_epoch_secs() -> i64 {
 /// Cammina l'albero e raccoglie ogni `.jsonl`. Non distingue file di sessione
 /// da file di subagent: lo fa `parse_transcript_line`, che legge gli stessi
 /// campi in entrambi.
-fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
+pub(crate) fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -457,7 +457,7 @@ fn collect_jsonl(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn mtime_epoch(path: &Path) -> i64 {
+pub(crate) fn mtime_epoch(path: &Path) -> i64 {
     fs::metadata(path)
         .and_then(|m| m.modified())
         .ok()
