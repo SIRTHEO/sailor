@@ -3685,6 +3685,28 @@ mod tests {
         assert_eq!(canonical_root(""), "");
     }
 
+    /// Il taglio `gitdir[..cut]` nasce da `str::find` di un modello ASCII, che
+    /// restituisce sempre un confine di carattere: un accento prima o dopo il
+    /// modello non può farlo cadere. La prova lo fissa, perché la forma
+    /// «indice di byte su una stringa» ha già prodotto un panico il 18/08/2026.
+    #[test]
+    fn an_accented_path_does_not_break_the_canonical_root() {
+        let home = HomeIsolata::nuova("radice-accentata");
+        let repo = home.dir.join("Società").join("suite-è");
+        let tree = home.dir.join("orca").join("tautog-ò");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        fs::create_dir_all(&tree).unwrap();
+        fs::write(
+            tree.join(".git"),
+            format!("gitdir: {}/.git/worktrees/tautog-ò\n", repo.display()),
+        )
+        .unwrap();
+        assert_eq!(
+            canonical_root(tree.to_str().unwrap()),
+            repo.to_string_lossy()
+        );
+    }
+
     #[test]
     fn the_successor_inherits_the_handoff_of_its_own_repo() {
         let home = HomeIsolata::nuova("consegna-ereditata");
