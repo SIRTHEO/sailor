@@ -62,6 +62,11 @@ mod squash_orphans;
 // misura del 20/08/2026 dove tre canonici su quattro erano su rami di lavoro
 // altrui, e l'indicizzatore taceva — nessun errore, solo un «green» bugiardo.
 mod index_freshness;
+// Il gancio d'innesco della ronda delle novità, 23/08/2026 (gradino 9 della
+// scala): due inneschi locali a `SessionStart`. Non ancora acceso — la riga
+// di `settings.json` è di Theo, classe MAI (libro di bordo, voce «La
+// configurazione si mantiene da sola»).
+mod ronda_trigger;
 // Il raccoglitore dei marcatori, 21/08/2026: il congedo li butta una volta sola,
 // e ciò che in quell'istante non si sapeva vivo restava sul disco per sempre.
 // NON È IN SERVIZIO: nessuna radice lo invoca, nessun servizio lo sveglia.
@@ -245,6 +250,10 @@ const ALL_HOOKS: &[&str] = &[
     // Il nono, il 23/08/2026 (gradino 5): riscrive il modello di un `Agent`
     // dal mestiere. `PreToolUse`/`Agent`, quindi NON sta in NOT_HOOKS.
     "phase-router",
+    // Il decimo, il 23/08/2026 (gradino 9): la ronda delle novità. Non
+    // giudica un nome di strumento — legge `source` su `SessionStart` — e non
+    // è ancora accesa: la riga è di Theo.
+    "ronda-trigger",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -475,6 +484,10 @@ fn has_module_test(name: &str) -> bool {
         "phase-router" => &[
             include_str!("phase_router.rs"),
             include_str!("../../guards/src/phase_router.rs"),
+        ],
+        "ronda-trigger" => &[
+            include_str!("ronda_trigger.rs"),
+            include_str!("../../guards/src/ronda_trigger.rs"),
         ],
         _ => &[],
     };
@@ -1309,6 +1322,7 @@ fn run(which: &str) -> Result<i32, String> {
         // Il router di fase: `PreToolUse`/`Agent`, mai un diniego — o riscrive
         // `model` nell'input o non stampa niente.
         "phase-router" => Ok(phase_router::run()),
+        "ronda-trigger" => Ok(ronda_trigger::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
