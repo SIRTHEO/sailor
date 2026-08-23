@@ -639,19 +639,45 @@ fn coverage_key(r: &LedgerRow) -> (String, String, String, String) {
     )
 }
 
+fn parse_ymd(s: &str) -> Option<Date> {
+    if s.len() < 10 {
+        return None;
+    }
+    Date::new(s.get(0..4)?.parse().ok()?, s.get(5..7)?.parse().ok()?, s.get(8..10)?.parse().ok()?)
+}
+
+/// I giorni UTC coperti da una riga hook: da `day_bucket(first_ts)` a
+/// `day_bucket(last_ts)` inclusi. Una riga hook aggrega tutti i turni letti
+/// in un giro solo — se il primo cade alle 23:59 e il successivo alle 00:01,
+/// copre entrambi i giorni, non solo quello del primo: `backfill`, che
+/// raggruppa per turno, avrebbe altrimenti trovato il turno di mezzanotte in
+/// un giorno «scoperto» e lo avrebbe ricontato. `last_ts` vuoto (riga di
+/// correzione, `turns:0`) copre solo il giorno di `first_ts`.
+fn hook_days(r: &LedgerRow) -> Vec<String> {
+    let start_str = day_bucket(&r.first_ts);
+    let end_str = if r.last_ts.is_empty() { start_str } else { day_bucket(&r.last_ts) };
+    match (parse_ymd(start_str), parse_ymd(end_str)) {
+        (Some(a), Some(b)) if b.days() >= a.days() => {
+            (a.days()..=b.days()).map(|d| Date::from_days(d).iso()).collect()
+        }
+        _ => vec![start_str.to_string()],
+    }
+}
+
 /// Scarta le righe `source:"backfill"` la cui chiave di copertura combacia
-/// con una riga `source:"hook"` già presente: il gancio, una volta acceso, è
-/// la fonte più vera da lì in avanti, il backfill riempie solo i buchi di
-/// prima. LIMITE ACCETTATO: un giorno coperto solo a metà dal gancio non
-/// viene completato dal backfill per quella chiave — ma non si conta mai due
-/// volte, ed è il gancio a coprire tutto da quando è acceso. Restituisce le
-/// righe tenute e quante `backfill` sono state scartate.
+/// con un giorno coperto da una riga `source:"hook"` già presente: il gancio,
+/// una volta acceso, è la fonte più vera da lì in avanti, il backfill riempie
+/// solo i buchi di prima. LIMITE ACCETTATO: un giorno coperto solo a metà dal
+/// gancio non viene completato dal backfill per quella chiave — ma non si
+/// conta mai due volte, ed è il gancio a coprire tutto da quando è acceso.
+/// Restituisce le righe tenute e quante `backfill` sono state scartate.
 pub fn dedupe_backfill_covered_by_hook(rows: Vec<LedgerRow>) -> (Vec<LedgerRow>, usize) {
-    let hook_keys: BTreeSet<(String, String, String, String)> = rows
-        .iter()
-        .filter(|r| r.source == "hook")
-        .map(coverage_key)
-        .collect();
+    let mut hook_keys: BTreeSet<(String, String, String, String)> = BTreeSet::new();
+    for r in rows.iter().filter(|r| r.source == "hook") {
+        for day in hook_days(r) {
+            hook_keys.insert((r.session.clone(), r.agent_id.clone().unwrap_or_default(), r.model.clone(), day));
+        }
+    }
     let mut discarded = 0usize;
     let kept = rows
         .into_iter()
@@ -1214,6 +1240,33 @@ mod tests {
         let (kept, discarded) = dedupe_backfill_covered_by_hook(rows);
         assert_eq!(discarded, 0);
         assert_eq!(kept.len(), 1);
+    }
+
+    fn row_span(model: &str, source: &str, first_ts: &str, last_ts: &str) -> LedgerRow {
+        let mut r = row_with(model, source, "sess1", None, first_ts);
+        r.last_ts = last_ts.into();
+        r
+    }
+
+    #[test]
+    fn a_hook_row_spanning_utc_midnight_covers_both_days() {
+        let rows = vec![
+            row_span("claude-sonnet-5", "hook", "2026-08-19T23:59:00.000Z", "2026-08-20T00:01:00.000Z"),
+            row_span("claude-sonnet-5", "backfill", "2026-08-19T23:59:00.000Z", "2026-08-19T23:59:00.000Z"),
+            row_span("claude-sonnet-5", "backfill", "2026-08-20T00:01:00.000Z", "2026-08-20T00:01:00.000Z"),
+        ];
+        let (kept, discarded) = dedupe_backfill_covered_by_hook(rows);
+        assert_eq!(discarded, 2, "entrambi i giorni scavalcati dalla riga hook sono coperti");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].source, "hook");
+    }
+
+    #[test]
+    fn a_turns0_correction_row_has_an_empty_day_bucket() {
+        // La riga di correzione (`turns:0`) non porta un `first_ts` reale: il
+        // suo giorno è la stringa vuota, non «il giorno dopo» — non copre mai
+        // per sbaglio un giorno vero.
+        assert_eq!(day_bucket(""), "");
     }
 
     #[test]
