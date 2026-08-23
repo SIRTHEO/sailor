@@ -365,6 +365,32 @@ mod tests {
         instinct(id, "2026-01-01", "2026-02-01", 0.9, body)
     }
 
+    /// Il blocco su cui vale davvero `MAX_LIVE_BYTES`: corpi iniettati e coda,
+    /// senza l'intestazione fissa né la riga dei conteggi, che nel budget non
+    /// passano. Senza questo ritaglio il tetto si prova con uno scarto a occhio,
+    /// e uno scarto abbastanza largo fa passare qualunque formula.
+    fn capped_bytes(rendered: &Rendered) -> usize {
+        let after_header = rendered.text.strip_prefix(HEADER).expect("l'intestazione c'è");
+        let start = after_header.find("\n\n").expect("la riga dei conteggi c'è") + 2;
+        after_header.len() - start
+    }
+
+    /// La coda emessa, dal titolo in poi: è su questa che vale
+    /// `MAX_REMEASURE_BYTES`, non sul blocco intero.
+    fn tail_of(rendered: &Rendered) -> &str {
+        let start = rendered.text.find(REMEASURE_TITLE).expect("la coda c'è");
+        &rendered.text[start..]
+    }
+
+    /// Una riga di coda lunga **esattamente** `len` byte e riconoscibile dal suo
+    /// numero: la quota della coda si prova sul byte, e i casi che contano sono
+    /// quello che ci sta per un byte e quello che sfonda per uno.
+    fn tail_line(n: usize, len: usize) -> String {
+        let head = format!("riga-{n}:");
+        assert!(len >= head.len(), "{len} byte non bastano per l'intestazione della riga");
+        format!("{head}{}", "X".repeat(len - head.len()))
+    }
+
     #[test]
     fn a_live_instinct_is_injected_whole() {
         let text = instinct("vivo", "2026-08-01", "2026-08-30", 0.9, "CORPO SEGRETO");
@@ -383,6 +409,9 @@ mod tests {
         // rotto così → rosso: togliere il ramo `expired_count += 1` inietta il corpo
         assert!(!out.text.contains("CORPO SEGRETO"));
         assert!(out.text.contains("istinto scaduto: scaduto (misurato il 2026-08-01, scaduto il 2026-08-10)"));
+        // rotto così → rosso: senza il ramo `measure` la riga dice «misura non
+        // dichiarata» al posto del comando che la rifà
+        assert!(out.text.contains("da rimisurare: comando di prova"), "{}", out.text);
         assert_eq!((out.live, out.expired, out.undated), (0, 1, 0));
     }
 
@@ -446,6 +475,111 @@ mod tests {
         // rotto così → rosso: continuare a leggere oltre la prima riga di corpo
         // farebbe rileggere `expires: 2020-01-01` e scadere l'istinto
         assert_eq!((out.live, out.expired, out.undated), (1, 0, 0));
+    }
+
+    /// Un istinto vivo il cui corpo comincia con una frase che porta un `:`
+    /// dentro, e più sotto ha una riga rientrata che *sembra* un campo. Serve la
+    /// coppia: la frase da sola non nomina nessuno dei cinque campi, ma se non
+    /// chiude il frontmatter la riga sotto ci entra davvero e l'istinto scade.
+    #[test]
+    fn a_prose_line_with_a_colon_closes_the_frontmatter_instead_of_being_read() {
+        let text = "---\nid: vivo\nconfidence: 0.9\nmeasured: 2026-08-01\nexpires: 2026-12-31\n\
+measure: comando di prova\nEvidenza raccolta il 21/08: il gancio nega la scrittura.\n\n\
+    expires: 2020-01-01\nCORPO SEGRETO\n"
+            .to_string();
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        // rotto così → rosso: una `is_frontmatter_key` sempre vera, o che accetta
+        // gli spazi, fa leggere `expires: 2020-01-01` come campo
+        assert_eq!((out.live, out.expired, out.undated), (1, 0, 0), "{}", out.text);
+        assert!(out.text.contains("CORPO SEGRETO"), "{}", out.text);
+    }
+
+    /// La stessa trappola con una riga di corpo che comincia con una data: prima
+    /// dei due punti c'è un solo token, ma non comincia con una lettera.
+    #[test]
+    fn a_body_line_that_starts_with_a_digit_closes_the_frontmatter() {
+        let text = "---\nid: vivo\nconfidence: 0.9\nmeasured: 2026-08-01\nexpires: 2026-12-31\n\
+measure: comando di prova\n2026-08-21: la misura e' stata rifatta.\n\n\
+    expires: 2020-01-01\nCORPO SEGRETO\n"
+            .to_string();
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        // rotto così → rosso: senza il controllo sulla prima lettera «2026-08-21»
+        // passa per un campo, il parser tira dritto e l'istinto risulta scaduto
+        assert_eq!((out.live, out.expired, out.undated), (1, 0, 0), "{}", out.text);
+        assert!(out.text.contains("CORPO SEGRETO"), "{}", out.text);
+    }
+
+    /// Il rovescio: un campo che non è fra i cinque ma è scritto come un campo
+    /// non deve chiudere il frontmatter. I trattini negli istinti veri ci sono
+    /// (`fonte-dati`), e chiudere lì dentro perderebbe le date scritte sotto.
+    #[test]
+    fn an_unknown_field_with_a_dash_does_not_close_the_frontmatter() {
+        let text = "---\nid: vivo\nfonte-dati: registro dei ganci\nconfidence: 0.9\n\
+measured: 2026-08-01\nexpires: 2026-12-31\nmeasure: comando di prova\n---\nCORPO SEGRETO\n"
+            .to_string();
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        // rotto così → rosso: un controllo che rifiuta `-` o `_` si ferma su
+        // `fonte-dati` e non arriva mai a `measured`/`expires`
+        assert_eq!((out.live, out.expired, out.undated), (1, 0, 0), "{}", out.text);
+        assert!(out.text.contains("CORPO SEGRETO"), "{}", out.text);
+    }
+
+    /// `confidence: NaN` si legge come numero ma non si ordina: vale come
+    /// illeggibile, non come un valore fra gli altri.
+    #[test]
+    fn a_non_finite_confidence_counts_as_unreadable() {
+        let text = "---\nid: nan\nconfidence: NaN\nmeasured: 2026-08-01\nexpires: 2026-08-30\n\
+measure: comando di prova\n---\nCORPO SEGRETO\n"
+            .to_string();
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        // rotto così → rosso: accettare qualunque `f64` mette NaN in classifica,
+        // dove ogni confronto è falso e l'ordine diventa quello di arrivo
+        assert!(!out.text.contains("CORPO SEGRETO"), "{}", out.text);
+        assert_eq!((out.live, out.expired, out.undated), (0, 0, 1));
+        assert!(
+            out.text.contains("istinto senza misura: nan — confidence non leggibile: NaN"),
+            "{}",
+            out.text
+        );
+    }
+
+    /// Le quattro forme storte che il confronto lessicografico non regge: il
+    /// controllo è lungo dieci, coi trattini al quarto e al settimo byte e cifre
+    /// in tutti gli altri, e ognuna di queste ne viola uno solo.
+    #[test]
+    fn a_date_that_is_not_iso_never_passes_for_a_valid_one() {
+        for bad in ["2026/08/01", "2026-08/01", "20260801", "2026-08-011"] {
+            let text = instinct("storto", "2026-08-01", bad, 0.9, "CORPO SEGRETO");
+            let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+            // rotto così → rosso: un `||` al posto di un `&&` fa bastare una
+            // condizione sola, e la data storta torna a contare come valida
+            assert_eq!((out.live, out.expired, out.undated), (0, 0, 1), "«{bad}»: {}", out.text);
+            assert!(out.text.contains(&format!("data non ISO: {bad}")), "{}", out.text);
+        }
+    }
+
+    /// La data storta può essere `measured`, non solo `expires`: è la prima delle
+    /// due a essere controllata, e la causa dichiarata deve nominare lei.
+    #[test]
+    fn a_measured_that_is_not_iso_is_named_as_the_cause() {
+        let text = instinct("storto", "2026-8-1", "2026-12-31", 0.9, "CORPO SEGRETO");
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        // rotto così → rosso: saltare il controllo su `measured` fa cadere il
+        // caso nel ramo «entrambe valide», e l'istinto torna vivo
+        assert!(!out.text.contains("CORPO SEGRETO"), "{}", out.text);
+        assert_eq!((out.live, out.expired, out.undated), (0, 0, 1));
+        assert!(out.text.contains("data non ISO: 2026-8-1"), "{}", out.text);
+    }
+
+    /// Un istinto scaduto senza riga `measure` lo dice, invece di tacere sulla
+    /// sola cosa che serve a chi deve rimisurarlo.
+    #[test]
+    fn an_expired_instinct_without_a_measure_says_so() {
+        let text = "---\nid: muto\nconfidence: 0.9\nmeasured: 2026-01-01\nexpires: 2026-02-01\n\
+---\nCORPO\n"
+            .to_string();
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        assert!(out.text.contains("da rimisurare: misura non dichiarata"), "{}", out.text);
     }
 
     /// Revisione: un `.md` trovato ma illeggibile spariva dai tre conteggi
@@ -608,17 +742,81 @@ mod tests {
             })
             .collect();
         let out = select(&items, "2026-08-15");
-        // rotto così → rosso: rendere la coda intera la fa arrivare a 10.053 byte
-        let body = out.text.len() - HEADER.len();
+        // rotto così → rosso: rendere la coda intera la fa arrivare a 10.053 byte.
+        // Il metro è la quota della coda, non il tetto del blocco: con quello
+        // c'erano quattro volte lo spazio necessario e ogni formula passava.
+        let tail = tail_of(&out);
         assert!(
-            body <= MAX_LIVE_BYTES + 120,
-            "blocco di {body} byte oltre il tetto: {}",
-            out.text
+            tail.len() <= MAX_REMEASURE_BYTES,
+            "coda di {} byte oltre la quota di {MAX_REMEASURE_BYTES}: {tail}",
+            tail.len()
         );
+        assert!(capped_bytes(&out) <= MAX_LIVE_BYTES, "{}", out.text);
         assert_eq!(out.expired, 40);
         assert!(out.text.contains("## Da rimisurare"));
         assert!(out.text.contains("non elencate"), "le righe tagliate si dichiarano");
         assert!(out.text.contains("istinto scaduto: vecchio-0"), "le prime si leggono");
+    }
+
+    /// Una riga che riempie la quota **al byte** entra: il confronto è `>`, non
+    /// `>=`. Titolo (18) + riga (734) + riserva (48) = 800 esatti.
+    #[test]
+    fn a_tail_line_that_exactly_fills_the_quota_still_enters() {
+        let lines = vec![tail_line(0, 734), tail_line(1, 10)];
+        let out = render_remeasure(&lines);
+        // rotto così → rosso: `>=` lascia fuori proprio il caso limite
+        assert!(out.contains("riga-0:"), "{out}");
+        assert!(!out.contains("riga-1:"), "{out}");
+        assert!(out.ends_with("\n… e altre 1 non elencate"), "{out}");
+        assert!(out.len() <= MAX_REMEASURE_BYTES, "coda di {} byte", out.len());
+    }
+
+    /// Il byte del ritorno a capo fra due righe si paga sulla quota: qui la
+    /// seconda riga sfonda **solo** per quello — 318 + 1 + 434 + 48 = 801.
+    #[test]
+    fn the_separator_byte_counts_against_the_tail_quota() {
+        let lines = vec![tail_line(0, 300), tail_line(1, 434)];
+        let out = render_remeasure(&lines);
+        // rotto così → rosso: togliere lo stacco dal conto, o moltiplicarlo
+        // invece di sommarlo, fa entrare una riga in più di un byte
+        assert!(out.contains("riga-0:"), "{out}");
+        assert!(!out.contains("riga-1:"), "{out}");
+    }
+
+    /// La riserva per la riga di conto serve a non sfondare proprio nel caso in
+    /// cui la quota esiste: quattro righe restano fuori e il totale resta sotto.
+    #[test]
+    fn the_reserved_room_for_the_overflow_line_keeps_the_tail_in_the_quota() {
+        let lines: Vec<String> = (0..5).map(|i| tail_line(i, 400)).collect();
+        let out = render_remeasure(&lines);
+        // rotto così → rosso: senza la riserva entra una seconda riga e la coda
+        // arriva a 846 byte; un conto sbagliato dice «e altre 5» o «e altre 6»;
+        // senza lo stacco la riga di conto si incolla all'ultima elencata
+        assert!(out.contains("riga-0:"), "{out}");
+        assert!(!out.contains("riga-1:"), "{out}");
+        assert!(out.ends_with("\n… e altre 4 non elencate"), "{out}");
+        assert!(out.len() <= MAX_REMEASURE_BYTES, "coda di {} byte", out.len());
+    }
+
+    /// Quando non entra nemmeno una riga, la riga di conto segue subito il
+    /// titolo: il titolo finisce già con una riga vuota.
+    #[test]
+    fn nothing_fits_and_the_count_line_follows_the_title() {
+        let out = render_remeasure(&[tail_line(0, 900)]);
+        // rotto così → rosso: uno stacco messo a prescindere aggiunge una riga
+        // vuota di troppo davanti alla sola riga rimasta
+        assert_eq!(out, format!("{REMEASURE_TITLE}… e altre 1 non elencate"));
+    }
+
+    /// Una coda che ci sta tutta non dichiara niente di nascosto, e ogni riga
+    /// resta la sua: 18 + 200 + 1 + 200 + 1 + 200 = 620 byte.
+    #[test]
+    fn a_tail_that_fits_whole_says_nothing_about_lines_left_out() {
+        let lines: Vec<String> = (0..3).map(|i| tail_line(i, 200)).collect();
+        let out = render_remeasure(&lines);
+        // rotto così → rosso: `<=` aggiunge «… e altre 0 non elencate», e un
+        // contatore che non avanza incolla le righe una all'altra
+        assert_eq!(out, format!("{REMEASURE_TITLE}{}\n{}\n{}", lines[0], lines[1], lines[2]));
     }
 
     /// La coda toglie budget ai corpi vivi, non se ne prende uno suo: il tetto
@@ -635,7 +833,61 @@ mod tests {
         // entrare il corpo grosso *e* la coda, sfondando il blocco
         assert!(!out.text.contains("id: quasi-pieno"), "col peso della coda non ci sta più");
         assert!(out.text.contains("istinto scaduto: vecchio"));
-        assert!(out.text.len() - HEADER.len() <= MAX_LIVE_BYTES + 120);
+        assert!(capped_bytes(&out) <= MAX_LIVE_BYTES, "{}", out.text);
+    }
+
+    /// I due byte di riga vuota fra i corpi e la coda escono dallo stesso budget:
+    /// il tetto vale sul blocco emesso, distacco compreso. Si prova sul byte —
+    /// un corpo grande esattamente quanto il budget entra, uno di un byte più
+    /// grande no.
+    #[test]
+    fn the_blank_line_before_the_tail_is_charged_to_the_live_budget() {
+        let stale = expired("vecchio", "CORPO");
+        let alone = select(&[("b.md".into(), Some(stale.clone()))], "2026-08-15");
+        let budget = MAX_LIVE_BYTES - (tail_of(&alone).len() + 2);
+
+        let fits = select(
+            &[
+                ("a.md".into(), Some(live_of_size("giusto", 0.9, budget))),
+                ("b.md".into(), Some(stale.clone())),
+            ],
+            "2026-08-15",
+        );
+        // rotto così → rosso: contare la coda due volte restringe il budget e
+        // lascia fuori un corpo che ci stava
+        assert!(fits.text.contains("id: giusto"), "{}", fits.text);
+        assert_eq!(fits.excluded_by_bytes, 0);
+
+        let over = select(
+            &[
+                ("a.md".into(), Some(live_of_size("troppo", 0.9, budget + 1))),
+                ("b.md".into(), Some(stale)),
+            ],
+            "2026-08-15",
+        );
+        // rotto così → rosso: scalare il distacco invece di sommarlo allarga il
+        // budget di quattro byte, e il blocco emesso sfonda il tetto
+        assert!(!over.text.contains("id: troppo"), "{}", over.text);
+        assert_eq!(over.excluded_by_bytes, 1);
+        assert!(capped_bytes(&fits) <= MAX_LIVE_BYTES, "{}", fits.text);
+    }
+
+    /// Fra due corpi iniettati c'è una riga vuota, e davanti al primo no: la
+    /// riga dei conteggi ha già il suo distacco.
+    #[test]
+    fn injected_bodies_are_separated_and_none_opens_the_block() {
+        let high = instinct("alto", "2026-08-01", "2026-08-30", 0.9, "ALTO");
+        let low = instinct("basso", "2026-08-01", "2026-08-30", 0.5, "BASSO");
+        let out = select(
+            &[("a.md".into(), Some(low.clone())), ("b.md".into(), Some(high.clone()))],
+            "2026-08-15",
+        );
+        // rotto così → rosso: uno stacco messo a prescindere apre il blocco con
+        // una riga vuota di troppo
+        assert!(out.text.contains(&format!("senza misura: 0\n\n{high}")), "{}", out.text);
+        // rotto così → rosso: uno stacco che non scatta mai, o che scatta solo
+        // sul primo, incolla il secondo corpo alla fine del primo
+        assert!(out.text.contains(&format!("{high}\n\n{low}")), "{}", out.text);
     }
 
     /// Senza niente iniettato la coda non vuole un distacco davanti: la riga
