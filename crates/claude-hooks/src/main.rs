@@ -80,6 +80,10 @@ mod costs;
 // `Agent` che sceglie il modello dal mestiere. Non ancora acceso
 // (`docs/2026-08-22-gesto-message-budget.md`).
 mod phase_router;
+// Il canarino del formato transcript, 24/08/2026: non è un gancio, è lo
+// strumento che prova su un transcript vero le assunzioni di schema che ogni
+// misura di casa dà per scontate. Lo chiama la ronda.
+mod transcript_canary;
 
 use hook_io::{Decision, Mode};
 
@@ -254,6 +258,10 @@ const ALL_HOOKS: &[&str] = &[
     // giudica un nome di strumento — legge `source` su `SessionStart` — e non
     // è ancora accesa: la riga è di Theo.
     "ronda-trigger",
+    // L'undicesimo, il 24/08/2026: il canarino del formato transcript. Non
+    // giudica nessun evento — lo si interroga da fuori, e la ronda lo chiama —
+    // quindi sta in NOT_HOOKS.
+    "transcript-canary",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -292,6 +300,7 @@ const NOT_HOOKS: &[&str] = &[
     "captain-authorize",
     "marker-sweep",
     "permission-stall",
+    "transcript-canary",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -488,6 +497,10 @@ fn has_module_test(name: &str) -> bool {
         "ronda-trigger" => &[
             include_str!("ronda_trigger.rs"),
             include_str!("../../guards/src/ronda_trigger.rs"),
+        ],
+        "transcript-canary" => &[
+            include_str!("transcript_canary.rs"),
+            include_str!("../../guards/src/transcript_canary.rs"),
         ],
         _ => &[],
     };
@@ -1323,6 +1336,11 @@ fn run(which: &str) -> Result<i32, String> {
         // `model` nell'input o non stampa niente.
         "phase-router" => Ok(phase_router::run()),
         "ronda-trigger" => Ok(ronda_trigger::run()),
+        // Non è un gancio: legge un transcript vero e dice se lo schema che
+        // tutte le misure danno per scontato regge ancora. Esce 1 quando muore
+        // e 2 quando non ha potuto misurare, così chi lo chiama dalla ronda
+        // distingue «rotto» da «non provato».
+        "transcript-canary" => Ok(transcript_canary::run()),
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
