@@ -11,6 +11,16 @@
 /// L'intestazione fissa del blocco iniettato, invariata dallo script che sostituisce.
 const HEADER: &str = "# Learned instincts (from your own past session observations)\n\nHeuristics with a confidence score, not hard rules. Apply when the trigger matches.\n\n";
 
+/// Quanti istinti vivi entrano al massimo nel blocco iniettato, oltre il
+/// filtro di scadenza: il blocco cresceva senza freno (+135% dal 20/08),
+/// quindi si taglia ai primi N per `confidence` anche se sono tutti vivi.
+const MAX_LIVE_COUNT: usize = 8;
+
+/// Tetto in byte del corpo degli istinti vivi iniettati (separatori inclusi).
+/// Fra questo e `MAX_LIVE_COUNT` vince chi scatta prima, scorrendo l'elenco
+/// già ordinato per `confidence` decrescente.
+const MAX_LIVE_BYTES: usize = 12_000;
+
 /// I soli campi del frontmatter che contano per la decadenza.
 #[derive(Default)]
 struct Frontmatter {
@@ -111,6 +121,9 @@ pub struct Rendered {
     pub live: usize,
     pub expired: usize,
     pub undated: usize,
+    /// Quanti istinti vivi sono stati esclusi dal tetto (conteggio o byte),
+    /// non dalla scadenza: 0 finché nessuno dei due limiti scatta.
+    pub excluded_by_cap: usize,
 }
 
 /// Sceglie quali istinti iniettare interi e quali ridurre a una riga.
@@ -160,19 +173,44 @@ pub fn select(instincts: &[(String, Option<String>)], today: &str) -> Rendered {
     // Confidence decrescente; a parità l'ordine di arrivo (sort stabile).
     live.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
+    // Prefisso dell'elenco già ordinato: si ferma al primo dei due limiti
+    // che scatta, il resto è escluso in blocco (niente buchi a metà elenco).
+    let mut included: Vec<&str> = Vec::new();
+    let mut bytes_so_far = 0usize;
+    let mut cap_reason: Option<&'static str> = None;
+    for (_, body) in &live {
+        if included.len() >= MAX_LIVE_COUNT {
+            cap_reason = Some("oltre le prime 8 per confidence");
+            break;
+        }
+        let separator = if included.is_empty() { 0 } else { 2 }; // "\n\n"
+        let candidate_bytes = bytes_so_far + separator + body.len();
+        if candidate_bytes > MAX_LIVE_BYTES {
+            cap_reason = Some("oltre il tetto di 12.000 byte");
+            break;
+        }
+        bytes_so_far = candidate_bytes;
+        included.push(body.as_str());
+    }
+    let excluded_by_cap = live.len() - included.len();
+
     let mut text = String::new();
     text.push_str(HEADER);
     text.push_str(&format!(
-        "Vivi: {live_count} · scaduti: {expired_count} · senza misura: {undated_count}\n\n"
+        "Vivi: {live_count} · scaduti: {expired_count} · senza misura: {undated_count}"
     ));
-    for (i, (_, body)) in live.iter().enumerate() {
+    if let Some(reason) = cap_reason {
+        text.push_str(&format!(" · tagliati dal tetto: {excluded_by_cap} ({reason})"));
+    }
+    text.push_str("\n\n");
+    for (i, body) in included.iter().enumerate() {
         if i > 0 {
             text.push_str("\n\n");
         }
         text.push_str(body);
     }
     if !remeasure.is_empty() {
-        if live_count > 0 {
+        if !included.is_empty() {
             text.push_str("\n\n");
         }
         text.push_str("## Da rimisurare\n\n");
@@ -184,6 +222,7 @@ pub fn select(instincts: &[(String, Option<String>)], today: &str) -> Rendered {
         live: live_count,
         expired: expired_count,
         undated: undated_count,
+        excluded_by_cap,
     }
 }
 
@@ -286,5 +325,44 @@ mod tests {
         // rotto così → rosso: ignorare il ramo `None` lo farebbe sparire dal totale
         assert_eq!((out.live, out.expired, out.undated), (0, 0, 1));
         assert!(out.text.contains("istinto senza misura: rotto.md — illeggibile"));
+    }
+
+    /// Nono istinto vivo: il tetto di conteggio (`MAX_LIVE_COUNT`) taglia
+    /// prima del tetto in byte, perché i corpi qui sono piccoli.
+    #[test]
+    fn a_ninth_live_instinct_is_cut_by_the_count_cap() {
+        let items: Vec<(String, Option<String>)> = (0..9)
+            .map(|i| {
+                let confidence = 0.9 - (i as f64) * 0.01; // decrescente per ordine noto
+                let body = format!("CORPO-{i}");
+                (
+                    format!("f{i}.md"),
+                    Some(instinct(&format!("i{i}"), "2026-08-01", "2026-08-30", confidence, &body)),
+                )
+            })
+            .collect();
+        let out = select(&items, "2026-08-15");
+        // rotto così → rosso: togliere il controllo `included.len() >= MAX_LIVE_COUNT` inietta il nono
+        assert!(out.text.contains("CORPO-0"), "il primo per confidence deve entrare");
+        assert!(!out.text.contains("CORPO-8"), "il nono deve restare fuori");
+        assert_eq!(out.excluded_by_cap, 1);
+        assert!(out.text.contains("tagliati dal tetto: 1 (oltre le prime 8 per confidence)"));
+    }
+
+    /// Due istinti vivi, il primo da solo sopra `MAX_LIVE_BYTES`: il tetto
+    /// in byte taglia prima di arrivare al tetto di conteggio.
+    #[test]
+    fn a_body_over_the_byte_cap_is_cut_by_the_byte_cap() {
+        let huge_body = "X".repeat(MAX_LIVE_BYTES + 1);
+        let huge = instinct("enorme", "2026-08-01", "2026-08-30", 0.9, &huge_body);
+        let small = instinct("piccolo", "2026-08-01", "2026-08-30", 0.8, "CORPO PICCOLO");
+        let out = select(
+            &[("a.md".into(), Some(huge)), ("b.md".into(), Some(small))],
+            "2026-08-15",
+        );
+        // rotto così → rosso: togliere il controllo `candidate_bytes > MAX_LIVE_BYTES` inietta anche il corpo enorme
+        assert!(!out.text.contains("CORPO PICCOLO"), "il tetto in byte deve fermare l'elenco al primo elemento");
+        assert_eq!(out.excluded_by_cap, 2, "entrambi restano fuori: il primo supera da solo il tetto");
+        assert!(out.text.contains("tagliati dal tetto: 2 (oltre il tetto di 12.000 byte)"));
     }
 }
