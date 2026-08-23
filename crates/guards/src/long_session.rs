@@ -7,10 +7,11 @@
 //! centinaio dopo, si inietta **una riga** che dice il numero e la via d'uscita.
 //! Non è `handoff_threshold`, che misura i token: qui il metro sono i turni.
 //!
-//! COS'È UN TURNO. Lo stesso che conta `scripts/session-tokens.py`: una riga del
-//! transcript con `message.usage`, cioè una richiesta al servizio. È la
-//! definizione su cui è misurato il 4×, quindi la soglia è confrontabile con la
-//! tabella; i prompt dell'utente sarebbero un numero diverso e più basso.
+//! COS'È UN TURNO. Una richiesta al servizio: un record con `message.usage`,
+//! **deduplicato su `message.id`**, perché lo streaming ripete lo stesso turno
+//! su 2-3 righe (misurato il 23/08: 130k righe per 67k turni). Lo script del
+//! 18/08 contava le righe grezze, quindi la sua tabella è gonfiata di ~1,85×:
+//! i 100 turni di qui valgono ~185 righe di là, e il 4× resta.
 //!
 //! Il giudizio è puro: entrano il testo del transcript e lo stato già detto,
 //! escono il gradino e la riga. Chi tocca stdin, il file e `TMPDIR` sta in
@@ -21,19 +22,29 @@ pub const STEP: u64 = 100;
 
 /// Quante richieste al servizio contiene il transcript.
 ///
-/// Una riga che non è JSON o non ha `message.usage` non conta. Un `usage` di
-/// primo livello qui **non** conta: lo script che ha misurato il 4× lo legge
-/// solo come ripiego, e nei transcript di Claude Code non compare mai da solo.
+/// Una riga che non è JSON o non ha `message.usage` non conta; un `usage` di
+/// primo livello non conta, perché nei transcript di Claude Code non compare
+/// mai da solo. Due righe con lo stesso `message.id` sono un turno; una riga
+/// senza `id` vale un turno da sola.
 pub fn count_turns(text: &str) -> u64 {
-    text.lines()
-        .filter(|line| line.contains("\"usage\""))
-        .filter(|line| {
-            serde_json::from_str::<serde_json::Value>(line)
-                .ok()
-                .and_then(|v| v.get("message")?.get("usage")?.as_object().map(|_| ()))
-                .is_some()
-        })
-        .count() as u64
+    let mut seen = std::collections::HashSet::new();
+    let mut without_id = 0u64;
+    for line in text.lines().filter(|l| l.contains("\"usage\"")) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(msg) = v.get("message") else { continue };
+        if !msg.get("usage").is_some_and(|u| u.is_object()) {
+            continue;
+        }
+        match msg.get("id").and_then(|i| i.as_str()) {
+            Some(id) => {
+                seen.insert(id.to_string());
+            }
+            None => without_id += 1,
+        }
+    }
+    seen.len() as u64 + without_id
 }
 
 /// Il gradino raggiunto: il multiplo di `STEP` più alto non oltre `turns`.
@@ -67,24 +78,39 @@ pub fn judge(transcript: &str, state: &str) -> Option<(u64, String)> {
 mod tests {
     use super::*;
 
-    fn turn() -> String {
-        r#"{"type":"assistant","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":5}}}"#
-            .to_string()
+    fn turn(id: usize) -> String {
+        format!(
+            r#"{{"type":"assistant","message":{{"id":"msg_{id}","usage":{{"input_tokens":1,"cache_read_input_tokens":5}}}}}}"#
+        )
     }
 
     fn transcript(n: usize) -> String {
-        std::iter::repeat(turn()).take(n).collect::<Vec<_>>().join("\n")
+        (0..n).map(turn).collect::<Vec<_>>().join("\n")
     }
 
     #[test]
-    fn a_turn_is_a_line_with_message_usage() {
+    fn a_turn_is_a_message_id_with_usage() {
         let text = [
-            turn(),
+            turn(1),
             r#"{"type":"user","message":{"content":"ciao"}}"#.to_string(),
             r#"{"type":"assistant","usage":{"input_tokens":1}}"#.to_string(),
             r#"{"usage": rotta"#.to_string(),
             r#"{"type":"assistant","message":{"usage":"no"}}"#.to_string(),
-            turn(),
+            turn(2),
+        ]
+        .join("\n");
+        assert_eq!(count_turns(&text), 2);
+    }
+
+    #[test]
+    fn streaming_repeats_a_turn_but_it_counts_once() {
+        // Tre righe con lo stesso `id` e `output_tokens` crescente: un turno.
+        // Una riga senza `id` conta da sola.
+        let text = [
+            turn(7),
+            turn(7),
+            turn(7),
+            r#"{"type":"assistant","message":{"usage":{"input_tokens":1}}}"#.to_string(),
         ]
         .join("\n");
         assert_eq!(count_turns(&text), 2);

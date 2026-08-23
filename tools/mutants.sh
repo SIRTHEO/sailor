@@ -40,6 +40,8 @@ FILES=(
   "crates/claude-hooks/src/link_worktree_rules.rs"
   "crates/guards/src/handoff_threshold.rs"
   "crates/claude-hooks/src/handoff_threshold.rs"
+  "crates/guards/src/long_session.rs"
+  "crates/claude-hooks/src/long_session.rs"
   "crates/guards/src/spotlight_marker.rs"
   "crates/claude-hooks/src/spotlight_marker.rs"
   "crates/guards/src/skill_nudge.rs"
@@ -1090,6 +1092,48 @@ if [ "$WHICH" = "handoff-threshold" ] || [ "$WHICH" = "tutte" ]; then
     's = s.replace("if size > TAIL_BYTES && !lines.is_empty() {", "if false && size > TAIL_BYTES && !lines.is_empty() {", 1)'
 
   COMPARE=""
+fi
+
+# ── long-session ────────────────────────────────────────────────────────────
+if [ "$WHICH" = "long-session" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su long_session.rs:"
+  # Nato in Rust il 23/08: non c'e' un Python da confrontare, l'oracolo e' la
+  # batteria dei due moduli.
+  ORACOLO="cargo test --release -p guards -p claude-hooks long_session"
+  G="crates/guards/src/long_session.rs"
+  I="crates/claude-hooks/src/long_session.rs"
+
+  # Il centinaio diventa cinquantina: il gancio parla dove deve tacere.
+  mutate "gradino spostato da 100 a 50" "$G" \
+    's = s.replace("pub const STEP: u64 = 100;", "pub const STEP: u64 = 50;", 1)'
+
+  # Al centesimo esatto non si parla piu: il confine da chiuso ad aperto.
+  mutate "confine aperto sul gradino" "$G" \
+    's = s.replace("(step >= STEP).then_some(step)", "(step > STEP).then_some(step)", 1)'
+
+  # Il freno «una volta per centinaio» si allenta: lo stato a 100 non copre il
+  # turno 150.
+  mutate "freno una-volta-per-centinaio allentato" "$G" \
+    's = s.replace("is_ok_and(|said| said >= step)", "is_ok_and(|said| said > step)", 1)'
+
+  # Lo streaming torna a contare: ogni riga con usage e un turno, come nello
+  # script del 18/08 che gonfiava di 1,85x.
+  mutate "deduplicazione su message.id tolta" "$G" \
+    's = s.replace("seen.insert(id.to_string());", "seen.insert(format!(\"{id}-{}\", seen.len()));", 1)'
+
+  # La riga perde la via d uscita: e l unica parola che fa agire.
+  mutate "la riga non nomina handoff" "$G" \
+    's = s.replace("chiudi con `handoff`", "chiudi", 1)'
+
+  # Lo stato non si scrive piu: il gancio riparla a ogni prompt.
+  mutate "scrittura dello stato saltata" "$I" \
+    's = s.replace("let _ = fs::write(&state, step.to_string());", "let _ = (&state, step);", 1)'
+
+  # La valvola sparisce: LONG_SESSION=off non tace piu.
+  mutate "valvola tolta" "$I" \
+    's = s.replace("if Mode::from_env(\"LONG_SESSION\") == Mode::Off {", "if false {", 1)'
+
+  ORACOLO=""
 fi
 
 # ── spotlight-marker ────────────────────────────────────────────────────────
