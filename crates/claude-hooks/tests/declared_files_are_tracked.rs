@@ -26,7 +26,27 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// La radice del deposito, risalendo dal manifesto di questa cassa.
+///
+/// `CLAUDE_HOOKS_REPO_ROOT` la sostituisce, e serve a un caso solo: quando i
+/// sorgenti vengono compilati fuori dal deposito — `cargo mutants` li copia in
+/// una cartella temporanea — `git rev-parse` non ha niente da dire e questa
+/// prova cade portandosi dietro l'intera base, che è la condizione per cui
+/// nessun mutante viene misurato. Puntata al deposito vero, la domanda resta
+/// quella di sempre: risponde l'indice di git di `~/.claude`, non il disco
+/// della copia. Senza la variabile non cambia niente.
 fn repo_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("CLAUDE_HOOKS_REPO_ROOT") {
+        let root = PathBuf::from(root);
+        // Una radice sbagliata farebbe tacere la prova invece di romperla: senza
+        // `.git` non c'è nessun indice da interrogare, e `git ls-files` direbbe
+        // «non lo conosco» per ogni file.
+        assert!(
+            root.join(".git").exists(),
+            "CLAUDE_HOOKS_REPO_ROOT points at {}, which is not a git repository",
+            root.display()
+        );
+        return root;
+    }
     let out = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
