@@ -19,7 +19,11 @@
 set -uo pipefail
 
 ROOT="$HOME/.claude/rust"
-BACKUP=$(mktemp -d)
+# Senza copia di sicurezza i mutanti finirebbero sui sorgenti veri e il
+# ripristino fallirebbe in silenzio: successo il 23/08/2026 in una sandbox che
+# nega /var/folders. Qui ci si ferma prima.
+BACKUP=$(mktemp -d) || { echo "mutants.sh: mktemp -d fallito, niente copia di sicurezza: mi fermo" >&2; exit 1; }
+[ -d "$BACKUP" ] || { echo "mutants.sh: $BACKUP non esiste: mi fermo" >&2; exit 1; }
 FILES=(
   "crates/guards/src/duplication.rs"
   "crates/guards/src/linear_readonly.rs"
@@ -49,6 +53,8 @@ FILES=(
   "crates/claude-hooks/src/work_status.rs"
   "crates/claude-hooks/src/orca_cleanup.rs"
   "crates/claude-hooks/src/relay.rs"
+  "crates/guards/src/phase_router.rs"
+  "crates/claude-hooks/src/phase_router.rs"
 )
 for f in "${FILES[@]}"; do
   mkdir -p "$BACKUP/$(dirname "$f")"
@@ -1495,6 +1501,45 @@ if [ "$WHICH" = "orca-cleanup" ] || [ "$WHICH" = "tutte" ]; then
     's = s.replace("        if args.align {\n            return outcome;\n        }\n", "", 1)'
 
   COMPARE=""
+fi
+
+# ── phase-router ────────────────────────────────────────────────────────────
+if [ "$WHICH" = "phase-router" ] || [ "$WHICH" = "tutte" ]; then
+  echo "mutanti su phase_router.rs (il router di fase, gradino 5):"
+  # Nato in Rust il 23/08, senza un Python da confrontare: l'oracolo e' la
+  # batteria dei due moduli, come per long-session.
+  ORACOLO="cargo test --release -p guards -p claude-hooks phase_router"
+  G="crates/guards/src/phase_router.rs"
+  I="crates/claude-hooks/src/phase_router.rs"
+
+  # Il mutante piu' pericoloso dei tre: chi lancia un subagent con un modello
+  # esplicito se lo vede sovrascritto lo stesso.
+  mutate "riscrive anche con model gia' scritto" "$G" \
+    's = s.replace("    if model.is_some_and(|m| !m.trim().is_empty()) {\n        return Routing {\n            model: None,\n            trade,\n            reason: \"chi lancia ha deciso\",\n        };\n    }\n", "", 1)'
+
+  # La valvola smette di spegnere: PHASE_ROUTER=off non lascia piu' passare
+  # tutto com'e'. E' nell'involucro, non nel giudizio puro: la traduzione
+  # dall'ambiente e' il punto che un test sul solo `guards::route` non vede.
+  mutate "PHASE_ROUTER=off non spegne" "$I" \
+    's = s.replace("let valve_off = hook_io::Mode::from_env(\"PHASE_ROUTER\") == hook_io::Mode::Off;", "let valve_off = false;", 1)'
+
+  # La tabella candidata cambia riga: measurer va su sonnet invece di haiku.
+  # E' la forma che il router deve saper applicare, provata sulla tabella
+  # delle batterie perche' quella in servizio puo' essere vuota.
+  mutate "measurer va su sonnet invece che haiku" "$G" \
+    's = s.replace("\"measurer\",\n        \"haiku\",", "\"measurer\",\n        \"sonnet\",", 1)'
+
+  # La tabella in servizio si riempie senza che la prova a campione l'abbia
+  # promossa: e' la riga che il 23/08 e' stata svuotata per misura.
+  mutate "la tabella in servizio torna piena senza prova" "$G" \
+    's = s.replace("pub const TRADE_MODEL: &[Row] = &[];", "pub const TRADE_MODEL: &[Row] = CANDIDATE_TABLE;", 1)'
+
+  # La forma del mandato smette di fermare un measurer a cui si chiede di
+  # scrivere: torna a girare su un modello piccolo mentre modifica sorgente.
+  mutate "il verbo di scrittura non ferma piu' il measurer" "$G" \
+    's = s.replace("        if asks_to_write_code(prompt) {\n            return Routing {\n                model: None,\n                trade,\n                reason: \"il mandato chiede di scrivere codice\",\n            };\n        }\n", "", 1)'
+
+  ORACOLO=""
 fi
 
 echo

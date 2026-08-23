@@ -23,6 +23,7 @@ pub mod memory_anchor;
 pub mod message_budget;
 pub mod link_worktree_rules;
 pub mod live_rules;
+pub mod phase_router;
 pub mod pr_merge_admin;
 pub mod pr_title;
 pub mod queue_clock;
