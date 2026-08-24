@@ -27,7 +27,9 @@
 //! stava soltanto leggendo**: sei occorrenze in un giorno su sessioni vere. Qui
 //! il bersaglio nominato è sempre un argomento vero di *quel* pezzo, e un
 //! comando che si limita a nominare — `bash -n script.sh`, `grep -n rm file`,
-//! `echo "rm -rf /"` — non è un gesto e non viene negato.
+//! `echo "rm -rf /"` — non è un gesto e non viene negato. Dal 24/08/2026 vale
+//! anche per il **corpo di un messaggio di commit**, che non esegue niente e
+//! che le righe di uno heredoc facevano leggere come comandi.
 //!
 //! LE VIE D'USCITA ESISTENTI NON SI CHIUDONO. Il materiale usa-e-getta dentro
 //! una copia di lavoro continua a passare, e il permesso lo decide la stessa
@@ -299,10 +301,119 @@ pub fn judge(f: &Facts) -> Decision {
     }
 }
 
+/// Le parole di un segmento, con una lettura di ripiego quando le virgolette
+/// non si chiudono.
+///
+/// Serve **solo** a riconoscere dove nasce un messaggio di commit: nell'idioma
+/// `git commit -m "$(cat <<'EOF'` la virgoletta si chiude tre righe più in
+/// basso, e senza ripiego quella riga non si riconoscerebbe come un commit. Chi
+/// giudica un gesto non passa di qui: là una parola che non si legge deve
+/// restare non letta, ed è il ramo che nega invece di indovinare.
+fn words_or_split(segment: &str) -> Vec<String> {
+    split_words(segment).unwrap_or_else(|| segment.split_whitespace().map(str::to_string).collect())
+}
+
+/// Il segmento è il posto in cui **nasce** un messaggio di commit?
+fn is_commit_context(words: &[String]) -> bool {
+    // Il file che git apre nell'editor: ciò che ci finisce dentro è testo.
+    if words.iter().any(|w| w.ends_with("COMMIT_EDITMSG")) {
+        return true;
+    }
+    let rest = strip_prefixes(words);
+    let Some((verb, args)) = rest.split_first() else {
+        return false;
+    };
+    ends_with_command(verb, "git") && git_subcommand(args).is_some_and(|(sub, _)| sub == "commit")
+}
+
+/// Chi riceve uno heredoc **senza eseguirlo**: `git commit -F-`, e il `cat`
+/// dell'idioma qui sopra. `bash <<EOF` no — quel corpo viene eseguito davvero,
+/// e resta letto come codice anche sulla riga di un commit.
+fn receives_text(words: &[String]) -> bool {
+    if is_commit_context(words) {
+        return true;
+    }
+    let rest = strip_prefixes(words);
+    let Some((verb, args)) = rest.split_first() else {
+        return false;
+    };
+    // Un `cat` che manda il testo altrove sta scrivendo un file, e un file si
+    // esegue: solo quello senza destinazione porta il corpo di un messaggio.
+    ends_with_command(verb, "cat") && !args.iter().any(|a| a.contains('>'))
+}
+
+/// I terminatori degli heredoc aperti da un segmento: `<<EOF`, `<<-EOF`,
+/// `<<'EOF'` (le virgolette le toglie `split_words`), `<< EOF`. `<<<` è una
+/// stringa, non uno heredoc, e non entra: dopo i due segni ne trova un terzo.
+fn heredoc_tags(words: &[String]) -> Vec<String> {
+    let mut tags = Vec::new();
+    for (i, w) in words.iter().enumerate() {
+        let Some(rest) = w.strip_prefix("<<") else {
+            continue;
+        };
+        let rest = rest.strip_prefix('-').unwrap_or(rest);
+        if rest.is_empty() {
+            // `<< EOF`: il terminatore è la parola dopo. Non la si salta: da
+            // sola non comincia per `<<`, quindi il giro successivo la ignora.
+            tags.extend(words.get(i + 1).cloned());
+        } else if !rest.starts_with('<') {
+            tags.push(rest.to_string());
+        }
+    }
+    tags
+}
+
+/// Il terminatore dello heredoc che questa riga apre **per farne un messaggio**.
+/// Servono tutte e due le condizioni: che sulla riga ci sia un commit, e che a
+/// ricevere il testo sia qualcosa che non lo esegue.
+fn commit_message_heredoc(line: &str) -> Option<String> {
+    let segments: Vec<Vec<String>> =
+        split_segments(line).iter().map(|s| words_or_split(s)).collect();
+    if !segments.iter().any(|w| is_commit_context(w)) {
+        return None;
+    }
+    segments
+        .iter()
+        .filter(|w| receives_text(w))
+        .flat_map(|w| heredoc_tags(w))
+        .next()
+}
+
+/// Il comando con il **corpo dei messaggi di commit** svuotato.
+///
+/// Un messaggio di commit non esegue niente, ma `split_segments` legge ogni riga
+/// di uno heredoc come un comando: la notte del 24/08/2026 un commit è stato
+/// negato perché il messaggio nominava un riazzeramento forzato, e chi lo
+/// scriveva ha cambiato forma al comando invece di segnalarlo. Si svuota il
+/// corpo e nient'altro: la riga che lo apre resta giudicata, e dopo il
+/// terminatore si torna a comandi veri.
+fn without_commit_messages(command: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    let mut terminator: Option<String> = None;
+    for line in command.split('\n') {
+        match &terminator {
+            Some(tag) => {
+                if line.trim() == tag.as_str() {
+                    terminator = None;
+                    out.push(line);
+                } else {
+                    out.push("");
+                }
+            }
+            None => {
+                out.push(line);
+                terminator = commit_message_heredoc(line);
+            }
+        }
+    }
+    out.join("\n")
+}
+
 fn first_danger(command: &str, f: &Facts, depth: usize) -> Option<Danger> {
     if depth > MAX_NESTING {
         return None;
     }
+    let command = &without_commit_messages(command);
     let mut variables = assignments(command);
     variables.extend(mktemp_variables(command));
     for segment in split_segments(command) {
@@ -1411,5 +1522,122 @@ mod tests {
             on("git reset --hard HEAD~1", "/Users/theo/orca/general", None),
             Decision::Pass
         ));
+    }
+
+    // ── Il messaggio di commit: testo, non un gesto ─────────────────────────
+
+    /// Il caso vero della notte del 24/08/2026. `split_segments` legge le righe
+    /// di uno heredoc come comandi, quindi un messaggio che **descriveva** un
+    /// riazzeramento forzato è stato negato — e chi lo scriveva ha cambiato
+    /// forma al comando invece di segnalarlo.
+    ///
+    /// MUTANTE: in `first_danger`, togliere la riga che svuota i messaggi (cioè
+    /// `without_commit_messages` ridotta all'identità). Eseguito: questa prova
+    /// diventa rossa e le altre restano verdi. Ripristinato.
+    #[test]
+    fn a_commit_message_is_text_and_never_a_gesture() {
+        // L'idioma con cui questa casa scrive i messaggi lunghi.
+        let idiom = "git commit -m \"$(cat <<'EOF'\n\
+                     test(guards): close the mutants left alive on the two brakes\n\
+                     \n\
+                     The branch is read from the repository, so a bare\n\
+                     `git reset --hard HEAD~3` is blocked too. Same for\n\
+                     `rm -rf /Users/theo/personal/sailor` and `git push --force`.\n\
+                     EOF\n\
+                     )\"";
+        assert!(matches!(
+            on(idiom, "/Users/theo/gyver/work/suite", Some("main")),
+            Decision::Pass
+        ));
+        // `-F-`: lo heredoc arriva a git, che non lo esegue.
+        assert!(!blocked(
+            "git commit -F- <<'EOF'\nrm -rf /Users/theo/personal/sailor\nEOF"
+        ));
+        // Il file che git apre nell'editor: ciò che ci finisce dentro è testo.
+        assert!(!blocked(
+            "cat > .git/COMMIT_EDITMSG <<'EOF'\nrm -rf /Users/theo/personal/sailor\nEOF"
+        ));
+        // Un apostrofo nel testo non rende il comando «illeggibile»: prima
+        // spariva il corpo del messaggio e il rifiuto nominava un gesto che
+        // nessuno stava facendo.
+        assert!(!blocked(
+            "git commit -F- <<'EOF'\nl'errore era rm -rf /Users/theo\nEOF"
+        ));
+        // Il messaggio scritto sulla riga era già testo, e resta tale.
+        assert!(!blocked(
+            "git commit -m 'rm -rf / e git push --force, spiegati'"
+        ));
+        assert!(!blocked("git commit --message=\"rm -rf /Users/theo\""));
+        assert!(!blocked("git commit -F /tmp/messaggio.txt"));
+    }
+
+    /// IL VINCOLO: l'esenzione vale per il **messaggio**, mai per il comando che
+    /// gli sta accanto.
+    ///
+    /// MUTANTE: in `receives_text`, tornare `true` sempre. Eseguito: la riga su
+    /// `bash <<EOF` e quella su `cat > script.sh` diventano rosse. Ripristinato.
+    #[test]
+    fn the_exemption_covers_the_message_and_nothing_beside_it() {
+        let t = "/Users/theo/personal/sailor";
+        assert!(blocked(&format!("git commit -m \"x\" && rm -rf {t}")));
+        assert!(blocked(&format!("git commit -F /tmp/msg.txt; rm -rf {t}")));
+        // Dopo il terminatore si torna a comandi veri.
+        assert!(blocked(&format!(
+            "git commit -F- <<'EOF'\nun messaggio\nEOF\nrm -rf {t}"
+        )));
+        // Uno heredoc che qualcuno **esegue** resta letto come codice, anche
+        // sulla riga di un commit.
+        assert!(blocked(&format!(
+            "git commit -m x && bash <<'EOF'\nrm -rf {t}\nEOF"
+        )));
+        // E un `cat` che manda il testo in un file sta scrivendo un file, che
+        // qualcuno eseguirà: non è un messaggio.
+        assert!(blocked(&format!(
+            "git commit -m x && cat > script.sh <<'EOF'\nrm -rf {t}\nEOF"
+        )));
+        // Senza un commit sulla riga non c'è nessuna esenzione.
+        assert!(blocked(&format!("cat <<'EOF'\nrm -rf {t}\nEOF")));
+        // Un git che non è un commit non esenta niente...
+        assert!(blocked(&format!("git stash list <<'EOF'\nrm -rf {t}\nEOF")));
+        // ...e un «commit» che non è di git nemmeno.
+        assert!(blocked(&format!("jj commit <<'EOF'\nrm -rf {t}\nEOF")));
+    }
+
+    /// Le forme dello heredoc, e ciò che non lo è.
+    ///
+    /// MUTANTE: in `heredoc_tags`, togliere il ramo `rest.is_empty()` — quello
+    /// del terminatore staccato (`<< EOF`). Eseguito: cade **la riga della
+    /// coda** di quella forma, e solo quella. Il corpo resta verde perché il
+    /// terminatore diventa la stringa vuota, che non combacia con nessuna riga:
+    /// il messaggio sparisce comunque, e con lui tutto ciò che segue. È la
+    /// ragione per cui ogni forma qui ha due righe invece di una.
+    /// Ripristinato.
+    #[test]
+    fn every_shape_of_heredoc_is_read_and_a_here_string_is_not_one() {
+        let t = "/Users/theo/personal/sailor";
+        for open in ["<<EOF", "<< EOF", "<<'EOF'", "<<\"EOF\""] {
+            assert!(
+                !blocked(&format!("git commit -F- {open}\nrm -rf {t}\nEOF")),
+                "corpo di {open}"
+            );
+            assert!(
+                blocked(&format!(
+                    "git commit -F- {open}\nun messaggio\nEOF\nrm -rf {t}"
+                )),
+                "coda di {open}"
+            );
+        }
+        // `<<-` accetta il terminatore rientrato: senza toglierne il segno, il
+        // terminatore non combacerebbe più e la coda passerebbe.
+        assert!(!blocked(&format!(
+            "git commit -F- <<-EOF\n\trm -rf {t}\n\tEOF"
+        )));
+        assert!(blocked(&format!(
+            "git commit -F- <<-EOF\n\tun messaggio\n\tEOF\nrm -rf {t}"
+        )));
+        // `<<<` è una stringa, non uno heredoc: la riga dopo è un comando vero.
+        assert!(blocked(&format!(
+            "git commit -F- <<<\"messaggio\"\nrm -rf {t}"
+        )));
     }
 }
