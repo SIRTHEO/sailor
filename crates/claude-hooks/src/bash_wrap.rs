@@ -112,6 +112,7 @@ mod tests {
     /// cambiato.
     #[test]
     fn a_listed_command_is_rewritten_keeping_the_rest_of_the_input() {
+        let _serrata = valve_lock();
         let out = process_with(&bash_payload("cargo test -p guards"), "/bin/ch")
             .expect("doveva riscrivere");
         let input = &out["hookSpecificOutput"]["updatedInput"];
@@ -144,9 +145,28 @@ mod tests {
         assert_eq!(process_with(&payload, "/bin/ch"), None);
     }
 
+    /// Le variabili d'ambiente appartengono al **processo**, non al thread, e
+    /// `cargo test` manda in parallelo i casi dello stesso binario. Chi accende
+    /// la valvola la accende quindi anche per chi sta girando accanto: senza
+    /// questa serratura, i due casi che attraversano il cammino sano vedevano
+    /// una valvola spenta che non avevano chiesto, e fallivano **una volta su
+    /// otto** — misurato sulla batteria intera il 24/08/2026.
+    ///
+    /// La serratura si prende anche in lettura, non solo in scrittura: il danno
+    /// non lo fa chi scrive, lo prende chi legge nel momento sbagliato.
+    static VALVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Una serratura avvelenata da un caso che è già fallito non deve far
+    /// fallire anche i vicini: il primo rosso è quello vero, gli altri sarebbero
+    /// rumore che nasconde la causa.
+    fn valve_lock() -> std::sync::MutexGuard<'static, ()> {
+        VALVE.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// La valvola spegne tutto senza toccare `settings.json`.
     #[test]
     fn the_valve_silences_the_hook() {
+        let _serrata = valve_lock();
         std::env::set_var("WRAP_BASH", "off");
         let outcome = process_with(&bash_payload("cargo test"), "/bin/ch");
         std::env::remove_var("WRAP_BASH");
@@ -167,6 +187,7 @@ mod tests {
     /// e non stampa niente — mai un diniego, mai un panico.
     #[test]
     fn a_broken_stdin_never_denies() {
+        let _serrata = valve_lock();
         struct Broken;
         impl Read for Broken {
             fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
