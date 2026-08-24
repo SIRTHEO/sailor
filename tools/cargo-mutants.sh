@@ -28,9 +28,63 @@ export CLAUDE_HOOKS_REPO_ROOT="$HOME/.claude"
 # `cargo mutants` dà a ogni lavoro parallelo la propria copia dell'albero, e
 # quindi la propria cartella di build — ma una `CARGO_TARGET_DIR` ereditata le
 # rimette tutte sulla stessa, e i lavori si sovrascrivono a vicenda: un mutante
-# risultava «ucciso» con un numero impossibile. Qui si toglie di mezzo, invece
-# di imporre `-j 1` a chi lancia.
+# risultava «ucciso» con un numero impossibile. Qui si toglie di mezzo.
 unset CARGO_TARGET_DIR
 
+# Il tetto al parallelismo. `-j` non moltiplica solo i lavori: ogni lavoro lancia
+# un `cargo` che a sua volta impegna tutti i core, e la memoria dei collegamenti
+# si somma. Misurato il 24/08/2026 sullo stesso lotto, acceso e spento tre volte:
+# -j 1 → 956 MB di picco, -j 2 → 1.045 MB, -j 4 → 2.036 e poi 2.443 MB.
+# Con -j 4 quella notte lo swap si è esaurito, il kernel ha sospeso Arc e Orca e
+# Theo ha subìto tre chiusure forzate. Chi non dichiara niente prende 2; chi
+# dichiara di più tiene la sua scelta e legge sullo schermo quanto costa —
+# imporlo di forza toglierebbe una misura legittima a chi la vuole fare.
+JOBS_CAP=2
+
+# `cargo mutants` accetta quattro forme: `-j N`, `-jN`, `--jobs N`, `--jobs=N`.
+declared_jobs=""
+awaiting_value=""
+for arg in "$@"; do
+  case "$arg" in
+    -j | --jobs)
+      awaiting_value="yes"
+      continue
+      ;;
+    -j*) declared_jobs="${arg#-j}" ;;
+    --jobs=*) declared_jobs="${arg#--jobs=}" ;;
+    *)
+      if [ -n "$awaiting_value" ]; then declared_jobs="$arg"; fi
+      ;;
+  esac
+  awaiting_value=""
+done
+
+case "$declared_jobs" in
+  '')
+    set -- -j "$JOBS_CAP" "$@"
+    ;;
+  *[!0-9]*)
+    # Non è un numero: lascia protestare `cargo mutants`, che lo dice meglio.
+    ;;
+  *)
+    if [ "$declared_jobs" -gt "$JOBS_CAP" ]; then
+      {
+        echo "AVVERTIMENTO: -j $declared_jobs supera il tetto di casa ($JOBS_CAP)."
+        echo "  Picco di memoria misurato il 24/08/2026 sullo stesso lotto:"
+        echo "    -j 1 -> 956 MB     -j 2 -> 1.045 MB     -j 4 -> 2.036 e 2.443 MB"
+        echo "  Con -j 4 lo swap si è esaurito: il kernel ha sospeso Arc e Orca,"
+        echo "  e sono seguite tre chiusure forzate. La scelta resta la tua."
+      } >&2
+    fi
+    ;;
+esac
+
 cd "$ROOT" || exit 1
-exec cargo mutants "$@"
+# `--gitignore=true` non è il valore predefinito in `cargo-mutants 27.1.0`: senza,
+# ogni copia dell'albero si porta dietro i `target-*` delle sessioni parallele.
+# Misurato il 24/08/2026 sullo stesso lotto: 2,3 GB per copia contro 303 MB.
+# Non toglie `target/`, che arriva da `--copy-target` (acceso di suo) e va
+# tenuto: è ciò che evita di ricompilare da zero a ogni copia. Sta prima di
+# `"$@"` perché è un valore predefinito, non una museruola: chi ha motivo di
+# copiare anche gli artefatti scrive `--gitignore=false` in coda e vince lui.
+exec cargo mutants --gitignore=true "$@"
