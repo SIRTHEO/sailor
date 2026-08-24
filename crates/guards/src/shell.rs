@@ -95,14 +95,31 @@ pub fn split_words(s: &str) -> Option<Vec<String>> {
 /// Conta solo **in testa** a un segmento, fra le assegnazioni che precedono il
 /// comando: più in là è una stringa qualunque, e prenderla per una valvola
 /// aprirebbe il gate a chi la nomina nel corpo di una richiesta.
+///
+/// DENTRO UN CICLO LA TESTA NON È DOVE SEMBRA. L'a capo separa due comandi
+/// quanto un `;`, e `do`, `then`, `else`, `{` aprono un blocco senza essere
+/// comandi: senza contarli, in un ciclo `for … do` che porta
+/// `FRENO_DISTRUTTIVO=off rm -rf "$d"` sulla riga successiva,
+/// il segmento comincia per `do` e la valvola resta invisibile. Il 24/08/2026 è
+/// costato un diniego su una cancellazione lecita, provato in tutte e due le
+/// forme che il messaggio del freno suggerisce: una valvola che non apre insegna
+/// che l'unica strada è truccare il comando finché il freno non lo riconosce.
 pub fn valve_in_front(command: &str, valve: &str) -> bool {
-    command.split(|c| c == ';' || c == '&' || c == '|').any(|segment| {
-        segment
-            .split_whitespace()
-            .take_while(|w| w.contains('=') && !w.starts_with('-'))
-            .any(|w| w.eq_ignore_ascii_case(valve))
-    })
+    command
+        .split(|c| c == ';' || c == '&' || c == '|' || c == '\n')
+        .any(|segment| {
+            segment
+                .split_whitespace()
+                .skip_while(|w| BLOCK_OPENERS.contains(w))
+                .take_while(|w| w.contains('=') && !w.starts_with('-'))
+                .any(|w| w.eq_ignore_ascii_case(valve))
+        })
 }
+
+/// Le parole che aprono un blocco: stanno dove starebbe un comando, ma il
+/// comando viene dopo. Non allargano dove la valvola vale — resta in testa, fra
+/// le assegnazioni — spostano solo il punto in cui la testa comincia.
+const BLOCK_OPENERS: &[&str] = &["do", "then", "else", "{", "("];
 
 /// Dove finisce un comando e comincia il successivo, **senza spezzare dentro
 /// una stringa**.
@@ -441,6 +458,34 @@ mod tests {
         assert!(!valve_in_front("gh pr create -t x", v));
         // Un'altra valvola non apre questa.
         assert!(!valve_in_front("GANCI_SPENTI=off gh pr create -t x", v));
+    }
+
+    /// Il caso vero del 24/08/2026: la valvola scritta dove il messaggio del
+    /// freno dice di scriverla, dentro un ciclo, e il freno che nega lo stesso.
+    #[test]
+    fn a_valve_inside_a_loop_opens_like_one_in_front_of_a_bare_command() {
+        let v = "FRENO_DISTRUTTIVO=off";
+        // L'a capo separa due comandi quanto un `;`.
+        assert!(valve_in_front(
+            "for n in A B; do\n  FRENO_DISTRUTTIVO=off rm -rf \"$d\"\ndone",
+            v
+        ));
+        // E il blocco aperto sulla stessa riga: la testa viene dopo `do`.
+        assert!(valve_in_front("for n in A B; do FRENO_DISTRUTTIVO=off rm -rf \"$d\"; done", v));
+        assert!(valve_in_front("if [ -d x ]; then FRENO_DISTRUTTIVO=off rm -rf x; fi", v));
+    }
+
+    /// Il verso che conta di più: aver spostato la testa non deve aver reso la
+    /// valvola riconoscibile dove è solo testo, o il freno si apre a chi la
+    /// nomina in un messaggio.
+    #[test]
+    fn the_wider_head_does_not_make_a_mentioned_valve_count() {
+        let v = "FRENO_DISTRUTTIVO=off";
+        assert!(!valve_in_front("rm -rf /x --nota FRENO_DISTRUTTIVO=off", v));
+        assert!(!valve_in_front("for n in A B; do rm -rf \"$d\" FRENO_DISTRUTTIVO=off; done", v));
+        assert!(!valve_in_front("echo \"scrivi FRENO_DISTRUTTIVO=off davanti\"", v));
+        // `do` sposta la testa, non la cancella: dopo il comando è troppo tardi.
+        assert!(!valve_in_front("do rm -rf /x FRENO_DISTRUTTIVO=off", v));
     }
 
     #[test]
