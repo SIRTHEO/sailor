@@ -117,10 +117,15 @@ fn raw_find_delete() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"(?:^|[\s;&|])find\s.*(?:-delete|-exec\w*\s+rm)").unwrap())
 }
 
-/// Redirezioni: non sono bersagli, e prenderle per tali fa nominare `1`.
+/// La redirezione in testa a un token: `>`, `2>>`, `&>`, `2>&1`, con la
+/// destinazione attaccata (`>/dev/null`) o senza.
+///
+/// Non è mai un bersaglio, e prenderla per tale fa nominare `1` o `/dev/null` al
+/// posto della cartella che il comando sta cancellando — il difetto che questo
+/// freno esiste per non ripetere.
 fn redirection() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"^(\d*(>>?|<)&?\d*|&>>?|\d*>&\d*)$").unwrap())
+    RE.get_or_init(|| Regex::new(r"^(\d*(>>?|<)&?\d*|&>>?)").unwrap())
 }
 
 /// Un'assegnazione il cui valore è una sostituzione di comando: `X=$(…)` o
@@ -420,13 +425,23 @@ fn operands(args: &[String], variables: &HashMap<String, String>) -> Vec<Option<
             skip_next = false;
             continue;
         }
-        if a == "--" || a.starts_with('-') || redirection().is_match(a) {
+        if a == "--" || a.starts_with('-') {
             continue;
         }
-        // `> /tmp/log` scritto staccato: il nome che segue è la destinazione
-        // della redirezione, non un bersaglio.
-        if a.ends_with('>') || a.ends_with('<') {
-            skip_next = true;
+        // La destinazione staccata (`> /dev/null`) è il token dopo, e
+        // giudicarlo significa negare `rm -rf /tmp/x > /dev/null` accusando
+        // `/dev/null`. Attaccata (`>/dev/null`) se ne va tutta insieme, e
+        // `2>&1` non porta via niente: prenderlo per un bersaglio fa nominare
+        // `1`.
+        if let Some(m) = redirection().find(a) {
+            skip_next = m.len() == a.len() && (a.ends_with('>') || a.ends_with('<'));
+            continue;
+        }
+        // `cartella>destinazione` scritti attaccati: davanti c'è un bersaglio
+        // vero, dietro la destinazione, e solo il primo si giudica.
+        if let Some(i) = a.find(['>', '<']) {
+            skip_next = a.ends_with('>') || a.ends_with('<');
+            out.push(expand(&a[..i], variables));
             continue;
         }
         out.push(expand(a, variables));
@@ -1179,6 +1194,203 @@ mod tests {
         ));
         assert!(blocked(
             "rm -rf /home/someone/personal/sailor/src --nota FRENO_DISTRUTTIVO=off"
+        ));
+    }
+
+    // ── I gesti che la misura dei mutanti ha trovato scoperti ───────────────
+
+    /// Il riazzeramento **nudo**. Ogni prova qui sopra passa un bersaglio
+    /// (`origin/main`, `HEAD~3`), quindi la forma più corta e più frequente non
+    /// era provata da nessuna: bastava leggere `--hard` al contrario perché il
+    /// divieto sparisse proprio sul gesto che si digita ogni giorno.
+    #[test]
+    fn a_hard_reset_with_no_target_at_all_is_still_blocked() {
+        assert!(matches!(
+            on(
+                "git reset --hard",
+                "/home/someone/other-repo/work/suite",
+                Some("main")
+            ),
+            Decision::Block(_)
+        ));
+        assert!(matches!(
+            on(
+                "git reset --hard",
+                "/home/someone/other-repo/work/suite",
+                Some("fix/x")
+            ),
+            Decision::Pass
+        ));
+    }
+
+    /// `find` senza percorso lavora sulla cartella corrente: il permesso lo
+    /// decide dove gira il comando, e i privilegi lo tolgono comunque.
+    #[test]
+    fn a_find_without_a_path_is_judged_on_the_working_directory() {
+        assert!(matches!(
+            on(
+                "find -type f -delete",
+                &format!("{W}/suite/tautog/dist"),
+                None
+            ),
+            Decision::Pass
+        ));
+        assert!(blocked("find -type f -delete"));
+        assert!(matches!(
+            on(
+                "sudo find -type f -delete",
+                &format!("{W}/suite/tautog/dist"),
+                None
+            ),
+            Decision::Block(_)
+        ));
+    }
+
+    /// E con il percorso scritto: la via d'uscita vale per `find` quanto per
+    /// `rm`, e si spegne davanti ai privilegi allo stesso modo.
+    #[test]
+    fn a_find_that_deletes_throwaway_material_passes_unless_privileged() {
+        assert!(!blocked("find /tmp/costruzione-123 -type f -delete"));
+        assert!(!blocked(&format!("find {W}/suite/tautog/dist -delete")));
+        assert!(blocked("sudo find /tmp/costruzione-123 -type f -delete"));
+    }
+
+    /// Il nome della variabile non cambia il gesto: l'assegnazione in testa si
+    /// toglie comunque, e dietro resta `rm`.
+    #[test]
+    fn an_assignment_in_front_is_stripped_whatever_the_variable_is_called() {
+        for name in ["A", "MY_VAR", "_TMP", "x2"] {
+            assert!(
+                blocked(&format!("{name}=1 rm -rf /home/someone/personal/sailor/src")),
+                "{name}"
+            );
+        }
+    }
+
+    /// Un comando che finisce prima del verbo non deve far cadere il freno: se
+    /// cade, il gancio muore e ogni comando dopo di lui passa senza giudizio.
+    #[test]
+    fn a_command_that_ends_before_its_verb_does_not_bring_the_brake_down() {
+        for cmd in [
+            "sudo -v",
+            "env -i",
+            "timeout -k",
+            "timeout 30",
+            "nice -n 10",
+            // E `git` con le sole opzioni globali: dietro non c'è nessun
+            // sottocomando da leggere.
+            "git --version",
+            "git -C /home/someone/personal/sailor",
+        ] {
+            assert!(!blocked(cmd), "{cmd}");
+        }
+    }
+
+    /// Un nome di variabile che la shell non accetta non è un'assegnazione: la
+    /// shell cerca quella parola fra i comandi, e `rm` resta un argomento che
+    /// nessuno esegue. Trattarla come un involucro è un falso positivo.
+    #[test]
+    fn a_word_that_only_looks_like_an_assignment_is_the_command_itself() {
+        for cmd in ["1BAD=x", "=x", "no-name=x"] {
+            assert!(
+                !blocked(&format!("{cmd} rm -rf /home/someone/personal/sailor/src")),
+                "{cmd}"
+            );
+        }
+    }
+
+    /// Un glob non si legge a tavolino, e `/tmp/*` non è «una cartella
+    /// temporanea»: è la cartella temporanea di tutti.
+    #[test]
+    fn a_glob_is_never_read_as_a_scratch_path() {
+        assert!(blocked("rm -rf /tmp/*"));
+        assert!(blocked("rm -rf /tmp/costruzione-?"));
+        assert!(blocked(&format!("rm -rf {W}/suite/tautog/*")));
+    }
+
+    /// La destinazione di una redirezione non è un bersaglio nemmeno quando il
+    /// bersaglio vero è materiale usa-e-getta: `rm -rf /tmp/x > /dev/null` è il
+    /// modo normale di scrivere quel comando.
+    #[test]
+    fn a_redirection_target_is_not_a_target_even_when_the_command_passes() {
+        assert!(!blocked("rm -rf /tmp/costruzione-123 > /dev/null 2>&1"));
+        assert!(!blocked("rm -rf /tmp/costruzione-123 >/dev/null"));
+        assert!(!blocked(&format!(
+            "rm -rf {W}/suite/tautog/dist > /home/someone/nota.log"
+        )));
+        // Ma il bersaglio vero resta giudicato: la redirezione non lo copre.
+        assert!(blocked(
+            "rm -rf /home/someone/personal/sailor/src > /dev/null 2>&1"
+        ));
+        // Una redirezione che si chiude da sé non porta via il token che la
+        // segue: lì il bersaglio c'è, e il rifiuto deve nominare lui.
+        let m = message("rm -rf 2>&1 /home/someone/personal/sailor/src");
+        assert!(m.contains("/home/someone/personal/sailor/src"), "{m}");
+        // Attaccata al bersaglio, invece, se ne porta via solo la destinazione.
+        assert!(!blocked("rm -rf /tmp/costruzione-123> /home/someone/nota.log"));
+    }
+
+    /// `-p` dice dove: il suo valore va letto, non saltato.
+    #[test]
+    fn a_scratch_root_given_with_dash_p_is_read_as_the_directory() {
+        assert!(!blocked("D=$(mktemp -d -p /tmp); rm -rf \"$D\""));
+        assert!(blocked(
+            "D=$(mktemp -d -p /home/someone/.claude); rm -rf \"$D\""
+        ));
+    }
+
+    /// `-t prefisso` non toglie il modello: se il modello c'è, è lui a dire
+    /// dove si scrive.
+    #[test]
+    fn a_template_after_a_dash_t_prefix_still_says_where() {
+        assert!(!blocked(
+            "D=$(mktemp -t prova /tmp/prova.XXXXXX); rm -rf \"$D\""
+        ));
+        assert!(blocked(
+            "D=$(mktemp -t prova /home/someone/.claude/x.XXXXXX); rm -rf \"$D\""
+        ));
+        // Il valore di `-t` è un prefisso, non un'opzione: in `-t -t prova` il
+        // secondo `-t` resta un'opzione e `prova` è il suo prefisso.
+        assert!(!blocked("D=$(mktemp -t -t prova); rm -rf \"$D\""));
+    }
+
+    /// Un'opzione che il freno non conosce toglie la garanzia: dove scriverà
+    /// quel `mktemp` non si sa più, e ciò che non si legge non passa.
+    #[test]
+    fn an_option_the_brake_does_not_know_takes_the_guarantee_away() {
+        assert!(blocked(
+            "D=$(mktemp -d -p /tmp --suffix=.log); rm -rf \"$D\""
+        ));
+        // L'ordine fra modello relativo e `-p` lo decide `mktemp`, non questo
+        // freno: due letture possibili, quindi nessuna.
+        assert!(blocked(
+            "D=$(mktemp -d prova.XXXXXX -p /tmp); rm -rf \"$D\""
+        ));
+    }
+
+    /// Un percorso che si compone mentre gira — relativo, o con dentro una
+    /// sostituzione di comando — non è un percorso noto.
+    #[test]
+    fn a_template_that_is_built_while_it_runs_is_not_a_known_directory() {
+        assert!(matches!(
+            on(
+                "D=$(mktemp -d sotto/prova.XXXXXX); rm -rf \"$D\"",
+                &format!("{W}/suite/tautog"),
+                None
+            ),
+            Decision::Block(_)
+        ));
+        assert!(blocked(
+            "D=$(mktemp -d /tmp/`whoami`/x.XXXXXX); rm -rf \"$D\""
+        ));
+    }
+
+    /// Tre involucri uno dentro l'altro: `MAX_NESTING` dichiara di seguirne
+    /// tre, e il terzo livello dev'essere ancora dentro.
+    #[test]
+    fn code_nested_three_interpreters_deep_is_still_read() {
+        assert!(blocked(
+            "bash -c \"bash -c 'sh -c \\\"rm -rf /home/someone/personal/sailor/src\\\"'\""
         ));
     }
 
