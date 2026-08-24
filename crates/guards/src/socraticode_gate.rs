@@ -556,11 +556,9 @@ fn judge_write(ws: &Workspace, input: &hook_io::HookInput, session: &str) -> Ver
 
     if let Ok(text) = std::fs::read_to_string(search_trace(ws, session)) {
         if let Ok(t) = text.trim().parse::<u128>() {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0);
-            if now.saturating_sub(t) < SEARCH_WINDOW_MS {
+            // Lo stesso `now_ms` che ha timbrato la traccia: due letture
+            // diverse dell'orologio si sarebbero potute scostare fra loro.
+            if now_ms().saturating_sub(t) < SEARCH_WINDOW_MS {
                 return Verdict::pass("ricerca-recente").with_path(file);
             }
         }
@@ -1741,6 +1739,419 @@ mod tests {
             "un ramo non-definizione ammette l'intera alternativa: {:?}",
             verdict.reason
         );
+    }
+
+    // ── La porta pubblica ───────────────────────────────────────────────────
+    //
+    // I casi qui sopra entrano quasi tutti da `judge_search` o da `judge_edit`.
+    // Chiamare la funzione dietro la porta lascia la porta stessa senza
+    // sorveglianza: cancellando due rami del `match` di `judge`, il gate non
+    // giudica più né una modifica né una ricerca — cadono tutte in
+    // `out_of_scope()` — e la batteria resta verde. Da qui in giù si entra da
+    // `judge`.
+
+    /// MUTANTE: cancellare il ramo `"Edit"` di `judge`, o togliere un `!` dalle
+    /// due condizioni d'uscita di `judge_edit`.
+    #[test]
+    fn an_edit_that_drops_an_export_is_judged_through_the_public_door() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let edit = hook_io::HookInput {
+            session_id: Some("s-porta-edit".to_string()),
+            cwd: Some(repo.to_string_lossy().into_owned()),
+            tool_name: Some("Edit".to_string()),
+            tool_input: Some(serde_json::json!({
+                "file_path": src.join("index.ts").to_string_lossy(),
+                "old_string": "export const formatDate = 1;",
+                "new_string": "export const formatDay = 1;",
+            })),
+            ..Default::default()
+        };
+
+        // Il contatore parte a metà quota: i primi passaggi si registrano come
+        // «sotto quota», ed è già il segno che il gate se ne è occupato.
+        for giro in 0..5 {
+            let verdict = judge(&ws, &edit);
+            assert!(
+                verdict.is_recorded(),
+                "giro {giro}: un Edit che perde un export è di competenza del gate"
+            );
+            assert_eq!(verdict.reason, "sotto-quota-impact");
+        }
+        match judge(&ws, &edit).decision {
+            Decision::Block(m) => assert!(
+                m.contains("formatDate"),
+                "il messaggio deve dire quale simbolo sparisce: {m}"
+            ),
+            other => panic!("a quota il gate blocca, non {other:?}"),
+        }
+    }
+
+    /// MUTANTE: cancellare il ramo `"Grep" | "Bash"` di `judge`, o svuotare i
+    /// due messaggi che il blocco stampa.
+    #[test]
+    fn a_conceptual_search_is_judged_through_the_public_door_from_both_tools() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        let question = "dove si gestisce il pagamento fallito";
+
+        for input in [
+            grep_input(&repo, &repo, question),
+            bash_input(&repo, &format!("grep -rn \"{question}\" {}", repo.display())),
+        ] {
+            let verdict = judge(&ws, &input);
+            assert_eq!(verdict.reason, "ricerca-concettuale");
+            match verdict.decision {
+                Decision::Block(m) => {
+                    assert!(
+                        m.contains(&format!("Cercavi: {question}")),
+                        "il blocco deve dire quale ricerca è stata giudicata: {m}"
+                    );
+                    assert!(
+                        m.contains("codebase_search"),
+                        "e quale strumento usare al posto del grep: {m}"
+                    );
+                }
+                other => panic!("una domanda concettuale si ferma, non {other:?}"),
+            }
+        }
+    }
+
+    /// La traccia che il caso del riuso legge la lascia OGNI ricerca semantica,
+    /// non solo la prima delle quattro, e nasce col timbro di adesso: una
+    /// traccia che nascesse scaduta chiuderebbe per sempre la deroga «ho appena
+    /// cercato», cioè bloccherebbe proprio chi ha fatto la cosa giusta.
+    #[test]
+    fn every_semantic_search_tool_leaves_a_fresh_trace() {
+        let (ws, _keep) = workspace();
+        for suffix in [
+            "codebase_search",
+            "codebase_context_search",
+            "codebase_symbol",
+            "codebase_flow",
+        ] {
+            let session = format!("s-traccia-{suffix}");
+            let verdict = judge(
+                &ws,
+                &hook_io::HookInput {
+                    session_id: Some(session.clone()),
+                    // Il nome porta il prefisso del plugin: si riconosce dal suffisso.
+                    tool_name: Some(format!("mcp__plugin_socraticode__{suffix}")),
+                    ..Default::default()
+                },
+            );
+            assert!(
+                !verdict.is_recorded(),
+                "{suffix}: la ricerca semantica non è un caso di competenza del gate"
+            );
+            let trace = search_trace(&ws, &session);
+            let stamped: u128 = std::fs::read_to_string(&trace)
+                .unwrap_or_else(|e| panic!("{suffix} deve lasciare la traccia: {e}"))
+                .trim()
+                .parse()
+                .expect("la traccia porta un istante");
+            assert!(
+                stamped > 0 && now_ms().saturating_sub(stamped) < SEARCH_WINDOW_MS,
+                "{suffix}: traccia nata già scaduta ({stamped})"
+            );
+        }
+    }
+
+    /// I due bordi della finestra: cinque minuti fa vale, venticinque no.
+    /// Senza tutti e due, la durata non è sorvegliata da niente.
+    #[test]
+    fn the_search_trace_is_worth_twenty_minutes() {
+        let (ws, _keep) = workspace();
+        // Percorsi finti e radice dichiarata nello stato: sotto la cartella
+        // temporanea il gate scarterebbe il file come usa-e-getta prima di
+        // guardare la traccia, e la prova direbbe di sì senza aver provato.
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            "/Users/theo/repo-dichiarato-per-prova\n",
+        )
+        .unwrap();
+
+        let write_input = |session: &str| hook_io::HookInput {
+            session_id: Some(session.to_string()),
+            cwd: Some("/Users/theo/repo-dichiarato-per-prova".to_string()),
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(serde_json::json!({
+                "file_path": "/Users/theo/repo-dichiarato-per-prova/src/nuovo.ts",
+            })),
+            ..Default::default()
+        };
+        let stamp = |session: &str, ago_ms: u128| {
+            std::fs::write(
+                search_trace(&ws, session),
+                now_ms().saturating_sub(ago_ms).to_string(),
+            )
+            .expect("la traccia si scrive dove il gate la cerca");
+        };
+
+        stamp("s-fresca", 5 * 60 * 1000);
+        assert_eq!(
+            judge(&ws, &write_input("s-fresca")).reason,
+            "ricerca-recente",
+            "cinque minuti stanno dentro la finestra"
+        );
+
+        stamp("s-vecchia", 25 * 60 * 1000);
+        let stale = judge(&ws, &write_input("s-vecchia"));
+        assert!(
+            matches!(stale.decision, Decision::Block(_)),
+            "venticinque minuti sono fuori dalla finestra: {:?}",
+            stale.reason
+        );
+        match stale.decision {
+            Decision::Block(m) => assert!(
+                m.contains("nuovo.ts") && m.contains("codebase_search"),
+                "il blocco deve dire quale file e cosa fare: {m}"
+            ),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Una ricerca da `Bash` si giudica DOVE PUNTA, non dove gira.
+    ///
+    /// I percorsi sono finti di proposito, come nel caso del riuso: la radice
+    /// indicizzata si dichiara nello stato, e `/Users/…` è l'unica forma che
+    /// `first_absolute_path` riconosce — una cartella temporanea non lo è.
+    #[test]
+    fn a_bash_search_is_judged_where_it_points_not_where_it_runs() {
+        let (ws, keep) = workspace();
+        let altrove = keep.path().join("altrove");
+        std::fs::create_dir_all(&altrove).unwrap();
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            "/Users/theo/repo-dichiarato-per-prova\n",
+        )
+        .unwrap();
+
+        let verdict = judge(
+            &ws,
+            &bash_input(
+                &altrove,
+                "grep -rn \"dove si gestisce il pagamento fallito\" \
+                 /Users/theo/repo-dichiarato-per-prova/src",
+            ),
+        );
+        assert!(
+            matches!(verdict.decision, Decision::Block(_)),
+            "il bersaglio scritto nel comando è indicizzato, il cwd no: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// Il `path` dello strumento `Grep` può essere relativo: si aggancia al
+    /// `cwd`, o il bersaglio giudicato non è quello che l'agente ha in mano.
+    #[test]
+    fn a_relative_grep_target_is_anchored_to_the_working_directory() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        let input = grep_input(
+            &repo,
+            Path::new("src"),
+            "dove si gestisce il pagamento fallito",
+        );
+        let verdict = judge(&ws, &input);
+        assert!(
+            matches!(verdict.decision, Decision::Block(_)),
+            "`src` sotto un cwd indicizzato è indicizzato: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// Un file usa-e-getta non è riuso di codice nemmeno dentro una radice
+    /// dichiarata: lo stato e gli scratchpad restano fuori da soli, non perché
+    /// per caso nessuno li indicizza.
+    #[test]
+    fn a_throwaway_file_inside_a_declared_root_stays_out_of_the_reuse_case() {
+        let (ws, _keep) = workspace();
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            "/Users/theo/.claude\n",
+        )
+        .unwrap();
+        let write_input = |path: &str| hook_io::HookInput {
+            session_id: Some("s-usa-e-getta".to_string()),
+            cwd: Some("/Users/theo/.claude".to_string()),
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(serde_json::json!({ "file_path": path })),
+            ..Default::default()
+        };
+        for path in [
+            "/Users/theo/.claude/state/nuovo.ts",
+            "/Users/theo/.claude/scratchpad/nuovo.ts",
+        ] {
+            assert!(
+                !judge(&ws, &write_input(path)).is_recorded(),
+                "{path} è usa-e-getta, il gate non se ne occupa"
+            );
+        }
+        // Il fratello dentro la stessa radice, invece, il gate lo guarda.
+        assert!(matches!(
+            judge(&ws, &write_input("/Users/theo/.claude/rust/nuovo.ts")).decision,
+            Decision::Block(_)
+        ));
+    }
+
+    /// Una ricerca di definizione da `Bash` senza `-c` si ferma. La deroga è il
+    /// conteggio, e si riconosce dalle OPZIONI: un bersaglio che per caso
+    /// contiene una `c` — `src` — non è una richiesta di contare.
+    #[test]
+    fn a_bash_definition_lookup_without_a_count_flag_is_blocked() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        assert_eq!(
+            judge(&ws, &bash_input(&src, "grep -rn \"fn judge\" src")).reason,
+            "ricerca-di-definizione"
+        );
+    }
+
+    /// Il pattern arriva spesso ancora fra virgolette: si leggono via prima di
+    /// giudicare, e di nuovo prima di estrarre il nome per il messaggio.
+    #[test]
+    fn a_quoted_definition_pattern_is_read_without_its_quotes() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        let src = repo.join("crates").join("guards").join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+
+        match judge(&ws, &grep_input(&src, &src, "\"pub fn judge\"")).decision {
+            Decision::Block(m) => assert!(
+                m.contains("codebase_symbol \"judge\""),
+                "il nome si estrae dal pattern senza le virgolette: {m}"
+            ),
+            other => panic!("una ricerca di definizione si ferma, non {other:?}"),
+        }
+    }
+
+    /// L'elenco dichiarato: una riga vuota non è una radice.
+    ///
+    /// Letta come radice renderebbe indicizzato TUTTO — ogni percorso «comincia
+    /// con» la stringa vuota — e il gate parlerebbe ovunque, anche dove la
+    /// ricerca semantica non ha niente da rispondere.
+    #[test]
+    fn a_blank_line_is_not_a_root_and_what_is_outside_stays_outside() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("dichiarato");
+        let altrove = keep.path().join("altrove");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::create_dir_all(&altrove).unwrap();
+        std::fs::write(
+            ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
+            format!("# commento\n\n   \n{}\n", repo.display()),
+        )
+        .unwrap();
+
+        assert_eq!(declared_projects_list(&ws.home), vec![repo.clone()]);
+        assert!(is_indexed(&ws, &repo.join("src")));
+        assert!(
+            !is_indexed(&ws, &altrove),
+            "fuori dalle radici dichiarate il grep resta il ripiego giusto"
+        );
+    }
+
+    /// Due salti di worktree, non tre: oltre il limite si torna al grep invece
+    /// di risalire una catena che in questa casa non esiste.
+    #[test]
+    fn the_worktree_walk_up_stops_after_two_hops() {
+        let (ws, keep) = workspace();
+        let canonical = keep.path().join("canonico");
+        std::fs::create_dir_all(canonical.join(".git")).unwrap();
+        std::fs::write(canonical.join(".socraticodeignore"), "").unwrap();
+
+        // copia3 → canonico, copia2 → copia3, copia1 → copia2
+        let mut previous = canonical;
+        let mut chain = Vec::new();
+        for name in ["copia3", "copia2", "copia1"] {
+            let dir = keep.path().join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join(".git"),
+                format!("gitdir: {}/.git/worktrees/{name}\n", previous.display()),
+            )
+            .unwrap();
+            previous = dir.clone();
+            chain.push(dir);
+        }
+        assert!(is_indexed(&ws, &chain[0]), "un salto");
+        assert!(is_indexed(&ws, &chain[1]), "due salti");
+        assert!(!is_indexed(&ws, &chain[2]), "tre salti sono oltre il limite");
+    }
+
+    /// Una regex passa senza pedaggio, e OGNI metacarattere vale da solo.
+    ///
+    /// Ogni frase qui sotto ne porta uno, e per il resto è una domanda di
+    /// dominio in minuscolo: se il riconoscimento di quel metacarattere smette
+    /// di valere per conto suo, la frase torna a essere un concetto e il gate
+    /// blocca chi stava scrivendo una regex.
+    #[test]
+    fn one_metacharacter_is_enough_to_make_a_pattern_a_shape() {
+        for p in [
+            "chiusura \\n rimandata",
+            "sessione [aperta] ancora",
+            "stato (aperto) ancora",
+            "stato aperto|chiuso qui",
+            "^stato aperto",
+            "costo in $ al giorno",
+            "riga.*seguente qui",
+            "conto + spesa",
+            "meno < di ieri",
+            "piu > di ieri",
+            "stato = aperto",
+            "numero # della sessione",
+        ] {
+            assert!(allowed_search(p), "{p:?} porta un metacarattere, deve passare");
+        }
+    }
+
+    /// Le forme che non sono metacaratteri, una per condizione: il trattino
+    /// basso, il percorso Rust, il punto, il camelCase, e la stringa d'errore
+    /// tutta maiuscola con un trattino o una cifra in mezzo.
+    #[test]
+    fn the_other_shapes_hold_on_their_own() {
+        for p in [
+            "dove sta il campo session_id",
+            "dove sta crate::shell adesso",
+            "dove sta orca.py adesso",
+            "dove sta workspaceStatus adesso",
+            "TOKEN-BUDGET SUPERATO",
+            "ERRORE 500 SU LOGIN",
+        ] {
+            assert!(allowed_search(p), "{p:?} è una forma, deve passare");
+        }
+    }
+
+    /// Un frammento ricopiato da un sorgente passa sulla sola punteggiatura,
+    /// senza nessun metacarattere: virgolette, apici, graffa, punto e virgola.
+    #[test]
+    fn a_copied_fragment_passes_on_its_punctuation_alone() {
+        for p in [
+            "dove sta \"il conto\" delle sessioni",
+            "dove sta 'il conto' delle sessioni",
+            "dove sta { il conto",
+            "dove sta il conto; poi",
+        ] {
+            assert!(
+                allowed_search(p),
+                "{p:?} è un frammento ricopiato, deve passare"
+            );
+        }
     }
 
     /// Una cartella temporanea che si cancella da sé: i test non devono poter
