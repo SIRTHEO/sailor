@@ -27,20 +27,47 @@ pub fn now_local_iso8601() -> String {
 }
 
 fn format_local(epoch: i64, offset: i32) -> String {
+    let sign = if offset < 0 { '-' } else { '+' };
+    let abs = offset.unsigned_abs() / 60;
+    format!(
+        "{}{sign}{:02}{:02}",
+        iso_seconds(epoch, offset),
+        abs / 60,
+        abs % 60
+    )
+}
+
+/// «2026-08-17T00:03:00» — lo stesso istante senza l'offset in coda, cioè
+/// `date +%Y-%m-%dT%H:%M:%S` nel fuso che gli si passa.
+///
+/// SERVE A CHI CONFRONTA, NON A CHI REGISTRA. Un registro dichiara il proprio
+/// fuso una volta e poi scrive istanti nudi: chi li rilegge li confronta come
+/// stringhe, e in forma ISO l'ordine alfabetico e quello cronologico
+/// coincidono. Con l'offset in coda quel confronto smetterebbe di funzionare al
+/// primo cambio d'ora.
+pub fn iso_seconds(epoch: i64, offset: i32) -> String {
     let local = epoch + offset as i64;
     let days = local.div_euclid(86_400);
     let rem = local.rem_euclid(86_400);
     let (y, m, d) = crate::journal::civil_from_days(days);
-    let sign = if offset < 0 { '-' } else { '+' };
-    let abs = offset.unsigned_abs() / 60;
     format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}{sign}{:02}{:02}",
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}",
         rem / 3600,
         (rem % 3600) / 60,
-        rem % 60,
-        abs / 60,
-        abs % 60
+        rem % 60
     )
+}
+
+/// L'ora locale di un istante, senza offset.
+pub fn local_iso_seconds(epoch: i64) -> String {
+    iso_seconds(epoch, local_offset(epoch))
+}
+
+/// Lo stesso istante in UTC. Non è la stessa cosa: fra i registri di casa due
+/// scrivono l'ora locale e uno UTC, e con due ore di scarto una finestra prende
+/// il giorno sbagliato ai bordi.
+pub fn utc_iso_seconds(epoch: i64) -> String {
+    iso_seconds(epoch, 0)
 }
 
 /// L'offset in secondi valido a quell'istante, letto da `/etc/localtime`.
@@ -167,6 +194,16 @@ mod tests {
         assert_eq!(format_local(1_786_917_780, -18_000), "2026-08-16T17:03:00-0500");
         // offset non intero di ore: mezz'ora esiste davvero (India, Terranova)
         assert_eq!(format_local(1_786_917_780, 19_800), "2026-08-17T03:33:00+0530");
+    }
+
+    /// L'istante nudo è lo stesso, tolto l'offset: le due forme non possono
+    /// divergere, perché la seconda è la prima più una coda.
+    #[test]
+    fn the_bare_instant_is_the_same_one_without_its_offset() {
+        assert_eq!(iso_seconds(1_786_917_780, 7200), "2026-08-17T00:03:00");
+        assert_eq!(utc_iso_seconds(1_786_917_780), "2026-08-16T22:03:00");
+        let full = format_local(1_786_917_780, 7200);
+        assert_eq!(&full[..19], iso_seconds(1_786_917_780, 7200));
     }
 
     #[test]
