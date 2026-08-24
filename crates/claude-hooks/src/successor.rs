@@ -989,6 +989,13 @@ mod tests {
 
     #[test]
     fn session_cap_with_zero_cap_blocks_and_logs_it() {
+        // Il tetto si confronta con le sessioni vive, e chi le conta chiede a
+        // `ps`: senza risposta il conto e' zero e il freno apre invece di
+        // fermare — quello che si legge nel registro non e' il difetto.
+        if let Some(why) = hook_io::testing::ps_is_denied() {
+            eprintln!("{why}");
+            return;
+        }
         let home = HomeIsolata::nuova("successor-session-cap-deny");
         let _env = EnvOverrides::new()
             .unset("SESSION_CAP_GUARD")
@@ -1021,6 +1028,14 @@ mod tests {
 
     #[test]
     fn arm_with_zero_session_cap_stops_and_speaks() {
+        // QUI LA GUARDIA NON SERVE SOLO A NON CADERE. Senza `ps` il conto delle
+        // sessioni vive e' zero, il freno del tetto non scatta, e il caso
+        // arriva ad **aprire una tab in Orca per davvero**: il 24/08/2026 e'
+        // stato fermato solo dalla app che non rispondeva.
+        if let Some(why) = hook_io::testing::ps_is_denied() {
+            eprintln!("{why}");
+            return;
+        }
         let home = HomeIsolata::nuova("successor-arm-too-many-sessions");
         let _env = EnvOverrides::new()
             .unset(guards::successor::GENERATION_ENV)
