@@ -344,10 +344,23 @@ pub fn is_skill_or_script(path: &str) -> bool {
 /// workspace, ed è il motivo per cui `judge_search` lo esclude allo stesso
 /// modo (21/08/2026, «touched by other sessions» bloccato dentro
 /// `claude-code-harness-marketplace`).
+/// I TRANSCRIT E I REGISTRI SONO DATI, NON DOMINIO — dal 24/08/2026. Sotto
+/// `~/.claude` l'indice esiste, quindi ogni ricerca a parole dentro
+/// `projects/` (le trascrizioni) e `state/` (i registri delle automazioni)
+/// veniva negata e mandata a `codebase_search`, che lì non ha niente da
+/// rispondere: nessun indice semantico contiene le trascrizioni. Riprodotto
+/// sul binario in servizio. Un diniego che rimanda a uno strumento incapace di
+/// rispondere non sposta il lavoro nel posto giusto: insegna ad aggirare.
 pub fn is_out_of_perimeter(path: &str) -> bool {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(^|/)(node_modules|dist|build|\.next|coverage|\.git|plugins/cache)/").unwrap()
+        Regex::new(
+            // La cartella stessa vale quanto ciò che contiene, e per questo la
+            // coda ammette la fine della stringa: il bersaglio di un `grep -r`
+            // è quasi sempre la cartella nuda, senza barra.
+            r"(^|/)(node_modules|dist|build|\.next|coverage|\.git|plugins/cache)/|\.claude/(projects|state)(/|$)",
+        )
+        .unwrap()
     })
     .is_match(path)
 }
@@ -1774,6 +1787,33 @@ mod tests {
         let input = grep_input(&docs, &note, "fn judge");
         let verdict = judge_search(&ws, &input);
         assert!(matches!(verdict.decision, Decision::Pass));
+    }
+
+    /// Una domanda a parole dentro le trascrizioni non ha un indice a cui
+    /// rivolgersi: lì il `grep` è lo strumento, non il ripiego. Riprodotto il
+    /// 24/08/2026 sul binario in servizio.
+    /// MUTANTE (rotto così → rosso): togliere `projects|state` da
+    /// `is_out_of_perimeter` — il diniego torna, e manda a `codebase_search`,
+    /// che nelle trascrizioni non cerca.
+    #[test]
+    fn a_question_asked_inside_the_transcripts_is_not_sent_to_the_index() {
+        for dove in [
+            "/Users/theo/.claude/projects",
+            "/Users/theo/.claude/projects/-Users-theo-orca-general/x.jsonl",
+            "/Users/theo/.claude/state/staffetta.log",
+        ] {
+            assert!(is_out_of_perimeter(dove), "{dove}");
+        }
+        // Il controllo negativo, con la stessa radice: il codice della
+        // configurazione resta dentro il perimetro, o la restrizione avrebbe
+        // spento il gate proprio dove serve.
+        for dove in [
+            "/Users/theo/.claude/rust/crates/guards/src",
+            "/Users/theo/.claude/scripts/queue-patrol.sh",
+            "/Users/theo/.claude/docs",
+        ] {
+            assert!(!is_out_of_perimeter(dove), "{dove}");
+        }
     }
 
     /// (5) due sagome di definizione in alternativa, senza nome pinnato:
