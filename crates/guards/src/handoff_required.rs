@@ -170,7 +170,7 @@ pub fn decide(f: &Facts) -> Decision {
     if f.handoff_valid {
         return Decision::Block(format!(
             "Aggiorna la consegna e chiudi il turno: invoca di nuovo la skill \
-             `handoff`, poi le due righe Stato / Procedo con. CONTESTO AL {pct}% \
+             `handoff`, poi la riga Stato. CONTESTO AL {pct}% \
              del budget di qualita' di {model} ({} token, budget ~{}), oltre il \
              gradino di blocco (96%) e cresciuto ancora in modo significativo \
              da quando la consegna vale: quella scritta prima non basta piu' \
@@ -193,7 +193,7 @@ pub fn decide(f: &Facts) -> Decision {
          1. Invoca la skill `handoff`: scrive un memory file di consegna + il \
          puntatore in MEMORY.md, che la prossima sessione ricarica da sola. Cita \
          specifiche, piani e commit per percorso invece di ricopiarli.\n\
-         2. Chiudi il turno con le due righe: Stato / Procedo con.\n\n\
+         2. Chiudi il turno con la riga Stato.\n\n\
          Fatto l'handoff il richiamo smette. `{}` e' gia' passato: e' un \
          promemoria, non un divieto, che torna finche' non consegni, poi si \
          arrende (dopo {} rifiuti). Passano: Skill, Read, Write, Edit, Grep, \
