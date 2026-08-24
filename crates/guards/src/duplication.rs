@@ -914,7 +914,13 @@ mod tests {
 
         // Il file nasce nella cartella di stato vera: l'impronta viene da una
         // radice temporanea, quindi non può collidere con quella di un repo.
+        // Ed è per la stessa ragione che dentro il perimetro non si misura: la
+        // sede vera è proprio quella che il perimetro nega.
         let path = baseline_path(&root);
+        if let Some(why) = hook_io::testing::writes_denied_in(path.parent().unwrap()) {
+            eprintln!("{why}");
+            return;
+        }
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let _cleanup = RemoveOnDrop(path.clone());
         std::fs::write(&path, r#"{"coppie": ["app/uno.ts|lib/due.ts|ff00", "a|b|11"]}"#).unwrap();

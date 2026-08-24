@@ -763,6 +763,12 @@ nessuno la butterà mai"
 
     #[test]
     fn a_session_end_sweeps_its_own_markers_and_leaves_the_others() {
+        // Il congedo spazza solo se sa che quella sessione e' finita, e lo sa
+        // da `ps`: senza, ogni marcatore resta per prudenza ed e' giusto cosi'.
+        if let Some(why) = hook_io::testing::ps_is_denied() {
+            eprintln!("{why}");
+            return;
+        }
         let casa = HomeIsolata::nuova("fine-sessione");
         let state = casa.dir.join(".claude/state");
         std::fs::create_dir_all(state.join("sessioni-vive")).unwrap();
@@ -906,6 +912,10 @@ nessuno la butterà mai"
 
     #[test]
     fn a_pid_that_cannot_exist_is_not_a_live_session() {
+        if let Some(why) = hook_io::testing::ps_is_denied() {
+            eprintln!("{why}");
+            return;
+        }
         // Il verso che conta: se `ps` gira e dice che quel pid non c'e', quella
         // e' una risposta — altrimenti nessun record verrebbe mai buttato.
         assert_eq!(look_up_session_process(999_999), ProcessLookup::NotFound);
@@ -938,6 +948,10 @@ nessuno la butterà mai"
 
     #[test]
     fn a_short_pid_and_a_long_one_read_the_same_command() {
+        if let Some(why) = hook_io::testing::ps_is_denied() {
+            eprintln!("{why}");
+            return;
+        }
         // IL CASO CHE MANCAVA, e senza il quale dieci prove verdi convivevano
         // col difetto: l'unica che interrogava `ps` chiedeva il pid della
         // batteria e si aspettava `OtherProgram`, cioe' la stessa risposta che
