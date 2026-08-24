@@ -83,6 +83,10 @@ cd "$ROOT" || exit 1
 # `--gitignore=true` non è il valore predefinito in `cargo-mutants 27.1.0`: senza,
 # ogni copia dell'albero si porta dietro i `target-*` delle sessioni parallele.
 # Misurato il 24/08/2026 sullo stesso lotto: 2,3 GB per copia contro 303 MB.
+# LA RIGA DI `.gitignore` DEL COMMIT `7ad541b` NON FA QUESTO LAVORO, e il suo
+# messaggio afferma il contrario: le copie fatte venticinque minuti dopo quel
+# commit contenevano ancora tutte e tre le cartelle. Sta scritto qui perché chi
+# rilegge quel messaggio lo prenderebbe per vero.
 # Non toglie `target/`, che arriva da `--copy-target` (acceso di suo) e va
 # tenuto: è ciò che evita di ricompilare da zero a ogni copia. Sta prima di
 # `"$@"` perché è un valore predefinito, non una museruola: chi ha motivo di
