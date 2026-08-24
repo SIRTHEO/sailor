@@ -263,6 +263,8 @@ pub fn shared_blocks(
 ) -> Vec<Block> {
     let a: Vec<&str> = lines_a.iter().map(|(_, t)| t.as_str()).collect();
     let b: Vec<&str> = lines_b.iter().map(|(_, t)| t.as_str()).collect();
+    // Scorciatoia, non guardia: con un elenco vuoto i cicli qui sotto non
+    // girerebbero comunque. Nessuna prova può distinguerla, ed è giusto così.
     if a.is_empty() || b.is_empty() {
         return Vec::new();
     }
@@ -278,6 +280,10 @@ pub fn shared_blocks(
                 current[j] = previous[j - 1] + 1;
                 // Fine corsa: la prossima coppia non prosegue il blocco.
                 let ends = i == a.len() || j == b.len() || a[i] != b[j];
+                // Aspettare la fine corsa è un risparmio, non una condizione:
+                // un blocco ancora aperto tornerebbe qui più lungo, con lo
+                // stesso inizio, e riscriverebbe la voce. Anche questa nessuna
+                // prova può distinguerla.
                 if ends && current[j] >= minimum {
                     let body = &a[i - current[j]..i];
                     if body.iter().map(|x| x.chars().count()).sum::<usize>() >= MIN_CHARS {
@@ -337,6 +343,10 @@ pub fn sha1(data: &[u8]) -> [u8; 20] {
             w[i] = (w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16]).rotate_left(1);
         }
         let (mut a, mut b, mut c, mut d, mut e) = (h[0], h[1], h[2], h[3], h[4]);
+        // Le due funzioni qui sotto si scrivono anche con `^` al posto di `|`,
+        // e danno lo stesso identico risultato: nella prima i due termini non
+        // hanno bit in comune, nella seconda vale l'identità della maggioranza.
+        // Non c'è dato che possa distinguere le due scritture.
         for (i, &word) in w.iter().enumerate() {
             let (f, k) = match i {
                 0..=19 => ((b & c) | ((!b) & d), 0x5A827999u32),
@@ -662,6 +672,9 @@ mod tests {
         assert!(is_import("export type { A } from './x'"));
         assert!(!is_import("export function toStringArray(v) {"));
         assert!(!is_import("export const useThing = () => {}"));
+        // Un alias di tipo è una dichiarazione: dopo `type` c'è uno spazio ma
+        // non una graffa, e servono tutte e due perché sia un ri-export.
+        assert!(!is_import("export type Alias = Record<string, number>"));
         assert!(!is_import("important('this is not an import')"));
         assert!(!is_import("exported = 1"));
     }
@@ -709,5 +722,382 @@ mod tests {
         assert!(!is_watched("/x/a.md"));
         assert!(!is_watched("/x/node_modules/a.ts"));
         assert!(!is_watched("/x/.claude/a.py"));
+    }
+
+    /// Ogni marcatore di commento vale da solo. Incrociarli a due a due — la
+    /// mutazione che qui sopravviveva — spegne il riconoscimento di `#` e di
+    /// `*` senza che il rapporto finale cambi di una riga.
+    #[test]
+    fn each_comment_marker_stands_on_its_own() {
+        assert!(is_comment("// una riga di commento"));
+        assert!(is_comment("# un commento di Python"));
+        assert!(is_comment(" * la riga di mezzo di un blocco"));
+        assert!(is_comment("/* apre un blocco */"));
+        assert!(!is_comment("const value = 1 // in coda"));
+    }
+
+    /// I due filtri che si somigliano ma non coincidono: la sola punteggiatura,
+    /// e la riga troppo corta. Il taglio è a **meno di** dodici caratteri, e
+    /// dodici esatti restano.
+    #[test]
+    fn punctuation_is_not_logic_and_twelve_characters_are_enough() {
+        assert!(is_trivial("  });  "));
+        assert!(!is_trivial("const a = 1"));
+        let text = "let x = 1234\nlet y = 123\n});});});});\n";
+        assert_eq!(
+            significant_lines(text),
+            vec![(1, "let x = 1234".to_string())]
+        );
+    }
+
+    /// La normalizzazione degli spazi è ciò che rende confrontabili due righe
+    /// indentate diversamente: se cade, due copie identiche smettono di
+    /// sembrarlo e il rilevatore tace.
+    #[test]
+    fn it_squeezes_every_run_of_whitespace_into_one_space() {
+        assert_eq!(collapse_spaces("const a   =\t1"), "const a = 1");
+        assert_eq!(collapse_spaces("uno"), "uno");
+        assert_eq!(collapse_spaces(""), "");
+    }
+
+    /// Cartella o nome: bastano da soli. Chiederli tutti e due lascerebbe
+    /// confrontare le prove col codice, che è il paragone che non insegna
+    /// niente.
+    #[test]
+    fn a_test_file_is_recognised_by_the_folder_or_by_the_name() {
+        assert!(is_test(Path::new("/x/__tests__/bulk-bar.tsx")));
+        assert!(is_test(Path::new("/x/app/bulk-bar.test.tsx")));
+        assert!(!is_test(Path::new("/x/app/bulk-bar.tsx")));
+    }
+
+    /// L'ordine è deliberato: senza, il taglio a `MAX_SIBLINGS` cade su file
+    /// diversi a ogni esecuzione, perché `read_dir` non è alfabetico.
+    #[test]
+    fn it_walks_the_whole_tree_in_path_order() {
+        let root = fixture_root("duplicazione-albero");
+        write_file(&root.join("b/second.ts"), "uno");
+        write_file(&root.join("a/first.ts"), "uno");
+        write_file(&root.join("a/deep/third.md"), "uno");
+        assert_eq!(
+            walk(&root),
+            vec![
+                root.join("a/deep/third.md"),
+                root.join("a/first.ts"),
+                root.join("b/second.ts"),
+            ]
+        );
+    }
+
+    /// Le tre porte d'ingresso — famiglia, cartella, punto di riuso — e i
+    /// quattro rifiuti. Ognuna entra da sola: un caso che le chieda tutte
+    /// insieme non vede quale delle tre si è spenta.
+    #[test]
+    fn the_siblings_are_the_family_the_folder_and_the_reuse_points() {
+        let root = fixture_root("duplicazione-fratelli");
+        let target = root.join("app/candidates-bulk-bar.tsx");
+        write_file(&target, "uno");
+        write_file(&root.join("altro/external-users-bulk-bar.tsx"), "uno");
+        write_file(&root.join("app/list-view.tsx"), "uno");
+        write_file(&root.join("lib/format-money.ts"), "uno");
+        write_file(&root.join("altro/user-profile-card.tsx"), "uno");
+        write_file(&root.join("app/appunti.md"), "uno");
+        write_file(&root.join("app/candidates-bulk-bar.test.tsx"), "uno");
+        write_file(&root.join("node_modules/candidates-bulk-bar.tsx"), "uno");
+
+        let mut found: Vec<String> = siblings(&target, &root)
+            .iter()
+            .map(|p| p.strip_prefix(&root).unwrap().to_string_lossy().into_owned())
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            vec![
+                "altro/external-users-bulk-bar.tsx",
+                "app/list-view.tsx",
+                "lib/format-money.ts",
+            ],
+            "il bersaglio, le prove, l'estensione muta e node_modules restano fuori"
+        );
+    }
+
+    /// Il confronto è per carattere, non per componente: è così che si sceglie
+    /// il donatore più probabile quando i candidati sono più di trecento.
+    #[test]
+    fn the_nearest_sibling_shares_the_longest_prefix() {
+        assert_eq!(common_prefix_len("/a/b/uno.ts", "/a/b/due.ts"), 5);
+        assert_eq!(common_prefix_len("/a/b/uno.ts", "/z/uno.ts"), 1);
+        assert_eq!(common_prefix_len("", "/a"), 0);
+    }
+
+    /// I passi interni del confronto: dove comincia il blocco qui, dove
+    /// comincia là, su quale corpo si calcola l'impronta e quando la corsa
+    /// finisce. Un caso che guardi solo la lunghezza non ne distingue nessuno
+    /// dei quattro — i due elenchi hanno code diverse apposta, perché
+    /// altrimenti il blocco finirebbe insieme ai file e la condizione di fine
+    /// non verrebbe mai esercitata.
+    #[test]
+    fn a_block_carries_both_starting_lines_and_the_body_it_hashed() {
+        let body = shared_body(5);
+        let shared: Vec<&str> = body.lines().collect();
+        let mut here: Vec<(usize, String)> = vec![
+            (10, "const firstLineOnlyHere = prepareTheContext(1)".to_string()),
+            (11, "const thirdLineOnlyHere = prepareTheContext(2)".to_string()),
+        ];
+        let mut there: Vec<(usize, String)> = vec![
+            (20, "const alphaOnlyThere = prepareOtherContext(1)".to_string()),
+            (21, "const betaOnlyThere = prepareOtherContext(2)".to_string()),
+            (22, "const gammaOnlyThere = prepareOtherContext(3)".to_string()),
+        ];
+        for (i, line) in shared.iter().enumerate() {
+            here.push((12 + i, (*line).to_string()));
+            there.push((23 + i, (*line).to_string()));
+        }
+        here.push((17, "const tailOnlyHere = closeTheContext(9)".to_string()));
+        there.push((28, "const tailOnlyThere = closeOtherContext(9)".to_string()));
+
+        let blocks = shared_blocks(&here, &there, MIN_LINES);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].count, 5);
+        assert_eq!(blocks[0].line_here, 12);
+        assert_eq!(blocks[0].line_there, 23);
+        assert_eq!(blocks[0].fingerprint, fingerprint(&shared));
+    }
+
+    /// L'impronta deve restare quella di `hashlib.sha1`: la linea di base
+    /// congelata è un file solo e la leggono in due. Oracolo:
+    /// `python3 -c "import hashlib; print(hashlib.sha1(b'uno\ndue').hexdigest())"`.
+    #[test]
+    fn the_fingerprint_is_the_first_sixteen_digits_of_the_joined_body() {
+        assert_eq!(fingerprint(&["uno", "due"]), "e9697974cd37f503");
+    }
+
+    /// Dentro la radice la firma è fatta di percorsi relativi, in ordine
+    /// alfabetico. Sono i due passi che il caso a percorsi inesistenti non
+    /// tocca: là `strip_prefix` fallisce e si ricade sui percorsi interi.
+    #[test]
+    fn the_signature_is_relative_to_the_root_and_alphabetical() {
+        let root = fixture_root("duplicazione-firma");
+        write_file(&root.join("app/uno.ts"), "uno");
+        write_file(&root.join("lib/due.ts"), "due");
+        let signature = pair_signature(
+            &root,
+            &root.join("lib/due.ts"),
+            &root.join("app/uno.ts"),
+            "ff00",
+        );
+        assert_eq!(signature, "app/uno.ts|lib/due.ts|ff00");
+    }
+
+    /// Due radici non possono condividere la linea di base: il debito congelato
+    /// in un albero di lavoro non vale nell'altro, e mescolarli darebbe silenzi
+    /// falsi.
+    #[test]
+    fn each_root_gets_its_own_baseline_under_the_state_folder() {
+        let home = PathBuf::from(std::env::var("HOME").unwrap());
+        assert_eq!(state_dir(), home.join(".claude/state/duplicazione"));
+
+        let path = baseline_path(&fixture_root("duplicazione-linea-uno"));
+        assert_eq!(path.parent().unwrap(), state_dir());
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(name.len(), 12 + ".json".len());
+        assert!(name[..12].chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(path, baseline_path(&fixture_root("duplicazione-linea-due")));
+    }
+
+    /// Le coppie congelate si leggono dal file di **quella** radice; un file
+    /// mancante vale «niente di congelato», e il rilevatore parla di più
+    /// invece che di meno.
+    #[test]
+    fn the_frozen_pairs_come_from_the_file_of_that_root() {
+        let root = fixture_root("duplicazione-congelate");
+        assert!(load_baseline(&root).is_empty());
+
+        // Il file nasce nella cartella di stato vera: l'impronta viene da una
+        // radice temporanea, quindi non può collidere con quella di un repo.
+        let path = baseline_path(&root);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let _cleanup = RemoveOnDrop(path.clone());
+        std::fs::write(&path, r#"{"coppie": ["app/uno.ts|lib/due.ts|ff00", "a|b|11"]}"#).unwrap();
+
+        let frozen = load_baseline(&root);
+        assert_eq!(frozen.len(), 2);
+        assert!(frozen.contains("app/uno.ts|lib/due.ts|ff00"));
+        assert!(frozen.contains("a|b|11"));
+    }
+
+    /// La catena intera, dal file al riscontro. È il caso che manca a un gancio
+    /// che non trova mai niente: senza, tacere passerebbe per star bene.
+    #[test]
+    fn it_reports_the_copied_block_and_the_lines_it_covers() {
+        let root = fixture_root("duplicazione-rapporto");
+        let body = shared_body(5);
+        let target = root.join("app/candidates-bulk-bar.tsx");
+        write_file(
+            &target,
+            &format!(
+                "import {{ x }} from './y'\n\
+                 const firstLineOnlyHere = prepareTheContext(1)\n\
+                 const thirdLineOnlyHere = prepareTheContext(2)\n\
+                 {body}\n"
+            ),
+        );
+        let sibling = root.join("app/external-users-bulk-bar.tsx");
+        write_file(
+            &sibling,
+            &format!("const alphaOnlyThere = prepareOtherContext(1)\n{body}\n"),
+        );
+
+        let (covered, findings) = report(&target, &root, MIN_LINES, &HashSet::new(), false);
+        assert_eq!(covered, 5, "cinque righe del bersaglio stanno già altrove");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].sibling, sibling);
+        assert_eq!(findings[0].line_here, 4);
+        assert_eq!(findings[0].line_there, 2);
+        assert_eq!(findings[0].count, 5);
+
+        // La firma congelata zittisce quel riscontro, e con lui le righe che
+        // risultavano coperte.
+        let known: HashSet<String> = [findings[0].signature.clone()].into_iter().collect();
+        let (covered, findings) = report(&target, &root, MIN_LINES, &known, false);
+        assert_eq!(covered, 0);
+        assert!(findings.is_empty());
+    }
+
+    /// Il taglio è «meno di `minimum` righe», non «al più»: un file di
+    /// esattamente quattro righe significative si guarda ancora.
+    #[test]
+    fn a_file_with_exactly_the_minimum_number_of_lines_is_still_examined() {
+        let root = fixture_root("duplicazione-minimo");
+        let body = shared_body(MIN_LINES);
+        let target = root.join("app/candidates-bulk-bar.tsx");
+        write_file(&target, &format!("{body}\n"));
+        write_file(
+            &root.join("app/external-users-bulk-bar.tsx"),
+            &format!("{body}\n"),
+        );
+        let (covered, findings) = report(&target, &root, MIN_LINES, &HashSet::new(), false);
+        assert_eq!(covered, MIN_LINES);
+        assert_eq!(findings.len(), 1);
+    }
+
+    /// Il taglio ai primi sei vale per l'avviso, non per chi congela: là un
+    /// riscontro dimenticato resterebbe a suonare per sempre.
+    #[test]
+    fn the_notice_stops_at_six_findings_and_the_freeze_sees_them_all() {
+        let root = fixture_root("duplicazione-taglio");
+        let body = shared_body(5);
+        let target = root.join("app/candidates-bulk-bar.tsx");
+        write_file(&target, &format!("{body}\n"));
+        for i in 1..=7 {
+            write_file(
+                &root.join(format!("app/copy{i}-bulk-bar.tsx")),
+                &format!("{body}\n"),
+            );
+        }
+        let (_, short) = report(&target, &root, MIN_LINES, &HashSet::new(), false);
+        assert_eq!(short.len(), 6);
+        let (_, full) = report(&target, &root, MIN_LINES, &HashSet::new(), true);
+        assert_eq!(full.len(), 7);
+    }
+
+    /// Un byte non valido non ferma il rilevatore: il file si legge lo stesso,
+    /// col carattere di sostituzione al posto del byte.
+    #[test]
+    fn a_file_with_invalid_bytes_is_read_anyway() {
+        let root = fixture_root("duplicazione-byte");
+        let path = root.join("strano.ts");
+        std::fs::write(&path, b"const a = 1\n\xff\n").unwrap();
+        assert_eq!(read_lossy(&path).unwrap(), "const a = 1\n\u{fffd}\n");
+        assert!(read_lossy(&root.join("non-esiste.ts")).is_err());
+    }
+
+    /// La risalita al deposito: da un file si parte dalla sua cartella, da una
+    /// cartella da sé stessa. Dove c'è `src` la radice è quella, perché è lì
+    /// che sta il codice con cui confrontarsi.
+    #[test]
+    fn the_root_is_the_repository_or_its_source_folder() {
+        let root = fixture_root("duplicazione-radice");
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        write_file(&root.join("app/uno.ts"), "uno");
+        assert_eq!(root_of(&root.join("app/uno.ts")), root);
+        assert_eq!(root_from_dir(&root.join("app")), root);
+
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        assert_eq!(root_of(&root.join("app/uno.ts")), root.join("src"));
+        assert_eq!(root_from_dir(&root.join("app")), root.join("src"));
+    }
+
+    /// L'avviso dice il file, le righe da entrambi i lati e la via d'uscita.
+    #[test]
+    fn the_notice_names_the_file_the_lines_and_the_way_out() {
+        let findings = [Finding {
+            sibling: PathBuf::from("/repo/app/external-users-bulk-bar.tsx"),
+            line_here: 12,
+            line_there: 23,
+            count: 5,
+            signature: "app/uno.ts|app/due.ts|ff00".to_string(),
+        }];
+        let text = post_text(Path::new("/repo/app/candidates-bulk-bar.tsx"), 5, &findings);
+        assert!(text.starts_with("codice ricopiato in candidates-bulk-bar.tsx: 5 righe"));
+        assert!(
+            text.contains("· righe 12-16 = /repo/app/external-users-bulk-bar.tsx:23 (5 righe)"),
+            "{text}"
+        );
+        assert!(text.contains("estrai la parte comune"));
+    }
+
+    /// L'avviso alla nascita elenca solo i veri omonimi: i vicini di cartella
+    /// servono al confronto in `post`, ma in un elenco «ecco la tua famiglia»
+    /// sono rumore.
+    #[test]
+    fn the_birth_notice_lists_only_the_namesakes() {
+        let root = fixture_root("duplicazione-nascita");
+        write_file(
+            &root.join("app/external-users-bulk-bar.tsx"),
+            "const a = 1\nconst b = 2\n",
+        );
+        write_file(&root.join("app/list-view.tsx"), "const c = 3\n");
+
+        let text = pre_text(&root.join("app/candidates-bulk-bar.tsx"), &root)
+            .expect("la famiglia esiste");
+        assert!(
+            text.starts_with("stai creando candidates-bulk-bar.tsx; la sua famiglia esiste già:"),
+            "{text}"
+        );
+        assert!(text.contains("external-users-bulk-bar.tsx  (2 righe)"), "{text}");
+        assert!(!text.contains("list-view.tsx"), "{text}");
+        assert_eq!(pre_text(&root.join("app/orphan-alone-widget.tsx"), &root), None);
+    }
+
+    /// Una radice di prova **già risolta**: sotto `/tmp` il percorso vero passa
+    /// da `/private`, e `siblings` confronta cartelle risolte con cartelle
+    /// camminate — con una radice non risolta nessun fratello risulta vicino.
+    fn fixture_root(tag: &str) -> PathBuf {
+        hook_io::testing::test_dir(tag).canonicalize().unwrap()
+    }
+
+    fn write_file(path: &Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    /// Righe come quelle che si ricopiano davvero: abbastanza lunghe da
+    /// superare il minimo di sostanza, così i casi provano la soglia in righe e
+    /// non quella in caratteri.
+    fn shared_body(count: usize) -> String {
+        (1..=count)
+            .map(|i| format!("const rowTotalNumber{i} = computeRowAmountFor({i}, true)"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// La linea di base di prova vive nella cartella di stato vera: va tolta
+    /// anche quando il caso cade a metà.
+    struct RemoveOnDrop(PathBuf);
+
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+        }
     }
 }
