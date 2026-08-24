@@ -286,12 +286,18 @@ fn last_wakeup(transcript: &str) -> Option<(f64, String)> {
     None
 }
 
-/// I secondi dell'epoca da un timestamp ISO-8601 in UTC.
+/// I secondi dell'epoca da un timestamp ISO-8601.
 ///
 /// I transcript scrivono `2026-08-17T09:35:56.123Z`. Si converte a mano invece
 /// di aggiungere una dipendenza: il formato è fisso, e ciò che serve è la data
 /// civile trasformata in giorni — l'algoritmo dei giorni dall'era, che non ha
 /// casi particolari sugli anni bisestili.
+///
+/// La coda si legge, non si salta. Prima si prendevano i primi 19 byte **come
+/// se fossero UTC**: il giorno in cui il transcript portasse `+02:00`, ogni
+/// durata sarebbe sbagliata di due ore e nessuno se ne accorgerebbe. Un fuso
+/// che non sappiamo leggere vale `None`, perché una misura assente si vede e
+/// una misura sbagliata di due ore no.
 fn epoch_from_iso(iso: &str) -> Option<f64> {
     let b = iso.as_bytes();
     if b.len() < 19 || b[4] != b'-' || b[7] != b'-' || b[10] != b'T' {
@@ -300,6 +306,7 @@ fn epoch_from_iso(iso: &str) -> Option<f64> {
     let num = |a: usize, z: usize| iso.get(a..z)?.parse::<i64>().ok();
     let (y, m, d) = (num(0, 4)?, num(5, 7)?, num(8, 10)?);
     let (hh, mm, ss) = (num(11, 13)?, num(14, 16)?, num(17, 19)?);
+    let offset = zone_offset_seconds(iso.get(19..)?)?;
     // Giorni dall'era (Howard Hinnant): marzo come primo mese, così il 29
     // febbraio cade in fondo all'anno e non serve nessun caso a parte.
     let y = if m <= 2 { y - 1 } else { y };
@@ -309,7 +316,46 @@ fn epoch_from_iso(iso: &str) -> Option<f64> {
     let doy = (153 * mp + 2) / 5 + d - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + doe - 719_468;
-    Some((days * 86_400 + hh * 3600 + mm * 60 + ss) as f64)
+    Some((days * 86_400 + hh * 3600 + mm * 60 + ss - offset) as f64)
+}
+
+/// Quanti secondi l'ora scritta è avanti rispetto a UTC, letti dalla coda che
+/// segue i secondi: si sottraggono per tornare all'epoca.
+///
+/// Ammette la frazione (`.123`), la `Z`, la coda vuota — che i transcript di
+/// oggi non usano ma che le prove dichiarano leggibile — e le tre forme di
+/// fuso (`+02:00`, `+0200`, `+02`). Tutto il resto è `None`: preferiamo non
+/// misurare piuttosto che misurare storto.
+fn zone_offset_seconds(tail: &str) -> Option<i64> {
+    let mut rest = tail;
+    if let Some(after) = rest.strip_prefix('.').or_else(|| rest.strip_prefix(',')) {
+        let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        if digits == 0 {
+            return None;
+        }
+        rest = &after[digits..];
+    }
+    if rest.is_empty() || rest == "Z" || rest == "z" {
+        return Some(0);
+    }
+    let sign = match rest.as_bytes()[0] {
+        b'+' => 1,
+        b'-' => -1,
+        _ => return None,
+    };
+    let body = &rest[1..];
+    let (hours, minutes) = match body.len() {
+        2 => (body, "00"),
+        4 => (&body[0..2], &body[2..4]),
+        5 if body.as_bytes()[2] == b':' => (&body[0..2], &body[3..5]),
+        _ => return None,
+    };
+    let hours: i64 = hours.parse().ok()?;
+    let minutes: i64 = minutes.parse().ok()?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    Some(sign * (hours * 3600 + minutes * 60))
 }
 
 /// Modello, budget e soglie per la sessione che sta scrivendo questo transcript.
@@ -482,6 +528,36 @@ mod tests {
         assert_eq!(epoch_from_iso("2024-02-29T00:00:00Z"), Some(1_709_164_800.0));
         assert_eq!(epoch_from_iso("non e' una data"), None);
         assert_eq!(epoch_from_iso(""), None);
+    }
+
+    /// Il fuso scritto nel timestamp si applica, e quello che non sappiamo
+    /// leggere non diventa un'ora finta.
+    #[test]
+    fn a_written_zone_moves_the_instant_instead_of_being_ignored() {
+        // Le stesse 09:35:56 dell'esempio sano, ma dichiarate a +02:00: sono le
+        // 07:35:56 UTC, cioè due ore prima. Rotto così — la coda ignorata —
+        // questa riga torna il valore di prima e la prova è rossa.
+        let utc = epoch_from_iso("2026-08-17T09:35:56.123Z").expect("la forma sana si legge");
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56.123+02:00"), Some(utc - 7200.0));
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56.123-05:00"), Some(utc + 18000.0));
+        // Le altre due forme ammesse dallo standard.
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56+0200"), Some(utc - 7200.0));
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56+02"), Some(utc - 7200.0));
+        // Mezz'ora di fuso esiste davvero (India, +05:30).
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56+05:30"), Some(utc - 19800.0));
+        // Diciannove byte nudi restano UTC: è la forma più corta che i lettori
+        // interpretano, e il canarino la dichiara sana.
+        assert_eq!(epoch_from_iso("2026-08-17T09:35:56"), Some(utc));
+        // Una coda che non sappiamo leggere non vale zero: vale «non misurato».
+        for storto in [
+            "2026-08-17T09:35:56+99:00",
+            "2026-08-17T09:35:56+02:99",
+            "2026-08-17T09:35:56 CEST",
+            "2026-08-17T09:35:56.Z",
+            "2026-08-17T09:35:56+2",
+        ] {
+            assert_eq!(epoch_from_iso(storto), None, "«{storto}»");
+        }
     }
 
     /// Il marcatore di consegna e un transcript, dentro una HOME usa-e-getta.
