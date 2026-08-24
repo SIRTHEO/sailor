@@ -286,4 +286,121 @@ mod tests {
     fn an_unterminated_heredoc_swallows_what_follows() {
         assert_eq!(judge("bash <<EOF\ncd /repo && git push"), Decision::Pass);
     }
+
+    /// Uno heredoc CHIUSO non si porta via il comando che viene dopo.
+    ///
+    /// È il caso opposto a quello qui sopra, e senza di lui il freno diventa
+    /// cieco a metà giornata: basta che `find_terminator` non trovi più la riga
+    /// di chiusura perché ogni heredoc risulti aperto e tutto ciò che segue —
+    /// compreso un `cd /altrove && git …` — sparisca prima del giudizio.
+    #[test]
+    fn a_closed_heredoc_leaves_the_command_after_it_visible() {
+        match judge("bash <<EOF\nsolo testo\nEOF\ncd /repo && git push") {
+            Decision::Block(m) => assert!(m.contains("git -C /repo"), "{m}"),
+            other => panic!("il comando dopo lo heredoc chiuso deve restare visibile, non {other:?}"),
+        }
+        // E ciò che sta DENTRO lo heredoc resta dello script che lo riceve.
+        assert_eq!(
+            judge("bash <<EOF\ncd /repo && git push\nEOF\nls"),
+            Decision::Pass
+        );
+    }
+
+    /// La riga di chiusura si cerca anche oltre la prima riga del corpo.
+    ///
+    /// Il passo intermedio si prova qui perché `strip_noise` è una catena di
+    /// cinque funzioni: un indice sbagliato dentro `find_terminator` si vede
+    /// sul risultato finale solo per certi comandi, e in tutti gli altri passa.
+    #[test]
+    fn the_terminator_is_the_line_that_holds_only_the_marker() {
+        let s = "bash <<EOF\nprima\nEOF\ncoda";
+        // `from` è il byte subito dopo il marcatore aperto, cioè il `\n` di riga 1.
+        let end = find_terminator(s, 10, "EOF").expect("la riga EOF c'è");
+        assert_eq!(&s[..end], "bash <<EOF\nprima\nEOF");
+        // Una riga che CONTIENE il marcatore non lo chiude.
+        assert_eq!(find_terminator("bash <<EOF\nEOFX\ncoda", 10, "EOF"), None);
+        // Indentata sì: `<<-` la ammette e il confronto passa da `trim`.
+        assert!(find_terminator("bash <<-EOF\nx\n\tEOF\n", 11, "EOF").is_some());
+    }
+
+    /// Il primo passo della catena, guardato da solo: cosa resta del comando
+    /// dopo aver tolto gli heredoc. Le asserzioni sono sul testo esatto perché
+    /// è l'unico modo di sorvegliare i confini — un byte in più o in meno
+    /// cambia quale `cd` il freno vedrà.
+    #[test]
+    fn heredocs_are_cut_from_the_marker_to_their_closing_line() {
+        let cases: &[(&str, &str)] = &[
+            ("bash <<EOF\nbody\nEOF\ntail", "bash  \ntail"),
+            // `<<-` ammette marcatore e corpo indentati.
+            ("bash <<-EOF\n\tbody\n\tEOF\ntail", "bash  \ntail"),
+            // Uno spazio fra `<<` e il marcatore è legale in shell.
+            ("bash << EOF\nbody\nEOF\ntail", "bash  \ntail"),
+            // Marcatore fra apici: la chiusura si cerca sul nome nudo.
+            ("bash <<'EOF'\nbody\nEOF\ntail", "bash  \ntail"),
+            // Apice mai chiuso: il marcatore resta `EOF` e la riga lo chiude.
+            ("bash <<'EOF\nEOF\ntail", "bash  \ntail"),
+            // Mai chiuso: il resto del comando è dentro lo heredoc.
+            ("bash <<EOF", "bash  "),
+            ("bash <<'EOF", "bash  "),
+            // `<<` senza marcatore non è uno heredoc: si copia e si va avanti.
+            ("bash <<", "bash <<"),
+            ("bash << ", "bash << "),
+            // `<<<` è un here-string, non uno heredoc: niente da togliere.
+            ("bash <<<\"$x\"", "bash <<<\"$x\""),
+            // Un `<` solo è una redirezione, anche in fondo al comando.
+            ("echo <", "echo <"),
+            ("echo <file", "echo <file"),
+        ];
+        for (command, expected) in cases {
+            assert_eq!(&strip_heredocs(command), expected, "caso: {command:?}");
+        }
+    }
+
+    /// `$( … )` sparisce, e con lui il `cd` che vive nella sottoshell. Il
+    /// giudizio finale non basta a sorvegliare questi indici: un `cd` dentro
+    /// una sostituzione non ha davanti un separatore, quindi non lo vedrebbe
+    /// nemmeno se la sostituzione restasse lì.
+    #[test]
+    fn command_substitutions_are_replaced_by_a_single_space() {
+        let cases: &[(&str, &str)] = &[
+            ("echo $(pwd) done", "echo   done"),
+            // Annidata: quattro passate, dalla più interna in fuori.
+            ("ROOT=$(dirname $(pwd))", "ROOT= "),
+            // `$` senza `(` non apre niente, nemmeno in fondo al comando.
+            ("echo $R (ok)", "echo $R (ok)"),
+            ("costa 100$", "costa 100$"),
+            // Una parentesi senza `$` davanti non è una sostituzione.
+            ("echo (x)", "echo (x)"),
+        ];
+        for (command, expected) in cases {
+            assert_eq!(
+                &strip_command_substitutions(command),
+                expected,
+                "caso: {command:?}"
+            );
+        }
+    }
+
+    /// Il `cd` di una sottoshell non è quello che questo freno cerca, ma il
+    /// separatore che lo precede sì: senza togliere la sostituzione, un
+    /// `$(ls; cd /repo && git push)` diventerebbe un blocco a torto.
+    #[test]
+    fn a_cd_inside_a_subshell_is_not_this_guards_business() {
+        assert_eq!(judge("R=$(ls; cd /repo && git push); echo \"$R\""), Decision::Pass);
+    }
+
+    /// Ogni coppia di delimitatori vale uno spazio; uno spaiato lascia in pace
+    /// tutto ciò che segue — è l'unica divergenza che il confronto con il
+    /// Python su 3.137 comandi veri aveva trovato.
+    #[test]
+    fn each_pair_of_delimiters_becomes_one_space_and_an_odd_one_is_left_alone() {
+        assert_eq!(strip_delimited("echo 'a' 'b'", '\'', '\''), "echo    ");
+        assert_eq!(strip_delimited("echo 'a'x'b'y", '\'', '\''), "echo  x y");
+        // Spaiato: da qui in poi si copia tale e quale, coda compresa.
+        assert_eq!(
+            strip_delimited("grep -oE '`x`' ; cd /repo", '`', '`'),
+            "grep -oE ' ' ; cd /repo"
+        );
+        assert_eq!(strip_delimited("echo 'aperto", '\'', '\''), "echo 'aperto");
+    }
 }
