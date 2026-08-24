@@ -62,9 +62,17 @@ const EXCLUDED: &[&str] = &[
     "/.mastra/", "/coverage/",
 ];
 
+/// UN NOME, NON UN SUFFISSO. Senza lo stelo davanti, `.test.ts` combaciava — e
+/// quella non è la scheda di prova di qualcosa, è l'estensione da sola. Costo
+/// misurato il 24/08/2026: `node scripts/check-doc-refs.mjs` veniva negato dal
+/// gate della lingua perché nel sorgente c'è
+/// `const SKIP = [… '.test.ts', '.test.tsx']`, cioè la lista delle **esclusioni**
+/// di un programma di manutenzione — la famiglia di programmi che un repo scrive
+/// proprio per sorvegliare quelle estensioni. Il divieto non proteggeva niente:
+/// lo stesso programma passava indisturbato lanciato da `npm test`.
 fn test_file() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\.(test|spec)\.[cm]?[jt]sx?$").unwrap())
+    RE.get_or_init(|| Regex::new(r"[^/.][^/]*\.(test|spec)\.[cm]?[jt]sx?$").unwrap())
 }
 
 /// A quale famiglia appartiene il file, se a una.
@@ -1093,6 +1101,32 @@ mod tests {
         // il pregresso escluso non si giudica
         assert_eq!(family("/x/node_modules/a.test.ts"), None);
         assert_eq!(family("/x/dist/scripts/deploy.sh"), None);
+        // Il suffisso nudo non è un file: è l'elemento di una lista di
+        // esclusioni. Rotto così — la regex senza lo stelo davanti — questa
+        // riga torna `Some(Family::Test)` e `node scripts/check-doc-refs.mjs`
+        // torna a essere negato per una stringa che nomina, non che scrive.
+        assert_eq!(family(".test.ts"), None);
+        assert_eq!(family(".test.tsx"), None);
+        assert_eq!(family(".spec.js"), None);
+        // …ma un nome corto resta un nome, e un file nascosto con lo stelo
+        // pure: la restrizione non deve mangiarsi i casi veri.
+        assert_eq!(family("a.test.ts"), Some(Family::Test));
+        assert_eq!(family("/x/.hidden.test.ts"), Some(Family::Test));
+    }
+
+    /// Il caso vero da cui la restrizione nasce: la lista delle esclusioni di
+    /// un programma di manutenzione non è un elenco di bersagli.
+    #[test]
+    fn the_skip_list_of_a_maintenance_script_is_not_a_write_target() {
+        let skip = "node -e \"const SKIP = ['/node_modules/', '/generated/', '.test.ts', \
+                    '.test.tsx']; fs.writeFileSync(out, JSON.stringify(SKIP))\"";
+        // rotto così → rosso: senza lo stelo davanti nella regex del file di
+        // prova, `.test.ts` risulta un bersaglio e il comando è negato
+        assert!(opaque_writes(skip).is_empty(), "{:?}", opaque_writes(skip));
+        // E il controllo negativo, con lo stesso gesto di scrittura: un nome
+        // vero resta visto, altrimenti la restrizione avrebbe spento il gate.
+        let vero = "node -e \"fs.writeFileSync('src/a.test.ts', body)\"";
+        assert_eq!(opaque_writes(vero), vec!["src/a.test.ts".to_string()]);
     }
 
     #[test]
