@@ -1251,12 +1251,15 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // che mandato. Il 19/08/2026 il successore ha ricevuto solo la consegna e
     // il loop è finito lì.
     //
-    // IL PUNTO DI RIPRESA, non un documento da cui dedurlo. Il `CLAUDE.md`
-    // prescrive che ogni turno chiuda con «**Procedo con** — <il passo
-    // successivo>»: è il punto scritto da chi lavorava, nel momento in cui lo
-    // sapeva. Fino al 19/08/2026 il successore riceveva solo «leggi la consegna
-    // e prosegui», cioè gli si chiedeva di ricavarsi da un riassunto una cosa
-    // che era già scritta in chiaro tre righe più in là.
+    // IL PUNTO DI RIPRESA, non un documento da cui dedurlo. Fino al 19/08/2026
+    // il successore riceveva solo «leggi la consegna e prosegui», cioè gli si
+    // chiedeva di ricavarsi da un riassunto una cosa già scritta in chiaro.
+    //
+    // LA FONTE È IL FILE DI CONSEGNA — dal 23/08/2026, decisione di Theo nel
+    // libro di bordo. Prima si cercava la riga «**Procedo con** —» che il
+    // prologo prescriveva a ogni turno, e **262 sessioni su 348 non ce l'hanno**:
+    // una riga prescritta che manca tre volte su quattro non è un punto di
+    // ripresa. Il transcript resta come ripiego, non come fonte.
     //
     // SI SCRIVE IN JSON, e non a righe etichettate. Un mandato di `/loop` è
     // spesso un elenco su più righe: un formato a righe lo spezza, e chi lo
@@ -1266,7 +1269,7 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // esiste. Il formato vecchio — il solo percorso, senza newline — non è JSON
     // valido e continua a essere letto come tale.
     let hpath = latest_handoff(&rec.cwd);
-    let punto = crate::handoff::resume_point(&rec.transcript).unwrap_or_default();
+    let punto = crate::handoff::resume_point_from(&hpath, &rec.transcript).unwrap_or_default();
     let mandato = crate::handoff::wakeup_prompt(&rec.transcript).unwrap_or_default();
     if !mandato.is_empty() {
         log_line(&format!(
