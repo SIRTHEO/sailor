@@ -14,12 +14,17 @@
 //! riconosce il comando (il primo token è `cd` nel 12% dei casi e non dice
 //! niente): si guarda la **forma** del testo.
 //!
-//! IL VERSO IN CUI SBAGLIARE È LA PRUDENZA. Un'uscita che contiene un errore
+//! IL VERSO IN CUI SBAGLIARE È LA PRUDENZA. Un'uscita di un comando fallito
 //! passa intera fino a `error_cap`, quattro volte il tetto normale: chi legge
 //! un fallimento deve vedere tutto. Sotto `cap` il filtro è l'identità, byte
-//! per byte. E quando taglia lo dice in prima riga con quanto ha tolto — una
-//! riduzione silenziosa viene letta come un'uscita completa, e chi la legge
-//! conclude il falso su un lavoro che non ha visto.
+//! per byte, e non aggiunge nemmeno una riga. E quando taglia lo dice in prima
+//! riga con quanto ha tolto, dove sta l'intero e cosa manca — una riduzione
+//! silenziosa viene letta come un'uscita completa, e chi la legge conclude il
+//! falso su un lavoro che non ha visto.
+//!
+//! «Fallito» si riconosce dal codice di uscita quando chi invoca lo passa, e
+//! altrimenti da un esito nelle ultime dieci righe: vedi `looks_failed`, dove
+//! sta il numero che ha bocciato il criterio più ovvio.
 
 use std::borrow::Cow;
 
@@ -40,6 +45,8 @@ pub struct Limits {
     pub verdicts: usize,
     /// Quante righe finali si guardano per capire se il comando è fallito.
     pub tail_verdict: usize,
+    /// Oltre questa lunghezza una riga sola viene accorciata nel mezzo.
+    pub line_cap: usize,
 }
 
 /// 4.000 byte ≈ 1.000 token: è quanto vale una risposta a un comando; sopra,
@@ -60,6 +67,11 @@ pub const DEFAULT: Limits = Limits {
     run: 5,
     verdicts: 40,
     tail_verdict: 10,
+    // Una riga di 2.000 byte è già mezza schermata. Sopra, di solito, è un
+    // documento stampato per intero su una riga sola: sul corpus del 24/08 le
+    // righe più lunghe di 2.000 byte valgono il 10,9% dei byte grossi, e 103
+    // uscite su 2.823 sono fatte per più di metà da una riga sola.
+    line_cap: 2_000,
 };
 
 /// L'esito del filtro: il corpo tagliato e i numeri per dichiararlo.
@@ -77,6 +89,8 @@ pub struct Filtered {
     pub rescued_verdicts: usize,
     /// Righe con un esito che non ci stavano nemmeno nel ripescaggio.
     pub lost_verdicts: usize,
+    /// Righe singole accorciate nel mezzo perché troppo lunghe.
+    pub shortened_lines: usize,
 }
 
 impl Filtered {
@@ -112,6 +126,12 @@ impl Filtered {
                 self.rescued_verdicts
             ));
         }
+        if self.shortened_lines > 0 {
+            head.push_str(&format!(
+                ", {} righe accorciate nel mezzo",
+                self.shortened_lines
+            ));
+        }
         if self.lost_verdicts > 0 {
             head.push_str(&format!(
                 ". ATTENZIONE: altre {} righe con un esito NON sono qui",
@@ -141,11 +161,45 @@ impl Filtered {
 /// così `ERROR` e `Error` cadono nello stesso caso.
 pub fn is_verdict(line: &str) -> bool {
     const MARKERS: &[&str] = &[
-        "error", "errore", "fail", "fallit", "panic", "fatal", "exception", "traceback", "assert",
-        "denied", "negato", "bloccato", "refus", "rifiut", "abort", "timeout", "killed",
-        "segmentation", "not found", "no such", "cannot", "can't", "unable to", "missing",
-        "warning", "avviso", "attenzione", "exit code", "exit status", "test result", "unresolved",
-        "undefined", "conflict", "rossa", "rosso", "✗", "✘", "❌", "⚠",
+        "error",
+        "errore",
+        "fail",
+        "fallit",
+        "panic",
+        "fatal",
+        "exception",
+        "traceback",
+        "assert",
+        "denied",
+        "negato",
+        "bloccato",
+        "refus",
+        "rifiut",
+        "abort",
+        "timeout",
+        "killed",
+        "segmentation",
+        "not found",
+        "no such",
+        "cannot",
+        "can't",
+        "unable to",
+        "missing",
+        "warning",
+        "avviso",
+        "attenzione",
+        "exit code",
+        "exit status",
+        "test result",
+        "unresolved",
+        "undefined",
+        "conflict",
+        "rossa",
+        "rosso",
+        "✗",
+        "✘",
+        "❌",
+        "⚠",
     ];
     let low = line.to_ascii_lowercase();
     MARKERS.iter().any(|m| low.contains(m))
@@ -205,6 +259,41 @@ fn last_carriage_segment(line: &str) -> &str {
     }
 }
 
+/// Accorcia una riga sola troppo lunga, tenendone principio e fine.
+///
+/// Serve per un caso che il taglio a righe non vede: un JSON, un `strings`, una
+/// riga di prova che stampa mezzo file. Il taglio cade su un confine di
+/// carattere, mai in mezzo a un accento.
+fn shorten_line(line: &str, limits: &Limits) -> Option<String> {
+    if line.len() <= limits.line_cap {
+        return None;
+    }
+    let head = floor_boundary(line, limits.line_cap * 2 / 3);
+    let tail = ceil_boundary(line, line.len() - limits.line_cap / 3);
+    Some(format!(
+        "{} [filtro-uscite: {} B nel mezzo di questa riga non mostrati] {}",
+        &line[..head],
+        thousands(tail - head),
+        &line[tail..]
+    ))
+}
+
+/// Il confine di carattere alla posizione data o subito prima.
+fn floor_boundary(s: &str, mut i: usize) -> usize {
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Il confine di carattere alla posizione data o subito dopo.
+fn ceil_boundary(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
 /// Collassa le corse di righe consecutive con lo stesso scheletro.
 ///
 /// Solo consecutive: due righe uguali lontane fra loro possono essere due fatti
@@ -237,9 +326,7 @@ fn collapse_runs(lines: &[&str], limits: &Limits) -> (Vec<Cow<'static, str>>, us
                 "[filtro-uscite] … altre {} righe della stessa forma non mostrate …",
                 thousands(run - 2)
             )));
-            out.push(Cow::Owned(
-                last_carriage_segment(lines[j - 1]).to_string(),
-            ));
+            out.push(Cow::Owned(last_carriage_segment(lines[j - 1]).to_string()));
             dropped += run - 2;
         } else {
             for k in i..j {
@@ -288,6 +375,7 @@ pub fn filter_with_exit(input: &str, limits: &Limits, exit_code: Option<i32>) ->
         dropped_lines: 0,
         rescued_verdicts: 0,
         lost_verdicts: 0,
+        shortened_lines: 0,
     };
 
     if original_bytes <= limits.cap {
@@ -309,7 +397,17 @@ pub fn filter_with_exit(input: &str, limits: &Limits, exit_code: Option<i32>) ->
         }
     };
 
-    let (collapsed, collapsed_dropped) = collapse_runs(&raw, limits);
+    let (mut collapsed, collapsed_dropped) = collapse_runs(&raw, limits);
+    // Il taglio dentro la riga viene dopo il collasso: prima cambierebbe gli
+    // scheletri, e due righe lunghe diverse si somiglierebbero solo perché
+    // tagliate nello stesso punto.
+    let mut shortened = 0usize;
+    for line in collapsed.iter_mut() {
+        if let Some(short) = shorten_line(line, limits) {
+            *line = Cow::Owned(short);
+            shortened += 1;
+        }
+    }
     let collapsed_bytes: usize = collapsed.iter().map(|l| l.len() + 1).sum();
     if collapsed_bytes <= limits.cap {
         let body = collapsed
@@ -324,6 +422,7 @@ pub fn filter_with_exit(input: &str, limits: &Limits, exit_code: Option<i32>) ->
             dropped_lines: collapsed_dropped,
             rescued_verdicts: 0,
             lost_verdicts: 0,
+            shortened_lines: shortened,
         });
     }
 
@@ -359,6 +458,7 @@ pub fn filter_with_exit(input: &str, limits: &Limits, exit_code: Option<i32>) ->
         dropped_lines: collapsed_dropped + middle.len().saturating_sub(rescued),
         rescued_verdicts: rescued,
         lost_verdicts: lost,
+        shortened_lines: shortened,
     })
 }
 
@@ -525,13 +625,33 @@ mod tests {
     fn the_filter_never_makes_the_output_longer() {
         // Corse da cinque righe di due caratteri: il collasso scatta ovunque e
         // ogni marcatore è più lungo delle righe che sostituisce.
-        let out = (0..1200)
+        let out = (0..4000)
             .map(|i| format!("{}", (i / 5) % 10))
             .collect::<Vec<_>>()
             .join("\n");
         assert!(out.len() > DEFAULT.cap);
         let f = filter(&out, &DEFAULT);
-        assert!(f.body.len() <= out.len(), "{} > {}", f.body.len(), out.len());
+        assert!(
+            f.body.len() <= out.len(),
+            "{} > {}",
+            f.body.len(),
+            out.len()
+        );
+    }
+
+    /// Una riga sola che vale mezza uscita si accorcia nel mezzo, e il taglio
+    /// cade su un confine di carattere — non a metà di un accento.
+    #[test]
+    fn one_endless_line_is_shortened_in_the_middle() {
+        let single = format!("inizio {} fine", "però ".repeat(2000));
+        let f = filter(&single, &DEFAULT);
+        assert!(f.body.starts_with("inizio "), "{}", &f.body[..40]);
+        assert!(f.body.ends_with("fine"), "{}", &f.body[f.body.len() - 40..]);
+        assert!(f.body.contains("nel mezzo di questa riga non mostrati"));
+        assert_eq!(f.shortened_lines, 1);
+        assert!(f.body.len() < single.len() / 3);
+        let header = f.header(None).unwrap();
+        assert!(header.contains("1 righe accorciate"), "{header}");
     }
 
     /// Il carrello: una barra di avanzamento salvata su file si riduce a quello
