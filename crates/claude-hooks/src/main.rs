@@ -93,6 +93,11 @@ mod transcript_canary;
 // (dopo l'esecuzione, prima che l'uscita torni) non esiste in questa versione:
 // `PostToolUse` può solo aggiungere contesto, non sostituire il risultato.
 mod output_filter;
+// Il gancio che porta il filtro dove serve, 24/08/2026: `PreToolUse` su Bash,
+// riscrive il comando con `updatedInput` — ma solo per la lista ristretta di
+// famiglie che pesa il 20,1% dei byte, così il rischio dei permessi rivalutati
+// non si presenta sul resto. Non è acceso: la riga è di Theo.
+mod bash_wrap;
 
 use hook_io::{Decision, Mode};
 
@@ -280,6 +285,9 @@ const ALL_HOOKS: &[&str] = &[
     // accorcia. Sta in NOT_HOOKS perché nessun evento può ospitarlo — vedi il
     // commento sul modulo.
     "filter-output",
+    // Il gancio che invoca il filtro qui sopra, stesso giorno: `PreToolUse` su
+    // Bash, quindi NON sta in NOT_HOOKS. Non ancora acceso: la riga è di Theo.
+    "wrap-bash",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -528,6 +536,10 @@ fn has_module_test(name: &str) -> bool {
         "filter-output" => &[
             include_str!("output_filter.rs"),
             include_str!("../../guards/src/output_filter.rs"),
+        ],
+        "wrap-bash" => &[
+            include_str!("bash_wrap.rs"),
+            include_str!("../../guards/src/bash_wrap.rs"),
         ],
         _ => &[],
     };
@@ -1425,6 +1437,9 @@ fn run(which: &str) -> Result<i32, String> {
         // momento in cui dovrebbe girare da solo non esiste fra i ganci di
         // questa versione — il commento sul modulo dice cosa l'ha stabilito.
         "filter-output" => Ok(output_filter::run()),
+        // `PreToolUse` su Bash: o riscrive il comando per farne passare
+        // l'uscita dal filtro, o non stampa niente. Non nega mai.
+        "wrap-bash" => Ok(bash_wrap::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }
