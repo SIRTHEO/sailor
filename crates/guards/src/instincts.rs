@@ -9,9 +9,16 @@
 //! solo sul primo.
 //!
 //! I due tetti valgono sul blocco intero, coda «Da rimisurare» compresa, e si
-//! applicano scorrendo l'elenco per `confidence` decrescente: chi non ci sta si
-//! salta e si prova il successivo, così un istinto enorme non porta fuori anche
-//! i piccoli che avrebbero ancora spazio.
+//! applicano scorrendo l'elenco per `confidence` decrescente. Un corpo che non
+//! entrerebbe **nemmeno in un blocco vuoto** si salta e si prova il successivo,
+//! così un istinto enorme non porta fuori anche i piccoli che avevano ancora
+//! spazio; se invece a fermarlo è solo lo spazio già preso da chi lo precede in
+//! classifica, l'elenco si chiude lì — altrimenti passerebbe avanti il primo
+//! corpo abbastanza corto, e la dimensione varrebbe più del merito.
+//!
+//! Chi resta fuori lascia comunque la sua riga `trigger:`, in fondo al blocco e
+//! **fuori** dal tetto: un istinto sparito del tutto non avverte nessuno, e
+//! l'innesco costa un quindicesimo del corpo.
 
 /// L'intestazione fissa del blocco iniettato, invariata dallo script che sostituisce.
 const HEADER: &str = "# Learned instincts (from your own past session observations)\n\nHeuristics with a confidence score, not hard rules. Apply when the trigger matches.\n\n";
@@ -38,6 +45,20 @@ const MAX_REMEASURE_BYTES: usize = 800;
 /// Il titolo della coda, contato dentro `MAX_REMEASURE_BYTES`.
 const REMEASURE_TITLE: &str = "## Da rimisurare\n\n";
 
+/// Quanto può prendersi la sezione degli inneschi. Sta **fuori** da
+/// `MAX_LIVE_BYTES` e si paga apposta: il 24/08/2026 la trappola dello zsh ha
+/// morso una sessione in diretta — un `find` con le esclusioni in una variabile
+/// ha risposto «zero file» invece di 1.179 — proprio mentre il suo corpo era
+/// fra i sei tagliati dal tetto. La quota esiste solo perché la sezione non
+/// cresca senza freno come faceva la coda: i sei inneschi di oggi ne fanno
+/// 1.350 misurati, e oltre la quota si degrada alla riga di conto.
+const MAX_TRIGGER_BYTES: usize = 1_600;
+
+/// Il titolo della sezione degli inneschi, contato dentro `MAX_TRIGGER_BYTES`.
+/// Dice cosa sono queste righe, perché un innesco nudo si legge come un istinto
+/// monco, e dove sta il corpo per chi vuole andarselo a prendere.
+const TRIGGER_TITLE: &str = "## Trappole di cui non è entrato il corpo\n\nQueste trappole esistono: il corpo non è entrato nel tetto, l'innesco sì. Il corpo intero sta in `~/.claude/homunculus/instincts/personal/<id>.md`.\n\n";
+
 /// Spazio tenuto da parte per la riga che dichiara le righe non elencate: il
 /// conto non arriva a sei cifre, quindi ci sta sempre. Senza questa riserva la
 /// coda troncata sfonderebbe la quota proprio nel caso che la quota esiste per
@@ -60,6 +81,9 @@ enum Confidence {
 #[derive(Default)]
 struct Frontmatter {
     id: Option<String>,
+    /// La riga che dice «quando ti succede questo»: è l'unica parte che si
+    /// inietta anche quando il corpo non entra nel tetto.
+    trigger: Option<String>,
     confidence: Confidence,
     measured: Option<String>,
     expires: Option<String>,
@@ -109,6 +133,7 @@ fn parse_frontmatter(text: &str) -> Frontmatter {
         let value = value.trim().trim_matches('"');
         match key {
             "id" => fm.id = Some(value.to_string()),
+            "trigger" => fm.trigger = Some(value.to_string()),
             "confidence" => {
                 fm.confidence = match value.parse::<f64>() {
                     Ok(v) if v.is_finite() => Confidence::Value(v),
@@ -170,18 +195,21 @@ pub struct Rendered {
     pub excluded_by_count: usize,
 }
 
-/// Rende la coda «Da rimisurare» dentro `MAX_REMEASURE_BYTES`: righe intere
+/// Rende una sezione di righe dentro `quota`, titolo compreso: righe intere
 /// finché entrano, poi una riga sola che dice quante ne restano fuori. Vuota
-/// se non c'è niente da rimisurare, così chi la chiama sa che non occupa nulla.
-fn render_remeasure(lines: &[String]) -> String {
+/// se non c'è niente da elencare, così chi la chiama sa che non occupa nulla.
+/// La usano tutte e due le sezioni in fondo al blocco — «Da rimisurare» e le
+/// trappole senza corpo — perché il troncamento è lo stesso e una seconda copia
+/// divergerebbe alla prima correzione.
+fn render_capped_list(title: &str, lines: &[String], quota: usize) -> String {
     if lines.is_empty() {
         return String::new();
     }
-    let mut out = String::from(REMEASURE_TITLE);
+    let mut out = String::from(title);
     let mut listed = 0usize;
     for line in lines {
         let separator = if listed == 0 { 0 } else { 1 }; // "\n"
-        if out.len() + separator + line.len() + OVERFLOW_LINE_MAX > MAX_REMEASURE_BYTES {
+        if out.len() + separator + line.len() + OVERFLOW_LINE_MAX > quota {
             break;
         }
         if separator == 1 {
@@ -202,6 +230,16 @@ fn render_remeasure(lines: &[String]) -> String {
     out
 }
 
+/// Un istinto vivo in attesa di sapere se il suo corpo entra nel tetto. Porta
+/// con sé nome e innesco perché chi resta fuori va comunque nominato: la riga
+/// d'innesco si costruisce dopo la selezione, non prima.
+struct Live {
+    confidence: f64,
+    id: String,
+    trigger: Option<String>,
+    body: String,
+}
+
 /// Sceglie quali istinti iniettare interi e quali ridurre a una riga.
 ///
 /// `today` e le date del frontmatter sono confrontate come stringhe ISO
@@ -209,7 +247,7 @@ fn render_remeasure(lines: &[String]) -> String {
 /// Un testo `None` è un file trovato ma non leggibile: conta come «senza
 /// misura» invece di sparire dai tre numeri, che così restano esaustivi.
 pub fn select(instincts: &[(String, Option<String>)], today: &str) -> Rendered {
-    let mut live: Vec<(f64, String)> = Vec::new();
+    let mut live: Vec<Live> = Vec::new();
     let mut remeasure: Vec<String> = Vec::new();
     let (mut live_count, mut expired_count, mut undated_count) = (0usize, 0usize, 0usize);
 
@@ -237,7 +275,12 @@ pub fn select(instincts: &[(String, Option<String>)], today: &str) -> Rendered {
         match dating(&fm) {
             Dating::Both(_measured, expires) if today <= expires => {
                 live_count += 1;
-                live.push((confidence, text.clone()));
+                live.push(Live {
+                    confidence,
+                    id: id.to_string(),
+                    trigger: fm.trigger.clone(),
+                    body: text.clone(),
+                });
             }
             Dating::Both(measured, expires) => {
                 expired_count += 1;
@@ -259,38 +302,69 @@ pub fn select(instincts: &[(String, Option<String>)], today: &str) -> Rendered {
         }
     }
 
-    // Confidence decrescente; a parità l'ordine di arrivo (sort stabile).
-    live.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Confidence decrescente; a parità l'ordine di arrivo (sort stabile), che è
+    // quello alfabetico dei file. È un criterio dichiaratamente arbitrario:
+    // sugli otto istinti di oggi la confidence separa quattro scaglioni
+    // (0,95 ×3 · 0,9 ×2 · 0,85 ×2 · 0,8), quindi decide la testa della
+    // classifica ma non le parità, e nel frontmatter non c'è un secondo segnale
+    // di merito da usare al suo posto.
+    live.sort_by(|a, b| {
+        b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // La coda si rende per prima perché il suo ingombro toglie budget ai corpi
     // vivi: il tetto vale sul blocco emesso, non sui soli istinti iniettati.
     // I due byte del distacco si scalano anche quando nessun corpo entra: due
     // byte di prudenza costano meno di un tetto che sfonda per un caso di bordo.
-    let remeasure_text = render_remeasure(&remeasure);
+    let remeasure_text = render_capped_list(REMEASURE_TITLE, &remeasure, MAX_REMEASURE_BYTES);
     let joint = if remeasure_text.is_empty() { 0 } else { 2 }; // "\n\n"
     let live_budget = MAX_LIVE_BYTES.saturating_sub(remeasure_text.len() + joint);
 
-    // Si scorre l'elenco già ordinato e chi non ci sta si salta: fermarsi al
-    // primo che sfonda buttava fuori anche i piccoli dietro, che avevano ancora
-    // spazio, e attribuiva loro una causa che non era la loro.
     let mut included: Vec<&str> = Vec::new();
+    let mut cut: Vec<&Live> = Vec::new();
     let mut bytes_so_far = 0usize;
     let (mut cut_by_count, mut cut_by_bytes) = (0usize, 0usize);
-    for (_, body) in &live {
+    // Vero da quando un corpo è stato fermato dallo spazio già occupato: da lì
+    // in poi non entra più nessuno, nemmeno chi ci starebbe.
+    let mut budget_taken = false;
+    for item in &live {
         if included.len() >= MAX_LIVE_COUNT {
             cut_by_count += 1;
+            cut.push(item);
             continue;
         }
         let separator = if included.is_empty() { 0 } else { 2 }; // "\n\n"
-        let candidate_bytes = bytes_so_far + separator + body.len();
-        if candidate_bytes > live_budget {
+        let candidate_bytes = bytes_so_far + separator + item.body.len();
+        if budget_taken || candidate_bytes > live_budget {
             cut_by_bytes += 1;
+            cut.push(item);
+            // Due esclusioni diverse. Un corpo più lungo del budget intero non
+            // sarebbe entrato nemmeno da solo: saltarlo non toglie niente a
+            // nessuno, e i piccoli dietro tengono lo spazio che avevano. Un
+            // corpo che invece ci sarebbe stato in un blocco vuoto è fermo solo
+            // per lo spazio preso da chi lo precede in classifica: qui l'elenco
+            // si chiude, altrimenti passerebbe avanti il primo corpo abbastanza
+            // corto e la dimensione varrebbe più del merito.
+            if item.body.len() <= live_budget {
+                budget_taken = true;
+            }
             continue;
         }
         bytes_so_far = candidate_bytes;
-        included.push(body.as_str());
+        included.push(item.body.as_str());
     }
     let excluded_by_cap = cut_by_count + cut_by_bytes;
+
+    // Chi è stato tagliato lascia il suo innesco: chi legge deve sapere che la
+    // trappola esiste, anche quando il corpo non entra.
+    let trigger_lines: Vec<String> = cut
+        .iter()
+        .map(|item| {
+            let trigger = item.trigger.as_deref().unwrap_or("innesco non dichiarato");
+            format!("- {} — {}", item.id, trigger)
+        })
+        .collect();
+    let trigger_text = render_capped_list(TRIGGER_TITLE, &trigger_lines, MAX_TRIGGER_BYTES);
 
     let mut text = String::new();
     text.push_str(HEADER);
@@ -315,17 +389,24 @@ pub fn select(instincts: &[(String, Option<String>)], today: &str) -> Rendered {
         ));
     }
     text.push_str("\n\n");
+    let head_len = text.len();
     for (i, body) in included.iter().enumerate() {
         if i > 0 {
             text.push_str("\n\n");
         }
         text.push_str(body);
     }
-    if !remeasure_text.is_empty() {
-        if !included.is_empty() {
+    // Le due sezioni in fondo si attaccano allo stesso modo: una riga vuota solo
+    // se davanti c'è già qualcosa. Il metro è quanto si è scritto oltre la testa,
+    // non il numero dei vivi: una sezione che non segue niente non vuole stacco.
+    for section in [&remeasure_text, &trigger_text] {
+        if section.is_empty() {
+            continue;
+        }
+        if text.len() > head_len {
             text.push_str("\n\n");
         }
-        text.push_str(&remeasure_text);
+        text.push_str(section);
     }
 
     Rendered {
@@ -367,12 +448,39 @@ mod tests {
 
     /// Il blocco su cui vale davvero `MAX_LIVE_BYTES`: corpi iniettati e coda,
     /// senza l'intestazione fissa né la riga dei conteggi, che nel budget non
-    /// passano. Senza questo ritaglio il tetto si prova con uno scarto a occhio,
+    /// passano, e senza la sezione degli inneschi, che sta fuori dal tetto per
+    /// scelta. Senza questo ritaglio il tetto si prova con uno scarto a occhio,
     /// e uno scarto abbastanza largo fa passare qualunque formula.
     fn capped_bytes(rendered: &Rendered) -> usize {
         let after_header = rendered.text.strip_prefix(HEADER).expect("l'intestazione c'è");
         let start = after_header.find("\n\n").expect("la riga dei conteggi c'è") + 2;
-        after_header.len() - start
+        let end = match after_header.find(TRIGGER_TITLE) {
+            // La riga vuota che stacca la sezione si scala con lei; se la
+            // sezione apre il blocco non c'è nessuno stacco da togliere.
+            Some(pos) if pos > start => pos - 2,
+            Some(_) => start,
+            None => after_header.len(),
+        };
+        end - start
+    }
+
+    /// La sezione degli inneschi, dal titolo in poi.
+    fn triggers_of(rendered: &Rendered) -> &str {
+        let start = rendered.text.find(TRIGGER_TITLE).expect("la sezione degli inneschi c'è");
+        &rendered.text[start..]
+    }
+
+    /// Un istinto vivo che dichiara un innesco, per provare cosa resta quando il
+    /// corpo non entra.
+    fn live_with_trigger(id: &str, confidence: f64, trigger: &str, size: usize) -> String {
+        let head = format!(
+            "---\nid: {id}\ntrigger: \"{trigger}\"\nconfidence: {confidence}\n\
+measured: 2026-08-01\nexpires: 2026-08-30\nmeasure: comando di prova\n---\n"
+        );
+        assert!(size > head.len(), "{size} byte non bastano per il frontmatter");
+        let text = format!("{head}{}\n", "X".repeat(size - head.len() - 1));
+        assert_eq!(text.len(), size);
+        text
     }
 
     /// La coda emessa, dal titolo in poi: è su questa che vale
@@ -763,7 +871,7 @@ measure: comando di prova\n---\nCORPO SEGRETO\n"
     #[test]
     fn a_tail_line_that_exactly_fills_the_quota_still_enters() {
         let lines = vec![tail_line(0, 734), tail_line(1, 10)];
-        let out = render_remeasure(&lines);
+        let out = render_capped_list(REMEASURE_TITLE, &lines, MAX_REMEASURE_BYTES);
         // rotto così → rosso: `>=` lascia fuori proprio il caso limite
         assert!(out.contains("riga-0:"), "{out}");
         assert!(!out.contains("riga-1:"), "{out}");
@@ -776,7 +884,7 @@ measure: comando di prova\n---\nCORPO SEGRETO\n"
     #[test]
     fn the_separator_byte_counts_against_the_tail_quota() {
         let lines = vec![tail_line(0, 300), tail_line(1, 434)];
-        let out = render_remeasure(&lines);
+        let out = render_capped_list(REMEASURE_TITLE, &lines, MAX_REMEASURE_BYTES);
         // rotto così → rosso: togliere lo stacco dal conto, o moltiplicarlo
         // invece di sommarlo, fa entrare una riga in più di un byte
         assert!(out.contains("riga-0:"), "{out}");
@@ -788,7 +896,7 @@ measure: comando di prova\n---\nCORPO SEGRETO\n"
     #[test]
     fn the_reserved_room_for_the_overflow_line_keeps_the_tail_in_the_quota() {
         let lines: Vec<String> = (0..5).map(|i| tail_line(i, 400)).collect();
-        let out = render_remeasure(&lines);
+        let out = render_capped_list(REMEASURE_TITLE, &lines, MAX_REMEASURE_BYTES);
         // rotto così → rosso: senza la riserva entra una seconda riga e la coda
         // arriva a 846 byte; un conto sbagliato dice «e altre 5» o «e altre 6»;
         // senza lo stacco la riga di conto si incolla all'ultima elencata
@@ -802,7 +910,7 @@ measure: comando di prova\n---\nCORPO SEGRETO\n"
     /// titolo: il titolo finisce già con una riga vuota.
     #[test]
     fn nothing_fits_and_the_count_line_follows_the_title() {
-        let out = render_remeasure(&[tail_line(0, 900)]);
+        let out = render_capped_list(REMEASURE_TITLE, &[tail_line(0, 900)], MAX_REMEASURE_BYTES);
         // rotto così → rosso: uno stacco messo a prescindere aggiunge una riga
         // vuota di troppo davanti alla sola riga rimasta
         assert_eq!(out, format!("{REMEASURE_TITLE}… e altre 1 non elencate"));
@@ -813,7 +921,7 @@ measure: comando di prova\n---\nCORPO SEGRETO\n"
     #[test]
     fn a_tail_that_fits_whole_says_nothing_about_lines_left_out() {
         let lines: Vec<String> = (0..3).map(|i| tail_line(i, 200)).collect();
-        let out = render_remeasure(&lines);
+        let out = render_capped_list(REMEASURE_TITLE, &lines, MAX_REMEASURE_BYTES);
         // rotto così → rosso: `<=` aggiunge «… e altre 0 non elencate», e un
         // contatore che non avanza incolla le righe una all'altra
         assert_eq!(out, format!("{REMEASURE_TITLE}{}\n{}\n{}", lines[0], lines[1], lines[2]));
@@ -938,5 +1046,171 @@ measure: comando di prova\n---\nCORPO SEGRETO\n"
         let pos_with = out.text.find("BODY-WITH\n").expect("BODY-WITH presente");
         let pos_without = out.text.find("BODY-WITHOUT").expect("BODY-WITHOUT presente");
         assert!(pos_with < pos_without, "chi non dichiara confidence sta in fondo");
+    }
+
+    /// Il guasto del 24/08/2026: il tetto tagliava sei istinti su otto e chi
+    /// leggeva non sapeva nemmeno che esistessero. Un corpo che non entra deve
+    /// lasciare almeno il suo innesco, col nome per andarselo a leggere.
+    #[test]
+    fn an_instinct_cut_by_the_byte_cap_still_leaves_its_trigger() {
+        let small = live_with_trigger("piccolo", 0.99, "quando succede il primo caso", 200);
+        let huge = live_with_trigger(
+            "zsh-variabile",
+            0.90,
+            "quando un elenco passa da una variabile",
+            MAX_LIVE_BYTES + 1,
+        );
+        let out = select(
+            &[("a.md".into(), Some(small)), ("b.md".into(), Some(huge))],
+            "2026-08-15",
+        );
+        // rotto così → rosso: non raccogliere i tagliati, o non emettere la
+        // sezione, riporta il blocco a com'era quando la trappola ha morso
+        assert!(!out.text.contains("id: zsh-variabile"), "il corpo tagliato non si inietta");
+        assert!(out.text.contains("id: piccolo"), "{}", out.text);
+        assert!(
+            out.text.contains("- zsh-variabile — quando un elenco passa da una variabile"),
+            "{}",
+            out.text
+        );
+        // rotto così → rosso: elencare anche chi è entrato intero ripete l'innesco
+        assert!(!out.text.contains("- piccolo —"), "chi entra intero non si ripete: {}", out.text);
+        assert!(out.text.contains("## Trappole di cui non è entrato il corpo"), "{}", out.text);
+    }
+
+    /// Anche chi è tagliato dal tetto di conteggio lascia l'innesco: la causa
+    /// del taglio non cambia cosa deve sapere chi legge.
+    #[test]
+    fn an_instinct_cut_by_the_count_cap_also_leaves_its_trigger() {
+        let items: Vec<(String, Option<String>)> = (0..9)
+            .map(|i| {
+                (
+                    format!("f{i}.md"),
+                    Some(live_with_trigger(
+                        &format!("n{i}"),
+                        0.9 - (i as f64) * 0.01,
+                        &format!("quando capita il caso {i}"),
+                        200,
+                    )),
+                )
+            })
+            .collect();
+        let out = select(&items, "2026-08-15");
+        // rotto così → rosso: raccogliere i tagliati solo nel ramo dei byte
+        // lascia muto proprio il nono, che è quello che nessuno vedrà mai
+        assert_eq!((out.excluded_by_count, out.excluded_by_bytes), (1, 0));
+        assert!(out.text.contains("- n8 — quando capita il caso 8"), "{}", out.text);
+    }
+
+    /// Un tagliato senza riga `trigger:` si nomina lo stesso: sapere che esiste
+    /// un istinto che non è entrato vale più del silenzio.
+    #[test]
+    fn a_cut_instinct_without_a_trigger_is_named_anyway() {
+        let huge = live_of_size("muto", 0.9, MAX_LIVE_BYTES + 1);
+        let out = select(&[("a.md".into(), Some(huge))], "2026-08-15");
+        // rotto così → rosso: saltare chi non dichiara l'innesco lo fa sparire
+        assert!(out.text.contains("- muto — innesco non dichiarato"), "{}", out.text);
+    }
+
+    /// Niente tagliati, niente sezione: un titolo senza righe sotto costerebbe
+    /// byte a ogni sessione per non dire niente.
+    #[test]
+    fn no_trigger_section_when_nothing_was_cut() {
+        let text = instinct("vivo", "2026-08-01", "2026-08-30", 0.9, "CORPO");
+        let out = select(&[("f.md".into(), Some(text))], "2026-08-15");
+        // rotto così → rosso: rendere la sezione a prescindere stampa il titolo
+        assert!(!out.text.contains(TRIGGER_TITLE), "{}", out.text);
+        assert!(!out.text.contains("\n\n\n"), "riga vuota di troppo: {}", out.text);
+    }
+
+    /// Gli inneschi si pagano **in aggiunta** al tetto: la parte sotto
+    /// `MAX_LIVE_BYTES` resta dentro, e il blocco emesso è più lungo di così.
+    /// È il costo dichiarato della riparazione, e va misurato, non stimato.
+    #[test]
+    fn the_trigger_lines_are_charged_outside_the_byte_cap() {
+        // Otto corpi da 430 byte riempiono il tetto quasi al millimetro
+        // (8 × 430 + 7 stacchi = 3.454 su 3.500): se la sezione contasse dentro
+        // il budget non ci sarebbe posto, e la si vedrebbe sparire.
+        let items: Vec<(String, Option<String>)> = (0..9)
+            .map(|i| {
+                (
+                    format!("f{i}.md"),
+                    Some(live_with_trigger(
+                        &format!("n{i}"),
+                        0.9 - (i as f64) * 0.01,
+                        &format!("quando capita il caso {i}"),
+                        430,
+                    )),
+                )
+            })
+            .collect();
+        let out = select(&items, "2026-08-15");
+        // rotto così → rosso: contare la sezione dentro `live_budget` la fa
+        // rientrare nel tetto, e il costo sparisce dalla misura
+        assert!(capped_bytes(&out) <= MAX_LIVE_BYTES, "{}", out.text);
+        let triggers = triggers_of(&out);
+        assert!(!triggers.is_empty());
+        assert!(
+            capped_bytes(&out) + triggers.len() > MAX_LIVE_BYTES,
+            "gli inneschi devono aggiungersi al tetto, non starci dentro"
+        );
+        assert!(triggers.len() <= MAX_TRIGGER_BYTES, "sezione di {} byte", triggers.len());
+    }
+
+    /// Il criterio di scelta: la dimensione non è un vantaggio. Il secondo per
+    /// confidence ci starebbe in un blocco vuoto, quindi a fermarlo è solo lo
+    /// spazio preso dal primo — e da lì l'elenco si chiude. Senza questa regola
+    /// il terzo, che vale meno ma è corto, gli passerebbe davanti.
+    #[test]
+    fn a_shorter_body_does_not_overtake_a_worthier_one_that_lost_only_the_room() {
+        let first = live_with_trigger("primo", 0.99, "quando capita il primo caso", 2_000);
+        let second = live_with_trigger("secondo", 0.90, "quando capita il secondo caso", 2_000);
+        let third = live_with_trigger("terzo", 0.80, "quando capita il terzo caso", 300);
+        let out = select(
+            &[
+                ("a.md".into(), Some(first)),
+                ("b.md".into(), Some(second)),
+                ("c.md".into(), Some(third)),
+            ],
+            "2026-08-15",
+        );
+        // rotto così → rosso: un `continue` che non chiude l'elenco fa entrare
+        // il terzo (2.000 + 2 + 300 sta nei 3.500) davanti al secondo, che vale
+        // di più ed è escluso solo perché è più lungo
+        assert!(out.text.contains("id: primo"), "{}", out.text);
+        assert!(!out.text.contains("id: secondo"), "{}", out.text);
+        assert!(!out.text.contains("id: terzo"), "{}", out.text);
+        assert_eq!((out.excluded_by_bytes, out.excluded_by_count), (2, 0));
+        // i due esclusi restano riconoscibili dall'innesco
+        assert!(out.text.contains("- secondo — quando capita il secondo caso"), "{}", out.text);
+        assert!(out.text.contains("- terzo — quando capita il terzo caso"), "{}", out.text);
+    }
+
+    /// La sezione degli inneschi non cresce senza freno: è la malattia che la
+    /// coda «Da rimisurare» aveva già avuto, e la cura è la stessa.
+    #[test]
+    fn the_trigger_section_cannot_grow_past_its_quota() {
+        let items: Vec<(String, Option<String>)> = (0..30)
+            .map(|i| {
+                (
+                    format!("f{i:02}.md"),
+                    Some(live_with_trigger(
+                        &format!("istinto-numero-{i:02}"),
+                        0.9,
+                        "quando capita un caso con un innesco lungo come quelli veri, che di byte ne prendono più di cento",
+                        400,
+                    )),
+                )
+            })
+            .collect();
+        let out = select(&items, "2026-08-15");
+        let triggers = triggers_of(&out);
+        // rotto così → rosso: una sezione senza quota arriva a migliaia di byte
+        assert!(
+            triggers.len() <= MAX_TRIGGER_BYTES,
+            "sezione di {} byte oltre la quota di {MAX_TRIGGER_BYTES}",
+            triggers.len()
+        );
+        assert!(triggers.contains("non elencate"), "le righe tagliate si dichiarano: {triggers}");
     }
 }
