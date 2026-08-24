@@ -210,6 +210,7 @@ const ALL_HOOKS: &[&str] = &[
     "code-language",
     "comment-refs",
     "duplication",
+    "legacy-script",
     "message-budget",
     "handoff-arms-successor",
     "handoff-measure",
@@ -367,6 +368,7 @@ const SELF_CHECK_EXTRA: &[&str] = &[
     "code-language",
     "comment-refs",
     "duplication",
+    "legacy-script",
     "orca-cleanup",
     "spotlight-marker",
     "work-status",
@@ -421,6 +423,7 @@ fn has_module_test(name: &str) -> bool {
         "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
         "instincts" => &[include_str!("../../guards/src/instincts.rs")],
         "code-language" => &[include_str!("../../guards/src/code_language.rs")],
+        "legacy-script" => &[include_str!("../../guards/src/legacy_script.rs")],
         "message-budget" => &[include_str!("../../guards/src/message_budget.rs")],
         // Il secondo file prova la colla, non il giudizio: senza, il rapporto
         // conterebbe coperto un gancio di cui è provata solo metà.
@@ -796,6 +799,25 @@ fn self_check() -> i32 {
     );
     if !matches!(to_a_document, Decision::Deny(_)) || !matches!(to_a_source_file, Decision::Pass) {
         eprintln!("comment-refs: non distingue un rimando a un documento da un percorso di codice");
+        failures += 1;
+    }
+
+    // `legacy-script` giudica un percorso, non un comando, e i due bracci che
+    // contano sono opposti: lo script che decide dentro la configurazione va
+    // negato, quello di avvio a freddo deve passare. Un porto rotto che negasse
+    // tutto supererebbe un'autoprova a un braccio solo, e spegnerebbe la casa al
+    // primo avvio senza binario.
+    let a_deciding_script =
+        guards::legacy_script::judge("/Users/theo/.claude/scripts/deposito-guasti.sh", true, false);
+    let a_cold_start_script = guards::legacy_script::judge(
+        "/Users/theo/.claude/scripts/rust-hooks-present.sh",
+        true,
+        false,
+    );
+    if !matches!(a_deciding_script, Decision::Deny(_))
+        || !matches!(a_cold_start_script, Decision::Pass)
+    {
+        eprintln!("legacy-script: non distingue uno script che decide dall'avvio a freddo");
         failures += 1;
     }
 
@@ -1237,6 +1259,62 @@ fn run(which: &str) -> Result<i32, String> {
                 eprintln!("{message}");
                 Ok(2)
             }
+        }
+        // Il linguaggio deprecato dentro la configurazione. Nega e basta: non ha
+        // una fase `post` perché a cose scritte non c'è più niente da decidere,
+        // e il messaggio serve **prima** che il lavoro sia fatto.
+        //
+        // L'ESISTENZA DEL FILE SI GUARDA QUI E NON NEL GIUDIZIO, perché il
+        // giudizio dev'essere puro: è quello che permette di provarlo su
+        // percorsi che non esistono su nessuna macchina.
+        "legacy-script" => {
+            if Mode::from_env("LEGACY_SCRIPT") == Mode::Off {
+                return Ok(0);
+            }
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            let empty = serde_json::json!({});
+            let tool_input = input.tool_input.as_ref().unwrap_or(&empty);
+            let path = tool_input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if path.is_empty() {
+                return Ok(0);
+            }
+            let exists = std::path::Path::new(path).exists();
+            // UNA VOLTA PER FILE E PER SESSIONE, e non è un dettaglio di forma:
+            // a messaggio pieno per ogni gesto questo freno costerebbe 424
+            // dinieghi nel giorno peggiore misurato, lo stesso ordine di
+            // grandezza che ha già fatto respingere la bozza di un altro freno.
+            // Il marcatore è la forma che usa il gate della ricerca — un file
+            // che nasce con `create_new` — riusata invece di inventarne una.
+            let session = input.session_id.as_deref().unwrap_or("ignota");
+            let key = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                path.hash(&mut h);
+                h.finish()
+            };
+            let marker = std::env::temp_dir().join(format!("claude-legacy-{session}-{key:x}"));
+            let already_said = marker.exists();
+            let hook_io::Decision::Deny(message) =
+                guards::legacy_script::judge(path, exists, already_said)
+            else {
+                return Ok(0);
+            };
+            // Il posto si prende DOPO il giudizio: se il verdetto fosse `Pass`,
+            // segnare il file brucerebbe la spiegazione per un gesto che non è
+            // mai stato negato.
+            let _ = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&marker);
+            Ok(hook_io::emit(
+                "legacy-script",
+                &hook_io::Decision::Deny(message),
+            ))
         }
         // Le regole appena scritte. Nessuna valvola d'ambiente: l'originale non
         // ne aveva una, e aggiungerla qui vorrebbe dire che il porting cambia
