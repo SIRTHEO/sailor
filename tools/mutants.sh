@@ -93,6 +93,57 @@ done
 TOUCHED=""
 restore_touched() { for f in $TOUCHED; do cp "$BACKUP/$f" "$ROOT/$f"; done; }
 
+# ── La sentinella: questo banco muta i sorgenti IN SERVIZIO ──────────────────
+#
+# Chi legge un sorgente mentre un giro è in volo vede un mutante e lo prende per
+# un difetto. Successo la notte del 24/08/2026: la sessione generale ha letto
+# `instincts.rs` tre volte in pochi secondi e ha visto tre stati diversi, e una
+# consegna ha riportato un rosso che non esisteva. Il rischio peggiore è l'altro:
+# se il giro muore a metà, il mutante resta nel sorgente e il primo che ricompila
+# se lo porta nel binario che i ganci eseguono a ogni strumento.
+#
+# Non è una serratura — nessuno qui dentro può obbligare le altre sessioni a
+# chiedere permesso — ma è la cosa che rende la domanda rispondibile: chi vede un
+# rosso strano guarda se questo file esiste. Una sentinella che sopravvive al
+# proprio processo è la firma del giro morto a metà, e per questo il ripristino
+# la toglie **solo** quando ha verificato che i sorgenti sono tornati.
+SENTINELLA="$HOME/.claude/state/mutanti-in-corso-$$"
+mkdir -p "$HOME/.claude/state" 2>/dev/null
+
+announce_mutant() {
+  {
+    echo "banco dei mutanti in corso — i sorgenti qui sotto NON sono quelli in servizio"
+    echo "processo: $$"
+    echo "sezione: $WHICH"
+    echo "dalle: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "mutante: ${1:-nessuno ancora applicato}"
+    echo "file: ${2:-nessuno ancora toccato}"
+    echo "copia di sicurezza: $BACKUP"
+    echo
+    echo "Se stai leggendo un rosso su uno di questi file, non è tuo: aspetta la"
+    echo "fine del giro. Se il processo qui sopra non esiste più, il giro è morto"
+    echo "a metà e il sorgente può essere ancora mutato: confronta con la copia."
+  } > "$SENTINELLA" 2>/dev/null
+}
+
+# Le sentinelle dei giri morti: si dicono all'avvio, perché è il momento in cui
+# qualcuno sta per mutare di nuovo gli stessi file e cancellerebbe la prova.
+for vecchia in "$HOME"/.claude/state/mutanti-in-corso-*; do
+  [ -f "$vecchia" ] || continue
+  altrui="${vecchia##*-}"
+  [ "$altrui" = "$$" ] && continue
+  if kill -0 "$altrui" 2>/dev/null; then
+    echo "ATTENZIONE: un altro banco gira sugli stessi sorgenti (processo $altrui)." >&2
+    echo "  I due giri si sovrascrivono i mutanti a vicenda: vedi $vecchia" >&2
+  else
+    echo "ATTENZIONE: $vecchia è di un processo che non esiste più." >&2
+    echo "  Quel giro è morto a metà: i sorgenti che nomina possono essere ancora" >&2
+    echo "  mutati, e il binario in servizio con loro. Leggilo prima di continuare." >&2
+  fi
+done
+
+announce_mutant
+
 # Ripristinare i sorgenti non basta: **il binario resta quello mutato**, ed è
 # quello che i ganci di questa macchina eseguono davvero. Il 17/08/2026 questo
 # script ha lasciato in produzione il binario dell'ultimo mutante, e il confronto
@@ -105,12 +156,26 @@ restore() {
   # verdi: il 17/08/2026 `successor.rs` è rimasto col nome del gancio cambiato in
   # `successore`, che non rompe niente e fa sparire dai conteggi ogni riga che
   # quel gancio scrive. Qui si confronta, e se non torna lo si dice per nome.
+  residuo=""
   for f in $TOUCHED; do
     cmp -s "$BACKUP/$f" "$ROOT/$f" \
-      || echo "ATTENZIONE: $f non e' tornato alla copia di sicurezza — mutante residuo"
+      || { echo "ATTENZIONE: $f non e' tornato alla copia di sicurezza — mutante residuo"; residuo="$residuo $f"; }
   done
   (cd "$ROOT" && cargo build --release >/dev/null 2>&1) \
-    || echo "ATTENZIONE: ricompilazione fallita, il binario è ancora quello mutato"
+    || { echo "ATTENZIONE: ricompilazione fallita, il binario è ancora quello mutato"; residuo="$residuo (binario)"; }
+  # La sentinella si toglie solo quando c'è la prova che i sorgenti sono tornati:
+  # è l'unica cosa che, il giorno dopo, distingue «il banco ha finito» da «il
+  # banco è morto col mutante dentro». Con un residuo resta, e cambia nome perché
+  # il giro dopo non la scambi per un banco vivo.
+  if [ -n "$residuo" ]; then
+    mv "$SENTINELLA" "$HOME/.claude/state/mutanti-residuo-$$" 2>/dev/null
+    echo "ATTENZIONE: resta $HOME/.claude/state/mutanti-residuo-$$ — i file:$residuo"
+    # La copia di sicurezza NON si butta: senza, il confronto che dice cosa è
+    # rimasto mutato non è più possibile da nessuno.
+    echo "  copia di sicurezza tenuta in $BACKUP"
+    return
+  fi
+  rm -f "$SENTINELLA"
   rm -rf "$BACKUP"
 }
 trap restore EXIT
@@ -158,6 +223,9 @@ mutate() {
   attempted=$((attempted + 1))
   restore_touched
   case " $TOUCHED " in *" $file "*) ;; *) TOUCHED="$TOUCHED $file" ;; esac
+  # La sentinella si aggiorna PRIMA di mutare, non dopo: se il giro muore fra le
+  # due righe, il file che nomina è quello davvero sporco.
+  announce_mutant "$name" "$file"
   # Un mutante che non muta niente risulterebbe «sopravvissuto» senza aver mai
   # cambiato il comportamento: è un difetto dello script, non un punto cieco
   # della batteria, e va distinto ad alta voce.
