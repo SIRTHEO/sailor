@@ -103,6 +103,10 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "phase-router",
         "sceglie il modello di un `Agent` dal mestiere; scritto il 23/08 (gradino 5), la riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`)",
     ),
+    (
+        "wrap-bash",
+        "manda l'uscita dei comandi in lista dentro il filtro riscrivendo `command`; scritto il 24/08, la riga che lo accende è di Theo insieme al permesso per `filter-output` (segnalazione `2026-08-24-il-filtro-uscite-non-ha-un-gancio-dove-vivere.md`)",
+    ),
 ];
 
 /// Le porte che decidono su un nome di strumento **dentro una funzione** che il
