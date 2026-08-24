@@ -59,6 +59,15 @@ fn memory_dirs() -> Vec<PathBuf> {
             }
         }
     }
+    // Le voci di coda sono affermazioni datate come le memorie, e si consumano
+    // allo stesso modo: qualcuno le legge giorni dopo e agisce su ciò che
+    // dicono. Portano lo stesso frontmatter, quindi `--suggest`, `--restamp` e
+    // la verifica le servono senza una riga di codice in più — e senza un
+    // secondo meccanismo che risponde alla stessa domanda su un'altra cartella.
+    let queue = crate::queue_freshness::queue_dir();
+    if queue.is_dir() {
+        out.push(queue);
+    }
     out.sort();
     out
 }
@@ -163,6 +172,16 @@ impl Drop for TestRootsGuard {
 /// Da come è scritto nella memoria al file sul disco.
 fn resolve(path: &str) -> Option<PathBuf> {
     resolve_all(path).into_iter().next()
+}
+
+/// La stessa risoluzione, aperta a `queue_freshness`.
+///
+/// Quel braccio deve giudicare gli ancoraggi delle voci di coda esattamente
+/// come li giudica `--check` qui: due idee diverse di dove viva un file
+/// darebbero due verdetti diversi sullo stesso ancoraggio, e quello scritto
+/// dentro la voce sarebbe il verdetto sbagliato.
+pub(crate) fn resolve_for_queue(path: &str) -> Option<PathBuf> {
+    resolve(path)
 }
 
 /// Tutti i file che quel percorso può nominare, radice per radice.
