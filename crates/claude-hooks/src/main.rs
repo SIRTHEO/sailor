@@ -98,6 +98,17 @@ mod output_filter;
 // famiglie che pesa il 20,1% dei byte, così il rischio dei permessi rivalutati
 // non si presenta sul resto. Non è acceso: la riga è di Theo.
 mod bash_wrap;
+// L'esame della forma, 24/08/2026: non è un gancio e non giudica un evento.
+// Ogni altro meccanismo qui dentro è un allarme, e un allarme ha bisogno di
+// qualcosa che si rompa; questo chiede «che forma ha preso questa casa, e in
+// che direzione si muove» — una domanda che nessun evento fa scattare. Si
+// sveglia su una soglia di righe mosse, come la ronda, non a un'ora.
+mod shape_exam;
+// La freschezza della coda, 24/08/2026: non è un gancio e non giudica un
+// evento. Dice quali voci di coda parlano della stessa cosa e quali sono
+// troppo vecchie per essere credute, e scrive il rilievo dentro le voci
+// stesse invece di aprirne di nuove.
+mod queue_freshness;
 
 use hook_io::{Decision, Mode};
 
@@ -288,6 +299,15 @@ const ALL_HOOKS: &[&str] = &[
     // Il gancio che invoca il filtro qui sopra, stesso giorno: `PreToolUse` su
     // Bash, quindi NON sta in NOT_HOOKS. Non ancora acceso: la riga è di Theo.
     "wrap-bash",
+    // L'esame della forma, 24/08/2026. Sta in NOT_HOOKS: non giudica un evento
+    // — lo si interroga da fuori, e con `--if-moved` si sveglia da sé quando la
+    // casa si è mossa abbastanza. La riga di `settings.json` è di Theo.
+    "shape",
+    // La freschezza della coda, 24/08/2026: risponde a «questa voce è ancora
+    // credibile, e qualcun altro ha già detto il contrario?». Sta in NOT_HOOKS
+    // perché non giudica nessun evento — e non aggiunge un byte al prologo di
+    // proposito: il rilievo lo scrive dentro le voci, non davanti a tutti.
+    "queue-freshness",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -328,6 +348,8 @@ const NOT_HOOKS: &[&str] = &[
     "permission-stall",
     "transcript-canary",
     "filter-output",
+    "shape",
+    "queue-freshness",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -540,6 +562,14 @@ fn has_module_test(name: &str) -> bool {
         "wrap-bash" => &[
             include_str!("bash_wrap.rs"),
             include_str!("../../guards/src/bash_wrap.rs"),
+        ],
+        "shape" => &[
+            include_str!("shape_exam.rs"),
+            include_str!("../../guards/src/shape_exam.rs"),
+        ],
+        "queue-freshness" => &[
+            include_str!("queue_freshness.rs"),
+            include_str!("../../guards/src/queue_overlap.rs"),
         ],
         _ => &[],
     };
@@ -1440,6 +1470,16 @@ fn run(which: &str) -> Result<i32, String> {
         // `PreToolUse` su Bash: o riscrive il comando per farne passare
         // l'uscita dal filtro, o non stampa niente. Non nega mai.
         "wrap-bash" => Ok(bash_wrap::run()),
+        // Non è un gancio: osserva la forma della casa e dice una cosa sola.
+        // Non legge stdin — le sue opzioni stanno sulla riga di comando — e non
+        // corregge niente: nessun pannello, nessun agente, nessuna scrittura
+        // fuori da `state/` e dalla coda.
+        "shape" => Ok(shape_exam::run()),
+        // Non è un gancio: risponde a «questa voce di coda è ancora credibile?»
+        // e a «qualcun altro ha già parlato della stessa cosa?». Senza `--mark`
+        // racconta e basta; con `--mark` scrive il rilievo dentro le voci
+        // interessate, e non ne apre nessuna di nuova.
+        "queue-freshness" => Ok(queue_freshness::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }
