@@ -129,17 +129,14 @@ pub fn in_cooldown(today: &str, last_fired_day: Option<&str>) -> bool {
 /// un secondo mandato, qualunque altro valore — o la sua assenza — lascia
 /// passare.
 ///
-/// Riusa `memory_anchor::frontmatter`, lo stesso estrattore che già legge
-/// `queue_clock.rs`: un secondo parser dello stesso blocco `---`/`---`
-/// divergerebbe alla prima correzione fatta a uno solo dei due.
+/// Riusa `queue_overlap::state_word`, che è il lettore di `stato:` della coda:
+/// una seconda copia dello stesso taglio divergerebbe alla prima correzione
+/// fatta a una sola delle due. Da lì arriva anche la regola del formato — vale
+/// la **prima parola**, il resto della riga è commento — che questa versione
+/// non aveva: uno `stato: aperta — RIAPERTA alle 09:50` era uno stato ignoto, e
+/// il 21/08/2026 quel dettaglio ha reso muta una voce riaperta.
 pub fn already_open(mandate_text: &str) -> bool {
-    let Some(front) = crate::memory_anchor::frontmatter(mandate_text) else {
-        return false;
-    };
-    front
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("stato:"))
-        .is_some_and(|v| v.trim() == "aperta")
+    crate::queue_overlap::state_word(mandate_text).as_deref() == Some("aperta")
 }
 
 /// La riga breve verso la sessione, sul canale `additionalContext`: solo

@@ -38,7 +38,9 @@ const CLAIM_WORDS: [&str; 9] = [
 /// Le estensioni che rendono una parola «un percorso», al solo scopo di
 /// coprirla prima di cercare le date: `2026-08-17-cron-e-soglie.md` porta una
 /// data che non è una misura, è il nome del documento.
-const PATH_EXTENSIONS: [&str; 21] = [
+/// `pub`: `queue_overlap` chiede la stessa cosa — «questa parola è un file?» —
+/// e un secondo elenco parallelo divergerebbe alla prima estensione aggiunta.
+pub const PATH_EXTENSIONS: [&str; 21] = [
     "py", "sh", "ts", "tsx", "js", "mjs", "cjs", "md", "json", "yml", "yaml",
     "toml", "sql", "prisma", "html", "css", "jsonl", "rs", "txt", "tsv", "log",
 ];

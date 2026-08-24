@@ -86,6 +86,41 @@ fn parse_timestamp(value: &str) -> Option<Timestamp> {
     None
 }
 
+fn iso_date_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^(\d{4})-(\d{2})-(\d{2})").unwrap())
+}
+
+fn slash_date_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^(\d{1,2})/(\d{1,2})/(\d{4})").unwrap())
+}
+
+/// La data dichiarata da un valore di frontmatter, **senza pretendere l'ora**.
+///
+/// Vive qui e non altrove perché questo modulo è già il proprietario di «cosa
+/// dichiara il frontmatter della coda»: un secondo lettore delle stesse due
+/// forme divergerebbe alla prima correzione fatta a uno solo dei due.
+///
+/// Perché non basta [`parse_timestamp`]: metà delle voci scrive
+/// `quando: 2026-08-24 (mattina)`, che non porta nessun `HH:MM` e che a un
+/// controllo sull'ora è invisibile. Per l'età di una voce la sola data basta,
+/// e pretendere l'ora avrebbe reso «senza data» proprio le voci più vecchie.
+///
+/// L'ancoraggio a sinistra resta quello di [`parse_timestamp`], e per la stessa
+/// ragione: una data in mezzo a una frase è cronaca, non una dichiarazione.
+pub fn declared_date(value: &str) -> Option<Date> {
+    let v = unquote(value);
+    let n = |c: &regex::Captures, i: usize| c.get(i).unwrap().as_str().parse::<i64>().unwrap_or(-1);
+    if let Some(c) = iso_date_re().captures(v) {
+        return Date::new(n(&c, 1), n(&c, 2), n(&c, 3));
+    }
+    if let Some(c) = slash_date_re().captures(v) {
+        return Date::new(n(&c, 3), n(&c, 2), n(&c, 1));
+    }
+    None
+}
+
 /// Nome e valore di una riga `chiave: valore`, se la riga ne porta una.
 fn field(line: &str) -> Option<(&str, &str)> {
     let idx = line.find(':')?;
