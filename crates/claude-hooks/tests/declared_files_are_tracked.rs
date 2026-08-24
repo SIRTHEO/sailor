@@ -157,6 +157,84 @@ fn git_knows(root: &Path, path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// Il contenuto del file come sta **in indice**: quello che il prossimo commit
+/// porterebbe. `None` quando l'indice non ha quel percorso, e chi chiama lo
+/// tratta come «non c'è niente di promesso qui».
+fn staged_text(root: &Path, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let out = Command::new("git")
+        .arg("show")
+        .arg(format!(":{}", relative.display()))
+        .current_dir(root)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    String::from_utf8(out.stdout).ok()
+}
+
+/// Le dichiarazioni che il prossimo commit porterebbe senza il file dietro.
+///
+/// Sta fuori dal caso di prova perché la scena del guasto si possa costruire in
+/// un deposito usa-e-getta: provare questo controllo sull'albero vero
+/// vorrebbe dire sporcare l'indice che tutte le sessioni condividono.
+fn broken_declarations(root: &Path, sources: &[PathBuf]) -> Vec<String> {
+    let mut untracked: Vec<String> = Vec::new();
+
+    for file in sources {
+        // Un sorgente che git non conosce non puo' pretendere niente dagli
+        // altri: e' lavoro in corso di qualcuno, e le sue dichiarazioni non
+        // sono ancora una promessa fatta al ramo.
+        if !git_knows(root, file) {
+            continue;
+        }
+        // IL TESTO SI LEGGE DALL'INDICE, NON DAL DISCO — dal 24/08/2026. Una
+        // dichiarazione che vive solo nell'albero di lavoro non è una promessa
+        // fatta a nessuno: è lavoro in corso, e finché non entra in un commit
+        // il ramo pubblicato non ne sa niente. Leggendo il disco, questa prova
+        // diventava rossa ogni volta che un'altra sessione stava scrivendo un
+        // modulo nuovo — due volte su tre corse il 24/08 — e un rosso che non
+        // è tuo è il modo più rapido per far spegnere una prova. `git show :`
+        // dà la versione **in indice**, cioè quello che il prossimo commit
+        // porterà: così il controllo morde ancora prima del commit, che è il
+        // momento in cui serve, senza contare ciò che nessuno ha promesso.
+        let text = match staged_text(root, file) {
+            Some(t) => t,
+            None => continue,
+        };
+        let dir = module_dir(file);
+
+        for name in declared_mods(&text) {
+            let flat = dir.join(format!("{name}.rs"));
+            let nested = dir.join(&name).join("mod.rs");
+            if !git_knows(root, &flat) && !git_knows(root, &nested) {
+                untracked.push(format!(
+                    "{} declares `mod {};` but git knows neither {} nor {}",
+                    file.strip_prefix(root).unwrap_or(file).display(),
+                    name,
+                    flat.strip_prefix(root).unwrap_or(&flat).display(),
+                    nested.strip_prefix(root).unwrap_or(&nested).display()
+                ));
+            }
+        }
+
+        for rel in included_paths(&text) {
+            let target = file.parent().unwrap_or(Path::new(".")).join(&rel);
+            if !git_knows(root, &target) {
+                untracked.push(format!(
+                    "{} includes \"{}\" but git does not know {}",
+                    file.strip_prefix(root).unwrap_or(file).display(),
+                    rel,
+                    target.strip_prefix(root).unwrap_or(&target).display()
+                ));
+            }
+        }
+    }
+
+    untracked
+}
+
 #[test]
 fn every_declared_module_and_included_file_is_tracked_by_git() {
     let root = repo_root();
@@ -168,51 +246,66 @@ fn every_declared_module_and_included_file_is_tracked_by_git() {
         root.display()
     );
 
-    let mut untracked: Vec<String> = Vec::new();
-
-    for file in &sources {
-        // Un sorgente che git non conosce non puo' pretendere niente dagli
-        // altri: e' lavoro in corso di qualcuno, e le sue dichiarazioni non
-        // sono ancora una promessa fatta al ramo.
-        if !git_knows(&root, file) {
-            continue;
-        }
-        let text = match std::fs::read_to_string(file) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        let dir = module_dir(file);
-
-        for name in declared_mods(&text) {
-            let flat = dir.join(format!("{name}.rs"));
-            let nested = dir.join(&name).join("mod.rs");
-            if !git_knows(&root, &flat) && !git_knows(&root, &nested) {
-                untracked.push(format!(
-                    "{} declares `mod {};` but git knows neither {} nor {}",
-                    file.strip_prefix(&root).unwrap_or(file).display(),
-                    name,
-                    flat.strip_prefix(&root).unwrap_or(&flat).display(),
-                    nested.strip_prefix(&root).unwrap_or(&nested).display()
-                ));
-            }
-        }
-
-        for rel in included_paths(&text) {
-            let target = file.parent().unwrap_or(Path::new(".")).join(&rel);
-            if !git_knows(&root, &target) {
-                untracked.push(format!(
-                    "{} includes \"{}\" but git does not know {}",
-                    file.strip_prefix(&root).unwrap_or(file).display(),
-                    rel,
-                    target.strip_prefix(&root).unwrap_or(&target).display()
-                ));
-            }
-        }
-    }
-
+    let untracked = broken_declarations(&root, &sources);
     assert!(
         untracked.is_empty(),
         "the branch does not build from a clean clone:\n  {}",
         untracked.join("\n  ")
     );
+}
+
+/// Il deposito usa-e-getta con un `lib.rs` che dichiara `mod <name>;`.
+/// `staged` dice se la dichiarazione entra in indice o resta solo sul disco.
+fn scene(name: &str, declares: &str, staged: bool) -> PathBuf {
+    let dir = std::path::Path::new("/tmp").join(format!(
+        "claude-hooks-prove-{}-{name}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    let src = dir.join("rust").join("crates").join("uno").join("src");
+    std::fs::create_dir_all(&src).expect("the scene directory");
+    let run = |args: &[&str]| {
+        Command::new("git").args(args).current_dir(&dir).output().expect("git must run");
+    };
+    run(&["init", "--quiet"]);
+    run(&["config", "user.email", "prova@example.com"]);
+    run(&["config", "user.name", "prova"]);
+    let lib = src.join("lib.rs");
+    std::fs::write(&lib, "// niente\n").expect("the first lib.rs");
+    run(&["add", "."]);
+    run(&["commit", "--quiet", "-m", "base"]);
+    std::fs::write(&lib, declares).expect("the declaring lib.rs");
+    if staged {
+        run(&["add", "rust/crates/uno/src/lib.rs"]);
+    }
+    dir
+}
+
+/// Il guasto vero: la dichiarazione è in indice, il file che promette no.
+/// MUTANTE (rotto così → rosso): far leggere di nuovo il disco a `staged_text`
+/// — questo caso resterebbe verde, perché su disco e in indice il testo è lo
+/// stesso, ma la prova non distinguerebbe più i due mondi.
+#[test]
+fn a_declaration_staged_without_its_file_is_caught() {
+    let root = scene("promessa-in-indice", "pub mod mancante;\n", true);
+    let sources = rust_sources(&root);
+    let broken = broken_declarations(&root, &sources);
+    assert_eq!(broken.len(), 1, "{broken:?}");
+    assert!(broken[0].contains("mod mancante"), "{broken:?}");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// E il lavoro in corso di un altro non è un guasto: la stessa identica
+/// dichiarazione, lasciata solo nell'albero di lavoro, non promette niente a
+/// nessuno. È il falso rosso che il 24/08/2026 ha colpito due corse su tre.
+/// MUTANTE (rotto così → rosso): rimettere `read_to_string` al posto di
+/// `staged_text` — questo caso torna rosso, e con lui ogni sessione che sta
+/// scrivendo un modulo nuovo accanto alla tua.
+#[test]
+fn a_declaration_left_in_the_working_tree_is_nobodys_promise() {
+    let root = scene("promessa-solo-sul-disco", "pub mod mancante;\n", false);
+    let sources = rust_sources(&root);
+    let broken = broken_declarations(&root, &sources);
+    assert!(broken.is_empty(), "{broken:?}");
+    let _ = std::fs::remove_dir_all(&root);
 }
