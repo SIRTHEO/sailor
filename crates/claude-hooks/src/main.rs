@@ -44,6 +44,10 @@ mod ai_personal_data;
 mod json_tool;
 mod memory_anchors;
 mod memory_citation_gate;
+// Il governo della memoria della macchina, 24/08/2026. Niente a che vedere con
+// i due moduli qui sopra, che parlano della memoria delle sessioni: questo
+// guarda la RAM, e l'omonimia è solo del vocabolario italiano.
+mod memory_governor;
 mod orca_cleanup;
 mod reachability;
 mod register_session;
@@ -84,6 +88,11 @@ mod phase_router;
 // strumento che prova su un transcript vero le assunzioni di schema che ogni
 // misura di casa dà per scontate. Lo chiama la ronda.
 mod transcript_canary;
+// Il filtro sulle uscite dei comandi, 24/08/2026: accorcia un'uscita rumorosa
+// e dichiara quanto ha tolto. Non è un gancio — il punto in cui servirebbe
+// (dopo l'esecuzione, prima che l'uscita torni) non esiste in questa versione:
+// `PostToolUse` può solo aggiungere contesto, non sostituire il risultato.
+mod output_filter;
 
 use hook_io::{Decision, Mode};
 
@@ -262,6 +271,15 @@ const ALL_HOOKS: &[&str] = &[
     // giudica nessun evento — lo si interroga da fuori, e la ronda lo chiama —
     // quindi sta in NOT_HOOKS.
     "transcript-canary",
+    // Il dodicesimo, il 24/08/2026: il governo della memoria della macchina.
+    // `PreToolUse` su Bash, quindi NON sta in NOT_HOOKS — anche se lo stesso
+    // slug porta il verbo `report`, che si digita da fuori. Non è ancora
+    // acceso: la riga in `settings.json` è di Theo.
+    "memory-governor",
+    // Il filtro sulle uscite, 24/08/2026: legge un'uscita da stdin e la
+    // accorcia. Sta in NOT_HOOKS perché nessun evento può ospitarlo — vedi il
+    // commento sul modulo.
+    "filter-output",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -301,6 +319,7 @@ const NOT_HOOKS: &[&str] = &[
     "marker-sweep",
     "permission-stall",
     "transcript-canary",
+    "filter-output",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -501,6 +520,14 @@ fn has_module_test(name: &str) -> bool {
         "transcript-canary" => &[
             include_str!("transcript_canary.rs"),
             include_str!("../../guards/src/transcript_canary.rs"),
+        ],
+        "memory-governor" => &[
+            include_str!("memory_governor.rs"),
+            include_str!("../../guards/src/memory_governor.rs"),
+        ],
+        "filter-output" => &[
+            include_str!("output_filter.rs"),
+            include_str!("../../guards/src/output_filter.rs"),
         ],
         _ => &[],
     };
@@ -1374,11 +1401,30 @@ fn run(which: &str) -> Result<i32, String> {
         // e 2 quando non ha potuto misurare, così chi lo chiama dalla ronda
         // distingue «rotto» da «non provato».
         "transcript-canary" => Ok(transcript_canary::run()),
+        // Il governo della memoria: `PreToolUse` su Bash senza verbo, e col
+        // verbo `report` la fotografia per chi guarda da fuori. Il rapporto
+        // vuole `ps`, che dentro il sandbox è negato — per questo è un verbo a
+        // parte e non una riga in più del gancio.
+        "memory-governor" => {
+            let args: Vec<String> = std::env::args().skip(2).collect();
+            match args.first().map(String::as_str) {
+                Some("report") => Ok(memory_governor::report()),
+                None => Ok(memory_governor::run()),
+                Some(other) => {
+                    eprintln!("memory-governor: verbo sconosciuto {other:?} (report)");
+                    Ok(0)
+                }
+            }
+        }
         // `json` non è un gancio: è il pezzo che toglie `python3 -c` dai tre
         // ganci scritti in shell, che lo invocano per leggere un campo o
         // costruire una risposta. Sta nell'elenco perché il dispatch e l'elenco
         // si controllano a vicenda, non perché `settings.json` lo nomini.
         "json" => Ok(json_tool::run()),
+        // Non è un gancio: accorcia un'uscita che gli si passa da stdin. Il
+        // momento in cui dovrebbe girare da solo non esiste fra i ganci di
+        // questa versione — il commento sul modulo dice cosa l'ha stabilito.
+        "filter-output" => Ok(output_filter::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }
@@ -1418,27 +1464,6 @@ fn role_of(session: &str) -> Option<String> {
     (!first.is_empty()).then_some(first)
 }
 
-/// L'identificativo del capitano vivo, se c'è.
-///
-/// Si guardano **solo** i file intestati a una sessione — otto cifre esadecimali
-/// — e non quelli intestati al mestiere: questi ultimi contengono un
-/// identificativo, non un ruolo, e scambiarli fa rispondere il nome sbagliato.
-fn live_captain() -> Option<String> {
-    let entries = std::fs::read_dir(roles_dir()).ok()?;
-    for e in entries.flatten() {
-        let name = e.file_name().to_string_lossy().to_string();
-        let is_session = name.len() == 8 && name.chars().all(|c| c.is_ascii_hexdigit());
-        if !is_session {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(e.path()) else { continue };
-        if raw.trim_start().starts_with("CAPITANO") {
-            return Some(name);
-        }
-    }
-    None
-}
-
 /// Il verdetto sull'apertura di un modulo, letto il payload del gancio.
 ///
 /// FAIL-OPEN OVUNQUE, e non è pigrizia: questo gira davanti a **ogni** strumento
@@ -1456,7 +1481,7 @@ fn ask_routing_verdict(raw: &str) -> Decision {
     }
     let session = data.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
     let role = role_of(session);
-    guards::ask_routing::judge(tool, role.as_deref(), live_captain().as_deref())
+    guards::ask_routing::judge(tool, role.as_deref())
 }
 
 #[cfg(test)]
