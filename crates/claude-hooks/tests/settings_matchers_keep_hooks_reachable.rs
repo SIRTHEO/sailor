@@ -103,10 +103,6 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "phase-router",
         "sceglie il modello di un `Agent` dal mestiere; scritto il 23/08 (gradino 5), la riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`)",
     ),
-    (
-        "wrap-bash",
-        "manda l'uscita dei comandi in lista dentro il filtro riscrivendo `command`; scritto il 24/08, la riga che lo accende è di Theo insieme al permesso per `filter-output` (segnalazione `2026-08-24-il-filtro-uscite-non-ha-un-gancio-dove-vivere.md`)",
-    ),
 ];
 
 /// Le porte che decidono su un nome di strumento **dentro una funzione** che il
@@ -189,6 +185,10 @@ const DENIES_WITHOUT_STOPPING: &[(&str, &str)] = &[(
 /// vivono su eventi che non portano nessuno strumento — `Stop`, `SubagentStop`,
 /// `UserPromptSubmit` — dove un `matcher` non significa niente.
 ///
+/// `memory-governor` è entrato con l'accensione del 24/08 alle 17:06, e sta qui
+/// per la stessa ragione: governa la memoria su `Stop`, dove strumenti non ne
+/// passano.
+///
 /// Non è un permesso e non invecchia da solo: un nome che perde l'accensione o
 /// che acquista una porta fa cadere `the_uncovered_hooks_are_named_here`.
 const WIRED_WITHOUT_A_READABLE_GATE: &[&str] = &[
@@ -201,6 +201,7 @@ const WIRED_WITHOUT_A_READABLE_GATE: &[&str] = &[
     "linear-readonly",
     "live-rules",
     "long-session",
+    "memory-governor",
     "observe",
     "orca-cleanup",
     "register-session",
