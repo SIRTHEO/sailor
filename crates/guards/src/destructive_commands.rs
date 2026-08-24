@@ -775,6 +775,32 @@ fn force_push(tail: &[String]) -> Option<Danger> {
     None
 }
 
+/// L'avvertenza da appendere quando il bersaglio nominato **non è un percorso**
+/// ma il testo che lo produrrà.
+///
+/// Il freno legge il comando come testo e non espande niente: in
+/// `d="$T/roba"; rm -rf "$d"` il bersaglio che stampa è `$d`, che non comincia
+/// per `/tmp` né per `/var/folders` e quindi non supera il riconoscimento della
+/// zona usa-e-getta — anche quando a valle ci finiva davvero. Il 24/08/2026 è
+/// costato un diniego su quattro copie abbandonate da `cargo mutants`.
+///
+/// **Perché dirlo invece di espandere.** Espandere le variabili sposterebbe il
+/// verso dell'errore dalla parte sbagliata: un'espansione approssimata farebbe
+/// *passare* cancellazioni che oggi si fermano, e questo freno esiste per il
+/// caso in cui sbagliare costa il lavoro di qualcuno. Chi legge il rifiuto,
+/// invece, ha bisogno di sapere che quel testo non è il percorso: senza,
+/// conclude che il freno non riconosce `/tmp` e va a riscrivere il comando
+/// finché il freno non lo vede più — che è la lezione peggiore.
+fn unexpanded_note(target: &str) -> &'static str {
+    if target.contains('$') || target.contains('`') {
+        "\n  · **Quel bersaglio non è un percorso**: contiene variabili, e il freno legge il \
+         comando come testo senza espanderle. Non sa dove finisce davvero la cancellazione, \
+         quindi non può riconoscerla come zona usa-e-getta."
+    } else {
+        ""
+    }
+}
+
 fn explain(d: &Danger) -> String {
     match d {
         Danger::RecursiveDelete { target, privileged } => {
@@ -784,14 +810,15 @@ fn explain(d: &Danger) -> String {
                 format!("cancellazione ricorsiva su «{target}»")
             };
             format!(
-                "{head}.\n  · Non esiste, in questa casa, una via più sicura del comando nudo: i \
+                "{head}.{}\n  · Non esiste, in questa casa, una via più sicura del comando nudo: i \
                  rami hanno `rami.py` e le copie di lavoro hanno `orca`, una cartella qualunque \
                  non ha niente. Il freno lo dice invece di inventarla.\n  · Se la cancellazione \
                  serve davvero, la fa una persona a mano fuori da una sessione, dopo aver \
                  guardato cosa c'è dentro.\n  · Il materiale usa-e-getta dentro una copia di \
                  lavoro e sotto /tmp continua a passare: se il bersaglio era uno di quelli, il \
                  percorso qui sopra dice perché non lo sembrava.\n  · Consapevole e necessario: \
-                 `FRENO_DISTRUTTIVO=off <comando>`, che resta scritto nel registro."
+                 `FRENO_DISTRUTTIVO=off <comando>`, che resta scritto nel registro.",
+                unexpanded_note(target)
             )
         }
         Danger::UnreadableDelete { segment } => format!(
@@ -1306,6 +1333,43 @@ mod tests {
         assert!(blocked(
             "rm -rf /home/someone/personal/sailor/src --nota FRENO_DISTRUTTIVO=off"
         ));
+    }
+
+    /// Il caso vero del 24/08/2026, che la valvola non apriva: quattro copie
+    /// abbandonate da `cargo mutants`, cancellate dentro un ciclo, con la
+    /// valvola scritta dove il rifiuto dice di scriverla.
+    #[test]
+    fn the_valve_opens_inside_a_loop_too() {
+        assert!(!blocked(
+            "for n in A B; do\n  d=\"$T/cargo-mutants-$n.tmp\"\n  \
+             FRENO_DISTRUTTIVO=off rm -rf \"$d\"\ndone"
+        ));
+        // Senza valvola lo stesso ciclo resta bloccato: è la valvola che apre,
+        // non il ciclo che nasconde.
+        assert!(blocked(
+            "for n in A B; do\n  d=\"$T/cargo-mutants-$n.tmp\"\n  rm -rf \"$d\"\ndone"
+        ));
+    }
+
+    /// Un bersaglio che è testo, non un percorso: il rifiuto deve dirlo, o chi
+    /// legge conclude che il freno non riconosce le zone usa-e-getta e va a
+    /// riscrivere il comando finché il freno non lo vede più.
+    #[test]
+    fn a_target_still_carrying_variables_says_it_is_not_a_path() {
+        let Decision::Block(m) = on(
+            "for n in A B; do\n  d=\"$T/cargo-mutants-$n.tmp\"\n  rm -rf \"$d\"\ndone",
+            "/home/someone/orca/general",
+            None,
+        ) else {
+            panic!("expected a block");
+        };
+        assert!(m.contains("$T/cargo-mutants-$n.tmp"), "{m}");
+        assert!(m.contains("non è un percorso"), "{m}");
+        // E un bersaglio vero non porta quell'avvertenza addosso.
+        let Decision::Block(m) = on("rm -rf src", "/home/someone/personal/sailor", None) else {
+            panic!("expected a block");
+        };
+        assert!(!m.contains("non è un percorso"), "{m}");
     }
 
     // ── I gesti che la misura dei mutanti ha trovato scoperti ───────────────
