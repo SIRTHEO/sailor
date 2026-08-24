@@ -634,7 +634,36 @@ fn is_iso_utc(s: &str) -> bool {
     };
     // Il 60 esiste: è il secondo intercalare, e rifiutarlo sarebbe un falso
     // allarme una notte ogni qualche anno.
-    (0..24).contains(&hour) && (0..60).contains(&minute) && (0..61).contains(&second)
+    (0..24).contains(&hour)
+        && (0..60).contains(&minute)
+        && (0..61).contains(&second)
+        && ends_in_utc(s.get(19..).unwrap_or(""))
+}
+
+/// La coda dice UTC?
+///
+/// Questa funzione si chiama «utc» e fino al 24/08/2026 la parte che lo dice
+/// non la guardava: `…T01:02:03+02:00` passava per sano. È il fallimento per cui
+/// il canarino esiste — un formato che cambia sotto una misura che continua a
+/// dirsi viva. Il fuso adesso `epoch_from_iso` lo sa leggere, quindi le durate
+/// non mentirebbero; ma un transcript che smette di scrivere in UTC è un cambio
+/// di contratto, e chi legge le assunzioni deve saperlo il giorno stesso.
+fn ends_in_utc(tail: &str) -> bool {
+    let rest = match tail.strip_prefix('.') {
+        // La frazione di secondo esiste e non è il fuso: si scavalca, ma vuota
+        // non vale — `…03.Z` non è una forma che qualcuno legga.
+        Some(after) => {
+            let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+            if digits == 0 {
+                return false;
+            }
+            &after[digits..]
+        }
+        None => tail,
+    };
+    // La coda nuda vale UTC per convenzione, ed è la forma più corta che i
+    // lettori accettano: la prova sui diciannove byte la fissa.
+    rest.is_empty() || rest == "Z"
 }
 
 /// Il rapporto in chiaro: cosa è stato letto, cosa è caduto, chi si rompe.
@@ -942,6 +971,31 @@ mod tests {
         // Sotto quella soglia l'ora non c'è più, e quello è un difetto vero.
         let report = check_owned(&with_timestamp("2026-08-24"));
         assert_eq!(report.verdict(), Verdict::Dead, "{}", render(&report));
+    }
+
+    /// Un fuso scritto al posto della `Z` è un cambio di contratto, e questo
+    /// canarino esiste per gridarlo il giorno stesso.
+    #[test]
+    fn a_timestamp_that_is_not_utc_kills_the_canary() {
+        for bad in [
+            "2026-08-24T01:07:11.123+02:00",
+            "2026-08-24T01:07:11-05:00",
+            "2026-08-24T01:07:11 CEST",
+            "2026-08-24T01:07:11.Z",
+        ] {
+            let report = check_owned(&with_timestamp(bad));
+            // rotto così → rosso: senza il controllo sulla coda il canarino
+            // dice VIVO mentre il formato è già cambiato sotto i lettori
+            assert_eq!(report.verdict(), Verdict::Dead, "«{bad}»: {}", render(&report));
+            assert!(
+                report.findings.iter().any(|f| f.assumption == "timestamp"),
+                "«{bad}»: {:?}",
+                report.findings
+            );
+        }
+        // E la forma sana resta sana: la frazione non è un fuso.
+        let report = check_owned(&with_timestamp("2026-08-24T01:07:11.123Z"));
+        assert_eq!(report.verdict(), Verdict::Alive, "{}", render(&report));
     }
 
     /// Il tetto per assunzione non scatta quando non ha nascosto niente: tre
