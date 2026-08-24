@@ -193,6 +193,99 @@ pub fn wakeup_pending(transcript: &str, now: f64) -> Option<u64> {
 ///
 /// Si prende dall'**ultimo** turno che la contiene, e si taglia a 600 caratteri:
 /// oltre non è più un punto di ripresa, è un rendiconto.
+/// Il punto di ripresa: prima il file di consegna, poi il transcript.
+///
+/// L'ORDINE È IL LAVORO. Fino al 23/08/2026 il punto di ripresa si cercava
+/// **solo** nel transcript, come riga «Procedo con» che il prologo prescriveva
+/// a ogni turno: **262 sessioni su 348 non ce l'hanno**, tre su quattro. Una
+/// riga prescritta che manca il 75% delle volte non è un punto di ripresa. La
+/// consegna invece la scrive chi chiude, ed è il documento che il successore
+/// legge comunque. Decisione di Theo del 23/08 sera, registrata nel libro di
+/// bordo: la prescrizione è ritirata, il punto di ripresa è il file di consegna.
+///
+/// Il transcript resta come ripiego e non come fonte: una sessione che quella
+/// riga ce l'ha ancora, e nessuna consegna, non deve perdere niente.
+pub fn resume_point_from(handoff_path: &str, transcript: &str) -> Option<String> {
+    resume_point_in_handoff(handoff_path).or_else(|| resume_point(transcript))
+}
+
+/// I titoli sotto cui una consegna scrive il passo successivo.
+///
+/// L'elenco è a mano e misurato, non dedotto: sulle 84 consegne scritte finora
+/// **68 hanno una di queste sezioni** — l'81%, contro il 25% della riga
+/// prescritta nel transcript. Un titolo nominato è il contrario di «l'ultima
+/// riga del file», che è la forma che si rompe alla prima consegna scritta
+/// diversamente.
+const RESUME_HEADINGS: &[&str] =
+    &["prossimi passi", "prossimo passo", "da qui", "ripartenza", "punto di ripresa"];
+
+/// Il primo passo che una consegna lascia aperto.
+///
+/// Si salta ciò che la consegna stessa dichiara già chiuso: le voci di quegli
+/// elenchi cominciano spesso con `FATTO`, e prendere la prima riga a occhi
+/// chiusi darebbe come punto di ripresa un lavoro finito. Se sono tutte chiuse
+/// vale comunque la prima, perché un elenco tutto fatto è pur sempre il posto
+/// da cui chi arriva riparte a leggere.
+fn resume_point_in_handoff(path: &str) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut in_section = false;
+    let mut first_seen: Option<String> = None;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(title) = trimmed.strip_prefix('#') {
+            if in_section {
+                break; // il titolo dopo chiude la sezione
+            }
+            let title = title.trim_start_matches('#').trim().to_lowercase();
+            in_section = RESUME_HEADINGS.iter().any(|h| title.starts_with(h));
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        let Some(item) = list_item(trimmed) else { continue };
+        if item.is_empty() {
+            continue;
+        }
+        if first_seen.is_none() {
+            first_seen = Some(item.clone());
+        }
+        if !already_done(&item) {
+            return Some(item.chars().take(600).collect());
+        }
+    }
+    first_seen.map(|f| f.chars().take(600).collect())
+}
+
+/// Il testo di una voce di elenco — `1.`, `-`, `*` — o `None` se la riga non lo è.
+fn list_item(line: &str) -> Option<String> {
+    if let Some(rest) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+        return Some(rest.trim().to_string());
+    }
+    let digits = line.len() - line.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits > 0 {
+        if let Some(rest) = line[digits..].strip_prefix(". ") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
+/// La voce dichiara se stessa già chiusa? Si guardano le prime parole, senza
+/// la grassettatura del Markdown: `**FATTO alle 11:33 — …**`.
+fn already_done(item: &str) -> bool {
+    let head: String = item
+        .trim_start_matches(['*', '_'])
+        .chars()
+        .take(12)
+        .collect::<String>()
+        .to_uppercase();
+    head.starts_with("FATTO") || head.starts_with("CHIUSO") || head.starts_with("FINITO")
+}
+
 pub fn resume_point(transcript: &str) -> Option<String> {
     let tail = transcript_tail(transcript);
     for line in tail.lines().rev() {
@@ -703,6 +796,63 @@ mod tests {
     fn without_a_closing_turn_no_resume_point_is_invented() {
         let s = Scene::new("punto-assente", false, vec![user_message("Mandato.")]);
         assert_eq!(resume_point(&s.transcript()), None);
+    }
+
+    /// Una consegna con la sezione del passo successivo, dentro la scena.
+    fn handoff_file(scene: &Scene, body: &str) -> String {
+        let path = scene.dir.join("consegna-di-prova.md");
+        fs::write(&path, body).expect("la consegna di prova");
+        path.display().to_string()
+    }
+
+    const HANDOFF_DOC: &str = "# Consegna\n\n## Stato\n\nFatto un po' di tutto.\n\n\
+                               ## Prossimi passi\n\n\
+                               1. **FATTO alle 11:33** — il gesto è partito.\n\
+                               2. Il secondo rilascio è l'unica cosa che manca.\n\n\
+                               ## Link\n\n- niente\n";
+
+    #[test]
+    fn the_resume_point_comes_from_the_handoff_when_the_transcript_has_no_line() {
+        // La scena che conta: 262 sessioni su 348 non hanno la riga prescritta,
+        // e prima di oggi per tutte quelle il punto di ripresa era vuoto.
+        // Rotto così → rosso: far tornare `resume_point_from` al solo
+        // transcript, e questa riga torna `None`.
+        let s = Scene::new("punto-da-consegna", false, vec![user_message("Mandato.")]);
+        let doc = handoff_file(&s, HANDOFF_DOC);
+        let punto = resume_point_from(&doc, &s.transcript()).expect("il punto sta nella consegna");
+        assert!(punto.contains("Il secondo rilascio"), "{punto}");
+        // E si salta ciò che la consegna dichiara già chiuso, o il punto di
+        // ripresa sarebbe un lavoro finito.
+        assert!(!punto.contains("FATTO"), "{punto}");
+    }
+
+    #[test]
+    fn between_the_handoff_and_the_transcript_the_handoff_wins() {
+        // I due dicono cose diverse apposta: senza la differenza, la prova non
+        // dimostrerebbe quale delle due fonti ha vinto.
+        let s = Scene::new(
+            "punto-due-fonti",
+            false,
+            vec![closing_turn("il passo scritto nel transcript")],
+        );
+        let doc = handoff_file(&s, HANDOFF_DOC);
+        let punto = resume_point_from(&doc, &s.transcript()).unwrap();
+        assert!(punto.contains("Il secondo rilascio"), "{punto}");
+        assert!(!punto.contains("transcript"), "{punto}");
+    }
+
+    #[test]
+    fn without_a_handoff_the_transcript_still_answers() {
+        // Il ripiego resta: una sessione che ha ancora la riga vecchia e nessuna
+        // consegna non deve perdere il proprio punto di ripresa.
+        let s = Scene::new("punto-ripiego", false, vec![closing_turn("la staffetta via /clear")]);
+        let punto = resume_point_from("", &s.transcript()).expect("il ripiego risponde");
+        assert!(punto.contains("la staffetta via /clear"), "{punto}");
+        // E una consegna senza quella sezione non inventa un punto: si torna
+        // al transcript com'era.
+        let muta = handoff_file(&s, "# Consegna\n\n## Stato\n\nsolo stato.\n");
+        let punto = resume_point_from(&muta, &s.transcript()).unwrap();
+        assert!(punto.contains("la staffetta via /clear"), "{punto}");
     }
 
     #[test]
