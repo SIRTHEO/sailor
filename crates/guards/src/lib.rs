@@ -18,6 +18,7 @@ pub mod handoff;
 pub mod hooks_off;
 pub mod instincts;
 pub mod language;
+pub mod legacy_script;
 pub mod linear_readonly;
 pub mod long_session;
 pub mod memory_anchor;
