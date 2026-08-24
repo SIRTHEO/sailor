@@ -33,7 +33,57 @@ pub fn test_root() -> PathBuf {
     // raccolta si accumulano per sempre — 46 cartelle in mezz'ora di lavoro,
     // misurate il 19/08/2026 mentre si correggeva proprio questo.
     SWEEP.call_once(sweep_stale_roots);
-    Path::new("/tmp").join(format!("{PREFIX}{}", std::process::id()))
+    let root = Path::new("/tmp").join(format!("{PREFIX}{}", std::process::id()));
+    if let Some(why) = writing_here_is_denied(&root) {
+        panic!("{why}");
+    }
+    root
+}
+
+/// Il messaggio da dare a chi lancia la batteria dentro il perimetro, o `None`
+/// se qui si può scrivere davvero.
+///
+/// PERCHÉ NON SI LASCIA SEMPLICEMENTE FALLIRE. Il perimetro delle scritture nega
+/// `/tmp`, e una prova che non riesce a costruire la propria casa produce
+/// asserzioni rosse **indistinguibili da un difetto vero**. Il 24/08/2026 è
+/// costato quattro verifiche in un giorno, a quattro agenti diversi: «221 su 464
+/// falliscono», «65 rosse in code_language» — tutte verdi da fuori. Il verso
+/// pericoloso non è la perdita di tempo: è che un giorno saranno rosse davvero, e
+/// chi le ha viste rosse per finta tre volte le archivierà come artefatto. Un
+/// falso allarme ripetuto è un anestetico. Qui si dice **una cosa diversa da
+/// «fallito»** — non misurato, e perché — invece di lasciar cadere venti
+/// asserzioni a valle.
+///
+/// Il verdetto si calcola una volta e si ripete uguale: il controllo è una
+/// scrittura vera, e rifarla a ogni caso costerebbe quanto la prova.
+fn writing_here_is_denied(root: &Path) -> Option<String> {
+    static VERDICT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    VERDICT
+        .get_or_init(|| {
+            let probe = root.join(".probe");
+            let done = std::fs::create_dir_all(root).and_then(|_| std::fs::write(&probe, b"x"));
+            let _ = std::fs::remove_file(&probe);
+            match done {
+                Ok(()) => None,
+                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Some(format!(
+                    "PROVA NON ESEGUITA, non fallita: la batteria non può scrivere in {}.\n  \
+                     È il perimetro delle scritture, non un difetto del codice — dentro il \
+                     perimetro `/tmp` è negato, e ogni caso che costruisce la propria casa \
+                     cadrebbe con asserzioni che sembrano vere.\n  \
+                     Rilancia la batteria da fuori il perimetro: quel numero rosso non dice \
+                     niente su questo codice.",
+                    root.display()
+                )),
+                // Un guasto diverso resta un guasto: qui si nomina solo ciò che
+                // si è misurato, o questa scorciatoia diventerebbe il posto in
+                // cui i difetti veri si nascondono.
+                Err(e) => Some(format!(
+                    "la batteria non riesce a costruire la propria radice in {}: {e}",
+                    root.display()
+                )),
+            }
+        })
+        .clone()
 }
 
 /// Butta le radici lasciate dai processi finiti. Un guasto qui non è una ragione
