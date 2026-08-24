@@ -48,7 +48,14 @@ pub fn run() -> i32 {
     }
 
     let filtered = output_filter::filter_with_exit(&input, &limits, exit_code(&args));
-    let archive = if filtered.trimmed() && archive_wanted {
+    let archive = if !filtered.trimmed() {
+        None
+    } else if let Some(existing) = given_archive(&args) {
+        // Chi invoca ha già l'uscita intera su disco — è il caso del gancio,
+        // che gliela passa da lì: una seconda copia sarebbe solo un file in più
+        // da raccogliere.
+        Some(existing)
+    } else if archive_wanted {
         store(&input)
     } else {
         None
@@ -66,6 +73,12 @@ pub fn run() -> i32 {
 fn exit_code(args: &[String]) -> Option<i32> {
     let i = args.iter().position(|a| a == "--exit-code")?;
     args.get(i + 1)?.parse().ok()
+}
+
+/// Il percorso dove l'uscita intera sta già, se chi invoca lo dichiara.
+fn given_archive(args: &[String]) -> Option<String> {
+    let i = args.iter().position(|a| a == "--archive")?;
+    args.get(i + 1).cloned()
 }
 
 /// I tetti da riga di comando. Sconosciuto è un errore, non un valore
@@ -101,6 +114,12 @@ fn parse_limits(args: &[String]) -> Result<Limits, String> {
                 i += 2;
             }
             "--no-archive" => i += 1,
+            // Letto da `given_archive()`: qui basta che ci sia un percorso.
+            "--archive" => {
+                args.get(i + 1)
+                    .ok_or_else(|| "--archive vuole un percorso".to_string())?;
+                i += 2;
+            }
             // Letto da `exit_code()`: qui si controlla solo che sia un numero,
             // così una riga scritta male non passa in silenzio.
             "--exit-code" => {
@@ -204,6 +223,19 @@ mod tests {
     #[test]
     fn no_archive_is_accepted() {
         assert!(parse_limits(&args(&["--no-archive"])).is_ok());
+    }
+
+    /// L'archivio già esistente si legge dove sta, e senza percorso è un
+    /// errore: l'intestazione citerebbe il nulla.
+    #[test]
+    fn a_given_archive_is_read_and_validated() {
+        assert_eq!(
+            given_archive(&args(&["--archive", "/tmp/uscita.txt"])),
+            Some("/tmp/uscita.txt".to_string())
+        );
+        assert_eq!(given_archive(&args(&["--no-archive"])), None);
+        assert!(parse_limits(&args(&["--archive", "/tmp/uscita.txt"])).is_ok());
+        assert!(parse_limits(&args(&["--archive"])).is_err());
     }
 
     /// Il codice di uscita si legge dove sta, e uno scritto male si rifiuta
