@@ -997,6 +997,83 @@ fn base64url_tail(s: &str, n: usize) -> String {
     out[start..].to_string()
 }
 
+// ── La regola, consegnata solo dove l'indice esiste ─────────────────────────
+
+/// La regola prescrive strumenti che senza indice semantico non hanno niente da
+/// rispondere, e il prologo la consegnava lo stesso: misurato il 24/08/2026 su
+/// un repo non indicizzato, **+8,8% di token e zero usi** dello strumento in
+/// tre corse su tre. Il frontmatter `paths:` non sa distinguere i due casi —
+/// misurato lo stesso giorno, il confronto vede **solo** il percorso relativo
+/// alla cartella di lavoro, quindi `src/x.rs` in un repo indicizzato e in uno
+/// qualunque sono la stessa stringa. Da qui il gancio: guarda il percorso vero.
+pub const RULE_PATH: &str = ".claude/rules/socraticode-first.md";
+
+/// Il corpo della regola, senza il frontmatter: quei `paths:` parlano
+/// all'harness, e in contesto sarebbero solo rumore.
+pub fn rule_body(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix("---\n") else {
+        return text.trim_start();
+    };
+    match rest.find("\n---\n") {
+        Some(end) => rest[end + "\n---\n".len()..].trim_start(),
+        None => text.trim_start(),
+    }
+}
+
+/// La cartella su cui si chiede «qui l'indice c'è?».
+///
+/// Non è quella da cui è partita la sessione: si lavora di continuo su un repo
+/// diverso da quello di partenza — l'84,5% dei tocchi, misurato il 19/08/2026 —
+/// ed è il file toccato a dire dove siamo davvero. La cartella di partenza resta
+/// il ripiego per gli strumenti che un percorso non ce l'hanno.
+pub fn subject_dir(input: &hook_io::HookInput) -> Option<PathBuf> {
+    let by_field = |name: &str| {
+        let v = field(input, name);
+        (!v.is_empty()).then(|| PathBuf::from(v))
+    };
+    let named = match input.tool_name.as_deref().unwrap_or("") {
+        "Edit" | "Write" => by_field("file_path").and_then(|p| p.parent().map(Path::to_path_buf)),
+        "Grep" => by_field("path"),
+        _ => None,
+    };
+    named.or_else(|| input.cwd.as_deref().map(PathBuf::from))
+}
+
+/// Gli strumenti su cui la regola può ancora cambiare una decisione.
+///
+/// Un `Bash` qualunque non è fra questi: la regola parla di come si cerca nel
+/// codice, e consegnarla al primo `ls` della sessione la brucerebbe prima del
+/// momento in cui serve — che è esattamente il difetto per cui la si sposta.
+fn rule_is_pertinent(input: &hook_io::HookInput) -> bool {
+    match input.tool_name.as_deref().unwrap_or("") {
+        "Grep" | "Edit" | "Write" => true,
+        "Bash" => is_code_search(input.bash_command()),
+        _ => false,
+    }
+}
+
+/// La regola tocca a questa chiamata? Non tocca niente: chi decide di
+/// consegnarla davvero prende il posto con [`claim_rule`].
+pub fn rule_is_due(ws: &Workspace, input: &hook_io::HookInput) -> bool {
+    rule_is_pertinent(input) && subject_dir(input).is_some_and(|d| is_indexed(ws, &d))
+}
+
+/// Prende il posto della sessione, una volta sola.
+///
+/// `create_new` fallisce se il marcatore esiste già: due chiamate a strumento
+/// in parallelo consegnerebbero altrimenti la stessa regola due volte, e la
+/// seconda copia costa quanto la prima. Separata da [`rule_is_due`] perché il
+/// posto si prende **dopo** aver letto il file: se la regola non si legge, la
+/// sessione deve poterci riprovare invece di restare a mani vuote per sempre.
+pub fn claim_rule(ws: &Workspace, session: &str) -> bool {
+    let marker = ws.tmp.join(format!("claude-socraticode-rule-{session}"));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(marker)
+        .is_ok()
+}
+
 /// Scrive la riga di registro, con gli stessi campi del JavaScript.
 pub fn record(verdict: &Verdict, tool: &str, session: &str) {
     if !verdict.is_recorded() {
@@ -2152,6 +2229,116 @@ mod tests {
                 "{p:?} è un frammento ricopiato, deve passare"
             );
         }
+    }
+
+    // ── La regola consegnata solo dove l'indice esiste ──────────────────────
+
+    /// Dichiara una radice indicizzata e restituisce il percorso di un file di
+    /// codice dentro. Passa dall'elenco su disco, che è la fonte vera.
+    fn indexed_repo(ws: &Workspace, keep: &tempdir::TempDir, name: &str) -> PathBuf {
+        let repo = keep.path().join(name);
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        let list = ws
+            .home
+            .join(".claude")
+            .join("state")
+            .join("socraticode-progetti.txt");
+        std::fs::write(list, format!("{}\n", repo.display())).unwrap();
+        repo
+    }
+
+    fn write_input(cwd: &Path, file: &Path) -> hook_io::HookInput {
+        hook_io::HookInput {
+            session_id: Some("s-regola".to_string()),
+            cwd: Some(cwd.to_string_lossy().into_owned()),
+            tool_name: Some("Write".to_string()),
+            tool_input: Some(serde_json::json!({ "file_path": file.to_string_lossy() })),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_rule_is_due_inside_an_indexed_repo_and_nowhere_else() {
+        let (ws, keep) = workspace();
+        let indexed = indexed_repo(&ws, &keep, "con-indice");
+        assert!(rule_is_due(&ws, &write_input(&indexed, &indexed.join("src/x.ts"))));
+
+        // MUTANTE (rotto così → rosso): togliere `is_indexed` da `rule_is_due`.
+        // Senza, la regola tornerebbe a viaggiare ovunque, che è il difetto.
+        let elsewhere = keep.path().join("senza-indice");
+        std::fs::create_dir_all(elsewhere.join("src")).unwrap();
+        assert!(
+            !rule_is_due(&ws, &write_input(&elsewhere, &elsewhere.join("src/x.ts"))),
+            "senza indice la ricerca semantica non ha niente da rispondere"
+        );
+    }
+
+    #[test]
+    fn the_file_being_touched_decides_not_the_folder_the_session_started_in() {
+        // MUTANTE: far tornare a `subject_dir` sempre `input.cwd`. È il difetto
+        // che la regola nel prologo ha davvero: si accende sull'albero di
+        // partenza, e l'84,5% dei tocchi cade fuori.
+        let (ws, keep) = workspace();
+        let indexed = indexed_repo(&ws, &keep, "con-indice");
+        let elsewhere = keep.path().join("altrove");
+        std::fs::create_dir_all(elsewhere.join("src")).unwrap();
+
+        assert!(
+            rule_is_due(&ws, &write_input(&elsewhere, &indexed.join("src/x.ts"))),
+            "sessione partita fuori, file toccato dentro: la regola serve"
+        );
+        assert!(
+            !rule_is_due(&ws, &write_input(&indexed, &elsewhere.join("src/x.ts"))),
+            "sessione partita dentro, file toccato fuori: la regola non serve"
+        );
+    }
+
+    #[test]
+    fn only_the_tools_that_can_still_change_the_choice_get_the_rule() {
+        let (ws, keep) = workspace();
+        let indexed = indexed_repo(&ws, &keep, "con-indice");
+        let bash = |cmd: &str| hook_io::HookInput {
+            session_id: Some("s-regola".to_string()),
+            cwd: Some(indexed.to_string_lossy().into_owned()),
+            tool_name: Some("Bash".to_string()),
+            tool_input: Some(serde_json::json!({ "command": cmd })),
+            ..Default::default()
+        };
+        assert!(rule_is_due(&ws, &bash("rg 'come si autentica'")));
+        // MUTANTE: rendere `rule_is_pertinent` vera per ogni `Bash`. La regola
+        // finirebbe sul primo comando qualunque, cioè prima del momento in cui
+        // può cambiare una decisione — che è il difetto da cui si parte.
+        assert!(
+            !rule_is_due(&ws, &bash("ls -la")),
+            "un comando che non cerca nel codice non merita la regola"
+        );
+
+        let mut read = write_input(&indexed, &indexed.join("src/x.ts"));
+        read.tool_name = Some("Read".to_string());
+        assert!(!rule_is_due(&ws, &read), "leggere un file non è cercare");
+    }
+
+    #[test]
+    fn the_rule_is_handed_over_once_per_session() {
+        let (ws, _keep) = workspace();
+        assert!(claim_rule(&ws, "s1"), "la prima volta il posto è libero");
+        // MUTANTE: sostituire `create_new` con `create`. Il file verrebbe
+        // riaperto senza errore e la regola arriverebbe a ogni chiamata.
+        assert!(!claim_rule(&ws, "s1"), "la seconda no");
+        assert!(claim_rule(&ws, "s2"), "un'altra sessione ha il suo posto");
+    }
+
+    #[test]
+    fn the_frontmatter_stays_out_of_what_the_model_reads() {
+        assert_eq!(
+            rule_body("---\npaths: [\"src/**\"]\n---\n\n# Titolo\n\ncorpo\n"),
+            "# Titolo\n\ncorpo\n"
+        );
+        // MUTANTE: restituire sempre `text`. I `paths:` parlano all'harness e
+        // in contesto sono rumore che il modello legge come prescrizione.
+        assert!(!rule_body("---\npaths: [\"src/**\"]\n---\n\n# T\n").contains("paths:"));
+        assert_eq!(rule_body("# senza frontmatter\n"), "# senza frontmatter\n");
+        assert_eq!(rule_body("---\nmai chiuso\n"), "---\nmai chiuso\n");
     }
 
     /// Una cartella temporanea che si cancella da sé: i test non devono poter
