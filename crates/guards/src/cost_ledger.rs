@@ -895,6 +895,77 @@ mod tests {
         assert_eq!(dedupe_by_message_id(turns).len(), 2);
     }
 
+    #[test]
+    fn a_tie_on_output_tokens_keeps_the_chunk_that_arrived_first() {
+        // Due chunk con lo stesso `message.id` e lo stesso `output_tokens`:
+        // resta il primo, perché il secondo non porta niente di più. Se
+        // vincesse l'ultimo, il primo timestamp del turno slitterebbe in
+        // avanti e la durata del batch si accorcerebbe da sola.
+        let turns: Vec<RawTurn> = [
+            line("msg_1", 42, "2026-08-11T14:00:00.000Z", "claude-sonnet-5"),
+            line("msg_1", 42, "2026-08-11T14:00:09.000Z", "claude-sonnet-5"),
+        ]
+        .iter()
+        .filter_map(|l| parse_transcript_line(l))
+        .collect();
+        let deduped = dedupe_by_message_id(turns);
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].timestamp, "2026-08-11T14:00:00.000Z");
+    }
+
+    // --- il primo `tool_use` dentro il contenuto del messaggio ---
+
+    fn line_with_content(id: &str, content: serde_json::Value) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-08-11T14:00:00.000Z",
+            "sessionId": "sess1",
+            "isSidechain": false,
+            "message": {
+                "id": id,
+                "model": "claude-sonnet-5",
+                "usage": { "input_tokens": 1, "output_tokens": 1 },
+                "content": content,
+            },
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn the_first_tool_use_is_found_past_a_text_block() {
+        // Il turno tipico apre con un blocco `text` e chiama lo strumento
+        // subito dopo: se la ricerca prendesse il primo blocco qualunque,
+        // ogni turno con del testo davanti risulterebbe senza strumento — e
+        // quindi mai meccanico.
+        let l = line_with_content(
+            "msg_1",
+            serde_json::json!([
+                { "type": "text", "text": "guardo il registro" },
+                { "type": "tool_use", "name": "Bash", "input": { "command": "git status" } },
+            ]),
+        );
+        let t = parse_transcript_line(&l).expect("è un turno assistant con usage");
+        assert_eq!(t.first_tool.as_deref(), Some("Bash"));
+        assert_eq!(t.bash_command.as_deref(), Some("git status"));
+        assert!(is_mechanical(&t), "un git status dietro del testo resta meccanico");
+    }
+
+    #[test]
+    fn only_a_bash_tool_use_carries_the_command() {
+        // Un campo `input.command` può comparire anche su strumenti che non
+        // sono Bash: il comando si legge solo quando lo strumento è davvero
+        // Bash, o un parametro omonimo finirebbe nel giudizio di scrittura.
+        let l = line_with_content(
+            "msg_2",
+            serde_json::json!([
+                { "type": "tool_use", "name": "Read", "input": { "command": "rm -rf /x" } },
+            ]),
+        );
+        let t = parse_transcript_line(&l).expect("turno valido");
+        assert_eq!(t.first_tool.as_deref(), Some("Read"));
+        assert_eq!(t.bash_command, None, "solo Bash porta un comando");
+    }
+
     // --- finestra per timestamp ---
 
     #[test]
@@ -926,6 +997,32 @@ mod tests {
             10.5
         );
         assert_eq!(duration_seconds("boh", "2026-08-11T14:00:00.000Z"), 0.0);
+    }
+
+    #[test]
+    fn parse_iso_epoch_millis_lands_on_the_exact_instant() {
+        // Il valore atteso non viene da questa stessa formula: è l'istante di
+        // 2026-08-11T14:05:14.688Z contato fuori di qui. Ogni pezzo — giorni,
+        // ore, minuti, secondi, millesimi — pesa col proprio fattore, e un
+        // fattore sbagliato sposta il totale invece di sparire nella somma.
+        assert_eq!(
+            parse_iso_epoch_millis("2026-08-11T14:05:14.688Z"),
+            Some(1_786_457_114_688)
+        );
+    }
+
+    #[test]
+    fn a_timestamp_without_milliseconds_is_still_an_instant() {
+        // Diciannove caratteri sono già un istante completo al secondo: la
+        // soglia esclude ciò che è più corto, non questo. E ciò che segue i
+        // secondi si legge come millesimi solo se è davvero un punto
+        // decimale a tre cifre — un fuso o una frazione troncata valgono
+        // zero millesimi, non una riga scartata.
+        let base = parse_iso_epoch_millis("2026-08-11T14:05:14").expect("19 caratteri bastano");
+        assert_eq!(base, 1_786_457_114_000);
+        assert_eq!(parse_iso_epoch_millis("2026-08-11T14:05:14+00:00"), Some(base));
+        assert_eq!(parse_iso_epoch_millis("2026-08-11T14:05:14.6Z"), Some(base));
+        assert_eq!(parse_iso_epoch_millis("2026-08-11T14:05"), None, "troppo corto");
     }
 
     // --- classificazione meccanica: almeno sei casi ---
@@ -998,6 +1095,17 @@ mod tests {
         assert!(!is_read_only_bash(""));
     }
 
+    #[test]
+    fn an_empty_or_commented_subcommand_does_not_sink_a_read_only_chain() {
+        // Un `;` finale lascia un sottocomando vuoto, e una riga di commento
+        // non è un comando: né l'uno né l'altro scrive niente, quindi non
+        // devono far cadere il giudizio di sola lettura del resto della
+        // catena. Un turno di lettura contato come non meccanico sposta la
+        // percentuale su cui si decide il listino.
+        assert!(is_read_only_bash("git status; "));
+        assert!(is_read_only_bash("# guardo e basta\nls"));
+    }
+
     // --- job_of ---
 
     #[test]
@@ -1005,6 +1113,54 @@ mod tests {
         assert_eq!(job_of(&turn(false, None, None, None)), "main");
         assert_eq!(job_of(&turn(true, None, None, None)), "unknown");
         assert_eq!(job_of(&turn(true, Some("measurer"), None, None)), "measurer");
+    }
+
+    // --- l'aggregazione di un gruppo di turni ---
+
+    fn turn_at(ts: &str, tokens: [u64; 4], tool: Option<&str>) -> RawTurn {
+        let mut t = turn(false, None, tool, None);
+        t.timestamp = ts.into();
+        t.input_tokens = tokens[0];
+        t.output_tokens = tokens[1];
+        t.cache_read = tokens[2];
+        t.cache_write = tokens[3];
+        t
+    }
+
+    #[test]
+    fn totals_of_sums_every_column_and_spans_the_real_window() {
+        // I turni arrivano nell'ordine del transcript, non in ordine di
+        // timestamp: la finestra deve restare il minimo e il massimo veri.
+        // Ogni colonna qui vale un numero diverso da tutte le altre, così una
+        // voce persa o scambiata non si nasconde dietro una somma che torna
+        // lo stesso. È il totale su cui si legge il costo di una sessione:
+        // uno zero ben formato è peggio di un errore.
+        let turns = vec![
+            turn_at("2026-08-20T10:00:00.000Z", [1, 20, 300, 4_000], Some("Read")),
+            turn_at("2026-08-20T09:00:00.000Z", [2, 40, 600, 8_000], Some("Edit")),
+            turn_at("2026-08-20T11:00:00.000Z", [4, 80, 900, 16_000], Some("Edit")),
+        ];
+        let t = totals_of(&turns, 9);
+        assert_eq!(t.turns, 3);
+        assert_eq!(t.raw_records, 9, "il conteggio pre-deduplica arriva da fuori");
+        assert_eq!(t.mechanical_turns, 1, "solo il turno che legge");
+        assert_eq!(t.input_tokens, 7);
+        assert_eq!(t.output_tokens, 140);
+        assert_eq!(t.cache_read, 1_800);
+        assert_eq!(t.cache_write, 28_000);
+        assert_eq!(t.first_ts, "2026-08-20T09:00:00.000Z");
+        assert_eq!(t.last_ts, "2026-08-20T11:00:00.000Z");
+    }
+
+    #[test]
+    fn totals_of_without_turns_still_carries_the_raw_count() {
+        // Nessun turno da contare non vuol dire nessun record letto: il
+        // conteggio grezzo resta, ed è quello che dice che il transcript era
+        // pieno di righe non contabili invece che vuoto.
+        let t = totals_of(&[], 12);
+        assert_eq!(t.turns, 0);
+        assert_eq!(t.raw_records, 12);
+        assert_eq!(t.first_ts, "");
     }
 
     // --- parser TOML ---
@@ -1096,6 +1252,60 @@ mod tests {
     }
 
     #[test]
+    fn group_ledger_sums_every_column_and_the_widest_window() {
+        // Due righe della stessa chiave, in ordine sparso di tempo: la somma
+        // prende ogni colonna e la finestra si allarga a entrambe. Valori
+        // tutti diversi fra loro, per lo stesso motivo dell'aggregazione dei
+        // turni: uno scambio di colonna deve vedersi.
+        let mut a = row("claude-sonnet-5", "main", 20, 300);
+        a.turns = 2;
+        a.raw_records = 5;
+        a.mechanical_turns = 1;
+        a.input_tokens = 1;
+        a.cache_write = 4_000;
+        a.first_ts = "2026-08-20T10:00:00.000Z".into();
+        a.last_ts = "2026-08-20T10:30:00.000Z".into();
+        let mut b = row("claude-sonnet-5", "main", 40, 600);
+        b.turns = 8;
+        b.raw_records = 11;
+        b.mechanical_turns = 6;
+        b.input_tokens = 2;
+        b.cache_write = 8_000;
+        b.first_ts = "2026-08-20T09:00:00.000Z".into();
+        b.last_ts = "2026-08-20T11:00:00.000Z".into();
+        let groups = group_ledger(&[a, b], &Listino::default(), |r| r.model.clone());
+        let g = &groups["claude-sonnet-5"];
+        assert_eq!(g.totals.turns, 10);
+        assert_eq!(g.totals.raw_records, 16);
+        assert_eq!(g.totals.mechanical_turns, 7);
+        assert_eq!(g.totals.input_tokens, 3);
+        assert_eq!(g.totals.output_tokens, 60);
+        assert_eq!(g.totals.cache_read, 900);
+        assert_eq!(g.totals.cache_write, 12_000);
+        assert_eq!(g.totals.first_ts, "2026-08-20T09:00:00.000Z");
+        assert_eq!(g.totals.last_ts, "2026-08-20T11:00:00.000Z");
+    }
+
+    #[test]
+    fn group_ledger_prices_all_four_kinds_of_token() {
+        // Prezzi e quantità diversi per ogni voce: input, output, cache letta
+        // e cache scritta entrano nel costo ciascuna col proprio peso. Con
+        // quantità o prezzi uguali, una voce persa o addizionata al posto
+        // sbagliato darebbe lo stesso totale — e la cache scritta, la più
+        // cara, è anche quella che una prova a zero non guarda mai.
+        let listino = listino_from_toml(
+            "[cambio]\nusd_eur = 1.0\n[claude-sonnet-5]\ninput=1\noutput=10\ncache_read=100\ncache_write=1000\n",
+        );
+        let mut r = row("claude-sonnet-5", "main", 2_000_000, 4_000_000);
+        r.input_tokens = 1_000_000;
+        r.cache_write = 8_000_000;
+        let g = group_ledger(&[r], &listino, |r| r.model.clone());
+        // 1*1 + 2*10 + 4*100 + 8*1000
+        assert_eq!(g["claude-sonnet-5"].cost_eur, 8_421.0);
+        assert!(g["claude-sonnet-5"].unpriced_models.is_empty());
+    }
+
+    #[test]
     fn ledger_row_round_trips_through_json() {
         let r = row("claude-opus-5", "builder", 42, 7);
         let text = render_ledger_row(&r);
@@ -1155,6 +1365,29 @@ mod tests {
         assert_eq!(cursor_key("/a/b.jsonl"), cursor_key("/a/b.jsonl"));
         assert_ne!(cursor_key("/a/b.jsonl"), cursor_key("/a/c.jsonl"));
         assert_eq!(cursor_key("/a/b.jsonl").len(), 16, "esadecimale a 64 bit");
+    }
+
+    #[test]
+    fn cursor_key_matches_the_published_fnv1a_vectors() {
+        // I vettori di prova pubblicati di FNV-1a a 64 bit: un oracolo di
+        // fuori, non la stessa formula riscritta qui. Servono perché due
+        // chiavi restano diverse fra loro anche con un algoritmo sbagliato —
+        // e una chiave che cambia forma spezza i cursori già sul disco.
+        assert_eq!(cursor_key(""), "cbf29ce484222325");
+        assert_eq!(cursor_key("a"), "af63dc4c8601ec8c");
+        assert_eq!(cursor_key("foobar"), "85944171f73967e8");
+    }
+
+    #[test]
+    fn a_cursor_inside_a_character_slides_back_to_its_start() {
+        // Un cursore salvato a metà di un carattere multi-byte non deve far
+        // crollare la slice né mangiare il carattere: si arretra al confine e
+        // la riga si rilegge intera. Arretrare, non avanzare — avanzando si
+        // perderebbe per sempre il carattere spezzato.
+        let text = "héllo\n"; // 'é' occupa i byte 1 e 2
+        let (tail, cursor) = tail_from_cursor(text, 2);
+        assert_eq!(tail, "éllo\n");
+        assert_eq!(cursor, text.len() as u64);
     }
 
     // --- percorso del figlio da agent_id ---
@@ -1262,6 +1495,22 @@ mod tests {
     }
 
     #[test]
+    fn a_hook_row_whose_span_runs_backwards_still_covers_its_first_day() {
+        // `last_ts` prima di `first_ts` è una riga malmessa, non un permesso
+        // di non coprire niente: se la copertura tornasse vuota, il backfill
+        // dello stesso giorno rientrerebbe e quel giorno finirebbe contato
+        // due volte.
+        let rows = vec![
+            row_span("claude-sonnet-5", "hook", "2026-08-20T10:00:00.000Z", "2026-08-19T10:00:00.000Z"),
+            row_span("claude-sonnet-5", "backfill", "2026-08-20T12:00:00.000Z", "2026-08-20T12:00:00.000Z"),
+        ];
+        let (kept, discarded) = dedupe_backfill_covered_by_hook(rows);
+        assert_eq!(discarded, 1, "il giorno di first_ts resta coperto");
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].source, "hook");
+    }
+
+    #[test]
     fn a_turns0_correction_row_has_an_empty_day_bucket() {
         // La riga di correzione (`turns:0`) non porta un `first_ts` reale: il
         // suo giorno è la stringa vuota, non «il giorno dopo» — non copre mai
@@ -1276,5 +1525,63 @@ mod tests {
         let text = render_report(&rows, &listino);
         assert!(text.contains("turni reali vs record grezzi: 1 / 1"));
         assert!(text.contains("claude-sonnet-5"));
+    }
+
+    #[test]
+    fn render_report_is_exact_down_to_the_last_column() {
+        // Il rapporto per intero, colonna per colonna: è il numero su cui si
+        // decide il listino, e un rendiconto ben formato con dentro uno zero
+        // sbagliato non lo vede nessuno. Ogni cifra qui è diversa dalle
+        // altre, e la percentuale non è né 0 né 100.
+        let listino = listino_from_toml(
+            "[cambio]\nusd_eur = 1.0\n[claude-sonnet-5]\ninput=1\noutput=10\ncache_read=100\ncache_write=1000\n",
+        );
+        let mut r = row("claude-sonnet-5", "main", 2_000_000, 4_000_000);
+        r.turns = 4;
+        r.raw_records = 5;
+        r.mechanical_turns = 1;
+        r.input_tokens = 1_000_000;
+        r.cache_write = 8_000_000;
+        let header =
+            "chiave\tturni\trecord_grezzi\t%meccanici\toutput_M\tcache_letta_M\tcache_scritta_M\tcosto_eur";
+        let expected = [
+            "-- Per modello --",
+            header,
+            "claude-sonnet-5\t4\t5\t25.0%\t2.00\t4.00\t8.00\t8421.00",
+            "",
+            "-- Per mestiere --",
+            header,
+            "main\t4\t5\t25.0%\t2.00\t4.00\t8.00\t8421.00",
+            "",
+            "totale: 4 turni, 5 record grezzi, output 2.00 M, cache letta 4.00 M, cache scritta 8.00 M, costo 8421.00 eur",
+            "turni reali vs record grezzi: 4 / 5 (80.0%)",
+            "",
+        ]
+        .join("\n");
+        assert_eq!(render_report(&[r], &listino), expected);
+    }
+
+    #[test]
+    fn a_model_without_a_price_is_marked_partial_and_named() {
+        // Il modello che il listino non conosce non vale zero in silenzio:
+        // la sua riga porta l'asterisco, il totale si dichiara parziale e il
+        // nome è elencato in fondo. Senza quell'elenco, un costo mancante si
+        // legge come un costo basso.
+        let listino = listino_from_toml("[claude-sonnet-5]\ninput=1\noutput=1\ncache_read=1\ncache_write=1\n");
+        let text = render_report(&[row("claude-mistero", "main", 1_000_000, 0)], &listino);
+        assert!(text.contains("\t0.00*\n"), "la riga del gruppo è marcata: {text}");
+        assert!(text.contains("costo 0.00 eur (parziale)"), "{text}");
+        assert!(text.contains("senza prezzo nel listino: claude-mistero"), "{text}");
+    }
+
+    #[test]
+    fn a_report_where_every_model_has_a_price_says_nothing_about_missing_ones() {
+        // La riga finale compare solo quando manca davvero un prezzo: se
+        // comparisse sempre, l'avviso smetterebbe di voler dire qualcosa.
+        let listino = listino_from_toml("[claude-sonnet-5]\ninput=1\noutput=1\ncache_read=1\ncache_write=1\n");
+        let text = render_report(&[row("claude-sonnet-5", "main", 1_000_000, 0)], &listino);
+        assert!(!text.contains("senza prezzo nel listino"), "{text}");
+        assert!(!text.contains("(parziale)"), "{text}");
+        assert!(text.contains("\t1.00\n"), "il costo non è marcato: {text}");
     }
 }
