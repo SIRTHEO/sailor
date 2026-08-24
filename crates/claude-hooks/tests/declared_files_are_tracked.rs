@@ -256,8 +256,13 @@ fn every_declared_module_and_included_file_is_tracked_by_git() {
 
 /// Il deposito usa-e-getta con un `lib.rs` che dichiara `mod <name>;`.
 /// `staged` dice se la dichiarazione entra in indice o resta solo sul disco.
+///
+/// La scena sta dove il sistema dice, non in `/tmp` scritto per esteso: dentro
+/// il perimetro delle sessioni quel percorso non è scrivibile e i due casi che
+/// usano questa funzione morivano di `PermissionDenied`, cioè con un rosso che
+/// non distingue un ramo rotto da una scrittura negata.
 fn scene(name: &str, declares: &str, staged: bool) -> PathBuf {
-    let dir = std::path::Path::new("/tmp").join(format!(
+    let dir = std::env::temp_dir().join(format!(
         "claude-hooks-prove-{}-{name}",
         std::process::id()
     ));
