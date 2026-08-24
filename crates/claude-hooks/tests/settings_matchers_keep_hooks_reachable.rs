@@ -201,6 +201,7 @@ const WIRED_WITHOUT_A_READABLE_GATE: &[&str] = &[
     "orca-cleanup",
     "register-session",
     "restart-notice",
+    "ronda-trigger",
     "scope-drift",
     "skill-nudge",
     "socraticode-gate",
