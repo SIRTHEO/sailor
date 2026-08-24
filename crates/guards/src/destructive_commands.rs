@@ -292,13 +292,49 @@ pub fn judge(f: &Facts) -> Decision {
     // per quel comando e resta nel registro. Esiste perché questo freno è nuovo
     // e non ancora provato sul traffico vero: si toglie quando la misura dirà
     // che non sbaglia, e finché c'è, ogni uso è una misura.
-    if valve_in_front(f.command, "FRENO_DISTRUTTIVO=off") {
-        return Decision::Pass;
-    }
     match first_danger(f.command, f, 0) {
+        Some(d) if every_dangerous_segment_is_waived(f) => {
+            let _ = &d;
+            Decision::Pass
+        }
         Some(d) => Decision::Block(explain(&d)),
         None => Decision::Pass,
     }
+}
+
+/// La valvola disarma **il comando che la porta davanti**, non la riga intera.
+///
+/// PERCHÉ NON BASTA CERCARLA NELLA RIGA. Chiedere «c'è una valvola da qualche
+/// parte?» lascia disarmare il freno da un pezzo di contorno: in un
+/// `rm -rf <bersaglio>` seguito da `; for x in 1; do FRENO_DISTRUTTIVO=off :; done`
+/// la valvola non governa niente di ciò che cancella, e il comando è bash
+/// ordinario. Trovato da un revisore il 24/08/2026 addosso alla correzione dello
+/// stesso giorno, che aveva allargato la testa del segmento senza legare la
+/// valvola al gesto: una valvola che si può mettere altrove non è una valvola, è
+/// una parola d'ordine.
+///
+/// COSA CHIEDE, ESATTAMENTE. Ogni segmento che porta un gesto pericoloso deve
+/// portare **anche** la valvola davanti a sé. Un solo segmento pericoloso senza
+/// valvola fa negare tutto il comando: chi vuole cancellare due cose lo dichiara
+/// due volte.
+///
+/// IL VERSO SICURO. Se il pericolo si vede solo guardando il comando intero — un
+/// heredoc, uno script nominato per percorso — nessun singolo segmento risulta
+/// pericoloso, la funzione torna `false` e il freno **nega**. Un dubbio qui
+/// costa un rifiuto da spiegare; il dubbio dall'altra parte costa il lavoro di
+/// qualcuno.
+fn every_dangerous_segment_is_waived(f: &Facts) -> bool {
+    let mut any = false;
+    for segment in split_segments(f.command) {
+        if first_danger(&segment, f, 0).is_none() {
+            continue;
+        }
+        any = true;
+        if !valve_in_front(&segment, "FRENO_DISTRUTTIVO=off") {
+            return false;
+        }
+    }
+    any
 }
 
 /// Le parole di un segmento, con una lettura di ripiego quando le virgolette
@@ -1333,6 +1369,30 @@ mod tests {
         assert!(blocked(
             "rm -rf /Users/theo/personal/sailor/src --nota FRENO_DISTRUTTIVO=off"
         ));
+    }
+
+    /// La valvola apre **il comando che la porta davanti**, non la riga.
+    ///
+    /// Trovato da un revisore il 24/08/2026, addosso alla correzione dello
+    /// stesso giorno: allargare la testa del segmento senza legare la valvola al
+    /// gesto pericoloso lascia disarmare il freno da un pezzo di contorno.
+    /// `rm -rf <bersaglio>; for x in 1; do FRENO_DISTRUTTIVO=off :; done` è un
+    /// comando bash ordinario, e la valvola non governa niente di ciò che
+    /// cancella.
+    #[test]
+    fn a_valve_on_another_segment_does_not_open_the_dangerous_one() {
+        let target = "/Users/theo/personal/sailor/src";
+        assert!(blocked(&format!(
+            "rm -rf {target}; for x in 1; do FRENO_DISTRUTTIVO=off :; done"
+        )));
+        assert!(blocked(&format!("FRENO_DISTRUTTIVO=off :; rm -rf {target}")));
+        assert!(blocked(&format!("rm -rf {target}; FRENO_DISTRUTTIVO=off :")));
+        assert!(blocked(&format!(
+            "FRENO_DISTRUTTIVO=off echo pulizia && rm -rf {target}"
+        )));
+        // E la valvola davanti al gesto pericoloso continua ad aprire, anche
+        // quando la riga porta altro: è il caso per cui la valvola esiste.
+        assert!(!blocked(&format!("echo pulizia; FRENO_DISTRUTTIVO=off rm -rf {target}")));
     }
 
     /// Il caso vero del 24/08/2026, che la valvola non apriva: quattro copie
