@@ -966,6 +966,39 @@ fn run(which: &str) -> Result<i32, String> {
                 eprintln!("{m}");
                 return Ok(2);
             }
+            // La regola arriva da qui, non dal prologo. Il frontmatter `paths:`
+            // non sa distinguere un repo indicizzato da uno qualunque — vede
+            // solo il percorso relativo alla cartella di lavoro — e consegnarla
+            // dove l'indice non c'è costa senza produrre niente.
+            if guards::socraticode_gate::rule_is_due(&ws, &input) {
+                if let Some(testo) = socraticode_rule_text(&ws) {
+                    let session = input.session_id.as_deref().unwrap_or("nosession");
+                    if guards::socraticode_gate::claim_rule(&ws, session) {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "hookSpecificOutput": {
+                                    "hookEventName": "PreToolUse",
+                                    "additionalContext": testo,
+                                }
+                            })
+                        );
+                        // La riga di registro è l'unico modo di accorgersi che
+                        // questa via è morta: il prologo non elenca ciò che ha
+                        // caricato, quindi una consegna che non arriva non si
+                        // vede da dentro la sessione.
+                        hook_io::journal::record(
+                            "socraticode-gate",
+                            "consegna",
+                            "regola-consegnata",
+                            &[
+                                ("sessione", session.into()),
+                                ("byte", (testo.len() as i64).into()),
+                            ],
+                        );
+                    }
+                }
+            }
             Ok(0)
         }
         // Il codice ricopiato. Due fasi con mestieri diversi: `pre` elenca la
@@ -1355,6 +1388,17 @@ fn run(which: &str) -> Result<i32, String> {
 /// rimandi senza migliorare niente.
 fn emit_with_legacy_prefix(hook: &str, decision: &Decision) -> i32 {
     hook_io::emit(hook, decision)
+}
+
+/// Il testo della regola SocratiCode, senza frontmatter, o niente.
+///
+/// Il file resta la fonte unica: qui non c'è nessuna copia del testo, così una
+/// modifica alla regola entra in servizio senza ricompilare il gancio. Se il
+/// file manca o è vuoto il gancio tace — non difende niente, consegna.
+fn socraticode_rule_text(ws: &guards::socraticode_gate::Workspace) -> Option<String> {
+    let raw = std::fs::read_to_string(ws.home.join(guards::socraticode_gate::RULE_PATH)).ok()?;
+    let body = guards::socraticode_gate::rule_body(&raw).to_string();
+    (!body.trim().is_empty()).then_some(body)
 }
 
 /// La cartella dove ogni figura viva dichiara il proprio mestiere.
