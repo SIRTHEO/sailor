@@ -145,6 +145,7 @@ pub fn run() -> i32 {
     let mut stale_count = 0;
     let mut drift_count = 0;
     let mut written = 0;
+    let mut refused: Vec<String> = Vec::new();
     for entry in &entries {
         let stale = stale_days(&entry.voice, now).map(|d| (d, entry.voice.last_touched));
         if stale.is_some() {
@@ -164,8 +165,17 @@ pub fn run() -> i32 {
         }
         let body = block_body(stale, &partners, &drifted);
         let updated = with_block(&entry.text, body.as_deref());
-        if updated != entry.text && std::fs::write(&entry.path, &updated).is_ok() {
-            written += 1;
+        if updated == entry.text {
+            continue;
+        }
+        match std::fs::write(&entry.path, &updated) {
+            Ok(()) => written += 1,
+            // UNA SCRITTURA NEGATA SI DICE. Dentro il perimetro
+            // `~/.claude/state` è in sola lettura, e la passata rispondeva
+            // «rilievo scritto dentro 0 voci» — cioè la stessa riga del caso in
+            // cui non c'era niente da scrivere. È il falso verde peggiore:
+            // chi lo legge crede che la coda sia marcata e non lo è.
+            Err(e) => refused.push(format!("{}: {e}", label_of(&entry.path))),
         }
     }
 
@@ -187,10 +197,19 @@ pub fn run() -> i32 {
         guards::queue_overlap::STALE_DAYS,
         drift_count
     );
-    if mark {
-        println!("Rilievo scritto dentro {written} voci.");
-    } else {
+    if !mark {
         println!("Nessun file toccato: `--mark` scrive il rilievo dentro le voci.");
+        return 0;
+    }
+    println!("Rilievo scritto dentro {written} voci.");
+    if let Some(first) = refused.first() {
+        println!(
+            "SCRITTURA NEGATA su {} voci — la coda NON è marcata. La prima: {first}",
+            refused.len()
+        );
+        // Esce 1 solo qui: «non ho potuto» è l'unica condizione in cui chi
+        // lancia deve accorgersene senza leggere l'uscita a occhio.
+        return 1;
     }
     0
 }
