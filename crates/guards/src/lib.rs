@@ -30,6 +30,8 @@ pub mod phase_router;
 pub mod pr_merge_admin;
 pub mod pr_title;
 pub mod queue_clock;
+pub mod queue_overlap;
+pub mod shape_exam;
 pub mod shell;
 pub mod successor;
 pub mod socraticode_gate;
