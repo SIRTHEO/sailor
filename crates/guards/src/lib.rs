@@ -6,6 +6,7 @@
 //! prova la decisione, non il processo.
 
 pub mod ask_routing;
+pub mod bash_wrap;
 pub mod cd_guard;
 pub mod chain;
 pub mod code_language;
