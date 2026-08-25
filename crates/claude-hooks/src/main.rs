@@ -39,6 +39,7 @@ mod long_session;
 mod link_worktree_rules;
 mod permission_stall;
 mod spotlight_marker;
+mod uncovered_thread;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
 mod ai_personal_data;
 mod json_tool;
@@ -310,6 +311,11 @@ const ALL_HOOKS: &[&str] = &[
     // scrive e dice quali sessioni sono ferme su un permesso. Non giudica un
     // evento — lo si interroga da fuori — quindi sta in NOT_HOOKS.
     "permission-stall",
+    // Il decimo, il 25/08/2026: elenca le consegne rimaste senza esecutore,
+    // cioè i fili che il successore non ha raccolto e la cui sessione non c'è
+    // più. I marcatori li scrive `consegna-arma-successore` quando ferma; qui
+    // si leggono, e come sopra si interroga da fuori — NOT_HOOKS.
+    "fili-scoperti",
     // Il registro dei costi, 23/08/2026: `record` è un gancio vero su
     // `Stop`/`SubagentStop`, quindi NON sta in NOT_HOOKS anche se lo stesso
     // slug porta anche `backfill` e `report` (strumenti) — stessa forma di
@@ -397,6 +403,7 @@ const NOT_HOOKS: &[&str] = &[
     "captain-authorize",
     "marker-sweep",
     "permission-stall",
+    "fili-scoperti",
     "transcript-canary",
     "filter-output",
     "shape",
@@ -596,6 +603,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("register_session.rs"),
         ],
         "permission-stall" => &[include_str!("permission_stall.rs")],
+        "fili-scoperti" => &[include_str!("uncovered_thread.rs")],
         "costs" => &[
             include_str!("costs.rs"),
             include_str!("../../guards/src/cost_ledger.rs"),
@@ -1576,6 +1584,7 @@ fn run(which: &str) -> Result<i32, String> {
         // e stampa quali sessioni sono ferme su un permesso — il comando da
         // riga di comando che risponde a «è bloccata?» da fuori.
         "permission-stall" => Ok(permission_stall::run_report()),
+        "fili-scoperti" => Ok(uncovered_thread::run_report()),
         // Il registro dei costi. `record` legge stdin come ogni gancio; gli
         // altri due verbi leggono i loro argomenti da riga di comando e non
         // aspettano niente su stdin — chiamarli senza un verbo noto non deve

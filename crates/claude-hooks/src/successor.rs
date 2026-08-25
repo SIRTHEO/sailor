@@ -492,6 +492,9 @@ pub fn arm(
             let (ok, detail) = open_tab(path, &inherited_clause(&cwd));
             if ok {
                 note_successor(session, &detail);
+                // Il filo ha un esecutore: se un rinvio precedente aveva
+                // lasciato il marcatore, adesso non ha più niente da dire.
+                crate::uncovered_thread::clear(session);
             }
             journal::record(
                 "consegna-arma-successore",
@@ -543,6 +546,12 @@ pub fn arm(
         ],
     };
     journal::record("consegna-arma-successore", "ferma", reason, &extra);
+    // E IL FILO RESTA SCOPERTO, se il motivo è un tetto di risorse. La riga qui
+    // sopra basta a chi indaga dopo; non basta a chi dovrebbe accorgersene
+    // adesso, perché nessuno legge il registro dei ganci. Il marcatore sì: si
+    // interroga con `claude-hooks fili-scoperti`, e sparisce da solo appena
+    // qualcuno riprende quel lavoro.
+    crate::uncovered_thread::declare(session, &cwd, path, reason);
     ArmOutcome::Stop(message)
 }
 
