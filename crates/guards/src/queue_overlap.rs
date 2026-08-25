@@ -35,6 +35,7 @@
 //! niente.
 
 use crate::memory_anchor::frontmatter;
+use crate::regen_block::{quoted, RegenBlock};
 use crate::stale_facts::{Date, PATH_EXTENSIONS};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -69,10 +70,23 @@ pub const COMMON_SUBJECT_DIVISOR: usize = 32;
 /// che hanno guidato lavoro sbagliato.
 pub const STALE_DAYS: i64 = 2;
 
+/// L'etichetta del blocco rigenerabile scritto dentro una voce.
+///
+/// Il gesto — togliere, rendere, non lasciare sedimento — sta in
+/// `regen_block`, che è la parte comune con le consegne: qui resta la scelta
+/// dell'etichetta, che è l'unica cosa che distingue questo blocco dagli altri
+/// che potrebbero finire nello stesso file.
+pub const BLOCK_TAG: &str = "freschezza-coda";
+
 /// L'apertura del blocco rigenerabile scritto dentro una voce.
 pub const BLOCK_OPEN: &str = "<!-- freschezza-coda: inizio -->";
 /// La chiusura dello stesso blocco.
 pub const BLOCK_CLOSE: &str = "<!-- freschezza-coda: fine -->";
+
+/// Il blocco di questa coda.
+fn block() -> RegenBlock {
+    RegenBlock::new(BLOCK_TAG)
+}
 
 // ─── I soggetti ──────────────────────────────────────────────────────────────
 
@@ -384,27 +398,8 @@ pub fn partners_of<'a>(name: &str, pairs: &'a [Pair]) -> Vec<(&'a str, &'a [Stri
 // ─── Il blocco dentro la voce ────────────────────────────────────────────────
 
 /// Il testo senza il blocco rigenerabile, delimitatori compresi.
-///
-/// Senza memoria di proposito: chi scrive il blocco toglie prima quello di
-/// ieri, così una passata che non ha più niente da dire lascia il file pulito
-/// invece di lasciarci un avviso scaduto.
 pub fn strip_block(text: &str) -> String {
-    let Some(start) = text.find(BLOCK_OPEN) else {
-        return text.to_string();
-    };
-    let Some(end_offset) = text[start..].find(BLOCK_CLOSE) else {
-        return text.to_string();
-    };
-    let end = start + end_offset + BLOCK_CLOSE.len();
-    // Gli a capo attorno al blocco sono suoi: se ne restassero, ogni passata
-    // che toglie e rimette il rilievo farebbe crescere il file di una riga
-    // vuota — e due passate di seguito non darebbero più gli stessi byte.
-    let head = text[..start].trim_end_matches('\n');
-    let tail = text[end..].trim_start_matches('\n');
-    if head.is_empty() {
-        return tail.to_string();
-    }
-    format!("{head}\n\n{tail}")
+    block().strip(text)
 }
 
 /// Il corpo del rilievo, o niente quando non c'è niente da dire.
@@ -445,7 +440,7 @@ pub fn block_body(
              più il file di adesso."
         ));
     }
-    Some(lines.join("\n>\n"))
+    quoted(&lines)
 }
 
 /// La voce col blocco rigenerato subito sotto il frontmatter.
@@ -459,7 +454,7 @@ pub fn with_block(text: &str, body: Option<&str>) -> String {
     let Some(body) = body else {
         return bare;
     };
-    let block = format!("{BLOCK_OPEN}\n{body}\n{BLOCK_CLOSE}");
+    let block = block().render(body);
     let Some(front) = frontmatter(&bare) else {
         return format!("{block}\n\n{bare}");
     };
@@ -690,6 +685,16 @@ mod tests {
     #[test]
     fn nothing_to_say_means_no_block() {
         assert!(block_body(None, &[], &[]).is_none());
+    }
+
+    #[test]
+    fn the_delimiters_are_the_ones_already_written_in_the_voices() {
+        // I due delimitatori sono ricopiati nelle voci vere che la passata del
+        // 24/08/2026 ha già marcato: se l'etichetta cambiasse, il taglio non
+        // riconoscerebbe più i blocchi sul disco e ogni voce ne prenderebbe un
+        // secondo. Mutazione che lo rende rosso: cambiare `BLOCK_TAG`.
+        assert_eq!(block().open(), BLOCK_OPEN);
+        assert_eq!(block().close(), BLOCK_CLOSE);
     }
 
     #[test]

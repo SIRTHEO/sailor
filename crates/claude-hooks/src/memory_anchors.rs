@@ -45,7 +45,7 @@ fn home() -> PathBuf {
 ///
 /// `MEMORY_ANCHOR_DIR` (più cartelle separate da `:`) le sostituisce: è la
 /// valvola che rende provabile lo strumento senza toccare le memorie vere.
-fn memory_dirs() -> Vec<PathBuf> {
+pub(crate) fn memory_dirs() -> Vec<PathBuf> {
     if let Some(v) = std::env::var_os("MEMORY_ANCHOR_DIR") {
         return std::env::split_paths(&v).collect();
     }
