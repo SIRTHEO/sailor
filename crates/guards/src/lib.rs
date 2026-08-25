@@ -35,6 +35,7 @@ pub mod handoff_freshness;
 pub mod queue_clock;
 pub mod queue_overlap;
 pub mod regen_block;
+pub mod role_claim;
 pub mod shape_exam;
 pub mod shell;
 pub mod successor;
