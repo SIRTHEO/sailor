@@ -178,8 +178,9 @@ const DENIES_WITHOUT_STOPPING: &[(&str, &str)] = &[(
 /// I ganci **accesi** che nessuna porta leggibile difende: il loro codice non
 /// dice su quale strumento lavora, quindi cambiare il loro `matcher` non fa
 /// rossire niente. Sta qui e non nel rapporto di chi l'ha scritto perché il
-/// numero deve stare dove sta il verde: **sedici**. (Quanti siano in tutto
-/// non lo scrivo: sarebbe un numero che nessun caso tiene onesto.)
+/// numero deve stare dove sta il verde: **diciannove**. (Quanti siano in tutto
+/// non lo scrivo: sarebbe un numero che nessun caso tiene onesto — e infatti
+/// questo era rimasto a «sedici» con diciotto nomi sotto.)
 ///
 /// `costs` e `long-session` sono gli ultimi due, accesi da Theo il 23/08:
 /// vivono su eventi che non portano nessuno strumento — `Stop`, `SubagentStop`,
@@ -188,6 +189,13 @@ const DENIES_WITHOUT_STOPPING: &[(&str, &str)] = &[(
 /// `memory-governor` è entrato con l'accensione del 24/08 alle 17:06, e sta qui
 /// per la stessa ragione: governa la memoria su `Stop`, dove strumenti non ne
 /// passano.
+///
+/// `legacy-script` è entrato con l'accensione del 25/08 alle 08:45, e per una
+/// ragione diversa dalle altre: vive su `Write|Edit|MultiEdit`, cioè su eventi
+/// che gli strumenti li portano eccome, ma **giudica il percorso del file**, non
+/// lo strumento con cui lo si tocca. Dal suo codice non si legge nessun nome di
+/// strumento, quindi cambiargli il `matcher` non farebbe rossire niente. Chi
+/// vorrà toglierlo da qui deve dargli una porta leggibile, non un commento.
 ///
 /// Non è un permesso e non invecchia da solo: un nome che perde l'accensione o
 /// che acquista una porta fa cadere `the_uncovered_hooks_are_named_here`.
@@ -198,6 +206,7 @@ const WIRED_WITHOUT_A_READABLE_GATE: &[&str] = &[
     "handoff-on-stop",
     "handoff-threshold",
     "hook-census",
+    "legacy-script",
     "linear-readonly",
     "live-rules",
     "long-session",
