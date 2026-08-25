@@ -469,17 +469,59 @@ fn classify_ps_line(line: &str) -> ProcessLookup {
     }
 }
 
+/// Il processo che il record attribuisce a questa sessione. `None` se il record
+/// non c'è, non si legge, o non porta il campo — che è il caso di tutti quelli
+/// scritti prima delle 11:30 del 21/08/2026.
+pub(crate) fn recorded_pid(sess: &str) -> Option<u32> {
+    let raw = fs::read_to_string(live_dir().join(format!("{sess}.json"))).ok()?;
+    let record = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
+    record.get("session_pid").and_then(|v| v.as_u64()).map(|p| p as u32)
+}
+
 /// Cosa si sa della sessione, leggendo il suo record sul disco.
+///
+/// I tre modi di non avere il pid — record assente, JSON illeggibile, campo che
+/// non c'è — finiscono tutti in `None`, e `liveness_from` li tratta già come
+/// «non si sa niente»: non serve distinguerli qui, e distinguerli costava una
+/// seconda lettura del disco per dare la stessa risposta.
 pub(crate) fn liveness_of(sess: &str) -> SessionLiveness {
-    let Ok(raw) = fs::read_to_string(live_dir().join(format!("{sess}.json"))) else {
-        return SessionLiveness::Unknown; // niente record: non si sa niente
-    };
-    let Ok(record) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return SessionLiveness::Unknown;
-    };
-    let pid = record.get("session_pid").and_then(|v| v.as_u64()).map(|p| p as u32);
-    let lookup = pid.map_or(ProcessLookup::Unavailable, look_up_session_process);
-    liveness_from(pid, lookup)
+    liveness_of_pid(recorded_pid(sess))
+}
+
+/// La stessa domanda a chi il pid ce l'ha già in mano, per non rileggere il
+/// record una seconda volta solo per riottenere il numero che si aveva.
+pub(crate) fn liveness_of_pid(pid: Option<u32>) -> SessionLiveness {
+    liveness_from(pid, pid.map_or(ProcessLookup::Unavailable, look_up_session_process))
+}
+
+/// Il segnale afferma una rigenerazione che non è avvenuta?
+///
+/// LA DOMANDA NON È «QUELLA SESSIONE È VIVA», ED È QUI CHE IL DISEGNO OVVIO
+/// SBAGLIA. Una sessione rigenerata resta viva: `/clear` svuota la memoria e
+/// **lascia in piedi lo stesso processo**. Misurato il 25/08/2026 sui record: la
+/// scheda `664b6cae` ne portava tre — `236e7b0c`, `7bee1a8f`, `c0a60027` — tutti
+/// e tre con `session_pid` 18116, cioè tre generazioni della stessa postazione
+/// azzerata due volte. Chiedere «è viva?» le dà tutte e tre per vive, e chi si
+/// fermasse lì non riprenderebbe mai più dopo una staffetta legittima.
+///
+/// LA DOMANDA GIUSTA È «È UN ALTRO PROCESSO». Se la sessione nominata gira su un
+/// pid **diverso dal proprio**, allora non è stata azzerata sul posto: è
+/// un'altra sessione, viva, che nessuno ha sostituito — e il suo punto di
+/// ripresa non è nostro. Se il pid coincide, siamo noi stessi un attimo fa, ed è
+/// esattamente il caso che il segnale serve a servire.
+///
+/// Tutto il resto è dubbio, e il dubbio lascia passare: senza i due pid, o senza
+/// una risposta piena sul processo, il mandato si consegna com'è sempre stato —
+/// negarlo per un forse lascerebbe la sessione senza incarico.
+pub(crate) fn signal_is_a_lie(
+    named: SessionLiveness,
+    named_pid: Option<u32>,
+    own_pid: Option<u32>,
+) -> bool {
+    match (named, named_pid, own_pid) {
+        (SessionLiveness::Alive, Some(theirs), Some(mine)) => theirs != mine,
+        _ => false,
+    }
 }
 
 /// Da quanti secondi non si tocca questo file. `None` se non esiste o se
@@ -514,6 +556,22 @@ fn forget_session(data: &serde_json::Value) {
         return;
     }
     forget_with(&sess, &full, liveness_of(&sess));
+}
+
+/// Il congedo di una sessione che **si è appena osservata morta**, per chi quel
+/// fatto ce l'ha già in mano e non deve dedurlo da un record.
+///
+/// ESISTE PERCHÉ IL FATTO SI PERDE COL FILE. La staffetta scopre il processo
+/// sparito guardando `ps`, e la cura è togliere di mezzo il record; ma se lo
+/// cancellasse e basta, il `SessionEnd` che arrivasse dopo — sovrapposizione
+/// plausibile, il giro della staffetta passa ogni minuto — non troverebbe più
+/// niente da leggere e concluderebbe `Unknown` invece di `Gone`. Sono due
+/// pulizie diverse: `Gone` butta i marcatori subito, `Unknown` li lascia lì un
+/// giorno intero (`UNKNOWN_GRACE_SECS`) ad aspettare un raccoglitore che oggi
+/// nessuno esegue. Chiamando qui, chi ha visto la morte la spende tutta in una
+/// volta: i marcatori vanno via col record, e non resta niente da dedurre.
+pub(crate) fn forget_dead_session(sess: &str, full_id: &str) {
+    forget_with(sess, full_id, SessionLiveness::Gone);
 }
 
 /// La parte che decide cosa sparisce, separata da chi guarda i processi: così i
@@ -589,6 +647,30 @@ fn resume_message() -> String {
             let io = env("ORCA_TAB_ID");
             if !destinatario.is_empty() && !io.is_empty() && destinatario != io {
                 return String::new(); // non è per noi: resta a chi aspetta
+            }
+            // E POI SI VERIFICA CIÒ CHE IL MESSAGGIO STA PER AFFERMARE. La frase
+            // che esce di qui dice «la sessione precedente ha consegnato ed è
+            // stata rigenerata». Fino al 25/08/2026 non c'era modo di
+            // controllarla: il segnale non nominava nessuno, e quella riga
+            // veniva creduta sulla parola da chiunque la trovasse.
+            let named = campo("sessione");
+            if !named.is_empty() {
+                let short_id: String = named.chars().take(8).collect();
+                let named_pid = recorded_pid(&short_id);
+                if signal_is_a_lie(liveness_of_pid(named_pid), named_pid, session_pid()) {
+                    journal::record(
+                        "register-session",
+                        "salta",
+                        "segnale-su-sessione-viva",
+                        &[("session", Field::Text(short_id))],
+                    );
+                    // NON SI CONSUMA. Il file scade da sé dopo `FRESH_SEC`, e
+                    // finché è lì il destinatario giusto può ancora prenderlo:
+                    // cancellarlo qui vorrebbe dire che la sessione sbagliata,
+                    // oltre a non ricevere il mandato, lo toglie anche a chi
+                    // aspetta.
+                    return String::new();
+                }
             }
             (campo("handoff"), campo("punto"), campo("mandato"))
         }
@@ -864,6 +946,42 @@ nessuno la butterà mai"
     }
 
     #[test]
+    fn a_regenerated_session_is_alive_on_our_own_pid_and_that_is_not_a_lie() {
+        // IL CASO NORMALE DELLA STAFFETTA, e quello che un controllo ingenuo
+        // romperebbe: `/clear` azzera la memoria e lascia in piedi lo stesso
+        // processo, quindi la sessione uscente risulta viva e col nostro
+        // stesso pid. Se questo passasse per bugia, dopo ogni rigenerazione
+        // legittima nessuno riprenderebbe piu' niente.
+        assert!(!signal_is_a_lie(SessionLiveness::Alive, Some(18116), Some(18116)));
+    }
+
+    #[test]
+    fn a_signal_naming_another_live_process_is_a_lie() {
+        // Il caso vissuto il 25/08/2026: il messaggio dichiarava rigenerata una
+        // sessione che girava per conto suo su un altro processo, e chi lo ha
+        // creduto le e' finito addosso sullo stesso lavoro.
+        assert!(signal_is_a_lie(SessionLiveness::Alive, Some(18116), Some(85535)));
+    }
+
+    #[test]
+    fn without_both_pids_the_mandate_still_goes_through() {
+        // NEL DUBBIO SI CONSEGNA. I record scritti prima delle 11:30 del
+        // 21/08/2026 non hanno il campo del processo, e `ps` puo' non partire
+        // affatto: nessuna delle due e' una prova di bugia, e negare il mandato
+        // per un forse lascerebbe la sessione senza incarico.
+        assert!(!signal_is_a_lie(SessionLiveness::Alive, None, Some(85535)));
+        assert!(!signal_is_a_lie(SessionLiveness::Alive, Some(18116), None));
+        assert!(!signal_is_a_lie(SessionLiveness::Unknown, Some(18116), Some(85535)));
+    }
+
+    #[test]
+    fn a_signal_naming_a_dead_session_is_the_honest_case() {
+        // Una sessione davvero sparita e' esattamente cio' che il segnale
+        // afferma: qui non c'e' niente da smentire, il mandato passa.
+        assert!(!signal_is_a_lie(SessionLiveness::Gone, Some(18116), Some(85535)));
+    }
+
+    #[test]
     fn an_unrecognised_program_is_a_dont_know_not_a_death() {
         // Un nome che non riconosco non e' un'osservazione di morte: e' un pid
         // riciclato OPPURE una riga letta storta, e dal di dentro non si
@@ -1044,6 +1162,29 @@ nessuno la butterà mai"
         let msg = resume_message();
         assert!(msg.contains("/percorso/consegna.md"), "{msg}");
         assert!(!msg.contains("stava girando su questo mandato"), "{msg}");
+    }
+
+    #[test]
+    fn a_signal_naming_a_session_nobody_has_a_record_of_still_delivers() {
+        // IL CASO NORMALE DOPO IL CABLAGGIO DEL 25/08/2026, e quello che una
+        // riverifica troppo severa spegnerebbe: della sessione nominata non si
+        // sa niente — nessun record, e in questo perimetro nemmeno `ps` che
+        // risponda. «Non lo so» non e' «mi hanno mentito», e il mandato passa.
+        let fake_home = HomeIsolata::nuova("segnale-sessione-ignota");
+        let corpo = serde_json::json!({
+            "handoff": "/percorso/consegna.md",
+            "punto": "",
+            "mandato": "",
+            "tab": "",
+            "sessione": "aaaabbbb-1111-2222-3333-444455556666",
+        })
+        .to_string();
+        signal(&fake_home, &corpo);
+        let msg = resume_message();
+        assert!(
+            msg.contains("/percorso/consegna.md"),
+            "un segnale su una sessione ignota e' stato buttato via: {msg}"
+        );
     }
 
     #[test]
