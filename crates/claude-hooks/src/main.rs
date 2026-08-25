@@ -44,6 +44,9 @@ mod ai_personal_data;
 mod json_tool;
 mod memory_anchors;
 mod memory_citation_gate;
+// La freschezza delle consegne, 24/08/2026: gemello di `queue_freshness` su un
+// altro corpus, con in comune il blocco rigenerabile di `guards::regen_block`.
+mod memory_freshness;
 // Il governo della memoria della macchina, 24/08/2026. Niente a che vedere con
 // i due moduli qui sopra, che parlano della memoria delle sessioni: questo
 // guarda la RAM, e l'omonimia è solo del vocabolario italiano.
@@ -109,10 +112,41 @@ mod shape_exam;
 // troppo vecchie per essere credute, e scrive il rilievo dentro le voci
 // stesse invece di aprirne di nuove.
 mod queue_freshness;
+// Il depositatore dei guasti, portato dalla shell il 25/08/2026: legge i
+// registri delle automazioni e apre da sé una voce di coda quando una riga
+// marcata come guasto si ripete oltre soglia. Non è un gancio — lo chiama la
+// ronda della coda a ogni giro, e chiunque a mano.
+mod fault_deposit;
 
 use hook_io::{Decision, Mode};
 
+/// Rimette il comportamento Unix quando chi legge chiude il tubo presto.
+///
+/// La libreria standard di Rust ignora `SIGPIPE` all'avvio, quindi una scrittura
+/// su un tubo chiuso torna come errore e `println!` va in **panico**: il
+/// messaggio finisce su standard error, l'uscita non è più zero, e un gancio che
+/// parla con l'harness scrivendo JSON sporca il canale con cui dice la verità.
+/// Visto il 24/08/2026 nel registro di `release-hooks.sh`, da un `hook-census`
+/// incanalato in qualcosa che legge una riga sola.
+///
+/// Ripristinando il gestore predefinito il processo muore quieto, come ogni
+/// programma Unix. Gli **altri** errori di scrittura non sono toccati: uno
+/// standard output chiuso o rotto per un altro motivo continua a farsi sentire,
+/// ed è il verso della prova che conta di più — una cura che zittisse anche
+/// quelli avrebbe coperto un guasto invece di ripararlo.
+fn restore_default_sigpipe() {
+    // 13 è `SIGPIPE` e 0 è `SIG_DFL` su ogni Unix in cui questo binario gira.
+    // Dichiarati qui invece di prendere una dipendenza esterna per due numeri.
+    extern "C" {
+        fn signal(sig: i32, handler: usize) -> usize;
+    }
+    unsafe {
+        signal(13, 0);
+    }
+}
+
 fn main() {
+    restore_default_sigpipe();
     let args: Vec<String> = std::env::args().collect();
     let Some(which) = args.get(1).map(String::as_str) else {
         eprintln!("uso: claude-hooks <gancio>   (--list per l'elenco)");
@@ -309,6 +343,14 @@ const ALL_HOOKS: &[&str] = &[
     // perché non giudica nessun evento — e non aggiunge un byte al prologo di
     // proposito: il rilievo lo scrive dentro le voci, non davanti a tutti.
     "queue-freshness",
+    // Lo stesso, lo stesso giorno, sulle consegne: «questo piano è di una
+    // sessione chiusa?». Anche questo in NOT_HOOKS, e anche questo scrive il
+    // rilievo dentro il documento invece di aprirne uno nuovo.
+    "memory-freshness",
+    // Il depositatore dei guasti, 25/08/2026, primo dei tredici script che
+    // decidono a passare in Rust. Sta in NOT_HOOKS: non giudica un evento della
+    // sessione, lo chiama la ronda della coda.
+    "fault-deposit",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -351,6 +393,8 @@ const NOT_HOOKS: &[&str] = &[
     "filter-output",
     "shape",
     "queue-freshness",
+    "memory-freshness",
+    "fault-deposit",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -423,6 +467,11 @@ fn has_module_test(name: &str) -> bool {
         "cd-guard" => &[include_str!("../../guards/src/cd_guard.rs")],
         "instincts" => &[include_str!("../../guards/src/instincts.rs")],
         "code-language" => &[include_str!("../../guards/src/code_language.rs")],
+        // Rimessa il 25/08/2026: mancava nell'albero e c'era in `HEAD`, tolta da
+        // qualcuno senza committare. Senza di lei il test che tiene onesta questa
+        // mappa è rosso, e `--list` dichiara `legacy-script` «senza
+        // test-modulo» mentre i suoi sei casi esistono — cioè il falso negativo
+        // che questa mappa esiste per impedire.
         "legacy-script" => &[include_str!("../../guards/src/legacy_script.rs")],
         "message-budget" => &[include_str!("../../guards/src/message_budget.rs")],
         // Il secondo file prova la colla, non il giudizio: senza, il rapporto
@@ -573,6 +622,18 @@ fn has_module_test(name: &str) -> bool {
         "queue-freshness" => &[
             include_str!("queue_freshness.rs"),
             include_str!("../../guards/src/queue_overlap.rs"),
+        ],
+        // Il terzo file è la parte comune coi due qui sopra: se qualcuno
+        // togliesse i casi del blocco rigenerabile, questa colonna deve
+        // accorgersene anche per la freschezza delle consegne.
+        "memory-freshness" => &[
+            include_str!("memory_freshness.rs"),
+            include_str!("../../guards/src/handoff_freshness.rs"),
+            include_str!("../../guards/src/regen_block.rs"),
+        ],
+        "fault-deposit" => &[
+            include_str!("fault_deposit.rs"),
+            include_str!("../../guards/src/fault_deposit.rs"),
         ],
         _ => &[],
     };
@@ -1459,6 +1520,10 @@ fn run(which: &str) -> Result<i32, String> {
         "squash-orphans" => Ok(squash_orphans::run()),
         "index-freshness" => Ok(index_freshness::run()),
         "allow-session-messages" => Ok(session_messages::run()),
+        // Nemmeno questo è un gancio: legge i registri delle automazioni e apre
+        // da sé una voce di coda quando una riga marcata si ripete oltre soglia.
+        // Lo chiama la ronda della coda a ogni giro.
+        "fault-deposit" => Ok(fault_deposit::run()),
         // Non e un gancio: e lo strumento che risponde a «chi lancia
         // ancora questo controllo». Sta nel dispatch perche il binario e
         // gia il posto dove vive la logica, e un secondo eseguibile per
@@ -1558,6 +1623,12 @@ fn run(which: &str) -> Result<i32, String> {
         // racconta e basta; con `--mark` scrive il rilievo dentro le voci
         // interessate, e non ne apre nessuna di nuova.
         "queue-freshness" => Ok(queue_freshness::run()),
+        // Il gemello sulle memorie: risponde a «questo piano è ancora un
+        // ordine, o era il piano di quel giorno?». Senza `--mark` racconta e
+        // basta; con `--mark` scrive il rilievo sopra la sezione operativa
+        // delle consegne di sessioni chiuse, e non tocca una riga del testo che
+        // qualcuno ha scritto a mano.
+        "memory-freshness" => Ok(memory_freshness::run()),
         other => Err(format!("gancio sconosciuto: {other}")),
     }
 }

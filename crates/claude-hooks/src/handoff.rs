@@ -11,6 +11,7 @@
 
 use guards::handoff::{context_used_found, thresholds_from_lines, Thresholds, MIN_GROWTH,
                       TAIL_BYTES};
+use guards::handoff_freshness::RESUME_HEADINGS;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
@@ -216,8 +217,13 @@ pub fn resume_point_from(handoff_path: &str, transcript: &str) -> Option<String>
 /// prescritta nel transcript. Un titolo nominato è il contrario di «l'ultima
 /// riga del file», che è la forma che si rompe alla prima consegna scritta
 /// diversamente.
-const RESUME_HEADINGS: &[&str] =
-    &["prossimi passi", "prossimo passo", "da qui", "ripartenza", "punto di ripresa"];
+///
+/// Vive in `guards::handoff_freshness` dal 24/08/2026 (importato in testa a
+/// questo file), quando lo stesso elenco è servito a chi mette il rilievo di
+/// freschezza **sopra** quella sezione: due copie della stessa lista divergono
+/// alla prima aggiunta, e la copia rimasta indietro smette di riconoscere
+/// proprio le consegne scritte con la forma nuova.
+const _: &[&str] = RESUME_HEADINGS;
 
 /// Il primo passo che una consegna lascia aperto.
 ///
