@@ -176,7 +176,7 @@ fn basename(p: &str) -> &str {
 /// percorsi delle copie di lavoro possono benissimo essere già stati smontati, e
 /// il Python in quel caso risponde comunque con la forma normalizzata. `..` si
 /// applica al percorso **già risolto**, come in posixpath dalla 3.10.
-fn realpath(path: &str) -> String {
+pub(crate) fn realpath(path: &str) -> String {
     let start = if path.starts_with('/') {
         path.to_string()
     } else {

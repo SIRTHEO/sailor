@@ -751,9 +751,40 @@ pub fn run() -> i32 {
         return 0;
     }
     record_session(&data);
+    // QUI C'È DI NUOVO QUALCUNO. Se in questo albero un successore non era mai
+    // partito, il filo risultava scoperto: chiunque sia arrivato adesso — la
+    // staffetta, un'automazione, Theo che apre un pannello a mano — lo tiene
+    // lui. È l'unico evento che lo dice, ed è ciò che impedisce all'elenco dei
+    // fili scoperti di crescere e basta: un elenco che non cala nessuno lo
+    // legge dopo il terzo giorno.
+    crate::uncovered_thread::clear_tree(
+        data.get("cwd")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default()
+            })
+            .as_str(),
+    );
     let msg = resume_message();
     if !msg.is_empty() {
         println!("{msg}");
+        // E QUI CI SI FERMA. Chi riceve un mandato di ripartenza non è libero:
+        // sta riprendendo un piano già autorizzato, e il messaggio che ha
+        // appena letto gli dice, testualmente, di non annunciare la ripartenza
+        // e di far coincidere il primo messaggio del turno col passo
+        // successivo. Aggiungerci sotto un elenco di lavori altrui è
+        // esattamente la narrazione che quel canale esclude — «IL MANDATO NON
+        // E' CONTESTO, E' L'INCARICO». I fili scoperti restano, e li vedrà chi
+        // apre una sessione senza un incarico in mano.
+        return 0;
+    }
+    // COSA È RIMASTO SENZA NESSUNO — dopo `clear_tree`, che ha appena tolto di
+    // mezzo il filo di questo albero: quello lo tiene chi sta leggendo, e
+    // nominarglielo sarebbe rumore. Restano quelli altrove.
+    let idle = crate::uncovered_thread::opening_notice();
+    if !idle.is_empty() {
+        println!("{idle}");
     }
     0
 }
