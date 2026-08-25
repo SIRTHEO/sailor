@@ -117,6 +117,10 @@ mod queue_freshness;
 // marcata come guasto si ripete oltre soglia. Non è un gancio — lo chiama la
 // ronda della coda a ogni giro, e chiunque a mano.
 mod fault_deposit;
+// `role-claim.sh`/`role-vacancy.sh`, portati insieme il 25/08/2026 perché sono
+// un solo giudizio: chi dichiara un mestiere, chi lo tiene ancora, e il terzo
+// stato (vuoto per decisione). Non è un gancio — lo chiama chi nasce, a mano.
+mod role_claim;
 
 use hook_io::{Decision, Mode};
 
@@ -351,6 +355,10 @@ const ALL_HOOKS: &[&str] = &[
     // decidono a passare in Rust. Sta in NOT_HOOKS: non giudica un evento della
     // sessione, lo chiama la ronda della coda.
     "fault-deposit",
+    // `role-claim`, stesso giorno: dichiara un mestiere della configurazione.
+    // Sta in NOT_HOOKS: non giudica un evento della sessione, lo chiama chi
+    // nasce, a mano.
+    "role-claim",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -395,6 +403,7 @@ const NOT_HOOKS: &[&str] = &[
     "queue-freshness",
     "memory-freshness",
     "fault-deposit",
+    "role-claim",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -634,6 +643,10 @@ fn has_module_test(name: &str) -> bool {
         "fault-deposit" => &[
             include_str!("fault_deposit.rs"),
             include_str!("../../guards/src/fault_deposit.rs"),
+        ],
+        "role-claim" => &[
+            include_str!("role_claim.rs"),
+            include_str!("../../guards/src/role_claim.rs"),
         ],
         _ => &[],
     };
@@ -1524,6 +1537,9 @@ fn run(which: &str) -> Result<i32, String> {
         // da sé una voce di coda quando una riga marcata si ripete oltre soglia.
         // Lo chiama la ronda della coda a ogni giro.
         "fault-deposit" => Ok(fault_deposit::run()),
+        // Nemmeno questo è un gancio: dichiara un mestiere della configurazione
+        // per la sessione che lo chiama, a mano.
+        "role-claim" => Ok(role_claim::run()),
         // Non e un gancio: e lo strumento che risponde a «chi lancia
         // ancora questo controllo». Sta nel dispatch perche il binario e
         // gia il posto dove vive la logica, e un secondo eseguibile per
