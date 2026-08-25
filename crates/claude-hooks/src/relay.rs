@@ -57,6 +57,7 @@ use guards::handoff::{
     evaluate, resolve_armed_successor, resolve_terminal_handle, round_half_to_even, state_key,
     turn_status_from_lines, Action, SessionFacts, Terminal, TurnStatus,
 };
+use crate::register_session::SessionLiveness;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1240,6 +1241,40 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             );
             return;
         }
+        PanelReadiness::SessionGone => {
+            // NÉ RINVIO NÉ GUASTO: SI BUTTA IL RECORD. Un processo morto non
+            // torna aspettando, quindi il rinvio non scadrebbe mai; ma contarlo
+            // fra i guasti sarebbe peggio, ed è la trappola in cui questo ramo
+            // era caduto alla prima stesura. `defer_and_count` tiene il conto
+            // **per albero, non per sessione**: tre giri e scatta una resa cieca
+            // di sei ore che ferma *chiunque* su quell'albero — anche una
+            // sessione viva che la staffetta doveva rigenerare davvero. Un solo
+            // record morto a terra avrebbe reso l'albero più spesso bloccato che
+            // libero.
+            //
+            // La cura giusta ce l'aveva già il file due passi più su: un record
+            // illeggibile «si butta, l'alternativa è riprovare a leggerlo ogni
+            // minuto per sempre». Questo è lo stesso caso — un record che parla
+            // di un processo che non esiste — e la stessa risposta lo chiude per
+            // davvero: al giro dopo la sessione non è più in elenco, e nessuno
+            // ripassa a chiedersi di chi fosse quel pannello. È anche ciò che
+            // `marker_sweep` farebbe da sé (`should_remove` dà sempre `true` per
+            // `Gone`) se qualcuno lo eseguisse: qui non si aspetta quel qualcuno.
+            //
+            // E SI CONGEDA PER INTERO, non si cancella solo il record. Il fatto
+            // «questo processo è morto» vive finché vive il file che porta il
+            // pid: cancellandolo da soli lo si butterebbe insieme, e il
+            // `SessionEnd` che arrivasse dopo — un minuto dopo, il giro passa di
+            // lì — non potrebbe più dedurlo e lascerebbe i marcatori di quella
+            // sessione sul disco per un giorno. Chi ha visto la morte la spende
+            // tutta adesso: record e marcatori insieme, dalla stessa porta da
+            // cui esce un congedo normale.
+            crate::register_session::forget_dead_session(&rec.session, &rec.session_id);
+            log_line(&format!(
+                "sess={sess}: il record nomina un processo che non c'e' piu', il pannello non e' suo: butto il record e lascio stare i tasti"
+            ));
+            return;
+        }
     }
 
     // 2. lascia il segnale di ripresa per il successore
@@ -1288,11 +1323,20 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // indirizzo la seconda si prenderebbe il punto di ripresa e il `/loop` della
     // prima. La tab è l'identità giusta: `ORCA_TERMINAL_HANDLE` invecchia a ogni
     // riattacco, `ORCA_TAB_ID` no, e `/clear` non la cambia (misurato).
+    // E IL SEGNALE DICE CHI HA SOSTITUITO, non solo a chi va. Il messaggio che
+    // ne esce afferma «la sessione precedente ha consegnato ed è stata
+    // rigenerata»: un'affermazione su una sessione **che il segnale non
+    // nominava**, e che quindi al consumo non si poteva né confermare né
+    // smentire. Il 25/08/2026 quella frase è arrivata a una sessione dicendole
+    // di riprendere il filo di un'altra che era viva e ci stava lavorando: due
+    // sessioni sullo stesso lavoro, e una collisione di scrittura vera.
+    // Il nome per intero, non le otto cifre: chi legge risale al record da sé.
     let corpo = serde_json::json!({
         "handoff": if hpath.is_empty() { "ultimo handoff in memory" } else { &hpath },
         "punto": punto,
         "mandato": mandato,
         "tab": rec.tab_id,
+        "sessione": rec.session_id,
     })
     .to_string();
     let _ = fs::create_dir_all(resume_dir());
@@ -1921,6 +1965,17 @@ enum PanelReadiness {
     /// casi. Una segnalazione nata da 588 di quelle righe accusava il pannello,
     /// e chi ha indagato ha dovuto escluderlo prima di poter cercare altrove.
     TranscriptUnknown,
+    /// Il record nomina un processo che non c'è più: **quel pannello non è più
+    /// suo**, e ciò che vi si legge sopra è di qualcun altro.
+    ///
+    /// SEPARATA DALLE ALTRE PERCHÉ È UNA DOMANDA DIVERSA, e viene prima. Le
+    /// altre cinque chiedono «cosa c'è scritto sul pannello»; questa chiede **di
+    /// chi è il pannello**. Leggere una domanda in sospeso su un pannello che
+    /// ormai ospita un'altra sessione non è una prova su di lei: è una prova su
+    /// un estraneo, e rispondergli è il danno che `close_old_panel` documenta
+    /// per il 18/08/2026 — due sessioni sullo stesso albero, e la staffetta che
+    /// scrive a quella sbagliata.
+    SessionGone,
 }
 
 /// Legge la coda del pannello e giudica se è il caso di scriverci.
@@ -1972,7 +2027,45 @@ fn turn_readiness(transcript: &str) -> PanelReadiness {
 /// solo quando lo schermo è pulito ha senso guardare oltre, perché `tui-idle`
 /// e un prompt vuoto dicono soltanto «silenzio adesso» — vero anche a metà di
 /// un comando che dorme 300 secondi — e non «turno chiuso».
+///
+/// E PRIMA ANCORA VIENE «DI CHI È QUESTO PANNELLO». Fino al 25/08/2026 questa
+/// prova guardava **solo il proprio pannello e il proprio transcript**: due
+/// letture che dicono cosa c'è sullo schermo, nessuna che dica se la sessione
+/// del record esiste ancora. Il controllo che lo saprebbe era già scritto —
+/// `register_session::liveness_of`, il test del processo via `ps` — e non lo
+/// chiamava nessuno da qui. Il 25/08 quel buco è costato tre volte in un turno
+/// solo: un punto di ripresa consegnato alla sessione sbagliata, e del lavoro
+/// rifatto due volte da due sessioni che non sapevano l'una dell'altra.
+///
+/// SI GUARDA SOLO LA PROVA POSITIVA DEL CONTRARIO. `Gone` è una risposta piena —
+/// `ps` ha girato e quel processo non c'è — e solo quella ferma la mano.
+/// `Alive` non basta a fermarla, e non per distrazione: la staffetta rigenera
+/// **sessioni vive**, è il suo mestiere. `Unknown` — `ps` che non parte, un
+/// record senza pid, i record scritti prima delle 11:30 del 21/08/2026 che il
+/// campo non ce l'hanno — non è una prova di niente e lascia decidere alle due
+/// letture di sempre.
 fn readiness(rec: &Record, handle: &str, orca: OrcaFn) -> PanelReadiness {
+    readiness_with(crate::register_session::liveness_of(&rec.session), rec, handle, orca)
+}
+
+/// La stessa prova, con la risposta sul processo già in mano.
+///
+/// SEPARATA PER LO STESSO MOTIVO DI `liveness_from`: chi guarda i processi non
+/// è provabile qui dentro. `ps` non parte affatto nel perimetro in cui questa
+/// batteria gira — misurato il 25/08/2026, `Operation not permitted` anche da un
+/// processo figlio — e senza `ps` ogni sessione risulta `Unknown`: un caso
+/// scritto contro `readiness` proverebbe il ramo che passa, mai quello che
+/// ferma. Con la liveness in argomento i tre esiti si provano tutti e tre, e
+/// quello che conta — `Gone` — si prova proprio dove non si potrebbe osservare.
+fn readiness_with(
+    liveness: SessionLiveness,
+    rec: &Record,
+    handle: &str,
+    orca: OrcaFn,
+) -> PanelReadiness {
+    if liveness == SessionLiveness::Gone {
+        return PanelReadiness::SessionGone;
+    }
     match panel_readiness(handle, orca) {
         PanelReadiness::Clear => turn_readiness(&rec.transcript),
         other => other,
@@ -2474,6 +2567,97 @@ mod tests {
         );
     }
 
+    /// Un pannello che dice «libero» in ogni modo che la staffetta sa leggere,
+    /// e che nonostante questo non si tocca: perche' la sessione del record non
+    /// c'e' piu', e quel pannello ormai e' di qualcun altro.
+    ///
+    /// SI ENTRA DA `readiness_with` E NON DA `regenerate` perche' qui `ps` e'
+    /// negato: passando dalla porta vera la sessione risulterebbe `Unknown` e il
+    /// caso proverebbe l'esatto contrario di cio' che dice il suo nome.
+    #[test]
+    fn a_dead_session_gets_no_keystroke_however_clear_the_panel_looks() {
+        let _home = HomeIsolata::nuova("sessione-sparita");
+        let mut orca = |_: &[&str]| -> (i32, String) { (0, PROMPT_LIBERO.to_string()) };
+        assert_eq!(
+            readiness_with(
+                SessionLiveness::Gone,
+                &test_record(),
+                "term_vecchio",
+                &mut orca
+            ),
+            PanelReadiness::SessionGone
+        );
+    }
+
+    /// IL DIFFERENZIALE DEL CASO SOPRA, e la rete contro il controllo troppo
+    /// zelante: una sessione **viva** non ferma niente. La staffetta rigenera
+    /// sessioni vive — e' il suo mestiere, `/clear` lascia in piedi lo stesso
+    /// processo — e un controllo che leggesse «viva» come «non toccare» le
+    /// fermerebbe tutte. `Unknown` passa per la stessa ragione: non e' una prova.
+    #[test]
+    fn a_live_or_unknown_session_is_judged_by_the_panel_as_before() {
+        let _home = HomeIsolata::nuova("sessione-viva");
+        for liveness in [SessionLiveness::Alive, SessionLiveness::Unknown] {
+            let mut orca = |_: &[&str]| -> (i32, String) { (0, PROMPT_LIBERO.to_string()) };
+            assert_eq!(
+                readiness_with(liveness, &test_record(), "term_vecchio", &mut orca),
+                PanelReadiness::Clear,
+                "{liveness:?} non doveva cambiare il giudizio del pannello"
+            );
+        }
+    }
+
+    /// La stessa prova dalla porta vera, per quando la batteria gira dove `ps`
+    /// risponde: e' l'unico caso che lega `liveness_of` al `/clear` che non
+    /// parte, e senza di lui il cablaggio potrebbe sparire senza un rosso.
+    #[test]
+    fn the_dead_session_check_is_really_wired_into_the_relay() {
+        if let Some(why) = hook_io::testing::ps_is_denied() {
+            eprintln!("{why}");
+            return;
+        }
+        let fake_home = HomeIsolata::nuova("sessione-sparita-vera");
+        let live = fake_home.stato().join("sessioni-vive");
+        fs::create_dir_all(&live).unwrap();
+        // Il massimo pid di macOS e' 99998: questo non puo' esistere, quindi
+        // `ps` risponde davvero «non c'e'» invece di non rispondere.
+        fs::write(live.join("provarel.json"), r#"{"session_pid": 999999}"#).unwrap();
+        // Un marcatore di quella sessione, per vedere se il congedo e' intero.
+        let marcatore = fake_home.stato().join("consegna-fatta-provarel");
+        fs::write(&marcatore, "x").unwrap();
+
+        let chiamate = std::rc::Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+        let c = chiamate.clone();
+        let mut orca = move |args: &[&str]| -> (i32, String) {
+            c.borrow_mut().push(args.join(" "));
+            if args.contains(&"read") {
+                return (0, PROMPT_LIBERO.to_string());
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+
+        let seq = chiamate.borrow().clone();
+        assert!(
+            !seq.iter().any(|x| x.contains("/clear")),
+            "il pannello di una sessione sparita e' stato azzerato lo stesso: {seq:?}"
+        );
+        // E IL RECORD SPARISCE, o il giro dopo si ripresenta lo stesso caso e
+        // l'albero finisce in resa cieca per sei ore trascinandosi dietro le
+        // sessioni vive che ci lavorano.
+        assert!(
+            !live.join("provarel.json").exists(),
+            "il record di una sessione morta e' rimasto a terra"
+        );
+        // E CON LUI I MARCATORI. Se il record se ne andasse da solo, il fatto
+        // «era morta» sparirebbe col file che lo portava: un `SessionEnd` in
+        // ritardo leggerebbe «non lo so» e li lascerebbe li' per un giorno.
+        assert!(
+            !marcatore.exists(),
+            "il congedo si e' fermato al record e ha lasciato i marcatori"
+        );
+    }
+
     /// Un transcript il cui ultimo record è un `tool_use` senza risultato: il
     /// caso vero, un `Bash` che dorme 300 secondi.
     fn in_progress_transcript() -> String {
@@ -2832,6 +3016,10 @@ mod tests {
         assert_eq!(d["mandato"].as_str().unwrap_or(""), "/loop Sistema la configurazione");
         assert!(d["handoff"].as_str().unwrap_or("").ends_with(".md")
             || d["handoff"] == "ultimo handoff in memory", "{corpo}");
+        // E DICE CHI HA SOSTITUITO. Senza questo nome la frase «la sessione
+        // precedente e' stata rigenerata» resta un'affermazione che al consumo
+        // nessuno puo' verificare — il difetto del 25/08/2026.
+        assert_eq!(d["sessione"].as_str().unwrap_or(""), "provarel-0000-0000");
     }
 
     #[test]
