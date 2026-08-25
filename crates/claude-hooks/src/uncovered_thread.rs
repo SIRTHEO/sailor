@@ -304,17 +304,36 @@ fn read_markers() -> Vec<Value> {
 pub fn opening_notice() -> String {
     let threads = decide_uncovered(&read_markers(), &alive_short_ids(), now_epoch());
     let Some(first) = threads.first() else { return String::new() };
-    let quanti = if threads.len() == 1 {
-        "C'e' 1 filo di lavoro che non ha nessuno".to_string()
-    } else {
-        format!("Ci sono {} fili di lavoro che non hanno nessuno", threads.len())
+    // È UN MANDATO, NON UNA NOTIZIA, e la differenza è tutto il valore di questa
+    // funzione. La prima stesura diceva «c'e' 1 filo di lavoro che non ha
+    // nessuno» e chiudeva con «non e' un ordine»: cioè un suggerimento, e il
+    // piano di casa lo dichiara senza effetto con una misura secca — 1290
+    // suggerimenti a registro, zero effetti, mentre ciò che nega o incarica
+    // funziona. Una riga che informa su un lavoro fermo lascia il lavoro fermo.
+    //
+    // LA FORMA È QUELLA CHE GIÀ FUNZIONA: la stessa che la staffetta inietta per
+    // far riprendere una sessione rigenerata — imperativa, col percorso da
+    // leggere, e con l'istruzione di non annunciare. Quel canale è provato: la
+    // sessione riprende davvero. Qui cambia solo la sorgente del mandato.
+    //
+    // E RESTA RIFIUTABILE, che non è la stessa cosa di essere un consiglio: chi
+    // ha già un incarico non arriva nemmeno a leggere questa riga — chi la
+    // chiama esce prima (`register_session::run`) — e a chi non ce l'ha si dice
+    // cosa fare, non che ci sarebbe qualcosa da fare.
+    let altri = match threads.len() {
+        1 => String::new(),
+        n => format!(" Ce ne sono altri {}: `claude-hooks fili-scoperti`.", n - 1),
     };
     format!(
-        "{quanti}. Il piu' vecchio aspetta da {} h: {} (consegna: {}).\n\
-         Non e' un ordine — se stai per fare altro, lascialo. L'elenco: `claude-hooks fili-scoperti`.",
+        "LAVORO DA RIPRENDERE (nessuno lo tiene). Un filo di lavoro e' rimasto \
+senza esecutore da {} h: il successore non e' mai partito e la sessione che lo \
+teneva non c'e' piu'. Riprendilo: leggi `{}` e prosegui il piano gia' \
+autorizzato, nell'albero `{}`. Non ricominciare da zero e non annunciare la \
+ripresa — il primo messaggio del turno e' gia' il passo successivo. Se hai \
+motivo di non prenderlo, dillo in una riga e prosegui col tuo lavoro.{altri}",
         first.seconds_uncovered / 3600,
-        if first.cwd.is_empty() { "(albero ignoto)" } else { &first.cwd },
-        if first.handoff.is_empty() { "(nessuna)" } else { &first.handoff },
+        if first.handoff.is_empty() { "l'ultima consegna in memory" } else { &first.handoff },
+        if first.cwd.is_empty() { "(ignoto)" } else { &first.cwd },
     )
 }
 
@@ -484,16 +503,28 @@ mod tests {
     }
 
     #[test]
-    fn the_opening_notice_names_the_oldest_thread() {
+    fn the_opening_notice_hands_over_the_work_instead_of_reporting_it() {
+        // IL CASO CHE TIENE FERMA LA DIFFERENZA FRA INFORMARE E INCARICARE.
+        // Misurato in casa: 1290 suggerimenti a registro, zero effetti. Una riga
+        // che dice «c'e' del lavoro fermo» lascia il lavoro fermo; questa deve
+        // dire cosa fare, con la stessa forma imperativa che la staffetta usa
+        // per far riprendere una sessione rigenerata — e che funziona.
         let _home = crate::test_home::HomeIsolata::nuova("filo-avviso");
         declare("aaaabbbb-1111", "/albero/uno", "/consegna.md", "fuori-orario");
         let notice = opening_notice();
-        assert!(notice.contains("/albero/uno"), "l'avviso non dice dove: {notice}");
-        assert!(notice.contains("/consegna.md"), "l'avviso non dice cosa leggere: {notice}");
+        assert!(notice.contains("/albero/uno"), "non dice in quale albero: {notice}");
+        assert!(notice.contains("/consegna.md"), "non dice cosa leggere: {notice}");
         assert!(
-            notice.contains("Non e' un ordine"),
-            "l'avviso deve restare un'offerta, non un incarico: {notice}"
+            notice.contains("Riprendilo"),
+            "consegna una notizia invece di un incarico: {notice}"
         );
+        assert!(
+            !notice.contains("Non e' un ordine"),
+            "si scusa di incaricare, e allora non incarica: {notice}"
+        );
+        // E resta rifiutabile: chi ha un motivo per non prenderlo lo dice e va
+        // avanti. Incaricare non e' incatenare.
+        assert!(notice.contains("Se hai motivo di non prenderlo"), "{notice}");
     }
 
     /// I due capi del filo sono cablati davvero, e non solo scritti qui.
