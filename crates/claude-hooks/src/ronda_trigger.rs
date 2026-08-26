@@ -96,11 +96,23 @@ fn binary_commit() -> String {
     read_trim(&state_dir().join("hooks-binary-commit")).unwrap_or_default()
 }
 
-fn head_commit() -> String {
+/// L'ultimo commit che tocca il sorgente da cui il binario nasce.
+///
+/// NON `rev-parse HEAD`, ed è la differenza fra un innesco che morde e uno
+/// che grida ogni giorno. Il binario dipende da `rust/` e da nient'altro:
+/// confrontarlo con `HEAD` nudo lo dichiara vecchio ogni volta che si tocca
+/// un documento, una regola o uno script. Misurato il 26/08/2026 sugli
+/// ultimi quaranta commit di `~/.claude`: **diciotto non toccano `rust/`**,
+/// il 45%. Quasi un innesco su due era un falso allarme, e un allarme che
+/// suona a vuoto una volta su due smette di essere letto.
+///
+/// Stringa vuota quando `git` non risponde: `check_binary` non scatta su un
+/// lato vuoto, quindi il silenzio è il verso giusto del guasto.
+fn built_source_commit() -> String {
     let out = Command::new("git")
         .arg("-C")
         .arg(claude_dir())
-        .args(["rev-parse", "HEAD"])
+        .args(["log", "-1", "--format=%H", "--", "rust/"])
         .output();
     match out {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
@@ -176,7 +188,7 @@ fn handle_drift_trigger() -> Option<String> {
     }
 
     let binary = binary_commit();
-    let head = head_commit();
+    let head = built_source_commit();
     let verdict = judge::check_drift(&fp_check, &binary, &head);
     if !verdict.fires {
         return None;
@@ -248,9 +260,17 @@ mod tests {
         fs::write(dir.join("changelog.md"), body).unwrap();
     }
 
-    /// Un repo `.claude` vero e minimo, per poter chiedere `git rev-parse
-    /// HEAD` come fa il codice di produzione — senza, il ramo binario non si
-    /// può provare dal vivo.
+    /// Un repo `.claude` vero e minimo, per poter interrogare `git` come fa il
+    /// codice di produzione — senza, il ramo binario non si può provare dal
+    /// vivo.
+    ///
+    /// IL COMMIT TOCCA `rust/`, e non è un dettaglio del banco: il codice
+    /// confronta il timbro con l'ultimo commit **che tocca il sorgente**, non
+    /// con `HEAD`. Un repo finto fatto di soli commit vuoti risponde stringa
+    /// vuota, l'innesco non scatta, e le prove del ramo binario diventerebbero
+    /// verdi per la ragione sbagliata.
+    ///
+    /// Ritorna quel commit, che è quello che il timbro deve nominare.
     fn init_claude_repo(home: &HomeIsolata) -> String {
         let dir = home.dir.join(".claude");
         let run = |args: &[&str]| {
@@ -265,8 +285,53 @@ mod tests {
         run(&["init", "-q"]);
         run(&["config", "user.email", "prova@esempio.test"]);
         run(&["config", "user.name", "prova"]);
-        run(&["commit", "--allow-empty", "-q", "-m", "iniziale"]);
+        fs::create_dir_all(dir.join("rust/crates/guards/src")).unwrap();
+        fs::write(dir.join("rust/crates/guards/src/lib.rs"), "// sorgente\n").unwrap();
+        run(&["add", "rust"]);
+        run(&["commit", "-q", "-m", "iniziale"]);
         String::from_utf8(
+            Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(["log", "-1", "--format=%H", "--", "rust/"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap()
+        .trim()
+        .to_string()
+    }
+
+    /// Il commit che il timbro deve nominare non è `HEAD` quando l'ultimo
+    /// lavoro è stato su un documento: è questa distinzione che il 26/08/2026
+    /// faceva scattare l'innesco B una volta su due a vuoto — 18 degli ultimi
+    /// 40 commit di `~/.claude` non toccavano `rust/`.
+    #[test]
+    fn a_commit_outside_rust_does_not_make_the_binary_look_stale() {
+        let home = HomeIsolata::nuova("ronda-commit-fuori-da-rust");
+        let source_commit = init_claude_repo(&home);
+        // Il timbro è allineato al sorgente: nessun disallineamento.
+        fs::write(home.stato().join("hooks-binary-commit"), &source_commit).unwrap();
+        assert_eq!(built_source_commit(), source_commit);
+
+        // Ora un commit che tocca solo un documento: `HEAD` si sposta, il
+        // sorgente no, e il binario in servizio resta quello giusto.
+        let dir = home.dir.join(".claude");
+        fs::write(dir.join("APPUNTI.md"), "una riga\n").unwrap();
+        for args in [
+            vec!["add", "APPUNTI.md"],
+            vec!["commit", "-q", "-m", "solo documenti"],
+        ] {
+            assert!(Command::new("git")
+                .arg("-C")
+                .arg(&dir)
+                .args(&args)
+                .status()
+                .unwrap()
+                .success());
+        }
+        let head = String::from_utf8(
             Command::new("git")
                 .arg("-C")
                 .arg(&dir)
@@ -277,7 +342,22 @@ mod tests {
         )
         .unwrap()
         .trim()
-        .to_string()
+        .to_string();
+
+        assert_ne!(head, source_commit, "il commit doveva spostare HEAD");
+        assert_eq!(
+            built_source_commit(),
+            source_commit,
+            "il sorgente non è cambiato: il criterio non deve seguire HEAD"
+        );
+        assert!(
+            !judge::check_binary(&source_commit, &built_source_commit()),
+            "col criterio giusto non scatta niente"
+        );
+        assert!(
+            judge::check_binary(&source_commit, &head),
+            "col vecchio criterio scattava: è il falso allarme che si è tolto"
+        );
     }
 
     fn queue_file(home: &HomeIsolata, name: &str) -> PathBuf {
