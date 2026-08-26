@@ -452,11 +452,23 @@ mod tests {
             lines[0]["motivo"],
             "tabella e mestiere in disaccordo: vince quello dichiarato"
         );
+    }
 
-        // Il differenziale: quando i due concordano, il router riscrive come
-        // sempre — la riga sopra non è un modo per spegnerlo del tutto.
-        let home2 = HomeIsolata::nuova("phase-router-accordo");
-        declare_trade(&home2, "measurer", "haiku");
+    /// Il differenziale della prova sopra: quando la tabella e il mestiere
+    /// dicono la stessa cosa il router riscrive come sempre — il disaccordo
+    /// non è un modo per spegnerlo del tutto.
+    ///
+    /// UNA PROVA A SÉ, E NON È STILE. `HomeIsolata::nuova` prende un lucchetto
+    /// globale, e `std::sync::Mutex` non è rientrante: due case nella stessa
+    /// funzione bloccano il thread su sé stesso e il lucchetto **non torna
+    /// più**. Il 26/08/2026 questo ha fermato l'intera batteria — dodici prove
+    /// appese, sei in questo modulo e sei in `queue_mandate`, che non
+    /// c'entrava niente ed è stata la prima sospettata. Il primo `home` è vivo
+    /// fino alla fine del blocco, non fino al suo ultimo uso.
+    #[test]
+    fn a_table_row_agreeing_with_the_trade_is_still_applied() {
+        let home = HomeIsolata::nuova("phase-router-accordo");
+        declare_trade(&home, "measurer", "haiku");
         let out = process_with(CANDIDATE_TABLE, &agent_payload("measurer", None, "conta"))
             .expect("concordi: si riscrive");
         assert_eq!(out["hookSpecificOutput"]["updatedInput"]["model"], "haiku");
