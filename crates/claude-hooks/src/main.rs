@@ -17,6 +17,7 @@ mod authorizations;
 mod duplication;
 mod handoff;
 mod handoff_on_stop;
+mod handoff_precompact;
 mod handoff_required;
 mod linear;
 mod live_rules;
@@ -39,6 +40,7 @@ mod long_session;
 mod link_worktree_rules;
 mod permission_stall;
 mod spotlight_marker;
+mod uncovered_exit;
 mod uncovered_thread;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
 mod ai_personal_data;
@@ -69,6 +71,7 @@ mod squash_orphans;
 // Il quinto: se l'indice semantico riflette il ramo giusto. Nasce da una
 // misura del 20/08/2026 dove tre canonici su quattro erano su rami di lavoro
 // altrui, e l'indicizzatore taceva — nessun errore, solo un «green» bugiardo.
+mod index_bridge;
 mod index_freshness;
 // Il gancio d'innesco della ronda delle novità, 23/08/2026 (gradino 9 della
 // scala): due inneschi locali a `SessionStart`. Non ancora acceso — la riga
@@ -122,6 +125,12 @@ mod fault_deposit;
 // un solo giudizio: chi dichiara un mestiere, chi lo tiene ancora, e il terzo
 // stato (vuoto per decisione). Non è un gancio — lo chiama chi nasce, a mano.
 mod role_claim;
+// La terza fonte del mandato di `SessionStart`, il 25/08/2026: quando né la
+// staffetta né un filo scoperto danno un incarico, sceglie una voce di coda
+// dispacciabile e la impone come lavoro. `opening_notice` è un gancio vero
+// dentro `register-session`; il verbo da riga di comando è solo un rapporto —
+// sta in NOT_HOOKS.
+mod queue_mandate;
 
 use hook_io::{Decision, Mode};
 
@@ -211,6 +220,13 @@ fn main() {
         std::process::exit(preflight::run_with(verbose, voice));
     }
 
+    // L'indice semantico da riga di comando. Intercettato qui, come `--list` e
+    // `--preflight`, perché ha bisogno degli argomenti che seguono — e perché
+    // non è un gancio: non legge stdin e non deve fallire in silenzio.
+    if which == "indice" {
+        std::process::exit(index_bridge::run(&args[2..]));
+    }
+
     // Fail-open per tutti, prima ancora di leggere stdin: un `PreToolUse` che
     // esce in errore rifiuta ogni strumento della sessione.
     let code = match run(which) {
@@ -254,6 +270,12 @@ const ALL_HOOKS: &[&str] = &[
     "handoff-arms-successor",
     "handoff-measure",
     "handoff-on-stop",
+    // Il porto del 25/08/2026: lo stesso lavoro di
+    // `~/.claude/scripts/handoff-precompact.sh`, ma la consegna finisce in
+    // `~/.claude/state/consegne-precompact/`, che un riavvio non cancella —
+    // vedi la premessa di `handoff_precompact.rs`. La riga in `settings.json`
+    // che lo mette al posto dello script resta un gesto di Theo.
+    "handoff-precompact",
     "handoff-required",
     "handoff-latest",
     "repo-tools",
@@ -365,6 +387,12 @@ const ALL_HOOKS: &[&str] = &[
     // Sta in NOT_HOOKS: non giudica un evento della sessione, lo chiama chi
     // nasce, a mano.
     "role-claim",
+    // Il verbo da riga di comando della terza fonte del mandato, il
+    // 25/08/2026: «quale voce di coda si dispaccerebbe ora». Non giudica un
+    // evento — lo si interroga da fuori, come `fili-scoperti` — quindi sta in
+    // NOT_HOOKS. Il gancio vero è `register-session`, che lo chiama a ogni
+    // `SessionStart`.
+    "mandato-coda",
 ];
 
 /// Gli slug che NON sono ganci: strumenti da riga di comando, finestre di sola
@@ -411,6 +439,7 @@ const NOT_HOOKS: &[&str] = &[
     "memory-freshness",
     "fault-deposit",
     "role-claim",
+    "mandato-coda",
 ];
 
 fn is_hook(name: &str) -> bool {
@@ -506,6 +535,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("handoff_on_stop.rs"),
             include_str!("../../guards/src/handoff_on_stop.rs"),
         ],
+        "handoff-precompact" => &[include_str!("handoff_precompact.rs")],
         "handoff-required" => &[
             include_str!("handoff_required.rs"),
             include_str!("../../guards/src/handoff_required.rs"),
@@ -656,6 +686,7 @@ fn has_module_test(name: &str) -> bool {
             include_str!("role_claim.rs"),
             include_str!("../../guards/src/role_claim.rs"),
         ],
+        "mandato-coda" => &[include_str!("queue_mandate.rs")],
         _ => &[],
     };
     sources.iter().any(|s| source_contains_test(s))
@@ -739,6 +770,7 @@ fn self_check() -> i32 {
                         home: "/home/someone",
                         is_link: &|_| false,
                         current_branch: &|_| None,
+                        has_pending_changes: &|_, _| false,
                     })
                 }
                 // Il rifiuto viaggia sull'altro canale (`deny` su stdout,
@@ -1462,6 +1494,10 @@ fn run(which: &str) -> Result<i32, String> {
         // Il presidio della consegna, lato PostToolUse.
         "handoff-required" => Ok(handoff_required::run()),
         "handoff-on-stop" => Ok(handoff_on_stop::run()),
+        // Il porto del gancio `PreCompact`, 25/08/2026: legge il JSON da
+        // stdin e scrive la consegna in un posto che un riavvio non cancella.
+        // Non ancora acceso: la riga in `settings.json` è di Theo.
+        "handoff-precompact" => Ok(handoff_precompact::run()),
         "allow-worktree-deletes" => Ok(worktree_deletes::run()),
         // Il gemello dal lato che nega. Nessuna valvola d'ambiente: quella che
         // c'è sta sulla riga di comando, dove resta scritta nel registro invece
@@ -1585,6 +1621,10 @@ fn run(which: &str) -> Result<i32, String> {
         // riga di comando che risponde a «è bloccata?» da fuori.
         "permission-stall" => Ok(permission_stall::run_report()),
         "fili-scoperti" => Ok(uncovered_thread::run_report()),
+        // Non è un gancio: quale voce di coda si dispaccerebbe ora, senza
+        // scrivere niente — lo stesso contratto di sola lettura di
+        // `fili-scoperti`, sulla terza fonte del mandato.
+        "mandato-coda" => Ok(queue_mandate::run_report()),
         // Il registro dei costi. `record` legge stdin come ogni gancio; gli
         // altri due verbi leggono i loro argomenti da riga di comando e non
         // aspettano niente su stdin — chiamarli senza un verbo noto non deve
