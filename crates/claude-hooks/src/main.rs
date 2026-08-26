@@ -13,7 +13,6 @@
 //!     claude-hooks cd-guard      legge il JSON del gancio da stdin
 //!     claude-hooks --list        i ganci disponibili
 
-mod authorizations;
 mod duplication;
 mod handoff;
 mod handoff_on_stop;
@@ -324,15 +323,6 @@ const ALL_HOOKS: &[&str] = &[
     "memory-anchors",
     "memory-citation-gate",
     "stale-facts",
-    // Il sesto porto, il 21/08/2026: risponde a «questa cosa è autorizzata?»
-    // leggendo `state/autorizzazioni.jsonl`. Non giudica un evento della
-    // sessione, quindi non e' acceso da nessuna radice — sta in NOT_HOOKS.
-    "authorization-check",
-    // La penna dello stesso registro, aggiunta lo stesso giorno: scrive una
-    // riga in coda. Stessa ragione della voce sopra: non e' un gancio,
-    // nessuna radice lo accende, sta in NOT_HOOKS — lo digita solo il
-    // capitano.
-    "captain-authorize",
     // Il settimo, il 21/08/2026: ripassa i marcatori che il congedo di una
     // sessione non ha potuto buttare. Non giudica nessun evento, quindi sta in
     // NOT_HOOKS — e per ora non lo invoca nemmeno un servizio.
@@ -435,8 +425,6 @@ const NOT_HOOKS: &[&str] = &[
     "restart-count",
     "successor-probe",
     "stale-facts",
-    "authorization-check",
-    "captain-authorize",
     "marker-sweep",
     "permission-stall",
     "fili-scoperti",
@@ -635,8 +623,6 @@ fn has_module_test(name: &str) -> bool {
             include_str!("stale_facts.rs"),
             include_str!("../../guards/src/stale_facts.rs"),
         ],
-        "authorization-check" => &[include_str!("authorizations.rs")],
-        "captain-authorize" => &[include_str!("authorizations.rs")],
         // Il secondo file è dove vive il giudizio che la passata riusa: se
         // qualcuno togliesse i casi di `should_remove`, questa colonna deve
         // accorgersene anche per il raccoglitore.
@@ -1624,19 +1610,10 @@ fn run(which: &str) -> Result<i32, String> {
         // dicono di aver misurato qualcosa, e quando». Sta qui perché il suo
         // gemello Python non è più eseguibile da dentro una sessione.
         "stale-facts" => Ok(stale_facts::run()),
-        // Non è un gancio: risponde a «questa cosa è autorizzata?» leggendo il
-        // registro che il capitano scrive, senza che chi esegue debba
-        // chiedere a nessuno. La chiave arriva come argomento.
-        "authorization-check" => Ok(authorizations::run()),
-        // La penna dello stesso registro: SCRIVE SOLO IL CAPITANO. Non è un
-        // gancio, nessuna radice lo invoca — lo digita a mano chi ha appena
-        // ricevuto una decisione di Theo da trascrivere. La procedura sta in
-        // `docs/procedura-autorizzazioni.md`.
-        "captain-authorize" => Ok(authorizations::run_write()),
         // Non è un gancio: ripassa i marcatori che il congedo di una sessione
         // non ha potuto buttare, col GIUDIZIO DEL CONGEDO e non con l'età nuda.
-        // Senza `--delete` racconta e basta. NON È IN SERVIZIO: la sveglia
-        // periodica la mette il capitano, dopo un verdetto indipendente.
+        // Senza `--delete` racconta e basta. NON È IN SERVIZIO: nessuna sveglia
+        // periodica lo chiama.
         "marker-sweep" => Ok(marker_sweep::run()),
         // Non è un gancio: legge i marcatori che `observe permission` scrive
         // e stampa quali sessioni sono ferme su un permesso — il comando da
