@@ -45,6 +45,7 @@ mod uncovered_exit;
 mod uncovered_thread;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
 mod ai_personal_data;
+mod instinct_delivery;
 mod json_tool;
 mod memory_anchors;
 mod memory_citation_gate;
@@ -260,6 +261,7 @@ fn main() {
 /// fallisce se un ramo nuovo non compare qui.
 const ALL_HOOKS: &[&str] = &[
     "ai-personal-data",
+    "consegna-istinto",
     "allow-worktree-deletes",
     "allow-session-messages",
     "json",
@@ -497,6 +499,10 @@ fn source_contains_test(source: &str) -> bool {
 fn has_module_test(name: &str) -> bool {
     let sources: &[&str] = match name {
         "ai-personal-data" => &[include_str!("ai_personal_data.rs")],
+        "consegna-istinto" => &[
+            include_str!("instinct_delivery.rs"),
+            include_str!("../../guards/src/instinct_delivery.rs"),
+        ],
         "allow-worktree-deletes" => &[
             include_str!("worktree_deletes.rs"),
             include_str!("../../guards/src/worktree_deletes.rs"),
@@ -1496,6 +1502,16 @@ fn run(which: &str) -> Result<i32, String> {
                 return Ok(0);
             };
             Ok(ai_personal_data::run(&input))
+        }
+        // La consegna di un istinto nel momento in cui il comando lo innesca,
+        // invece che nel prologo di ogni sessione. Il prologo è costo fisso, un
+        // gancio è costo condizionale: qui non si spende niente finché nessuno
+        // scrive il comando che innesca.
+        "consegna-istinto" => {
+            let Some(input) = hook_io::read_input() else {
+                return Ok(0);
+            };
+            Ok(instinct_delivery::run(&input))
         }
         // Il presidio della consegna, lato PostToolUse.
         "handoff-required" => Ok(handoff_required::run()),
