@@ -214,6 +214,64 @@ fn ask(server: &str, tool: &str, arguments: serde_json::Value) -> Result<String,
     })
 }
 
+/// Le risposte con cui il server dice «non ho niente da darti».
+///
+/// Arrivano come testo normale dentro una risposta riuscita, quindi senza
+/// questo riconoscimento il ponte le stampava e usciva **zero**: chi le
+/// riceveva da uno script le contava come successo. Il 26/08/2026 è successo
+/// esattamente questo — il freno su `grep` mandava all'indice, l'indice
+/// rispondeva «No symbol graph found» e nessuno sapeva perché.
+fn looks_like_nothing_came_back(text: &str) -> bool {
+    let t = text.to_lowercase();
+    t.contains("no symbol graph found")
+        || t.contains("not indexed")
+        || t.contains("no results found")
+        || t.contains("docker not available")
+}
+
+/// Vero se il socket di Docker si lascia aprire da qui.
+///
+/// Serve a distinguere due guasti che il server racconta con la stessa frase:
+/// l'indice davvero mancante (si costruisce) e l'indice irraggiungibile perché
+/// il perimetro di questo processo non arriva al socket (si riesegue fuori).
+/// Senza la distinzione, il consiglio è sbagliato in metà dei casi.
+fn docker_socket_is_reachable() -> bool {
+    for socket in [
+        "/var/run/docker.sock",
+        // Docker Desktop su macOS mette il socket dell'utente qui.
+        &format!(
+            "{}/.docker/run/docker.sock",
+            std::env::var("HOME").unwrap_or_default()
+        ),
+    ] {
+        if std::os::unix::net::UnixStream::connect(socket).is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
+/// Il consiglio da dare quando il server non ha restituito niente.
+///
+/// Separato dal resto perché è la parte che qualcuno legge davvero, e le prove
+/// la esercitano senza avviare nessun processo.
+pub fn advice_when_empty(docker_reachable: bool) -> String {
+    if docker_reachable {
+        "L'indice risponde ma su questo progetto non ha dati: va costruito.\n  \
+         codebase_index (poi codebase_graph_build) sul percorso del repo,\n  \
+         oppure INDICE_PROGETTO=<repo> per interrogarne un altro."
+            .to_string()
+    } else {
+        "Il socket di Docker non si apre da questo processo, e senza Docker\n\
+         l'indice non ha né ricerca né grafo — la risposta «non trovato» qui\n\
+         NON vuol dire che il progetto sia da indicizzare.\n  \
+         Da una sessione Claude: usa gli strumenti MCP, che non passano da qui.\n  \
+         Da uno script nel perimetro ristretto: rieseguilo fuori dal perimetro.\n  \
+         Se Docker è davvero fermo: avvia Docker Desktop."
+            .to_string()
+    }
+}
+
 pub fn run(args: &[String]) -> i32 {
     let (tool, arguments) = match build_call(args) {
         Ok(c) => c,
@@ -233,6 +291,10 @@ pub fn run(args: &[String]) -> i32 {
     match ask(&server, &tool, arguments) {
         Ok(text) => {
             println!("{text}");
+            if looks_like_nothing_came_back(&text) {
+                eprintln!("\n{}", advice_when_empty(docker_socket_is_reachable()));
+                return 3;
+            }
             0
         }
         Err(msg) => {
@@ -248,6 +310,58 @@ mod tests {
 
     fn args(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    /// Le frasi con cui il server dice «niente», raccolte dal vivo il
+    /// 26/08/2026 — non inventate: sono quelle che il ponte ha stampato
+    /// uscendo zero.
+    #[test]
+    fn the_server_saying_nothing_is_recognised_as_a_failure() {
+        for said in [
+            "No symbol graph found. Run codebase_graph_build (or codebase_index) first.",
+            "Infrastructure: ❌ Docker not available",
+            "Project not indexed yet.",
+            "No results found for this query.",
+        ] {
+            assert!(
+                looks_like_nothing_came_back(said),
+                "«{said}» è un guasto travestito da risposta, va riconosciuto"
+            );
+        }
+    }
+
+    /// Il contro-caso, senza il quale la prova sopra si accontenterebbe di un
+    /// riconoscimento che dice sempre sì — e ogni risposta buona diventerebbe
+    /// un guasto.
+    #[test]
+    fn a_real_answer_is_not_mistaken_for_a_failure() {
+        for said in [
+            "Symbol: looks_like_a_name_lookup (function)\nDefined: crates/guards/src/socraticode_gate.rs:1012",
+            "Infrastructure: ✅ All services running (Docker, Qdrant, ollama embeddings)",
+            "3 results:\n  crates/notte/src/main.rs:88",
+        ] {
+            assert!(
+                !looks_like_nothing_came_back(said),
+                "«{said}» è una risposta buona, non va scambiata per un guasto"
+            );
+        }
+    }
+
+    /// I due consigli devono essere DIVERSI, e ciascuno dire la sua causa:
+    /// è tutto il valore della distinzione. Se dicessero la stessa cosa,
+    /// metà di chi legge andrebbe a indicizzare un progetto già indicizzato.
+    #[test]
+    fn the_advice_names_the_cause_it_actually_found() {
+        let with_docker = advice_when_empty(true);
+        let without_docker = advice_when_empty(false);
+        assert_ne!(with_docker, without_docker);
+        assert!(with_docker.contains("codebase_index"));
+        assert!(!with_docker.contains("socket"));
+        assert!(without_docker.contains("socket"));
+        assert!(
+            without_docker.contains("NON vuol dire"),
+            "il consiglio senza Docker deve smentire la lettura sbagliata, non solo suggerire"
+        );
     }
 
     #[test]
