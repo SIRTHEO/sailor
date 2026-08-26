@@ -99,6 +99,12 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "squash-orphans",
         "giudica le fusioni con schiacciamento; nato il 20/08, mai acceso",
     ),
+    (
+        "consegna-istinto",
+        "consegna un istinto sul comando che lo innesca; scritto e provato dal vivo il 26/08/2026, \
+         la riga che lo accende è negata da due parti insieme — il recinto vieta di scrivere \
+         `settings.json` da riga di comando, e il permesso a scadenza per Write/Edit è scaduto il 12/08",
+    ),
     // `phase-router` stava qui, ed è uscito il 26/08/2026: è registrato su
     // `PreToolUse`/`Agent` e il controllo lo copre come tutti gli altri. Non è
     // stato tolto per pulizia — l'elenco dei buchi noti è invecchiato **nello

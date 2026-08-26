@@ -78,15 +78,20 @@ enum Confidence {
 }
 
 /// I soli campi del frontmatter che contano per la decadenza.
+///
+/// Visibile a tutto il crate perché la decadenza si chiede in due posti: qui,
+/// che decide chi entra nel prologo, e nella consegna a evento, che decide se
+/// un corpo vale ancora la pena di essere mandato. Due letture separate dello
+/// stesso frontmatter divergerebbero alla prima riga storta.
 #[derive(Default)]
-struct Frontmatter {
+pub(crate) struct Frontmatter {
     id: Option<String>,
     /// La riga che dice «quando ti succede questo»: è l'unica parte che si
     /// inietta anche quando il corpo non entra nel tetto.
     trigger: Option<String>,
     confidence: Confidence,
     measured: Option<String>,
-    expires: Option<String>,
+    pub(crate) expires: Option<String>,
     measure: Option<String>,
 }
 
@@ -109,7 +114,7 @@ fn is_frontmatter_key(candidate: &str) -> bool {
 /// parser si ferma alla prima riga che non è né vuota né `chiave: valore`:
 /// senza una chiusura esplicita è così che il corpo smette di essere letto
 /// come se fosse ancora frontmatter.
-fn parse_frontmatter(text: &str) -> Frontmatter {
+pub(crate) fn parse_frontmatter(text: &str) -> Frontmatter {
     let mut fm = Frontmatter::default();
     let mut lines = text.lines();
     if lines.next().map(str::trim) != Some("---") {
@@ -152,7 +157,7 @@ fn parse_frontmatter(text: &str) -> Frontmatter {
 /// `YYYY-MM-DD` esatto: quattro cifre, un trattino, due cifre, un trattino, due
 /// cifre. Non controlla il calendario (un 13º mese passa): serve solo a
 /// garantire che il confronto lessicografico fra date valga quello cronologico.
-fn is_iso_date(s: &str) -> bool {
+pub(crate) fn is_iso_date(s: &str) -> bool {
     let b = s.as_bytes();
     b.len() == 10
         && b[4] == b'-'
