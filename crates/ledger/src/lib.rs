@@ -5,7 +5,7 @@
 //! stessa transazione logica; con WAL SQLite non promette però atomicità fra
 //! database collegati se manca l'alimentazione durante il commit.
 
-use flow::{Completion, Outcome, RecordStore, StepRecord};
+use flow::{AttemptRelation, Completion, Outcome, RecordStore, StepRecord};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -131,6 +131,14 @@ pub struct FailedStep {
     pub epoch: u64,
     pub failure_class: String,
     pub ended_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GatesChangedStep {
+    pub run_id: String,
+    pub step_id: String,
+    pub attempt: u32,
+    pub epoch: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,13 +310,32 @@ impl Ledger {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
-                    gates, started_at, outcome, output, said, failure_class, ended_at
+                    gates, attempt_relation, started_at, outcome, output, said,
+                    failure_class, ended_at
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
             .query_map([run_id], step_from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(records)
+    }
+
+    pub fn steps_resumed_with_changed_gates(&self) -> Result<Vec<GatesChangedStep>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT run_id, step_id, attempt, epoch FROM steps
+             WHERE attempt_relation = 'same_input_gates_changed'
+             ORDER BY started_at, run_id, step_id, attempt",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(GatesChangedStep {
+                run_id: row.get(0)?,
+                step_id: row.get(1)?,
+                attempt: row.get(2)?,
+                epoch: u64_column(row, 3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     pub fn is_checkpointed(
@@ -575,6 +602,7 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
              input_digest TEXT NOT NULL,
              input TEXT NOT NULL,
              gates TEXT NOT NULL,
+             attempt_relation TEXT,
              started_at INTEGER NOT NULL,
              outcome TEXT,
              output TEXT,
@@ -588,6 +616,8 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
              ON steps(run_id, step_id, epoch);
          CREATE INDEX IF NOT EXISTS steps_failure_idx
              ON steps(failure_class, outcome, ended_at DESC);
+         CREATE INDEX IF NOT EXISTS steps_attempt_relation_idx
+             ON steps(attempt_relation, started_at);
          CREATE TABLE IF NOT EXISTS model_calls (
              call_id TEXT PRIMARY KEY,
              run_id TEXT NOT NULL,
@@ -778,12 +808,14 @@ fn project_step(
     transaction.execute(
         "INSERT INTO steps
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
-          started_at, outcome, output, said, failure_class, ended_at, checkpointed)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+          attempt_relation, started_at, outcome, output, said, failure_class,
+          ended_at, checkpointed)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
-          gates=excluded.gates, started_at=excluded.started_at,
+          gates=excluded.gates, attempt_relation=excluded.attempt_relation,
+          started_at=excluded.started_at,
           outcome=excluded.outcome, output=excluded.output, said=excluded.said,
           failure_class=excluded.failure_class, ended_at=excluded.ended_at,
           checkpointed=excluded.checkpointed",
@@ -796,6 +828,7 @@ fn project_step(
             record.input_digest,
             serde_json::to_string(&record.input)?,
             serde_json::to_string(&record.gates)?,
+            record.attempt_relation.map(attempt_relation_name),
             record.started_at,
             record.outcome.map(outcome_name),
             record
@@ -908,7 +941,8 @@ fn read_step(
     Ok(connection
         .query_row(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
-                    gates, started_at, outcome, output, said, failure_class, ended_at
+                    gates, attempt_relation, started_at, outcome, output, said,
+                    failure_class, ended_at
              FROM steps WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3",
             params![run_id, step_id, attempt],
             step_from_row,
@@ -920,8 +954,9 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let deps: String = row.get(4)?;
     let input: String = row.get(6)?;
     let gates: String = row.get(7)?;
-    let outcome: Option<String> = row.get(9)?;
-    let output: Option<String> = row.get(10)?;
+    let attempt_relation: Option<String> = row.get(8)?;
+    let outcome: Option<String> = row.get(10)?;
+    let output: Option<String> = row.get(11)?;
     Ok(StepRecord {
         run_id: row.get(0)?,
         step_id: row.get(1)?,
@@ -931,15 +966,22 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         input_digest: row.get(5)?,
         input: json_column(&input, 6)?,
         gates: json_column(&gates, 7)?,
-        started_at: row.get(8)?,
-        outcome: outcome.as_deref().map(parse_outcome).transpose()?,
+        attempt_relation: attempt_relation
+            .as_deref()
+            .map(parse_attempt_relation)
+            .transpose()?,
+        started_at: row.get(9)?,
+        outcome: outcome
+            .as_deref()
+            .map(|value| parse_outcome(value, 10))
+            .transpose()?,
         output: output
             .as_deref()
-            .map(|value| json_column(value, 10))
+            .map(|value| json_column(value, 11))
             .transpose()?,
-        said: row.get(11)?,
-        failure_class: row.get(12)?,
-        ended_at: row.get(13)?,
+        said: row.get(12)?,
+        failure_class: row.get(13)?,
+        ended_at: row.get(14)?,
     })
 }
 
@@ -978,7 +1020,7 @@ fn outcome_name(outcome: Outcome) -> &'static str {
     }
 }
 
-fn parse_outcome(value: &str) -> rusqlite::Result<Outcome> {
+fn parse_outcome(value: &str, column: usize) -> rusqlite::Result<Outcome> {
     match value {
         "Went" => Ok(Outcome::Went),
         "Broke" => Ok(Outcome::Broke),
@@ -986,7 +1028,7 @@ fn parse_outcome(value: &str) -> rusqlite::Result<Outcome> {
         "Stopped" => Ok(Outcome::Stopped),
         "Skipped" => Ok(Outcome::Skipped),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
-            9,
+            column,
             rusqlite::types::Type::Text,
             std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -997,10 +1039,35 @@ fn parse_outcome(value: &str) -> rusqlite::Result<Outcome> {
     }
 }
 
+fn attempt_relation_name(relation: AttemptRelation) -> &'static str {
+    match relation {
+        AttemptRelation::SameInput => "same_input",
+        AttemptRelation::SameInputGatesChanged => "same_input_gates_changed",
+        AttemptRelation::DifferentInput => "different_input",
+    }
+}
+
+fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
+    match value {
+        "same_input" => Ok(AttemptRelation::SameInput),
+        "same_input_gates_changed" => Ok(AttemptRelation::SameInputGatesChanged),
+        "different_input" => Ok(AttemptRelation::DifferentInput),
+        other => Err(rusqlite::Error::FromSqlConversionFailure(
+            8,
+            rusqlite::types::Type::Text,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown attempt relation {other}"),
+            )
+            .into(),
+        )),
+    }
+}
+
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
-        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,started_at,outcome,output,said,failure_class,ended_at,checkpointed",
+        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,checkpointed",
         "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),

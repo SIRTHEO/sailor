@@ -1,5 +1,5 @@
 use crate::record::truncate_said;
-use crate::{Graph, Outcome, SchemaError, Step, StepRecord};
+use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -454,7 +454,7 @@ impl Executor for InProcessExecutor {
                 let previous = latest_for(step, &records);
                 let attempt = previous.map_or(1, |record| record.attempt + 1);
                 let epoch = records.iter().map(|record| record.epoch).max().unwrap_or(0) + 1;
-                let started = StepRecord::started(
+                let mut started = StepRecord::started(
                     &request.run_id,
                     &step.id,
                     attempt,
@@ -464,6 +464,25 @@ impl Executor for InProcessExecutor {
                     request.gates.clone(),
                     clock.now()?,
                 );
+                started.attempt_relation = previous.map(|previous| {
+                    if previous.input_digest != started.input_digest {
+                        AttemptRelation::DifferentInput
+                    } else {
+                        let origin = records
+                            .iter()
+                            .filter(|record| {
+                                record.step_id == step.id
+                                    && record.input_digest == started.input_digest
+                            })
+                            .min_by_key(|record| (record.attempt, record.epoch))
+                            .unwrap_or(previous);
+                        if same_gates(&origin.gates, &started.gates) {
+                            AttemptRelation::SameInput
+                        } else {
+                            AttemptRelation::SameInputGatesChanged
+                        }
+                    }
+                });
                 store.append_started(started)?;
 
                 let completion = match action {
@@ -622,6 +641,12 @@ fn latest_for<'a>(step: &Step, records: &'a [StepRecord]) -> Option<&'a StepReco
         .max_by_key(|record| (record.attempt, record.epoch))
 }
 
+fn same_gates(left: &[String], right: &[String]) -> bool {
+    let left: std::collections::BTreeSet<_> = left.iter().collect();
+    let right: std::collections::BTreeSet<_> = right.iter().collect();
+    left == right
+}
+
 fn successful_output(step_id: &str, records: &[StepRecord]) -> Result<Value, FlowError> {
     records
         .iter()
@@ -758,6 +783,51 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn retry_with_same_input_and_changed_gates_is_explicit() {
+        let graph = Graph::new(vec![step("work", &[], "echo", 2)]).expect("grafo valido");
+        let input = json!({"payload": 7});
+        let mut first = StepRecord::started(
+            "run",
+            "work",
+            1,
+            1,
+            vec![],
+            input.clone(),
+            vec!["filesystem".to_owned()],
+            1,
+        );
+        first.outcome = Some(Outcome::Broke);
+        first.failure_class = Some("temporary".to_owned());
+        first.ended_at = Some(2);
+        let mut store = InMemoryRecordStore::from_records(vec![first]);
+        let mut actions = ActionRegistry::default();
+        actions.register("echo", Echo);
+
+        InProcessExecutor
+            .execute(
+                &graph,
+                ExecutionRequest {
+                    run_id: "run".to_owned(),
+                    root_inputs: [("work".to_owned(), input)].into_iter().collect(),
+                    gates: vec!["network".to_owned(), "filesystem".to_owned()],
+                    shared: SharedState::new(),
+                },
+                &mut store,
+                &actions,
+                &mut Tick(2),
+            )
+            .expect("ripresa riuscita");
+
+        let attempts = store.all();
+        assert_eq!(attempts[0].input_digest, attempts[1].input_digest);
+        assert_eq!(
+            attempts[1].attempt_relation,
+            Some(AttemptRelation::SameInputGatesChanged)
+        );
+        assert_eq!(attempts[1].said, None);
     }
 
     #[test]
