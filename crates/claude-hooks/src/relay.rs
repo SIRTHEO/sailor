@@ -238,11 +238,21 @@ fn log_line(line: &str) {
 /// altrui può arrivarci.
 ///
 /// IL CRITERIO PER SCEGLIERE CHI LO PORTA È UNO SOLO: **la condizione può
-/// cadere da sola?** Un turno ancora in corso e una scelta in sospeso passano
-/// col tempo, e restano cronaca. Una riga battuta e mai inviata, un pannello che
+/// cadere da sola?** Un turno ancora in corso, una scelta in sospeso e una riga
+/// battuta e mai inviata passano col tempo, e restano cronaca. Un pannello che
 /// non si riesce a leggere, un invio fallito: quelli non cadono aspettando, si
 /// ripetono ogni minuto per sempre, e un rinvio che non scade non è un rinvio —
 /// è un blocco. Chi legge il registro non deve dedurlo: c'è scritto.
+///
+/// LA RIGA BATTUTA E MAI INVIATA STAVA FRA I GUASTI, E CI STAVA A TORTO.
+/// Misurato il 26/08/2026 sull'intero `staffetta.log`: quattordici sessioni
+/// l'hanno vista, **nessuna è rimasta bloccata**. Quattro hanno ripreso il
+/// corso normale entro l'ora — la riga si era svuotata — sette si sono chiuse
+/// col terminale, tre erano ancora in corso. Il costo dell'errore non era il
+/// rumore: al terzo giro la staffetta scriveva «RINVIO SENZA SCADENZA, una
+/// condizione che non cade da sola», il deposito guasti apriva una voce, e la
+/// voce chiedeva un investigator per un comportamento corretto. È successo tre
+/// volte prima che qualcuno andasse a contare.
 ///
 /// E CHI PORTA IL MARCATORE SU UN RINVIO PASSA DA `defer_and_count`, non da
 /// qui: il marcatore dice che la condizione non cade da sola, e allora il rinvio
@@ -1023,6 +1033,13 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     //     file). Non conta come un nuovo giro: qui non si apre un anello della
     //     catena, si chiude quello di prima.
     if !dry_run && try_deliver_pending_boot(&rec.worktree, orca) {
+        // SEMPRE, SENZA TREGUA: è un successo raro, ed è l'unica riga che lega
+        // questo esito al «candidato sess=…» appena scritto dal chiamante — la
+        // funzione chiamata registra i propri dettagli sul pannello, ma non
+        // questo, che chiude il giro senza passare dagli altri controlli.
+        log_line(&format!(
+            "sess={sess}: chiudo qui, ho solo consegnato il mandato rimasto in sospeso dal giro precedente"
+        ));
         return;
     }
 
@@ -1031,8 +1048,9 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     //    guarda le rigenerazioni già fatte su questo albero, che è l'unica cosa
     //    che dice se la catena sta convergendo o girando a vuoto.
     let mut chain = read_chain(&rec.worktree);
+    let limits = chain_limits();
     if !brake_is_off() {
-        let (verdict, why) = chain_verdict(&chain, now_epoch(), &chain_limits());
+        let (verdict, why) = chain_verdict(&chain, now_epoch(), &limits);
         match verdict {
             ChainVerdict::Stop => {
                 let marker = chain_blocked_path(&rec.worktree);
@@ -1040,10 +1058,12 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
                     log_line(&format!("[SECCO] FRENO sess={sess}: {why}"));
                     return;
                 }
-                // Si parla una volta sola: il marcatore è insieme la traccia per
-                // Theo e la memoria di averlo già detto. Senza, questa riga
-                // tornerebbe ogni sessanta secondi finché non interviene
-                // qualcuno, e un registro saturo è un registro cieco.
+                // Per esteso una volta sola: il marcatore è insieme la traccia
+                // per Theo e la memoria di averlo già detto. I giri dopo si
+                // diradano con la STESSA TREGUA di `defer_and_count`
+                // (`set_cooldown`), non con un secondo silenzio: `evaluate` la
+                // rilegge e salta la candidatura, quindi la riga sotto torna
+                // una volta ogni cinque minuti — mai una al minuto, mai zero.
                 if !marker.exists() {
                     let _ = fs::create_dir_all(state_dir());
                     let _ = fs::write(
@@ -1054,11 +1074,22 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
                             rec.worktree
                         ),
                     );
+                    set_cooldown(&rec.worktree);
                     log_line(&format!(
                         "FRENO sess={sess}: {why}. NON rigenero. Per ripartire: \
                          rm {} {}",
                         chain_path(&rec.worktree).display(),
                         marker.display()
+                    ));
+                } else if !in_cooldown(&rec.worktree, now_epoch()) {
+                    set_cooldown(&rec.worktree);
+                    let remaining = chain
+                        .last()
+                        .map_or(0.0, |l| (limits.idle_reset_sec - (now_epoch() - l.at)).max(0.0));
+                    log_line(&format!(
+                        "sess={sess}: FRENO ancora attivo ({why}), mancano {} min a \
+                         quando la catena si dimentica da sola, non rigenero",
+                        round_half_to_even(remaining / 60.0)
                     ));
                 }
                 return;
@@ -1087,8 +1118,24 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         // sua eta non si puo misurare: vale come scaduta, altrimenti resta li
         // per sempre. Sul sistema vivo ce n'era una del 19/08.
         let age = blind_stop_age_sec(&rec.worktree, now_epoch());
-        if age.is_some_and(|a| a < BLIND_STOP_RESET_SEC) {
-            return;
+        if let Some(a) = age {
+            if a < BLIND_STOP_RESET_SEC {
+                // STESSA TREGUA DI `defer_and_count`, non un meccanismo nuovo:
+                // il costo del rinvio è `set_cooldown`, non il silenzio. Senza,
+                // questo ramo tace fino a sei ore di fila — il grosso delle 452
+                // uscite senza traccia misurate il 25/08/2026. Il controllo su
+                // `in_cooldown` evita di riscrivere la stessa riga se qualcuno
+                // chiama `regenerate` due volte nella stessa tregua.
+                if !in_cooldown(&rec.worktree, now_epoch()) {
+                    set_cooldown(&rec.worktree);
+                    log_line(&format!(
+                        "sess={sess}: resa cieca ancora attiva, mancano {} min alla \
+                         scadenza, non rigenero",
+                        round_half_to_even((BLIND_STOP_RESET_SEC - a) / 60.0)
+                    ));
+                }
+                return;
+            }
         }
         // IL GIRO A SECCO NON MUTA NIENTE. `--secco` è lo strumento con cui si
         // guarda cosa farebbe la staffetta senza farglielo fare: cancellare qui
@@ -1200,13 +1247,9 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
             return;
         }
         PanelReadiness::Typing => {
-            defer_and_count(
-                rec,
-                "riga-battuta-mai-inviata",
-                &format!(
-                    "sess={sess}: la riga d'ingresso non e' vuota, non tocco i tasti: rimando"
-                ),
-            );
+            log_line(&format!(
+                "sess={sess}: la riga d'ingresso non è vuota, non tocco i tasti: rimando"
+            ));
             return;
         }
         PanelReadiness::TurnInProgress => {
@@ -1949,6 +1992,10 @@ enum PanelReadiness {
     /// Una scelta è ancora aperta e aspetta una risposta.
     Question,
     /// La riga d'ingresso porta del testo non ancora inviato.
+    ///
+    /// CRONACA, NON GUASTO: è l'unica delle condizioni di rinvio che dipende
+    /// da un gesto di chi sta al pannello, e quel gesto arriva — si invia, o
+    /// si cancella. La misura del 26/08/2026 sta sopra `log_guasto`.
     Typing,
     /// Il transcript mostra un turno ancora aperto: un `tool_use` senza il
     /// suo risultato, o un messaggio che aspetta ancora una risposta.
@@ -2749,6 +2796,49 @@ mod tests {
         );
     }
 
+    /// Il rinvio si scrive come cronaca, senza marcatore di guasto e senza
+    /// conteggio: la condizione cade da sola quando chi sta al pannello
+    /// invia o cancella. Misurato il 26/08/2026 su quattordici sessioni,
+    /// nessuna delle quali è rimasta bloccata — la misura sta sopra
+    /// `log_guasto`.
+    ///
+    /// Rompere questa prova vuol dire aver rimesso `Typing` fra i guasti: il
+    /// costo non è il rumore nel registro, è che al terzo giro la staffetta
+    /// dichiara «una condizione che non cade da sola» e il deposito guasti
+    /// apre una voce che chiede un investigator per un comportamento giusto.
+    #[test]
+    fn typed_text_is_logged_as_chronicle_not_as_a_fault() {
+        let home = HomeIsolata::nuova("testo-non-inviato-cronaca");
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"read") {
+                return (0, "──────\n❯ non ancora inviato\n──────\n".to_string());
+            }
+            (0, String::new())
+        };
+        // Più giri di fila: è la ripetizione che prima faceva scattare il tetto.
+        for _ in 0..MAX_BLIND_ATTEMPTS + 1 {
+            regenerate(&test_record(), false, &mut orca);
+        }
+        let log = fs::read_to_string(home.dir.join(".claude/state/staffetta.log"))
+            .unwrap_or_default();
+        assert!(
+            log.contains("la riga d'ingresso non è vuota"),
+            "il rinvio deve restare scritto: {log}"
+        );
+        assert!(
+            !log.contains("riga-battuta-mai-inviata"),
+            "non deve più portare il marcatore di guasto: {log}"
+        );
+        assert!(
+            !log.contains("RINVIO SENZA SCADENZA"),
+            "non deve arrivare alla resa: la condizione cade da sola. {log}"
+        );
+        assert!(
+            !blind_attempts_path(&test_record().worktree).exists(),
+            "non deve nemmeno aprire il conteggio dei tentativi ciechi"
+        );
+    }
+
     #[test]
     fn the_wait_and_the_clear_share_one_resolved_handle() {
         let _home = HomeIsolata::nuova("handle-unico-attesa-e-invio");
@@ -2944,6 +3034,13 @@ mod tests {
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("avvio in sospeso su term_vecchio: consegnato"), "{log}");
+        // LA RIGA DI CHIUSURA, sempre, senza tregua: lega l'esito al
+        // «candidato sess=…» del chiamante, invece di lasciare che il giro
+        // finisca senza che `regenerate` abbia detto nulla di suo.
+        assert!(
+            log.contains("sess=provarel: chiudo qui, ho solo consegnato"),
+            "{log}"
+        );
     }
 
     #[test]
@@ -3612,6 +3709,49 @@ mod tests {
     }
 
     #[test]
+    fn a_fresh_blind_stop_thins_its_own_reminder_instead_of_staying_mute() {
+        let _home = HomeIsolata::nuova("resa-cieca-dirada");
+        // Prima della correzione questo ramo usciva senza lasciare traccia, per
+        // tutte e sei le ore della resa. Ora lascia una riga, che si dirada con
+        // la tregua invece di ripetersi ogni minuto o sparire del tutto.
+        std::env::set_var("RELAY_PICKUP_TIMEOUT_SEC", "0");
+        let _ = fs::create_dir_all(state_dir());
+        let fresh_at = now_epoch() - 60.0;
+        fs::write(
+            blind_stop_path("wt-prova"),
+            format!("{fresh_at}\nfresco, di prova\nalbero: wt-prova\n"),
+        )
+        .unwrap();
+        let mut orca = |_args: &[&str]| -> (i32, String) { (0, String::new()) };
+        regenerate(&test_record(), false, &mut orca);
+        regenerate(&test_record(), false, &mut orca);
+        let log_after_two_rounds =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert_eq!(
+            log_after_two_rounds.matches("resa cieca ancora attiva").count(),
+            1,
+            "due giri nella stessa tregua non devono ripetere la riga: {log_after_two_rounds}"
+        );
+        let _ = fs::write(
+            state_dir().join(format!("staffetta-cooldown-{}", state_key("wt-prova"))),
+            format!("{}", now_epoch() - COOLDOWN_SEC as f64 - 1.0),
+        );
+        regenerate(&test_record(), false, &mut orca);
+        let log_after_cooldown_expiry =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert_eq!(
+            log_after_cooldown_expiry.matches("resa cieca ancora attiva").count(),
+            2,
+            "scaduta la tregua doveva tornare a parlare: {log_after_cooldown_expiry}"
+        );
+        assert!(
+            log_after_cooldown_expiry.contains("mancano")
+                && log_after_cooldown_expiry.contains("min alla"),
+            "{log_after_cooldown_expiry}"
+        );
+    }
+
+    #[test]
     fn a_blind_stop_without_a_date_is_dropped_and_retried() {
         let _home = HomeIsolata::nuova("resa-cieca-senza-data");
         // Il terzo caso del differenziale: stesso marcatore, ma nel formato
@@ -4241,6 +4381,30 @@ mod tests {
             1,
             "il freno ha ripetuto la stessa riga: {log}"
         );
+    }
+
+    #[test]
+    fn the_brake_speaks_again_once_the_cooldown_wears_off() {
+        let _home = HomeIsolata::nuova("freno-dirada");
+        // Il differenziale della prova sopra: fra i due giri passa la tregua
+        // (qui simulata scrivendo una tregua già scaduta), e il freno deve
+        // tornare a parlare — non restare muto per le sei ore della catena.
+        fake_chain("wt-prova", 10, 5, "/qualcosa.md", 30.0);
+        let (_, mut orca) = orca_that_records();
+        regenerate(&test_record(), false, &mut orca);
+        let _ = fs::write(
+            state_dir().join(format!("staffetta-cooldown-{}", state_key("wt-prova"))),
+            format!("{}", now_epoch() - COOLDOWN_SEC as f64 - 1.0),
+        );
+        regenerate(&test_record(), false, &mut orca);
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert_eq!(
+            log.matches("FRENO").count(),
+            2,
+            "doveva diradarsi, non tacere per sempre: {log}"
+        );
+        assert!(log.contains("FRENO ancora attivo"), "{log}");
+        assert!(log.contains("mancano") && log.contains("min a"), "{log}");
     }
 
     #[test]
