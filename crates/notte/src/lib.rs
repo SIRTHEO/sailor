@@ -446,14 +446,23 @@ pub fn decide(inputs: &WatchInputs, th: &WatchThresholds) -> WatchDecision {
             inputs.tasks_this_hour, th.hourly_cap
         ));
     }
-    if !hour_in_window(inputs.hour, th.window_start_hour, th.window_end_hour)
-        && inputs.idle_seconds < th.very_idle_seconds
-    {
-        return WatchDecision::Skip(format!(
-            "fuori dalla finestra di notte ({:02}:00–{:02}:00, ora {:02}) e macchina non ferma da abbastanza tempo (idle {}s, servono {}s)",
-            th.window_start_hour, th.window_end_hour, inputs.hour, inputs.idle_seconds, th.very_idle_seconds
-        ));
-    }
+    // L'OROLOGIO NON DECIDE PIÙ, DECIDE IL CARICO — 26/08/2026, per misura.
+    //
+    // Fino a oggi, fuori dalla finestra si lavorava solo dopo due ore di
+    // macchina ferma. Con qualcuno che lavora quelle due ore non arrivano mai,
+    // e il registro lo diceva: **su 191 salti, 158 erano «fuori dalla
+    // finestra» e appena 4 per carico alto**, mentre il carico stava sotto la
+    // soglia stretta nel 46% delle misure. Cioè il ciclo stava fermo quasi
+    // sempre per l'ora del giorno, quasi mai perché la macchina fosse occupata.
+    //
+    // La protezione vera è già qui sotto e funziona: due soglie di carico —
+    // una stretta mentre qualcuno lavora, una larga a macchina ferma — più la
+    // memoria libera e il tetto orario. Quelle misurano se c'è margine
+    // ADESSO; l'orologio indovinava. Un sistema che può ripararsi solo di
+    // notte, nei fatti, non si ripara.
+    //
+    // La finestra resta nelle soglie e serve ancora a scegliere QUANTO osare
+    // (`idle_load_ratio_cap` contro `busy_load_ratio_cap`), non più a negare.
 
     let idle = inputs.idle_seconds >= th.idle_seconds;
     let load_cap =
@@ -884,16 +893,36 @@ mod tests {
         assert!(!hour_in_window(12, 23, 2));
     }
 
-    /// FUORI DALLA FINESTRA, MACCHINA NON FERMA: era il difetto misurato —
-    /// il ciclo di notte girava anche di giorno. Ora salta con un motivo che
-    /// nomina la finestra, non un "carico alto" fuorviante.
+    /// DI GIORNO, CON MARGINE, SI LAVORA — il rovescio del 26/08/2026.
+    ///
+    /// Prima questo caso pretendeva un salto, e la ragione era l'ora. Il
+    /// registro ha detto che era la ragione sbagliata: 158 salti su 191 per
+    /// l'orologio, 4 per il carico. Un sistema che può ripararsi solo di notte
+    /// non si ripara, perché di notte la macchina dorme e di giorno l'orologio
+    /// lo ferma.
     #[test]
-    fn outside_the_window_and_not_idle_enough_skips() {
+    fn during_the_day_with_headroom_it_works() {
         let inputs = WatchInputs { hour: 14, idle_seconds: 100, ..good_inputs() };
-        let WatchDecision::Skip(reason) = decide(&inputs, &thresholds()) else {
-            panic!("doveva saltare, era fuori finestra e non abbastanza ferma")
+        assert_eq!(
+            decide(&inputs, &thresholds()),
+            WatchDecision::Run,
+            "di giorno, con carico e memoria a posto, il ciclo deve poter lavorare"
+        );
+    }
+
+    /// E IL FRENO CHE RESTA È QUELLO GIUSTO: di giorno la soglia è quella
+    /// stretta, perché qualcuno sta lavorando. Senza questo caso, togliere la
+    /// finestra sembrerebbe togliere ogni protezione.
+    #[test]
+    fn during_the_day_a_busy_machine_still_stops_it() {
+        let th = thresholds();
+        let over = th.busy_load_ratio_cap * good_inputs().core_count as f64 + 0.1;
+        let inputs = WatchInputs { hour: 14, idle_seconds: 100, load1: over, ..good_inputs() };
+        let WatchDecision::Skip(reason) = decide(&inputs, &th) else {
+            panic!("con la macchina occupata deve saltare, anche adesso")
         };
-        assert!(reason.contains("fuori dalla finestra di notte"), "{reason}");
+        assert!(reason.contains("carico alto"), "e il motivo dice il carico, non l'ora: {reason}");
+        assert!(reason.contains("macchina al lavoro"), "{reason}");
     }
 
     /// La seconda porta della finestra: fuori orario ma ferma da molto
