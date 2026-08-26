@@ -10,34 +10,68 @@
 //! scegliergli il modello — il danno peggiore che questo gancio può fare.
 //! Fail-open su stdin illeggibile o fuori contesto, come ogni altro gancio.
 
-use guards::phase_router::{route_with, Routing, Row, TRADE_MODEL};
+use guards::phase_router::{
+    declared_model_in_frontmatter, declared_model_wins, route_with, Row, TRADE_MODEL,
+};
 use serde_json::Value;
 use std::fs;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 
 use crate::handoff::state_dir;
 
 const CEILING_BYTES: u64 = 5 * 1024 * 1024;
 
+/// Il file che definisce un mestiere, se il nome è un nome di mestiere.
+///
+/// Il nome arriva dal payload, quindi non si concatena a un percorso senza
+/// guardarlo: un `subagent_type` con una barra o due punti uscirebbe dalla
+/// cartella degli agenti. I mestieri dei plugin (`claude-security:explore`)
+/// cadono qui dentro ed è giusto — il loro file non sta in questa cartella,
+/// e il gancio non ha niente da far valere per loro.
+fn agent_file(trade: &str) -> Option<PathBuf> {
+    if trade.is_empty()
+        || !trade
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    let home = std::env::var_os("HOME")?;
+    Some(
+        PathBuf::from(home)
+            .join(".claude")
+            .join("agents")
+            .join(format!("{trade}.md")),
+    )
+}
+
+/// Il modello che il mestiere dichiara, letto dal suo file. `None` per ogni
+/// mestiere che non ne ha uno: quelli di sistema, quelli dei plugin, e
+/// quelli il cui file non si legge.
+fn declared_model_for(trade: &str) -> Option<String> {
+    let text = fs::read_to_string(agent_file(trade)?).ok()?;
+    declared_model_in_frontmatter(&text).map(str::to_string)
+}
+
 /// Una riga in `ganci.jsonl`: mestiere, modello scelto (o `null`), motivo,
 /// sessione se c'è. Formato compatto, come i ganci nati in Rust senza un
 /// originale Python da ricopiare byte per byte.
-fn log_routing(routing: &Routing, session: Option<&str>) {
+fn log_routing(trade: &str, model: Option<&str>, reason: &str, session: Option<&str>) {
     let mut obj = serde_json::Map::new();
     obj.insert(
         "t".into(),
         Value::String(hook_io::journal::now_iso8601_python()),
     );
     obj.insert("gancio".into(), Value::String("phase-router".into()));
-    obj.insert("mestiere".into(), Value::String(routing.trade.clone()));
+    obj.insert("mestiere".into(), Value::String(trade.to_string()));
     obj.insert(
         "modello".into(),
-        routing
-            .model
+        model
             .map(|m| Value::String(m.to_string()))
             .unwrap_or(Value::Null),
     );
-    obj.insert("motivo".into(), Value::String(routing.reason.to_string()));
+    obj.insert("motivo".into(), Value::String(reason.to_string()));
     if let Some(s) = session.filter(|s| !s.is_empty()) {
         obj.insert("session".into(), Value::String(s.chars().take(8).collect()));
     }
@@ -76,25 +110,45 @@ fn process_with(table: &[Row], payload: &Value) -> Option<Value> {
         .unwrap_or("");
     let valve_off = hook_io::Mode::from_env("PHASE_ROUTER") == hook_io::Mode::Off;
 
-    let routing = route_with(table, trade, model, prompt, valve_off);
     if valve_off {
         return None; // la valvola lascia passare tutto senza toccare il registro
     }
     let session = payload.get("session_id").and_then(|v| v.as_str());
-    log_routing(&routing, session);
+
+    // Prima si fa valere la scelta che il mestiere ha già dichiarato: dove
+    // c'è un `model` esplicito il router non entra mai («chi lancia ha
+    // deciso»), e senza questo passaggio il frontmatter resterebbe
+    // scavalcato in silenzio.
+    let declared = trade.and_then(declared_model_for);
+    if let Some(down) = declared
+        .as_deref()
+        .and_then(|d| declared_model_wins(Some(d), model))
+    {
+        log_routing(trade.unwrap_or(""), Some(&down.to), down.reason, session);
+        return Some(rewrite_model(tool_input, &down.to));
+    }
+
+    let routing = route_with(table, trade, model, prompt, valve_off);
+    log_routing(&routing.trade, routing.model, routing.reason, session);
 
     let chosen = routing.model?;
+    Some(rewrite_model(tool_input, chosen))
+}
+
+/// L'input della chiamata con il campo `model` sostituito: è l'unica forma
+/// di uscita che questo gancio produce.
+fn rewrite_model(tool_input: &Value, model: &str) -> Value {
     let mut rewritten = tool_input.clone();
     rewritten
         .as_object_mut()
-        .expect("filtrato sopra: e' un oggetto")
-        .insert("model".to_string(), Value::String(chosen.to_string()));
-    Some(serde_json::json!({
+        .expect("filtrato da chi chiama: è un oggetto")
+        .insert("model".to_string(), Value::String(model.to_string()));
+    serde_json::json!({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "updatedInput": rewritten,
         }
-    }))
+    })
 }
 
 pub fn run() -> i32 {
@@ -257,6 +311,106 @@ mod tests {
             printed["hookSpecificOutput"]["updatedInput"]["model"],
             "haiku"
         );
+    }
+
+    /// Scrive il file di un mestiere nella casa isolata, col modello che
+    /// dichiara: è il frontmatter che il gancio deve andare a leggere.
+    fn declare_trade(home: &HomeIsolata, trade: &str, model: &str) {
+        let dir = home.dir.join(".claude").join("agents");
+        fs::create_dir_all(&dir).expect("la cartella degli agenti");
+        fs::write(
+            dir.join(format!("{trade}.md")),
+            format!("---\nname: {trade}\nmodel: {model}\n---\n\n# {trade}\n"),
+        )
+        .expect("il file del mestiere");
+    }
+
+    /// Il caso misurato il 26/08/2026: `builder` dichiara sonnet e la
+    /// chiamata chiede opus. Si torna al dichiarato, e il registro dice
+    /// perché.
+    #[test]
+    fn a_costlier_model_than_the_trade_declares_is_brought_back_to_it() {
+        let home = HomeIsolata::nuova("phase-router-declassa");
+        declare_trade(&home, "builder", "sonnet");
+        let out = process_with(
+            CANDIDATE_TABLE,
+            &agent_payload("builder", Some("opus"), "scrivi il codice"),
+        )
+        .expect("doveva riportare al modello dichiarato");
+        assert_eq!(out["hookSpecificOutput"]["updatedInput"]["model"], "sonnet");
+        assert_eq!(
+            out["hookSpecificOutput"]["updatedInput"]["subagent_type"],
+            "builder"
+        );
+        let lines = hook_journal_lines(&home);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0]["mestiere"], "builder");
+        assert_eq!(lines[0]["modello"], "sonnet");
+        assert_eq!(
+            lines[0]["motivo"],
+            "il mestiere aveva già scelto il proprio modello"
+        );
+    }
+
+    /// Verso il basso non si tocca, e nemmeno quando il modello chiesto è
+    /// quello già dichiarato: resta la riga «chi lancia ha deciso».
+    #[test]
+    fn a_cheaper_or_equal_model_is_left_to_whoever_asked() {
+        let home = HomeIsolata::nuova("phase-router-non-declassa");
+        declare_trade(&home, "builder", "sonnet");
+        for asked in ["haiku", "sonnet"] {
+            assert_eq!(
+                process_with(
+                    CANDIDATE_TABLE,
+                    &agent_payload("builder", Some(asked), "scrivi il codice")
+                ),
+                None,
+                "{asked} non doveva essere riscritto"
+            );
+        }
+        let lines = hook_journal_lines(&home);
+        assert_eq!(lines.len(), 2);
+        assert!(lines
+            .iter()
+            .all(|l| l["motivo"] == "chi lancia ha deciso" && l["modello"].is_null()));
+    }
+
+    /// Un mestiere che non dichiara niente non ha una scelta da far valere:
+    /// gli agenti di sistema e quelli dei plugin passano intatti. Il nome coi
+    /// due punti non deve nemmeno diventare un percorso.
+    #[test]
+    fn a_trade_that_declares_nothing_is_passed_through() {
+        let home = HomeIsolata::nuova("phase-router-senza-dichiarazione");
+        for trade in ["general-purpose", "claude-security:explore", "Explore"] {
+            assert_eq!(
+                process_with(CANDIDATE_TABLE, &agent_payload(trade, Some("opus"), "x")),
+                None,
+                "{trade} non dichiara niente: nessuna riscrittura"
+            );
+        }
+        assert!(hook_journal_lines(&home)
+            .iter()
+            .all(|l| l["modello"].is_null()));
+    }
+
+    /// Il nome del mestiere arriva dal payload: non deve poter uscire dalla
+    /// cartella degli agenti. Il file esiste davvero, un gradino più su, e
+    /// resta irraggiungibile.
+    #[test]
+    fn a_trade_name_cannot_escape_the_agents_directory() {
+        let home = HomeIsolata::nuova("phase-router-fuga");
+        declare_trade(&home, "builder", "sonnet");
+        let outside = home.dir.join(".claude").join("outside.md");
+        fs::write(&outside, "---\nmodel: haiku\n---\n").expect("il file un gradino su");
+        for trade in ["../outside", "../../etc/passwd", "builder/../outside", "."] {
+            assert_eq!(agent_file(trade), None, "{trade} doveva essere respinto");
+            assert_eq!(
+                process_with(CANDIDATE_TABLE, &agent_payload(trade, Some("opus"), "x")),
+                None,
+                "{trade} non doveva leggere niente"
+            );
+        }
+        assert!(agent_file("builder").is_some());
     }
 
     /// Uno strumento diverso da `Agent` non è affar suo: nessun output, nessuna
