@@ -44,6 +44,7 @@
 //! che il gancio non legge (uno script già sul disco, un `Makefile`, un
 //! `npm run`). Le prime tre sono le più vicine e le più facili da aggiungere.
 
+use crate::interpreters::{DELEGATES, INTERPRETERS};
 use crate::shell::{split_segments, split_words, valve_in_front};
 use crate::worktree_deletes::{assignments, expand, inside_worktree};
 use hook_io::Decision;
@@ -83,12 +84,13 @@ const PREFIXES: &[&str] = &[
     "elif", "do", "while", "until", "for",
 ];
 
-/// Chi riceve del **codice** come argomento: la stringa va guardata, non il verbo.
-///
-/// È la sola via per cui `bash -c "rm -rf /x"` viene riconosciuto. Senza,
-/// basterebbe scrivere il gesto dentro una stringa. E `bash -n script.sh`, che
-/// il codice lo *legge* soltanto, continua a passare: lì non c'è nessun `-c`.
-const INTERPRETERS: &[&str] = &["bash", "sh", "zsh", "dash", "ksh", "busybox"];
+// `INTERPRETERS` e `DELEGATES` vivono in `crate::interpreters`, condivisi con
+// `linear_readonly.rs`: fino al 25/08/2026 questo file ne aveva una copia
+// propria, larga solo quanto le shell POSIX (`bash`, `sh`, `zsh`, `dash`,
+// `ksh`, `busybox`), e `python3 -c "…rm -rf…"` non veniva mai riletto — buco
+// misurato in diretta lo stesso giorno. `linear_readonly.rs` non importa
+// ancora da qui: è protetto e non si modifica dall'interno di una sessione
+// (segnalazione in coda), quindi tiene la propria copia, già larga.
 
 /// Le radici sotto cui una cancellazione ricorsiva non distrugge lavoro.
 ///
@@ -275,6 +277,13 @@ pub struct Facts<'a> {
     /// il ramo le sfugge anche mentre ci si trova sopra — ed è il caso che fa
     /// danno, non quello che scrive `origin/main` per esteso.
     pub current_branch: &'a dyn Fn(&str) -> Option<String>,
+    /// C'è del lavoro non salvato che quel bersaglio perderebbe?
+    ///
+    /// Letta da git (`diff --quiet -- <bersaglio>`), non dedotta dal testo: un
+    /// `git checkout -- <path>` su un albero pulito è il modo normale di
+    /// scartare una modifica che non esiste, e negarlo sarebbe attrito ogni
+    /// giorno per niente. Il repository e il bersaglio arrivano assoluti.
+    pub has_pending_changes: &'a dyn Fn(&str, &str) -> bool,
 }
 
 /// Il gesto riconosciuto, con il bersaglio che il rifiuto potrà nominare.
@@ -284,6 +293,7 @@ enum Danger {
     UnreadableDelete { segment: String },
     HardReset { branch: String, repo: String },
     ForcePush { how: String },
+    CheckoutDiscardsChanges { path: String, repo: String },
 }
 
 pub fn judge(f: &Facts) -> Decision {
@@ -298,8 +308,36 @@ pub fn judge(f: &Facts) -> Decision {
             Decision::Pass
         }
         Some(d) => Decision::Block(explain(&d)),
-        None => Decision::Pass,
+        // Nessun pericolo: resta da dire se il comando ha passato il lavoro a
+        // un delegato che questo freno non può leggere. Non si nega — Codex
+        // serve a lavoro vero — ma si rende visibile nel registro, con
+        // `Decision::Warn` che `hook_io::emit` scrive e lascia passare.
+        None => match named_delegate(f.command) {
+            Some(verb) => Decision::Warn(format!(
+                "delegato non ispezionabile: {verb}.\n  · Questo freno legge comandi di \
+                 shell, non ciò che un altro processo farà: non vede né vieta i suoi gesti.\n  \
+                 · Non è negato — {verb} è in uso legittimo — ma resta scritto nel registro."
+            )),
+            None => Decision::Pass,
+        },
     }
+}
+
+/// Il primo delegato nominato nel comando, se ce n'è uno.
+fn named_delegate(command: &str) -> Option<String> {
+    for segment in split_segments(command) {
+        let Some(words) = split_words(&segment) else {
+            continue;
+        };
+        let rest = strip_prefixes(&words);
+        let Some(verb) = rest.first() else {
+            continue;
+        };
+        if let Some(name) = DELEGATES.iter().find(|d| ends_with_command(verb, d)) {
+            return Some((*name).to_string());
+        }
+    }
+    None
 }
 
 /// La valvola disarma **il comando che la porta davanti**, non la riga intera.
@@ -477,17 +515,121 @@ fn judge_segment(
         }
         return None;
     };
-    let rest = strip_prefixes(&words);
+    judge_words(&words, variables, f, depth)
+}
+
+/// Le lettere che portano codice inline, per interprete: `-c` per
+/// bash/sh/python, `-e`/`--eval` per node/ruby/perl/deno.
+fn inline_code_flag(a: &str) -> bool {
+    matches!(a, "-c" | "-e" | "--eval")
+}
+
+/// Le stringhe letterali di un codice che non è sintassi di shell — Python,
+/// JavaScript — nell'ordine in cui compaiono.
+///
+/// `subprocess.run(['rm','-rf','x'])` non si legge come `rm -rf x`:
+/// parentesi, virgole e parentesi quadre non sono sintassi di shell, quindi
+/// `split_words` le fonde in un'unica parola illeggibile. Ma gli argomenti
+/// veri di quella chiamata sono le stringhe fra virgolette, nell'ordine in cui
+/// il codice le scrive — ed è tutto ciò che serve per ricostruire l'elenco che
+/// il processo eseguirà davvero.
+fn quoted_literals(code: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = code.chars();
+    while let Some(c) = chars.next() {
+        if c != '\'' && c != '"' {
+            continue;
+        }
+        let mut s = String::new();
+        for c2 in chars.by_ref() {
+            if c2 == c {
+                break;
+            }
+            s.push(c2);
+        }
+        out.push(s);
+    }
+    out
+}
+
+/// Il codice nomina una funzione nota per uscire verso una shell?
+///
+/// SENZA QUESTO CANCELLO, `quoted_literals` legge come comando anche una
+/// stringa mai eseguita: `print('rm -rf is dangerous, never run it')` non
+/// tocca niente, ed è la stessa classe di caso per cui il freno principale
+/// non nega chi si limita a *nominare* un gesto (vedi
+/// `a_command_that_only_names_a_gesture_is_never_denied`). Il fallback sui
+/// letterali si applica solo quando il codice porta uno di questi nomi vicino
+/// — non capisce la semantica di Python o JavaScript, ma un `print(...)`
+/// senza nessuno di questi non ha modo di eseguire ciò che stampa.
+///
+/// NON È PRECISO: un marcatore e una stringa innocua nello stesso blocco di
+/// codice, senza nessun legame vero fra i due, restano un falso positivo
+/// possibile — il prezzo di non poter analizzare la sintassi vera del
+/// linguaggio ospite. È il compromesso scritto qui, non taciuto.
+fn looks_like_a_shell_escape(code: &str) -> bool {
+    // Confronto testuale: si cerca la sottostringa nel codice altrui, non si
+    // chiama `eval`/`exec` di nessun linguaggio da qui.
+    let lower = code.to_lowercase();
+    const MARKERS: &[&str] = &[
+        "os.system",
+        "os.popen",
+        "subprocess.run",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.check_output",
+        "subprocess.popen",
+        "execsync",
+        "spawnsync",
+        "child_process",
+        "system(",
+        "popen(",
+        "shell_exec",
+        "eval(",
+        "exec(",
+    ];
+    MARKERS.iter().any(|m| lower.contains(m))
+}
+
+fn judge_words(
+    words: &[String],
+    variables: &HashMap<String, String>,
+    f: &Facts,
+    depth: usize,
+) -> Option<Danger> {
+    if depth > MAX_NESTING {
+        return None;
+    }
+    let rest = strip_prefixes(words);
     let (verb, args) = rest.split_first()?;
     let privileged = words.iter().any(|w| w == "sudo" || w == "doas");
 
     // Un interprete che riceve del codice: si guarda il codice, non il verbo.
     if INTERPRETERS.iter().any(|i| ends_with_command(verb, i)) {
-        let code = args
-            .iter()
-            .position(|a| a == "-c")
-            .and_then(|i| args.get(i + 1))?;
-        return first_danger(code, f, depth + 1);
+        let code = args.iter().position(|a| inline_code_flag(a)).and_then(|i| args.get(i + 1))?;
+        if let Some(d) = first_danger(code, f, depth + 1) {
+            return Some(d);
+        }
+        // Il codice non è sintassi di shell: se nomina una funzione nota per
+        // uscire verso una shell, si prova a leggerlo come una sequenza di
+        // argomenti (`subprocess.run(['rm','-rf','x'])`) e, se dentro c'è una
+        // stringa che è essa stessa un comando di shell intero
+        // (`execSync('git push --force')`), come quella stringa a sé. Senza
+        // quel nome, una stringa fra virgolette è testo quanto lo è per il
+        // freno principale (`echo "rm -rf /"` non è negato).
+        if looks_like_a_shell_escape(code) {
+            let literals = quoted_literals(code);
+            for lit in &literals {
+                if let Some(d) = first_danger(lit, f, depth + 1) {
+                    return Some(d);
+                }
+            }
+            if !literals.is_empty() {
+                let empty = HashMap::new();
+                return judge_words(&literals, &empty, f, depth + 1);
+            }
+        }
+        return None;
     }
 
     if ends_with_command(verb, "rm") {
@@ -761,8 +903,53 @@ fn git_gesture(args: &[String], f: &Facts) -> Option<Danger> {
     match sub {
         "reset" => hard_reset(args, tail, f),
         "push" => force_push(tail),
+        "checkout" => checkout_gesture(args, tail, f),
         _ => None,
     }
+}
+
+/// `git checkout -- <path>` e `git checkout .`: scartano le modifiche non
+/// salvate di un percorso, non cambiano ramo — e il mandato che ha fatto
+/// perdere lavoro vero il 20/08/2026 (`checkout-porta-via-lavoro-altrui`) è
+/// esattamente questo gesto.
+///
+/// SOLO SE C'È DAVVERO QUALCOSA DA PERDERE. `git checkout -- <path>` su un
+/// albero pulito è il modo normale di scartare una modifica che non esiste —
+/// negarlo sarebbe un attrito quotidiano senza motivo. Si condiziona a `git
+/// diff --quiet -- <path>`, come `hard_reset` condiziona al ramo vero: il
+/// fatto si legge dal repository, non si indovina dal testo.
+///
+/// `git checkout <ramo>` senza `--` e senza bersaglio nudo (`.`) resta fuori
+/// di proposito: è un cambio di ramo, non uno scarto di modifiche.
+fn checkout_gesture(args: &[String], tail: &[String], f: &Facts) -> Option<Danger> {
+    let paths: Vec<&String> = if let Some(sep) = tail.iter().position(|a| a == "--") {
+        tail[sep + 1..].iter().collect()
+    } else if tail == ["."] {
+        // `.` non è mai un nome di ramo valido: senza `--` è comunque un
+        // percorso, e scarta ogni modifica non salvata nella cartella corrente.
+        tail.iter().collect()
+    } else {
+        return None;
+    };
+    if paths.is_empty() {
+        return None;
+    }
+    let repo = args
+        .iter()
+        .position(|a| a == "-C")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| f.cwd.to_string());
+    let repo = absolute(&repo, f)?;
+    for path in paths {
+        if (f.has_pending_changes)(&repo, path) {
+            return Some(Danger::CheckoutDiscardsChanges {
+                path: path.clone(),
+                repo,
+            });
+        }
+    }
+    None
 }
 
 fn hard_reset(args: &[String], tail: &[String], f: &Facts) -> Option<Danger> {
@@ -881,6 +1068,15 @@ fn explain(d: &Danger) -> String {
              richiesta di modifica.\n  · `git push origin --delete <ramo>` non è questo gesto e \
              resta autorizzato."
         ),
+        Danger::CheckoutDiscardsChanges { path, repo } => format!(
+            "riazzeramento di «{path}» in «{repo}», che ha modifiche non salvate.\n  · \
+             `git checkout -- <percorso>` (e `git checkout .`) riporta il file alla versione \
+             dell'indice e butta via ogni modifica nel mezzo, in silenzio: è il gesto che ha già \
+             fatto perdere lavoro vero.\n  · Le modifiche si leggono dal repository (`git diff \
+             --quiet -- {path}`), non dal testo del comando.\n  · Vie d'uscita: \
+             `git -C {repo} stash push -- {path}` prima; oppure `git -C {repo} diff -- {path}` \
+             per guardare cosa si perderebbe."
+        ),
     }
 }
 
@@ -892,7 +1088,14 @@ mod tests {
     const HOME: &str = "/Users/theo";
 
     fn on(command: &str, cwd: &str, branch: Option<&str>) -> Decision {
+        on_dirty(command, cwd, branch, &[])
+    }
+
+    /// Come `on`, ma con `dirty` a dire quali bersagli `git diff --quiet`
+    /// troverebbe sporchi — serve solo ai casi di `git checkout`.
+    fn on_dirty(command: &str, cwd: &str, branch: Option<&str>, dirty: &[&str]) -> Decision {
         let b = branch.map(|s| s.to_string());
+        let dirty: Vec<String> = dirty.iter().map(|s| s.to_string()).collect();
         judge(&Facts {
             command,
             cwd,
@@ -900,6 +1103,7 @@ mod tests {
             home: HOME,
             is_link: &|_| false,
             current_branch: &|_| b.clone(),
+            has_pending_changes: &|_repo, path| dirty.iter().any(|d| d == path),
         })
     }
 
@@ -1011,6 +1215,7 @@ mod tests {
                 *seen.borrow_mut() = repo.to_string();
                 Some("develop".to_string())
             },
+            has_pending_changes: &|_, _| false,
         });
         assert!(matches!(d, Decision::Block(_)));
         assert_eq!(*seen.borrow(), "/Users/theo/gyver/work/whatsapp");
@@ -1763,5 +1968,155 @@ mod tests {
         assert!(blocked(&format!(
             "git commit -F- <<<\"messaggio\"\nrm -rf {t}"
         )));
+    }
+
+    // ── Il buco misurato il 25/08/2026: interpreti non-shell, delegati, checkout ──
+
+    fn warned(command: &str) -> Option<String> {
+        match on(command, "/Users/theo/orca/general", None) {
+            Decision::Warn(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// Il caso vero, misurato in diretta: `python3 -c "…subprocess.run([…])"`
+    /// passava con `exit=0` perché `python3` non era fra gli interpreti
+    /// riconosciuti. Non basta allargare l'elenco: il codice Python non è
+    /// sintassi di shell, e il bersaglio vero sono le stringhe fra virgolette.
+    ///
+    /// MUTANTE: in `interpreters.rs`, restringere `INTERPRETERS` alle sole
+    /// shell POSIX (`bash`, `sh`, `zsh`, `dash`, `ksh`, `busybox`). Eseguito
+    /// (con una ricompilazione vera del binario `claude-hooks`, non solo di
+    /// questo test): il PoC torna a passare con `exit=0`. Ripristinato, e
+    /// l'impronta MD5 del file combacia con quella di prima della mutazione.
+    #[test]
+    fn python_code_with_a_list_argv_is_read_as_the_command_it_will_run() {
+        let m = message(
+            "python3 -c \"import subprocess; subprocess.run(['rm','-rf','./una-cartella-finta'])\"",
+        );
+        assert!(m.contains("una-cartella-finta"), "{m}");
+        // `os.system`/`subprocess.call` con una stringa intera valgono quanto
+        // `bash -c`: la stringa È shell, e il primo tentativo (senza il
+        // fallback sui letterali) la coglie già.
+        assert!(blocked(
+            "python3 -c \"import os; os.system('rm -rf /Users/theo/personal/sailor/src')\""
+        ));
+    }
+
+    /// La stessa classe di buco con `node -e`: il codice non è shell, ma la
+    /// stringa passata a `execSync` lo È, per intero.
+    #[test]
+    fn node_inline_code_that_shells_out_is_read_too() {
+        let m = message(
+            "node -e \"require('child_process').execSync('git push --force')\"",
+        );
+        assert!(m.contains("pubblicazione forzata"), "{m}");
+        // `-e` funziona quanto `-c`: prima solo `-c` era riconosciuto.
+        assert!(blocked(
+            "ruby -e \"system('rm -rf /Users/theo/personal/sailor/src')\""
+        ));
+    }
+
+    /// Il rischio dichiarato del fallback sui letterali: una stringa che è
+    /// solo testo (mai eseguita) può contenere per caso un verbo pericoloso
+    /// come prima parola. Qui non capita — «print» non è mai `rm`/`git` — ma
+    /// la prova esiste per dire dove passa il confine: non si prova a
+    /// capire la semantica del Python, si legge cosa il codice esegue quando
+    /// il primo pezzo è già un verbo riconosciuto.
+    #[test]
+    fn a_literal_that_only_describes_a_gesture_does_not_trigger_the_fallback_alone() {
+        assert!(!blocked("python3 -c \"print('rm -rf is dangerous, never run it')\""));
+    }
+
+    /// Il delegato non si vieta: passa, ma il freno lo rende visibile invece
+    /// di tacere — è l'unica cosa che può fare, perché non legge cosa farà
+    /// quel processo.
+    ///
+    /// MUTANTE: in `named_delegate`, tornare sempre `None`. Eseguito: questa
+    /// prova diventa rossa e basta. Ripristinato.
+    #[test]
+    fn a_delegate_is_not_blocked_but_becomes_visible() {
+        for (cmd, verb) in [
+            ("codex exec \"fai qualcosa\"", "codex"),
+            ("gemini -p 'fai qualcosa'", "gemini"),
+            ("aider --message 'fai qualcosa'", "aider"),
+        ] {
+            let m = warned(cmd).unwrap_or_else(|| panic!("atteso un avviso per: {cmd}"));
+            assert!(m.contains("delegato non ispezionabile"), "{m}");
+            assert!(m.contains(verb), "{m}");
+            assert!(!blocked(cmd), "un delegato non si nega: {cmd}");
+        }
+        // Un comando ordinario non genera nessun avviso.
+        assert!(warned("npm run build").is_none());
+        // Un delegato che porta comunque un gesto riconoscibile resta
+        // giudicato su quello, prima di arrivare al ramo dell'avviso: qui non
+        // c'è nessun modo di leggere dentro `codex exec`, quindi passa con
+        // l'avviso e basta — la riga è qui per dire che l'ordine dei rami non
+        // nasconde un pericolo che *si può* leggere.
+        assert!(blocked("rm -rf /Users/theo/personal/sailor/src && codex exec x"));
+    }
+
+    /// `git checkout -- <path>` e `git checkout .`: il caso vero che ha fatto
+    /// perdere lavoro il 20/08/2026. Bloccato **solo** se c'è davvero
+    /// qualcosa da perdere — letto dal repository, non dal testo.
+    ///
+    /// MUTANTE: in `checkout_gesture`, tornare sempre `None`. Eseguito: le
+    /// prime tre righe diventano rosse. Ripristinato.
+    #[test]
+    fn checkout_that_discards_real_changes_is_blocked() {
+        let repo = "/Users/theo/personal/sailor";
+        let m = match on_dirty("git checkout -- src/main.rs", repo, None, &["src/main.rs"]) {
+            Decision::Block(m) => m,
+            other => panic!("atteso un blocco, ottenuto {other:?}"),
+        };
+        assert!(m.contains("src/main.rs"), "{m}");
+        assert!(m.contains("modifiche non salvate"), "{m}");
+        assert!(matches!(
+            on_dirty("git checkout .", repo, None, &["."]),
+            Decision::Block(_)
+        ));
+        // Più bersagli: basta che uno sia sporco.
+        assert!(matches!(
+            on_dirty(
+                "git checkout -- a.txt b.txt",
+                repo,
+                None,
+                &["b.txt"]
+            ),
+            Decision::Block(_)
+        ));
+    }
+
+    /// L'ALBERO PULITO NON FA RUMORE: è il falso positivo da cui questo
+    /// gesto va protetto, o l'attrito quotidiano vince sulla protezione.
+    ///
+    /// MUTANTE: in `checkout_gesture`, ignorare `f.has_pending_changes` e
+    /// bloccare sempre. Eseguito: questa prova diventa rossa. Ripristinato.
+    #[test]
+    fn checkout_on_a_clean_tree_passes_without_noise() {
+        let repo = "/Users/theo/personal/sailor";
+        assert!(matches!(
+            on_dirty("git checkout -- src/main.rs", repo, None, &[]),
+            Decision::Pass
+        ));
+        assert!(matches!(
+            on_dirty("git checkout .", repo, None, &[]),
+            Decision::Pass
+        ));
+    }
+
+    /// Un cambio di ramo non è uno scarto di modifiche: senza `--` e senza un
+    /// bersaglio nudo (`.`), il gesto resta fuori — anche con l'albero sporco.
+    #[test]
+    fn switching_branches_is_not_touched_even_with_a_dirty_tree() {
+        let repo = "/Users/theo/personal/sailor";
+        assert!(matches!(
+            on_dirty("git checkout main", repo, None, &["main"]),
+            Decision::Pass
+        ));
+        assert!(matches!(
+            on_dirty("git checkout -b nuovo-ramo", repo, None, &["nuovo-ramo"]),
+            Decision::Pass
+        ));
     }
 }
