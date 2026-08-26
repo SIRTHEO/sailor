@@ -40,6 +40,7 @@ mod long_session;
 mod link_worktree_rules;
 mod permission_stall;
 mod spotlight_marker;
+mod status_board;
 mod uncovered_exit;
 mod uncovered_thread;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
@@ -225,6 +226,11 @@ fn main() {
     // non è un gancio: non legge stdin e non deve fallire in silenzio.
     if which == "indice" {
         std::process::exit(index_bridge::run(&args[2..]));
+    }
+    // Come `indice`: si invoca a mano, non lo chiama nessun evento — quindi
+    // esce prima del giro dei ganci, che si aspetta un payload su stdin.
+    if which == "stato" {
+        std::process::exit(status_board::run());
     }
 
     // Fail-open per tutti, prima ancora di leggere stdin: un `PreToolUse` che
