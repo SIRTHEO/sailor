@@ -36,7 +36,6 @@ struct Config {
     codex_dir: PathBuf,
     gemini_bin: String,
     gemini_model: String,
-    gemini_key_file: PathBuf,
     gemini_timeout_secs: u64,
     openrouter_model: String,
     openrouter_key_file: PathBuf,
@@ -118,12 +117,11 @@ impl Config {
                 "NOTTE_CODEX_DIR",
                 format!("{home}/.claude/docs"),
             )),
-            gemini_bin: env_or("NOTTE_GEMINI_BIN", "gemini".to_string()),
-            gemini_model: env_or("NOTTE_GEMINI_MODEL", "gemini-2.5-flash".to_string()),
-            gemini_key_file: PathBuf::from(env_or(
-                "NOTTE_GEMINI_KEY_FILE",
-                format!("{home}/.claude/state/gemini.key"),
-            )),
+            // `agy`, non `gemini`: è la riga di comando di Antigravity, e usa
+            // l'accesso già fatto. Vive in `~/.local/bin`, che `resolve_bin`
+            // guarda anche quando il percorso ereditato non ci arriva.
+            gemini_bin: env_or("NOTTE_GEMINI_BIN", "agy".to_string()),
+            gemini_model: env_or("NOTTE_GEMINI_MODEL", "gemini-3.7-flash-low".to_string()),
             gemini_timeout_secs: env_or("NOTTE_GEMINI_TIMEOUT_SECS", "300".to_string())
                 .parse()
                 .unwrap_or(300),
@@ -589,33 +587,19 @@ fn call_openrouter(cfg: &Config, prompt: &str) -> EngineResult {
 
 /// Il terzo motore, dal 26/08/2026.
 ///
-/// PERCHÉ UNA CHIAVE E NON L'ACCESSO CHE THEO HA GIÀ FATTO. L'accesso del
-/// 26/08 vale per Antigravity, che è un ambiente di sviluppo, non un comando
-/// da riga di comando: la CLI ufficiale risponde `UNSUPPORTED_CLIENT` —
-/// Google ha chiuso quel livello gratuito ai comandi da terminale. La strada
-/// che resta è una chiave di AI Studio, gratuita e su una quota diversa.
+/// IL NOME DEL COMANDO È `agy`, NON `gemini`, e la differenza è costata mezza
+/// mattina. La CLI che si chiama `gemini` risponde `UNSUPPORTED_CLIENT`:
+/// Google ha chiuso quel livello gratuito ai comandi da terminale e rimanda
+/// ad Antigravity. Ma Antigravity **ha** la sua riga di comando, `agy`, che
+/// usa l'accesso già fatto — nessuna chiave, nessuna quota separata. Prima di
+/// concludere che una strada è chiusa conviene chiedere come si chiama la
+/// porta.
 ///
-/// SENZA CHIAVE SI RIMANDA, NON SI FALLISCE. Come per il motore locale
-/// inerte: un compito che aspetta una chiave non è un difetto del compito, e
-/// non deve consumare il contatore dei fallimenti consecutivi né aprire una
-/// segnalazione ogni notte.
+/// SENZA MOTORE SI RIMANDA, NON SI FALLISCE. Come per il motore locale
+/// inerte: un compito che aspetta uno strumento non installato non è un
+/// difetto del compito, e non deve consumare il contatore dei fallimenti
+/// consecutivi né aprire una segnalazione ogni notte.
 fn call_gemini(cfg: &Config, prompt: &str) -> EngineResult {
-    let key = fs::read_to_string(&cfg.gemini_key_file)
-        .map(|k| k.trim().to_string())
-        .unwrap_or_default();
-    if key.is_empty() {
-        let _ = fs::write(
-            &cfg.last_output_path,
-            format!(
-                "nessuna chiave in {}\n\
-                 Si prende su aistudio.google.com/apikey e si incolla lì dentro,\n\
-                 su una riga sola. L'accesso ad Antigravity non basta: quella\n\
-                 strada è chiusa ai comandi da terminale.\n",
-                cfg.gemini_key_file.display()
-            ),
-        );
-        return EngineResult::Failed { kind: "senza chiave".to_string(), tokens: "0".to_string() };
-    }
     let bin = match resolve_engine_bin(&cfg.gemini_bin) {
         Ok(b) => b,
         Err(looked) => {
@@ -627,19 +611,24 @@ fn call_gemini(cfg: &Config, prompt: &str) -> EngineResult {
                     looked.iter().map(|p| format!("  {p}")).collect::<Vec<_>>().join("\n")
                 ),
             );
-            return EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() };
+            return EngineResult::Failed {
+                kind: "motore assente".to_string(),
+                tokens: "0".to_string(),
+            };
         }
     };
+    let workdir = cfg.codex_dir.join(".lavoro-usa-e-getta");
+    let _ = fs::create_dir_all(&workdir);
     let mut cmd = Command::new(&bin);
-    cmd.args(["--skip-trust", "-m"])
+    cmd.arg("--model")
         .arg(&cfg.gemini_model)
-        .arg("-p")
+        .arg("--print")
         .arg(prompt)
         .env("PATH", child_path())
-        .env("GEMINI_API_KEY", &key)
-        // La cartella di lavoro è la stessa di Codex: sola lettura di fatto,
-        // perché senza `--yolo` la CLI non esegue niente da sé.
-        .current_dir(&cfg.codex_dir)
+        // Stessa cartella usa-e-getta di Codex, per lo stesso motivo: il
+        // motore legge tutta la macchina e può scrivere solo dove non serve
+        // a nessuno.
+        .current_dir(&workdir)
         .stdin(Stdio::null());
     match run_with_timeout(cmd, Duration::from_secs(cfg.gemini_timeout_secs)) {
         RunOutcome::Finished { status, stdout, stderr } => {
@@ -903,6 +892,30 @@ struct TaskOutcome {
 /// il ciclo che svuota tutta la coda in un colpo (`notte`) e il ciclo
 /// continuo che ne fa uno alla volta (`notte --watch`): il giudizio su un
 /// singolo compito è lo stesso, cambia solo quanti gliene si dà in pasto.
+/// Il rapporto del giorno **corrente**, non di quello in cui il ciclo è partito.
+///
+/// IL DIFETTO CHE RIPARA, misurato il 26/08/2026: la data si calcolava una
+/// volta sola, all'avvio del processo. Il ciclo è residente e sopravvive alla
+/// mezzanotte, quindi continuava a scrivere nel rapporto del giorno prima —
+/// cinque righe datate 26 stavano dentro `rapporto-2026-08-25.md`, e per il 26
+/// non esisteva nessun file. Chi cercava cosa avesse fatto il sistema oggi non
+/// trovava niente, mentre il sistema aveva lavorato.
+///
+/// `today_now` arriva da fuori invece di essere letto qui: è ciò che rende
+/// questa scelta provabile senza aspettare mezzanotte.
+fn report_for(configured: &Path, configured_day: &str, today_now: &str) -> (PathBuf, String) {
+    // Le due variabili d'ambiente restano sovrane: chi fissa la data o il
+    // percorso lo fa apposta — le prove, e chi rigenera un rapporto a mano.
+    if std::env::var("NOTTE_REPORT").is_ok() || std::env::var("NOTTE_DATE_OVERRIDE").is_ok() {
+        return (configured.to_path_buf(), configured_day.to_string());
+    }
+    if today_now == configured_day || today_now.is_empty() {
+        return (configured.to_path_buf(), configured_day.to_string());
+    }
+    let dir = configured.parent().unwrap_or_else(|| Path::new("."));
+    (dir.join(format!("rapporto-{today_now}.md")), today_now.to_string())
+}
+
 fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32) -> TaskOutcome {
     let name = path
         .file_name()
@@ -1079,21 +1092,24 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32) -> 
                     }
                 }
             }
-            // Aspettare una credenziale non è fallire: non tocca il contatore
-            // dei fallimenti consecutivi (tre di fila fermerebbero la notte
-            // intera) e non apre una segnalazione nuova ogni notte. Il
-            // compito resta lì, pronto per quando la chiave arriva.
-            EngineResult::Failed { kind, .. } if kind == "senza chiave" => {
-                let detail = fs::read_to_string(&cfg.last_output_path).unwrap_or_default();
-                note(&cfg.log_path, &format!("{name}: manca la chiave del motore, rimando"));
+            // Aspettare uno strumento non installato non è fallire: non tocca
+            // il contatore dei fallimenti consecutivi (tre di fila
+            // fermerebbero la notte intera) e non apre una segnalazione nuova
+            // ogni notte. Il compito resta lì, pronto per quando arriva.
+            EngineResult::Failed { kind, .. } if kind == "motore assente" => {
+                note(&cfg.log_path, &format!("{name}: il motore non è installato, rimando"));
                 report.line(&report_line(
                     &name,
                     &Outcome::Deferred {
-                        reason: format!("{}: manca la chiave", task.engine),
+                        reason: format!("{}: il motore non è installato", task.engine),
                     },
                 ));
-                let _ = detail;
-                close_task(&claimed, cfg, &task, &format!("rimandato ({}: manca la chiave)", task.engine));
+                close_task(
+                    &claimed,
+                    cfg,
+                    &task,
+                    &format!("rimandato ({}: motore assente)", task.engine),
+                );
                 return TaskOutcome { counts_total: true, bucket: "deferred" };
             }
             EngineResult::Failed { kind, tokens } => {
@@ -1355,7 +1371,11 @@ fn run_watch(cfg: &Config) -> i32 {
                     "__run__",
                 );
                 if let Some(path) = tasks.into_iter().next() {
-                    let report = Report::open(&cfg.report_path, &cfg.today);
+                    // La data si rilegge a ogni esecuzione: il ciclo resta
+                    // acceso per giorni e la mezzanotte non lo riavvia.
+                    let (report_path, report_day) =
+                        report_for(&cfg.report_path, &cfg.today, &shell_date(&["+%Y-%m-%d"]));
+                    let report = Report::open(&report_path, &report_day);
                     execute_task(cfg, &path, &report, &mut fails);
                     recent_runs.push(Instant::now());
                     if fails >= cfg.max_failures {
@@ -1407,6 +1427,35 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// LA MEZZANOTTE, senza aspettarla — difetto misurato il 26/08/2026.
+    ///
+    /// Il ciclo residente calcolava la data all'avvio e la teneva per giorni:
+    /// cinque righe datate 26 sono finite in `rapporto-2026-08-25.md`, e per il
+    /// 26 non esisteva nessun file. Qui la giornata nuova si passa a mano.
+    #[test]
+    fn after_midnight_the_report_follows_the_new_day() {
+        let configured = PathBuf::from("/tmp/notte-x/rapporto-2026-08-25.md");
+        let (path, day) = report_for(&configured, "2026-08-25", "2026-08-26");
+        assert_eq!(day, "2026-08-26");
+        assert_eq!(path, PathBuf::from("/tmp/notte-x/rapporto-2026-08-26.md"));
+        assert_eq!(
+            path.parent(),
+            configured.parent(),
+            "la cartella non cambia: cambia solo il giorno"
+        );
+    }
+
+    /// Nello stesso giorno non si tocca niente: senza questo caso, un criterio
+    /// che ricalcola sempre il percorso passerebbe la prova sopra e nessuno si
+    /// accorgerebbe che ha smesso di rispettare `NOTTE_REPORT`.
+    #[test]
+    fn within_the_same_day_the_report_path_is_untouched() {
+        let configured = PathBuf::from("/tmp/notte-x/rapporto-2026-08-25.md");
+        let (path, day) = report_for(&configured, "2026-08-25", "2026-08-25");
+        assert_eq!(day, "2026-08-25");
+        assert_eq!(path, configured);
+    }
 
     /// LA CORSA VERA, misurata dal vivo il 25/08/2026: due istanze lanciate
     /// insieme prendevano ENTRAMBE il lucchetto. La causa era leggere un
