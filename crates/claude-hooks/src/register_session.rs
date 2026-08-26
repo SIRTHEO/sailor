@@ -411,6 +411,7 @@ fn liveness_from(pid: Option<u32>, lookup: ProcessLookup) -> SessionLiveness {
         (Some(_), ProcessLookup::Unavailable) => SessionLiveness::Unknown,
         (Some(_), ProcessLookup::IsClaude) => SessionLiveness::Alive,
         (Some(_), ProcessLookup::OtherProgram) => SessionLiveness::Unknown,
+        (Some(_), ProcessLookup::ExistsNameUnknown) => SessionLiveness::Unknown,
         (Some(_), ProcessLookup::NotFound) => SessionLiveness::Gone,
     }
 }
@@ -430,23 +431,80 @@ enum ProcessLookup {
     /// Il processo c'è e non si chiama `claude`. Sembra «pid riciclato», ma è
     /// un «non lo so»: anche una riga letta storta arriva qui.
     OtherProgram,
+    /// Il pid esiste — lo dice `kill`, non `ps` — ma il nome resta ignoto
+    /// perché `ps` non era disponibile. Non è «un nome diverso da `claude`»:
+    /// è «nessun nome letto». Stessa incertezza di `OtherProgram`, motivo
+    /// diverso — tenerli distinti dice a chi legge da dove viene il dubbio.
+    ExistsNameUnknown,
     /// `ps` ha risposto, e quel pid non esiste.
     NotFound,
     /// Non si è potuto chiedere: non è un «no», è un «non lo so».
     Unavailable,
 }
 
+/// Cosa risponde il kernel a «questo pid esiste?», letto da `kill(pid, 0)` —
+/// che su Unix non manda nessun segnale, chiede solo l'esistenza. Misurato in
+/// questo perimetro il 25/08/2026, dove `ps` non riesce nemmeno a partire:
+/// `kill(1, 0)` dà `EPERM` (il pid 1 c'è, non ho il permesso di segnalarlo) e
+/// `kill(999999, 0)` dà `ESRCH` (non c'è). Un comando esterno avrebbe dato
+/// codice di uscita 1 in tutti e due i casi: è il motivo del fallimento che
+/// li distingue, non l'esito.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessExistence {
+    /// Il pid esiste. Non dice quale programma sia: quello lo sa solo `ps`.
+    Exists,
+    /// Il pid non esiste.
+    Gone,
+    /// Un errore diverso da `EPERM` ed `ESRCH`: non si sa leggere.
+    Unknown,
+}
+
+/// PURA: cosa dice l'esito grezzo di `kill`. `ret == 0` è successo — il pid
+/// esiste ed è nostro, o comunque abbiamo il permesso di segnalarlo — e vale
+/// come `EPERM`: la sola differenza fra i due è il permesso, mai l'esistenza.
+fn existence_from_kill_result(ret: i32, errno: Option<i32>) -> ProcessExistence {
+    const EPERM: i32 = 1;
+    const ESRCH: i32 = 3;
+    if ret == 0 {
+        return ProcessExistence::Exists;
+    }
+    match errno {
+        Some(EPERM) => ProcessExistence::Exists,
+        Some(ESRCH) => ProcessExistence::Gone,
+        _ => ProcessExistence::Unknown,
+    }
+}
+
+/// L'IMPURITÀ VIVE SOLO QUI. Nessuna crate `libc` per una firma sola — stesso
+/// stile di `current_uid` in `reachability.rs`.
+fn process_exists(pid: u32) -> ProcessExistence {
+    unsafe extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    let ret = unsafe { kill(pid as i32, 0) };
+    let errno =
+        if ret == 0 { None } else { std::io::Error::last_os_error().raw_os_error() };
+    existence_from_kill_result(ret, errno)
+}
+
 /// Il processo scritto nel record è la sessione? L'IMPURITÀ VIVE SOLO QUI.
 ///
 /// Non basta che il pid esista: un numero si ricicla, e un pid riassegnato a un
 /// altro programma dichiarerebbe viva una sessione finita. Si guarda il nome,
-/// con lo stesso confronto che usa chi il pid l'ha scritto.
+/// con lo stesso confronto che usa chi il pid l'ha scritto — e per quello
+/// serve `ps`. Quando `ps` non parte, si ripiega su `kill(pid, 0)`: dà solo
+/// l'esistenza, mai il nome, ma basta a dire «morto» quando risponde `ESRCH`
+/// — il ramo che il difetto di due giorni fa lasciava cieco.
 fn look_up_session_process(pid: u32) -> ProcessLookup {
     let Ok(output) = std::process::Command::new("ps")
         .args(["-o", "pid=,ppid=,comm=", "-p", &pid.to_string()])
         .output()
     else {
-        return ProcessLookup::Unavailable; // `ps` non è partito: non si sa niente
+        return match process_exists(pid) {
+            ProcessExistence::Gone => ProcessLookup::NotFound,
+            ProcessExistence::Exists => ProcessLookup::ExistsNameUnknown,
+            ProcessExistence::Unknown => ProcessLookup::Unavailable,
+        };
     };
     if !output.status.success() {
         return ProcessLookup::NotFound; // ha risposto: quel pid non c'è
@@ -478,13 +536,64 @@ pub(crate) fn recorded_pid(sess: &str) -> Option<u32> {
     record.get("session_pid").and_then(|v| v.as_u64()).map(|p| p as u32)
 }
 
+/// Quando il record dice di essere stato scritto l'ultima volta. `None` nelle
+/// stesse condizioni di `recorded_pid`.
+fn recorded_updated_at(sess: &str) -> Option<u64> {
+    let raw = fs::read_to_string(live_dir().join(format!("{sess}.json"))).ok()?;
+    let record = serde_json::from_str::<serde_json::Value>(&raw).ok()?;
+    record.get("updated_at").and_then(|v| v.as_u64())
+}
+
+/// L'ora in cui questa macchina si è avviata, da `kern.boottime` (`sysctl`).
+/// `None` se `sysctl` non parte — negato in questo stesso perimetro come `ps`
+/// — o non risponde: chi chiama non applica lo scarto quando non sa l'orario,
+/// perché un controllo che non si può fare non dice «morto».
+fn boot_time_secs() -> Option<u64> {
+    let output = std::process::Command::new("sysctl").args(["-n", "kern.boottime"]).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_boottime(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// PURA: il primo intero dopo `sec = ` nella riga che dà `sysctl`, es.
+/// `{ sec = 1787668740, usec = 36804 } Tue Aug 25 16:39:00 2026`.
+fn parse_boottime(text: &str) -> Option<u64> {
+    let after = text.split("sec = ").nth(1)?;
+    let digits: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+/// PURA: un record è morto per costruzione se è più vecchio dell'avvio della
+/// macchina che lo legge — un pid di un mondo di processi che non c'è più può
+/// coincidere per caso con uno vivo di adesso, e il record mentirebbe senza
+/// che nessuno se ne accorga. Misurato il 25/08/2026: 2 record su 8 in
+/// `sessioni-vive/` nominavano lo stesso pid di un avvio di ieri.
+fn is_from_a_previous_boot(updated_at: u64, boot_time: u64) -> bool {
+    updated_at < boot_time
+}
+
+/// PURA: il verdetto immediato quando si conoscono i due orari, separata da
+/// chi li legge — così si prova senza `sysctl`, negato in questo stesso
+/// perimetro come `ps`. `None` quando manca uno dei due: non è un'osservazione
+/// a metà, è «non si sa», e chi chiama continua col giudizio sul processo.
+fn boot_verdict(updated_at: Option<u64>, boot_time: Option<u64>) -> Option<SessionLiveness> {
+    let (updated_at, boot_time) = (updated_at?, boot_time?);
+    is_from_a_previous_boot(updated_at, boot_time).then_some(SessionLiveness::Gone)
+}
+
 /// Cosa si sa della sessione, leggendo il suo record sul disco.
 ///
-/// I tre modi di non avere il pid — record assente, JSON illeggibile, campo che
-/// non c'è — finiscono tutti in `None`, e `liveness_from` li tratta già come
-/// «non si sa niente»: non serve distinguerli qui, e distinguerli costava una
-/// seconda lettura del disco per dare la stessa risposta.
+/// Prima si chiede se il record parla di un avvio della macchina che non c'è
+/// più — vedi `boot_verdict` — perché un pid di allora può coincidere per
+/// caso con uno vivo adesso. Solo se questo tace si guarda il processo: i tre
+/// modi di non avere il pid (record assente, JSON illeggibile, campo
+/// mancante) finiscono in `None`, e `liveness_from` li legge già come «non si
+/// sa niente».
 pub(crate) fn liveness_of(sess: &str) -> SessionLiveness {
+    if let Some(verdict) = boot_verdict(recorded_updated_at(sess), boot_time_secs()) {
+        return verdict;
+    }
     liveness_of_pid(recorded_pid(sess))
 }
 
@@ -734,6 +843,41 @@ fn is_session_end(data: &serde_json::Value, args: &[String]) -> bool {
         .is_some_and(|e| e == "SessionEnd")
 }
 
+/// Quale fonte apre la sessione, in ordine di priorità: la staffetta
+/// (rigenerazione), poi il filo scoperto, poi la voce di coda. PURA: le tre
+/// fonti arrivano come chiusure non ancora eseguite — non tre stringhe già
+/// pronte — così la fonte che vince è la SOLA interrogata.
+///
+/// CONTA PER LA TERZA, CHE NON È INNOCUA: quando risponde,
+/// `queue_mandate::opening_notice` dichiara la voce di coda presa scrivendo
+/// un marcatore. Interrogarla comunque dopo che una delle prime due ha già
+/// parlato la sottrarrebbe a chi la può ancora lavorare, per un mandato che
+/// nessuna sessione leggerebbe mai.
+///
+/// `session_id` VUOTO TIENE MUTA LA CODA SENZA CHIEDERLE NIENTE:
+/// `queue_mandate::try_declare_taken` rifiuta già un id vuoto (non rivendica
+/// mai la voce), quindi il risultato non cambia — mancava solo il fatto che
+/// nessuno lo provasse, ed evita una lettura del disco inutile.
+fn opening_message(
+    relay: impl FnOnce() -> String,
+    uncovered: impl FnOnce() -> String,
+    queued: impl FnOnce(&str) -> String,
+    session_id: &str,
+) -> String {
+    let msg = relay();
+    if !msg.is_empty() {
+        return msg;
+    }
+    let msg = uncovered();
+    if !msg.is_empty() {
+        return msg;
+    }
+    if session_id.trim().is_empty() {
+        return String::new();
+    }
+    queued(session_id)
+}
+
 pub fn run() -> i32 {
     let mut raw = String::new();
     if std::io::stdin().read_to_string(&mut raw).is_err() {
@@ -766,25 +910,23 @@ pub fn run() -> i32 {
             })
             .as_str(),
     );
-    let msg = resume_message();
+    // LA COMPOSIZIONE DELLE TRE FONTI STA IN `opening_message`, PURA E PROVATA
+    // LÌ CON LE CHIUSURE: qui si passa ciascuna fonte non ancora eseguita, e
+    // si stampa quella che ha vinto — vedi il commento della funzione per il
+    // perché conta chi viene interrogato e chi no.
+    let session_id = data.get("session_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let msg = opening_message(
+        resume_message,
+        crate::uncovered_thread::opening_notice,
+        crate::queue_mandate::opening_notice,
+        &session_id,
+    );
     if !msg.is_empty() {
+        // E QUI CI SI FERMA. Chi riceve un mandato — di rigenerazione, di
+        // filo scoperto o di coda — non è libero di narrarci sopra: il
+        // messaggio dice già cosa fare. Aggiungerci un elenco di lavori
+        // altrui è esattamente ciò che quel canale esclude.
         println!("{msg}");
-        // E QUI CI SI FERMA. Chi riceve un mandato di ripartenza non è libero:
-        // sta riprendendo un piano già autorizzato, e il messaggio che ha
-        // appena letto gli dice, testualmente, di non annunciare la ripartenza
-        // e di far coincidere il primo messaggio del turno col passo
-        // successivo. Aggiungerci sotto un elenco di lavori altrui è
-        // esattamente la narrazione che quel canale esclude — «IL MANDATO NON
-        // E' CONTESTO, E' L'INCARICO». I fili scoperti restano, e li vedrà chi
-        // apre una sessione senza un incarico in mano.
-        return 0;
-    }
-    // COSA È RIMASTO SENZA NESSUNO — dopo `clear_tree`, che ha appena tolto di
-    // mezzo il filo di questo albero: quello lo tiene chi sta leggendo, e
-    // nominarglielo sarebbe rumore. Restano quelli altrove.
-    let idle = crate::uncovered_thread::opening_notice();
-    if !idle.is_empty() {
-        println!("{idle}");
     }
     0
 }
@@ -874,14 +1016,85 @@ nessuno la butterà mai"
         assert!(is_session_end(&serde_json::json!({}), &args));
     }
 
+    /// La staffetta vince su tutto: le altre due chiusure non vengono nemmeno
+    /// chiamate. IL MUTANTE CHE CONTA è invertire l'ordine delle fonti dentro
+    /// `opening_message`: con l'ordine scambiato questo caso torna rosso
+    /// sull'uguaglianza del messaggio, ancora prima di guardare i flag.
+    #[test]
+    fn the_relay_wins_and_the_other_two_are_never_asked() {
+        let uncovered_called = std::rc::Rc::new(std::cell::Cell::new(false));
+        let queued_called = std::rc::Rc::new(std::cell::Cell::new(false));
+        let (u, q) = (uncovered_called.clone(), queued_called.clone());
+        let msg = opening_message(
+            || "mandato della staffetta".to_string(),
+            move || {
+                u.set(true);
+                String::new()
+            },
+            move |_| {
+                q.set(true);
+                String::new()
+            },
+            "sess",
+        );
+        assert_eq!(msg, "mandato della staffetta");
+        assert!(!uncovered_called.get(), "il filo scoperto non doveva essere interrogato");
+        assert!(!queued_called.get(), "la coda non doveva essere interrogata");
+    }
+
+    /// Il filo scoperto vince sulla coda quando la staffetta tace.
+    #[test]
+    fn the_uncovered_thread_wins_over_the_queue_when_the_relay_is_silent() {
+        let queued_called = std::rc::Rc::new(std::cell::Cell::new(false));
+        let q = queued_called.clone();
+        let msg = opening_message(
+            || String::new(),
+            || "filo scoperto".to_string(),
+            move |_| {
+                q.set(true);
+                String::new()
+            },
+            "sess",
+        );
+        assert_eq!(msg, "filo scoperto");
+        assert!(!queued_called.get(), "la coda non doveva essere interrogata");
+    }
+
+    /// La terza fonte parla solo se le prime due tacciono entrambe.
+    #[test]
+    fn the_queue_speaks_only_when_the_first_two_are_silent() {
+        let msg = opening_message(
+            || String::new(),
+            || String::new(),
+            |sess| format!("voce di coda per {sess}"),
+            "sess-42",
+        );
+        assert_eq!(msg, "voce di coda per sess-42");
+    }
+
+    /// Il caso del `session_id` vuoto (`unwrap_or("")` in `run()`): la coda
+    /// resta muta, e non viene nemmeno interrogata.
+    #[test]
+    fn an_empty_session_id_keeps_the_queue_unasked() {
+        let queued_called = std::rc::Rc::new(std::cell::Cell::new(false));
+        let q = queued_called.clone();
+        let msg = opening_message(
+            || String::new(),
+            || String::new(),
+            move |_| {
+                q.set(true);
+                "non dovrebbe arrivare qui".to_string()
+            },
+            "",
+        );
+        assert_eq!(msg, "");
+        assert!(!queued_called.get(), "session_id vuoto: la coda non va interrogata");
+    }
+
     #[test]
     fn a_session_end_sweeps_its_own_markers_and_leaves_the_others() {
-        // Il congedo spazza solo se sa che quella sessione e' finita, e lo sa
-        // da `ps`: senza, ogni marcatore resta per prudenza ed e' giusto cosi'.
-        if let Some(why) = hook_io::testing::ps_is_denied() {
-            eprintln!("{why}");
-            return;
-        }
+        // Il congedo spazza solo se sa che quella sessione e' finita: dal
+        // 25/08/2026 lo sa anche senza `ps`, ripiegando su `kill(pid, 0)`.
         let casa = HomeIsolata::nuova("fine-sessione");
         let state = casa.dir.join(".claude/state");
         std::fs::create_dir_all(state.join("sessioni-vive")).unwrap();
@@ -1074,6 +1287,108 @@ nessuno la butterà mai"
             look_up_session_process(std::process::id()),
             ProcessLookup::OtherProgram
         );
+    }
+
+    #[test]
+    fn kill_zero_reads_the_errno_not_the_exit_code() {
+        // LA MISURA DEL 25/08/2026, RIPRODOTTA. `EPERM` (1) ed `ESRCH` (3) sono
+        // i due soli motivi che si sanno leggere; qualunque altro resta
+        // onestamente ignoto — e cosi' anche l'assenza di errno con `ret != 0`,
+        // che sul sistema vero non capita mai ma qui non si suppone.
+        assert_eq!(existence_from_kill_result(0, None), ProcessExistence::Exists);
+        assert_eq!(existence_from_kill_result(-1, Some(1)), ProcessExistence::Exists);
+        assert_eq!(existence_from_kill_result(-1, Some(3)), ProcessExistence::Gone);
+        assert_eq!(existence_from_kill_result(-1, Some(13)), ProcessExistence::Unknown);
+        assert_eq!(existence_from_kill_result(-1, None), ProcessExistence::Unknown);
+    }
+
+    #[test]
+    fn kill_distinguishes_a_process_that_exists_from_one_that_does_not() {
+        // IL RAMO CHE `ps` NON PUO' DARE QUI DENTRO. Questa batteria gira dove
+        // `ps` e' negato — vedi `ps_is_denied()` — ma `kill(pid, 0)` e' una
+        // system call, non un comando esterno: non dipende da quel perimetro,
+        // e prova la distinzione dal vivo invece che sulla parola dell'esito.
+        assert_eq!(process_exists(1), ProcessExistence::Exists, "pid 1 esiste sempre");
+        assert_eq!(
+            process_exists(999_999),
+            ProcessExistence::Gone,
+            "il massimo pid su macOS e' 99998"
+        );
+        assert_eq!(
+            process_exists(std::process::id()),
+            ProcessExistence::Exists,
+            "il processo di questa batteria esiste per se stesso"
+        );
+    }
+
+    #[test]
+    fn without_ps_a_dead_pid_is_known_dead_and_a_live_one_is_not_claimed_alive() {
+        // IL RAMO CHE PRIMA RESTAVA CIECO IN SILENZIO. Quando `ps` non parte,
+        // la vecchia strada rispondeva sempre `Unavailable` — qualunque pid,
+        // vivo o morto, dava lo stesso "non lo so". Qui, nello stesso
+        // perimetro dove `ps_is_denied()` fa autoescludere le altre batterie,
+        // si prova che ora `look_up_session_process` sa dire "morto" da solo.
+        let Some(_) = hook_io::testing::ps_is_denied() else {
+            eprintln!(
+                "PROVA NON ESEGUITA: qui `ps` parte, il ramo di ripiego non si puo' forzare"
+            );
+            return;
+        };
+        assert_eq!(look_up_session_process(999_999), ProcessLookup::NotFound);
+        // Vivo ma senza nome letto: NON diventa `IsClaude`. Sapere che il pid
+        // c'e' non basta a dichiararlo la sessione — sarebbe l'errore opposto
+        // a quello del 21/08/2026, un pid riciclato creduto per buono.
+        assert_eq!(look_up_session_process(1), ProcessLookup::ExistsNameUnknown);
+    }
+
+    #[test]
+    fn a_process_that_exists_with_an_unread_name_is_a_dont_know() {
+        assert_eq!(
+            liveness_from(Some(42), ProcessLookup::ExistsNameUnknown),
+            SessionLiveness::Unknown,
+            "esiste ma non si sa chi e': non e' una prova di vita"
+        );
+    }
+
+    #[test]
+    fn a_record_older_than_the_boot_is_dead_by_construction() {
+        // LA MISURA DEL 25/08/2026: 2 record su 8 in `sessioni-vive/`
+        // nominavano lo stesso pid di un avvio precedente. Il pid da solo non
+        // lo direbbe mai — puo' essere stato riassegnato per caso a un
+        // processo vivo adesso — ma l'orologio non mente.
+        assert_eq!(boot_verdict(Some(100), Some(200)), Some(SessionLiveness::Gone));
+        assert!(is_from_a_previous_boot(100, 200));
+    }
+
+    #[test]
+    fn a_record_updated_after_the_boot_is_not_judged_here() {
+        assert_eq!(boot_verdict(Some(300), Some(200)), None);
+        assert!(!is_from_a_previous_boot(300, 200));
+        // Lo stesso istante non e' "prima": un record scritto esattamente
+        // all'avvio non e' un residuo del giro precedente.
+        assert!(!is_from_a_previous_boot(200, 200));
+    }
+
+    #[test]
+    fn without_one_of_the_two_clocks_the_boot_check_stays_silent() {
+        // Non sapere non e' sapere che e' morto: un `sysctl` negato o un
+        // record senza `updated_at` lasciano decidere al giudizio sul
+        // processo, non lo anticipano con un "morto" indimostrato.
+        assert_eq!(boot_verdict(None, Some(200)), None);
+        assert_eq!(boot_verdict(Some(100), None), None);
+        assert_eq!(boot_verdict(None, None), None);
+    }
+
+    #[test]
+    fn boottime_reads_the_first_integer_after_sec() {
+        // La riga vera data da `sysctl -n kern.boottime` su questa macchina,
+        // il 25/08/2026: si legge il primo intero, non l'ora leggibile in
+        // coda ne' i microsecondi.
+        assert_eq!(
+            parse_boottime("{ sec = 1787668740, usec = 36804 } Tue Aug 25 16:39:00 2026\n"),
+            Some(1_787_668_740)
+        );
+        assert_eq!(parse_boottime("qualcosa senza il campo"), None);
     }
 
     /// La riga di `ps -o pid=,ppid=,comm=` e il nome del comando visto da solo,
