@@ -34,6 +34,10 @@ struct Config {
     alerts_dir: PathBuf,
     codex_bin: String,
     codex_dir: PathBuf,
+    gemini_bin: String,
+    gemini_model: String,
+    gemini_key_file: PathBuf,
+    gemini_timeout_secs: u64,
     openrouter_model: String,
     openrouter_key_file: PathBuf,
     openrouter_fetch_override: Option<String>,
@@ -114,6 +118,15 @@ impl Config {
                 "NOTTE_CODEX_DIR",
                 format!("{home}/.claude/docs"),
             )),
+            gemini_bin: env_or("NOTTE_GEMINI_BIN", "gemini".to_string()),
+            gemini_model: env_or("NOTTE_GEMINI_MODEL", "gemini-2.5-flash".to_string()),
+            gemini_key_file: PathBuf::from(env_or(
+                "NOTTE_GEMINI_KEY_FILE",
+                format!("{home}/.claude/state/gemini.key"),
+            )),
+            gemini_timeout_secs: env_or("NOTTE_GEMINI_TIMEOUT_SECS", "300".to_string())
+                .parse()
+                .unwrap_or(300),
             openrouter_model: env_or(
                 "NOTTE_OPENROUTER_MODEL",
                 "nvidia/nemotron-3-super-120b-a12b:free".to_string(),
@@ -574,6 +587,87 @@ fn call_openrouter(cfg: &Config, prompt: &str) -> EngineResult {
     }
 }
 
+/// Il terzo motore, dal 26/08/2026.
+///
+/// PERCHÉ UNA CHIAVE E NON L'ACCESSO CHE THEO HA GIÀ FATTO. L'accesso del
+/// 26/08 vale per Antigravity, che è un ambiente di sviluppo, non un comando
+/// da riga di comando: la CLI ufficiale risponde `UNSUPPORTED_CLIENT` —
+/// Google ha chiuso quel livello gratuito ai comandi da terminale. La strada
+/// che resta è una chiave di AI Studio, gratuita e su una quota diversa.
+///
+/// SENZA CHIAVE SI RIMANDA, NON SI FALLISCE. Come per il motore locale
+/// inerte: un compito che aspetta una chiave non è un difetto del compito, e
+/// non deve consumare il contatore dei fallimenti consecutivi né aprire una
+/// segnalazione ogni notte.
+fn call_gemini(cfg: &Config, prompt: &str) -> EngineResult {
+    let key = fs::read_to_string(&cfg.gemini_key_file)
+        .map(|k| k.trim().to_string())
+        .unwrap_or_default();
+    if key.is_empty() {
+        let _ = fs::write(
+            &cfg.last_output_path,
+            format!(
+                "nessuna chiave in {}\n\
+                 Si prende su aistudio.google.com/apikey e si incolla lì dentro,\n\
+                 su una riga sola. L'accesso ad Antigravity non basta: quella\n\
+                 strada è chiusa ai comandi da terminale.\n",
+                cfg.gemini_key_file.display()
+            ),
+        );
+        return EngineResult::Failed { kind: "senza chiave".to_string(), tokens: "0".to_string() };
+    }
+    let bin = match resolve_engine_bin(&cfg.gemini_bin) {
+        Ok(b) => b,
+        Err(looked) => {
+            let _ = fs::write(
+                &cfg.last_output_path,
+                format!(
+                    "«{}» non è eseguibile in nessuno dei posti guardati:\n{}\n",
+                    cfg.gemini_bin,
+                    looked.iter().map(|p| format!("  {p}")).collect::<Vec<_>>().join("\n")
+                ),
+            );
+            return EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() };
+        }
+    };
+    let mut cmd = Command::new(&bin);
+    cmd.args(["--skip-trust", "-m"])
+        .arg(&cfg.gemini_model)
+        .arg("-p")
+        .arg(prompt)
+        .env("PATH", child_path())
+        .env("GEMINI_API_KEY", &key)
+        // La cartella di lavoro è la stessa di Codex: sola lettura di fatto,
+        // perché senza `--yolo` la CLI non esegue niente da sé.
+        .current_dir(&cfg.codex_dir)
+        .stdin(Stdio::null());
+    match run_with_timeout(cmd, Duration::from_secs(cfg.gemini_timeout_secs)) {
+        RunOutcome::Finished { status, stdout, stderr } => {
+            let mut combined = String::from_utf8_lossy(&stdout).to_string();
+            combined.push_str(&String::from_utf8_lossy(&stderr));
+            let _ = fs::write(&cfg.last_output_path, &combined);
+            if status.success() {
+                // La CLI non stampa un conteggio di token come fa Codex:
+                // meglio un punto interrogativo onesto di un numero inventato.
+                EngineResult::Ok { tokens: "?".to_string() }
+            } else {
+                EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() }
+            }
+        }
+        RunOutcome::TimedOut => {
+            let _ = fs::write(
+                &cfg.last_output_path,
+                format!("gemini non ha risposto entro {}s\n", cfg.gemini_timeout_secs),
+            );
+            EngineResult::Failed { kind: "timeout".to_string(), tokens: "?".to_string() }
+        }
+        RunOutcome::SpawnFailed => {
+            let _ = fs::write(&cfg.last_output_path, "gemini non è partito\n");
+            EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() }
+        }
+    }
+}
+
 /// Il percorso che ricevono tutti i figli: il motore, la sua catena di
 /// interpreti, e la riga di shell della `verifica:`.
 fn child_path() -> String {
@@ -616,9 +710,25 @@ fn call_codex(cfg: &Config, prompt: &str) -> EngineResult {
             return EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() };
         }
     };
+    // LA CARTELLA DI LAVORO È USA-E-GETTA, E IL MOTIVO NON È L'ORDINE.
+    //
+    // Dal 26/08/2026 il motore gira in `workspace-write` invece che in sola
+    // lettura, perché l'indice semantico di casa passa da un servizio locale
+    // che la sola lettura non lascia raggiungere: senza, il motore non sa
+    // dove stanno le cose e inventa percorsi — è successo lo stesso giorno,
+    // con tre compiti che puntavano a cartelle inesistenti.
+    //
+    // In cambio la cartella scrivibile è una cartella che non serve a
+    // nessuno, ricreata a ogni compito: il motore legge tutto il resto della
+    // macchina, e può scrivere solo lì. Prima poteva scrivere in
+    // `~/.claude/docs`, che è dove nessuno vuole trovarsi modifiche.
+    let workdir = cfg.codex_dir.join(".lavoro-usa-e-getta");
+    let _ = fs::create_dir_all(&workdir);
     let mut cmd = Command::new(&bin);
-    cmd.args(["exec", "-s", "read-only", "-C"])
-        .arg(&cfg.codex_dir)
+    cmd.args(["exec", "-s", "workspace-write", "-c"])
+        .arg("sandbox_workspace_write={network_access=true}")
+        .arg("-C")
+        .arg(&workdir)
         .arg(prompt)
         .env("PATH", child_path())
         .stdin(Stdio::null());
@@ -901,6 +1011,10 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32) -> 
                 call_openrouter(cfg, &task.prompt),
             ),
             "codex" => ("codex".to_string(), call_codex(cfg, &task.prompt)),
+            "gemini" => (
+                format!("gemini/{}", cfg.gemini_model),
+                call_gemini(cfg, &task.prompt),
+            ),
             other => {
                 note(&cfg.log_path, &format!("{name}: motore sconosciuto «{other}»"));
                 report.line(&report_line(
@@ -964,6 +1078,23 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32) -> 
                         "red"
                     }
                 }
+            }
+            // Aspettare una credenziale non è fallire: non tocca il contatore
+            // dei fallimenti consecutivi (tre di fila fermerebbero la notte
+            // intera) e non apre una segnalazione nuova ogni notte. Il
+            // compito resta lì, pronto per quando la chiave arriva.
+            EngineResult::Failed { kind, .. } if kind == "senza chiave" => {
+                let detail = fs::read_to_string(&cfg.last_output_path).unwrap_or_default();
+                note(&cfg.log_path, &format!("{name}: manca la chiave del motore, rimando"));
+                report.line(&report_line(
+                    &name,
+                    &Outcome::Deferred {
+                        reason: format!("{}: manca la chiave", task.engine),
+                    },
+                ));
+                let _ = detail;
+                close_task(&claimed, cfg, &task, &format!("rimandato ({}: manca la chiave)", task.engine));
+                return TaskOutcome { counts_total: true, bucket: "deferred" };
             }
             EngineResult::Failed { kind, tokens } => {
                 *fails += 1;
