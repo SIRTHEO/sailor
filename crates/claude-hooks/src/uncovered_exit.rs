@@ -65,24 +65,41 @@ fn thread_fingerprint(marker: &Value) -> String {
 /// sessione. Se l'impronta salvata non combacia più con quella corrente — un
 /// filo diverso ha preso il posto di quello negato l'ultima volta — il
 /// conteggio riparte da zero.
-fn blocks_so_far(short_session: &str, fingerprint: &str) -> u32 {
+/// I due conteggi tenuti per una sessione: quello del filo corrente e quello
+/// che non si azzera mai.
+///
+/// IL FILE HA TRE RIGHE DAL 26/08/2026 — impronta, conteggio del filo, totale
+/// di sessione — e ne aveva due. Un file vecchio si legge lo stesso: la terza
+/// riga assente vale zero, e la sessione riparte con il suo credito intero
+/// invece di essere fermata da un totale che nessuno aveva ancora scritto.
+struct Counts {
+    for_this_thread: u32,
+    for_this_session: u32,
+}
+
+fn counts(short_session: &str, fingerprint: &str) -> Counts {
     let Ok(text) = fs::read_to_string(counter_path(short_session)) else {
-        return 0;
+        return Counts { for_this_thread: 0, for_this_session: 0 };
     };
-    let mut righe = text.splitn(2, '\n');
-    let impronta_salvata = righe.next().unwrap_or("");
-    let n_salvato = righe.next().and_then(|n| n.trim().parse::<u32>().ok()).unwrap_or(0);
-    if impronta_salvata == fingerprint {
-        n_salvato
-    } else {
-        0
+    let mut lines = text.split('\n');
+    let saved_fingerprint = lines.next().unwrap_or("");
+    let saved_thread = lines.next().and_then(|n| n.trim().parse::<u32>().ok()).unwrap_or(0);
+    let saved_session = lines.next().and_then(|n| n.trim().parse::<u32>().ok()).unwrap_or(0);
+    Counts {
+        // Il filo cambia, il suo conteggio riparte: è voluto, e resta.
+        for_this_thread: if saved_fingerprint == fingerprint { saved_thread } else { 0 },
+        // Il totale no: è tutto il punto della riga in più.
+        for_this_session: saved_session,
     }
 }
 
 fn record_block(short_session: &str, fingerprint: &str) {
-    let n = blocks_so_far(short_session, fingerprint);
+    let c = counts(short_session, fingerprint);
     let _ = fs::create_dir_all(state_dir());
-    let _ = fs::write(counter_path(short_session), format!("{fingerprint}\n{}", n + 1));
+    let _ = fs::write(
+        counter_path(short_session),
+        format!("{fingerprint}\n{}\n{}", c.for_this_thread + 1, c.for_this_session + 1),
+    );
 }
 
 /// Nega lo Stop se questa sessione sta per sparire lasciando un filo suo
@@ -107,10 +124,12 @@ pub fn deny_if_own_thread_uncovered(session_intero: &str, stop_hook_active: bool
     // L'impronta serve solo quando c'è un marcatore da leggere: senza,
     // `decide` risponde `Pass` a prescindere e il contatore non si consulta.
     let fingerprint = marker.as_ref().map(thread_fingerprint).unwrap_or_default();
+    let c = counts(&short, &fingerprint);
     let facts = Facts {
         own_thread_uncovered: marker.is_some(),
         stop_hook_active,
-        blocks_so_far: blocks_so_far(&short, &fingerprint),
+        blocks_so_far: c.for_this_thread,
+        blocks_in_session: c.for_this_session,
         reason,
     };
     match decide(&facts) {
