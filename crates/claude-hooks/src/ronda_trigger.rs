@@ -243,10 +243,58 @@ pub fn run() -> i32 {
     if let Some(line) = handle_drift_trigger() {
         said.push(line);
     }
+    let session = payload.get("session_id").and_then(|v| v.as_str());
+    log_round(said.len(), session);
     if !said.is_empty() {
         println!("{}", said.join("\n"));
     }
     0
+}
+
+/// Una riga in `ganci.jsonl` a ogni giro, anche quando non scatta niente.
+///
+/// PERCHÉ ANCHE IL GIRO MUTO. Fino al 26/08/2026 questo gancio non compariva
+/// fra i quindici che scrivono nel registro: produceva mandati veri — due
+/// erano rimasti aperti ventotto ore — e l'unico modo di sapere che avesse
+/// mai girato era andare a leggere i file che scrive. Un gancio che si vede
+/// solo quando morde non si distingue da uno che non parte: zero mandati può
+/// voler dire «niente di nuovo» o «non è mai stato eseguito», e sono due
+/// stati opposti.
+fn log_round(opened: usize, session: Option<&str>) {
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        "t".into(),
+        serde_json::Value::String(hook_io::journal::now_iso8601_python()),
+    );
+    obj.insert(
+        "gancio".into(),
+        serde_json::Value::String("ronda-trigger".into()),
+    );
+    obj.insert(
+        "decisione".into(),
+        serde_json::Value::String(if opened > 0 { "apre" } else { "niente" }.into()),
+    );
+    obj.insert("mandati".into(), serde_json::Value::from(opened));
+    if let Some(s) = session.filter(|s| !s.is_empty()) {
+        obj.insert(
+            "session".into(),
+            serde_json::Value::String(s.chars().take(8).collect()),
+        );
+    }
+    let dir = state_dir();
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    // Fallire qui non deve fermare la ronda: il registro è cronaca, i mandati
+    // sono il lavoro.
+    if let Ok(mut f) = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("ganci.jsonl"))
+    {
+        use std::io::Write;
+        let _ = writeln!(f, "{}", serde_json::Value::Object(obj));
+    }
 }
 
 #[cfg(test)]
