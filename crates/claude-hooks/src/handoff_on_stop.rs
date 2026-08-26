@@ -356,6 +356,16 @@ pub fn run() -> i32 {
             if successor_alive(&session_intero, terminals.as_deref()).is_empty() {
                 arm_successor(&session_intero, used, t.require);
             }
+            // IL BUCO DAL LATO DELL'USCITA: se `arm_successor` ha appena
+            // fallito per un tetto di risorse, `uncovered_thread::declare` ha
+            // scritto un marcatore per QUESTA sessione — ed è l'ultimo
+            // istante in cui lei può scegliere di non lasciarlo scoperto.
+            // Deve stare prima del congedo: chiudere la propria scheda
+            // renderebbe la scelta impossibile.
+            if crate::uncovered_exit::deny_if_own_thread_uncovered(&session_intero, stop_hook_active)
+            {
+                return 2;
+            }
             farewell(&session_intero, terminals.as_deref(), &mut orca);
             0
         }
