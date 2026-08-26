@@ -17,6 +17,7 @@ pub mod duplication;
 pub mod fault_deposit;
 pub mod handoff;
 pub mod hooks_off;
+pub mod instinct_delivery;
 pub mod instincts;
 pub mod language;
 pub mod legacy_script;
