@@ -46,6 +46,7 @@ pub enum Outcome {
     Broke,
     Waiting,
     Stopped,
+    Skipped,
 }
 
 impl StepRecord {
@@ -88,7 +89,7 @@ pub fn digest_input(value: &Value) -> String {
     format!("{digest:x}")
 }
 
-pub(crate) fn truncate_said(value: String) -> String {
+pub fn truncate_said(value: String) -> String {
     if value.len() <= MAX_SAID_BYTES {
         return value;
     }
@@ -153,5 +154,12 @@ mod tests {
             .expect("il record è un oggetto")
             .remove("ended_at");
         assert!(serde_json::from_value::<StepRecord>(value).is_err());
+    }
+
+    #[test]
+    fn truncate_said_preserves_a_multibyte_character_boundary() {
+        let value = format!("{}é", "a".repeat(MAX_SAID_BYTES - 1));
+        let truncated = truncate_said(value);
+        assert_eq!(truncated, "a".repeat(MAX_SAID_BYTES - 1));
     }
 }

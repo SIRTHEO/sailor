@@ -468,7 +468,7 @@ impl Executor for InProcessExecutor {
 
                 let completion = match action {
                     None => Completion {
-                        outcome: Outcome::Stopped,
+                        outcome: Outcome::Skipped,
                         output: None,
                         said: None,
                         failure_class: None,
@@ -576,6 +576,7 @@ fn decision_from(graph: &Graph, records: &[StepRecord]) -> Result<Decision, Flow
             None if latest.is_some() => running.push(step.id.clone()),
             Some(Outcome::Waiting) => waiting.push(step.id.clone()),
             Some(Outcome::Stopped) => stopped.push(step.id.clone()),
+            Some(Outcome::Skipped) => continue,
             Some(Outcome::Broke)
                 if latest.is_some_and(|record| record.attempt >= step.max_attempts) =>
             {
@@ -828,11 +829,12 @@ mod tests {
             .execute(&graph, request, &mut store, &actions, &mut Tick(0))
             .expect("condizione valutata");
         assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert_eq!(store.all()[0].outcome, Some(Outcome::Skipped));
         assert_eq!(
             execution.decisions,
             vec![
                 Decision::Ready(vec!["conditional".to_owned()]),
-                Decision::Stopped(vec!["conditional".to_owned()]),
+                Decision::Complete,
             ]
         );
     }
