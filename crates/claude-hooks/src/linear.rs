@@ -170,6 +170,31 @@ fn note(outcome: &str, reason: &str, tool: &str, session: &str, cwd: &str, comma
     }
 }
 
+/// Il file di configurazione nominato è **nostro**, o solo omonimo?
+///
+/// UN PERCORSO SENZA CARTELLE RESTA NOSTRO: `settings.json` scritto nudo
+/// quasi sempre significa «quello della cartella dove sto», e la cartella dove
+/// si lavora è la nostra. Nel dubbio il freno tiene — sbagliare per eccesso
+/// qui costa un messaggio, sbagliare per difetto costa la valvola.
+///
+/// Una copia di configurazione dichiarata a mano vale come la nostra: è la
+/// stessa cassa, spostata per una prova a due bracci (`CLAUDE_CONFIG_DIR`).
+fn config_file_is_ours(path: &str) -> bool {
+    if !path.contains('/') {
+        return true;
+    }
+    if path.contains("/.claude/") || path.contains("/.claude-") {
+        return true;
+    }
+    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+        let dir = dir.trim_end_matches('/');
+        if !dir.is_empty() && path.starts_with(dir) {
+            return true;
+        }
+    }
+    false
+}
+
 fn refusal(reason: &str) -> Decision {
     // Due rifiuti, non uno con la ragione interpolata: il divieto protegge due
     // cose diverse, e fino al 18/08/2026 chi toccava `settings.json` riceveva
@@ -220,6 +245,24 @@ pub fn run(input: &HookInput) -> i32 {
         let Some((reason, valve)) = linear::reason_on_file(path) else {
             return 0;
         };
+        // UN OMONIMO NON È IL NOSTRO FILE. Il criterio del nucleo riconosce la
+        // configurazione dal **solo nome**, e sotto casa dell'utente ci sono
+        // almeno tre programmi che chiamano `settings.json` la propria: il
+        // 26/08/2026 questo ha negato di toccare quella della CLI di Google,
+        // impedendo di dare a un motore esterno la mappa e l'indice — cioè il
+        // lavoro che gli fa fare meno errori.
+        //
+        // La correzione sta qui e non nel nucleo per una ragione sola: il
+        // nucleo non si modifica dall'interno di una sessione, di proposito, e
+        // quella regola vale anche quando a chiedere il cambiamento è un
+        // difetto del nucleo stesso. Qui si restringe **cosa arriva** al
+        // rifiuto, senza toccare cosa il nucleo considera protetto.
+        //
+        // Il nucleo (`Valve::Core`) non passa di qui: quei file sono nostri e
+        // basta, ovunque si trovino.
+        if valve == Valve::UserDeclared && !config_file_is_ours(path) {
+            return 0;
+        }
         // `json.dumps(ingresso)` senza `ensure_ascii=False`: qui il Python usa
         // la forma predefinita, mentre la riga che lo contiene no. La differenza
         // è visibile solo su un percorso accentato, e c'è.
@@ -332,5 +375,45 @@ mod tests {
         assert!(m.contains("orca linear list"), "{m}");
         assert!(m.contains("OK_UTENTE"), "{m}");
         assert!(!m.contains("regge il divieto"), "{m}");
+    }
+
+    // ── un omonimo non è il nostro file ────────────────────────────────
+    //
+    // Il caso vero del 26/08/2026: il freno ha negato di toccare la
+    // configurazione della CLI di Google, riconoscendola dal solo nome.
+
+    #[test]
+    fn the_settings_of_another_program_are_not_ours() {
+        assert!(!config_file_is_ours("/home/someone/.gemini/settings.json"));
+        assert!(!config_file_is_ours("/home/someone/.config/qualcosa/settings.json"));
+        assert!(!config_file_is_ours("/Applications/Roba.app/settings.json"));
+    }
+
+    #[test]
+    fn our_own_settings_stay_protected() {
+        assert!(config_file_is_ours("/home/someone/.claude/settings.json"));
+        assert!(config_file_is_ours("/home/someone/.claude/settings.local.json"));
+    }
+
+    /// Un percorso senza cartelle resta nostro: è la cartella dove si lavora,
+    /// e nel dubbio il freno tiene.
+    #[test]
+    fn a_bare_name_is_still_ours() {
+        assert!(config_file_is_ours("settings.json"));
+    }
+
+    /// Una copia di configurazione dichiarata a mano è la stessa cassa,
+    /// spostata: vale come la nostra.
+    #[test]
+    fn a_declared_config_copy_is_ours_too() {
+        let key = "CLAUDE_CONFIG_DIR";
+        let before = std::env::var(key).ok();
+        std::env::set_var(key, "/tmp/prova-config-ab");
+        let verdict = config_file_is_ours("/tmp/prova-config-ab/settings.json");
+        match before {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        assert!(verdict, "una copia dichiarata deve restare protetta");
     }
 }
