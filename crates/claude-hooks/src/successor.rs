@@ -226,9 +226,9 @@ pub(crate) fn already_armed(path: &str, session: &str) -> bool {
 /// sinistra, dove Theo cerca le sessioni vive. Con l'handle del terminale che
 /// consegna si divide quello; senza handle — fuori da Orca — resta la scheda,
 /// che è meglio di nessuna ripresa.
-fn open_tab(path: &str, inherited: &str) -> (bool, String) {
+fn open_tab(path: &str, inherited: &str, workdir: &str) -> (bool, String) {
     let wait_s = wait_seconds(std::env::var("CONSEGNA_ATTESA_S").ok().as_deref());
-    let command = launch_command(&mandate(path, inherited), wait_s);
+    let command = launch_command(&mandate(path, inherited), wait_s, workdir);
     // L'handle NON si prende dall'ambiente: `ORCA_TERMINAL_HANDLE` è catturato
     // all'avvio e non si aggiorna più, e proprio le sessioni lunghe — quelle in
     // cui questo gancio scatta — sono quelle che hanno riattaccato il terminale
@@ -289,12 +289,34 @@ fn wait_seconds(raw: Option<&str>) -> u32 {
 /// avvia `claude` con lo stesso testo. Pura — nessun processo, nessun ambiente.
 ///
 /// Estratta il 20/08/2026 per la stessa ragione di `wait_seconds`.
-fn launch_command(mandate_text: &str, wait_s: u32) -> String {
+fn launch_command(mandate_text: &str, wait_s: u32, workdir: &str) -> String {
     // Il mandato entra in una stringa fra apici singoli della shell: l'unico
     // carattere da neutralizzare è l'apice stesso.
     let text = mandate_text.replace('\'', r"'\''");
+    // LA CARTELLA SI PORTA APPRESSO, dal 26/08/2026. Il pannello nuovo non
+    // nasceva dove sta il lavoro: `terminal create` parte nel worktree ATTIVO
+    // di Orca, non nella cartella di chi consegna, e quel giorno una sessione
+    // aperta per continuare un lavoro in un repo personale è atterrata in un
+    // albero che non c'entrava. `--worktree path:` non risolve il caso: gli
+    // alberi fuori da Orca — un repo personale qualunque — non compaiono nel
+    // suo elenco, misurato lo stesso giorno. Quindi ci si sposta da soli.
+    //
+    // Il danno non era solo il disagio di chi riprende: il freno che conta i
+    // pannelli dell'albero guarda l'albero di chi consegna, mentre la figlia
+    // finiva in un altro — così due sessioni sullo stesso lavoro restavano
+    // invisibili a quel conteggio.
+    //
+    // Se la cartella non c'è più si parte lo stesso, perché il gancio è
+    // FAIL-OPEN ovunque e una ripresa nel posto sbagliato vale più di nessuna
+    // ripresa — ma lo si dice, invece di sbagliare in silenzio.
+    let move_there = if workdir.is_empty() {
+        String::new()
+    } else {
+        let dir = workdir.replace('\'', r"'\''");
+        format!("cd '{dir}' || printf 'Could not enter the handing-over directory; starting where I am.\\n'; ")
+    };
     format!(
-        "printf '%s\\n\\n' '{text}'; \
+        "{move_there}printf '%s\\n\\n' '{text}'; \
          printf 'Starting in {wait_s}s. Ctrl-C to cancel.\\n'; \
          sleep {wait_s}; exec claude '{text}'"
     )
@@ -489,7 +511,7 @@ pub fn arm(
             }
             // L'inventario si raccoglie qui e non prima: costa due `lsof`, e
             // ogni altro ramo di questa funzione si ferma senza aprire niente.
-            let (ok, detail) = open_tab(path, &inherited_clause(&cwd));
+            let (ok, detail) = open_tab(path, &inherited_clause(&cwd), &cwd);
             if ok {
                 note_successor(session, &detail);
                 // Il filo ha un esecutore: se un rinvio precedente aveva
@@ -1075,17 +1097,57 @@ mod tests {
 
     #[test]
     fn launch_command_carries_the_mandate_and_the_wait() {
-        let cmd = launch_command("leggi qui", 7);
+        let cmd = launch_command("leggi qui", 7, "");
         assert!(cmd.contains("sleep 7"), "{cmd}");
         assert!(cmd.contains("leggi qui"), "{cmd}");
     }
 
     #[test]
     fn launch_command_escapes_single_quotes() {
-        let cmd = launch_command("un mandato con 'apice'", 30);
+        let cmd = launch_command("un mandato con 'apice'", 30, "");
         // Senza l'escape, l'apice del mandato chiuderebbe la stringa di shell
         // in anticipo: deve comparire come `'\''`, non come un apice nudo.
         assert!(cmd.contains(r"'\''"), "{cmd}");
+    }
+
+    #[test]
+    fn launch_command_moves_to_the_handing_over_directory_first() {
+        let cmd = launch_command("leggi qui", 30, "/Users/x/personal/socraticode");
+        // Lo spostamento viene PRIMA di tutto: se stampasse il mandato per poi
+        // spostarsi, `exec claude` partirebbe comunque dalla cartella giusta ma
+        // il pannello mostrerebbe il mandato con la cartella sbagliata sotto.
+        assert!(
+            cmd.starts_with("cd '/Users/x/personal/socraticode'"),
+            "{cmd}"
+        );
+        assert!(cmd.contains("exec claude"), "{cmd}");
+    }
+
+    #[test]
+    fn launch_command_without_a_directory_stays_where_it_is() {
+        // Cartella sconosciuta: si parte comunque, senza un `cd` a vuoto che
+        // fallirebbe e sporcherebbe il pannello.
+        let cmd = launch_command("leggi qui", 30, "");
+        assert!(!cmd.contains("cd '"), "{cmd}");
+        assert!(cmd.starts_with("printf"), "{cmd}");
+    }
+
+    #[test]
+    fn launch_command_escapes_a_quote_in_the_directory() {
+        // Un apice nel percorso chiuderebbe la stringa di shell e il resto del
+        // comando finirebbe fuori dagli apici: da lì a eseguire il mandato come
+        // comando il passo è corto.
+        let cmd = launch_command("leggi qui", 30, "/Users/x/l'albero");
+        assert!(cmd.starts_with(r"cd '/Users/x/l'\''albero'"), "{cmd}");
+    }
+
+    #[test]
+    fn launch_command_survives_a_missing_directory() {
+        // FAIL-OPEN: se la cartella non c'è più, il pannello parte lo stesso e
+        // lo dice. Senza il `||`, un `cd` fallito con `set -e` fermerebbe tutto.
+        let cmd = launch_command("leggi qui", 30, "/non/esiste");
+        assert!(cmd.contains("||"), "{cmd}");
+        assert!(cmd.contains("exec claude"), "{cmd}");
     }
 
     #[test]
