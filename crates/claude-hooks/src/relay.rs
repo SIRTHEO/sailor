@@ -1032,15 +1032,17 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     //     davvero distruttivo di tutta la staffetta (vedi la testata del
     //     file). Non conta come un nuovo giro: qui non si apre un anello della
     //     catena, si chiude quello di prima.
-    if !dry_run && try_deliver_pending_boot(&rec.worktree, orca) {
-        // SEMPRE, SENZA TREGUA: è un successo raro, ed è l'unica riga che lega
-        // questo esito al «candidato sess=…» appena scritto dal chiamante — la
-        // funzione chiamata registra i propri dettagli sul pannello, ma non
-        // questo, che chiude il giro senza passare dagli altri controlli.
-        log_line(&format!(
-            "sess={sess}: chiudo qui, ho solo consegnato il mandato rimasto in sospeso dal giro precedente"
-        ));
-        return;
+    if !dry_run {
+        if let Some(outcome) = try_deliver_pending_boot(&rec.worktree, orca) {
+            // SEMPRE, SENZA TREGUA: è l'unica riga che lega questo esito al
+            // «candidato sess=…» appena scritto dal chiamante — la funzione
+            // chiamata registra i propri dettagli sul pannello, ma non questo,
+            // che chiude il giro senza passare dagli altri controlli.
+            // L'esito arriva da lei, che è l'unica a sapere quale dei quattro
+            // modi di finire è stato: consegnato è solo uno dei quattro.
+            log_line(&format!("sess={sess}: chiudo qui, {outcome}"));
+            return;
+        }
     }
 
     // 0. IL FRENO, prima di ogni altra cosa e prima di spendere una chiamata a
@@ -1759,27 +1761,37 @@ fn save_pending_boot(worktree: &str, handle: &str, boot_text: &str) {
 }
 
 /// Se c'è un avvio rimasto in sospeso su questo albero, prova a consegnarlo
-/// adesso. Vero se il giro finisce qui — consegnato o ancora da riprovare —
-/// perché finché quel mandato non è a posto non si apre un nuovo ciclo.
+/// adesso. `Some(esito)` se il giro finisce qui — perché finché quel mandato
+/// non è a posto non si apre un nuovo ciclo — e l'esito dice **quale** dei
+/// quattro modi di finire è stato.
+///
+/// NON UN `bool`, dal 26/08/2026. Ritornava vero in quattro casi e il
+/// chiamante ne scriveva uno solo: «chiudo qui, ho solo consegnato il mandato
+/// rimasto in sospeso». Su tre di quei quattro non era stato consegnato
+/// niente — il pannello era ancora occupato, l'invio era stato rifiutato, o il
+/// mandato era stato abbandonato dopo un'ora — e chi leggeva il registro per
+/// sapere se un albero fosse fermo trovava scritto «consegnato» proprio nei
+/// casi in cui l'avvio era ancora appeso. Trovato in revisione, riprodotto sul
+/// caso «abbandonato».
 ///
 /// SI RICONTROLLA L'IDLE, non si spedisce alla cieca: è lo stesso motivo per
 /// cui l'invio originale l'ha lasciato in sospeso, e riprovare senza
 /// verificare rifarebbe la stessa corsa contro una coda che non si vede.
-fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
+fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> Option<&'static str> {
     let path = pending_boot_path(worktree);
     let Ok(text) = fs::read_to_string(&path) else {
-        return false; // niente in sospeso: si procede col giro normale
+        return None; // niente in sospeso: si procede col giro normale
     };
     let Ok(d) = serde_json::from_str::<serde_json::Value>(&text) else {
         let _ = fs::remove_file(&path); // illeggibile: non c'è niente da salvare
-        return false;
+        return None;
     };
     let handle = d.get("handle").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let boot_text = d.get("boot").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let at = d.get("at").and_then(|v| v.as_f64()).unwrap_or(0.0);
     if handle.is_empty() || boot_text.is_empty() {
         let _ = fs::remove_file(&path);
-        return false;
+        return None;
     }
     if now_epoch() - at > PENDING_BOOT_MAX_AGE_SEC {
         // Il codice si arrende: ore di tentativi e il mandato non è mai
@@ -1795,7 +1807,8 @@ fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
             ),
         );
         let _ = fs::remove_file(&path);
-        return true; // il giro si ferma comunque qui: non si ricomincia alla cieca
+        // Il giro si ferma comunque qui: non si ricomincia alla cieca.
+        return Some("ho abbandonato il mandato rimasto in sospeso dal giro precedente");
     }
     let timeout = IDLE_TIMEOUT_MS.to_string();
     let (rc_idle, _) = orca(&[
@@ -1804,13 +1817,14 @@ fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
     ]);
     if rc_idle != 0 {
         log_line(&format!("avvio in sospeso su {handle}: ancora occupato, rimando"));
-        return true;
+        return Some("il mandato del giro precedente è ancora in sospeso, il pannello era occupato");
     }
     let (rc_send, _) =
         orca(&["terminal", "send", "--terminal", &handle, "--text", &boot_text, "--enter"]);
     if rc_send == 0 {
         let _ = fs::remove_file(&path);
         log_line(&format!("avvio in sospeso su {handle}: consegnato"));
+        return Some("ho solo consegnato il mandato rimasto in sospeso dal giro precedente");
     } else {
         // «Ancora occupato» qui sopra è cronaca: un pannello occupato si libera.
         // Un invio rifiutato su un pannello che *era* libero no, e a forza di
@@ -1822,7 +1836,7 @@ fn try_deliver_pending_boot(worktree: &str, orca: OrcaFn) -> bool {
             ),
         );
     }
-    true
+    Some("il mandato del giro precedente è ancora in sospeso, l'invio è stato rifiutato")
 }
 
 /// True se il successore ha raccolto il segnale di ripresa, entro il tempo.
@@ -3062,6 +3076,52 @@ mod tests {
         let log =
             fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
         assert!(log.contains("AVVIO ABBANDONATO"), "{log}");
+        // LA RIGA CHE CHIUDE IL GIRO DEVE DIRE COSA È SUCCESSO. Fino al
+        // 26/08/2026 diceva «ho solo consegnato» anche qui, dove non era
+        // stato consegnato niente: chi leggeva il registro per sapere se un
+        // albero fosse fermo trovava scritto il contrario.
+        assert!(
+            log.contains("chiudo qui, ho abbandonato"),
+            "l'esito del giro deve dire che è stato abbandonato: {log}"
+        );
+        assert!(
+            !log.contains("chiudo qui, ho solo consegnato"),
+            "non è stato consegnato niente: {log}"
+        );
+    }
+
+    /// Il pannello ancora occupato è il terzo dei quattro modi di finire, ed è
+    /// il più frequente: il mandato resta in sospeso e si riprova al giro
+    /// dopo. Anche qui la riga diceva «consegnato».
+    #[test]
+    fn a_pending_boot_on_a_busy_panel_says_it_is_still_pending() {
+        let _home = HomeIsolata::nuova("avvio-in-sospeso-occupato");
+        let _ = fs::create_dir_all(state_dir());
+        fs::write(
+            pending_boot_path("wt-prova"),
+            serde_json::json!({"handle": "term_occupato", "boot": "x", "at": now_epoch()})
+                .to_string(),
+        )
+        .unwrap();
+        // L'attesa dell'idle fallisce: il pannello non si è liberato.
+        let mut orca = |args: &[&str]| -> (i32, String) {
+            if args.contains(&"wait") {
+                return (1, String::new());
+            }
+            (0, String::new())
+        };
+        regenerate(&test_record(), false, &mut orca);
+        assert!(
+            pending_boot_path("wt-prova").exists(),
+            "il mandato non consegnato non si butta"
+        );
+        let log =
+            fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert!(
+            log.contains("chiudo qui, il mandato del giro precedente è ancora in sospeso"),
+            "{log}"
+        );
+        assert!(!log.contains("ho solo consegnato"), "{log}");
     }
 
     #[test]
@@ -4405,6 +4465,21 @@ mod tests {
         );
         assert!(log.contains("FRENO ancora attivo"), "{log}");
         assert!(log.contains("mancano") && log.contains("min a"), "{log}");
+
+        // IL TERZO GIRO, SUBITO DOPO, È QUELLO CHE PROVA LA TREGUA. Senza di
+        // esso la prova resta verde anche togliendo il `set_cooldown` del ramo
+        // «promemoria»: fermarsi al secondo giro misura che il freno **torna**
+        // a parlare, mai che smetta di nuovo. Trovato in revisione il
+        // 26/08/2026 con quella mutazione precisa, che sopravviveva a questa
+        // prova e alla sua gemella. Il costo di lasciarla passare è la riga al
+        // minuto che il commento del codice dice di voler evitare.
+        regenerate(&test_record(), false, &mut orca);
+        let log = fs::read_to_string(home().join(".claude/state/staffetta.log")).unwrap_or_default();
+        assert_eq!(
+            log.matches("FRENO").count(),
+            2,
+            "il promemoria ha riarmato la propria tregua: il terzo giro deve tacere. {log}"
+        );
     }
 
     #[test]
