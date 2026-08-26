@@ -286,7 +286,7 @@ impl Ledger {
         }
         record.outcome = Some(completion.outcome);
         record.output = completion.output;
-        record.said = completion.said.map(truncate_said);
+        record.said = completion.said.map(flow::truncate_said);
         record.failure_class = completion.failure_class;
         record.ended_at = Some(completion.ended_at);
         append_event(&transaction, &StoredEvent::StepClosed(record.clone()))?;
@@ -974,6 +974,7 @@ fn outcome_name(outcome: Outcome) -> &'static str {
         Outcome::Broke => "Broke",
         Outcome::Waiting => "Waiting",
         Outcome::Stopped => "Stopped",
+        Outcome::Skipped => "Skipped",
     }
 }
 
@@ -983,6 +984,7 @@ fn parse_outcome(value: &str) -> rusqlite::Result<Outcome> {
         "Broke" => Ok(Outcome::Broke),
         "Waiting" => Ok(Outcome::Waiting),
         "Stopped" => Ok(Outcome::Stopped),
+        "Skipped" => Ok(Outcome::Skipped),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
             9,
             rusqlite::types::Type::Text,
@@ -993,18 +995,6 @@ fn parse_outcome(value: &str) -> rusqlite::Result<Outcome> {
             .into(),
         )),
     }
-}
-
-fn truncate_said(value: String) -> String {
-    let maximum = flow::MAX_SAID_BYTES;
-    if value.len() <= maximum {
-        return value;
-    }
-    let mut end = maximum;
-    while !value.is_char_boundary(end) {
-        end -= 1;
-    }
-    value[..end].to_owned()
 }
 
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {

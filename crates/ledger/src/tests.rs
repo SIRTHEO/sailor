@@ -141,6 +141,38 @@ fn step_record_round_trips_without_losing_nulls_or_columns() {
 }
 
 #[test]
+fn stopped_and_skipped_outcomes_round_trip_through_the_operational_column() {
+    let directory = TestDirectory::new("outcomes");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    for (run_id, outcome, stored_name) in [
+        ("run-stopped", Outcome::Stopped, "Stopped"),
+        ("run-skipped", Outcome::Skipped, "Skipped"),
+    ] {
+        ledger
+            .append_step_started(&started(run_id))
+            .expect("scrivere il record");
+        let mut completion = completion();
+        completion.outcome = outcome;
+        ledger
+            .close_step(run_id, "compile", 1, 7, completion)
+            .expect("chiudere il passo");
+        assert_eq!(
+            ledger.steps(run_id).expect("rileggere")[0].outcome,
+            Some(outcome)
+        );
+        let connection = ledger.lock().expect("connessione");
+        let stored: String = connection
+            .query_row(
+                "SELECT outcome FROM steps WHERE run_id = ?1",
+                [run_id],
+                |row| row.get(0),
+            )
+            .expect("leggere la colonna operativa");
+        assert_eq!(stored, stored_name);
+    }
+}
+
+#[test]
 fn two_processes_using_ledger_api_serialize_writers() {
     let directory = TestDirectory::new("concurrency");
     Ledger::open(&directory.0).expect("inizializzare il deposito");
