@@ -11,7 +11,8 @@
 //! Fail-open su stdin illeggibile o fuori contesto, come ogni altro gancio.
 
 use guards::phase_router::{
-    declared_model_in_frontmatter, declared_model_wins, route_with, Row, TRADE_MODEL,
+    declared_model_in_frontmatter, declared_model_wins, declared_name_in_frontmatter, route_with,
+    Row, TRADE_MODEL,
 };
 use serde_json::Value;
 use std::fs;
@@ -49,8 +50,19 @@ fn agent_file(trade: &str) -> Option<PathBuf> {
 /// Il modello che il mestiere dichiara, letto dal suo file. `None` per ogni
 /// mestiere che non ne ha uno: quelli di sistema, quelli dei plugin, e
 /// quelli il cui file non si legge.
+///
+/// IL NOME DENTRO IL FILE DEVE COMBACIARE, e non è una cintura in più: su
+/// macOS il filesystem è insensibile alle maiuscole, quindi `agent_file`
+/// costruisce `agents/BUILDER.md` e `fs::read_to_string` apre tranquillamente
+/// `builder.md`. Senza questo confronto un `subagent_type` scritto in un caso
+/// qualunque erediterebbe la dichiarazione di un mestiere che in quella forma
+/// non esiste. Il nome nel frontmatter è l'unico dato che non passa dal
+/// percorso, quindi l'unico che può smentirlo.
 fn declared_model_for(trade: &str) -> Option<String> {
     let text = fs::read_to_string(agent_file(trade)?).ok()?;
+    if declared_name_in_frontmatter(&text) != Some(trade) {
+        return None;
+    }
     declared_model_in_frontmatter(&text).map(str::to_string)
 }
 
@@ -129,6 +141,28 @@ fn process_with(table: &[Row], payload: &Value) -> Option<Value> {
     }
 
     let routing = route_with(table, trade, model, prompt, valve_off);
+
+    // TABELLA E MESTIERE CHE SI CONTRADDICONO NON SI RISOLVONO IN SILENZIO.
+    // Quando la chiamata non porta `model`, il router sceglie dalla tabella
+    // senza guardare il frontmatter: se il mestiere ne dichiara uno diverso,
+    // riscrivere vorrebbe dire scavalcare — dal basso, e senza che nessuno lo
+    // veda — la stessa decisione che il ramo sopra difende dall'alto. Vince il
+    // dichiarato, e resta la riga: due fonti in disaccordo sono un segnale che
+    // una delle due va aggiornata a mano, non un caso da appianare.
+    // Oggi non morde: `TRADE_MODEL` è vuota. Il giorno che una riga la
+    // popolasse — che è lo scopo di `CANDIDATE_TABLE` — morderebbe subito.
+    if let (Some(chosen), Some(declared)) = (routing.model, declared.as_deref()) {
+        if chosen != declared {
+            log_routing(
+                &routing.trade,
+                None,
+                "tabella e mestiere in disaccordo: vince quello dichiarato",
+                session,
+            );
+            return None;
+        }
+    }
+
     log_routing(&routing.trade, routing.model, routing.reason, session);
 
     let chosen = routing.model?;
@@ -391,6 +425,68 @@ mod tests {
         assert!(hook_journal_lines(&home)
             .iter()
             .all(|l| l["modello"].is_null()));
+    }
+
+    /// La tabella del router manda `measurer` su haiku; il file reale ne
+    /// dichiara un altro. Vince il dichiarato, e la riga lo dice.
+    ///
+    /// Trovato in revisione il 26/08/2026 come conflitto dormiente: oggi
+    /// `TRADE_MODEL` è vuota, ma `CANDIDATE_TABLE` esiste apposta per essere
+    /// promossa. Il giorno che quella riga entrasse in servizio, un `measurer`
+    /// senza `model` esplicito sarebbe finito su haiku scavalcando in silenzio
+    /// la scelta del mestiere — lo stesso scavalcamento che il ramo del
+    /// declassamento difende, preso dall'altro verso.
+    #[test]
+    fn a_table_row_disagreeing_with_the_trade_loses_to_it() {
+        let home = HomeIsolata::nuova("phase-router-disaccordo");
+        declare_trade(&home, "measurer", "sonnet");
+        assert_eq!(
+            process_with(CANDIDATE_TABLE, &agent_payload("measurer", None, "conta")),
+            None,
+            "la tabella direbbe haiku, il mestiere dice sonnet: non si riscrive"
+        );
+        let lines = hook_journal_lines(&home);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0]["modello"].is_null());
+        assert_eq!(
+            lines[0]["motivo"],
+            "tabella e mestiere in disaccordo: vince quello dichiarato"
+        );
+
+        // Il differenziale: quando i due concordano, il router riscrive come
+        // sempre — la riga sopra non è un modo per spegnerlo del tutto.
+        let home2 = HomeIsolata::nuova("phase-router-accordo");
+        declare_trade(&home2, "measurer", "haiku");
+        let out = process_with(CANDIDATE_TABLE, &agent_payload("measurer", None, "conta"))
+            .expect("concordi: si riscrive");
+        assert_eq!(out["hookSpecificOutput"]["updatedInput"]["model"], "haiku");
+    }
+
+    /// Il nome scritto in un caso diverso non è quel mestiere, anche se il
+    /// filesystem di macOS apre lo stesso file.
+    ///
+    /// Trovato in revisione il 26/08/2026, verificato sulla macchina: con
+    /// `builder.md` sul disco, `agent_file("BUILDER")` costruisce un percorso
+    /// che si apre, e senza il confronto sul nome il gancio ereditava la
+    /// dichiarazione di un mestiere che in quella forma non esiste.
+    #[test]
+    fn a_trade_named_in_a_different_case_is_not_that_trade() {
+        let home = HomeIsolata::nuova("phase-router-maiuscole");
+        declare_trade(&home, "builder", "sonnet");
+        for trade in ["BUILDER", "Builder", "bUiLdEr"] {
+            assert_eq!(
+                declared_model_for(trade),
+                None,
+                "{trade} non è il mestiere dichiarato in builder.md"
+            );
+            assert_eq!(
+                process_with(CANDIDATE_TABLE, &agent_payload(trade, Some("opus"), "x")),
+                None,
+                "{trade} non doveva ereditare una dichiarazione altrui"
+            );
+        }
+        // Il differenziale: lo stesso file, chiesto col proprio nome, declassa.
+        assert_eq!(declared_model_for("builder").as_deref(), Some("sonnet"));
     }
 
     /// Il nome del mestiere arriva dal payload: non deve poter uscire dalla
