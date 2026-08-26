@@ -24,6 +24,25 @@ fn workspaces() -> String {
     format!("{}/orca/workspaces", home())
 }
 
+/// C'è del lavoro non salvato che `git checkout -- <path>` perderebbe?
+///
+/// `git diff --quiet` esce 1 se ci sono differenze fra indice e albero di
+/// lavoro (esattamente ciò che `checkout` scarterebbe), 0 se è pulito. Un
+/// repository che non risponde non inventa un pericolo: fail-open, come il
+/// resto del gancio.
+fn has_pending_changes(repo: &str, path: &str) -> bool {
+    let Some(status) = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["diff", "--quiet", "--", path])
+        .status()
+        .ok()
+    else {
+        return false;
+    };
+    !status.success()
+}
+
 /// Il ramo su cui quel repository si trova ora. `None` se non è un repository,
 /// se git non risponde, o se la testa è staccata — e in tutti e tre i casi il
 /// giudizio si astiene invece di indovinare.
@@ -72,6 +91,7 @@ pub fn run() -> i32 {
         home: &home,
         is_link: &is_link,
         current_branch: &|repo: &str| current_branch(repo),
+        has_pending_changes: &|repo: &str, path: &str| has_pending_changes(repo, path),
     });
     if matches!(decision, Decision::Pass) {
         return 0;
