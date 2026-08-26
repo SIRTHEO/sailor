@@ -16,5 +16,5 @@ pub use executor::{
     Reconciliation, ReconciliationRequest, RecordStore, SharedState, SystemClock,
 };
 pub use graph::{Condition, Graph, GraphError, Step};
-pub use record::{digest_input, Outcome, StepRecord, MAX_SAID_BYTES};
+pub use record::{digest_input, truncate_said, Outcome, StepRecord, MAX_SAID_BYTES};
 pub use schema::{SchemaError, ValueSchema};
