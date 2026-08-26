@@ -99,10 +99,12 @@ const NO_ENTRY_AT_ALL: &[(&str, &str)] = &[
         "squash-orphans",
         "giudica le fusioni con schiacciamento; nato il 20/08, mai acceso",
     ),
-    (
-        "phase-router",
-        "sceglie il modello di un `Agent` dal mestiere; scritto il 23/08 (gradino 5), la riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`)",
-    ),
+    // `phase-router` stava qui, ed è uscito il 26/08/2026: è registrato su
+    // `PreToolUse`/`Agent` e il controllo lo copre come tutti gli altri. Non è
+    // stato tolto per pulizia — l'elenco dei buchi noti è invecchiato **nello
+    // stesso commit** che ha acceso il gancio, ed è diventato l'unico rosso
+    // della batteria. Un elenco di eccezioni si aggiorna insieme a ciò che
+    // esclude, o diventa lui il difetto.
 ];
 
 /// Le porte che decidono su un nome di strumento **dentro una funzione** che il
