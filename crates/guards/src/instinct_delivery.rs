@@ -68,6 +68,81 @@ pub fn due_for_command(command: &str) -> Option<&'static str> {
         .map(|(id, _)| *id)
 }
 
+/// Dove vivono i corpi, relativo alla casa dell'utente.
+pub const INSTINCTS_DIR: &str = ".claude/homunculus/instincts/personal";
+
+/// Il file che contiene il corpo di un istinto.
+pub fn path_of(home: &std::path::Path, id: &str) -> std::path::PathBuf {
+    home.join(INSTINCTS_DIR).join(format!("{id}.md"))
+}
+
+/// Il corpo, cioè tutto ciò che sta **dopo** il frontmatter.
+///
+/// Il frontmatter serve a chi sceglie (data di scadenza, confidenza, innesco);
+/// a chi riceve la lezione non dice niente e costa byte a ogni consegna. Un
+/// file senza frontmatter è tutto corpo: è il caso di un istinto scritto a mano
+/// male, e consegnarlo intero è meglio che consegnare il vuoto.
+pub fn body_of(raw: &str) -> &str {
+    let Some(rest) = raw.strip_prefix("---\n") else {
+        return raw.trim_start();
+    };
+    match rest.split_once("\n---\n") {
+        Some((_, body)) => body.trim_start(),
+        // Frontmatter aperto e mai chiuso: non si indovina dove finisca, e
+        // mandare il file intero è l'unico esito che non perde la lezione.
+        None => raw.trim_start(),
+    }
+}
+
+/// Un istinto si consegna solo finché la sua misura è ancora in piedi.
+///
+/// **Scaduto vale come assente**, e non è severità: il corpo di un istinto
+/// racconta una misura fatta un giorno preciso, e riproporla dopo la scadenza
+/// insegna qualcosa che nessuno ha più verificato. Il prologo fa la stessa
+/// scelta — declassa lo scaduto alla sola riga — con la differenza che lì
+/// resta una traccia visibile, qui no: perciò qui si tace del tutto.
+///
+/// Senza `expires`, o con una data che non è `YYYY-MM-DD`, non si consegna:
+/// non sapere quando scade non è la stessa cosa che essere valido.
+pub fn is_live(raw: &str, today: &str) -> bool {
+    let fm = crate::instincts::parse_frontmatter(raw);
+    let Some(expires) = fm.expires.as_deref() else {
+        return false;
+    };
+    crate::instincts::is_iso_date(expires)
+        && crate::instincts::is_iso_date(today)
+        && expires >= today
+}
+
+/// Prende il posto per **questa sessione e questo istinto**, una volta sola.
+///
+/// Senza il marcatore la stessa lezione arriverebbe a ogni comando che la
+/// innesca: chi sbaglia un `find` lo sbaglia in serie, e la seconda copia costa
+/// quanto la prima senza insegnare niente di nuovo. `create_new` fallisce se il
+/// file c'è già, quindi due strumenti in parallelo non consegnano due volte.
+///
+/// Il posto si prende **dopo** aver letto il corpo: se il file non si legge, la
+/// sessione deve poterci riprovare invece di restare a mani vuote per sempre.
+pub fn claim(tmp: &std::path::Path, session: &str, id: &str) -> bool {
+    let marker = tmp.join(format!("claude-istinto-{session}-{id}"));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(marker)
+        .is_ok()
+}
+
+/// L'intestazione che accompagna il corpo, perché una lezione che arriva da
+/// sola in mezzo a un turno sembra un pezzo di contesto qualunque: dire che è
+/// **il comando appena scritto** ad averla chiamata è ciò che la rende
+/// azionabile invece che decorativa.
+pub fn delivery_text(body: &str) -> String {
+    format!(
+        "# Istinto misurato in casa, consegnato adesso perché il comando che stai per eseguire lo innesca\n\n\
+         Non è una regola generale del mestiere: è una misura fatta su **questa** macchina, e vale qui.\n\n{body}"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +214,96 @@ mod tests {
                 dir.display()
             );
         }
+    }
+
+    /// Un istinto vero, nella forma esatta dei file sul disco.
+    fn instinct(expires: &str, body: &str) -> String {
+        format!(
+            "---\nid: prova\ntrigger: \"quando succede\"\nconfidence: 0.9\nexpires: {expires}\n---\n{body}"
+        )
+    }
+
+    /// Una cartella tutta sua per ogni prova che scrive marcatori: due prove che
+    /// condividono la cartella si toglierebbero il posto a vicenda, e il
+    /// fallimento cadrebbe su quella che gira seconda.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("istinti-prova-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("cartella di prova");
+        dir
+    }
+
+    // ── il corpo, senza il frontmatter ─────────────────────────────────
+
+    /// Il frontmatter serve a chi sceglie, non a chi riceve: ciò che parte è
+    /// solo il corpo, e i campi di servizio non costano byte a ogni consegna.
+    #[test]
+    fn the_frontmatter_does_not_travel_with_the_body() {
+        let raw = instinct("2026-12-31", "# Il titolo\n\nLa lezione.\n");
+        assert_eq!(body_of(&raw), "# Il titolo\n\nLa lezione.\n");
+        assert!(!body_of(&raw).contains("confidence"));
+    }
+
+    /// Due casi storti in cui la lezione **non si perde**: senza frontmatter è
+    /// tutto corpo, e con un frontmatter mai chiuso non si indovina dove
+    /// finisca. Consegnare qualcosa di troppo è meglio che tacere.
+    #[test]
+    fn a_file_without_a_closed_frontmatter_still_delivers_its_lesson() {
+        assert_eq!(body_of("# Nudo\n\nLa lezione.\n"), "# Nudo\n\nLa lezione.\n");
+        let unclosed = "---\nid: prova\nexpires: 2026-12-31\n# Il titolo\n\nLa lezione.\n";
+        assert!(body_of(unclosed).contains("La lezione."));
+    }
+
+    // ── la scadenza ────────────────────────────────────────────────────
+
+    /// Il giorno stesso della scadenza vale ancora; il giorno dopo no.
+    #[test]
+    fn an_instinct_is_live_up_to_its_expiry_day_included() {
+        let raw = instinct("2026-09-24", "corpo");
+        assert!(is_live(&raw, "2026-09-24"), "il giorno della scadenza vale");
+        assert!(is_live(&raw, "2026-08-26"));
+        assert!(!is_live(&raw, "2026-09-25"), "il giorno dopo non vale più");
+    }
+
+    /// Senza scadenza, o con una data che non è `YYYY-MM-DD`, non si consegna:
+    /// non sapere quando scade non è la stessa cosa che essere valido.
+    #[test]
+    fn an_undated_instinct_is_not_delivered() {
+        assert!(!is_live("---\nid: prova\n---\ncorpo", "2026-08-26"));
+        assert!(!is_live(&instinct("2026-9-24", "corpo"), "2026-08-26"));
+        assert!(!is_live(&instinct("prossimo mese", "corpo"), "2026-08-26"));
+        assert!(!is_live("nessun frontmatter", "2026-08-26"));
+    }
+
+    // ── una volta sola ─────────────────────────────────────────────────
+
+    /// La stessa lezione non arriva due volte nella stessa sessione: chi sbaglia
+    /// un comando lo sbaglia in serie, e la seconda copia costa quanto la prima
+    /// senza insegnare niente.
+    #[test]
+    fn the_same_lesson_is_delivered_once_per_session() {
+        let tmp = scratch("una-volta");
+        assert!(claim(&tmp, "sessione-a", "istinto-uno"));
+        assert!(!claim(&tmp, "sessione-a", "istinto-uno"), "la seconda non passa");
+    }
+
+    /// Il posto è preso per una coppia, non per la sessione intera: un secondo
+    /// istinto ha ancora il suo, e un'altra sessione non eredita il silenzio
+    /// della prima.
+    #[test]
+    fn the_claim_is_per_lesson_and_per_session() {
+        let tmp = scratch("per-coppia");
+        assert!(claim(&tmp, "sessione-a", "istinto-uno"));
+        assert!(claim(&tmp, "sessione-a", "istinto-due"), "un altro istinto ha il suo posto");
+        assert!(claim(&tmp, "sessione-b", "istinto-uno"), "un'altra sessione riparte da zero");
+    }
+
+    /// Il corpo arriva intero dentro il testo consegnato, e l'intestazione dice
+    /// perché è arrivato: senza quella riga sembra contesto qualunque.
+    #[test]
+    fn the_delivered_text_carries_the_whole_body_and_says_why_it_came() {
+        let text = delivery_text("# Il titolo\n\nLa lezione.\n");
+        assert!(text.ends_with("# Il titolo\n\nLa lezione.\n"));
+        assert!(text.contains("innesca"));
     }
 }
