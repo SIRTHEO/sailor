@@ -838,6 +838,92 @@ context. The summary below covers the earlier portion of the conversation.\n\nSu
         );
     }
 
+    #[test]
+    fn summarize_counts_all_six_buckets_with_six_distinct_totals() {
+        // Rilievo del 26/08/2026, due giri: la prima versione di questa prova
+        // aveva cinque secchielli su sei tutti a 1, quindi uno scambio fra
+        // QUALUNQUE coppia di quei cinque restava invisibile — provato dal
+        // vivo su Queue/Peer da un revisore che non l'ha scritta. Qui ogni
+        // secchiello porta un conteggio diverso (1..6): uno scambio fra due
+        // rami qualsiasi dentro `summarize` produce sempre un totale diverso
+        // da quello atteso, non solo per person/mechanism.
+        const PERSON: usize = 2;
+        const MECHANISM: usize = 1;
+        const QUEUE: usize = 3;
+        const PEER: usize = 4;
+        const CONTINUATION: usize = 5;
+        const UNKNOWN: usize = 6;
+
+        let mut entries: Vec<(CommitInfo, Option<TriggerMessage>)> = Vec::new();
+        for i in 0..PERSON {
+            entries.push((
+                commit(&format!("p{i}00000")),
+                Some(TriggerMessage {
+                    origin_kind: Some("human".to_string()),
+                    content_text: "sistema il freno".to_string(),
+                }),
+            ));
+        }
+        for i in 0..MECHANISM {
+            entries.push((
+                commit(&format!("m{i}00000")),
+                Some(TriggerMessage {
+                    origin_kind: None,
+                    content_text: format!("test {QUEUE_SWEEP_MANDATE_MARKER}"),
+                }),
+            ));
+        }
+        for i in 0..QUEUE {
+            entries.push((
+                commit(&format!("q{i}00000")),
+                Some(TriggerMessage {
+                    origin_kind: None,
+                    content_text: "state/plancia/segnalazioni/2026-08-20-canarini.md".to_string(),
+                }),
+            ));
+        }
+        for i in 0..PEER {
+            entries.push((
+                commit(&format!("r{i}00000")),
+                Some(TriggerMessage {
+                    origin_kind: Some("peer".to_string()),
+                    content_text: "procedi pure".to_string(),
+                }),
+            ));
+        }
+        for i in 0..CONTINUATION {
+            entries.push((
+                commit(&format!("c{i}00000")),
+                Some(TriggerMessage {
+                    origin_kind: None,
+                    content_text: format!("{CONTINUATION_MARKER} altro testo"),
+                }),
+            ));
+        }
+        for i in 0..UNKNOWN {
+            entries.push((commit(&format!("u{i}00000")), None)); // nessun'eco trovata
+        }
+
+        let commits: Vec<CommitInfo> = entries.iter().map(|(c, _)| c.clone()).collect();
+        let by_sha: HashMap<String, Option<TriggerMessage>> =
+            entries.into_iter().map(|(c, m)| (c.short_sha, m)).collect();
+        let find = |c: &CommitInfo| -> Option<TriggerMessage> { by_sha.get(&c.short_sha).cloned().flatten() };
+
+        let s = summarize(&decide_repairs_with(&commits, &find));
+        assert_eq!(
+            s,
+            Summary {
+                total: PERSON + MECHANISM + QUEUE + PEER + CONTINUATION + UNKNOWN,
+                person: PERSON,
+                mechanism: MECHANISM,
+                queue: QUEUE,
+                peer: PEER,
+                continuation: CONTINUATION,
+                unknown: UNKNOWN,
+            }
+        );
+    }
+
     // --- il parser di `git log` --------------------------------------------
 
     #[test]
