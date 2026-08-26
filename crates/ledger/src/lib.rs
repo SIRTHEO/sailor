@@ -1,9 +1,9 @@
 //! Il deposito durevole di Sailor.
 //!
 //! `events.db` contiene la verità append-only; `state.db` contiene quattro
-//! proiezioni interrogabili e ricostruibili. I due file vengono collegati alla
-//! stessa transazione logica; con WAL SQLite non promette però atomicità fra
-//! database collegati se manca l'alimentazione durante il commit.
+//! proiezioni interrogabili e un segno dell'ultimo evento incorporato. I due
+//! file sono collegati, ma il nuovo evento e la sua proiezione vengono commessi
+//! in due fasi perché WAL non offre atomicità fra database collegati.
 
 use flow::{AttemptRelation, Completion, Outcome, RecordStore, StepRecord};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -20,6 +20,7 @@ use tracing_subscriber::layer::{Context, Layer};
 const STATE_FILE: &str = "state.db";
 const EVENTS_FILE: &str = "events.db";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+const PROJECTION_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -188,7 +189,29 @@ impl Ledger {
         {
             let transaction = immediate(&mut connection)?;
             create_event_schema(&transaction)?;
-            rebuild_projections_in(&transaction)?;
+            let had_projection_schema = projection_schema_exists(&transaction)?;
+            let projection_schema_version: i64 =
+                transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+            create_projection_schema(&transaction)?;
+            match projection_schema_version {
+                0 => {
+                    if had_projection_schema {
+                        rebuild_projections_in(&transaction)?;
+                    } else {
+                        initialize_projection_watermark(&transaction)?;
+                        apply_pending_events(&transaction)?;
+                    }
+                    transaction.pragma_update(None, "user_version", PROJECTION_SCHEMA_VERSION)?;
+                }
+                PROJECTION_SCHEMA_VERSION => {
+                    apply_pending_events(&transaction)?;
+                }
+                other => {
+                    return Err(LedgerError::InvalidRecord(format!(
+                        "unsupported projection schema version {other}"
+                    )));
+                }
+            }
             transaction.commit()?;
         }
         Ok(Self {
@@ -202,29 +225,22 @@ impl Ledger {
     }
 
     pub fn record_run(&self, record: &RunRecord) -> Result<(), LedgerError> {
-        self.write_event(StoredEvent::RunRecorded(record.clone()), |transaction| {
-            project_run(transaction, record)
-        })
+        self.write_event(StoredEvent::RunRecorded(record.clone()))
     }
 
     pub fn record_model_call(&self, record: &ModelCallRecord) -> Result<(), LedgerError> {
-        self.write_event(
-            StoredEvent::ModelCallRecorded(record.clone()),
-            |transaction| project_model_call(transaction, record),
-        )
+        self.write_event(StoredEvent::ModelCallRecorded(record.clone()))
     }
 
     pub fn record_snapshot(&self, record: &SnapshotRecord) -> Result<(), LedgerError> {
-        self.write_event(
-            StoredEvent::SnapshotRecorded(record.clone()),
-            |transaction| project_snapshot(transaction, record),
-        )
+        self.write_event(StoredEvent::SnapshotRecorded(record.clone()))
     }
 
     pub fn append_step_started(&self, record: &StepRecord) -> Result<(), LedgerError> {
         validate_started(record)?;
         let mut connection = self.lock()?;
         let transaction = immediate(&mut connection)?;
+        apply_pending_events(&transaction)?;
         let existing: Option<(u32, String)> = transaction
             .query_row(
                 "SELECT attempt, epoch FROM steps
@@ -254,8 +270,8 @@ impl Ledger {
         }
         test_pause_after_step_read();
         append_event(&transaction, &StoredEvent::StepStarted(record.clone()))?;
-        project_step(&transaction, record, false)?;
         transaction.commit()?;
+        apply_pending(&mut connection)?;
         Ok(())
     }
 
@@ -269,6 +285,7 @@ impl Ledger {
     ) -> Result<(), LedgerError> {
         let mut connection = self.lock()?;
         let transaction = immediate(&mut connection)?;
+        apply_pending_events(&transaction)?;
         let greatest_epoch: Option<String> = transaction.query_row(
             "SELECT MAX(epoch) FROM steps WHERE run_id = ?1 AND step_id = ?2",
             params![run_id, step_id],
@@ -280,12 +297,13 @@ impl Ledger {
                 epoch,
             });
         }
-        let mut record = read_step(&transaction, run_id, step_id, attempt)?.ok_or_else(|| {
-            LedgerError::MissingAttempt {
-                step: step_id.to_owned(),
-                attempt,
-            }
-        })?;
+        let mut record =
+            read_step(&transaction, run_id, step_id, attempt, epoch)?.ok_or_else(|| {
+                LedgerError::MissingAttempt {
+                    step: step_id.to_owned(),
+                    attempt,
+                }
+            })?;
         if record.outcome.is_some() {
             return Err(LedgerError::AlreadyClosed {
                 step: step_id.to_owned(),
@@ -298,11 +316,9 @@ impl Ledger {
         record.failure_class = completion.failure_class;
         record.ended_at = Some(completion.ended_at);
         append_event(&transaction, &StoredEvent::StepClosed(record.clone()))?;
-        test_crash_after_close_event();
-        // `checkpointed` cambia insieme all'esito: non esiste una finestra in
-        // cui un passo concluso possa apparire rilanciabile.
-        project_step(&transaction, &record, true)?;
         transaction.commit()?;
+        test_crash_after_close_event();
+        apply_pending(&mut connection)?;
         Ok(())
     }
 
@@ -403,21 +419,18 @@ impl Ledger {
         Ok(Value::Object(dump))
     }
 
-    fn write_event(
-        &self,
-        event: StoredEvent,
-        project: impl FnOnce(&Transaction<'_>) -> Result<(), LedgerError>,
-    ) -> Result<(), LedgerError> {
+    fn write_event(&self, event: StoredEvent) -> Result<(), LedgerError> {
         let mut connection = self.lock()?;
         let transaction = immediate(&mut connection)?;
+        apply_pending_events(&transaction)?;
         append_event(&transaction, &event)?;
-        project(&transaction)?;
         transaction.commit()?;
+        apply_pending(&mut connection)?;
         Ok(())
     }
 
     fn append_trace(&self, trace: TraceRecord) -> Result<(), LedgerError> {
-        self.write_event(StoredEvent::Trace(trace), |_| Ok(()))
+        self.write_event(StoredEvent::Trace(trace))
     }
 
     fn lock(&self) -> Result<MutexGuard<'_, Connection>, LedgerError> {
@@ -524,6 +537,13 @@ fn immediate(connection: &mut Connection) -> Result<Transaction<'_>, LedgerError
     Ok(connection.transaction_with_behavior(TransactionBehavior::Immediate)?)
 }
 
+fn apply_pending(connection: &mut Connection) -> Result<(), LedgerError> {
+    let transaction = immediate(connection)?;
+    apply_pending_events(&transaction)?;
+    transaction.commit()?;
+    Ok(())
+}
+
 #[cfg(test)]
 fn test_pause_after_step_read() {
     let Some(marker) = std::env::var_os("LEDGER_TEST_STEP_READ_MARKER") else {
@@ -543,8 +563,8 @@ fn test_pause_after_step_read() {}
 #[cfg(test)]
 fn test_crash_after_close_event() {
     if std::env::var_os("LEDGER_TEST_CRASH_AFTER_CLOSE_EVENT").is_some() {
-        // `exit` salta i distruttori: la connessione muore con la transazione
-        // aperta e SQLite deve annullare sia evento sia punto di controllo.
+        // L'evento è durevole, il watermark no: l'apertura deve incorporarlo
+        // prima che il passo possa apparire rilanciabile.
         std::process::exit(86);
     }
 }
@@ -655,9 +675,30 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
          CREATE INDEX IF NOT EXISTS snapshots_run_idx
              ON snapshots(run_id, step_id, phase);
          CREATE UNIQUE INDEX IF NOT EXISTS snapshots_phase_idx
-             ON snapshots(run_id, IFNULL(step_id, ''), phase);",
+             ON snapshots(run_id, IFNULL(step_id, ''), phase);
+         CREATE TABLE IF NOT EXISTS projection_watermark (
+             singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+             last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
+         );",
     )?;
     Ok(())
+}
+
+fn initialize_projection_watermark(connection: &Connection) -> Result<(), LedgerError> {
+    connection.execute(
+        "INSERT INTO projection_watermark (singleton, last_applied_seq) VALUES (1, 0)",
+        [],
+    )?;
+    Ok(())
+}
+
+fn projection_schema_exists(connection: &Connection) -> Result<bool, LedgerError> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master
+         WHERE type = 'table' AND name = 'runs')",
+        [],
+        |row| row.get(0),
+    )?)
 }
 
 fn drop_projection_schema(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
@@ -671,30 +712,95 @@ fn drop_projection_schema(transaction: &Transaction<'_>) -> Result<(), LedgerErr
 }
 
 fn rebuild_projections_in(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
+    let (event_count, log_high_water): (i64, i64) = transaction.query_row(
+        "SELECT COUNT(*), COALESCE((SELECT seq FROM events.sqlite_sequence
+                                    WHERE name = 'events'), 0)
+         FROM events.events",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    if event_count != log_high_water {
+        return Err(LedgerError::InvalidRecord(
+            "cannot rebuild projections from a pruned event log".to_owned(),
+        ));
+    }
     drop_projection_schema(transaction)?;
     create_projection_schema(transaction)?;
+    transaction.execute("DELETE FROM projection_watermark", [])?;
+    initialize_projection_watermark(transaction)?;
     let events = {
         let mut statement =
-            transaction.prepare("SELECT payload FROM events.events ORDER BY seq")?;
+            transaction.prepare("SELECT seq, payload FROM events.events ORDER BY seq")?;
         let events = statement
-            .query_map([], |row| row.get::<_, String>(0))?
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         events
     };
-    for payload in events {
+    for (seq, payload) in events {
         let event: StoredEvent = serde_json::from_str(&payload)?;
         project_event(transaction, &event)?;
+        set_projection_watermark(transaction, seq)?;
     }
+    Ok(())
+}
+
+fn apply_pending_events(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
+    let watermark: Option<i64> = transaction
+        .query_row(
+            "SELECT last_applied_seq FROM projection_watermark WHERE singleton = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let watermark = watermark
+        .ok_or_else(|| LedgerError::InvalidRecord("projection watermark is missing".to_owned()))?;
+    let log_high_water: i64 = transaction.query_row(
+        "SELECT COALESCE((SELECT seq FROM events.sqlite_sequence
+                              WHERE name = 'events'), 0)",
+        [],
+        |row| row.get(0),
+    )?;
+    if watermark > log_high_water {
+        return Err(LedgerError::InvalidRecord(format!(
+            "projection watermark {watermark} is ahead of event log {log_high_water}"
+        )));
+    }
+    let events = {
+        let mut statement = transaction
+            .prepare("SELECT seq, payload FROM events.events WHERE seq > ?1 ORDER BY seq")?;
+        let events = statement
+            .query_map([watermark], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        events
+    };
+    for (seq, payload) in events {
+        test_count_applied_event_read();
+        let event: StoredEvent = serde_json::from_str(&payload)?;
+        project_event(transaction, &event)?;
+        set_projection_watermark(transaction, seq)?;
+    }
+    Ok(())
+}
+
+fn set_projection_watermark(transaction: &Transaction<'_>, seq: i64) -> Result<(), LedgerError> {
+    transaction.execute(
+        "UPDATE projection_watermark SET last_applied_seq = ?1 WHERE singleton = 1",
+        [seq],
+    )?;
     Ok(())
 }
 
 fn append_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(), LedgerError> {
     // Da qui l'evento va in `events.db`, mentre la successiva proiezione va in
     // `state.db`. Con WAL SQLite non rende atomico il commit dei due database
-    // collegati: dopo uno schianto lo stato può restare più avanti del registro,
-    // soprattutto con state FULL ed events NORMAL. La ricostruzione considera il
-    // registro come verità e, a ogni apertura, rifà da zero le proiezioni,
-    // perdendo quell'anticipo.
+    // collegati. Il nuovo evento non viene mai proiettato nella transazione che
+    // lo inserisce; il watermark avanza solo nella transazione seguente. Uno
+    // schianto può lasciare la proiezione indietro, mai davanti al registro, e
+    // l'apertura applica soltanto la coda che manca.
     let (kind, run_id, step_id, attempt, epoch, occurred_at) = event_metadata(event);
     let payload = serde_json::to_string(event)?;
     transaction.execute(
@@ -937,18 +1043,33 @@ fn read_step(
     run_id: &str,
     step_id: &str,
     attempt: u32,
+    epoch: u64,
 ) -> Result<Option<StepRecord>, LedgerError> {
     Ok(connection
         .query_row(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
                     failure_class, ended_at
-             FROM steps WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3",
-            params![run_id, step_id, attempt],
+             FROM steps
+             WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
+            params![run_id, step_id, attempt, padded_u64(epoch)],
             step_from_row,
         )
         .optional()?)
 }
+
+#[cfg(test)]
+thread_local! {
+    static APPLIED_EVENT_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn test_count_applied_event_read() {
+    APPLIED_EVENT_READS.set(APPLIED_EVENT_READS.get() + 1);
+}
+
+#[cfg(not(test))]
+fn test_count_applied_event_read() {}
 
 fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let deps: String = row.get(4)?;
