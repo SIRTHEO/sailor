@@ -70,6 +70,24 @@ fn cost_rank(model: &str) -> Option<usize> {
 /// modelli in prosa («non delegare a un modello più piccolo»), e una riga di
 /// prosa non è una dichiarazione. Puro: il testo lo legge chi chiama.
 pub fn declared_model_in_frontmatter(text: &str) -> Option<&str> {
+    frontmatter_value(text, "model")
+}
+
+/// Il nome che il mestiere dichiara, dallo stesso blocco.
+///
+/// SERVE A SAPERE SE IL FILE È DAVVERO DI QUEL MESTIERE. Il file si trova per
+/// percorso, e su macOS il percorso è insensibile alle maiuscole: chiedere
+/// `BUILDER` apre `builder.md` e ne legge la dichiarazione come se fosse sua.
+/// Il nome scritto dentro è l'unico dato che non passa dal filesystem, quindi
+/// è l'unico che può smentire quella corrispondenza.
+pub fn declared_name_in_frontmatter(text: &str) -> Option<&str> {
+    frontmatter_value(text, "name")
+}
+
+/// Il valore di una chiave nel solo frontmatter — il blocco fra i primi due
+/// `---`. Si ferma lì di proposito: il corpo di un agente parla dei modelli
+/// in prosa, e una riga di prosa non è una dichiarazione.
+fn frontmatter_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     let mut lines = text.lines();
     // Il frontmatter esiste solo se il file ci si apre.
     if lines.next()?.trim() != "---" {
@@ -78,9 +96,12 @@ pub fn declared_model_in_frontmatter(text: &str) -> Option<&str> {
     for line in lines {
         let trimmed = line.trim();
         if trimmed == "---" {
-            return None; // frontmatter finito senza un `model:`
+            return None; // frontmatter finito senza quella chiave
         }
-        if let Some(rest) = trimmed.strip_prefix("model:") {
+        if let Some(rest) = trimmed
+            .strip_prefix(key)
+            .and_then(|r| r.strip_prefix(':'))
+        {
             let value = rest.trim().trim_matches(['"', '\'']).trim();
             return (!value.is_empty()).then_some(value);
         }
