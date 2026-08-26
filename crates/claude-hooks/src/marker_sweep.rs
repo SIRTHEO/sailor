@@ -602,43 +602,72 @@ pub(crate) struct SweepLock {
     path: PathBuf,
 }
 
+/// L'esito di `take`: preso, tenuto da un'altra passata, o non preso perché
+/// il disco/il permesso non lo consentono — un caso che prima si confondeva
+/// col secondo e usciva a zero come un successo (misurato con `chmod 500`).
+pub(crate) enum TakeOutcome {
+    Taken(SweepLock),
+    Locked,
+    Io(String),
+}
+
+/// L'esito grezzo della scrittura del file: creato, già presente (lucchetto
+/// altrui), o un errore di I/O che non ha niente a che fare col lucchetto.
+enum CreateOutcome {
+    Created,
+    AlreadyLocked,
+    Io(String),
+}
+
 impl SweepLock {
-    /// Prende il lucchetto, oppure `None` se un'altra passata è in corso.
+    /// Prende il lucchetto. `Locked` se un'altra passata ce l'ha già, `Io` se
+    /// il file proprio non si è potuto scrivere (disco pieno, permesso
+    /// negato): i due casi non sono lo stesso "non ho preso il lucchetto".
     ///
     /// Un lucchetto più vecchio di `LOCK_STALE_SECS` è di un processo che non
     /// esiste più e si scavalca: altrimenti un solo processo ucciso a metà
     /// spegnerebbe la raccolta per sempre, in silenzio.
-    pub(crate) fn take(dir: &Path) -> Option<Self> {
+    pub(crate) fn take(dir: &Path) -> TakeOutcome {
         let path = dir.join("marker-sweep.lock");
-        if Self::create(&path) {
-            return Some(Self { path });
+        match Self::create(&path) {
+            CreateOutcome::Created => return TakeOutcome::Taken(Self { path }),
+            CreateOutcome::Io(e) => return TakeOutcome::Io(e),
+            CreateOutcome::AlreadyLocked => {}
         }
         match file_age_secs(&path) {
             Some(age) if age >= LOCK_STALE_SECS => {
                 let _ = fs::remove_file(&path);
-                Self::create(&path).then_some(Self { path })
+                Self::create(&path).into_take_outcome(path)
             }
             // Il lucchetto è sparito fra il tentativo e la lettura: si riprova
             // una volta sola, e se anche questa perde la corsa qualcuno l'ha
             // preso nel frattempo.
-            None => Self::create(&path).then_some(Self { path }),
-            Some(_) => None,
+            None => Self::create(&path).into_take_outcome(path),
+            Some(_) => TakeOutcome::Locked,
         }
     }
 
-    fn create(path: &Path) -> bool {
+    fn create(path: &Path) -> CreateOutcome {
         use std::io::Write as _;
         use std::os::unix::fs::OpenOptionsExt;
-        let Ok(mut file) = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(path)
-        else {
-            return false;
-        };
-        let _ = writeln!(file, "{}", std::process::id());
-        true
+        match fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path) {
+            Ok(mut file) => {
+                let _ = writeln!(file, "{}", std::process::id());
+                CreateOutcome::Created
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => CreateOutcome::AlreadyLocked,
+            Err(e) => CreateOutcome::Io(e.to_string()),
+        }
+    }
+}
+
+impl CreateOutcome {
+    fn into_take_outcome(self, path: PathBuf) -> TakeOutcome {
+        match self {
+            CreateOutcome::Created => TakeOutcome::Taken(SweepLock { path }),
+            CreateOutcome::AlreadyLocked => TakeOutcome::Locked,
+            CreateOutcome::Io(e) => TakeOutcome::Io(e),
+        }
     }
 }
 
@@ -667,9 +696,18 @@ pub(crate) fn report(t: &Tally, deleting: bool) -> String {
 pub fn run() -> i32 {
     let deleting = std::env::args().any(|a| a == "--delete");
     let dir = state_dir();
-    let Some(_lock) = SweepLock::take(&dir) else {
-        println!("marker-sweep: another sweep holds the lock, nothing done");
-        return 0;
+    let _lock = match SweepLock::take(&dir) {
+        TakeOutcome::Taken(lock) => lock,
+        TakeOutcome::Locked => {
+            println!("marker-sweep: another sweep holds the lock, nothing done");
+            return 0;
+        }
+        // «Non posso» non è «non devo»: un disco pieno o un permesso negato
+        // non deve passare per un normale lucchetto altrui.
+        TakeOutcome::Io(reason) => {
+            eprintln!("marker-sweep: cannot take the lock: {reason}");
+            return 1;
+        }
     };
     let markers = census(&dir);
     let mut t = tally(&markers);
@@ -876,14 +914,16 @@ mod tests {
     fn two_sweeps_do_not_run_on_the_same_state() {
         let home = HomeIsolata::nuova("passata-lucchetto");
         let state = home.stato();
-        let first = SweepLock::take(&state).expect("il primo lucchetto si prende");
+        let TakeOutcome::Taken(first) = SweepLock::take(&state) else {
+            panic!("il primo lucchetto si prende")
+        };
         assert!(
-            SweepLock::take(&state).is_none(),
+            matches!(SweepLock::take(&state), TakeOutcome::Locked),
             "due passate insieme sullo stesso stato"
         );
         drop(first);
         assert!(
-            SweepLock::take(&state).is_some(),
+            matches!(SweepLock::take(&state), TakeOutcome::Taken(_)),
             "il lucchetto non si rilascia all'uscita"
         );
     }
@@ -895,9 +935,25 @@ mod tests {
         let home = HomeIsolata::nuova("passata-lucchetto-vecchio");
         let state = home.stato();
         marker(&state, "marker-sweep.lock", LOCK_STALE_SECS + 1);
-        assert!(SweepLock::take(&state).is_some());
+        assert!(matches!(SweepLock::take(&state), TakeOutcome::Taken(_)));
         marker(&state, "marker-sweep.lock", 1);
-        assert!(SweepLock::take(&state).is_none());
+        assert!(matches!(SweepLock::take(&state), TakeOutcome::Locked));
+    }
+
+    /// PROVA 4c. IL CASO CHE PASSAVA PER SUCCESSO: `open` fallisce per un
+    /// motivo che non ha niente a che fare col lucchetto (qui, permesso
+    /// negato sulla cartella) — non deve travestirsi da "un'altra passata ce
+    /// l'ha già".
+    #[test]
+    fn a_permission_error_is_not_confused_with_another_sweep_holding_the_lock() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = HomeIsolata::nuova("passata-lucchetto-permesso-negato");
+        let state = home.stato();
+        let before = fs::metadata(&state).unwrap().permissions();
+        fs::set_permissions(&state, fs::Permissions::from_mode(0o500)).unwrap();
+        let outcome = SweepLock::take(&state);
+        fs::set_permissions(&state, before).unwrap();
+        assert!(matches!(outcome, TakeOutcome::Io(_)), "un guasto di I/O non è un lucchetto altrui");
     }
 
     /// PROVA 4c, LA TRAPPOLA VERA. Il marcatore è stato riscritto fra il
