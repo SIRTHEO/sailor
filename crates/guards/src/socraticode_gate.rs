@@ -357,8 +357,11 @@ pub fn is_out_of_perimeter(path: &str) -> bool {
         Regex::new(
             // La cartella stessa vale quanto ciò che contiene, e per questo la
             // coda ammette la fine della stringa: il bersaglio di un `grep -r`
-            // è quasi sempre la cartella nuda, senza barra.
-            r"(^|/)(node_modules|dist|build|\.next|coverage|\.git|plugins/cache)/|\.claude/(projects|state)(/|$)",
+            // è quasi sempre la cartella nuda, senza barra. `target` è la
+            // cartella di build di Cargo (qui sotto ne vive una da 7,3 GB):
+            // vendorizzata quanto `node_modules`, e senza di lei
+            // `quoted_verbatim_in_target` ci spenderebbe dentro tutto il tetto.
+            r"(^|/)(node_modules|dist|build|target|\.next|coverage|\.git|plugins/cache)/|\.claude/(projects|state)(/|$)",
         )
         .unwrap()
     })
@@ -410,29 +413,29 @@ pub fn first_absolute_path(command: &str) -> Option<String> {
 /// Il consiglio dato quando una ricerca è giudicata concettuale.
 ///
 /// Porta la distinzione che nel resto della configurazione manca: per una
-/// domanda STRUTTURALE («dove vive», «esiste gia'», «cosa esporta», «chi
-/// dipende») l'indice vale anche se e' vecchio, perche' la forma del codice
+/// domanda STRUTTURALE («dove vive», «esiste già», «cosa esporta», «chi
+/// dipende») l'indice vale anche se è vecchio, perché la forma del codice
 /// cambia lentamente; il testo remoto (grep) serve al VALORE DI OGGI — quante
 /// occorrenze adesso, quale versione dichiara il manifesto — non a dire dove
 /// vive qualcosa.
 fn concept_advice() -> &'static str {
-    "  ToolSearch query \"select:codebase_search,codebase_symbol,codebase_flow\"\n  codebase_search \"<il dominio a parole>\"   -> dove vive, esiste gia'\n  codebase_graph_query          -> chi importa questo file (projectPath del REPO)\nDomanda STRUTTURALE (dove vive, cosa esporta, chi dipende): l'indice vale\nanche se e' vecchio, perche' la forma del codice cambia lentamente. Il grep\nresta lo strumento giusto solo per il VALORE DI OGGI: quante occorrenze\nadesso, quale versione dichiara il manifesto.\nLa domanda si fa nella lingua in cui e' scritto cio' che cerchi.\nSe invece cerchi un identificatore ESATTO, una stringa d'errore letterale o\nuna regex, riscrivi il pattern in quella forma: passa senza pedaggio."
+    "  ToolSearch query \"select:codebase_search,codebase_symbol,codebase_flow\"\n  codebase_search \"<il dominio a parole>\"   -> dove vive, esiste già\n  codebase_graph_query          -> chi importa questo file (projectPath del REPO)\nDomanda STRUTTURALE (dove vive, cosa esporta, chi dipende): l'indice vale\nanche se è vecchio, perché la forma del codice cambia lentamente. Il grep\nresta lo strumento giusto solo per il VALORE DI OGGI: quante occorrenze\nadesso, quale versione dichiara il manifesto.\nLa domanda si fa nella lingua in cui è scritto ciò che cerchi.\nSe invece cerchi un identificatore ESATTO, una stringa d'errore letterale o\nuna regex, riscrivi il pattern in quella forma: passa senza pedaggio."
 }
 
 /// Il messaggio della ricerca concettuale.
 ///
-/// NON e' piu' identico byte per byte al gemello in
-/// `scripts/socraticode-gate-v2.js`: qui la sostanza e' cambiata (giudizio
+/// NON è più identico byte per byte al gemello in
+/// `scripts/socraticode-gate-v2.js`: qui la sostanza è cambiata (giudizio
 /// sulla domanda, non sul conteggio; la distinzione strutturale/valore-di-
 /// oggi) e il JS resta fuori dal perimetro di questa modifica — il ripiego,
-/// quando il binario manca, parla ancora col testo vecchio finche' qualcuno
+/// quando il binario manca, parla ancora col testo vecchio finché qualcuno
 /// non lo riporta in pari.
 ///
-/// Porta **cosa** cercavi, e non e' cosmesi: senza il pattern, chi legge il
-/// blocco non sa quale delle sue ricerche e' stata giudicata concettuale.
+/// Porta **cosa** cercavi, e non è cosmesi: senza il pattern, chi legge il
+/// blocco non sa quale delle sue ricerche è stata giudicata concettuale.
 fn message_concept(sought: &str) -> String {
     format!(
-        "SocratiCode-first: questa e' una ricerca CONCETTUALE in un repo indicizzato.\nCercavi: {sought}\nIl grep conta le occorrenze; non dice se una cosa e' viva, chi la importa,\nne' dove vive il dominio. Per questa domanda la risposta sta altrove:\n{}",
+        "SocratiCode-first: questa è una ricerca CONCETTUALE in un repo indicizzato.\nCercavi: {sought}\nIl grep conta le occorrenze; non dice se una cosa è viva, chi la importa,\nné dove vive il dominio. Per questa domanda la risposta sta altrove:\n{}",
         concept_advice()
     )
 }
@@ -440,21 +443,37 @@ fn message_concept(sought: &str) -> String {
 fn message_impact(lost: &[String]) -> String {
     format!(
         "SocratiCode-first: questo Edit rinomina o rimuove un simbolo esportato ({}).\n\
-         Chi lo importa non e' visibile da qui. Prima misura il raggio:\n\
+         Chi lo importa non è visibile da qui. Prima misura il raggio:\n\
          \x20 - codebase_impact  -> chi rompe questo cambio\n\
          \x20 - codebase_graph_query  -> dipendenze entranti, anche cross-repo\n\
          Poi rilancia lo STESSO Edit: passa (il gate si riarma ogni 10).\n\
-         Se il simbolo e' interno malgrado l'export (test, barrel locale), rilancia e basta.",
+         Se il simbolo è interno malgrado l'export (test, barrel locale), rilancia e basta.",
         lost.join(", ")
     )
 }
 
-/// Il consiglio dato quando il pattern e' la sagoma di una definizione:
+/// Il consiglio dato quando si scandisce un albero cercando il nome di una
+/// cosa: la domanda è «dove vive», e l'indice risponde a quella.
+fn message_name_lookup(pattern: &str) -> String {
+    let ident = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
+    format!(
+        "SocratiCode-first: stai scandendo un albero indicizzato per trovare dove\n\
+         vive \"{ident}\". Il grep ti dà le righe che lo nominano; l'indice ti dà\n\
+         dove è definito, cosa fa e chi lo usa — in una chiamata.\n\
+         \x20 ToolSearch \"select:codebase_symbol,codebase_search\"\n\
+         \x20 codebase_symbol \"{ident}\"   (projectPath del repo)\n\
+         \x20 oppure, dalla shell: claude-hooks indice simbolo {ident}\n\
+         Se invece stai CONTANDO le occorrenze di oggi, aggiungi -c: passa.\n\
+         Se sai già in quale file guardare, nominalo: un bersaglio preciso passa."
+    )
+}
+
+/// Il consiglio dato quando il pattern èla sagoma di una definizione:
 /// l'indice la risolve in una chiamata, non un pedaggio sul singolo grep.
 fn message_definition(pattern: &str) -> String {
     let ident = definition_identifier(pattern).unwrap_or_else(|| pattern.trim().to_string());
     format!(
-        "SocratiCode-first: \"{pattern}\" e' una ricerca di DEFINIZIONE in un repo\n\
+        "SocratiCode-first: \"{pattern}\" è una ricerca di DEFINIZIONE in un repo\n\
          indicizzato: l'indice la risolve in una chiamata, il grep in tre.\n\
          \x20 ToolSearch \"select:codebase_symbol,codebase_search\"\n\
          \x20 codebase_symbol \"{ident}\"   (projectPath del repo)\n\
@@ -628,9 +647,9 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
 
     // Il percorso riportato resta quello vero, file compreso: prima veniva
     // collassato alla cartella padre anche quando il bersaglio era un file
-    // gia' individuato, e il registro perdeva quale file si stava cercando.
-    // Si collassa solo un percorso che non esiste affatto — ne' `is_indexed`
-    // ne' il giudizio sul pattern dipendono dall'essere file o cartella.
+    // già individuato, e il registro perdeva quale file si stava cercando.
+    // Si collassa solo un percorso che non esiste affatto — né `is_indexed`
+    // né il giudizio sul pattern dipendono dall'essere file o cartella.
     if !path.exists() {
         path = path.parent().map(Path::to_path_buf).unwrap_or(path);
     }
@@ -655,11 +674,11 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
         return Verdict::out_of_scope();
     }
 
-    // Ricerca di DEFINIZIONE («dov'e' fn judge») in un repo di codice: qui
+    // Ricerca di DEFINIZIONE («dov'è fn judge») in un repo di codice: qui
     // l'identificatore esatto passerebbe sempre sotto `allowed_search`, ma
     // l'indice la risolve in una chiamata contro tre grep. `-c`/`output_mode:
     // count` restano il VALORE DI OGGI (quante occorrenze) e non pagano
-    // pedaggio, ne' un bersaglio fuori da codice (`docs/`, `.md`).
+    // pedaggio, né un bersaglio fuori da codice (`docs/`, `.md`).
     if is_code_target(&target)
         && !wants_count(tool, input, command)
         && looks_like_a_definition_lookup(&pattern)
@@ -672,12 +691,47 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
         };
     }
 
+    // Scandire un ALBERO indicizzato per il nome di una cosa è la domanda
+    // «dove vive», non «quante volte compare».
+    //
+    // `path.is_dir()` non è un dettaglio, è il confine: chi ha già scelto il
+    // file sa dove guardare, e cercare un identificatore lì dentro è leggere,
+    // non orientarsi. Senza questa condizione il criterio fermava anche
+    // `grep handlePaymentFailed payment.ts` — lo ha preso una prova che
+    // esisteva già, ed è il genere di falso blocco per cui un presidio viene
+    // spento.
+    //
+    // Le altre esclusioni sono quelle del caso sopra: un conteggio passa, due
+    // bersagli espliciti passano, fuori dal codice passa. In più serve la
+    // sagoma di un identificatore vero, perché una parola comune non è il
+    // nome di niente.
+    if is_code_target(&target)
+        && path.is_dir()
+        && !wants_count(tool, input, command)
+        && looks_like_a_name_lookup(&pattern)
+    {
+        return Verdict {
+            decision: Decision::Block(message_name_lookup(&pattern)),
+            reason: "ricerca-di-nome",
+            path: Some(target),
+            count: None,
+        };
+    }
+
     // IL GIUDIZIO GUARDA LA DOMANDA, NON UN CONTATORE. Un identificatore
     // esatto, una regex o una stringa d'errore sono lo strumento giusto e
-    // passano sempre, senza pedaggio: se il criterio e' buono non serve un
+    // passano sempre, senza pedaggio: se il criterio è buono non serve un
     // contatore. Una domanda concettuale parla sempre, non a turno — anche
-    // dentro un file solo: e' lo stesso censimento spezzato in tanti grep.
+    // dentro un file solo: èlo stesso censimento spezzato in tanti grep.
     if !allowed_search(&pattern) {
+        // Una frase per forma è indistinguibile da un concetto vero —
+        // "regge il divieto" e "duplicazione del codice" hanno la stessa
+        // sagoma — e solo il contenuto le separa: se il testo esiste già,
+        // letterale, in ciò che si sta per cercare, non è una domanda, è
+        // una citazione presa da un messaggio già letto altrove.
+        if quoted_verbatim_in_target(&pattern, &path) {
+            return Verdict::pass("citazione-letterale").with_path(&target);
+        }
         return Verdict {
             decision: Decision::Block(message_concept(&pattern)),
             reason: "ricerca-concettuale",
@@ -696,13 +750,13 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
 /// pezzo non-opzione dopo il comando; se è fra virgolette si tolgono. `None`
 /// quando non si riesce a isolarlo, e chi chiama tratta `None` come «ammesso»:
 /// non aver capito la ricerca non è una ragione per negarla.
-/// Divide una riga di comando in parole, ma tiene insieme cio' che sta fra
+/// Divide una riga di comando in parole, ma tiene insieme ciò che sta fra
 /// virgolette.
 ///
-/// Serve perche' `split_whitespace()` spezzava
+/// Serve perché `split_whitespace()` spezzava
 /// `grep -rn "dove si gestisce il pagamento fallito" src` alla prima parola, e
 /// `grep_pattern` restituiva `dove`: una domanda concettuale diventava un
-/// identificatore e passava. Il difetto non mordeva finche' il gate contava le
+/// identificatore e passava. Il difetto non mordeva finché il gate contava le
 /// ricerche invece di leggerle; da quando il giudizio guarda il pattern, meta'
 /// delle ricerche — quelle che passano da `Bash` — sfuggivano tutte.
 fn split_respecting_quotes(s: &str) -> Vec<String> {
@@ -871,8 +925,8 @@ fn is_keyword_phrase(p: &str) -> bool {
 }
 
 /// Un conteggio (`grep -c`, o `output_mode: "count"` per lo strumento
-/// `Grep`) e' domanda sul VALORE DI OGGI — quante occorrenze adesso — anche
-/// quando il pattern ha la sagoma di una definizione: li' il grep resta lo
+/// `Grep`) è domanda sul VALORE DI OGGI — quante occorrenze adesso — anche
+/// quando il pattern ha la sagoma di una definizione: lì il grep resta lo
 /// strumento giusto, l'indice non conta occorrenze.
 fn wants_count(tool: &str, input: &hook_io::HookInput, command: &str) -> bool {
     if tool == "Grep" {
@@ -888,10 +942,10 @@ fn wants_count(tool: &str, input: &hook_io::HookInput, command: &str) -> bool {
     })
 }
 
-/// Il bersaglio e' codice: un file con estensione da codice, o una cartella
+/// Il bersaglio è codice: un file con estensione da codice, o una cartella
 /// che contiene uno dei segmenti tipici di un repo (`rust`, `src`, `crates`,
 /// `lib`, `app`). Un `grep "fn "` dentro `docs/` o un `.md` resta un grep
-/// qualsiasi: li' non c'e' una definizione da risolvere nell'indice.
+/// qualsiasi: li' non c'è una definizione da risolvere nell'indice.
 fn is_code_target(target: &str) -> bool {
     if is_code_file(target) {
         return true;
@@ -905,10 +959,10 @@ fn is_code_target(target: &str) -> bool {
 }
 
 /// La sagoma di una ricerca di DEFINIZIONE: parola chiave del linguaggio,
-/// poi — se c'e' — l'identificatore. Il nome resta opzionale apposta:
+/// poi — se c'è — l'identificatore. Il nome resta opzionale apposta:
 /// `^fn ` da solo enumera ogni funzione di un file, la stessa domanda
 /// strutturale con o senza un nome pinnato. Condivisa dal giudizio booleano
-/// e dall'estrazione del nome per il messaggio, cosi' non divergono.
+/// e dall'estrazione del nome per il messaggio, così non divergono.
 fn definition_lookup_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -921,10 +975,10 @@ fn definition_lookup_regex() -> &'static Regex {
     })
 }
 
-/// Vero se il pattern e' una ricerca di DEFINIZIONE: comincia con una parola
+/// Vero se il pattern è una ricerca di DEFINIZIONE: comincia con una parola
 /// chiave, non con un identificatore nudo — quello resta un grep legittimo,
 /// cerca il valore di oggi. Un'alternativa (`|`) conta solo se OGNI ramo lo
-/// e': nel dubbio, falso.
+/// è: nel dubbio, falso.
 fn looks_like_a_definition_lookup(pattern: &str) -> bool {
     let unquoted = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
     if unquoted.is_empty() {
@@ -934,6 +988,64 @@ fn looks_like_a_definition_lookup(pattern: &str) -> bool {
         let b = branch.trim().trim_start_matches('^');
         !b.is_empty() && definition_lookup_regex().is_match(b)
     })
+}
+
+/// Il pattern è il nome di una cosa che vive nel codice — e cercarlo **a
+/// tappeto** è la domanda «dove vive», non «quante volte compare».
+///
+/// PERCHÉ SI AGGIUNGE, IL 26/08/2026. Il criterio precedente diceva per
+/// iscritto che «un identificatore nudo resta un grep legittimo, cerca il
+/// valore di oggi». È vero quando si conta — e infatti i conteggi restano
+/// fuori — ma non quando si scandisce un intero albero per trovare dove una
+/// funzione è definita e chi la chiama: quella è esattamente la domanda a cui
+/// l'indice risponde in una chiamata invece che in tre grep. Detto da Theo lo
+/// stesso giorno, dopo aver visto una sessione cercare così per un'intera
+/// mattina: «grep crea solo casino quando si tratta di fare codice».
+///
+/// COSA NON DEVE CADERCI DENTRO, ed è il motivo della forma richiesta. Una
+/// parola comune — `TODO`, `error`, `test`, `debug` — non è il nome di
+/// niente: si cerca per contare, o per leggere. Si chiede quindi la sagoma di
+/// un identificatore vero: `snake_case`, `camelCase`, `PascalCase`, un
+/// percorso qualificato. Una parola sola tutta minuscola e senza separatori
+/// **non** basta, per quanto sia un nome valido: il costo di sbagliare qui è
+/// un blocco a torto, e un presidio che dà fastidio a torto viene spento.
+fn looks_like_a_name_lookup(pattern: &str) -> bool {
+    let p = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
+    if p.is_empty() || p.split_whitespace().count() > 1 {
+        return false;
+    }
+    // Una regex non è un nome: se porta i metacaratteri, chi cerca sa già
+    // cosa sta facendo.
+    if p.contains(['*', '+', '[', ']', '(', ')', '\\', '^', '$', '?', '{', '}', '|']) {
+        return false;
+    }
+    let ident = |s: &str| {
+        !s.is_empty()
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+            && s.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+    };
+    // Un nome qualificato — `guards::judge`, `notte.decide` — è un nome
+    // anche se i suoi pezzi sono parole semplici.
+    for sep in ["::", "."] {
+        if p.contains(sep) {
+            return p.split(sep).all(ident);
+        }
+    }
+    if !ident(p) {
+        return false;
+    }
+    let has_underscore = p.contains('_');
+    // TUTTO MAIUSCOLO SENZA SEPARATORI NON È UN NOME: `TODO`, `FIXME`, `XXX`,
+    // `HACK` sono marcatori che si cercano per leggerli o contarli. Con un
+    // separatore invece è una costante vera — `MAX_TASK_ATTEMPTS` — e quella
+    // vive nel codice come qualunque altro simbolo.
+    let all_upper = p.chars().all(|c| !c.is_ascii_lowercase());
+    if all_upper && !has_underscore {
+        return false;
+    }
+    let has_inner_upper = p.chars().skip(1).any(|c| c.is_ascii_uppercase());
+    let starts_upper = p.chars().next().is_some_and(|c| c.is_ascii_uppercase());
+    has_underscore || has_inner_upper || starts_upper
 }
 
 /// Il nome che segue la parola chiave, per il messaggio del gate. `None`
@@ -985,6 +1097,85 @@ pub fn allowed_search(pattern: &str) -> bool {
     // Resta la parola singola ambigua (ammessa, sotto osservazione altrove) o
     // la frase senza parola chiave, che è un concetto e basta.
     p.split_whitespace().count() <= 1
+}
+
+// ── La citazione, distinta dal concetto per contenuto e non per forma ──────
+
+/// Quanti file e byte questo controllo apre al massimo prima di arrendersi.
+/// Un tetto, non una promessa di completezza: un riscontro mancato PER IL
+/// TETTO resta bloccato, non passa — l'esenzione non si allarga mai per un
+/// bersaglio che non si è riusciti a leggere tutto.
+const CITATION_SCAN_MAX_FILES: usize = 4_000;
+const CITATION_SCAN_MAX_BYTES: usize = 16 * 1024 * 1024;
+const CITATION_SCAN_MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Un pattern bloccato da [`allowed_search`] per la sua forma può ancora
+/// essere una citazione, non un concetto: "regge il divieto" e
+/// "duplicazione del codice" hanno la stessa sagoma — nessuna parola chiave,
+/// nessun metacarattere, più di una parola — e la lingua da sola non li
+/// separa. Il precedente in casa è `code_language::written_text`, «il testo
+/// ricopiato non è testo scritto»: là il confronto è con `old_string`, qui
+/// non c'è un prima da diffare — fa da `before` il bersaglio stesso del
+/// comando. Se la frase esiste già, letterale, in ciò che si sta per
+/// cercare, chi l'ha scritta l'ha vista altrove (un diniego, un commento, un
+/// messaggio), non l'ha composta come domanda.
+///
+/// Non un dizionario in cache come quello di `language.rs`: qui il contenuto
+/// cambia file per file, quindi si legge il bersaglio vero a ogni chiamata,
+/// col tetto sopra a tenerne basso il costo sul caso patologico (una cartella
+/// di build da gigabyte, esclusa comunque da `is_out_of_perimeter`).
+fn quoted_verbatim_in_target(pattern: &str, target: &Path) -> bool {
+    let needle = pattern.trim();
+    if needle.is_empty() {
+        return false;
+    }
+    let mut files_left = CITATION_SCAN_MAX_FILES;
+    let mut bytes_left = CITATION_SCAN_MAX_BYTES;
+    scan_for_literal(target, needle, &mut files_left, &mut bytes_left)
+}
+
+/// Cammina `path` in cerca di `needle`, testo per testo. Un simlink non si
+/// segue — eviterebbe un ciclo — e una cartella fuori perimetro
+/// (`is_out_of_perimeter`, `target/` di Cargo compreso) non si apre: è lì che
+/// vivono i gigabyte che il tetto da solo non basterebbe a rendere innocui in
+/// tempo utile.
+fn scan_for_literal(path: &Path, needle: &str, files_left: &mut usize, bytes_left: &mut usize) -> bool {
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    if meta.file_type().is_symlink() {
+        return false;
+    }
+    if meta.is_file() {
+        if *files_left == 0 || *bytes_left == 0 || meta.len() > CITATION_SCAN_MAX_FILE_BYTES {
+            return false;
+        }
+        *files_left -= 1;
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return false; // binario, o non UTF-8: non è dove vive una frase
+        };
+        *bytes_left = bytes_left.saturating_sub(text.len());
+        return text.contains(needle);
+    }
+    if !meta.is_dir() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if is_out_of_perimeter(&p.to_string_lossy()) {
+            continue;
+        }
+        if *files_left == 0 || *bytes_left == 0 {
+            return false;
+        }
+        if scan_for_literal(&p, needle, files_left, bytes_left) {
+            return true;
+        }
+    }
+    false
 }
 
 /// Gli ultimi `n` caratteri del percorso in base64url — lo stesso nome di
@@ -1117,6 +1308,60 @@ mod tests {
         assert!(!is_code_search("cat file | grep pattern"));
     }
 
+    // ── «dove vive» non è «quante volte compare» ───────────────────────
+    //
+    // Il caso vero: una mattina intera passata a cercare a tappeto i nomi
+    // delle funzioni in un albero indicizzato, dove l'indice risponde in una
+    // chiamata. Detto da Theo il 26/08/2026.
+
+    #[test]
+    fn the_name_of_a_thing_in_the_code_is_a_where_does_it_live_question() {
+        assert!(looks_like_a_name_lookup("reason_on_file"));
+        assert!(looks_like_a_name_lookup("callGemini"));
+        assert!(looks_like_a_name_lookup("WatchThresholds"));
+        assert!(looks_like_a_name_lookup("guards::judge"));
+        assert!(looks_like_a_name_lookup("notte.decide"));
+        assert!(looks_like_a_name_lookup("\"resolve_bin\""));
+    }
+
+    /// Il confine che tiene in piedi il criterio: una parola comune non è il
+    /// nome di niente, e chi la cerca sta contando o leggendo. Se questi
+    /// cadessero, il presidio darebbe fastidio a torto — ed è così che un
+    /// presidio smette di esistere.
+    #[test]
+    fn a_common_word_is_not_the_name_of_anything() {
+        for word in [
+            "TODO", "FIXME", "XXX", "HACK", "NOTE", "error", "test", "debug", "fixme", "warning",
+        ] {
+            assert!(
+                !looks_like_a_name_lookup(word),
+                "«{word}» non deve essere preso per un nome"
+            );
+        }
+        // Il contro-caso, senza il quale la prova sopra si accontenterebbe di un
+        // criterio che nega tutto: una costante vera porta il separatore, e resta
+        // un nome che vive nel codice.
+        assert!(looks_like_a_name_lookup("MAX_TASK_ATTEMPTS"));
+        assert!(looks_like_a_name_lookup("WatchThresholds"));
+    }
+
+    /// Una regex non è un nome: chi porta i metacaratteri sa già cosa cerca.
+    #[test]
+    fn a_regular_expression_is_never_a_name() {
+        assert!(!looks_like_a_name_lookup("fn .*_bin"));
+        assert!(!looks_like_a_name_lookup("^pub fn"));
+        assert!(!looks_like_a_name_lookup("errore|timeout"));
+        assert!(!looks_like_a_name_lookup("call_[a-z]+"));
+    }
+
+    /// Più parole sono una frase, e una frase la giudica il criterio sulle
+    /// ricerche concettuali, non questo.
+    #[test]
+    fn a_phrase_is_judged_elsewhere() {
+        assert!(!looks_like_a_name_lookup("dove si decide la notte"));
+        assert!(!looks_like_a_name_lookup("not found on PATH"));
+    }
+
     #[test]
     fn a_recursive_grep_in_command_position_is_a_code_search() {
         assert!(is_code_search("grep -r foo src/"));
@@ -1150,7 +1395,7 @@ mod tests {
 
     #[test]
     fn reading_or_walking_alone_is_not_a_code_search() {
-        // Camminare senza cercare, o cercare in un file solo, non e' un censimento.
+        // Camminare senza cercare, o cercare in un file solo, non è un censimento.
         assert!(!is_code_search("python3 -c \"import glob;print(glob.glob('src/**'))\""));
         assert!(!is_code_search("python3 -c \"import re;re.findall(r'x',open('a.ts').read())\""));
         assert!(!is_code_search("sed -n '1,80p' src/api/index.ts"));
@@ -1240,7 +1485,7 @@ mod tests {
         let judged = judge(&ws, &write_input("/repo/src/x.ts"));
         assert!(
             matches!(judged.decision, Decision::Block(_)),
-            "un file nuovo in una cartella indicizzata e' di competenza del gate (reason: {:?})",
+            "un file nuovo in una cartella indicizzata è di competenza del gate (reason: {:?})",
             judged.reason
         );
     }
@@ -1268,7 +1513,7 @@ mod tests {
             let v = judge(&ws, &write_input(path));
             assert!(
                 matches!(v.decision, Decision::Block(_)),
-                "{path} e' di competenza del gate (reason: {:?})",
+                "{path} è di competenza del gate (reason: {:?})",
                 v.reason
             );
         }
@@ -1337,8 +1582,8 @@ mod tests {
     }
 
     /// I casi vengono dalle ricerche vere di una sessione del 17/08/2026, non
-    /// inventati: e' l'unico modo perche' la soglia fra «forma» e «concetto»
-    /// somigli a cio' che si scrive davvero invece che a cio' che si immagina.
+    /// inventati: èl'unico modo perché la soglia fra «forma» e «concetto»
+    /// somigli a ciò che si scrive davvero invece che a ciò che si immagina.
     #[test]
     fn a_search_for_a_shape_is_always_allowed() {
         for p in [
@@ -1356,7 +1601,7 @@ mod tests {
             "in-review",
             "MERGED",
         ] {
-            assert!(allowed_search(p), "{p:?} e' una forma, deve passare");
+            assert!(allowed_search(p), "{p:?} è una forma, deve passare");
         }
     }
 
@@ -1369,13 +1614,13 @@ mod tests {
             // due parole, tutte maiuscole, e prima si fermava sullo spazio.
             "CONTESTO AL",
             "BLOCCATO (cd-guard)",
-            "SocratiCode-first: questa e' una ricerca CONCETTUALE",
+            "SocratiCode-first: questa è una ricerca CONCETTUALE",
             // Frammenti ricopiati da un sorgente: virgolette e freccia.
             "\"code-language\" =>",
             "match self { Some(x)",
             "return 0;",
         ] {
-            assert!(allowed_search(p), "{p:?} e' letterale, deve passare");
+            assert!(allowed_search(p), "{p:?} è letterale, deve passare");
         }
     }
 
@@ -1389,7 +1634,7 @@ mod tests {
     #[test]
     fn a_conflict_marker_and_a_cli_invocation_pass_as_promised() {
         for p in ["<<<<<<< HEAD", "git commit"] {
-            assert!(allowed_search(p), "{p:?} e' letterale, deve passare");
+            assert!(allowed_search(p), "{p:?} è letterale, deve passare");
         }
     }
 
@@ -1401,17 +1646,95 @@ mod tests {
             "chiusura sessione",
             "where the handoff is written",
         ] {
-            assert!(!allowed_search(p), "{p:?} e' un concetto, deve fermarsi");
+            assert!(!allowed_search(p), "{p:?} è un concetto, deve fermarsi");
         }
+    }
+
+    /// I due comandi negati due volte di fila il 25/08/2026: una frase presa
+    /// **verbatim** dal diniego di un altro gancio (`linear_readonly`), non
+    /// composta come domanda. `allowed_search` da sola le blocca ancora
+    /// (prova sopra): è `judge_search`, con il bersaglio vero sotto mano, a
+    /// dover distinguere la citazione dal concetto.
+    /// MUTANTE: far tornare sempre `false` `quoted_verbatim_in_target` —
+    /// questi due casi tornerebbero rossi.
+    #[test]
+    fn a_phrase_copied_verbatim_from_another_gates_denial_passes() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        std::fs::write(
+            repo.join("linear_readonly.rs"),
+            "// Questo file regge il divieto di scrittura su Linear, e non si \
+             modifica dall'interno di una sessione: una valvola che autorizza \
+             il proprio smontaggio non è ammessa.",
+        )
+        .unwrap();
+
+        for pattern in ["una valvola che autorizza il proprio smontaggio", "regge il divieto"] {
+            let cmd = format!("grep -rln \"{pattern}\" {}", repo.display());
+            let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
+            assert!(
+                matches!(verdict.decision, Decision::Pass),
+                "{pattern:?} esiste già nel bersaglio, è una citazione: {:?}",
+                verdict.reason
+            );
+        }
+    }
+
+    /// Il differenziale che tiene la porta stretta: stessa sagoma (nessuna
+    /// parola chiave, nessun metacarattere, più di una parola), ma il testo
+    /// NON esiste da nessuna parte nel bersaglio — è una domanda vera, non
+    /// una citazione, e deve restare bloccata anche dopo l'esenzione.
+    /// MUTANTE: far tornare sempre `true` `quoted_verbatim_in_target` —
+    /// questo caso passerebbe, e il gate smetterebbe di fermare i concetti.
+    #[test]
+    fn a_genuine_concept_absent_from_the_target_still_pays_the_toll() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        std::fs::write(repo.join("x.rs"), "fn main() {}").unwrap();
+
+        let cmd = format!("grep -rln \"duplicazione del codice\" {}", repo.display());
+        let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
+        assert!(
+            matches!(verdict.decision, Decision::Block(_)),
+            "la frase non esiste nel bersaglio, è un concetto vero: {:?}",
+            verdict.reason
+        );
+    }
+
+    /// Il tetto non allarga mai l'esenzione: un file più grande del limite
+    /// per-file resta illeggibile a questo controllo, e la citazione dentro
+    /// non si trova — sbaglia dalla parte prudente, non passa in silenzio.
+    /// MUTANTE: rimuovere il confronto con `CITATION_SCAN_MAX_FILE_BYTES` —
+    /// questo caso tornerebbe verde e il tetto smetterebbe di valere.
+    #[test]
+    fn a_file_over_the_per_file_cap_is_not_read() {
+        let (ws, keep) = workspace();
+        let repo = keep.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join(".socraticodeignore"), "").unwrap();
+        let filler = "x".repeat(CITATION_SCAN_MAX_FILE_BYTES as usize + 1);
+        std::fs::write(repo.join("enorme.rs"), format!("{filler} regge il divieto")).unwrap();
+
+        let cmd = format!("grep -rln \"regge il divieto\" {}", repo.display());
+        let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
+        assert!(
+            matches!(verdict.decision, Decision::Block(_)),
+            "il file supera il tetto per-file, non va letto: {:?}",
+            verdict.reason
+        );
     }
 
     #[test]
     fn a_single_lowercase_word_is_given_the_benefit_of_the_doubt() {
-        // Ambiguo per costruzione: `handoff` e' un concetto e anche il nome di
-        // un file. Fra i due errori, bloccare a torto costa di piu': un gate che
+        // Ambiguo per costruzione: `handoff` è un concetto e anche il nome di
+        // un file. Fra i due errori, bloccare a torto costa di più: un gate che
         // da' fastidio a sproposito viene spento.
         for p in ["handoff", "relay", "throttle", ""] {
-            assert!(allowed_search(p), "{p:?} e' ambiguo, si ammette");
+            assert!(allowed_search(p), "{p:?} è ambiguo, si ammette");
         }
     }
 
@@ -1420,7 +1743,7 @@ mod tests {
         assert_eq!(grep_pattern("grep -rn \"ORCA_TAB_ID\" src").as_deref(), Some("ORCA_TAB_ID"));
         assert_eq!(grep_pattern("rg --hidden paneKey").as_deref(), Some("paneKey"));
         // MUTANTE: le opzioni non sono il pattern, e prenderle vorrebbe dire
-        // giudicare `-rn` invece di cio' che si cerca.
+        // giudicare `-rn` invece di ciò che si cerca.
         assert_eq!(grep_pattern("grep -r -i -n handoff .").as_deref(), Some("handoff"));
         // Nessun pattern isolabile: chi chiama tratta None come ammesso.
         assert_eq!(grep_pattern("ls -la"), None);
@@ -1487,7 +1810,7 @@ mod tests {
     #[test]
     fn a_conceptual_pattern_against_a_single_file_is_judged() {
         // MUTANTE: rimettere il ramo che usciva con out_of_scope() prima di
-        // guardare il pattern quando il bersaglio e' un file esistente — questa
+        // guardare il pattern quando il bersaglio è un file esistente — questa
         // prova torna verde solo se il giudizio guarda anche i bersagli-file.
         let (ws, keep) = workspace();
         let repo = keep.path().join("repo");
@@ -1500,7 +1823,7 @@ mod tests {
         let verdict = judge_search(&ws, &input);
         assert!(
             matches!(verdict.decision, Decision::Block(_)),
-            "un pattern concettuale su un file gia' individuato deve fermarsi, non passare in silenzio"
+            "un pattern concettuale su un file già individuato deve fermarsi, non passare in silenzio"
         );
     }
 
@@ -1522,7 +1845,7 @@ mod tests {
     fn three_real_identifiers_of_this_same_file_all_pass_in_a_row() {
         // Il caso dimostrato dal revisore: handoff, relay, throttle sono tre
         // identificatori veri di QUESTO file, ognuno ammesso da solo. In fila
-        // non diventano un concetto solo perche' diversi fra loro.
+        // non diventano un concetto solo perché diversi fra loro.
         // MUTANTE: rimettere la regola delle tre parole ambigue — il terzo
         // giro tornerebbe a bloccare.
         let (ws, keep) = workspace();
@@ -1534,7 +1857,7 @@ mod tests {
             let verdict = judge_search(&ws, &input);
             assert!(
                 matches!(verdict.decision, Decision::Pass),
-                "{word:?} e' un identificatore ammesso da solo, deve passare anche in fila"
+                "{word:?} è un identificatore ammesso da solo, deve passare anche in fila"
             );
         }
     }
@@ -1566,7 +1889,7 @@ mod tests {
         let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
         assert!(
             matches!(verdict.decision, Decision::Block(_)),
-            "la domanda via Bash e' sfuggita al giudizio: {:?}",
+            "la domanda via Bash è sfuggita al giudizio: {:?}",
             verdict.reason
         );
     }
@@ -1574,7 +1897,7 @@ mod tests {
     #[test]
     fn a_quoted_identifier_in_a_bash_grep_still_passes() {
         // Il differenziale della prova sopra, una variabile sola: stesso
-        // strumento e stesse virgolette, ma dentro c'e' un identificatore.
+        // strumento e stesse virgolette, ma dentro c'è un identificatore.
         let (ws, keep) = workspace();
         let repo = keep.path().join("repo");
         std::fs::create_dir_all(&repo).unwrap();
@@ -1611,7 +1934,7 @@ mod tests {
         let verdict = judge_search(&ws, &bash_input(&repo, &cmd));
         assert!(
             matches!(verdict.decision, Decision::Pass),
-            "quattro bersagli nominati: chi cerca sa gia' dove, deve passare: {:?}",
+            "quattro bersagli nominati: chi cerca sa già dove, deve passare: {:?}",
             verdict.reason
         );
     }
@@ -1656,7 +1979,7 @@ mod tests {
         std::fs::create_dir_all(&vendored).unwrap();
         // Radice indicizzata: senza questa dichiarazione il gate uscirebbe
         // out-of-scope per un altro motivo (non indicizzato) e la prova non
-        // proverebbe che e' il perimetro vendorizzato a farlo passare.
+        // proverebbe che èil perimetro vendorizzato a farlo passare.
         std::fs::write(
             ws.home.join(".claude").join("state").join("socraticode-progetti.txt"),
             format!("{}\n", ws.home.join(".claude").display()),
@@ -1669,7 +1992,7 @@ mod tests {
         let verdict = judge_search(&ws, &bash_input(&vendored, &cmd));
         assert!(
             !verdict.is_recorded(),
-            "un plugin vendorizzato e' fuori dal perimetro del gate, non di sua competenza: {:?}",
+            "un plugin vendorizzato è fuori dal perimetro del gate, non di sua competenza: {:?}",
             verdict.reason
         );
     }
@@ -1698,7 +2021,7 @@ mod tests {
     }
 
     /// (2) l'identificatore nudo resta un grep legittimo: cerca il valore di
-    /// oggi, non dov'e' la definizione.
+    /// oggi, non dov'è la definizione.
     /// MUTANTE (rotto così → rosso): rendere `looks_like_a_definition_lookup`
     /// vera per qualunque parola — bloccherebbe anche `judge` da solo.
     #[test]
@@ -1715,7 +2038,7 @@ mod tests {
     }
 
     /// (3) `-c` conta le occorrenze di oggi: anche una sagoma di definizione
-    /// passa, la domanda non e' "dove vive" ma "quante volte c'e' adesso".
+    /// passa, la domanda non è"dove vive" ma "quante volte c'è adesso".
     /// MUTANTE (rotto così → rosso): togliere `!wants_count(...)` dal
     /// giudizio — la stessa ricerca finirebbe bloccata.
     #[test]
@@ -1770,7 +2093,7 @@ mod tests {
         assert!(looks_like_a_definition_lookup("^pub fn"));
     }
 
-    /// (4) fuori da un bersaglio di codice (`docs/`, `.md`) non c'e' una
+    /// (4) fuori da un bersaglio di codice (`docs/`, `.md`) non c'è una
     /// definizione da risolvere nell'indice: il grep resta quello giusto.
     /// MUTANTE (rotto così → rosso): togliere `is_code_target(...)` dal
     /// giudizio — un `fn ` dentro `docs/` si bloccherebbe comunque.
@@ -1837,8 +2160,8 @@ mod tests {
         );
     }
 
-    /// (6) un ramo dell'alternativa non e' una definizione (`TODO`): basta
-    /// un ramo qualunque perche' non sia piu' "ogni ramo e' una definizione".
+    /// (6) un ramo dell'alternativa non è una definizione (`TODO`): basta
+    /// un ramo qualunque perché non sia più "ogni ramo è una definizione".
     /// MUTANTE (rotto così → rosso): bastare UN ramo invece di TUTTI (`.any`
     /// al posto di `.all`) — questo pattern si bloccherebbe.
     #[test]

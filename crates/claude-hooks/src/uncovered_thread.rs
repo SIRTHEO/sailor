@@ -115,6 +115,35 @@ pub fn uncovers(reason: &str) -> bool {
     UNCOVERING_REASONS.contains(&reason)
 }
 
+/// Il timbro da scrivere per questa dichiarazione — quello vecchio se il
+/// filo è lo stesso, uno nuovo se è cambiato. PURA: legge `previous`, non il
+/// disco né l'orologio se non quando deve, ed è per questo provabile senza
+/// aspettare un secondo vero a scorrere.
+///
+/// L'ISTANTE È L'IDENTITÀ DEL FILO, non la data dell'ultimo tentativo —
+/// deciso in revisione il 25/08/2026 (2º giro): `declare` riscriveva
+/// l'istante a ogni tentativo fallito, anche sullo stesso filo, e questo
+/// rendeva instabili sia l'età che `decide_uncovered` mostra sia l'impronta
+/// che `uncovered_exit` ne ricava per il proprio tetto — tanto quanto il
+/// ritmo dei ritentativi, che è un rumore e non un fatto sul filo. «Stesso
+/// filo» qui vuol dire: stessa consegna E stesso motivo, la stessa
+/// definizione che il chiamante userebbe a occhio.
+fn stable_stamp(previous: Option<&Value>, handoff_path: &str, reason: &str) -> (String, i64) {
+    if let Some(m) = previous {
+        let same_handoff = m.get("handoff").and_then(|v| v.as_str()) == Some(handoff_path);
+        let same_reason = m.get("reason").and_then(|v| v.as_str()) == Some(reason);
+        if same_handoff && same_reason {
+            if let (Some(at), Some(epoch)) = (
+                m.get("declared_at").and_then(|v| v.as_str()),
+                m.get("declared_at_epoch").and_then(|v| v.as_i64()),
+            ) {
+                return (at.to_string(), epoch);
+            }
+        }
+    }
+    (hook_io::journal::now_iso8601_seconds(), now_epoch())
+}
+
 /// Registra che una consegna è rimasta senza successore. Chiamata dal ramo che
 /// ferma di `consegna-arma-successore`, subito dopo la riga di registro.
 ///
@@ -128,15 +157,29 @@ pub fn declare(session_id: &str, cwd: &str, handoff_path: &str, reason: &str) {
     if fs::create_dir_all(markers_dir()).is_err() {
         return;
     }
+    let previous = read_own(session_id);
+    let (declared_at, declared_at_epoch) = stable_stamp(previous.as_ref(), handoff_path, reason);
     let body = serde_json::json!({
         "session_id": session_id,
         "cwd": cwd,
         "handoff": handoff_path,
         "reason": reason,
-        "declared_at": hook_io::journal::now_iso8601_seconds(),
-        "declared_at_epoch": now_epoch(),
+        "declared_at": declared_at,
+        "declared_at_epoch": declared_at_epoch,
     });
     let _ = fs::write(marker_path(session_id), body.to_string());
+}
+
+/// Il marcatore di QUESTA sessione, se esiste — senza filtro di vivezza.
+///
+/// Diverso da `decide_uncovered`: quello guarda i fili di sessioni **altrui**
+/// e scarta quelle ancora vive, perché è lei a tenerli. Qui il chiamante è
+/// la sessione stessa, nell'istante in cui sta per fermarsi — chiederle se è
+/// «viva» non ha senso, è la domanda a cui sta per rispondere di no.
+/// `pub(crate)` per `uncovered_exit`, che nega l'uscita quando torna `Some`.
+pub(crate) fn read_own(session_id: &str) -> Option<Value> {
+    let text = fs::read_to_string(marker_path(session_id)).ok()?;
+    serde_json::from_str::<Value>(&text).ok()
 }
 
 /// Il successore si è armato: quel filo ha un esecutore.
@@ -551,24 +594,30 @@ mod tests {
             starts.contains("uncovered_thread::clear_tree("),
             "l'avvio di una sessione non ripulisce piu' l'albero: l'elenco crescerebbe e basta, e smetterebbe di essere letto"
         );
-        assert!(
-            starts.contains("uncovered_thread::opening_notice("),
-            "nessuno mostra piu' i fili scoperti a chi apre una sessione: resta un dato che si trova solo se lo si cerca, ed e' il difetto da cui il modulo nasce"
-        );
+        let notice_at = starts
+            .find("crate::uncovered_thread::opening_notice")
+            .expect("nessuno mostra più i fili scoperti a chi apre una sessione: resta un dato che si trova solo se lo si cerca, ed è il difetto da cui il modulo nasce");
         // E L'AVVISO NON CALPESTA UN MANDATO. Chi riceve una ripartenza
-        // automatica legge un canale che per progetto non porta narrazione:
-        // l'avviso deve stare sotto il ramo che esce quando il mandato c'e'.
-        let after_mandate = starts
-            .split("let msg = resume_message();")
-            .nth(1)
-            .expect("il punto di ripresa non si legge piu' da qui");
-        let notice_at = after_mandate
-            .find("uncovered_thread::opening_notice(")
-            .expect("l'avviso non e' piu' dopo il mandato");
-        let return_at = after_mandate.find("return 0;").unwrap_or(usize::MAX);
+        // automatica legge un canale che per progetto non porta narrazione.
+        // Dal 25/08/2026 non è più un `return` anticipato a garantirlo: le tre
+        // fonti si passano non eseguite a `opening_message`, che interroga in
+        // ordine e si ferma alla prima che parla — la precedenza sta
+        // nell'ORDINE DEGLI ARGOMENTI, e quella scelta si prova lì con le
+        // chiusure. Qui resta da sorvegliare che l'ordine sia questo.
+        let resume_at = starts
+            .find("let msg = opening_message(")
+            .expect("il punto di ripresa non si compone più da qui");
         assert!(
-            return_at < notice_at,
-            "l'avviso dei fili scoperti si stampa anche a chi ha gia' un mandato di ripartenza"
+            resume_at < notice_at,
+            "i fili scoperti sono finiti prima della ripartenza: l'avviso si stamperebbe a chi ha già un mandato"
+        );
+        let args = &starts[resume_at..];
+        let resume_arg = args
+            .find("resume_message")
+            .expect("la ripartenza non è più una delle fonti");
+        assert!(
+            resume_arg < args.find("crate::uncovered_thread::opening_notice").unwrap_or(usize::MAX),
+            "la ripartenza ha perso la precedenza sui fili scoperti"
         );
     }
 
@@ -606,5 +655,101 @@ mod tests {
         let m = [serde_json::json!({"session_id": "aaaabbbb", "cwd": "/a"})];
         let out = decide_uncovered(&m, &alive(&[]), 1000);
         assert_eq!(out[0].seconds_uncovered, 0);
+    }
+
+    fn old_marker(handoff: &str, reason: &str) -> Value {
+        // L'epoca e' volutamente minuscola (1970 e spiccioli): un timbro
+        // fresco calcolato da `now_epoch()` non puo' mai coincidere per
+        // sbaglio, quindi il caso «e' cambiato» non dipende dall'istante in
+        // cui gira il test.
+        serde_json::json!({
+            "handoff": handoff,
+            "reason": reason,
+            "declared_at": "1970-01-01T00:00:12+0000",
+            "declared_at_epoch": 12_345,
+        })
+    }
+
+    #[test]
+    fn stable_stamp_keeps_the_old_instant_for_the_same_thread() {
+        // MUTANTE: se `stable_stamp` ignorasse `previous` e timbrasse sempre
+        // adesso, questo caso muore da solo — l'istante atteso e' quello
+        // vecchio, non uno vicino a "ora".
+        let prev = old_marker("/consegna.md", "fuori-orario");
+        assert_eq!(
+            stable_stamp(Some(&prev), "/consegna.md", "fuori-orario"),
+            ("1970-01-01T00:00:12+0000".to_string(), 12_345)
+        );
+    }
+
+    #[test]
+    fn stable_stamp_mints_a_new_instant_when_the_handoff_changes() {
+        let prev = old_marker("/consegna-A.md", "fuori-orario");
+        let (_, epoch) = stable_stamp(Some(&prev), "/consegna-B.md", "fuori-orario");
+        assert_ne!(epoch, 12_345, "una consegna diversa e' un filo diverso");
+    }
+
+    #[test]
+    fn stable_stamp_mints_a_new_instant_when_the_reason_changes() {
+        let prev = old_marker("/consegna.md", "fuori-orario");
+        let (_, epoch) = stable_stamp(Some(&prev), "/consegna.md", "albero-affollato");
+        assert_ne!(epoch, 12_345, "un motivo diverso e' un filo diverso");
+    }
+
+    #[test]
+    fn stable_stamp_mints_a_new_instant_without_a_previous_marker() {
+        let (at, epoch) = stable_stamp(None, "/consegna.md", "fuori-orario");
+        assert_ne!(epoch, 0, "senza marcatore precedente non c'e' niente da tenere fermo");
+        assert!(!at.is_empty());
+    }
+
+    #[test]
+    fn declare_keeps_the_epoch_stable_on_disk_for_a_retried_thread() {
+        // Il cablaggio, non solo la funzione pura: qui si prova che `declare`
+        // consulta davvero il marcatore precedente prima di scrivere. Due
+        // dichiarazioni con la stessa consegna e lo stesso motivo — la scena
+        // di un ritentativo del `PostToolUse`, o di un secondo Stop sullo
+        // stesso filo — devono avere IDENTICO `declared_at_epoch` sul disco,
+        // a prescindere da quanto tempo vero sia passato fra le due.
+        let _home = crate::test_home::HomeIsolata::nuova("filo-istante-stabile");
+        declare("aaaabbbb-1111", "/albero/uno", "/consegna.md", "fuori-orario");
+        let before = read_own("aaaabbbb-1111").unwrap();
+        let epoch_before = before.get("declared_at_epoch").and_then(|v| v.as_i64());
+
+        // La pausa vera è ciò che rende questo caso capace di uccidere un
+        // `declare` che timbrasse sempre adesso: due chiamate a microsecondi
+        // di distanza atterrerebbero quasi sempre sullo stesso secondo anche
+        // SENZA la logica di preservazione, e il confronto passerebbe per
+        // coincidenza invece che per merito.
+        std::thread::sleep(std::time::Duration::from_millis(1_100));
+        declare("aaaabbbb-1111", "/albero/uno", "/consegna.md", "fuori-orario");
+        let after = read_own("aaaabbbb-1111").unwrap();
+        assert_eq!(
+            after.get("declared_at_epoch").and_then(|v| v.as_i64()),
+            epoch_before,
+            "lo stesso filo ritentato non deve ringiovanire"
+        );
+    }
+
+    /// Il cablaggio: `declare` deve leggere davvero il proprio marcatore
+    /// precedente e passarlo a `stable_stamp`, non solo avere quella funzione
+    /// disponibile inutilizzata nel file.
+    #[test]
+    fn declare_is_wired_to_read_its_own_previous_marker() {
+        let source = include_str!("uncovered_thread.rs");
+        let body = source
+            .split("pub fn declare(")
+            .nth(1)
+            .expect("declare non si legge piu' da qui");
+        let body = &body[..body.find("\npub fn ").unwrap_or(body.len())];
+        assert!(
+            body.contains("read_own(session_id)"),
+            "declare non consulta piu' il proprio marcatore precedente: \
+             stable_stamp riceverebbe sempre `None` e timbrerebbe sempre adesso"
+        );
+        assert!(
+            body.contains("stable_stamp("),
+            "declare non passa piu' il marcatore letto a stable_stamp"
+        );
     }
 }
