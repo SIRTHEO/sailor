@@ -452,14 +452,39 @@ fn message_impact(lost: &[String]) -> String {
     )
 }
 
+/// L'albero bersaglio è un progetto Rust: c'è un `Cargo.toml` in questa
+/// cartella o in una che la contiene.
+///
+/// SERVE PERCHÉ IL CONSIGLIO CAMBIA. Misurato il 26/08/2026 nel codice del
+/// pacchetto: su Rust il grafo delle dipendenze risolve **solo** i `mod x;`
+/// nudi e scarta ogni `use …::…`, quindi «chi lo usa» l'indice non lo sa — 36
+/// chiamate risolte fra file su 11.003. Un freno che manda all'indice
+/// promettendo una risposta che non arriva insegna a ignorare il freno.
+///
+/// Si risale invece di guardare la sola cartella perché il bersaglio tipico è
+/// un sottoalbero (`crates/guards/src`), non la radice del progetto. Otto
+/// livelli bastano e chiudono il caso di una radice senza `Cargo.toml`.
+fn is_rust_tree(dir: &std::path::Path) -> bool {
+    dir.ancestors().take(8).any(|d| d.join("Cargo.toml").is_file())
+}
+
 /// Il consiglio dato quando si scandisce un albero cercando il nome di una
 /// cosa: la domanda è «dove vive», e l'indice risponde a quella.
-fn message_name_lookup(pattern: &str) -> String {
+fn message_name_lookup(pattern: &str, rust: bool) -> String {
     let ident = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
+    // Su Rust la promessa si accorcia a ciò che l'indice mantiene davvero, e la
+    // parte che non mantiene si nomina invece di tacerla: chi cerca «chi lo
+    // usa» deve sapere che qui il grep è la via giusta, non un ripiego.
+    let promise = if rust {
+        "dove è definito e cosa fa — in una chiamata. NON chi lo usa: su Rust\n\
+         il grafo vede solo i `mod` e per «chi importa» va usato il grep."
+    } else {
+        "dove è definito, cosa fa e chi lo usa — in una chiamata."
+    };
     format!(
         "SocratiCode-first: stai scandendo un albero indicizzato per trovare dove\n\
          vive \"{ident}\". Il grep ti dà le righe che lo nominano; l'indice ti dà\n\
-         dove è definito, cosa fa e chi lo usa — in una chiamata.\n\
+         {promise}\n\
          \x20 ToolSearch \"select:codebase_symbol,codebase_search\"\n\
          \x20 codebase_symbol \"{ident}\"   (projectPath del repo)\n\
          \x20 oppure, dalla shell: claude-hooks indice simbolo {ident}\n\
@@ -711,7 +736,7 @@ fn judge_search(ws: &Workspace, input: &hook_io::HookInput) -> Verdict {
         && looks_like_a_name_lookup(&pattern)
     {
         return Verdict {
-            decision: Decision::Block(message_name_lookup(&pattern)),
+            decision: Decision::Block(message_name_lookup(&pattern, is_rust_tree(&path))),
             reason: "ricerca-di-nome",
             path: Some(target),
             count: None,
@@ -2702,6 +2727,36 @@ mod tests {
         assert!(!rule_body("---\npaths: [\"src/**\"]\n---\n\n# T\n").contains("paths:"));
         assert_eq!(rule_body("# senza frontmatter\n"), "# senza frontmatter\n");
         assert_eq!(rule_body("---\nmai chiuso\n"), "---\nmai chiuso\n");
+    }
+
+    /// Su Rust il consiglio non promette «chi lo usa», perché l'indice non lo
+    /// sa: il suo grafo vede solo i `mod`. Un freno che promette una risposta
+    /// che non arriva insegna a ignorare il freno.
+    #[test]
+    fn on_a_rust_tree_the_advice_does_not_promise_who_uses_it() {
+        let dir = tempdir::TempDir::new();
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        let sub = dir.path().join("crates").join("qualcosa").join("src");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        assert!(is_rust_tree(&sub), "il Cargo.toml di un antenato conta");
+        let advice = message_name_lookup("MAX_TASK_ATTEMPTS", is_rust_tree(&sub));
+        assert!(!advice.contains("e chi lo usa"), "non lo promette:\n{advice}");
+        assert!(advice.contains("grep"), "e dice dove sta la risposta:\n{advice}");
+    }
+
+    /// Fuori da un progetto Rust la promessa resta intera: lì è misurata vera
+    /// (30 importatori esatti sulla suite), e accorciarla ovunque toglierebbe
+    /// allo strumento la ragione per cui esiste.
+    #[test]
+    fn outside_a_rust_tree_the_advice_keeps_its_full_promise() {
+        let dir = tempdir::TempDir::new();
+        let sub = dir.path().join("src").join("lib");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        assert!(!is_rust_tree(&sub), "nessun Cargo.toml, nessun albero Rust");
+        let advice = message_name_lookup("candidateSchema", is_rust_tree(&sub));
+        assert!(advice.contains("e chi lo usa"), "{advice}");
     }
 
     /// Una cartella temporanea che si cancella da sé: i test non devono poter
