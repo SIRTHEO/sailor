@@ -202,13 +202,37 @@ fn refusal(reason: &str) -> Decision {
     // motivo vero relegato fra parentesi. Un messaggio che parla d'altro si
     // legge come un difetto del freno, e chi lo riceve gira intorno al freno.
     if linear::is_protected_file(reason) {
+        // DUE FILE PROTETTI, DUE MESSAGGI. Il nucleo non si smonta con niente;
+        // la configurazione dei ganci invece **si amministra ogni giorno**, e
+        // il nucleo stesso lo dice — `Valve::UserDeclared` esiste per lei, e
+        // la prova `the_core_of_the_ban_is_not_negotiable` mette per iscritto
+        // che `OK_UTENTE=1 cp a.json ~/.claude/settings.json` passa.
+        //
+        // Fino al 26/08/2026 questo messaggio diceva a tutti e due «dillo a
+        // Theo e lo scrive lui da un terminale fuori da Claude Code», e
+        // nominava il permesso senza dire dove viva né come si scriva. Il
+        // costo non è teorico: quel giorno una sessione con l'autorizzazione
+        // esplicita in mano ha girato intorno al freno invece di usare la
+        // valvola che il freno aveva già, perché il rifiuto non gliela
+        // nominava. Un messaggio che non nomina la propria via d'uscita la fa
+        // cercare fuori.
+        if linear::CONFIG_FILES.iter().any(|f| reason.contains(f)) {
+            return Decision::Deny(format!(
+                "Questo file regge il divieto di scrittura su Linear ({reason}). Non è il nucleo: \
+                 la configurazione dei ganci si amministra, e ha due vie, tutte e due tracciate. \
+                 Da riga di comando: rilancia con OK_UTENTE=1 davanti, e l'uso resta scritto nel \
+                 registro. Con Write o Edit, che non hanno una riga dove scriverla: serve il \
+                 permesso di Theo in ~/.claude/state/linear-permesso.json, un JSON con `scade` \
+                 (epoch) e `ambito` fra \"scritture\" e \"done\". Se Theo non ha autorizzato questa \
+                 modifica, chiedi invece di concedertela da solo."
+            ));
+        }
         return Decision::Deny(format!(
             "Questo file regge il divieto di scrittura su Linear ({reason}), e non si modifica \
              dall'interno di una sessione: una valvola che autorizza il proprio smontaggio non è \
-             una valvola. Leggerlo, cercarlo e lanciarne le prove resta libero. Se il cambiamento \
-             serve davvero, dillo a Theo e lo scrive lui da un terminale fuori da Claude Code — \
-             per la configurazione dei ganci c'è il suo permesso scritto, per il nucleo del \
-             divieto non c'è niente, di proposito."
+             una valvola. Leggerlo, cercarlo e lanciarne le prove resta libero. Qui non c'è \
+             nessuna via d'uscita, di proposito, e nemmeno OK_UTENTE=1 la apre: se il cambiamento \
+             serve davvero lo scrive Theo da un terminale fuori da Claude Code."
         ));
     }
     Decision::Deny(format!(
@@ -366,7 +390,39 @@ mod tests {
         assert!(m.contains("regge il divieto"), "{m}");
         assert!(m.contains("settings.json"), "{m}");
         assert!(!m.contains("orca linear list"), "{m}");
-        assert!(!m.contains("OK_UTENTE"), "{m}");
+    }
+
+    /// La configurazione dei ganci **si amministra**, e il rifiuto deve dire
+    /// come. Fino al 26/08/2026 diceva solo «dillo a Theo», e la prova qui
+    /// sopra metteva per iscritto che la valvola non andasse nominata — presa
+    /// per evitare l'omelia su Linear, finiva per nascondere l'unica via
+    /// legittima. Quel giorno una sessione con l'autorizzazione in mano ha
+    /// girato intorno al freno invece di usarla.
+    #[test]
+    fn the_refusal_on_the_hook_configuration_names_both_ways_out() {
+        let m = text("riscrittura di la configurazione dei ganci (settings.json)");
+        assert!(m.contains("OK_UTENTE=1"), "la via da riga di comando: {m}");
+        assert!(
+            m.contains("linear-permesso.json"),
+            "la via per Write ed Edit, che non hanno una riga di comando: {m}"
+        );
+        assert!(
+            m.contains("Non è il nucleo"),
+            "chi legge deve capire subito che qui una via c'è: {m}"
+        );
+    }
+
+    /// Il nucleo invece non ha vie, e il messaggio lo dice per esteso: senza,
+    /// chi ha appena letto dell'altra valvola la prova anche qui.
+    #[test]
+    fn the_refusal_on_the_core_says_there_is_no_way_out_at_all() {
+        let m = text("riscrittura di il gancio del divieto (linear-sola-lettura.py)");
+        assert!(m.contains("nessuna via d'uscita"), "{m}");
+        assert!(
+            m.contains("nemmeno OK_UTENTE=1"),
+            "va nominata per negarla, o si prova lo stesso: {m}"
+        );
+        assert!(!m.contains("linear-permesso.json"), "{m}");
     }
 
     #[test]
