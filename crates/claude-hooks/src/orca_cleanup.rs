@@ -20,12 +20,16 @@
 //!   `--names`  i nomi delle copie di lavoro (+ le tab, se non c'è `--align`);
 //!   default    elenca/chiude i terminali senza padrone.
 //!
-//! DUE DIFETTI DELL'ORIGINALE, riprodotti perché il porto non è la sede per
-//! correggerli (dettaglio e percorso nella risposta che accompagna il lavoro):
-//!   1. l'ordine delle chiusure viene da un `set` di Python, quindi cambia a
-//!      ogni esecuzione (l'hash delle stringhe è randomizzato per processo);
-//!   2. una copia senza `path` finisce in `orca worktree set --worktree
-//!      path:None`, perché l'f-string interpola `None` invece di fermarsi.
+//! UN DIFETTO DELL'ORIGINALE è ancora qui: una copia senza `path` finisce in
+//! `orca worktree set --worktree path:None`, perché l'f-string interpolava
+//! `None` invece di fermarsi. Riprodotto perché il porto non era la sede per
+//! correggerlo.
+//!
+//! L'altro **non** è riprodotto, e va detto perché l'intestazione ha sostenuto
+//! il contrario: l'ordine delle chiusure, in Python, veniva da un `set` con
+//! l'hash delle stringhe randomizzato per processo, quindi cambiava a ogni
+//! esecuzione. Qui l'insieme è ordinato apposta — lo dice il codice che lo
+//! costruisce, venti righe dentro `run`.
 //!
 //! RESIDUO DICHIARATO: un campo testuale che arriva da Orca come numero
 //! (`title`, `handle`, `worktreePath`, `displayName`, `branch`) fa esplodere il
