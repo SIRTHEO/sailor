@@ -40,8 +40,8 @@ pub enum Family {
     Gate,
 }
 
-/// `/crates/` e' entrato il 18/08/2026 insieme a `.rs`: senza, l'aggiunta
-/// dell'estensione non copriva un solo file, perche' i 55 sorgenti Rust della
+/// `/crates/` è entrato il 18/08/2026 insieme a `.rs`: senza, l'aggiunta
+/// dell'estensione non copriva un solo file, perché i 55 sorgenti Rust della
 /// configurazione stanno tutti sotto `rust/crates/`.
 const GATE_DIRS: &[&str] = &[
     "/scripts/", "/.github/workflows/", "/hooks/", "/.husky/", "/crates/",
@@ -200,7 +200,7 @@ fn declared() -> &'static Regex {
             r"|\b(?:function|const|let|var|class)\s+([A-Za-z_$]\w*)", // js/ts
             // Rust, aggiunto il 18/08/2026: senza, il gate accettava i `.rs` e
             // non sapeva leggerli. Estensione e cartella senza la sintassi
-            // coprono zero casi, e il controllo sembra acceso mentre e' cieco.
+            // coprono zero casi, e il controllo sembra acceso mentre è cieco.
             r"|\b(?:fn|struct|enum|trait|mod|type|impl)\s+([A-Za-z_]\w*)", // rust
         ))
         .unwrap()
@@ -219,7 +219,7 @@ pub fn declared_names(text: &str) -> Vec<String> {
     for m in declared().captures_iter(&text) {
         // 1..=4, non 1..=3: il Python scorre `m.groups()` per intero, quindi
         // un ramo nuovo nell'espressione gli arriva da solo. Qui l'intervallo e'
-        // scritto a mano, e il 18/08/2026 il ramo Rust — il quarto — e' rimasto
+        // scritto a mano, e il 18/08/2026 il ramo Rust — il quarto — è rimasto
         // muto per questo: il gate diceva di guardare i `.rs` e non li leggeva.
         // Chi aggiunge un gruppo alla regex deve allargare anche questo.
         let name = (1..=4)
@@ -334,7 +334,7 @@ pub fn report_names(names: &[String], filename: Option<&str>) -> String {
         "{head} (regola globale §Lingua: «identificatori di codice, nomi di \
          file, comandi» restano in inglese).\n\
          Misurato il 16/08/2026: 322 identificatori italiani in 29 file su 51, \
-         perche' nessun controllo li guardava.\n\n\
+         perché nessun controllo li guardava.\n\n\
          In italiano:\n\n{body}\n\
          I commenti restano in italiano: quelli non si toccano.\n\
          Dai un nome inglese ora, prima che lo citini un gancio o una regola."
@@ -387,7 +387,7 @@ pub fn report_opaque(targets: &[String]) -> String {
          Nominati qui dentro:\n\n{}\n\n\
          Riscrivilo con `Write` o `Edit`: il testo passa dal controllo prima di \
          toccare il disco. Misurato il 19/08/2026: un'intera nottata di codice \
-         e' passata da `python3 - <<PY … write_text …` senza che il gate \
+         è passata da `python3 - <<PY … write_text …` senza che il gate \
          leggesse una riga, e il 19/08 alle 17 sei identificatori italiani sono \
          entrati in `relay.rs` da uno script scritto e lanciato nello stesso \
          comando — la stessa cecità, con un file in mezzo.",
@@ -904,10 +904,87 @@ fn quoted_path() -> &'static Regex {
 ///
 /// I nomi vengono prima: un identificatore sbagliato lo citeranno i ganci, le
 /// regole e le memorie, e rinominarlo dopo costa dieci volte tanto.
+/// Le vocali accentate scritte con l'apostrofo, che la regola vieta.
+///
+/// PERCHÉ STA QUI E NON IN UN GANCIO NUOVO. È lingua, e la lingua la giudica
+/// questo modulo. Il 26/08/2026 la misura diceva **623 righe in 52 file**, e
+/// nessun controllo le vedeva — compreso questo, che ne era pieno: il
+/// sorvegliante portava il difetto che avrebbe dovuto sorvegliare.
+///
+/// SI GUARDA SOLO CIÒ CHE SI STA SCRIVENDO. `judge` riceve il testo nuovo, non
+/// il file: le seicento righe già sul disco non fermano nessuno, e si
+/// correggono quando si passa di lì. È la differenza fra una regola che si può
+/// accendere oggi e una che bloccherebbe cinquantadue file.
+const APOSTROPHE_FOR_ACCENT: &[(&str, &str)] = &[
+    ("perche'", "perché"),
+    ("finche'", "finché"),
+    ("poiche'", "poiché"),
+    ("piu'", "più"),
+    ("gia'", "già"),
+    ("cosi'", "così"),
+    ("puo'", "può"),
+    ("cio'", "ciò"),
+    ("pero'", "però"),
+    ("verita'", "verità"),
+    ("qualita'", "qualità"),
+    ("liberta'", "libertà"),
+    ("meta'", "metà"),
+    ("citta'", "città"),
+    ("piu'", "più"),
+];
+
+/// Le forme di una lettera sola, che vogliono lo spazio attorno per non
+/// scambiare un tempo di vita di Rust (`&'a str`) per una parola italiana.
+const SHORT_APOSTROPHE_FOR_ACCENT: &[(&str, &str)] = &[
+    (" e' ", " è "),
+    (" ne' ", " né "),
+    (" se' ", " sé "),
+    (" li' ", " lì "),
+    (" la' ", " là "),
+    (" gia' ", " già "),
+];
+
+pub fn ascii_accents(text: &str) -> Vec<String> {
+    let lower = text.to_lowercase();
+    let mut found: Vec<String> = Vec::new();
+    for (wrong, right) in APOSTROPHE_FOR_ACCENT {
+        if lower.contains(wrong) {
+            let pair = format!("{wrong} → {right}");
+            if !found.contains(&pair) {
+                found.push(pair);
+            }
+        }
+    }
+    for (wrong, right) in SHORT_APOSTROPHE_FOR_ACCENT {
+        if lower.contains(wrong) {
+            let pair = format!("{} → {}", wrong.trim(), right.trim());
+            if !found.contains(&pair) {
+                found.push(pair);
+            }
+        }
+    }
+    found
+}
+
+/// Il messaggio: porta la correzione già fatta, non il divieto.
+pub fn report_accents(found: &[String]) -> String {
+    format!(
+        "Le vocali accentate si scrivono accentate, non con l'apostrofo:\n  · {}\n\
+         Vale nei commenti e nei messaggi come ovunque: il testo si legge, e una\n\
+         parola con l'apostrofo al posto dell'accento è scritta male in italiano.\n\
+         Riscrivi solo ciò che stai toccando — quello che è già sul disco non ti ferma.",
+        found.join("\n  · ")
+    )
+}
+
 pub fn judge(path: &str, text: &str, file_exists: bool) -> Option<String> {
     let family = family(path)?;
     if is_exempt(path) {
         return None;
+    }
+    let accents = ascii_accents(text);
+    if !accents.is_empty() {
+        return Some(report_accents(&accents));
     }
     let names = italian_names(text);
     if !file_exists && italian_filename(path) {
@@ -922,6 +999,87 @@ pub fn judge(path: &str, text: &str, file_exists: bool) -> Option<String> {
         return None;
     }
     Some(report(family, &found))
+}
+
+#[cfg(test)]
+mod accent_tests {
+    use super::*;
+
+    /// Le forme raccolte dal vivo il 26/08/2026 nei sorgenti di casa, non
+    /// inventate: sono quelle che 623 righe in 52 file scrivevano davvero.
+    #[test]
+    fn an_apostrophe_standing_in_for_an_accent_is_caught() {
+        for wrote in [
+            "// perche' nessun controllo li guardava",
+            "/// e' la sagoma di una definizione",
+            "// il piu' vecchio, gia' visto",
+            "// cosi' non divergono, cio' che conta",
+            "// non e' piu' identico",
+        ] {
+            assert!(
+                !ascii_accents(wrote).is_empty(),
+                "«{wrote}» scrive un accento con l'apostrofo, va segnalato"
+            );
+        }
+    }
+
+    /// IL CONTRO-CASO CHE VALE PIÙ DELLA PROVA SOPRA, e la prima stesura non
+    /// valeva niente: elencava tempi di vita di Rust (`&'a str`, `<'de>`) in
+    /// cui la sequenza «e più apostrofo» **non compare affatto**, così il
+    /// criterio poteva essere rotto senza che nessun caso arrossisse. Provato
+    /// col mutante, che passava.
+    ///
+    /// Il pericolo vero è l'inglese: `we're`, `there's`, `one's` contengono
+    /// «e più apostrofo» davvero, e stanno nei messaggi e nei nomi. Da qui lo
+    /// spazio richiesto attorno alle forme di una lettera sola.
+    #[test]
+    fn english_with_an_apostrophe_is_never_mistaken_for_a_missing_accent() {
+        for wrote in [
+            // Questi tre vengono dai sorgenti di casa, non dalla fantasia: una
+            // parola inglese fra apostrofi che finisce in «e» produce «e più
+            // apostrofo più spazio», ed è esattamente ciò che un criterio senza
+            // lo spazio davanti scambierebbe per italiano. Sono 150 righe.
+            "let kind = 'future' ;",
+            "// see 'usage' below",
+            "matches 'replace' and nothing else",
+            "// we're done here, and there's nothing left",
+            "pub fn strings<'a>(text: &'a str) -> Vec<&'a str> {",
+        ] {
+            assert!(
+                ascii_accents(wrote).is_empty(),
+                "«{wrote}» non è italiano scritto male, deve passare"
+            );
+        }
+    }
+
+    /// Il messaggio porta la correzione, non solo il divieto: chi lo legge deve
+    /// poter riscrivere senza andare a cercare come si fa.
+    #[test]
+    fn the_message_carries_the_fix_not_just_the_ban() {
+        let msg = report_accents(&ascii_accents("// perche' e' piu' facile"));
+        assert!(msg.contains("perché"));
+        assert!(msg.contains("più"));
+        assert!(
+            msg.contains("non ti ferma"),
+            "il messaggio deve dire che il già scritto non blocca, o sembra un divieto su 52 file"
+        );
+    }
+
+    /// E il giudizio complessivo li vede: senza questo, le funzioni sopra
+    /// sarebbero giuste e scollegate.
+    #[test]
+    fn the_gate_itself_reports_them() {
+        // Il percorso vuole la barra davanti a `crates/`: è così che il gate
+        // riconosce il perimetro, e un percorso relativo gli sfugge.
+        let verdict = judge(
+            "/Users/theo/.claude/rust/crates/guards/src/x.rs",
+            "// perche' si', e' cosi'",
+            true,
+        );
+        assert!(verdict.is_some_and(|v| v.contains("perché")));
+        // E fuori dal perimetro tace, come tutto il resto di questo gate.
+        assert!(judge("/tmp/appunti.rs", "// perche' no", true).is_none());
+    }
 }
 
 #[cfg(test)]
