@@ -233,7 +233,7 @@ fn two_processes_using_ledger_api_serialize_writers() {
 }
 
 #[test]
-fn projections_rebuild_identically_and_skipped_event_control_differs() {
+fn explicit_projection_rebuild_is_identical_and_skipped_event_control_differs() {
     let directory = TestDirectory::new("rebuild");
     let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
     sample_all(&ledger);
@@ -245,8 +245,9 @@ fn projections_rebuild_identically_and_skipped_event_control_differs() {
         broken, expected,
         "saltare l'evento di chiusura doveva cambiare la proiezione"
     );
-    drop(ledger);
-    let ledger = Ledger::open(&directory.0).expect("riaprire e ricostruire automaticamente");
+    ledger
+        .rebuild_projections()
+        .expect("ricostruire esplicitamente");
     assert_eq!(
         ledger.projection_dump().expect("leggere il risultato"),
         expected
@@ -254,7 +255,7 @@ fn projections_rebuild_identically_and_skipped_event_control_differs() {
 }
 
 #[test]
-fn checkpoint_is_absent_before_commit_and_present_after() {
+fn committed_event_is_projected_after_a_crash_between_the_two_phases() {
     let directory = TestDirectory::new("checkpoint");
     let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
     ledger
@@ -270,19 +271,13 @@ fn checkpoint_is_absent_before_commit_and_present_after() {
         "il processo iniettato doveva interrompersi"
     );
     let reopened = Ledger::open(&directory.0).expect("riaprire dopo lo schianto");
-    assert!(!reopened
-        .is_checkpointed("run-crash", "compile", 1)
-        .expect("leggere il checkpoint"));
-    assert!(reopened.steps("run-crash").expect("leggere il passo")[0]
-        .outcome
-        .is_none());
-
-    reopened
-        .close_step("run-crash", "compile", 1, 7, completion())
-        .expect("chiudere dopo la ripresa");
     assert!(reopened
         .is_checkpointed("run-crash", "compile", 1)
-        .expect("leggere il checkpoint commesso"));
+        .expect("leggere il checkpoint"));
+    assert_eq!(
+        reopened.steps("run-crash").expect("leggere il passo")[0].outcome,
+        Some(Outcome::Broke)
+    );
     assert!(!would_relaunch(&reopened, "run-crash"));
 }
 
@@ -303,6 +298,83 @@ fn stale_epoch_cannot_close_superseded_attempt() {
     assert!(matches!(error, LedgerError::StaleEpoch { epoch: 5, .. }));
     let steps = ledger.steps("run-epoch").expect("rileggere i tentativi");
     assert!(steps.iter().all(|record| record.outcome.is_none()));
+}
+
+#[test]
+fn current_epoch_cannot_close_a_previous_attempt() {
+    let directory = TestDirectory::new("attempt-epoch-fencing");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .append_step_started(&started_attempt("run-epoch-pair", 1, 5))
+        .expect("avviare il primo tentativo");
+    ledger
+        .append_step_started(&started_attempt("run-epoch-pair", 2, 6))
+        .expect("avviare il tentativo corrente");
+
+    let error = ledger
+        .close_step("run-epoch-pair", "compile", 1, 6, completion())
+        .expect_err("tentativo ed epoca devono identificare lo stesso record");
+    assert!(matches!(
+        error,
+        LedgerError::MissingAttempt { attempt: 1, .. }
+    ));
+    assert!(ledger
+        .steps("run-epoch-pair")
+        .expect("rileggere i tentativi")
+        .iter()
+        .all(|record| record.outcome.is_none()));
+}
+
+#[test]
+fn reopening_twice_does_not_read_or_reapply_old_events() {
+    let directory = TestDirectory::new("incremental-open");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    sample_all(&ledger);
+    let expected = ledger.projection_dump().expect("leggere lo stato");
+    drop(ledger);
+
+    APPLIED_EVENT_READS.set(0);
+    let first = Ledger::open(&directory.0).expect("prima riapertura");
+    assert_eq!(
+        APPLIED_EVENT_READS.get(),
+        0,
+        "la prima riapertura ha riletto eventi"
+    );
+    drop(first);
+    let second = Ledger::open(&directory.0).expect("seconda riapertura");
+    assert_eq!(
+        APPLIED_EVENT_READS.get(),
+        0,
+        "la seconda riapertura ha riletto eventi vecchi"
+    );
+    assert_eq!(
+        second.projection_dump().expect("rileggere lo stato"),
+        expected
+    );
+}
+
+#[test]
+fn pruning_applied_events_preserves_projections_on_reopen() {
+    let directory = TestDirectory::new("pruned-log");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    sample_all(&ledger);
+    let expected = ledger.projection_dump().expect("leggere lo stato");
+    drop(ledger);
+
+    let events = Connection::open(directory.0.join(EVENTS_FILE)).expect("aprire il registro");
+    events
+        .execute_batch(
+            "DROP TRIGGER events_append_only_delete;
+             DELETE FROM events;",
+        )
+        .expect("potare gli eventi già incorporati");
+    drop(events);
+
+    let reopened = Ledger::open(&directory.0).expect("riaprire dopo la potatura");
+    assert_eq!(
+        reopened.projection_dump().expect("rileggere lo stato"),
+        expected
+    );
 }
 
 #[test]
