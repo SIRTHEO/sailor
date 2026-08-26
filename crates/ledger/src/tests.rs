@@ -141,6 +141,37 @@ fn step_record_round_trips_without_losing_nulls_or_columns() {
 }
 
 #[test]
+fn changed_gates_on_same_input_are_queryable_as_a_resume_condition() {
+    let directory = TestDirectory::new("changed-gates");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    let first = started_attempt("run-gates", 1, 7);
+    ledger
+        .append_step_started(&first)
+        .expect("scrivere il primo tentativo");
+
+    let mut resumed = started_attempt("run-gates", 2, 8);
+    resumed.gates = vec!["filesystem".to_owned()];
+    resumed.attempt_relation = Some(flow::AttemptRelation::SameInputGatesChanged);
+    assert_eq!(first.input_digest, resumed.input_digest);
+    ledger
+        .append_step_started(&resumed)
+        .expect("scrivere la ripresa");
+
+    assert_eq!(
+        ledger
+            .steps_resumed_with_changed_gates()
+            .expect("interrogare le riprese"),
+        vec![GatesChangedStep {
+            run_id: "run-gates".to_owned(),
+            step_id: "compile".to_owned(),
+            attempt: 2,
+            epoch: 8,
+        }]
+    );
+    assert_eq!(ledger.steps("run-gates").expect("rileggere")[1], resumed);
+}
+
+#[test]
 fn stopped_and_skipped_outcomes_round_trip_through_the_operational_column() {
     let directory = TestDirectory::new("outcomes");
     let ledger = Ledger::open(&directory.0).expect("aprire il deposito");

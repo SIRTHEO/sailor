@@ -16,11 +16,14 @@ pub struct StepRecord {
     /// Monotona. Un tentativo dato per morto che torna non riscrive stato vecchio.
     pub epoch: u64,
     pub deps: Vec<String>,
-    /// Impronta degli ingressi: due esecuzioni con la stessa impronta sono la stessa.
+    /// Impronta del solo input tipato; non comprende i freni attivi del passo.
     pub input_digest: String,
     pub input: Value,
     /// I freni attivi quando il passo è partito.
     pub gates: Vec<String>,
+    /// Relazione della ripresa con l'identità già registrata, calcolata dal motore.
+    #[serde(default)]
+    pub attempt_relation: Option<AttemptRelation>,
     pub started_at: i64,
 
     // Scritti alla chiusura. `deserialize_with` rende obbligatoria anche la
@@ -49,6 +52,14 @@ pub enum Outcome {
     Skipped,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttemptRelation {
+    SameInput,
+    SameInputGatesChanged,
+    DifferentInput,
+}
+
 impl StepRecord {
     #[allow(clippy::too_many_arguments)]
     pub fn started(
@@ -71,6 +82,7 @@ impl StepRecord {
             input_digest,
             input,
             gates,
+            attempt_relation: None,
             started_at,
             outcome: None,
             output: None,
