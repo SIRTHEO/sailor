@@ -90,6 +90,8 @@ pub struct Completion {
     pub said: Option<String>,
     pub failure_class: Option<String>,
     pub ended_at: i64,
+    pub bytes_seen: Option<u64>,
+    pub bytes_discarded: Option<u64>,
 }
 
 pub trait RecordStore {
@@ -128,6 +130,8 @@ impl RecordStore for InMemoryRecordStore {
             || record.said.is_some()
             || record.failure_class.is_some()
             || record.ended_at.is_some()
+            || record.bytes_seen.is_some()
+            || record.bytes_discarded.is_some()
         {
             return Err(FlowError::InvalidRecord(
                 "a started record already contains closing fields".to_owned(),
@@ -207,6 +211,8 @@ impl RecordStore for InMemoryRecordStore {
         record.said = completion.said;
         record.failure_class = completion.failure_class;
         record.ended_at = Some(completion.ended_at);
+        record.bytes_seen = completion.bytes_seen;
+        record.bytes_discarded = completion.bytes_discarded;
         Ok(())
     }
 
@@ -355,6 +361,8 @@ impl InProcessExecutor {
                         said: None,
                         failure_class: None,
                         ended_at: clock.now()?,
+                        bytes_seen: None,
+                        bytes_discarded: None,
                     },
                     &mut report.closed_as_went,
                 ),
@@ -365,6 +373,8 @@ impl InProcessExecutor {
                         said: None,
                         failure_class: Some("process_disappeared".to_owned()),
                         ended_at: clock.now()?,
+                        bytes_seen: None,
+                        bytes_discarded: None,
                     },
                     &mut report.closed_as_broke,
                 ),
@@ -375,6 +385,8 @@ impl InProcessExecutor {
                         said: Some(reason),
                         failure_class: Some("effect_unknown".to_owned()),
                         ended_at: clock.now()?,
+                        bytes_seen: None,
+                        bytes_discarded: None,
                     },
                     &mut report.closed_as_waiting,
                 ),
@@ -385,6 +397,8 @@ impl InProcessExecutor {
                         said: Some(error.said),
                         failure_class: Some(error.class),
                         ended_at: clock.now()?,
+                        bytes_seen: None,
+                        bytes_discarded: None,
                     },
                     &mut report.closed_as_waiting,
                 ),
@@ -399,34 +413,6 @@ impl InProcessExecutor {
             bucket.push(record.step_id.clone());
         }
         Ok(report)
-    }
-
-    fn input_for(
-        &self,
-        graph: &Graph,
-        step: &Step,
-        root_inputs: &BTreeMap<String, Value>,
-        records: &[StepRecord],
-    ) -> Result<Value, FlowError> {
-        match step.deps.as_slice() {
-            [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
-            [only] if !graph.dependency_is_skippable(&step.id, only) => {
-                successful_output(only, records)
-            }
-            many => {
-                let mut values = serde_json::Map::new();
-                for dependency in many {
-                    if let Some(output) = dependency_output(
-                        dependency,
-                        graph.dependency_is_skippable(&step.id, dependency),
-                        records,
-                    )? {
-                        values.insert(dependency.clone(), output);
-                    }
-                }
-                Ok(Value::Object(values))
-            }
-        }
     }
 }
 
@@ -457,7 +443,7 @@ impl Executor for InProcessExecutor {
                 let step = graph
                     .step(&step_id)
                     .ok_or_else(|| FlowError::UnknownStep(step_id.clone()))?;
-                let input = self.input_for(graph, step, &request.root_inputs, &records)?;
+                let input = step_input(graph, step, &request.root_inputs, &records)?;
                 step.input_schema.validate(&input)?;
                 let condition_met = step
                     .when
@@ -485,25 +471,7 @@ impl Executor for InProcessExecutor {
                     request.gates.clone(),
                     clock.now()?,
                 );
-                started.attempt_relation = previous.map(|previous| {
-                    if previous.input_digest != started.input_digest {
-                        AttemptRelation::DifferentInput
-                    } else {
-                        let origin = records
-                            .iter()
-                            .filter(|record| {
-                                record.step_id == step.id
-                                    && record.input_digest == started.input_digest
-                            })
-                            .min_by_key(|record| (record.attempt, record.epoch))
-                            .unwrap_or(previous);
-                        if same_gates(&origin.gates, &started.gates) {
-                            AttemptRelation::SameInput
-                        } else {
-                            AttemptRelation::SameInputGatesChanged
-                        }
-                    }
-                });
+                started.attempt_relation = attempt_relation(&records, &started);
                 store.append_started(started)?;
 
                 let completion = match action {
@@ -513,6 +481,8 @@ impl Executor for InProcessExecutor {
                         said: None,
                         failure_class: None,
                         ended_at: clock.now()?,
+                        bytes_seen: None,
+                        bytes_discarded: None,
                     },
                     Some(action) => match action.execute(&input, &mut request.shared) {
                         Ok(ActionOutcome::Went(output)) => {
@@ -523,6 +493,8 @@ impl Executor for InProcessExecutor {
                                     said: None,
                                     failure_class: None,
                                     ended_at: clock.now()?,
+                                    bytes_seen: None,
+                                    bytes_discarded: None,
                                 },
                                 Err(error) => Completion {
                                     outcome: Outcome::Broke,
@@ -530,6 +502,8 @@ impl Executor for InProcessExecutor {
                                     said: Some(error.to_string()),
                                     failure_class: Some("invalid_output".to_owned()),
                                     ended_at: clock.now()?,
+                                    bytes_seen: None,
+                                    bytes_discarded: None,
                                 },
                             }
                         }
@@ -539,6 +513,8 @@ impl Executor for InProcessExecutor {
                             said: Some(reason),
                             failure_class: None,
                             ended_at: clock.now()?,
+                            bytes_seen: None,
+                            bytes_discarded: None,
                         },
                         Err(error) => Completion {
                             outcome: Outcome::Broke,
@@ -546,6 +522,8 @@ impl Executor for InProcessExecutor {
                             said: Some(error.said),
                             failure_class: Some(error.class),
                             ended_at: clock.now()?,
+                            bytes_seen: None,
+                            bytes_discarded: None,
                         },
                     },
                 };
@@ -666,14 +644,71 @@ fn dependencies_satisfied(graph: &Graph, step: &Step, records: &[StepRecord]) ->
     })
 }
 
-fn latest_for<'a>(step: &Step, records: &'a [StepRecord]) -> Option<&'a StepRecord> {
+pub fn step_input(
+    graph: &Graph,
+    step: &Step,
+    root_inputs: &BTreeMap<String, Value>,
+    records: &[StepRecord],
+) -> Result<Value, FlowError> {
+    match step.deps.as_slice() {
+        [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
+        [only] if !graph.dependency_is_skippable(&step.id, only) => {
+            successful_output(only, records)
+        }
+        many => {
+            let mut values = serde_json::Map::new();
+            for dependency in many {
+                if let Some(output) = dependency_output(
+                    dependency,
+                    graph.dependency_is_skippable(&step.id, dependency),
+                    records,
+                )? {
+                    values.insert(dependency.clone(), output);
+                }
+            }
+            Ok(Value::Object(values))
+        }
+    }
+}
+
+pub fn attempt_relation(
+    records: &[StepRecord],
+    started: &StepRecord,
+) -> Option<AttemptRelation> {
+    let previous = records
+        .iter()
+        .filter(|record| {
+            record.step_id == started.step_id
+                && (record.attempt < started.attempt || record.epoch < started.epoch)
+        })
+        .max_by_key(|record| (record.attempt, record.epoch))?;
+    if previous.input_digest != started.input_digest {
+        Some(AttemptRelation::DifferentInput)
+    } else {
+        let origin = records
+            .iter()
+            .filter(|record| {
+                record.step_id == started.step_id
+                    && record.input_digest == started.input_digest
+            })
+            .min_by_key(|record| (record.attempt, record.epoch))
+            .unwrap_or(previous);
+        if same_gates(&origin.gates, &started.gates) {
+            Some(AttemptRelation::SameInput)
+        } else {
+            Some(AttemptRelation::SameInputGatesChanged)
+        }
+    }
+}
+
+pub fn latest_for<'a>(step: &Step, records: &'a [StepRecord]) -> Option<&'a StepRecord> {
     records
         .iter()
         .filter(|record| record.step_id == step.id)
         .max_by_key(|record| (record.attempt, record.epoch))
 }
 
-fn same_gates(left: &[String], right: &[String]) -> bool {
+pub fn same_gates(left: &[String], right: &[String]) -> bool {
     let left: std::collections::BTreeSet<_> = left.iter().collect();
     let right: std::collections::BTreeSet<_> = right.iter().collect();
     left == right
@@ -1031,6 +1066,8 @@ mod tests {
                 said: None,
                 failure_class: None,
                 ended_at: 4,
+                bytes_seen: None,
+                bytes_discarded: None,
             },
         );
         assert_eq!(

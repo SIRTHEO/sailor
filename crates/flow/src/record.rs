@@ -41,6 +41,12 @@ pub struct StepRecord {
     pub failure_class: Option<String>,
     #[serde(deserialize_with = "required_option")]
     pub ended_at: Option<i64>,
+    /// Conteggio totale dei byte emessi; non fa parte del canale dati tipato.
+    #[serde(default)]
+    pub bytes_seen: Option<u64>,
+    /// Byte tagliati perché oltre il tetto configurato.
+    #[serde(default)]
+    pub bytes_discarded: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +95,8 @@ impl StepRecord {
             said: None,
             failure_class: None,
             ended_at: None,
+            bytes_seen: None,
+            bytes_discarded: None,
         }
     }
 }
@@ -173,5 +181,28 @@ mod tests {
         let value = format!("{}é", "a".repeat(MAX_SAID_BYTES - 1));
         let truncated = truncate_said(value);
         assert_eq!(truncated, "a".repeat(MAX_SAID_BYTES - 1));
+    }
+
+    #[test]
+    fn legacy_record_without_byte_counts_is_accepted() {
+        let json_str = r#"{
+            "run_id": "run-legacy",
+            "step_id": "step",
+            "attempt": 1,
+            "epoch": 1,
+            "deps": [],
+            "input_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "input": null,
+            "gates": [],
+            "started_at": 1,
+            "outcome": "Went",
+            "output": null,
+            "said": null,
+            "failure_class": null,
+            "ended_at": 2
+        }"#;
+        let record: StepRecord = serde_json::from_str(json_str).expect("record vecchio leggibile");
+        assert_eq!(record.bytes_seen, None);
+        assert_eq!(record.bytes_discarded, None);
     }
 }
