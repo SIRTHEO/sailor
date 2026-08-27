@@ -20,7 +20,7 @@ use notte::{
 use notte::{parse_idle_seconds, parse_loadavg_1min, parse_mem_free_percent};
 use notte::{parse_task, prompt_over_cap, report_line, status_line};
 use notte::{decide, OpenRouterResult, Outcome, ParsedTask, WatchDecision, WatchInputs, WatchThresholds, Weight};
-use notte::{attempts_field, parse_lock_pid, set_attempts_field, split_receipt_name, strip_receipt_suffix};
+use notte::{attempts_field, parse_lock_pid, process_exists, set_attempts_field, split_receipt_name, strip_receipt_suffix};
 use notte::MAX_TASK_ATTEMPTS;
 use std::fs;
 use std::io::{Read, Write};
@@ -263,24 +263,9 @@ fn rotate_log(log_path: &Path) {
     }
 }
 
-/// Cosa risponde il kernel a «questo pid esiste?», via `kill(pid, 0)` — su
-/// Unix non manda nessun segnale, chiede solo l'esistenza. `ps` è negato in
-/// questo perimetro; niente crate `libc` per una firma sola, stesso stile
-/// già in uso in `claude-hooks::register_session`.
-fn process_exists(pid: u32) -> bool {
-    unsafe extern "C" {
-        fn kill(pid: i32, sig: i32) -> i32;
-    }
-    const ESRCH: i32 = 3;
-    let ret = unsafe { kill(pid as i32, 0) };
-    if ret == 0 {
-        return true;
-    }
-    // Qualunque errore diverso da "non esiste" (tipicamente EPERM: il pid
-    // c'è ma non è nostro) si conta come vivo: un falso "morto" scavalca un
-    // lucchetto altrui, un falso "vivo" al più aspetta un giro in più.
-    std::io::Error::last_os_error().raw_os_error() != Some(ESRCH)
-}
+// `process_exists` sta in `lib.rs`, accanto a chi legge le ricevute: la via di
+// rilascio del servizio deve fare la stessa domanda prima di riavviare, e da
+// qui dentro non la può raggiungere.
 
 /// Il lucchetto dell'intero giro (difetto 2 del 25/08): un file con dentro
 /// il pid, creato con `O_EXCL` così due istanze non possono prenderlo
