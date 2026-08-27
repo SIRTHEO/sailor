@@ -96,6 +96,22 @@ pub const TARGETS: &[Target] = &[
         stamp_rel: "state/hooks-binary-commit",
         service: None,
     },
+    // Il bersaglio che mancava, e la sua assenza era il difetto: `sailor` mette
+    // in servizio gli altri due, ma fino al 27/08/2026 veniva installato a mano
+    // copiando un binario — cioè proprio il gesto che questa tabella esiste per
+    // togliere di mezzo. Chi rilascia deve poter rilasciare anche se stesso.
+    //
+    // Si sostituisce mentre gira: nessun servizio dietro, e i comandi che durano
+    // (`sailor ui`) tengono aperto il file che stavano eseguendo — su questo
+    // sistema sostituire un eseguibile non disturba chi lo sta già eseguendo.
+    Target {
+        name: "sailor",
+        bin: "sailor",
+        live_rel: "rust/target/release/sailor",
+        safe_rel: "bin/sailor",
+        stamp_rel: "state/sailor-binary-commit",
+        service: None,
+    },
 ];
 
 /// Il bersaglio che porta questo nome, se esiste.
@@ -239,7 +255,22 @@ mod tests {
     fn targets_are_found_by_name() {
         assert_eq!(target("notte").map(|t| t.bin), Some("notte"));
         assert_eq!(target("hooks").map(|t| t.bin), Some("claude-hooks"));
+        assert_eq!(target("sailor").map(|t| t.bin), Some("sailor"));
         assert!(target("nessuno").is_none());
+    }
+
+    /// Chi mette in servizio gli altri deve saper mettere in servizio se stesso:
+    /// finché quel bersaglio non c'era, l'unico modo di installare `sailor` era
+    /// copiare un binario a mano — cioè il gesto che questa tabella esiste per
+    /// togliere di mezzo, lasciato aperto proprio sullo strumento che lo chiude.
+    #[test]
+    fn the_releaser_can_release_itself() {
+        let itself = target("sailor").expect("sailor deve essere un bersaglio");
+        assert_eq!(itself.safe_rel, "bin/sailor");
+        assert!(
+            itself.service.is_none(),
+            "sailor non è un servizio residente: dichiararlo tale chiamerebbe launchctl su un'etichetta inesistente"
+        );
     }
 
     /// Solo chi resta residente va riavviato: dirlo di un gancio farebbe
