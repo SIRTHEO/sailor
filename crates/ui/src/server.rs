@@ -17,6 +17,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const INDEX_HTML: &str = include_str!("../assets/index.html");
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// Alta apposta: per non litigare con le porte di sviluppo comuni (3000,
+/// 8000, 8080, ...).
+pub const DEFAULT_PORT: u16 = 47831;
+
 pub struct ServerState {
     pub ledger_dir: PathBuf,
     pub flows: FlowRegistry,
