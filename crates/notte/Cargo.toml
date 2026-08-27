@@ -4,5 +4,10 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
+# `flow`/`ledger` servono solo al ponte verso il deposito durevole
+# (`src/ledger_bridge.rs`), che sparisce quando `notte` diventa un flusso
+# vero: vedi la data di smontaggio in testa a quel file.
 [dependencies]
+flow = { path = "../flow" }
+ledger = { path = "../ledger" }
 serde_json = { workspace = true }
