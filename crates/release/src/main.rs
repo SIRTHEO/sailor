@@ -602,8 +602,18 @@ fn restart_service(service: Service) {
     }
 }
 
+/// Il dominio launchd da riavviare.
+///
+/// L'ETICHETTA VIENE DALL'AMBIENTE QUANDO C'È. Il nome di un servizio è una
+/// proprietà dell'installazione, non del codice, e questo crate va in un
+/// deposito pubblico: chi installa `notte` altrove non si chiama Theo. Il valore
+/// scritto nella tabella resta il predefinito di questa macchina.
 fn service_domain(service: Service) -> String {
-    format!("gui/{}/{}", current_uid(), service.label)
+    let label = std::env::var("RELEASE_SERVICE_LABEL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| service.label.to_string());
+    format!("gui/{}/{}", current_uid(), label)
 }
 
 // `getuid` viene dal kernel ed è infallibile; un crate intero per questa sola

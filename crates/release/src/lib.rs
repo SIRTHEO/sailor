@@ -31,7 +31,14 @@
 /// effetto, e chi no.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Service {
-    /// L'etichetta launchd, per `launchctl kickstart -k gui/<uid>/<label>`.
+    /// L'etichetta launchd predefinita, per `launchctl kickstart -k gui/<uid>/<label>`.
+    ///
+    /// **È un valore predefinito, non un fatto del codice.** Il nome del
+    /// servizio è una proprietà dell'installazione — chi installa `notte` su
+    /// un'altra macchina lo chiama come vuole — e questo crate va in un deposito
+    /// pubblico. `RELEASE_SERVICE_LABEL` lo sostituisce; qui resta il nome che
+    /// ha su questa macchina, perché un predefinito sbagliato è meglio di un
+    /// predefinito assente solo quando è scritto che è un predefinito.
     pub label: &'static str,
     /// Dove il servizio lascia la ricevuta della lavorazione che ha in mano,
     /// relativo a `~/.claude`. Un riavvio dato lì in mezzo lascia un compito né
