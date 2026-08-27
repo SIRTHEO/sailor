@@ -55,7 +55,12 @@ pub fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
 }
 
 pub fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
+    // Il filtro sul vuoto non è pignoleria: per un percorso senza cartella
+    // ("profili.json") `parent()` risponde `Some("")`, e `create_dir_all("")`
+    // fallisce con «file inesistente» — il salvataggio si rifiuterebbe pur
+    // avendo i permessi sulla cartella corrente. Segnalato il 27/08/2026 da un
+    // revisore indipendente.
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)
             .map_err(|e| format!("impossibile creare {}: {e}", parent.display()))?;
     }
@@ -246,5 +251,22 @@ mod tests {
 
         let result = apply_symlink_swap(&fixed_home, "credentials.json", &profile_a);
         assert!(result.is_err());
+    }
+
+    /// Un percorso senza cartella davanti: `parent()` risponde con la stringa
+    /// vuota, e chi la passa a `create_dir_all` si sente rispondere «file
+    /// inesistente» pur avendo i permessi. Prima della riparazione del
+    /// 27/08/2026 questa prova falliva.
+    #[test]
+    fn a_bare_filename_saves_into_the_current_directory() {
+        let dir = TempDir::new();
+        let previous = env::current_dir().expect("cartella corrente");
+        env::set_current_dir(dir.path()).expect("mi sposto nella cartella di prova");
+
+        let outcome = save_store_to(Path::new("profili.json"), &ProfileStore::default());
+
+        env::set_current_dir(previous).expect("torno dov'ero");
+        outcome.expect("un nome nudo deve salvarsi nella cartella corrente");
+        assert!(dir.path().join("profili.json").exists());
     }
 }
