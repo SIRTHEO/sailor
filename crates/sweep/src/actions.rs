@@ -210,26 +210,48 @@ fn scan_dir(config: SweepConfig) -> Scan {
 pub(crate) fn read_live(state: &Path) -> Option<LiveSessions> {
     let entries = fs::read_dir(state.join("sessioni-vive")).ok()?;
     let mut ids = Vec::new();
-    for entry in entries.flatten() {
+    // Ogni via d'uscita che non porta a un identificativo lascia una sessione
+    // fuori dall'elenco. Vive o no non si sa: solo che non lo si è potuto
+    // sapere, ed è il caso in cui non si cancella.
+    let mut unreadable = 0u64;
+    let mut observed = 0u64;
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                unreadable += 1;
+                continue;
+            }
+        };
+        observed += 1;
         let name = entry.file_name().to_string_lossy().into_owned();
         let Some(short) = name.strip_suffix(".json") else {
+            unreadable += 1;
             continue;
         };
         let Some(record) = state_record(state, short) else {
+            unreadable += 1;
             continue;
         };
-        if liveness(state, short) == Liveness::Alive {
-            if let Some(id) = record
+        match liveness(state, short) {
+            Liveness::Alive => match record
                 .get("session_id")
                 .and_then(Value::as_str)
                 .filter(|id| !id.is_empty())
             {
-                ids.push(id.to_owned());
-            }
+                Some(id) => ids.push(id.to_owned()),
+                None => unreadable += 1,
+            },
+            Liveness::Gone => {}
+            Liveness::Unknown => unreadable += 1,
         }
     }
     ids.sort();
-    Some(LiveSessions { ids })
+    Some(LiveSessions {
+        ids,
+        unreadable,
+        observed,
+    })
 }
 
 pub struct ScanAction;
@@ -254,7 +276,8 @@ impl Action for LiveSessionsAction {
     ) -> Result<ActionOutcome, ActionError> {
         let config: SweepConfig = decode(input)?;
         Ok(match read_live(&config_path(&config)) {
-            Some(live) => ActionOutcome::Went(encode(live)?),
+            Some(live) if live.complete() => ActionOutcome::Went(encode(live)?),
+            Some(_) => ActionOutcome::Waiting("live session list is incomplete".to_owned()),
             None => ActionOutcome::Waiting("live session directory is unreadable".to_owned()),
         })
     }
@@ -343,8 +366,12 @@ impl Action for LegacyAction {
                     Some(&input.read_live_sessions.ids),
                 ) {
                     FingerprintOwner::Alive => "alive",
-                    FingerprintOwner::Orphan => "orphan",
-                    FingerprintOwner::Unknown => "unknown",
+                    // Senza padrone si condanna subito, senza grazia: se
+                    // l'elenco dei vivi era incompleto il padrone potrebbe
+                    // essercene uno e non averlo detto. Non si sa, e non si sa
+                    // è l'unico verdetto che non cancella.
+                    FingerprintOwner::Orphan if input.read_live_sessions.complete() => "orphan",
+                    FingerprintOwner::Orphan | FingerprintOwner::Unknown => "unknown",
                 }
             };
             classified.push(ClassifiedMarker {
@@ -412,21 +439,21 @@ pub struct RemoveAction;
 impl RemoveAction {
     fn recovered(plan: &RemovalPlan) -> RemovalTrace {
         let state = Path::new(&plan.state_dir);
-        let mut removed = Vec::new();
         let mut spared = Vec::new();
+        let mut vanished = Vec::new();
         for target in &plan.targets {
             if state.join(&target.name).exists() {
                 spared.push(target.name.clone());
             } else {
-                removed.push(target.name.clone());
+                vanished.push(target.name.clone());
             }
         }
         RemovalTrace {
             looked: plan.looked.clone(),
             orphan: plan.orphan.clone(),
-            removed,
+            removed: Vec::new(),
             spared,
-            vanished: Vec::new(),
+            vanished,
             remove_failed: Vec::new(),
             recovered: true,
         }
@@ -447,7 +474,16 @@ impl RemoveAction {
         for (index, target) in plan.targets.iter().enumerate() {
             let path = state.join(&target.name);
             let still = if target.kind == "standard" {
-                age(&path).is_some_and(|value| match target.liveness {
+                // La vivezza del piano è vecchia quanto la scansione, e fra i due
+                // passi può passare una ripresa intera: una sessione ripartita
+                // riscrive il suo marcatore e se lo vedrebbe togliere. Vale il
+                // giudizio più prudente fra quello scritto e quello di adesso.
+                let verdict = match (target.liveness, liveness(state, &target.session)) {
+                    (Liveness::Alive, _) | (_, Liveness::Alive) => Liveness::Alive,
+                    (Liveness::Gone, Liveness::Gone) => Liveness::Gone,
+                    _ => Liveness::Unknown,
+                };
+                age(&path).is_some_and(|value| match verdict {
                     Liveness::Alive => false,
                     Liveness::Gone => true,
                     Liveness::Unknown => value >= UNKNOWN_GRACE_SECS,
@@ -477,6 +513,11 @@ impl RemoveAction {
 }
 
 fn legacy_still_condemned(path: &Path, live: &LiveSessions) -> bool {
+    // Stessa guardia della classificazione: se la rilettura non è riuscita a
+    // vedere tutte le sessioni, un padrone può esserci e non essersi dichiarato.
+    if !live.complete() {
+        return false;
+    }
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };

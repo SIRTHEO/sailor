@@ -53,9 +53,21 @@ pub struct Scan {
     pub legacy: Vec<LegacyMarker>,
 }
 
+/// Un elenco parziale non è un elenco: chi manca perché la sua voce era
+/// illeggibile è indistinguibile da chi non è vivo, e un marcatore senza padrone
+/// viene condannato senza grazia. Il conteggio delle voci saltate viaggia quindi
+/// col dato, e chi sta per cancellare deve guardarlo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveSessions {
     pub ids: Vec<String>,
+    pub unreadable: u64,
+    pub observed: u64,
+}
+
+impl LiveSessions {
+    pub fn complete(&self) -> bool {
+        self.observed > 0 && self.unreadable == 0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
