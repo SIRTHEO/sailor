@@ -50,6 +50,8 @@ struct Config {
     // ── il lucchetto e la ricevuta (difetti 2 e 4 del 25/08) ─────────
     lock_path: PathBuf,
     in_progress_dir: PathBuf,
+    /// Dove vive il deposito durevole dei flussi, per tutta la macchina.
+    ledger_dir: PathBuf,
     // ── le scadenze (difetto 3 del 25/08) ────────────────────────────
     codex_timeout_secs: u64,
     check_timeout_secs: u64,
@@ -129,6 +131,12 @@ impl Config {
         );
         let lock_path = env_or("NOTTE_LOCK_PATH", format!("{state_dir}/notte.lock"));
         let in_progress_dir = env_or("NOTTE_IN_PROGRESS_DIR", format!("{queue_dir}/in-corso"));
+        // IL DEPOSITO DEI FLUSSI STA FUORI DALLO STATO DEL SERVIZIO, di
+        // proposito: Theo ha chiesto un sistema **centralizzato** che mostri i
+        // flussi, e un deposito per servizio è la forma che rende impossibile
+        // guardarli insieme. Qui dentro finiranno anche i flussi che oggi non
+        // esistono ancora.
+        let ledger_dir = env_or("SAILOR_LEDGER_DIR", format!("{home}/.claude/state/flussi"));
         Config {
             queue_dir: PathBuf::from(queue_dir),
             done_dir: PathBuf::from(done_dir),
@@ -170,6 +178,7 @@ impl Config {
             last_output_path: PathBuf::from(last_output_path),
             lock_path: PathBuf::from(lock_path),
             in_progress_dir: PathBuf::from(in_progress_dir),
+            ledger_dir: PathBuf::from(ledger_dir),
             codex_timeout_secs: env_or("NOTTE_CODEX_TIMEOUT_SECS", "300".to_string())
                 .parse()
                 .unwrap_or(300),
@@ -928,6 +937,82 @@ fn report_for(configured: &Path, configured_day: &str, today_now: &str) -> (Path
     (dir.join(format!("rapporto-{today_now}.md")), today_now.to_string())
 }
 
+/// I secondi dall'epoca, per timbrare l'apertura e la chiusura di un passo.
+/// Un orologio che non si legge non fa cadere niente: allo zero corrisponde un
+/// record che dice «non lo so», che è meglio di una lavorazione persa.
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Il passo aperto nel deposito durevole, che affianca il registro di testo
+/// senza sostituirlo.
+///
+/// PRIMO GRADINO, deciso da Theo il 27/08/2026: le lavorazioni devono diventare
+/// visibili, e per esserlo devono passare dal motore dei flussi — dove oggi non
+/// è mai passato niente. Qui il servizio **scrive in più**: il registro di testo
+/// resta l'unica cosa che qualcuno legge, e a fine giornata le due storie si
+/// confrontano. Se divergono, si scopre adesso e non quando il testo sarà stato
+/// tolto di mezzo.
+///
+/// **NIENTE QUI DENTRO PUÒ FAR CADERE UNA LAVORAZIONE.** Il deposito che non si
+/// apre, la scrittura che fallisce, il disco pieno: tutto si ignora in silenzio.
+/// Uno specchio che rompe ciò che riflette è peggio dell'assenza dello specchio.
+struct MirroredStep {
+    ledger: ledger::Ledger,
+    run_id: String,
+}
+
+impl MirroredStep {
+    /// Apre il passo **prima** che il motore parta. `None` se il deposito non
+    /// si apre: il giro prosegue identico.
+    fn open(cfg: &Config, name: &str, task: &ParsedTaskFields, today: &str) -> Option<Self> {
+        let ledger = ledger::Ledger::open(&cfg.ledger_dir).ok()?;
+        let run_id = notte::mirror::run_id(name, today, std::process::id());
+        let record = notte::mirror::step_started(
+            &run_id,
+            name,
+            &task.engine,
+            task.weight,
+            now_secs(),
+        );
+        ledger.append_step_started(&record).ok()?;
+        Some(MirroredStep { ledger, run_id })
+    }
+
+    fn close(&self, outcome: &Outcome) {
+        let completion = notte::mirror::completion(outcome, now_secs());
+        let _ = self.ledger.close_step(
+            &self.run_id,
+            notte::mirror::STEP,
+            1,
+            1,
+            completion,
+        );
+    }
+}
+
+/// I due campi del compito che lo specchio guarda, così `open` non chiede in
+/// prestito l'intero `Task` mentre il resto del giro lo sta usando.
+struct ParsedTaskFields {
+    engine: String,
+    weight: &'static str,
+}
+
+/// L'esito scritto nel rapporto e, se il passo è aperto, anche nel deposito.
+///
+/// I due gesti stanno insieme perché **devono** stare insieme: finché sono due
+/// righe separate, il giorno in cui qualcuno aggiunge un ramo nuovo ne scrive
+/// una sola, e le due storie divergono senza che nessuno lo veda.
+fn settle(report: &Report, mirror: Option<&MirroredStep>, name: &str, outcome: Outcome) {
+    report.line(&report_line(name, &outcome));
+    if let Some(step) = mirror {
+        step.close(&outcome);
+    }
+}
+
 fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, today: &str) -> TaskOutcome {
     let name = path
         .file_name()
@@ -1024,6 +1109,22 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
     };
     let caffeine_secs = engine_cap_secs + cfg.check_timeout_secs + 30;
 
+    // L'intenzione si scrive PRIMA che il motore parta: è tutto il punto di un
+    // deposito durevole. Un passo che nasce già chiuso non distingue una
+    // lavorazione finita da una interrotta a metà.
+    let mirror = MirroredStep::open(
+        cfg,
+        &name,
+        &ParsedTaskFields {
+            engine: task.engine.clone(),
+            weight: match task.weight {
+                Weight::Light => "leggero",
+                Weight::Heavy => "pesante",
+            },
+        },
+        today,
+    );
+
     let start = Instant::now();
     let bucket = {
         // Il caffeinate vive quanto questo blocco (difetto 1b): appena si
@@ -1042,10 +1143,12 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
             ),
             other => {
                 note(&cfg.log_path, &format!("{name}: motore sconosciuto «{other}»"));
-                report.line(&report_line(
+                settle(
+                    report,
+                    mirror.as_ref(),
                     &name,
-                    &Outcome::Skipped { reason: format!("motore sconosciuto «{other}»") },
-                ));
+                    Outcome::Skipped { reason: format!("motore sconosciuto «{other}»") },
+                );
                 finish(&claimed, &cfg.done_dir, "saltato (motore sconosciuto)");
                 return TaskOutcome { counts_total: true, bucket: "skipped" };
             }
@@ -1057,19 +1160,23 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                 match run_check(&task.check, &cfg.last_output_path, Duration::from_secs(cfg.check_timeout_secs)) {
                     CheckOutcome::Passed => {
                         *fails = 0;
-                        report.line(&report_line(
+                        settle(
+                            report,
+                            mirror.as_ref(),
                             &name,
-                            &Outcome::Green { engine_label: label, tokens, seconds: elapsed },
-                        ));
+                            Outcome::Green { engine_label: label, tokens, seconds: elapsed },
+                        );
                         close_task(&claimed, cfg, &task, "green");
                         "green"
                     }
                     CheckOutcome::Failed => {
                         *fails += 1;
-                        report.line(&report_line(
+                        settle(
+                            report,
+                            mirror.as_ref(),
                             &name,
-                            &Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: "verifica fallita".into() },
-                        ));
+                            Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: "verifica fallita".into() },
+                        );
                         let detail = fs::read_to_string(&cfg.last_output_path).unwrap_or_default();
                         write_alert(
                             cfg,
@@ -1083,15 +1190,17 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                     }
                     CheckOutcome::TimedOut => {
                         *fails += 1;
-                        report.line(&report_line(
+                        settle(
+                            report,
+                            mirror.as_ref(),
                             &name,
-                            &Outcome::Red {
+                            Outcome::Red {
                                 engine_label: label,
                                 tokens,
                                 seconds: elapsed,
                                 reason: format!("verifica: timeout dopo {}s", cfg.check_timeout_secs),
                             },
-                        ));
+                        );
                         write_alert(
                             cfg,
                             &name,
@@ -1110,12 +1219,14 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
             // ogni notte. Il compito resta lì, pronto per quando arriva.
             EngineResult::Failed { kind, .. } if kind == "motore assente" => {
                 note(&cfg.log_path, &format!("{name}: il motore non è installato, rimando"));
-                report.line(&report_line(
+                settle(
+                    report,
+                    mirror.as_ref(),
                     &name,
-                    &Outcome::Deferred {
+                    Outcome::Deferred {
                         reason: format!("{}: il motore non è installato", task.engine),
                     },
-                ));
+                );
                 close_task(
                     &claimed,
                     cfg,
@@ -1126,10 +1237,12 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
             }
             EngineResult::Failed { kind, tokens } => {
                 *fails += 1;
-                report.line(&report_line(
+                settle(
+                    report,
+                    mirror.as_ref(),
                     &name,
-                    &Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: format!("motore: {kind}") },
-                ));
+                    Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: format!("motore: {kind}") },
+                );
                 let detail = fs::read_to_string(&cfg.last_output_path).unwrap_or_default();
                 write_alert(
                     cfg,
