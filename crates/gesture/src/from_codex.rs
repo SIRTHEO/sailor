@@ -115,6 +115,15 @@ mod tests {
         assert_eq!(from_claude.moment, from_codex.moment);
         assert_eq!(from_claude.tool, from_codex.tool);
         assert_eq!(from_claude.bash_command(), from_codex.bash_command());
+        // Aggiunti il 27/08/2026 su segnalazione di un revisore indipendente:
+        // la prova dichiarava di confrontare «ogni campo che una regola guarda»
+        // ma non guardava né la cartella di lavoro né la sessione. Svuotandoli
+        // nel traduttore restava verde — e sono i due campi con cui una regola
+        // sa dove si sta agendo e per conto di chi.
+        assert_eq!(from_claude.cwd, from_codex.cwd);
+        assert_eq!(from_claude.session_id, from_codex.session_id);
+        assert_eq!(from_codex.cwd.as_deref(), Some("/x"));
+        assert_eq!(from_codex.session_id.as_deref(), Some("s1"));
         assert_ne!(from_claude.source, from_codex.source);
     }
 }
