@@ -101,9 +101,14 @@ pub const TARGETS: &[Target] = &[
     // copiando un binario — cioè proprio il gesto che questa tabella esiste per
     // togliere di mezzo. Chi rilascia deve poter rilasciare anche se stesso.
     //
-    // Si sostituisce mentre gira: nessun servizio dietro, e i comandi che durano
-    // (`sailor ui`) tengono aperto il file che stavano eseguendo — su questo
-    // sistema sostituire un eseguibile non disturba chi lo sta già eseguendo.
+    // Nessun servizio da riavviare — ma «nessun servizio» NON vuol dire «si può
+    // sovrascrivere». Il 27/08/2026, installato con un `cp` sopra il file mentre
+    // `sailor ui` lo stava eseguendo, ogni invocazione successiva è morta con
+    // SIGKILL (137), `sailor version` compreso: su macOS riscrivere in posto un
+    // eseguibile mappato in memoria ne invalida la firma per tutti. Con la
+    // rinomina atomica che questo rilascio usa già — si scrive accanto e si
+    // rinomina, il processo vecchio resta sul suo inode — lo stesso gesto
+    // funziona. È il motivo per cui la scorciatoia a mano non va presa.
     Target {
         name: "sailor",
         bin: "sailor",
