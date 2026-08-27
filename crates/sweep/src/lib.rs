@@ -5,66 +5,14 @@ mod model;
 pub use graph::sweep_graph;
 pub use model::*;
 
-use actions::{actions, config_path, read_live};
+use actions::actions;
 use flow::{
-    Completion, Decision, Execution, ExecutionRequest, Executor, InProcessExecutor, Outcome,
-    ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, SharedState, StepRecord,
-    SystemClock,
+    Decision, Execution, ExecutionRequest, Executor, InProcessExecutor, ProcessProbe,
+    Reconciliation, ReconciliationRequest, SharedState, StepRecord, SystemClock,
 };
 use ledger::Ledger;
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs() as i64)
-}
-
-fn prepare_live_step(
-    run_id: &str,
-    config: &SweepConfig,
-    store: &mut dyn RecordStore,
-) -> Result<(), flow::FlowError> {
-    if !store.records(run_id)?.is_empty() {
-        return Ok(());
-    }
-    let input = serde_json::to_value(config)
-        .map_err(|error| flow::FlowError::InvalidRecord(error.to_string()))?;
-    let record = StepRecord::started(
-        run_id,
-        "read_live_sessions",
-        1,
-        1,
-        vec![],
-        input,
-        vec!["filesystem".to_owned()],
-        now(),
-    );
-    store.append_started(record)?;
-    let live = read_live(&config_path(config));
-    let completion = match live {
-        Some(live) => Completion {
-            outcome: Outcome::Went,
-            output: Some(
-                serde_json::to_value(live)
-                    .map_err(|error| flow::FlowError::InvalidRecord(error.to_string()))?,
-            ),
-            said: None,
-            failure_class: None,
-            ended_at: now(),
-        },
-        None => Completion {
-            outcome: Outcome::Waiting,
-            output: None,
-            said: Some("live session directory is unreadable".to_owned()),
-            failure_class: Some("live_sessions_unknown".to_owned()),
-            ended_at: now(),
-        },
-    };
-    store.close(run_id, "read_live_sessions", 1, 1, completion)
-}
 
 pub fn run(
     run_id: impl Into<String>,
@@ -75,12 +23,15 @@ pub fn run(
     let graph = sweep_graph();
     let actions = actions();
     let mut ledger = Ledger::open(ledger_directory)?;
-    prepare_live_step(&run_id, &config, &mut ledger)?;
+    let input = serde_json::to_value(config)?;
     let request = ExecutionRequest {
         run_id,
-        root_inputs: [("scan_markers".to_owned(), serde_json::to_value(config)?)]
-            .into_iter()
-            .collect(),
+        root_inputs: [
+            ("scan_markers".to_owned(), input.clone()),
+            ("read_live_sessions".to_owned(), input),
+        ]
+        .into_iter()
+        .collect(),
         gates: vec!["filesystem".to_owned()],
         shared: BTreeMap::new(),
     };
@@ -132,12 +83,12 @@ pub fn decision(
 mod tests {
     use super::*;
     use crate::actions::RemoveAction;
-    use flow::{Action, ActionRegistry, EffectStatus};
+    use flow::{Action, ActionRegistry, EffectStatus, Outcome, RecordStore};
     use std::env;
     use std::fs;
     use std::process::Command;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     const FIXTURE_LEDGER: &str = "SWEEP_TEST_LEDGER";
     const FIXTURE_STATE: &str = "SWEEP_TEST_STATE";
@@ -192,7 +143,7 @@ mod tests {
             .find(|record| record.step_id == "read_live_sessions")
             .unwrap();
         assert_eq!(live.outcome, Some(Outcome::Waiting));
-        assert_eq!(live.failure_class.as_deref(), Some("live_sessions_unknown"));
+        assert_eq!(live.failure_class, None);
     }
 
     #[test]
