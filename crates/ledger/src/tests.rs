@@ -52,6 +52,8 @@ fn completion() -> Completion {
         said: Some("errore grezzo".to_owned()),
         failure_class: Some("compiler_error".to_owned()),
         ended_at: 120,
+        bytes_seen: None,
+        bytes_discarded: None,
     }
 }
 
@@ -134,7 +136,15 @@ fn step_record_round_trips_without_losing_nulls_or_columns() {
         .expect("evento");
     let value: Value = serde_json::from_str(&payload).expect("json");
     let object = value["record"].as_object().expect("record oggetto");
-    for field in ["outcome", "output", "said", "failure_class", "ended_at"] {
+    for field in [
+        "outcome",
+        "output",
+        "said",
+        "failure_class",
+        "ended_at",
+        "bytes_seen",
+        "bytes_discarded",
+    ] {
         assert!(object.contains_key(field), "manca il campo {field}");
         assert!(object[field].is_null(), "{field} non è nullo");
     }
@@ -551,3 +561,341 @@ fn pragma_i64(connection: &Connection, database: &str, pragma: &str) -> i64 {
         .query_row(&format!("PRAGMA {database}.{pragma}"), [], |row| row.get(0))
         .expect("leggere pragma")
 }
+
+#[test]
+fn steps_with_discarded_output_are_queryable_and_match_declared_values() {
+    let directory = TestDirectory::new("discarded-output");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    let record = started("run-discard");
+    ledger
+        .append_step_started(&record)
+        .expect("scrivere intenzione");
+    let mut comp = completion();
+    comp.outcome = Outcome::Went;
+    comp.bytes_seen = Some(150_000);
+    comp.bytes_discarded = Some(50_000);
+    ledger
+        .close_step("run-discard", "compile", 1, 7, comp)
+        .expect("chiudere il passo");
+
+    let discarded = ledger
+        .steps_with_discarded_output()
+        .expect("interrogare passi con scarto");
+    assert_eq!(
+        discarded,
+        vec![DiscardedOutputStep {
+            run_id: "run-discard".to_owned(),
+            step_id: "compile".to_owned(),
+            attempt: 1,
+            epoch: 7,
+            bytes_seen: 150_000,
+            bytes_discarded: 50_000,
+        }]
+    );
+    let steps = ledger.steps("run-discard").expect("rileggere");
+    assert_eq!(steps[0].bytes_seen, Some(150_000));
+    assert_eq!(steps[0].bytes_discarded, Some(50_000));
+}
+
+#[test]
+fn schema_v1_legacy_records_without_byte_counts_upgrade_and_rebuild_cleanly() {
+    let directory = TestDirectory::new("upgrade-v1");
+    // Creiamo un database v1 con lo schema vecchio e un record senza campi bytes_seen/bytes_discarded
+    {
+        let state_path = directory.0.join(STATE_FILE);
+        let events_path = directory.0.join(EVENTS_FILE);
+        let mut connection = Connection::open(&state_path).expect("open state");
+        connection
+            .execute(
+                "ATTACH DATABASE ?1 AS events",
+                [events_path.to_string_lossy().as_ref()],
+            )
+            .expect("attach");
+        let transaction = immediate(&mut connection).expect("tx");
+        create_event_schema(&transaction).expect("event schema");
+        transaction
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS runs (
+                     run_id TEXT PRIMARY KEY,
+                     kind TEXT NOT NULL,
+                     entity TEXT NOT NULL,
+                     parent_run_id TEXT,
+                     started_by TEXT NOT NULL,
+                     status TEXT NOT NULL,
+                     total_cost_micros INTEGER NOT NULL,
+                     error TEXT,
+                     started_at INTEGER NOT NULL,
+                     ended_at INTEGER
+                 );
+                 CREATE TABLE IF NOT EXISTS steps (
+                     run_id TEXT NOT NULL,
+                     step_id TEXT NOT NULL,
+                     attempt INTEGER NOT NULL,
+                     epoch TEXT NOT NULL,
+                     deps TEXT NOT NULL,
+                     input_digest TEXT NOT NULL,
+                     input TEXT NOT NULL,
+                     gates TEXT NOT NULL,
+                     attempt_relation TEXT,
+                     started_at INTEGER NOT NULL,
+                     outcome TEXT,
+                     output TEXT,
+                     said TEXT,
+                     failure_class TEXT,
+                     ended_at INTEGER,
+                     checkpointed INTEGER NOT NULL DEFAULT 0 CHECK(checkpointed IN (0, 1)),
+                     PRIMARY KEY (run_id, step_id, attempt)
+                 );
+                 CREATE TABLE IF NOT EXISTS model_calls (
+                     call_id TEXT PRIMARY KEY,
+                     run_id TEXT NOT NULL,
+                     step_id TEXT,
+                     purpose TEXT NOT NULL,
+                     cli TEXT NOT NULL,
+                     requested_model TEXT NOT NULL,
+                     actual_model TEXT NOT NULL,
+                     input_tokens TEXT NOT NULL,
+                     output_tokens TEXT NOT NULL,
+                     cached_tokens TEXT NOT NULL,
+                     cost_micros INTEGER NOT NULL,
+                     price_currency TEXT NOT NULL,
+                     input_price_micros_per_million INTEGER NOT NULL,
+                     output_price_micros_per_million INTEGER NOT NULL,
+                     cached_price_micros_per_million INTEGER NOT NULL,
+                     mandate_name TEXT NOT NULL,
+                     mandate_version TEXT NOT NULL,
+                     retry_chain TEXT NOT NULL,
+                     error_type TEXT,
+                     started_at INTEGER NOT NULL,
+                     ended_at INTEGER
+                 );
+                 CREATE TABLE IF NOT EXISTS snapshots (
+                     snapshot_id TEXT PRIMARY KEY,
+                     run_id TEXT NOT NULL,
+                     step_id TEXT,
+                     phase TEXT NOT NULL,
+                     before_state TEXT NOT NULL,
+                     after_state TEXT NOT NULL,
+                     created_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS projection_watermark (
+                     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                     last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
+                 );",
+            )
+            .expect("v1 tables");
+        initialize_projection_watermark(&transaction).expect("watermark");
+        transaction
+            .pragma_update(None, "user_version", 1)
+            .expect("version 1");
+
+        let legacy_json = serde_json::json!({
+            "run_id": "legacy-run",
+            "step_id": "compile",
+            "attempt": 1,
+            "epoch": 1,
+            "deps": [],
+            "input_digest": "digest",
+            "input": null,
+            "gates": [],
+            "attempt_relation": null,
+            "started_at": 100,
+            "outcome": "Went",
+            "output": {"result": "ok"},
+            "said": "[launcher] kept 10 bytes",
+            "failure_class": null,
+            "ended_at": 110
+        });
+        transaction
+            .execute(
+                "INSERT INTO events.events (seq, run_id, step_id, attempt, kind, payload)
+                 VALUES (1, 'legacy-run', 'compile', 1, 'step_closed', ?1)",
+                [serde_json::to_string(&serde_json::json!({
+                    "type": "step_closed",
+                    "record": legacy_json
+                }))
+                .unwrap()],
+            )
+            .expect("insert legacy event");
+        transaction.commit().expect("commit v1");
+    }
+
+    let ledger = Ledger::open(&directory.0).expect("apertura e migrazione v1->v2");
+    let steps = ledger.steps("legacy-run").expect("lettura passi migrati");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].bytes_seen, None);
+    assert_eq!(steps[0].bytes_discarded, None);
+    assert_eq!(steps[0].outcome, Some(Outcome::Went));
+}
+
+#[test]
+fn schema_v1_pruned_database_upgrades_in_place_without_event_rebuild() {
+    let directory = TestDirectory::new("upgrade-v1-pruned");
+    // Creiamo un database v1 con proiezioni già scritte e registro eventi potato
+    {
+        let state_path = directory.0.join(STATE_FILE);
+        let events_path = directory.0.join(EVENTS_FILE);
+        let mut connection = Connection::open(&state_path).expect("open state");
+        connection
+            .execute(
+                "ATTACH DATABASE ?1 AS events",
+                [events_path.to_string_lossy().as_ref()],
+            )
+            .expect("attach");
+        let transaction = immediate(&mut connection).expect("tx");
+        create_event_schema(&transaction).expect("event schema");
+        transaction
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS runs (
+                     run_id TEXT PRIMARY KEY,
+                     kind TEXT NOT NULL,
+                     entity TEXT NOT NULL,
+                     parent_run_id TEXT,
+                     started_by TEXT NOT NULL,
+                     status TEXT NOT NULL,
+                     total_cost_micros INTEGER NOT NULL,
+                     error TEXT,
+                     started_at INTEGER NOT NULL,
+                     ended_at INTEGER
+                 );
+                 CREATE TABLE IF NOT EXISTS steps (
+                     run_id TEXT NOT NULL,
+                     step_id TEXT NOT NULL,
+                     attempt INTEGER NOT NULL,
+                     epoch TEXT NOT NULL,
+                     deps TEXT NOT NULL,
+                     input_digest TEXT NOT NULL,
+                     input TEXT NOT NULL,
+                     gates TEXT NOT NULL,
+                     attempt_relation TEXT,
+                     started_at INTEGER NOT NULL,
+                     outcome TEXT,
+                     output TEXT,
+                     said TEXT,
+                     failure_class TEXT,
+                     ended_at INTEGER,
+                     checkpointed INTEGER NOT NULL DEFAULT 0 CHECK(checkpointed IN (0, 1)),
+                     PRIMARY KEY (run_id, step_id, attempt)
+                 );
+                 CREATE TABLE IF NOT EXISTS model_calls (
+                     call_id TEXT PRIMARY KEY,
+                     run_id TEXT NOT NULL,
+                     step_id TEXT,
+                     purpose TEXT NOT NULL,
+                     cli TEXT NOT NULL,
+                     requested_model TEXT NOT NULL,
+                     actual_model TEXT NOT NULL,
+                     input_tokens TEXT NOT NULL,
+                     output_tokens TEXT NOT NULL,
+                     cached_tokens TEXT NOT NULL,
+                     cost_micros INTEGER NOT NULL,
+                     price_currency TEXT NOT NULL,
+                     input_price_micros_per_million INTEGER NOT NULL,
+                     output_price_micros_per_million INTEGER NOT NULL,
+                     cached_price_micros_per_million INTEGER NOT NULL,
+                     mandate_name TEXT NOT NULL,
+                     mandate_version TEXT NOT NULL,
+                     retry_chain TEXT NOT NULL,
+                     error_type TEXT,
+                     started_at INTEGER NOT NULL,
+                     ended_at INTEGER
+                 );
+                 CREATE TABLE IF NOT EXISTS snapshots (
+                     snapshot_id TEXT PRIMARY KEY,
+                     run_id TEXT NOT NULL,
+                     step_id TEXT,
+                     phase TEXT NOT NULL,
+                     before_state TEXT NOT NULL,
+                     after_state TEXT NOT NULL,
+                     created_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS projection_watermark (
+                     singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                     last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
+                 );",
+            )
+            .expect("v1 tables");
+        transaction
+            .execute(
+                "INSERT INTO projection_watermark (singleton, last_applied_seq) VALUES (1, 10)",
+                [],
+            )
+            .expect("watermark");
+        transaction
+            .execute(
+                "INSERT INTO events.sqlite_sequence (name, seq) VALUES ('events', 10)",
+                [],
+            )
+            .expect("sqlite sequence");
+        transaction
+            .pragma_update(None, "user_version", 1)
+            .expect("version 1");
+        transaction
+            .execute(
+                "INSERT INTO steps (run_id, step_id, attempt, epoch, deps, input_digest, input,
+                                    gates, attempt_relation, started_at, outcome, output, said,
+                                    failure_class, ended_at, checkpointed)
+                 VALUES ('pruned-run', 'compile', 1, '00000000000000000001', '[]', 'digest',
+                         'null', '[]', null, 100, 'Went', '{\"result\":\"ok\"}',
+                         '[launcher] kept 10 bytes', null, 110, 1)",
+                [],
+            )
+            .expect("insert v1 projected step");
+        // Registro eventi vuoto (potato): una ricostruzione fallirebbe
+        transaction.commit().expect("commit v1");
+    }
+
+    let ledger = Ledger::open(&directory.0).expect("apertura v1 potato senza ricostruzione");
+    let steps = ledger.steps("pruned-run").expect("lettura passi preservati");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].bytes_seen, None);
+    assert_eq!(steps[0].bytes_discarded, None);
+    assert_eq!(steps[0].outcome, Some(Outcome::Went));
+}
+
+#[test]
+fn corrupted_event_log_behind_projection_watermark_is_rejected_on_open() {
+    let directory = TestDirectory::new("corrupted-watermark");
+    // Simuliamo un deposito corrotto: la proiezione è al passo 10,
+    // ma il registro eventi non è mai andato oltre la sequenza 2.
+    {
+        let state_path = directory.0.join(STATE_FILE);
+        let events_path = directory.0.join(EVENTS_FILE);
+        let mut connection = Connection::open(&state_path).expect("open state");
+        connection
+            .execute(
+                "ATTACH DATABASE ?1 AS events",
+                [events_path.to_string_lossy().as_ref()],
+            )
+            .expect("attach");
+        let transaction = immediate(&mut connection).expect("tx");
+        create_event_schema(&transaction).expect("event schema");
+        create_projection_tables(&transaction).expect("tables");
+        create_projection_indexes(&transaction).expect("indexes");
+        transaction
+            .execute(
+                "INSERT INTO projection_watermark (singleton, last_applied_seq) VALUES (1, 10)",
+                [],
+            )
+            .expect("watermark");
+        transaction
+            .execute(
+                "INSERT INTO events.sqlite_sequence (name, seq) VALUES ('events', 2)",
+                [],
+            )
+            .expect("sqlite sequence");
+        transaction.commit().expect("commit");
+    }
+
+    match Ledger::open(&directory.0) {
+        Err(LedgerError::InvalidRecord(message)) => {
+            assert!(
+                message.contains("projection watermark 10 is ahead of event log 2"),
+                "messaggio inatteso: {message}"
+            );
+        }
+        Ok(_) => panic!("l'apertura doveva essere rifiutata per watermark corrotto"),
+        Err(error) => panic!("tipo di errore inatteso: {error:?}"),
+    }
+}
+
