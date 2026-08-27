@@ -51,6 +51,7 @@ pub mod restart;
 pub mod ronda_trigger;
 pub mod scope_drift;
 pub mod session_messages;
+pub mod settings_writes;
 pub mod skill_nudge;
 pub mod spotlight_marker;
 pub mod stale_facts;
