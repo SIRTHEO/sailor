@@ -7,7 +7,3 @@ rust-version = "1.89"
 [dependencies]
 notte = { path = "../notte" }
 serde_json.workspace = true
-
-[[bin]]
-name = "models"
-path = "src/main.rs"
