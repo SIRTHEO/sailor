@@ -20,7 +20,7 @@ use tracing_subscriber::layer::{Context, Layer};
 const STATE_FILE: &str = "state.db";
 const EVENTS_FILE: &str = "events.db";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const PROJECTION_SCHEMA_VERSION: i64 = 1;
+const PROJECTION_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -142,6 +142,16 @@ pub struct GatesChangedStep {
     pub epoch: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscardedOutputStep {
+    pub run_id: String,
+    pub step_id: String,
+    pub attempt: u32,
+    pub epoch: u64,
+    pub bytes_seen: u64,
+    pub bytes_discarded: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "record", rename_all = "snake_case")]
 enum StoredEvent {
@@ -189,29 +199,25 @@ impl Ledger {
         {
             let transaction = immediate(&mut connection)?;
             create_event_schema(&transaction)?;
-            let had_projection_schema = projection_schema_exists(&transaction)?;
             let projection_schema_version: i64 =
                 transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-            create_projection_schema(&transaction)?;
-            match projection_schema_version {
-                0 => {
-                    if had_projection_schema {
-                        rebuild_projections_in(&transaction)?;
-                    } else {
-                        initialize_projection_watermark(&transaction)?;
-                        apply_pending_events(&transaction)?;
-                    }
-                    transaction.pragma_update(None, "user_version", PROJECTION_SCHEMA_VERSION)?;
-                }
-                PROJECTION_SCHEMA_VERSION => {
-                    apply_pending_events(&transaction)?;
-                }
-                other => {
-                    return Err(LedgerError::InvalidRecord(format!(
-                        "unsupported projection schema version {other}"
-                    )));
-                }
+            if !(0..=PROJECTION_SCHEMA_VERSION).contains(&projection_schema_version) {
+                return Err(LedgerError::InvalidRecord(format!(
+                    "unsupported projection schema version {projection_schema_version}"
+                )));
             }
+            // La creazione delle tabelle, l'adeguamento delle colonne e la nascita
+            // degli indici sono tre fasi distinte: un deposito nuovo crea tutto subito,
+            // un deposito vecchio deve prima aggiungere le colonne mancanti affinché
+            // gli indici possano agganciarsi, e un deposito aggiornato non tocca nulla.
+            create_projection_tables(&transaction)?;
+            initialize_projection_watermark(&transaction)?;
+            if projection_schema_version < PROJECTION_SCHEMA_VERSION {
+                migrate_v1_to_v2(&transaction)?;
+                transaction.pragma_update(None, "user_version", PROJECTION_SCHEMA_VERSION)?;
+            }
+            create_projection_indexes(&transaction)?;
+            apply_pending_events(&transaction)?;
             transaction.commit()?;
         }
         Ok(Self {
@@ -315,6 +321,8 @@ impl Ledger {
         record.said = completion.said.map(flow::truncate_said);
         record.failure_class = completion.failure_class;
         record.ended_at = Some(completion.ended_at);
+        record.bytes_seen = completion.bytes_seen;
+        record.bytes_discarded = completion.bytes_discarded;
         append_event(&transaction, &StoredEvent::StepClosed(record.clone()))?;
         transaction.commit()?;
         test_crash_after_close_event();
@@ -327,7 +335,7 @@ impl Ledger {
         let mut statement = connection.prepare(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
-                    failure_class, ended_at
+                    failure_class, ended_at, bytes_seen, bytes_discarded
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
@@ -349,6 +357,29 @@ impl Ledger {
                 step_id: row.get(1)?,
                 attempt: row.get(2)?,
                 epoch: u64_column(row, 3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn steps_with_discarded_output(&self) -> Result<Vec<DiscardedOutputStep>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT run_id, step_id, attempt, epoch, bytes_seen, bytes_discarded
+             FROM steps
+             WHERE bytes_discarded > 0
+             ORDER BY started_at, run_id, step_id, attempt",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let seen: i64 = row.get(4)?;
+            let discarded: i64 = row.get(5)?;
+            Ok(DiscardedOutputStep {
+                run_id: row.get(0)?,
+                step_id: row.get(1)?,
+                attempt: row.get(2)?,
+                epoch: u64_column(row, 3)?,
+                bytes_seen: seen as u64,
+                bytes_discarded: discarded as u64,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -599,6 +630,12 @@ fn create_event_schema(connection: &Connection) -> Result<(), LedgerError> {
 }
 
 fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> {
+    create_projection_tables(connection)?;
+    create_projection_indexes(connection)?;
+    Ok(())
+}
+
+fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS runs (
              run_id TEXT PRIMARY KEY,
@@ -612,7 +649,6 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
              started_at INTEGER NOT NULL,
              ended_at INTEGER
          );
-         CREATE INDEX IF NOT EXISTS runs_started_idx ON runs(started_at DESC);
          CREATE TABLE IF NOT EXISTS steps (
              run_id TEXT NOT NULL,
              step_id TEXT NOT NULL,
@@ -629,15 +665,11 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
              said TEXT,
              failure_class TEXT,
              ended_at INTEGER,
+             bytes_seen INTEGER,
+             bytes_discarded INTEGER,
              checkpointed INTEGER NOT NULL DEFAULT 0 CHECK(checkpointed IN (0, 1)),
              PRIMARY KEY (run_id, step_id, attempt)
          );
-         CREATE UNIQUE INDEX IF NOT EXISTS steps_epoch_idx
-             ON steps(run_id, step_id, epoch);
-         CREATE INDEX IF NOT EXISTS steps_failure_idx
-             ON steps(failure_class, outcome, ended_at DESC);
-         CREATE INDEX IF NOT EXISTS steps_attempt_relation_idx
-             ON steps(attempt_relation, started_at);
          CREATE TABLE IF NOT EXISTS model_calls (
              call_id TEXT PRIMARY KEY,
              run_id TEXT NOT NULL,
@@ -661,8 +693,6 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
              started_at INTEGER NOT NULL,
              ended_at INTEGER
          );
-         CREATE INDEX IF NOT EXISTS model_calls_run_idx
-             ON model_calls(run_id, step_id, started_at);
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
              run_id TEXT NOT NULL,
@@ -672,10 +702,6 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
              after_state TEXT NOT NULL,
              created_at INTEGER NOT NULL
          );
-         CREATE INDEX IF NOT EXISTS snapshots_run_idx
-             ON snapshots(run_id, step_id, phase);
-         CREATE UNIQUE INDEX IF NOT EXISTS snapshots_phase_idx
-             ON snapshots(run_id, IFNULL(step_id, ''), phase);
          CREATE TABLE IF NOT EXISTS projection_watermark (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
@@ -684,21 +710,58 @@ fn create_projection_schema(connection: &Connection) -> Result<(), LedgerError> 
     Ok(())
 }
 
-fn initialize_projection_watermark(connection: &Connection) -> Result<(), LedgerError> {
-    connection.execute(
-        "INSERT INTO projection_watermark (singleton, last_applied_seq) VALUES (1, 0)",
-        [],
+fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError> {
+    connection.execute_batch(
+        "CREATE INDEX IF NOT EXISTS runs_started_idx ON runs(started_at DESC);
+         CREATE UNIQUE INDEX IF NOT EXISTS steps_epoch_idx
+             ON steps(run_id, step_id, epoch);
+         CREATE INDEX IF NOT EXISTS steps_failure_idx
+             ON steps(failure_class, outcome, ended_at DESC);
+         CREATE INDEX IF NOT EXISTS steps_attempt_relation_idx
+             ON steps(attempt_relation, started_at);
+         CREATE INDEX IF NOT EXISTS steps_discarded_idx
+             ON steps(bytes_discarded, started_at);
+         CREATE INDEX IF NOT EXISTS model_calls_run_idx
+             ON model_calls(run_id, step_id, started_at);
+         CREATE INDEX IF NOT EXISTS snapshots_run_idx
+             ON snapshots(run_id, step_id, phase);
+         CREATE UNIQUE INDEX IF NOT EXISTS snapshots_phase_idx
+             ON snapshots(run_id, IFNULL(step_id, ''), phase);",
     )?;
     Ok(())
 }
 
-fn projection_schema_exists(connection: &Connection) -> Result<bool, LedgerError> {
-    Ok(connection.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sqlite_master
-         WHERE type = 'table' AND name = 'runs')",
+fn migrate_v1_to_v2(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
+    // La migrazione aggiunge le colonne opzionali introdotte nella versione 2
+    // senza invalidare le proiezioni esistenti né richiedere la rilettura
+    // del registro degli eventi.
+    if !column_exists(transaction, "steps", "bytes_seen")? {
+        transaction.execute("ALTER TABLE steps ADD COLUMN bytes_seen INTEGER", [])?;
+    }
+    if !column_exists(transaction, "steps", "bytes_discarded")? {
+        transaction.execute("ALTER TABLE steps ADD COLUMN bytes_discarded INTEGER", [])?;
+    }
+    Ok(())
+}
+
+fn column_exists(connection: &Connection, table: &str, column: &str) -> Result<bool, LedgerError> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn initialize_projection_watermark(connection: &Connection) -> Result<(), LedgerError> {
+    connection.execute(
+        "INSERT OR IGNORE INTO projection_watermark (singleton, last_applied_seq) VALUES (1, 0)",
         [],
-        |row| row.get(0),
-    )?)
+    )?;
+    Ok(())
 }
 
 fn drop_projection_schema(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
@@ -743,6 +806,7 @@ fn rebuild_projections_in(transaction: &Transaction<'_>) -> Result<(), LedgerErr
         project_event(transaction, &event)?;
         set_projection_watermark(transaction, seq)?;
     }
+    transaction.pragma_update(None, "user_version", PROJECTION_SCHEMA_VERSION)?;
     Ok(())
 }
 
@@ -915,8 +979,8 @@ fn project_step(
         "INSERT INTO steps
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
           attempt_relation, started_at, outcome, output, said, failure_class,
-          ended_at, checkpointed)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+          ended_at, bytes_seen, bytes_discarded, checkpointed)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
@@ -924,6 +988,7 @@ fn project_step(
           started_at=excluded.started_at,
           outcome=excluded.outcome, output=excluded.output, said=excluded.said,
           failure_class=excluded.failure_class, ended_at=excluded.ended_at,
+          bytes_seen=excluded.bytes_seen, bytes_discarded=excluded.bytes_discarded,
           checkpointed=excluded.checkpointed",
         params![
             record.run_id,
@@ -945,6 +1010,8 @@ fn project_step(
             record.said,
             record.failure_class,
             record.ended_at,
+            record.bytes_seen.map(|bytes| bytes as i64),
+            record.bytes_discarded.map(|bytes| bytes as i64),
             checkpointed,
         ],
     )?;
@@ -1030,6 +1097,8 @@ fn validate_started(record: &StepRecord) -> Result<(), LedgerError> {
         || record.said.is_some()
         || record.failure_class.is_some()
         || record.ended_at.is_some()
+        || record.bytes_seen.is_some()
+        || record.bytes_discarded.is_some()
     {
         return Err(LedgerError::InvalidRecord(
             "a started record contains closing fields".to_owned(),
@@ -1049,7 +1118,7 @@ fn read_step(
         .query_row(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
-                    failure_class, ended_at
+                    failure_class, ended_at, bytes_seen, bytes_discarded
              FROM steps
              WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
             params![run_id, step_id, attempt, padded_u64(epoch)],
@@ -1078,6 +1147,8 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let attempt_relation: Option<String> = row.get(8)?;
     let outcome: Option<String> = row.get(10)?;
     let output: Option<String> = row.get(11)?;
+    let bytes_seen: Option<i64> = row.get(15)?;
+    let bytes_discarded: Option<i64> = row.get(16)?;
     Ok(StepRecord {
         run_id: row.get(0)?,
         step_id: row.get(1)?,
@@ -1103,6 +1174,8 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         said: row.get(12)?,
         failure_class: row.get(13)?,
         ended_at: row.get(14)?,
+        bytes_seen: bytes_seen.map(|b| b as u64),
+        bytes_discarded: bytes_discarded.map(|b| b as u64),
     })
 }
 
@@ -1188,7 +1261,7 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
-        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,checkpointed",
+        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,checkpointed",
         "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
