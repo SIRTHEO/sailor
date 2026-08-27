@@ -1,0 +1,13 @@
+[package]
+name = "models"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+
+[dependencies]
+notte = { path = "../notte" }
+serde_json.workspace = true
+
+[[bin]]
+name = "models"
+path = "src/main.rs"
