@@ -12,6 +12,9 @@ pub enum ValueSchema {
     Boolean,
     Number,
     String,
+    OneOf {
+        values: Vec<Value>,
+    },
     Array {
         items: Box<ValueSchema>,
     },
@@ -42,6 +45,19 @@ impl ValueSchema {
             | (ValueSchema::Boolean, ValueSchema::Boolean)
             | (ValueSchema::Number, ValueSchema::Number)
             | (ValueSchema::String, ValueSchema::String) => true,
+            (ValueSchema::Null, ValueSchema::OneOf { values }) => values.iter().all(Value::is_null),
+            (ValueSchema::Boolean, ValueSchema::OneOf { values }) => {
+                values.iter().all(Value::is_boolean)
+            }
+            (ValueSchema::Number, ValueSchema::OneOf { values }) => {
+                values.iter().all(Value::is_number)
+            }
+            (ValueSchema::String, ValueSchema::OneOf { values }) => {
+                values.iter().all(Value::is_string)
+            }
+            (ValueSchema::OneOf { values: wanted }, ValueSchema::OneOf { values: actual }) => {
+                actual.iter().all(|value| wanted.contains(value))
+            }
             (ValueSchema::Array { items: wanted }, ValueSchema::Array { items: actual }) => {
                 wanted.accepts(actual)
             }
@@ -90,6 +106,11 @@ impl ValueSchema {
             ValueSchema::Boolean if value.is_boolean() => Ok(()),
             ValueSchema::Number if value.is_number() => Ok(()),
             ValueSchema::String if value.is_string() => Ok(()),
+            ValueSchema::OneOf { values } if values.contains(value) => Ok(()),
+            ValueSchema::OneOf { values } => Err(SchemaError {
+                path,
+                expected: format!("one of {}; found {}", Value::Array(values.clone()), value),
+            }),
             ValueSchema::Array { items } => {
                 let values = value.as_array().ok_or_else(mismatch)?;
                 for (index, item) in values.iter().enumerate() {
@@ -134,6 +155,7 @@ impl ValueSchema {
             ValueSchema::Boolean => "boolean",
             ValueSchema::Number => "number",
             ValueSchema::String => "string",
+            ValueSchema::OneOf { .. } => "one of the declared values",
             ValueSchema::Array { .. } => "array",
             ValueSchema::Object { .. } => "object",
         }
@@ -147,3 +169,24 @@ impl Display for SchemaError {
 }
 
 impl Error for SchemaError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn closed_set_rejects_and_names_the_found_value() {
+        let schema = ValueSchema::OneOf {
+            values: vec![json!("keep"), json!("remove")],
+        };
+
+        let error = schema
+            .validate(&json!("remvoe"))
+            .expect_err("valore ignoto");
+        let message = error.to_string();
+        assert!(message.contains("remvoe"), "{message}");
+        assert!(message.contains("keep"), "{message}");
+        assert!(message.contains("remove"), "{message}");
+    }
+}
