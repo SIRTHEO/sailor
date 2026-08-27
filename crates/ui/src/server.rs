@@ -170,4 +170,20 @@ mod tests {
     fn an_empty_line_is_rejected() {
         assert_eq!(parse_request_line(""), None);
     }
+
+    #[test]
+    fn the_embedded_page_has_live_refresh_and_history_controls() {
+        assert!(INDEX_HTML.contains("id=\"refresh-toggle\""));
+        assert!(INDEX_HTML.contains("refreshEveryMs = 5000"));
+        assert!(INDEX_HTML.contains("window.scrollTo(scrollPosition.left, scrollPosition.top)"));
+        assert!(INDEX_HTML.contains("id=\"status-filter\""));
+        assert!(INDEX_HTML.contains("id=\"kind-filter\""));
+        assert!(INDEX_HTML.contains("id=\"sort-order\""));
+    }
+
+    #[test]
+    fn the_embedded_page_marks_missing_ledger_counts_as_unknown() {
+        assert!(INDEX_HTML.contains("I conteggi non sono ancora noti"));
+        assert!(!INDEX_HTML.contains("://"), "la pagina non deve caricare risorse esterne");
+    }
 }

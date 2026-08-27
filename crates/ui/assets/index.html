@@ -3,249 +3,515 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sailor — flussi</title>
+<title>Sailor — plancia dei flussi</title>
 <style>
   :root {
-    --bg: #f6f6f4;
-    --fg: #1c1d20;
-    --muted: #5b5f66;
-    --card: #ffffff;
-    --border: #e1e1de;
-    --accent: #2f6f4f;
-    --warn: #a8402f;
-    --open: #9a6b12;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light dark;
+    --bg: #f2f0e9;
+    --fg: #20241f;
+    --muted: #656b63;
+    --card: #fbfaf6;
+    --raised: #ffffff;
+    --border: #d8d7ce;
+    --accent: #146447;
+    --accent-soft: #dcebe3;
+    --warn: #92531b;
+    --warn-soft: #f7e8ce;
+    --danger: #a13930;
+    --danger-soft: #f6dedb;
+    --shadow: 0 10px 30px rgba(34, 38, 31, 0.06);
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    --sans: Avenir, "Avenir Next", Futura, "Trebuchet MS", sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #15161a;
-      --fg: #eceef2;
-      --muted: #9aa0ab;
-      --card: #1d1f24;
-      --border: #2b2e35;
-      --accent: #63c294;
-      --warn: #e2897a;
-      --open: #e0b45c;
+      --bg: #121814;
+      --fg: #edf1ea;
+      --muted: #a5aea4;
+      --card: #19211c;
+      --raised: #202a24;
+      --border: #354039;
+      --accent: #78d2a8;
+      --accent-soft: #193e2e;
+      --warn: #efb464;
+      --warn-soft: #3d2d19;
+      --danger: #f29a91;
+      --danger-soft: #452521;
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
     }
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    padding: 2rem 1.25rem 4rem;
-    background: var(--bg);
+    background:
+      linear-gradient(90deg, color-mix(in srgb, var(--border) 35%, transparent) 1px, transparent 1px) 0 0 / 3.5rem 3.5rem,
+      linear-gradient(color-mix(in srgb, var(--border) 30%, transparent) 1px, transparent 1px) 0 0 / 3.5rem 3.5rem,
+      var(--bg);
     color: var(--fg);
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font: 15px/1.5 var(--sans);
   }
-  main { max-width: 68rem; margin: 0 auto; }
-  header { margin-bottom: 2rem; }
-  h1 { font-size: 1.4rem; margin: 0 0 0.25rem; }
-  .sub { color: var(--muted); font-size: 0.85rem; font-family: var(--mono); }
-  h2 { font-size: 1rem; margin: 0 0 0.75rem; }
-  section { margin-bottom: 2.25rem; }
-  .card {
+  button, select { font: inherit; }
+  button:focus-visible, select:focus-visible, summary:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--accent) 50%, transparent);
+    outline-offset: 2px;
+  }
+  main { width: min(76rem, calc(100% - 2rem)); margin: 0 auto; padding: 2rem 0 5rem; }
+  header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.35rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--fg);
+  }
+  .eyebrow {
+    margin: 0 0 0.2rem;
+    color: var(--accent);
+    font: 700 0.7rem/1 var(--mono);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0; font-size: clamp(1.65rem, 4vw, 2.4rem); line-height: 1.05; letter-spacing: -0.035em; }
+  h2 { margin: 0; font-size: 1.05rem; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font: 0.78rem/1.45 var(--mono); }
+  .refresh-panel { display: flex; align-items: center; gap: 0.75rem; text-align: right; }
+  .refresh-copy { min-width: 12rem; }
+  .refresh-copy span { display: block; }
+  .refresh-copy [data-role="refresh-state"] { color: var(--fg); font-weight: 700; }
+  .refresh-button {
+    min-width: 6.8rem;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--raised);
+    color: var(--fg);
+    cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .refresh-button:hover { border-color: var(--accent); }
+  .refresh-button[aria-pressed="true"] { background: var(--warn-soft); border-color: var(--warn); }
+  section { margin-top: 2.2rem; }
+  .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
+  .section-index { color: var(--muted); font: 0.72rem var(--mono); }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(15rem, 1.4fr);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 14px;
     background: var(--card);
+    box-shadow: var(--shadow);
+  }
+  .metric { min-height: 8.3rem; padding: 1rem; border-right: 1px solid var(--border); }
+  .metric:last-child { border-right: 0; }
+  .metric-label { display: block; color: var(--muted); font: 0.69rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+  .metric-value { display: block; margin-top: 0.45rem; font-size: clamp(1.7rem, 4vw, 2.45rem); font-weight: 700; line-height: 1; }
+  .metric-note { display: block; margin-top: 0.55rem; color: var(--muted); font-size: 0.77rem; }
+  .metric.danger { box-shadow: inset 0 4px 0 var(--danger); }
+  .model-list { margin: 0.65rem 0 0; padding: 0; list-style: none; font: 0.76rem var(--mono); }
+  .model-list li { display: flex; justify-content: space-between; gap: 0.75rem; margin-top: 0.35rem; }
+  .card {
+    position: relative;
+    margin-bottom: 0.75rem;
+    padding: 1rem 1.1rem;
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 1rem 1.1rem;
-    margin-bottom: 0.75rem;
+    background: var(--card);
+    box-shadow: var(--shadow);
   }
-  .empty { color: var(--muted); font-style: italic; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-  th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
-  code, .mono { font-family: var(--mono); font-size: 0.85em; }
+  .card.attention { padding-left: 1.35rem; }
+  .card.attention::before {
+    content: "";
+    position: absolute;
+    inset: -1px auto -1px -1px;
+    width: 0.4rem;
+    border-radius: 10px 0 0 10px;
+    background: var(--danger);
+  }
+  .card.stale::before { background: repeating-linear-gradient(135deg, var(--warn) 0 5px, transparent 5px 9px); }
+  .empty { margin: 0; padding: 1rem; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted); font-style: italic; background: var(--card); }
+  .mono, code { font-family: var(--mono); font-size: 0.88em; }
   .badge {
-    display: inline-block;
-    padding: 0.05rem 0.45rem;
-    border-radius: 999px;
-    font-size: 0.72rem;
-    font-family: var(--mono);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.12rem 0.12rem 0.12rem 0;
+    padding: 0.12rem 0.48rem;
     border: 1px solid var(--border);
+    border-radius: 999px;
+    font: 700 0.68rem var(--mono);
   }
-  .badge.open { color: var(--open); border-color: var(--open); }
-  .badge.broke { color: var(--warn); border-color: var(--warn); }
-  .badge.went { color: var(--accent); border-color: var(--accent); }
-  ul.steps { margin: 0; padding-left: 1.1rem; }
-  ul.steps li { margin-bottom: 0.2rem; }
+  .badge::before { content: "•"; }
+  .badge.open { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+  .badge.broke { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+  .badge.went { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .badge.retry::before { content: "↻"; }
+  .badge.retry { border-radius: 3px; color: var(--warn); border-color: var(--warn); }
+  .flow-steps, .steps { margin: 0.6rem 0 0; padding-left: 1.2rem; }
+  .flow-steps li, .steps li { margin-bottom: 0.32rem; }
+  .open-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  .open-age { font-weight: 700; color: var(--warn); }
+  .filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(10rem, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 0.9rem;
+    padding: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+  }
+  .filters label { display: grid; gap: 0.3rem; color: var(--muted); font: 0.7rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; }
+  .filters select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--raised); color: var(--fg); }
+  .execution-head { display: grid; grid-template-columns: minmax(11rem, 1.2fr) minmax(8rem, 0.7fr) minmax(11rem, 1fr) minmax(12rem, 1fr); gap: 1rem; align-items: start; }
+  .execution-head > div { min-width: 0; }
+  .execution-title { overflow-wrap: anywhere; }
+  .status-label { font-weight: 700; }
+  .error { margin-top: 0.3rem; color: var(--danger); font-size: 0.82rem; }
+  .token-line { font: 0.75rem/1.5 var(--mono); }
+  .models { margin: 0.75rem 0 0; padding-top: 0.65rem; border-top: 1px solid var(--border); }
+  details { margin-top: 0.7rem; }
   details summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; }
-  .flow-steps { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.85rem; }
-  .flow-steps li { margin-bottom: 0.3rem; }
+  .table-wrap { overflow-x: auto; margin-top: 0.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font: 700 0.67rem var(--mono); letter-spacing: 0.05em; text-transform: uppercase; }
+  .results-note { color: var(--muted); font: 0.74rem var(--mono); }
+  @media (max-width: 900px) {
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    .metric { border-bottom: 1px solid var(--border); }
+    .metric:nth-child(2n) { border-right: 0; }
+    .metric:last-child { grid-column: 1 / -1; border-bottom: 0; }
+    .execution-head { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 600px) {
+    main { width: min(100% - 1.2rem, 76rem); padding-top: 1rem; }
+    header { align-items: start; flex-direction: column; }
+    .refresh-panel { width: 100%; justify-content: space-between; text-align: left; }
+    .refresh-copy { min-width: 0; }
+    .summary, .filters, .execution-head { grid-template-columns: 1fr; }
+    .metric, .metric:nth-child(2n) { border-right: 0; border-bottom: 1px solid var(--border); }
+    .metric:last-child { grid-column: auto; }
+  }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <h1>Sailor — flussi</h1>
-    <div class="sub" id="subtitle">caricamento…</div>
+    <div>
+      <p class="eyebrow">Plancia locale · sola lettura</p>
+      <h1>Sailor / flussi</h1>
+      <div class="sub" id="subtitle" aria-live="polite">caricamento…</div>
+    </div>
+    <div class="refresh-panel">
+      <div class="refresh-copy sub">
+        <span data-role="refresh-state">aggiornamento automatico</span>
+        <span id="refresh-detail">ogni 5 secondi</span>
+      </div>
+      <button class="refresh-button" id="refresh-toggle" type="button" aria-pressed="false">Metti in pausa</button>
+    </div>
   </header>
 
-  <section>
-    <h2>I flussi che esistono</h2>
+  <section aria-labelledby="summary-title">
+    <div class="section-heading"><h2 id="summary-title">Oggi, in breve</h2><span class="section-index">00 / quadro</span></div>
+    <div class="summary" id="summary" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="flows-title">
+    <div class="section-heading"><h2 id="flows-title">I flussi che esistono</h2><span class="section-index">01 / registro</span></div>
     <div id="flows"></div>
   </section>
 
-  <section>
-    <h2>Stato di adesso</h2>
+  <section aria-labelledby="open-title">
+    <div class="section-heading"><h2 id="open-title">Stato di adesso</h2><span class="section-index">02 / in corso</span></div>
     <div id="open-steps"></div>
   </section>
 
-  <section>
-    <h2>Storia delle esecuzioni</h2>
+  <section aria-labelledby="executions-title">
+    <div class="section-heading"><h2 id="executions-title">Storia delle esecuzioni</h2><span class="results-note" id="results-note"></span></div>
+    <div class="filters">
+      <label>Stato
+        <select id="status-filter"><option value="all">Tutti gli stati</option><option value="went">Andate bene</option><option value="broke">Da controllare</option><option value="open">In corso</option></select>
+      </label>
+      <label>Genere
+        <select id="kind-filter"><option value="all">Tutti i generi</option></select>
+      </label>
+      <label>Ordine
+        <select id="sort-order"><option value="newest">Più recenti</option><option value="oldest">Meno recenti</option><option value="attention">Prima quelle da controllare</option></select>
+      </label>
+    </div>
     <div id="executions"></div>
   </section>
 </main>
 
 <script>
+const refreshEveryMs = 5000;
+const staleAfterSeconds = 15 * 60;
+let latestPayload = null;
+let refreshTimer = null;
+let countdownTimer = null;
+let nextRefreshAt = 0;
+let isPaused = false;
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 }
 
-function fmtWhen(seconds) {
-  if (seconds === null || seconds === undefined) return '—';
-  return new Date(seconds * 1000).toLocaleString();
+function formatNumber(value) {
+  if (value === null || value === undefined) return 'non noto';
+  return new Intl.NumberFormat('it-IT').format(value);
 }
 
-function fmtDuration(seconds) {
+function formatRelative(seconds) {
+  if (seconds === null || seconds === undefined) return 'momento non noto';
+  const difference = seconds - Math.floor(Date.now() / 1000);
+  const absolute = Math.abs(difference);
+  let unit = 'second';
+  let divisor = 1;
+  if (absolute >= 86400) { unit = 'day'; divisor = 86400; }
+  else if (absolute >= 3600) { unit = 'hour'; divisor = 3600; }
+  else if (absolute >= 60) { unit = 'minute'; divisor = 60; }
+  const amount = Math.round(difference / divisor);
+  return new Intl.RelativeTimeFormat('it', { numeric: 'auto' }).format(amount, unit);
+}
+
+function formatExact(seconds) {
+  if (seconds === null || seconds === undefined) return 'momento non noto';
+  return new Date(seconds * 1000).toLocaleString('it-IT');
+}
+
+function formatDuration(seconds) {
   if (seconds === null || seconds === undefined) return 'in corso';
-  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? 'o' : 'i'}`;
   const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${rest}s`;
+  if (minutes < 60) return `${minutes} minut${minutes === 1 ? 'o' : 'i'}`;
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m`;
+  if (hours < 24) return `${hours} or${hours === 1 ? 'a' : 'e'} ${minutes % 60} min`;
+  const days = Math.floor(hours / 24);
+  return `${days} giorn${days === 1 ? 'o' : 'i'} ${hours % 24} h`;
 }
 
-function fmtCost(micros) {
-  return `$${(micros / 1_000_000).toFixed(4)}`;
+function formatCost(micros) {
+  if (micros === null || micros === undefined) return 'costo non noto';
+  return `${(micros / 1_000_000).toLocaleString('it-IT', { style: 'currency', currency: 'USD', minimumFractionDigits: 4 })}`;
 }
 
-function fmtTokens(totals) {
-  return `${totals.input_tokens} in · ${totals.output_tokens} out · ${totals.cached_tokens} cache`;
+function formatTokens(totals) {
+  if (!totals) return 'token non noti';
+  return `${formatNumber(totals.input_tokens)} in · ${formatNumber(totals.output_tokens)} out · ${formatNumber(totals.cached_tokens)} cache`;
+}
+
+function executionNeedsAttention(execution) {
+  return Boolean(execution.error || execution.steps_broke > 0 || ['failed', 'broke', 'error'].includes(execution.status));
+}
+
+function executionIsOpen(execution) {
+  return execution.steps_open.length > 0 || ['running', 'open'].includes(execution.status);
+}
+
+function isToday(seconds) {
+  const date = new Date(seconds * 1000);
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+}
+
+function renderSummary(payload) {
+  const element = document.getElementById('summary');
+  if (!payload.ledger_present) {
+    element.innerHTML = '<div class="metric" style="grid-column:1/-1"><span class="metric-label">Deposito assente</span><strong class="metric-value">Nessun dato</strong><span class="metric-note">I conteggi non sono ancora noti: il deposito non è mai stato creato.</span></div>';
+    return;
+  }
+  const today = payload.executions.filter(execution => isToday(execution.started_at));
+  const went = today.filter(execution => !executionNeedsAttention(execution) && !executionIsOpen(execution) && execution.status === 'succeeded').length;
+  const broke = today.filter(executionNeedsAttention).length;
+  const totals = today.reduce((sum, execution) => {
+    sum.input += execution.tokens.input_tokens;
+    sum.output += execution.tokens.output_tokens;
+    sum.cached += execution.tokens.cached_tokens;
+    return sum;
+  }, { input: 0, output: 0, cached: 0 });
+  const models = new Map();
+  today.forEach(execution => Object.entries(execution.tokens_by_model).forEach(([model, tokens]) => {
+    const total = models.get(model) || { input: 0, output: 0, cached: 0 };
+    total.input += tokens.input_tokens;
+    total.output += tokens.output_tokens;
+    total.cached += tokens.cached_tokens;
+    models.set(model, total);
+  }));
+  const modelRows = [...models.entries()].map(([model, tokens]) => `<li><code>${escapeHtml(model)}</code><span>${formatNumber(tokens.input + tokens.output)} token</span></li>`).join('');
+  element.innerHTML = `
+    <div class="metric"><span class="metric-label">Esecuzioni</span><strong class="metric-value">${formatNumber(today.length)}</strong><span class="metric-note">avviate oggi</span></div>
+    <div class="metric"><span class="metric-label">Andate bene</span><strong class="metric-value">${formatNumber(went)}</strong><span class="metric-note">concluse senza rotture</span></div>
+    <div class="metric ${broke ? 'danger' : ''}"><span class="metric-label">Da controllare</span><strong class="metric-value">${formatNumber(broke)}</strong><span class="metric-note">rotte o con errore</span></div>
+    <div class="metric"><span class="metric-label">Token</span><strong class="metric-value">${formatNumber(totals.input + totals.output)}</strong><span class="metric-note">${formatNumber(totals.input)} in · ${formatNumber(totals.output)} out · ${formatNumber(totals.cached)} cache</span></div>
+    <div class="metric"><span class="metric-label">Per modello</span>${modelRows ? `<ul class="model-list">${modelRows}</ul>` : '<span class="metric-note">Nessuna chiamata al modello oggi.</span>'}</div>`;
 }
 
 function renderFlows(flows) {
-  const el = document.getElementById('flows');
+  const element = document.getElementById('flows');
   if (flows.length === 0) {
-    el.innerHTML = '<p class="empty">Nessun flusso è registrato in questa pagina: nessun file *.json in --flows-dir descrive ancora un flow::Graph.</p>';
+    element.innerHTML = '<p class="empty">Nessun flusso è registrato: nessun file <code>*.json</code> descrive ancora un grafo.</p>';
     return;
   }
-  el.innerHTML = flows.map(flow => `
-    <div class="card">
+  element.innerHTML = flows.map(flow => `
+    <article class="card">
       <strong class="mono">${escapeHtml(flow.name)}</strong>
-      <ul class="flow-steps">
-        ${flow.steps.map(step => `
-          <li>
-            <code>${escapeHtml(step.id)}</code>
-            ${step.deps.length ? `← ${step.deps.map(d => `<code>${escapeHtml(d)}</code>`).join(', ')}` : '<span class="mono">(radice)</span>'}
-            — azione <code>${escapeHtml(step.action)}</code>,
-            ${step.max_attempts} tentativ${step.max_attempts === 1 ? 'o' : 'i'}
-            ${step.conditional ? '<span class="badge open">condizionale</span>' : ''}
-          </li>
-        `).join('')}
+      <ul class="flow-steps">${flow.steps.map(step => `
+        <li><code>${escapeHtml(step.id)}</code> ${step.deps.length ? `← ${step.deps.map(dependency => `<code>${escapeHtml(dependency)}</code>`).join(', ')}` : '<span class="mono">(radice)</span>'} — azione <code>${escapeHtml(step.action)}</code>, ${step.max_attempts} tentativ${step.max_attempts === 1 ? 'o' : 'i'} ${step.conditional ? '<span class="badge open">condizionale</span>' : ''}</li>`).join('')}
       </ul>
-    </div>
-  `).join('');
+    </article>`).join('');
 }
 
 function renderOpenSteps(payload) {
-  const el = document.getElementById('open-steps');
+  const element = document.getElementById('open-steps');
   if (!payload.ledger_present) {
-    el.innerHTML = `<p class="empty">Il deposito <code class="mono">${escapeHtml(payload.ledger_dir)}</code> non esiste ancora: nessun flusso è mai girato su questa macchina.</p>`;
+    element.innerHTML = `<p class="empty">Il deposito <code>${escapeHtml(payload.ledger_dir)}</code> non esiste ancora: nessun flusso è mai girato su questa macchina.</p>`;
     return;
   }
-  const withOpen = payload.executions.filter(e => e.steps_open.length > 0);
-  if (withOpen.length === 0) {
-    el.innerHTML = '<p class="empty">Nessun passo è aperto adesso.</p>';
+  const openExecutions = payload.executions.filter(execution => execution.steps_open.length > 0);
+  if (openExecutions.length === 0) {
+    element.innerHTML = '<p class="empty">Nessun passo è aperto adesso.</p>';
     return;
   }
-  el.innerHTML = withOpen.map(execution => `
-    <div class="card">
-      <strong class="mono">${escapeHtml(execution.run_id)}</strong>
-      <span class="sub">${escapeHtml(execution.kind)} · ${escapeHtml(execution.entity)}</span>
-      <ul class="steps">
-        ${execution.steps_open.map(step => `
-          <li><code>${escapeHtml(step.step_id)}</code> — tentativo ${step.attempt}, aperto da ${fmtDuration(step.open_for_secs)}</li>
-        `).join('')}
-      </ul>
-    </div>
-  `).join('');
+  element.innerHTML = openExecutions.map(execution => {
+    const isStale = execution.steps_open.some(step => step.open_for_secs >= staleAfterSeconds);
+    return `<article class="card ${isStale ? 'attention stale' : ''}">
+      <div class="open-head"><div><strong class="mono">${escapeHtml(execution.run_id)}</strong><div class="sub">${escapeHtml(execution.kind)} · ${escapeHtml(execution.entity)}</div></div>${isStale ? '<span class="badge open">aperto da molto</span>' : ''}</div>
+      <ul class="steps">${execution.steps_open.map(step => `<li><code>${escapeHtml(step.step_id)}</code> — tentativo ${step.attempt} · <span class="open-age">aperto da ${formatDuration(step.open_for_secs)}</span> ${step.attempt > 1 ? '<span class="badge retry">tentativo ripetuto</span>' : ''}</li>`).join('')}</ul>
+    </article>`;
+  }).join('');
+}
+
+function updateKindFilter(executions) {
+  const select = document.getElementById('kind-filter');
+  const selected = select.value;
+  const kinds = [...new Set(executions.map(execution => execution.kind))].sort((left, right) => left.localeCompare(right, 'it'));
+  select.innerHTML = '<option value="all">Tutti i generi</option>' + kinds.map(kind => `<option value="${escapeHtml(kind)}">${escapeHtml(kind)}</option>`).join('');
+  select.value = kinds.includes(selected) ? selected : 'all';
 }
 
 function renderExecutions(payload) {
-  const el = document.getElementById('executions');
+  const element = document.getElementById('executions');
+  const note = document.getElementById('results-note');
   if (!payload.ledger_present) {
-    el.innerHTML = `<p class="empty">Il deposito <code class="mono">${escapeHtml(payload.ledger_dir)}</code> non esiste: nessuna esecuzione da mostrare finché un flusso non gira almeno una volta.</p>`;
+    note.textContent = '';
+    element.innerHTML = `<p class="empty">Il deposito <code>${escapeHtml(payload.ledger_dir)}</code> non esiste: nessuna esecuzione da mostrare finché un flusso non gira almeno una volta.</p>`;
     return;
   }
+  const status = document.getElementById('status-filter').value;
+  const kind = document.getElementById('kind-filter').value;
+  const order = document.getElementById('sort-order').value;
+  let executions = payload.executions.filter(execution => {
+    const matchesKind = kind === 'all' || execution.kind === kind;
+    const matchesStatus = status === 'all' || (status === 'went' && execution.status === 'succeeded' && !executionNeedsAttention(execution)) || (status === 'broke' && executionNeedsAttention(execution)) || (status === 'open' && executionIsOpen(execution));
+    return matchesKind && matchesStatus;
+  });
+  executions.sort((left, right) => {
+    if (order === 'oldest') return left.started_at - right.started_at;
+    if (order === 'attention') return Number(executionNeedsAttention(right)) - Number(executionNeedsAttention(left)) || right.started_at - left.started_at;
+    return right.started_at - left.started_at;
+  });
+  note.textContent = `${executions.length} di ${payload.executions.length}`;
   if (payload.executions.length === 0) {
-    el.innerHTML = '<p class="empty">Il deposito esiste ma non contiene ancora nessuna esecuzione.</p>';
+    element.innerHTML = '<p class="empty">Il deposito esiste ma non contiene ancora nessuna esecuzione.</p>';
     return;
   }
-  const rows = payload.executions.map(execution => {
-    const models = Object.entries(execution.tokens_by_model)
-      .map(([model, totals]) => `<div><code>${escapeHtml(model)}</code>: ${fmtTokens(totals)} · ${fmtCost(totals.cost_micros)}</div>`)
-      .join('');
-    const calls = execution.calls.map(call => `
-      <tr>
-        <td class="mono">${escapeHtml(call.call_id)}</td>
-        <td>${escapeHtml(call.step_id ?? '—')}</td>
-        <td>${escapeHtml(call.purpose)}</td>
-        <td class="mono">${escapeHtml(call.requested_model)} → ${escapeHtml(call.actual_model)}</td>
-        <td>${fmtTokens(call)}</td>
-        <td>${fmtCost(call.cost_micros)}</td>
-      </tr>
-    `).join('');
-    return `
-      <div class="card">
-        <table style="margin-bottom:0.5rem">
-          <tbody>
-            <tr>
-              <td><strong class="mono">${escapeHtml(execution.run_id)}</strong><br><span class="sub">${escapeHtml(execution.kind)} · ${escapeHtml(execution.entity)}</span></td>
-              <td>${escapeHtml(execution.status)}${execution.error ? `<br><span style="color:var(--warn)">${escapeHtml(execution.error)}</span>` : ''}</td>
-              <td>iniziata ${fmtWhen(execution.started_at)}<br>durata ${fmtDuration(execution.duration_secs)}</td>
-              <td>
-                <span class="badge went">${execution.steps_went} andati</span>
-                ${execution.steps_broke ? `<span class="badge broke">${execution.steps_broke} rotti</span>` : ''}
-                ${execution.steps_open.length ? `<span class="badge open">${execution.steps_open.length} aperti</span>` : ''}
-              </td>
-              <td>${fmtTokens(execution.tokens)}<br>${fmtCost(execution.tokens.cost_micros)} totali</td>
-            </tr>
-          </tbody>
-        </table>
-        ${models ? `<div class="sub" style="margin-bottom:0.5rem">${models}</div>` : ''}
-        ${execution.calls.length ? `
-          <details>
-            <summary>${execution.calls.length} chiamate al modello</summary>
-            <table>
-              <thead><tr><th>Chiamata</th><th>Passo</th><th>Scopo</th><th>Modello</th><th>Token</th><th>Costo</th></tr></thead>
-              <tbody>${calls}</tbody>
-            </table>
-          </details>
-        ` : ''}
+  if (executions.length === 0) {
+    element.innerHTML = '<p class="empty">Nessuna esecuzione corrisponde ai filtri scelti.</p>';
+    return;
+  }
+  element.innerHTML = executions.map(execution => {
+    const needsAttention = executionNeedsAttention(execution);
+    const repeated = execution.steps_retried > 0;
+    const models = Object.entries(execution.tokens_by_model).map(([model, totals]) => `<div><code>${escapeHtml(model)}</code>: ${formatTokens(totals)} · ${formatCost(totals.cost_micros)}</div>`).join('');
+    const calls = execution.calls.map(call => `<tr><td class="mono">${escapeHtml(call.call_id)}</td><td>${escapeHtml(call.step_id ?? '—')}</td><td>${escapeHtml(call.purpose)}</td><td class="mono">${escapeHtml(call.requested_model)} → ${escapeHtml(call.actual_model)}</td><td>${formatTokens(call)}</td><td>${formatCost(call.cost_micros)}</td></tr>`).join('');
+    return `<article class="card ${needsAttention ? 'attention' : ''}">
+      <div class="execution-head">
+        <div class="execution-title"><strong class="mono">${escapeHtml(execution.run_id)}</strong><div class="sub">${escapeHtml(execution.kind)} · ${escapeHtml(execution.entity)}</div></div>
+        <div><span class="status-label">${escapeHtml(execution.status)}</span>${needsAttention ? '<div><span class="badge broke">da controllare</span></div>' : ''}${execution.error ? `<div class="error">${escapeHtml(execution.error)}</div>` : ''}</div>
+        <div><time title="${escapeHtml(formatExact(execution.started_at))}" datetime="${new Date(execution.started_at * 1000).toISOString()}">iniziata ${formatRelative(execution.started_at)}</time><div class="sub">durata ${formatDuration(execution.duration_secs)}</div></div>
+        <div><span class="badge went">${execution.steps_went} andati</span> ${execution.steps_broke ? `<span class="badge broke">${execution.steps_broke} rotti</span>` : ''} ${execution.steps_open.length ? `<span class="badge open">${execution.steps_open.length} aperti</span>` : ''} ${repeated ? `<span class="badge retry">${execution.steps_retried} ripetut${execution.steps_retried === 1 ? 'o' : 'i'}</span>` : ''}</div>
       </div>
-    `;
+      <div class="models"><div class="token-line">${formatTokens(execution.tokens)} · ${formatCost(execution.tokens.cost_micros)} totali</div>${models ? `<div class="sub">${models}</div>` : ''}</div>
+      ${execution.calls.length ? `<details><summary>${execution.calls.length} chiamate al modello</summary><div class="table-wrap"><table><thead><tr><th>Chiamata</th><th>Passo</th><th>Scopo</th><th>Modello</th><th>Token</th><th>Costo</th></tr></thead><tbody>${calls}</tbody></table></div></details>` : ''}
+    </article>`;
   }).join('');
-  el.innerHTML = rows;
+}
+
+function render(payload, updateKinds = true) {
+  renderSummary(payload);
+  renderFlows(payload.flows);
+  renderOpenSteps(payload);
+  if (updateKinds) updateKindFilter(payload.executions);
+  renderExecutions(payload);
+}
+
+function updateRefreshCopy() {
+  const state = document.querySelector('[data-role="refresh-state"]');
+  const detail = document.getElementById('refresh-detail');
+  if (isPaused) {
+    state.textContent = 'aggiornamento in pausa';
+    detail.textContent = 'i dati restano fermi';
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
+  state.textContent = 'aggiornamento automatico';
+  detail.textContent = `prossimo tra ${seconds} second${seconds === 1 ? 'o' : 'i'}`;
+}
+
+function scheduleRefresh() {
+  window.clearTimeout(refreshTimer);
+  nextRefreshAt = Date.now() + refreshEveryMs;
+  updateRefreshCopy();
+  refreshTimer = window.setTimeout(load, refreshEveryMs);
 }
 
 async function load() {
   const subtitle = document.getElementById('subtitle');
   try {
-    const response = await fetch('/api/dashboard');
+    const response = await fetch('/api/dashboard', { cache: 'no-store' });
     if (!response.ok) throw new Error(`risposta ${response.status}`);
     const payload = await response.json();
-    subtitle.textContent = `deposito: ${payload.ledger_dir} · aggiornato ${fmtWhen(payload.generated_at)}`;
-    renderFlows(payload.flows);
-    renderOpenSteps(payload);
-    renderExecutions(payload);
+    const scrollPosition = { left: window.scrollX, top: window.scrollY };
+    latestPayload = payload;
+    subtitle.textContent = `deposito: ${payload.ledger_dir} · aggiornato ${formatRelative(payload.generated_at)}`;
+    subtitle.title = `Aggiornato ${formatExact(payload.generated_at)}`;
+    render(payload);
+    window.scrollTo(scrollPosition.left, scrollPosition.top);
   } catch (error) {
-    subtitle.textContent = `non riesco a leggere /api/dashboard: ${error}`;
+    subtitle.textContent = `non riesco a leggere i dati: ${error.message || error}`;
   }
+  if (!isPaused) scheduleRefresh();
 }
+
+document.getElementById('refresh-toggle').addEventListener('click', event => {
+  isPaused = !isPaused;
+  event.currentTarget.setAttribute('aria-pressed', String(isPaused));
+  event.currentTarget.textContent = isPaused ? 'Riprendi' : 'Metti in pausa';
+  if (isPaused) window.clearTimeout(refreshTimer);
+  else load();
+  updateRefreshCopy();
+});
+
+['status-filter', 'kind-filter', 'sort-order'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+  if (latestPayload) renderExecutions(latestPayload);
+}));
+
+countdownTimer = window.setInterval(() => {
+  updateRefreshCopy();
+  if (latestPayload) {
+    document.getElementById('subtitle').textContent = `deposito: ${latestPayload.ledger_dir} · aggiornato ${formatRelative(latestPayload.generated_at)}`;
+    renderOpenSteps(latestPayload);
+  }
+}, 1000);
 
 load();
 </script>
