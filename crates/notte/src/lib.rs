@@ -16,6 +16,17 @@
 //! formato come leva per il giorno in cui si restringe di nuovo, ma oggi non
 //! decide niente da solo.
 
+/// Quanto una lavorazione disturba la macchina mentre gira — non quanto è
+/// importante. `peso: leggero` nel file dà `Light`; qualunque altro valore, o
+/// il campo assente, dà `Heavy`: la scelta prudente, perché una lavorazione
+/// che nessuno ha classificato non deve guadagnare accesso a una soglia più
+/// larga per distrazione.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Weight {
+    Light,
+    Heavy,
+}
+
 /// Un compito letto da un file `.task`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Task {
@@ -23,6 +34,8 @@ pub struct Task {
     pub perimeter: String,
     pub prompt: String,
     pub check: String,
+    /// Quanto disturba la macchina mentre gira: vedi `Weight`.
+    pub weight: Weight,
     /// Un compito che si ripete invece di consumarsi.
     ///
     /// PERCHÉ ESISTE. Nella notte fra il 25 e il 26/08/2026 la macchina è
@@ -45,8 +58,9 @@ pub enum ParsedTask {
     Malformed,
 }
 
-/// Legge i quattro campi da un file `.task`. `motore`, `prompt` e `verifica`
-/// sono obbligatori; `perimetro` no, perché non decide più niente da solo.
+/// Legge i campi da un file `.task`. `motore`, `prompt` e `verifica` sono
+/// obbligatori; `perimetro` no, perché non decide più niente da solo; `peso`
+/// nemmeno, e assente vale `Heavy` (vedi `Weight`).
 pub fn parse_task(text: &str) -> ParsedTask {
     let engine = meta_field(text, "motore");
     let perimeter = meta_field(text, "perimetro").unwrap_or_default();
@@ -54,6 +68,10 @@ pub fn parse_task(text: &str) -> ParsedTask {
         .map(|v| v.trim() == "ogni-notte")
         .unwrap_or(false);
     let last_run = meta_field(text, "ultima-esecuzione").filter(|v| !v.trim().is_empty());
+    let weight = match meta_field(text, "peso").as_deref() {
+        Some("leggero") => Weight::Light,
+        _ => Weight::Heavy,
+    };
     let prompt = block(text, "prompt");
     let check = block(text, "verifica");
     match (engine, prompt, check) {
@@ -65,6 +83,7 @@ pub fn parse_task(text: &str) -> ParsedTask {
                 perimeter,
                 prompt,
                 check,
+                weight,
                 recurring,
                 last_run,
             })
@@ -391,6 +410,10 @@ pub struct WatchThresholds {
     pub idle_seconds: u64,
     pub idle_load_ratio_cap: f64,
     pub busy_load_ratio_cap: f64,
+    /// Il tetto per una lavorazione leggera, che non guarda se la macchina è
+    /// ferma o occupata: il perché e i numeri stanno nel commento dentro
+    /// `decide()`.
+    pub light_load_ratio_cap: f64,
     pub mem_free_min_percent: u32,
     pub hourly_cap: u32,
     /// La finestra di notte, ore locali `[start, end)`: fuori da qui si
@@ -415,6 +438,9 @@ pub struct WatchInputs {
     pub in_cooldown: bool,
     /// L'ora locale corrente (0-23), per la finestra di notte.
     pub hour: u32,
+    /// Il peso della lavorazione in testa alla coda, già letta e giudicata
+    /// altrove: `decide()` non apre nessun file, guarda solo questo.
+    pub next_task_weight: Weight,
 }
 
 /// L'esito della decisione: o si esegue un compito, o si salta con un
@@ -465,14 +491,37 @@ pub fn decide(inputs: &WatchInputs, th: &WatchThresholds) -> WatchDecision {
     // (`idle_load_ratio_cap` contro `busy_load_ratio_cap`), non più a negare.
 
     let idle = inputs.idle_seconds >= th.idle_seconds;
-    let load_cap =
-        (if idle { th.idle_load_ratio_cap } else { th.busy_load_ratio_cap }) * inputs.core_count as f64;
+
+    // IL PESO ENTRA NEL TETTO — 26/08/2026, per misura.
+    //
+    // Tolto l'orologio, il freno vero è rimasto il carico — e con OGNI
+    // lavorazione pesata uguale, una sentinella che conta righe con `grep` e
+    // finisce in pochi secondi aspettava lo stesso tetto (3,0) di un compito
+    // che compila un workspace Rust. Il carico di oggi: mediana 7,88,
+    // massimo 43,66 su 223 misure — sotto 3,0 solo l'8% delle volte. Una
+    // leggera non deve aspettare la macchina ferma per girare.
+    //
+    // Il tetto largo è 1 volta il numero di core: la stessa lettura con cui
+    // si giudica un `load average` altrove — sotto al numero di core la
+    // macchina non sta mettendo lavoro in coda. Lascia passare la mediana
+    // (7,88 < 12 core reali) e ferma il picco (43,66 > 12). Una pesante
+    // tiene il tetto di oggi, invariato — idle/busy come prima.
+    let weight_word = match inputs.next_task_weight {
+        Weight::Light => "leggero",
+        Weight::Heavy => "pesante",
+    };
+    let load_cap = match inputs.next_task_weight {
+        Weight::Light => th.light_load_ratio_cap * inputs.core_count as f64,
+        Weight::Heavy => {
+            (if idle { th.idle_load_ratio_cap } else { th.busy_load_ratio_cap }) * inputs.core_count as f64
+        }
+    };
     let load_low = inputs.load1 <= load_cap;
     let mem_ok = inputs.mem_free_percent >= th.mem_free_min_percent;
 
     if !load_low {
         return WatchDecision::Skip(format!(
-            "carico alto ({:.2} su {:.1} concessi, {})",
+            "carico alto ({:.2} su {:.1} concessi a un compito {weight_word}, {})",
             inputs.load1,
             load_cap,
             if idle { "macchina ferma" } else { "macchina al lavoro" }
@@ -606,6 +655,31 @@ mod tests {
             panic!("doveva capirsi")
         };
         assert_eq!(t.perimeter, "");
+    }
+
+    /// Assente vale `Heavy`: la scelta prudente, senza classificazione niente
+    /// accesso a una soglia più larga.
+    #[test]
+    fn a_task_without_the_weight_field_defaults_to_heavy() {
+        let text = "motore: codex\n---prompt---\nx\n---verifica---\ntrue\n";
+        let ParsedTask::Ok(t) = parse_task(text) else { panic!("doveva capirsi") };
+        assert_eq!(t.weight, Weight::Heavy);
+    }
+
+    #[test]
+    fn the_peso_field_reads_light() {
+        let text = "motore: codex\npeso: leggero\n---prompt---\nx\n---verifica---\ntrue\n";
+        let ParsedTask::Ok(t) = parse_task(text) else { panic!("doveva capirsi") };
+        assert_eq!(t.weight, Weight::Light);
+    }
+
+    /// Un valore che non è esattamente `leggero` — compreso `pesante` scritto
+    /// per esteso — resta `Heavy`: solo un valore preciso allarga la soglia.
+    #[test]
+    fn an_unrecognised_peso_value_defaults_to_heavy() {
+        let text = "motore: codex\npeso: chissà\n---prompt---\nx\n---verifica---\ntrue\n";
+        let ParsedTask::Ok(t) = parse_task(text) else { panic!("doveva capirsi") };
+        assert_eq!(t.weight, Weight::Heavy);
     }
 
     #[test]
@@ -766,6 +840,7 @@ mod tests {
             idle_seconds: 600,
             idle_load_ratio_cap: 0.6,
             busy_load_ratio_cap: 0.25,
+            light_load_ratio_cap: 1.0,
             mem_free_min_percent: 20,
             hourly_cap: 6,
             window_start_hour: 1,
@@ -784,6 +859,7 @@ mod tests {
             queue_empty: false,
             in_cooldown: false,
             hour: 3, // dentro la finestra di notte di prova (1–7)
+            next_task_weight: Weight::Heavy, // il caso di oggi, senza classificazione
         }
     }
 
@@ -870,6 +946,78 @@ mod tests {
             panic!("doveva saltare")
         };
         assert!(reason.contains("memoria bassa"), "{reason}");
+    }
+
+    // ── il peso di una lavorazione ──────────────────────────────────────
+
+    /// LA MEDIANA VERA DI OGGI (26/08/2026): 7,88, ben oltre il tetto
+    /// stretto (3,0) ma sotto il tetto largo di una leggera (12,0 con 12
+    /// core). Una leggera non deve aspettare che la macchina sia ferma.
+    #[test]
+    fn a_light_task_at_todays_median_load_runs() {
+        let inputs = WatchInputs { next_task_weight: Weight::Light, load1: 7.88, ..good_inputs() };
+        assert_eq!(decide(&inputs, &thresholds()), WatchDecision::Run);
+    }
+
+    /// Lo stesso carico, con una pesante, resta un salto — e il motivo deve
+    /// dire il peso: senza, due giri identici che decidono diverso
+    /// sembrerebbero un capriccio.
+    #[test]
+    fn a_heavy_task_at_todays_median_load_skips_and_names_the_weight() {
+        let inputs = WatchInputs { next_task_weight: Weight::Heavy, load1: 7.88, ..good_inputs() };
+        let WatchDecision::Skip(reason) = decide(&inputs, &thresholds()) else {
+            panic!("doveva saltare")
+        };
+        assert!(reason.contains("carico alto"), "{reason}");
+        assert!(reason.contains("pesante"), "{reason}");
+    }
+
+    /// IL PICCO VERO DI OGGI: 43,66, oltre il tetto largo (12,0) — anche una
+    /// leggera si ferma davanti a una macchina davvero in ginocchio.
+    #[test]
+    fn a_light_task_at_todays_peak_load_skips() {
+        let inputs = WatchInputs { next_task_weight: Weight::Light, load1: 43.66, ..good_inputs() };
+        let WatchDecision::Skip(reason) = decide(&inputs, &thresholds()) else {
+            panic!("doveva saltare")
+        };
+        assert!(reason.contains("carico alto"), "{reason}");
+    }
+
+    /// Un compito senza il campo `peso` legge `Weight::Heavy` da
+    /// `parse_task` (vedi `a_task_without_the_weight_field_defaults_to_heavy`
+    /// più sotto): qui si prova che, arrivato fino a `decide()`, si comporta
+    /// come una pesante — stesso tetto stretto, stesso salto.
+    #[test]
+    fn a_task_without_the_weight_field_is_treated_as_heavy_by_decide() {
+        let text = "motore: codex\n---prompt---\nx\n---verifica---\ntrue\n";
+        let ParsedTask::Ok(t) = parse_task(text) else { panic!("doveva leggersi") };
+        assert_eq!(t.weight, Weight::Heavy);
+        let inputs = WatchInputs { next_task_weight: t.weight, load1: 7.88, ..good_inputs() };
+        let WatchDecision::Skip(reason) = decide(&inputs, &thresholds()) else {
+            panic!("senza classificazione un compito è pesante, e 7.88 supera il suo tetto")
+        };
+        assert!(reason.contains("pesante"), "{reason}");
+    }
+
+    /// La memoria resta un freno per tutti, leggere comprese: il salto qui
+    /// deve dire memoria, non carico.
+    #[test]
+    fn a_light_task_with_low_memory_skips_for_memory_not_load() {
+        let inputs = WatchInputs { next_task_weight: Weight::Light, mem_free_percent: 10, ..good_inputs() };
+        let WatchDecision::Skip(reason) = decide(&inputs, &thresholds()) else {
+            panic!("doveva saltare")
+        };
+        assert!(reason.contains("memoria bassa"), "{reason}");
+    }
+
+    /// Il tetto orario resta per tutti: una leggera non lo scavalca.
+    #[test]
+    fn a_light_task_still_stops_at_the_hourly_cap() {
+        let inputs = WatchInputs { next_task_weight: Weight::Light, tasks_this_hour: 6, ..good_inputs() };
+        let WatchDecision::Skip(reason) = decide(&inputs, &thresholds()) else {
+            panic!("doveva saltare")
+        };
+        assert!(reason.contains("tetto orario raggiunto"), "{reason}");
     }
 
     // ── la finestra oraria ──────────────────────────────────────────────
