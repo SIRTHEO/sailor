@@ -575,34 +575,19 @@ pub fn parse_mem_free_percent(output: &str) -> Option<u32> {
     line.split(':').nth(1)?.trim().trim_end_matches('%').parse().ok()
 }
 
-// ── la ricevuta (`in-corso/`) e il contatore tentativi ──────────────────
+// ── la ricevuta (`in-corso/`) ─────────────────────────────────────────
 // Un compito ucciso a metà motore lasciava prima solo il file in coda,
 // indistinguibile da uno mai toccato: tornava in cima senza memoria di
 // essere già stato provato, e con `KeepAlive` questo è un anello infinito.
+// La ricevuta resta (`release`/`sailor` la leggono dall'esterno per sapere
+// se il servizio è a metà di qualcosa: vedi `crates/release`), ma il
+// conteggio dei tentativi non vive più nel testo del compito — lo tiene il
+// deposito durevole del motore dei flussi, un tentativo per record.
 
-/// Oltre questa soglia di interruzioni il compito è avvelenato: non si
-/// ritenta più, finisce rosso in `fatti/`.
-pub const MAX_TASK_ATTEMPTS: u32 = 2;
-
-/// Quante volte questo compito è già stato preso in carico e interrotto
-/// (`tentativi: N` in testa al file). Assente vale zero: un compito appena
-/// arrivato in coda non ne ha ancora subita nessuna.
-pub fn attempts_field(text: &str) -> u32 {
-    meta_field(text, "tentativi").and_then(|s| s.parse().ok()).unwrap_or(0)
-}
-
-/// Scrive (o riscrive) `tentativi: N` in testa al testo: sta fuori dai
-/// blocchi `---prompt---`/`---verifica---`, quindi non ne altera il
-/// contenuto, e una chiamata ripetuta sostituisce il valore invece di
-/// accumulare righe.
-pub fn set_attempts_field(text: &str, attempts: u32) -> String {
-    let rest: String = text
-        .lines()
-        .filter(|l| !l.starts_with("tentativi:"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("tentativi: {attempts}\n{rest}\n")
-}
+/// Oltre questa soglia di tentativi il compito è avvelenato: il motore non
+/// ritenta più, e il passo finisce rosso in `fatti/`. È lo stesso
+/// `max_attempts` del passo "motore" nel grafo di `notte::main`.
+pub const MAX_TASK_ATTEMPTS: u32 = 3;
 
 /// Il nome di una ricevuta in `in-corso/` è `<nome-compito>.<pid>`: separa i
 /// due, o restituisce il nome intatto e `None` se non porta un suffisso
@@ -1117,23 +1102,7 @@ mod tests {
         assert_eq!(decide(&inputs, &thresholds()), WatchDecision::Run);
     }
 
-    // ── la ricevuta e il contatore tentativi ────────────────────────────
-
-    #[test]
-    fn attempts_default_to_zero_without_the_field() {
-        assert_eq!(attempts_field("motore: codex\n---prompt---\nx\n---verifica---\ntrue\n"), 0);
-    }
-
-    #[test]
-    fn attempts_round_trip_through_set_and_read() {
-        let text = "motore: codex\n---prompt---\nx\n---verifica---\ntrue\n";
-        let once = set_attempts_field(text, 1);
-        assert_eq!(attempts_field(&once), 1);
-        // Una seconda scrittura sostituisce, non accumula righe.
-        let twice = set_attempts_field(&once, 2);
-        assert_eq!(attempts_field(&twice), 2);
-        assert_eq!(twice.matches("tentativi:").count(), 1, "{twice}");
-    }
+    // ── la ricevuta ──────────────────────────────────────────────────────
 
     #[test]
     fn receipt_name_splits_the_pid_suffix() {
