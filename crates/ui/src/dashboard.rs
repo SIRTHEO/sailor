@@ -63,6 +63,7 @@ pub struct ExecutionView {
     pub steps_total: usize,
     pub steps_went: usize,
     pub steps_broke: usize,
+    pub steps_retried: usize,
     pub steps_open: Vec<OpenStep>,
     pub tokens: TokenTotals,
     pub tokens_by_model: BTreeMap<String, TokenTotals>,
@@ -92,8 +93,12 @@ pub fn summarize_run(
 
     let mut steps_went = 0;
     let mut steps_broke = 0;
+    let mut steps_retried = 0;
     let mut steps_open = Vec::new();
     for step in latest_by_step.values() {
+        if step.attempt > 1 {
+            steps_retried += 1;
+        }
         match step.outcome {
             Some(Outcome::Went) => steps_went += 1,
             Some(Outcome::Broke) => steps_broke += 1,
@@ -148,6 +153,7 @@ pub fn summarize_run(
         steps_total: latest_by_step.len(),
         steps_went,
         steps_broke,
+        steps_retried,
         steps_open,
         tokens,
         tokens_by_model,
@@ -246,6 +252,7 @@ mod tests {
         assert_eq!(view.steps_total, 1);
         assert_eq!(view.steps_went, 1);
         assert_eq!(view.steps_broke, 0);
+        assert_eq!(view.steps_retried, 1);
     }
 
     #[test]
