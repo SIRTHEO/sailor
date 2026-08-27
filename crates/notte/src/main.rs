@@ -1380,25 +1380,42 @@ fn run_watch(cfg: &Config) -> i32 {
         // mai girare.
         let today = today_now();
         let tasks = list_queued_tasks(&cfg.queue_dir, &today);
-        // Il peso si legge PRIMA di decidere, dalla stessa lavorazione che
-        // `execute_task` prenderebbe (la testa della coda già ordinata): un
-        // compito illeggibile o senza il campo `peso` conta come pesante,
-        // stessa prudenza di `parse_task`.
-        let next_task_weight = tasks
-            .first()
-            .and_then(|p| fs::read_to_string(p).ok())
-            .map(|text| match parse_task(&text) {
-                ParsedTask::Ok(t) => t.weight,
-                ParsedTask::Malformed => Weight::Heavy,
+        // IL PESO SI GUARDA SU TUTTA LA CODA, NON SULLA SOLA TESTA.
+        //
+        // Il difetto che questo ripara, misurato sul servizio vivo il
+        // 27/08/2026: il peso si leggeva dalla prima lavorazione dell'elenco
+        // ordinato, e quello diventava il peso dell'intero giro. La coda aveva
+        // dieci compiti leggeri su dodici, ma in testa — per ordine alfabetico,
+        // non per scelta di nessuno — stava `giudica-la-riparazione`, che è
+        // pesante. Risultato: il giro veniva giudicato pesante, la soglia si
+        // stringeva a quella dei pesanti, e con la macchina di Theo al lavoro
+        // **i dieci leggeri dietro non partivano mai**.
+        //
+        // Il peso serve esattamente a far passare il lavoro piccolo mentre la
+        // macchina è occupata. Deciderlo sulla testa lo annulla ogni volta che
+        // un pesante capita davanti, cioè per pura fortuna alfabetica.
+        let weighed: Vec<(PathBuf, Weight)> = tasks
+            .iter()
+            .map(|p| {
+                // Un compito illeggibile o senza il campo `peso` conta come
+                // pesante: stessa prudenza di `parse_task`.
+                let w = fs::read_to_string(p)
+                    .ok()
+                    .map(|text| match parse_task(&text) {
+                        ParsedTask::Ok(t) => t.weight,
+                        ParsedTask::Malformed => Weight::Heavy,
+                    })
+                    .unwrap_or(Weight::Heavy);
+                (p.clone(), w)
             })
-            .unwrap_or(Weight::Heavy);
+            .collect();
         let idle_seconds = measure_idle_seconds(cfg);
         let load1 = measure_load1(cfg);
         let mem_free_percent = measure_mem_free_percent(cfg);
         let core_count = measure_core_count(cfg);
         let hour = measure_hour(cfg);
 
-        let inputs = WatchInputs {
+        let inputs_for = |w: Weight| WatchInputs {
             idle_seconds,
             load1,
             mem_free_percent,
@@ -1407,11 +1424,32 @@ fn run_watch(cfg: &Config) -> i32 {
             queue_empty: tasks.is_empty(),
             in_cooldown: cooldown_until.is_some(),
             hour,
-            next_task_weight,
+            next_task_weight: w,
         };
         let idle_word = if idle_seconds >= th.idle_seconds { "si" } else { "no" };
 
-        match decide(&inputs, &th) {
+        // La prima lavorazione che le condizioni di adesso ammettono davvero.
+        // `decide` resta il solo giudice — gli si chiede solo una volta per
+        // peso, invece di una volta per la testa: gli altri freni (finestra,
+        // tetto orario, riposo dopo i fallimenti) non dipendono dal peso e
+        // quindi negano tutti i candidati insieme, come prima.
+        let chosen = weighed
+            .iter()
+            .find(|(_, w)| matches!(decide(&inputs_for(*w), &th), WatchDecision::Run))
+            .map(|(p, _)| p.clone());
+
+        // Quando non passa nessuno, la ragione da registrare è quella del
+        // compito in testa: è il candidato che chi legge il registro si aspetta
+        // di vedere nominato.
+        let decision = match &chosen {
+            Some(_) => WatchDecision::Run,
+            None => decide(
+                &inputs_for(weighed.first().map(|(_, w)| *w).unwrap_or(Weight::Heavy)),
+                &th,
+            ),
+        };
+
+        match decision {
             WatchDecision::Skip(reason) => {
                 let line = format!("idle={idle_word} carico={load1:.2} mem={mem_free_percent}% → salto: {reason}");
                 decision_log.record(line, &reason);
@@ -1421,7 +1459,7 @@ fn run_watch(cfg: &Config) -> i32 {
                     format!("idle={idle_word} carico={load1:.2} mem={mem_free_percent}% → eseguo"),
                     "__run__",
                 );
-                if let Some(path) = tasks.into_iter().next() {
+                if let Some(path) = chosen {
                     // La data si rilegge a ogni esecuzione: il ciclo resta
                     // acceso per giorni e la mezzanotte non lo riavvia.
                     let (report_path, report_day) =
