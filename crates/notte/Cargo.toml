@@ -4,10 +4,13 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# `flow`/`ledger` servono solo al ponte verso il deposito durevole
-# (`src/ledger_bridge.rs`), che sparisce quando `notte` diventa un flusso
-# vero: vedi la data di smontaggio in testa a quel file.
+# Il ciclo passa dal motore dei flussi: `flow` esegue il grafo di un compito,
+# `ledger` è il deposito durevole in cui scrive, `actions` porta le due
+# primitive che il passo usa (invocare un motore esterno, eseguire una
+# verifica con un tempo massimo) — riusabili da qualunque altro flusso.
 [dependencies]
+actions = { path = "../actions" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
+serde = { workspace = true }
 serde_json = { workspace = true }

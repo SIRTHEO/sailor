@@ -12,10 +12,14 @@
 //! UN 429 NON SI RITENTA A RAFFICA: conta nella quota di 20/minuto. Qui non
 //! esiste un ciclo di ritentativo — un 429 è semplicemente un rosso, come
 //! ogni altro errore del motore.
+//!
+//! IL CICLO PASSA DAL MOTORE (`flow`): la chiamata al motore esterno e la sua
+//! verifica sono un `flow::Graph` di un passo solo (`NotteTaskAction`, più in
+//! basso), eseguito da `flow::InProcessExecutor` con `ledger::Ledger` come
+//! deposito durevole. Le due primitive che quel passo usa — invocare un
+//! motore esterno, eseguire una verifica con un tempo massimo — vivono nel
+//! crate `actions`, riusabili da qualunque altro flusso.
 
-mod ledger_bridge;
-
-use ledger_bridge::LedgerHandle;
 use notte::{
     already_done_today, alert_markdown, contains_secret, enriched_path, parse_codex_tokens,
     parse_openrouter_body, resolve_bin, stamped_for_next_night,
@@ -23,10 +27,19 @@ use notte::{
 use notte::{parse_idle_seconds, parse_loadavg_1min, parse_mem_free_percent};
 use notte::{parse_task, prompt_over_cap, report_line, status_line};
 use notte::{decide, OpenRouterResult, Outcome, ParsedTask, WatchDecision, WatchInputs, WatchThresholds, Weight};
-use notte::{attempts_field, parse_lock_pid, process_exists, set_attempts_field, split_receipt_name, strip_receipt_suffix};
+use notte::{parse_lock_pid, process_exists, split_receipt_name, strip_receipt_suffix};
 use notte::MAX_TASK_ATTEMPTS;
+use flow::{
+    Action, ActionError, ActionOutcome, ActionRegistry, Decision, ExecutionRequest, Executor,
+    FlowError, Graph, InMemoryRecordStore, InProcessExecutor, ProcessProbe, RecordStore,
+    ReconciliationRequest, SharedState, Step, StepRecord, SystemClock, ValueSchema,
+};
+use ledger::Ledger;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -53,6 +66,10 @@ struct Config {
     // ── il lucchetto e la ricevuta (difetti 2 e 4 del 25/08) ─────────
     lock_path: PathBuf,
     in_progress_dir: PathBuf,
+    // Il deposito durevole del motore dei flussi: dove il passo "motore" di
+    // ogni compito registra intenzione ed esito. `NOTTE_LEDGER_DIR` resta
+    // sovrano per le prove, che non devono mai scrivere nel deposito vero.
+    ledger_dir: PathBuf,
     // ── le scadenze (difetto 3 del 25/08) ────────────────────────────
     codex_timeout_secs: u64,
     check_timeout_secs: u64,
@@ -132,6 +149,7 @@ impl Config {
         );
         let lock_path = env_or("NOTTE_LOCK_PATH", format!("{state_dir}/notte.lock"));
         let in_progress_dir = env_or("NOTTE_IN_PROGRESS_DIR", format!("{queue_dir}/in-corso"));
+        let ledger_dir = env_or("NOTTE_LEDGER_DIR", format!("{home}/.claude/state/flussi"));
         Config {
             queue_dir: PathBuf::from(queue_dir),
             done_dir: PathBuf::from(done_dir),
@@ -173,6 +191,7 @@ impl Config {
             last_output_path: PathBuf::from(last_output_path),
             lock_path: PathBuf::from(lock_path),
             in_progress_dir: PathBuf::from(in_progress_dir),
+            ledger_dir: PathBuf::from(ledger_dir),
             codex_timeout_secs: env_or("NOTTE_CODEX_TIMEOUT_SECS", "300".to_string())
                 .parse()
                 .unwrap_or(300),
@@ -380,58 +399,6 @@ impl Drop for CaffeineGuard {
     }
 }
 
-/// L'esito di un comando eseguito con un tetto di tempo. Niente `timeout(1)`:
-/// non esiste su questa macchina (difetto 3 del 25/08); il tetto è un ciclo
-/// di `try_wait` con `kill` alla scadenza.
-enum RunOutcome {
-    Finished { status: std::process::ExitStatus, stdout: Vec<u8>, stderr: Vec<u8> },
-    TimedOut,
-    SpawnFailed,
-}
-
-fn run_with_timeout(mut cmd: Command, limit: Duration) -> RunOutcome {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => return RunOutcome::SpawnFailed,
-    };
-    // Drenare in due fili, non a fine corsa: un figlio che riempie la pipe
-    // prima che la leggiamo resterebbe bloccato in scrittura per sempre.
-    let mut out_pipe = child.stdout.take().expect("stdout è piped");
-    let mut err_pipe = child.stderr.take().expect("stderr è piped");
-    let out_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = out_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let err_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = err_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if start.elapsed() >= limit {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(_) => break None,
-        }
-    };
-    let stdout = out_thread.join().unwrap_or_default();
-    let stderr = err_thread.join().unwrap_or_default();
-    match status {
-        Some(status) => RunOutcome::Finished { status, stdout, stderr },
-        None => RunOutcome::TimedOut,
-    }
-}
-
 struct Report {
     path: PathBuf,
 }
@@ -523,155 +490,6 @@ fn finish_recurring(path: &Path, cfg: &Config, status: &str) {
     }
 }
 
-enum EngineResult {
-    Ok { tokens: String },
-    Failed { kind: String, tokens: String },
-}
-
-fn fetch_openrouter_body(cfg: &Config, prompt: &str) -> String {
-    if let Some(cmd) = &cfg.openrouter_fetch_override {
-        let child = Command::new(cmd)
-            .arg(&cfg.openrouter_model)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn();
-        let Ok(mut child) = child else {
-            return String::new();
-        };
-        if let Some(stdin) = child.stdin.as_mut() {
-            let _ = stdin.write_all(prompt.as_bytes());
-        }
-        return child
-            .wait_with_output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .unwrap_or_default();
-    }
-    let key = match fs::read_to_string(&cfg.openrouter_key_file) {
-        Ok(k) => k.trim().to_string(),
-        Err(_) => {
-            return format!(
-                "{{\"error\":{{\"message\":\"OpenRouter key not readable: {}\"}}}}",
-                cfg.openrouter_key_file.display()
-            )
-        }
-    };
-    let payload = serde_json::json!({
-        "model": cfg.openrouter_model,
-        "temperature": 0,
-        "max_tokens": 2000,
-        "messages": [{"role": "user", "content": prompt}],
-    })
-    .to_string();
-    Command::new("curl")
-        .args([
-            "-sS",
-            "-m",
-            "180",
-            "https://openrouter.ai/api/v1/chat/completions",
-            "-H",
-            &format!("Authorization: Bearer {key}"),
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-            &payload,
-        ])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .unwrap_or_default()
-}
-
-fn call_openrouter(cfg: &Config, prompt: &str) -> EngineResult {
-    let body = fetch_openrouter_body(cfg, prompt);
-    match parse_openrouter_body(&body) {
-        OpenRouterResult::Ok { content, tokens } => {
-            let _ = fs::write(&cfg.last_output_path, &content);
-            EngineResult::Ok { tokens }
-        }
-        OpenRouterResult::RateLimited => {
-            let _ = fs::write(&cfg.last_output_path, &body);
-            EngineResult::Failed { kind: "429".to_string(), tokens: "?".to_string() }
-        }
-        OpenRouterResult::Error(msg) => {
-            let _ = fs::write(&cfg.last_output_path, &msg);
-            EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() }
-        }
-    }
-}
-
-/// Il terzo motore, dal 26/08/2026.
-///
-/// IL NOME DEL COMANDO È `agy`, NON `gemini`, e la differenza è costata mezza
-/// mattina. La CLI che si chiama `gemini` risponde `UNSUPPORTED_CLIENT`:
-/// Google ha chiuso quel livello gratuito ai comandi da terminale e rimanda
-/// ad Antigravity. Ma Antigravity **ha** la sua riga di comando, `agy`, che
-/// usa l'accesso già fatto — nessuna chiave, nessuna quota separata. Prima di
-/// concludere che una strada è chiusa conviene chiedere come si chiama la
-/// porta.
-///
-/// SENZA MOTORE SI RIMANDA, NON SI FALLISCE. Come per il motore locale
-/// inerte: un compito che aspetta uno strumento non installato non è un
-/// difetto del compito, e non deve consumare il contatore dei fallimenti
-/// consecutivi né aprire una segnalazione ogni notte.
-fn call_gemini(cfg: &Config, prompt: &str) -> EngineResult {
-    let bin = match resolve_engine_bin(&cfg.gemini_bin) {
-        Ok(b) => b,
-        Err(looked) => {
-            let _ = fs::write(
-                &cfg.last_output_path,
-                format!(
-                    "«{}» non è eseguibile in nessuno dei posti guardati:\n{}\n",
-                    cfg.gemini_bin,
-                    looked.iter().map(|p| format!("  {p}")).collect::<Vec<_>>().join("\n")
-                ),
-            );
-            return EngineResult::Failed {
-                kind: "motore assente".to_string(),
-                tokens: "0".to_string(),
-            };
-        }
-    };
-    let workdir = cfg.codex_dir.join(".lavoro-usa-e-getta");
-    let _ = fs::create_dir_all(&workdir);
-    let mut cmd = Command::new(&bin);
-    cmd.arg("--model")
-        .arg(&cfg.gemini_model)
-        .arg("--print")
-        .arg(prompt)
-        .env("PATH", child_path())
-        // Stessa cartella usa-e-getta di Codex, per lo stesso motivo: il
-        // motore legge tutta la macchina e può scrivere solo dove non serve
-        // a nessuno.
-        .current_dir(&workdir)
-        .stdin(Stdio::null());
-    match run_with_timeout(cmd, Duration::from_secs(cfg.gemini_timeout_secs)) {
-        RunOutcome::Finished { status, stdout, stderr } => {
-            let mut combined = String::from_utf8_lossy(&stdout).to_string();
-            combined.push_str(&String::from_utf8_lossy(&stderr));
-            let _ = fs::write(&cfg.last_output_path, &combined);
-            if status.success() {
-                // La CLI non stampa un conteggio di token come fa Codex:
-                // meglio un punto interrogativo onesto di un numero inventato.
-                EngineResult::Ok { tokens: "?".to_string() }
-            } else {
-                EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() }
-            }
-        }
-        RunOutcome::TimedOut => {
-            let _ = fs::write(
-                &cfg.last_output_path,
-                format!("gemini non ha risposto entro {}s\n", cfg.gemini_timeout_secs),
-            );
-            EngineResult::Failed { kind: "timeout".to_string(), tokens: "?".to_string() }
-        }
-        RunOutcome::SpawnFailed => {
-            let _ = fs::write(&cfg.last_output_path, "gemini non è partito\n");
-            EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() }
-        }
-    }
-}
-
 /// Il percorso che ricevono tutti i figli: il motore, la sua catena di
 /// interpreti, e la riga di shell della `verifica:`.
 fn child_path() -> String {
@@ -694,106 +512,535 @@ fn resolve_engine_bin(name: &str) -> Result<String, Vec<String>> {
     })
 }
 
-/// Un compito impiantato (`sleep 100000` nella `verifica:`, o un `codex` che
-/// non torna) fermava la notte per sempre: solo `curl` aveva un `-m`
-/// (difetto 3 del 25/08). Qui il guardiano è `run_with_timeout`.
-fn call_codex(cfg: &Config, prompt: &str) -> EngineResult {
-    let bin = match resolve_engine_bin(&cfg.codex_bin) {
-        Ok(b) => b,
-        Err(looked) => {
-            let _ = fs::write(
-                &cfg.last_output_path,
-                format!(
-                    "«{}» non è eseguibile in nessuno dei posti guardati.\n\
-                     Sotto launchd il percorso ereditato non è quello della shell.\n\
-                     Guardati:\n{}\n",
-                    cfg.codex_bin,
-                    looked.iter().map(|p| format!("  {p}")).collect::<Vec<_>>().join("\n")
-                ),
+// ── il passo "motore": la ricetta per il grafo, e l'azione che la esegue ──
+//
+// `TaskStepInput`/`TaskStepOutput` sono il contratto JSON del passo unico del
+// ciclo: QUALE motore (i tre rami sotto) è una scelta fatta qui, prima di
+// entrare nel grafo — il grafo e `NotteTaskAction` non sanno se stanno
+// parlando con Codex, `agy` o OpenRouter, solo con un binario e i suoi
+// argomenti. Le due primitive che l'azione usa — invocare un motore esterno,
+// eseguire una verifica con un tempo massimo — vivono nel crate `actions`.
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TaskStepInput {
+    /// "openrouter" | "codex" | "gemini": serve solo a scegliere come
+    /// leggere l'uscita del motore (token, corpo JSON) — l'invocazione vera
+    /// è già la stessa strada per tutti e tre.
+    engine_kind: String,
+    engine_label: String,
+    /// `false` quando il binario del motore non si è trovato: l'azione non
+    /// tenta nemmeno di invocarlo, e l'esito è un rimando, non un rosso.
+    resolved: bool,
+    missing_detail: String,
+    bin: String,
+    #[serde(default)]
+    args: Vec<String>,
+    #[serde(default)]
+    env: BTreeMap<String, String>,
+    #[serde(default)]
+    workdir: Option<String>,
+    #[serde(default)]
+    stdin: Option<String>,
+    engine_timeout_secs: u64,
+    output_file: String,
+    check: String,
+    check_timeout_secs: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TaskStepOutput {
+    engine_label: String,
+    tokens: String,
+    /// "green" | "red_engine" | "red_check" | "red_check_timeout" | "deferred_missing"
+    kind: String,
+    /// Per un rosso o un rimando: il motivo leggibile. Vuoto per un verde.
+    reason: String,
+    /// Il dettaglio troncato per la segnalazione.
+    detail: String,
+}
+
+/// L'azione unica del ciclo di notte: chiama il motore, poi — se ha
+/// risposto — la verifica. Non fallisce mai con un `ActionError`: un rosso è
+/// un dato nell'uscita (`TaskStepOutput`), non un guasto dell'azione, perché
+/// un compito rosso non deve far ritentare il grafo. **Solo** un processo
+/// morto a metà fa ritentare, ed è la riconciliazione a deciderlo — vedi
+/// `NotteProcessProbe` — non questa azione.
+struct NotteTaskAction;
+
+impl Action for NotteTaskAction {
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
+        let spec: TaskStepInput = serde_json::from_value(input.clone())
+            .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+
+        if !spec.resolved {
+            let _ = fs::write(&spec.output_file, &spec.missing_detail);
+            return Ok(ActionOutcome::Went(json!(TaskStepOutput {
+                engine_label: spec.engine_label,
+                tokens: "?".to_string(),
+                kind: "deferred_missing".to_string(),
+                reason: format!("{}: il motore non è installato", spec.engine_kind),
+                detail: spec.missing_detail,
+            })));
+        }
+
+        let invocation = actions::EngineInvocation {
+            bin: spec.bin,
+            args: spec.args,
+            env: spec.env,
+            workdir: spec.workdir,
+            stdin: spec.stdin.map(String::into_bytes),
+            timeout: Duration::from_secs(spec.engine_timeout_secs),
+        };
+        let (content, tokens, engine_failure) = match actions::invoke_external_engine(&invocation)
+        {
+            actions::EngineResult::Ok { stdout, stderr } => match spec.engine_kind.as_str() {
+                "openrouter" => match parse_openrouter_body(&stdout) {
+                    OpenRouterResult::Ok { content, tokens } => (content, tokens, None),
+                    OpenRouterResult::RateLimited => {
+                        (stdout.clone(), "?".to_string(), Some(("429".to_string(), stdout)))
+                    }
+                    OpenRouterResult::Error(msg) => {
+                        (String::new(), "?".to_string(), Some(("errore".to_string(), msg)))
+                    }
+                },
+                "codex" => {
+                    let combined = format!("{stdout}{stderr}");
+                    let tokens = parse_codex_tokens(&combined);
+                    (combined, tokens, None)
+                }
+                // `gemini` e ogni motore futuro senza un contatore proprio:
+                // meglio un punto interrogativo onesto di un numero inventato.
+                _ => (format!("{stdout}{stderr}"), "?".to_string(), None),
+            },
+            actions::EngineResult::ExitError { stdout, stderr } => (
+                String::new(),
+                "?".to_string(),
+                Some(("errore".to_string(), format!("{stdout}{stderr}"))),
+            ),
+            actions::EngineResult::TimedOut => (
+                String::new(),
+                "?".to_string(),
+                Some((
+                    "timeout".to_string(),
+                    format!("il motore non ha risposto entro {}s\n", spec.engine_timeout_secs),
+                )),
+            ),
+            actions::EngineResult::SpawnFailed => (
+                String::new(),
+                "?".to_string(),
+                Some(("errore".to_string(), "il motore non è partito\n".to_string())),
+            ),
+        };
+
+        if let Some((kind, detail)) = engine_failure {
+            let _ = fs::write(&spec.output_file, &detail);
+            return Ok(ActionOutcome::Went(json!(TaskStepOutput {
+                engine_label: spec.engine_label,
+                tokens,
+                kind: "red_engine".to_string(),
+                reason: kind,
+                detail: notte::truncate_chars(&detail, 500),
+            })));
+        }
+
+        let _ = fs::write(&spec.output_file, &content);
+
+        let mut check_env = BTreeMap::new();
+        check_env.insert("NOTTE_OUTPUT_FILE".to_string(), spec.output_file.clone());
+        check_env.insert("PATH".to_string(), child_path());
+        let check_invocation = actions::CheckInvocation {
+            command: spec.check,
+            env: check_env,
+            timeout: Duration::from_secs(spec.check_timeout_secs),
+        };
+        let (kind, reason) = match actions::run_shell_check(&check_invocation) {
+            actions::CheckResult::Passed => ("green".to_string(), String::new()),
+            actions::CheckResult::Failed => {
+                ("red_check".to_string(), "verifica fallita".to_string())
+            }
+            actions::CheckResult::TimedOut => (
+                "red_check_timeout".to_string(),
+                format!("verifica: timeout dopo {}s", spec.check_timeout_secs),
+            ),
+        };
+        Ok(ActionOutcome::Went(json!(TaskStepOutput {
+            engine_label: spec.engine_label,
+            tokens,
+            kind,
+            reason,
+            detail: notte::truncate_chars(&content, 500),
+        })))
+    }
+
+    /// Un tentativo lasciato aperto da un processo morto a metà: si può
+    /// sempre ritentare. `NotApplied`, non l'`Unknown` di default — quello
+    /// chiuderebbe il passo come "in attesa", e un passo in attesa non torna
+    /// mai pronto (vedi `decision_from` in `flow`): il compito resterebbe
+    /// bloccato per sempre invece di essere ripreso al tentativo successivo,
+    /// come faceva il vecchio ciclo con ogni ricevuta orfana.
+    fn inspect_effect(
+        &self,
+        _record: &StepRecord,
+        _shared: &SharedState,
+    ) -> Result<flow::EffectStatus, ActionError> {
+        Ok(flow::EffectStatus::NotApplied)
+    }
+}
+
+/// Chiede al kernel se il PROCESSO NOTTE che aveva in mano questo tentativo
+/// è ancora vivo — non un motore esterno figlio: come il vecchio
+/// `claim_task`, è il pid di `notte` stesso (`std::process::id()`, scritto
+/// nell'ingresso del passo da `execute_task`) a dire se il tentativo è
+/// ancora seguito da qualcuno.
+struct NotteProcessProbe;
+
+impl ProcessProbe for NotteProcessProbe {
+    fn is_running(&self, record: &StepRecord) -> Result<bool, FlowError> {
+        let pid = record.input.get("pid").and_then(|v| v.as_u64());
+        Ok(pid.is_some_and(|pid| process_exists(pid as u32)))
+    }
+}
+
+/// Apre il deposito durevole. Un guasto (cartella non apribile, disco
+/// pieno) resta un `None`: chi lo usa degrada a un deposito in memoria
+/// (`record_store_for`) e la lavorazione gira lo stesso — perde solo la
+/// storia, non l'esecuzione. Stesso contratto del vecchio `ledger_bridge`.
+fn open_ledger(cfg: &Config) -> Option<Ledger> {
+    Ledger::open(&cfg.ledger_dir).ok()
+}
+
+/// Il `RecordStore` che il motore usa per un passo: il deposito vero se si è
+/// aperto, altrimenti un deposito in memoria che vive quanto la chiamata.
+/// `Ledger` clona a costo di un `Arc`, quindi aprirlo una volta sola in
+/// `execute_task`/`recover_orphaned_receipts` e derivarne qui lo store non
+/// riapre mai il file.
+fn record_store_for(ledger: &Option<Ledger>) -> Box<dyn RecordStore> {
+    match ledger {
+        Some(ledger) => Box::new(ledger.clone()),
+        None => Box::new(InMemoryRecordStore::default()),
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Scrive (o riscrive) la riga della corsa nel deposito: `flow::RecordStore`
+/// tiene solo i passi, non le corse — la tabella `runs`, con lo stato
+/// leggibile che il resto della casa già si aspetta di trovarci, resta
+/// responsabilità di chi chiama, come faceva `ledger_bridge`. Nessun guasto
+/// qui tocca la lavorazione: un deposito assente rende questa funzione un
+/// no-op.
+fn record_run_status(ledger: &Option<Ledger>, run_id: &str, entity: &str, status: &str, started_at: i64, ended_at: Option<i64>) {
+    let Some(ledger) = ledger else { return };
+    let _ = ledger.record_run(&ledger::RunRecord {
+        run_id: run_id.to_string(),
+        kind: "notte".to_string(),
+        entity: entity.to_string(),
+        parent_run_id: None,
+        started_by: "notte".to_string(),
+        status: status.to_string(),
+        total_cost_micros: 0,
+        error: None,
+        started_at,
+        ended_at,
+    });
+}
+
+/// Scrive la chiamata al motore nel deposito, quando `tokens` è un numero
+/// leggibile: un `"?"` (motore senza contatore, o rimando) non scrive nulla,
+/// mai uno zero inventato — stesso contratto del vecchio `ledger_bridge`.
+fn record_ledger_model_call(ledger: &Option<Ledger>, run_id: &str, engine_label: &str, cli: &str, tokens: &str) {
+    let Some(ledger) = ledger else { return };
+    let Ok(total) = tokens.trim().parse::<u64>() else { return };
+    let now = now_secs();
+    let call = ledger::ModelCallRecord {
+        call_id: format!("{run_id}-call"),
+        run_id: run_id.to_string(),
+        step_id: Some("motore".to_string()),
+        purpose: "notte".to_string(),
+        cli: cli.to_string(),
+        requested_model: engine_label.to_string(),
+        actual_model: engine_label.to_string(),
+        input_tokens: 0,
+        output_tokens: total,
+        cached_tokens: 0,
+        cost_micros: 0,
+        price_currency: "USD".to_string(),
+        input_price_micros_per_million: 0,
+        output_price_micros_per_million: 0,
+        cached_price_micros_per_million: 0,
+        mandate_name: "notte".to_string(),
+        mandate_version: "1".to_string(),
+        retry_chain: Vec::new(),
+        error_type: None,
+        started_at: now,
+        ended_at: Some(now),
+    };
+    let _ = ledger.record_model_call(&call);
+}
+
+/// Il record più recente del passo "motore" per una corsa: l'unico posto da
+/// cui `execute_task` legge l'esito, invece di tenerlo in una variabile
+/// locale come faceva la vecchia `EngineResult`.
+fn latest_motore_record(store: &dyn RecordStore, run_id: &str) -> Option<StepRecord> {
+    store
+        .records(run_id)
+        .ok()?
+        .into_iter()
+        .filter(|record| record.step_id == "motore")
+        .max_by_key(|record| (record.attempt, record.epoch))
+}
+
+/// Il grafo di un compito: un passo solo, "motore" — chiamare il motore
+/// esterno e la sua verifica sono, nel deposito, un ciclo indivisibile (vedi
+/// il commento in testa a questo file). `max_attempts` è la stessa soglia di
+/// prima (`MAX_TASK_ATTEMPTS`): tollera due interruzioni, avvelena alla terza.
+fn task_graph() -> Graph {
+    Graph::new(vec![Step {
+        id: "motore".to_string(),
+        deps: vec![],
+        input_schema: ValueSchema::Any,
+        output_schema: ValueSchema::Any,
+        when: None,
+        action: "notte-task".to_string(),
+        max_attempts: MAX_TASK_ATTEMPTS,
+    }])
+    .expect("il grafo di un compito singolo, senza dipendenze, è sempre valido")
+}
+
+fn task_action_registry() -> ActionRegistry {
+    let mut registry = ActionRegistry::default();
+    registry.register("notte-task", NotteTaskAction);
+    registry
+}
+
+/// Stabile per l'intera notte (così una ripresa dopo un'interruzione ritrova
+/// gli stessi record), ma diverso da un giorno all'altro: una sentinella
+/// ricorrente rieseguita domani è un'altra corsa, non un altro tentativo di
+/// questa.
+fn task_run_id(bare_task_name: &str, today: &str) -> String {
+    format!("notte-{today}-{bare_task_name}")
+}
+
+/// La ricetta del passo "motore" per OpenRouter: la chiave, il modello e il
+/// corpo della richiesta sono gli stessi di sempre; qui cambia solo *come*
+/// arrivano al motore — via `actions::invoke_external_engine` invece di un
+/// `Command` costruito a mano.
+fn openrouter_step_input(cfg: &Config, task: &notte::Task, output_file: &Path) -> TaskStepInput {
+    let engine_label = format!("openrouter/{}", cfg.openrouter_model);
+    let output_file = output_file.to_string_lossy().to_string();
+    if let Some(cmd) = &cfg.openrouter_fetch_override {
+        return TaskStepInput {
+            engine_kind: "openrouter".to_string(),
+            engine_label,
+            resolved: true,
+            missing_detail: String::new(),
+            bin: cmd.clone(),
+            args: vec![cfg.openrouter_model.clone()],
+            env: BTreeMap::new(),
+            workdir: None,
+            stdin: Some(task.prompt.clone()),
+            engine_timeout_secs: 200,
+            output_file,
+            check: task.check.clone(),
+            check_timeout_secs: cfg.check_timeout_secs,
+        };
+    }
+    let key = match fs::read_to_string(&cfg.openrouter_key_file) {
+        Ok(k) => k.trim().to_string(),
+        Err(_) => {
+            // Lo stesso corpo d'errore sintetico di prima: `parse_openrouter_body`
+            // lo legge come un errore normale (rosso), non come un rimando —
+            // una chiave illeggibile non è un motore assente.
+            let fake_body = format!(
+                "{{\"error\":{{\"message\":\"OpenRouter key not readable: {}\"}}}}",
+                cfg.openrouter_key_file.display()
             );
-            return EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() };
+            return TaskStepInput {
+                engine_kind: "openrouter".to_string(),
+                engine_label,
+                resolved: true,
+                missing_detail: String::new(),
+                bin: "/bin/echo".to_string(),
+                args: vec!["-n".to_string(), fake_body],
+                env: BTreeMap::new(),
+                workdir: None,
+                stdin: None,
+                engine_timeout_secs: 200,
+                output_file,
+                check: task.check.clone(),
+                check_timeout_secs: cfg.check_timeout_secs,
+            };
         }
     };
-    // LA CARTELLA DI LAVORO È USA-E-GETTA, E IL MOTIVO NON È L'ORDINE.
-    //
-    // Dal 26/08/2026 il motore gira in `workspace-write` invece che in sola
-    // lettura, perché l'indice semantico di casa passa da un servizio locale
-    // che la sola lettura non lascia raggiungere: senza, il motore non sa
-    // dove stanno le cose e inventa percorsi — è successo lo stesso giorno,
-    // con tre compiti che puntavano a cartelle inesistenti.
-    //
-    // In cambio la cartella scrivibile è una cartella che non serve a
-    // nessuno, ricreata a ogni compito: il motore legge tutto il resto della
-    // macchina, e può scrivere solo lì. Prima poteva scrivere in
-    // `~/.claude/docs`, che è dove nessuno vuole trovarsi modifiche.
-    let workdir = cfg.codex_dir.join(".lavoro-usa-e-getta");
-    let _ = fs::create_dir_all(&workdir);
-    let mut cmd = Command::new(&bin);
-    cmd.args(["exec", "-s", "workspace-write", "-c"])
-        .arg("sandbox_workspace_write={network_access=true}")
-        .arg("-C")
-        .arg(&workdir)
-        .arg(prompt)
-        .env("PATH", child_path())
-        .stdin(Stdio::null());
-    match run_with_timeout(cmd, Duration::from_secs(cfg.codex_timeout_secs)) {
-        RunOutcome::Finished { status, stdout, stderr } => {
-            let mut combined = String::from_utf8_lossy(&stdout).to_string();
-            combined.push_str(&String::from_utf8_lossy(&stderr));
-            let _ = fs::write(&cfg.last_output_path, &combined);
-            let tokens = parse_codex_tokens(&combined);
-            if status.success() {
-                EngineResult::Ok { tokens }
-            } else {
-                EngineResult::Failed { kind: "errore".to_string(), tokens }
+    let payload = serde_json::json!({
+        "model": cfg.openrouter_model,
+        "temperature": 0,
+        "max_tokens": 2000,
+        "messages": [{"role": "user", "content": task.prompt}],
+    })
+    .to_string();
+    TaskStepInput {
+        engine_kind: "openrouter".to_string(),
+        engine_label,
+        resolved: true,
+        missing_detail: String::new(),
+        bin: "curl".to_string(),
+        args: vec![
+            "-sS".to_string(),
+            "-m".to_string(),
+            "180".to_string(),
+            "https://openrouter.ai/api/v1/chat/completions".to_string(),
+            "-H".to_string(),
+            format!("Authorization: Bearer {key}"),
+            "-H".to_string(),
+            "Content-Type: application/json".to_string(),
+            "-d".to_string(),
+            payload,
+        ],
+        env: BTreeMap::new(),
+        workdir: None,
+        stdin: None,
+        engine_timeout_secs: 200,
+        output_file,
+        check: task.check.clone(),
+        check_timeout_secs: cfg.check_timeout_secs,
+    }
+}
+
+fn codex_step_input(cfg: &Config, task: &notte::Task, output_file: &Path) -> TaskStepInput {
+    let base = TaskStepInput {
+        engine_kind: "codex".to_string(),
+        engine_label: "codex".to_string(),
+        resolved: true,
+        missing_detail: String::new(),
+        bin: String::new(),
+        args: vec![],
+        env: BTreeMap::new(),
+        workdir: None,
+        stdin: None,
+        engine_timeout_secs: cfg.codex_timeout_secs,
+        output_file: output_file.to_string_lossy().to_string(),
+        check: task.check.clone(),
+        check_timeout_secs: cfg.check_timeout_secs,
+    };
+    match resolve_engine_bin(&cfg.codex_bin) {
+        Err(looked) => TaskStepInput {
+            resolved: false,
+            missing_detail: format!(
+                "«{}» non è eseguibile in nessuno dei posti guardati.\n\
+                 Sotto launchd il percorso ereditato non è quello della shell.\n\
+                 Guardati:\n{}\n",
+                cfg.codex_bin,
+                looked.iter().map(|p| format!("  {p}")).collect::<Vec<_>>().join("\n")
+            ),
+            ..base
+        },
+        Ok(bin) => {
+            // LA CARTELLA DI LAVORO È USA-E-GETTA, E IL MOTIVO NON È L'ORDINE.
+            //
+            // Dal 26/08/2026 il motore gira in `workspace-write` invece che in
+            // sola lettura, perché l'indice semantico di casa passa da un
+            // servizio locale che la sola lettura non lascia raggiungere: senza,
+            // il motore non sa dove stanno le cose e inventa percorsi. In
+            // cambio la cartella scrivibile è usa-e-getta, ricreata a ogni
+            // compito: il motore legge tutto il resto della macchina, e può
+            // scrivere solo lì.
+            let workdir = cfg.codex_dir.join(".lavoro-usa-e-getta");
+            let _ = fs::create_dir_all(&workdir);
+            let mut env = BTreeMap::new();
+            env.insert("PATH".to_string(), child_path());
+            TaskStepInput {
+                bin,
+                args: vec![
+                    "exec".to_string(),
+                    "-s".to_string(),
+                    "workspace-write".to_string(),
+                    "-c".to_string(),
+                    "sandbox_workspace_write={network_access=true}".to_string(),
+                    "-C".to_string(),
+                    workdir.to_string_lossy().to_string(),
+                    task.prompt.clone(),
+                ],
+                env,
+                workdir: Some(workdir.to_string_lossy().to_string()),
+                ..base
             }
-        }
-        RunOutcome::TimedOut => {
-            let _ = fs::write(
-                &cfg.last_output_path,
-                format!("codex timed out after {}s\n", cfg.codex_timeout_secs),
-            );
-            EngineResult::Failed { kind: "timeout".to_string(), tokens: "?".to_string() }
-        }
-        RunOutcome::SpawnFailed => {
-            let _ = fs::write(&cfg.last_output_path, "codex not found on PATH\n");
-            EngineResult::Failed { kind: "errore".to_string(), tokens: "?".to_string() }
         }
     }
 }
 
-/// L'esito della `verifica:`: distinto da un `Failed` normale, perché il
-/// rapporto deve poter dire "timeout" e non "check failed" quando è stato il
-/// tempo a fermarla, non il giudizio.
-enum CheckOutcome {
-    Passed,
-    Failed,
-    TimedOut,
+/// Il terzo motore, dal 26/08/2026.
+///
+/// IL NOME DEL COMANDO È `agy`, NON `gemini`, e la differenza è costata mezza
+/// mattina. La CLI che si chiama `gemini` risponde `UNSUPPORTED_CLIENT`:
+/// Google ha chiuso quel livello gratuito ai comandi da terminale e rimanda
+/// ad Antigravity. Ma Antigravity **ha** la sua riga di comando, `agy`, che
+/// usa l'accesso già fatto — nessuna chiave, nessuna quota separata.
+fn gemini_step_input(cfg: &Config, task: &notte::Task, output_file: &Path) -> TaskStepInput {
+    let base = TaskStepInput {
+        engine_kind: "gemini".to_string(),
+        engine_label: format!("gemini/{}", cfg.gemini_model),
+        resolved: true,
+        missing_detail: String::new(),
+        bin: String::new(),
+        args: vec![],
+        env: BTreeMap::new(),
+        workdir: None,
+        stdin: None,
+        engine_timeout_secs: cfg.gemini_timeout_secs,
+        output_file: output_file.to_string_lossy().to_string(),
+        check: task.check.clone(),
+        check_timeout_secs: cfg.check_timeout_secs,
+    };
+    match resolve_engine_bin(&cfg.gemini_bin) {
+        Err(looked) => TaskStepInput {
+            resolved: false,
+            missing_detail: format!(
+                "«{}» non è eseguibile in nessuno dei posti guardati:\n{}\n",
+                cfg.gemini_bin,
+                looked.iter().map(|p| format!("  {p}")).collect::<Vec<_>>().join("\n")
+            ),
+            ..base
+        },
+        Ok(bin) => {
+            // Stessa cartella usa-e-getta di Codex, per lo stesso motivo.
+            let workdir = cfg.codex_dir.join(".lavoro-usa-e-getta");
+            let _ = fs::create_dir_all(&workdir);
+            let mut env = BTreeMap::new();
+            env.insert("PATH".to_string(), child_path());
+            TaskStepInput {
+                bin,
+                args: vec![
+                    "--model".to_string(),
+                    cfg.gemini_model.clone(),
+                    "--print".to_string(),
+                    task.prompt.clone(),
+                ],
+                env,
+                workdir: Some(workdir.to_string_lossy().to_string()),
+                ..base
+            }
+        }
+    }
 }
 
-fn run_check(check: &str, last_output_path: &Path, limit: Duration) -> CheckOutcome {
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c")
-        .arg(check)
-        .env("NOTTE_OUTPUT_FILE", last_output_path)
-        .env("PATH", child_path());
-    let Ok(mut child) = cmd.spawn() else { return CheckOutcome::Failed };
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                return if status.success() { CheckOutcome::Passed } else { CheckOutcome::Failed };
-            }
-            Ok(None) => {
-                if start.elapsed() >= limit {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return CheckOutcome::TimedOut;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(_) => return CheckOutcome::Failed,
-        }
+/// Solo i tre motori noti: un motore sconosciuto è filtrato PRIMA di
+/// arrivare qui (in `execute_task`, come "saltato"), quindi il terzo ramo
+/// resta `gemini` — l'unico caso rimasto una volta esclusi gli altri due.
+fn build_task_step_input(cfg: &Config, task: &notte::Task, output_file: &Path) -> TaskStepInput {
+    match task.engine.as_str() {
+        "openrouter" => openrouter_step_input(cfg, task, output_file),
+        "codex" => codex_step_input(cfg, task, output_file),
+        _ => gemini_step_input(cfg, task, output_file),
     }
 }
 
@@ -848,12 +1095,19 @@ fn claim_task(in_progress_dir: &Path, path: &Path, name: &str) -> Option<PathBuf
     Some(receipt)
 }
 
-/// Le ricevute rimaste da un processo ucciso a metà: pid morto, contatore
-/// tentativi incrementato. Oltre `MAX_TASK_ATTEMPTS` il compito è
-/// avvelenato e finisce dritto in `fatti/`; altrimenti torna in coda per un
-/// altro giro. Va chiamata una sola volta, all'avvio.
-fn recover_orphaned_receipts(cfg: &Config) {
+/// Le ricevute rimaste da un processo `notte` ucciso a metà: pid morto. Il
+/// tentativo lasciato aperto nel deposito lo chiude la riconciliazione del
+/// motore (`InProcessExecutor::reconcile`, con `NotteProcessProbe` a
+/// chiedere al kernel), che decide da sola se resta un altro tentativo:
+/// oltre `MAX_TASK_ATTEMPTS` il compito è avvelenato e finisce dritto in
+/// `fatti/`, altrimenti torna in coda per un altro giro — senza più
+/// scrivere un contatore nel testo del compito, perché il numero di
+/// tentativi vive nel deposito, non nel file. Va chiamata una sola volta,
+/// all'avvio.
+fn recover_orphaned_receipts(cfg: &Config, today: &str) {
     let Ok(entries) = fs::read_dir(&cfg.in_progress_dir) else { return };
+    let graph = task_graph();
+    let registry = task_action_registry();
     for entry in entries.flatten() {
         let receipt = entry.path();
         let Some(file_name) = receipt.file_name().map(|n| n.to_string_lossy().to_string()) else {
@@ -868,29 +1122,44 @@ fn recover_orphaned_receipts(cfg: &Config) {
         }
 
         let text = fs::read_to_string(&receipt).unwrap_or_default();
-        let attempts = attempts_field(&text) + 1;
-        let content = set_attempts_field(&text, attempts);
+        let engine = match parse_task(&text) {
+            ParsedTask::Ok(t) => t.engine,
+            ParsedTask::Malformed => "sconosciuto".to_string(),
+        };
+        let run_id = task_run_id(&base_name, today);
+        let ledger = open_ledger(cfg);
+        let mut store = record_store_for(&ledger);
+        let _ = InProcessExecutor.reconcile(ReconciliationRequest {
+            graph: &graph,
+            run_id: &run_id,
+            store: &mut *store,
+            actions: &registry,
+            shared: &SharedState::new(),
+            processes: &NotteProcessProbe,
+            clock: &mut SystemClock,
+        });
+        let attempt = latest_motore_record(&*store, &run_id).map(|record| record.attempt);
         let _ = fs::remove_file(&receipt);
 
-        if attempts > MAX_TASK_ATTEMPTS {
-            let mut poisoned = content.clone();
-            poisoned.push_str(&status_line("red (avvelenato)"));
-            let _ = fs::write(cfg.done_dir.join(&base_name), &poisoned);
-            let engine = match parse_task(&content) {
-                ParsedTask::Ok(t) => t.engine,
-                ParsedTask::Malformed => "sconosciuto".to_string(),
-            };
-            write_alert(
-                cfg,
-                &base_name,
-                &engine,
-                &format!("interrotto {attempts} volte (pid morto ogni volta): avvelenato, non si ritenta più"),
-                &notte::truncate_chars(&content, 500),
-            );
-            note(&cfg.log_path, &format!("{base_name}: avvelenato dopo {attempts} tentativi, in fatti/"));
-        } else {
-            let _ = fs::write(cfg.queue_dir.join(&base_name), &content);
-            note(&cfg.log_path, &format!("{base_name}: ricevuta orfana (pid {pid} morto), tentativo {attempts}, torna in coda"));
+        match attempt {
+            Some(attempt) if attempt >= MAX_TASK_ATTEMPTS => {
+                let mut poisoned = text.clone();
+                poisoned.push_str(&status_line("red (avvelenato)"));
+                let _ = fs::write(cfg.done_dir.join(&base_name), &poisoned);
+                write_alert(
+                    cfg,
+                    &base_name,
+                    &engine,
+                    &format!("interrotto {attempt} volte (pid morto ogni volta): avvelenato, non si ritenta più"),
+                    &notte::truncate_chars(&text, 500),
+                );
+                record_run_status(&ledger, &run_id, &base_name, "red (avvelenato)", now_secs(), Some(now_secs()));
+                note(&cfg.log_path, &format!("{base_name}: avvelenato dopo {attempt} tentativi, in fatti/"));
+            }
+            _ => {
+                let _ = fs::write(cfg.queue_dir.join(&base_name), &text);
+                note(&cfg.log_path, &format!("{base_name}: ricevuta orfana (pid {pid} morto), torna in coda"));
+            }
         }
     }
 }
@@ -1020,12 +1289,23 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
         return TaskOutcome { counts_total: true, bucket: "skipped" };
     };
 
+    if !matches!(task.engine.as_str(), "openrouter" | "codex" | "gemini") {
+        note(&cfg.log_path, &format!("{name}: motore sconosciuto «{}»", task.engine));
+        report.line(&report_line(
+            &name,
+            &Outcome::Skipped { reason: format!("motore sconosciuto «{}»", task.engine) },
+        ));
+        finish(&claimed, &cfg.done_dir, "saltato (motore sconosciuto)");
+        return TaskOutcome { counts_total: true, bucket: "skipped" };
+    }
+
     let engine_cap_secs = match task.engine.as_str() {
         "codex" => cfg.codex_timeout_secs,
         // Il fetch OpenRouter ha già `curl -m 180`: qui basta un margine.
         _ => 200,
     };
     let caffeine_secs = engine_cap_secs + cfg.check_timeout_secs + 30;
+    let run_id = task_run_id(&name, today);
 
     let start = Instant::now();
     let bucket = {
@@ -1033,132 +1313,177 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
         // esce — verde, rosso o timeout — viene ammazzato.
         let _caffeine = CaffeineGuard::start(caffeine_secs);
 
-        // Il record d'intenzione nel deposito durevole va scritto PRIMA di
-        // chiamare il motore: vedi `ledger_bridge` per il perché e per come
-        // un suo guasto non tocca mai questa lavorazione.
-        let ledger_handle = LedgerHandle::begin(&name, &task.engine);
+        let graph = task_graph();
+        let registry = task_action_registry();
+        let ledger = open_ledger(cfg);
+        let mut store = record_store_for(&ledger);
+        let started_at = now_secs();
+        record_run_status(&ledger, &run_id, &name, "running", started_at, None);
 
-        let (label, result) = match task.engine.as_str() {
-            "openrouter" => (
-                format!("openrouter/{}", cfg.openrouter_model),
-                call_openrouter(cfg, &task.prompt),
-            ),
-            "codex" => ("codex".to_string(), call_codex(cfg, &task.prompt)),
-            "gemini" => (
-                format!("gemini/{}", cfg.gemini_model),
-                call_gemini(cfg, &task.prompt),
-            ),
-            other => {
-                note(&cfg.log_path, &format!("{name}: motore sconosciuto «{other}»"));
-                report.line(&report_line(
-                    &name,
-                    &Outcome::Skipped { reason: format!("motore sconosciuto «{other}»") },
-                ));
-                ledger_handle.finish_skipped("motore sconosciuto");
-                finish(&claimed, &cfg.done_dir, "saltato (motore sconosciuto)");
-                return TaskOutcome { counts_total: true, bucket: "skipped" };
-            }
-        };
+        // Un tentativo lasciato aperto da un `notte` morto a metà — capitato
+        // fra la coda e questo compito senza passare da `in-corso/` (per
+        // esempio: rimesso in coda da `recover_orphaned_receipts` un istante
+        // prima) — si chiude qui, prima di provare un nuovo tentativo.
+        let _ = InProcessExecutor.reconcile(ReconciliationRequest {
+            graph: &graph,
+            run_id: &run_id,
+            store: &mut *store,
+            actions: &registry,
+            shared: &SharedState::new(),
+            processes: &NotteProcessProbe,
+            clock: &mut SystemClock,
+        });
+
+        // IL RECORD D'INTENZIONE nel deposito durevole si scrive PRIMA che il
+        // motore parli: lo scrive `InProcessExecutor::execute`, dentro
+        // `store.append_started`, prima di chiamare `NotteTaskAction`.
+        let mut input = json!(build_task_step_input(cfg, &task, &cfg.last_output_path));
+        input["pid"] = json!(std::process::id());
+        let execution_result = InProcessExecutor.execute(
+            &graph,
+            ExecutionRequest {
+                run_id: run_id.clone(),
+                root_inputs: [("motore".to_string(), input)].into_iter().collect(),
+                gates: vec![],
+                shared: SharedState::new(),
+            },
+            &mut *store,
+            &registry,
+            &mut SystemClock,
+        );
         let elapsed = start.elapsed().as_secs();
 
-        match result {
-            EngineResult::Ok { tokens } => {
-                ledger_handle.record_tokens(&label, &task.engine, &tokens);
-                match run_check(&task.check, &cfg.last_output_path, Duration::from_secs(cfg.check_timeout_secs)) {
-                    CheckOutcome::Passed => {
-                        *fails = 0;
-                        report.line(&report_line(
-                            &name,
-                            &Outcome::Green { engine_label: label, tokens, seconds: elapsed },
-                        ));
-                        ledger_handle.finish_went();
-                        close_task(&claimed, cfg, &task, "green");
-                        "green"
-                    }
-                    CheckOutcome::Failed => {
-                        *fails += 1;
-                        report.line(&report_line(
-                            &name,
-                            &Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: "verifica fallita".into() },
-                        ));
-                        let detail = fs::read_to_string(&cfg.last_output_path).unwrap_or_default();
-                        write_alert(
-                            cfg,
-                            &name,
-                            &task.engine,
-                            "la verifica non ha confermato la risposta",
-                            &notte::truncate_chars(&detail, 500),
-                        );
-                        ledger_handle.finish_broke("verifica fallita", &notte::truncate_chars(&detail, 500));
-                        close_task(&claimed, cfg, &task, "red (verifica fallita)");
-                        "red"
-                    }
-                    CheckOutcome::TimedOut => {
-                        *fails += 1;
-                        report.line(&report_line(
-                            &name,
-                            &Outcome::Red {
-                                engine_label: label,
-                                tokens,
-                                seconds: elapsed,
-                                reason: format!("verifica: timeout dopo {}s", cfg.check_timeout_secs),
-                            },
-                        ));
-                        write_alert(
-                            cfg,
-                            &name,
-                            &task.engine,
-                            "the check did not finish within the time allowed",
-                            &notte::truncate_chars(&task.check, 500),
-                        );
-                        ledger_handle.finish_broke(
-                            "timeout verifica",
-                            &format!("verifica: timeout dopo {}s", cfg.check_timeout_secs),
-                        );
-                        close_task(&claimed, cfg, &task, "red (timeout verifica)");
-                        "red"
-                    }
-                }
-            }
-            // Aspettare uno strumento non installato non è fallire: non tocca
-            // il contatore dei fallimenti consecutivi (tre di fila
-            // fermerebbero la notte intera) e non apre una segnalazione nuova
-            // ogni notte. Il compito resta lì, pronto per quando arriva.
-            EngineResult::Failed { kind, .. } if kind == "motore assente" => {
-                note(&cfg.log_path, &format!("{name}: il motore non è installato, rimando"));
-                report.line(&report_line(
-                    &name,
-                    &Outcome::Deferred {
-                        reason: format!("{}: il motore non è installato", task.engine),
-                    },
-                ));
-                ledger_handle.finish_waiting("motore assente");
-                close_task(
-                    &claimed,
-                    cfg,
-                    &task,
-                    &format!("rimandato ({}: motore assente)", task.engine),
-                );
-                return TaskOutcome { counts_total: true, bucket: "deferred" };
-            }
-            EngineResult::Failed { kind, tokens } => {
+        let execution = match execution_result {
+            Ok(execution) => execution,
+            // Il motore dei flussi stesso non è riuscito a girare: non
+            // dovrebbe succedere (anche un deposito rotto degrada a un
+            // deposito in memoria, vedi `open_task_store`), ma un rosso
+            // onesto è meglio di un panico.
+            Err(error) => {
                 *fails += 1;
-                ledger_handle.record_tokens(&label, &task.engine, &tokens);
+                note(&cfg.log_path, &format!("{name}: il motore dei flussi non è riuscito a eseguire il passo: {error}"));
                 report.line(&report_line(
                     &name,
-                    &Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: format!("motore: {kind}") },
+                    &Outcome::Red { engine_label: task.engine.clone(), tokens: "?".into(), seconds: elapsed, reason: format!("motore dei flussi: {error}") },
+                ));
+                record_run_status(&ledger, &run_id, &name, &format!("red (motore dei flussi: {error})"), started_at, Some(now_secs()));
+                close_task(&claimed, cfg, &task, &format!("red (motore dei flussi: {error})"));
+                return TaskOutcome { counts_total: true, bucket: "red" };
+            }
+        };
+
+        // AVVELENATO: il grafo non ha nemmeno provato ad agire, perché la
+        // riconciliazione ha appena chiuso l'ultimo tentativo concesso come
+        // interrotto. Sostituisce il vecchio contatore `tentativi:` nel testo
+        // del compito: il numero di tentativi vive nel deposito.
+        if matches!(execution.decisions.last(), Some(Decision::Failed(_))) {
+            let attempt = latest_motore_record(&*store, &run_id).map(|r| r.attempt).unwrap_or(MAX_TASK_ATTEMPTS);
+            *fails += 1;
+            report.line(&report_line(
+                &name,
+                &Outcome::Red { engine_label: task.engine.clone(), tokens: "?".into(), seconds: elapsed, reason: format!("avvelenato dopo {attempt} tentativi interrotti") },
+            ));
+            write_alert(
+                cfg,
+                &name,
+                &task.engine,
+                &format!("interrotto {attempt} volte (pid morto ogni volta): avvelenato, non si ritenta più"),
+                &notte::truncate_chars(&text, 500),
+            );
+            record_run_status(&ledger, &run_id, &name, "red (avvelenato)", started_at, Some(now_secs()));
+            close_task(&claimed, cfg, &task, "red (avvelenato)");
+            return TaskOutcome { counts_total: true, bucket: "red" };
+        }
+
+        let output = latest_motore_record(&*store, &run_id)
+            .and_then(|record| record.output)
+            .and_then(|value| serde_json::from_value::<TaskStepOutput>(value).ok());
+        let Some(output) = output else {
+            // Non dovrebbe succedere: un'esecuzione arrivata a `Complete`
+            // lascia sempre un'uscita `Went`. Un rosso onesto se capita.
+            *fails += 1;
+            report.line(&report_line(
+                &name,
+                &Outcome::Red { engine_label: task.engine.clone(), tokens: "?".into(), seconds: elapsed, reason: "il passo non ha lasciato un'uscita leggibile".into() },
+            ));
+            record_run_status(&ledger, &run_id, &name, "red (uscita del motore illeggibile)", started_at, Some(now_secs()));
+            close_task(&claimed, cfg, &task, "red (uscita del motore illeggibile)");
+            return TaskOutcome { counts_total: true, bucket: "red" };
+        };
+        record_ledger_model_call(&ledger, &run_id, &output.engine_label, &task.engine, &output.tokens);
+
+        match output.kind.as_str() {
+            "green" => {
+                *fails = 0;
+                report.line(&report_line(
+                    &name,
+                    &Outcome::Green { engine_label: output.engine_label, tokens: output.tokens, seconds: elapsed },
+                ));
+                record_run_status(&ledger, &run_id, &name, "green", started_at, Some(now_secs()));
+                close_task(&claimed, cfg, &task, "green");
+                "green"
+            }
+            "red_check" => {
+                *fails += 1;
+                report.line(&report_line(
+                    &name,
+                    &Outcome::Red { engine_label: output.engine_label, tokens: output.tokens, seconds: elapsed, reason: "verifica fallita".into() },
                 ));
                 let detail = fs::read_to_string(&cfg.last_output_path).unwrap_or_default();
                 write_alert(
                     cfg,
                     &name,
                     &task.engine,
-                    &format!("il motore ha risposto: {kind}"),
+                    "la verifica non ha confermato la risposta",
                     &notte::truncate_chars(&detail, 500),
                 );
-                ledger_handle.finish_broke(&kind, &notte::truncate_chars(&detail, 500));
-                close_task(&claimed, cfg, &task, &format!("red (engine: {kind})"));
+                record_run_status(&ledger, &run_id, &name, "red (verifica fallita)", started_at, Some(now_secs()));
+                close_task(&claimed, cfg, &task, "red (verifica fallita)");
                 "red"
+            }
+            "red_check_timeout" => {
+                *fails += 1;
+                report.line(&report_line(
+                    &name,
+                    &Outcome::Red { engine_label: output.engine_label, tokens: output.tokens, seconds: elapsed, reason: output.reason.clone() },
+                ));
+                write_alert(
+                    cfg,
+                    &name,
+                    &task.engine,
+                    "la verifica non è tornata entro il tempo concesso",
+                    &notte::truncate_chars(&task.check, 500),
+                );
+                record_run_status(&ledger, &run_id, &name, "red (timeout verifica)", started_at, Some(now_secs()));
+                close_task(&claimed, cfg, &task, "red (timeout verifica)");
+                "red"
+            }
+            "red_engine" => {
+                *fails += 1;
+                report.line(&report_line(
+                    &name,
+                    &Outcome::Red { engine_label: output.engine_label, tokens: output.tokens, seconds: elapsed, reason: format!("motore: {}", output.reason) },
+                ));
+                write_alert(
+                    cfg,
+                    &name,
+                    &task.engine,
+                    &format!("il motore ha risposto: {}", output.reason),
+                    &output.detail,
+                );
+                record_run_status(&ledger, &run_id, &name, &format!("red (engine: {})", output.reason), started_at, Some(now_secs()));
+                close_task(&claimed, cfg, &task, &format!("red (engine: {})", output.reason));
+                "red"
+            }
+            // "deferred_missing", e ogni valore imprevisto: rimando, come per
+            // il motore locale inerte — non tocca il contatore dei
+            // fallimenti consecutivi né apre una segnalazione ogni notte.
+            _ => {
+                note(&cfg.log_path, &format!("{name}: il motore non è installato, rimando"));
+                report.line(&report_line(&name, &Outcome::Deferred { reason: output.reason }));
+                record_run_status(&ledger, &run_id, &name, &format!("rimandato ({}: motore assente)", task.engine), started_at, Some(now_secs()));
+                close_task(&claimed, cfg, &task, &format!("rimandato ({}: motore assente)", task.engine));
+                return TaskOutcome { counts_total: true, bucket: "deferred" };
             }
         }
     };
@@ -1180,7 +1505,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
 fn run_batch(cfg: &Config) -> i32 {
     ensure_dirs(cfg);
     rotate_log(&cfg.log_path);
-    recover_orphaned_receipts(cfg);
+    recover_orphaned_receipts(cfg, &today_now());
     let report = Report::open(&cfg.report_path, &cfg.today);
 
     let tasks = list_queued_tasks(&cfg.queue_dir, &cfg.today);
@@ -1347,7 +1672,7 @@ fn run_watch(cfg: &Config) -> i32 {
             cfg.very_idle_seconds,
         ),
     );
-    recover_orphaned_receipts(cfg);
+    recover_orphaned_receipts(cfg, &today_now());
 
     let th = WatchThresholds {
         idle_seconds: cfg.idle_threshold_secs,

@@ -48,16 +48,67 @@ impl Workspace {
 
     /// Scrive una ricevuta a mano in `in-corso/`, come se un giro precedente
     /// l'avesse presa in carico e fosse morto lì: simula il difetto 4 senza
-    /// dover davvero uccidere un processo a metà lavoro.
-    fn write_receipt(&self, task_name: &str, pid: u32, engine: &str, prompt: &str, check: &str, attempts: u32) -> PathBuf {
-        let mut text = format!("motore: {engine}\nperimetro: pubblico\n---prompt---\n{prompt}\n---verifica---\n{check}\n");
-        if attempts > 0 {
-            text = format!("tentativi: {attempts}\n{text}");
-        }
+    /// dover davvero uccidere un processo a metà lavoro. Il numero di
+    /// tentativi non vive più nel testo del compito (lo tiene il deposito:
+    /// vedi `write_open_attempt`/`write_closed_broke_attempt`), quindi qui
+    /// il testo è sempre quello nudo del compito.
+    fn write_receipt(&self, task_name: &str, pid: u32, engine: &str, prompt: &str, check: &str) -> PathBuf {
+        let text = format!("motore: {engine}\nperimetro: pubblico\n---prompt---\n{prompt}\n---verifica---\n{check}\n");
         let path = self.path("in-corso").join(format!("{task_name}.{pid}"));
         fs::write(&path, text).unwrap();
         path
     }
+}
+
+/// Lo stesso formato di `task_run_id` in `main.rs` (privato, non
+/// raggiungibile da qui perché `main.rs` è un binario, non una libreria):
+/// duplicato apposta, perché la prova deve costruire l'identità di corsa
+/// esattamente come la costruisce il binario, per scrivere nel deposito
+/// esattamente dove il binario andrà a cercare.
+fn expected_run_id(task_name: &str, today: &str) -> String {
+    format!("notte-{today}-{task_name}")
+}
+
+/// Il record del passo "motore" per un tentativo lasciato aperto da un
+/// processo morto a metà: la controparte, nel deposito, della vecchia
+/// ricevuta orfana in `in-corso/`. `dead_pid` è il pid che
+/// `NotteProcessProbe` troverà nell'ingresso del record — nessun processo
+/// vero su questa macchina userà mai 999999.
+fn write_open_attempt(ledger: &ledger::Ledger, run_id: &str, attempt: u32, dead_pid: u32) {
+    let record = flow::StepRecord::started(
+        run_id,
+        "motore",
+        attempt,
+        attempt as u64,
+        vec![],
+        serde_json::json!({ "pid": dead_pid }),
+        vec![],
+        0,
+    );
+    ledger.append_step_started(&record).expect("scrivere l'intenzione del tentativo interrotto");
+}
+
+/// Un tentativo già chiuso come interrotto: la storia di un'interruzione
+/// passata, già recuperata in una notte precedente.
+fn write_closed_broke_attempt(ledger: &ledger::Ledger, run_id: &str, attempt: u32) {
+    write_open_attempt(ledger, run_id, attempt, 999_999);
+    ledger
+        .close_step(
+            run_id,
+            "motore",
+            attempt,
+            attempt as u64,
+            flow::Completion {
+                outcome: flow::Outcome::Broke,
+                output: None,
+                said: None,
+                failure_class: Some("process_disappeared".to_string()),
+                ended_at: 1,
+                bytes_seen: None,
+                bytes_discarded: None,
+            },
+        )
+        .expect("chiudere il tentativo interrotto");
 }
 
 impl Drop for Workspace {
@@ -420,47 +471,84 @@ fn a_stale_lock_from_a_dead_pid_is_taken_over() {
 
 // ── difetto 4: la ricevuta prima del lavoro ──────────────────────────────
 
-/// Una ricevuta orfana (pid morto, nessun `tentativi:` ancora scritto) viene
-/// recuperata al riavvio con il contatore a 1, e rientra in coda per essere
-/// riprovata nello stesso giro.
+/// Una ricevuta orfana (pid morto) viene recuperata al riavvio: la
+/// riconciliazione del motore chiude il tentativo interrotto come "Broke",
+/// il compito rientra in coda e viene rieseguito — un secondo tentativo per
+/// lo stesso passo "motore" — nello stesso giro.
+///
+/// IL BRACCIO CHE CONTA, sostituisce la vecchia `tentativi: 1` nel testo del
+/// compito: qui il numero di tentativi si legge nel deposito, non nel file.
 #[test]
-fn an_orphaned_receipt_with_a_dead_pid_is_recovered_with_the_counter_at_one() {
+fn an_orphaned_receipt_is_retried_and_the_ledger_shows_two_attempts() {
     let ws = Workspace::new("receipt-recovered");
-    ws.write_receipt("2026-08-25-q.task", 999_999, "openrouter", "una domanda", "grep -q 'answer: 42' \"$NOTTE_OUTPUT_FILE\"", 0);
-    let status = run(&ws, &[]);
+    ws.write_receipt("2026-08-25-q.task", 999_999, "openrouter", "una domanda", "grep -q 'answer: 42' \"$NOTTE_OUTPUT_FILE\"");
+    let ledger_dir = ws.path("state").join("flussi");
+    let run_id = expected_run_id("2026-08-25-q.task", "2026-08-25");
+    {
+        let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito di prova deve aprirsi");
+        write_open_attempt(&ledger, &run_id, 1, 999_999);
+    }
+
+    let status = run(&ws, &[("NOTTE_LEDGER_DIR", ledger_dir.to_str().unwrap())]);
     assert!(status.success());
     assert!(in_progress_names(&ws).is_empty(), "la ricevuta orfana non deve restare lì");
     assert_eq!(done_names(&ws), vec!["2026-08-25-q.task"], "recuperata, rimessa in coda, eseguita nello stesso giro");
     let moved = fs::read_to_string(ws.path("done").join("2026-08-25-q.task")).unwrap();
-    assert!(moved.contains("tentativi: 1"), "{moved}");
     assert!(moved.contains("notte-status: green"), "{moved}");
+    assert!(!moved.contains("tentativi:"), "il contatore non vive più nel testo del compito: {moved}");
+
+    let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito deve rileggersi");
+    let steps = ledger.steps(&run_id).expect("i passi devono leggersi");
+    assert_eq!(steps.len(), 2, "un tentativo interrotto più uno riuscito: {steps:?}");
+    assert_eq!(steps[0].attempt, 1);
+    assert_eq!(steps[0].outcome, Some(flow::Outcome::Broke), "{steps:?}");
+    assert_eq!(steps[0].failure_class.as_deref(), Some("process_disappeared"), "{steps:?}");
+    assert_eq!(steps[1].attempt, 2);
+    assert_eq!(steps[1].outcome, Some(flow::Outcome::Went), "{steps:?}");
 }
 
-/// LA TRAPPOLA VERA: un compito già interrotto due volte (tentativi: 2 già
-/// scritto, pid morto la terza) non si ritenta più — va dritto in `fatti/`
-/// come rosso avvelenato, senza nemmeno chiamare il motore.
+/// LA TRAPPOLA VERA: un compito già interrotto due volte (due tentativi già
+/// chiusi come "Broke" nel deposito) e interrotto una terza — pid morto,
+/// ricevuta orfana — non si ritenta più: va dritto in `fatti/` come rosso
+/// avvelenato, senza che il motore chiami mai `NotteTaskAction::execute`.
 ///
-/// MUTANTE: se il controllo fosse `attempts >= MAX_TASK_ATTEMPTS` invece di
-/// `>`, un compito che ha funzionato al secondo tentativo verrebbe
-/// avvelenato al posto di essere ritentato — questa prova lo becca solo se
-/// il terzo giro NON tocca affatto il motore (fixture assente/rotta va bene
-/// comunque, perché il codice non deve mai arrivarci).
+/// MUTANTE: se il controllo del grafo fosse `attempt > max_attempts` invece
+/// di `>=`, un compito interrotto tre volte verrebbe ritentato una quarta —
+/// questa prova lo becca solo se il terzo tentativo resta "Broke" e non
+/// lascia mai un'uscita (`TaskStepOutput`) nel deposito.
 #[test]
-fn a_receipt_interrupted_a_third_time_is_poisoned_without_retrying() {
+fn a_third_interrupted_attempt_is_poisoned_without_calling_the_engine() {
     let ws = Workspace::new("receipt-poisoned");
-    ws.write_receipt("2026-08-25-r.task", 999_999, "openrouter", "una domanda", "true", 2);
-    let status = run(&ws, &[]);
+    ws.write_receipt("2026-08-25-r.task", 999_999, "openrouter", "una domanda", "true");
+    let ledger_dir = ws.path("state").join("flussi");
+    let run_id = expected_run_id("2026-08-25-r.task", "2026-08-25");
+    {
+        let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito di prova deve aprirsi");
+        write_closed_broke_attempt(&ledger, &run_id, 1);
+        write_closed_broke_attempt(&ledger, &run_id, 2);
+        write_open_attempt(&ledger, &run_id, 3, 999_999);
+    }
+
+    let status = run(&ws, &[("NOTTE_LEDGER_DIR", ledger_dir.to_str().unwrap())]);
     assert!(status.success());
     assert!(in_progress_names(&ws).is_empty());
     assert!(queue_names(&ws).is_empty(), "un avvelenato non torna in coda");
     assert_eq!(done_names(&ws), vec!["2026-08-25-r.task"]);
     let moved = fs::read_to_string(ws.path("done").join("2026-08-25-r.task")).unwrap();
-    assert!(moved.contains("tentativi: 3"), "{moved}");
     assert!(moved.contains("notte-status: red (avvelenato)"), "{moved}");
+    assert!(!moved.contains("tentativi:"), "{moved}");
     let alerts = alert_files(&ws);
     assert_eq!(alerts.len(), 1, "{alerts:?}");
     let alert = fs::read_to_string(ws.path("alerts").join(&alerts[0])).unwrap();
     assert!(alert.contains("avvelenato"), "{alert}");
+
+    let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito deve rileggersi");
+    let steps = ledger.steps(&run_id).expect("i passi devono leggersi");
+    assert_eq!(steps.len(), 3, "nessun quarto tentativo: {steps:?}");
+    assert!(
+        steps.iter().all(|s| s.outcome == Some(flow::Outcome::Broke)),
+        "il motore non deve essere mai stato chiamato: {steps:?}"
+    );
 }
 
 // ── i compiti che si ripetono ──────────────────────────────────────────
