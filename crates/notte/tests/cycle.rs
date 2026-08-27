@@ -526,6 +526,57 @@ fn a_recurring_task_already_done_today_does_not_steal_the_tick() {
     assert!(!untouched.contains("notte-status:"), "non doveva essere toccata: {untouched}");
 }
 
+/// IL DIFETTO CHE QUESTA PROVA TIENE CHIUSO, misurato sul servizio vivo il
+/// 27/08/2026: il peso del giro si leggeva dalla **sola testa** della coda
+/// ordinata, e diventava il peso di tutto il giro. La coda reale aveva dieci
+/// lavorazioni leggere su dodici, ma in testa stava una pesante — per ordine
+/// alfabetico, non per scelta di nessuno. Il giro veniva quindi giudicato
+/// pesante, la soglia di carico si stringeva a quella dei pesanti, e con la
+/// macchina al lavoro **le dieci leggere dietro non partivano mai**.
+///
+/// È il difetto che annulla il peso proprio nel caso per cui il peso esiste:
+/// far passare il lavoro piccolo mentre la macchina è occupata.
+///
+/// La prova mette il carico a 5, che sta **sopra** la soglia dei pesanti e
+/// **sotto** quella delle leggere: senza la correzione il giro salta e la coda
+/// resta intatta.
+#[test]
+fn a_heavy_task_at_the_head_does_not_hold_back_the_light_ones_behind_it() {
+    let ws = Workspace::new("pesante-in-testa");
+    let heavy = "motore: openrouter\npeso: pesante\n---prompt---\nuna domanda\n---verifica---\ntrue\n";
+    fs::write(ws.path("queue").join("a-pesante.task"), heavy).unwrap();
+    let light = "motore: openrouter\npeso: leggero\n---prompt---\nuna domanda\n---verifica---\ngrep -q 'answer: 42' \"$NOTTE_OUTPUT_FILE\"\n";
+    fs::write(ws.path("queue").join("b-leggera.task"), light).unwrap();
+
+    // Carico 5.0 su 8 core: oltre il tetto dei pesanti, entro quello delle
+    // leggere. La macchina non è ferma, che è la condizione di tutti i giorni.
+    let status = run_watch(
+        &ws,
+        1,
+        &[
+            ("NOTTE_LOAD1_OVERRIDE", "5.0"),
+            ("NOTTE_IDLE_SECONDS_OVERRIDE", "0"),
+        ],
+    );
+    assert!(status.success());
+
+    let report = report_text(&ws);
+    assert!(
+        report.contains("b-leggera.task"),
+        "la leggera dietro doveva partire malgrado la pesante in testa; \
+         col difetto il giro è giudicato pesante e salta. Rapporto: {report:?}"
+    );
+    assert!(
+        !report.contains("a-pesante.task"),
+        "la pesante non doveva partire con la macchina a questo carico: {report}"
+    );
+    assert_eq!(
+        queue_names(&ws),
+        vec!["a-pesante.task"],
+        "la pesante resta in coda, la leggera se n'è andata"
+    );
+}
+
 /// Un orologio finto che passa la mezzanotte fra l'avvio e il primo giro.
 ///
 /// `shell_date` invoca `date` **senza percorso assoluto**, quindi rispetta il
