@@ -13,7 +13,7 @@
 //! direttamente `invoke_external_engine`/`run_shell_check`: sono funzioni
 //! semplici, non solo azioni registrate.
 
-use flow::{Action, ActionError, ActionOutcome, SharedState};
+use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -302,6 +302,18 @@ impl Action for ExternalEngineAction {
         };
         Ok(ActionOutcome::Went(json!(outcome)))
     }
+
+    /// Non dichiara di potersi rifare, e quindi finisce a una persona.
+    /// È la scelta giusta per il caso generale: dietro `bin` e `args` può
+    /// esserci qualunque cosa — un motore che ha già riscritto mezzo albero,
+    /// una richiesta di rete già partita — e da fuori non si distingue da un
+    /// comando che non ha fatto niente. Chi sa che il proprio motore è
+    /// idempotente lo dichiara nella propria azione, come fa il servizio
+    /// notturno: la specie appartiene a chi conosce il lavoro, non alla
+    /// primitiva che lo lancia.
+    fn species(&self) -> StepSpecies {
+        StepSpecies::HandToHuman
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -337,6 +349,15 @@ impl Action for ShellCheckAction {
             CheckResult::TimedOut => "timed_out",
         };
         Ok(ActionOutcome::Went(json!({ "status": status })))
+    }
+
+    /// Una verifica interrotta si rifà: il suo mestiere è rileggere il mondo
+    /// e dire com'è, non cambiarlo. Chi ci infila dentro un comando che
+    /// modifica ha già rotto il contratto di questa azione, e lo aveva già
+    /// rotto prima: il motore riesegue la verifica a ogni tentativo anche
+    /// senza nessuna interruzione di mezzo.
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
     }
 }
 

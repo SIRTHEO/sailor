@@ -24,6 +24,17 @@ pub struct StepRecord {
     /// Relazione della ripresa con l'identità già registrata, calcolata dal motore.
     #[serde(default)]
     pub attempt_relation: Option<AttemptRelation>,
+    /// Il pid del processo che teneva il passo mentre girava, scritto dal
+    /// motore all'apertura. È un campo, non una convenzione dentro `input`:
+    /// chi riprende deve poter chiedere al kernel se quel processo è vivo
+    /// senza sapere come il chiamante ha chiamato la propria chiave.
+    #[serde(default)]
+    pub held_by_pid: Option<u32>,
+    /// La specie del passo, congelata all'apertura: dichiara se rifarlo è
+    /// sicuro. `None` è un record scritto prima che la specie esistesse, e
+    /// vale quanto `HandToHuman` — mai quanto `Repeatable`.
+    #[serde(default)]
+    pub species: Option<StepSpecies>,
     pub started_at: i64,
 
     // Scritti alla chiusura. `deserialize_with` rende obbligatoria anche la
@@ -58,6 +69,22 @@ pub enum Outcome {
     Skipped,
 }
 
+/// Le tre specie di passo: un'azione o si può rifare tale e quale, o si può
+/// disfare e rifare, o va lasciata a una persona. Non esiste una quarta
+/// strada implicita — la specie sconosciuta vale `HandToHuman`, mai
+/// `Repeatable`, perché l'errore da cui questa distinzione difende è
+/// duplicare un effetto già avvenuto sul mondo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepSpecies {
+    /// Si può rilanciare tale e quale: nessun effetto residuo da disfare.
+    Repeatable,
+    /// L'effetto già prodotto si può disfare, poi il passo si rifà.
+    Compensable,
+    /// Né l'uno né l'altro: nessuna azione automatica è sicura.
+    HandToHuman,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptRelation {
@@ -89,6 +116,8 @@ impl StepRecord {
             input,
             gates,
             attempt_relation: None,
+            held_by_pid: None,
+            species: None,
             started_at,
             outcome: None,
             output: None,
@@ -204,5 +233,21 @@ mod tests {
         let record: StepRecord = serde_json::from_str(json_str).expect("record vecchio leggibile");
         assert_eq!(record.bytes_seen, None);
         assert_eq!(record.bytes_discarded, None);
+        // Scritto prima che la specie esistesse: resta leggibile, e non
+        // eredita una specie che nessuno ha dichiarato.
+        assert_eq!(record.species, None);
+        assert_eq!(record.held_by_pid, None);
+    }
+
+    #[test]
+    fn species_and_holder_survive_a_round_trip() {
+        let mut record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
+        record.species = Some(StepSpecies::Compensable);
+        record.held_by_pid = Some(4321);
+        let text = serde_json::to_string(&record).expect("record serializzabile");
+        assert!(text.contains("\"compensable\""), "la specie va scritta in minuscolo: {text}");
+        let back: StepRecord = serde_json::from_str(&text).expect("record rileggibile");
+        assert_eq!(back.species, Some(StepSpecies::Compensable));
+        assert_eq!(back.held_by_pid, Some(4321));
     }
 }

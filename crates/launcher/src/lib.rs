@@ -2,9 +2,9 @@
 
 use flow::{
     attempt_relation, latest_for, step_input, Action, ActionError, ActionOutcome, ActionRegistry,
-    AttemptRelation, Clock, Completion, Decision, EffectStatus, Execution, ExecutionRequest,
-    Executor, FlowError, Graph, InProcessExecutor, Outcome, ProcessProbe, RecordStore, SharedState,
-    Step, StepRecord, MAX_SAID_BYTES,
+    Clock, Completion, Decision, EffectStatus, Execution, ExecutionRequest, Executor, FlowError,
+    Graph, InProcessExecutor, Outcome, ProcessProbe, RecordStore, SharedState, StepRecord,
+    StepSpecies, MAX_SAID_BYTES,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -44,6 +44,7 @@ pub struct CommandSpec {
     pub timeout: Duration,
     pub max_output_bytes: usize,
     inspector: Option<Arc<dyn EffectInspector>>,
+    species: StepSpecies,
 }
 
 impl CommandSpec {
@@ -61,11 +62,22 @@ impl CommandSpec {
             timeout,
             max_output_bytes,
             inspector: None,
+            // Un comando esterno di cui non si dichiara niente non si rilancia
+            // da solo: dietro `executable` può esserci qualunque effetto.
+            species: StepSpecies::HandToHuman,
         }
     }
 
     pub fn with_inspector(mut self, inspector: impl EffectInspector + 'static) -> Self {
         self.inspector = Some(Arc::new(inspector));
+        self
+    }
+
+    /// Dichiara se rifare questo comando è sicuro, quando l'ispezione
+    /// dell'effetto non sa rispondere. Serve a chi conosce il comando: da qui
+    /// dentro, un eseguibile vale l'altro.
+    pub fn with_species(mut self, species: StepSpecies) -> Self {
+        self.species = species;
         self
     }
 }
@@ -119,6 +131,7 @@ impl ProcessExecutor {
                 name,
                 InspectionAction {
                     inspector: command.inspector.clone(),
+                    species: command.species,
                 },
             );
         }
@@ -194,6 +207,13 @@ impl Executor for ProcessExecutor {
                     clock.now()?,
                 );
                 started.attempt_relation = attempt_relation(&records, &started);
+                // Chi tiene il passo è questo processo, non il figlio che sta
+                // per nascere: se muore lui, il passo resta aperto e senza
+                // nessuno che lo segua, ed è quello che la ripresa deve vedere.
+                // Il pid del figlio non serve a nessuno, perché a dire se il
+                // lavoro è ancora in corso qui è il lucchetto (`FileLockProbe`).
+                started.held_by_pid = Some(std::process::id());
+                started.species = command.as_ref().ok().map(|command| command.species);
                 store.append_started(started.clone())?;
 
                 let completion = if !should_run {
@@ -262,6 +282,7 @@ impl Executor for ProcessExecutor {
 
 struct InspectionAction {
     inspector: Option<Arc<dyn EffectInspector>>,
+    species: StepSpecies,
 }
 
 impl Action for InspectionAction {
@@ -285,6 +306,10 @@ impl Action for InspectionAction {
             || Ok(EffectStatus::Unknown("effect_not_inspectable".to_owned())),
             |inspector| inspector.inspect(record, shared),
         )
+    }
+
+    fn species(&self) -> StepSpecies {
+        self.species
     }
 }
 
