@@ -525,3 +525,102 @@ fn a_recurring_task_already_done_today_does_not_steal_the_tick() {
     let untouched = fs::read_to_string(ws.path("queue").join("a-sentinella.task")).unwrap();
     assert!(!untouched.contains("notte-status:"), "non doveva essere toccata: {untouched}");
 }
+
+/// Un orologio finto che passa la mezzanotte fra l'avvio e il primo giro.
+///
+/// `shell_date` invoca `date` **senza percorso assoluto**, quindi rispetta il
+/// `PATH`: è questo che rende il tempo iniettabile senza toccare il codice di
+/// produzione. La prima richiesta di una data nuda risponde col giorno prima —
+/// è quella che il processo fa nascendo, per fissare `Config::today` — e da lì
+/// in poi risponde col giorno dopo. Ogni altra forma (l'ora col fuso, che il
+/// registro stampa a ogni riga) passa al `date` vero.
+///
+/// Senza questo, il difetto è **invisibile per costruzione**: in una prova il
+/// processo nasce e muore nello stesso istante, quindi la data dell'avvio e
+/// quella di adesso coincidono sempre.
+fn install_clock_that_crosses_midnight(ws: &Workspace) -> PathBuf {
+    let bin = ws.path("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let counter = ws.path("state").join("date-calls");
+    let script = format!(
+        "#!/bin/sh\n\
+         for a in \"$@\"; do\n\
+         \x20 if [ \"$a\" = \"+%Y-%m-%d\" ]; then\n\
+         \x20   if [ -f {c} ]; then echo 2026-08-27; else : > {c}; echo 2026-08-26; fi\n\
+         \x20   exit 0\n\
+         \x20 fi\n\
+         done\n\
+         exec /bin/date \"$@\"\n",
+        c = counter.display()
+    );
+    let date_path = bin.join("date");
+    fs::write(&date_path, script).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&date_path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin
+}
+
+/// IL DIFETTO CHE QUESTA PROVA TIENE CHIUSO, misurato sul servizio vivo il
+/// 27/08/2026: il ciclo residente filtrava i ricorrenti con la data **dell'avvio**
+/// invece che con quella di adesso. Dal giorno dopo l'avvio, ogni lavorazione
+/// portava `ultima-esecuzione` uguale a quella data ferma, quindi tutte
+/// risultavano già fatte e la coda si dichiarava vuota **per sempre**: il
+/// registro portava «salto: coda vuota (x340)» con dodici lavorazioni dentro, e
+/// per quel giorno non esisteva nessun rapporto.
+///
+/// Il servizio sembrava così attivo solo di notte: ogni riavvio gli ridava
+/// esattamente un giorno di lavoro, poi taceva fino al successivo.
+///
+/// La prova rompe apposta il presupposto — l'orologio avanza di un giorno fra
+/// l'avvio e il primo giro — e pretende che la lavorazione di ieri venga ripresa.
+#[test]
+fn a_resident_cycle_picks_up_yesterdays_recurring_task_after_midnight() {
+    let ws = Workspace::new("mezzanotte-ricorrenti");
+    let done_yesterday = "motore: openrouter\nricorrenza: ogni-notte\nultima-esecuzione: 2026-08-26\n---prompt---\nuna domanda\n---verifica---\ngrep -q 'answer: 42' \"$NOTTE_OUTPUT_FILE\"\n";
+    fs::write(ws.path("queue").join("sentinella.task"), done_yesterday).unwrap();
+
+    let bin = install_clock_that_crosses_midnight(&ws);
+    let path_with_fake_date = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    // Niente `NOTTE_DATE_OVERRIDE`: qui la data deve venire dall'orologio, che
+    // è il pezzo sotto esame. Con l'override la prova resterebbe verde anche
+    // col difetto dentro, perché la data non cambierebbe mai.
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_notte"));
+    cmd.arg("--watch")
+        .env("PATH", &path_with_fake_date)
+        .env("NOTTE_QUEUE_DIR", ws.path("queue"))
+        .env("NOTTE_DONE_DIR", ws.path("done"))
+        .env("NOTTE_ALERTS_DIR", ws.path("alerts"))
+        .env("NOTTE_STATE_DIR", ws.path("state"))
+        .env("NOTTE_IN_PROGRESS_DIR", ws.path("in-corso"))
+        .env("NOTTE_LOCK_PATH", ws.path("state").join("notte.lock"))
+        .env("NOTTE_MAX_FAILURES", "3")
+        .env("NOTTE_OPENROUTER_PAUSE", "0")
+        .env("NOTTE_MAX_PROMPT_BYTES", "8000")
+        .env("NOTTE_OPENROUTER_FETCH", fixture("fixture-openrouter-ok.test.sh"))
+        .env("NOTTE_WATCH_MAX_TICKS", "1")
+        .env("NOTTE_WATCH_INTERVAL_SECS", "0")
+        .env("NOTTE_IDLE_SECONDS_OVERRIDE", "99999")
+        .env("NOTTE_LOAD1_OVERRIDE", "0.1")
+        .env("NOTTE_MEM_FREE_PERCENT_OVERRIDE", "90")
+        .env("NOTTE_CORE_COUNT_OVERRIDE", "8")
+        .env("NOTTE_HOUR_OVERRIDE", "3");
+    let status = cmd.status().expect("il binario deve poter partire");
+    assert!(status.success());
+
+    // Il rapporto porta la data di **oggi**, non quella dell'avvio.
+    let report = fs::read_to_string(ws.path("state").join("rapporto-2026-08-27.md"))
+        .unwrap_or_default();
+    assert!(
+        report.contains("sentinella.task"),
+        "la ricorrente di ieri doveva essere ripresa dopo la mezzanotte; \
+         col difetto la coda risulta vuota e il rapporto non esiste. Rapporto: {report:?}"
+    );
+}

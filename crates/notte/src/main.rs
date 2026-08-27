@@ -19,7 +19,7 @@ use notte::{
 };
 use notte::{parse_idle_seconds, parse_loadavg_1min, parse_mem_free_percent};
 use notte::{parse_task, prompt_over_cap, report_line, status_line};
-use notte::{decide, OpenRouterResult, Outcome, ParsedTask, WatchDecision, WatchInputs, WatchThresholds};
+use notte::{decide, OpenRouterResult, Outcome, ParsedTask, WatchDecision, WatchInputs, WatchThresholds, Weight};
 use notte::{attempts_field, parse_lock_pid, set_attempts_field, split_receipt_name, strip_receipt_suffix};
 use notte::MAX_TASK_ATTEMPTS;
 use std::fs;
@@ -58,6 +58,7 @@ struct Config {
     idle_threshold_secs: u64,
     idle_load_ratio_cap: f64,
     busy_load_ratio_cap: f64,
+    light_load_ratio_cap: f64,
     mem_free_min_percent: u32,
     hourly_cap: u32,
     failure_cooldown_secs: u64,
@@ -81,6 +82,26 @@ struct Config {
 
 fn env_or(key: &str, default: String) -> String {
     std::env::var(key).unwrap_or(default)
+}
+
+/// La data di adesso, non quella dell'avvio.
+///
+/// IL GUASTO CHE RIPARA, misurato il 27/08/2026: `Config::today` si calcola una
+/// volta sola, quando il processo nasce. Il ciclo residente vive per giorni, e
+/// dal giorno dopo l'avvio confrontava ogni ricorrente con una data ferma: tutte
+/// portavano `ultima-esecuzione` uguale a quel giorno, quindi tutte risultavano
+/// «già fatte oggi» e la coda si dichiarava vuota. **Per sempre.** Il registro
+/// del 27/08 porta «salto: coda vuota (x340)» con dodici lavorazioni ferme
+/// dentro, e nessun rapporto per quel giorno.
+///
+/// È il difetto che faceva sembrare il servizio attivo solo di notte: ogni
+/// riavvio — un rilascio, un riavvio della macchina — gli ridava esattamente un
+/// giorno di lavoro, e poi taceva.
+///
+/// `NOTTE_DATE_OVERRIDE` resta sovrano: chi fissa la data lo fa apposta, e le
+/// prove ci contano.
+fn today_now() -> String {
+    env_or("NOTTE_DATE_OVERRIDE", shell_date(&["+%Y-%m-%d"]))
 }
 
 impl Config {
@@ -167,6 +188,12 @@ impl Config {
             busy_load_ratio_cap: env_or("NOTTE_BUSY_LOAD_CAP", "0.25".to_string())
                 .parse()
                 .unwrap_or(0.25),
+            // 1 volta il numero di core: sotto quel numero la macchina non
+            // sta mettendo lavoro in coda. Il perché coi numeri di oggi è nel
+            // commento dentro `decide()`, in `lib.rs`.
+            light_load_ratio_cap: env_or("NOTTE_LIGHT_LOAD_CAP", "1.0".to_string())
+                .parse()
+                .unwrap_or(1.0),
             mem_free_min_percent: env_or("NOTTE_MEM_FREE_MIN_PERCENT", "20".to_string())
                 .parse()
                 .unwrap_or(20),
@@ -916,7 +943,7 @@ fn report_for(configured: &Path, configured_day: &str, today_now: &str) -> (Path
     (dir.join(format!("rapporto-{today_now}.md")), today_now.to_string())
 }
 
-fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32) -> TaskOutcome {
+fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, today: &str) -> TaskOutcome {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -940,7 +967,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32) -> 
     // archivio, non apre una segnalazione, non conta come lavoro. Senza
     // questo, i sei giri all'ora della finestra notturna lo rieseguirebbero
     // fino a riempire la notte con un compito solo.
-    if already_done_today(&task, &cfg.today) {
+    if already_done_today(&task, today) {
         return TaskOutcome { counts_total: false, bucket: "skipped" };
     }
 
@@ -1164,7 +1191,9 @@ fn run_batch(cfg: &Config) -> i32 {
     let mut stopped = false;
 
     for path in tasks {
-        let outcome = execute_task(cfg, &path, &report, &mut fails);
+        // Il giro `--once` nasce e muore nello stesso minuto: la data
+        // dell'avvio è ancora quella di adesso.
+        let outcome = execute_task(cfg, &path, &report, &mut fails, &cfg.today);
         if outcome.counts_total {
             total += 1;
         }
@@ -1301,11 +1330,12 @@ fn run_watch(cfg: &Config) -> i32 {
     note(
         &cfg.log_path,
         &format!(
-            "ciclo avviato: giro ogni {}s · ferma da {}s · carico max da fermo {} · carico max da occupata {} · memoria libera min {}% · tetto orario {} · finestra {:02}:00-{:02}:00 · fermissima {}s",
+            "ciclo avviato: giro ogni {}s · ferma da {}s · carico max da fermo {} · carico max da occupata {} · carico max per una leggera {} · memoria libera min {}% · tetto orario {} · finestra {:02}:00-{:02}:00 · fermissima {}s",
             cfg.watch_interval_secs,
             cfg.idle_threshold_secs,
             cfg.idle_load_ratio_cap,
             cfg.busy_load_ratio_cap,
+            cfg.light_load_ratio_cap,
             cfg.mem_free_min_percent,
             cfg.hourly_cap,
             cfg.window_start_hour,
@@ -1319,6 +1349,7 @@ fn run_watch(cfg: &Config) -> i32 {
         idle_seconds: cfg.idle_threshold_secs,
         idle_load_ratio_cap: cfg.idle_load_ratio_cap,
         busy_load_ratio_cap: cfg.busy_load_ratio_cap,
+        light_load_ratio_cap: cfg.light_load_ratio_cap,
         mem_free_min_percent: cfg.mem_free_min_percent,
         hourly_cap: cfg.hourly_cap,
         window_start_hour: cfg.window_start_hour,
@@ -1341,7 +1372,26 @@ fn run_watch(cfg: &Config) -> i32 {
             }
         }
 
-        let tasks = list_queued_tasks(&cfg.queue_dir, &cfg.today);
+        // LA DATA SI RILEGGE A OGNI GIRO, e va letta **qui**, prima del filtro.
+        // La correzione del 26/08 la rileggeva solo per scegliere il file del
+        // rapporto, dentro il ramo che esegue — cioè a valle del punto che si
+        // blocca: per arrivarci serve una coda non vuota, e la coda si svuotava
+        // proprio qui. Una correzione giusta messa dopo l'ostacolo non si vede
+        // mai girare.
+        let today = today_now();
+        let tasks = list_queued_tasks(&cfg.queue_dir, &today);
+        // Il peso si legge PRIMA di decidere, dalla stessa lavorazione che
+        // `execute_task` prenderebbe (la testa della coda già ordinata): un
+        // compito illeggibile o senza il campo `peso` conta come pesante,
+        // stessa prudenza di `parse_task`.
+        let next_task_weight = tasks
+            .first()
+            .and_then(|p| fs::read_to_string(p).ok())
+            .map(|text| match parse_task(&text) {
+                ParsedTask::Ok(t) => t.weight,
+                ParsedTask::Malformed => Weight::Heavy,
+            })
+            .unwrap_or(Weight::Heavy);
         let idle_seconds = measure_idle_seconds(cfg);
         let load1 = measure_load1(cfg);
         let mem_free_percent = measure_mem_free_percent(cfg);
@@ -1357,6 +1407,7 @@ fn run_watch(cfg: &Config) -> i32 {
             queue_empty: tasks.is_empty(),
             in_cooldown: cooldown_until.is_some(),
             hour,
+            next_task_weight,
         };
         let idle_word = if idle_seconds >= th.idle_seconds { "si" } else { "no" };
 
@@ -1374,9 +1425,9 @@ fn run_watch(cfg: &Config) -> i32 {
                     // La data si rilegge a ogni esecuzione: il ciclo resta
                     // acceso per giorni e la mezzanotte non lo riavvia.
                     let (report_path, report_day) =
-                        report_for(&cfg.report_path, &cfg.today, &shell_date(&["+%Y-%m-%d"]));
+                        report_for(&cfg.report_path, &cfg.today, &today);
                     let report = Report::open(&report_path, &report_day);
-                    execute_task(cfg, &path, &report, &mut fails);
+                    execute_task(cfg, &path, &report, &mut fails, &today);
                     recent_runs.push(Instant::now());
                     if fails >= cfg.max_failures {
                         note(
