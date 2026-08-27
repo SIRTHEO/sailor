@@ -1,7 +1,8 @@
 //! Esecuzione sincrona di passi `flow` in gruppi di processi Unix.
 
 use flow::{
-    Action, ActionError, ActionRegistry, AttemptRelation, Clock, Completion, Decision,
+    Action, ActionError, ActionOutcome, ActionRegistry, AttemptRelation, Clock, Completion,
+    Decision,
     EffectStatus, Execution, ExecutionRequest, Executor, FlowError, Graph, InProcessExecutor,
     Outcome, ProcessProbe, RecordStore, SharedState, Step, StepRecord, MAX_SAID_BYTES,
 };
@@ -274,7 +275,11 @@ struct InspectionAction {
 }
 
 impl Action for InspectionAction {
-    fn execute(&self, _input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
+    fn execute(
+        &self,
+        _input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
         Err(ActionError::new(
             "wrong_executor",
             "external commands must run through ProcessExecutor",

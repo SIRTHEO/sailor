@@ -1,5 +1,5 @@
 use crate::model::*;
-use flow::{Action, ActionError, EffectStatus, SharedState, StepRecord};
+use flow::{Action, ActionError, ActionOutcome, EffectStatus, SharedState, StepRecord};
 use guards::successor::{armed_fingerprint, recalculate_fingerprint_owner, FingerprintOwner};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -235,15 +235,39 @@ pub(crate) fn read_live(state: &Path) -> Option<LiveSessions> {
 pub struct ScanAction;
 
 impl Action for ScanAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
-        encode(scan_dir(decode(input)?))
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
+        encode(scan_dir(decode(input)?)).map(ActionOutcome::Went)
+    }
+}
+
+pub struct LiveSessionsAction;
+
+impl Action for LiveSessionsAction {
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
+        let config: SweepConfig = decode(input)?;
+        Ok(match read_live(&config_path(&config)) {
+            Some(live) => ActionOutcome::Went(encode(live)?),
+            None => ActionOutcome::Waiting("live session directory is unreadable".to_owned()),
+        })
     }
 }
 
 pub struct StandardAction;
 
 impl Action for StandardAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
         let scan: Scan = decode(input)?;
         let mut classified = Vec::new();
         let mut condemned = Vec::new();
@@ -283,6 +307,7 @@ impl Action for StandardAction {
             classified,
             condemned,
         })
+        .map(ActionOutcome::Went)
     }
 }
 
@@ -295,7 +320,11 @@ struct LegacyInput {
 pub struct LegacyAction;
 
 impl Action for LegacyAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
         let input: LegacyInput = decode(input)?;
         let mut classified = Vec::new();
         let mut condemned = Vec::new();
@@ -343,6 +372,7 @@ impl Action for LegacyAction {
             classified,
             condemned,
         })
+        .map(ActionOutcome::Went)
     }
 }
 
@@ -355,7 +385,11 @@ struct PlanInput {
 pub struct PlanAction;
 
 impl Action for PlanAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
         let input: PlanInput = decode(input)?;
         let mut looked = input.classify_standard.looked;
         looked.extend(input.classify_legacy.looked);
@@ -369,6 +403,7 @@ impl Action for PlanAction {
             orphan,
             targets,
         })
+        .map(ActionOutcome::Went)
     }
 }
 
@@ -463,8 +498,12 @@ fn legacy_still_condemned(path: &Path, live: &LiveSessions) -> bool {
 }
 
 impl Action for RemoveAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
-        encode(Self::remove(&decode(input)?))
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
+        encode(Self::remove(&decode(input)?)).map(ActionOutcome::Went)
     }
 
     fn inspect_effect(
@@ -493,6 +532,7 @@ fn test_pause_after_first(index: usize) {
 pub(crate) fn actions() -> flow::ActionRegistry {
     let mut actions = flow::ActionRegistry::default();
     actions.register("scan_markers", ScanAction);
+    actions.register("read_live_sessions", LiveSessionsAction);
     actions.register("classify_standard", StandardAction);
     actions.register("classify_legacy", LegacyAction);
     actions.register("plan_removals", PlanAction);
