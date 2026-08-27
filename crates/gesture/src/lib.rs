@@ -14,8 +14,10 @@
 //! formato comune» non ha trovato altro che questo stesso genere di problema
 //! discusso in prosa, mai un tipo scritto.
 
+pub mod from_agy;
 pub mod from_claude;
 pub mod from_codex;
+pub mod from_gemini;
 
 use serde::{Deserialize, Serialize};
 
@@ -44,11 +46,19 @@ pub enum Moment {
 }
 
 impl Moment {
-    /// Il nome che arriva sul filo in `hook_event_name`, per entrambe le CLI.
+    /// Il nome che arriva sul filo in `hook_event_name`.
+    ///
+    /// Claude Code e Codex condividono lo stesso vocabolario (`PreToolUse`,
+    /// `PostToolUse`, …). Gemini CLI no: manda `BeforeTool`/`AfterTool` per
+    /// lo stesso momento — verificato in
+    /// `@google/gemini-cli/bundle/docs/hooks/reference.md`, installato in
+    /// questo ambiente (v0.57.0). Le due voci in più sono quella differenza,
+    /// non un'estensione a caso: senza di loro `from_gemini` finirebbe ogni
+    /// gesto in `Other`, invisibile a chi cerca `BeforeExecution`.
     pub fn from_wire_name(name: &str) -> Moment {
         match name {
-            "PreToolUse" => Moment::BeforeExecution,
-            "PostToolUse" => Moment::AfterExecution,
+            "PreToolUse" | "BeforeTool" => Moment::BeforeExecution,
+            "PostToolUse" | "AfterTool" => Moment::AfterExecution,
             "SessionStart" => Moment::SessionStart,
             "UserPromptSubmit" => Moment::UserPrompt,
             "PermissionRequest" => Moment::PermissionRequest,
@@ -71,6 +81,13 @@ impl Moment {
 pub enum Source {
     ClaudeCode,
     Codex,
+    /// Il binario `gemini` (Gemini CLI), non `agy`: vedi `Source::Agy`.
+    Gemini,
+    /// Antigravity: la riga di comando si chiama `agy`, non `gemini` — la
+    /// CLI `gemini` risponde `UNSUPPORTED_CLIENT` da terminale (vedi
+    /// `crates/notte/src/main.rs` intorno alla riga 560). Fonte diversa,
+    /// formato di gancio diverso: vedi `from_agy`.
+    Agy,
 }
 
 /// Un gesto: quale strumento, con quali argomenti, in quale sessione, in
@@ -121,6 +138,16 @@ mod tests {
         assert_eq!(Moment::from_wire_name("PostToolUse"), Moment::AfterExecution);
         assert_eq!(Moment::from_wire_name("SessionStart"), Moment::SessionStart);
         assert_eq!(Moment::from_wire_name("UserPromptSubmit"), Moment::UserPrompt);
+    }
+
+    #[test]
+    fn geminis_own_vocabulary_maps_to_the_same_moment_as_claude_and_codex() {
+        assert_eq!(Moment::from_wire_name("BeforeTool"), Moment::BeforeExecution);
+        assert_eq!(Moment::from_wire_name("AfterTool"), Moment::AfterExecution);
+        assert_eq!(
+            Moment::from_wire_name("BeforeTool"),
+            Moment::from_wire_name("PreToolUse")
+        );
     }
 
     #[test]
