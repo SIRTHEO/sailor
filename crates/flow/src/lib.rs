@@ -11,9 +11,10 @@ mod record;
 mod schema;
 
 pub use executor::{
-    Action, ActionError, ActionOutcome, ActionRegistry, Clock, Completion, Decision, EffectStatus,
-    Execution, ExecutionRequest, Executor, FlowError, InMemoryRecordStore, InProcessExecutor,
-    ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, SharedState, SystemClock,
+    attempt_relation, latest_for, same_gates, step_input, Action, ActionError, ActionOutcome,
+    ActionRegistry, Clock, Completion, Decision, EffectStatus, Execution, ExecutionRequest,
+    Executor, FlowError, InMemoryRecordStore, InProcessExecutor, ProcessProbe, Reconciliation,
+    ReconciliationRequest, RecordStore, SharedState, SystemClock,
 };
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{

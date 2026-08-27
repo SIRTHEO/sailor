@@ -1,7 +1,7 @@
 use flow::{
-    ActionRegistry, Clock, EffectStatus, ExecutionRequest, Executor, Graph, InMemoryRecordStore,
-    InProcessExecutor, Outcome, ProcessProbe, ReconciliationRequest, SharedState, Step, StepRecord,
-    ValueSchema,
+    ActionRegistry, Clock, Condition, DependencyEdge, EffectStatus, ExecutionRequest, Executor,
+    Graph, InMemoryRecordStore, InProcessExecutor, Outcome, ProcessProbe, ReconciliationRequest,
+    SharedState, Step, StepRecord, ValueSchema,
 };
 use launcher::{hold_process_lock, CommandSpec, EffectInspector, FileLockProbe, ProcessExecutor};
 use serde_json::Value;
@@ -285,6 +285,8 @@ fn output_over_the_limit_is_truncated_and_the_record_declares_the_difference() {
     let record = &store.all()[0];
     assert_eq!(record.outcome, Some(Outcome::Went));
     assert_eq!(record.output, Some(Value::Null));
+    assert_eq!(record.bytes_seen, Some(200));
+    assert_eq!(record.bytes_discarded, Some(168));
     let said = record
         .said
         .as_deref()
@@ -297,6 +299,112 @@ fn output_over_the_limit_is_truncated_and_the_record_declares_the_difference() {
             .len(),
         32
     );
+    cleanup_directory(&directory);
+}
+
+#[test]
+fn conditional_join_with_skipped_dependency_in_process_executor() {
+    let _serial = SPAWN_ORDER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let directory = create_test_directory();
+
+    let steps = vec![
+        Step {
+            id: "first".to_owned(),
+            deps: vec![],
+            input_schema: ValueSchema::Any,
+            output_schema: ValueSchema::Any,
+            when: None,
+            action: "echo_first".to_owned(),
+            max_attempts: 1,
+        },
+        Step {
+            id: "skipped".to_owned(),
+            deps: vec!["first".to_owned()],
+            input_schema: ValueSchema::Any,
+            output_schema: ValueSchema::Any,
+            when: Some(Condition::PointerEquals {
+                pointer: "/enabled".to_owned(),
+                value: Value::Bool(true),
+            }),
+            action: "echo_skipped".to_owned(),
+            max_attempts: 1,
+        },
+        Step {
+            id: "join".to_owned(),
+            deps: vec!["first".to_owned(), "skipped".to_owned()],
+            input_schema: ValueSchema::Any,
+            output_schema: ValueSchema::Any,
+            when: None,
+            action: "echo_join".to_owned(),
+            max_attempts: 1,
+        },
+    ];
+    let graph = Graph::with_skippable_dependencies(
+        steps,
+        vec![DependencyEdge::new("join", "skipped")],
+    )
+    .expect("grafo con ramo opzionale valido");
+
+    let mut executor = ProcessExecutor::new(directory.join("locks"));
+    let mut first_spec = CommandSpec::new("/bin/sh", &directory, Duration::from_millis(200), 1024);
+    first_spec.arguments = vec![
+        "-c".into(),
+        "eval \"printf '{\\\"enabled\\\":false}' >&$SAILOR_OUTPUT_FD\"".into(),
+    ];
+    executor.register("echo_first", first_spec);
+
+    let mut skipped_spec =
+        CommandSpec::new("/bin/sh", &directory, Duration::from_millis(200), 1024);
+    skipped_spec.arguments = vec![
+        "-c".into(),
+        "eval \"printf '{\\\"skipped\\\":true}' >&$SAILOR_OUTPUT_FD\"".into(),
+    ];
+    executor.register("echo_skipped", skipped_spec);
+
+    let mut join_spec = CommandSpec::new("/bin/sh", &directory, Duration::from_millis(200), 1024);
+    join_spec.arguments = vec![
+        "-c".into(),
+        "cat > /dev/null; eval \"printf '{\\\"joined\\\":true}' >&$SAILOR_OUTPUT_FD\"".into(),
+    ];
+    executor.register("echo_join", join_spec);
+
+    let mut store = InMemoryRecordStore::default();
+    let result = executor.execute(
+        &graph,
+        ExecutionRequest {
+            run_id: "run-skipped-join".to_owned(),
+            root_inputs: BTreeMap::new(),
+            gates: vec![],
+            shared: SharedState::new(),
+        },
+        &mut store,
+        &ActionRegistry::default(),
+        &mut FixedClock(1),
+    );
+    assert!(
+        result.is_ok(),
+        "l'esecuzione deve avere successo gestendo la dipendenza saltata: {result:?}"
+    );
+    let records = store.all();
+    let skipped_record = records
+        .iter()
+        .find(|r| r.step_id == "skipped")
+        .expect("record skipped");
+    assert_eq!(skipped_record.outcome, Some(Outcome::Skipped));
+    let join_record = records
+        .iter()
+        .find(|r| r.step_id == "join")
+        .expect("record join");
+    assert_eq!(join_record.outcome, Some(Outcome::Went));
+    assert_eq!(
+        join_record.input,
+        serde_json::json!({
+            "first": {"enabled": false}
+        })
+    );
+
     cleanup_directory(&directory);
 }
 
