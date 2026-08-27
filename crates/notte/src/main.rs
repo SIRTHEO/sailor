@@ -676,32 +676,33 @@ impl Action for NotteTaskAction {
         })))
     }
 
-    /// Un tentativo lasciato aperto da un processo morto a metà: si può
-    /// sempre ritentare. `NotApplied`, non l'`Unknown` di default — quello
-    /// chiuderebbe il passo come "in attesa", e un passo in attesa non torna
-    /// mai pronto (vedi `decision_from` in `flow`): il compito resterebbe
-    /// bloccato per sempre invece di essere ripreso al tentativo successivo,
-    /// come faceva il vecchio ciclo con ogni ricevuta orfana.
-    fn inspect_effect(
-        &self,
-        _record: &StepRecord,
-        _shared: &SharedState,
-    ) -> Result<flow::EffectStatus, ActionError> {
-        Ok(flow::EffectStatus::NotApplied)
+    /// Un compito notturno si può sempre ritentare: il motore esterno lavora
+    /// per conto suo e la verifica rilegge il mondo da capo, quindi rifare un
+    /// tentativo interrotto non duplica niente che conti.
+    ///
+    /// Qui c'era un `inspect_effect` che rispondeva `NotApplied`, cioè
+    /// «l'effetto non è avvenuto», per ottenere il rilancio. Non era vero: di
+    /// un motore ucciso a metà non si sa nulla. Ora l'ignoranza resta scritta
+    /// come ignoranza — `Unknown`, il valore predefinito — e a far ripartire
+    /// il compito è questa dichiarazione, che è l'unica cosa vera che ci sia
+    /// da dire.
+    fn species(&self) -> flow::StepSpecies {
+        flow::StepSpecies::Repeatable
     }
 }
 
 /// Chiede al kernel se il PROCESSO NOTTE che aveva in mano questo tentativo
 /// è ancora vivo — non un motore esterno figlio: come il vecchio
-/// `claim_task`, è il pid di `notte` stesso (`std::process::id()`, scritto
-/// nell'ingresso del passo da `execute_task`) a dire se il tentativo è
-/// ancora seguito da qualcuno.
+/// `claim_task`, è il pid di `notte` stesso a dire se il tentativo è ancora
+/// seguito da qualcuno. Il numero lo scrive il motore nel campo
+/// `held_by_pid` insieme all'intenzione: non è più una chiave concordata
+/// dentro l'ingresso del passo, che ogni chiamante poteva chiamare a modo
+/// suo e dimenticare in silenzio.
 struct NotteProcessProbe;
 
 impl ProcessProbe for NotteProcessProbe {
     fn is_running(&self, record: &StepRecord) -> Result<bool, FlowError> {
-        let pid = record.input.get("pid").and_then(|v| v.as_u64());
-        Ok(pid.is_some_and(|pid| process_exists(pid as u32)))
+        Ok(record.held_by_pid.is_some_and(process_exists))
     }
 }
 
@@ -1095,72 +1096,136 @@ fn claim_task(in_progress_dir: &Path, path: &Path, name: &str) -> Option<PathBuf
     Some(receipt)
 }
 
-/// Le ricevute rimaste da un processo `notte` ucciso a metà: pid morto. Il
-/// tentativo lasciato aperto nel deposito lo chiude la riconciliazione del
-/// motore (`InProcessExecutor::reconcile`, con `NotteProcessProbe` a
-/// chiedere al kernel), che decide da sola se resta un altro tentativo:
-/// oltre `MAX_TASK_ATTEMPTS` il compito è avvelenato e finisce dritto in
-/// `fatti/`, altrimenti torna in coda per un altro giro — senza più
-/// scrivere un contatore nel testo del compito, perché il numero di
-/// tentativi vive nel deposito, non nel file. Va chiamata una sola volta,
-/// all'avvio.
-fn recover_orphaned_receipts(cfg: &Config, today: &str) {
-    let Ok(entries) = fs::read_dir(&cfg.in_progress_dir) else { return };
+/// I compiti lasciati a metà da un processo `notte` ucciso: si riparte dalle
+/// CORSE APERTE NEL DEPOSITO, non dai nomi dei file in `in-corso/`.
+///
+/// PERCHÉ IL DEPOSITO E NON LA CARTELLA. Il nome di una corsa porta la data
+/// della notte che l'ha aperta (`notte-<giorno>-<compito>`), e una notte
+/// finisce a mezzanotte mentre il lavoro no: ricostruire quel nome da qui,
+/// con la data di oggi, vuol dire cercare una corsa che non esiste per ogni
+/// compito preso prima di mezzanotte e raccolto dopo. Il tentativo di ieri
+/// resterebbe aperto per sempre e il conteggio ripartirebbe da zero — cioè un
+/// compito che si interrompe ogni notte non verrebbe avvelenato mai. Il
+/// deposito le corse aperte le conosce per nome, e non ha bisogno che nessuno
+/// gliele indovini.
+///
+/// Il tentativo lasciato aperto lo chiude la riconciliazione del motore
+/// (`InProcessExecutor::reconcile`, con `NotteProcessProbe` a chiedere al
+/// kernel), che decide da sola se resta un altro tentativo: oltre
+/// `MAX_TASK_ATTEMPTS` il compito è avvelenato e finisce dritto in `fatti/`,
+/// altrimenti torna in coda — senza contatori scritti nel testo del compito,
+/// perché il numero di tentativi vive nel deposito. Va chiamata una sola
+/// volta, all'avvio.
+fn recover_orphaned_receipts(cfg: &Config) {
     let graph = task_graph();
     let registry = task_action_registry();
-    for entry in entries.flatten() {
-        let receipt = entry.path();
-        let Some(file_name) = receipt.file_name().map(|n| n.to_string_lossy().to_string()) else {
-            continue;
-        };
-        let (base_name, pid) = split_receipt_name(&file_name);
-        // Un nome senza suffisso pid non è mai stato scritto da `claim_task`:
-        // non si sa di chi sia, si lascia stare piuttosto che perderlo.
-        let Some(pid) = pid else { continue };
-        if process_exists(pid) {
-            continue; // al lavoro davvero (o pid riciclato: si aspetta)
-        }
+    let ledger = open_ledger(cfg);
+    let unfinished = ledger
+        .as_ref()
+        .and_then(|ledger| ledger.unfinished_runs().ok())
+        .unwrap_or_default();
 
+    let mut recovered_tasks: Vec<String> = Vec::new();
+    for run in unfinished {
+        // `entity` è il nome del compito, scritto insieme alla corsa. Vuota
+        // vuol dire corsa mai registrata: non si sa a quale file appartenga.
+        if run.entity.is_empty() {
+            continue;
+        }
+        let Some(receipt) = receipt_for_task(cfg, &run.entity) else {
+            continue; // nessun file in mano: il compito è già altrove
+        };
         let text = fs::read_to_string(&receipt).unwrap_or_default();
         let engine = match parse_task(&text) {
-            ParsedTask::Ok(t) => t.engine,
+            ParsedTask::Ok(task) => task.engine,
             ParsedTask::Malformed => "sconosciuto".to_string(),
         };
-        let run_id = task_run_id(&base_name, today);
-        let ledger = open_ledger(cfg);
         let mut store = record_store_for(&ledger);
-        let _ = InProcessExecutor.reconcile(ReconciliationRequest {
+        let report = InProcessExecutor.reconcile(ReconciliationRequest {
             graph: &graph,
-            run_id: &run_id,
+            run_id: &run.run_id,
             store: &mut *store,
             actions: &registry,
             shared: &SharedState::new(),
             processes: &NotteProcessProbe,
             clock: &mut SystemClock,
         });
-        let attempt = latest_motore_record(&*store, &run_id).map(|record| record.attempt);
+        // Il motore ha lasciato aperto un passo: chi lo teneva è ancora vivo.
+        // La ricevuta non è orfana e il compito non è nostro da riprendere.
+        if report.is_ok_and(|report| !report.still_running.is_empty()) {
+            continue;
+        }
+        let attempt = latest_motore_record(&*store, &run.run_id).map(|record| record.attempt);
         let _ = fs::remove_file(&receipt);
+        recovered_tasks.push(run.entity.clone());
 
         match attempt {
             Some(attempt) if attempt >= MAX_TASK_ATTEMPTS => {
                 let mut poisoned = text.clone();
                 poisoned.push_str(&status_line("red (avvelenato)"));
-                let _ = fs::write(cfg.done_dir.join(&base_name), &poisoned);
+                let _ = fs::write(cfg.done_dir.join(&run.entity), &poisoned);
                 write_alert(
                     cfg,
-                    &base_name,
+                    &run.entity,
                     &engine,
                     &format!("interrotto {attempt} volte (pid morto ogni volta): avvelenato, non si ritenta più"),
                     &notte::truncate_chars(&text, 500),
                 );
-                record_run_status(&ledger, &run_id, &base_name, "red (avvelenato)", now_secs(), Some(now_secs()));
-                note(&cfg.log_path, &format!("{base_name}: avvelenato dopo {attempt} tentativi, in fatti/"));
+                record_run_status(&ledger, &run.run_id, &run.entity, "red (avvelenato)", now_secs(), Some(now_secs()));
+                note(&cfg.log_path, &format!("{}: avvelenato dopo {attempt} tentativi, in fatti/", run.entity));
             }
             _ => {
-                let _ = fs::write(cfg.queue_dir.join(&base_name), &text);
-                note(&cfg.log_path, &format!("{base_name}: ricevuta orfana (pid {pid} morto), torna in coda"));
+                let _ = fs::write(cfg.queue_dir.join(&run.entity), &text);
+                note(&cfg.log_path, &format!("{}: corsa {} interrotta, torna in coda", run.entity, run.run_id));
             }
         }
+    }
+
+    recover_receipts_without_a_run(cfg, &recovered_tasks);
+}
+
+/// La ricevuta di un compito, cercata per il nome con cui è nato. Il suffisso
+/// pid non si conosce da qui — lo mise il processo morto — quindi si guarda il
+/// nome senza suffisso.
+fn receipt_for_task(cfg: &Config, task: &str) -> Option<PathBuf> {
+    let entries = fs::read_dir(&cfg.in_progress_dir).ok()?;
+    entries.flatten().map(|entry| entry.path()).find(|path| {
+        path.file_name()
+            .map(|name| strip_receipt_suffix(&name.to_string_lossy()) == task)
+            .unwrap_or(false)
+    })
+}
+
+/// Le ricevute rimaste in `in-corso/` senza nessuna corsa aperta che le
+/// spieghi: il processo è morto PRIMA di scrivere l'intenzione nel deposito,
+/// oppure quella volta il deposito non si era aperto. Non c'è storia da
+/// contare, quindi il compito torna in coda e basta — è il solo caso in cui
+/// il conteggio riparte da zero, e riparte perché davvero non è mai partito.
+fn recover_receipts_without_a_run(cfg: &Config, already_recovered: &[String]) {
+    let Ok(entries) = fs::read_dir(&cfg.in_progress_dir) else { return };
+    for entry in entries.flatten() {
+        let receipt = entry.path();
+        let Some(file_name) = receipt.file_name().map(|name| name.to_string_lossy().to_string())
+        else {
+            continue;
+        };
+        let (task, pid) = split_receipt_name(&file_name);
+        // Un nome senza suffisso pid non è mai stato scritto da `claim_task`:
+        // non si sa di chi sia, si lascia stare piuttosto che perderlo.
+        let Some(pid) = pid else { continue };
+        if already_recovered.contains(&task) {
+            continue;
+        }
+        if process_exists(pid) {
+            continue; // al lavoro davvero (o pid riciclato: si aspetta)
+        }
+        let text = fs::read_to_string(&receipt).unwrap_or_default();
+        let _ = fs::remove_file(&receipt);
+        let _ = fs::write(cfg.queue_dir.join(&task), &text);
+        note(
+            &cfg.log_path,
+            &format!("{task}: ricevuta orfana (pid {pid} morto) senza corsa nel deposito, torna in coda"),
+        );
     }
 }
 
@@ -1336,9 +1401,13 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
 
         // IL RECORD D'INTENZIONE nel deposito durevole si scrive PRIMA che il
         // motore parli: lo scrive `InProcessExecutor::execute`, dentro
-        // `store.append_started`, prima di chiamare `NotteTaskAction`.
-        let mut input = json!(build_task_step_input(cfg, &task, &cfg.last_output_path));
-        input["pid"] = json!(std::process::id());
+        // `store.append_started`, prima di chiamare `NotteTaskAction` — e con
+        // l'intenzione scrive anche il pid di chi tiene il passo, che quindi
+        // non va più infilato a mano nell'ingresso. Toglierlo di lì non è
+        // solo pulizia: il pid cambiava a ogni tentativo, e l'impronta
+        // dell'ingresso con lui, così due tentativi dello stesso compito
+        // risultavano «ingresso diverso» quando invece è lo stesso lavoro.
+        let input = json!(build_task_step_input(cfg, &task, &cfg.last_output_path));
         let execution_result = InProcessExecutor.execute(
             &graph,
             ExecutionRequest {
@@ -1505,7 +1574,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
 fn run_batch(cfg: &Config) -> i32 {
     ensure_dirs(cfg);
     rotate_log(&cfg.log_path);
-    recover_orphaned_receipts(cfg, &today_now());
+    recover_orphaned_receipts(cfg);
     let report = Report::open(&cfg.report_path, &cfg.today);
 
     let tasks = list_queued_tasks(&cfg.queue_dir, &cfg.today);
@@ -1672,7 +1741,7 @@ fn run_watch(cfg: &Config) -> i32 {
             cfg.very_idle_seconds,
         ),
     );
-    recover_orphaned_receipts(cfg, &today_now());
+    recover_orphaned_receipts(cfg);
 
     let th = WatchThresholds {
         idle_seconds: cfg.idle_threshold_secs,
