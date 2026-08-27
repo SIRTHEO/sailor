@@ -1,0 +1,12 @@
+[package]
+name = "actions"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Azioni riusabili da qualunque flow::Graph: nessuna dipendenza verso un
+# servizio in particolare, solo verso il motore che le esegue.
+[dependencies]
+flow = { path = "../flow" }
+serde = { workspace = true }
+serde_json = { workspace = true }
