@@ -95,6 +95,9 @@ enum Mode {
     Quoted(u8),
     /// Stringa grezza di Rust: `r#"…"#`, con quanti cancelletti la chiudono.
     RawString(usize),
+    /// Espressione regolare di JavaScript: `/…/flags`, con la classe `[…]`
+    /// che al suo interno annulla la barra di chiusura.
+    Regex { in_class: bool },
     /// Le tre virgolette di Python.
     TripleQuoted(u8),
 }
@@ -166,6 +169,16 @@ pub fn scan(source: &str, language: Language) -> Scan {
                         index += 2 + hashes;
                         continue;
                     }
+                }
+                // `/…/g` di JavaScript. Senza riconoscerla, una regola che
+                // contiene una virgoletta — e `graph-imports.ts` ne è pieno —
+                // apre una stringa che non si chiude più, e da lì in poi la
+                // maschera dice il falso su tutto il file: ventisette guasti
+                // su ventotto stavano dentro finte stringhe.
+                if language == Language::Braces && byte == b'/' && regex_can_start(bytes, index) {
+                    stack.push(Mode::Regex { in_class: false });
+                    index += 1;
+                    continue;
                 }
                 if language == Language::Hash && (byte == b'"' || byte == b'\'') {
                     let triple = bytes.get(index + 1) == Some(&byte)
@@ -243,6 +256,27 @@ pub fn scan(source: &str, language: Language) -> Scan {
                 }
                 index += 1;
             }
+            Mode::Regex { in_class } => {
+                if byte == b'\\' {
+                    index += 2;
+                    continue;
+                }
+                if byte == b'\n' {
+                    // Una regola non attraversa la riga: se siamo qui, quella
+                    // barra era una divisione.
+                    stack.pop();
+                    index += 1;
+                    continue;
+                }
+                if byte == b'[' {
+                    *stack.last_mut().unwrap() = Mode::Regex { in_class: true };
+                } else if byte == b']' {
+                    *stack.last_mut().unwrap() = Mode::Regex { in_class: false };
+                } else if byte == b'/' && !in_class {
+                    stack.pop();
+                }
+                index += 1;
+            }
             Mode::TripleQuoted(delimiter) => {
                 if byte == delimiter
                     && bytes.get(index + 1) == Some(&delimiter)
@@ -265,6 +299,33 @@ pub fn scan(source: &str, language: Language) -> Scan {
         literals,
         line_starts,
     }
+}
+
+/// Se quella barra apre una regola e non è una divisione.
+///
+/// Lo dice il token prima: dopo un valore — un nome, una parentesi chiusa, un
+/// numero — la barra divide; dopo una virgola, un uguale, una parentesi aperta
+/// o l'inizio della riga, comincia una regola. È l'euristica che usano gli
+/// evidenziatori, e sbaglia solo dove sbaglierebbero anche loro.
+fn regex_can_start(bytes: &[u8], index: usize) -> bool {
+    // `//` e `/*` sono commenti, e li ha già presi chi chiama.
+    if matches!(bytes.get(index + 1), Some(b'/') | Some(b'*')) {
+        return false;
+    }
+    let mut cursor = index;
+    while cursor > 0 {
+        cursor -= 1;
+        let byte = bytes[cursor];
+        if byte.is_ascii_whitespace() {
+            continue;
+        }
+        return matches!(
+            byte,
+            b'(' | b',' | b'=' | b':' | b'[' | b'!' | b'&' | b'|' | b'?' | b'{' | b'}' | b';'
+                | b'+' | b'-' | b'*' | b'%' | b'^' | b'~' | b'<' | b'>' | b'\n'
+        );
+    }
+    true
 }
 
 /// Se l'apostrofo a quell'indice apre un carattere e non una durata di vita.
@@ -440,6 +501,35 @@ mod tests {
         let scanned = scan(source, Language::Rust);
         assert!(!scanned.is_code(source.find("a ===").unwrap() + 2));
         assert!(scanned.is_code(source.find("1 ==").unwrap() + 2));
+    }
+
+    /// La virgoletta dentro una regola non apre una stringa: se lo facesse,
+    /// tutto il resto del file passerebbe per testo e i guasti cadrebbero
+    /// dentro stringhe che non esistono.
+    #[test]
+    fn a_quote_inside_a_regex_does_not_open_a_string() {
+        let source = "const re = /[\"']/g;\nif (a === b) return 1;\n";
+        let scanned = scan(source, Language::Braces);
+        assert!(scanned.is_code(source.find("===").unwrap()), "il confronto dopo resta codice");
+        assert!(scanned.literals.is_empty(), "{:?}", scanned.literals);
+    }
+
+    /// E una divisione non apre una regola: `a / b` seguito da una virgoletta
+    /// manderebbe fuori sincrono nell'altra direzione.
+    #[test]
+    fn a_division_is_not_a_regex() {
+        let source = "const half = total / count;\nconst name = \"x/\";\n";
+        let scanned = scan(source, Language::Braces);
+        let literal = scanned.literals.first().expect("una stringa");
+        assert_eq!(&source[literal.start..literal.end], "x/");
+    }
+
+    #[test]
+    fn a_regex_with_an_escaped_slash_closes_where_it_should() {
+        let source = "const re = /\\/\\*[\\s\\S]*?\\*\\//g;\nconst tag = \"fine\";\n";
+        let scanned = scan(source, Language::Braces);
+        let literal = scanned.literals.first().expect("una stringa");
+        assert_eq!(&source[literal.start..literal.end], "fine");
     }
 
     #[test]
