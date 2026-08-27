@@ -312,7 +312,7 @@ impl FileLockProbe {
 impl ProcessProbe for FileLockProbe {
     fn is_running(&self, record: &StepRecord) -> Result<bool, FlowError> {
         let path = self.path_for(record);
-        let file = match OpenOptions::new().read(true).write(true).open(&path) {
+        let file = match File::open(&path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
             Err(error) => return Err(FlowError::Store(error.to_string())),
@@ -342,8 +342,42 @@ pub fn hold_process_lock(path: &Path) -> io::Result<ProcessLock> {
         .write(true)
         .open(path)?;
     lock(&file)?;
-    clear_close_on_exec(file.as_raw_fd())?;
     Ok(ProcessLock(file))
+}
+
+fn acquire_process_lock(
+    path: &Path,
+    started: Instant,
+    timeout: Duration,
+    shutdown: &ShutdownHandle,
+) -> io::Result<Result<ProcessLock, StopReason>> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)?;
+    loop {
+        if try_lock(&file)? {
+            return Ok(Ok(ProcessLock(file)));
+        }
+        if shutdown.is_requested() {
+            return Ok(Err(StopReason {
+                outcome: Outcome::Stopped,
+                class: "shutdown_requested",
+            }));
+        }
+        if started.elapsed() >= timeout {
+            return Ok(Err(StopReason {
+                outcome: Outcome::Broke,
+                class: "timeout",
+            }));
+        }
+        thread::sleep(POLL_INTERVAL);
+    }
 }
 
 struct ProcessResult {
@@ -366,7 +400,21 @@ fn run_command(
     shutdown: &ShutdownHandle,
 ) -> Result<ProcessResult, LaunchError> {
     validate_spec(spec)?;
-    let lock = hold_process_lock(lock_path).map_err(|error| launch_error("lock_failed", error))?;
+    let started = Instant::now();
+    let lock = match acquire_process_lock(lock_path, started, spec.timeout, shutdown)
+        .map_err(|error| launch_error("lock_failed", error))?
+    {
+        Ok(lock) => lock,
+        Err(reason) => {
+            return Ok(ProcessResult {
+                outcome: reason.outcome,
+                output: None,
+                said: Some(format_said(0, &[], spec.max_output_bytes)),
+                failure_class: Some(reason.class.to_owned()),
+                detail: None,
+            });
+        }
+    };
     let (data_parent, data_child) =
         UnixStream::pair().map_err(|error| launch_error("structured_channel_failed", error))?;
     let data_fd = data_child.as_raw_fd();
@@ -418,10 +466,15 @@ fn run_command(
     );
     let data_thread = thread::spawn(move || read_structured(data_parent));
 
-    let started = Instant::now();
-    let (status, stop_reason) = wait_for_child(&mut child, started, spec.timeout, shutdown)
-        .map_err(|error| launch_error("wait_failed", error))?;
-    terminate_remaining_group(child.id() as i32);
+    let (status, stop_reason) = wait_for_child(
+        &mut child,
+        lock_path,
+        started,
+        spec.timeout,
+        shutdown,
+        &SystemGroupSignaler,
+    )
+    .map_err(|error| launch_error("wait_failed", error))?;
     let _ = stdin_thread.join();
     let _ = stdout_thread.join();
     let _ = stderr_thread.join();
@@ -505,13 +558,18 @@ struct StopReason {
 
 fn wait_for_child(
     child: &mut Child,
+    lock_path: &Path,
     started: Instant,
     timeout: Duration,
     shutdown: &ShutdownHandle,
+    signaler: &dyn GroupSignaler,
 ) -> io::Result<(ExitStatus, Option<StopReason>)> {
     loop {
-        if let Some(status) = child.try_wait()? {
-            return Ok((status, None));
+        if child_has_exited(child)? {
+            if descendants_hold_lock(lock_path)? {
+                terminate_remaining_group(child.id() as i32, signaler)?;
+            }
+            return child.wait().map(|status| (status, None));
         }
         let reason = if shutdown.is_requested() {
             Some(StopReason {
@@ -527,37 +585,72 @@ fn wait_for_child(
             None
         };
         if let Some(reason) = reason {
-            terminate_group(child.id() as i32, libc::SIGTERM)?;
+            signaler.send(child.id() as i32, libc::SIGTERM)?;
             let deadline = Instant::now() + TERMINATION_GRACE;
             while Instant::now() < deadline {
-                if child.try_wait()?.is_some() {
+                if child_has_exited(child)? {
                     break;
                 }
                 thread::sleep(POLL_INTERVAL);
             }
-            terminate_group(child.id() as i32, libc::SIGKILL)?;
+            signaler.send(child.id() as i32, libc::SIGKILL)?;
             return child.wait().map(|status| (status, Some(reason)));
         }
         thread::sleep(POLL_INTERVAL);
     }
 }
 
-fn terminate_remaining_group(pgid: i32) {
-    let _ = terminate_group(pgid, libc::SIGTERM);
-    thread::sleep(TERMINATION_GRACE);
-    let _ = terminate_group(pgid, libc::SIGKILL);
+fn child_has_exited(child: &Child) -> io::Result<bool> {
+    let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::zeroed();
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            child.id(),
+            info.as_mut_ptr(),
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if result == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    let info = unsafe { info.assume_init() };
+    Ok(unsafe { info.si_pid() } != 0)
 }
 
-fn terminate_group(pgid: i32, signal: i32) -> io::Result<()> {
-    let result = unsafe { libc::kill(-pgid, signal) };
-    if result == 0 {
-        return Ok(());
-    }
-    let error = io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(())
+fn descendants_hold_lock(path: &Path) -> io::Result<bool> {
+    let file = File::open(path)?;
+    if try_lock(&file)? {
+        unlock(&file)?;
+        Ok(false)
     } else {
-        Err(error)
+        Ok(true)
+    }
+}
+
+fn terminate_remaining_group(pgid: i32, signaler: &dyn GroupSignaler) -> io::Result<()> {
+    signaler.send(pgid, libc::SIGTERM)?;
+    thread::sleep(TERMINATION_GRACE);
+    signaler.send(pgid, libc::SIGKILL)
+}
+
+trait GroupSignaler {
+    fn send(&self, pgid: i32, signal: i32) -> io::Result<()>;
+}
+
+struct SystemGroupSignaler;
+
+impl GroupSignaler for SystemGroupSignaler {
+    fn send(&self, pgid: i32, signal: i32) -> io::Result<()> {
+        let result = unsafe { libc::kill(-pgid, signal) };
+        if result == 0 {
+            return Ok(());
+        }
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() == Some(libc::ESRCH) {
+            Ok(())
+        } else {
+            Err(error)
+        }
     }
 }
 
@@ -621,16 +714,16 @@ fn read_structured(mut stream: UnixStream) -> io::Result<Vec<u8>> {
 }
 
 fn format_said(seen: usize, kept: &[u8], configured_limit: usize) -> String {
-    let discarded = seen.saturating_sub(kept.len());
+    let raw_discarded = seen.saturating_sub(kept.len());
     let rendered = String::from_utf8_lossy(kept);
     let mut rendered_end = rendered.len().min(configured_limit);
     while !rendered.is_char_boundary(rendered_end) {
         rendered_end -= 1;
     }
+    let truncated = raw_discarded > 0 || rendered_end < rendered.len();
     format!(
-        "[launcher-output bytes_seen={seen} bytes_kept={} bytes_discarded={discarded} configured_limit={configured_limit} truncated={}]\n{}",
-        kept.len(),
-        discarded > 0,
+        "[launcher-output bytes_seen={seen} bytes_kept={rendered_end} bytes_discarded={raw_discarded} configured_limit={configured_limit} truncated={}]\n{}",
+        truncated,
         &rendered[..rendered_end]
     )
 }
@@ -771,5 +864,76 @@ fn launch_error(class: &str, error: impl std::fmt::Display) -> LaunchError {
     LaunchError {
         class: class.to_owned(),
         said: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Default)]
+    struct RecordingSignaler {
+        signals: Mutex<Vec<(i32, i32)>>,
+    }
+
+    impl GroupSignaler for RecordingSignaler {
+        fn send(&self, pgid: i32, signal: i32) -> io::Result<()> {
+            self.signals
+                .lock()
+                .expect("registro dei segnali accessibile")
+                .push((pgid, signal));
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn fast_command_without_descendants_sends_no_group_signal() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("orologio dopo epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "launcher-signal-test-{}-{nonce}",
+            std::process::id()
+        ));
+        fs::create_dir(&directory).expect("cartella temporanea creata");
+        let lock_path = directory.join("process.lock");
+        let lock = hold_process_lock(&lock_path).expect("lock del comando preso");
+        let lock_fd = lock.0.as_raw_fd();
+        let mut command = Command::new("/usr/bin/true");
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setpgid(0, 0) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                clear_close_on_exec(lock_fd)
+            });
+        }
+        let mut child = command.spawn().expect("comando veloce avviato");
+        drop(lock);
+        let signaler = RecordingSignaler::default();
+        let (status, reason) = wait_for_child(
+            &mut child,
+            &lock_path,
+            Instant::now(),
+            Duration::from_secs(1),
+            &ShutdownHandle::default(),
+            &signaler,
+        )
+        .expect("comando veloce raccolto");
+        assert!(status.success());
+        assert!(reason.is_none());
+        assert_eq!(
+            signaler
+                .signals
+                .lock()
+                .expect("registro dei segnali leggibile")
+                .as_slice(),
+            &[]
+        );
+        fs::remove_file(lock_path).expect("lock temporaneo rimosso");
+        fs::remove_dir(directory).expect("cartella temporanea rimossa");
     }
 }
