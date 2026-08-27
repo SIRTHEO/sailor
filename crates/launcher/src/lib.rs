@@ -1,10 +1,10 @@
 //! Esecuzione sincrona di passi `flow` in gruppi di processi Unix.
 
 use flow::{
-    Action, ActionError, ActionOutcome, ActionRegistry, AttemptRelation, Clock, Completion,
-    Decision,
-    EffectStatus, Execution, ExecutionRequest, Executor, FlowError, Graph, InProcessExecutor,
-    Outcome, ProcessProbe, RecordStore, SharedState, Step, StepRecord, MAX_SAID_BYTES,
+    attempt_relation, latest_for, step_input, Action, ActionError, ActionOutcome, ActionRegistry,
+    AttemptRelation, Clock, Completion, Decision, EffectStatus, Execution, ExecutionRequest,
+    Executor, FlowError, Graph, InProcessExecutor, Outcome, ProcessProbe, RecordStore, SharedState,
+    Step, StepRecord, MAX_SAID_BYTES,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -124,24 +124,6 @@ impl ProcessExecutor {
         }
     }
 
-    fn input_for(
-        step: &Step,
-        root_inputs: &BTreeMap<String, Value>,
-        records: &[StepRecord],
-    ) -> Result<Value, FlowError> {
-        match step.deps.as_slice() {
-            [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
-            [only] => successful_output(only, records),
-            many => {
-                let mut values = serde_json::Map::new();
-                for dependency in many {
-                    values.insert(dependency.clone(), successful_output(dependency, records)?);
-                }
-                Ok(Value::Object(values))
-            }
-        }
-    }
-
     fn run(&self, command: &CommandSpec, record: &StepRecord, input: &Value) -> ProcessResult {
         match run_command(
             command,
@@ -156,6 +138,8 @@ impl ProcessExecutor {
                 said: Some(format_said(0, &[], command.max_output_bytes)),
                 failure_class: Some(error.class),
                 detail: Some(error.said),
+                bytes_seen: Some(0),
+                bytes_discarded: Some(0),
             },
         }
     }
@@ -186,7 +170,7 @@ impl Executor for ProcessExecutor {
                 let step = graph
                     .step(&step_id)
                     .ok_or_else(|| FlowError::UnknownStep(step_id.clone()))?;
-                let input = Self::input_for(step, &request.root_inputs, &records)?;
+                let input = step_input(graph, step, &request.root_inputs, &records)?;
                 step.input_schema.validate(&input)?;
                 let should_run = step
                     .when
@@ -209,7 +193,7 @@ impl Executor for ProcessExecutor {
                     request.gates.clone(),
                     clock.now()?,
                 );
-                started.attempt_relation = relation(previous, &records, &started);
+                started.attempt_relation = attempt_relation(&records, &started);
                 store.append_started(started.clone())?;
 
                 let completion = if !should_run {
@@ -219,6 +203,8 @@ impl Executor for ProcessExecutor {
                         said: None,
                         failure_class: None,
                         ended_at: clock.now()?,
+                        bytes_seen: None,
+                        bytes_discarded: None,
                     }
                 } else {
                     let result = match command {
@@ -235,6 +221,8 @@ impl Executor for ProcessExecutor {
                                     said: Some(error.to_string()),
                                     failure_class: Some("unknown_action".to_owned()),
                                     ended_at: clock.now()?,
+                                    bytes_seen: None,
+                                    bytes_discarded: None,
                                 },
                             )?;
                             continue;
@@ -262,6 +250,8 @@ impl Executor for ProcessExecutor {
                         said,
                         failure_class,
                         ended_at: clock.now()?,
+                        bytes_seen: result.bytes_seen,
+                        bytes_discarded: result.bytes_discarded,
                     }
                 };
                 store.close(&request.run_id, &step.id, attempt, epoch, completion)?;
@@ -391,6 +381,8 @@ struct ProcessResult {
     said: Option<String>,
     failure_class: Option<String>,
     detail: Option<String>,
+    bytes_seen: Option<u64>,
+    bytes_discarded: Option<u64>,
 }
 
 struct LaunchError {
@@ -417,6 +409,8 @@ fn run_command(
                 said: Some(format_said(0, &[], spec.max_output_bytes)),
                 failure_class: Some(reason.class.to_owned()),
                 detail: None,
+                bytes_seen: Some(0),
+                bytes_discarded: Some(0),
             });
         }
     };
@@ -493,6 +487,8 @@ fn run_command(
     let captured = capture
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let seen = captured.seen as u64;
+    let discarded = captured.seen.saturating_sub(captured.kept.len()) as u64;
     let said = Some(format_said(
         captured.seen,
         &captured.kept,
@@ -506,6 +502,8 @@ fn run_command(
             said,
             failure_class: Some(reason.class.to_owned()),
             detail: None,
+            bytes_seen: Some(seen),
+            bytes_discarded: Some(discarded),
         });
     }
     if !status.success() {
@@ -515,6 +513,8 @@ fn run_command(
             said,
             failure_class: Some("exit_status".to_owned()),
             detail: Some(format_exit_status(status)),
+            bytes_seen: Some(seen),
+            bytes_discarded: Some(discarded),
         });
     }
     let bytes = structured?;
@@ -528,6 +528,8 @@ fn run_command(
         said,
         failure_class: None,
         detail: None,
+        bytes_seen: Some(seen),
+        bytes_discarded: Some(discarded),
     })
 }
 
@@ -752,54 +754,6 @@ fn format_exit_status(status: ExitStatus) -> String {
         || "process ended by signal".to_owned(),
         |code| format!("exit code {code}"),
     )
-}
-
-fn latest_for<'a>(step: &Step, records: &'a [StepRecord]) -> Option<&'a StepRecord> {
-    records
-        .iter()
-        .filter(|record| record.step_id == step.id)
-        .max_by_key(|record| (record.attempt, record.epoch))
-}
-
-fn successful_output(step_id: &str, records: &[StepRecord]) -> Result<Value, FlowError> {
-    records
-        .iter()
-        .filter(|record| record.step_id == step_id && record.outcome == Some(Outcome::Went))
-        .max_by_key(|record| (record.attempt, record.epoch))
-        .and_then(|record| record.output.clone())
-        .ok_or_else(|| FlowError::MissingOutput(step_id.to_owned()))
-}
-
-fn relation(
-    previous: Option<&StepRecord>,
-    records: &[StepRecord],
-    started: &StepRecord,
-) -> Option<AttemptRelation> {
-    previous.map(|previous| {
-        if previous.input_digest != started.input_digest {
-            AttemptRelation::DifferentInput
-        } else {
-            let origin = records
-                .iter()
-                .filter(|record| {
-                    record.step_id == started.step_id && record.input_digest == started.input_digest
-                })
-                .min_by_key(|record| (record.attempt, record.epoch))
-                .unwrap_or(previous);
-            if normalized_gates(&origin.gates) == normalized_gates(&started.gates) {
-                AttemptRelation::SameInput
-            } else {
-                AttemptRelation::SameInputGatesChanged
-            }
-        }
-    })
-}
-
-fn normalized_gates(gates: &[String]) -> Vec<&str> {
-    let mut values: Vec<_> = gates.iter().map(String::as_str).collect();
-    values.sort_unstable();
-    values.dedup();
-    values
 }
 
 fn lock_path(directory: &Path, record: &StepRecord) -> PathBuf {
