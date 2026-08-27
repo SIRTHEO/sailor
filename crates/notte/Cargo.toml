@@ -4,10 +4,5 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# `flow` per la forma di un passo durevole, `ledger` per il deposito che lo
-# tiene. Sono il primo gradino verso i flussi visibili: `notte` ci scrive in
-# più, e nessun errore di quella scrittura può far cadere una lavorazione.
 [dependencies]
-flow = { path = "../flow" }
-ledger = { path = "../ledger" }
 serde_json = { workspace = true }
