@@ -1,5 +1,5 @@
 use crate::record::truncate_said;
-use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord};
+use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -61,6 +61,29 @@ pub trait Action: Send + Sync {
         _shared: &SharedState,
     ) -> Result<EffectStatus, ActionError> {
         Ok(EffectStatus::Unknown("effect_not_inspectable".to_owned()))
+    }
+
+    /// Se rifare questa azione è sicuro. Chi non risponde viene consegnato a
+    /// una persona: il difetto da cui si difende è duplicare un effetto già
+    /// avvenuto sul mondo, e nessun valore predefinito lo può escludere al
+    /// posto di chi ha scritto l'azione.
+    fn species(&self) -> StepSpecies {
+        StepSpecies::HandToHuman
+    }
+
+    /// Disfa l'effetto già prodotto, perché il passo possa essere rifatto.
+    /// Ha senso solo per un'azione che si dichiara `Compensable`: una che lo
+    /// dichiara senza scrivere questo metodo fallisce la compensazione e
+    /// finisce a una persona, che è il modo giusto di far vedere l'errore.
+    fn compensate(
+        &self,
+        _record: &StepRecord,
+        _shared: &SharedState,
+    ) -> Result<(), ActionError> {
+        Err(ActionError::new(
+            "no_compensation",
+            "l'azione si dichiara compensabile ma non sa disfare il proprio effetto",
+        ))
     }
 }
 
@@ -275,6 +298,11 @@ pub struct Reconciliation {
     pub closed_as_broke: Vec<String>,
     pub closed_as_waiting: Vec<String>,
     pub still_running: Vec<String>,
+    /// I passi il cui effetto è stato disfatto prima di riaprirli. Non è un
+    /// secchio a sé rispetto agli altri: sono anche in `closed_as_broke`,
+    /// che è dove si legge «torna pronto». Qui si legge un'altra cosa —
+    /// qualcosa è stato annullato sul mondo, e chi guarda deve saperlo.
+    pub compensated: Vec<String>,
 }
 
 pub struct ReconciliationRequest<'a> {
@@ -332,74 +360,110 @@ impl InProcessExecutor {
                 report.still_running.push(record.step_id.clone());
                 continue;
             }
-            let inspected = graph.step(&record.step_id).map_or_else(
-                || Err(ActionError::new("unknown_step", &record.step_id)),
-                |step| {
-                    actions.get(&step.action).map_or_else(
-                        || Err(ActionError::new("unknown_action", &step.action)),
-                        |action| {
-                            action.inspect_effect(record, shared).and_then(|status| {
-                                if let EffectStatus::Applied(output) = &status {
-                                    step.output_schema.validate(output).map_err(|error| {
-                                        ActionError::new(
-                                            "invalid_recovered_output",
-                                            error.to_string(),
-                                        )
-                                    })?;
-                                }
-                                Ok(status)
-                            })
-                        },
-                    )
+            let resolved = match graph.step(&record.step_id) {
+                None => Err(ActionError::new("unknown_step", &record.step_id)),
+                Some(step) => match actions.get(&step.action) {
+                    None => Err(ActionError::new("unknown_action", &step.action)),
+                    Some(action) => Ok((step, action)),
                 },
-            );
+            };
+            let action = resolved.as_ref().ok().map(|(_, action)| *action);
+            let inspected = match resolved {
+                Err(error) => Err(error),
+                Ok((step, action)) => action.inspect_effect(record, shared).and_then(|status| {
+                    if let EffectStatus::Applied(output) = &status {
+                        step.output_schema.validate(output).map_err(|error| {
+                            ActionError::new("invalid_recovered_output", error.to_string())
+                        })?;
+                    }
+                    Ok(status)
+                }),
+            };
+            let now = clock.now()?;
             let (completion, bucket) = match inspected {
                 Ok(EffectStatus::Applied(output)) => (
-                    Completion {
-                        outcome: Outcome::Went,
-                        output: Some(output),
-                        said: None,
-                        failure_class: None,
-                        ended_at: clock.now()?,
-                        bytes_seen: None,
-                        bytes_discarded: None,
-                    },
+                    closed(Outcome::Went, Some(output), None, None, now),
                     &mut report.closed_as_went,
                 ),
                 Ok(EffectStatus::NotApplied) => (
-                    Completion {
-                        outcome: Outcome::Broke,
-                        output: None,
-                        said: None,
-                        failure_class: Some("process_disappeared".to_owned()),
-                        ended_at: clock.now()?,
-                        bytes_seen: None,
-                        bytes_discarded: None,
-                    },
+                    closed(Outcome::Broke, None, None, Some("process_disappeared"), now),
                     &mut report.closed_as_broke,
                 ),
-                Ok(EffectStatus::Unknown(reason)) => (
-                    Completion {
-                        outcome: Outcome::Waiting,
-                        output: None,
-                        said: Some(reason),
-                        failure_class: Some("effect_unknown".to_owned()),
-                        ended_at: clock.now()?,
-                        bytes_seen: None,
-                        bytes_discarded: None,
-                    },
-                    &mut report.closed_as_waiting,
-                ),
+                // L'effetto non si sa: qui, e solo qui, decide la specie del
+                // passo. Senza di lei l'unica scelta sicura era «in attesa» —
+                // e un passo in attesa non torna mai pronto (`decision_from`),
+                // cioè la ripresa vedeva l'interrotto e non lo rilanciava mai.
+                Ok(EffectStatus::Unknown(reason)) => {
+                    match species_for(record, action) {
+                        StepSpecies::Repeatable => (
+                            closed(
+                                Outcome::Broke,
+                                None,
+                                Some(reason),
+                                Some("repeatable_after_unknown_effect"),
+                                now,
+                            ),
+                            &mut report.closed_as_broke,
+                        ),
+                        StepSpecies::Compensable => {
+                            let compensation = action.map_or_else(
+                                || {
+                                    Err(ActionError::new(
+                                        "unknown_action",
+                                        "nessuna azione da cui disfare l'effetto",
+                                    ))
+                                },
+                                |action| action.compensate(record, shared),
+                            );
+                            match compensation {
+                                Ok(()) => {
+                                    report.compensated.push(record.step_id.clone());
+                                    (
+                                        closed(
+                                            Outcome::Broke,
+                                            None,
+                                            Some(reason),
+                                            Some("compensated_then_retry"),
+                                            now,
+                                        ),
+                                        &mut report.closed_as_broke,
+                                    )
+                                }
+                                // La compensazione dichiarata che non riesce
+                                // lascia il mondo a metà: è il caso in cui una
+                                // persona serve davvero.
+                                Err(error) => (
+                                    closed(
+                                        Outcome::Waiting,
+                                        None,
+                                        Some(error.said),
+                                        Some(error.class.as_str()),
+                                        now,
+                                    ),
+                                    &mut report.closed_as_waiting,
+                                ),
+                            }
+                        }
+                        StepSpecies::HandToHuman => (
+                            closed(
+                                Outcome::Waiting,
+                                None,
+                                Some(reason),
+                                Some("effect_unknown"),
+                                now,
+                            ),
+                            &mut report.closed_as_waiting,
+                        ),
+                    }
+                }
                 Err(error) => (
-                    Completion {
-                        outcome: Outcome::Waiting,
-                        output: None,
-                        said: Some(error.said),
-                        failure_class: Some(error.class),
-                        ended_at: clock.now()?,
-                        bytes_seen: None,
-                        bytes_discarded: None,
-                    },
+                    closed(
+                        Outcome::Waiting,
+                        None,
+                        Some(error.said),
+                        Some(error.class.as_str()),
+                        now,
+                    ),
                     &mut report.closed_as_waiting,
                 ),
             };
@@ -472,6 +536,11 @@ impl Executor for InProcessExecutor {
                     clock.now()?,
                 );
                 started.attempt_relation = attempt_relation(&records, &started);
+                // Chi tiene il passo è questo processo, per definizione di
+                // esecutore in processo: il pid si scrive PRIMA dell'effetto,
+                // insieme all'intenzione, o alla ripresa non serve a nulla.
+                started.held_by_pid = Some(std::process::id());
+                started.species = action.map(|action| action.species());
                 store.append_started(started)?;
 
                 let completion = match action {
@@ -589,6 +658,36 @@ impl Display for FlowError {
 }
 
 impl Error for FlowError {}
+
+fn closed(
+    outcome: Outcome,
+    output: Option<Value>,
+    said: Option<String>,
+    failure_class: Option<&str>,
+    ended_at: i64,
+) -> Completion {
+    Completion {
+        outcome,
+        output,
+        said,
+        failure_class: failure_class.map(str::to_owned),
+        ended_at,
+        bytes_seen: None,
+        bytes_discarded: None,
+    }
+}
+
+/// La specie di un passo aperto. **Il record vince sull'azione**: è ciò che
+/// valeva quando il passo è partito, e un'azione riscritta nel frattempo non
+/// può cambiare il giudizio su un effetto prodotto dalla versione di prima.
+/// L'azione risponde solo per i record scritti prima che la specie esistesse;
+/// se non c'è nemmeno quella, si consegna a una persona.
+fn species_for(record: &StepRecord, action: Option<&dyn Action>) -> StepSpecies {
+    record
+        .species
+        .or_else(|| action.map(|action| action.species()))
+        .unwrap_or(StepSpecies::HandToHuman)
+}
 
 fn decision_from(graph: &Graph, records: &[StepRecord]) -> Result<Decision, FlowError> {
     let mut ready = Vec::new();
