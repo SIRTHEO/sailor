@@ -131,6 +131,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gesture"
+version = "0.1.0"
+dependencies = [
+ "guards",
+ "hook-io",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "guards"
 version = "0.1.0"
 dependencies = [
@@ -259,6 +269,8 @@ dependencies = [
 name = "notte"
 version = "0.1.0"
 dependencies = [
+ "flow",
+ "ledger",
  "serde_json",
 ]
 
@@ -379,8 +391,11 @@ dependencies = [
 name = "sailor"
 version = "0.1.0"
 dependencies = [
+ "models",
  "notte",
+ "profiles",
  "release",
+ "ui",
 ]
 
 [[package]]
