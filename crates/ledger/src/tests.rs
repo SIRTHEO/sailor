@@ -720,12 +720,47 @@ fn schema_v1_legacy_records_without_byte_counts_upgrade_and_rebuild_cleanly() {
         transaction.commit().expect("commit v1");
     }
 
-    let ledger = Ledger::open(&directory.0).expect("apertura e migrazione v1->v2");
+    let ledger = Ledger::open(&directory.0).expect("apertura e migrazione dello schema vecchio");
     let steps = ledger.steps("legacy-run").expect("lettura passi migrati");
     assert_eq!(steps.len(), 1);
     assert_eq!(steps[0].bytes_seen, None);
     assert_eq!(steps[0].bytes_discarded, None);
+    // Un passo scritto prima che esistessero non eredita né un detentore né
+    // una specie: restano vuoti, che è ciò che erano davvero.
+    assert_eq!(steps[0].held_by_pid, None);
+    assert_eq!(steps[0].species, None);
     assert_eq!(steps[0].outcome, Some(Outcome::Went));
+}
+
+/// Chi tiene il passo e di che specie è arrivano fino al disco e tornano
+/// indietro: sono i due dati su cui la ripresa decide se rilanciare, e un
+/// deposito che li perdesse per strada la riporterebbe a indovinare.
+#[test]
+fn the_holder_and_the_species_survive_the_ledger() {
+    let directory = TestDirectory::new("species-round-trip");
+    let ledger = Ledger::open(&directory.0).expect("apertura del deposito");
+    let mut record = started_attempt("species-run", 1, 7);
+    record.held_by_pid = Some(4321);
+    record.species = Some(StepSpecies::Compensable);
+    ledger
+        .append_step_started(&record)
+        .expect("scrivere l'intenzione");
+
+    let steps = ledger.steps("species-run").expect("rilettura dei passi");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].held_by_pid, Some(4321));
+    assert_eq!(steps[0].species, Some(StepSpecies::Compensable));
+}
+
+/// Una specie che il deposito non conosce non si legge come «consegna a una
+/// persona»: sarebbe un valore inventato al posto di un dato corrotto.
+#[test]
+fn an_unknown_species_is_an_error_not_a_fallback() {
+    assert_eq!(species_name(StepSpecies::Repeatable), "repeatable");
+    assert_eq!(species_name(StepSpecies::Compensable), "compensable");
+    assert_eq!(species_name(StepSpecies::HandToHuman), "hand_to_human");
+    assert!(parse_species("repeatable").is_ok());
+    assert!(parse_species("ripetibile").is_err());
 }
 
 #[test]

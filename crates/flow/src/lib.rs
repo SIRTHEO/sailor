@@ -18,6 +18,6 @@ pub use executor::{
 };
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{
-    digest_input, truncate_said, AttemptRelation, Outcome, StepRecord, MAX_SAID_BYTES,
+    digest_input, truncate_said, AttemptRelation, Outcome, StepRecord, StepSpecies, MAX_SAID_BYTES,
 };
 pub use schema::{SchemaError, ValueSchema};

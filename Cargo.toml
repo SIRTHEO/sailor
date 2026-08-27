@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/hook-io", "crates/guards", "crates/claude-hooks", "crates/notte", "crates/flow", "crates/ledger", "crates/launcher", "crates/release", "crates/guasti", "crates/profiles", "crates/resume", "crates/models", "crates/ui", "crates/sailor", "crates/gesture", "crates/actions"]
+members = ["crates/hook-io", "crates/guards", "crates/claude-hooks", "crates/notte", "crates/flow", "crates/ledger", "crates/launcher", "crates/release", "crates/guasti", "crates/profiles", "crates/models", "crates/ui", "crates/sailor", "crates/gesture", "crates/actions"]
 
 [workspace.package]
 edition = "2021"
