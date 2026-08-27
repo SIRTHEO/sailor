@@ -247,6 +247,65 @@ fn refusal(reason: &str) -> Decision {
     ))
 }
 
+/// Cosa dice lo spiraglio su una scrittura in `settings.json`.
+enum Opening {
+    /// Passa, e questa è la ragione da scrivere nel registro.
+    Granted(String),
+    /// Non passa, ma si sa **perché**: il rifiuto lo dice invece di ripetere la
+    /// formula generale. Un divieto che spiega si contesta; uno che non spiega
+    /// si aggira.
+    Refused(String),
+    /// Nessuna forma riconosciuta: decide il nucleo, come sempre.
+    Unrecognised,
+}
+
+/// Le due domande che il giudizio puro non può fare, perché stanno sul disco.
+///
+/// SOLO `Edit`, e il motivo è la sostanza dell'apertura: lì la modifica è
+/// **scritta** — da questo a quello. In un `Write` c'è il risultato, e giudicare
+/// un risultato vuol dire ricostruire l'intenzione di chi l'ha prodotto.
+fn settings_opening(tool: &str, tool_input: &Value) -> Opening {
+    use guards::settings_writes::{granted, shape_of_edit, Shape};
+
+    if tool != "Edit" {
+        return Opening::Unrecognised;
+    }
+    let old = tool_input.get("old_string").and_then(|v| v.as_str()).unwrap_or("");
+    let new = tool_input.get("new_string").and_then(|v| v.as_str()).unwrap_or("");
+
+    match shape_of_edit(old, new) {
+        Shape::PathMoved { from, to } => {
+            // IL CONFRONTO È BYTE PER BYTE, non sul nome né sulla dimensione:
+            // due file che pesano uguale non sono lo stesso file, e il punto di
+            // questa apertura è che il comportamento in servizio **non cambia**.
+            let (Ok(before), Ok(after)) = (std::fs::read(&from), std::fs::read(&to)) else {
+                return Opening::Refused(format!(
+                    "uno dei due percorsi non si legge: «{from}» o «{to}». Finché non si può \
+                     confrontare quello che eseguono, spostare il comando è un cambiamento di \
+                     comportamento, non uno spostamento."
+                ));
+            };
+            if before != after {
+                return Opening::Refused(format!(
+                    "«{to}» non è lo stesso binario di «{from}» ({} byte contro {}). Spostare il \
+                     comando lì dentro metterebbe in servizio un altro programma.",
+                    after.len(),
+                    before.len()
+                ));
+            }
+            let shape = Shape::PathMoved { from, to };
+            Opening::Granted(granted(&shape, &format!("identici, {} byte", before.len())))
+        }
+        Shape::HookAdded { hook, .. } => Opening::Refused(format!(
+            "il gancio «{hook}» si accenderebbe senza che nessuno abbia verificato che neghi \
+             davvero. Quella verifica vuole l'evento su cui verrà montato, e da questa modifica \
+             non si vede: il 24/08/2026 fidarsi del nome invece del comportamento avrebbe fatto \
+             montare una guardia che non restringe niente."
+        )),
+        Shape::Refused(_) => Opening::Unrecognised,
+    }
+}
+
 /// Il gancio intero. Restituisce il codice di uscita: sempre 0, perché il
 /// rifiuto viaggia sull'altro canale (`permissionDecision: deny` su stdout).
 pub fn run(input: &HookInput) -> i32 {
@@ -296,6 +355,25 @@ pub fn run(input: &HookInput) -> i32 {
         if valve == Valve::UserDeclared && valid_permission().is_some() {
             note("autorizzato", &reason, &tool, &session, &cwd, &shown);
             return 0;
+        }
+        // LO SPIRAGLIO, e sta qui e non nel nucleo per la stessa ragione già
+        // scritta sopra: il nucleo non si modifica dall'interno di una sessione,
+        // nemmeno quando a chiederlo è una sua mancanza. Qui si restringe **cosa
+        // arriva** al rifiuto; cosa il nucleo considera protetto non cambia di
+        // una riga.
+        let mut reason = reason;
+        if valve == Valve::UserDeclared {
+            match settings_opening(&tool, tool_input) {
+                Opening::Granted(why) => {
+                    note("autorizzato", &why, &tool, &session, &cwd, &shown);
+                    return 0;
+                }
+                // Il rifiuto porta il motivo vero al posto della formula
+                // generale: chi legge deve sapere quale condizione è mancata,
+                // altrimenti il passo dopo è tentare a caso.
+                Opening::Refused(why) => reason = format!("{reason} — {why}"),
+                Opening::Unrecognised => {}
+            }
         }
         let outcome = if valve == Valve::Core { "negato-nucleo" } else { "negato" };
         note(outcome, &reason, &tool, &session, &cwd, &shown);
