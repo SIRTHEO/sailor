@@ -85,6 +85,13 @@ fn run(ws: &Workspace, extra: &[(&str, &str)]) -> std::process::ExitStatus {
         .env("NOTTE_MAX_FAILURES", "3")
         .env("NOTTE_OPENROUTER_PAUSE", "0")
         .env("NOTTE_MAX_PROMPT_BYTES", "8000")
+        // Senza questa riga il ponte cade sul percorso predefinito, che è il
+        // deposito VERO: il 27/08/2026 una batteria ha scritto 55 esecuzioni
+        // finte nella pagina di controllo, con token di laboratorio, e chi la
+        // guardava leggeva una giornata di lavoro che non era mai successa.
+        // Ogni altra variabile qui sopra isola già la prova: questa mancava
+        // perché il ponte è arrivato dopo.
+        .env("NOTTE_LEDGER_DIR", ws.path("state").join("flussi"))
         .env("NOTTE_OPENROUTER_FETCH", fixture("fixture-openrouter-ok.test.sh"));
     for (k, v) in extra {
         cmd.env(k, v);
@@ -109,6 +116,9 @@ fn run_watch(ws: &Workspace, ticks: u32, extra: &[(&str, &str)]) -> std::process
         .env("NOTTE_OPENROUTER_PAUSE", "0")
         .env("NOTTE_MAX_PROMPT_BYTES", "8000")
         .env("NOTTE_OPENROUTER_FETCH", fixture("fixture-openrouter-ok.test.sh"))
+        // Stessa ragione della gemella `run`: senza, il ciclo residente scrive
+        // nel deposito vero.
+        .env("NOTTE_LEDGER_DIR", ws.path("state").join("flussi"))
         .env("NOTTE_WATCH_MAX_TICKS", ticks.to_string())
         .env("NOTTE_WATCH_INTERVAL_SECS", "0")
         .env("NOTTE_IDLE_SECONDS_OVERRIDE", "99999")
@@ -656,6 +666,11 @@ fn a_resident_cycle_picks_up_yesterdays_recurring_task_after_midnight() {
         .env("NOTTE_OPENROUTER_PAUSE", "0")
         .env("NOTTE_MAX_PROMPT_BYTES", "8000")
         .env("NOTTE_OPENROUTER_FETCH", fixture("fixture-openrouter-ok.test.sh"))
+        // Questa prova costruisce l'ambiente a mano invece di passare da `run`,
+        // e per questo era l'ultima a scrivere ancora nel deposito vero dopo la
+        // riparazione delle altre due: l'unica esecuzione sopravvissuta si
+        // chiamava `sentinella.task`, che è il compito qui sotto.
+        .env("NOTTE_LEDGER_DIR", ws.path("state").join("flussi"))
         .env("NOTTE_WATCH_MAX_TICKS", "1")
         .env("NOTTE_WATCH_INTERVAL_SECS", "0")
         .env("NOTTE_IDLE_SECONDS_OVERRIDE", "99999")
