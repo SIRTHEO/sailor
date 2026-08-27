@@ -13,6 +13,9 @@
 //! esiste un ciclo di ritentativo — un 429 è semplicemente un rosso, come
 //! ogni altro errore del motore.
 
+mod ledger_bridge;
+
+use ledger_bridge::LedgerHandle;
 use notte::{
     already_done_today, alert_markdown, contains_secret, enriched_path, parse_codex_tokens,
     parse_openrouter_body, resolve_bin, stamped_for_next_night,
@@ -1030,6 +1033,11 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
         // esce — verde, rosso o timeout — viene ammazzato.
         let _caffeine = CaffeineGuard::start(caffeine_secs);
 
+        // Il record d'intenzione nel deposito durevole va scritto PRIMA di
+        // chiamare il motore: vedi `ledger_bridge` per il perché e per come
+        // un suo guasto non tocca mai questa lavorazione.
+        let ledger_handle = LedgerHandle::begin(&name, &task.engine);
+
         let (label, result) = match task.engine.as_str() {
             "openrouter" => (
                 format!("openrouter/{}", cfg.openrouter_model),
@@ -1046,6 +1054,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                     &name,
                     &Outcome::Skipped { reason: format!("motore sconosciuto «{other}»") },
                 ));
+                ledger_handle.finish_skipped("motore sconosciuto");
                 finish(&claimed, &cfg.done_dir, "saltato (motore sconosciuto)");
                 return TaskOutcome { counts_total: true, bucket: "skipped" };
             }
@@ -1054,6 +1063,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
 
         match result {
             EngineResult::Ok { tokens } => {
+                ledger_handle.record_tokens(&label, &task.engine, &tokens);
                 match run_check(&task.check, &cfg.last_output_path, Duration::from_secs(cfg.check_timeout_secs)) {
                     CheckOutcome::Passed => {
                         *fails = 0;
@@ -1061,6 +1071,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                             &name,
                             &Outcome::Green { engine_label: label, tokens, seconds: elapsed },
                         ));
+                        ledger_handle.finish_went();
                         close_task(&claimed, cfg, &task, "green");
                         "green"
                     }
@@ -1078,6 +1089,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                             "la verifica non ha confermato la risposta",
                             &notte::truncate_chars(&detail, 500),
                         );
+                        ledger_handle.finish_broke("verifica fallita", &notte::truncate_chars(&detail, 500));
                         close_task(&claimed, cfg, &task, "red (verifica fallita)");
                         "red"
                     }
@@ -1099,6 +1111,10 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                             "the check did not finish within the time allowed",
                             &notte::truncate_chars(&task.check, 500),
                         );
+                        ledger_handle.finish_broke(
+                            "timeout verifica",
+                            &format!("verifica: timeout dopo {}s", cfg.check_timeout_secs),
+                        );
                         close_task(&claimed, cfg, &task, "red (timeout verifica)");
                         "red"
                     }
@@ -1116,6 +1132,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                         reason: format!("{}: il motore non è installato", task.engine),
                     },
                 ));
+                ledger_handle.finish_waiting("motore assente");
                 close_task(
                     &claimed,
                     cfg,
@@ -1126,6 +1143,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
             }
             EngineResult::Failed { kind, tokens } => {
                 *fails += 1;
+                ledger_handle.record_tokens(&label, &task.engine, &tokens);
                 report.line(&report_line(
                     &name,
                     &Outcome::Red { engine_label: label, tokens, seconds: elapsed, reason: format!("motore: {kind}") },
@@ -1138,6 +1156,7 @@ fn execute_task(cfg: &Config, path: &Path, report: &Report, fails: &mut u32, tod
                     &format!("il motore ha risposto: {kind}"),
                     &notte::truncate_chars(&detail, 500),
                 );
+                ledger_handle.finish_broke(&kind, &notte::truncate_chars(&detail, 500));
                 close_task(&claimed, cfg, &task, &format!("red (engine: {kind})"));
                 "red"
             }
