@@ -42,11 +42,31 @@ impl Condition {
 #[serde(try_from = "GraphData", into = "GraphData")]
 pub struct Graph {
     steps: Vec<Step>,
+    skippable_dependencies: BTreeSet<DependencyEdge>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct GraphData {
     steps: Vec<Step>,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    skippable_dependencies: BTreeSet<DependencyEdge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DependencyEdge {
+    pub step: String,
+    pub dependency: String,
+}
+
+impl DependencyEdge {
+    /// Identifica un arco; il costruttore del grafo lo dichiara saltabile.
+    pub fn new(step: impl Into<String>, dependency: impl Into<String>) -> Self {
+        Self {
+            step: step.into(),
+            dependency: dependency.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +75,7 @@ pub enum GraphError {
     DuplicateStep(String),
     MissingDependency { step: String, dependency: String },
     DuplicateDependency { step: String, dependency: String },
+    InvalidSkippableDependency { step: String, dependency: String },
     Cycle,
     ZeroAttempts(String),
     IncompatibleInput { step: String },
@@ -62,7 +83,17 @@ pub enum GraphError {
 
 impl Graph {
     pub fn new(steps: Vec<Step>) -> Result<Self, GraphError> {
-        let graph = Self { steps };
+        Self::with_skippable_dependencies(steps, [])
+    }
+
+    pub fn with_skippable_dependencies(
+        steps: Vec<Step>,
+        dependencies: impl IntoIterator<Item = DependencyEdge>,
+    ) -> Result<Self, GraphError> {
+        let graph = Self {
+            steps,
+            skippable_dependencies: dependencies.into_iter().collect(),
+        };
         graph.validate()?;
         Ok(graph)
     }
@@ -73,6 +104,11 @@ impl Graph {
 
     pub fn step(&self, id: &str) -> Option<&Step> {
         self.steps.iter().find(|step| step.id == id)
+    }
+
+    pub fn dependency_is_skippable(&self, step: &str, dependency: &str) -> bool {
+        self.skippable_dependencies
+            .contains(&DependencyEdge::new(step, dependency))
     }
 
     fn validate(&self) -> Result<(), GraphError> {
@@ -86,6 +122,20 @@ impl Graph {
             }
             if by_id.insert(step.id.as_str(), step).is_some() {
                 return Err(GraphError::DuplicateStep(step.id.clone()));
+            }
+        }
+
+        for edge in &self.skippable_dependencies {
+            let valid = by_id.get(edge.step.as_str()).is_some_and(|step| {
+                step.deps
+                    .iter()
+                    .any(|dependency| dependency == &edge.dependency)
+            });
+            if !valid {
+                return Err(GraphError::InvalidSkippableDependency {
+                    step: edge.step.clone(),
+                    dependency: edge.dependency.clone(),
+                });
             }
         }
 
@@ -151,7 +201,7 @@ impl Graph {
     ) -> Option<ValueSchema> {
         match step.deps.as_slice() {
             [] => None,
-            [only] => by_id
+            [only] if !self.dependency_is_skippable(&step.id, only) => by_id
                 .get(only.as_str())
                 .map(|step| step.output_schema.clone()),
             many => Some(ValueSchema::object(
@@ -165,7 +215,9 @@ impl Graph {
                             .clone(),
                     )
                 }),
-                many.iter().cloned(),
+                many.iter()
+                    .filter(|id| !self.dependency_is_skippable(&step.id, id))
+                    .cloned(),
             )),
         }
     }
@@ -175,13 +227,21 @@ impl TryFrom<GraphData> for Graph {
     type Error = GraphError;
 
     fn try_from(value: GraphData) -> Result<Self, Self::Error> {
-        Self::new(value.steps)
+        let graph = Self {
+            steps: value.steps,
+            skippable_dependencies: value.skippable_dependencies,
+        };
+        graph.validate()?;
+        Ok(graph)
     }
 }
 
 impl From<Graph> for GraphData {
     fn from(value: Graph) -> Self {
-        Self { steps: value.steps }
+        Self {
+            steps: value.steps,
+            skippable_dependencies: value.skippable_dependencies,
+        }
     }
 }
 
@@ -199,6 +259,10 @@ impl Display for GraphError {
             GraphError::DuplicateDependency { step, dependency } => {
                 write!(formatter, "step {step} repeats dependency {dependency}")
             }
+            GraphError::InvalidSkippableDependency { step, dependency } => write!(
+                formatter,
+                "step {step} marks non-dependency {dependency} as skippable"
+            ),
             GraphError::Cycle => write!(formatter, "graph contains a backward dependency"),
             GraphError::ZeroAttempts(step) => write!(formatter, "step {step} allows zero attempts"),
             GraphError::IncompatibleInput { step } => {
