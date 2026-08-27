@@ -38,8 +38,20 @@ pub enum EffectStatus {
     Unknown(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActionOutcome {
+    /// L'azione conosce il proprio risultato tipato.
+    Went(Value),
+    /// L'azione non può conoscere il risultato; non è un fallimento ritentabile.
+    Waiting(String),
+}
+
 pub trait Action: Send + Sync {
-    fn execute(&self, input: &Value, shared: &mut SharedState) -> Result<Value, ActionError>;
+    fn execute(
+        &self,
+        input: &Value,
+        shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError>;
 
     /// Un'azione senza una prova positiva non è rilanciabile automaticamente:
     /// `Unknown` conserva l'ambiguità invece di duplicare un effetto esterno.
@@ -391,17 +403,26 @@ impl InProcessExecutor {
 
     fn input_for(
         &self,
+        graph: &Graph,
         step: &Step,
         root_inputs: &BTreeMap<String, Value>,
         records: &[StepRecord],
     ) -> Result<Value, FlowError> {
         match step.deps.as_slice() {
             [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
-            [only] => successful_output(only, records),
+            [only] if !graph.dependency_is_skippable(&step.id, only) => {
+                successful_output(only, records)
+            }
             many => {
                 let mut values = serde_json::Map::new();
                 for dependency in many {
-                    values.insert(dependency.clone(), successful_output(dependency, records)?);
+                    if let Some(output) = dependency_output(
+                        dependency,
+                        graph.dependency_is_skippable(&step.id, dependency),
+                        records,
+                    )? {
+                        values.insert(dependency.clone(), output);
+                    }
                 }
                 Ok(Value::Object(values))
             }
@@ -436,7 +457,7 @@ impl Executor for InProcessExecutor {
                 let step = graph
                     .step(&step_id)
                     .ok_or_else(|| FlowError::UnknownStep(step_id.clone()))?;
-                let input = self.input_for(step, &request.root_inputs, &records)?;
+                let input = self.input_for(graph, step, &request.root_inputs, &records)?;
                 step.input_schema.validate(&input)?;
                 let condition_met = step
                     .when
@@ -494,21 +515,30 @@ impl Executor for InProcessExecutor {
                         ended_at: clock.now()?,
                     },
                     Some(action) => match action.execute(&input, &mut request.shared) {
-                        Ok(output) => match step.output_schema.validate(&output) {
-                            Ok(()) => Completion {
-                                outcome: Outcome::Went,
-                                output: Some(output),
-                                said: None,
-                                failure_class: None,
-                                ended_at: clock.now()?,
-                            },
-                            Err(error) => Completion {
-                                outcome: Outcome::Broke,
-                                output: None,
-                                said: Some(error.to_string()),
-                                failure_class: Some("invalid_output".to_owned()),
-                                ended_at: clock.now()?,
-                            },
+                        Ok(ActionOutcome::Went(output)) => {
+                            match step.output_schema.validate(&output) {
+                                Ok(()) => Completion {
+                                    outcome: Outcome::Went,
+                                    output: Some(output),
+                                    said: None,
+                                    failure_class: None,
+                                    ended_at: clock.now()?,
+                                },
+                                Err(error) => Completion {
+                                    outcome: Outcome::Broke,
+                                    output: None,
+                                    said: Some(error.to_string()),
+                                    failure_class: Some("invalid_output".to_owned()),
+                                    ended_at: clock.now()?,
+                                },
+                            }
+                        }
+                        Ok(ActionOutcome::Waiting(reason)) => Completion {
+                            outcome: Outcome::Waiting,
+                            output: None,
+                            said: Some(reason),
+                            failure_class: None,
+                            ended_at: clock.now()?,
                         },
                         Err(error) => Completion {
                             outcome: Outcome::Broke,
@@ -602,7 +632,7 @@ fn decision_from(graph: &Graph, records: &[StepRecord]) -> Result<Decision, Flow
                 failed.push(step.id.clone());
             }
             Some(Outcome::Broke) | None => {
-                if dependencies_went(step, records) {
+                if dependencies_satisfied(graph, step, records) {
                     ready.push(step.id.clone());
                 }
             }
@@ -623,14 +653,16 @@ fn decision_from(graph: &Graph, records: &[StepRecord]) -> Result<Decision, Flow
     }
 }
 
-fn dependencies_went(step: &Step, records: &[StepRecord]) -> bool {
+fn dependencies_satisfied(graph: &Graph, step: &Step, records: &[StepRecord]) -> bool {
     step.deps.iter().all(|dependency| {
-        records
+        let outcome = records
             .iter()
             .filter(|record| record.step_id == *dependency)
             .max_by_key(|record| (record.attempt, record.epoch))
-            .and_then(|record| record.outcome)
-            == Some(Outcome::Went)
+            .and_then(|record| record.outcome);
+        outcome == Some(Outcome::Went)
+            || (outcome == Some(Outcome::Skipped)
+                && graph.dependency_is_skippable(&step.id, dependency))
     })
 }
 
@@ -656,6 +688,25 @@ fn successful_output(step_id: &str, records: &[StepRecord]) -> Result<Value, Flo
         .ok_or_else(|| FlowError::MissingOutput(step_id.to_owned()))
 }
 
+fn dependency_output(
+    step_id: &str,
+    skippable: bool,
+    records: &[StepRecord],
+) -> Result<Option<Value>, FlowError> {
+    let latest = records
+        .iter()
+        .filter(|record| record.step_id == step_id)
+        .max_by_key(|record| (record.attempt, record.epoch));
+    match latest.and_then(|record| record.outcome) {
+        Some(Outcome::Went) => latest
+            .and_then(|record| record.output.clone())
+            .map(Some)
+            .ok_or_else(|| FlowError::MissingOutput(step_id.to_owned())),
+        Some(Outcome::Skipped) if skippable => Ok(None),
+        _ => Err(FlowError::MissingOutput(step_id.to_owned())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,20 +727,52 @@ mod tests {
     struct Echo;
 
     impl Action for Echo {
-        fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
-            Ok(input.clone())
+        fn execute(
+            &self,
+            input: &Value,
+            _shared: &mut SharedState,
+        ) -> Result<ActionOutcome, ActionError> {
+            Ok(ActionOutcome::Went(input.clone()))
         }
     }
 
     struct FailOnce(Arc<AtomicUsize>);
 
     impl Action for FailOnce {
-        fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
+        fn execute(
+            &self,
+            input: &Value,
+            _shared: &mut SharedState,
+        ) -> Result<ActionOutcome, ActionError> {
             if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(ActionError::new("temporary", "try again"))
             } else {
-                Ok(input.clone())
+                Ok(ActionOutcome::Went(input.clone()))
             }
+        }
+    }
+
+    struct Wait;
+
+    impl Action for Wait {
+        fn execute(
+            &self,
+            _input: &Value,
+            _shared: &mut SharedState,
+        ) -> Result<ActionOutcome, ActionError> {
+            Ok(ActionOutcome::Waiting("source unreadable".to_owned()))
+        }
+    }
+
+    struct Empty;
+
+    impl Action for Empty {
+        fn execute(
+            &self,
+            _input: &Value,
+            _shared: &mut SharedState,
+        ) -> Result<ActionOutcome, ActionError> {
+            Ok(ActionOutcome::Went(json!([])))
         }
     }
 
@@ -744,6 +827,93 @@ mod tests {
             .expect("record della giunzione");
         assert_eq!(join.input["left"]["value"], "said is not data");
         assert_eq!(join.input["right"]["value"], "said is not data");
+    }
+
+    #[test]
+    fn action_can_wait_without_failure_or_retry() {
+        let graph = Graph::new(vec![
+            step("uncertain", &[], "wait", 3),
+            step("later", &["uncertain"], "echo", 1),
+        ])
+        .expect("grafo valido");
+        let mut actions = ActionRegistry::default();
+        actions.register("wait", Wait);
+        actions.register("echo", Echo);
+        let mut store = InMemoryRecordStore::default();
+        let execution = InProcessExecutor
+            .execute(
+                &graph,
+                ExecutionRequest {
+                    run_id: "run".to_owned(),
+                    root_inputs: BTreeMap::new(),
+                    gates: vec![],
+                    shared: SharedState::new(),
+                },
+                &mut store,
+                &actions,
+                &mut Tick(0),
+            )
+            .expect("l'attesa è un esito legittimo");
+
+        assert_eq!(
+            execution.decisions,
+            vec![
+                Decision::Ready(vec!["uncertain".to_owned()]),
+                Decision::Waiting(vec!["uncertain".to_owned()]),
+            ]
+        );
+        assert_eq!(store.all().len(), 1);
+        assert_eq!(store.all()[0].outcome, Some(Outcome::Waiting));
+        assert_eq!(store.all()[0].failure_class, None);
+    }
+
+    #[test]
+    fn conditional_join_omits_skipped_input_but_keeps_present_empty_input() {
+        let mut skipped = step("skipped", &["root"], "empty", 1);
+        skipped.when = Some(Condition::PointerEquals {
+            pointer: "/take_skipped".to_owned(),
+            value: json!(true),
+        });
+        let graph = Graph::with_skippable_dependencies(
+            vec![
+                step("root", &[], "echo", 1),
+                skipped,
+                step("present_empty", &["root"], "empty", 1),
+                step("join", &["skipped", "present_empty"], "echo", 1),
+            ],
+            [crate::DependencyEdge::new("join", "skipped")],
+        )
+        .expect("grafo valido");
+        let mut actions = ActionRegistry::default();
+        actions.register("echo", Echo);
+        actions.register("empty", Empty);
+        let mut store = InMemoryRecordStore::default();
+        InProcessExecutor
+            .execute(
+                &graph,
+                ExecutionRequest {
+                    run_id: "run".to_owned(),
+                    root_inputs: [("root".to_owned(), json!({"take_skipped": false}))]
+                        .into_iter()
+                        .collect(),
+                    gates: vec![],
+                    shared: SharedState::new(),
+                },
+                &mut store,
+                &actions,
+                &mut Tick(0),
+            )
+            .expect("la giunzione parte");
+
+        let join = store
+            .all()
+            .iter()
+            .find(|record| record.step_id == "join")
+            .expect("record della giunzione");
+        let input = join.input.as_object().expect("ingresso composto");
+        assert!(!input.contains_key("skipped"));
+        assert_eq!(input.get("present_empty"), Some(&json!([])));
+        assert_eq!(join.outcome, Some(Outcome::Went));
     }
 
     #[test]

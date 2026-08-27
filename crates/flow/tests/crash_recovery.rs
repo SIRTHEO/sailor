@@ -1,6 +1,6 @@
 use flow::{
-    Action, ActionError, ActionRegistry, Clock, Completion, Decision, EffectStatus, Graph,
-    InMemoryRecordStore, InProcessExecutor, Outcome, ProcessProbe, ReconciliationRequest,
+    Action, ActionError, ActionOutcome, ActionRegistry, Clock, Completion, Decision, EffectStatus,
+    Graph, InMemoryRecordStore, InProcessExecutor, Outcome, ProcessProbe, ReconciliationRequest,
     RecordStore, SharedState, Step, StepRecord, ValueSchema,
 };
 use serde_json::{json, Value};
@@ -40,11 +40,15 @@ struct FileEffect {
 }
 
 impl Action for FileEffect {
-    fn execute(&self, _input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
+    fn execute(
+        &self,
+        _input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
         self.executions.fetch_add(1, Ordering::SeqCst);
         fs::write(&self.path, b"landed")
             .map_err(|error| ActionError::new("write_failed", error.to_string()))?;
-        Ok(json!({"path": self.path}))
+        Ok(ActionOutcome::Went(json!({"path": self.path})))
     }
 
     fn inspect_effect(
@@ -63,8 +67,12 @@ impl Action for FileEffect {
 struct Echo;
 
 impl Action for Echo {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<Value, ActionError> {
-        Ok(input.clone())
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
+        Ok(ActionOutcome::Went(input.clone()))
     }
 }
 
