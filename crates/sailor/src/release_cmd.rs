@@ -1,9 +1,13 @@
-//! Mette in servizio un binario costruito da `HEAD`, mai dall'albero di lavoro.
+//! `sailor release`: mette in servizio un binario costruito da `HEAD`, mai
+//! dall'albero di lavoro.
 //!
-//! Questo file contiene soltanto i gesti che toccano disco e processi. Le
+//! Questo modulo contiene soltanto i gesti che toccano disco e processi. Le
 //! decisioni — quali bersagli esistono, come si legge un timbro e quando un
-//! servizio è occupato — stanno in `lib.rs`, dove si possono provare senza
-//! cambiare il mondo.
+//! servizio è occupato — stanno nella libreria `release`, dove si possono
+//! provare senza cambiare il mondo. Prima del 27/08/2026 questo era il
+//! `main.rs` di un binario a sé (`release`): confluito qui perché nessuno
+//! aveva mai deciso più di un binario di sistema, e il crate `release` che
+//! resta serve solo più come libreria.
 
 use release::{read_stamp, readiness, target, target_names, Service, Target};
 use std::env;
@@ -33,22 +37,18 @@ impl Drop for TemporaryTree {
     }
 }
 
-fn main() {
-    std::process::exit(run());
-}
-
-fn run() -> i32 {
-    let options = match parse_options() {
+pub fn run(args: &[String]) -> i32 {
+    let options = match parse_options(args) {
         Ok(options) => options,
         Err(message) => {
-            eprintln!("release: {message}");
+            eprintln!("sailor release: {message}");
             eprintln!("bersagli disponibili: {}", target_names());
             return 2;
         }
     };
     let Some(selected) = target(&options.target_name) else {
         eprintln!(
-            "release: bersaglio sconosciuto '{}'; bersagli disponibili: {}",
+            "sailor release: bersaglio sconosciuto '{}'; bersagli disponibili: {}",
             options.target_name,
             target_names()
         );
@@ -58,16 +58,16 @@ fn run() -> i32 {
     match release(selected, &options) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("release: {message}");
+            eprintln!("sailor release: {message}");
             1
         }
     }
 }
 
-fn parse_options() -> Result<Options, String> {
-    let mut args = env::args().skip(1);
+fn parse_options(args: &[String]) -> Result<Options, String> {
+    let mut args = args.iter().cloned();
     let target_name = args.next().ok_or_else(|| {
-        "manca il bersaglio (uso: release <bersaglio> [--dry-run] [--skip-tests] [--wait-secs N])"
+        "manca il bersaglio (uso: sailor release <bersaglio> [--dry-run] [--skip-tests] [--wait-secs N])"
             .to_string()
     })?;
     if target_name.starts_with('-') {
@@ -181,7 +181,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             .map_err(|error| format!("non posso rileggere {}: {error}", suite_path.display()))?;
         print_tail(&suite, 25);
         if !suite_status.success() {
-            eprintln!("release: la batteria è rossa su HEAD: nulla è stato sostituito e il binario in servizio è intatto.");
+            eprintln!("sailor release: la batteria è rossa su HEAD: nulla è stato sostituito e il binario in servizio è intatto.");
             eprintln!("   Commit verdi separati non fanno una somma verde: questo è quel caso.");
             eprintln!("   Se il binario in servizio è rotto e aspettare costa di più, rilancia con --skip-tests.");
             return Ok(1);
@@ -218,7 +218,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     if let Some(service) = selected.service {
         let ready = wait_until_ready(&root, service, options.wait_secs)?;
         if !ready {
-            println!("release: rilascio rimandato: il servizio sta ancora lavorando; nulla è stato sostituito");
+            println!("sailor release: rilascio rimandato: il servizio sta ancora lavorando; nulla è stato sostituito");
             return Ok(3);
         }
     }
@@ -246,7 +246,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         // punto può aver preso un altro compito, che il riavvio troncherebbe.
         if !wait_until_ready(&root, service, 0)? {
             let domain = service_domain(service);
-            println!("release: rilascio rimandato: il servizio ha iniziato una nuova lavorazione; il binario nuovo e il timbro sono al loro posto, ma il servizio esegue ancora quello vecchio.");
+            println!("sailor release: rilascio rimandato: il servizio ha iniziato una nuova lavorazione; il binario nuovo e il timbro sono al loro posto, ma il servizio esegue ancora quello vecchio.");
             println!("   Quando la lavorazione finisce, chiudi il rilascio con: launchctl kickstart -k {domain}");
             return Ok(3);
         }
@@ -590,13 +590,13 @@ fn restart_service(service: Service) {
         Ok(status) if status.success() => println!("   servizio riavviato: {domain}"),
         Ok(status) => {
             eprintln!(
-                "release: il binario è a posto, ma il servizio esegue ancora quello vecchio ({}).",
+                "sailor release: il binario è a posto, ma il servizio esegue ancora quello vecchio ({}).",
                 status_description(status)
             );
             eprintln!("   Per chiudere il buco esegui: launchctl kickstart -k {domain}");
         }
         Err(error) => {
-            eprintln!("release: il binario è a posto, ma il servizio esegue ancora quello vecchio ({error}).");
+            eprintln!("sailor release: il binario è a posto, ma il servizio esegue ancora quello vecchio ({error}).");
             eprintln!("   Per chiudere il buco esegui: launchctl kickstart -k {domain}");
         }
     }
@@ -626,4 +626,38 @@ fn current_uid() -> u32 {
     // SAFETY: `getuid` non prende puntatori, non modifica memoria Rust e non
     // può fallire; la firma coincide con `uid_t` sulle piattaforme Unix target.
     unsafe { getuid() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn a(words: &[&str]) -> Vec<String> {
+        words.iter().map(|w| w.to_string()).collect()
+    }
+
+    #[test]
+    fn a_missing_target_is_refused_with_the_usage() {
+        assert!(parse_options(&a(&[])).is_err());
+    }
+
+    #[test]
+    fn dry_run_and_skip_tests_are_read_as_flags() {
+        let options = parse_options(&a(&["notte", "--dry-run", "--skip-tests"])).unwrap();
+        assert_eq!(options.target_name, "notte");
+        assert!(options.dry_run);
+        assert!(options.skip_tests);
+        assert_eq!(options.wait_secs, 600);
+    }
+
+    #[test]
+    fn wait_secs_reads_its_number() {
+        let options = parse_options(&a(&["notte", "--wait-secs", "30"])).unwrap();
+        assert_eq!(options.wait_secs, 30);
+    }
+
+    #[test]
+    fn an_unknown_option_is_refused() {
+        assert!(parse_options(&a(&["notte", "--turbo"])).is_err());
+    }
 }
