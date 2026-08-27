@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+pub mod store_io;
+
 /// Come una riga di comando trova la propria cartella di casa.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HomeMechanism {
@@ -94,6 +96,16 @@ const KNOWN_CLIS: &[KnownCli] = &[
 /// La tabella delle righe di comando conosciute.
 pub fn known_clis() -> &'static [KnownCli] {
     KNOWN_CLIS
+}
+
+/// La riga di comando che porta questo `id`, o un rifiuto leggibile. Un solo
+/// posto: `sailor profiles` e `sailor run` cercano entrambi qui, non due
+/// copie dello stesso `.find()`.
+pub fn find_cli(id: &str) -> Result<&'static KnownCli, String> {
+    known_clis()
+        .iter()
+        .find(|c| c.id == id)
+        .ok_or_else(|| format!("riga di comando sconosciuta: {id}"))
 }
 
 /// Un profilo: nome scelto dall'utente, a quale riga di comando appartiene,
@@ -330,6 +342,12 @@ mod tests {
     fn parse_store_treats_empty_string_as_empty_store() {
         assert_eq!(parse_store("").unwrap(), ProfileStore::default());
         assert_eq!(parse_store("   \n").unwrap(), ProfileStore::default());
+    }
+
+    #[test]
+    fn find_cli_finds_a_known_id_and_rejects_an_unknown_one() {
+        assert_eq!(find_cli("codex").map(|c| c.id), Ok("codex"));
+        assert!(find_cli("non-esiste").is_err());
     }
 
     #[test]

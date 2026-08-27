@@ -1,53 +1,17 @@
-//! La parte impura: stato su disco, cartelle dei profili, e lo scambio —
-//! per collegamento simbolico dove serve — fra i profili di una riga di
-//! comando conosciuta. Quattro comandi: `list`, `create`, `switch`,
-//! `current`. Percorsi da ambiente, mai cablati: `PROFILES_STATE_PATH`
-//! (default `~/.claude/state/profili.json`) e `PROFILES_HOME_ROOT`
-//! (default accanto allo stato, in `profiles-homes/`).
+//! I gesti impuri di `profiles`: variabili d'ambiente, disco, collegamenti
+//! simbolici. Prima del 27/08/2026 stavano nel `main.rs` del crate, quando
+//! `profiles` era ancora un binario a sé; da quando lo esegue `sailor
+//! profiles`, la parte pura resta in `lib.rs` e questa è l'unica che tocca
+//! il mondo.
 
-use profiles::{
-    build_environment, known_clis, parse_store, profile_home_path, serialize_store,
-    symlink_swap, HomeMechanism, KnownCli, Profile, ProfileStore,
-};
+use crate::{parse_store, serialize_store, symlink_swap, ProfileStore};
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
-fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
-    match run(&args) {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(message) => {
-            eprintln!("{message}");
-            ExitCode::FAILURE
-        }
-    }
-}
-
-fn run(args: &[String]) -> Result<(), String> {
-    match args {
-        [cmd, rest @ ..] if cmd == "list" => cmd_list(rest),
-        [cmd, rest @ ..] if cmd == "create" => cmd_create(rest),
-        [cmd, rest @ ..] if cmd == "switch" => cmd_switch(rest),
-        [cmd, rest @ ..] if cmd == "current" => cmd_current(rest),
-        _ => Err(usage()),
-    }
-}
-
-fn usage() -> String {
-    "uso: profiles <list [cli]|create <cli> <nome>|switch <cli> <nome>|current <cli>>".to_owned()
-}
-
-fn find_cli(id: &str) -> Result<&'static KnownCli, String> {
-    known_clis()
-        .iter()
-        .find(|c| c.id == id)
-        .ok_or_else(|| format!("riga di comando sconosciuta: {id}"))
-}
-
-fn home_dir() -> Result<PathBuf, String> {
+/// `HOME`, o un errore leggibile se non è impostata.
+pub fn home_dir() -> Result<PathBuf, String> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| "HOME non impostata".to_owned())
@@ -61,13 +25,15 @@ fn default_state_path() -> PathBuf {
         .join("profili.json")
 }
 
-fn state_path() -> PathBuf {
+/// `PROFILES_STATE_PATH`, se impostata, altrimenti `~/.claude/state/profili.json`.
+pub fn state_path() -> PathBuf {
     env::var_os("PROFILES_STATE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(default_state_path)
 }
 
-fn profiles_root() -> PathBuf {
+/// `PROFILES_HOME_ROOT`, se impostata, altrimenti accanto allo stato, in `profiles-homes/`.
+pub fn profiles_root() -> PathBuf {
     env::var_os("PROFILES_HOME_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -78,7 +44,7 @@ fn profiles_root() -> PathBuf {
         })
 }
 
-fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
+pub fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
     match fs::read_to_string(path) {
         Ok(content) => {
             parse_store(&content).map_err(|e| format!("stato illeggibile in {}: {e}", path.display()))
@@ -88,7 +54,7 @@ fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
     }
 }
 
-fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
+pub fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("impossibile creare {}: {e}", parent.display()))?;
@@ -97,97 +63,12 @@ fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
     fs::write(path, json).map_err(|e| format!("impossibile scrivere {}: {e}", path.display()))
 }
 
-fn load_store() -> Result<ProfileStore, String> {
+pub fn load_store() -> Result<ProfileStore, String> {
     load_store_from(&state_path())
 }
 
-fn save_store(store: &ProfileStore) -> Result<(), String> {
+pub fn save_store(store: &ProfileStore) -> Result<(), String> {
     save_store_to(&state_path(), store)
-}
-
-fn cmd_list(args: &[String]) -> Result<(), String> {
-    let store = load_store()?;
-    let filter = args.first();
-    for profile in &store.profiles {
-        if let Some(f) = filter {
-            if &profile.cli_id != f {
-                continue;
-            }
-        }
-        let is_active = store
-            .active
-            .get(&profile.cli_id)
-            .is_some_and(|active_name| active_name == &profile.name);
-        let marker = if is_active { "*" } else { " " };
-        println!(
-            "{marker} {} {} -> {}",
-            profile.cli_id,
-            profile.name,
-            profile.home_dir.display()
-        );
-    }
-    Ok(())
-}
-
-fn cmd_create(args: &[String]) -> Result<(), String> {
-    let [cli_id, name] = args else {
-        return Err("uso: profiles create <cli> <nome>".to_owned());
-    };
-    let cli = find_cli(cli_id)?;
-    let home = profile_home_path(&profiles_root(), cli.id, name)
-        .map_err(|e| format!("nome di profilo non valido: {e}"))?;
-    fs::create_dir_all(&home).map_err(|e| format!("impossibile creare {}: {e}", home.display()))?;
-
-    let mut store = load_store()?;
-    let already_exists = store
-        .profiles
-        .iter()
-        .any(|p| p.cli_id == cli.id && &p.name == name);
-    if already_exists {
-        return Err(format!("il profilo {name} esiste già per {}", cli.id));
-    }
-    store.profiles.push(Profile {
-        name: name.clone(),
-        cli_id: cli.id.to_owned(),
-        home_dir: home,
-    });
-    save_store(&store)
-}
-
-fn cmd_switch(args: &[String]) -> Result<(), String> {
-    let [cli_id, name] = args else {
-        return Err("uso: profiles switch <cli> <nome>".to_owned());
-    };
-    let cli = find_cli(cli_id)?;
-    let mut store = load_store()?;
-    let profile = store
-        .profiles
-        .iter()
-        .find(|p| p.cli_id == cli.id && &p.name == name)
-        .cloned()
-        .ok_or_else(|| format!("profilo {name} non trovato per {}", cli.id))?;
-
-    if let HomeMechanism::CredentialSymlink { relative_path } = cli.home {
-        apply_symlink_swap(&home_dir()?, relative_path, &profile.home_dir)?;
-    }
-    // Per il meccanismo a variabile d'ambiente non c'è nulla da spostare sul
-    // filesystem: registrare l'attivo qui basta, `build_environment` legge
-    // `profile.home_dir` al momento del lancio — vedi lib.rs.
-    store.active.insert(cli.id.to_owned(), name.clone());
-    save_store(&store)
-}
-
-fn cmd_current(args: &[String]) -> Result<(), String> {
-    let [cli_id] = args else {
-        return Err("uso: profiles current <cli>".to_owned());
-    };
-    let cli = find_cli(cli_id)?;
-    let store = load_store()?;
-    match store.active.get(cli.id) {
-        Some(name) => println!("{name}"),
-        None => println!("(nessun profilo attivo)"),
-    }
-    Ok(())
 }
 
 /// Sposta il collegamento su `profile_home`, senza mai toccare un file
@@ -195,7 +76,7 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
 /// il profilo abbia già le sue credenziali — non ne fabbrica di vuote, che
 /// finirebbero prese per vere dalla riga di comando. Così il profilo
 /// lasciato non perde nulla: il suo file non viene mai aperto in scrittura.
-fn apply_symlink_swap(
+pub fn apply_symlink_swap(
     fixed_home: &Path,
     relative_path: &str,
     profile_home: &Path,
@@ -241,6 +122,7 @@ fn apply_symlink_swap(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Profile;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// Cartella usa-e-getta sotto `$TMPDIR`, cancellata a fine prova. Niente
@@ -364,13 +246,5 @@ mod tests {
 
         let result = apply_symlink_swap(&fixed_home, "credentials.json", &profile_a);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn build_environment_uses_the_profile_home_recorded_in_the_store() {
-        let cli = find_cli("codex").unwrap();
-        let home = PathBuf::from("/home/profiles/codex/lavoro");
-        let env = build_environment(cli, &home);
-        assert_eq!(env.get("CODEX_HOME"), Some(&"/home/profiles/codex/lavoro".to_owned()));
     }
 }

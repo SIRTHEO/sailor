@@ -12,7 +12,3 @@ flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-[[bin]]
-name = "ui"
-path = "src/main.rs"

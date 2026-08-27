@@ -5,7 +5,17 @@
 //! non sull'ambiente reale del processo.
 
 use crate::config::UserConfig;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// `MODELS_CONFIG_PATH`, se presente, altrimenti `~/.claude/state/modelli.json`.
+/// Mai cablato altrove nel crate: è la riga del mandato.
+pub fn config_path() -> PathBuf {
+    if let Ok(p) = std::env::var("MODELS_CONFIG_PATH") {
+        return PathBuf::from(p);
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(format!("{home}/.claude/state/modelli.json"))
+}
 
 /// Legge la configurazione da disco. Un file assente o illeggibile non è un
 /// errore: è "non configurato", e su questo si regge la riga di Theo — chi
@@ -35,6 +45,18 @@ mod tests {
         let mut p = std::env::temp_dir();
         p.push(format!("models-crate-test-{}-{name}", std::process::id()));
         p
+    }
+
+    #[test]
+    fn config_path_honours_the_override_env_var() {
+        let key = "MODELS_CONFIG_PATH";
+        let previous = std::env::var(key).ok();
+        std::env::set_var(key, "/tmp/modelli-di-prova.json");
+        assert_eq!(config_path(), PathBuf::from("/tmp/modelli-di-prova.json"));
+        match previous {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
     }
 
     #[test]
