@@ -103,7 +103,11 @@ fn scan() -> ValueSchema {
 }
 
 fn live_sessions() -> ValueSchema {
-    object([("ids", strings())])
+    object([
+        ("ids", strings()),
+        ("unreadable", ValueSchema::Number),
+        ("observed", ValueSchema::Number),
+    ])
 }
 
 fn plan() -> ValueSchema {

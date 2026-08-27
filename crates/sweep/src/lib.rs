@@ -12,7 +12,70 @@ use flow::{
 };
 use ledger::Ledger;
 use std::collections::BTreeMap;
+use std::fs;
+use std::io::Write;
 use std::path::Path;
+
+const LOCK_STALE_SECS: u64 = 10 * 60;
+
+struct SweepLock {
+    path: std::path::PathBuf,
+}
+
+enum TakeLock {
+    Taken(SweepLock),
+    Locked,
+    Io(std::io::Error),
+}
+
+impl SweepLock {
+    fn take(state: &Path) -> TakeLock {
+        let path = state.join("marker-sweep.lock");
+        match Self::create(&path) {
+            TakeLock::Taken(lock) => return TakeLock::Taken(lock),
+            TakeLock::Io(error) => return TakeLock::Io(error),
+            TakeLock::Locked => {}
+        }
+        let stale = fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|elapsed| elapsed.as_secs() >= LOCK_STALE_SECS);
+        if stale {
+            let _ = fs::remove_file(&path);
+            Self::create(&path)
+        } else if path.exists() {
+            TakeLock::Locked
+        } else {
+            Self::create(&path)
+        }
+    }
+
+    fn create(path: &Path) -> TakeLock {
+        use std::os::unix::fs::OpenOptionsExt;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+        {
+            Ok(mut file) => {
+                let _ = writeln!(file, "{}", std::process::id());
+                TakeLock::Taken(Self {
+                    path: path.to_owned(),
+                })
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => TakeLock::Locked,
+            Err(error) => TakeLock::Io(error),
+        }
+    }
+}
+
+impl Drop for SweepLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
 
 pub fn run(
     run_id: impl Into<String>,
@@ -20,6 +83,16 @@ pub fn run(
     ledger_directory: impl AsRef<Path>,
 ) -> Result<Execution, Box<dyn std::error::Error>> {
     let run_id = run_id.into();
+    let _lock = match SweepLock::take(Path::new(&config.state_dir)) {
+        TakeLock::Taken(lock) => lock,
+        TakeLock::Locked => {
+            return Ok(Execution {
+                decisions: vec![Decision::Waiting(vec!["sweep_lock".to_owned()])],
+                shared: SharedState::new(),
+            });
+        }
+        TakeLock::Io(error) => return Err(Box::new(error)),
+    };
     let graph = sweep_graph();
     let actions = actions();
     let mut ledger = Ledger::open(ledger_directory)?;
@@ -83,7 +156,7 @@ pub fn decision(
 mod tests {
     use super::*;
     use crate::actions::RemoveAction;
-    use flow::{Action, ActionRegistry, EffectStatus, Outcome, RecordStore};
+    use flow::{Action, ActionOutcome, ActionRegistry, EffectStatus, Outcome, RecordStore};
     use std::env;
     use std::fs;
     use std::process::Command;
@@ -110,6 +183,28 @@ mod tests {
         let file = fs::File::options().write(true).open(path).unwrap();
         file.set_modified(SystemTime::now() - Duration::from_secs(UNKNOWN_GRACE_SECS + 2))
             .unwrap();
+    }
+
+    fn gone_session(state: &Path, short: &str, full: &str) {
+        fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        fs::write(
+            state.join("sessioni-vive").join(format!("{short}.json")),
+            format!(
+                r#"{{"session_id":"{full}","session_pid":4000000000,"updated_at":0}}"#
+            ),
+        )
+        .unwrap();
+    }
+
+    fn legacy_marker(state: &Path, marker_path: &str, owner: &str) -> String {
+        let hex = guards::successor::armed_fingerprint(marker_path, owner);
+        let name = format!("successore-armato-{hex}");
+        fs::write(
+            state.join(&name),
+            format!("2026-08-18T00:00:00\n{marker_path}\n"),
+        )
+        .unwrap();
+        name
     }
 
     #[test]
@@ -151,7 +246,7 @@ mod tests {
         let root = directory("trace");
         let state = root.join("state");
         let ledger = root.join("ledger");
-        fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        gone_session(&state, "deadbeef", "deadbeef-dead-dead-dead-deadbeef0000");
         old_marker(&state, "consegna-misura-deadbeef");
 
         run(
@@ -178,6 +273,59 @@ mod tests {
         assert_eq!(output.looked, ["consegna-misura-deadbeef"]);
         assert_eq!(output.orphan, ["consegna-misura-deadbeef"]);
         assert_eq!(output.removed, ["consegna-misura-deadbeef"]);
+    }
+
+    #[test]
+    fn unreadable_live_entry_stops_every_removal() {
+        let root = directory("partial-live");
+        let state = root.join("state");
+        let ledger = root.join("ledger");
+        fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        fs::write(state.join("sessioni-vive/broken.json"), b"not json").unwrap();
+        old_marker(&state, "consegna-misura-deadbeef");
+        let legacy = legacy_marker(&state, "/x/live.md", "live-session");
+
+        let execution = run(
+            "partial-run",
+            SweepConfig {
+                state_dir: state.to_string_lossy().into_owned(),
+                deleting: true,
+            },
+            &ledger,
+        )
+        .unwrap();
+
+        assert_eq!(
+            execution.decisions.last(),
+            Some(&Decision::Waiting(vec!["read_live_sessions".to_owned()]))
+        );
+        assert!(state.join("consegna-misura-deadbeef").exists());
+        assert!(state.join(legacy).exists());
+    }
+
+    #[test]
+    fn empty_live_directory_spares_legacy_markers() {
+        let root = directory("empty-live");
+        let state = root.join("state");
+        let ledger = root.join("ledger");
+        fs::create_dir_all(state.join("sessioni-vive")).unwrap();
+        let legacy = legacy_marker(&state, "/x/live.md", "live-session");
+
+        let execution = run(
+            "empty-run",
+            SweepConfig {
+                state_dir: state.to_string_lossy().into_owned(),
+                deleting: true,
+            },
+            &ledger,
+        )
+        .unwrap();
+
+        assert_eq!(
+            execution.decisions.last(),
+            Some(&Decision::Waiting(vec!["read_live_sessions".to_owned()]))
+        );
+        assert!(state.join(legacy).exists());
     }
 
     #[test]
@@ -219,6 +367,144 @@ mod tests {
         RemoveAction
             .execute(&input, &mut SharedState::new())
             .unwrap();
+    }
+
+    #[test]
+    #[ignore = "avviato soltanto dalla prova padre"]
+    fn locked_sweep_fixture_process() {
+        let Ok(ledger) = env::var(FIXTURE_LEDGER) else {
+            return;
+        };
+        let state = std::path::PathBuf::from(env::var(FIXTURE_STATE).unwrap());
+        run(
+            "locked-child",
+            SweepConfig {
+                state_dir: state.to_string_lossy().into_owned(),
+                deleting: true,
+            },
+            ledger,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn two_sweeps_do_not_remove_in_contention() {
+        let root = directory("lock");
+        let state = root.join("state");
+        let first_ledger = root.join("first-ledger");
+        let second_ledger = root.join("second-ledger");
+        let signal = root.join("first");
+        fs::create_dir(&state).unwrap();
+        gone_session(&state, "deadbeef", "deadbeef-dead-dead-dead-deadbeef0000");
+        old_marker(&state, "consegna-misura-deadbeef");
+        old_marker(&state, "consegna-stop-deadbeef");
+        let mut child = Command::new(env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "tests::locked_sweep_fixture_process",
+                "--test-threads=1",
+            ])
+            .env(FIXTURE_LEDGER, &first_ledger)
+            .env(FIXTURE_STATE, &state)
+            .env(FIXTURE_SIGNAL, &signal)
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !signal.exists() {
+            assert!(Instant::now() < deadline, "la prima passata non si è fermata");
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let second = run(
+            "locked-parent",
+            SweepConfig {
+                state_dir: state.to_string_lossy().into_owned(),
+                deleting: true,
+            },
+            &second_ledger,
+        )
+        .unwrap();
+        assert_eq!(
+            second.decisions,
+            [Decision::Waiting(vec!["sweep_lock".to_owned()])]
+        );
+        assert!(state.join("consegna-stop-deadbeef").exists());
+        child.kill().unwrap();
+        assert!(!child.wait().unwrap().success());
+    }
+
+    #[test]
+    fn restarted_session_keeps_its_rewritten_standard_marker() {
+        let root = directory("restart");
+        let state = root.join("state");
+        fs::create_dir(&state).unwrap();
+        old_marker(&state, "consegna-misura-deadbeef");
+        let plan = RemovalPlan {
+            state_dir: state.to_string_lossy().into_owned(),
+            deleting: true,
+            looked: vec!["consegna-misura-deadbeef".to_owned()],
+            orphan: vec!["consegna-misura-deadbeef".to_owned()],
+            targets: vec![RemovalTarget {
+                name: "consegna-misura-deadbeef".to_owned(),
+                kind: "standard".to_owned(),
+                session: "deadbeef".to_owned(),
+                liveness: Liveness::Gone,
+            }],
+        };
+
+        fs::write(state.join("consegna-misura-deadbeef"), b"rewritten").unwrap();
+        fs::create_dir(state.join("sessioni-vive")).unwrap();
+        fs::write(state.join("sessioni-vive/deadbeef.json"), b"starting").unwrap();
+        let output = RemoveAction
+            .execute(&serde_json::to_value(plan).unwrap(), &mut SharedState::new())
+            .unwrap();
+        let ActionOutcome::Went(value) = output else {
+            panic!("la rimozione deve produrre una traccia")
+        };
+        let trace: RemovalTrace = serde_json::from_value(value).unwrap();
+
+        assert_eq!(trace.spared, ["consegna-misura-deadbeef"]);
+        assert!(state.join("consegna-misura-deadbeef").exists());
+    }
+
+    #[test]
+    fn vanished_file_is_not_claimed_during_recovery() {
+        let root = directory("vanished");
+        let state = root.join("state");
+        fs::create_dir(&state).unwrap();
+        let plan = RemovalPlan {
+            state_dir: state.to_string_lossy().into_owned(),
+            deleting: true,
+            looked: vec!["gone".to_owned()],
+            orphan: vec!["gone".to_owned()],
+            targets: vec![RemovalTarget {
+                name: "gone".to_owned(),
+                kind: "standard".to_owned(),
+                session: "deadbeef".to_owned(),
+                liveness: Liveness::Gone,
+            }],
+        };
+        let record = StepRecord::started(
+            "vanished-run",
+            "remove_markers",
+            1,
+            1,
+            vec!["plan_removals".to_owned()],
+            serde_json::to_value(plan).unwrap(),
+            vec!["filesystem".to_owned()],
+            1,
+        );
+        let EffectStatus::Applied(value) = RemoveAction
+            .inspect_effect(&record, &SharedState::new())
+            .unwrap()
+        else {
+            panic!("la ripresa deve chiudere la rimozione")
+        };
+        let trace: RemovalTrace = serde_json::from_value(value).unwrap();
+
+        assert!(trace.removed.is_empty());
+        assert_eq!(trace.vanished, ["gone"]);
     }
 
     #[test]
@@ -265,7 +551,8 @@ mod tests {
         let records = trace("crash-run", &ledger_path).unwrap();
         let output: RemovalTrace =
             serde_json::from_value(records[0].output.clone().unwrap()).unwrap();
-        assert_eq!(output.removed, ["one"]);
+        assert!(output.removed.is_empty());
+        assert_eq!(output.vanished, ["one"]);
         assert_eq!(output.spared, ["two"]);
         assert!(output.recovered);
 
