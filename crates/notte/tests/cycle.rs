@@ -675,3 +675,54 @@ fn a_resident_cycle_picks_up_yesterdays_recurring_task_after_midnight() {
          col difetto la coda risulta vuota e il rapporto non esiste. Rapporto: {report:?}"
     );
 }
+
+// ── il ponte verso il deposito durevole (`ledger_bridge`) ───────────────
+
+/// Il caso di base: un compito verde finisce anche nel deposito, con la
+/// stessa intenzione (`run`, `step`) e lo stesso esito che il rapporto di
+/// testo racconta — il deposito è un secondo osservatore, non un sostituto.
+#[test]
+fn a_green_task_is_recorded_in_the_ledger_too() {
+    let ws = Workspace::new("ledger-green");
+    ws.write_task("2026-08-25-u.task", "openrouter", "una domanda", "grep -q 'answer: 42' \"$NOTTE_OUTPUT_FILE\"");
+    let ledger_dir = ws.path("state").join("flussi");
+    let status = run(&ws, &[("NOTTE_LEDGER_DIR", ledger_dir.to_str().unwrap())]);
+    assert!(status.success());
+    assert_eq!(done_names(&ws), vec!["2026-08-25-u.task"]);
+
+    let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito deve essersi aperto davvero");
+    let dump = ledger.projection_dump().expect("il dump deve leggersi");
+    let runs = dump["runs"].as_array().expect("colonna runs");
+    assert_eq!(runs.len(), 1, "{runs:?}");
+    assert_eq!(runs[0][5].as_str(), Some("green"), "colonna status: {runs:?}");
+    let run_id = runs[0][0].as_str().expect("run_id").to_string();
+    let steps = ledger.steps(&run_id).expect("passi leggibili");
+    assert_eq!(steps.len(), 1, "{steps:?}");
+    assert_eq!(steps[0].outcome, Some(flow::Outcome::Went));
+    let calls = dump["model_calls"].as_array().expect("colonna model_calls");
+    assert_eq!(calls.len(), 1, "il token noto doveva finire in una riga: {calls:?}");
+}
+
+/// IL BRACCIO CHE CONTA: un file al posto della cartella del deposito fa
+/// fallire `Ledger::open` a ogni compito, eppure il ciclo deve arrivare in
+/// fondo come se il ponte non esistesse — verde, spostato in `done/`,
+/// nessun blocco. Un deposito rotto non è mai un guasto della lavorazione.
+///
+/// MUTANTE PROVATO A MANO: sostituendo temporaneamente `.ok()` con
+/// `.expect(...)` in `LedgerHandle::begin_in`, questa prova va in panico
+/// (rosso); ripristinato l'originale torna verde. Il file è tornato
+/// identico — vedi il rapporto di consegna per l'impronta prima/dopo.
+#[test]
+fn a_broken_ledger_directory_does_not_stop_a_green_task() {
+    let ws = Workspace::new("ledger-broken");
+    ws.write_task("2026-08-25-v.task", "openrouter", "una domanda", "grep -q 'answer: 42' \"$NOTTE_OUTPUT_FILE\"");
+    let blocked = ws.path("state").join("flussi-rotta");
+    fs::write(&blocked, "non è una cartella, il deposito non potrà aprirla").unwrap();
+
+    let status = run(&ws, &[("NOTTE_LEDGER_DIR", blocked.to_str().unwrap())]);
+    assert!(status.success(), "un deposito rotto non deve fermare il ciclo");
+    let report = report_text(&ws);
+    assert!(report.contains("VERDE"), "{report}");
+    assert_eq!(done_names(&ws), vec!["2026-08-25-v.task"]);
+    assert!(alert_files(&ws).is_empty(), "un verde non apre segnalazioni, deposito rotto o no");
+}
