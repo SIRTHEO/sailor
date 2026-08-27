@@ -9,7 +9,7 @@ use flow::StepRecord;
 use ledger::{Ledger, ModelCallRecord, RunRecord};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub struct GatherError(String);
@@ -93,4 +93,10 @@ pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
         registry.insert(name.to_owned(), graph);
     }
     registry
+}
+
+/// `~/.claude/state/flussi`, o questa macchina se `HOME` non è impostata.
+pub fn default_ledger_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/theo".to_owned());
+    PathBuf::from(home).join(".claude/state/flussi")
 }
