@@ -628,6 +628,34 @@ pub fn parse_lock_pid(text: &str) -> Option<u32> {
     text.trim().parse().ok()
 }
 
+/// Cosa risponde il kernel a «questo pid esiste?», via `kill(pid, 0)` — su
+/// Unix non manda nessun segnale, chiede solo l'esistenza. `ps` è negato in
+/// questo perimetro; niente crate `libc` per una firma sola, stesso stile
+/// già in uso in `claude-hooks::register_session`.
+///
+/// L'UNICA COSA IN QUESTO FILE CHE PARLA COL SISTEMA, e sta qui apposta: vive
+/// accanto a `split_receipt_name` e `parse_lock_pid` perché è la stessa
+/// famiglia — leggere una ricevuta e chiedersi se è ancora di qualcuno sono un
+/// gesto solo. Il 27/08/2026 stava in `notte/src/main.rs`, irraggiungibile da
+/// fuori, e la via di rilascio del servizio — che deve sapere se una lavorazione
+/// è in corso prima di riavviare — stava per farne la **terza copia** in questa
+/// casa. Una domanda al kernel resta deterministica: non tocca né rete né disco,
+/// che è ciò che il contratto in testa al file protegge davvero.
+pub fn process_exists(pid: u32) -> bool {
+    unsafe extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    const ESRCH: i32 = 3;
+    let ret = unsafe { kill(pid as i32, 0) };
+    if ret == 0 {
+        return true;
+    }
+    // Qualunque errore diverso da "non esiste" (tipicamente EPERM: il pid
+    // c'è ma non è nostro) si conta come vivo: un falso "morto" scavalca un
+    // lucchetto altrui, un falso "vivo" al più aspetta un giro in più.
+    std::io::Error::last_os_error().raw_os_error() != Some(ESRCH)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
