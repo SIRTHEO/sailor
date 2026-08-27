@@ -63,7 +63,7 @@ pub fn render(outcomes: &[Outcome]) -> String {
         ));
         for outcome in &survivors {
             out.push_str(&format!(
-                "  {}:{}  {}\n      - {}\n      + {}\n",
+                "  {}:{}  {}\n      - «{}»\n      + «{}»\n",
                 outcome.fault.file,
                 outcome.fault.line,
                 outcome.fault.label,
@@ -110,6 +110,12 @@ pub fn exit_code(counts: Tally) -> i32 {
 /// Il testo su una riga sola, perché il rapporto resti leggibile anche quando
 /// il guasto ha buttato via trenta righe di funzione.
 fn one_line(text: &str) -> String {
+    // Uno spazio è un carattere di confine come la barra, e un guasto che lo
+    // toglie va letto: comprimendo la spaziatura il rapporto stampava due
+    // righe vuote, e ventotto sopravvissuti su un file erano illeggibili.
+    if !text.is_empty() && text.trim().is_empty() {
+        return "␣".repeat(text.chars().count().min(20));
+    }
     let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if flat.chars().count() <= 90 {
         return flat;
@@ -192,6 +198,19 @@ mod tests {
             }),
             0
         );
+    }
+
+    /// Il guasto che toglie uno spazio da una stringa è un guasto come gli
+    /// altri, e il rapporto deve farlo vedere: compresso via, mostrava due
+    /// righe vuote e chi leggeva non sapeva cosa fosse cambiato.
+    #[test]
+    fn a_fault_on_a_space_is_visible_in_the_report() {
+        let mut outcome = outcome(Verdict::Survived, "confine di stringa tolto in coda");
+        outcome.fault.before = " ".to_string();
+        outcome.fault.after = String::new();
+        let text = render(&[outcome]);
+        assert!(text.contains("- «␣»"), "{text}");
+        assert!(text.contains("+ «»"), "{text}");
     }
 
     #[test]
