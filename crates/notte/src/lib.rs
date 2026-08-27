@@ -16,6 +16,11 @@
 //! formato come leva per il giorno in cui si restringe di nuovo, ma oggi non
 //! decide niente da solo.
 
+/// Le lavorazioni scritte anche nel deposito durevole, mentre il registro di
+/// testo resta l'unica cosa che qualcuno legge. È il primo gradino verso i
+/// flussi visibili, e non sposta niente: scrive in più.
+pub mod mirror;
+
 /// Quanto una lavorazione disturba la macchina mentre gira — non quanto è
 /// importante. `peso: leggero` nel file dà `Light`; qualunque altro valore, o
 /// il campo assente, dà `Heavy`: la scelta prudente, perché una lavorazione
