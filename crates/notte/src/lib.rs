@@ -592,6 +592,12 @@ pub const MAX_TASK_ATTEMPTS: u32 = 3;
 /// Il nome di una ricevuta in `in-corso/` è `<nome-compito>.<pid>`: separa i
 /// due, o restituisce il nome intatto e `None` se non porta un suffisso
 /// numerico (un file arrivato lì per un'altra via).
+///
+/// IL NOME NON DICE A QUALE CORSA APPARTIENE, e non deve dirlo: quello lo sa
+/// il deposito del motore, che tiene corsa, detentore e tentativi. Una
+/// ricevuta serve a due cose sole — il testo del compito e «non è più in
+/// coda» — e chi rilascia la legge per sapere se il servizio è occupato
+/// senza aprire il deposito (`release::readiness`).
 pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
     match name.rsplit_once('.') {
         Some((base, suffix)) if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) => {

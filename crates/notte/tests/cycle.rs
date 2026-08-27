@@ -72,20 +72,42 @@ fn expected_run_id(task_name: &str, today: &str) -> String {
 /// Il record del passo "motore" per un tentativo lasciato aperto da un
 /// processo morto a metà: la controparte, nel deposito, della vecchia
 /// ricevuta orfana in `in-corso/`. `dead_pid` è il pid che
-/// `NotteProcessProbe` troverà nell'ingresso del record — nessun processo
-/// vero su questa macchina userà mai 999999.
+/// `NotteProcessProbe` chiederà al kernel — nessun processo vero su questa
+/// macchina userà mai 999999.
 fn write_open_attempt(ledger: &ledger::Ledger, run_id: &str, attempt: u32, dead_pid: u32) {
-    let record = flow::StepRecord::started(
+    let mut record = flow::StepRecord::started(
         run_id,
         "motore",
         attempt,
         attempt as u64,
         vec![],
-        serde_json::json!({ "pid": dead_pid }),
+        serde_json::Value::Null,
         vec![],
         0,
     );
+    record.held_by_pid = Some(dead_pid);
+    record.species = Some(flow::StepSpecies::Repeatable);
     ledger.append_step_started(&record).expect("scrivere l'intenzione del tentativo interrotto");
+}
+
+/// La corsa nel deposito, con il compito su cui lavorava. La scrive
+/// `record_run_status` prima di ogni tentativo vero: senza, il recupero non
+/// saprebbe a quale file appartiene una corsa rimasta aperta.
+fn write_run(ledger: &ledger::Ledger, run_id: &str, task_name: &str) {
+    ledger
+        .record_run(&ledger::RunRecord {
+            run_id: run_id.to_string(),
+            kind: "notte".to_string(),
+            entity: task_name.to_string(),
+            parent_run_id: None,
+            started_by: "notte".to_string(),
+            status: "running".to_string(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 0,
+            ended_at: None,
+        })
+        .expect("scrivere la corsa");
 }
 
 /// Un tentativo già chiuso come interrotto: la storia di un'interruzione
@@ -486,6 +508,7 @@ fn an_orphaned_receipt_is_retried_and_the_ledger_shows_two_attempts() {
     let run_id = expected_run_id("2026-08-25-q.task", "2026-08-25");
     {
         let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito di prova deve aprirsi");
+        write_run(&ledger, &run_id, "2026-08-25-q.task");
         write_open_attempt(&ledger, &run_id, 1, 999_999);
     }
 
@@ -502,9 +525,21 @@ fn an_orphaned_receipt_is_retried_and_the_ledger_shows_two_attempts() {
     assert_eq!(steps.len(), 2, "un tentativo interrotto più uno riuscito: {steps:?}");
     assert_eq!(steps[0].attempt, 1);
     assert_eq!(steps[0].outcome, Some(flow::Outcome::Broke), "{steps:?}");
-    assert_eq!(steps[0].failure_class.as_deref(), Some("process_disappeared"), "{steps:?}");
+    // La classe dice il vero: dell'effetto non si sa niente, e a rilanciare
+    // è la specie dichiarata dal compito, non una finta prova che l'effetto
+    // non sia avvenuto.
+    assert_eq!(steps[0].failure_class.as_deref(), Some("repeatable_after_unknown_effect"), "{steps:?}");
     assert_eq!(steps[1].attempt, 2);
     assert_eq!(steps[1].outcome, Some(flow::Outcome::Went), "{steps:?}");
+    // Il pid di chi teneva il passo è un campo del record, e il tentativo
+    // nuovo porta quello del processo vivo che l'ha rifatto.
+    assert_eq!(steps[0].held_by_pid, Some(999_999), "{steps:?}");
+    // Il processo `notte` che ha rifatto il lavoro è un figlio di questa
+    // prova: il suo pid non si conosce qui, si sa solo che non è quello morto.
+    assert!(steps[1].held_by_pid.is_some_and(|pid| pid != 999_999), "{steps:?}");
+    // L'ingresso del tentativo nuovo è il compito e basta: il pid non ci
+    // entra più, quindi non sporca più l'impronta.
+    assert!(steps[1].input.get("pid").is_none(), "{steps:?}");
 }
 
 /// LA TRAPPOLA VERA: un compito già interrotto due volte (due tentativi già
@@ -524,6 +559,7 @@ fn a_third_interrupted_attempt_is_poisoned_without_calling_the_engine() {
     let run_id = expected_run_id("2026-08-25-r.task", "2026-08-25");
     {
         let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito di prova deve aprirsi");
+        write_run(&ledger, &run_id, "2026-08-25-r.task");
         write_closed_broke_attempt(&ledger, &run_id, 1);
         write_closed_broke_attempt(&ledger, &run_id, 2);
         write_open_attempt(&ledger, &run_id, 3, 999_999);
@@ -548,6 +584,54 @@ fn a_third_interrupted_attempt_is_poisoned_without_calling_the_engine() {
     assert!(
         steps.iter().all(|s| s.outcome == Some(flow::Outcome::Broke)),
         "il motore non deve essere mai stato chiamato: {steps:?}"
+    );
+}
+
+/// UNA NOTTE FINISCE A MEZZANOTTE E IL LAVORO NO. Un compito preso in carico
+/// ieri e raccolto oggi deve ritrovare la propria corsa, che porta la data di
+/// IERI — e la ritrova perché il recupero **chiede al deposito quali corse
+/// sono rimaste aperte**, invece di ricostruirne il nome con la data di oggi.
+///
+/// Il difetto che questa prova esiste per fermare non fa rumore: cercando la
+/// corsa sotto la data di oggi non la si trova, il conteggio dei tentativi
+/// riparte da zero e l'avvelenamento non scatta mai — un compito che si
+/// interrompe ogni notte torna in coda per sempre — mentre il tentativo di
+/// ieri resta aperto nel deposito e nessuno lo chiude più.
+///
+/// Qui il compito è già stato interrotto due volte ieri: al terzo, raccolto
+/// oggi, deve essere avvelenato. Se la corsa di ieri non si trovasse, questo
+/// sarebbe il «primo» tentativo e il compito tornerebbe in coda.
+#[test]
+fn a_task_interrupted_last_night_finds_its_own_run_after_midnight() {
+    let ws = Workspace::new("receipt-across-midnight");
+    ws.write_receipt("2026-08-24-m.task", 999_999, "openrouter", "una domanda", "true");
+    let ledger_dir = ws.path("state").join("flussi");
+    let yesterday = expected_run_id("2026-08-24-m.task", "2026-08-24");
+    {
+        let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito di prova deve aprirsi");
+        write_run(&ledger, &yesterday, "2026-08-24-m.task");
+        write_closed_broke_attempt(&ledger, &yesterday, 1);
+        write_closed_broke_attempt(&ledger, &yesterday, 2);
+        write_open_attempt(&ledger, &yesterday, 3, 999_999);
+    }
+
+    // Oggi è il 25: la ricevuta viene da ieri.
+    let status = run(&ws, &[("NOTTE_LEDGER_DIR", ledger_dir.to_str().unwrap())]);
+    assert!(status.success());
+    assert!(queue_names(&ws).is_empty(), "avvelenato: non torna in coda");
+    assert_eq!(done_names(&ws), vec!["2026-08-24-m.task"]);
+    let moved = fs::read_to_string(ws.path("done").join("2026-08-24-m.task")).unwrap();
+    assert!(moved.contains("notte-status: red (avvelenato)"), "{moved}");
+
+    let ledger = ledger::Ledger::open(&ledger_dir).expect("il deposito deve rileggersi");
+    let steps = ledger.steps(&yesterday).expect("i passi di ieri devono leggersi");
+    assert_eq!(steps.len(), 3, "nessun quarto tentativo: {steps:?}");
+    assert_eq!(steps[2].outcome, Some(flow::Outcome::Broke), "il terzo tentativo di ieri va chiuso, non lasciato aperto: {steps:?}");
+    // E non deve essere nata una corsa fantasma con la data di oggi.
+    let today = expected_run_id("2026-08-24-m.task", "2026-08-25");
+    assert!(
+        ledger.steps(&today).expect("lettura corsa di oggi").is_empty(),
+        "la ricevuta di ieri non deve aprire una corsa sotto la data di oggi"
     );
 }
 

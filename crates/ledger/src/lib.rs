@@ -5,7 +5,7 @@
 //! file sono collegati, ma il nuovo evento e la sua proiezione vengono commessi
 //! in due fasi perché WAL non offre atomicità fra database collegati.
 
-use flow::{AttemptRelation, Completion, Outcome, RecordStore, StepRecord};
+use flow::{AttemptRelation, Completion, Outcome, RecordStore, StepRecord, StepSpecies};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -20,7 +20,7 @@ use tracing_subscriber::layer::{Context, Layer};
 const STATE_FILE: &str = "state.db";
 const EVENTS_FILE: &str = "events.db";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const PROJECTION_SCHEMA_VERSION: i64 = 2;
+const PROJECTION_SCHEMA_VERSION: i64 = 3;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -142,6 +142,16 @@ pub struct GatesChangedStep {
     pub epoch: u64,
 }
 
+/// Una corsa con almeno un passo aperto, come la vede chi riprende.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnfinishedRun {
+    pub run_id: String,
+    /// Su cosa lavorava la corsa. Vuota se nessuno l'ha mai registrata.
+    pub entity: String,
+    pub open_steps: usize,
+    pub oldest_started_at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscardedOutputStep {
     pub run_id: String,
@@ -213,7 +223,7 @@ impl Ledger {
             create_projection_tables(&transaction)?;
             initialize_projection_watermark(&transaction)?;
             if projection_schema_version < PROJECTION_SCHEMA_VERSION {
-                migrate_v1_to_v2(&transaction)?;
+                add_missing_projection_columns(&transaction)?;
                 transaction.pragma_update(None, "user_version", PROJECTION_SCHEMA_VERSION)?;
             }
             create_projection_indexes(&transaction)?;
@@ -335,7 +345,8 @@ impl Ledger {
         let mut statement = connection.prepare(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
-                    failure_class, ended_at, bytes_seen, bytes_discarded
+                    failure_class, ended_at, bytes_seen, bytes_discarded,
+                    held_by_pid, species
              FROM steps WHERE run_id = ?1 ORDER BY started_at, step_id, attempt",
         )?;
         let records = statement
@@ -357,6 +368,36 @@ impl Ledger {
                 step_id: row.get(1)?,
                 attempt: row.get(2)?,
                 epoch: u64_column(row, 3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Le corse rimaste a metà: hanno un'intenzione scritta e nessun esito.
+    ///
+    /// È LA DOMANDA DELLA RIPRESA, e non nomina nessuna lavorazione: chi
+    /// riprende non sa quali corse esistano, sa solo di voler chiudere ciò che
+    /// è rimasto aperto. Prima di questo metodo il nome della corsa andava
+    /// ricostruito da fuori — nel servizio notturno, con la data di oggi — e
+    /// chi si era interrotto prima di mezzanotte non veniva ritrovato mai.
+    ///
+    /// L'ordine è quello di apertura: si riprende ciò che è fermo da più tempo.
+    pub fn unfinished_runs(&self) -> Result<Vec<UnfinishedRun>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT steps.run_id, COALESCE(runs.entity, ''), COUNT(*), MIN(steps.started_at)
+             FROM steps LEFT JOIN runs ON runs.run_id = steps.run_id
+             WHERE steps.outcome IS NULL
+             GROUP BY steps.run_id
+             ORDER BY MIN(steps.started_at), steps.run_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let open: i64 = row.get(2)?;
+            Ok(UnfinishedRun {
+                run_id: row.get(0)?,
+                entity: row.get(1)?,
+                open_steps: open as usize,
+                oldest_started_at: row.get(3)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -659,6 +700,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              input TEXT NOT NULL,
              gates TEXT NOT NULL,
              attempt_relation TEXT,
+             held_by_pid INTEGER,
+             species TEXT,
              started_at INTEGER NOT NULL,
              outcome TEXT,
              output TEXT,
@@ -731,15 +774,25 @@ fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError>
     Ok(())
 }
 
-fn migrate_v1_to_v2(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
-    // La migrazione aggiunge le colonne opzionali introdotte nella versione 2
-    // senza invalidare le proiezioni esistenti né richiedere la rilettura
-    // del registro degli eventi.
-    if !column_exists(transaction, "steps", "bytes_seen")? {
-        transaction.execute("ALTER TABLE steps ADD COLUMN bytes_seen INTEGER", [])?;
-    }
-    if !column_exists(transaction, "steps", "bytes_discarded")? {
-        transaction.execute("ALTER TABLE steps ADD COLUMN bytes_discarded INTEGER", [])?;
+/// Porta la proiezione di un deposito già esistente alla versione corrente
+/// aggiungendo le colonne opzionali nate dopo di lui. Non è una catena di
+/// migrazioni numerate: ogni colonna si aggiunge se manca, quindi la stessa
+/// funzione porta a destinazione un deposito di qualunque versione passata,
+/// e rieseguirla non fa niente. Nessuna invalida le proiezioni esistenti né
+/// obbliga a rileggere il registro degli eventi — i valori dei record già
+/// scritti restano nulli, che è esattamente ciò che erano.
+fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
+    for (column, kind) in [
+        // versione 2
+        ("bytes_seen", "INTEGER"),
+        ("bytes_discarded", "INTEGER"),
+        // versione 3: chi teneva il passo, e se rifarlo è sicuro
+        ("held_by_pid", "INTEGER"),
+        ("species", "TEXT"),
+    ] {
+        if !column_exists(transaction, "steps", column)? {
+            transaction.execute(&format!("ALTER TABLE steps ADD COLUMN {column} {kind}"), [])?;
+        }
     }
     Ok(())
 }
@@ -979,8 +1032,10 @@ fn project_step(
         "INSERT INTO steps
          (run_id, step_id, attempt, epoch, deps, input_digest, input, gates,
           attempt_relation, started_at, outcome, output, said, failure_class,
-          ended_at, bytes_seen, bytes_discarded, checkpointed)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+          ended_at, bytes_seen, bytes_discarded, held_by_pid, species,
+          checkpointed)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                 ?15, ?16, ?17, ?18, ?19, ?20)
          ON CONFLICT(run_id, step_id, attempt) DO UPDATE SET
           epoch=excluded.epoch, deps=excluded.deps,
           input_digest=excluded.input_digest, input=excluded.input,
@@ -989,6 +1044,7 @@ fn project_step(
           outcome=excluded.outcome, output=excluded.output, said=excluded.said,
           failure_class=excluded.failure_class, ended_at=excluded.ended_at,
           bytes_seen=excluded.bytes_seen, bytes_discarded=excluded.bytes_discarded,
+          held_by_pid=excluded.held_by_pid, species=excluded.species,
           checkpointed=excluded.checkpointed",
         params![
             record.run_id,
@@ -1012,6 +1068,8 @@ fn project_step(
             record.ended_at,
             record.bytes_seen.map(|bytes| bytes as i64),
             record.bytes_discarded.map(|bytes| bytes as i64),
+            record.held_by_pid.map(|pid| pid as i64),
+            record.species.map(species_name),
             checkpointed,
         ],
     )?;
@@ -1118,7 +1176,8 @@ fn read_step(
         .query_row(
             "SELECT run_id, step_id, attempt, epoch, deps, input_digest, input,
                     gates, attempt_relation, started_at, outcome, output, said,
-                    failure_class, ended_at, bytes_seen, bytes_discarded
+                    failure_class, ended_at, bytes_seen, bytes_discarded,
+                    held_by_pid, species
              FROM steps
              WHERE run_id = ?1 AND step_id = ?2 AND attempt = ?3 AND epoch = ?4",
             params![run_id, step_id, attempt, padded_u64(epoch)],
@@ -1149,6 +1208,8 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let output: Option<String> = row.get(11)?;
     let bytes_seen: Option<i64> = row.get(15)?;
     let bytes_discarded: Option<i64> = row.get(16)?;
+    let held_by_pid: Option<i64> = row.get(17)?;
+    let species: Option<String> = row.get(18)?;
     Ok(StepRecord {
         run_id: row.get(0)?,
         step_id: row.get(1)?,
@@ -1176,6 +1237,8 @@ fn step_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         ended_at: row.get(14)?,
         bytes_seen: bytes_seen.map(|b| b as u64),
         bytes_discarded: bytes_discarded.map(|b| b as u64),
+        held_by_pid: held_by_pid.map(|pid| pid as u32),
+        species: species.as_deref().map(parse_species).transpose()?,
     })
 }
 
@@ -1233,6 +1296,34 @@ fn parse_outcome(value: &str, column: usize) -> rusqlite::Result<Outcome> {
     }
 }
 
+fn species_name(species: StepSpecies) -> &'static str {
+    match species {
+        StepSpecies::Repeatable => "repeatable",
+        StepSpecies::Compensable => "compensable",
+        StepSpecies::HandToHuman => "hand_to_human",
+    }
+}
+
+/// Una specie che il deposito non riconosce è un errore, non un ripiego
+/// silenzioso: leggerla come `hand_to_human` sarebbe prudente per il singolo
+/// passo e falso per chi legge la storia.
+fn parse_species(value: &str) -> rusqlite::Result<StepSpecies> {
+    match value {
+        "repeatable" => Ok(StepSpecies::Repeatable),
+        "compensable" => Ok(StepSpecies::Compensable),
+        "hand_to_human" => Ok(StepSpecies::HandToHuman),
+        other => Err(rusqlite::Error::FromSqlConversionFailure(
+            18,
+            rusqlite::types::Type::Text,
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown step species {other}"),
+            )
+            .into(),
+        )),
+    }
+}
+
 fn attempt_relation_name(relation: AttemptRelation) -> &'static str {
     match relation {
         AttemptRelation::SameInput => "same_input",
@@ -1261,7 +1352,7 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
-        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,checkpointed",
+        "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed",
         "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
