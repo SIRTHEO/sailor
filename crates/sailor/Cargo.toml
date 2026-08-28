@@ -21,5 +21,11 @@ actions = { path = "../actions" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 inventory = { path = "../inventory" }
+# Il rilevamento di cosa c'è sulla macchina — CLI, server MCP, strumenti — che un
+# passo di flusso può chiedere con l'azione `detect_tools`, e che qui risolve gli
+# strumenti nominati dai passi. `trigger` porta il nodo di ingresso: da dove
+# arriva il segnale che fa partire un flusso.
+toolbox = { path = "../toolbox" }
+trigger = { path = "../trigger" }
 serde = { workspace = true }
 serde_json = { workspace = true }
