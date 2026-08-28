@@ -6,7 +6,7 @@
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
-use ui::gather::{default_ledger_dir, load_flow_registry};
+use ui::gather::{default_flows_dir, default_ledger_dir, load_flow_registry};
 use ui::server::{run_forever, ServerState, DEFAULT_PORT};
 
 /// Apre la pagina nel browser predefinito, dopo che la porta è già in ascolto.
@@ -68,7 +68,12 @@ pub fn run(args: &[String]) -> i32 {
         }
     }
 
-    let flows_dir = flows_dir.unwrap_or_else(|| ledger_dir.join("flows"));
+    // I FLUSSI NON STANNO ACCANTO AL DEPOSITO. Fino al 28/08/2026 qui c'era
+    // `ledger_dir.join("flows")`, cioè `~/.claude/state/flussi/flows`: una
+    // cartella mai esistita. La pagina rispondeva `"flows": []` senza errore, e
+    // l'elenco vuoto sembrava un fatto sul mondo invece che una domanda posta
+    // nel posto sbagliato. Il deposito è stato, i flussi sono sorgenti.
+    let flows_dir = flows_dir.unwrap_or_else(default_flows_dir);
     let flows = load_flow_registry(&flows_dir);
     let state = Arc::new(ServerState { ledger_dir, flows });
 
