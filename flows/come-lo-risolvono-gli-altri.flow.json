@@ -1,0 +1,875 @@
+{
+  "id": "come-lo-risolvono-gli-altri",
+  "description": "Prende dei guasti veri, incontrati davvero mentre si sviluppava, e va a vedere come li avrebbero evitati gli altri: prima la letteratura pubblicata, poi i progetti vivi, poi il nostro codice. Un quarto passo sceglie cosa adottare e — la parte che conta di più — dichiara quali guasti resterebbero comunque scoperti. Un quinto, su un modello più basso, va ad aprire le fonti citate e i file nominati: se non riesce ad aprirle respinge, perché una ricerca che cita quello che non ha letto è peggio di nessuna ricerca. PERCHÉ ESISTE: un guasto riparato a mano resta nella testa di chi l'ha riparato, e la volta dopo ci ricasca un altro. Questo flusso serve a trasformare un guasto incontrato una volta in un controllo che lo impedisce per sempre. I GUASTI ENTRANO DALL'INNESCO, non sono scritti nel grafo: per studiarne altri si cambia quel testo. NOTA SUI TEMPI: i passi girano in fila, non insieme, quindi la corsa dura quanto la somma dei cinque motori.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "who",
+            "where",
+            "source",
+            "kind"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "letteratura",
+        "deps": [
+          "trigger"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "opus"
+          ],
+          "timeout_secs": 1800,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "practices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "catches": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "how",
+                    "source",
+                    "catches"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "practices",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Usa la competenza «neuroarxiv» per rispondere: leggi davvero la letteratura pubblicata, non ricordarla. Ogni pratica che riporti deve avere una fonte che esiste e che hai aperto.\n\nCerca come la ricerca pubblicata affronta il problema qui sotto. Interessano i lavori su: verifica automatica di proprietà nei sistemi di flusso di lavoro, apprendimento dai guasti in produzione, prevenzione della regressione, e i modi di fallire già documentati di questi approcci.\n\n",
+              {
+                "$from": "/text"
+              },
+              "\n\nIn «catches» scrivi quale dei guasti elencati quella pratica avrebbe impedito, citandolo per numero. Se una pratica non ne avrebbe impedito nessuno, non riportarla.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "practices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "how": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "catches": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "how",
+                      "source",
+                      "catches"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "practices",
+                "total"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "progetti",
+        "deps": [
+          "trigger",
+          "letteratura"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "opus"
+          ],
+          "timeout_secs": 1800,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "practices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "catches": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "how",
+                    "source",
+                    "catches"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "practices",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Usa la competenza «advise-project-approach» per rispondere. Studia progetti reali e vivi, non idee generiche: motori di flusso di lavoro e di automazione affermati. Guarda come risolvono davvero il problema, andando a vedere il loro codice o la loro documentazione — non come dicono di risolverlo.\n\nIL PROBLEMA\n\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\nLA LETTERATURA HA GIÀ TROVATO QUESTO — non ripeterlo, cerca quello che i progetti veri fanno e che la ricerca non dice:\n",
+              {
+                "$json": "/letteratura/answer"
+              },
+              "\n\nIn «source» metti il progetto e il punto preciso (file, pagina) dove si vede. In «catches» quale guasto dell'elenco avrebbe impedito, per numero.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "practices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "how": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "catches": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "how",
+                      "source",
+                      "catches"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "practices",
+                "total"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "nostro",
+        "deps": [
+          "trigger",
+          "progetti"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "opus"
+          ],
+          "timeout_secs": 1800,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "practices": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "how": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "catches": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "how",
+                    "source",
+                    "catches"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "practices",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Guarda com'è fatto Sailor, il progetto in ~/personal/sailor, e dove potrebbe ospitare un meccanismo del genere. Usa gli strumenti di SocratiCode per orientarti (ricerca per significato, simboli, impatto), ma VERIFICA sempre leggendo il file: il suo grafo delle dipendenze su questo repo dà falsi negativi, dice «nessuno dipende da questo» per moduli che hanno otto dipendenti dichiarati.\n\nIL PROBLEMA\n\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\nCOSA HANNO TROVATO GLI ALTRI DUE — valuta quali di queste pratiche Sailor può ospitare e quali no:\n",
+              {
+                "$json": "/progetti/answer"
+              },
+              "\n\nIn «name» metti la pratica, in «how» dove esattamente andrebbe in Sailor (file, funzione, o «un flusso» se è un flusso), in «source» il percorso del file che hai letto per dirlo, in «catches» il numero del guasto.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "practices": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "how": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "catches": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "how",
+                      "source",
+                      "catches"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "practices",
+                "total"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "sintesi",
+        "deps": [
+          "trigger",
+          "letteratura",
+          "progetti",
+          "nostro"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "opus"
+          ],
+          "timeout_secs": 1800,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "adopt": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "what": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    },
+                    "first_step": {
+                      "type": "string"
+                    },
+                    "catches": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "what",
+                    "why",
+                    "first_step",
+                    "catches"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "reject": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "what": {
+                      "type": "string"
+                    },
+                    "why_not": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "what",
+                    "why_not"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "uncovered": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "adopt",
+              "reject",
+              "uncovered"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Tre ricerche hanno risposto alla stessa domanda da tre lati. Decidi cosa adottare, in ordine di quanto rende, e cosa scartare con la ragione. Non riassumere: scegli.\n\nIL METRO: Sailor deve poter essere adottato da chiunque, su qualunque macchina, con qualunque strumento a riga di comando. Una pratica che funziona solo qui non va adottata. E vale la politica di chi lo costruisce: si scrive nel codice del programma solo ciò che tocca il mondo; tutto il resto è un flusso, modificabile senza ricompilare.\n\nIL PROBLEMA E I GUASTI VERI\n\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\n=== LA LETTERATURA ===\n",
+              {
+                "$json": "/letteratura/answer"
+              },
+              "\n\n=== I PROGETTI VERI ===\n",
+              {
+                "$json": "/progetti/answer"
+              },
+              "\n\n=== DOVE STAREBBE IN SAILOR ===\n",
+              {
+                "$json": "/nostro/answer"
+              },
+              "\n\nIn «uncovered» elenca i numeri dei guasti che NESSUNA delle pratiche trovate avrebbe impedito. Quella lista vale più delle altre due: dice cosa resta scoperto.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "adopt": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "what": {
+                        "type": "string"
+                      },
+                      "why": {
+                        "type": "string"
+                      },
+                      "first_step": {
+                        "type": "string"
+                      },
+                      "catches": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "what",
+                      "why",
+                      "first_step",
+                      "catches"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "reject": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "what": {
+                        "type": "string"
+                      },
+                      "why_not": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "what",
+                      "why_not"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "uncovered": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "adopt",
+                "reject",
+                "uncovered"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": [
+          "letteratura",
+          "progetti",
+          "nostro",
+          "sintesi"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "sonnet"
+          ],
+          "timeout_secs": 1800,
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "verdict": {
+                "type": "one_of",
+                "values": [
+                  "APPROVATO",
+                  "RESPINTO"
+                ]
+              },
+              "why": {
+                "type": "string"
+              },
+              "checked": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "verdict",
+              "why",
+              "checked"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Ricevi un lavoro di ricerca già fatto e devi dire se regge. Non rifarlo. Non fidarti del racconto di chi l'ha fatto.\n\nCONTROLLA TRE COSE, e per le prime due vai a guardare tu:\n1. le fonti citate esistono davvero e dicono quello che si sostiene: prendine almeno tre, aprile;\n2. le affermazioni sul codice di Sailor sono vere: prendi almeno due percorsi di file citati e leggili;\n3. la lista «uncovered» è onesta, cioè non ci sono guasti dichiarati coperti da una pratica che non li coprirebbe.\nSe non riesci ad aprire una fonte, questo è un motivo per respingere, non per approvare. In «checked» scrivi cosa hai aperto davvero.\n\n=== LA LETTERATURA ===\n",
+              {
+                "$json": "/letteratura/answer"
+              },
+              "\n\n=== I PROGETTI ===\n",
+              {
+                "$json": "/progetti/answer"
+              },
+              "\n\n=== IL NOSTRO CODICE ===\n",
+              {
+                "$json": "/nostro/answer"
+              },
+              "\n\n=== LA SINTESI DA GIUDICARE ===\n",
+              {
+                "$json": "/sintesi/answer"
+              },
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "type": "one_of",
+                  "values": [
+                    "APPROVATO",
+                    "RESPINTO"
+                  ]
+                },
+                "why": {
+                  "type": "string"
+                },
+                "checked": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "verdict",
+                "why",
+                "checked"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verdetto",
+        "deps": [
+          "verifica"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "[ \"$VERDICT\" = APPROVATO ]",
+          "env": {
+            "VERDICT": {
+              "$from": "/answer/verdict"
+            }
+          },
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "text": "Il problema da studiare è questo: quando chi sviluppa incontra un guasto e lo ripara, quella riparazione resta nella sua testa. La volta dopo, un'altra persona — o lo stesso sistema automatico — ci ricasca. Serve un modo perché un guasto incontrato una volta diventi un controllo permanente che lo impedisce per sempre, senza che qualcuno debba ricordarsene.\n\nSailor è un motore di flussi: un flusso è un file che descrive dei passi e le loro dipendenze, e ogni passo esegue qualcosa. L'idea da valutare è che il meccanismo di cattura sia esso stesso un flusso, non codice del programma.\n\n=== I GUASTI VERI DA CUI PARTIRE ===\n\nQuesti sono guasti VERI, incontrati fra il 28 e il 29 agosto 2026 mentre si sviluppava Sailor. Nessuno è ipotetico. Nessuno di loro ha lasciato una traccia nel sistema: sono stati riparati a mano e dimenticati, ed è questo il problema da risolvere.\n\n1. Un motore esterno è stato invocato con gli argomenti nell'ordine sbagliato. Il motore stesso ha risposto spiegando come si ripara. Nessuno se n'era accorto prima perché le opzioni erano state lette dalla sua documentazione e mai eseguite.\n2. Un passo che falliva veniva registrato come riuscito, col codice d'errore nascosto dentro il risultato. La corsa diventava rossa solo perché per caso l'ultimo nodo guardava anche quel campo.\n3. Il controllo statico di un flusso chiudeva senza errori su un flusso che nominava uno strumento inesistente. Il guasto si scopriva solo eseguendo.\n4. Un processo di sviluppo lasciato orfano occupava una porta e impediva l'avvio. È successo due volte, a due persone diverse, nella stessa notte, e la seconda non sapeva della prima.\n5. Alcune prove automatiche leggevano un file di configurazione della macchina di chi le esegue. Una pulizia di quel file le ha fatte diventare rosse senza che il codice fosse cambiato.\n6. Uno script ha stampato «fatto, 1975 file rimossi» senza rimuoverne nessuno: l'opzione usata non esiste su questo sistema operativo, e il messaggio di successo stava fuori dal controllo dell'esito.\n7. Due passi dichiarati «in parallelo» giravano in fila. Il codice lo dichiarava apertamente in un commento; la documentazione e la descrizione del flusso dicevano il contrario.\n8. Il formato di estensione rifiuta un file che contiene un campo che quella versione non conosce: chi scrive un'estensione per una versione più nuova perde l'intero componente su una vecchia.\n9. Un elemento grafico era invisibile perché disegnato dello stesso colore dello sfondo. Non era visibile né dal codice né dai tipi né dalle prove: solo da un'immagine dello schermo.\n10. La stessa lista di componenti era scritta in due punti del programma. Si sono disallineati nel giro di un'ora, durante la stessa giornata di lavoro.",
+      "who": "",
+      "where": ""
+    }
+  }
+}

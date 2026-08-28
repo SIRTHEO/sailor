@@ -1,0 +1,39 @@
+{
+  "id": "prova-innesco",
+  "description": "FLUSSO DI PROVA del cantiere esecuzione: un innesco manuale e un passo che rilegge la consegna ricevuta. Serve a provare che il pulsante scrive testo, chi e da dove nel segnale.",
+  "graph": {
+    "steps": [
+      {
+        "id": "innesco",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": { "source": "manual" },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "eco",
+        "deps": ["innesco"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "printf 'ho ricevuto \"%s\" da %s (%s)\\n' \"$CONSEGNA\" \"$DOVE\" \"$CHI\"",
+          "env": {
+            "CONSEGNA": { "$from": "/text" },
+            "DOVE": { "$from": "/where" },
+            "CHI": { "$from": "/who" }
+          },
+          "timeout_secs": 10
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "innesco": { "text": "la consegna scritta nel file, che il pulsante sostituisce" }
+  }
+}
