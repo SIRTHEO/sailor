@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "real=$(python3 -c 'import io,pathlib,sys\nroot=pathlib.Path.home()/\"personal/sailor/crates\"\nn=0\nfor p in root.rglob(\"*.rs\"):\n    s=str(p)\n    if \"/target/\" in s or \"/tests/\" in s: continue\n    lines=io.open(p,encoding=\"utf-8\",errors=\"replace\").read().splitlines()\n    cut=next((i for i,l in enumerate(lines) if \"#[cfg(test)]\" in l), None)\n    if (cut if cut is not None else len(lines))>1000: n+=1\nprint(n)'); [ -n \"$real\" ] && [ \"$real\" -le 8 ]",
           "timeout_secs": 120
@@ -142,7 +146,7 @@
         "workspace-write",
         "-c",
         "sandbox_workspace_write={network_access=true}",
-        "Albero: ~/.claude/rust/crates. E' Sailor perche' Theo l'ha deciso il 22/08/2026 alle 11:20, con la correzione delle 11:50 — libro di bordo, e docs/plans/2026-08-22-sailor-il-sistema.md: «sailor e' questo deposito, i crate in rust/ sono sailor». NON ~/personal/sailor, che e' il vecchio prodotto chiuso il 17/08: fino al 26/08 questa sentinella misurava li', cioe' sorvegliava il debito di una cosa morta mentre quello vivo cresceva non visto.\n\nSotto ~/.claude/rust/crates conta i file .rs che superano le 1000 righe DI CODICE, dove per codice si intende tutto cio' che sta PRIMA della riga con #[cfg(test)] (in Rust le prove stanno in fondo allo stesso file, e un file che cresce perche' aggiunge prove non e' debito). Escludi i percorsi dentro target/ e dentro una cartella tests/, che sono prove per intero. Elenca ognuno nella forma '<righe di codice>/<righe totali> <percorso>', dal piu' grande al piu' piccolo. Poi scrivi una riga esatta: file_oltre_mille: N. Se N e' sceso rispetto a 8, dillo esplicitamente: e' il verso in cui questo numero deve muoversi.\n\nIl numero 8 e' la misura del 26/08/2026 sull'albero giusto. Il piu' grosso e' relay.rs con 2469 righe di codice su 5064 totali."
+        "Albero: ~/personal/sailor/crates. E' Sailor da quando ci ha traslocato, il 27/08/2026: ~/.claude/rust non esiste piu', cancellato il 28/08. Questa sentinella ha misurato l'albero sbagliato due volte in senso opposto — fino al 26/08 guardava il vecchio prodotto, e dal 27/08 al 28/08 ha guardato l'albero congelato dal trasloco: in tutti e due i casi sorvegliava una cosa ferma, e restava verde mentre il debito vero cresceva non visto.\n\nSotto ~/personal/sailor/crates conta i file .rs che superano le 1000 righe DI CODICE, dove per codice si intende tutto cio' che sta PRIMA della riga con #[cfg(test)] (in Rust le prove stanno in fondo allo stesso file, e un file che cresce perche' aggiunge prove non e' debito). Escludi i percorsi dentro target/ e dentro una cartella tests/, che sono prove per intero. Elenca ognuno nella forma '<righe di codice>/<righe totali> <percorso>', dal piu' grande al piu' piccolo. Poi scrivi una riga esatta: file_oltre_mille: N. Se N e' sceso rispetto a 8, dillo esplicitamente: e' il verso in cui questo numero deve muoversi.\n\nIl numero 8 e' la misura del 26/08/2026 sull'albero giusto. Il piu' grosso e' relay.rs con 2469 righe di codice su 5064 totali."
       ],
       "env": {},
       "timeout_secs": 300

@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "D=$HOME/.claude/state/plancia/segnalazioni\naperte=$(grep -l '^stato: aperta' $D/*.md 2>/dev/null | wc -l | tr -d ' ')\nsenza=$(for f in $(grep -l '^stato: aperta' $D/*.md 2>/dev/null); do grep -q '^gravita:' \"$f\" || echo x; done | wc -l | tr -d ' ')\n# Verde solo se il numero di voci aperte senza gravita' e' sceso sotto quello\n# di partenza (71 al 2026-08-26). Rossa se nessuna e' stata classificata, e\n# rossa anche se qualcuno ha chiuso voci per far scendere il numero: le aperte\n# non devono calare piu' di quanto siano state classificate.\n[ -n \"$senza\" ] && [ \"$senza\" -lt 71 ] && [ \"$aperte\" -ge 70 ]",
           "timeout_secs": 120

@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "D=$HOME/.claude/state/plancia/segnalazioni\n# Ogni voce chiusa dalla coda automatica deve portare la propria prova: se ne\n# esiste anche una sola senza la sezione di chiusura, la lavorazione e' rossa\n# anche se ha fatto scendere il numero. E' il freno contro la chiusura a vuoto.\nsenza_prova=0\nfor f in $(grep -l '^chiusa-da: coda automatica' $D/*.md 2>/dev/null); do\n  grep -q '^## Chiusura automatica' \"$f\" || senza_prova=$((senza_prova+1))\n  grep -q '^stato: chiusa' \"$f\" || senza_prova=$((senza_prova+1))\ndone\n[ \"$senza_prova\" -eq 0 ]",
           "timeout_secs": 120
