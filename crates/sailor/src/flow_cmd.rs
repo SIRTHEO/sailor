@@ -40,6 +40,7 @@ pub fn run(args: &[String]) -> i32 {
 fn dispatch(args: &[String], flows_dir: &Path) -> Result<String, String> {
     match args {
         [command] if command == "list" => list_flows(flows_dir),
+        [command] if command == "due" => due_flows(flows_dir),
         [command, name] if command == "check" => check_flow(flows_dir, name),
         [command, name] if command == "run" => run_flow(flows_dir, name),
         _ => Err(usage()),
@@ -47,7 +48,69 @@ fn dispatch(args: &[String], flows_dir: &Path) -> Result<String, String> {
 }
 
 fn usage() -> String {
-    "uso: sailor flow <list|check <nome>|run <nome>>".to_owned()
+    "uso: sailor flow <list|due|check <nome>|run <nome>>".to_owned()
+}
+
+/// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
+///
+/// PERCHÉ QUESTO COMANDO ESISTE PRIMA DI UNO SCHEDULATORE. Finché nessuno sa
+/// dire *che cosa dovrebbe girare adesso*, un cron non si può convertire in
+/// flusso: si convertirebbe che cosa fa, perdendo quando lo fa. Qui la domanda
+/// riceve una risposta che una persona può leggere e smentire — che è il
+/// gradino prima di lasciarla eseguire a una macchina.
+///
+/// L'ora si legge **una volta sola** e si passa a tutti: due flussi giudicati su
+/// due istanti diversi non sono confrontabili, e la differenza si vede solo nei
+/// casi rari, cioè quando fa più danno.
+fn due_flows(flows_dir: &Path) -> Result<String, String> {
+    let paths = flow_paths(flows_dir)?;
+    if paths.is_empty() {
+        return Ok("nessun flusso trovato in flows/".to_owned());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    // Un deposito che non c'è ancora non è un errore: nessun flusso è mai
+    // girato, quindi sono tutti dovuti — ed è la risposta giusta.
+    let last = default_ledger_dir()
+        .ok()
+        .filter(|dir| dir.join("state.db").exists())
+        .and_then(|dir| Ledger::open(&dir).ok())
+        .and_then(|ledger| ledger.last_started_at().ok())
+        .unwrap_or_default();
+
+    let mut report = String::new();
+    let mut due = 0usize;
+    let mut unplanned = 0usize;
+    for path in paths {
+        let name = flow_name(&path);
+        let Ok(flow) = load_flow(&path) else {
+            let _ = writeln!(report, "{name}\tnon caricabile");
+            continue;
+        };
+        let Some(schedule) = flow.schedule.as_ref() else {
+            unplanned += 1;
+            continue;
+        };
+        let last_run = last.get(&flow.id).copied();
+        let verdict = if flow::is_due(schedule, last_run, now) {
+            due += 1;
+            "DOVUTO"
+        } else {
+            "non ancora"
+        };
+        let when = match last_run {
+            Some(seconds) => format!("ultima corsa {} minuti fa", (now - seconds) / 60),
+            None => "mai girato".to_owned(),
+        };
+        let _ = writeln!(report, "{}\t{verdict}\t{when}", flow.id);
+    }
+    let _ = write!(
+        report,
+        "{due} dovuti adesso; {unplanned} senza pianificazione, che partono solo a mano"
+    );
+    Ok(report)
 }
 
 fn list_flows(flows_dir: &Path) -> Result<String, String> {

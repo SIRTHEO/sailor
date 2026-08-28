@@ -9,6 +9,7 @@ mod executor;
 mod file;
 mod graph;
 mod record;
+mod schedule;
 mod schema;
 
 pub use executor::{
@@ -22,4 +23,5 @@ pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{
     digest_input, truncate_said, AttemptRelation, Outcome, StepRecord, StepSpecies, MAX_SAID_BYTES,
 };
+pub use schedule::{is_due, Recurrence, Schedule, Weight};
 pub use schema::{SchemaError, ValueSchema};
