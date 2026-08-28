@@ -28,6 +28,17 @@ flow = { path = "../../crates/flow" }
 actions = { path = "../../crates/actions" }
 ledger = { path = "../../crates/ledger" }
 
+# Per far partire un flusso che comincia con un nodo di innesco: l'azione
+# `trigger` vive in un crate a sé, e un registro che non la contiene rifiuta il
+# flusso con «azione sconosciuta» al momento del lancio.
+trigger = { path = "../../crates/trigger" }
+
+# Per rispondere alla finestra quando chiede «cosa posso usare qui»: CLI di
+# intelligenza artificiale, server MCP, strumenti. L'elenco di cosa cercare è un
+# dato del crate, non codice, e chi installa qualcosa di nuovo lo dichiara in un
+# file invece di aspettare una versione nuova del programma.
+toolbox = { path = "../../crates/toolbox" }
+
 # FUORI DAL WORKSPACE, DI PROPOSITO. Un `[workspace]` vuoto stacca questo crate
 # da quello alla radice, e non è pigrizia: `sailor release` esegue
 # `cargo test --release --workspace` per **qualunque** bersaglio, quindi da
