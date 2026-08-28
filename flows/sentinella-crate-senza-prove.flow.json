@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "real=$(find \"$HOME/personal/sailor\" -type f -name Cargo.toml -exec sh -c 'for c do d=${c%/*}; [ -z \"$(find \"$d\" -type d -name tests -print -quit 2>/dev/null)\" ] && [ -z \"$(grep -RIlF \"cfg(test)\" \"$d\" 2>/dev/null)\" ] && printf x; done' sh {} + 2>/dev/null | wc -c | tr -d ' '); [ -n \"$real\" ] && [ \"$real\" -eq 0 ]",
           "timeout_secs": 120
@@ -142,7 +146,7 @@
         "workspace-write",
         "-c",
         "sandbox_workspace_write={network_access=true}",
-        "Sotto ~/.claude/rust trova i crate Rust (le cartelle che contengono un Cargo.toml) che non hanno nessun file di prova: ne' una cartella tests/, ne' un blocco #[cfg(test)] nei sorgenti. Usa find e grep, non leggere i sorgenti per intero. Elenca ogni crate trovato, uno per riga, nella forma 'senza prove: <nome del crate>'. Chiudi con una riga esatta: crate_senza_prove: N"
+        "Sotto ~/personal/sailor trova i crate Rust (le cartelle che contengono un Cargo.toml) che non hanno nessun file di prova: ne' una cartella tests/, ne' un blocco #[cfg(test)] nei sorgenti. Usa find e grep, non leggere i sorgenti per intero. Elenca ogni crate trovato, uno per riga, nella forma 'senza prove: <nome del crate>'. Chiudi con una riga esatta: crate_senza_prove: N"
       ],
       "env": {},
       "timeout_secs": 300

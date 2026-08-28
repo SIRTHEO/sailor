@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "D=$HOME/.claude/state/plancia/segnalazioni\n# Chi giudica non deve aver riparato: se la stessa passata ha lasciato modifiche\n# al codice, ha cambiato mestiere. Qui si controlla la traccia sulle voci.\nsp=0\nfor f in $(grep -l '^giudicata-da: gemini' $D/*.md 2>/dev/null); do\n  # Una voce giudicata «regge» deve essere chiusa e portare la propria prova.\n  grep -q '^stato: chiusa' \"$f\" || sp=$((sp+1))\n  grep -q '^## Chiusura automatica' \"$f\" || sp=$((sp+1))\ndone\nfor f in $(grep -l '^verdetto: rimandato-indietro' $D/*.md 2>/dev/null); do\n  # Una rimandata indietro deve restare aperta e dire perche'.\n  grep -q '^stato: aperta' \"$f\" || sp=$((sp+1))\n  grep -q '^## Verdetto' \"$f\" || sp=$((sp+1))\ndone\n# UN VERDE CHE NON DISTINGUE «FATTO» DA «NIENTE DA FARE» E' UN VERDE FALSO.\n# La prima esecuzione di questa lavorazione, 2026-08-26 alle 18:18, e' uscita\n# VERDE in 9 secondi senza aver giudicato niente: non c'era ancora nessuna voce\n# in attesa, e i freni qui sopra non trovano incoerenze dove non c'e' nulla.\n# Nel rapporto della giornata quel VERDE si legge identico a un verdetto vero.\n# Quindi: se una voce resta in attesa di giudizio da piu' di un giorno, questa\n# lavorazione e' ROSSA — sta girando senza fare il suo mestiere.\nin_attesa_vecchie=$(find $D -name '*.md' -mtime +1 2>/dev/null \\\n  -exec grep -l '^verdetto: in-attesa' {} + 2>/dev/null | wc -l | tr -d ' ')\n[ \"$sp\" -eq 0 ] && [ \"${in_attesa_vecchie:-0}\" -eq 0 ]",
           "timeout_secs": 120

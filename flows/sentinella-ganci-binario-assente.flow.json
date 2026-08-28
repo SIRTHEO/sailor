@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "real=$(for f in \"$HOME\"/.claude/settings.json \"$HOME\"/.claude/settings.local.json; do [ -f \"$f\" ] && grep -hoE '\"command\"[[:space:]]*:[[:space:]]*\"[^\"]+\"' \"$f\"; done 2>/dev/null | sed 's/.*: *\"//;s/\"$//' | while IFS= read -r cmd; do exe=${cmd%%[[:space:]]*}; command -v \"$exe\" >/dev/null 2>&1 || [ -x \"$exe\" ] || printf x; done | wc -c | tr -d ' '); [ -n \"$real\" ] && [ \"$real\" -eq 0 ]",
           "timeout_secs": 120
