@@ -1,0 +1,151 @@
+{
+  "id": "ripara-la-voce-piu-grave",
+  "description": "Lavorazione ogni-notte, peso pesante: invoca codex e poi verifica il risultato.",
+  "graph": {
+    "steps": [
+      {
+        "id": "motore",
+        "deps": [],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "bin": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "bin",
+            "args",
+            "env",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": [
+          "motore"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "D=$HOME/.claude/state/plancia/segnalazioni\n# Due freni. Primo: chi ripara non chiude — una voce marcata `riparata-da: codex`\n# che risulti gia' chiusa vuol dire che ha saltato il verdetto.\n# Secondo: ogni riparazione deve portare il proprio rapporto, o chi giudica non\n# ha su cosa lavorare.\nsp=0\nfor f in $(grep -l '^riparata-da: codex' $D/*.md 2>/dev/null); do\n  grep -q '^## Riparazione, da giudicare' \"$f\" || sp=$((sp+1))\n  grep -q '^stato: chiusa' \"$f\" && sp=$((sp+1))\ndone\n# Il perimetro: settings.json non si tocca da qui.\nts=0\nfind \"$HOME/.claude/settings.json\" -mmin -30 2>/dev/null | grep -q . && ts=1\n[ \"$sp\" -eq 0 ] && [ \"$ts\" -eq 0 ]",
+          "timeout_secs": 120
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr",
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed",
+                "failed",
+                "timed_out"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "motore": {
+      "bin": "codex",
+      "args": [
+        "exec",
+        "-s",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write={network_access=true}",
+        "Sei **chi ripara**, e riporti a chi giudica. Non sei tu a chiudere la voce: il tuo lavoro lo vaglia un altro motore, in un altro giro, che non ha visto niente di quello che hai fatto. Scrivi per lui.\n\nUna voce per giro. Una sola, fatta bene.\n\nLe voci stanno in ~/.claude/state/plancia/segnalazioni/, Markdown con frontmatter YAML. Aperta = `stato: aperta`.\n\n# HAI UN BUDGET DI TEMPO, E LA PRIMA VOLTA L'HA SFORATO\n\nIl motore viene tagliato dopo **300 secondi**. La prima esecuzione di questa lavorazione, il 26/08/2026, è morta a **715 s** senza consegnare niente: il compito chiedeva di scegliere, rivalutare, cercare nel codice, cercare prior art e riparare, tutto in un giro. Le altre lavorazioni della coda stanno fra 9 e 57 secondi.\n\nPerciò: **non scegliere e non rivalutare tu**. Quel lavoro l'ha già fatto la lavorazione leggera `voci-gia-vere-non-piu`, che marca le voci ancora vere con `da-riparare: si`. Tu prendi **una** voce che porta già quella marca — la più grave, a parità la più vecchia — e vai dritto al punto 2.\n\nSe **nessuna voce** porta `da-riparare: si`, non inventarti un compito: scrivi `voce_lavorata: nessuna — nessuna voce marcata da riparare` e fermati. È un esito buono, e costa tre secondi invece di dodici minuti.\n\n**Se vedi che non ce la fai in tempo**, non tirare fino al taglio: scrivi quello che hai capito nella sezione `## Riparazione, da giudicare`, marca la voce `verdetto: in-attesa` e dichiara che la riparazione è parziale. Un lavoro consegnato a metà con scritto cosa manca vale infinitamente più di dodici minuti buttati che non lasciano niente.\n\n# Il contesto di questa casa, che vale per tutto quello che segue\n\n- **Si scrive in italiano** in tutto ciò che è prosa: rapporti, voci, commenti nei documenti. Nel codice — nomi, commenti, messaggi — vale l'inglese.\n- **Il codice è la fonte; commenti e documenti sono indizi datati.** Non agire su ciò che un commento afferma: vai a vedere il codice che gira.\n- **Una misura vale solo se poteva venire diversa.** Rompi apposta ciò che provi e guarda l'esito cambiare.\n- **Mai incanalare l'uscita di una batteria in `grep` o `tail`**: il codice d'uscita diventa quello dell'ultimo comando, e una batteria rossa passa per verde. Scrivi su file e leggi da lì.\n- **`timeout` non esiste su questa macchina.** Non usarlo.\n- **Percorsi assoluti nei comandi**, mai `cd <cartella> && …`.\n- **Dentro il perimetro la rete verso GitHub è chiusa** e `git fetch` fallisce in silenzio: dopo un fetch fallito `git rev-list --left-right --count` risponde `0 0` leggendo il riferimento vecchio, cioè «sei allineato» a chi non lo è. Guarda il codice d'uscita del fetch, mai l'eco del conteggio.\n\n# 1. Prendi la voce già scelta\n\nFra le voci con `da-riparare: si`: prima `gravita: blocca`, poi `alta`, poi `media`; a parità la più vecchia. **Scarta** quelle che dicono `per: Theo` o nominano una decisione sua, e quelle già `verdetto: in-attesa` — sono in mano a chi giudica.\n\nLa rivalutazione è già stata fatta da chi ha messo quella marca, e **c'è la sua misura scritta nella voce**: leggila, non rifarla. Se però quello che vedi nel codice contraddice quella misura, fermati e dillo: vuol dire che il mondo è cambiato ancora, e chi ripara sulla base di una misura vecchia fa danni.\n\n# 2. Capisci il codice con SocratiCode, non col grep alla cieca\n\nHai `socraticode` collegato come MCP e abilitato.\n\n- `codebase_search` con la radice giusta: **`~/.claude` è Sailor** — configurazione, ganci e i crate Rust sotto `rust/crates`, tutto lo stesso deposito (deciso da Theo il 22/08/2026, `docs/plans/2026-08-22-sailor-il-sistema.md`). `~/other-repo/work` per i repo di lavoro. In dubbio, `codebase_list_projects` prima di indovinare. **`~/personal/sailor` NON è Sailor**: è il vecchio prodotto chiuso il 17/08 — fino al 26/08 questa riga diceva il contrario e ha mandato due sessioni a lavorare là dentro per niente.\n- `codebase_symbol` per trovare i simboli.\n- **Su Rust non usare `codebase_graph_query` né `codebase_impact`**: il risolutore degli import tratta solo i `mod` nudi, quindi su `~/.claude/rust` e su Sailor rispondono rumore. Per «chi usa questo» su Rust si greppa, e lì il grep è lo strumento giusto, non un ripiego.\n\n# 3. Chiedi se qualcuno l'ha già risolto, prima di inventare\n\n**Salta questo punto solo se non hai accesso alla rete, e in quel caso dillo esplicitamente nel rapporto.**\n\n- **Qualcuno l'ha già risolto in un progetto vero?** Il modo sta in `~/.claude/skills/advise-project-approach/SKILL.md`: leggilo e seguilo.\n- **Esiste prior art seria?** Solo se il problema è di architettura, algoritmo o protocollo — non per una correzione meccanica. Il modo sta in `~/.claude/skills/neuroarxiv/SKILL.md`.\n\nLa domanda che servono a evitare è una sola: **sto per ricostruire una cosa che esiste già?** Se la risposta è sì, usa quella e scrivi nel rapporto da dove viene.\n\n# 4. Ripara, dentro un perimetro stretto\n\n- **Scrivi solo dentro `~/.claude/` o dentro il repo che la voce nomina.** Mai fuori.\n- **Non toccare `settings.json`**, mai: quel file lo cambia solo Theo a mano.\n- **Non toccare rami protetti, non fare push, non aprire richieste di modifica.**\n- **Cambia il comportamento solo dove la voce dice che deve cambiare.** Se vedi altro da sistemare, scrivilo e lascialo stare.\n- Se il rimedio richiede una decisione di prodotto, o è irreversibile, o esce da questo perimetro: **non farlo**. Aggiungi alla voce `per: Theo — <la domanda precisa>` e fermati. Fermarsi è un esito buono.\n\n# 5. Consegna a chi giudica — NON chiudere tu\n\n**A) Riparata** → lascia `stato: aperta`, aggiungi al frontmatter `verdetto: in-attesa` e `riparata-da: codex`, e in fondo una sezione `## Riparazione, da giudicare` con:\n   - **cosa hai cambiato**, file per file;\n   - **come hai provato che funziona**, col comando e la sua uscita vera;\n   - **cosa hai rotto apposta** per vedere la prova diventare rossa, e cosa è successo;\n   - **cosa non hai toccato** pur avendolo visto.\n   Chi legge non ha visto niente di tutto questo: se un passaggio non è scritto lì, per lui non esiste.\n\n**B) Non c'era più** → stessa forma, `verdetto: in-attesa`, sezione `## Riparazione, da giudicare` che dice **la misura che l'ha smentita**: il commit che l'aveva già corretta, l'uscita del comando, il numero di adesso.\n\n**C) Ancora vera ma non tua** → lasciala aperta senza `verdetto:`, aggiungi la riga `per:` e spiega nel rapporto.\n\nAlla fine scrivi una riga esatta: voce_lavorata: <nome-file> — <riparata|non-piu-vera|lasciata-aperta>"
+      ],
+      "env": {},
+      "timeout_secs": 300
+    }
+  }
+}

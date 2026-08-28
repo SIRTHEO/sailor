@@ -1,0 +1,151 @@
+{
+  "id": "misura-general-purpose-al-posto-di-un-mestiere",
+  "description": "Lavorazione ogni-notte, peso leggero: invoca codex e poi verifica il risultato.",
+  "graph": {
+    "steps": [
+      {
+        "id": "motore",
+        "deps": [],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "bin": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "bin",
+            "args",
+            "env",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": [
+          "motore"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "tot=$(jq -r 'select(.agent_type != \"main\") | .agent_type' \"$HOME/.claude/state/costi.jsonl\" 2>/dev/null | wc -l | tr -d ' '); [ -n \"$tot\" ] && [ \"$tot\" -gt 0 ]",
+          "timeout_secs": 120
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr",
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed",
+                "failed",
+                "timed_out"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "motore": {
+      "bin": "codex",
+      "args": [
+        "exec",
+        "-s",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write={network_access=true}",
+        "Nel registro ~/.claude/state/costi.jsonl ogni riga JSON ha i campi \"agent_type\" e \"model\". Conta le righe per ciascun valore di agent_type, usando jq riga per riga e mai leggendo il file per intero. I mestieri dichiarati sono quelli in ~/.claude/agents/ (builder, code-reviewer, database-reviewer, investigator, measurer, plan-reviewer, security-reviewer); \"general-purpose\" e' il generico di sistema e \"main\" e' la sessione principale, che vanno tenuti distinti dai mestieri. Elenca ogni valore con il suo conteggio e il modello prevalente, uno per riga, nella forma 'agente: <nome> = <numero> turni, modello <nome del modello>'. Chiudi con una riga esatta: quota_generico_sui_subagenti: N dove N e' la percentuale intera delle righe general-purpose sul totale delle righe che non sono agent_type main."
+      ],
+      "env": {},
+      "timeout_secs": 300
+    }
+  }
+}
