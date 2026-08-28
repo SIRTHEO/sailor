@@ -5,6 +5,11 @@ export interface StepNodeData extends Record<string, unknown> {
   step: Step;
   kind: StepKind;
   run?: StepRun;
+  /** Il flusso a cui il passo appartiene, e il colore della sua corsia sulla tela unica. */
+  flowName: string;
+  color: string;
+  /** Vero quando un altro flusso è a fuoco: questo passo si ritrae, non sparisce. */
+  dimmed: boolean;
 }
 
 /**
@@ -30,7 +35,7 @@ const STATE_LABEL: Record<StepState, string> = {
   handed_to_human: "aspetta una persona",
 };
 
-const KIND_LABEL: Record<StepKind, string> = {
+export const KIND_LABEL: Record<StepKind, string> = {
   trigger: "innesco",
   engine: "agente",
   check: "verifica",
@@ -43,7 +48,7 @@ const KIND_LABEL: Record<StepKind, string> = {
 };
 
 export function StepNode({ data, selected }: NodeProps) {
-  const { step, kind, run } = data as StepNodeData;
+  const { step, kind, run, flowName, color: flowColor, dimmed } = data as StepNodeData;
   const state: StepState = run?.state ?? "waiting";
   const color = STATE_COLOR[state];
   const isAgent = kind === "engine";
@@ -52,11 +57,15 @@ export function StepNode({ data, selected }: NodeProps) {
     <div
       className="step-node"
       data-agent={isAgent || undefined}
+      data-dimmed={dimmed || undefined}
       style={{
         borderColor: selected ? "#3b82f6" : color,
         borderWidth: selected ? 2 : 1,
       }}
     >
+      {/* Il bollino di corsia: a quale flusso appartiene questo passo, nella
+          tela dove tutti i flussi stanno insieme. */}
+      <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
       <Handle type="target" position={Position.Left} />
 
       <div className="step-node__head">
@@ -91,6 +100,34 @@ export function StepNode({ data, selected }: NodeProps) {
       )}
 
       <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+
+export interface FlowBandData extends Record<string, unknown> {
+  name: string;
+  description: string;
+  stepCount: number;
+  color: string;
+  dimmed: boolean;
+}
+
+/**
+ * La corsia di un flusso: solo lo sfondo e l'etichetta, dietro ai suoi passi.
+ * Non ha maniglie e non si seleziona — è la cornice che rende leggibile «un
+ * sistema solo, i rami connessi» invece di quaranta nodi sparsi.
+ */
+export function FlowBandNode({ data }: NodeProps) {
+  const { name, description, stepCount, color, dimmed } = data as FlowBandData;
+  return (
+    <div className="flow-band" data-dimmed={dimmed || undefined} style={{ borderColor: color }}>
+      <div className="flow-band__head">
+        <span className="flow-band__name" style={{ color }}>
+          {name}
+        </span>
+        <span className="flow-band__count">{stepCount} passi</span>
+      </div>
+      <div className="flow-band__desc">{description}</div>
     </div>
   );
 }
