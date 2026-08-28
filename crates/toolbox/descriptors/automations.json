@@ -1,0 +1,179 @@
+{
+  "_leggimi": [
+    "LE AUTOMAZIONI CHE UNA PERSONA HA GIÀ, prima di conoscere Sailor: i ganci di",
+    "una riga di comando, i servizi del sistema operativo, le attività pianificate,",
+    "gli script sparsi. È l'elenco su cui lavora il flusso di sistema",
+    "«migrazione-a-sailor», ed è un dato come tutti gli altri: si riscrive, si",
+    "estende e si spegne senza ricompilare niente.",
+    "",
+    "Per aggiungerne una: metti un file `.json` in `~/.sailor/tools.d/` con dentro",
+    "un array di descrittori, e chiedila con `descriptor_paths` nel passo. Un `id`",
+    "già presente qui dentro viene sostituito dal tuo; per toglierne uno, riscrivi",
+    "il suo `id` con `\"disabled\": true`.",
+    "",
+    "STA IN UN CATALOGO SEPARATO DAGLI STRUMENTI, E NON PER ORDINE. Un'automazione",
+    "altrui non è qualcosa che un passo di flusso possa invocare: se stesse nello",
+    "stesso elenco degli strumenti, il suo identificativo comparirebbe fra quelli",
+    "che Sailor propone a chi ha scritto un nome sbagliato, e un flusso potrebbe",
+    "nominarla come se fosse un binario da eseguire.",
+    "",
+    "NESSUNA VOCE QUI DICHIARA `version`, ED È UNA REGOLA DEL CATALOGO. Chiedere",
+    "una versione significa eseguire un binario: questo elenco guarda la",
+    "configurazione personale di chi lo esegue, e guardare non deve mai voler dire",
+    "avviare qualcosa.",
+    "",
+    "LE QUATTRO FAMIGLIE DICONO IL VERDETTO, e il flusso le mostra separate:",
+    "`automation_hook` — parte quando succede qualcosa; in Sailor sarebbe un",
+    "innesco più un flusso. `automation_schedule` — parte a un'ora o a intervalli;",
+    "in Sailor sarebbe la pianificazione di un flusso. `automation_script` — un",
+    "programma che qualcuno lancia a mano; in Sailor sarebbe un passo, ma nessuno",
+    "sa dire quando gira, e quel «quando» non sta scritto da nessuna parte.",
+    "`automation_opaque` — trovata, e non leggibile con gli strumenti di oggi.",
+    "",
+    "SI GUARDA NELLA CASA DELL'UTENTE, non nel progetto. Un flusso può essere",
+    "lanciato da una finestra che è stata avviata chissà dove, e una cartella di",
+    "lavoro sbagliata farebbe dire «non hai ganci» a chi ne ha dodici."
+  ],
+  "tools": [
+    {
+      "id": "claude-code-hooks",
+      "family": "automation_hook",
+      "label": "ganci di Claude Code, validi ovunque",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/.claude/settings.json", "~/.claude/settings.local.json"],
+          "pointer": ["hooks"]
+        }
+      },
+      "note": "Le voci sono i nomi degli eventi (PreToolUse, Stop, SessionStart…). Ognuno esegue un comando: in Sailor sarebbe un innesco con quel nome più un flusso che fa quello che fa il comando. Oggi Sailor ha una sola sorgente di innesco che funziona davvero — quella manuale — quindi la traduzione si può leggere, non eseguire."
+    },
+    {
+      "id": "claude-code-project-hooks",
+      "family": "automation_hook",
+      "label": "ganci di Claude Code dichiarati progetto per progetto",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/.claude.json"],
+          "pointer": ["projects", "*", "hooks"]
+        }
+      },
+      "note": "Si leggono dalla casa e non dal progetto, perché è la casa a tenerne l'elenco: così si vedono anche i progetti su cui non si sta lavorando adesso."
+    },
+    {
+      "id": "claude-desktop-hooks",
+      "family": "automation_hook",
+      "label": "ganci dichiarati per l'applicazione Claude",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/Library/Application Support/Claude/claude_desktop_config.json"],
+          "pointer": ["hooks"]
+        }
+      }
+    },
+    {
+      "id": "vscode-tasks",
+      "family": "automation_hook",
+      "label": "attività dichiarate per l'editor",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/.vscode/tasks.json", "~/Library/Application Support/Code/User/tasks.json"],
+          "pointer": ["tasks"]
+        }
+      },
+      "note": "Le voci sotto `tasks` sono un array, non un oggetto: se qui non compare niente pur essendoci delle attività, è questo il motivo, e la riparazione è nel descrittore."
+    },
+
+    {
+      "id": "launchd-user-agents",
+      "family": "automation_schedule",
+      "label": "servizi launchd dell'utente (macOS)",
+      "enumerate": { "paths": ["~/Library/LaunchAgents/*.plist"] },
+      "note": "Un file per servizio. Dentro c'è il comando e, se pianificato, `StartInterval` o `StartCalendarInterval`: sarebbero la ricorrenza di un flusso. Sailor oggi non legge i plist — è XML, e non c'è un lettore — quindi qui si vedono i nomi, non cosa fanno."
+    },
+    {
+      "id": "launchd-machine-agents",
+      "family": "automation_schedule",
+      "label": "servizi launchd di tutta la macchina (macOS)",
+      "enumerate": { "paths": ["/Library/LaunchAgents/*.plist"] },
+      "note": "Installati da altri programmi per tutti gli utenti: si guardano, non si toccano."
+    },
+    {
+      "id": "launchd-daemons",
+      "family": "automation_schedule",
+      "label": "demoni launchd di sistema (macOS)",
+      "enumerate": { "paths": ["/Library/LaunchDaemons/*.plist"] },
+      "note": "Girano fuori dalla sessione dell'utente, spesso da root. Non sono roba da migrare in un flusso: stanno nell'elenco perché chi guarda «cosa parte da solo su questa macchina» deve vederli."
+    },
+    {
+      "id": "systemd-user-units",
+      "family": "automation_schedule",
+      "label": "unità systemd dell'utente (Linux)",
+      "enumerate": {
+        "paths": [
+          "~/.config/systemd/user/*.service",
+          "~/.config/systemd/user/*.timer"
+        ]
+      },
+      "note": "Un `.timer` è la ricorrenza, il `.service` è cosa esegue. La coppia è la forma più vicina a un flusso pianificato di Sailor che esista su una macchina qualunque."
+    },
+    {
+      "id": "cron-user-table",
+      "family": "automation_schedule",
+      "label": "la tabella cron dell'utente",
+      "detect": [
+        { "path": "/usr/lib/cron/tabs/$USER" },
+        { "path": "/var/at/tabs/$USER" },
+        { "path": "/var/spool/cron/crontabs/$USER" }
+      ],
+      "note": "ATTENZIONE, QUI UN «NON C'È» NON VUOL DIRE NIENTE: su quasi tutti i sistemi queste cartelle sono leggibili solo da root, e il modo onesto di chiedere è `crontab -l`, che è un comando da eseguire — cosa che questo elenco non fa mai. Se hai dei cron, guardali con `crontab -l` e portali a mano."
+    },
+    {
+      "id": "cron-drop-in-dirs",
+      "family": "automation_schedule",
+      "label": "i cron di sistema lasciati in cartella",
+      "enumerate": {
+        "paths": ["/etc/cron.d/*", "/etc/periodic/*/*"]
+      },
+      "note": "Questi si leggono senza privilegi quasi ovunque, al contrario della tabella personale."
+    },
+
+    {
+      "id": "user-bin-scripts",
+      "family": "automation_script",
+      "label": "gli script nelle cartelle personali del percorso",
+      "enumerate": { "paths": ["~/bin/*", "~/.local/bin/*"] },
+      "note": "Un programma che qualcuno lancia a mano. In Sailor sarebbe un passo, e la traduzione è immediata; quello che manca è il «quando», che non sta scritto da nessuna parte — per questo sono una famiglia a sé e non pianificati."
+    },
+
+    {
+      "id": "shell-startup-files",
+      "family": "automation_opaque",
+      "label": "i file che la shell esegue all'avvio",
+      "detect": [
+        { "path": "~/.zshrc" },
+        { "path": "~/.bashrc" },
+        { "path": "~/.zprofile" },
+        { "path": "~/.bash_profile" },
+        { "path": "~/.profile" }
+      ],
+      "note": "Dentro ci sono alias, funzioni e agganci che di fatto sono automazioni. Sailor non li legge e non deve: leggerli vorrebbe dire interpretare la shell, e un interprete dentro Sailor è esattamente ciò che il progetto vieta. Qui si dice solo che ci sono."
+    },
+    {
+      "id": "codex-config",
+      "family": "automation_opaque",
+      "label": "la configurazione di Codex",
+      "detect": [
+        { "path": "~/.codex/config.toml" },
+        { "path": "$CODEX_HOME/config.toml" }
+      ],
+      "note": "È TOML, e Sailor non ha un lettore TOML: si vede che il file c'è, non cosa dichiara. Attenzione anche a quale file conta: CODEX_HOME può spostarlo, e quello che si legge a mano non è sempre quello che usa chi lo ospita."
+    },
+    {
+      "id": "git-hooks",
+      "family": "automation_opaque",
+      "label": "i ganci di git dei tuoi repository",
+      "detect": [{ "path": "~/.config/git/hooks" }],
+      "note": "QUI C'È UN BUCO DICHIARATO, e vale la pena saperlo invece di crederlo coperto. I ganci veri stanno in `.git/hooks` dentro ogni repository, e questo elenco guarda la casa, non i progetti; per di più ogni repository nuovo ci mette tredici file `.sample` che non girano, e lo schema con `*` non sa escluderli. Elencarli darebbe tredici righe di rumore per repository. Si vede solo la cartella dei ganci condivisi, se l'hai configurata con `core.hooksPath`."
+    }
+  ]
+}

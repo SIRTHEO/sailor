@@ -1,0 +1,27 @@
+[package]
+name = "toolbox"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Risponde a «cosa posso usare qui?»: quali righe di comando, quali server MCP e
+# quali altri strumenti esistono su questa macchina. L'elenco di cosa cercare e'
+# un dato — i descrittori — non codice: qui dentro non compare il nome di nessuno
+# strumento in particolare.
+#
+# `actions` per la primitiva del tempo massimo (`run_with_timeout`): chiedere la
+# versione a un binario significa eseguirlo, e un binario che non torna non deve
+# fermare un rilevamento. `inventory` per `discovery::glob`, che gia' aggancia gli
+# schemi con `*` senza tirarsi dietro una crate in piu'. `flow` per il tratto
+# `Action`, cosi' un passo di flusso puo' chiedere il rilevamento.
+# `ledger` per `sailor_home()` e nient'altro: dove sta la casa di Sailor lo sa un
+# posto solo, e riscriverne qui la regola farebbe guardare a `tool_needs` una
+# cartella diversa da quella in cui la finestra cerca i flussi. Non aggiunge
+# niente alla compilazione — ci si arrivava gia' passando per `actions`.
+[dependencies]
+actions = { path = "../actions" }
+flow = { path = "../flow" }
+ledger = { path = "../ledger" }
+inventory = { path = "../inventory" }
+serde = { workspace = true }
+serde_json = { workspace = true }
