@@ -143,27 +143,15 @@ pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
 /// sbagliato è dove il programma è stato avviato, e chi guarda se ne accorge
 /// subito — mentre un percorso plausibile ma altrui fa credere che i dati siano
 /// spariti.
+/// **La scoperta vive in `ledger`, non qui**, ed è la correzione di un difetto
+/// che questa funzione stava per introdurre: il deposito lo apre chi esegue i
+/// flussi, e se la finestra si costruisse la propria idea di dove sta la casa,
+/// i due guarderebbero posti diversi senza che nessuno dei due dica di
+/// sbagliare. Qui resta solo il ripiego per quando l'ambiente non dichiara
+/// nemmeno la cartella dell'utente: si resta dove il programma è stato avviato,
+/// che si vede subito, invece di inventare un percorso plausibile.
 pub fn sailor_home() -> PathBuf {
-    let given = |name: &str| {
-        std::env::var_os(name)
-            .map(PathBuf::from)
-            .filter(|path| !path.as_os_str().is_empty())
-    };
-    home_from(given("SAILOR_HOME"), given("XDG_CONFIG_HOME"), given("HOME"))
-}
-
-/// La scelta della casa, senza l'ambiente: si prova questa.
-fn home_from(declared: Option<PathBuf>, config: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
-    if let Some(declared) = declared {
-        return declared;
-    }
-    if let Some(config) = config {
-        return config.join("sailor");
-    }
-    match home {
-        Some(home) => home.join(".config").join("sailor"),
-        None => PathBuf::from("."),
-    }
+    ledger::sailor_home().unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Dove vive il deposito: gli eventi e la proiezione delle corse.
@@ -171,10 +159,7 @@ fn home_from(declared: Option<PathBuf>, config: Option<PathBuf>, home: Option<Pa
 /// `SAILOR_LEDGER` lo sposta da solo, per chi tiene lo stato altrove — un disco
 /// diverso, una cartella sincronizzata, un deposito condiviso fra due macchine.
 pub fn default_ledger_dir() -> PathBuf {
-    std::env::var_os("SAILOR_LEDGER")
-        .map(PathBuf::from)
-        .filter(|path| !path.as_os_str().is_empty())
-        .unwrap_or_else(|| sailor_home().join("ledger"))
+    ledger::default_directory().unwrap_or_else(|| sailor_home().join("ledger"))
 }
 
 /// Dove stanno i flussi dichiarati.
@@ -415,38 +400,15 @@ mod tests {
         );
     }
 
-    /// LA PROVA CHE IL PRODOTTO NON CONOSCE UNA CASA SOLA. Fino al 28/08/2026
-    /// qui dentro c'era scritta la cartella di chi sviluppa Sailor: chi avesse
-    /// installato il programma si sarebbe portato dietro la macchina di un
-    /// altro. La casa si compone dalla cartella dell'utente che esegue, e
-    /// nient'altro.
+    /// CHI GUARDA IL DEPOSITO DEVE GUARDARE DOVE SCRIVE CHI LO RIEMPIE. La
+    /// finestra e chi esegue i flussi devono chiedere la casa alla stessa
+    /// funzione: due idee di dove sta il deposito non danno un errore, danno una
+    /// finestra che dice «nessuna corsa» mentre le corse ci sono.
     #[test]
-    fn the_home_is_composed_from_the_running_users_folder() {
+    fn the_window_asks_the_ledger_where_the_ledger_lives() {
         assert_eq!(
-            home_from(None, None, Some(PathBuf::from("/home/chiunque"))),
-            PathBuf::from("/home/chiunque/.config/sailor")
+            default_ledger_dir(),
+            ledger::default_directory().expect("questa macchina dichiara HOME")
         );
-    }
-
-    /// Lo standard del sistema viene prima della cartella dell'utente: chi
-    /// tiene la configurazione altrove l'ha già dichiarato lì.
-    #[test]
-    fn the_systems_config_folder_comes_before_the_users_home() {
-        assert_eq!(
-            home_from(
-                None,
-                Some(PathBuf::from("/opt/config")),
-                Some(PathBuf::from("/home/chiunque"))
-            ),
-            PathBuf::from("/opt/config/sailor")
-        );
-    }
-
-    /// Senza nemmeno una cartella utente non si inventa un percorso plausibile:
-    /// si resta dove il programma è stato avviato. Un percorso altrui farebbe
-    /// credere che i dati siano spariti.
-    #[test]
-    fn without_a_users_folder_nothing_is_invented() {
-        assert_eq!(home_from(None, None, None), PathBuf::from("."));
     }
 }
