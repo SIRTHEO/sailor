@@ -125,10 +125,92 @@ pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
     registry
 }
 
-/// `~/.claude/state/flussi`, o questa macchina se `HOME` non è impostata.
+/// La casa di Sailor: dove vivono i flussi, il deposito e la configurazione.
+///
+/// NIENTE PERCORSI DI UNA PERSONA SOLA. Fino al 28/08/2026 le due funzioni qui
+/// sotto nominavano le cartelle di chi sviluppa Sailor — `~/.claude/state`,
+/// `~/personal/sailor` — e ripiegavano sul suo nome utente. Chi avesse
+/// installato il prodotto si sarebbe portato dietro la macchina di un altro:
+/// **un prodotto che conosce una casa sola non è un prodotto**.
+///
+/// La casa si scopre come la scopre qualunque programma su questo sistema, e
+/// questa macchina torna a essere quello che è — **un caso configurato**, che
+/// dichiara `SAILOR_HOME` nel comando che apre la finestra, non un caso scritto
+/// nel codice.
+///
+/// I gradini, dal più esplicito al più generale. L'ultimo è la cartella
+/// corrente e non un percorso inventato: se `HOME` non c'è, il posto meno
+/// sbagliato è dove il programma è stato avviato, e chi guarda se ne accorge
+/// subito — mentre un percorso plausibile ma altrui fa credere che i dati siano
+/// spariti.
+pub fn sailor_home() -> PathBuf {
+    let given = |name: &str| {
+        std::env::var_os(name)
+            .map(PathBuf::from)
+            .filter(|path| !path.as_os_str().is_empty())
+    };
+    home_from(given("SAILOR_HOME"), given("XDG_CONFIG_HOME"), given("HOME"))
+}
+
+/// La scelta della casa, senza l'ambiente: si prova questa.
+fn home_from(declared: Option<PathBuf>, config: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    if let Some(declared) = declared {
+        return declared;
+    }
+    if let Some(config) = config {
+        return config.join("sailor");
+    }
+    match home {
+        Some(home) => home.join(".config").join("sailor"),
+        None => PathBuf::from("."),
+    }
+}
+
+/// Dove vive il deposito: gli eventi e la proiezione delle corse.
+///
+/// `SAILOR_LEDGER` lo sposta da solo, per chi tiene lo stato altrove — un disco
+/// diverso, una cartella sincronizzata, un deposito condiviso fra due macchine.
 pub fn default_ledger_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/someone".to_owned());
-    PathBuf::from(home).join(".claude/state/flussi")
+    std::env::var_os("SAILOR_LEDGER")
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| sailor_home().join("ledger"))
+}
+
+/// Dove stanno i flussi dichiarati.
+///
+/// IL DIFETTO CHE QUESTA FUNZIONE CHIUDE, misurato il 28/08/2026: la pagina
+/// rispondeva `"flows": []` e nessuno sapeva perché. Cercava i flussi **accanto
+/// al deposito** (`<ledger_dir>/flows`, cioè `~/.claude/state/flussi/flows`),
+/// una cartella che non è mai esistita; i quattordici flussi veri stanno nei
+/// sorgenti, in `~/personal/sailor/flows/`. L'elenco vuoto non era un errore da
+/// leggere: era la risposta esatta a una domanda posta nel posto sbagliato.
+///
+/// **Il deposito è stato, i flussi sono sorgenti.** Tenerli sotto la stessa
+/// radice li faceva sembrare la stessa cosa, ed è la ragione dello scambio.
+///
+/// I flussi stanno nella casa di Sailor, in `flows/`. `SAILOR_FLOWS` li sposta
+/// da solo: è il gradino che serve a chi sviluppa Sailor e tiene i flussi
+/// nell'albero dei sorgenti mentre la casa è altrove.
+pub fn default_flows_dir() -> PathBuf {
+    flows_dir_from(
+        std::env::var_os("SAILOR_FLOWS").map(PathBuf::from),
+        sailor_home(),
+    )
+}
+
+/// La scelta, senza l'ambiente: si prova questa, non quella sopra.
+///
+/// Le variabili d'ambiente sono globali al processo e le prove girano in
+/// parallelo nello stesso: una prova che le scrivesse rovinerebbe le altre a
+/// caso, e chi vede il rosso guarderebbe il modulo sbagliato. Una stringa vuota
+/// vale come «non impostata» — è quello che lascia dietro uno script che
+/// esporta una variabile senza valore, e trattarla come un percorso manderebbe
+/// a cercare i flussi nella radice.
+fn flows_dir_from(explicit: Option<PathBuf>, home: PathBuf) -> PathBuf {
+    explicit
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| home.join("flows"))
 }
 
 #[cfg(test)]
@@ -293,5 +375,78 @@ mod tests {
         assert!(registry.is_empty(), "i file non JSON non devono entrare nel registro");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// IL GUASTO CHE QUESTA PROVA ESISTE PER PRENDERE, misurato il 28/08/2026:
+    /// la pagina cercava i flussi accanto al deposito e rispondeva `"flows": []`
+    /// senza errore. I flussi stanno nella casa di Sailor, il deposito è un'altra
+    /// cosa e sta accanto a loro, non sopra.
+    #[test]
+    fn the_flows_live_in_their_own_folder_not_inside_the_ledger() {
+        let chosen = flows_dir_from(None, PathBuf::from("/casa/sailor"));
+        assert_eq!(chosen, PathBuf::from("/casa/sailor/flows"));
+        assert!(
+            !chosen.starts_with("/casa/sailor/ledger"),
+            "la cartella dei flussi non sta dentro il deposito: {}",
+            chosen.display()
+        );
+    }
+
+    /// Il gradino esplicito vince: chi nomina la cartella dei flussi non vuole
+    /// che la si deduca dalla casa. Serve a chi sviluppa Sailor e tiene i flussi
+    /// nell'albero dei sorgenti mentre la casa sta altrove.
+    #[test]
+    fn the_explicit_folder_wins_over_the_home() {
+        assert_eq!(
+            flows_dir_from(Some(PathBuf::from("/qui/i/flussi")), PathBuf::from("/casa/sailor")),
+            PathBuf::from("/qui/i/flussi")
+        );
+    }
+
+    /// Una variabile esportata senza valore non è un percorso: presa alla
+    /// lettera manderebbe a cercare i flussi nella radice del disco, e
+    /// `read_dir` su `/flows` fallisce in silenzio dando di nuovo un elenco
+    /// vuoto — lo stesso guasto da cui si è partiti, con un'altra causa.
+    #[test]
+    fn an_empty_variable_counts_as_unset() {
+        assert_eq!(
+            flows_dir_from(Some(PathBuf::new()), PathBuf::from("/casa/sailor")),
+            PathBuf::from("/casa/sailor/flows")
+        );
+    }
+
+    /// LA PROVA CHE IL PRODOTTO NON CONOSCE UNA CASA SOLA. Fino al 28/08/2026
+    /// qui dentro c'era scritta la cartella di chi sviluppa Sailor: chi avesse
+    /// installato il programma si sarebbe portato dietro la macchina di un
+    /// altro. La casa si compone dalla cartella dell'utente che esegue, e
+    /// nient'altro.
+    #[test]
+    fn the_home_is_composed_from_the_running_users_folder() {
+        assert_eq!(
+            home_from(None, None, Some(PathBuf::from("/home/chiunque"))),
+            PathBuf::from("/home/chiunque/.config/sailor")
+        );
+    }
+
+    /// Lo standard del sistema viene prima della cartella dell'utente: chi
+    /// tiene la configurazione altrove l'ha già dichiarato lì.
+    #[test]
+    fn the_systems_config_folder_comes_before_the_users_home() {
+        assert_eq!(
+            home_from(
+                None,
+                Some(PathBuf::from("/opt/config")),
+                Some(PathBuf::from("/home/chiunque"))
+            ),
+            PathBuf::from("/opt/config/sailor")
+        );
+    }
+
+    /// Senza nemmeno una cartella utente non si inventa un percorso plausibile:
+    /// si resta dove il programma è stato avviato. Un percorso altrui farebbe
+    /// credere che i dati siano spariti.
+    #[test]
+    fn without_a_users_folder_nothing_is_invented() {
+        assert_eq!(home_from(None, None, None), PathBuf::from("."));
     }
 }
