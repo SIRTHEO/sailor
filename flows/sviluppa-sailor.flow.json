@@ -592,7 +592,8 @@
             "-m",
             {
               "$join": [
-                "lavoro di un flusso: ",
+                "lavoro di un flusso, approvato da chi non l'ha scritto\n\n",
+                "COSA ERA STATO CHIESTO\n",
                 {
                   "$from": "/trigger/text"
                 },
@@ -600,11 +601,8 @@
                 {
                   "$from": "/trigger/source"
                 },
-                "», da «",
-                {
-                  "$from": "/trigger/where"
-                },
-                "».\n\nCOSA È STATO FATTO, dichiarato da chi l'ha fatto:\n",
+                "».",
+                "\n\nCOSA È STATO FATTO, dichiarato da chi l'ha fatto:\n",
                 {
                   "$json": "/implementa/answer"
                 },
