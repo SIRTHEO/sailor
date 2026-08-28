@@ -60,7 +60,13 @@ fn repo_root() -> PathBuf {
 /// prova. Il guasto non ha niente di specifico a questa cassa.
 fn rust_sources(root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
-    let mut stack = vec![root.join("rust").join("crates")];
+    // `crates/` è dove vivono le casse da quando Sailor è uscito dalla
+    // configurazione, il 27/08/2026; `rust/crates/` era la vecchia casa. Si
+    // cammina su entrambe: quella che non c'è costa una `read_dir` fallita, e
+    // il giorno che l'albero cambia ancora è il canarino qui sotto a dirlo —
+    // questa prova è rimasta muta per un giorno intero perché camminava su un
+    // percorso che il trasloco aveva svuotato.
+    let mut stack = vec![root.join("crates"), root.join("rust").join("crates")];
     while let Some(dir) = stack.pop() {
         let entries = match std::fs::read_dir(&dir) {
             Ok(e) => e,
