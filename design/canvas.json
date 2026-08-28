@@ -1,0 +1,52 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "La tela dei flussi"
+    },
+    {
+      "file": "Agente.dc.html",
+      "x": 1600,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Il nodo agente, aperto"
+    },
+    {
+      "file": "Codice.dc.html",
+      "x": 3200,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Lo stesso flusso in codice"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "nota-tela",
+      "x": 0,
+      "y": -210,
+      "w": 460,
+      "text": "Programma Tauri, tela alla n8n. Ogni passo è un nodo: verifiche, attese, rami, agenti, consegne a una persona. Non esistono script appesi fuori dalla tela — quello che non è un nodo, Sailor non lo esegue."
+    },
+    {
+      "id": "nota-agente",
+      "x": 1600,
+      "y": -210,
+      "w": 460,
+      "text": "Il nodo che possiede un agente si apre sul posto: il suo terminale vivo, il mandato che ha ricevuto, quello che sta consumando, e i tre gesti — apri, sospendi, termina. La tela resta dietro."
+    },
+    {
+      "id": "nota-codice",
+      "x": 3200,
+      "y": -210,
+      "w": 460,
+      "text": "Lo stesso flusso in codice, stile Mastra: createStep e createFlow, .then() e .branch(). Grafo e codice sono la stessa cosa; il controllo gira quando il file si carica, non a metà corsa."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

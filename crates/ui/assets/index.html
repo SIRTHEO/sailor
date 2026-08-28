@@ -361,13 +361,26 @@ function renderFlows(flows) {
     element.innerHTML = '<p class="empty">Nessun flusso è registrato: nessun file <code>*.json</code> descrive ancora un grafo.</p>';
     return;
   }
-  element.innerHTML = flows.map(flow => `
+  element.innerHTML = flows.map(flow => {
+    if (flow.error) {
+      return `
+    <article class="card attention">
+      <div class="open-head">
+        <strong class="mono">${escapeHtml(flow.name)}</strong>
+        <span class="badge broke">non caricabile</span>
+      </div>
+      <div class="error">${escapeHtml(flow.error)}</div>
+    </article>`;
+    }
+    const description = flow.description ? `<div class="sub">${escapeHtml(flow.description)}</div>` : '';
+    return `
     <article class="card">
-      <strong class="mono">${escapeHtml(flow.name)}</strong>
+      <strong class="mono">${escapeHtml(flow.name)}</strong>${description}
       <ul class="flow-steps">${flow.steps.map(step => `
         <li><code>${escapeHtml(step.id)}</code> ${step.deps.length ? `← ${step.deps.map(dependency => `<code>${escapeHtml(dependency)}</code>`).join(', ')}` : '<span class="mono">(radice)</span>'} — azione <code>${escapeHtml(step.action)}</code>, ${step.max_attempts} tentativ${step.max_attempts === 1 ? 'o' : 'i'} ${step.conditional ? '<span class="badge open">condizionale</span>' : ''}</li>`).join('')}
       </ul>
-    </article>`).join('');
+    </article>`;
+  }).join('');
 }
 
 function renderOpenSteps(payload) {

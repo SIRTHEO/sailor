@@ -186,4 +186,10 @@ mod tests {
         assert!(INDEX_HTML.contains("I conteggi non sono ancora noti"));
         assert!(!INDEX_HTML.contains("://"), "la pagina non deve caricare risorse esterne");
     }
+
+    #[test]
+    fn the_embedded_page_marks_broken_flows() {
+        assert!(INDEX_HTML.contains("non caricabile"));
+        assert!(INDEX_HTML.contains("badge broke"));
+    }
 }

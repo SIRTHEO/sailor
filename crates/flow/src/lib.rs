@@ -6,6 +6,7 @@
 //! processo.
 
 mod executor;
+mod file;
 mod graph;
 mod record;
 mod schema;
@@ -16,6 +17,7 @@ pub use executor::{
     Executor, FlowError, InMemoryRecordStore, InProcessExecutor, ProcessProbe, Reconciliation,
     ReconciliationRequest, RecordStore, SharedState, SystemClock,
 };
+pub use file::FlowFile;
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
 pub use record::{
     digest_input, truncate_said, AttemptRelation, Outcome, StepRecord, StepSpecies, MAX_SAID_BYTES,

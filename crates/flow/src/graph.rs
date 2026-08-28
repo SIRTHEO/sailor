@@ -12,6 +12,9 @@ pub struct Step {
     pub deps: Vec<String>,
     pub input_schema: ValueSchema,
     pub output_schema: ValueSchema,
+    /// I parametri dichiarati dal passo vincono sulle chiavi ricevute in ingresso.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub with: Option<Value>,
     /// Riceve soltanto il valore tipato in ingresso; `said` non è raggiungibile.
     pub when: Option<Condition>,
     /// Nome stabile dell'azione risolta dall'esecutore, non codice incorporato nel grafo.
@@ -78,6 +81,7 @@ pub enum GraphError {
     InvalidSkippableDependency { step: String, dependency: String },
     Cycle,
     ZeroAttempts(String),
+    DestructiveInputOverlay { step: String },
     IncompatibleInput { step: String },
 }
 
@@ -155,6 +159,7 @@ impl Graph {
                     });
                 }
             }
+            self.validate_input_overlay(step, &by_id)?;
             if let Some(produced) = self.produced_input_schema(step, &by_id) {
                 if !step.input_schema.accepts(&produced) {
                     return Err(GraphError::IncompatibleInput {
@@ -194,12 +199,57 @@ impl Graph {
         Ok(())
     }
 
+    fn validate_input_overlay(
+        &self,
+        step: &Step,
+        by_id: &BTreeMap<&str, &Step>,
+    ) -> Result<(), GraphError> {
+        let Some(with) = step.with.as_ref() else {
+            return Ok(());
+        };
+        let has_required_dependency = step
+            .deps
+            .iter()
+            .any(|dependency| !self.dependency_is_skippable(&step.id, dependency));
+        if !has_required_dependency {
+            return Ok(());
+        }
+        if !with.is_object() {
+            return Err(GraphError::DestructiveInputOverlay {
+                step: step.id.clone(),
+            });
+        }
+        if let [only] = step.deps.as_slice() {
+            let output_schema = &by_id
+                .get(only.as_str())
+                .expect("la dipendenza esiste")
+                .output_schema;
+            if !self.dependency_is_skippable(&step.id, only)
+                && !matches!(output_schema, ValueSchema::Object { .. } | ValueSchema::Any)
+            {
+                return Err(GraphError::DestructiveInputOverlay {
+                    step: step.id.clone(),
+                });
+            }
+        } else if step.deps.iter().any(|dependency| {
+            !self.dependency_is_skippable(&step.id, dependency)
+                && with.get(dependency).is_some()
+        }) {
+            return Err(GraphError::DestructiveInputOverlay {
+                step: step.id.clone(),
+            });
+        }
+        // Una dipendenza saltabile promette già che il suo dato può mancare:
+        // `with` può dichiarare il valore sostitutivo che il nodo riceverà comunque.
+        Ok(())
+    }
+
     fn produced_input_schema(
         &self,
         step: &Step,
         by_id: &BTreeMap<&str, &Step>,
     ) -> Option<ValueSchema> {
-        match step.deps.as_slice() {
+        let produced = match step.deps.as_slice() {
             [] => None,
             [only] if !self.dependency_is_skippable(&step.id, only) => by_id
                 .get(only.as_str())
@@ -219,7 +269,42 @@ impl Graph {
                     .filter(|id| !self.dependency_is_skippable(&step.id, id))
                     .cloned(),
             )),
+        };
+        match (produced, step.with.as_ref()) {
+            (Some(produced), Some(with)) => Some(schema_with_overlay(produced, with)),
+            (produced, _) => produced,
         }
+    }
+}
+
+fn schema_with_overlay(produced: ValueSchema, with: &Value) -> ValueSchema {
+    let Value::Object(with) = with else {
+        return ValueSchema::OneOf {
+            values: vec![with.clone()],
+        };
+    };
+    let (mut properties, mut required, allow_extra) = match produced {
+        ValueSchema::Object {
+            properties,
+            required,
+            allow_extra,
+        } => (properties, required, allow_extra),
+        ValueSchema::Any => (BTreeMap::new(), BTreeSet::new(), true),
+        _ => (BTreeMap::new(), BTreeSet::new(), false),
+    };
+    for (name, value) in with {
+        properties.insert(
+            name.clone(),
+            ValueSchema::OneOf {
+                values: vec![value.clone()],
+            },
+        );
+        required.insert(name.clone());
+    }
+    ValueSchema::Object {
+        properties,
+        required,
+        allow_extra,
     }
 }
 
@@ -265,6 +350,10 @@ impl Display for GraphError {
             ),
             GraphError::Cycle => write!(formatter, "graph contains a backward dependency"),
             GraphError::ZeroAttempts(step) => write!(formatter, "step {step} allows zero attempts"),
+            GraphError::DestructiveInputOverlay { step } => write!(
+                formatter,
+                "il campo with del passo {step} scarterebbe l'uscita di una dipendenza obbligatoria"
+            ),
             GraphError::IncompatibleInput { step } => {
                 write!(
                     formatter,
@@ -287,6 +376,7 @@ mod tests {
             deps: deps.iter().map(|id| (*id).to_owned()).collect(),
             input_schema: ValueSchema::Any,
             output_schema: ValueSchema::String,
+            with: None,
             when: None,
             action: id.to_owned(),
             max_attempts: 1,
@@ -315,6 +405,89 @@ mod tests {
             step("right", &["root"]),
             join
         ])
+        .is_ok());
+    }
+
+    #[test]
+    fn dependency_schema_is_merged_with_step_values() {
+        let mut source = step("source", &[]);
+        source.output_schema = ValueSchema::object(
+            [("panel".to_owned(), ValueSchema::String)],
+            ["panel".to_owned()],
+        );
+        let mut send = step("send", &["source"]);
+        send.with = Some(serde_json::json!({"text": "/clear"}));
+        send.input_schema = ValueSchema::object(
+            [
+                ("panel".to_owned(), ValueSchema::String),
+                (
+                    "text".to_owned(),
+                    ValueSchema::OneOf {
+                        values: vec![serde_json::json!("/clear")],
+                    },
+                ),
+            ],
+            ["panel".to_owned(), "text".to_owned()],
+        );
+
+        assert!(Graph::new(vec![source, send]).is_ok());
+    }
+
+    #[test]
+    fn non_object_with_cannot_replace_required_dependency_input() {
+        let mut source = step("source", &[]);
+        source.output_schema = ValueSchema::Any;
+        let mut send = step("send", &["source"]);
+        send.with = Some(serde_json::json!("/clear"));
+
+        assert_eq!(
+            Graph::new(vec![source, send]),
+            Err(GraphError::DestructiveInputOverlay {
+                step: "send".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn non_object_dependency_output_cannot_be_replaced_by_with() {
+        let source = step("source", &[]);
+        let mut send = step("send", &["source"]);
+        send.with = Some(serde_json::json!({"text": "/clear"}));
+
+        assert_eq!(
+            Graph::new(vec![source, send]),
+            Err(GraphError::DestructiveInputOverlay {
+                step: "send".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn required_join_dependency_cannot_be_replaced_by_with() {
+        let panel = step("panel", &[]);
+        let text = step("text", &[]);
+        let mut send = step("send", &["panel", "text"]);
+        send.with = Some(serde_json::json!({"text": "/clear"}));
+
+        assert_eq!(
+            Graph::new(vec![panel, text, send]),
+            Err(GraphError::DestructiveInputOverlay {
+                step: "send".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn skippable_join_dependency_can_be_replaced_by_with() {
+        let panel = step("panel", &[]);
+        let text = step("text", &[]);
+        let mut send = step("send", &["panel", "text"]);
+        send.with = Some(serde_json::json!({"text": "/clear"}));
+
+        assert!(Graph::with_skippable_dependencies(
+            vec![panel, text, send],
+            [DependencyEdge::new("send", "text")],
+        )
         .is_ok());
     }
 }

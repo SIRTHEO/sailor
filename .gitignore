@@ -1,0 +1,16 @@
+# Prodotti della compilazione: si rifanno, e pesano più del sorgente.
+# `target/` da solo era 1,9 GB su 2,2 GB d'albero il 28/08/2026.
+target/
+mutants.out/
+mutants.out.old/
+
+# La finestra: dipendenze scaricate e pacchetto compilato.
+desktop/node_modules/
+desktop/dist/
+
+# La configurazione di chi lavora qui, non del prodotto. Dentro ci sono anche
+# 332 file del prodotto chiuso il 17/08/2026 — screenshot, sessioni, piani —
+# che non appartengono a questo deposito e non devono seguirlo su SIRTHEO.
+.claude/
+
+.DS_Store
