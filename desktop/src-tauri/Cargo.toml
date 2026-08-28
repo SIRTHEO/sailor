@@ -1,0 +1,45 @@
+[package]
+name = "sailor-desktop"
+version = "0.1.0"
+description = "La finestra di Sailor: la tela dei flussi, in un programma vero."
+edition = "2021"
+rust-version = "1.89"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# La finestra chiede i flussi al motore invece di rileggerli per conto suo:
+# `load_flow_registry` sa già distinguere un flusso valido da uno rotto e
+# porta il motivo del rifiuto. Una seconda lettura qui sarebbe la quarta
+# copia della stessa conoscenza — dopo `crates/flow`, `crates/ui` e
+# `desktop/src/flow.ts` — e la prima a divergere in silenzio.
+ui = { path = "../../crates/ui" }
+flow = { path = "../../crates/flow" }
+
+# Per rifiutare, al salvataggio, un flusso con un'azione che il motore non sa
+# eseguire — la stessa verifica di `sailor flow check`
+# (`crates/sailor/src/flow_cmd.rs`), qui richiamata via `register_default` /
+# `register_store`, non riscritta.
+actions = { path = "../../crates/actions" }
+ledger = { path = "../../crates/ledger" }
+
+# FUORI DAL WORKSPACE, DI PROPOSITO. Un `[workspace]` vuoto stacca questo crate
+# da quello alla radice, e non è pigrizia: `sailor release` esegue
+# `cargo test --release --workspace` per **qualunque** bersaglio, quindi da
+# membro questa finestra si tirerebbe dietro WebKit e qualche centinaio di crate
+# a ogni rilascio di `hooks` o di `notte` — su una macchina dove il governo della
+# memoria ferma già le compilazioni ordinarie. La finestra ha il suo ciclo di
+# vita: si compila quando la si vuole vedere.
+[workspace]
+
+# Gli stessi interruttori della radice: un binario che deve aprirsi subito.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
