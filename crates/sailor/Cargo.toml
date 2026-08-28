@@ -20,5 +20,6 @@ ui = { path = "../ui" }
 actions = { path = "../actions" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
+inventory = { path = "../inventory" }
 serde = { workspace = true }
 serde_json = { workspace = true }
