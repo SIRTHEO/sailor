@@ -1,0 +1,294 @@
+:root {
+  --ink: #0f172a;
+  --muted: #64748b;
+  --faint: #94a3b8;
+  --line: #e2e8f0;
+  --paper: #ffffff;
+  --rail: #fafbfc;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.bar__name {
+  font-weight: 600;
+}
+
+.bar__sep {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+}
+
+.bar__flow {
+  font-size: 14px;
+}
+
+.bar__spacer {
+  flex-grow: 1;
+}
+
+button {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+button.is-primary {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+  font-weight: 600;
+}
+
+.body {
+  flex-grow: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.rail {
+  width: 232px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  background: var(--rail);
+  padding: 12px 10px;
+  overflow-y: auto;
+}
+
+.rail__title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 8px 8px;
+}
+
+.rail__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 9px 10px;
+  margin-bottom: 3px;
+}
+
+.rail__item[data-open] {
+  background: var(--paper);
+  border-color: var(--line);
+}
+
+.rail__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.rail__note {
+  display: block;
+  font-size: 10.5px;
+  color: var(--faint);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* Un flusso rotto è visibile e riconoscibile, mai assente. */
+.rail__item[data-broken] .rail__label {
+  color: #b91c1c;
+}
+
+.rail__item[data-broken] .rail__note {
+  color: #dc2626;
+}
+
+.canvas {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.broken {
+  padding: 48px;
+  max-width: 560px;
+}
+
+.broken h2 {
+  font-size: 18px;
+  margin: 0 0 10px;
+}
+
+.broken p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+.broken__why {
+  color: var(--faint);
+  font-size: 12.5px;
+}
+
+.panel {
+  width: 288px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line);
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.panel__title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.panel__id {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 4px 0 14px;
+}
+
+.panel__empty {
+  font-size: 12.5px;
+  color: var(--faint);
+  line-height: 1.5;
+}
+
+.panel dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 12px;
+}
+
+.panel dd {
+  margin: 4px 0 0;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11.5px;
+  word-break: break-word;
+}
+
+/* ── il nodo ─────────────────────────────────────────────────────────── */
+
+.step-node {
+  width: 196px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 11px;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+}
+
+.step-node[data-agent] {
+  width: 232px;
+}
+
+.step-node__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.step-node__kind {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.step-node__when {
+  font-size: 9px;
+  color: #9333ea;
+}
+
+.step-node__id {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 3px 0 6px;
+}
+
+.step-node__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  gap: 8px;
+}
+
+.step-node__attempt {
+  font-family: ui-monospace, monospace;
+  font-size: 9.5px;
+  color: #b45309;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.step-node__agent {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.step-node__pid {
+  font-family: ui-monospace, monospace;
+  font-size: 9.5px;
+  color: var(--muted);
+}
+
+.step-node__actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.step-node__actions button {
+  flex: 1;
+  padding: 4px 0;
+  font-size: 10.5px;
+  border-radius: 5px;
+}
+
+.step-node__actions button.is-stop {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+  font-weight: 600;
+}

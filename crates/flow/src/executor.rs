@@ -749,7 +749,7 @@ pub fn step_input(
     root_inputs: &BTreeMap<String, Value>,
     records: &[StepRecord],
 ) -> Result<Value, FlowError> {
-    match step.deps.as_slice() {
+    let input = match step.deps.as_slice() {
         [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
         [only] if !graph.dependency_is_skippable(&step.id, only) => {
             successful_output(only, records)
@@ -767,7 +767,22 @@ pub fn step_input(
             }
             Ok(Value::Object(values))
         }
-    }
+    }?;
+    Ok(overlay_input(input, step.with.as_ref()))
+}
+
+fn overlay_input(input: Value, with: Option<&Value>) -> Value {
+    let Some(with) = with else {
+        return input;
+    };
+    let Value::Object(with) = with else {
+        return with.clone();
+    };
+    let Value::Object(mut input) = input else {
+        return Value::Object(with.clone());
+    };
+    input.extend(with.clone());
+    Value::Object(input)
 }
 
 pub fn attempt_relation(
@@ -916,6 +931,7 @@ mod tests {
             deps: deps.iter().map(|id| (*id).to_owned()).collect(),
             input_schema: ValueSchema::Any,
             output_schema: ValueSchema::Any,
+            with: None,
             when: None,
             action: action.to_owned(),
             max_attempts,
@@ -961,6 +977,42 @@ mod tests {
             .expect("record della giunzione");
         assert_eq!(join.input["left"]["value"], "said is not data");
         assert_eq!(join.input["right"]["value"], "said is not data");
+    }
+
+    #[test]
+    fn dependent_step_merges_its_values_over_predecessor_output() {
+        let mut send = step("send", &["panel"], "echo", 1);
+        send.with = Some(json!({"text": "/clear", "mode": "declared"}));
+        let graph = Graph::new(vec![step("panel", &[], "echo", 1), send])
+            .expect("grafo valido");
+        let mut actions = ActionRegistry::default();
+        actions.register("echo", Echo);
+        let request = ExecutionRequest {
+            run_id: "run".to_owned(),
+            root_inputs: [(
+                "panel".to_owned(),
+                json!({"panel": "p-7", "mode": "predecessor"}),
+            )]
+            .into_iter()
+            .collect(),
+            gates: vec![],
+            shared: SharedState::new(),
+        };
+        let mut store = InMemoryRecordStore::default();
+
+        InProcessExecutor
+            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .expect("esecuzione riuscita");
+
+        let send = store
+            .all()
+            .iter()
+            .find(|record| record.step_id == "send")
+            .expect("record dell'invio");
+        assert_eq!(
+            send.input,
+            json!({"panel": "p-7", "mode": "declared", "text": "/clear"})
+        );
     }
 
     #[test]

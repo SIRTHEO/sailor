@@ -17,3 +17,8 @@ notte = { path = "../notte" }
 profiles = { path = "../profiles" }
 models = { path = "../models" }
 ui = { path = "../ui" }
+actions = { path = "../actions" }
+flow = { path = "../flow" }
+ledger = { path = "../ledger" }
+serde = { workspace = true }
+serde_json = { workspace = true }

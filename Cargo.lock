@@ -375,16 +375,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "resume"
-version = "0.1.0"
-dependencies = [
- "flow",
- "ledger",
- "notte",
- "serde_json",
-]
-
-[[package]]
 name = "rusqlite"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -402,10 +392,15 @@ dependencies = [
 name = "sailor"
 version = "0.1.0"
 dependencies = [
+ "actions",
+ "flow",
+ "ledger",
  "models",
  "notte",
  "profiles",
  "release",
+ "serde",
+ "serde_json",
  "ui",
 ]
 
