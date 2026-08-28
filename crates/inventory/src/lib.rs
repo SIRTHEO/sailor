@@ -87,15 +87,18 @@ pub struct Root {
     pub path: PathBuf,
     /// La casa carica sempre; un repo carica solo se ci si lavora dentro.
     pub is_home: bool,
-    /// Una cartella che **nessuna configurazione carica**: le cose che ci
-    /// stanno esistono sul disco e non sono invocabili da nessuna parte.
+    /// Una cartella di competenze che **Claude Code non carica**: quello che ci
+    /// sta esiste sul disco e da qui non è invocabile.
     ///
-    /// PERCHÉ MERITA UNA CATEGORIA SUA, con la misura del 28/08/2026:
-    /// `~/other-repo/work/.agents/skills` ne contiene **95**, e solo 5 sono
-    /// collegate dentro la cartella che Claude Code legge davvero. Le altre 90
-    /// non le nomina nessun `settings.json` e nessun `CLAUDE.md`: sono lavoro
-    /// fatto che non raggiunge nessuno. Ometterle dall'inventario le
-    /// nasconderebbe; contarle come attive sarebbe falso.
+    /// «NON LO CARICA NESSUNO» SAREBBE FALSO, ed è stato scritto qui per mezza
+    /// giornata prima che una misura lo smentisse. `~/.agents/skills` è
+    /// referenziato da due altri harness — `~/.factory` e `~/.commandcode` —
+    /// con **767 collegamenti ciascuno**, di cui **1.508 rotti**: il magazzino
+    /// si è svuotato da oltre 767 voci alle 33 di oggi, e nessuno dei due lati
+    /// se n'è accorto. Quindi il verdetto giusto è ristretto a ciò che questo
+    /// programma può sapere: da **qui** non si invocano, e chi le vuole le
+    /// collega. Che le carichi qualcun altro è una cosa che l'inventario, per
+    /// ora, non guarda — e dirlo è più onesto che affermare il contrario.
     pub is_warehouse: bool,
 }
 
@@ -507,7 +510,7 @@ fn hooks_of(root: &Root) -> Vec<Entry> {
                 };
                 out.push(Entry {
                     kind: Kind::Hook,
-                    name: format!("{event} · {matcher}"),
+                    name: format!("{event} · {matcher} · {}", hook_label(command)),
                     description: command.to_string(),
                     origin: origin_of(root),
                     path: path.to_string_lossy().into_owned(),
@@ -523,6 +526,61 @@ fn hooks_of(root: &Root) -> Vec<Entry> {
         }
     }
     out
+}
+
+/// Come si chiama un gancio, per chi lo legge: non il comando intero, ma il
+/// pezzo che lo distingue dagli altri.
+///
+/// SENZA QUESTO DUE GANCI DIVENTANO UNO. Evento e matcher non bastano a
+/// identificarli: su `PreToolUse · Bash` ne vivono **otto**, e depositarli con
+/// la stessa chiave ne faceva sparire sette in silenzio — misurato il
+/// 28/08/2026, 30 voci perse su 358. Un elenco che perde per collisione è
+/// peggio di un elenco che non c'è, perché sembra completo.
+fn hook_label(command: &str) -> String {
+    // LE OPZIONI DISTINGUONO, e la prima versione le buttava: due ganci che
+    // lanciano lo stesso sottocomando con opzioni diverse — `orca-cleanup
+    // --close` e `orca-cleanup --names --rename` — sono due ganci, e scartare
+    // le opzioni li faceva collassare in uno.
+    const SHELL_NOISE: &[&str] = &["cd", "||", "&&", ";", "&", "true", "exec", "nohup", "sh", "-c"];
+    let words: Vec<&str> = command.split_whitespace().collect();
+    // L'eseguibile è l'ultima parola che è un percorso: prima di lei ci sono
+    // solo preamboli di shell, dopo ci sono gli argomenti che contano.
+    let executable = words.iter().rposition(|word| {
+        word.contains('/') && !word.starts_with('>') && !word.contains(">/") && !word.contains("</")
+    });
+    let mut label: Vec<&str> = words
+        .iter()
+        .skip(executable.map_or(0, |index| index + 1))
+        .copied()
+        .filter(|word| {
+            !word.contains('/')
+                && !word.starts_with('>')
+                && !SHELL_NOISE.contains(word)
+                && !word.is_empty()
+        })
+        .collect();
+    if label.is_empty() {
+        // Nessun argomento: allora il gancio è lo script che lancia.
+        if let Some(index) = executable {
+            label.push(words[index].rsplit('/').next().unwrap_or(words[index]));
+        }
+    }
+    if label.is_empty() {
+        return command.to_string();
+    }
+    let joined = label
+        .join(" ")
+        .trim_matches(|c: char| c == '"' || c == '\'' || c == ';')
+        .to_string();
+    // Un gancio scritto come programma in linea non ha un nome: ha un corpo.
+    // Si tronca, perché serve a distinguerlo, non a raccontarlo — e il comando
+    // per intero resta nella descrizione, dove chi vuole leggerlo lo trova.
+    const NAME_CEILING: usize = 48;
+    if joined.chars().count() <= NAME_CEILING {
+        return joined;
+    }
+    let short: String = joined.chars().take(NAME_CEILING).collect();
+    format!("{short}…")
 }
 
 /// Il primo percorso nominato dal comando che non esiste sul disco.
