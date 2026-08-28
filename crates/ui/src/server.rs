@@ -7,6 +7,7 @@
 use crate::dashboard::{build_executions, ExecutionView};
 use crate::gather::{gather, ledger_present, GatherError};
 use crate::registry::{flow_views, FlowRegistry, FlowView};
+use inventory::{collect, default_roots};
 use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
@@ -97,6 +98,11 @@ pub fn handle_connection(stream: TcpStream, state: &ServerState) -> std::io::Res
                 respond(&stream, 500, "application/json; charset=utf-8", body.as_bytes())
             }
         },
+        "/api/inventory" => {
+            let found = collect(&default_roots());
+            let body = serde_json::to_vec(&found).unwrap_or_default();
+            respond(&stream, 200, "application/json; charset=utf-8", &body)
+        }
         _ => respond(&stream, 404, "text/plain; charset=utf-8", b"non trovato"),
     }
 }
