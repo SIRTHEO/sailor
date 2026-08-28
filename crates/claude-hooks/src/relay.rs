@@ -1351,6 +1351,15 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     let hpath = latest_handoff(&rec.cwd);
     let punto = crate::handoff::resume_point_from(&hpath, &rec.transcript).unwrap_or_default();
     let mandato = crate::handoff::wakeup_prompt(&rec.transcript).unwrap_or_default();
+    // IL TESTIMONE È IL MANDATO — Theo, 28/08/2026: «dovrebbe essere `/clear` →
+    // autoripresa del mandato». La consegna resta nel segnale come ripiego, non
+    // come fonte: dice com'è finito un turno, mentre chi riparte deve sapere
+    // **a che lavoro appartiene**. Si passa solo il mandato che questa sessione
+    // ha davvero nominato: darne uno sbagliato è peggio che non darne nessuno.
+    let incarico = crate::handoff::mandate_file(&rec.transcript).unwrap_or_default();
+    if !incarico.is_empty() {
+        log_line(&format!("sess={sess}: il testimone porta il mandato {incarico}"));
+    }
     if !mandato.is_empty() {
         log_line(&format!(
             "sess={sess}: il mandato del loop viaggia col testimone ({} caratteri)",
@@ -1380,6 +1389,7 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
         "handoff": if hpath.is_empty() { "ultimo handoff in memory" } else { &hpath },
         "punto": punto,
         "mandato": mandato,
+        "incarico": incarico,
         "tab": rec.tab_id,
         "sessione": rec.session_id,
     })
