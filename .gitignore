@@ -8,6 +8,14 @@ mutants.out.old/
 desktop/node_modules/
 desktop/dist/
 
+# Il guscio nativo rigenera questi a ogni compilazione, dall'icona e dalla
+# configurazione che invece sono versionate. Le icone di Android e iOS le
+# produce lo stesso comando: Sailor è un programma da scrivania, e tenerle qui
+# vorrebbe dire versionare centoventi file per due piattaforme che non esistono.
+desktop/src-tauri/gen/
+desktop/src-tauri/icons/android/
+desktop/src-tauri/icons/ios/
+
 # La configurazione di chi lavora qui, non del prodotto. Dentro ci sono anche
 # 332 file del prodotto chiuso il 17/08/2026 — screenshot, sessioni, piani —
 # che non appartengono a questo deposito e non devono seguirlo su SIRTHEO.
