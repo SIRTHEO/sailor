@@ -1041,6 +1041,44 @@ fn run(which: &str) -> Result<i32, String> {
                 (Mode::WarnOnly, Decision::Deny(m)) => Decision::Warn(m),
                 (_, d) => d,
             };
+            // IL VERDETTO SI SCRIVE, PERCHÉ IL MODULO PROMETTE DI MISURARLO.
+            // In testa a `message_budget.rs` sta scritto «si misura — la quota
+            // che passa ancora per messaggio — e si stringe solo se il numero
+            // non scende». Nessuno lo scriveva: il registro delle osservazioni
+            // porta i **tentativi**, non gli esiti, e chi voleva il numero
+            // doveva ricostruirlo riapplicando la regola a mano — misurato il
+            // 28/08/2026, con uno scarto del 3% e la coda della distribuzione
+            // censurata a 5.000 byte dallo strumento che la raccoglie.
+            //
+            // Si registrano la lunghezza e se c'era una domanda, cioè i due
+            // ingressi del giudizio: senza, il numero dice quanti sono stati
+            // negati ma non permette di rispondere a «e se la soglia fosse
+            // un'altra?» — che è la domanda per cui la misura esiste.
+            //
+            // SONO DUE RIGHE, E NON È UNA SVISTA. `hook_io::emit` ne scrive già
+            // una, ma solo quando il verdetto è negativo: **un messaggio che
+            // passa non lascia traccia**, e senza i passati non esiste nessuna
+            // quota da misurare, solo un conteggio di dinieghi. Questa riga
+            // copre tutti e tre gli esiti e porta gli ingressi; quella di
+            // `emit` porta il testo che l'autore ha letto. Si distinguono dal
+            // motivo: chi conta filtra `motivo == "budget-messaggio"`, chi
+            // diagnostica legge l'altra.
+            hook_io::journal::record(
+                "message-budget",
+                match &decision {
+                    Decision::Deny(_) => "nega",
+                    Decision::Warn(_) => "avvisa",
+                    _ => "passa",
+                },
+                "budget-messaggio",
+                &[
+                    (
+                        "caratteri",
+                        hook_io::journal::Field::Number(message.chars().count() as i64),
+                    ),
+                    ("domanda", hook_io::journal::Field::Bool(message.contains('?'))),
+                ],
+            );
             Ok(emit_with_legacy_prefix("message-budget", &decision))
         }
         "block-worktree-create" => {
