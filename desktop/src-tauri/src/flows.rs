@@ -18,13 +18,19 @@ use ui::gather::{default_ledger_dir, ledger_present};
 /// Il comando che la tela chiama per creare o modificare un flusso.
 #[tauri::command]
 pub(crate) fn save_flow(flow: serde_json::Value) -> Result<(), String> {
-    save_flow_in(&super::default_flows_dir(), flow)
+    // L'identificativo si legge qui solo per sapere DOVE scrivere. Che sia
+    // valido lo decide `save_flow_in`, che ha già tutte le sue regole: un id
+    // assente o non testuale finisce nella cartella dei flussi nuovi e viene
+    // rifiutato là, col messaggio giusto, invece di essere rifiutato qui con un
+    // messaggio peggiore.
+    let id = flow.get("id").and_then(|id| id.as_str()).unwrap_or_default();
+    save_flow_in(&super::flows_dir_for(id), flow)
 }
 
 /// Il comando che la tela chiama per cancellare un flusso.
 #[tauri::command]
 pub(crate) fn delete_flow(name: String) -> Result<(), String> {
-    delete_flow_in(&super::default_flows_dir(), &name)
+    delete_flow_in(&super::flows_dir_for(&name), &name)
 }
 
 /// Cuore di `save_flow`, con la cartella passata invece che letta
@@ -118,6 +124,10 @@ fn reject_a_name_that_collides_only_by_case(
 fn action_registry() -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
+    // Senza questa riga un flusso che comincia con un nodo di innesco non si
+    // salva: il pannello lo rifiuterebbe come «azione sconosciuta» pur essendo
+    // un flusso che il motore esegue.
+    trigger::register_default(&mut registry);
     let ledger_dir = default_ledger_dir();
     if ledger_present(&ledger_dir) {
         if let Ok(ledger) = ledger::Ledger::open(&ledger_dir) {

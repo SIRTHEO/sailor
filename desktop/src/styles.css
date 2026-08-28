@@ -117,6 +117,38 @@ body {
   color: var(--muted);
 }
 
+/* Il nome si scrive solo finché il flusso non ha un file: dopo, rinominarlo
+   lascerebbe due file sul disco. */
+.focusbar__name-input {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-weight: 600;
+  font-size: 13px;
+  width: 160px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.focusbar__desc-input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  flex-grow: 1;
+  max-width: 420px;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.focusbar__desc-input:hover,
+.focusbar__desc-input:focus {
+  border-color: var(--line);
+  background: var(--paper);
+}
+
 .focusbar__dirty {
   font-size: 11px;
   font-weight: 600;
@@ -264,6 +296,23 @@ button.is-primary {
   margin-left: 0;
 }
 
+/* Il gesto che manca a una cartella vuota: creare il primo flusso. Sta sotto
+   l'elenco perché è lì che finisce lo sguardo quando l'elenco non basta. */
+.rail__new {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin-top: 6px;
+  font-weight: 600;
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.rail__new:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
 .rail__cassette {
   margin-top: 18px;
   padding-top: 12px;
@@ -298,6 +347,51 @@ button.is-primary {
 .canvas {
   flex-grow: 1;
   min-width: 0;
+  position: relative;
+}
+
+/* ── la tela bianca ──────────────────────────────────────────────────────
+   Sta SOPRA la tela, non al suo posto: i comandi e la minimappa restano dove
+   sono, e il messaggio sparisce da solo appena esiste un flusso. Non intercetta
+   il puntatore — si può continuare a trascinare la tela sotto — tranne il
+   riquadro, che è l'unica cosa da toccare. */
+.blank {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.blank__card {
+  pointer-events: auto;
+  max-width: 460px;
+  padding: 26px 28px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgb(15 23 42 / 8%);
+}
+
+.blank__card h2 {
+  font-size: 17px;
+  margin: 0 0 10px;
+}
+
+.blank__card p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.blank__card p.blank__why {
+  font-size: 11.5px;
+  color: var(--faint);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  word-break: break-word;
 }
 
 .broken {
@@ -416,6 +510,112 @@ button.is-primary {
   resize: vertical;
 }
 
+/* ── chi esegue il nodo ─────────────────────────────────────────────────
+   Un riquadro staccato: lo strumento, il modello e il prompt sono i tre campi
+   che decidono cosa fa il nodo, e vanno letti insieme. */
+
+.panel__tool {
+  margin-top: 18px;
+  padding: 12px 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--rail);
+}
+
+.panel__tool .panel__field:first-of-type {
+  margin-top: 8px;
+}
+
+.panel__tool select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* La scoperta che non ha (ancora) risposto si dice, non si nasconde dietro un
+   elenco vuoto che sembra «non c'è niente da scegliere». */
+.panel__note {
+  font-size: 12px;
+  font-weight: 600;
+  color: #92400e;
+  margin: 8px 0 0;
+}
+
+.panel__note-why {
+  font-size: 10.5px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  color: var(--faint);
+  margin: 3px 0 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.panel__tool-detail {
+  font-size: 10.5px;
+  color: var(--muted);
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
+
+.panel__tool-detail[data-off] {
+  color: #b45309;
+}
+
+.panel__tool-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  font-size: 9.5px;
+}
+
+.panel__tool-path {
+  display: block;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  color: var(--faint);
+  word-break: break-all;
+}
+
+.panel__tool-off {
+  display: block;
+  font-weight: 600;
+}
+
+/* Un'avvertenza non è un errore: il campo si scrive comunque, ma chi salva sa
+   cosa succederà al caricamento. */
+.panel__warn {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 8px 0 0;
+}
+
+.panel__prompt {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  resize: vertical;
+}
+
 .panel__deps {
   margin-top: 4px;
   max-height: 140px;
@@ -492,6 +692,68 @@ button.is-primary {
   font-size: 12px;
   font-weight: 600;
   margin: 3px 0 6px;
+}
+
+/* Lo strumento che esegue il nodo, sulla tela: si legge senza aprire nulla.
+   Il segno, il nome, il modello — e, quando lo strumento su questa macchina non
+   c'è, il motivo: un nodo che non puo' girare lo dice guardandolo. */
+.step-node__tool {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--muted);
+  background: #f1f5f9;
+  border-radius: 5px;
+  padding: 3px 5px;
+  margin-bottom: 6px;
+}
+
+/* Spento non è nascosto: resta leggibile, e si vede che è spento. */
+.step-node__tool[data-off] {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 2px 4px;
+}
+
+.step-node__tool-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.step-node__tool-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step-node__tool[data-off] .step-node__tool-name {
+  color: #b91c1c;
+}
+
+.step-node__tool-model {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 9px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Il motivo sta su due righe al massimo: deve stare dentro un nodo senza
+   allargarlo, e per intero si legge passandoci sopra. */
+.step-node__tool-why {
+  font-size: 8.5px;
+  color: #b45309;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .step-node__foot {
@@ -591,9 +853,784 @@ button.is-primary {
   color: var(--faint);
 }
 
+/* DUE RIGHE AL MASSIMO, e il resto passando sopra: l'intestazione della corsia
+   ha un'altezza riservata nella disposizione, e una descrizione lunga la
+   sfonda — sulla tela il testo finiva scritto in mezzo ai primi nodi, sopra i
+   loro nomi. Un flusso si descrive per esteso nel suo file, non addosso ai
+   passi di qualcun altro. */
 .flow-band__desc {
   font-size: 11px;
   color: var(--muted);
   margin-top: 3px;
   max-width: 520px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── il segno di uno strumento ──────────────────────────────────────────
+   Il colore arriva dal componente (`color` in linea) e i tratti lo ereditano
+   con `currentColor`: un segno solo, che vale a 16px sul nodo e a 20px nel
+   pannello senza due fogli di regole. */
+
+.tool-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.tool-mark svg {
+  display: block;
+}
+
+/* Il ripiego — il caso normale, su qualunque macchina vera — è una pastiglia
+   con le iniziali: si vede che è un ripiego, invece di sembrare un logo
+   sbagliato. */
+/* LA TINTA ARRIVA DA `--mark-tint`, NON DA `currentColor`, e il motivo è
+   misurato: `background: currentColor` accanto a `color: #fff` sullo stesso
+   elemento risolve `currentColor` al bianco appena dichiarato — pastiglia
+   bianca, lettere bianche, e il ripiego spariva. Sulla tela si vedeva un
+   rettangolo vuoto al posto del segno di ogni strumento senza disegno, cioè
+   della maggioranza. */
+.tool-mark__monogram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--mark-tint, #64748b);
+  color: #fff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.tool-mark[data-off] .tool-mark__monogram {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px dashed #94a3b8;
+}
+
+/* ── la scelta dello strumento, nel pannello ────────────────────────────── */
+
+.panel__tool-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.panel__tool-pick select {
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.panel__tool-detail p {
+  margin: 2px 0 0;
+}
+
+/* Il motivo del rilevamento: quando c'è dice da dove, quando manca dice
+   perché. Va letto, non solo scoperto passandoci sopra. */
+.panel__tool-why {
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.panel__tool-detail[data-off] .panel__tool-why {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.panel__tool-src {
+  font-size: 9.5px;
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* ── le opzioni ─────────────────────────────────────────────────────────── */
+
+.panel__subtitle {
+  margin-top: 14px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.panel__options {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+/* Una riga per opzione: il nome sopra, e sotto il valore, l'interruttore
+   «senza valore» e il gesto per toglierla.
+   SU DUE LIVELLI, E MISURATO: in una riga sola il campo del nome resta largo
+   una ottantina di pixel nella colonna del pannello, e `--max-turns` si legge
+   «--max-t». Un nome di opzione troncato è un nome sbagliato, per chi guarda. */
+.panel__option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dotted var(--line);
+}
+
+.panel__option:last-of-type {
+  border-bottom: none;
+}
+
+.panel__option[data-declared] {
+  display: block;
+}
+
+.panel__option-key,
+.panel__option-value {
+  min-width: 0;
+  padding: 5px 7px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.panel__option-key {
+  flex: 1 1 100%;
+}
+
+.panel__option-value {
+  flex: 1 1 auto;
+}
+
+.panel__option-flag {
+  flex: 1 1 auto;
+  font-size: 10px;
+  font-style: italic;
+  color: var(--faint);
+}
+
+.panel__option-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.panel__option-toggle input {
+  margin: 0;
+}
+
+.panel__option-drop {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--faint);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.panel__option-drop:hover {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.panel__option-help {
+  margin: 2px 0 0;
+  font-size: 9.5px;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+.panel__option-add {
+  margin-top: 8px;
+  padding: 5px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.panel__option-add:hover {
+  color: var(--ink);
+  border-style: solid;
+}
+
+/* Un'anteprima è un'anteprima: si vede cosa si sta componendo, e si vede che
+   non è quello che finisce nel file — sul disco restano le opzioni per nome. */
+.panel__option-preview {
+  margin: 8px 0 0;
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.panel__option-preview code {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--ink);
+  background: var(--rail);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* ── il nodo di innesco, e la vista dell'esecuzione ─────────────────────── */
+
+/* L'innesco non è un passo, e non deve sembrarlo: bordo continuo ma fondo
+   diverso da quello dei nodi, perché nel file del flusso non esiste. */
+.trigger-node {
+  width: 240px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--rail);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.trigger-node__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trigger-node__mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.trigger-node__kind {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.trigger-node__flow {
+  font-weight: 600;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.trigger-node__note {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Perché una consegna non ha dove andare si legge prima di premere, non dopo. */
+.trigger-node__why {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  padding: 5px 7px;
+}
+
+.trigger-node__mandate {
+  width: 100%;
+  min-height: 62px;
+  resize: vertical;
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1.4;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.trigger-node__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trigger-node__go {
+  flex-grow: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trigger-node__go:disabled {
+  background: var(--line);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.trigger-node__watch {
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Una corsa viva si vede da lontano: è la sola informazione che chi guarda
+   cerca sulla tela senza aprire niente. */
+.trigger-node__watch[data-status="running"] {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+.trigger-node__watch[data-status="complete"] {
+  color: #15803d;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.trigger-node__watch[data-status="failed"] {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.trigger-node__error {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #b91c1c;
+  word-break: break-word;
+}
+
+/* La vista dell'esecuzione: in fondo, sopra la tela, alta un terzo. */
+.console {
+  flex-shrink: 0;
+  height: 34vh;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.console__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 40px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.console__title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.console__pick,
+.console__modes button,
+.console__close {
+  font: inherit;
+  font-size: 11.5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.console__modes {
+  display: flex;
+  gap: 4px;
+}
+
+.console__modes button[data-on] {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.console__status {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.console__status[data-status="running"] {
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.console__status[data-status="failed"] {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.console__status[data-status="complete"] {
+  color: #15803d;
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.console__spacer {
+  flex-grow: 1;
+}
+
+/* La riga che impedisce di credere a una cosa falsa. Non si nasconde dietro un
+   punto interrogativo: sta in chiaro, sempre, perché è la differenza fra
+   leggere una corsa e fraintenderla. */
+.console__truth,
+.console__serial {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #92400e;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+}
+
+.console__serial {
+  border-bottom: none;
+  border-top: 1px solid #fde68a;
+}
+
+.console__lines,
+.console__panes {
+  flex-grow: 1;
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+.console__empty {
+  color: var(--faint);
+  font-size: 12px;
+  padding: 8px 0;
+}
+
+.console__line {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.console__time {
+  color: var(--faint);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chi ha prodotto la riga: nella vista in linea è l'unica cosa che distingue
+   due passi mescolati, quindi non si abbrevia e non si nasconde. */
+.console__who {
+  flex-shrink: 0;
+  min-width: 96px;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.console__text {
+  flex-grow: 1;
+}
+
+.console__line[data-stream="system"] .console__text {
+  color: var(--muted);
+}
+
+.console__line[data-stream="stderr"] .console__text {
+  color: #b91c1c;
+}
+
+.console__line[data-stream="said"] .console__text {
+  color: #7c3aed;
+}
+
+.console__waiting {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Affiancata: un riquadro per passo, come terminali divisi. */
+.console__panes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
+
+.pane {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  background: var(--rail);
+}
+
+.pane[data-open] {
+  border-color: #bfdbfe;
+}
+
+.pane__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.pane__id {
+  font-weight: 600;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane__state {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.pane__state[data-outcome="open"] {
+  color: #1d4ed8;
+}
+
+.pane__state[data-outcome="Went"] {
+  color: #15803d;
+}
+
+.pane__state[data-outcome="Broke"] {
+  color: #b91c1c;
+}
+
+.pane__body {
+  overflow: auto;
+  padding: 7px 8px;
+  max-height: 240px;
+}
+
+.pane__line {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pane__line[data-stream="system"] {
+  color: var(--muted);
+}
+
+.pane__line[data-stream="stderr"] {
+  color: #b91c1c;
+}
+
+.pane__line[data-stream="said"] {
+  color: #7c3aed;
+}
+
+/* Un riquadro senza righe non è un riquadro rotto: dice perché è vuoto. */
+.pane__note {
+  font-size: 11px;
+  color: var(--faint);
+  font-style: italic;
+  line-height: 1.45;
+}
+
+.pane__failure {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #b91c1c;
+}
+
+/* ── cosa è entrato in un passo, nel tempo ──────────────────────────────── */
+
+.history {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history__title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.history__note {
+  font-size: 11.5px;
+  color: var(--faint);
+  font-style: italic;
+}
+
+.passage {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 7px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--rail);
+}
+
+.passage[data-outcome="Went"] {
+  border-left-color: #22c55e;
+}
+
+.passage[data-outcome="Broke"] {
+  border-left-color: #ef4444;
+}
+
+.passage[data-outcome="open"] {
+  border-left-color: #3b82f6;
+}
+
+.passage__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+  width: 100%;
+}
+
+.passage__when {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.passage__outcome {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* Da dove è partita la chiamata: è la riga che risponde a «chi l'ha
+   chiamato», e non si abbrevia. */
+.passage__origin {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.passage__attempt {
+  font-size: 10.5px;
+  color: #92400e;
+}
+
+.passage__mandate {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 6px;
+}
+
+.passage__label {
+  display: block;
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 2px;
+}
+
+.passage__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.passage__code {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 6px 7px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.passage__failure {
+  font-size: 11px;
+  color: #b91c1c;
+}
+
+.passage__run {
+  font-size: 10px;
+  color: var(--faint);
+  word-break: break-all;
 }
