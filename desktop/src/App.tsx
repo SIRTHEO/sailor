@@ -27,6 +27,7 @@ import {
   type FlowFile,
   type Step,
   type StepKind,
+  type StepRun,
 } from "./flow";
 
 const nodeTypes = { step: StepNode, flowBand: FlowBandNode };
@@ -130,7 +131,15 @@ export default function App() {
   // ancora letta dal deposito: passare qui `SAMPLE_RUN` colorerebbe di
   // «andato» e «rotto» dei passi che nessuno ha mai eseguito, ed è la specie
   // di bugia che una tela racconta senza che nessuno la smentisca.
-  const runs = source === "sample" ? SAMPLE_RUN : new Map();
+  // `new Map()` scritto qui dentro sarebbe un oggetto nuovo a ogni render, e
+  // basta quello: il disegno dipende da `runs`, il disegno cambia identità, un
+  // effetto riscrive i nodi, che fa ripartire il render. La tela non si ferma
+  // mai abbastanza per misurare i propri nodi, e chi guarda vede una tela vuota
+  // con la minimappa piena — che è esattamente come si è presentata.
+  const runs = useMemo(
+    () => (source === "sample" ? SAMPLE_RUN : new Map<string, StepRun>()),
+    [source],
+  );
 
   const layout = useMemo(() => buildUnifiedLayout(flowList, runs, focusName), [flowList, runs, focusName]);
 
