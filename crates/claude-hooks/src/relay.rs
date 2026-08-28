@@ -899,6 +899,40 @@ fn memory_roots(cwd: &str) -> Vec<PathBuf> {
 /// consegna delle 02:07 era invisibile mentre vinceva quella del giorno prima.
 /// Il criterio che funziona è quello di `guards::successor`, lo stesso che arma
 /// il successore: si scorre per data e si conferma leggendo.
+/// Il mandato corrente come lo dichiara il deposito di questa macchina.
+///
+/// Il percorso del file, che è ciò che il testimone porta: il successore lo
+/// apre. **Un percorso che non esiste più non si passa** — mandare qualcuno ad
+/// aprire un file cancellato è peggio che non dirgli niente, perché il ripiego
+/// sul transcript non scatterebbe e lui resterebbe con un indirizzo morto.
+pub(crate) fn mandate_from_store() -> Option<String> {
+    mandate_declared_in(&ledger::default_directory()?)
+}
+
+/// Lo stesso, su un deposito che il chiamante nomina.
+///
+/// **SEPARATA DALLA PRECEDENTE PER POTERLA PROVARE.** La cartella predefinita
+/// viene da `HOME`, e in questo crate le prove che spostano `HOME` sono già
+/// costate una batteria rossa: `HOME` è di processo, e due prove in parallelo
+/// che se la contendono si rompono a vicenda. Qui la cartella arriva come
+/// argomento, e la prova non tocca niente di condiviso.
+///
+/// Ogni guasto vale `None`: deposito assente, voce mai scritta, JSON di forma
+/// inattesa, file sparito. La staffetta non è il posto dove si scopre che il
+/// deposito è rotto, e un testimone senza mandato è ancora un testimone.
+pub(crate) fn mandate_declared_in(directory: &std::path::Path) -> Option<String> {
+    if !directory.exists() {
+        return None;
+    }
+    let store = ledger::Ledger::open(directory).ok()?;
+    let record = store.read_record("mandate", "current").ok()??;
+    let path = record.value.get("path")?.as_str()?.trim().to_string();
+    if path.is_empty() || !std::path::Path::new(&path).exists() {
+        return None;
+    }
+    Some(path)
+}
+
 pub(crate) fn latest_handoff(cwd: &str) -> String {
     let mut found: Vec<(std::time::SystemTime, String)> = Vec::new();
     for root in memory_roots(cwd) {
@@ -1350,13 +1384,27 @@ pub fn regenerate(rec: &Record, dry_run: bool, orca: OrcaFn) {
     // valido e continua a essere letto come tale.
     let hpath = latest_handoff(&rec.cwd);
     let punto = crate::handoff::resume_point_from(&hpath, &rec.transcript).unwrap_or_default();
+
     let mandato = crate::handoff::wakeup_prompt(&rec.transcript).unwrap_or_default();
     // IL TESTIMONE È IL MANDATO — Theo, 28/08/2026: «dovrebbe essere `/clear` →
     // autoripresa del mandato». La consegna resta nel segnale come ripiego, non
     // come fonte: dice com'è finito un turno, mentre chi riparte deve sapere
-    // **a che lavoro appartiene**. Si passa solo il mandato che questa sessione
-    // ha davvero nominato: darne uno sbagliato è peggio che non darne nessuno.
-    let incarico = crate::handoff::mandate_file(&rec.transcript).unwrap_or_default();
+    // **a che lavoro appartiene**.
+    //
+    // E IL MANDATO SI LEGGE, NON SI DEDUCE. Fino al pomeriggio del 28/08 qui
+    // c'era solo `mandate_file`, che pesca nel transcript l'**ultimo percorso
+    // di mandato nominato**. Con 25 mandati sul disco quello è l'ultimo che
+    // qualcuno ha citato di passaggio — un `ls` della cartella basta a
+    // spostarlo — e una sessione partita sul lavoro sbagliato lo passava al
+    // proprio successore, giro dopo giro. È successo quel giorno stesso.
+    //
+    // Adesso la fonte è il deposito: la voce `current` della collezione
+    // `mandate`, che ci scrive il flusso `mandato-corrente`. Il transcript
+    // resta il ripiego per quando nessuno l'ha ancora dichiarata — un deposito
+    // muto non deve lasciare il successore senza niente.
+    let incarico = mandate_from_store().unwrap_or_else(|| {
+        crate::handoff::mandate_file(&rec.transcript).unwrap_or_default()
+    });
     if !incarico.is_empty() {
         log_line(&format!("sess={sess}: il testimone porta il mandato {incarico}"));
     }
@@ -2493,6 +2541,84 @@ mod tests {
         // taglio a byte spezzerebbe una lettera a metà.
         assert_eq!(cut("perché", 5), "perch");
         assert_eq!(cut("abc", 10), "abc");
+    }
+
+    /// Una cartella usa-e-getta, che sparisce con la prova.
+    fn scratch(label: &str) -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir()
+            .join(format!("relay-mandato-{label}-{}-{sequence}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("creare la cartella di prova");
+        path
+    }
+
+    fn declare(store: &ledger::Ledger, path: &str) {
+        store
+            .put_record(&ledger::StoreRecord {
+                collection: "mandate".into(),
+                key: "current".into(),
+                value: serde_json::json!({ "path": path }),
+                written_by: "prova".into(),
+                written_at: 1_756_400_000,
+            })
+            .expect("dichiarare il mandato");
+    }
+
+    /// Il mandato dichiarato nel deposito si legge, e si legge il **percorso**.
+    ///
+    /// È il fatto su cui poggia tutto il resto: senza questa lettura la
+    /// staffetta torna a pescare nel transcript l'ultimo mandato nominato di
+    /// passaggio, che è il difetto per cui questa strada esiste.
+    #[test]
+    fn the_mandate_the_store_declares_is_the_one_that_travels() {
+        let home = scratch("dichiarato");
+        let file = home.join("mandato.md");
+        std::fs::write(&file, "# un mandato vero\n").expect("scrivere il file");
+        let store = ledger::Ledger::open(home.join("flussi")).expect("aprire il deposito");
+        declare(&store, file.to_str().expect("percorso"));
+
+        assert_eq!(
+            mandate_declared_in(&home.join("flussi")),
+            Some(file.to_string_lossy().to_string())
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Un deposito muto non risponde, e chi chiama ripiega.
+    ///
+    /// Le due forme del silenzio sono distinte apposta: una cartella che non
+    /// c'è (nessun flusso è mai girato) e un deposito aperto dove la voce non
+    /// è mai stata scritta. Tutte e due devono valere `None`, perché il
+    /// ripiego sul transcript è l'unica cosa che tiene in piedi il testimone
+    /// prima che qualcuno dichiari il mandato la prima volta.
+    #[test]
+    fn a_silent_store_lets_the_caller_fall_back() {
+        assert_eq!(mandate_declared_in(std::path::Path::new("/non/esiste/affatto")), None);
+
+        let home = scratch("muto");
+        let _store = ledger::Ledger::open(home.join("flussi")).expect("aprire il deposito");
+        assert_eq!(mandate_declared_in(&home.join("flussi")), None);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Un mandato che nomina un file sparito **non si passa**.
+    ///
+    /// È il caso che distingue questa lettura da un semplice `read_record`: il
+    /// testimone porta un indirizzo che il successore aprirà. Un file
+    /// cancellato dopo la dichiarazione lascerebbe il successore con un
+    /// percorso morto e **senza ripiego**, perché il deposito avrebbe pur
+    /// sempre risposto qualcosa.
+    #[test]
+    fn a_mandate_pointing_at_a_deleted_file_is_not_passed_on() {
+        let home = scratch("sparito");
+        let store = ledger::Ledger::open(home.join("flussi")).expect("aprire il deposito");
+        declare(&store, home.join("mai-esistito.md").to_str().expect("percorso"));
+
+        assert_eq!(mandate_declared_in(&home.join("flussi")), None);
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     fn test_record() -> Record {
