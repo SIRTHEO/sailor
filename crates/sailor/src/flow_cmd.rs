@@ -10,22 +10,14 @@ use flow::{
     InProcessExecutor, RecordStore, SharedState, SystemClock,
 };
 use ledger::{Ledger, RunRecord};
+use ui::gather::FlowSource;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const FLOW_SUFFIX: &str = ".flow.json";
-
 pub fn run(args: &[String]) -> i32 {
-    let flows_dir = match std::env::current_dir() {
-        Ok(directory) => directory.join("flows"),
-        Err(error) => {
-            eprintln!("sailor flow: non riesco a leggere la cartella corrente: {error}");
-            return 1;
-        }
-    };
-    match dispatch(args, &flows_dir) {
+    match dispatch(args, &ui::gather::flow_sources()) {
         Ok(message) => {
             println!("{message}");
             0
@@ -37,14 +29,61 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
-fn dispatch(args: &[String], flows_dir: &Path) -> Result<String, String> {
+fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
     match args {
-        [command] if command == "list" => list_flows(flows_dir),
-        [command] if command == "due" => due_flows(flows_dir),
-        [command, name] if command == "check" => check_flow(flows_dir, name),
-        [command, name] if command == "run" => run_flow(flows_dir, name),
+        [command] if command == "list" => list_flows(sources),
+        [command] if command == "due" => due_flows(sources),
+        [command, name] if command == "check" => check_flow(sources, name),
+        [command, name] if command == "run" => run_flow(sources, name),
         _ => Err(usage()),
     }
+}
+
+/// I flussi che questa macchina vede, con l'origine di ciascuno.
+///
+/// **LA RIGA DI COMANDO E LA FINESTRA DEVONO GUARDARE NEGLI STESSI POSTI.** Fino
+/// al 29/08/2026 questo comando leggeva `flows/` sotto la cartella corrente e
+/// nient'altro: su una macchina appena installata rispondeva «nessun flusso
+/// trovato in flows/» mentre la finestra, dallo stesso binario, ne mostrava due
+/// spediti dentro di esso. Due risposte alla stessa domanda non danno un errore
+/// da leggere — danno due persone che si dicono cose diverse guardando lo stesso
+/// prodotto.
+///
+/// **UN FLUSSO SI NOMINA, NON SI PERCORRE.** Prima il nome diventava un percorso
+/// e serviva un controllo perché non uscisse dalla cartella. Adesso il nome si
+/// cerca in un elenco già costruito: un nome che quell'elenco non contiene non
+/// apre niente, e non c'è nessun posto da cui scappare.
+fn known_flows(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<FlowFile, String>)> {
+    ui::gather::load_all_flows(sources)
+}
+
+/// Il flusso che si chiama così, con l'origine da cui viene.
+fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static str), String> {
+    let known = known_flows(sources);
+    match known.iter().find(|(known, _, _)| known == name) {
+        Some((_, origin, Ok(flow))) => Ok((flow.clone(), origin)),
+        Some((_, origin, Err(reason))) => Err(format!("il flusso {name} ({origin}) non si carica: {reason}")),
+        None => {
+            let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
+            Err(format!(
+                "nessun flusso si chiama {name}; quelli che vedo sono: {}",
+                if names.is_empty() { "nessuno".to_owned() } else { names.join(", ") }
+            ))
+        }
+    }
+}
+
+/// Dove si è guardato, sempre in coda a un elenco vuoto: una lista vuota che non
+/// dice dove ha cercato è indistinguibile da un guasto.
+fn nothing_found(sources: &[FlowSource]) -> String {
+    format!(
+        "nessun flusso trovato. Guardato in:\n  {}",
+        sources
+            .iter()
+            .map(|source| format!("{}: {}", source.origin, source.dir.display()))
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    )
 }
 
 fn usage() -> String {
@@ -62,10 +101,10 @@ fn usage() -> String {
 /// L'ora si legge **una volta sola** e si passa a tutti: due flussi giudicati su
 /// due istanti diversi non sono confrontabili, e la differenza si vede solo nei
 /// casi rari, cioè quando fa più danno.
-fn due_flows(flows_dir: &Path) -> Result<String, String> {
-    let paths = flow_paths(flows_dir)?;
-    if paths.is_empty() {
-        return Ok("nessun flusso trovato in flows/".to_owned());
+fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
+    let known = known_flows(sources);
+    if known.is_empty() {
+        return Ok(nothing_found(sources));
     }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -83,9 +122,8 @@ fn due_flows(flows_dir: &Path) -> Result<String, String> {
     let mut report = String::new();
     let mut due = 0usize;
     let mut unplanned = 0usize;
-    for path in paths {
-        let name = flow_name(&path);
-        let Ok(flow) = load_flow(&path) else {
+    for (name, _, entry) in known {
+        let Ok(flow) = entry else {
             let _ = writeln!(report, "{name}\tnon caricabile");
             continue;
         };
@@ -113,26 +151,28 @@ fn due_flows(flows_dir: &Path) -> Result<String, String> {
     Ok(report)
 }
 
-fn list_flows(flows_dir: &Path) -> Result<String, String> {
-    let paths = flow_paths(flows_dir)?;
-    if paths.is_empty() {
-        return Ok("nessun flusso trovato in flows/".to_owned());
+fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
+    let known = known_flows(sources);
+    if known.is_empty() {
+        return Ok(nothing_found(sources));
     }
     let mut report = String::new();
-    for path in paths {
-        let name = flow_name(&path);
-        match load_flow(&path) {
+    // L'ORIGINE STA NELL'ELENCO, e non è ornamento: due flussi con lo stesso
+    // nome in due posti sono uno solo qui dentro — vince il piu' specifico — e
+    // chi non vede da dove viene quello che gira modifica l'altro.
+    for (name, origin, entry) in known {
+        match entry {
             Ok(flow) => {
                 let _ = writeln!(
                     report,
-                    "{}\t{} passi\t{}",
+                    "{}\t{} passi\t{origin}\t{}",
                     flow.id,
                     flow.graph.steps().len(),
                     flow.description
                 );
             }
             Err(error) => {
-                let _ = writeln!(report, "{name}\tnon caricabile: {error}");
+                let _ = writeln!(report, "{name}\t{origin}\tnon caricabile: {error}");
             }
         }
     }
@@ -140,13 +180,48 @@ fn list_flows(flows_dir: &Path) -> Result<String, String> {
     Ok(report)
 }
 
-fn check_flow(flows_dir: &Path, name: &str) -> Result<String, String> {
-    let path = flow_path(flows_dir, name)?;
-    let flow = load_flow(&path)?;
-    Ok(check_report(&flow, &default_registry(open_default_ledger())))
+fn check_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    let (flow, _) = one_flow(sources, name)?;
+    let tools = toolbox::Tools::current();
+    let (report, unknown) = check_report(
+        &flow,
+        &default_registry(open_default_ledger()),
+        Some(&tools),
+    );
+    if unknown.is_empty() {
+        return Ok(report);
+    }
+    // IL RAPPORTO SI VEDE ANCHE QUANDO IL FLUSSO È ROTTO. Chi controlla un
+    // flusso lo fa per capirlo: rispondere con la sola riga dell'errore
+    // costringerebbe a rilanciare il comando per vedere il resto.
+    println!("{report}");
+    Err(format!(
+        "il flusso {} chiede strumenti che nessun descrittore dichiara: {}. \
+         Non è «manca su questa macchina»: quei nomi non esistono in nessun catalogo, \
+         quindi il flusso non gira da nessuna parte finché non si corregge il nome o \
+         non si aggiunge un descrittore in ~/.sailor/tools.d/",
+        flow.id,
+        unknown.join(", ")
+    ))
 }
 
-fn check_report(flow: &FlowFile, registry: &ActionRegistry) -> String {
+/// Il rapporto, e i nomi di strumento che nessun descrittore dichiara.
+///
+/// **PERCHÉ DUE ESITI E NON UNO.** Un flusso può essere sbagliato in due modi
+/// che si somigliano e non lo sono: chiedere uno strumento che qui non è
+/// installato — e allora il flusso è sano, gira altrove, e installarlo lo fa
+/// girare anche qui — oppure chiedere un nome che nessun catalogo dichiara, e
+/// allora è rotto su qualunque macchina e non c'è niente da installare. Prima
+/// del 28/08/2026 il controllo non vedeva né l'uno né l'altro: `flow check`
+/// chiudeva a zero dicendo «azioni mancanti: nessuna», e il difetto si scopriva
+/// solo eseguendo. Solo il secondo caso è un errore; il primo è un avviso,
+/// perché un prodotto che gira su macchine diverse non può chiamare rotto un
+/// flusso che non è il suo.
+fn check_report(
+    flow: &FlowFile,
+    registry: &ActionRegistry,
+    tools: Option<&toolbox::Tools>,
+) -> (String, Vec<String>) {
     let dependency_count: usize = flow.graph.steps().iter().map(|step| step.deps.len()).sum();
     let missing = missing_actions(&flow.graph, registry);
     let mut report = format!(
@@ -173,12 +248,52 @@ fn check_report(flow: &FlowFile, registry: &ActionRegistry) -> String {
             missing.into_iter().collect::<Vec<_>>().join(", ")
         );
     }
-    report
+
+    let wanted = tools_wanted(&flow.graph);
+    let mut unknown = Vec::new();
+    match tools {
+        // Senza rilevatore non si dichiara niente: un rapporto che tace è
+        // meglio di uno che chiama sconosciuto ogni strumento perché non ha
+        // avuto modo di guardare.
+        None => {}
+        Some(tools) => {
+            let (declared, undeclared): (Vec<String>, Vec<String>) =
+                wanted.into_iter().partition(|id| tools.declares(id));
+            unknown = undeclared;
+            if !declared.is_empty() {
+                let _ = write!(report, "\nstrumenti chiesti: {}", declared.join(", "));
+            }
+            if !unknown.is_empty() {
+                let _ = write!(
+                    report,
+                    "\nstrumenti che nessun descrittore dichiara: {}",
+                    unknown.join(", ")
+                );
+            }
+        }
+    }
+    (report, unknown)
 }
 
-fn run_flow(flows_dir: &Path, name: &str) -> Result<String, String> {
-    let path = flow_path(flows_dir, name)?;
-    let flow = load_flow(&path)?;
+/// Gli strumenti che un flusso chiede per identificativo.
+///
+/// Legge il campo `tool` di ogni passo, qualunque azione sia: è il nome del
+/// campo a dire che quello è un identificativo di strumento, non l'azione che
+/// lo porta. Un'azione futura che ne chiedesse uno sarebbe controllata senza
+/// che nessuno tocchi questa funzione.
+fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
+    graph
+        .steps()
+        .iter()
+        .filter_map(|step| step.with.as_ref())
+        .filter_map(|with| with.get("tool"))
+        .filter_map(|tool| tool.as_str())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    let (flow, _) = one_flow(sources, name)?;
     // IL DEPOSITO PRIMA DEL REGISTRO, e non è un dettaglio d'ordine: i nodi
     // `store_write`/`store_read` lo possiedono, quindi un registro costruito
     // prima non li avrebbe e dichiarerebbe mancanti due azioni che esistono.
@@ -327,6 +442,29 @@ fn record_run(
 fn default_registry(ledger: Option<Ledger>) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
+    // Il rilevamento di cosa c'è sulla macchina è un'azione come le altre: un
+    // passo può chiedere «che strumenti ho qui» invece di dare per scontato che
+    // ci siano. Vive in un crate a sé perché non esegue lavoro — guarda il
+    // mondo — e perché l'elenco di cosa cercare è un dato, non codice.
+    toolbox::register_default(&mut registry);
+    // «Questi flussi girano qui?»: incrocia il rilevamento del passo prima con
+    // gli strumenti che i flussi di questa macchina chiedono. Sta accanto al
+    // rilevamento perché è la sua metà mancante — un elenco di cosa c'è non dice
+    // a nessuno cosa smetterà di funzionare.
+    toolbox::register_needs(&mut registry);
+    // Da dove arriva il segnale che fa partire un flusso: anche le sorgenti
+    // sono un elenco di descrittori, non un ramo di codice.
+    trigger::register_default(&mut registry);
+    // **QUESTA RIGA VA DOPO `actions::register_default`, E NON È UN ORDINE
+    // CASUALE**: quella registra un motore che non sa risolvere uno strumento
+    // per identificativo, questa lo sostituisce con uno che lo sa. È l'unico
+    // punto del programma dove il crate che esegue e quello che sa cosa c'è
+    // sulla macchina si incontrano — sopra restano indipendenti, e un flusso
+    // scritto altrove gira qui perché nomina strumenti, non binari.
+    registry.register(
+        actions::EXTERNAL_ENGINE_ACTION,
+        actions::ExternalEngineAction::resolving_with(toolbox::Tools::current()),
+    );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger);
     }
@@ -353,56 +491,6 @@ fn missing_actions(graph: &Graph, registry: &ActionRegistry) -> BTreeSet<String>
         .filter(|step| registry.get(&step.action).is_none())
         .map(|step| step.action.clone())
         .collect()
-}
-
-fn load_flow(path: &Path) -> Result<FlowFile, String> {
-    let bytes = std::fs::read(path)
-        .map_err(|error| format!("non riesco a leggere {}: {error}", path.display()))?;
-    serde_json::from_slice(&bytes)
-        .map_err(|error| format!("{} non è un flusso valido: {error}", path.display()))
-}
-
-fn flow_paths(flows_dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let entries = std::fs::read_dir(flows_dir)
-        .map_err(|error| format!("non riesco a leggere {}: {error}", flows_dir.display()))?;
-    let mut paths = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|error| {
-            format!("non riesco a leggere una voce in {}: {error}", flows_dir.display())
-        })?;
-        let path = entry.path();
-        // Anche una voce illeggibile deve arrivare a `load_flow`: chiedere qui
-        // i metadati con `is_file` trasformerebbe il suo errore in un falso e
-        // la farebbe sparire dall'elenco senza motivo.
-        if path.to_string_lossy().ends_with(FLOW_SUFFIX) {
-            paths.push(path);
-        }
-    }
-    paths.sort();
-    Ok(paths)
-}
-
-fn flow_path(flows_dir: &Path, name: &str) -> Result<PathBuf, String> {
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-    {
-        return Err(format!("nome di flusso non valido: {name}"));
-    }
-    Ok(flows_dir.join(format!("{name}{FLOW_SUFFIX}")))
-}
-
-fn flow_name(path: &Path) -> String {
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy())
-        .unwrap_or_else(|| path.as_os_str().to_string_lossy());
-    file_name
-        .strip_suffix(FLOW_SUFFIX)
-        .unwrap_or(&file_name)
-        .to_owned()
 }
 
 fn default_ledger_dir() -> Result<PathBuf, String> {
@@ -494,10 +582,14 @@ mod tests {
         directory.write("buono.flow.json", &flow_json("shell_check", "[]", "{}"));
         directory.write("rotto.flow.json", "{ non-json");
 
-        let report = list_flows(&directory.0).expect("elencare i flussi");
+        let report = list_flows(&[FlowSource {
+            origin: "di prova",
+            dir: directory.0.clone(),
+        }])
+        .expect("elencare i flussi");
 
-        assert!(report.contains("prova\t1 passi"), "{report}");
-        assert!(report.contains("rotto\tnon caricabile:"), "{report}");
+        assert!(report.contains("prova\t1 passi\tdi prova"), "{report}");
+        assert!(report.contains("rotto\tdi prova\tnon caricabile:"), "{report}");
         assert!(report.contains("rotto.flow.json"), "{report}");
     }
 
@@ -521,12 +613,100 @@ mod tests {
         assert!(error.to_string().contains("backward dependency"), "{error}");
     }
 
+    /// Un catalogo deciso dalla prova, così l'esito non dipende da cosa è
+    /// installato su chi la esegue.
+    fn tools_declaring(ids: &[&str]) -> toolbox::Tools {
+        let voci: Vec<String> = ids
+            .iter()
+            .map(|id| {
+                format!(
+                    r#"{{"id":"{id}","family":"tool","label":"{id}","detect":{{"command":"{id}"}}}}"#
+                )
+            })
+            .collect();
+        let file = std::env::temp_dir().join(format!("prova-strumenti-{}.json", ids.join("-")));
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, voci.join(","))).expect("scrivere");
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
+        toolbox::Tools::new(catalog, toolbox::Machine::current())
+    }
+
+    fn flow_wanting_tool(tool: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova",
+                "description": "flusso di prova",
+                "graph": {{
+                    "steps": [{{
+                        "id": "root",
+                        "deps": [],
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "when": null,
+                        "with": {{"tool": "{tool}", "timeout_secs": 10}},
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}}
+                    }}],
+                    "skippable_dependencies": []
+                }},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// Il difetto misurato il 28/08/2026: `flow check` chiudeva a zero dicendo
+    /// «azioni mancanti: nessuna» su un flusso che nominava uno strumento
+    /// inesistente, e il guasto si scopriva solo eseguendo.
+    #[test]
+    fn a_tool_no_catalogue_declares_is_named_by_the_check() {
+        let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
+        let tools = tools_declaring(&["git"]);
+
+        let (report, unknown) = check_report(&flow, &default_registry(None), Some(&tools));
+
+        assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
+        assert!(
+            report.contains("strumenti che nessun descrittore dichiara: questo-non-esiste-in-nessun-catalogo"),
+            "{report}"
+        );
+    }
+
+    /// L'altra metà, ed è quella che rende il prodotto adottabile: uno
+    /// strumento **dichiarato** non è un difetto, nemmeno quando su questa
+    /// macchina non è installato. Un flusso scritto altrove non è un flusso
+    /// rotto, e chiamarlo tale renderebbe inutilizzabile ogni flusso condiviso.
+    #[test]
+    fn a_declared_tool_is_reported_but_never_an_error() {
+        let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
+        let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
+
+        let (report, unknown) = check_report(&flow, &default_registry(None), Some(&tools));
+
+        assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
+        assert!(
+            report.contains("strumenti chiesti: strumento-dichiarato-mai-installato"),
+            "{report}"
+        );
+    }
+
+    /// Senza rilevatore il rapporto tace sugli strumenti invece di chiamarli
+    /// tutti sconosciuti: non aver potuto guardare non è aver visto che manca.
+    #[test]
+    fn without_a_detector_the_check_says_nothing_about_tools() {
+        let flow = flow_wanting_tool("qualunque");
+
+        let (report, unknown) = check_report(&flow, &default_registry(None), None);
+
+        assert!(unknown.is_empty());
+        assert!(!report.contains("strument"), "{report}");
+    }
+
     #[test]
     fn check_reports_steps_dependencies_and_every_missing_action() {
         let json = flow_json("azione_assente", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let report = check_report(&flow, &default_registry(None));
+        let (report, _) = check_report(&flow, &default_registry(None), None);
 
         assert!(report.contains("passi: 1"), "{report}");
         assert!(report.contains("cicli: nessuno"), "{report}");
@@ -550,7 +730,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let report = check_report(&flow, &default_registry(None));
+        let (report, _) = check_report(&flow, &default_registry(None), None);
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
@@ -561,6 +741,37 @@ mod tests {
         let registry = default_registry(None);
         assert!(registry.get("external_engine").is_some());
         assert!(registry.get("shell_check").is_some());
+    }
+
+    /// Il nodo di ingresso e il rilevatore sono azioni come le altre: un flusso
+    /// che li nomina si controlla senza che nessuno le registri a mano.
+    #[test]
+    fn the_trigger_and_the_detector_are_known_to_check() {
+        let registry = default_registry(None);
+        assert!(registry.get("trigger").is_some());
+        assert!(registry.get("detect_tools").is_some());
+    }
+
+    /// **IL MOTORE REGISTRATO QUI SA RISOLVERE UNO STRUMENTO.** Il mutante che
+    /// fa cadere questa prova è togliere la riga che lo sostituisce: il passo
+    /// tornerebbe a rispondere «questo motore non ha un modo per risolverlo», e
+    /// un flusso che nomina strumenti invece di binari non partirebbe più.
+    /// L'identificativo cercato non esiste apposta: la risposta che conta è
+    /// *chi* si lamenta, non che lo strumento ci sia.
+    #[test]
+    fn the_registered_engine_knows_how_to_resolve_a_tool_id() {
+        let registry = default_registry(None);
+        let engine = registry.get("external_engine").expect("il motore è registrato");
+        let input = serde_json::json!({
+            "tool": "nessuno-strumento-si-chiama-cosi",
+            "timeout_secs": 1
+        });
+
+        let error = engine
+            .execute(&input, &mut SharedState::new())
+            .expect_err("quell'identificativo non esiste");
+
+        assert_eq!(error.class, "tool_unavailable", "{}", error.said);
     }
 
     #[test]
@@ -575,17 +786,53 @@ mod tests {
         assert_eq!(request.run_id, "corsa-1");
     }
 
+    /// I FLUSSI DI CHI USA SAILOR NON SONO UNA FIXTURE. Fino al 28/08/2026
+    /// questa prova includeva `flows/prima-corsa.flow.json` a tempo di
+    /// compilazione: il giorno in cui la cartella dei flussi è stata svuotata —
+    /// un gesto legittimo di chi usa il programma — **il crate ha smesso di
+    /// compilare**. Una batteria non può dipendere dai dati dell'utente.
+    ///
+    /// Quello che la prova voleva dire resta, e vale per tutti: ogni flusso
+    /// presente si carica nella forma decisa e non nomina azioni che il motore
+    /// non sa eseguire. Una cartella vuota non è un fallimento — non c'è niente
+    /// da verificare — ma non si spaccia per una verifica riuscita: il
+    /// conteggio si stampa, così chi legge il verde sa su quanti file è passato.
     #[test]
-    fn prima_corsa_uses_the_decided_file_shape_and_only_registered_actions() {
-        let flow: FlowFile = serde_json::from_str(include_str!(
-            "../../../flows/prima-corsa.flow.json"
-        ))
-        .expect("caricare il primo flusso reale");
+    fn every_flow_on_disk_loads_and_names_only_registered_actions() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../flows");
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            println!("nessuna cartella dei flussi: niente da verificare");
+            return;
+        };
+        let mut checked = 0;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.to_string_lossy().ends_with(".flow.json") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).expect("leggere il flusso");
+            let flow: FlowFile = serde_json::from_str(&text)
+                .unwrap_or_else(|e| panic!("{} non si carica: {e}", path.display()));
+            let unknown = missing_actions(&flow.graph, &default_registry(None));
+            assert!(
+                unknown.is_empty(),
+                "{} nomina azioni che il motore non conosce: {unknown:?}",
+                path.display()
+            );
+            checked += 1;
+        }
+        println!("flussi verificati: {checked}");
+    }
 
-        assert_eq!(flow.id, "prima-corsa");
+    /// La forma decisa del file, su una fixture nostra: qui la prova deve
+    /// fallire se cambia il formato, non se qualcuno cancella un file suo.
+    #[test]
+    fn the_decided_file_shape_still_loads() {
+        let inputs = r#"{"solo":{"command":"true","env":{},"timeout_secs":1}}"#;
+        let json = flow_json("shell_check", "[]", inputs);
+        let flow: FlowFile = serde_json::from_str(&json).expect("caricare la forma decisa");
         assert_eq!(flow.graph.steps().len(), 1);
         assert!(missing_actions(&flow.graph, &default_registry(None)).is_empty());
-        assert!(flow.inputs.contains_key("working-tree-is-clean"));
     }
 
     #[test]
@@ -609,9 +856,43 @@ mod tests {
         assert_eq!(store.all()[0].input, flow.inputs["root"]);
     }
 
+    /// UN NOME NON DIVENTA PIÙ UN PERCORSO, e la protezione cambia di natura:
+    /// prima `../segreto` veniva unito alla cartella e serviva un controllo che
+    /// lo rifiutasse; adesso il nome si cerca in un elenco già costruito, quindi
+    /// non apre niente perché non c'è niente che si chiami così. La prova resta
+    /// perché la garanzia deve restare: nessun nome deve poter far leggere un
+    /// file che non è un flusso di questa macchina.
     #[test]
-    fn a_name_cannot_escape_the_flows_directory() {
-        assert!(flow_path(Path::new("/tmp/flows"), "../segreto").is_err());
-        assert!(flow_path(Path::new("/tmp/flows"), "cartella/segreto").is_err());
+    fn a_name_that_is_not_a_known_flow_opens_nothing() {
+        let directory = TestDirectory::new();
+        directory.write("buono.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = [FlowSource {
+            origin: "di prova",
+            dir: directory.0.clone(),
+        }];
+
+        for name in ["../segreto", "cartella/segreto", "", "..", "buono.flow.json"] {
+            let refused = one_flow(&sources, name).expect_err(&format!(
+                "«{name}» non è un flusso di questa macchina e non deve aprirsi"
+            ));
+            assert!(
+                refused.contains("nessun flusso si chiama"),
+                "«{name}»: {refused}"
+            );
+        }
+        assert!(one_flow(&sources, "buono").is_ok(), "il flusso vero si apre");
+    }
+
+    /// I FLUSSI SPEDITI SI VEDONO ANCHE DALLA RIGA DI COMANDO. Il difetto che
+    /// questa prova esiste per prendere: `sailor flow list` rispondeva «nessun
+    /// flusso» su una macchina appena installata mentre la finestra, dallo
+    /// stesso binario, ne mostrava due.
+    #[test]
+    fn the_command_line_sees_the_shipped_flows_too() {
+        let report = list_flows(&[FlowSource::builtin()]).expect("elencare i flussi");
+        for (name, _) in flow::system::FLOWS {
+            assert!(report.contains(name), "manca «{name}» in:\n{report}");
+        }
+        assert!(report.contains("di sistema"), "{report}");
     }
 }

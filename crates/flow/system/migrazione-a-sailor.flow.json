@@ -1,0 +1,70 @@
+{
+  "id": "migrazione-a-sailor",
+  "description": "COSA AUTOMATIZZI GIÀ, PRIMA DI CONOSCERE SAILOR — e cosa di quello si potrebbe portare dentro. Quattro passi, uno per famiglia, perché la famiglia È il verdetto. «ganci»: qualcosa che parte quando succede qualcosa; in Sailor sarebbe un innesco più un flusso. «pianificate»: qualcosa che parte a un'ora o a intervalli; in Sailor sarebbe la pianificazione di un flusso, che il formato del flusso già prevede. «script-sparsi»: programmi che lanci a mano; sarebbero un passo, e quello che manca è il «quando», che non sta scritto da nessuna parte. «viste-ma-non-lette»: trovate, e non leggibili con gli strumenti di oggi. IL CONFINE, DETTO PRIMA CHE QUALCUNO CI SBATTA CONTRO: questo flusso TROVA ED ELENCA, e non porta dentro niente. Non scrive un file, non tocca le tue automazioni, non le spegne, non le converte. Perché portarle dentro davvero servirebbero tre cose che Sailor oggi non ha: leggere un plist (XML), un TOML e una tabella cron per sapere COSA fa un'automazione e QUANDO; un'azione che scriva un file di flusso, perché nessuna azione registrata oggi scrive flussi; e delle sorgenti di innesco che ascoltino davvero, mentre oggi funziona solo quella manuale. Finché quelle tre mancano, una migrazione automatica sarebbe una recita: si vedrebbe un flusso nuovo che non fa quello che faceva l'automazione, e nessuno se ne accorgerebbe finché non serve. QUESTO FLUSSO LEGGE LA TUA CONFIGURAZIONE PERSONALE. Legge e basta: non scrive niente, non esegue niente — nessun descrittore di questo catalogo dichiara un comando di versione — e non manda niente da nessuna parte; quello che trova finisce nel deposito locale di Sailor, sulla tua macchina. Se non vuoi che i nomi dei tuoi script e dei tuoi servizi finiscano lì, non lanciarlo. COSA CERCARE È UN DATO: sta nel catalogo «automations» spedito col prodotto, e su un'altra macchina ci sarà altro — si aggiunge scrivendo un file JSON e chiedendolo con «descriptor_paths», senza ricompilare niente. UN «NON C'È» QUI NON È SEMPRE UNA MISURA: dove una cartella non si è potuta leggere la risposta è «non ho potuto guardare», col motivo, e le due non vanno confuse — vale in particolare per la tabella cron personale, che quasi ovunque è leggibile solo da root.",
+  "graph": {
+    "steps": [
+      {
+        "id": "ganci",
+        "deps": [],
+        "action": "detect_tools",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "pianificate",
+        "deps": [],
+        "action": "detect_tools",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "script-sparsi",
+        "deps": [],
+        "action": "detect_tools",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "viste-ma-non-lette",
+        "deps": [],
+        "action": "detect_tools",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "ganci": {
+      "builtin_catalogs": ["automations"],
+      "include_defaults": false,
+      "version_probes": false,
+      "family": "automation_hook"
+    },
+    "pianificate": {
+      "builtin_catalogs": ["automations"],
+      "include_defaults": false,
+      "version_probes": false,
+      "family": "automation_schedule"
+    },
+    "script-sparsi": {
+      "builtin_catalogs": ["automations"],
+      "include_defaults": false,
+      "version_probes": false,
+      "family": "automation_script"
+    },
+    "viste-ma-non-lette": {
+      "builtin_catalogs": ["automations"],
+      "include_defaults": false,
+      "version_probes": false,
+      "family": "automation_opaque"
+    }
+  }
+}

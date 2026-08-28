@@ -616,7 +616,7 @@ impl Action for NotteTaskAction {
                 // meglio un punto interrogativo onesto di un numero inventato.
                 _ => (format!("{stdout}{stderr}"), "?".to_string(), None),
             },
-            actions::EngineResult::ExitError { stdout, stderr } => (
+            actions::EngineResult::ExitError { stdout, stderr, .. } => (
                 String::new(),
                 "?".to_string(),
                 Some(("errore".to_string(), format!("{stdout}{stderr}"))),
@@ -629,10 +629,10 @@ impl Action for NotteTaskAction {
                     format!("il motore non ha risposto entro {}s\n", spec.engine_timeout_secs),
                 )),
             ),
-            actions::EngineResult::SpawnFailed => (
+            actions::EngineResult::SpawnFailed { reason } => (
                 String::new(),
                 "?".to_string(),
-                Some(("errore".to_string(), "il motore non è partito\n".to_string())),
+                Some(("errore".to_string(), format!("il motore non è partito: {reason}\n"))),
             ),
         };
 
@@ -659,9 +659,15 @@ impl Action for NotteTaskAction {
         };
         let (kind, reason) = match actions::run_shell_check(&check_invocation) {
             actions::CheckResult::Passed => ("green".to_string(), String::new()),
-            actions::CheckResult::Failed => {
-                ("red_check".to_string(), "verifica fallita".to_string())
-            }
+            actions::CheckResult::Failed { code, stderr } => (
+                "red_check".to_string(),
+                format!(
+                    "verifica fallita ({}): {}",
+                    code.map(|c| format!("codice {c}"))
+                        .unwrap_or_else(|| "ucciso da un segnale".to_string()),
+                    if stderr.trim().is_empty() { "nessun messaggio" } else { stderr.trim() }
+                ),
+            ),
             actions::CheckResult::TimedOut => (
                 "red_check_timeout".to_string(),
                 format!("verifica: timeout dopo {}s", spec.check_timeout_secs),

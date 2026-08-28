@@ -4,7 +4,7 @@
 //! controlla prima che il deposito esista già, e solo allora si apre.
 
 use crate::parse::{parse_model_calls, parse_runs};
-use crate::registry::{FlowFile, FlowRegistry};
+use crate::registry::FlowRegistry;
 use flow::StepRecord;
 use ledger::{Ledger, ModelCallRecord, RunRecord};
 use std::collections::BTreeMap;
@@ -65,64 +65,23 @@ pub fn gather(dir: &Path) -> Result<Option<GatheredData>, GatherError> {
     }))
 }
 
-/// Legge i flussi dichiarativi nella cartella (formato `{ id, description, graph, inputs }`).
+/// Legge i flussi di una sorgente.
 ///
-/// In precedenza i file non leggibili venivano saltati in silenzio con la motivazione
-/// che "la pagina non deve rompersi perché un file è a metà scritto". Quella scelta era
-/// sbagliata: un file a metà scritto è uno stato transitorio di pochi millisecondi,
-/// mentre un file rotto è permanente, e trattarli allo stesso modo fa sparire il secondo
-/// per sempre. Chi guarda la finestra vede un elenco corto senza sapere che è corto.
+/// **PASSA DA QUI ANCHE LA SORGENTE DI SISTEMA, che non è una cartella.** I
+/// flussi spediti col prodotto stanno dentro il binario: chiedere il loro
+/// elenco a `read_dir` darebbe zero, e chi mostra «dove ho guardato e cosa ho
+/// trovato» scriverebbe «di sistema: 0 flussi» accanto a flussi di sistema che
+/// stanno girando. Il riconoscimento sta qui e non in chi chiama perché i
+/// chiamanti sono più di uno — la finestra conta le voci di ogni sorgente — e un
+/// ramo dimenticato là fuori è invisibile.
 ///
-/// Ora ogni file `*.flow.json` o `*.json` viene incluso nel registro: se è valido viene
-/// caricato come [`FlowFile`], se è illeggibile o malformato viene registrato con il
-/// motivo del rifiuto, così la finestra può mostrarlo marcato.
+/// Il resto è come è sempre stato, e la ragione sta in `flow::system`: un flusso
+/// rotto entra nel registro col suo motivo invece di sparire.
 pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
-    let mut registry = FlowRegistry::new();
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return registry;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy())
-            .unwrap_or_default();
-        let is_flow_json = file_name.ends_with(".flow.json");
-        let is_json = path.extension().and_then(|ext| ext.to_str()) == Some("json");
-        if !is_flow_json && !is_json {
-            continue;
-        }
-        let name = file_name
-            .strip_suffix(".flow.json")
-            .or_else(|| file_name.strip_suffix(".json"))
-            .unwrap_or(&file_name)
-            .to_owned();
-        if name.is_empty() {
-            continue;
-        }
-        let text = match std::fs::read_to_string(&path) {
-            Ok(content) => content,
-            Err(error) => {
-                registry.insert(
-                    name,
-                    Err(format!("non riesco a leggere {}: {error}", path.display())),
-                );
-                continue;
-            }
-        };
-        match serde_json::from_str::<FlowFile>(&text) {
-            Ok(flow) => {
-                registry.insert(name, Ok(flow));
-            }
-            Err(error) => {
-                registry.insert(
-                    name,
-                    Err(format!("{} non è un flusso valido: {error}", path.display())),
-                );
-            }
-        }
+    if flow::system::is_place(dir) {
+        return flow::system::builtin_registry();
     }
-    registry
+    flow::system::load_registry(dir)
 }
 
 /// La casa di Sailor: dove vivono i flussi, il deposito e la configurazione.
@@ -184,6 +143,52 @@ pub fn default_flows_dir() -> PathBuf {
     )
 }
 
+/// Da dove viene un flusso: il tipo vive nel crate del flusso, perché dal
+/// 29/08/2026 non è più solo la finestra a chiedersi dove stanno i flussi — lo
+/// chiede anche un passo, e due risposte alla stessa domanda sono il difetto che
+/// `crates/flow/src/file.rs` racconta di aver già pagato sul formato del file.
+pub use flow::system::FlowSource;
+
+/// Tutti i posti in cui si cercano i flussi, nell'ordine in cui si guardano.
+///
+/// **PERCHÉ PIÙ DI UNO, E PERCHÉ È UN DIFETTO CHE FOSSE UNO SOLO.** Il 29/08/2026
+/// la finestra mostrava «nessun flusso» mentre la riga di comando ne eseguiva
+/// quattro: la prima guardava nella casa dell'utente, la seconda in `flows/`
+/// sotto la cartella di lavoro. Nessuna delle due sbagliava da sola — sbagliava
+/// il fatto che ce ne fosse una sola, perché **i due posti servono a due cose
+/// diverse**: nella casa stanno i flussi di chi usa Sailor, che valgono ovunque
+/// si trovi; nel progetto stanno i flussi di quel progetto, che vanno con lui e
+/// non riguardano nessun altro.
+///
+/// **E LA TERZA È QUELLA CHE FA DI SAILOR UN PRODOTTO.** I flussi di sistema
+/// sono spediti dentro il binario: chi installa Sailor su una macchina pulita
+/// trova già dei flussi, senza che nessuno gli abbia copiato una cartella. Sono
+/// i meno specifici — `di sistema` < `tuoi` < `del progetto` — quindi chi ne
+/// vuole uno diverso ne scrive uno con lo stesso nome in casa propria o nel
+/// proprio progetto, e vince il suo.
+///
+/// La regola che governa tutto è l'ordine, e il perché sta in `flow::system`.
+pub fn flow_sources() -> Vec<FlowSource> {
+    let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
+    let working = std::env::current_dir().ok();
+    flow::system::sources(
+        &sailor_home().join("flows"),
+        working.as_deref(),
+        declared.as_deref().map(Path::new),
+    )
+}
+
+/// I flussi di tutte le sorgenti, ciascuno con l'origine da cui viene.
+///
+/// A parità di nome vince l'ultima sorgente, cioè la più specifica, e l'origine
+/// resta visibile su ogni riga: una sostituzione silenziosa fa credere di aver
+/// modificato un flusso che non è quello che gira.
+pub fn load_all_flows(
+    sources: &[FlowSource],
+) -> Vec<(String, &'static str, Result<flow::FlowFile, String>)> {
+    flow::system::load_all(sources)
+}
+
 /// La scelta, senza l'ambiente: si prova questa, non quella sopra.
 ///
 /// Le variabili d'ambiente sono globali al processo e le prove girano in
@@ -196,6 +201,40 @@ fn flows_dir_from(explicit: Option<PathBuf>, home: PathBuf) -> PathBuf {
     explicit
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(|| home.join("flows"))
+}
+
+#[cfg(test)]
+mod flow_sources_tests {
+    use super::*;
+
+    /// LA SORGENTE CHE FA DI SAILOR UN PRODOTTO, e la prova sta qui perché è
+    /// qui che la finestra la chiede: su una macchina appena installata, senza
+    /// che nessuno abbia copiato niente, dei flussi ci sono. Le regole di
+    /// precedenza e di sovrascrittura si provano in `flow::system`, dove
+    /// vivono.
+    #[test]
+    fn the_window_always_sees_the_shipped_flows_first() {
+        let sources = flow_sources();
+        assert_eq!(sources[0].origin, "di sistema");
+        assert!(sources[0].is_builtin());
+        assert!(
+            !load_flow_registry(&sources[0].dir).is_empty(),
+            "la sorgente di sistema non è una cartella e va letta dal binario"
+        );
+    }
+
+    /// IL NUMERO CHE LA FINESTRA MOSTRA ACCANTO A OGNI SORGENTE passa da
+    /// `load_flow_registry`. Se la sorgente di sistema rispondesse zero, chi
+    /// guarda leggerebbe «di sistema: 0 flussi» accanto a flussi di sistema che
+    /// stanno girando, e non avrebbe modo di capire che il conto è sbagliato e
+    /// non l'elenco.
+    #[test]
+    fn counting_the_system_source_gives_the_shipped_flows() {
+        assert_eq!(
+            load_flow_registry(&FlowSource::builtin().dir).len(),
+            flow::system::FLOWS.len()
+        );
+    }
 }
 
 #[cfg(test)]
