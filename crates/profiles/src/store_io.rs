@@ -54,13 +54,25 @@ pub fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
     }
 }
 
+/// La cartella da creare prima di scrivere, o niente se non ce n'è una.
+///
+/// Il filtro sul vuoto non è pignoleria: per un percorso senza cartella
+/// ("profili.json") `parent()` risponde `Some("")`, e `create_dir_all("")`
+/// fallisce con «file inesistente» — il salvataggio si rifiuterebbe pur avendo
+/// i permessi sulla cartella corrente. Segnalato il 27/08/2026 da un revisore
+/// indipendente.
+///
+/// STA IN UNA FUNZIONE A SÉ PERCHÉ LA PROVA NON DEVE SPOSTARSI DI CARTELLA.
+/// Provare il nome nudo per il suo effetto voleva dire `set_current_dir`, che è
+/// di **processo**: mentre girava, le prove parallele scrivevano altrove e
+/// cadevano. Il 28/08/2026 quella prova ha fatto fallire due batterie e
+/// fermato un rilascio. La decisione, qui, si prova senza toccare niente.
+fn parent_to_create(path: &Path) -> Option<&Path> {
+    path.parent().filter(|p| !p.as_os_str().is_empty())
+}
+
 pub fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
-    // Il filtro sul vuoto non è pignoleria: per un percorso senza cartella
-    // ("profili.json") `parent()` risponde `Some("")`, e `create_dir_all("")`
-    // fallisce con «file inesistente» — il salvataggio si rifiuterebbe pur
-    // avendo i permessi sulla cartella corrente. Segnalato il 27/08/2026 da un
-    // revisore indipendente.
-    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+    if let Some(parent) = parent_to_create(path) {
         fs::create_dir_all(parent)
             .map_err(|e| format!("impossibile creare {}: {e}", parent.display()))?;
     }
@@ -256,17 +268,31 @@ mod tests {
     /// Un percorso senza cartella davanti: `parent()` risponde con la stringa
     /// vuota, e chi la passa a `create_dir_all` si sente rispondere «file
     /// inesistente» pur avendo i permessi. Prima della riparazione del
-    /// 27/08/2026 questa prova falliva.
+    /// 27/08/2026 il salvataggio di un nome nudo falliva.
+    ///
+    /// I TRE BRACCI SONO LA PROVA: il nome nudo non ha una cartella da creare,
+    /// quello con una cartella davanti ce l'ha, e quello assoluto pure. Togli il
+    /// filtro sul vuoto in `parent_to_create` e il primo diventa rosso.
     #[test]
-    fn a_bare_filename_saves_into_the_current_directory() {
+    fn a_bare_filename_has_no_directory_to_create() {
+        assert_eq!(parent_to_create(Path::new("profili.json")), None);
+        assert_eq!(
+            parent_to_create(Path::new("stato/profili.json")),
+            Some(Path::new("stato"))
+        );
+        assert_eq!(
+            parent_to_create(Path::new("/tmp/stato/profili.json")),
+            Some(Path::new("/tmp/stato"))
+        );
+    }
+
+    /// E il salvataggio vero riesce davvero, provato dove nessun'altra prova sta
+    /// guardando: una cartella tutta sua, con un percorso assoluto.
+    #[test]
+    fn the_store_is_written_where_it_is_asked_to_be() {
         let dir = TempDir::new();
-        let previous = env::current_dir().expect("cartella corrente");
-        env::set_current_dir(dir.path()).expect("mi sposto nella cartella di prova");
-
-        let outcome = save_store_to(Path::new("profili.json"), &ProfileStore::default());
-
-        env::set_current_dir(previous).expect("torno dov'ero");
-        outcome.expect("un nome nudo deve salvarsi nella cartella corrente");
-        assert!(dir.path().join("profili.json").exists());
+        let path = dir.path().join("dentro").join("profili.json");
+        save_store_to(&path, &ProfileStore::default()).expect("il salvataggio deve riuscire");
+        assert!(path.exists());
     }
 }
