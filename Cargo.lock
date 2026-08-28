@@ -567,6 +567,7 @@ name = "ui"
 version = "0.1.0"
 dependencies = [
  "flow",
+ "inventory",
  "ledger",
  "serde",
  "serde_json",
