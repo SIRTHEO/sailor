@@ -366,11 +366,19 @@ pub fn wakeup_prompt(transcript: &str) -> Option<String> {
 /// **7 risolti prima, 14 dopo**. Un percorso relativo resta invariato di
 /// proposito — qui non c'è una cartella di lavoro da cui risolverlo, e
 /// inventarne una darebbe un file esistente ma sbagliato.
-fn expand_home(path: &str) -> String {
+/// LA CASA ARRIVA COME ARGOMENTO, e non è un vezzo: `HOME` è una variabile di
+/// **processo**, e in questo crate le prove la spostano per farsi una casa
+/// isolata. Una prova che leggesse `HOME` da sé cadrebbe quando gira accanto a
+/// una di quelle — è successo il 28/08/2026, e ha fermato un rilascio.
+fn expand_home_with(path: &str, home: &std::path::Path) -> String {
     match path.strip_prefix("~/") {
-        Some(rest) => dirs_home().join(rest).to_string_lossy().into_owned(),
+        Some(rest) => home.join(rest).to_string_lossy().into_owned(),
         None => path.to_string(),
     }
+}
+
+fn expand_home(path: &str) -> String {
+    expand_home_with(path, &dirs_home())
 }
 
 pub fn mandate_file(transcript: &str) -> Option<String> {
@@ -675,17 +683,24 @@ mod tests {
     /// Theo, e sotto una HOME finta proverebbe l'espansione contro se stessa.
     /// Il braccio che conta è il secondo: un percorso già assoluto non deve
     /// muoversi di un carattere.
+    ///
+    /// LA CASA SI PASSA, NON SI LEGGE: in questo crate le prove spostano `HOME`
+    /// per farsi una casa isolata, ed è di processo. La prima versione la
+    /// leggeva da sé, cadeva quando girava accanto a una di quelle, e ha
+    /// fermato un rilascio il 28/08/2026 — verde da sola, rossa in batteria.
     #[test]
     fn a_mandate_written_with_a_tilde_is_resolved_against_home() {
-        let home = dirs_home();
+        let home = std::path::Path::new("/casa/di/prova");
         assert_eq!(
-            expand_home("~/.claude/state/plancia/mandati/x.md"),
-            home.join(".claude/state/plancia/mandati/x.md")
-                .to_string_lossy()
+            expand_home_with("~/.claude/state/plancia/mandati/x.md", home),
+            "/casa/di/prova/.claude/state/plancia/mandati/x.md"
         );
-        assert_eq!(expand_home("/tmp/plancia/mandati/x.md"), "/tmp/plancia/mandati/x.md");
+        assert_eq!(
+            expand_home_with("/tmp/plancia/mandati/x.md", home),
+            "/tmp/plancia/mandati/x.md"
+        );
         // `~altro/…` non è la casa di nessuno qui: resta com'è scritto.
-        assert_eq!(expand_home("~altrui/x.md"), "~altrui/x.md");
+        assert_eq!(expand_home_with("~altrui/x.md", home), "~altrui/x.md");
     }
 
     /// Il payload vero di un subagent: la sessione e il transcript sono quelli
