@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "tot=$(ls -1 \"$HOME\"/.claude/state/plancia/segnalazioni/*.md 2>/dev/null | wc -l | tr -d ' '); con=$(grep -l '^destinatario:' \"$HOME\"/.claude/state/plancia/segnalazioni/*.md 2>/dev/null | wc -l | tr -d ' '); real=$((tot - con)); [ \"$real\" -le 200 ]",
           "timeout_secs": 120

@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "m=$(ls -1 \"$HOME\"/.claude/docs/AGENTS.md 2>/dev/null | wc -l | tr -d ' '); i=$(\"$HOME/.claude/bin/claude-hooks\" indice cerca \"dove si decide se un compito notturno va eseguito\" 2>/dev/null | grep -c \"notte/src/lib.rs\"); [ \"$m\" = \"1\" ] && [ \"$i\" -ge 1 ]",
           "timeout_secs": 120
@@ -142,7 +146,7 @@
         "workspace-write",
         "-c",
         "sandbox_workspace_write={network_access=true}",
-        "Verifica due cose e riporta i risultati. Primo: leggi il file AGENTS.md che trovi risalendo dalla cartella di lavoro, e dì in una riga quale cartella contiene le memorie di questo progetto. Secondo: lancia il comando ~/.claude/rust/target/release/claude-hooks indice cerca \"dove si decide se un compito notturno va eseguito o saltato\" e dì in una riga il nome del file Rust che contiene la decisione. Chiudi con una riga esatta: motori_vedono_casa: si oppure motori_vedono_casa: no"
+        "Verifica due cose e riporta i risultati. Primo: leggi il file AGENTS.md che trovi risalendo dalla cartella di lavoro, e dì in una riga quale cartella contiene le memorie di questo progetto. Secondo: lancia il comando ~/.claude/bin/claude-hooks indice cerca \"dove si decide se un compito notturno va eseguito o saltato\" e dì in una riga il nome del file Rust che contiene la decisione. Chiudi con una riga esatta: motori_vedono_casa: si oppure motori_vedono_casa: no"
       ],
       "env": {},
       "timeout_secs": 300
