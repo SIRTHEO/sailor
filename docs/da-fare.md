@@ -108,8 +108,22 @@ corsa di quel flusso; qui l'indice:
 
 - Il flusso di ricerca `come-lo-risolvono-gli-altri`, al terzo passo su cinque.
 - Un cantiere sui flussi di sistema e sulla ricerca degli strumenti come flusso.
-- `sviluppa-sailor` è scritto e valido, in attesa che il workspace compili. Primo
-  mandato: **dare a un flusso il modo di guardare com'è andata** — le azioni del
-  deposito esistono, ma leggono un archivio a chiave; nessuna interroga lo
-  storico delle corse. È l'anello che separa un sistema che ripete da uno che
-  accumula.
+- `sviluppa-sailor` è scritto e valido, in attesa che il workspace compili.
+- **Un flusso può guardare com'è andata**: fatto il 29/08/2026. L'azione
+  `history_ask` risponde a quattro domande nominate — quante volte un passo è
+  fallito e con che classe, quali guasti sono i più frequenti, com'è andata
+  l'ultima corsa chiusa di un flusso, quanto ci mette di solito un passo — e
+  compare fra le «azioni disponibili» di `sailor flow check`. Niente SQL nei
+  file di flusso: lo schema resta in `ledger`, e le domande sono chiuse.
+  `input` e `output` non escono mai; `said` esce solo su richiesta esplicita,
+  dai soli passi rotti di una corsa sola, troncato. Deposito assente, deposito
+  vuoto e zero guasti sono tre risposte diverse, e nessuna delle tre rompe il
+  passo.
+  Restano aperti due limiti che nessun controllo locale mostra — restano verdi:
+  - **Le durate sono in secondi interi**, perché l'orologio del motore conta
+    secondi: un passo che dura meno di un secondo misura zero, e due zeri non
+    si confrontano. La risposta lo dichiara nel campo `unit`, ma dichiararlo
+    non lo risolve.
+  - **I passi di corse mai registrate in `runs` restano fuori da ogni finestra**:
+    il flusso di appartenenza vive solo nell'intestazione della corsa, quindi
+    senza intestazione quei passi non si possono attribuire e non si contano.
