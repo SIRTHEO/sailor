@@ -62,8 +62,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// successore arriverà, perché il tetto della generazione è assoluto. Sono 118
 /// rinvii su 1.438 (l'8%), non un'eccezione. Registrare in silenzio è
 /// esattamente ciò che serve: nessuno lo dice a lei, ma il filo si vede.
-const UNCOVERING_REASONS: &[&str] =
-    &["fuori-orario", "troppe-sessioni", "albero-affollato", "seconda-generazione"];
+/// `nessun-successore` è arrivato il 28/08/2026 e ha inghiottito gli altri
+/// quattro: quelli erano i tetti per cui il presidio **rinviava** l'apertura,
+/// e il presidio è stato smontato. Adesso nessuno apre più un successore per
+/// scelta, quindi la condizione non è più «un tetto ha detto no» ma «per
+/// costruzione non arriva nessuno». I quattro nomi restano perché i marcatori
+/// già scritti sul disco li portano, e leggerli non deve diventare un errore.
+const UNCOVERING_REASONS: &[&str] = &[
+    "nessun-successore",
+    "fuori-orario",
+    "troppe-sessioni",
+    "albero-affollato",
+    "seconda-generazione",
+];
 
 /// Oltre questa età un filo si mostra anche se la sua sessione risulta viva.
 ///
@@ -580,14 +591,17 @@ mod tests {
     /// il difetto di stamattina, e la batteria non se n'era accorta.
     #[test]
     fn both_ends_of_the_marker_are_wired_where_they_belong() {
-        let arms = include_str!("successor.rs");
+        // IL PRIMO CAPO HA CAMBIATO CASA IL 28/08/2026, e la prova con lui: lo
+        // teneva chi rinviava l'apertura di un successore, e quel presidio è
+        // stato smontato. Adesso lo tiene chi chiude il turno dopo aver
+        // consegnato — l'unico momento in cui si sa che un lavoro finisce e
+        // nessuno lo prende. Il secondo capo, quello che cancellava per
+        // sessione, non esiste più: senza un successore che parte manca
+        // l'evento che lo toglieva, e resta `clear_tree` qui sotto.
+        let settles = include_str!("handoff_on_stop.rs");
         assert!(
-            arms.contains("uncovered_thread::declare("),
-            "chi rinvia il successore non dichiara piu' il filo scoperto: nessuno sapra' che quel lavoro non ha nessuno"
-        );
-        assert!(
-            arms.contains("uncovered_thread::clear("),
-            "il successore che parte non toglie piu' il marcatore: l'elenco terrebbe righe gia' risolte"
+            settles.contains("uncovered_thread::declare("),
+            "chi chiude il turno non dichiara più il filo scoperto: nessuno saprà che quel lavoro non ha nessuno"
         );
         let starts = include_str!("register_session.rs");
         assert!(
