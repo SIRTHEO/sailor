@@ -1,0 +1,151 @@
+{
+  "id": "triage-voci-senza-gravita",
+  "description": "Lavorazione ogni-notte, peso leggero: invoca codex e poi verifica il risultato.",
+  "graph": {
+    "steps": [
+      {
+        "id": "motore",
+        "deps": [],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "bin": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "bin",
+            "args",
+            "env",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": [
+          "motore"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "D=$HOME/.claude/state/plancia/segnalazioni\naperte=$(grep -l '^stato: aperta' $D/*.md 2>/dev/null | wc -l | tr -d ' ')\nsenza=$(for f in $(grep -l '^stato: aperta' $D/*.md 2>/dev/null); do grep -q '^gravita:' \"$f\" || echo x; done | wc -l | tr -d ' ')\n# Verde solo se il numero di voci aperte senza gravita' e' sceso sotto quello\n# di partenza (71 al 2026-08-26). Rossa se nessuna e' stata classificata, e\n# rossa anche se qualcuno ha chiuso voci per far scendere il numero: le aperte\n# non devono calare piu' di quanto siano state classificate.\n[ -n \"$senza\" ] && [ \"$senza\" -lt 71 ] && [ \"$aperte\" -ge 70 ]",
+          "timeout_secs": 120
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr",
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed",
+                "failed",
+                "timed_out"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "motore": {
+      "bin": "codex",
+      "args": [
+        "exec",
+        "-s",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write={network_access=true}",
+        "In ~/.claude/state/plancia/segnalazioni/ ci sono voci di guasto in Markdown con un frontmatter YAML fra `---`. Una voce e' aperta se il frontmatter ha una riga `stato: aperta`.\n\nMolte voci aperte NON hanno la riga `gravita:`. Senza quella riga nessuno puo' ordinare la coda per urgenza, quindi nessuno puo' occuparsi prima delle cose piu' gravi: e' il motivo per cui questa coda cresce invece di scendere.\n\nIl tuo compito: prendi fino a 10 voci APERTE che non hanno la riga `gravita:`, leggile per intero, e aggiungi a ciascuna UNA riga nel frontmatter, subito dopo la riga `stato:`, con uno di questi quattro valori esatti:\n\n- `gravita: blocca`   qualcuno non puo' andare avanti finche' non e' risolta, oppure si perde lavoro o dati\n- `gravita: alta`     porta a una conclusione SBAGLIATA: un controllo che dice verde quando e' rosso, un comando che dice riuscito quando ha fallito, un numero falso su cui si decide\n- `gravita: media`    costringe a una deviazione nota ogni volta, ma chi la conosce arriva in fondo\n- `gravita: rallenta` costa tempo o rumore, nessuno prende decisioni sbagliate per colpa sua\n\nIl criterio che separa `alta` da `media` e' uno solo, e non e' quanto e' fastidiosa: **una voce e' `alta` quando chi si fida di cio' che vede conclude il falso**. Un diniego chiaro che si aggira e' `media`, anche se e' fastidiosissimo; una riga verde che nasconde un guasto e' `alta`, anche se costa un secondo.\n\nRegole rigide:\n- Modifica SOLO il frontmatter, SOLO aggiungendo la riga `gravita:`. Non toccare il corpo, non toccare `stato:`, non riscrivere altre righe, non riformattare.\n- Se una voce ha gia' una riga `gravita:`, saltala e basta.\n- Non creare, non cancellare, non rinominare file.\n- Non chiudere nessuna voce: assegnare la gravita' non e' risolvere.\n\nAlla fine scrivi una riga esatta nella forma: voci_classificate: N\ne sotto, per ognuna, una riga `<gravita> <nome-file>` con la ragione in mezza riga."
+      ],
+      "env": {},
+      "timeout_secs": 300
+    }
+  }
+}

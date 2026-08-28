@@ -1,0 +1,151 @@
+{
+  "id": "sentinella-ganci-binario-assente",
+  "description": "Lavorazione ogni-notte, peso leggero: invoca codex e poi verifica il risultato.",
+  "graph": {
+    "steps": [
+      {
+        "id": "motore",
+        "deps": [],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "bin": {
+              "type": "string"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "bin",
+            "args",
+            "env",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": [
+          "motore"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "real=$(for f in \"$HOME\"/.claude/settings.json \"$HOME\"/.claude/settings.local.json; do [ -f \"$f\" ] && grep -hoE '\"command\"[[:space:]]*:[[:space:]]*\"[^\"]+\"' \"$f\"; done 2>/dev/null | sed 's/.*: *\"//;s/\"$//' | while IFS= read -r cmd; do exe=${cmd%%[[:space:]]*}; command -v \"$exe\" >/dev/null 2>&1 || [ -x \"$exe\" ] || printf x; done | wc -c | tr -d ' '); [ -n \"$real\" ] && [ \"$real\" -eq 0 ]",
+          "timeout_secs": 120
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok",
+                "exit_error",
+                "timed_out",
+                "spawn_failed"
+              ]
+            },
+            "stdout": {
+              "type": "string"
+            },
+            "stderr": {
+              "type": "string"
+            },
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "status",
+            "stdout",
+            "stderr",
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed",
+                "failed",
+                "timed_out"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "motore": {
+      "bin": "codex",
+      "args": [
+        "exec",
+        "-s",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write={network_access=true}",
+        "Nei due file ~/.claude/settings.json e ~/.claude/settings.local.json cerca i campi \"command\" dei ganci e verifica se il primo pezzo di ogni comando si puo' davvero eseguire: o e' un comando che la shell conosce, o e' un file eseguibile. Usa grep, non leggere i file per intero. Elenca ogni comando che non si puo' eseguire, uno per riga, nella forma 'assente: <comando>'. Chiudi con una riga esatta: ganci_con_binario_assente: N"
+      ],
+      "env": {},
+      "timeout_secs": 300
+    }
+  }
+}
