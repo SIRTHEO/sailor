@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "real=$(find \"$HOME/.claude\" -type f \\( -name '*.md' -o -name '*.txt' \\) -exec sh -c 'for f do bad=; for p in $(grep -oE \"~/.claude/[A-Za-z0-9._/-]+\" \"$f\" 2>/dev/null); do [ -e \"$HOME${p#\\~}\" ] || bad=1; done; [ \"$bad\" = 1 ] && printf x; done' sh {} + 2>/dev/null | wc -c | tr -d ' '); [ -n \"$real\" ] && [ \"$real\" -le 288 ]",
           "timeout_secs": 120
