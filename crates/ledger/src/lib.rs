@@ -89,6 +89,52 @@ pub struct RunRecord {
     pub ended_at: Option<i64>,
 }
 
+/// Una voce vista da una scansione dell'inventario.
+///
+/// I campi sono testo e basta: il deposito **non** dipende dal crate che li
+/// produce, e non deve. Se un giorno l'inventario impara a riconoscere una
+/// famiglia nuova, qui non cambia niente — mentre un `enum` condiviso
+/// obbligherebbe a migrare il deposito per ogni parola nuova.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InventoryItem {
+    pub kind: String,
+    pub name: String,
+    pub origin: String,
+    pub path: String,
+    /// `active`, `inactive` o `unknown`.
+    pub reach: String,
+    /// Perché non è raggiungibile, quando non lo è.
+    pub reason: Option<String>,
+}
+
+/// Una scansione intera, con il suo istante.
+///
+/// SI DEPOSITA LA SCANSIONE, NON LA SINGOLA VOCE, e la differenza è tutto ciò
+/// che rende utile il deposito: **da un elenco completo si sa anche che cosa
+/// non c'è più**. Registrando voce per voce si saprebbe solo che cosa è stato
+/// visto, e «sparito» resterebbe indistinguibile da «non ancora guardato» —
+/// cioè proprio la domanda per cui questo deposito esiste.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InventoryScan {
+    pub taken_at: i64,
+    pub items: Vec<InventoryItem>,
+}
+
+/// Che cosa è cambiato per una voce fra due scansioni.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InventoryChange {
+    pub kind: String,
+    pub name: String,
+    pub path: String,
+    pub origin: String,
+    pub reach: String,
+    pub reason: Option<String>,
+    pub first_seen: i64,
+    pub last_seen: i64,
+    /// L'istante della scansione in cui è sparita, se è sparita.
+    pub gone_at: Option<i64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCallRecord {
     pub call_id: String,
@@ -171,6 +217,7 @@ enum StoredEvent {
     StepClosed(StepRecord),
     ModelCallRecorded(ModelCallRecord),
     SnapshotRecorded(SnapshotRecord),
+    InventoryScanned(InventoryScan),
     Trace(TraceRecord),
 }
 
@@ -251,6 +298,51 @@ impl Ledger {
 
     pub fn record_snapshot(&self, record: &SnapshotRecord) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::SnapshotRecorded(record.clone()))
+    }
+
+    /// Deposita una scansione dell'inventario.
+    pub fn record_inventory(&self, scan: &InventoryScan) -> Result<(), LedgerError> {
+        self.write_event(StoredEvent::InventoryScanned(scan.clone()))
+    }
+
+    /// Le voci sparite: c'erano, e l'ultima scansione non le ha più viste.
+    ///
+    /// È la domanda che un elenco calcolato ogni volta non sa porsi. Serve
+    /// prima di cancellare qualunque cosa: una voce sparita da ieri è un
+    /// cambiamento da capire, una sparita da un mese è spazzatura già morta.
+    pub fn inventory_gone(&self) -> Result<Vec<InventoryChange>, LedgerError> {
+        self.inventory_where("gone_at IS NOT NULL", "gone_at DESC, kind, name")
+    }
+
+    /// Le voci apparse dopo un certo istante — «che cosa è cambiato da ieri».
+    pub fn inventory_new_since(&self, since: i64) -> Result<Vec<InventoryChange>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT kind, name, path, origin, reach, reason, first_seen, last_seen, gone_at
+             FROM inventory_items WHERE first_seen >= ?1 AND gone_at IS NULL
+             ORDER BY first_seen DESC, kind, name",
+        )?;
+        let rows = statement.query_map(params![since], read_inventory_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Tutto ciò che c'è adesso, come lo ha visto l'ultima scansione.
+    pub fn inventory_present(&self) -> Result<Vec<InventoryChange>, LedgerError> {
+        self.inventory_where("gone_at IS NULL", "kind, name")
+    }
+
+    fn inventory_where(
+        &self,
+        condition: &str,
+        order: &str,
+    ) -> Result<Vec<InventoryChange>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT kind, name, path, origin, reach, reason, first_seen, last_seen, gone_at
+             FROM inventory_items WHERE {condition} ORDER BY {order}"
+        ))?;
+        let rows = statement.query_map([], read_inventory_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     pub fn append_step_started(&self, record: &StepRecord) -> Result<(), LedgerError> {
@@ -765,6 +857,18 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              after_state TEXT NOT NULL,
              created_at INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS inventory_items (
+             kind TEXT NOT NULL,
+             name TEXT NOT NULL,
+             path TEXT NOT NULL,
+             origin TEXT NOT NULL,
+             reach TEXT NOT NULL,
+             reason TEXT,
+             first_seen INTEGER NOT NULL,
+             last_seen INTEGER NOT NULL,
+             gone_at INTEGER,
+             PRIMARY KEY (kind, name, path)
+         );
          CREATE TABLE IF NOT EXISTS projection_watermark (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
@@ -1000,6 +1104,9 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
             None,
             Some(record.created_at),
         ),
+        StoredEvent::InventoryScanned(scan) => {
+            ("inventory_scanned", None, None, None, None, Some(scan.taken_at))
+        }
         StoredEvent::Trace(record) => ("trace", None, None, None, None, Some(record.occurred_at)),
     }
 }
@@ -1011,6 +1118,7 @@ fn project_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(
         StoredEvent::StepClosed(record) => project_step(transaction, record, true),
         StoredEvent::ModelCallRecorded(record) => project_model_call(transaction, record),
         StoredEvent::SnapshotRecorded(record) => project_snapshot(transaction, record),
+        StoredEvent::InventoryScanned(scan) => project_inventory(transaction, scan),
         StoredEvent::Trace(_) => Ok(()),
     }
 }
@@ -1140,6 +1248,66 @@ fn project_model_call(
             record.started_at,
             record.ended_at,
         ],
+    )?;
+    Ok(())
+}
+
+/// Una scansione dell'inventario diventa lo stato di ciò che c'è, ciò che è
+/// tornato e ciò che non c'è più.
+///
+/// TRE GESTI, IN QUEST'ORDINE, e l'ordine è il punto:
+/// 1. ogni voce vista aggiorna `last_seen` e cancella un'eventuale sparizione —
+///    una cosa che ricompare non è più sparita, e tenerne il segno la
+///    mostrerebbe morta per sempre;
+/// 2. le voci **non** viste in questa scansione, e non ancora marcate, prendono
+///    l'istante di questa scansione come momento della sparizione;
+/// 3. `first_seen` non si tocca mai dopo la prima volta: è l'unica data che
+///    risponde a «da quando ce l'abbiamo», e riscriverla la perderebbe.
+///
+/// SI CANCELLA SOLO DOPO AVER SCRITTO, non prima: una proiezione che azzera e
+/// riempie mostra un istante in cui l'inventario è vuoto, e chi legge in quel
+/// momento — la pagina, un flusso — vede una macchina senza niente installato.
+fn read_inventory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InventoryChange> {
+    Ok(InventoryChange {
+        kind: row.get(0)?,
+        name: row.get(1)?,
+        path: row.get(2)?,
+        origin: row.get(3)?,
+        reach: row.get(4)?,
+        reason: row.get(5)?,
+        first_seen: row.get(6)?,
+        last_seen: row.get(7)?,
+        gone_at: row.get(8)?,
+    })
+}
+
+fn project_inventory(
+    transaction: &Transaction<'_>,
+    scan: &InventoryScan,
+) -> Result<(), LedgerError> {
+    for item in &scan.items {
+        transaction.execute(
+            "INSERT INTO inventory_items
+             (kind, name, path, origin, reach, reason, first_seen, last_seen, gone_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, NULL)
+             ON CONFLICT(kind, name, path) DO UPDATE SET
+              origin=excluded.origin, reach=excluded.reach, reason=excluded.reason,
+              last_seen=excluded.last_seen, gone_at=NULL",
+            params![
+                item.kind,
+                item.name,
+                item.path,
+                item.origin,
+                item.reach,
+                item.reason,
+                scan.taken_at,
+            ],
+        )?;
+    }
+    transaction.execute(
+        "UPDATE inventory_items SET gone_at = ?1
+         WHERE last_seen < ?1 AND gone_at IS NULL",
+        params![scan.taken_at],
     )?;
     Ok(())
 }
