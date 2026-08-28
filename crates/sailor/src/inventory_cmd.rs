@@ -7,16 +7,21 @@
 //! quello che si vede nella finestra non possono divergere.
 
 use inventory::{collect, default_roots, Entry, Inventory, Kind, Reach};
+use ledger::{InventoryItem, InventoryScan, Ledger};
 
 pub fn run(args: &[String]) -> i32 {
     let mut json = false;
     let mut only: Option<Kind> = None;
     let mut hidden = false;
+    let mut record = false;
+    let mut changes = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--json" => json = true,
             "--unreachable" => hidden = true,
+            "--record" => record = true,
+            "--changes" => changes = true,
             "--kind" => {
                 i += 1;
                 let Some(raw) = args.get(i) else {
@@ -42,6 +47,27 @@ pub fn run(args: &[String]) -> i32 {
     }
 
     let found = collect(&default_roots());
+
+    if record {
+        match deposit(&found) {
+            Ok(message) => println!("{message}"),
+            Err(error) => {
+                eprintln!("l'inventario non si è depositato: {error}");
+                return 1;
+            }
+        }
+    }
+    if changes {
+        match print_changes() {
+            Ok(()) => {}
+            Err(error) => {
+                eprintln!("il deposito non risponde: {error}");
+                return 1;
+            }
+        }
+        return 0;
+    }
+
     if json {
         match serde_json::to_string_pretty(&found) {
             Ok(text) => {
@@ -62,6 +88,94 @@ pub fn run(args: &[String]) -> i32 {
 fn print_usage() {
     eprintln!("uso:");
     eprintln!("  sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]");
+    eprintln!("  sailor inventory --record        deposita questa scansione");
+    eprintln!("  sailor inventory --changes       che cosa è comparso e che cosa è sparito");
+}
+
+/// Deposita la scansione, così la prossima potrà dire che cosa è cambiato.
+///
+/// PERCHÉ UN COMANDO CHE CONTA NON BASTA. Un elenco ricalcolato ogni volta sa
+/// dire che cosa c'è; non sa dire che cosa **non c'è più**, e quella è la
+/// domanda da cui dipende ogni cancellazione. Senza, «sparito ieri» e «non è
+/// mai esistito» si leggono uguali — e chi cancella leggendo un elenco così
+/// cancella alla cieca.
+fn deposit(found: &Inventory) -> Result<String, String> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .map_err(|error| format!("l'orologio è indietro rispetto all'epoca: {error}"))?;
+    let items = found
+        .entries
+        .iter()
+        .map(|entry| InventoryItem {
+            kind: entry.kind.label().to_string(),
+            name: entry.name.clone(),
+            origin: entry.origin.clone(),
+            path: entry.path.clone(),
+            reach: match &entry.reach {
+                Reach::Active => "active".to_string(),
+                Reach::Inactive(_) => "inactive".to_string(),
+                Reach::Unknown(_) => "unknown".to_string(),
+            },
+            reason: match &entry.reach {
+                Reach::Active => None,
+                Reach::Inactive(reason) | Reach::Unknown(reason) => Some(reason.clone()),
+            },
+        })
+        .collect();
+    let ledger = open_ledger()?;
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: now,
+            items,
+        })
+        .map_err(|error| error.to_string())?;
+    Ok(format!(
+        "scansione depositata: {} voci",
+        found.entries.len()
+    ))
+}
+
+fn open_ledger() -> Result<Ledger, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME non è impostata".to_string())?;
+    let directory = std::path::PathBuf::from(home)
+        .join(".claude")
+        .join("state")
+        .join("flussi");
+    Ledger::open(&directory).map_err(|error| error.to_string())
+}
+
+/// Che cosa è comparso e che cosa è sparito, secondo il deposito.
+fn print_changes() -> Result<(), String> {
+    let ledger = open_ledger()?;
+    let gone = ledger.inventory_gone().map_err(|e| e.to_string())?;
+    let present = ledger.inventory_present().map_err(|e| e.to_string())?;
+
+    if present.is_empty() && gone.is_empty() {
+        println!("il deposito non ha ancora nessuna scansione: lanciala con --record");
+        return Ok(());
+    }
+
+    println!("presenti: {}", present.len());
+    let blocked = present.iter().filter(|item| item.reach != "active").count();
+    if blocked > 0 {
+        println!("di cui irraggiungibili: {blocked}");
+    }
+    println!();
+    if gone.is_empty() {
+        println!("sparite: nessuna");
+    } else {
+        println!("sparite: {}", gone.len());
+        for item in &gone {
+            println!(
+                "  {:<10} {:<34} {}",
+                item.kind,
+                item.name,
+                item.origin
+            );
+        }
+    }
+    Ok(())
 }
 
 fn parse_kind(raw: &str) -> Option<Kind> {

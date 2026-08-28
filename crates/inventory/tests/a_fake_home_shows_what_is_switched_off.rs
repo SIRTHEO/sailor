@@ -115,6 +115,11 @@ fn a_hook_pointing_at_a_file_that_is_gone_is_reported_as_dead() {
     let hooks = found.of(Kind::Hook);
     assert_eq!(hooks.len(), 2, "{hooks:#?}");
 
+    // Il nome porta anche quale gancio è, non solo dove scatta: senza, due
+    // ganci sullo stesso evento e matcher sarebbero indistinguibili — e su
+    // questa macchina otto vivono su `PreToolUse · Bash`.
+    assert_ne!(hooks[0].name, hooks[1].name, "{hooks:#?}");
+
     let alive = hooks.iter().find(|e| e.name.contains("Bash")).unwrap();
     assert_eq!(alive.reach, Reach::Active, "{alive:#?}");
 
