@@ -1,6 +1,6 @@
 {
   "id": "sviluppa-sailor",
-  "description": "Sailor che sviluppa se stesso. PRIMO MANDATO, 29/08/2026: dare a un flusso il modo di guardare com'è andata — l'anello che separa un sistema che ripete da uno che accumula. Un mandato entra dall'innesco; un passo lo capisce leggendo il codice e fa un piano senza toccare niente; un secondo lo esegue scrivendo davvero; le prove girano; un quarto, su un modello più basso, apre i file e giudica — e ha l'ordine esplicito di respingere se chi ha implementato dichiara di non aver provato il proprio controllo rompendolo. CHI FA NON GIUDICA: il verificatore è un altro motore, riceve il lavoro e non l'ha scritto. È un FLUSSO DI LAVORO NOSTRO, non si spedisce col prodotto: serve a chi costruisce Sailor, e conosce Sailor. NIENTE BRIGLIE, PER DECISIONE: il passo che implementa scrive senza chiedere permesso. Il perimetro non è applicato dal motore — non esiste ancora — quindi l'unica cosa che lo tiene dentro il repo è il mandato e la cartella di lavoro. Chi lo lancia lo sa.",
+  "description": "Sailor che sviluppa se stesso. PRIMO MANDATO, 29/08/2026: dare a un flusso il modo di guardare com'è andata — l'anello che separa un sistema che ripete da uno che accumula. Un mandato entra dall'innesco; un passo lo capisce leggendo il codice e fa un piano senza toccare niente; un secondo lo esegue scrivendo davvero; le prove girano; un quarto, su un modello più basso, apre i file e giudica — e ha l'ordine esplicito di respingere se chi ha implementato dichiara di non aver provato il proprio controllo rompendolo. CHI FA NON GIUDICA: il verificatore è un altro motore, riceve il lavoro e non l'ha scritto. È un FLUSSO DI LAVORO NOSTRO, non si spedisce col prodotto: serve a chi costruisce Sailor, e conosce Sailor. NIENTE BRIGLIE, PER DECISIONE: il passo che implementa scrive senza chiedere permesso. Il perimetro non è applicato dal motore — non esiste ancora — quindi l'unica cosa che lo tiene dentro il repo è il mandato e la cartella di lavoro. Chi lo lancia lo sa. REGISTRA, E NON È UN DETTAGLIO IN CODA: il flusso finiva con un verdetto e lasciava il lavoro nel working tree, senza traccia di chi avesse chiesto cosa. La catena dei commit È la pista di controllo — chi ha chiesto, cosa è stato prodotto, chi ha approvato — e un lavoro fatto da una macchina senza quella traccia è indistinguibile da uno fatto da nessuno. Il commit dipende dal verdetto: un lavoro respinto NON viene registrato e resta nel working tree, da guardare.",
   "graph": {
     "steps": [
       {
@@ -344,11 +344,12 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "bin": "sh",
+          "tool": "cargo",
           "args": [
-            "-c",
-            "cd /Users/theo/personal/sailor && cargo test --workspace 2>&1 | tail -40"
+            "test",
+            "--workspace"
           ],
+          "workdir": "/Users/theo/personal/sailor",
           "timeout_secs": 1800,
           "accept": [
             "exit_error"
@@ -357,12 +358,12 @@
         "input_schema": {
           "type": "object",
           "properties": {
-            "bin": {
+            "tool": {
               "type": "string"
             }
           },
           "required": [
-            "bin"
+            "tool"
           ],
           "allow_extra": true
         },
@@ -536,6 +537,99 @@
             "status"
           ],
           "allow_extra": false
+        }
+      },
+      {
+        "id": "registra_prepara",
+        "deps": [
+          "verdetto"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "git",
+          "args": [
+            "add",
+            "-A"
+          ],
+          "workdir": "/Users/theo/personal/sailor",
+          "timeout_secs": 120
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "registra",
+        "deps": [
+          "trigger",
+          "implementa",
+          "verifica",
+          "registra_prepara"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "git",
+          "workdir": "/Users/theo/personal/sailor",
+          "timeout_secs": 120,
+          "args": [
+            "commit",
+            "-m",
+            {
+              "$join": [
+                "lavoro di un flusso: ",
+                {
+                  "$from": "/trigger/text"
+                },
+                "\n\nCHI HA CHIESTO: l'innesco «",
+                {
+                  "$from": "/trigger/source"
+                },
+                "», da «",
+                {
+                  "$from": "/trigger/where"
+                },
+                "».\n\nCOSA È STATO FATTO, dichiarato da chi l'ha fatto:\n",
+                {
+                  "$json": "/implementa/answer"
+                },
+                "\n\nCHI HA APPROVATO: il passo di verifica, che non ha scritto questo lavoro.\n",
+                {
+                  "$json": "/verifica/answer"
+                }
+              ]
+            }
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
         }
       }
     ],
