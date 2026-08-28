@@ -48,8 +48,98 @@ body {
   font-size: 14px;
 }
 
+/* La provenienza dei dati: discreta quando è il disco, in evidenza quando è un
+   esempio o un guasto — sono i due casi in cui chi guarda rischia di credere
+   vero quello che non lo è. */
+.bar__source {
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.bar__source[data-source="sample"] {
+  color: #92400e;
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+
+.bar__source[data-source="failed"] {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+/* Il bollino di modifiche non salvate: chi chiude la finestra deve vederlo
+   prima di perdere il lavoro, non scoprirlo dopo. */
+.bar__dirty {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+}
+
 .bar__spacer {
   flex-grow: 1;
+}
+
+/* La barra del ramo a fuoco: nome, descrizione, salva ed elimina — non
+   cambia tela, agisce sul flusso che la colonna ha messo in evidenza. */
+.focusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--rail);
+  flex-shrink: 0;
+}
+
+.focusbar__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.focusbar__name {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.focusbar__desc {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.focusbar__dirty {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+}
+
+.focusbar__error {
+  font-size: 11.5px;
+  color: #b91c1c;
+}
+
+.focusbar__spacer {
+  flex-grow: 1;
+}
+
+button.is-danger {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fef2f2;
 }
 
 button {
@@ -93,6 +183,25 @@ button.is-primary {
   padding: 0 8px 8px;
 }
 
+/* «Tutti i flussi»: toglie il fuoco, torna a vedere l'intero sistema. */
+.rail__all {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rail__all[data-active] {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
 .rail__item {
   display: block;
   width: 100%;
@@ -101,11 +210,20 @@ button.is-primary {
   background: transparent;
   padding: 9px 10px;
   margin-bottom: 3px;
+  cursor: pointer;
 }
 
 .rail__item[data-open] {
   background: var(--paper);
   border-color: var(--line);
+}
+
+.rail__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-right: 6px;
 }
 
 .rail__label {
@@ -114,21 +232,67 @@ button.is-primary {
   font-weight: 500;
 }
 
+.rail__dirty-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #f59e0b;
+  margin-left: 5px;
+}
+
 .rail__note {
   display: block;
   font-size: 10.5px;
   color: var(--faint);
   margin-top: 3px;
+  margin-left: 13px;
   line-height: 1.4;
 }
 
 /* Un flusso rotto è visibile e riconoscibile, mai assente. */
+.rail__item[data-broken] {
+  cursor: default;
+}
+
 .rail__item[data-broken] .rail__label {
   color: #b91c1c;
 }
 
 .rail__item[data-broken] .rail__note {
   color: #dc2626;
+  margin-left: 0;
+}
+
+.rail__cassette {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.rail__hint {
+  font-size: 11px;
+  color: var(--faint);
+  margin: 0 8px 8px;
+  line-height: 1.4;
+}
+
+.cassette__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 0 2px;
+}
+
+.cassette__item {
+  font-size: 11px;
+  padding: 7px 4px;
+  text-align: center;
+}
+
+.cassette__item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .canvas {
@@ -201,9 +365,96 @@ button.is-primary {
   word-break: break-word;
 }
 
+/* ── il pannello di modifica del passo ──────────────────────────────── */
+
+.panel__flow {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.panel__id-input {
+  width: 100%;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 6px 0 12px;
+  padding: 6px 8px;
+}
+
+.panel__field {
+  display: block;
+  margin-top: 12px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.panel__field input[type="text"],
+.panel__field input[type="number"],
+.panel__field input:not([type]) {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.panel__with {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.panel__deps {
+  margin-top: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.panel__dep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  padding: 3px 0;
+}
+
+.panel__error {
+  font-size: 11px;
+  color: #b91c1c;
+  margin: 4px 0 0;
+}
+
+.panel__delete {
+  width: 100%;
+  margin-top: 20px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+  font-weight: 600;
+}
+
 /* ── il nodo ─────────────────────────────────────────────────────────── */
 
 .step-node {
+  position: relative;
   width: 196px;
   background: var(--paper);
   border: 1px solid var(--line);
@@ -291,4 +542,58 @@ button.is-primary {
   background: #fef2f2;
   border-color: #fecaca;
   font-weight: 600;
+}
+
+.step-node__flow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 9px 9px 0 0;
+}
+
+.step-node[data-dimmed] {
+  opacity: 0.3;
+}
+
+/* ── la corsia di un flusso, sulla tela unica ───────────────────────── */
+
+.flow-band {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1.5px dashed;
+  border-radius: 16px;
+  background: rgb(15 23 42 / 2.5%);
+  padding: 12px 16px;
+  transition: opacity 0.2s;
+}
+
+.flow-band[data-dimmed] {
+  opacity: 0.3;
+}
+
+.flow-band__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.flow-band__name {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.flow-band__count {
+  font-size: 10.5px;
+  color: var(--faint);
+}
+
+.flow-band__desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 3px;
+  max-width: 520px;
 }

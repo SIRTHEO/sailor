@@ -7,7 +7,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "cargo tauri dev",
+    "desktop:build": "cargo tauri build"
   },
   "dependencies": {
     "@xyflow/react": "^12.3.5",

@@ -108,25 +108,41 @@ export type StepKind =
  * Da quale azione nasce quale famiglia. Il motore ne registra due
  * (`external_engine`, `shell_check`); le altre sono la lista della spesa, e
  * finché non esistono un flusso che le nomina non parte.
+ *
+ * Una sola mappa, non uno switch: la cassetta dei passi e il pannello di
+ * modifica leggono la stessa vocabolario invece di ricopiarlo.
  */
+const ACTION_KIND: Record<string, StepKind> = {
+  external_engine: "engine",
+  shell_check: "check",
+  pane_until_idle: "wait",
+  signal_is_gone: "wait",
+  deposit_write: "deposit",
+  pane_send: "gesture",
+  hand_to_human: "human",
+  subflow: "subflow",
+};
+
 export function kindOf(action: string): StepKind {
-  switch (action) {
-    case "external_engine":
-      return "engine";
-    case "shell_check":
-      return "check";
-    case "pane_until_idle":
-    case "signal_is_gone":
-      return "wait";
-    case "deposit_write":
-      return "deposit";
-    case "pane_send":
-      return "gesture";
-    case "hand_to_human":
-      return "human";
-    case "subflow":
-      return "subflow";
-    default:
-      return "check";
-  }
+  return ACTION_KIND[action] ?? "check";
 }
+
+/** I nomi di azione che il vocabolario conosce oggi, per il suggerimento nel pannello. */
+export const KNOWN_ACTIONS: string[] = Object.keys(ACTION_KIND);
+
+/**
+ * L'azione con cui nasce un passo creato dalla cassetta, una per famiglia.
+ * «trigger» e «branch» non compaiono: nessuna azione vi si risolve ancora nel
+ * registro, e inventarne una vorrebbe dire scrivere un nome invece che
+ * leggerlo da lì — la cassetta non offre quelle due famiglie finché non
+ * esistono davvero.
+ */
+export const DEFAULT_ACTION_FOR_KIND: Partial<Record<StepKind, string>> = {
+  engine: "external_engine",
+  check: "shell_check",
+  wait: "pane_until_idle",
+  deposit: "deposit_write",
+  gesture: "pane_send",
+  human: "hand_to_human",
+  subflow: "subflow",
+};

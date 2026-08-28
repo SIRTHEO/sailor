@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- L'icona della finestra di Sailor: tre nodi collegati, che è quello che
+       chi apre il programma vede per primo. Non un timone né una vela: il
+       prodotto non è il nome, è il grafo. I colori sono gli stessi della tela
+       (`desktop/src/styles.css`): inchiostro #0f172a su carta #ffffff. -->
+  <rect width="1024" height="1024" rx="228" fill="#0f172a"/>
+  <g stroke="#ffffff" stroke-width="34" stroke-linecap="round" fill="none" opacity="0.92">
+    <path d="M336 336 H520 a72 72 0 0 1 72 72 v208 a72 72 0 0 0 72 72 h24"/>
+    <path d="M336 688 H520"/>
+  </g>
+  <g fill="#ffffff">
+    <rect x="196" y="272" width="140" height="128" rx="34"/>
+    <rect x="196" y="624" width="140" height="128" rx="34"/>
+    <rect x="688" y="624" width="140" height="128" rx="34"/>
+  </g>
+</svg>
