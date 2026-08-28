@@ -245,6 +245,12 @@
     </div>
     <div id="executions"></div>
   </section>
+
+  <section aria-labelledby="inventory-title">
+    <div class="section-heading"><h2 id="inventory-title">Cosa è installato</h2><span class="section-index">03 / inventario</span></div>
+    <div class="sub" id="inventory-summary">caricamento…</div>
+    <div id="inventory"></div>
+  </section>
 </main>
 
 <script>
@@ -459,6 +465,48 @@ function renderExecutions(payload) {
   }).join('');
 }
 
+const inventoryKindLabels = { skill: 'competenza', agent: 'agente', command: 'comando', rule: 'regola', hook: 'gancio' };
+const inventoryKindOrder = ['skill', 'agent', 'command', 'rule', 'hook'];
+
+function reachLine(reach) {
+  if (reach.state === 'active') return '';
+  const badgeClass = reach.state === 'inactive' ? 'broke' : 'open';
+  const badgeLabel = reach.state === 'inactive' ? 'irraggiungibile' : 'da verificare';
+  return `<div><span class="badge ${badgeClass}">${badgeLabel}</span> <span class="sub">${escapeHtml(reach.reason)}</span></div>`;
+}
+
+function renderInventory(inventoryData) {
+  const summary = document.getElementById('inventory-summary');
+  summary.textContent = `radici guardate: ${inventoryData.roots.length} · ${formatNumber(inventoryData.stale_plugin_copies)} copie di plugin restano in cache senza essere quella installata: non sono nell'elenco, sono solo spazio occupato.`;
+  const element = document.getElementById('inventory');
+  element.innerHTML = inventoryKindOrder.map(kind => {
+    const entries = inventoryData.entries.filter(entry => entry.kind === kind);
+    const rows = entries.map(entry => `
+        <li>
+          <div class="open-head"><div><code>${escapeHtml(entry.name)}</code><div class="sub">${escapeHtml(entry.origin)}</div></div></div>
+          ${entry.description ? `<div class="sub">${escapeHtml(entry.description)}</div>` : ''}
+          ${reachLine(entry.reach)}
+        </li>`).join('');
+    return `
+    <article class="card">
+      <div class="open-head"><strong>${inventoryKindLabels[kind] || kind}</strong><span class="sub">${formatNumber(entries.length)} in tutto</span></div>
+      ${entries.length ? `<ul class="steps">${rows}</ul>` : '<p class="empty">Nessuna.</p>'}
+    </article>`;
+  }).join('');
+}
+
+async function loadInventory() {
+  try {
+    const response = await fetch('/api/inventory', { cache: 'no-store' });
+    if (!response.ok) throw new Error(`risposta ${response.status}`);
+    const inventoryData = await response.json();
+    renderInventory(inventoryData);
+  } catch (error) {
+    document.getElementById('inventory-summary').textContent = '';
+    document.getElementById('inventory').innerHTML = `<p class="empty">non riesco a leggere l'inventario: ${escapeHtml(error.message || error)}</p>`;
+  }
+}
+
 function render(payload, updateKinds = true) {
   renderSummary(payload);
   renderFlows(payload.flows);
@@ -527,6 +575,7 @@ countdownTimer = window.setInterval(() => {
 }, 1000);
 
 load();
+loadInventory();
 </script>
 </body>
 </html>

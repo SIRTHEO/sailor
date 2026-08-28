@@ -507,6 +507,26 @@ fn reach_of(root: &Root) -> Reach {
     }
 }
 
+/// Le radici da guardare su questa macchina: la casa, e i repo di lavoro.
+///
+/// STA QUI E NON NEI DUE CHIAMANTI. La riga di comando e la pagina devono dire
+/// lo stesso numero sulla stessa macchina: se ognuna sceglie le proprie radici,
+/// la prima volta che una cambia tornano a divergere — che è il difetto che
+/// questo crate esiste per togliere.
+///
+/// Le basi sono dichiarate, non cercate su tutto il disco: camminare da `/`
+/// troverebbe anche le copie di lavoro, dove le stesse regole ricompaiono
+/// collegate.
+pub fn default_roots() -> Vec<Root> {
+    let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
+    let mut out = vec![Root::home(&home)];
+    out.extend(repos_under(&[
+        home.join("gyver").join("work"),
+        home.join("personal"),
+    ]));
+    out
+}
+
 /// I repo che portano una `.claude/`, cercati sotto le cartelle di lavoro.
 ///
 /// Profondità due e non di più: `~/gyver/work/suite` è un repo, ma scendere

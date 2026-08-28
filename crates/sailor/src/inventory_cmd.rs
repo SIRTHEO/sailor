@@ -6,8 +6,7 @@
 //! per la pagina — la stessa fonte, così l'elenco che si legge da terminale e
 //! quello che si vede nella finestra non possono divergere.
 
-use inventory::{collect, repos_under, Entry, Inventory, Kind, Reach, Root};
-use std::path::PathBuf;
+use inventory::{collect, default_roots, Entry, Inventory, Kind, Reach};
 
 pub fn run(args: &[String]) -> i32 {
     let mut json = false;
@@ -42,7 +41,7 @@ pub fn run(args: &[String]) -> i32 {
         i += 1;
     }
 
-    let found = collect(&roots());
+    let found = collect(&default_roots());
     if json {
         match serde_json::to_string_pretty(&found) {
             Ok(text) => {
@@ -74,21 +73,6 @@ fn parse_kind(raw: &str) -> Option<Kind> {
         "hook" | "gancio" => Some(Kind::Hook),
         _ => None,
     }
-}
-
-/// Dove si guarda: la casa, e i repo che portano una `.claude/`.
-///
-/// LE BASI SONO DICHIARATE, non cercate su tutto il disco. Camminare da `/`
-/// troverebbe anche le copie di lavoro, dove le stesse regole ricompaiono
-/// collegate, e l'inventario direbbe di avere venti volte le cose che ha.
-fn roots() -> Vec<Root> {
-    let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
-    let mut out = vec![Root::home(&home)];
-    out.extend(repos_under(&[
-        home.join("gyver").join("work"),
-        home.join("personal"),
-    ]));
-    out
 }
 
 fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
