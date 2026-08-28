@@ -14,10 +14,12 @@
 //!     sailor profiles <list|create|switch|current>  profili per riga di comando
 //!     sailor models <list|current|set>       il catalogo dei modelli
 //!     sailor ui [opzioni]                    la pagina locale dei flussi
+//!     sailor flow <list|check|run> [nome]    elenca, controlla o esegue un flusso
 //!     sailor run <cli> [argomenti...]        lancia una CLI col profilo attivo
 //!     sailor version                          la versione di questo binario
 //!     sailor --help                           l'elenco dei comandi
 
+mod flow_cmd;
 mod models_cmd;
 mod profiles_cmd;
 mod release_cmd;
@@ -34,6 +36,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("profiles", "elenca, crea e scambia i profili di una riga di comando conosciuta"),
     ("models", "elenca il catalogo dei modelli, mostra o cambia quale usare"),
     ("ui", "avvia la pagina locale che mostra i flussi di Sailor"),
+    ("flow", "elenca, controlla o esegue i flussi dichiarati in flows/"),
     ("run", "lancia una riga di comando col suo profilo attivo, sostituendo questo processo"),
     ("version", "la versione di questo binario"),
 ];
@@ -91,6 +94,7 @@ fn main() {
         Route::Known("profiles") => std::process::exit(profiles_cmd::run(&args[2..])),
         Route::Known("models") => std::process::exit(models_cmd::run(&args[2..])),
         Route::Known("ui") => std::process::exit(ui_cmd::run(&args[2..])),
+        Route::Known("flow") => std::process::exit(flow_cmd::run(&args[2..])),
         Route::Known("run") => std::process::exit(run_cmd::run(&args[2..])),
         Route::Known("version") => std::process::exit(version_cmd::run(&args[2..])),
         Route::Known(other) => unreachable!("comando registrato senza un braccio: {other}"),
@@ -134,10 +138,11 @@ mod tests {
     }
 
     #[test]
-    fn profiles_models_ui_and_run_reach_their_commands() {
+    fn profiles_models_ui_flow_and_run_reach_their_commands() {
         assert_eq!(route(&args(&["sailor", "profiles", "list"])), Route::Known("profiles"));
         assert_eq!(route(&args(&["sailor", "models", "list"])), Route::Known("models"));
         assert_eq!(route(&args(&["sailor", "ui", "--port", "9"])), Route::Known("ui"));
+        assert_eq!(route(&args(&["sailor", "flow", "list"])), Route::Known("flow"));
         assert_eq!(route(&args(&["sailor", "run", "codex"])), Route::Known("run"));
     }
 

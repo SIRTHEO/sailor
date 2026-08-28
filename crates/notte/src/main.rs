@@ -810,6 +810,7 @@ fn task_graph() -> Graph {
         deps: vec![],
         input_schema: ValueSchema::Any,
         output_schema: ValueSchema::Any,
+        with: None,
         when: None,
         action: "notte-task".to_string(),
         max_attempts: MAX_TASK_ATTEMPTS,
