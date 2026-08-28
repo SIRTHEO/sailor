@@ -9,6 +9,7 @@ use flow::{AttemptRelation, Completion, Outcome, RecordStore, StepRecord, StepSp
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -401,6 +402,25 @@ impl Ledger {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Quando ciascuna entità ha cominciato l'ultima volta.
+    ///
+    /// Serve a sapere se un flusso pianificato è dovuto adesso, e la domanda è
+    /// **quando è partito**, non quando è finito: una corsa ancora in volo ha
+    /// già consumato il suo turno, e contarla come «mai girata» la farebbe
+    /// ripartire sopra se stessa.
+    pub fn last_started_at(&self) -> Result<BTreeMap<String, i64>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT entity, MAX(started_at) FROM runs WHERE entity <> '' GROUP BY entity",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let entity: String = row.get(0)?;
+            let started: i64 = row.get(1)?;
+            Ok((entity, started))
+        })?;
+        Ok(rows.collect::<Result<BTreeMap<_, _>, _>>()?)
     }
 
     pub fn steps_with_discarded_output(&self) -> Result<Vec<DiscardedOutputStep>, LedgerError> {

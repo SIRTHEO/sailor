@@ -15,7 +15,7 @@
 //! Il grafo da solo dichiara le forme e non dice mai *quale* comando o *quale*
 //! motore: per questo il file porta anche i valori.
 
-use crate::Graph;
+use crate::{Graph, Schedule};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -33,6 +33,15 @@ pub struct FlowFile {
     pub description: String,
     pub graph: Graph,
     pub inputs: BTreeMap<String, Value>,
+    /// Quando il flusso è dovuto, quanto pesa, dove può scrivere.
+    ///
+    /// FACOLTATIVO PERCHÉ ESISTONO TUTTI E DUE I CASI, e non è un ripiego: un
+    /// flusso lanciato a mano non ha una ricorrenza, e dargliene una per forza
+    /// vorrebbe dire che qualcosa, prima o poi, lo fa partire da solo. `None`
+    /// significa «gira quando qualcuno lo chiede», che è un fatto, non un vuoto
+    /// da riempire.
+    #[serde(default)]
+    pub schedule: Option<Schedule>,
 }
 
 #[cfg(test)]
