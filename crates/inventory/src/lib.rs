@@ -87,6 +87,16 @@ pub struct Root {
     pub path: PathBuf,
     /// La casa carica sempre; un repo carica solo se ci si lavora dentro.
     pub is_home: bool,
+    /// Una cartella che **nessuna configurazione carica**: le cose che ci
+    /// stanno esistono sul disco e non sono invocabili da nessuna parte.
+    ///
+    /// PERCHÉ MERITA UNA CATEGORIA SUA, con la misura del 28/08/2026:
+    /// `~/gyver/work/.agents/skills` ne contiene **95**, e solo 5 sono
+    /// collegate dentro la cartella che Claude Code legge davvero. Le altre 90
+    /// non le nomina nessun `settings.json` e nessun `CLAUDE.md`: sono lavoro
+    /// fatto che non raggiunge nessuno. Ometterle dall'inventario le
+    /// nasconderebbe; contarle come attive sarebbe falso.
+    pub is_warehouse: bool,
 }
 
 impl Root {
@@ -95,19 +105,35 @@ impl Root {
             label: "casa".to_string(),
             path: path.to_path_buf(),
             is_home: true,
+            is_warehouse: false,
         }
     }
 
     pub fn repo(path: &Path) -> Root {
         Root {
-            label: path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.to_string_lossy().into_owned()),
+            label: named_after(path),
             path: path.to_path_buf(),
             is_home: false,
+            is_warehouse: false,
         }
     }
+
+    /// Una cartella di competenze che nessuna configurazione carica. `path` è
+    /// la cartella che le contiene direttamente, non la radice di un repo.
+    pub fn warehouse(label: &str, path: &Path) -> Root {
+        Root {
+            label: label.to_string(),
+            path: path.to_path_buf(),
+            is_home: false,
+            is_warehouse: true,
+        }
+    }
+}
+
+fn named_after(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
 /// L'inventario intero, in un ordine stabile: due letture di seguito danno la
@@ -138,6 +164,7 @@ impl Inventory {
 pub fn collect(roots: &[Root]) -> Inventory {
     let mut entries = Vec::new();
     let mut stale = 0usize;
+    let home = roots.iter().find(|r| r.is_home).map(|r| r.path.as_path());
     for root in roots {
         if root.is_home {
             let (found, dropped) = home_skills(&root.path);
@@ -146,6 +173,9 @@ pub fn collect(roots: &[Root]) -> Inventory {
             let (found, dropped) = home_agents(&root.path);
             entries.extend(found);
             stale += dropped;
+        } else if root.is_warehouse {
+            entries.extend(warehouse_skills(root, home));
+            continue;
         } else {
             entries.extend(repo_dir(root, "skills", Kind::Skill));
             entries.extend(repo_dir(root, "agents", Kind::Agent));
@@ -293,6 +323,46 @@ fn named(path: &Path) -> Option<(String, String, bool)> {
         .next()?
         .to_string();
     Some((name, discovery::description(&matter, false), by_model))
+}
+
+/// Le competenze di una cartella che nessuna configurazione carica.
+///
+/// Ce n'è una sola oggi, e vale la pena dire perché non è un caso limite: 95
+/// competenze scritte, cinque raggiungibili. Non è un difetto da riparare qui —
+/// collegarle è una decisione, non una manutenzione — ma finché l'elenco tace,
+/// quella decisione non arriva mai perché nessuno sa che c'è da prenderla.
+fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
+    discovery::glob(&root.path, "*/SKILL.md")
+        .into_iter()
+        .filter_map(|path| {
+            let (name, description, by_model) = named(&path)?;
+            let folder = path.parent()?.file_name()?.to_string_lossy().into_owned();
+            // UNA COMPETENZA COLLEGATA È RAGGIUNGIBILE, e va detto: cinque di
+            // queste lo sono. Dichiararle spente perché stanno nel magazzino
+            // sarebbe lo stesso errore al contrario — l'inventario perderebbe
+            // credito proprio sulle voci che sa giudicare.
+            let linked = home
+                .map(|h| h.join(".claude").join("skills").join(&folder).exists())
+                .unwrap_or(false);
+            Some(Entry {
+                kind: Kind::Skill,
+                name,
+                description,
+                origin: format!("magazzino {}", root.label),
+                path: path.to_string_lossy().into_owned(),
+                reach: if linked {
+                    Reach::Active
+                } else {
+                    Reach::Inactive(
+                        "sta in una cartella che nessuna configurazione carica: per invocarla va \
+                         collegata fra le competenze di casa"
+                            .to_string(),
+                    )
+                },
+                by_model,
+            })
+        })
+        .collect()
 }
 
 /// Competenze e agenti dichiarati dentro un repo.
@@ -524,6 +594,23 @@ pub fn default_roots() -> Vec<Root> {
         home.join("gyver").join("work"),
         home.join("personal"),
     ]));
+    // DUE MAGAZZINI, e sono davvero due: i collegamenti dentro le competenze di
+    // casa puntano al primo, mai al secondo. Trattarli come uno solo faceva
+    // dire «nessuna è collegata» anche di quelle che lo sono.
+    for (label, path) in [
+        (".agents", home.join(".agents").join("skills")),
+        (
+            "gyver/work/.agents",
+            home.join("gyver")
+                .join("work")
+                .join(".agents")
+                .join("skills"),
+        ),
+    ] {
+        if path.is_dir() {
+            out.push(Root::warehouse(label, &path));
+        }
+    }
     out
 }
 

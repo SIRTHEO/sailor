@@ -1,6 +1,11 @@
 {
   "id": "misura-general-purpose-al-posto-di-un-mestiere",
   "description": "Lavorazione ogni-notte, peso leggero: invoca codex e poi verifica il risultato.",
+  "schedule": {
+    "recurrence": { "kind": "daily_at", "hour": 1, "minute": 0 },
+    "weight": "light",
+    "perimeter": []
+  },
   "graph": {
     "steps": [
       {
