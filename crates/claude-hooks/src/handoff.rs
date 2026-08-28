@@ -340,6 +340,46 @@ pub fn wakeup_prompt(transcript: &str) -> Option<String> {
     Some(prompt)
 }
 
+/// Il file di mandato su cui la sessione stava lavorando, se ne ha nominato uno.
+///
+/// **IL TESTIMONE È IL MANDATO, non la consegna** — decisione di Theo del
+/// 28/08/2026: *«dovrebbe essere `/clear` → autoripresa del mandato»*. La
+/// consegna racconta un turno finito; il mandato dice a che lavoro appartiene
+/// la sessione, e resta vero anche quando il turno cambia. Chi riparte deve
+/// riprendere l'incarico, non il diario di chi c'era prima.
+///
+/// **Si prende dal transcript, non dalla cartella.** Il mandato più recente in
+/// `plancia/mandati/` è quello di *qualcuno*, non per forza di questa sessione:
+/// due sessioni su lavori diversi lo leggerebbero uguale, e dare l'incarico
+/// sbagliato è peggio che non darne nessuno. Vale solo ciò che questa sessione
+/// ha davvero nominato, che è la prova che ci stava lavorando.
+///
+/// Si scorre dal fondo: se una sessione ha cambiato mandato a metà giornata,
+/// vale l'ultimo. E il file deve esistere ancora: un percorso citato e poi
+/// cancellato manderebbe il successore a leggere il vuoto.
+pub fn mandate_file(transcript: &str) -> Option<String> {
+    const ANCHOR: &str = "/plancia/mandati/";
+    let tail = transcript_tail(transcript);
+    for line in tail.lines().rev() {
+        let mut from = 0usize;
+        while let Some(found) = line[from..].find(ANCHOR) {
+            let at = from + found;
+            // Il transcript è JSON: la citazione vive dentro una stringa, quindi
+            // il percorso comincia dopo l'ultimo carattere che un percorso non
+            // può portare, e finisce al primo.
+            let opens = line[..at].rfind(['"', '`', ' ', '\\', '(']).map_or(0, |i| i + 1);
+            let rest = &line[opens..];
+            let end = rest.find(['"', '`', ' ', '\\', ')']).unwrap_or(rest.len());
+            let path = &rest[..end];
+            if path.ends_with(".md") && std::path::Path::new(path).exists() {
+                return Some(path.to_string());
+            }
+            from = at + ANCHOR.len();
+        }
+    }
+    None
+}
+
 /// Scadenza e mandato dell'ultimo `ScheduleWakeup` della coda, se ne arma uno.
 ///
 /// Una sola scansione per due domande: il transcript è lo stesso e la riga
@@ -574,6 +614,39 @@ pub fn measure(transcript: &str, session: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Il mandato si legge dal transcript, e solo se il file c'è davvero.
+    #[test]
+    fn the_mandate_is_the_one_this_session_actually_named() {
+        let dir = std::env::temp_dir().join("prova-mandato-testimone/plancia/mandati");
+        std::fs::create_dir_all(&dir).unwrap();
+        let live = dir.join("2026-08-28-il-lavoro.md");
+        std::fs::write(&live, "# il mandato\n").unwrap();
+        let live = live.to_string_lossy().to_string();
+
+        let transcript = std::env::temp_dir().join("prova-mandato-testimone/t.jsonl");
+        // Due mandati nominati, e vale l'ultimo: una sessione che cambia
+        // incarico a metà giornata deve consegnare quello su cui stava.
+        std::fs::write(
+            &transcript,
+            format!(
+                "{}\n{}\n",
+                serde_json::json!({"type": "user", "message": {"content":
+                    "leggi /altro/plancia/mandati/2026-08-01-vecchio.md"}}),
+                serde_json::json!({"type": "user", "message": {"content":
+                    format!("il mandato è `{live}`, eseguilo")}}),
+            ),
+        )
+        .unwrap();
+
+        let found = mandate_file(&transcript.to_string_lossy());
+        assert_eq!(found.as_deref(), Some(live.as_str()));
+
+        // E un mandato citato ma cancellato non passa: manderebbe chi riparte a
+        // leggere il vuoto, che è peggio che non dargli niente.
+        std::fs::remove_file(&live).unwrap();
+        assert_eq!(mandate_file(&transcript.to_string_lossy()), None);
+    }
 
     /// Il payload vero di un subagent: la sessione e il transcript sono quelli
     /// della madre, e l'unica differenza è `agent_id`. I valori vengono dal caso
