@@ -1,0 +1,54 @@
+{
+  "id": "mandato-corrente",
+  "description": "Dichiara su che lavoro si è, adesso. Un passo solo, che deposita la voce `current` nella collezione `mandate`: da lì la legge chi riparte, invece di dedurla dall'ultimo mandato nominato in un transcript. Per cambiare lavoro si cambia la riga `inputs` qui sotto e si rilancia — il file è il posto dove la decisione si vede, e il deposito è il posto dove dura.",
+  "graph": {
+    "steps": [
+      {
+        "id": "declare-current-mandate",
+        "deps": [],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": null,
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "collection": { "type": "string" },
+            "key": { "type": "string" },
+            "value": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "allow_extra": true
+            },
+            "written_by": { "type": "string" }
+          },
+          "required": ["collection", "key", "value", "written_by"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "collection": { "type": "string" },
+            "key": { "type": "string" },
+            "written_at": { "type": "number" }
+          },
+          "required": ["collection", "key", "written_at"],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "declare-current-mandate": {
+      "collection": "mandate",
+      "key": "current",
+      "value": {
+        "file": "2026-08-28-sailor-attivo-e-la-macchina-pulita.md",
+        "path": "/home/someone/.claude/state/plancia/mandati/2026-08-28-sailor-attivo-e-la-macchina-pulita.md",
+        "why": "Theo, 28/08/2026: Sailor delegando a Codex e agy, i conflitti nei documenti, e la pulizia delle configurazioni sparse sulla macchina."
+      },
+      "written_by": "theo"
+    }
+  }
+}

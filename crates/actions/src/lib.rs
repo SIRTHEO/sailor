@@ -13,6 +13,8 @@
 //! direttamente `invoke_external_engine`/`run_shell_check`: sono funzioni
 //! semplici, non solo azioni registrate.
 
+pub mod store;
+
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

@@ -1047,3 +1047,124 @@ fn the_inventory_survives_a_rebuild_from_the_events() {
     assert_eq!(gone[0].gone_at, Some(20));
 }
 
+fn record(collection: &str, key: &str, value: Value, at: i64) -> StoreRecord {
+    StoreRecord {
+        collection: collection.to_string(),
+        key: key.to_string(),
+        value,
+        written_by: "flusso-di-prova".to_string(),
+        written_at: at,
+    }
+}
+
+/// Una voce che nessuno ha scritto risponde «non lo so».
+///
+/// È la risposta che permette a chi legge di avere un ripiego. Un deposito che
+/// inventasse un valore plausibile sarebbe peggio dell'euristica che
+/// sostituisce, perché sembrerebbe un fatto.
+#[test]
+fn a_record_nobody_wrote_says_it_does_not_know() {
+    let directory = TestDirectory::new("voce-mai-scritta");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    assert_eq!(ledger.read_record("mandate", "current").expect("letta"), None);
+}
+
+/// Il motore non conosce le collezioni: le tiene tutte, senza saperle.
+///
+/// È la prova che questo spazio è del flusso e non del motore. Due collezioni
+/// inventate qui — nomi che non compaiono da nessuna parte in Rust — devono
+/// convivere senza che nessuno le abbia dichiarate, e la stessa chiave in due
+/// collezioni deve restare due voci distinte. Se un giorno qualcuno rimettesse
+/// il dominio nel motore, questa prova sarebbe la prima a non compilare più.
+#[test]
+fn the_engine_keeps_collections_it_knows_nothing_about() {
+    let directory = TestDirectory::new("collezioni-ignote");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .put_record(&record("mandate", "current", json!({"file": "sailor.md"}), 10))
+        .expect("mandato");
+    ledger
+        .put_record(&record("panetteria", "current", json!({"pane": 3}), 20))
+        .expect("pane");
+
+    let mandate = ledger.read_record("mandate", "current").expect("letta").expect("c'è");
+    assert_eq!(mandate.value, json!({"file": "sailor.md"}));
+    let bakery = ledger.read_record("panetteria", "current").expect("letta").expect("c'è");
+    assert_eq!(bakery.value, json!({"pane": 3}));
+    assert_eq!(ledger.records_in("panetteria").expect("collezione").len(), 1);
+}
+
+/// L'ultima scrittura vince, e la voce resta una.
+///
+/// Il controllo che conta non è rileggere il secondo valore — lo farebbe anche
+/// una tabella che li accumula tutti e restituisce il più recente — ma che dopo
+/// due scritture la collezione porti **una voce sola**. Due voci
+/// significherebbe due risposte possibili alla stessa domanda, ed è la forma da
+/// cui nasce ogni «ma allora su cosa stavamo lavorando?».
+#[test]
+fn the_last_write_wins_and_the_record_stays_one() {
+    let directory = TestDirectory::new("voce-sostituita");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .put_record(&record("mandate", "current", json!({"file": "socraticode.md"}), 100))
+        .expect("primo");
+    ledger
+        .put_record(&record("mandate", "current", json!({"file": "sailor.md"}), 200))
+        .expect("secondo");
+
+    let current = ledger.read_record("mandate", "current").expect("letta").expect("c'è");
+    assert_eq!(current.value, json!({"file": "sailor.md"}));
+    assert_eq!(current.written_at, 200);
+    assert_eq!(ledger.records_in("mandate").expect("collezione").len(), 1);
+}
+
+/// Una voce senza indirizzo è rifiutata.
+///
+/// Vale per la chiave quanto per la collezione: chi scrive senza indirizzo
+/// crede di aver depositato qualcosa, e nessuno lo ritroverà.
+#[test]
+fn a_record_without_an_address_is_refused() {
+    let directory = TestDirectory::new("voce-senza-indirizzo");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    let mut homeless = record("mandate", "current", json!(1), 10);
+    homeless.collection = "  ".to_string();
+    assert!(ledger.put_record(&homeless).is_err());
+
+    let mut keyless = record("mandate", "current", json!(1), 10);
+    keyless.key = String::new();
+    assert!(ledger.put_record(&keyless).is_err());
+
+    // E il rifiuto non ha lasciato niente dietro di sé.
+    assert_eq!(ledger.read_record("mandate", "current").expect("letta"), None);
+}
+
+/// La fonte è il registro, non la tabella.
+///
+/// Cade da sola se `RecordWritten` smette di essere proiettato — cioè se
+/// qualcuno lo tratta come una traccia da scartare: la ricostruzione
+/// ripartirebbe da un registro pieno e lascerebbe la tabella vuota. È lo stesso
+/// controllo che l'inventario ha sopra, e per lo stesso motivo: un dato che
+/// vive solo nel file di stato è un dato che nessuno può più verificare.
+#[test]
+fn a_record_survives_a_rebuild_from_the_events() {
+    let directory = TestDirectory::new("voce-ricostruita");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .put_record(&record("mandate", "current", json!({"file": "vecchio.md"}), 100))
+        .expect("primo");
+    ledger
+        .put_record(&record("mandate", "current", json!({"file": "corrente.md"}), 200))
+        .expect("secondo");
+
+    ledger.rebuild_projections().expect("ricostruzione");
+
+    let current = ledger.read_record("mandate", "current").expect("letta").expect("c'è");
+    assert_eq!(
+        current.value,
+        json!({"file": "corrente.md"}),
+        "l'ordine degli eventi decide, e l'ultimo vince"
+    );
+    assert_eq!(current.written_by, "flusso-di-prova");
+}
+
