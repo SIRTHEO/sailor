@@ -199,8 +199,14 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
     }
 
+    // DUE RADICI, E NON SONO LA STESSA COSA. Da `root` si compila; in `home` si
+    // installa. Fino a stamattina coincidevano, e il 28/08/2026 spostare la
+    // prima ha spostato per sbaglio anche la seconda: il binario è finito
+    // accanto ai sorgenti, mentre i ganci continuavano a eseguire quello vecchio
+    // al suo posto di sempre. Il punto d'installazione non si sposta.
+    let home = install_root()?;
     let live = root.join(selected.live_rel);
-    let stamp = root.join(selected.stamp_rel);
+    let stamp = home.join(selected.stamp_rel);
     if live.is_file() && files_equal(&fresh, &live)? {
         println!(
             "== niente da fare: il binario in servizio corrisponde già a HEAD ({head_short}) =="
@@ -229,7 +235,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     atomic_copy(&fresh, &live)?;
     println!("   in servizio: {head_short}");
 
-    let safe = root.join(selected.safe_rel);
+    let safe = home.join(selected.safe_rel);
     match atomic_copy(&fresh, &safe) {
         Ok(()) => println!("   anche fuori da target/: {}", safe.display()),
         Err(error) => {
@@ -268,6 +274,22 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
 /// perché il codice vecchio compila benissimo.
 ///
 /// Il punto d'installazione resta dov'era; è la sorgente che si è spostata.
+/// La casa dove il binario va installato e dove vive il timbro.
+///
+/// Non si sposta con i sorgenti: i ganci la nominano per percorso assoluto, e
+/// installare altrove significa lasciare in servizio quello vecchio senza che
+/// nessuno se ne accorga — misurato il 28/08/2026, un rilascio con uscita 0 che
+/// ha scritto il binario accanto ai sorgenti mentre `settings.json` continuava a
+/// eseguirlo da qui.
+fn install_root() -> Result<PathBuf, String> {
+    if let Some(root) = env::var_os("CLAUDE_HOME").filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(root));
+    }
+    env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join(".claude"))
+        .ok_or_else(|| "né CLAUDE_HOME né HOME sono impostate".to_string())
+}
+
 fn sources_root() -> Result<PathBuf, String> {
     if let Some(root) = env::var_os("SAILOR_HOME").filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(root));
@@ -671,6 +693,31 @@ mod tests {
         // Il crate del binario sta lì, e non sotto un sottoalbero `rust/`.
         assert!(root.join("crates").join("claude-hooks").is_dir(), "{root:?}");
         assert!(!root.join("rust").exists(), "{root:?}");
+    }
+
+    /// Le due radici sono due, e il binario va installato nella seconda.
+    ///
+    /// IL BRACCIO CHE CONTA è che non coincidano: quando la sorgente si è
+    /// spostata portandosi dietro l'installazione, il rilascio ha scritto il
+    /// binario accanto ai sorgenti e i ganci hanno continuato a eseguire quello
+    /// vecchio — con uscita 0 e nessun avviso.
+    #[test]
+    fn the_binary_is_installed_where_the_hooks_look_for_it() {
+        let sources = sources_root().unwrap();
+        let home = install_root().unwrap();
+        assert_ne!(sources, home);
+        assert!(home.ends_with(".claude"), "{home:?}");
+
+        let hooks = target("hooks").expect("il bersaglio dei ganci esiste");
+        let installed = home.join(hooks.safe_rel);
+        assert!(
+            installed.starts_with(&home),
+            "il binario finirebbe fuori dalla casa: {installed:?}"
+        );
+        assert!(
+            !installed.starts_with(&sources),
+            "il binario finirebbe accanto ai sorgenti, dove nessuno lo esegue: {installed:?}"
+        );
     }
 
     #[test]
