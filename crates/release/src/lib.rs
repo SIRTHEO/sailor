@@ -55,16 +55,22 @@ pub struct Target {
     pub name: &'static str,
     /// Il target `cargo` da costruire.
     pub bin: &'static str,
-    /// Dove sta il binario che oggi qualcuno esegue davvero.
+    /// La copia dentro l'albero di compilazione, **relativa ai sorgenti**: è
+    /// quella che una `cargo build` locale riscriverebbe.
     pub live_rel: &'static str,
-    /// La stessa copia **fuori da `target/`**, dove nessuna compilazione la
-    /// raggiunge. Finché chi carica nomina ancora `target/release`, le due
-    /// strade convivono e il rilascio le tiene allineate; il giorno in cui
-    /// punta qui, compilare smette di mettere in servizio qualcosa — per
+    /// La copia in servizio, **relativa alla casa della configurazione** —
+    /// fuori da `target/`, dove nessuna compilazione la raggiunge. È questa che
+    /// i ganci nominano, quindi compilare non mette più in servizio niente: per
     /// costruzione, non per sorveglianza.
+    ///
+    /// LE DUE RADICI NON SONO LA STESSA, dal 28/08/2026: i sorgenti hanno
+    /// traslocato e l'installazione è rimasta dov'era. Chi legge questi campi
+    /// deve sapere a quale delle due appartengono, perché sbagliarlo scrive il
+    /// binario in un posto che nessuno esegue — ed è successo.
     pub safe_rel: &'static str,
     /// Il file che nomina il commit da cui è stato prodotto il binario in
-    /// servizio. È **l'unico posto** in cui quel dato esiste.
+    /// servizio, anch'esso relativo alla casa. È **l'unico posto** in cui quel
+    /// dato esiste.
     pub stamp_rel: &'static str,
     /// `None` per chi rinasce a ogni chiamata.
     pub service: Option<Service>,
@@ -78,7 +84,7 @@ pub const TARGETS: &[Target] = &[
     Target {
         name: "notte",
         bin: "notte",
-        live_rel: "rust/target/release/notte",
+        live_rel: "target/release/notte",
         safe_rel: "bin/notte",
         stamp_rel: "state/notte-binary-commit",
         service: Some(Service {
@@ -89,7 +95,7 @@ pub const TARGETS: &[Target] = &[
     Target {
         name: "hooks",
         bin: "claude-hooks",
-        live_rel: "rust/target/release/claude-hooks",
+        live_rel: "target/release/claude-hooks",
         safe_rel: "bin/claude-hooks",
         // Lo stesso file che `release-hooks.sh` scrive: due timbri per lo stesso
         // binario direbbero due verità, e chi legge non saprebbe quale.
@@ -112,7 +118,7 @@ pub const TARGETS: &[Target] = &[
     Target {
         name: "sailor",
         bin: "sailor",
-        live_rel: "rust/target/release/sailor",
+        live_rel: "target/release/sailor",
         safe_rel: "bin/sailor",
         stamp_rel: "state/sailor-binary-commit",
         service: None,
