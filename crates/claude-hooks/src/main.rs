@@ -40,7 +40,9 @@ mod link_worktree_rules;
 mod permission_stall;
 mod spotlight_marker;
 mod status_board;
-mod uncovered_exit;
+// `uncovered_exit` è stato tolto il 28/08/2026 insieme al presidio che armava
+// un successore: era l'unico chiamante del suo freno, e senza quel presidio
+// non nasce più nessun marcatore fresco da negare in uscita.
 mod uncovered_thread;
 // La seconda ondata, i quattro grossi: 400-824 righe di Python ciascuno.
 mod ai_personal_data;
@@ -274,7 +276,6 @@ const ALL_HOOKS: &[&str] = &[
     "duplication",
     "legacy-script",
     "message-budget",
-    "handoff-arms-successor",
     "handoff-measure",
     "handoff-on-stop",
     // Il porto del 25/08/2026: lo stesso lavoro di
@@ -301,7 +302,6 @@ const ALL_HOOKS: &[&str] = &[
     "restart-notice",
     "scope-drift",
     "socraticode-gate",
-    "successor-probe",
     "handoff-threshold",
     // Il contatore dei turni del 23/08/2026 (gradino 1, contesto corto): la
     // riga che lo accende è di Theo (`docs/2026-08-22-gesto-message-budget.md`).
@@ -423,7 +423,6 @@ const NOT_HOOKS: &[&str] = &[
     "relay-read-chain",
     "relay-sweep",
     "restart-count",
-    "successor-probe",
     "stale-facts",
     "marker-sweep",
     "permission-stall",
@@ -529,7 +528,6 @@ fn has_module_test(name: &str) -> bool {
             include_str!("duplication.rs"),
             include_str!("../../guards/src/duplication.rs"),
         ],
-        "handoff-arms-successor" => &[include_str!("successor.rs")],
         "handoff-measure" => &[include_str!("handoff.rs")],
         "handoff-on-stop" => &[
             include_str!("handoff_on_stop.rs"),
@@ -580,10 +578,6 @@ fn has_module_test(name: &str) -> bool {
             include_str!("../../guards/src/scope_drift.rs"),
         ],
         "socraticode-gate" => &[include_str!("../../guards/src/socraticode_gate.rs")],
-        "successor-probe" => &[
-            include_str!("successor.rs"),
-            include_str!("../../guards/src/successor.rs"),
-        ],
         "handoff-threshold" => &[
             include_str!("handoff_threshold.rs"),
             include_str!("../../guards/src/handoff_threshold.rs"),
@@ -1440,13 +1434,6 @@ fn run(which: &str) -> Result<i32, String> {
         // Il divieto su Linear: 813 righe di Python, il gancio più grande del
         // parco. Il giudizio sta in `guards::linear_readonly` ed è puro; la
         // parte con stato — permesso di Theo e registro — in `linear.rs`.
-        // Una consegna appena scritta arma la sessione dopo — una sola.
-        "handoff-arms-successor" => {
-            let Some(input) = hook_io::read_input() else {
-                return Ok(0);
-            };
-            Ok(successor::run(&input))
-        }
         "linear-readonly" => {
             // Nessuna valvola d'ambiente: il mandato dell'11/08/2026 non
             // prevede che una variabile lo tolga. Le tre valvole che esistono
@@ -1521,11 +1508,6 @@ fn run(which: &str) -> Result<i32, String> {
         "restart-count" => {
             let path = std::env::args().nth(2).unwrap_or_default();
             Ok(restart::count_probe(&path))
-        }
-        "successor-probe" => {
-            let a: Vec<String> = std::env::args().skip(2).collect();
-            let arg = |i: usize| a.get(i).cloned().unwrap_or_default();
-            Ok(successor::probe(&arg(0), &arg(1), &arg(2)))
         }
         // Non è un gancio: è `latest_handoff` esposta in sola lettura, perché una
         // correzione su quale consegna eredita il successore si verifica sul
@@ -1966,7 +1948,6 @@ mod catalogo {
             "handoff-on-stop",
             "handoff-required",
             "hook-census",
-            "handoff-arms-successor",
             "allow-worktree-deletes",
             "allow-session-messages",
         ] {
