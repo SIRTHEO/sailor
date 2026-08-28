@@ -738,7 +738,7 @@ fn resume_message() -> String {
     // etichettate, provato per un'ora il 19/08/2026, non ha mai raggiunto la
     // produzione — spezzava i mandati su più righe e chi rileggeva riattaccava
     // le righe senza separatore.
-    let (path, punto, mandato) = match serde_json::from_str::<serde_json::Value>(body.trim()) {
+    let (path, punto, mandato, incarico) = match serde_json::from_str::<serde_json::Value>(body.trim()) {
         Ok(d) => {
             let campo = |k: &str| {
                 d.get(k).and_then(|v| v.as_str()).unwrap_or_default().trim().to_string()
@@ -781,25 +781,51 @@ fn resume_message() -> String {
                     return String::new();
                 }
             }
-            (campo("handoff"), campo("punto"), campo("mandato"))
+            (campo("handoff"), campo("punto"), campo("mandato"), campo("incarico"))
         }
-        Err(_) => (body.trim().to_string(), String::new(), String::new()),
+        Err(_) => (body.trim().to_string(), String::new(), String::new(), String::new()),
     };
     let _ = fs::remove_file(&signal); // consumato: una staffetta, una ripresa
-    if path.is_empty() {
+    if path.is_empty() && incarico.is_empty() {
         return String::new();
     }
-    let base = format!(
-        "RIPARTENZA AUTOMATICA (staffetta). La sessione precedente su questo \
-worktree ha consegnato ed e' stata rigenerata per non trascinare un contesto \
-gonfio. Riprendi da quell'handoff: leggi `{path}` e prosegui il piano gia' \
+    // IL MANDATO PRIMA DELLA CONSEGNA — Theo, 28/08/2026: «`/clear` →
+    // autoripresa del mandato». Chi riparte deve riprendere **l'incarico**, che
+    // resta vero mentre i turni passano; la consegna racconta com'è finito il
+    // turno di un altro, ed è il ripiego per quando l'incarico non si sa.
+    // L'ordine conta: la prima riga di un testimone è quella che viene eseguita.
+    let base = if !incarico.is_empty() {
+        format!(
+            "RIPARTENZA AUTOMATICA (staffetta). La sessione precedente su questo \
+worktree è stata azzerata per non trascinare un contesto gonfio, e **il lavoro \
+non è finito**: è il suo mandato che continua, non un compito nuovo. \
+Riprendilo: leggi `{incarico}` per intero e prosegui da dove quel mandato è \
+arrivato. Non ricominciare da zero, non rifare ciò che risulta già fatto, e \
+**non annunciare la ripartenza**: il primo messaggio del turno è già il passo \
+successivo del mandato."
+        )
+    } else {
+        format!(
+            "RIPARTENZA AUTOMATICA (staffetta). La sessione precedente su questo \
+worktree ha consegnato ed è stata rigenerata per non trascinare un contesto \
+gonfio. Riprendi da quell'handoff: leggi `{path}` e prosegui il piano già \
 autorizzato. Non ricominciare da zero, e **non annunciare la ripartenza**: il \
-primo messaggio del turno e' gia' il passo successivo del piano."
-    );
-    if punto.is_empty() && mandato.is_empty() {
+primo messaggio del turno è già il passo successivo del piano."
+        )
+    };
+    if punto.is_empty() && mandato.is_empty() && (incarico.is_empty() || path.is_empty()) {
         return base;
     }
     let mut coda = String::new();
+    // LA CONSEGNA SCENDE A CONTESTO quando il mandato c'è. Non si butta: dice
+    // cosa è già stato fatto, ed è il modo per non rifarlo. Ma è materiale da
+    // consultare, non l'ordine del giorno — che è il mandato, sopra.
+    if !incarico.is_empty() && !path.is_empty() {
+        coda.push_str(&format!(
+            "\n\nCosa è già stato fatto su quel mandato, se ti serve saperlo \
+prima di rifarlo: `{path}`. È un rendiconto, non l'incarico."
+        ));
+    }
     if !punto.is_empty() {
         // IL PUNTO PRIMA DEL MANDATO: è la riga che dice cosa fare adesso,
         // mentre il mandato dice a che lavoro appartiene.
@@ -1488,6 +1514,52 @@ nessuno la butterà mai"
         })
         .to_string();
         signal(casa, &corpo);
+    }
+
+    /// Un segnale che porta anche il mandato, come dal 28/08/2026.
+    fn signal_with_mandate(home: &HomeIsolata, handoff: &str, mandate: &str) {
+        let corpo = serde_json::json!({
+            "handoff": handoff, "punto": "", "mandato": "", "tab": "",
+            "incarico": mandate,
+        })
+        .to_string();
+        signal(home, &corpo);
+    }
+
+    #[test]
+    fn the_baton_carries_the_mandate_not_the_report() {
+        // Theo, 28/08/2026: «`/clear` → autoripresa del mandato». Chi riparte
+        // deve ricevere l'incarico, non il rendiconto di chi c'era prima.
+        let home = HomeIsolata::nuova("testimone-mandato");
+        signal_with_mandate(
+            &home,
+            "/percorso/consegna.md",
+            "/percorso/mandati/2026-08-28-il-lavoro.md",
+        );
+        let msg = resume_message();
+
+        assert!(msg.contains("/percorso/mandati/2026-08-28-il-lavoro.md"), "{msg}");
+        assert!(msg.contains("è il suo mandato che continua"), "{msg}");
+        // La consegna non sparisce, ma scende: serve a non rifare ciò che è già
+        // fatto, e il messaggio deve dire che è un rendiconto.
+        assert!(msg.contains("È un rendiconto, non l'incarico."), "{msg}");
+        // E il mandato viene prima: la prima riga di un testimone è quella che
+        // viene eseguita.
+        let mandate_at = msg.find("/percorso/mandati/").expect("il mandato è nel messaggio");
+        let report_at = msg.find("/percorso/consegna.md").expect("la consegna è nel messaggio");
+        assert!(mandate_at < report_at, "il mandato deve venire prima:\n{msg}");
+    }
+
+    #[test]
+    fn without_a_mandate_the_baton_falls_back_to_the_report() {
+        // Il ripiego, e la prova che il ramo vecchio non è stato spento: finché
+        // una sessione non nomina un mandato, il testimone resta la consegna.
+        let home = HomeIsolata::nuova("testimone-senza-mandato");
+        signal_json(&home, "/percorso/consegna.md", "", "");
+        let msg = resume_message();
+
+        assert!(msg.contains("/percorso/consegna.md"), "{msg}");
+        assert!(!msg.contains("è il suo mandato che continua"), "{msg}");
     }
 
     /// Un segnale col corpo dato alla lettera, per provare le forme storte.
