@@ -95,6 +95,9 @@ mod tests {
             description: format!("Descrizione per {id}"),
             graph,
             inputs: BTreeMap::new(),
+            // Un flusso che si lancia a mano: qui si guarda la forma dei passi,
+            // non quando girerebbe da solo.
+            schedule: None,
         }
     }
 
