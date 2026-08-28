@@ -32,9 +32,59 @@ const EVENTS_FILE: &str = "events.db";
 ///
 /// `None` quando `HOME` non è definita: chi chiama ha sempre un ripiego, e
 /// nessuno deve dedurre una casa che l'ambiente non dichiara.
+///
+/// IL 28/08/2026 QUESTA FUNZIONE HA QUASI AVUTO UNA GEMELLA, e il commento qui
+/// sopra aveva previsto cosa sarebbe successo. Una modifica aveva insegnato alla
+/// finestra a cercare il deposito altrove, lasciando qui il percorso vecchio:
+/// chi esegue i flussi avrebbe scritto in una casa e chi li guarda avrebbe letto
+/// nell'altra, **senza che nessuna delle due dicesse di sbagliare**. Adesso la
+/// scoperta della casa vive qui, dove tutti già passano.
 pub fn default_directory() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME").filter(|value| !value.is_empty())?;
-    Some(PathBuf::from(home).join(".claude/state/flussi"))
+    if let Some(declared) = env_path("SAILOR_LEDGER") {
+        return Some(declared);
+    }
+    // LA CASA DI CHI C'ERA PRIMA. Su una macchina dove Sailor ha già girato, il
+    // deposito sta dove lo metteva la versione vecchia, e spostare il
+    // predefinito lo renderebbe invisibile: le corse ci sono, la finestra
+    // direbbe «nessuna». Si riconosce dai due file, non dalla cartella: una
+    // cartella vuota rimasta lì non è un'installazione.
+    //
+    // Questo gradino è una migrazione, non una casa: si toglie quando il
+    // deposito vecchio sarà stato spostato, e chi lo toglie deve prima
+    // spostarlo.
+    if let Some(home) = env_path("HOME") {
+        let previous = home.join(".claude/state/flussi");
+        if previous.join(STATE_FILE).exists() && previous.join(EVENTS_FILE).exists() {
+            return Some(previous);
+        }
+    }
+    Some(sailor_home()?.join("ledger"))
+}
+
+/// La casa di Sailor: dove vivono deposito, flussi e configurazione.
+///
+/// **Nessun percorso di una persona sola.** Si scopre come la scopre qualunque
+/// programma su questo sistema: `SAILOR_HOME` se dichiarata, altrimenti la
+/// cartella di configurazione standard, altrimenti quella dell'utente che
+/// esegue. `None` se l'ambiente non dichiara nemmeno quella — una casa dedotta
+/// senza fondamento manderebbe a scrivere nel posto di qualcun altro.
+pub fn sailor_home() -> Option<PathBuf> {
+    if let Some(declared) = env_path("SAILOR_HOME") {
+        return Some(declared);
+    }
+    if let Some(config) = env_path("XDG_CONFIG_HOME") {
+        return Some(config.join("sailor"));
+    }
+    Some(env_path("HOME")?.join(".config").join("sailor"))
+}
+
+/// Una variabile d'ambiente come percorso. La stringa vuota vale come «non
+/// impostata»: è quello che lascia dietro uno script che esporta una variabile
+/// senza valore, e prenderla alla lettera manderebbe a scrivere nella radice.
+fn env_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const PROJECTION_SCHEMA_VERSION: i64 = 3;
