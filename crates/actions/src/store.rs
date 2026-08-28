@@ -29,11 +29,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const STORE_WRITE_ACTION: &str = "store_write";
 /// Il nome sotto cui `StoreReadAction` si registra.
 pub const STORE_READ_ACTION: &str = "store_read";
+/// Il nome sotto cui `StoreListAction` si registra.
+pub const STORE_LIST_ACTION: &str = "store_list";
 
-/// Registra entrambi i nodi del deposito sul deposito dato.
+/// Registra i tre nodi del deposito sul deposito dato.
 pub fn register_store(registry: &mut flow::ActionRegistry, ledger: Ledger) {
     registry.register(STORE_WRITE_ACTION, StoreWriteAction::new(ledger.clone()));
-    registry.register(STORE_READ_ACTION, StoreReadAction::new(ledger));
+    registry.register(STORE_READ_ACTION, StoreReadAction::new(ledger.clone()));
+    registry.register(STORE_LIST_ACTION, StoreListAction::new(ledger));
 }
 
 #[derive(Debug, Deserialize)]
@@ -157,6 +160,82 @@ impl Action for StoreReadAction {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct ListSpec {
+    collection: String,
+    /// Solo le voci la cui chiave viene **dopo** questa, in ordine di testo.
+    ///
+    /// È il «da qui in poi» di chi ha già letto: senza, ogni giro rilegge tutta
+    /// la collezione e il costo cresce con la storia — cioè si ricostruisce nel
+    /// deposito lo stesso problema che si voleva togliere dalla finestra.
+    #[serde(default)]
+    after: Option<String>,
+}
+
+/// Elenca le voci di una collezione, dalla più vecchia alla più recente.
+///
+/// **A COSA SERVE, VISTO CHE `store_read` C'È GIÀ.** Leggere per chiave
+/// presuppone di sapere già quale chiave: va bene per un fatto solo — su che
+/// lavoro si è — e non serve a niente per una collezione che cresce, dove la
+/// domanda è «cosa c'è di nuovo». Sono due domande diverse, e finché esisteva
+/// solo la prima nessun flusso poteva tenere un elenco.
+///
+/// **L'ORDINE È QUELLO DELLE CHIAVI, ED È IL PATTO CON CHI SCRIVE.** Il
+/// deposito ordina per testo, non per data: una collezione che vuole leggersi
+/// in ordine di tempo deve avere chiavi ordinabili come testo — un istante ISO
+/// 8601, o un numero con gli zeri davanti. Una chiave scelta male dà un elenco
+/// in ordine casuale senza che niente segnali l'errore.
+pub struct StoreListAction {
+    ledger: Ledger,
+}
+
+impl StoreListAction {
+    pub fn new(ledger: Ledger) -> Self {
+        Self { ledger }
+    }
+}
+
+impl Action for StoreListAction {
+    fn execute(
+        &self,
+        input: &Value,
+        _shared: &mut SharedState,
+    ) -> Result<ActionOutcome, ActionError> {
+        let spec: ListSpec = serde_json::from_value(input.clone())
+            .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
+        let records = self
+            .ledger
+            .records_in(&spec.collection)
+            .map_err(|error| ActionError::new("store_unreadable", error.to_string()))?;
+        let after = spec.after.unwrap_or_default();
+        let entries: Vec<Value> = records
+            .into_iter()
+            .filter(|record| after.is_empty() || record.key > after)
+            .map(|record| {
+                json!({
+                    "key": record.key,
+                    "value": record.value,
+                    "written_by": record.written_by,
+                    "written_at": record.written_at,
+                })
+            })
+            .collect();
+        Ok(ActionOutcome::Went(json!({
+            "count": entries.len(),
+            // L'ultima chiave, perché il giro dopo sappia da dove ripartire
+            // senza che il flusso debba frugare nell'elenco per estrarla.
+            // Assente quando non c'è niente di nuovo: chi riprende tiene la
+            // propria e non la sovrascrive col vuoto.
+            "last_key": entries.last().and_then(|e| e.get("key").cloned()),
+            "entries": entries,
+        })))
+    }
+
+    fn species(&self) -> StepSpecies {
+        StepSpecies::Repeatable
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,6 +315,78 @@ mod tests {
         };
         assert_eq!(value["found"], json!(false));
         assert_eq!(value.get("value"), None, "non si inventa un valore che nessuno ha scritto");
+    }
+
+    /// Una collezione si legge in ordine, e «da qui in poi» salta il già letto.
+    ///
+    /// Le due asserzioni provano cose diverse e servono tutte e due: la prima
+    /// che l'ordine è quello delle chiavi — se il deposito le restituisse come
+    /// capita, un elenco di posta sarebbe inutilizzabile — la seconda che
+    /// `after` taglia davvero, cioè che un flusso che ha già letto non ripaga
+    /// quello che ha letto.
+    #[test]
+    fn a_collection_reads_in_key_order_and_after_skips_what_was_read() {
+        let (ledger, _guard) = store();
+        let mut shared = SharedState::new();
+        let write = StoreWriteAction::new(ledger.clone());
+        let list = StoreListAction::new(ledger);
+
+        // Scritte fuori ordine apposta: se l'ordine venisse dalla scrittura
+        // invece che dalla chiave, l'elenco uscirebbe 03, 01, 02.
+        for key in ["2026-08-28T03", "2026-08-28T01", "2026-08-28T02"] {
+            write
+                .execute(
+                    &json!({
+                        "collection": "posta/theo",
+                        "key": key,
+                        "value": {"oggetto": key},
+                        "written_by": "prova",
+                        "written_at": 1_756_400_000i64,
+                    }),
+                    &mut shared,
+                )
+                .expect("scrittura");
+        }
+
+        let ActionOutcome::Went(all) =
+            list.execute(&json!({"collection": "posta/theo"}), &mut shared).expect("elenco")
+        else {
+            panic!("nessuna attesa");
+        };
+        assert_eq!(all["count"], json!(3));
+        let keys: Vec<&str> =
+            all["entries"].as_array().expect("elenco").iter().map(|e| e["key"].as_str().expect("chiave")).collect();
+        assert_eq!(keys, vec!["2026-08-28T01", "2026-08-28T02", "2026-08-28T03"]);
+        assert_eq!(all["last_key"], json!("2026-08-28T03"));
+
+        let ActionOutcome::Went(fresh) = list
+            .execute(&json!({"collection": "posta/theo", "after": "2026-08-28T02"}), &mut shared)
+            .expect("elenco")
+        else {
+            panic!("nessuna attesa");
+        };
+        assert_eq!(fresh["count"], json!(1), "il già letto non si ripaga");
+        assert_eq!(fresh["entries"][0]["key"], json!("2026-08-28T03"));
+    }
+
+    /// Una collezione vuota, e una collezione già letta fino in fondo.
+    ///
+    /// `last_key` deve essere **assente**, non una stringa vuota: chi riprende
+    /// tiene la propria posizione, e un `last_key` vuoto scritto sopra quella
+    /// buona farebbe rileggere tutto al giro successivo.
+    #[test]
+    fn nothing_new_leaves_the_readers_place_alone() {
+        let (ledger, _guard) = store();
+        let mut shared = SharedState::new();
+        let list = StoreListAction::new(ledger);
+
+        let ActionOutcome::Went(empty) =
+            list.execute(&json!({"collection": "posta/nessuno"}), &mut shared).expect("elenco")
+        else {
+            panic!("nessuna attesa");
+        };
+        assert_eq!(empty["count"], json!(0));
+        assert_eq!(empty["last_key"], json!(null));
     }
 
     /// Un indirizzo vuoto è un errore di chi ha scritto il flusso.
