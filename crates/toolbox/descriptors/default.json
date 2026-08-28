@@ -1,0 +1,329 @@
+{
+  "_leggimi": [
+    "L'elenco di cosa cercare, spedito col prodotto. È un dato: si riscrive, si",
+    "estende e si spegne senza ricompilare niente.",
+    "",
+    "Per aggiungere uno strumento: metti un file `.json` in `~/.sailor/tools.d/`",
+    "(o dove punta SAILOR_TOOL_DESCRIPTORS) con dentro un array di descrittori,",
+    "o un oggetto con un campo `tools`. Un `id` già presente qui dentro viene",
+    "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
+    "`\"disabled\": true`.",
+    "",
+    "Un descrittore ha `detect` (questa cosa o c'è o non c'è) oppure `enumerate`",
+    "(le voci si scoprono leggendo un file di configurazione), mai tutti e due.",
+    "`detect` è una sonda o un elenco di sonde: `{\"command\": \"nome\"}` cerca un",
+    "eseguibile nelle cartelle del percorso, `{\"path\": \"~/x/*.json\"}` guarda se",
+    "un file c'è. Basta che una risponda.",
+    "",
+    "`version` dice come chiedere la versione all'eseguibile trovato; deve essere",
+    "una domanda, non un gesto: il rilevamento la esegue davvero.",
+    "`config` dice dove vive la sua configurazione. `~/`, `$VAR` e `*` valgono in",
+    "tutti i percorsi."
+  ],
+  "tools": [
+    {
+      "id": "claude-code",
+      "family": "ai_cli",
+      "label": "Claude Code",
+      "detect": { "command": "claude" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.claude/settings.json", "~/.claude.json"]
+    },
+    {
+      "id": "codex",
+      "family": "ai_cli",
+      "label": "Codex",
+      "detect": { "command": "codex" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
+      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa."
+    },
+    {
+      "id": "gemini-cli",
+      "family": "ai_cli",
+      "label": "Gemini CLI",
+      "detect": { "command": "gemini" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.gemini/settings.json"]
+    },
+    {
+      "id": "agy",
+      "family": "ai_cli",
+      "label": "agy",
+      "detect": { "command": "agy" },
+      "version": { "args": ["--version"] },
+      "note": "Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere."
+    },
+    {
+      "id": "openrouter-cli",
+      "family": "ai_cli",
+      "label": "OpenRouter CLI",
+      "detect": { "command": "openrouter" },
+      "version": { "args": ["--version"] },
+      "note": "Pacchetto `@openrouter/cli` su npm, pubblicato da OpenRouter; installa il comando `openrouter`. Sta qui come descrittore, non come codice: è la prova che una riga di comando nuova si dichiara senza ricompilare."
+    },
+    {
+      "id": "ollama",
+      "family": "ai_cli",
+      "label": "Ollama",
+      "detect": { "command": "ollama" },
+      "version": { "args": ["--version"], "must_contain": "version" },
+      "config": ["~/.ollama"],
+      "note": "Con il servizio non raggiungibile stampa prima un avvertimento: senza `must_contain` quella riga finirebbe registrata come se fosse la versione."
+    },
+
+    {
+      "id": "mcp-claude-code",
+      "family": "mcp_server",
+      "label": "server MCP dichiarati per Claude Code",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/.claude.json", "~/.claude/settings.json", "~/.mcp.json"],
+          "pointer": ["mcpServers"]
+        }
+      }
+    },
+    {
+      "id": "mcp-claude-projects",
+      "family": "mcp_server",
+      "label": "server MCP dichiarati progetto per progetto",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/.claude.json"],
+          "pointer": ["projects", "*", "mcpServers"]
+        }
+      }
+    },
+    {
+      "id": "mcp-claude-plugins",
+      "family": "mcp_server",
+      "label": "server MCP portati da un plugin",
+      "enumerate": {
+        "json_keys": {
+          "files": [
+            "~/.claude/plugins/marketplaces/*/.mcp.json",
+            "~/.claude/plugins/marketplaces/*/mcp.json",
+            "~/.claude/plugins/marketplaces/*/*/.mcp.json"
+          ],
+          "pointer": ["mcpServers"]
+        }
+      }
+    },
+    {
+      "id": "mcp-claude-desktop",
+      "family": "mcp_server",
+      "label": "server MCP dell'applicazione Claude",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/Library/Application Support/Claude/claude_desktop_config.json"],
+          "pointer": ["mcpServers"]
+        }
+      }
+    },
+    {
+      "id": "mcp-cursor",
+      "family": "mcp_server",
+      "label": "server MCP dichiarati per Cursor",
+      "enumerate": {
+        "json_keys": {
+          "files": ["~/.cursor/mcp.json"],
+          "pointer": ["mcpServers"]
+        }
+      }
+    },
+
+    {
+      "id": "socraticode",
+      "family": "tool",
+      "label": "SocratiCode",
+      "detect": [
+        { "command": "socraticode" },
+        { "path": "~/.claude/plugins/marketplaces/socraticode/.mcp.json" }
+      ],
+      "version": { "args": ["--version"] },
+      "config": ["~/.claude/plugins/marketplaces/socraticode/.mcp.json"],
+      "note": "Ha un eseguibile suo e si dichiara anche come server MCP: due sonde, basta che risponda una."
+    },
+    {
+      "id": "docker",
+      "family": "tool",
+      "label": "Docker",
+      "detect": { "command": "docker" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.docker/config.json"]
+    },
+    {
+      "id": "docker-compose",
+      "family": "tool",
+      "label": "Docker Compose",
+      "detect": { "command": "docker-compose" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "kubectl",
+      "family": "tool",
+      "label": "kubectl",
+      "detect": { "command": "kubectl" },
+      "version": { "args": ["version", "--client=true"] },
+      "config": ["~/.kube/config", "$KUBECONFIG"]
+    },
+    {
+      "id": "postman",
+      "family": "tool",
+      "label": "Postman",
+      "detect": [
+        { "path": "/Applications/Postman.app" },
+        { "command": "postman" }
+      ],
+      "config": ["~/Library/Application Support/Postman"]
+    },
+    {
+      "id": "newman",
+      "family": "tool",
+      "label": "Newman (Postman da riga di comando)",
+      "detect": { "command": "newman" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "gh",
+      "family": "tool",
+      "label": "GitHub CLI",
+      "detect": { "command": "gh" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.config/gh/config.yml", "~/.config/gh/hosts.yml"]
+    },
+    {
+      "id": "git",
+      "family": "tool",
+      "label": "git",
+      "detect": { "command": "git" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.gitconfig", "~/.config/git/config"]
+    },
+    {
+      "id": "psql",
+      "family": "tool",
+      "label": "PostgreSQL da riga di comando",
+      "detect": { "command": "psql" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.psqlrc", "~/.pgpass"]
+    },
+    {
+      "id": "mysql",
+      "family": "tool",
+      "label": "MySQL da riga di comando",
+      "detect": { "command": "mysql" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.my.cnf"]
+    },
+    {
+      "id": "sqlite3",
+      "family": "tool",
+      "label": "SQLite",
+      "detect": { "command": "sqlite3" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.sqliterc"]
+    },
+    {
+      "id": "redis-cli",
+      "family": "tool",
+      "label": "Redis da riga di comando",
+      "detect": { "command": "redis-cli" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "cargo",
+      "family": "tool",
+      "label": "Cargo",
+      "detect": { "command": "cargo" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.cargo/config.toml"]
+    },
+    {
+      "id": "node",
+      "family": "tool",
+      "label": "Node.js",
+      "detect": { "command": "node" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "npm",
+      "family": "tool",
+      "label": "npm",
+      "detect": { "command": "npm" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.npmrc"]
+    },
+    {
+      "id": "pnpm",
+      "family": "tool",
+      "label": "pnpm",
+      "detect": { "command": "pnpm" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "bun",
+      "family": "tool",
+      "label": "Bun",
+      "detect": { "command": "bun" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "python3",
+      "family": "tool",
+      "label": "Python 3",
+      "detect": { "command": "python3" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "jq",
+      "family": "tool",
+      "label": "jq",
+      "detect": { "command": "jq" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "ripgrep",
+      "family": "tool",
+      "label": "ripgrep",
+      "detect": { "command": "rg" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "just",
+      "family": "tool",
+      "label": "just",
+      "detect": { "command": "just" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "make",
+      "family": "tool",
+      "label": "make",
+      "detect": { "command": "make" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "curl",
+      "family": "tool",
+      "label": "curl",
+      "detect": { "command": "curl" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "terraform",
+      "family": "tool",
+      "label": "Terraform",
+      "detect": { "command": "terraform" },
+      "version": { "args": ["--version"] }
+    },
+    {
+      "id": "aws-cli",
+      "family": "tool",
+      "label": "AWS CLI",
+      "detect": { "command": "aws" },
+      "version": { "args": ["--version"] },
+      "config": ["~/.aws/config"]
+    }
+  ]
+}
