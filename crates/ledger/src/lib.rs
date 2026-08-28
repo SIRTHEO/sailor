@@ -308,6 +308,84 @@ pub struct DiscardedOutputStep {
     pub bytes_discarded: u64,
 }
 
+// ── com'è andata: le risposte che un flusso può ricevere sul proprio storico ──
+//
+// **NESSUNA DI QUESTE STRUTTURE PORTA `input` O `output`, E NON È UNA
+// DIMENTICANZA.** Da qui passa lo storico verso un'azione che qualunque flusso
+// può nominare, e `input`/`output` sono il canale dati tipato: ci transitano
+// prompt, ambienti e risposte di modelli. Tenerli fuori dai *tipi* invece che
+// da una proiezione fa sì che nessuna distrazione futura in `actions` possa
+// farli uscire: non c'è un campo da dimenticare di togliere. `said` esce da un
+// varco solo, `said_of_failed_steps`, legato a una corsa nominata.
+
+/// Quante volte un passo si è rotto, e con quale classe di guasto.
+///
+/// `attempts` è il denominatore: tre guasti su tre tentativi e tre su duecento
+/// sono la stessa cifra e non la stessa cosa.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StepFailureTally {
+    pub attempts: i64,
+    pub failures: i64,
+    /// Le corse toccate, che non sono i guasti: un passo può rompersi più
+    /// volte nella stessa corsa, un tentativo per volta.
+    pub runs_affected: i64,
+    pub by_class: Vec<FailureClassCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureClassCount {
+    /// `None` è un passo rotto che il motore non ha saputo classificare, e va
+    /// distinto da una classe che si chiama «sconosciuta»: qui manca il dato.
+    pub failure_class: Option<String>,
+    pub failures: i64,
+    pub runs_affected: i64,
+}
+
+/// Una corsa **chiusa**, passo per passo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FinishedRun {
+    pub run_id: String,
+    pub entity: String,
+    pub status: String,
+    pub started_at: i64,
+    pub ended_at: i64,
+    pub steps: Vec<StepOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StepOutcome {
+    pub step_id: String,
+    pub attempt: u32,
+    /// `None` è un passo rimasto aperto dentro una corsa già chiusa.
+    pub outcome: Option<String>,
+    pub failure_class: Option<String>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub bytes_seen: Option<i64>,
+    pub bytes_discarded: Option<i64>,
+}
+
+/// Quanto ci mette un passo, misurato sui soli tentativi riusciti.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct StepDurations {
+    /// Secondi interi, già ordinati: chi riassume non deve riordinare, e chi
+    /// legge la mediana non deve fidarsi che qualcuno l'abbia fatto.
+    pub seconds_sorted: Vec<i64>,
+    pub last_seconds: Option<i64>,
+    /// I tentativi rotti, contati ma **non** misurati: un guasto veloce
+    /// abbasserebbe la mediana e farebbe sembrare rapido un passo lento.
+    pub failed_samples: i64,
+}
+
+/// Il testo grezzo di un passo rotto, come lo si consegna a chi diagnostica.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaidExcerpt {
+    pub step_id: String,
+    pub attempt: u32,
+    pub said: String,
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "record", rename_all = "snake_case")]
 enum StoredEvent {
@@ -730,6 +808,271 @@ impl Ledger {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Quante corse il deposito conosce, comunque le conosca.
+    ///
+    /// **SERVE A DISTINGUERE «NON C'È NIENTE» DA «ZERO GUASTI».** Su una
+    /// macchina appena installata ogni conteggio è zero, e uno zero senza
+    /// questo numero accanto è indistinguibile da una macchina che gira da
+    /// mesi senza rompere niente — cioè da una bugia. Conta l'unione delle due
+    /// tabelle apposta: una corsa i cui passi sono registrati ma la cui
+    /// intestazione non lo è resta una corsa avvenuta, e dire «nessuna» a chi
+    /// ha lo storico sotto gli occhi sarebbe la stessa bugia al contrario.
+    pub fn recorded_runs(&self) -> Result<i64, LedgerError> {
+        let connection = self.lock()?;
+        Ok(connection.query_row(
+            "SELECT COUNT(*) FROM (SELECT run_id FROM runs UNION SELECT run_id FROM steps)",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Quante corse cadono davvero nella finestra chiesta.
+    ///
+    /// Chi riceve un conteggio deve sapere su quanto è stato calcolato: una
+    /// finestra di cinquanta corse su un deposito che ne ha tre non è una
+    /// finestra di cinquanta, e senza questo numero «zero guasti nelle ultime
+    /// cinquanta» suonerebbe come una rassicurazione che nessuno ha misurato.
+    pub fn runs_in_window(&self, flow: Option<&str>, limit: usize) -> Result<i64, LedgerError> {
+        let connection = self.lock()?;
+        Ok(connection.query_row(
+            "SELECT COUNT(*) FROM (SELECT run_id FROM runs
+             WHERE (?1 IS NULL OR entity = ?1)
+             ORDER BY started_at DESC LIMIT ?2)",
+            params![flow, limit as i64],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// Quante volte un passo si è rotto nella finestra, e come.
+    ///
+    /// **IL FILTRO PER FLUSSO PASSA DALLA GIUNZIONE CON `runs`**: `steps` non
+    /// sa a quale flusso appartiene, lo sa solo l'intestazione della corsa. Il
+    /// prezzo è dichiarato — i passi di corse mai registrate in `runs` restano
+    /// fuori dalla finestra — e il prezzo opposto sarebbe peggio: rispondere
+    /// sulla somma di tutti i flussi a chi ne ha nominato uno.
+    pub fn step_failure_tally(
+        &self,
+        step_id: &str,
+        flow: Option<&str>,
+        within_last_runs: usize,
+    ) -> Result<StepFailureTally, LedgerError> {
+        let connection = self.lock()?;
+        let limit = within_last_runs as i64;
+        let (attempts, failures, runs_affected) = connection.query_row(
+            "WITH recent AS (
+                 SELECT run_id FROM runs
+                 WHERE (?1 IS NULL OR entity = ?1)
+                 ORDER BY started_at DESC LIMIT ?2
+             )
+             SELECT COUNT(*),
+                    COALESCE(SUM(CASE WHEN s.outcome = 'Broke' THEN 1 ELSE 0 END), 0),
+                    COUNT(DISTINCT CASE WHEN s.outcome = 'Broke' THEN s.run_id END)
+             FROM steps s JOIN recent r ON r.run_id = s.run_id
+             WHERE s.step_id = ?3",
+            params![flow, limit, step_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        let mut statement = connection.prepare(
+            "WITH recent AS (
+                 SELECT run_id FROM runs
+                 WHERE (?1 IS NULL OR entity = ?1)
+                 ORDER BY started_at DESC LIMIT ?2
+             )
+             SELECT s.failure_class, COUNT(*), COUNT(DISTINCT s.run_id)
+             FROM steps s JOIN recent r ON r.run_id = s.run_id
+             WHERE s.step_id = ?3 AND s.outcome = 'Broke'
+             GROUP BY s.failure_class
+             ORDER BY COUNT(*) DESC, s.failure_class",
+        )?;
+        let by_class = statement
+            .query_map(params![flow, limit, step_id], read_failure_class_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(StepFailureTally {
+            attempts,
+            failures,
+            runs_affected,
+            by_class,
+        })
+    }
+
+    /// Le classi di guasto più frequenti, dalla più frequente in giù.
+    pub fn failure_class_tally(
+        &self,
+        flow: Option<&str>,
+        within_last_runs: usize,
+    ) -> Result<Vec<FailureClassCount>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "WITH recent AS (
+                 SELECT run_id FROM runs
+                 WHERE (?1 IS NULL OR entity = ?1)
+                 ORDER BY started_at DESC LIMIT ?2
+             )
+             SELECT s.failure_class, COUNT(*), COUNT(DISTINCT s.run_id)
+             FROM steps s JOIN recent r ON r.run_id = s.run_id
+             WHERE s.outcome = 'Broke'
+             GROUP BY s.failure_class
+             ORDER BY COUNT(*) DESC, s.failure_class",
+        )?;
+        let rows = statement.query_map(
+            params![flow, within_last_runs as i64],
+            read_failure_class_row,
+        )?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// L'ultima corsa **chiusa** di un flusso, passo per passo.
+    ///
+    /// **CHIUSA, NON RECENTE**, e la differenza non è di gusto: un flusso che
+    /// interroga il proprio storico mentre gira è lui stesso la corsa più
+    /// recente, e rispondergli con se stesso a metà gli darebbe un esito che
+    /// non è ancora successo. `ended_at IS NOT NULL` esclude chi sta chiedendo
+    /// per costruzione, senza che l'azione debba sapere il proprio nome.
+    pub fn last_finished_run(&self, flow: &str) -> Result<Option<FinishedRun>, LedgerError> {
+        let connection = self.lock()?;
+        let head: Option<(String, String, String, i64, i64)> = connection
+            .query_row(
+                "SELECT run_id, entity, status, started_at, ended_at FROM runs
+                 WHERE entity = ?1 AND ended_at IS NOT NULL
+                 ORDER BY started_at DESC, run_id DESC LIMIT 1",
+                params![flow],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((run_id, entity, status, started_at, ended_at)) = head else {
+            return Ok(None);
+        };
+        let mut statement = connection.prepare(
+            "SELECT step_id, attempt, outcome, failure_class, started_at, ended_at,
+                    bytes_seen, bytes_discarded
+             FROM steps WHERE run_id = ?1
+             ORDER BY started_at, step_id, attempt",
+        )?;
+        let steps = statement
+            .query_map(params![run_id], |row| {
+                Ok(StepOutcome {
+                    step_id: row.get(0)?,
+                    attempt: row.get(1)?,
+                    outcome: row.get(2)?,
+                    failure_class: row.get(3)?,
+                    started_at: row.get(4)?,
+                    ended_at: row.get(5)?,
+                    bytes_seen: row.get(6)?,
+                    bytes_discarded: row.get(7)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Some(FinishedRun {
+            run_id,
+            entity,
+            status,
+            started_at,
+            ended_at,
+            steps,
+        }))
+    }
+
+    /// Quanto ci ha messo un passo, tentativo riuscito per tentativo riuscito.
+    ///
+    /// I tentativi rotti si contano a parte invece di entrare nelle durate:
+    /// un guasto immediato è veloce, e mescolarlo alle riuscite risponderebbe
+    /// «va più svelto del solito» a un passo che ha smesso di funzionare.
+    pub fn step_durations(
+        &self,
+        step_id: &str,
+        flow: Option<&str>,
+        within_last_runs: usize,
+    ) -> Result<StepDurations, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "WITH recent AS (
+                 SELECT run_id FROM runs
+                 WHERE (?1 IS NULL OR entity = ?1)
+                 ORDER BY started_at DESC LIMIT ?2
+             )
+             SELECT s.outcome, s.ended_at - s.started_at, s.ended_at
+             FROM steps s JOIN recent r ON r.run_id = s.run_id
+             WHERE s.step_id = ?3 AND s.ended_at IS NOT NULL
+             ORDER BY s.ended_at DESC",
+        )?;
+        let rows = statement.query_map(params![flow, within_last_runs as i64, step_id], |row| {
+            let outcome: Option<String> = row.get(0)?;
+            let seconds: i64 = row.get(1)?;
+            Ok((outcome, seconds))
+        })?;
+        let mut durations = StepDurations::default();
+        for row in rows {
+            let (outcome, seconds) = row?;
+            match outcome.as_deref() {
+                Some("Went") => {
+                    // Le righe arrivano dalla più recente: la prima riuscita è
+                    // «l'ultima volta», ed è quella che chi chiede confronta.
+                    if durations.last_seconds.is_none() {
+                        durations.last_seconds = Some(seconds);
+                    }
+                    durations.seconds_sorted.push(seconds);
+                }
+                Some("Broke") => durations.failed_samples += 1,
+                // Saltato, fermato o in attesa: né una riuscita da misurare né
+                // un guasto da contare. Tacerne è più onesto che classificarli.
+                _ => {}
+            }
+        }
+        durations.seconds_sorted.sort_unstable();
+        Ok(durations)
+    }
+
+    /// Il testo grezzo dei passi rotti di **una** corsa nominata.
+    ///
+    /// **È UN VARCO, ED È SCRITTO COME UN VARCO.** `said` è l'unica cosa che
+    /// esce di ciò che è passato dentro un flusso, e potrebbe contenere
+    /// qualunque cosa un modello abbia detto. Accetta una corsa sola, un tetto
+    /// di passi e un tetto di byte proprio perché nessuna sequenza di domande
+    /// possa rastrellare lo storico un pezzo per volta: un metodo che
+    /// accettasse una finestra di corse sarebbe la fuga di dati che
+    /// l'interrogazione dello storico deve evitare, con l'aspetto di una
+    /// comodità.
+    pub fn said_of_failed_steps(
+        &self,
+        run_id: &str,
+        max_steps: usize,
+        max_bytes: usize,
+    ) -> Result<Vec<SaidExcerpt>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT step_id, attempt, said FROM steps
+             WHERE run_id = ?1 AND outcome = 'Broke' AND said IS NOT NULL
+             ORDER BY ended_at, step_id, attempt
+             LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![run_id, max_steps as i64], |row| {
+            let step_id: String = row.get(0)?;
+            let attempt: u32 = row.get(1)?;
+            let said: String = row.get(2)?;
+            Ok((step_id, attempt, said))
+        })?;
+        let mut excerpts = Vec::new();
+        for row in rows {
+            let (step_id, attempt, said) = row?;
+            let (said, truncated) = clip_to_bytes(said, max_bytes);
+            excerpts.push(SaidExcerpt {
+                step_id,
+                attempt,
+                said,
+                truncated,
+            });
+        }
+        Ok(excerpts)
     }
 
     pub fn rebuild_projections(&self) -> Result<(), LedgerError> {
@@ -1318,6 +1661,28 @@ fn project_record(
         ],
     )?;
     Ok(())
+}
+
+fn read_failure_class_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailureClassCount> {
+    Ok(FailureClassCount {
+        failure_class: row.get(0)?,
+        failures: row.get(1)?,
+        runs_affected: row.get(2)?,
+    })
+}
+
+/// Taglia un testo a un tetto di byte senza spezzare un carattere, e dice se
+/// ha tagliato. Il «se» va restituito, non dedotto dalla lunghezza: chi legge
+/// una diagnosi troncata senza saperlo la legge come completa.
+fn clip_to_bytes(value: String, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value, false);
+    }
+    let mut end = max_bytes;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (value[..end].to_owned(), true)
 }
 
 fn read_store_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoreRecord> {

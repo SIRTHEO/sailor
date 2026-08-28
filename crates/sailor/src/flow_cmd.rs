@@ -239,6 +239,11 @@ fn check_report(
         };
         let _ = write!(report, "\n  {} <- {}", step.id, dependencies);
     }
+    // **CHI CONTROLLA UN FLUSSO DEVE VEDERE COSA PUÒ SCRIVERCI DENTRO.** Il
+    // rapporto nominava solo le azioni mancanti, cioè rispondeva a «questo
+    // flusso gira?» e non a «cosa posso mettere nel prossimo passo». L'elenco
+    // arriva dal registro, non da una copia scritta qui accanto.
+    let _ = write!(report, "\nazioni disponibili: {}", registry.names().join(", "));
     if missing.is_empty() {
         report.push_str("\nazioni mancanti: nessuna");
     } else {
@@ -435,10 +440,16 @@ fn record_run(
 /// statico **crea file sul disco** — e che su una macchina dove il deposito non
 /// si apre il controllo direbbe «azione mancante» di un'azione che esiste.
 ///
-/// Quando manca, i due nodi non entrano nel registro e `flow check` lo dice
+/// Quando manca, quei nodi non entrano nel registro e `flow check` lo dice
 /// nella stessa forma in cui dice ogni altra azione mancante: chi legge vede
 /// che il controllo è stato fatto senza deposito, invece di credere a un
 /// grafo sano che all'esecuzione non parte.
+///
+/// **CHI LEGGE LO STORICO SEGUE LA REGOLA OPPOSTA.** `history_ask` si registra
+/// comunque, con o senza deposito, perché la sua risposta al deposito assente
+/// esiste ed è utile — dice `deposit: "absent"` invece di rompersi. Un'azione
+/// che legge non ha bisogno di un file per sapere di non avere niente da dire;
+/// una che scrive sì.
 fn default_registry(ledger: Option<Ledger>) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
@@ -465,6 +476,13 @@ fn default_registry(ledger: Option<Ledger>) -> ActionRegistry {
         actions::EXTERNAL_ENGINE_ACTION,
         actions::ExternalEngineAction::resolving_with(toolbox::Tools::current()),
     );
+    // **QUESTA NON STA DENTRO IL RAMO QUI SOTTO, E LA DIFFERENZA È IL PUNTO.**
+    // I nodi di `store` scrivono: senza deposito non hanno niente da fare, e
+    // restano fuori. Questo legge lo storico, e su una macchina appena
+    // installata «non c'è nessuna corsa registrata» è la risposta giusta.
+    // Registrarlo sotto la stessa condizione farebbe dire a `flow check` che
+    // l'azione manca proprio dove deve rispondere.
+    actions::history::register_history(&mut registry, ledger.clone());
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger);
     }
@@ -741,6 +759,40 @@ mod tests {
         let registry = default_registry(None);
         assert!(registry.get("external_engine").is_some());
         assert!(registry.get("shell_check").is_some());
+    }
+
+    /// **CHI INTERROGA LO STORICO C'È ANCHE SENZA DEPOSITO.**
+    ///
+    /// Il mutante che la fa cadere è spostare `register_history` dentro il ramo
+    /// `if let Some(ledger)` insieme ai nodi di `store` — l'errore più facile da
+    /// fare in quel punto, perché le due registrazioni si somigliano. `flow
+    /// check` direbbe «azione mancante» di un'azione che esiste, e lo direbbe
+    /// esattamente sulla macchina appena installata.
+    #[test]
+    fn the_history_question_is_registered_even_without_a_deposit() {
+        let registry = default_registry(None);
+        assert!(registry.get("history_ask").is_some());
+        assert!(
+            registry.get("store_write").is_none(),
+            "chi scrive resta fuori: senza deposito non ha dove scrivere"
+        );
+    }
+
+    /// Il rapporto nomina le azioni **disponibili**, non solo quelle mancanti.
+    ///
+    /// Cade se l'elenco sparisce o se smette di venire dal registro: chi apre
+    /// un flusso per capire cosa può metterci dentro leggerebbe una riga
+    /// vecchia, o nessuna riga.
+    #[test]
+    fn the_check_names_the_actions_a_flow_can_use() {
+        let json = flow_json("shell_check", "[]", "{}");
+        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+
+        let (report, _) = check_report(&flow, &default_registry(None), None);
+
+        assert!(report.contains("azioni disponibili: "), "{report}");
+        assert!(report.contains("history_ask"), "{report}");
+        assert!(report.contains("external_engine"), "{report}");
     }
 
     /// Il nodo di ingresso e il rilevatore sono azioni come le altre: un flusso
