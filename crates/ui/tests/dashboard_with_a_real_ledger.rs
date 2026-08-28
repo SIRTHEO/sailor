@@ -198,6 +198,7 @@ fn the_http_server_serves_valid_and_broken_flows_in_the_payload() {
             description: "Flusso valido di prova".into(),
             graph: valid_graph,
             inputs: std::collections::BTreeMap::new(),
+            schedule: None,
         }),
     );
     flows.insert(
