@@ -1,19 +1,15 @@
 //! Il gancio Stop che pretende la consegna quando il turno finisce in prosa.
 //!
 //! Il giudizio sta in `guards::handoff_on_stop`; qui c'è ciò che tocca il mondo:
-//! il payload su stdin, i marcatori sotto `state/`, il registro, e i due effetti
-//! su Orca — armare chi prosegue e congedarsi.
+//! il payload su stdin, i marcatori sotto `state/`, il registro, e il congedo
+//! su Orca quando risulta vivo un successore.
 //!
-//! DUE EFFETTI CHE NON SONO SIMMETRICI. Armare apre una scheda, congedarsi ne
-//! chiude una: la seconda è irreversibile per chi ci stava lavorando, quindi
-//! pretende tre condizioni tutte vere invece di una. Se una manca non si chiude
-//! niente e non si dice niente — una sessione che resta aperta costa una riga
-//! nella plancia, una che si chiude per sbaglio costa il lavoro in corso.
-//!
-//! L'ORDINE È COMPORTAMENTO: prima si arma, poi ci si congeda. Il congedo
-//! pretende un successore **vivo**, quindi nell'ordine inverso non scatterebbe
-//! mai; e in quest'ordine, se l'apertura fallisce, questa sessione resta viva
-//! invece di lasciare l'albero scoperto.
+//! IL PRESIDIO CHE ARMAVA UN SUCCESSORE È STATO TOLTO IL 28/08/2026: apriva un
+//! pannello nuovo quando la sessione era piena, e la staffetta ne aveva già
+//! abbandonato la funzione dal 19/08. Resta solo `farewell`, che chiude la
+//! propria scheda se un marcatore `successore-di-*` ne indica uno vivo — oggi
+//! solo quelli scritti prima di questo cambio, che `marker_sweep` ripulisce
+//! da soli quando invecchiano.
 //!
 //! FAIL-OPEN OVUNQUE: qualunque errore esce zero. Uno Stop hook che si rompe
 //! blocca la sessione per sempre, che è peggio della compattazione che evita.
@@ -209,62 +205,6 @@ fn farewell(session: &str, terminals: Option<&[Terminal]>, orca: crate::relay::O
     true
 }
 
-/// Su Stop: se la sessione è piena e ha consegnato, apre chi prosegue.
-///
-/// Non decide niente da sola — i quattro freni restano quelli di
-/// `successor::arm`, che è la sede unica. Qui si decide solo **quando**
-/// chiederglielo, e senza un documento da citare non si chiede: il successore
-/// partirebbe cieco.
-///
-/// IL BUCO CHE CHIUDE, misurato il 16/08/2026: l'unico innesco era la scrittura
-/// di una consegna, quindi una sessione piena che aveva già consegnato e
-/// proseguiva senza toccare file non armava mai niente — trovata così una
-/// sessione al 106% del budget di Opus 5, consegna fatta, ancora viva.
-fn arm_successor(session: &str, used: u64, require: u64) -> bool {
-    if blocked_as_shallow(used, require, was_voluntary_handoff(session)) {
-        return false;
-    }
-    let cwd = std::env::current_dir()
-        .unwrap_or_default()
-        .display()
-        .to_string();
-    let doc = crate::relay::latest_handoff(&cwd);
-    if doc.is_empty() {
-        return false;
-    }
-    matches!(
-        // `true`, `true`: la pienezza e la dichiarazione le ha già verificate
-        // la guardia qui sopra, ed è la condizione d'ingresso di questo
-        // percorso (`Decision::Settle` pretende `handoff_valid`). `false`: qui
-        // non si arriva mai da un subagent, perché il gancio dello Stop esce
-        // prima di tutto se la chiamata viene da uno (vedi `handoff::in_subagent`).
-        crate::successor::arm(&doc, session, "stop", true, false, true),
-        crate::successor::ArmOutcome::Open(_)
-    )
-}
-
-/// La consegna sotto la soglia d'obbligo arma comunque se `voluntary` dice
-/// che è stata una scelta, non un lavoro lasciato a metà.
-///
-/// Estratta per poterla provare senza aprire un pannello vero: `arm_successor`
-/// da qui in poi parla con `orca` e il disco.
-fn blocked_as_shallow(used: u64, require: u64, voluntary: bool) -> bool {
-    used == 0 || (used < require && !voluntary)
-}
-
-/// La consegna corrente è stata dichiarata sotto soglia per scelta —
-/// `handoff_required::mark_deliberate` (`handoff_required.rs:170`) scrive
-/// questo marcatore solo quando la consegna chiude PRIMA della soglia
-/// d'obbligo. Copre il solo caso per cui esisteva ancora il percorso Write di
-/// questo gancio: una consegna deliberata a metà lavoro, sotto la soglia che
-/// altrimenti la tratterebbe come «non ancora finita».
-fn was_voluntary_handoff(session: &str) -> bool {
-    let short: String = session.chars().take(8).collect();
-    state_dir()
-        .join(format!("consegna-volontaria-{short}"))
-        .exists()
-}
-
 fn orca_real(args: &[&str]) -> (i32, String) {
     match std::process::Command::new("orca").args(args).output() {
         Ok(o) => (
@@ -348,25 +288,27 @@ pub fn run() -> i32 {
     match decide(&fatti) {
         Decision::Pass => 0,
         Decision::Settle => {
-            // L'elenco si legge UNA volta e serve a due domande: chi prosegue, e
-            // qual è la propria scheda. Chiederlo due volte a venti secondi
-            // l'una sfonderebbe il timeout del gancio.
+            // L'elenco si legge una volta sola e serve solo a `farewell`: qual
+            // è la propria scheda, e se un successore risulta ancora vivo.
             let mut orca = orca_real;
             let terminals = crate::relay::read_terminals(&mut orca);
-            if successor_alive(&session_intero, terminals.as_deref()).is_empty() {
-                arm_successor(&session_intero, used, t.require);
-            }
-            // IL BUCO DAL LATO DELL'USCITA: se `arm_successor` ha appena
-            // fallito per un tetto di risorse, `uncovered_thread::declare` ha
-            // scritto un marcatore per QUESTA sessione — ed è l'ultimo
-            // istante in cui lei può scegliere di non lasciarlo scoperto.
-            // Deve stare prima del congedo: chiudere la propria scheda
-            // renderebbe la scelta impossibile.
-            if crate::uncovered_exit::deny_if_own_thread_uncovered(&session_intero, stop_hook_active)
-            {
-                return 2;
-            }
             farewell(&session_intero, terminals.as_deref(), &mut orca);
+            // IL FILO SI DICHIARA QUI DA QUANDO NESSUNO APRE PIÙ UN SUCCESSORE
+            // (28/08/2026). Prima lo dichiarava chi rinviava l'apertura, e il
+            // motivo era quale tetto avesse fermato il presidio; adesso il
+            // presidio non c'è più, quindi il motivo è uno solo e vale sempre.
+            //
+            // NON DIVENTA RUMORE, ed è il punto delicato: il marcatore si scrive
+            // a ogni chiusura, ma **conta solo quando la sessione sparisce senza
+            // che nessuno abbia preso il suo posto** — a dirlo è il registro
+            // delle sessioni vive, non questa riga. Chi riapre nello stesso
+            // albero lo cancella da sé.
+            crate::uncovered_thread::declare(
+                &session_intero,
+                &std::env::var("PWD").unwrap_or_default(),
+                transcript,
+                "nessun-successore",
+            );
             0
         }
         Decision::Surrender => {
@@ -540,35 +482,4 @@ mod tests {
         assert_eq!(handoff_marker_epoch("nessuno"), 0);
     }
 
-    /// Sotto soglia una consegna deliberata arma comunque; senza la scelta, no.
-    ///
-    /// MUTANTE: tolto `!voluntary` dalla condizione, questo caso va in rosso
-    /// da solo — nessun altro prova `voluntary: true` sotto soglia.
-    #[test]
-    fn blocked_as_shallow_lets_a_deliberate_handoff_through() {
-        assert!(
-            blocked_as_shallow(300_000, 450_000, false),
-            "sotto soglia e non voluta: ferma"
-        );
-        assert!(
-            !blocked_as_shallow(300_000, 450_000, true),
-            "sotto soglia ma voluta: passa"
-        );
-        assert!(
-            blocked_as_shallow(0, 450_000, true),
-            "zero non e' mai abbastanza, nemmeno voluta"
-        );
-        assert!(
-            !blocked_as_shallow(500_000, 450_000, false),
-            "piena: passa come prima"
-        );
-    }
-
-    #[test]
-    fn was_voluntary_handoff_reads_the_marker_written_by_mark_deliberate() {
-        let home = HomeIsolata::nuova("volontaria-marcatore");
-        assert!(!was_voluntary_handoff("sessione-lunga-1234"));
-        fs::write(home.stato().join("consegna-volontaria-sessione"), "1").unwrap();
-        assert!(was_voluntary_handoff("sessione-lunga-1234"));
-    }
 }
