@@ -23,8 +23,14 @@ use crate::shell::split_words;
 /// il controllo che mente, ed è peggio di nessun controllo.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Reading {
-    /// Pagine libere, in MB.
+    /// Pagine libere, in MB. **Non è la memoria disponibile**, e su macOS non
+    /// ci somiglia: resta vicino a zero anche a macchina scarica, perché il
+    /// kernel tiene la RAM piena di cache. Si conserva perché nel messaggio dice
+    /// qualcosa a chi legge, ma non vota più — vedi `available_mb`.
     pub free_mb: Option<u64>,
+    /// La memoria che il kernel può restituire subito, in MB: le pagine libere
+    /// più inattive, speculative e purgeable. **È questa che vota.**
+    pub available_mb: Option<u64>,
     /// Quanto tiene il compressore, in MB.
     pub compressor_mb: Option<u64>,
     /// La RAM fisica, in MB.
@@ -45,6 +51,8 @@ pub struct Reading {
 /// davvero. Stesso motivo di `GM_ETA_MIN` in `guardiano-macchina.sh`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Thresholds {
+    pub available_tight_mb: u64,
+    pub available_critical_mb: u64,
     pub free_tight_mb: u64,
     pub free_critical_mb: u64,
     /// Quota del compressore sulla RAM, in percento.
@@ -63,6 +71,12 @@ impl Default for Thresholds {
     /// arriva prima del pannello e non insieme.
     fn default() -> Self {
         Self {
+            // La memoria disponibile, che è il segnale che ha sostituito le
+            // pagine libere il 28/08/2026. Un ordine di grandezza sopra, perché
+            // misura un'altra cosa: su questa macchina «88 MB liberi» e «4.701
+            // MB disponibili» erano lo stesso istante.
+            available_tight_mb: 1536,
+            available_critical_mb: 512,
             free_tight_mb: 300,
             free_critical_mb: 100,
             compressor_tight_pct: 33,
@@ -114,7 +128,35 @@ pub fn classify(reading: &Reading, t: &Thresholds) -> PressureVerdict {
         }
     };
 
-    if let Some(free) = reading.free_mb {
+    // IL SEGNALE È LA MEMORIA DISPONIBILE, NON QUELLA LIBERA. Fino al
+    // 28/08/2026 votavano le pagine libere, e su macOS quel numero sta vicino a
+    // zero per costruzione: il kernel riempie la RAM di cache e la restituisce a
+    // chi la chiede. Alle 21:00 di quel giorno la macchina aveva 88 MB liberi e
+    // 4,7 GB disponibili, il kernel dichiarava «pressione normale», e il freno
+    // negava ogni compilazione da tre ore. Le pagine libere restano nel
+    // messaggio, perché a chi legge dicono qualcosa; non decidono più.
+    if let Some(available) = reading.available_mb {
+        let l = if available < t.available_critical_mb {
+            Pressure::Critical
+        } else if available < t.available_tight_mb {
+            Pressure::Tight
+        } else {
+            Pressure::Calm
+        };
+        let libere = match reading.free_mb {
+            Some(free) => format!(", di cui {free} libere"),
+            None => String::new(),
+        };
+        vote(
+            l,
+            format!("memoria disponibile {available} MB{libere}"),
+            &mut level,
+            &mut because,
+        );
+    } else if let Some(free) = reading.free_mb {
+        // Senza il conto della disponibile si torna al segnale vecchio: è meno
+        // buono, ma è meglio della cecità — e il messaggio dice quale dei due
+        // ha parlato, perché chi legge un diniego deve poterlo pesare.
         let l = if free < t.free_critical_mb {
             Pressure::Critical
         } else if free < t.free_tight_mb {
@@ -124,7 +166,7 @@ pub fn classify(reading: &Reading, t: &Thresholds) -> PressureVerdict {
         };
         vote(
             l,
-            format!("memoria libera {free} MB"),
+            format!("memoria libera {free} MB (disponibile non misurata)"),
             &mut level,
             &mut because,
         );
@@ -152,17 +194,26 @@ pub fn classify(reading: &Reading, t: &Thresholds) -> PressureVerdict {
         }
     }
 
+    // LO SWAP ALLOCATO NON TORNA INDIETRO, quindi da solo non può negare.
+    // È la traccia del picco peggiore da quando la macchina è accesa, non lo
+    // stato di adesso: il 28/08/2026 è sceso da 23,5 a 12,3 GB chiudendo
+    // applicazioni, e sarebbe rimasto sopra la soglia critica per il resto della
+    // giornata mentre il kernel dichiarava «pressione normale». Un segnale che
+    // sale e non scende, se vota `Critical`, spegne il lavoro fino al riavvio.
+    //
+    // Resta un segnale, e al massimo dei tre concorre: la macchina che ha già
+    // scritto tanto su disco è una macchina da trattare con riguardo. Ma il
+    // veto lo danno i due che sanno tornare indietro — la memoria disponibile e
+    // il compressore.
     if let Some(swap) = reading.swap_allocated_mb {
-        let l = if swap >= t.swap_critical_mb {
-            Pressure::Critical
-        } else if swap >= t.swap_tight_mb {
+        let l = if swap >= t.swap_tight_mb {
             Pressure::Tight
         } else {
             Pressure::Calm
         };
         vote(
             l,
-            format!("swap allocato {swap} MB"),
+            format!("swap allocato {swap} MB (traccia del picco, non dello stato)"),
             &mut level,
             &mut because,
         );
@@ -616,18 +667,22 @@ mod tests {
 
     #[test]
     fn the_worst_signal_decides_the_level() {
-        // Memoria libera abbondante, ma lo swap allocato è oltre la soglia
+        // Memoria disponibile abbondante, ma il compressore è oltre la soglia
         // critica: mediare i tre segnali avrebbe fatto sparire quello che grida.
         let r = Reading {
             free_mb: Some(4000),
-            compressor_mb: Some(1000),
+            available_mb: Some(6000),
+            compressor_mb: Some(8000),
             total_mb: Some(18432),
-            swap_allocated_mb: Some(11264),
+            swap_allocated_mb: Some(2048),
             unreadable: vec![],
         };
         let v = classify(&r, &Thresholds::default());
         assert_eq!(v.level, Pressure::Critical);
-        assert_eq!(v.because, vec!["swap allocato 11264 MB".to_string()]);
+        assert_eq!(
+            v.because,
+            vec!["compressore al 43% della RAM (8000 MB)".to_string()]
+        );
     }
 
     #[test]
@@ -635,8 +690,13 @@ mod tests {
         // I numeri veri di quella mattina: 18 MB liberi, 5,3 GB nel
         // compressore, swap a 9,4 su 10,2 GB. Se questa lettura non fosse
         // critica, il governo non servirebbe a niente.
+        //
+        // La memoria disponibile non c'è, e non si inventa: quel giorno non la
+        // misurava nessuno. Vale quindi il ripiego sulle pagine libere, ed è la
+        // prova che il ripiego funziona — su una lettura vera, non costruita.
         let r = Reading {
             free_mb: Some(18),
+            available_mb: None,
             compressor_mb: Some(5300),
             total_mb: Some(18432),
             swap_allocated_mb: Some(10240),
@@ -652,6 +712,7 @@ mod tests {
     fn a_quiet_machine_reads_calm() {
         let r = Reading {
             free_mb: Some(6000),
+            available_mb: Some(9000),
             compressor_mb: Some(2000),
             total_mb: Some(18432),
             swap_allocated_mb: Some(2048),
@@ -659,6 +720,53 @@ mod tests {
         };
         let v = classify(&r, &Thresholds::default());
         assert_eq!(v.level, Pressure::Calm);
+    }
+
+    /// LA LETTURA CHE IL 28/08/2026 BLOCCAVA TUTTO, e non doveva. Ottantotto
+    /// megabyte liberi su una macchina con quattro giga e mezzo disponibili e il
+    /// kernel che dichiarava «pressione normale»: il freno leggeva le pagine
+    /// libere, che su macOS stanno vicino a zero per costruzione, e negava ogni
+    /// compilazione.
+    #[test]
+    fn few_free_pages_with_plenty_available_is_not_pressure() {
+        let r = Reading {
+            free_mb: Some(88),
+            available_mb: Some(4701),
+            compressor_mb: Some(5295),
+            total_mb: Some(18432),
+            swap_allocated_mb: Some(12288),
+            unreadable: vec![],
+        };
+        assert_eq!(classify(&r, &Thresholds::default()).level, Pressure::Tight);
+    }
+
+    /// E il contrario, che è il caso per cui il freno esiste: poca memoria
+    /// disponibile davvero, non solo poche pagine libere.
+    #[test]
+    fn little_available_memory_is_still_critical() {
+        let r = Reading {
+            free_mb: Some(88),
+            available_mb: Some(200),
+            compressor_mb: Some(2000),
+            total_mb: Some(18432),
+            ..Default::default()
+        };
+        assert_eq!(classify(&r, &Thresholds::default()).level, Pressure::Critical);
+    }
+
+    /// Lo swap allocato è la traccia del picco peggiore da quando la macchina è
+    /// accesa, e non scende: se negasse da solo, spegnerebbe il lavoro fino al
+    /// riavvio. Concorre, non decide.
+    #[test]
+    fn high_allocated_swap_alone_never_refuses() {
+        let r = Reading {
+            available_mb: Some(9000),
+            compressor_mb: Some(2000),
+            total_mb: Some(18432),
+            swap_allocated_mb: Some(20480),
+            ..Default::default()
+        };
+        assert_eq!(classify(&r, &Thresholds::default()).level, Pressure::Tight);
     }
 
     #[test]
@@ -707,13 +815,13 @@ mod tests {
         // tarature, due verdetti. Senza questo, un collaudo del freno
         // pretenderebbe di saturare i 18 GB veri.
         let r = Reading {
-            free_mb: Some(2000),
+            available_mb: Some(2000),
             ..Default::default()
         };
         let base = Thresholds::default();
         assert_eq!(classify(&r, &base).level, Pressure::Calm);
         let stricter = Thresholds {
-            free_tight_mb: 3000,
+            available_tight_mb: 3000,
             ..base
         };
         assert_eq!(classify(&r, &stricter).level, Pressure::Tight);
