@@ -101,11 +101,11 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
 }
 
 fn release(selected: &Target, options: &Options) -> Result<i32, String> {
-    let root = claude_root()?;
+    let root = sources_root()?;
     let head_rev = git_text(&root, &["rev-parse", "HEAD"])?;
     let head_short = git_text(&root, &["rev-parse", "--short", "HEAD"])?;
     let source_rev = {
-        let revision = git_text(&root, &["log", "-1", "--format=%H", "--", "rust/"])?;
+        let revision = git_text(&root, &["log", "-1", "--format=%H", "--", "crates/"])?;
         if revision.is_empty() {
             head_rev.clone()
         } else {
@@ -113,11 +113,11 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
     };
 
-    let dirty = git_output(&root, &["status", "--porcelain", "--", "rust"])?;
+    let dirty = git_output(&root, &["status", "--porcelain", "--", "crates"])?;
     let dirty_count = String::from_utf8_lossy(&dirty.stdout).lines().count();
     if dirty_count > 0 {
         println!(
-            "nota: {dirty_count} file non committati sotto rust/ restano fuori dal servizio, per costruzione"
+            "nota: {dirty_count} file non committati sotto crates/ restano fuori dal servizio, per costruzione"
         );
     }
 
@@ -134,8 +134,10 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         "il checkout di HEAD nel clone è fallito",
     )?;
 
-    let build_target = root.join("rust/target/from-head");
-    let cloned_rust = repository.join("rust");
+    let build_target = root.join("target/from-head");
+    // I crate stanno alla radice dell'albero dal trasloco del 27/08/2026: non
+    // c'è più un sottoalbero da cui compilare.
+    let cloned_rust = repository.clone();
     println!("== compilo da quell'albero ==");
     let build = Command::new("cargo")
         .current_dir(&cloned_rust)
@@ -255,13 +257,24 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     Ok(0)
 }
 
-fn claude_root() -> Result<PathBuf, String> {
-    if let Some(root) = env::var_os("CLAUDE_HOME").filter(|value| !value.is_empty()) {
+/// L'albero dei sorgenti da cui si costruisce ciò che va in servizio.
+///
+/// IL 28/08/2026 QUESTA FUNZIONE HA RIMESSO IN SERVIZIO IL PASSATO. Puntava
+/// alla cartella della configurazione, che è la casa da cui i sorgenti se ne
+/// sono andati il 27/08 — ed è anche un repo git, quindi il clone di HEAD
+/// riportava indietro l'albero cancellato dal disco: un rilascio riuscito, con
+/// uscita 0 e il timbro al suo posto, che ha **disinstallato** il lavoro di
+/// quella stessa mattina. Nessun controllo poteva accorgersene: compilava,
+/// perché il codice vecchio compila benissimo.
+///
+/// Il punto d'installazione resta dov'era; è la sorgente che si è spostata.
+fn sources_root() -> Result<PathBuf, String> {
+    if let Some(root) = env::var_os("SAILOR_HOME").filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(root));
     }
     env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join(".claude"))
-        .ok_or_else(|| "né CLAUDE_HOME né HOME sono impostate".to_string())
+        .map(|home| PathBuf::from(home).join("personal").join("sailor"))
+        .ok_or_else(|| "né SAILOR_HOME né HOME sono impostate".to_string())
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
@@ -443,11 +456,11 @@ fn print_changes(
             .map_err(|error| format!("non posso verificare il vecchio timbro con git: {error}"))?;
         if exists.success() {
             let range = format!("{previous}..{head_rev}");
-            let log = git_output(root, &["log", "--oneline", &range, "--", "rust"])?;
+            let log = git_output(root, &["log", "--oneline", &range, "--", "crates"])?;
             print!("{}", String::from_utf8_lossy(&log.stdout));
-            let count = git_text(root, &["rev-list", "--count", &range, "--", "rust"])?;
+            let count = git_text(root, &["rev-list", "--count", &range, "--", "crates"])?;
             println!(
-                "   ({count} commit che toccano rust/, da {} a {head_short})",
+                "   ({count} commit che toccano crates/, da {} a {head_short})",
                 short_revision(&previous)
             );
             return Ok(());
@@ -639,6 +652,25 @@ mod tests {
     #[test]
     fn a_missing_target_is_refused_with_the_usage() {
         assert!(parse_options(&a(&[])).is_err());
+    }
+
+    /// Da dove si costruisce ciò che va in servizio.
+    ///
+    /// IL BRACCIO CHE CONTA È IL SECONDO: la cartella della configurazione è
+    /// anche un repo git, e finché il rilascio clonava quella rimetteva in
+    /// servizio l'albero da cui i sorgenti se n'erano andati — un rilascio
+    /// verde che disinstallava il lavoro della mattina.
+    #[test]
+    fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
+        let root = sources_root().unwrap();
+        assert!(root.ends_with("personal/sailor"), "{root:?}");
+        assert!(
+            !root.ends_with(".claude"),
+            "il rilascio è tornato a clonare la configurazione: {root:?}"
+        );
+        // Il crate del binario sta lì, e non sotto un sottoalbero `rust/`.
+        assert!(root.join("crates").join("claude-hooks").is_dir(), "{root:?}");
+        assert!(!root.join("rust").exists(), "{root:?}");
     }
 
     #[test]
