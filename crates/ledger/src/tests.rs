@@ -934,3 +934,116 @@ fn corrupted_event_log_behind_projection_watermark_is_rejected_on_open() {
     }
 }
 
+fn seen(kind: &str, name: &str, reach: &str) -> InventoryItem {
+    InventoryItem {
+        kind: kind.to_string(),
+        name: name.to_string(),
+        origin: "casa".to_string(),
+        path: format!("/casa/{kind}/{name}"),
+        reach: reach.to_string(),
+        reason: (reach != "active").then(|| "il plugin è spento".to_string()),
+    }
+}
+
+/// Il deposito sa dire che cosa non c'è più — la domanda che un elenco
+/// ricalcolato ogni volta non può nemmeno porsi.
+///
+/// TRE SCANSIONI, PERCHÉ IL TERZO ATTO È QUELLO CHE SI SBAGLIA: una cosa che
+/// ricompare deve smettere di risultare sparita. Senza quel braccio, il segno
+/// della sparizione resterebbe per sempre e l'elenco mostrerebbe morta una
+/// competenza che è tornata al suo posto — e chi cancella leggendo quell'elenco
+/// cancellerebbe una cosa viva.
+#[test]
+fn the_ledger_knows_what_disappeared_and_what_came_back() {
+    let directory = TestDirectory::new("inventario");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: 100,
+            items: vec![seen("skill", "prima", "active"), seen("hook", "sola", "active")],
+        })
+        .expect("prima scansione");
+
+    let present = ledger.inventory_present().expect("presenti");
+    assert_eq!(present.len(), 2, "{present:#?}");
+    assert!(present.iter().all(|item| item.first_seen == 100));
+
+    // Seconda scansione: la competenza non c'è più, e il gancio si spegne.
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: 200,
+            items: vec![seen("hook", "sola", "inactive")],
+        })
+        .expect("seconda scansione");
+
+    let gone = ledger.inventory_gone().expect("sparite");
+    assert_eq!(gone.len(), 1, "{gone:#?}");
+    assert_eq!(gone[0].name, "prima");
+    assert_eq!(gone[0].gone_at, Some(200));
+    // E la data della prima volta non si è mossa: è l'unica che dice da quando.
+    assert_eq!(gone[0].first_seen, 100);
+
+    let present = ledger.inventory_present().expect("presenti");
+    assert_eq!(present.len(), 1, "{present:#?}");
+    assert_eq!(present[0].reach, "inactive");
+    assert_eq!(present[0].reason.as_deref(), Some("il plugin è spento"));
+    assert_eq!(present[0].first_seen, 100, "il gancio c'era già dalla prima");
+
+    // Terza scansione: la competenza torna. Non è più sparita, e resta sua la
+    // data d'origine.
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: 300,
+            items: vec![seen("skill", "prima", "active"), seen("hook", "sola", "active")],
+        })
+        .expect("terza scansione");
+
+    assert!(
+        ledger.inventory_gone().expect("sparite").is_empty(),
+        "una voce tornata risulta ancora sparita"
+    );
+    let back = ledger
+        .inventory_present()
+        .expect("presenti")
+        .into_iter()
+        .find(|item| item.name == "prima")
+        .expect("la competenza è tornata");
+    assert_eq!(back.first_seen, 100);
+    assert_eq!(back.last_seen, 300);
+
+    // «Che cosa è nuovo da ieri»: niente, perché tutte e due esistevano già.
+    assert!(
+        ledger.inventory_new_since(150).expect("nuove").is_empty(),
+        "una voce tornata non è una voce nuova"
+    );
+}
+
+/// La proiezione si ricostruisce dagli eventi, com'è promesso per tutto il
+/// resto del deposito: se l'inventario non si ricostruisse, il file di stato
+/// diventerebbe l'unica copia di un dato che nessuno può più verificare.
+#[test]
+fn the_inventory_survives_a_rebuild_from_the_events() {
+    let directory = TestDirectory::new("inventario-ricostruito");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: 10,
+            items: vec![seen("skill", "una", "active"), seen("skill", "due", "active")],
+        })
+        .expect("prima");
+    ledger
+        .record_inventory(&InventoryScan {
+            taken_at: 20,
+            items: vec![seen("skill", "una", "active")],
+        })
+        .expect("seconda");
+
+    ledger.rebuild_projections().expect("ricostruzione");
+
+    let gone = ledger.inventory_gone().expect("sparite");
+    assert_eq!(gone.len(), 1, "{gone:#?}");
+    assert_eq!(gone[0].name, "due");
+    assert_eq!(gone[0].gone_at, Some(20));
+}
+
