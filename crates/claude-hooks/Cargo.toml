@@ -12,5 +12,8 @@ path = "src/main.rs"
 hook-io = { path = "../hook-io" }
 guards = { path = "../guards" }
 inventory = { path = "../inventory" }
+# Il deposito serve alla staffetta, che da lì legge su che lavoro si e' —
+# invece di dedurlo dall'ultimo mandato nominato in un transcript.
+ledger = { path = "../ledger" }
 serde_json.workspace = true
 regex.workspace = true

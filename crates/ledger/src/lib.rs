@@ -20,6 +20,22 @@ use tracing_subscriber::layer::{Context, Layer};
 
 const STATE_FILE: &str = "state.db";
 const EVENTS_FILE: &str = "events.db";
+
+/// Dove vive il deposito di questa macchina.
+///
+/// **STA QUI PERCHÉ È UNA SOLA.** Era una funzione privata di `sailor flow`, e
+/// finché a leggere il deposito c'era un comando solo bastava. Adesso lo legge
+/// anche la staffetta, per sapere su che lavoro si è: due copie di questo
+/// percorso divergerebbero al primo che cambia idea, e nessuna delle due
+/// direbbe di essere sbagliata — semplicemente una delle due aprirebbe un
+/// deposito vuoto e risponderebbe «non lo so».
+///
+/// `None` quando `HOME` non è definita: chi chiama ha sempre un ripiego, e
+/// nessuno deve dedurre una casa che l'ambiente non dichiara.
+pub fn default_directory() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").filter(|value| !value.is_empty())?;
+    Some(PathBuf::from(home).join(".claude/state/flussi"))
+}
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const PROJECTION_SCHEMA_VERSION: i64 = 3;
 
@@ -171,6 +187,39 @@ pub struct SnapshotRecord {
     pub created_at: i64,
 }
 
+/// Un fatto che un flusso vuole ricordare, in una collezione che ha nominato lui.
+///
+/// **LO SPAZIO È DEL FLUSSO, NON DEL MOTORE.** La prima stesura di questo pezzo,
+/// il 28/08/2026, era una tabella `current_mandate` con le sue colonne: un
+/// concetto di dominio scolpito in Rust, cioè lo stesso difetto per cui `notte`
+/// è condannata — un flusso di quattro passi diventato un programma di 2.562
+/// righe perché ogni cosa che doveva ricordare si è fatta la sua struttura.
+/// Theo l'ha fermata: *«dovrebbe esistere disegnato, non hardcodato»*.
+///
+/// Qui invece il motore offre **lo spazio**, e chi lo riempie decide cosa
+/// significa: `collection` è un nome che sceglie il flusso, `key` la voce
+/// dentro quel nome, `value` un JSON qualunque. Il motore non sa e non deve
+/// sapere che esiste una cosa chiamata «mandato».
+///
+/// **Perché non tabelle SQL vere, create dal file di flusso.** Sarebbe DDL
+/// arbitrario preso da un file di dati, dentro il processo che tiene i freni —
+/// la stessa porta che la pietra miliare §2 chiude quando vieta un interprete
+/// qui dentro. Una collezione dà la stessa libertà senza aprirla: chi legge
+/// vede le sue voci e nessun'altra, e nessuno può cambiare la forma del
+/// deposito scrivendo un file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoreRecord {
+    /// Lo spazio dei nomi, scelto da chi scrive il flusso.
+    pub collection: String,
+    /// La voce dentro quella collezione.
+    pub key: String,
+    /// Cosa vale, nella forma che il flusso ha deciso.
+    pub value: Value,
+    /// Chi l'ha scritto: il flusso, la corsa, o una persona.
+    pub written_by: String,
+    pub written_at: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailedStep {
     pub run_id: String,
@@ -218,6 +267,7 @@ enum StoredEvent {
     ModelCallRecorded(ModelCallRecord),
     SnapshotRecorded(SnapshotRecord),
     InventoryScanned(InventoryScan),
+    RecordWritten(StoreRecord),
     Trace(TraceRecord),
 }
 
@@ -303,6 +353,53 @@ impl Ledger {
     /// Deposita una scansione dell'inventario.
     pub fn record_inventory(&self, scan: &InventoryScan) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::InventoryScanned(scan.clone()))
+    }
+
+    /// Scrive una voce nella collezione che il flusso ha nominato.
+    ///
+    /// Collezione e chiave non possono essere vuote: sono l'indirizzo, e una
+    /// voce senza indirizzo la ritrova solo chi già sa dov'è.
+    pub fn put_record(&self, record: &StoreRecord) -> Result<(), LedgerError> {
+        if record.collection.trim().is_empty() {
+            return Err(LedgerError::InvalidRecord("record collection is empty".into()));
+        }
+        if record.key.trim().is_empty() {
+            return Err(LedgerError::InvalidRecord("record key is empty".into()));
+        }
+        self.write_event(StoredEvent::RecordWritten(record.clone()))
+    }
+
+    /// Che cosa vale una voce, se qualcuno l'ha scritta.
+    ///
+    /// `None` non è un guasto: è una voce che nessuno ha ancora scritto, e chi
+    /// legge deve avere un ripiego invece di fermarsi. Un deposito che
+    /// inventasse un valore plausibile sarebbe peggio del non sapere.
+    pub fn read_record(
+        &self,
+        collection: &str,
+        key: &str,
+    ) -> Result<Option<StoreRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let found = connection
+            .query_row(
+                "SELECT collection, key, value, written_by, written_at
+                 FROM store WHERE collection = ?1 AND key = ?2",
+                params![collection, key],
+                read_store_row,
+            )
+            .optional()?;
+        Ok(found)
+    }
+
+    /// Tutte le voci di una collezione, per chi la vuole mostrare intera.
+    pub fn records_in(&self, collection: &str) -> Result<Vec<StoreRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT collection, key, value, written_by, written_at
+             FROM store WHERE collection = ?1 ORDER BY key",
+        )?;
+        let rows = statement.query_map(params![collection], read_store_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Le voci sparite: c'erano, e l'ultima scansione non le ha più viste.
@@ -869,6 +966,14 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              gone_at INTEGER,
              PRIMARY KEY (kind, name, path)
          );
+         CREATE TABLE IF NOT EXISTS store (
+             collection TEXT NOT NULL,
+             key TEXT NOT NULL,
+             value TEXT NOT NULL,
+             written_by TEXT NOT NULL,
+             written_at INTEGER NOT NULL,
+             PRIMARY KEY (collection, key)
+         );
          CREATE TABLE IF NOT EXISTS projection_watermark (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
@@ -1107,6 +1212,9 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
         StoredEvent::InventoryScanned(scan) => {
             ("inventory_scanned", None, None, None, None, Some(scan.taken_at))
         }
+        StoredEvent::RecordWritten(record) => {
+            ("record_written", None, None, None, None, Some(record.written_at))
+        }
         StoredEvent::Trace(record) => ("trace", None, None, None, None, Some(record.occurred_at)),
     }
 }
@@ -1119,8 +1227,53 @@ fn project_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(
         StoredEvent::ModelCallRecorded(record) => project_model_call(transaction, record),
         StoredEvent::SnapshotRecorded(record) => project_snapshot(transaction, record),
         StoredEvent::InventoryScanned(scan) => project_inventory(transaction, scan),
+        StoredEvent::RecordWritten(record) => project_record(transaction, record),
         StoredEvent::Trace(_) => Ok(()),
     }
+}
+
+/// Una voce, un valore: l'ultima scrittura sostituisce la precedente.
+///
+/// La storia non si perde e non va qui: sta nel registro, dove ogni
+/// `record_written` resta con la sua data e con chi l'ha scritto. Questa
+/// tabella risponde a una domanda sola — *adesso*, quanto vale questa voce — e
+/// una tabella che risponde a una domanda sola non può dare due risposte in
+/// disaccordo.
+fn project_record(
+    transaction: &Transaction<'_>,
+    record: &StoreRecord,
+) -> Result<(), LedgerError> {
+    transaction.execute(
+        "INSERT INTO store (collection, key, value, written_by, written_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(collection, key) DO UPDATE SET
+          value=excluded.value, written_by=excluded.written_by,
+          written_at=excluded.written_at",
+        params![
+            record.collection,
+            record.key,
+            serde_json::to_string(&record.value)?,
+            record.written_by,
+            record.written_at,
+        ],
+    )?;
+    Ok(())
+}
+
+fn read_store_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoreRecord> {
+    let raw: String = row.get(2)?;
+    Ok(StoreRecord {
+        collection: row.get(0)?,
+        key: row.get(1)?,
+        // Il valore è entrato come JSON e deve uscire com'è entrato. Se il testo
+        // sul disco non si rilegge — un deposito toccato a mano, un file
+        // troncato — si restituisce la stringa grezza invece di far cadere la
+        // lettura: chi legge vede qualcosa di sbagliato e se ne accorge, mentre
+        // un errore qui spegnerebbe la riga per una voce sola.
+        value: serde_json::from_str(&raw).unwrap_or(Value::String(raw)),
+        written_by: row.get(3)?,
+        written_at: row.get(4)?,
+    })
 }
 
 fn project_run(transaction: &Transaction<'_>, record: &RunRecord) -> Result<(), LedgerError> {
