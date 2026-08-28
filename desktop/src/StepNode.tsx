@@ -1,5 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { Step, StepKind, StepRun, StepState } from "./flow";
+import { MODEL_KEY, toolOf, useTool, useToolsAreKnown } from "./tools";
+import { ToolMark } from "./ToolMark";
 
 export interface StepNodeData extends Record<string, unknown> {
   step: Step;
@@ -47,11 +49,59 @@ export const KIND_LABEL: Record<StepKind, string> = {
   subflow: "sotto-flusso",
 };
 
+/** Il modello scelto dal passo, se ne ha scelto uno. */
+function modelOf(step: Step): string {
+  const model = step.with?.[MODEL_KEY];
+  return typeof model === "string" ? model : "";
+}
+
+/**
+ * Cosa esegue questo passo, sulla tela: il segno dello strumento, come si
+ * chiama, e il modello se ne è stato scelto uno.
+ *
+ * UNO STRUMENTO ASSENTE NON SPARISCE, si spegne. Un nodo che su questa macchina
+ * non può girare deve dirlo guardandolo — col motivo che il rilevamento ha
+ * già in mano — invece di sembrare a posto e fallire alla partenza. E finché
+ * la scoperta non ha risposto non si accusa nessuno: si mostra
+ * l'identificativo scritto nel passo, che è quello che il file dice.
+ */
+function StepTool({ id, model }: { id: string; model: string }) {
+  const tool = useTool(id);
+  const known = useToolsAreKnown();
+  // Tre stati, non due: trovato e c'è, trovato e non c'è, e «non lo so
+  // ancora». Il terzo non è il secondo, e colorarlo di spento sarebbe una
+  // bugia che dura quanto il rilevamento.
+  const off = known && !tool?.available;
+  const why = tool?.reason ?? (known ? "non è fra gli strumenti rilevati su questa macchina" : "");
+
+  return (
+    <div className="step-node__tool" data-off={off || undefined}>
+      <ToolMark id={id} size={16} off={off} />
+      <div className="step-node__tool-text">
+        <span className="step-node__tool-name" title={id}>
+          {tool?.name ?? id}
+        </span>
+        {model !== "" && <span className="step-node__tool-model">{model}</span>}
+        {/* Il motivo si legge sulla tela, non solo passandoci sopra: chi guarda
+            un nodo spento non deve andare a cercare dove sta scritto perché. */}
+        {off && why !== "" && (
+          <span className="step-node__tool-why" title={why}>
+            {why}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function StepNode({ data, selected }: NodeProps) {
   const { step, kind, run, flowName, color: flowColor, dimmed } = data as StepNodeData;
   const state: StepState = run?.state ?? "waiting";
   const color = STATE_COLOR[state];
   const isAgent = kind === "engine";
+  // Quale strumento esegue questo nodo si legge sulla tela, non solo aprendo il
+  // pannello: è la prima domanda di chi guarda un flusso fatto da altri.
+  const tool = toolOf(step.with);
 
   return (
     <div
@@ -74,6 +124,8 @@ export function StepNode({ data, selected }: NodeProps) {
       </div>
 
       <div className="step-node__id">{step.id}</div>
+
+      {tool !== "" && <StepTool id={tool} model={modelOf(step)} />}
 
       <div className="step-node__foot">
         <span style={{ color }}>{STATE_LABEL[state]}</span>
@@ -127,7 +179,11 @@ export function FlowBandNode({ data }: NodeProps) {
         </span>
         <span className="flow-band__count">{stepCount} passi</span>
       </div>
-      <div className="flow-band__desc">{description}</div>
+      {/* Troncata a due righe dallo stile, ma non persa: per intero si legge
+          passandoci sopra. */}
+      <div className="flow-band__desc" title={description}>
+        {description}
+      </div>
     </div>
   );
 }

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "I permessi della finestra di Sailor. Senza questo file l'ascolto degli eventi non si attacca: `event.listen` e' un comando del nucleo di Tauri, e i comandi del nucleo vanno concessi uno a uno. Misurato il 28/08/2026: la vista dell'esecuzione riceveva «event.listen not allowed» e restava ferma sull'ultimo stato ricevuto, mentre la corsa nel deposito era gia' finita.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,171 @@
+import { useEffect, useState } from "react";
+import { stepHistory, type StepPassage } from "./engine";
+import { OUTCOME_LABEL, whyFailed } from "./RunConsole";
+
+/**
+ * Cosa è entrato in questo nodo, nel tempo.
+ *
+ * ## LA DOMANDA A CUI RISPONDE
+ *
+ * Un nodo, nella vita di un sistema, riceve molte chiamate: da inneschi
+ * diversi, da corse diverse, in giorni diversi. La vista dell'esecuzione
+ * racconta quella di adesso; questa racconta tutte le altre — quando è
+ * successo, da dove era partita la corsa, con quale consegna, e cosa è entrato
+ * in **questo** passo quella volta.
+ *
+ * ## CHI LO SCRIVE È IL SISTEMA, NON UN AGENTE
+ *
+ * Niente di quello che si legge qui è il racconto di un modello. Il motore
+ * registra l'ingresso di ogni passo nell'istante in cui lo apre, e la corsa
+ * porta scritta la propria provenienza da prima che qualunque passo giri:
+ * `crates/ledger` è append-only, e nessuno può riscrivere quello che c'è.
+ * Questo pannello legge, non aggiunge.
+ *
+ * ## IL CONFINE: LA PROVENIENZA SÌ, IL CONTENUTO DI UN TERMINALE NO
+ *
+ * Registrare da dove arriva una chiamata è una cosa. Registrare tutto quello
+ * che passa in una sessione di terminale è un'altra: lì dentro passano chiavi,
+ * gettoni e percorsi privati, e nessuno se lo aspetta da un pannello che
+ * mostra un elenco di date. **Questa finestra non registra niente di nuovo**:
+ * mostra quello che il deposito già conserva perché serve a eseguire — gli
+ * ingressi dichiarati di un passo. Se un giorno si vorrà tenere anche il
+ * contenuto di ciò che scorre in un terminale, dovrà essere una scelta
+ * esplicita, visibile, e spenta di partenza.
+ */
+
+function when(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleString();
+}
+
+function lasted(from: number, to: number | null): string {
+  if (to === null) return "in corso";
+  const delta = Math.max(0, to - from);
+  if (delta < 60) return `${delta}s`;
+  return `${Math.floor(delta / 60)}m ${delta % 60}s`;
+}
+
+/** Un testo lungo si mostra a spicchi: aprire il pannello non è chiedere tutto. */
+function shorten(text: string, max = 220): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length <= max ? flat : `${flat.slice(0, max)}…`;
+}
+
+interface StepHistoryProps {
+  flowName: string;
+  stepId: string;
+}
+
+type Ask =
+  | { state: "asking" }
+  | { state: "ready"; passages: StepPassage[] }
+  | { state: "mute"; why: string };
+
+export function StepHistory({ flowName, stepId }: StepHistoryProps) {
+  const [ask, setAsk] = useState<Ask>({ state: "asking" });
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let dropped = false;
+    setAsk({ state: "asking" });
+    stepHistory(flowName, stepId)
+      .then((passages) => {
+        if (!dropped) setAsk({ state: "ready", passages });
+      })
+      .catch((error: unknown) => {
+        if (!dropped) setAsk({ state: "mute", why: String(error) });
+      });
+    return () => {
+      dropped = true;
+    };
+  }, [flowName, stepId]);
+
+  return (
+    <section className="history">
+      <div className="history__title">Cosa è entrato in questo passo</div>
+
+      {ask.state === "asking" && <div className="history__note">chiedo al deposito…</div>}
+
+      {ask.state === "mute" && <div className="history__note">{ask.why}</div>}
+
+      {ask.state === "ready" && ask.passages.length === 0 && (
+        // Un elenco vuoto ha due cause diverse, e confonderle manda a cercare
+        // un guasto: qui è sempre la prima, perché un errore di lettura arriva
+        // come `mute`.
+        <div className="history__note">questo passo non è mai stato attraversato</div>
+      )}
+
+      {ask.state === "ready" &&
+        ask.passages.map((passage) => {
+          const key = `${passage.run_id}:${passage.attempt}`;
+          const isOpen = open === key;
+          return (
+            <article className="passage" key={key} data-outcome={passage.outcome ?? "open"}>
+              <button
+                type="button"
+                className="passage__head"
+                onClick={() => setOpen(isOpen ? null : key)}
+                aria-expanded={isOpen}
+              >
+                <span className="passage__when">{when(passage.started_at)}</span>
+                <span className="passage__outcome">
+                  {passage.outcome ? (OUTCOME_LABEL[passage.outcome] ?? passage.outcome) : "in corso"} ·{" "}
+                  {lasted(passage.started_at, passage.ended_at)}
+                </span>
+              </button>
+
+              {/* Da dove è partita, e chi l'ha mandata. Sono due fatti
+                  diversi: il primo è come il programma è stato invocato — dalla
+                  finestra, dalla riga di comando, da una pianificazione — il
+                  secondo è quello che il segnale stesso portava scritto. Un
+                  campo che il segnale non sapeva non si mostra vuoto: si
+                  omette, perché un'etichetta senza valore accanto fa credere
+                  che il dato ci sia. */}
+              <div className="passage__origin">
+                {passage.started_by}
+                {passage.signal_where && ` · da ${passage.signal_where}`}
+                {passage.signal_who && ` · ${passage.signal_who}`}
+              </div>
+
+              {passage.attempt > 1 && (
+                <div className="passage__attempt">{passage.attempt}ª volta di questa corsa</div>
+              )}
+
+              {passage.mandate && (
+                <div className="passage__mandate" title={passage.mandate}>
+                  <span className="passage__label">consegna</span>
+                  {shorten(passage.mandate)}
+                </div>
+              )}
+
+              {isOpen && (
+                <div className="passage__detail">
+                  <div className="passage__label">è entrato</div>
+                  <pre className="passage__code">{JSON.stringify(passage.input, null, 2)}</pre>
+
+                  {passage.output !== null && passage.output !== undefined && (
+                    <>
+                      <div className="passage__label">ne è uscito</div>
+                      <pre className="passage__code">{JSON.stringify(passage.output, null, 2)}</pre>
+                    </>
+                  )}
+
+                  {passage.said && (
+                    <>
+                      <div className="passage__label">ha detto</div>
+                      <pre className="passage__code">{passage.said}</pre>
+                    </>
+                  )}
+
+                  {passage.failure_class && (
+                    <div className="passage__failure">{whyFailed(passage.failure_class)}</div>
+                  )}
+
+                  <div className="passage__run">corsa {passage.run_id}</div>
+                </div>
+              )}
+            </article>
+          );
+        })}
+    </section>
+  );
+}

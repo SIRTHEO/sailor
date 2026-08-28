@@ -15,9 +15,11 @@
 //! che oggi coincidono per disciplina e non per costruzione.
 
 use serde::Serialize;
-use ui::gather::{default_flows_dir, load_flow_registry};
+use ui::gather::{flow_sources, load_all_flows};
 
 mod flows;
+mod run;
+mod tools;
 
 /// Un flusso come lo riceve la tela. Ricalca `FlowEntry` di
 /// `desktop/src/flow.ts`, tag compreso: chi cambia l'uno cambia l'altro.
@@ -29,8 +31,16 @@ mod flows;
 #[derive(Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 enum FlowEntry {
-    Loaded { flow: flow::FlowFile },
-    Broken { broken: BrokenFlow },
+    Loaded {
+        flow: flow::FlowFile,
+        /// Da quale sorgente viene: «tuoi», «del progetto», «dichiarati». Chi
+        /// vede due flussi con lo stesso nome deve poter capire quale gira.
+        origin: String,
+    },
+    Broken {
+        broken: BrokenFlow,
+        origin: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -49,20 +59,92 @@ struct BrokenFlow {
 /// guarda perché non vede quello che ha appena scritto.
 #[tauri::command]
 fn flows() -> Vec<FlowEntry> {
-    load_flow_registry(&default_flows_dir())
+    load_all_flows(&flow_sources())
         .into_iter()
-        .map(|(name, entry)| match entry {
-            Ok(flow) => FlowEntry::Loaded { flow },
+        .map(|(name, origin, entry)| match entry {
+            Ok(flow) => FlowEntry::Loaded {
+                flow,
+                origin: origin.to_owned(),
+            },
             Err(reason) => FlowEntry::Broken {
                 broken: BrokenFlow { name, reason },
+                origin: origin.to_owned(),
             },
         })
         .collect()
 }
 
+/// Dove la finestra ha guardato, e cosa ha trovato in ciascun posto.
+///
+/// **SERVE QUANDO NON TROVA NIENTE**, ed è il motivo per cui esiste: il
+/// 29/08/2026 la finestra diceva «nessun flusso» mentre quattro flussi
+/// esistevano a una cartella di distanza, e da dentro non c'era modo di sapere
+/// dove stesse cercando. Una lista vuota senza il posto in cui si è guardato è
+/// indistinguibile da un guasto.
+#[tauri::command]
+fn flow_places() -> Vec<Place> {
+    flow_sources()
+        .into_iter()
+        .map(|source| Place {
+            origin: source.origin.to_owned(),
+            path: source.dir.display().to_string(),
+            exists: source.dir.is_dir(),
+            count: ui::gather::load_flow_registry(&source.dir).len(),
+        })
+        .collect()
+}
+
+/// Dove si scrive un flusso.
+///
+/// **UN FLUSSO CHE ESISTE SI SALVA DOV'ERA.** Salvarlo altrove ne creerebbe una
+/// seconda copia che vince sulla prima per posizione, e chi lo ha modificato
+/// vedrebbe la sua modifica funzionare qui e sparire su un'altra macchina —
+/// oppure, peggio, resterebbe l'originale a girare senza che nessuno capisca
+/// perché la modifica non ha effetto.
+///
+/// **UNO NUOVO VA NELL'ULTIMA SORGENTE**, cioè la più specifica: il progetto se
+/// se ne sta guardando uno, altrimenti la casa di chi usa Sailor. È il posto che
+/// chi scrive sta guardando in quel momento.
+fn flows_dir_for(name: &str) -> std::path::PathBuf {
+    let sources = flow_sources();
+    for source in &sources {
+        if source.dir.join(format!("{name}.flow.json")).exists() {
+            return source.dir.clone();
+        }
+    }
+    sources
+        .last()
+        .map(|source| source.dir.clone())
+        .unwrap_or_else(ui::gather::default_flows_dir)
+}
+
+#[derive(Serialize)]
+struct Place {
+    origin: String,
+    path: String,
+    exists: bool,
+    count: usize,
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![flows, flows::save_flow, flows::delete_flow])
+        // LE CORSE VIVONO NEL GUSCIO, NON NELLA PAGINA. Chi chiude il pannello
+        // della vista o ricarica la tela non deve fermare un flusso che sta
+        // girando: il registro sta qui, e chi si riaffaccia ritrova tutto
+        // quello che è stato detto mentre non guardava.
+        .manage(std::sync::Arc::new(run::Runs::default()))
+        .invoke_handler(tauri::generate_handler![
+            flows,
+            flow_places,
+            flows::save_flow,
+            flows::delete_flow,
+            tools::discover_tools,
+            run::flow_trigger,
+            run::start_run,
+            run::run_snapshot,
+            run::known_runs,
+            run::step_history
+        ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");
 }
