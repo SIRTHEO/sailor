@@ -5,8 +5,12 @@ edition.workspace = true
 rust-version.workspace = true
 
 # Azioni riusabili da qualunque flow::Graph: nessuna dipendenza verso un
-# servizio in particolare, solo verso il motore che le esegue.
+# servizio in particolare — solo verso il motore che le esegue, e dal 28/08/2026
+# verso il deposito, perche' i due nodi di `store` danno a un flusso lo spazio
+# dove ricordare invece di farsi una struttura Rust per ogni fatto.
+# Resta vero cio' che conta: nessuna coda, nessun percorso, nessun servizio.
 [dependencies]
 flow = { path = "../flow" }
+ledger = { path = "../ledger" }
 serde = { workspace = true }
 serde_json = { workspace = true }

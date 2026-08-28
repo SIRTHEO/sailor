@@ -143,7 +143,7 @@ fn list_flows(flows_dir: &Path) -> Result<String, String> {
 fn check_flow(flows_dir: &Path, name: &str) -> Result<String, String> {
     let path = flow_path(flows_dir, name)?;
     let flow = load_flow(&path)?;
-    Ok(check_report(&flow, &default_registry()))
+    Ok(check_report(&flow, &default_registry(open_default_ledger())))
 }
 
 fn check_report(flow: &FlowFile, registry: &ActionRegistry) -> String {
@@ -179,7 +179,17 @@ fn check_report(flow: &FlowFile, registry: &ActionRegistry) -> String {
 fn run_flow(flows_dir: &Path, name: &str) -> Result<String, String> {
     let path = flow_path(flows_dir, name)?;
     let flow = load_flow(&path)?;
-    let registry = default_registry();
+    // IL DEPOSITO PRIMA DEL REGISTRO, e non è un dettaglio d'ordine: i nodi
+    // `store_write`/`store_read` lo possiedono, quindi un registro costruito
+    // prima non li avrebbe e dichiarerebbe mancanti due azioni che esistono.
+    let ledger_dir = default_ledger_dir()?;
+    let ledger = Ledger::open(&ledger_dir).map_err(|error| {
+        format!(
+            "non riesco ad aprire il deposito {}: {error}",
+            ledger_dir.display()
+        )
+    })?;
+    let registry = default_registry(Some(ledger.clone()));
     let missing = missing_actions(&flow.graph, &registry);
     if !missing.is_empty() {
         return Err(format!(
@@ -189,13 +199,6 @@ fn run_flow(flows_dir: &Path, name: &str) -> Result<String, String> {
         ));
     }
 
-    let ledger_dir = default_ledger_dir()?;
-    let ledger = Ledger::open(&ledger_dir).map_err(|error| {
-        format!(
-            "non riesco ad aprire il deposito {}: {error}",
-            ledger_dir.display()
-        )
-    })?;
     let run_id = new_run_id(&flow.id)?;
     let started_at = now_secs()?;
     record_run(&ledger, &flow, &run_id, "running", started_at, None, None)?;
@@ -308,10 +311,39 @@ fn record_run(
         .map_err(|error| format!("non riesco a registrare la corsa {run_id}: {error}"))
 }
 
-fn default_registry() -> ActionRegistry {
+/// Il registro delle azioni, con i nodi del deposito se un deposito c'è.
+///
+/// **PERCHÉ IL DEPOSITO È FACOLTATIVO QUI.** `store_write` e `store_read`
+/// hanno bisogno di un deposito vero per lavorare, ma `sailor flow check` non
+/// esegue niente: guarda se il grafo nomina azioni che nessuno ha registrato.
+/// Farlo dipendere dall'apertura di un deposito vorrebbe dire che un controllo
+/// statico **crea file sul disco** — e che su una macchina dove il deposito non
+/// si apre il controllo direbbe «azione mancante» di un'azione che esiste.
+///
+/// Quando manca, i due nodi non entrano nel registro e `flow check` lo dice
+/// nella stessa forma in cui dice ogni altra azione mancante: chi legge vede
+/// che il controllo è stato fatto senza deposito, invece di credere a un
+/// grafo sano che all'esecuzione non parte.
+fn default_registry(ledger: Option<Ledger>) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
+    if let Some(ledger) = ledger {
+        actions::store::register_store(&mut registry, ledger);
+    }
     registry
+}
+
+/// Il deposito predefinito se si apre, `None` se non c'è o non si apre.
+///
+/// Non riporta l'errore: chi la chiama sta facendo un controllo statico, e un
+/// deposito assente non è un guasto del flusso che sta guardando. Chi invece
+/// deve *eseguire* apre il deposito da sé e pretende che riesca.
+fn open_default_ledger() -> Option<Ledger> {
+    let dir = default_ledger_dir().ok()?;
+    if !dir.exists() {
+        return None;
+    }
+    Ledger::open(&dir).ok()
 }
 
 fn missing_actions(graph: &Graph, registry: &ActionRegistry) -> BTreeSet<String> {
@@ -374,10 +406,8 @@ fn flow_name(path: &Path) -> String {
 }
 
 fn default_ledger_dir() -> Result<PathBuf, String> {
-    let home = std::env::var_os("HOME")
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())?;
-    Ok(PathBuf::from(home).join(".claude/state/flussi"))
+    ledger::default_directory()
+        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())
 }
 
 fn now_secs() -> Result<i64, String> {
@@ -496,7 +526,7 @@ mod tests {
         let json = flow_json("azione_assente", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let report = check_report(&flow, &default_registry());
+        let report = check_report(&flow, &default_registry(None));
 
         assert!(report.contains("passi: 1"), "{report}");
         assert!(report.contains("cicli: nessuno"), "{report}");
@@ -520,7 +550,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let report = check_report(&flow, &default_registry());
+        let report = check_report(&flow, &default_registry(None));
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
@@ -528,7 +558,7 @@ mod tests {
 
     #[test]
     fn both_default_actions_are_known_to_check() {
-        let registry = default_registry();
+        let registry = default_registry(None);
         assert!(registry.get("external_engine").is_some());
         assert!(registry.get("shell_check").is_some());
     }
@@ -554,7 +584,7 @@ mod tests {
 
         assert_eq!(flow.id, "prima-corsa");
         assert_eq!(flow.graph.steps().len(), 1);
-        assert!(missing_actions(&flow.graph, &default_registry()).is_empty());
+        assert!(missing_actions(&flow.graph, &default_registry(None)).is_empty());
         assert!(flow.inputs.contains_key("working-tree-is-clean"));
     }
 
@@ -569,7 +599,7 @@ mod tests {
             &flow,
             "corsa-1",
             &mut store,
-            &default_registry(),
+            &default_registry(None),
             &mut Tick(0),
         )
         .expect("eseguire il flusso");
