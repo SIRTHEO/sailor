@@ -41,7 +41,9 @@ fn save_flow_in(flows_dir: &Path, flow_json: serde_json::Value) -> Result<(), St
 
     fs::create_dir_all(flows_dir)
         .map_err(|error| format!("non riesco a preparare la cartella dei flussi: {error}"))?;
-    let target = flows_dir.join(format!("{id}.flow.json"));
+    let file_name = format!("{id}.flow.json");
+    reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
+    let target = flows_dir.join(&file_name);
     let text = serde_json::to_string_pretty(&flow)
         .map_err(|error| format!("non riesco a comporre il flusso in JSON: {error}"))?;
     write_atomically(&target, text.as_bytes())
@@ -76,6 +78,37 @@ fn safe_flow_id(id: &str) -> Result<&str, String> {
         ));
     }
     Ok(id)
+}
+
+/// DUE NOMI CHE DIFFERISCONO SOLO PER LE MAIUSCOLE SONO LO STESSO FILE, e il
+/// disco non lo dice. Su APFS come lo installa macOS — e su Windows — salvare
+/// «mioflusso» sopra un «MioFlusso» esistente non dà nessun errore: sostituisce
+/// il contenuto e lascia il nome vecchio. Chi salva crede di aver creato un
+/// flusso nuovo, e ne ha cancellato un altro.
+///
+/// Il controllo non sta in `safe_flow_id`, che giudica il nome da solo: qui
+/// serve guardare cosa c'è già nella cartella. E si nega invece di scegliere
+/// per conto di chi salva — «volevi sovrascrivere quello?» è una domanda che
+/// deve fare la finestra, non un file system.
+fn reject_a_name_that_collides_only_by_case(
+    flows_dir: &Path,
+    file_name: &str,
+) -> Result<(), String> {
+    let Ok(entries) = fs::read_dir(flows_dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let existing = entry.file_name();
+        let existing = existing.to_string_lossy();
+        if existing.as_ref() != file_name && existing.eq_ignore_ascii_case(file_name) {
+            return Err(format!(
+                "esiste già «{existing}», che su questo disco è lo stesso file di \
+                 «{file_name}»: scrivendolo lo sostituiresti senza accorgertene. \
+                 Scegli un altro nome, o modifica quello che c'è."
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Le azioni note al motore, per rifiutare al salvataggio un flusso che una
@@ -316,6 +349,37 @@ mod tests {
         with_engine["graph"]["steps"][0]["action"] = json!("external_engine");
         with_engine["inputs"]["solo"] = json!({"bin": "true", "timeout_secs": 5});
         assert!(save_flow_in(&dir, with_engine).is_ok());
+    }
+
+    /// IL FILE SYSTEM NON DICE CHE SONO LO STESSO FILE. Su APFS come lo
+    /// installa macOS, salvare «MioFlusso» sopra un «mioflusso» esistente
+    /// sostituisce il contenuto senza un errore e lascia il nome vecchio: chi
+    /// salva crede di aver creato un flusso, e ne ha cancellato un altro.
+    #[test]
+    fn save_flow_refuses_a_name_that_differs_only_by_case() {
+        let dir = scratch_dir("case-collision");
+        save_flow_in(&dir, valid_flow("MioFlusso")).expect("il primo si scrive");
+
+        let error = save_flow_in(&dir, valid_flow("mioflusso"))
+            .expect_err("il secondo deve essere rifiutato");
+        assert!(error.contains("MioFlusso"), "{error}");
+
+        // E quello che c'era resta intero: il rifiuto non deve aver toccato
+        // niente, che è il motivo per cui esiste.
+        let written = fs::read_to_string(dir.join("MioFlusso.flow.json")).expect("il primo c'è");
+        assert!(written.contains("\"MioFlusso\""), "{written}");
+        assert_eq!(entries(&dir).len(), 1);
+    }
+
+    /// Riscrivere lo stesso flusso, con lo stesso nome, deve continuare a
+    /// passare: la difesa è contro i nomi che collidono, non contro il
+    /// salvataggio.
+    #[test]
+    fn saving_the_same_name_twice_is_still_allowed() {
+        let dir = scratch_dir("same-name-twice");
+        save_flow_in(&dir, valid_flow("stesso-nome")).expect("prima scrittura");
+        save_flow_in(&dir, valid_flow("stesso-nome")).expect("seconda scrittura");
+        assert_eq!(entries(&dir).len(), 1);
     }
 
     // ── la scrittura sostituisce davvero il contenuto, in modo atomico ──
