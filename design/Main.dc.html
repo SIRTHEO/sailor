@@ -1,0 +1,470 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    @keyframes pulsa { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    @keyframes scorri { to { stroke-dashoffset: -24; } }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: #ffffff; color: #0f172a; display: flex; flex-direction: column; overflow: hidden;">
+
+  <!-- barra del programma -->
+  <div style="height: 52px; flex-shrink: 0; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; padding: 0 16px; gap: 14px; background: #ffffff;">
+    <div style="display: flex; gap: 7px; padding-right: 6px;">
+      <div style="width: 11px; height: 11px; border-radius: 50%; background: #e2e8f0;"></div>
+      <div style="width: 11px; height: 11px; border-radius: 50%; background: #e2e8f0;"></div>
+      <div style="width: 11px; height: 11px; border-radius: 50%; background: #e2e8f0;"></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l9-13 9 13"/><path d="M3 17c2.5 2 5 2 7.5 0S16 15 18.5 17"/></svg>
+      <span style="font-weight: 600; font-size: 14px;">Sailor</span>
+    </div>
+    <div style="width: 1px; height: 22px; background: #e2e8f0;"></div>
+    <div style="display: flex; align-items: center; gap: 7px;">
+      <span style="font-size: 14px; font-weight: 500;">staffetta</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">v7</span>
+      <span style="font-size: 11px; color: #b45309; display: flex; align-items: center; gap: 4px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #f59e0b;"></span>modifiche non salvate</span>
+    </div>
+
+    <div style="display: flex; background: #f1f5f9; border-radius: 7px; padding: 2px; margin-left: 22px;">
+      <div style="padding: 5px 15px; font-size: 12.5px; font-weight: 600; background: #ffffff; border-radius: 5px; box-shadow: 0 1px 2px rgba(15,23,42,0.08);">Grafo</div>
+      <div style="padding: 5px 15px; font-size: 12.5px; color: #64748b;">Codice</div>
+      <div style="padding: 5px 15px; font-size: 12.5px; color: #64748b;">Corse</div>
+    </div>
+
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 9px;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #475569; margin-right: 6px;">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #3b82f6; animation: pulsa 1.6s ease-in-out infinite;"></span>
+        una corsa in atto &middot; passo 7 di 9
+      </div>
+      <div style="padding: 7px 13px; font-size: 12.5px; font-weight: 500; border: 1px solid #e2e8f0; border-radius: 7px;">Salva</div>
+      <div style="padding: 7px 15px; font-size: 12.5px; font-weight: 600; color: #ffffff; background: #0f172a; border-radius: 7px; display: flex; align-items: center; gap: 7px;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="#ffffff"><path d="M6 4l14 8-14 8z"/></svg>
+        Esegui
+      </div>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <!-- la cassetta dei passi -->
+    <div style="width: 212px; flex-shrink: 0; border-right: 1px solid #e2e8f0; background: #fafbfc; display: flex; flex-direction: column;">
+      <div style="padding: 13px 14px 9px;">
+        <div style="display: flex; align-items: center; gap: 7px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 7px 9px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.6-3.6"/></svg>
+          <span style="font-size: 12px; color: #94a3b8;">Cerca un passo</span>
+        </div>
+      </div>
+
+      <div style="padding: 0 14px 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8;">Motori</div>
+      <div style="padding: 0 10px; display: flex; flex-direction: column; gap: 3px;">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px; background: #ffffff; border: 1px solid #e2e8f0;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #eef2ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="2.5"/><path d="M12 7V4"/><circle cx="9" cy="13" r="1.2" fill="#4f46e5"/><circle cx="15" cy="13" r="1.2" fill="#4f46e5"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 12.5px; font-weight: 500;">Agente</div>
+            <div style="font-size: 10px; color: #94a3b8;">claude &middot; codex &middot; agy</div>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          </div>
+          <div style="font-size: 12.5px; color: #334155;">Verifica</div>
+        </div>
+      </div>
+
+      <div style="padding: 13px 14px 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8;">Governo</div>
+      <div style="padding: 0 10px; display: flex; flex-direction: column; gap: 3px;">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v7a6 6 0 0012 0V4"/><path d="M12 21v-4"/></svg>
+          </div>
+          <div style="font-size: 12.5px; color: #334155;">Ramo</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/></svg>
+          </div>
+          <div style="font-size: 12.5px; color: #334155;">Attesa</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #faf5ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9333ea" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0113 0"/></svg>
+          </div>
+          <div style="font-size: 12.5px; color: #334155;">A una persona</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h9"/></svg>
+          </div>
+          <div style="font-size: 12.5px; color: #334155;">Deposito</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 8px 9px; border-radius: 7px;">
+          <div style="width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="8" rx="2"/><rect x="13" y="12" width="8" height="8" rx="2"/><path d="M11 8h2a1 1 0 011 1v3"/></svg>
+          </div>
+          <div style="font-size: 12.5px; color: #334155;">Sotto-flusso</div>
+        </div>
+      </div>
+
+      <div style="margin: auto 10px 12px; padding: 10px 11px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <div style="font-size: 11px; color: #475569; line-height: 1.5;">Ogni passo è un nodo. Quello che non sta sulla tela, Sailor non lo esegue.</div>
+      </div>
+    </div>
+
+    <!-- la tela -->
+    <div style="flex-grow: 1; position: relative; background: #fbfcfd; background-image: radial-gradient(#dbe3ec 1.1px, transparent 1.1px); background-size: 20px 20px; overflow: hidden;">
+
+      <svg width="930" height="848" style="position: absolute; left: 0; top: 0;">
+        <defs>
+          <marker id="p-verde" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 1.2L7 4.5L0 7.8z" fill="#22c55e"/></marker>
+          <marker id="p-grigio" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 1.2L7 4.5L0 7.8z" fill="#cbd5e1"/></marker>
+          <marker id="p-viola" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 1.2L7 4.5L0 7.8z" fill="#c084fc"/></marker>
+          <marker id="p-blu" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto"><path d="M0 1.2L7 4.5L0 7.8z" fill="#3b82f6"/></marker>
+        </defs>
+
+        <path d="M205 113 C227 113, 223 113, 245 113" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#p-verde)"/>
+        <path d="M420 113 C442 113, 438 113, 460 113" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#p-verde)"/>
+        <path d="M635 113 C657 113, 653 113, 675 113" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#p-verde)"/>
+
+        <!-- dal ramo, uscita "vuoto": rientra sulla riga di sotto -->
+        <path d="M856 174 C886 174, 898 178, 898 206 C898 234, 878 238, 850 238 L280 238 C252 238, 245 246, 245 274 L245 316" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#p-verde)"/>
+        <!-- dal ramo, uscita "domanda in sospeso": va alla persona -->
+        <path d="M856 202 C880 202, 872 210, 872 234 C872 262, 850 266, 822 266 L152 266 C126 266, 118 274, 118 300 L118 316" stroke="#c084fc" stroke-width="2" stroke-dasharray="5 4" fill="none" marker-end="url(#p-viola)"/>
+
+        <path d="M420 363 C442 363, 438 363, 460 363" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#p-verde)"/>
+        <path d="M635 363 C657 363, 653 363, 675 363" stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#p-verde)"/>
+
+        <!-- l'arco vivo: la corsa è qui -->
+        <path d="M856 363 C890 363, 900 372, 900 402 L900 556 C900 588, 878 594, 848 594 L282 594 C252 594, 245 604, 245 632 L245 662" stroke="#3b82f6" stroke-width="2.4" fill="none" stroke-dasharray="8 6" marker-end="url(#p-blu)" style="animation: scorri 0.9s linear infinite;"/>
+
+        <path d="M592 706 C620 706, 632 706, 654 706" stroke="#cbd5e1" stroke-width="2" stroke-dasharray="4 4" fill="none" marker-end="url(#p-grigio)"/>
+      </svg>
+
+      <!-- innesco -->
+      <div style="position: absolute; left: 30px; top: 78px; width: 175px; background: #ffffff; border: 1px solid #d8b4fe; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #faf5ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#a855f7"><path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #a855f7;">Innesco</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Contesto oltre l'85%</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9; padding: 6px 11px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #64748b;">scattato 3 min fa</div>
+        <div style="position: absolute; right: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+      </div>
+
+      <!-- freno della catena -->
+      <div style="position: absolute; left: 245px; top: 78px; width: 175px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Verifica</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Il freno della catena</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9; padding: 6px 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 10.5px; color: #16a34a; font-weight: 500;">andato</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #94a3b8;">0,2 s</span>
+        </div>
+        <div style="position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+        <div style="position: absolute; right: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+      </div>
+
+      <!-- attesa: il pannello è fermo -->
+      <div style="position: absolute; left: 460px; top: 78px; width: 175px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Attesa</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Il pannello è fermo</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9; padding: 6px 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 10.5px; color: #16a34a; font-weight: 500;">andato</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #94a3b8;">47 s</span>
+        </div>
+        <div style="position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+        <div style="position: absolute; right: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+      </div>
+
+      <!-- ramo con due uscite -->
+      <div style="position: absolute; left: 675px; top: 78px; width: 175px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4v7a6 6 0 0012 0V4"/><path d="M12 21v-4"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Ramo</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Il prompt è vuoto?</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9;">
+          <div style="padding: 6px 11px 5px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 10.5px; color: #16a34a; font-weight: 500;">vuoto</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #16a34a;">presa</span>
+          </div>
+          <div style="padding: 0 11px 8px;">
+            <span style="font-size: 10.5px; color: #9333ea;">domanda in sospeso</span>
+          </div>
+        </div>
+        <div style="position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+        <div style="position: absolute; right: -6px; top: 90px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #22c55e;"></div>
+        <div style="position: absolute; right: -6px; top: 118px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #c084fc;"></div>
+      </div>
+
+      <!-- consegna a una persona -->
+      <div style="position: absolute; left: 30px; top: 328px; width: 175px; background: #ffffff; border: 1px dashed #d8b4fe; border-radius: 9px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #faf5ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9333ea" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 20a6.5 6.5 0 0113 0"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #9333ea;">A una persona</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Chiedi a Theo</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f5f3ff; padding: 6px 11px; font-size: 10.5px; color: #94a3b8;">non percorso</div>
+        <div style="position: absolute; left: 82px; top: -6px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #c084fc;"></div>
+      </div>
+
+      <!-- deposito -->
+      <div style="position: absolute; left: 245px; top: 328px; width: 175px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h9"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Deposito</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Scrivi il testimone</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9; padding: 6px 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 10.5px; color: #16a34a; font-weight: 500;">andato</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #94a3b8;">0,4 s</span>
+        </div>
+        <div style="position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+        <div style="position: absolute; right: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+      </div>
+
+      <!-- gesto: /clear, andato alla seconda -->
+      <div style="position: absolute; left: 460px; top: 328px; width: 175px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Gesto</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Manda <span style="font-family: 'JetBrains Mono', monospace;">/clear</span></div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9; padding: 6px 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 10.5px; color: #16a34a; font-weight: 500;">andato</span>
+          <span style="display: flex; align-items: center; gap: 3px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 5px;">
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 11-3-6.7"/><path d="M21 3v6h-6"/></svg>2&ordf;
+          </span>
+        </div>
+        <div style="position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+        <div style="position: absolute; right: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+      </div>
+
+      <!-- attesa: il segnale è sparito -->
+      <div style="position: absolute; left: 675px; top: 328px; width: 175px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 9px; box-shadow: 0 1px 3px rgba(15,23,42,0.07);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Attesa</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25;">Il segnale è sparito</div>
+          </div>
+        </div>
+        <div style="border-top: 1px solid #f1f5f9; padding: 6px 11px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 10.5px; color: #16a34a; font-weight: 500;">andato</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #94a3b8;">6 s</span>
+        </div>
+        <div style="position: absolute; left: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+        <div style="position: absolute; right: -6px; top: 30px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #94a3b8;"></div>
+      </div>
+
+      <!-- il nodo agente: scelto, in corso, apribile e terminabile -->
+      <div style="position: absolute; left: 245px; top: 660px; width: 347px; background: #ffffff; border: 2px solid #3b82f6; border-radius: 11px; box-shadow: 0 6px 22px rgba(59,130,246,0.2);">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 10px 12px 8px;">
+          <div style="width: 26px; height: 26px; border-radius: 7px; background: #eef2ff; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="7" width="16" height="12" rx="2.5"/><path d="M12 7V4"/><circle cx="9" cy="13" r="1.2" fill="#4f46e5"/><circle cx="15" cy="13" r="1.2" fill="#4f46e5"/></svg>
+          </div>
+          <div style="min-width: 0; flex-grow: 1;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #4f46e5;">Agente</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #475569; background: #f1f5f9; padding: 1px 5px; border-radius: 3px;">claude &middot; opus-5</span>
+            </div>
+            <div style="font-size: 13px; font-weight: 600; line-height: 1.3;">Avvia il successore</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: #2563eb; font-weight: 500; white-space: nowrap;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #3b82f6; animation: pulsa 1.4s ease-in-out infinite;"></span>in corso
+          </div>
+        </div>
+
+        <!-- il terminale dell'agente, dentro il nodo -->
+        <div style="margin: 0 12px; background: #0f172a; border-radius: 7px; padding: 8px 10px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; line-height: 1.7; color: #94a3b8;">
+          <div><span style="color: #64748b;">&gt;</span> <span style="color: #cbd5e1;">leggo la consegna e riprendo</span></div>
+          <div><span style="color: #4ade80;">&bull;</span> Read <span style="color: #7dd3fc;">consegna-27-08.md</span></div>
+          <div><span style="color: #4ade80;">&bull;</span> Bash <span style="color: #7dd3fc;">git -C ~/personal/sailor status</span></div>
+          <div style="color: #e2e8f0;">costruisco <span style="color: #fbbf24;">sailor flow</span><span style="animation: pulsa 1s steps(2) infinite;">▌</span></div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 13px; padding: 8px 12px 7px; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #64748b;">
+          <span>pid 41822</span>
+          <span>2 min 14 s</span>
+          <span>18,4k gettoni</span>
+          <span style="margin-left: auto;">tentativo 1/3</span>
+        </div>
+
+        <div style="display: flex; gap: 6px; padding: 0 12px 11px;">
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px; font-size: 11.5px; font-weight: 500; border: 1px solid #cbd5e1; border-radius: 6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v7a1 1 0 01-1 1H4a1 1 0 01-1-1V7a1 1 0 011-1h7"/></svg>
+            Apri
+          </div>
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px; font-size: 11.5px; font-weight: 500; border: 1px solid #cbd5e1; border-radius: 6px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round"><path d="M9 5v14"/><path d="M15 5v14"/></svg>
+            Sospendi
+          </div>
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 7px; font-size: 11.5px; font-weight: 600; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="#b91c1c"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            Termina
+          </div>
+        </div>
+
+        <div style="position: absolute; left: -7px; top: 42px; width: 13px; height: 13px; border-radius: 50%; background: #ffffff; border: 2.5px solid #3b82f6;"></div>
+        <div style="position: absolute; right: -7px; top: 42px; width: 13px; height: 13px; border-radius: 50%; background: #ffffff; border: 2.5px solid #94a3b8;"></div>
+      </div>
+
+      <!-- uscita, non ancora raggiunta -->
+      <div style="position: absolute; left: 660px; top: 672px; width: 175px; background: #ffffff; border: 1px dashed #cbd5e1; border-radius: 9px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 9px 11px 9px;">
+          <div style="width: 22px; height: 22px; border-radius: 6px; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <div style="min-width: 0;">
+            <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #94a3b8;">Uscita</div>
+            <div style="font-size: 12.5px; font-weight: 600; line-height: 1.25; color: #64748b;">Il testimone è passato</div>
+          </div>
+        </div>
+        <div style="position: absolute; left: -6px; top: 32px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; border: 2px solid #cbd5e1;"></div>
+      </div>
+
+      <!-- comandi della tela -->
+      <div style="position: absolute; left: 16px; bottom: 16px; display: flex; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 1px 3px rgba(15,23,42,0.06); overflow: hidden;">
+        <div style="padding: 7px 10px; border-right: 1px solid #f1f5f9;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></div>
+        <div style="padding: 7px 10px; border-right: 1px solid #f1f5f9;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></div>
+        <div style="padding: 7px 11px; border-right: 1px solid #f1f5f9; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #475569;">92%</div>
+        <div style="padding: 7px 10px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 011-1h4"/><path d="M20 9V5a1 1 0 00-1-1h-4"/><path d="M4 15v4a1 1 0 001 1h4"/><path d="M20 15v4a1 1 0 01-1 1h-4"/></svg></div>
+      </div>
+
+      <!-- come finisce un passo -->
+      <div style="position: absolute; right: 16px; bottom: 16px; background: rgba(255,255,255,0.96); border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; box-shadow: 0 1px 3px rgba(15,23,42,0.06);">
+        <div style="font-size: 9px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8; margin-bottom: 6px;">Come finisce un passo</div>
+        <div style="display: flex; gap: 13px;">
+          <div style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e;"></span><span style="font-size: 10.5px;">andato</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span><span style="font-size: 10.5px;">rotto, si ritenta</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f59e0b;"></span><span style="font-size: 10.5px;">fermo al tetto</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #a855f7;"></span><span style="font-size: 10.5px;">aspetta una persona</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- il passo scelto -->
+    <div style="width: 296px; flex-shrink: 0; border-left: 1px solid #e2e8f0; background: #ffffff; display: flex; flex-direction: column;">
+      <div style="padding: 13px 15px 11px; border-bottom: 1px solid #f1f5f9;">
+        <div style="font-size: 9.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8;">Passo scelto</div>
+        <div style="font-size: 15px; font-weight: 600; margin-top: 3px;">Avvia il successore</div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #64748b; margin-top: 2px;">start-successor</div>
+      </div>
+
+      <div style="padding: 13px 15px; display: flex; flex-direction: column; gap: 14px;">
+
+        <div>
+          <div style="font-size: 10.5px; font-weight: 600; color: #475569; margin-bottom: 6px;">Specie</div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid #e2e8f0; border-radius: 6px;">
+              <div style="width: 13px; height: 13px; border-radius: 50%; border: 2px solid #cbd5e1; flex-shrink: 0;"></div>
+              <span style="font-size: 12px; color: #334155;">Ripetibile</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1.5px solid #0f172a; border-radius: 6px; background: #f8fafc;">
+              <div style="width: 13px; height: 13px; border-radius: 50%; border: 4px solid #0f172a; flex-shrink: 0;"></div>
+              <span style="font-size: 12px; font-weight: 500;">Compensabile</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid #e2e8f0; border-radius: 6px;">
+              <div style="width: 13px; height: 13px; border-radius: 50%; border: 2px solid #cbd5e1; flex-shrink: 0;"></div>
+              <span style="font-size: 12px; color: #334155;">Da consegnare a una persona</span>
+            </div>
+          </div>
+          <div style="font-size: 10.5px; color: #94a3b8; margin-top: 6px; line-height: 1.5;">Dice a Sailor cosa fare se il passo cade a metà e l'effetto resta ignoto.</div>
+        </div>
+
+        <div>
+          <div style="font-size: 10.5px; font-weight: 600; color: #475569; margin-bottom: 6px;">Motore</div>
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px;">
+            <span style="font-size: 12px;">claude</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; margin-top: 4px;">
+            <span style="font-size: 12px;">opus-5</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 9px;">
+          <div style="flex: 1;">
+            <div style="font-size: 10.5px; font-weight: 600; color: #475569; margin-bottom: 6px;">Tetto tentativi</div>
+            <div style="padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px;">3</div>
+          </div>
+          <div style="flex: 1;">
+            <div style="font-size: 10.5px; font-weight: 600; color: #475569; margin-bottom: 6px;">Limite</div>
+            <div style="padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px;">20 min</div>
+          </div>
+        </div>
+
+        <div>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+            <span style="font-size: 10.5px; font-weight: 600; color: #475569;">Ingresso e uscita</span>
+            <span style="font-size: 10.5px; color: #4f46e5; font-weight: 500;">apri il codice</span>
+          </div>
+          <div style="background: #0f172a; border-radius: 7px; padding: 9px 11px; font-family: 'JetBrains Mono', monospace; font-size: 10px; line-height: 1.75; color: #cbd5e1;">
+            <div><span style="color: #c084fc;">in</span>&nbsp;&nbsp;pane<span style="color: #64748b;">:</span> <span style="color: #7dd3fc;">string</span></div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;mandate<span style="color: #64748b;">:</span> <span style="color: #7dd3fc;">Path</span></div>
+            <div><span style="color: #f472b6;">out</span> session<span style="color: #64748b;">:</span> <span style="color: #7dd3fc;">SessionId</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: auto; padding: 12px 15px; border-top: 1px solid #f1f5f9;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px; font-size: 12.5px; font-weight: 600; color: #ffffff; background: #0f172a; border-radius: 7px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Crea un passo nuovo
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

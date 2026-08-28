@@ -4,7 +4,7 @@
 //! controlla prima che il deposito esista già, e solo allora si apre.
 
 use crate::parse::{parse_model_calls, parse_runs};
-use crate::registry::FlowRegistry;
+use crate::registry::{FlowFile, FlowRegistry};
 use flow::StepRecord;
 use ledger::{Ledger, ModelCallRecord, RunRecord};
 use std::collections::BTreeMap;
@@ -65,12 +65,17 @@ pub fn gather(dir: &Path) -> Result<Option<GatheredData>, GatherError> {
     }))
 }
 
-/// Legge un grafo per ogni `*.json` nella cartella (nome del file = nome del
-/// flusso). Non è un meccanismo imposto dal deposito: `flow::Graph` è già
-/// serializzabile, ed è il modo più semplice per registrare "i flussi che
-/// esistono" senza dipendere da nessun altro crate. Una cartella assente o
-/// un file che non si legge come `Graph` viene saltato in silenzio: la
-/// pagina non deve rompersi perché un file è a metà scritto.
+/// Legge i flussi dichiarativi nella cartella (formato `{ id, description, graph, inputs }`).
+///
+/// In precedenza i file non leggibili venivano saltati in silenzio con la motivazione
+/// che "la pagina non deve rompersi perché un file è a metà scritto". Quella scelta era
+/// sbagliata: un file a metà scritto è uno stato transitorio di pochi millisecondi,
+/// mentre un file rotto è permanente, e trattarli allo stesso modo fa sparire il secondo
+/// per sempre. Chi guarda la finestra vede un elenco corto senza sapere che è corto.
+///
+/// Ora ogni file `*.flow.json` o `*.json` viene incluso nel registro: se è valido viene
+/// caricato come [`FlowFile`], se è illeggibile o malformato viene registrato con il
+/// motivo del rifiuto, così la finestra può mostrarlo marcato.
 pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
     let mut registry = FlowRegistry::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -78,19 +83,44 @@ pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy())
+            .unwrap_or_default();
+        let is_flow_json = file_name.ends_with(".flow.json");
+        let is_json = path.extension().and_then(|ext| ext.to_str()) == Some("json");
+        if !is_flow_json && !is_json {
             continue;
         }
-        let Some(name) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        let name = file_name
+            .strip_suffix(".flow.json")
+            .or_else(|| file_name.strip_suffix(".json"))
+            .unwrap_or(&file_name)
+            .to_owned();
+        if name.is_empty() {
             continue;
+        }
+        let text = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(error) => {
+                registry.insert(
+                    name,
+                    Err(format!("non riesco a leggere {}: {error}", path.display())),
+                );
+                continue;
+            }
         };
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(graph) = serde_json::from_str::<flow::Graph>(&text) else {
-            continue;
-        };
-        registry.insert(name.to_owned(), graph);
+        match serde_json::from_str::<FlowFile>(&text) {
+            Ok(flow) => {
+                registry.insert(name, Ok(flow));
+            }
+            Err(error) => {
+                registry.insert(
+                    name,
+                    Err(format!("{} non è un flusso valido: {error}", path.display())),
+                );
+            }
+        }
     }
     registry
 }
@@ -99,4 +129,169 @@ pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
 pub fn default_ledger_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/theo".to_owned());
     PathBuf::from(home).join(".claude/state/flussi")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+
+    fn temp_test_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sailor-ui-gather-test-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("creazione cartella temporanea");
+        dir
+    }
+
+    #[test]
+    fn load_flow_registry_loads_valid_flow_file_with_declarative_schema() {
+        let dir = temp_test_dir("valid-flow");
+        let flow_content = json!({
+            "id": "mio-flusso",
+            "description": "Flusso valido di prova",
+            "graph": {
+                "steps": [{
+                    "id": "passo-uno",
+                    "deps": [],
+                    "action": "shell_check",
+                    "max_attempts": 1,
+                    "when": null,
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"}
+                }],
+                "skippable_dependencies": []
+            },
+            "inputs": {
+                "passo-uno": {"command": "echo ok"}
+            }
+        });
+        fs::write(
+            dir.join("mio-flusso.flow.json"),
+            serde_json::to_string(&flow_content).unwrap(),
+        )
+        .expect("scrittura file");
+
+        let registry = load_flow_registry(&dir);
+        assert_eq!(registry.len(), 1);
+        let entry = registry.get("mio-flusso").expect("voce presente");
+        let flow = entry.as_ref().expect("flusso valido");
+        assert_eq!(flow.id, "mio-flusso");
+        assert_eq!(flow.description, "Flusso valido di prova");
+        assert_eq!(flow.graph.steps().len(), 1);
+        assert_eq!(flow.graph.steps()[0].id, "passo-uno");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_flow_registry_records_broken_flow_with_reason_instead_of_silently_skipping() {
+        let dir = temp_test_dir("broken-flow");
+        // File JSON non valido (sintassi tronca)
+        fs::write(
+            dir.join("flusso-tronco.flow.json"),
+            r#"{"id": "flusso-tronco", "description": "#,
+        )
+        .expect("scrittura file tronco");
+
+        // File con ciclo nel grafo
+        let cyclic_flow = json!({
+            "id": "flusso-ciclico",
+            "description": "Flusso con dipendenza circolare",
+            "graph": {
+                "steps": [
+                    {
+                        "id": "a",
+                        "deps": ["b"],
+                        "action": "test",
+                        "max_attempts": 1,
+                        "when": null,
+                        "input_schema": {"type": "any"},
+                        "output_schema": {"type": "any"}
+                    },
+                    {
+                        "id": "b",
+                        "deps": ["a"],
+                        "action": "test",
+                        "max_attempts": 1,
+                        "when": null,
+                        "input_schema": {"type": "any"},
+                        "output_schema": {"type": "any"}
+                    }
+                ],
+                "skippable_dependencies": []
+            },
+            "inputs": {}
+        });
+        fs::write(
+            dir.join("flusso-ciclico.flow.json"),
+            serde_json::to_string(&cyclic_flow).unwrap(),
+        )
+        .expect("scrittura file ciclico");
+
+        let registry = load_flow_registry(&dir);
+        // Prima della modifica entrambi venivano ignorati in silenzio e registry.len() era 0
+        assert_eq!(registry.len(), 2, "entrambi i flussi rotti devono essere nel registro");
+
+        let tronco = registry.get("flusso-tronco").expect("flusso tronco presente");
+        assert!(tronco.is_err(), "il file tronco deve essere marcato come errore");
+        let reason_tronco = tronco.as_ref().unwrap_err();
+        assert!(
+            reason_tronco.contains("non è un flusso valido"),
+            "motivo: {reason_tronco}"
+        );
+
+        let ciclico = registry.get("flusso-ciclico").expect("flusso ciclico presente");
+        assert!(ciclico.is_err(), "il flusso con ciclo deve essere marcato come errore");
+        let reason_ciclico = ciclico.as_ref().unwrap_err();
+        assert!(
+            reason_ciclico.contains("backward dependency") || reason_ciclico.contains("non è un flusso valido"),
+            "motivo: {reason_ciclico}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_flow_registry_rejects_naked_graph_format_with_reason() {
+        let dir = temp_test_dir("naked-graph");
+        let naked = json!({
+            "steps": [{
+                "id": "nudo",
+                "deps": [],
+                "action": "test",
+                "max_attempts": 1,
+                "when": null,
+                "input_schema": {"type": "any"},
+                "output_schema": {"type": "any"}
+            }]
+        });
+        fs::write(
+            dir.join("vecchio-grafo.json"),
+            serde_json::to_string(&naked).unwrap(),
+        )
+        .expect("scrittura file");
+
+        let registry = load_flow_registry(&dir);
+        assert_eq!(registry.len(), 1);
+        let entry = registry.get("vecchio-grafo").expect("voce presente");
+        assert!(
+            entry.is_err(),
+            "il vecchio formato grafo nudo senza {{ id, description, graph, inputs }} deve essere rifiutato con motivo"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_flow_registry_ignores_non_json_files() {
+        let dir = temp_test_dir("non-json");
+        fs::write(dir.join("README.md"), "Documentazione").expect("scrittura file");
+        fs::write(dir.join(".DS_Store"), "binary data").expect("scrittura file");
+
+        let registry = load_flow_registry(&dir);
+        assert!(registry.is_empty(), "i file non JSON non devono entrare nel registro");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

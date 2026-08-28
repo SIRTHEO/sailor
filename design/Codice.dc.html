@@ -1,0 +1,236 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    .n { color: #475569; display: inline-block; width: 26px; text-align: right; margin-right: 16px; user-select: none; }
+    .kw { color: #c084fc; }
+    .fn { color: #60a5fa; }
+    .st { color: #86efac; }
+    .id { color: #e2e8f0; }
+    .cm { color: #64748b; font-style: italic; }
+    .ty { color: #7dd3fc; }
+    .pn { color: #f0abfc; }
+    .nu { color: #fbbf24; }
+    pre { margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.85; color: #cbd5e1; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: #ffffff; color: #0f172a; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="height: 52px; flex-shrink: 0; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; padding: 0 16px; gap: 14px;">
+    <div style="display: flex; gap: 7px; padding-right: 6px;">
+      <div style="width: 11px; height: 11px; border-radius: 50%; background: #e2e8f0;"></div>
+      <div style="width: 11px; height: 11px; border-radius: 50%; background: #e2e8f0;"></div>
+      <div style="width: 11px; height: 11px; border-radius: 50%; background: #e2e8f0;"></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l9-13 9 13"/><path d="M3 17c2.5 2 5 2 7.5 0S16 15 18.5 17"/></svg>
+      <span style="font-weight: 600; font-size: 14px;">Sailor</span>
+    </div>
+    <div style="width: 1px; height: 22px; background: #e2e8f0;"></div>
+    <div style="display: flex; align-items: center; gap: 7px;">
+      <span style="font-size: 14px; font-weight: 500;">staffetta</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">v7</span>
+    </div>
+
+    <div style="display: flex; background: #f1f5f9; border-radius: 7px; padding: 2px; margin-left: 22px;">
+      <div style="padding: 5px 15px; font-size: 12.5px; color: #64748b;">Grafo</div>
+      <div style="padding: 5px 15px; font-size: 12.5px; font-weight: 600; background: #ffffff; border-radius: 5px; box-shadow: 0 1px 2px rgba(15,23,42,0.08);">Codice</div>
+      <div style="padding: 5px 15px; font-size: 12.5px; color: #64748b;">Corse</div>
+    </div>
+
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 9px;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #15803d; margin-right: 4px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>
+        9 passi, nessun ciclo, nessuna dipendenza mancante
+      </div>
+      <div style="padding: 7px 13px; font-size: 12.5px; font-weight: 500; border: 1px solid #e2e8f0; border-radius: 7px;">Salva</div>
+      <div style="padding: 7px 15px; font-size: 12.5px; font-weight: 600; color: #ffffff; background: #0f172a; border-radius: 7px; display: flex; align-items: center; gap: 7px;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="#ffffff"><path d="M6 4l14 8-14 8z"/></svg>
+        Esegui
+      </div>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <!-- i file del flusso -->
+    <div style="width: 206px; flex-shrink: 0; border-right: 1px solid #e2e8f0; background: #fafbfc; padding: 13px 0;">
+      <div style="padding: 0 15px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8;">Il flusso</div>
+      <div style="padding: 0 8px; display: flex; flex-direction: column; gap: 1px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 6px; background: #eef2ff;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 500; color: #3730a3;">relay.flow.ts</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 9px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #475569;">steps/pane.ts</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 9px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #475569;">steps/baton.ts</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 9px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #475569;">steps/engine.ts</span>
+        </div>
+      </div>
+
+      <div style="padding: 16px 15px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8;">Migrato da</div>
+      <div style="padding: 0 15px; display: flex; flex-direction: column; gap: 7px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #64748b; line-height: 1.5;">~/.claude/settings.json<br><span style="color: #b45309;">6 ganci su 57</span></div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #64748b; line-height: 1.5;">staffetta.sh<br><span style="color: #16a34a;">ritirato</span></div>
+      </div>
+
+      <div style="margin: 18px 10px 0; padding: 10px 11px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <div style="font-size: 11px; color: #475569; line-height: 1.5;">Le righe di comando restano vergini. Sailor legge la loro configurazione e la porta qui dentro.</div>
+      </div>
+    </div>
+
+    <!-- il codice -->
+    <div style="flex-grow: 1; background: #0f172a; padding: 16px 0 0; overflow: hidden;">
+<pre style="padding-left: 14px;"><span class="n">1</span><span class="kw">import</span> <span class="id">{ createStep, createFlow }</span> <span class="kw">from</span> <span class="st">"@sailor/core"</span>
+<span class="n">2</span><span class="kw">import</span> <span class="id">{ onContextAbove }</span> <span class="kw">from</span> <span class="st">"@sailor/triggers"</span>
+<span class="n">3</span><span class="kw">import</span> <span class="id">{ claude }</span> <span class="kw">from</span> <span class="st">"@sailor/engines"</span>
+<span class="n">4</span>
+<span class="n">5</span><span class="cm">// non si tronca un turno a metà</span>
+<span class="n">6</span><span class="kw">const</span> <span class="fn">paneIsIdle</span> = <span class="fn">createStep</span>({
+<span class="n">7</span>  <span class="pn">id</span>: <span class="st">"pane-is-idle"</span>,
+<span class="n">8</span>  <span class="pn">species</span>: <span class="st">"repeatable"</span>,
+<span class="n">9</span>  <span class="pn">input</span>: <span class="ty">z</span>.<span class="fn">object</span>({ <span class="pn">pane</span>: <span class="ty">z</span>.<span class="fn">string</span>() }),
+<span class="n">10</span>  <span class="pn">output</span>: <span class="ty">z</span>.<span class="fn">object</span>({ <span class="pn">idle</span>: <span class="ty">z</span>.<span class="fn">literal</span>(<span class="kw">true</span>) }),
+<span class="n">11</span>  <span class="kw">async</span> <span class="fn">run</span>({ <span class="id">input</span>, <span class="id">pane</span> }) {
+<span class="n">12</span>    <span class="kw">await</span> <span class="fn">pane</span>(<span class="id">input</span>.<span class="pn">pane</span>).<span class="fn">untilIdle</span>({ <span class="pn">within</span>: <span class="st">"10m"</span> })
+<span class="n">13</span>    <span class="kw">return</span> { <span class="pn">idle</span>: <span class="kw">true</span> }
+<span class="n">14</span>  },
+<span class="n">15</span>})
+<span class="n">16</span>
+<span class="n">17</span><span class="cm">// l'unico passo che non si ripete alla cieca: apre una sessione vera</span>
+<span class="n">18</span><span class="kw">const</span> <span class="fn">startSuccessor</span> = <span class="fn">createStep</span>({
+<span class="n">19</span>  <span class="pn">id</span>: <span class="st">"start-successor"</span>,
+<span class="n">20</span>  <span class="pn">species</span>: <span class="st">"compensable"</span>,
+<span class="n">21</span>  <span class="pn">engine</span>: <span class="fn">claude</span>({ <span class="pn">model</span>: <span class="st">"opus-5"</span> }),
+<span class="n">22</span>  <span class="pn">attempts</span>: <span class="nu">3</span>,
+<span class="n">23</span>  <span class="pn">within</span>: <span class="st">"20m"</span>,
+<span class="n">24</span>  <span class="pn">input</span>: <span class="ty">z</span>.<span class="fn">object</span>({ <span class="pn">pane</span>: <span class="ty">z</span>.<span class="fn">string</span>(), <span class="pn">mandate</span>: <span class="ty">z</span>.<span class="fn">string</span>() }),
+<span class="n">25</span>  <span class="pn">output</span>: <span class="ty">z</span>.<span class="fn">object</span>({ <span class="pn">session</span>: <span class="ty">z</span>.<span class="fn">string</span>() }),
+<span class="n">26</span>  <span class="kw">async</span> <span class="fn">run</span>({ <span class="id">input</span>, <span class="id">engine</span> }) {
+<span class="n">27</span>    <span class="kw">const</span> <span class="id">started</span> = <span class="kw">await</span> <span class="id">engine</span>.<span class="fn">start</span>({
+<span class="n">28</span>      <span class="pn">pane</span>: <span class="id">input</span>.<span class="pn">pane</span>,
+<span class="n">29</span>      <span class="pn">prompt</span>: <span class="id">input</span>.<span class="pn">mandate</span>,
+<span class="n">30</span>    })
+<span class="n">31</span>    <span class="kw">return</span> { <span class="pn">session</span>: <span class="id">started</span>.<span class="pn">id</span> }
+<span class="n">32</span>  },
+<span class="n">33</span>  <span class="cm">// se cade e l'effetto resta ignoto: si disfa, poi si rifà</span>
+<span class="n">34</span>  <span class="kw">async</span> <span class="fn">undo</span>({ <span class="id">output</span>, <span class="id">engine</span> }) {
+<span class="n">35</span>    <span class="kw">await</span> <span class="id">engine</span>.<span class="fn">stop</span>(<span class="id">output</span>.<span class="pn">session</span>)
+<span class="n">36</span>  },
+<span class="n">37</span>})
+<span class="n">38</span>
+<span class="n">39</span><span class="kw">export const</span> <span class="fn">relay</span> = <span class="fn">createFlow</span>({
+<span class="n">40</span>  <span class="pn">id</span>: <span class="st">"relay"</span>,
+<span class="n">41</span>  <span class="pn">on</span>: <span class="fn">onContextAbove</span>(<span class="nu">0.85</span>),
+<span class="n">42</span>})
+<span class="n">43</span>  .<span class="fn">then</span>(<span class="id">chainBrake</span>)
+<span class="n">44</span>  .<span class="fn">then</span>(<span class="id">paneIsIdle</span>)
+<span class="n">45</span>  .<span class="fn">branch</span>([
+<span class="n">46</span>    [({ <span class="id">ctx</span> }) =&gt; <span class="id">ctx</span>.<span class="pn">promptIsEmpty</span>, <span class="id">writeTheBaton</span>],
+<span class="n">47</span>    [({ <span class="id">ctx</span> }) =&gt; !<span class="id">ctx</span>.<span class="pn">promptIsEmpty</span>, <span class="id">askTheo</span>],
+<span class="n">48</span>  ])
+<span class="n">49</span>  .<span class="fn">then</span>(<span class="id">sendClear</span>)
+<span class="n">50</span>  .<span class="fn">then</span>(<span class="id">signalIsGone</span>)
+<span class="n">51</span>  .<span class="fn">then</span>(<span class="id">startSuccessor</span>)
+<span class="n">52</span>  .<span class="fn">commit</span>()</pre>
+    </div>
+
+    <!-- quello che ne esce -->
+    <div style="width: 320px; flex-shrink: 0; border-left: 1px solid #e2e8f0; background: #ffffff; display: flex; flex-direction: column;">
+      <div style="padding: 13px 15px 10px; border-bottom: 1px solid #f1f5f9;">
+        <div style="font-size: 13px; font-weight: 600;">Quello che ne esce</div>
+        <div style="font-size: 11px; color: #64748b; margin-top: 3px; line-height: 1.5;">Il grafo e il codice sono la stessa cosa. Sposta un nodo e cambia una riga; cambia una riga e si sposta il nodo.</div>
+      </div>
+
+      <div style="padding: 14px 15px; background: #fbfcfd; background-image: radial-gradient(#dbe3ec 1px, transparent 1px); background-size: 14px 14px; border-bottom: 1px solid #f1f5f9;">
+        <svg width="290" height="228" viewBox="0 0 290 228">
+          <defs>
+            <marker id="mm" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0 1L5.5 3.5L0 6z" fill="#94a3b8"/></marker>
+            <marker id="mv" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto"><path d="M0 1L5.5 3.5L0 6z" fill="#c084fc"/></marker>
+          </defs>
+          <path d="M78 22 L96 22" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#mm)"/>
+          <path d="M182 22 L200 22" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#mm)"/>
+          <path d="M145 36 L145 62" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#mm)"/>
+          <path d="M118 90 L74 90 L74 116" stroke="#c084fc" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#mv)"/>
+          <path d="M172 90 L216 90 L216 116" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#mm)"/>
+          <path d="M216 144 L216 162" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#mm)"/>
+          <path d="M216 190 L216 200" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#mm)"/>
+
+          <rect x="14" y="10" width="64" height="24" rx="6" fill="#ffffff" stroke="#d8b4fe" stroke-width="1.2"/>
+          <text x="46" y="25" text-anchor="middle" font-family="Inter" font-size="9" fill="#7e22ce">innesco</text>
+          <rect x="98" y="10" width="84" height="24" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
+          <text x="140" y="25" text-anchor="middle" font-family="Inter" font-size="9" fill="#334155">freno catena</text>
+          <rect x="200" y="10" width="76" height="24" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
+          <text x="238" y="25" text-anchor="middle" font-family="Inter" font-size="9" fill="#334155">pane idle</text>
+
+          <rect x="100" y="62" width="90" height="28" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+          <text x="145" y="79" text-anchor="middle" font-family="Inter" font-size="9" fill="#334155">prompt vuoto?</text>
+
+          <rect x="32" y="116" width="84" height="28" rx="6" fill="#ffffff" stroke="#d8b4fe" stroke-width="1.2" stroke-dasharray="3 2"/>
+          <text x="74" y="133" text-anchor="middle" font-family="Inter" font-size="9" fill="#7e22ce">chiedi a Theo</text>
+
+          <rect x="172" y="116" width="88" height="28" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
+          <text x="216" y="133" text-anchor="middle" font-family="Inter" font-size="9" fill="#334155">testimone</text>
+
+          <rect x="172" y="162" width="88" height="28" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2"/>
+          <text x="216" y="179" text-anchor="middle" font-family="Inter" font-size="9" fill="#334155">/clear + segnale</text>
+
+          <rect x="164" y="200" width="104" height="26" rx="6" fill="#eef2ff" stroke="#818cf8" stroke-width="1.4"/>
+          <text x="216" y="216" text-anchor="middle" font-family="Inter" font-size="9" fill="#3730a3" font-weight="600">avvia il successore</text>
+        </svg>
+      </div>
+
+      <div style="padding: 13px 15px; display: flex; flex-direction: column; gap: 11px;">
+        <div style="font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: #94a3b8;">Cosa ha rifiutato il controllo</div>
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px; flex-shrink: 0;"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <div style="font-size: 11.5px; color: #334155; line-height: 1.5;">Nessun ciclo fra i passi</div>
+        </div>
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px; flex-shrink: 0;"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <div style="font-size: 11.5px; color: #334155; line-height: 1.5;">Ogni dipendenza esiste davvero</div>
+        </div>
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px; flex-shrink: 0;"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <div style="font-size: 11.5px; color: #334155; line-height: 1.5;">Nessun passo con tetto zero: un tetto a zero non è «infinito», è un passo che non parte</div>
+        </div>
+        <div style="display: flex; gap: 9px; align-items: flex-start;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 1px; flex-shrink: 0;"><path d="M4 12.5l5 5L20 6.5"/></svg>
+          <div style="font-size: 11.5px; color: #334155; line-height: 1.5;">Ogni passo compensabile ha il suo <span style="font-family: 'JetBrains Mono', monospace;">undo</span></div>
+        </div>
+
+        <div style="margin-top: 4px; padding: 10px 11px; background: #f8fafc; border-radius: 7px;">
+          <div style="font-size: 11px; color: #475569; line-height: 1.55;">Il controllo gira quando il file si carica, non a metà corsa. Un flusso che non passa non arriva mai a toccare la macchina.</div>
+        </div>
+      </div>
+
+      <div style="margin-top: auto; padding: 12px 15px; border-top: 1px solid #f1f5f9; display: flex; gap: 7px;">
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; font-size: 12px; font-weight: 500; border: 1px solid #e2e8f0; border-radius: 7px;">Controlla</div>
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 9px; font-size: 12px; font-weight: 600; color: #ffffff; background: #0f172a; border-radius: 7px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Passo nuovo
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
