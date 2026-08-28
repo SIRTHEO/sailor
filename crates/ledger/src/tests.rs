@@ -1168,3 +1168,251 @@ fn a_record_survives_a_rebuild_from_the_events() {
     assert_eq!(current.written_by, "flusso-di-prova");
 }
 
+// ── com'è andata: le prove delle letture sullo storico ───────────────────
+
+fn a_run(ledger: &Ledger, run_id: &str, entity: &str, started_at: i64, ended_at: Option<i64>) {
+    ledger
+        .record_run(&RunRecord {
+            run_id: run_id.to_owned(),
+            kind: "flow".to_owned(),
+            entity: entity.to_owned(),
+            parent_run_id: None,
+            started_by: "prova".to_owned(),
+            status: if ended_at.is_some() { "done" } else { "running" }.to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at,
+            ended_at,
+        })
+        .expect("registrare la corsa");
+}
+
+#[allow(clippy::too_many_arguments)]
+fn a_step(
+    ledger: &Ledger,
+    run_id: &str,
+    step_id: &str,
+    attempt: u32,
+    epoch: u64,
+    started_at: i64,
+    closing: Option<(Outcome, Option<&str>, i64, Option<&str>)>,
+) {
+    let record = StepRecord::started(
+        run_id,
+        step_id,
+        attempt,
+        epoch,
+        vec![],
+        json!({"segreto": "questo non deve mai uscire"}),
+        vec![],
+        started_at,
+    );
+    ledger
+        .append_step_started(&record)
+        .expect("registrare l'intenzione");
+    if let Some((outcome, failure_class, ended_at, said)) = closing {
+        ledger
+            .close_step(
+                run_id,
+                step_id,
+                attempt,
+                epoch,
+                Completion {
+                    outcome,
+                    output: Some(json!({"segreto": "nemmeno questo"})),
+                    said: said.map(str::to_owned),
+                    failure_class: failure_class.map(str::to_owned),
+                    ended_at,
+                    bytes_seen: Some(10),
+                    bytes_discarded: Some(0),
+                },
+            )
+            .expect("chiudere il passo");
+    }
+}
+
+/// Un deposito appena nato risponde, e risponde zero.
+///
+/// Cade se una di queste letture tratta l'assenza come un guasto — per esempio
+/// con un `query_row` che pretende una riga. È il caso della macchina appena
+/// installata: chi interroga lo storico ci passa **prima** di ogni altra cosa,
+/// e un errore qui farebbe nascere rossa la prima corsa di ogni flusso nuovo.
+#[test]
+fn an_empty_ledger_answers_zero_instead_of_breaking() {
+    let directory = TestDirectory::new("storico-vuoto");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    assert_eq!(ledger.recorded_runs().expect("conteggio"), 0);
+    assert_eq!(ledger.runs_in_window(None, 50).expect("finestra"), 0);
+    let tally = ledger.step_failure_tally("compile", None, 50).expect("conteggio");
+    assert_eq!(tally.attempts, 0);
+    assert_eq!(tally.failures, 0);
+    assert!(tally.by_class.is_empty());
+    assert!(ledger.failure_class_tally(None, 50).expect("classi").is_empty());
+    assert_eq!(ledger.last_finished_run("qualunque").expect("ultima corsa"), None);
+    let durations = ledger.step_durations("compile", None, 50).expect("durate");
+    assert!(durations.seconds_sorted.is_empty());
+    assert_eq!(durations.failed_samples, 0);
+    assert!(ledger.said_of_failed_steps("mai-esistita", 5, 512).expect("detto").is_empty());
+}
+
+/// Il filtro per flusso taglia davvero, e taglia passando da `runs`.
+///
+/// Il mutante che la fa cadere è togliere la giunzione con `runs`: la risposta
+/// per `alpha` diventerebbe quella di tutti i flussi insieme, cioè un numero
+/// che sembra una misura del proprio flusso e misura anche quello di un altro.
+#[test]
+fn the_flow_filter_cuts_by_joining_the_run_header() {
+    let directory = TestDirectory::new("storico-per-flusso");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-a1", "alpha", 100, Some(200));
+    a_step(&ledger, "run-a1", "compile", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, None)));
+    a_run(&ledger, "run-a2", "alpha", 300, Some(400));
+    a_step(&ledger, "run-a2", "compile", 1, 1, 300, Some((Outcome::Broke, Some("timeout"), 350, None)));
+    a_run(&ledger, "run-b1", "beta", 500, Some(600));
+    a_step(&ledger, "run-b1", "compile", 1, 1, 500, Some((Outcome::Broke, Some("timeout"), 550, None)));
+
+    let alpha = ledger.step_failure_tally("compile", Some("alpha"), 50).expect("conteggio");
+    let everything = ledger.step_failure_tally("compile", None, 50).expect("conteggio");
+
+    assert_eq!(alpha.failures, 2, "solo le corse di alpha");
+    assert_eq!(everything.failures, 3, "senza flusso si guarda tutto");
+    assert_eq!(ledger.runs_in_window(Some("alpha"), 50).expect("finestra"), 2);
+}
+
+/// I guasti sono i tentativi; le corse toccate sono le corse.
+///
+/// Cade se qualcuno conta `COUNT(DISTINCT run_id)` al posto dei tentativi: due
+/// rotture nella stessa corsa diventerebbero una, e un passo che si sfascia a
+/// ogni ritentativo sembrerebbe rompersi la metà delle volte.
+#[test]
+fn failures_count_attempts_while_runs_affected_counts_runs() {
+    let directory = TestDirectory::new("storico-tentativi");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-1", "alpha", 100, Some(400));
+    a_step(&ledger, "run-1", "compile", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, None)));
+    a_step(&ledger, "run-1", "compile", 2, 2, 200, Some((Outcome::Broke, Some("timeout"), 250, None)));
+
+    let tally = ledger.step_failure_tally("compile", Some("alpha"), 50).expect("conteggio");
+
+    assert_eq!(tally.attempts, 2);
+    assert_eq!(tally.failures, 2, "due tentativi rotti sono due guasti");
+    assert_eq!(tally.runs_affected, 1, "in una corsa sola");
+}
+
+/// L'ultima corsa è l'ultima **chiusa**, mai quella ancora in volo.
+///
+/// Il mutante che la fa cadere è togliere `AND ended_at IS NOT NULL`: un flusso
+/// che si interroga mentre gira riceverebbe se stesso a metà, e leggerebbe come
+/// esito della volta scorsa un elenco di passi che non sono ancora successi.
+#[test]
+fn the_last_finished_run_is_never_the_one_still_in_flight() {
+    let directory = TestDirectory::new("storico-ultima-chiusa");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-vecchia", "alpha", 100, Some(200));
+    a_step(&ledger, "run-vecchia", "compile", 1, 1, 100, Some((Outcome::Went, None, 130, None)));
+    a_run(&ledger, "run-in-volo", "alpha", 300, None);
+    a_step(&ledger, "run-in-volo", "compile", 1, 1, 300, None);
+
+    let last = ledger.last_finished_run("alpha").expect("lettura").expect("una corsa chiusa c'è");
+
+    assert_eq!(last.run_id, "run-vecchia");
+    assert_eq!(last.steps.len(), 1);
+    assert_eq!(last.steps[0].outcome.as_deref(), Some("Went"));
+}
+
+/// Una finestra di una corsa lascia fuori la precedente.
+///
+/// Cade se `LIMIT` sparisce o se l'ordine per `started_at DESC` si rovescia:
+/// «nelle ultime N corse» diventerebbe «nelle prime N», cioè la risposta su uno
+/// storico vecchio consegnata a chi chiede com'è andata ultimamente.
+#[test]
+fn a_window_of_one_run_leaves_the_older_one_out() {
+    let directory = TestDirectory::new("storico-finestra");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-vecchia", "alpha", 100, Some(200));
+    a_step(&ledger, "run-vecchia", "compile", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, None)));
+    a_run(&ledger, "run-nuova", "alpha", 300, Some(400));
+    a_step(&ledger, "run-nuova", "compile", 1, 1, 300, Some((Outcome::Went, None, 350, None)));
+
+    let narrow = ledger.step_failure_tally("compile", Some("alpha"), 1).expect("conteggio");
+    let wide = ledger.step_failure_tally("compile", Some("alpha"), 50).expect("conteggio");
+
+    assert_eq!(narrow.failures, 0, "nell'ultima corsa non si è rotto niente");
+    assert_eq!(narrow.attempts, 1);
+    assert_eq!(wide.failures, 1, "guardando più indietro il guasto c'è");
+}
+
+/// La classe più frequente viene prima, e una rottura senza classe resta senza.
+#[test]
+fn the_most_frequent_failure_class_comes_first() {
+    let directory = TestDirectory::new("storico-classi");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-1", "alpha", 100, Some(400));
+    a_step(&ledger, "run-1", "uno", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 110, None)));
+    a_step(&ledger, "run-1", "due", 1, 1, 120, Some((Outcome::Broke, Some("timeout"), 130, None)));
+    a_step(&ledger, "run-1", "tre", 1, 1, 140, Some((Outcome::Broke, Some("exit_error"), 150, None)));
+    a_step(&ledger, "run-1", "quattro", 1, 1, 160, Some((Outcome::Broke, None, 170, None)));
+
+    let classes = ledger.failure_class_tally(None, 50).expect("classi");
+
+    assert_eq!(classes.len(), 3);
+    assert_eq!(classes[0].failure_class.as_deref(), Some("timeout"));
+    assert_eq!(classes[0].failures, 2);
+    assert!(
+        classes.iter().any(|c| c.failure_class.is_none()),
+        "una rottura che il motore non ha classificato resta senza classe: {classes:?}"
+    );
+}
+
+/// Un tentativo rotto si conta, e non entra nella misura.
+///
+/// Cade se le durate raccolgono qualunque tentativo chiuso: il guasto lungo qui
+/// sotto sposterebbe la mediana, e un passo che si rompe dopo cento secondi
+/// sembrerebbe semplicemente un passo lento.
+#[test]
+fn a_broken_attempt_is_counted_but_not_measured() {
+    let directory = TestDirectory::new("storico-durate");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-1", "alpha", 100, Some(900));
+    a_step(&ledger, "run-1", "compile", 1, 1, 100, Some((Outcome::Went, None, 110, None)));
+    a_step(&ledger, "run-1", "compile", 2, 2, 200, Some((Outcome::Went, None, 230, None)));
+    a_step(&ledger, "run-1", "compile", 3, 3, 300, Some((Outcome::Broke, Some("timeout"), 800, None)));
+
+    let durations = ledger.step_durations("compile", Some("alpha"), 50).expect("durate");
+
+    assert_eq!(durations.seconds_sorted, vec![10, 30], "solo i tentativi riusciti");
+    assert_eq!(durations.failed_samples, 1, "il rotto si conta comunque");
+    assert_eq!(durations.last_seconds, Some(30), "l'ultima riuscita, non l'ultima chiusa");
+}
+
+/// Il testo grezzo esce da una corsa sola, dai soli passi rotti, e troncato.
+///
+/// Le tre asserzioni sono tre cose diverse: che una corsa vicina non entri
+/// nella risposta, che un passo riuscito non porti con sé il proprio testo, e
+/// che il taglio venga dichiarato. La terza cade se `truncated` diventa un
+/// valore fisso: chi legge una diagnosi tagliata senza saperlo la legge come
+/// completa e conclude sul pezzo sbagliato.
+#[test]
+fn said_leaves_one_run_only_from_broken_steps_and_says_when_it_was_clipped() {
+    let directory = TestDirectory::new("storico-detto");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    a_run(&ledger, "run-1", "alpha", 100, Some(400));
+    let lungo = "à".repeat(400);
+    a_step(&ledger, "run-1", "rotto", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, Some(&lungo))));
+    a_step(&ledger, "run-1", "riuscito", 1, 1, 160, Some((Outcome::Went, None, 170, Some("tutto bene"))));
+    a_run(&ledger, "run-2", "alpha", 500, Some(600));
+    a_step(&ledger, "run-2", "altrove", 1, 1, 500, Some((Outcome::Broke, Some("timeout"), 550, Some("di un'altra corsa"))));
+
+    let excerpts = ledger.said_of_failed_steps("run-1", 5, 101).expect("detto");
+
+    assert_eq!(excerpts.len(), 1, "una corsa sola, e solo i passi rotti: {excerpts:?}");
+    assert_eq!(excerpts[0].step_id, "rotto");
+    assert!(excerpts[0].truncated, "il taglio si dichiara");
+    assert_eq!(
+        excerpts[0].said.len(),
+        100,
+        "il taglio rispetta il confine di un carattere: 101 byte cadono su mezza «à»"
+    );
+}
+
