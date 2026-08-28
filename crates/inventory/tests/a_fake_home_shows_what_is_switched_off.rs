@@ -214,6 +214,46 @@ fn a_command_is_listed_even_without_frontmatter_or_model_invocation() {
     assert_eq!(bare.description, "Il comando nudo");
 }
 
+/// Un magazzino di competenze che nessuna configurazione carica: quelle
+/// collegate fra le competenze di casa restano raggiungibili, le altre no.
+///
+/// I DUE BRACCI SONO IL PUNTO. Sul disco vero ce ne sono 128 in due magazzini, e
+/// 6 sono collegate: dire «tutte spente» sarebbe comodo e falso, e toglierebbe
+/// credito proprio alle 122 righe che l'inventario ha ragione di dare.
+#[test]
+fn a_warehouse_skill_counts_as_reachable_only_once_it_is_linked() {
+    let home = fake_home("magazzino");
+    let warehouse = home.join("magazzino").join("skills");
+    skill(&home, "magazzino/skills/collegata/SKILL.md", "collegata");
+    skill(&home, "magazzino/skills/sola-sua/SKILL.md", "sola-sua");
+
+    // Il collegamento come lo fa Claude Code: una voce dentro le competenze di
+    // casa che porta il nome della cartella.
+    fs::create_dir_all(home.join(".claude/skills")).unwrap();
+    std::os::unix::fs::symlink(
+        warehouse.join("collegata"),
+        home.join(".claude/skills/collegata"),
+    )
+    .unwrap();
+
+    let found = collect(&[Root::home(&home), Root::warehouse("magazzino", &warehouse)]);
+    let stored: Vec<_> = found
+        .of(Kind::Skill)
+        .into_iter()
+        .filter(|e| e.origin.starts_with("magazzino"))
+        .collect();
+    assert_eq!(stored.len(), 2, "{stored:#?}");
+
+    let linked = stored.iter().find(|e| e.name == "collegata").unwrap();
+    assert_eq!(linked.reach, Reach::Active, "{linked:#?}");
+
+    let alone = stored.iter().find(|e| e.name == "sola-sua").unwrap();
+    match &alone.reach {
+        Reach::Inactive(reason) => assert!(reason.contains("collegata"), "{reason}"),
+        other => panic!("una competenza mai collegata risulta {other:?}"),
+    }
+}
+
 /// L'inventario dichiara dove ha guardato. Un elenco che non lo dice non si può
 /// smentire: chi legge «zero agenti» non sa se non ce ne sono o se nessuno è
 /// andato a vedere.

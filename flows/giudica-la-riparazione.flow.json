@@ -1,6 +1,11 @@
 {
   "id": "giudica-la-riparazione",
   "description": "Lavorazione ogni-notte, peso pesante: invoca gemini e poi verifica il risultato.",
+  "schedule": {
+    "recurrence": { "kind": "daily_at", "hour": 1, "minute": 0 },
+    "weight": "heavy",
+    "perimeter": []
+  },
   "graph": {
     "steps": [
       {
