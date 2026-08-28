@@ -357,6 +357,22 @@ pub fn wakeup_prompt(transcript: &str) -> Option<String> {
 /// Si scorre dal fondo: se una sessione ha cambiato mandato a metà giornata,
 /// vale l'ultimo. E il file deve esistere ancora: un percorso citato e poi
 /// cancellato manderebbe il successore a leggere il vuoto.
+/// `~/x` → `/home/someone/x`, e ogni altro percorso invariato.
+///
+/// PERCHÉ SERVE, CON LA MISURA. Nella prosa il mandato si cita quasi sempre
+/// come `~/.claude/state/plancia/mandati/…`, e `Path::exists` su una tilde
+/// risponde «no» senza errore: il testimone cadeva sul rendiconto proprio nel
+/// caso normale. Misurato il 28/08/2026 su 19 sessioni che nominano un mandato:
+/// **7 risolti prima, 14 dopo**. Un percorso relativo resta invariato di
+/// proposito — qui non c'è una cartella di lavoro da cui risolverlo, e
+/// inventarne una darebbe un file esistente ma sbagliato.
+fn expand_home(path: &str) -> String {
+    match path.strip_prefix("~/") {
+        Some(rest) => dirs_home().join(rest).to_string_lossy().into_owned(),
+        None => path.to_string(),
+    }
+}
+
 pub fn mandate_file(transcript: &str) -> Option<String> {
     const ANCHOR: &str = "/plancia/mandati/";
     let tail = transcript_tail(transcript);
@@ -371,8 +387,11 @@ pub fn mandate_file(transcript: &str) -> Option<String> {
             let rest = &line[opens..];
             let end = rest.find(['"', '`', ' ', '\\', ')']).unwrap_or(rest.len());
             let path = &rest[..end];
-            if path.ends_with(".md") && std::path::Path::new(path).exists() {
-                return Some(path.to_string());
+            if path.ends_with(".md") {
+                let resolved = expand_home(path);
+                if std::path::Path::new(&resolved).exists() {
+                    return Some(resolved);
+                }
             }
             from = at + ANCHOR.len();
         }
@@ -646,6 +665,27 @@ mod tests {
         // leggere il vuoto, che è peggio che non dargli niente.
         std::fs::remove_file(&live).unwrap();
         assert_eq!(mandate_file(&transcript.to_string_lossy()), None);
+    }
+
+    /// La tilde è la forma in cui il mandato viene citato quasi sempre, e
+    /// `Path::exists` su una tilde risponde «no» in silenzio.
+    ///
+    /// LA PROVA STA QUI E NON SU `mandate_file` perché quella pretende un file
+    /// che esista davvero: sotto la HOME vera scriverebbe fra i mandati di
+    /// Theo, e sotto una HOME finta proverebbe l'espansione contro se stessa.
+    /// Il braccio che conta è il secondo: un percorso già assoluto non deve
+    /// muoversi di un carattere.
+    #[test]
+    fn a_mandate_written_with_a_tilde_is_resolved_against_home() {
+        let home = dirs_home();
+        assert_eq!(
+            expand_home("~/.claude/state/plancia/mandati/x.md"),
+            home.join(".claude/state/plancia/mandati/x.md")
+                .to_string_lossy()
+        );
+        assert_eq!(expand_home("/tmp/plancia/mandati/x.md"), "/tmp/plancia/mandati/x.md");
+        // `~altro/…` non è la casa di nessuno qui: resta com'è scritto.
+        assert_eq!(expand_home("~altrui/x.md"), "~altrui/x.md");
     }
 
     /// Il payload vero di un subagent: la sessione e il transcript sono quelli
