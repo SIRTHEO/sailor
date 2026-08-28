@@ -7,6 +7,7 @@ name = "actions"
 version = "0.1.0"
 dependencies = [
  "flow",
+ "ledger",
  "serde",
  "serde_json",
 ]
@@ -58,6 +59,7 @@ dependencies = [
  "guards",
  "hook-io",
  "inventory",
+ "ledger",
  "regex",
  "serde_json",
 ]
