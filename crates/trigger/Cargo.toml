@@ -1,0 +1,19 @@
+[package]
+name = "trigger"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Da dove arriva il segnale che fa partire un flusso. L'elenco delle sorgenti e'
+# un dato — i descrittori — non codice: qui dentro non compare il nome di
+# nessun terminale, di nessun prodotto e di nessuna macchina.
+#
+# `flow` per il tratto `Action`, cosi' un innesco e' un passo come gli altri.
+# `toolbox` per `Machine`: espandere `~`, `$VAR` e `*` e' gia' risolto li', e una
+# seconda implementazione divergerebbe dalla prima senza che nessuno se ne
+# accorga. Nessuna dipendenza verso `actions`: un innesco non esegue niente.
+[dependencies]
+flow = { path = "../flow" }
+toolbox = { path = "../toolbox" }
+serde = { workspace = true }
+serde_json = { workspace = true }
