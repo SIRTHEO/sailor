@@ -2655,6 +2655,8 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "toolbox",
+ "trigger",
  "ui",
 ]
 
@@ -3664,6 +3666,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
+name = "toolbox"
+version = "0.1.0"
+dependencies = [
+ "actions",
+ "flow",
+ "inventory",
+ "ledger",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3785,6 +3799,16 @@ dependencies = [
  "serde",
  "thiserror 2.0.20",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "trigger"
+version = "0.1.0"
+dependencies = [
+ "flow",
+ "serde",
+ "serde_json",
+ "toolbox",
 ]
 
 [[package]]

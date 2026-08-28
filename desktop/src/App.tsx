@@ -16,9 +16,27 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { FlowBandNode, KIND_LABEL, StepNode, type StepNodeData } from "./StepNode";
+import { BlankCanvas } from "./BlankCanvas";
+import { StepEditor } from "./StepEditor";
+import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
+import { RunConsole, type ConsoleMode } from "./RunConsole";
+import { StepHistory } from "./StepHistory";
 import { buildUnifiedLayout, nodeId, splitNodeId, wouldCycle } from "./layout";
 import { SAMPLE, SAMPLE_RUN } from "./sample";
-import { deleteFlow, insideTheWindow, loadFlows, saveFlow } from "./engine";
+import {
+  deleteFlow,
+  discoverTools,
+  flowTrigger,
+  insideTheWindow,
+  knownRuns,
+  listenToRuns,
+  loadFlows,
+  runSnapshot,
+  saveFlow,
+  startRun,
+  type RunEvent,
+  type RunSnapshot,
+} from "./engine";
 import {
   DEFAULT_ACTION_FOR_KIND,
   KNOWN_ACTIONS,
@@ -29,20 +47,39 @@ import {
   type StepKind,
   type StepRun,
 } from "./flow";
+import { MODEL_KEY, type Tool, type ToolDiscovery } from "./tools";
 
-const nodeTypes = { step: StepNode, flowBand: FlowBandNode };
+const nodeTypes = { step: StepNode, flowBand: FlowBandNode, trigger: TriggerNode };
 const CASSETTE_KINDS = Object.keys(DEFAULT_ACTION_FOR_KIND) as StepKind[];
 
-/** Da dove vengono i flussi che si stanno guardando. */
-type Source = "sample" | "engine" | "failed";
+/** Quanto spazio prende l'innesco a sinistra della sua corsia. */
+const TRIGGER_WIDTH = 240;
+const TRIGGER_GAP = 48;
+const TRIGGER_TOP = 54;
 
-/** Un flusso in modifica: quello che si vede e quello che è già sul disco. */
+/**
+ * Dentro il guscio o in un browser: si decide una volta sola, all'avvio.
+ * Cambia cosa la tela mostra prima ancora del primo giro di caricamento, e
+ * chiederlo a ogni render darebbe la stessa risposta.
+ */
+const NATIVE = insideTheWindow();
+
+/** Da dove vengono i flussi che si stanno guardando. */
+type Source = "loading" | "sample" | "engine" | "failed";
+
+/**
+ * Un flusso in modifica: quello che si vede e quello che è già sul disco.
+ * `saved: null` è un flusso appena creato qui e mai scritto — non è «uguale al
+ * disco», è «il disco non lo conosce», e le due cose portano a gesti diversi
+ * (si salva sempre, si cancella senza chiedere niente al motore).
+ */
 interface WorkingFlow {
   flow: FlowFile;
-  saved: FlowFile;
+  saved: FlowFile | null;
 }
 
 function isDirty(working: WorkingFlow): boolean {
+  if (working.saved === null) return true;
   return JSON.stringify(working.flow) !== JSON.stringify(working.saved);
 }
 
@@ -60,15 +97,43 @@ function splitEntries(entries: FlowEntry[]): { flows: Map<string, WorkingFlow>; 
   return { flows, broken };
 }
 
+/**
+ * Unisce i fatti di una corsa per numero d'ordine.
+ *
+ * Un fatto può arrivare due volte — una dall'elenco di quello che è già
+ * successo, una dall'ascolto — e i due canali si sovrappongono proprio nel
+ * momento in cui la vista si apre. Unire per `seq` è l'unico modo di non
+ * mostrare due volte lo stesso passo senza dipendere da quale dei due canali
+ * arriva prima. Se non c'è niente di nuovo torna l'array di partenza, così chi
+ * confronta le identità non ridisegna per un fatto già noto.
+ */
+function mergeEvents(existing: RunEvent[], incoming: RunEvent[]): RunEvent[] {
+  const fresh = incoming.filter(
+    (event) => !existing.some((known) => known.seq === event.seq),
+  );
+  if (fresh.length === 0) return existing;
+  return [...existing, ...fresh].sort((a, b) => a.seq - b.seq);
+}
+
+/** Un nome libero per un flusso nuovo: numerato, mai in collisione. */
+function freeFlowName(taken: Map<string, WorkingFlow>): string {
+  let n = 1;
+  while (taken.has(`flusso-${n}`)) n += 1;
+  return `flusso-${n}`;
+}
+
 export default function App() {
-  // SI PARTE DALL'ESEMPIO, E LO SI DICE. La tela nasce con i dati di esempio
-  // perché in un browser (`npm run dev`) il motore non c'è; dentro la finestra
-  // vengono sostituiti al primo giro. Quello che non si fa è lasciare credere
-  // che l'esempio sia il mondo: la barra dichiara sempre quale dei due si sta
+  // LA TELA NASCE COME IL DISCO, NON COME UN ESEMPIO. Dentro il guscio si parte
+  // vuoti e si aspetta la risposta del motore: mostrare l'esempio per un
+  // istante e poi toglierlo fa vedere flussi che sul disco non ci sono. Fuori
+  // dal guscio (`npm run dev` in un browser) il motore non esiste e l'esempio è
+  // l'unica cosa da mostrare — la barra dichiara sempre quale dei due si sta
   // guardando.
-  const [flows, setFlows] = useState<Map<string, WorkingFlow>>(() => splitEntries(SAMPLE).flows);
-  const [broken, setBroken] = useState<BrokenFlow[]>(() => splitEntries(SAMPLE).broken);
-  const [source, setSource] = useState<Source>("sample");
+  const [flows, setFlows] = useState<Map<string, WorkingFlow>>(() =>
+    NATIVE ? new Map<string, WorkingFlow>() : splitEntries(SAMPLE).flows,
+  );
+  const [broken, setBroken] = useState<BrokenFlow[]>(() => (NATIVE ? [] : splitEntries(SAMPLE).broken));
+  const [source, setSource] = useState<Source>(NATIVE ? "loading" : "sample");
   const [failure, setFailure] = useState<string | null>(null);
 
   // Il fuoco è del ramo, non della tela: la colonna indica un percorso dentro
@@ -79,8 +144,12 @@ export default function App() {
   const [saving, setSaving] = useState<Set<string>>(new Set());
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
 
+  const [discovery, setDiscovery] = useState<ToolDiscovery>(() =>
+    NATIVE ? { state: "asking" } : { state: "mute", why: "fuori dal guscio: gli strumenti li conosce il motore" },
+  );
+
   useEffect(() => {
-    if (!insideTheWindow()) return;
+    if (!NATIVE) return;
     let dropped = false;
     loadFlows()
       .then((loaded) => {
@@ -103,6 +172,30 @@ export default function App() {
       dropped = true;
     };
   }, []);
+
+  // GLI STRUMENTI SI CHIEDONO, NON SI SANNO. `discover_tools` nasce in un altro
+  // cantiere: se non risponde ancora, il pannello lo dice e lascia scrivere
+  // l'identificativo a mano — nessuna schermata bianca, e nessun elenco finto
+  // per far sembrare che funzioni.
+  useEffect(() => {
+    if (!NATIVE) return;
+    let dropped = false;
+    discoverTools()
+      .then((found) => {
+        if (dropped) return;
+        setDiscovery({ state: "ready", tools: found });
+      })
+      .catch((error: unknown) => {
+        if (dropped) return;
+        setDiscovery({ state: "mute", why: String(error) });
+      });
+    return () => {
+      dropped = true;
+    };
+  }, []);
+
+  const tools = discovery.state === "ready" ? discovery.tools : EMPTY_TOOLS;
+
 
   const anyDirty = useMemo(() => Array.from(flows.values()).some(isDirty), [flows]);
 
@@ -127,6 +220,259 @@ export default function App() {
     [flows],
   );
 
+  // I modelli già scritti negli altri passi: il suggerimento più onesto che
+  // esista, perché viene dai flussi veri invece che da un elenco inventato.
+  const usedModels = useMemo(() => {
+    const seen = new Set<string>();
+    for (const { flow } of flowList) {
+      for (const step of flow.graph.steps) {
+        const model = step.with?.[MODEL_KEY];
+        if (typeof model === "string" && model !== "") seen.add(model);
+      }
+    }
+    return Array.from(seen);
+  }, [flowList]);
+
+  // ── le corse: farne partire una, e guardarla ──────────────────────────
+  //
+  // LE CORSE NON VIVONO QUI. Vivono nel guscio, che le esegue su un thread
+  // proprio; questa mappa è la copia che la finestra tiene per disegnarle. È la
+  // ragione per cui chiudere la vista o ricaricare la pagina non ferma niente —
+  // e per cui, al montaggio, la prima cosa da fare è chiedere al guscio cosa
+  // sta già girando invece di ripartire da un elenco vuoto.
+  //
+  // Si chiamano «esecuzioni» e non «corse» per non confondersi con `runs` qui
+  // sotto, che è un'altra cosa: lo stato dei passi con cui la tela li colora.
+  const [executions, setExecutions] = useState<Map<string, RunSnapshot>>(new Map());
+  const [triggers, setTriggers] = useState<Map<string, TriggerState>>(new Map());
+  const [mandates, setMandates] = useState<Record<string, string>>({});
+  const [starting, setStarting] = useState<Set<string>>(new Set());
+  const [runErrors, setRunErrors] = useState<Record<string, string>>({});
+  const [watching, setWatching] = useState<string | null>(null);
+  const [consoleMode, setConsoleMode] = useState<ConsoleMode>("inline");
+
+  function absorb(snapshot: RunSnapshot) {
+    setExecutions((prev) => {
+      const current = prev.get(snapshot.run_id);
+      const next = new Map(prev);
+      next.set(snapshot.run_id, {
+        ...snapshot,
+        events: mergeEvents(current?.events ?? [], snapshot.events),
+      });
+      return next;
+    });
+  }
+
+  // Cosa sta già girando: si chiede una volta, all'apertura. Una corsa avviata
+  // prima di un ricaricamento della pagina è viva nel guscio, e senza questa
+  // domanda diventerebbe invisibile pur continuando a lavorare.
+  useEffect(() => {
+    if (!NATIVE) return;
+    let dropped = false;
+    knownRuns()
+      .then((found) => {
+        if (dropped) return;
+        for (const snapshot of found) absorb(snapshot);
+      })
+      // Nessuna corsa da mostrare non è un guasto da sbattere in faccia: il
+      // pulsante di partenza funziona lo stesso, e un errore qui parlerebbe di
+      // una vista che nessuno ha ancora chiesto.
+      .catch(() => {});
+    return () => {
+      dropped = true;
+    };
+  }, []);
+
+  // Perché la vista non si aggiorna da sola, quando non lo fa. Vuoto significa
+  // che l'ascolto è attaccato.
+  const [listenFailure, setListenFailure] = useState<string | null>(null);
+
+  // L'ascolto di quello che succede. Si attacca una volta e resta: staccarlo e
+  // riattaccarlo a ogni fatto perderebbe proprio i fatti che arrivano nel mezzo.
+  useEffect(() => {
+    if (!NATIVE) return;
+    let unlisten: (() => void) | null = null;
+    let dropped = false;
+    void listenToRuns((event) => {
+      setExecutions((prev) => {
+        const current = prev.get(event.run_id);
+        if (!current) return prev;
+        const events = mergeEvents(current.events, [event]);
+        if (events === current.events) return prev;
+        const payload = event.payload as { status?: unknown } | null;
+        const status =
+          event.kind === "run_ended" && typeof payload?.status === "string"
+            ? payload.status
+            : current.status;
+        const next = new Map(prev);
+        next.set(event.run_id, { ...current, events, status });
+        return next;
+      });
+    }).then((result) => {
+      if ("why" in result) {
+        setListenFailure(result.why);
+        return;
+      }
+      if (dropped) result.stop();
+      else unlisten = result.stop;
+    });
+    return () => {
+      dropped = true;
+      unlisten?.();
+    };
+  }, []);
+
+
+  // Come si innesca ciascun flusso lo dice il guscio, non questa pagina: la
+  // regola su dove va a finire una consegna è una sola, e sta di là.
+  const known = useMemo(() => flowList.map(({ name }) => name).join("\u0000"), [flowList]);
+  useEffect(() => {
+    if (!NATIVE) return;
+    let dropped = false;
+    for (const name of known.split("\u0000").filter((entry) => entry !== "")) {
+      setTriggers((prev) => {
+        if (prev.has(name)) return prev;
+        flowTrigger(name)
+          .then((trigger) => {
+            if (!dropped) setTriggers((now) => new Map(now).set(name, { state: "ready", trigger }));
+          })
+          .catch((error: unknown) => {
+            if (!dropped) setTriggers((now) => new Map(now).set(name, { state: "mute", why: String(error) }));
+          });
+        return new Map(prev).set(name, { state: "asking" });
+      });
+    }
+    return () => {
+      dropped = true;
+    };
+  }, [known]);
+
+  const anyRunning = useMemo(
+    () => Array.from(executions.values()).some((run) => run.status === "running"),
+    [executions],
+  );
+
+  // L'orologio dei contatori. BATTE SOLO MENTRE QUALCOSA GIRA: un secondo fisso
+  // che ridisegna la tela per sempre è un costo che nessuno guarda, e su questa
+  // tela un ridisegno di troppo è già bastato una volta a mandarla in ciclo.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    if (!anyRunning) return;
+    const tick = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(tick);
+  }, [anyRunning]);
+
+  // LA RETE DI SICUREZZA. Un canale di eventi può non attaccarsi, o perdere un
+  // fatto: in tutti e due i casi la finestra continuerebbe a disegnare l'ultimo
+  // stato ricevuto — «in corso da 00:30» su una corsa finita — che è
+  // esattamente la bugia che questa vista non deve raccontare. Finché qualcosa
+  // gira si richiede lo stato al guscio, e i fatti si uniscono per numero
+  // d'ordine: quelli già arrivati dall'ascolto non si contano due volte.
+  //
+  // Interroga **solo mentre una corsa è viva**, e non a tela ferma.
+  useEffect(() => {
+    if (!NATIVE || !anyRunning) return;
+    const live = Array.from(executions.values())
+      .filter((run) => run.status === "running")
+      .map((run) => run.run_id);
+    const tick = window.setInterval(() => {
+      for (const runId of live) void runSnapshot(runId).then(absorb).catch(() => {});
+    }, 1000);
+    return () => window.clearInterval(tick);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anyRunning, executions.size]);
+
+  /** La corsa più recente di un flusso: è quella che chi guarda intende. */
+  const latestByFlow = useMemo(() => {
+    const latest = new Map<string, RunSnapshot>();
+    for (const run of executions.values()) {
+      const current = latest.get(run.flow);
+      if (!current || run.started_at >= current.started_at) latest.set(run.flow, run);
+    }
+    return latest;
+  }, [executions]);
+
+  const executionList = useMemo(
+    () => Array.from(executions.values()).sort((a, b) => b.started_at - a.started_at),
+    [executions],
+  );
+
+  async function handleRun(flowName: string) {
+    const working = flows.get(flowName);
+    if (!working) return;
+    // UN FLUSSO SI ESEGUE DAL DISCO, NON DALLO SCHERMO. Il motore legge il
+    // file: se ci sono modifiche non salvate, quello che parte non è quello che
+    // si sta guardando — e chi preme lo deve decidere prima, non scoprirlo dai
+    // risultati.
+    if (isDirty(working)) {
+      const question =
+        working.saved === null
+          ? `«${flowName}» non è mai stato salvato: il motore non lo troverebbe sul disco. Salvarlo e poi eseguirlo?`
+          : `«${flowName}» ha modifiche non salvate: il motore eseguirebbe la versione sul disco. Salvarlo prima?`;
+      if (!window.confirm(question)) return;
+      await handleSave(flowName);
+      if (saveErrors[flowName]) return;
+    }
+
+    setStarting((prev) => new Set(prev).add(flowName));
+    setRunErrors((prev) => {
+      if (!(flowName in prev)) return prev;
+      const next = { ...prev };
+      delete next[flowName];
+      return next;
+    });
+    try {
+      const text = mandates[flowName] ?? "";
+      const started = await startRun(flowName, text.trim() === "" ? null : text);
+      absorb({
+        run_id: started.run_id,
+        flow: started.flow,
+        started_at: started.started_at,
+        status: "running",
+        events: [],
+      });
+      setWatching(started.run_id);
+      // I fatti nati fra la partenza e l'inizio dell'ascolto stanno solo nel
+      // guscio: si chiedono subito, e si uniscono per numero d'ordine.
+      void runSnapshot(started.run_id)
+        .then(absorb)
+        .catch((error: unknown) => setRunErrors((prev) => ({ ...prev, [flowName]: String(error) })));
+    } catch (error) {
+      setRunErrors((prev) => ({ ...prev, [flowName]: String(error) }));
+    } finally {
+      setStarting((prev) => {
+        const next = new Set(prev);
+        next.delete(flowName);
+        return next;
+      });
+    }
+  }
+
+  const controls: RunControls = useMemo(
+    () => ({
+      native: NATIVE,
+      triggerOf: (name) =>
+        triggers.get(name) ??
+        (NATIVE
+          ? { state: "asking" }
+          : { state: "mute", why: "fuori dal guscio: nessun motore da innescare" }),
+      runOf: (name) => latestByFlow.get(name),
+      mandateOf: (name) => mandates[name] ?? "",
+      onMandate: (name, text) => setMandates((prev) => ({ ...prev, [name]: text })),
+      onRun: (name) => void handleRun(name),
+      starting: (name) => starting.has(name),
+      errorOf: (name) => runErrors[name],
+      onWatch: (name) => {
+        const run = latestByFlow.get(name);
+        if (run) setWatching(run.run_id);
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [triggers, latestByFlow, mandates, starting, runErrors, flows, saveErrors],
+  );
+
+  const watched = watching ? executions.get(watching) : undefined;
+
   // GLI STATI D'ESEMPIO RESTANO ALL'ESEMPIO. Sui flussi veri la corsa non è
   // ancora letta dal deposito: passare qui `SAMPLE_RUN` colorerebbe di
   // «andato» e «rotto» dei passi che nessuno ha mai eseguito, ed è la specie
@@ -143,12 +489,64 @@ export default function App() {
 
   const layout = useMemo(() => buildUnifiedLayout(flowList, runs, focusName), [flowList, runs, focusName]);
 
+  /**
+   * I nodi di innesco, uno per corsia, a sinistra di dove comincia il grafo.
+   *
+   * Si aggiungono qui e non in `buildUnifiedLayout` per una ragione precisa:
+   * quella funzione disegna quello che sta nel file del flusso, e l'innesco nel
+   * file non c'è. Tenerlo fuori lascia visibile il confine fra ciò che il
+   * motore conosce e ciò che questa finestra aggiunge.
+   *
+   * I `data` portano due stringhe stabili e nient'altro: lo stato della corsa
+   * passa dal contesto. Se passasse di qui, ogni fatto in arrivo ricostruirebbe
+   * l'intero elenco dei nodi — e su questa tela un elenco di nodi ricostruito
+   * dentro un effetto è già bastato una volta a mandarla in ciclo infinito.
+   */
+  const canvas = useMemo(() => {
+    const nodes: Node[] = [...layout.nodes];
+    const edges: Edge[] = [...layout.edges];
+    const byName = new Map(flowList.map(({ name, flow }) => [name, flow]));
+
+    for (const [name, band] of layout.bands) {
+      const id = triggerNodeId(name);
+      nodes.push({
+        id,
+        type: "trigger",
+        position: { x: band.x - TRIGGER_WIDTH - TRIGGER_GAP, y: band.y + TRIGGER_TOP },
+        draggable: false,
+        data: { flowName: name, color: band.color },
+      });
+
+      // L'innesco punta ai passi da cui il grafo comincia. Tratteggiato,
+      // perché non è una dipendenza dichiarata nel file: è il gesto che mette
+      // in moto quelli che non aspettano nessun altro.
+      const flow = byName.get(name);
+      for (const step of flow?.graph.steps ?? []) {
+        if (step.deps.length > 0) continue;
+        edges.push({
+          id: `${id}->${nodeId(name, step.id)}`,
+          source: id,
+          target: nodeId(name, step.id),
+          animated: false,
+          selectable: false,
+          style: {
+            stroke: band.color,
+            strokeDasharray: "2 5",
+            opacity: focusName !== null && focusName !== name ? 0.2 : 0.7,
+          },
+        });
+      }
+    }
+
+    return { nodes, edges };
+  }, [layout, flowList, focusName]);
+
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   useEffect(() => {
-    setNodes(layout.nodes);
-    setEdges(layout.edges);
-  }, [layout]);
+    setNodes(canvas.nodes);
+    setEdges(canvas.edges);
+  }, [canvas]);
 
   // Il fuoco muove la vista, non ricrea la disposizione: leggo l'ultimo
   // riquadro noto da un ref, così un'ingresso non ri-centra la tela mentre si
@@ -183,6 +581,51 @@ export default function App() {
       const next = new Map(prev);
       next.set(name, { ...current, flow: updater(current.flow) });
       return next;
+    });
+  }
+
+  /**
+   * Un flusso nuovo nasce qui, vuoto, e resta nella finestra finché non lo si
+   * salva: senza questo gesto una cartella vuota è un vicolo cieco, perché la
+   * cassetta dei passi chiede un flusso a cui appartenere.
+   */
+  function addFlow() {
+    const name = freeFlowName(flows);
+    const flow: FlowFile = {
+      id: name,
+      description: "",
+      graph: { steps: [], skippable_dependencies: [] },
+      inputs: {},
+    };
+    setFlows((prev) => new Map(prev).set(name, { flow, saved: null }));
+    setFocusName(name);
+    setSelectedNode(null);
+  }
+
+  /**
+   * Rinominare un flusso significa rinominare il suo file: finché non è mai
+   * stato scritto è un gesto senza conseguenze, e dopo non lo è più — sul disco
+   * resterebbe il vecchio file accanto al nuovo. Il pannello lo permette solo
+   * prima del primo salvataggio, e lo dice.
+   */
+  function renameFlow(oldName: string, raw: string) {
+    const name = raw.trim();
+    if (name === "" || name === oldName) return;
+    setFlows((prev) => {
+      const current = prev.get(oldName);
+      if (!current || current.saved !== null || prev.has(name)) return prev;
+      const next = new Map<string, WorkingFlow>();
+      for (const [key, value] of prev) {
+        if (key === oldName) next.set(name, { ...value, flow: { ...value.flow, id: name } });
+        else next.set(key, value);
+      }
+      return next;
+    });
+    setFocusName((current) => (current === oldName ? name : current));
+    setSelectedNode((current) => {
+      if (!current) return current;
+      const { flowName, stepId } = splitNodeId(current);
+      return flowName === oldName ? nodeId(name, stepId) : current;
     });
   }
 
@@ -325,10 +768,17 @@ export default function App() {
   }
 
   async function handleDeleteFlow(name: string) {
-    if (!window.confirm(`Cancellare il flusso "${name}"? Non si torna indietro da qui.`)) return;
-    setSaving((prev) => new Set(prev).add(name));
-    try {
-      await deleteFlow(name);
+    const working = flows.get(name);
+    if (!working) return;
+    // Un flusso mai scritto si scarta qui: chiedere al motore di cancellare un
+    // file che non ha mai visto darebbe un errore al posto di un gesto riuscito.
+    const neverSaved = working.saved === null;
+    const question = neverSaved
+      ? `Scartare il flusso "${name}"? Non è mai stato scritto sul disco.`
+      : `Cancellare il flusso "${name}"? Non si torna indietro da qui.`;
+    if (!window.confirm(question)) return;
+
+    function forget() {
       setFlows((prev) => {
         const next = new Map(prev);
         next.delete(name);
@@ -336,6 +786,17 @@ export default function App() {
       });
       setFocusName((current) => (current === name ? null : current));
       setSelectedNode((current) => (current && splitNodeId(current).flowName === name ? null : current));
+    }
+
+    if (neverSaved) {
+      forget();
+      return;
+    }
+
+    setSaving((prev) => new Set(prev).add(name));
+    try {
+      await deleteFlow(name);
+      forget();
     } catch (error) {
       setSaveErrors((prev) => ({ ...prev, [name]: String(error) }));
     } finally {
@@ -407,7 +868,9 @@ export default function App() {
       <header className="bar">
         <span className="bar__name">Sailor</span>
         <span className="bar__sep" />
-        <span className="bar__flow">{flows.size} flussi, un sistema solo</span>
+        <span className="bar__flow">
+          {flows.size === 0 ? "nessun flusso, ancora" : `${flows.size} flussi, un sistema solo`}
+        </span>
         {/* Chi guarda deve sapere se sta vedendo il disco o un esempio, senza
             chiedere e senza aprire il codice. */}
         <span className="bar__source" data-source={source}>
@@ -415,41 +878,46 @@ export default function App() {
             ? `${flows.size + broken.length} flussi dal disco`
             : source === "failed"
               ? `il motore non risponde: ${failure}`
-              : "dati di esempio"}
+              : source === "loading"
+                ? "chiedo i flussi al motore…"
+                : "dati di esempio"}
         </span>
         {anyDirty && <span className="bar__dirty">modifiche non salvate</span>}
         <div className="bar__spacer" />
-        <button type="button" className="is-primary">
-          Esegui
-        </button>
+        {/* IL GESTO DI PARTENZA STA SUL NODO DI INNESCO, non qui: su una tela
+            dove tutti i flussi stanno insieme, un pulsante «Esegui» in cima non
+            dice quale flusso farebbe partire. Questo apre la vista di quello
+            che sta girando, che è la domanda che si fa dalla barra. */}
+        {executionList.length > 0 && (
+          <button
+            type="button"
+            className="is-primary"
+            onClick={() => setWatching(watched?.run_id ?? executionList[0].run_id)}
+            disabled={watched !== undefined}
+          >
+            {anyRunning ? "Guarda l'esecuzione ●" : "Vedi l'ultima esecuzione"}
+          </button>
+        )}
       </header>
 
       {focusName && focusedWorking && focusedBand && (
-        <div className="focusbar">
-          <span className="focusbar__dot" style={{ background: focusedBand.color }} />
-          <span className="focusbar__name">{focusName}</span>
-          <span className="focusbar__desc">{focusedWorking.flow.description}</span>
-          {focusedDirty && <span className="focusbar__dirty">non salvato</span>}
-          <div className="focusbar__spacer" />
-          {saveErrors[focusName] && <span className="focusbar__error">{saveErrors[focusName]}</span>}
-          <button
-            type="button"
-            onClick={() => void handleSave(focusName)}
-            disabled={!focusedDirty || saving.has(focusName)}
-          >
-            {saving.has(focusName) ? "salvo…" : "Salva flusso"}
-          </button>
-          <button
-            type="button"
-            className="is-danger"
-            onClick={() => void handleDeleteFlow(focusName)}
-            disabled={saving.has(focusName)}
-          >
-            Elimina flusso
-          </button>
-        </div>
+        <FocusBar
+          key={focusName}
+          name={focusName}
+          color={focusedBand.color}
+          flow={focusedWorking.flow}
+          neverSaved={focusedWorking.saved === null}
+          dirty={focusedDirty}
+          busy={saving.has(focusName)}
+          error={saveErrors[focusName]}
+          onRename={(next) => renameFlow(focusName, next)}
+          onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}
+          onSave={() => void handleSave(focusName)}
+          onDelete={() => void handleDeleteFlow(focusName)}
+        />
       )}
 
+      <RunContext.Provider value={controls}>
       <div className="body">
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
@@ -493,6 +961,9 @@ export default function App() {
               <span className="rail__note">{entry.reason}</span>
             </div>
           ))}
+          <button type="button" className="rail__new" onClick={addFlow}>
+            + Nuovo flusso
+          </button>
 
           <div className="rail__cassette">
             <div className="rail__title">Cassetta dei passi</div>
@@ -538,6 +1009,18 @@ export default function App() {
             <Controls />
             <MiniMap pannable zoomable />
           </ReactFlow>
+
+          {/* Una tela senza flussi non resta muta: dice cos'è un flusso e offre
+              il gesto per farne uno. Il messaggio sparisce da solo appena ce n'è
+              uno, e non intercetta il puntatore sulla tela sotto. */}
+          {flows.size === 0 && (
+            <BlankCanvas
+              state={source === "failed" ? "failed" : source === "loading" ? "loading" : "empty"}
+              failure={failure}
+              brokenCount={broken.length}
+              onCreate={addFlow}
+            />
+          )}
         </main>
 
         <aside className="panel">
@@ -548,12 +1031,16 @@ export default function App() {
           </datalist>
 
           {selectedData && selectedFlow ? (
+            <>
             <StepEditor
               key={selectedNode}
               flowName={selectedData.flowName}
               color={selectedData.color}
               step={selectedData.step}
               siblingIds={selectedFlow.flow.graph.steps.map((step) => step.id).filter((id) => id !== selectedData.step.id)}
+              tools={tools}
+              discovery={discovery}
+              usedModels={usedModels}
               onRename={(newId) => renameStep(selectedData.flowName, selectedData.step.id, newId)}
               onField={(patch) => updateStepField(selectedData.flowName, selectedData.step.id, patch)}
               onToggleDep={(depId, on) =>
@@ -563,131 +1050,131 @@ export default function App() {
               }
               onDelete={() => deleteStep(selectedData.flowName, selectedData.step.id)}
             />
+            {/* Cosa è passato di qui, nel tempo. Sta sotto i parametri e non in
+                un pannello a parte: chi clicca un nodo chiede tutte e due le
+                cose — com'è fatto, e cosa ci è entrato. Fuori dal guscio non
+                c'è deposito, e il pannello lo dice da sé. */}
+            {NATIVE && (
+              <StepHistory
+                key={`${selectedData.flowName}::${selectedData.step.id}`}
+                flowName={selectedData.flowName}
+                stepId={selectedData.step.id}
+              />
+            )}
+            </>
           ) : (
             <div className="panel__empty">
-              Scegli un passo per vederne e modificarne i parametri, o un flusso a
-              sinistra per metterlo a fuoco.
+              {flows.size === 0
+                ? "Nessun flusso da mostrare: creane uno dalla tela o dalla colonna a sinistra."
+                : "Scegli un passo per vederne e modificarne i parametri, o un flusso a sinistra per metterlo a fuoco."}
             </div>
           )}
         </aside>
       </div>
+
+      {/* LA VISTA SI CHIUDE, LA CORSA NO. Chiudere questo pannello non ferma
+          niente: il flusso gira nel guscio, e riaprendo si ritrova tutto quello
+          che ha detto mentre nessuno guardava. */}
+      {watched && (
+        <RunConsole
+          run={watched}
+          runs={executionList}
+          mode={consoleMode}
+          now={now}
+          listenFailure={listenFailure}
+          onMode={setConsoleMode}
+          onPick={setWatching}
+          onClose={() => setWatching(null)}
+        />
+      )}
+      </RunContext.Provider>
     </div>
   );
 }
 
-interface StepEditorProps {
-  flowName: string;
+/** Un elenco vuoto stabile: un `[]` nuovo a ogni render rifarebbe i calcoli a valle. */
+const EMPTY_TOOLS: Tool[] = [];
+
+interface FocusBarProps {
+  name: string;
   color: string;
-  step: Step;
-  siblingIds: string[];
-  onRename: (newId: string) => void;
-  onField: (patch: Partial<Step>) => void;
-  onToggleDep: (depId: string, on: boolean) => void;
+  flow: FlowFile;
+  neverSaved: boolean;
+  dirty: boolean;
+  busy: boolean;
+  error?: string;
+  onRename: (next: string) => void;
+  onDescription: (text: string) => void;
+  onSave: () => void;
   onDelete: () => void;
 }
 
 /**
- * Il pannello di un passo scelto: id, azione, tentativi, dipendenze, parametri.
- * Monta una volta per passo selezionato (la chiave è `selectedNode` in
- * `App`), così le bozze locali (id, JSON) ripartono pulite a ogni cambio di
- * selezione senza un effetto dedicato a resettarle.
+ * La barra del flusso a fuoco: nome, descrizione, salva ed elimina. Il nome si
+ * scrive solo prima del primo salvataggio (è il nome del file); la descrizione
+ * si scrive sempre, perché un flusso senza descrizione è un nome e basta per
+ * chiunque lo apra dopo.
+ *
+ * Le bozze restano qui dentro e si depositano al `blur`: rinominare a ogni
+ * tasto premuto significherebbe rinominare il flusso sette volte mentre lo si
+ * chiama «notte».
  */
-function StepEditor({ flowName, color, step, siblingIds, onRename, onField, onToggleDep, onDelete }: StepEditorProps) {
-  const [idDraft, setIdDraft] = useState(step.id);
-  const [withDraft, setWithDraft] = useState(step.with ? JSON.stringify(step.with, null, 2) : "");
-  const [withError, setWithError] = useState<string | null>(null);
-  const idTaken = idDraft !== step.id && siblingIds.includes(idDraft);
-
-  function commitId() {
-    const trimmed = idDraft.trim();
-    if (!trimmed || trimmed === step.id || siblingIds.includes(trimmed)) {
-      setIdDraft(step.id);
-      return;
-    }
-    onRename(trimmed);
-  }
-
-  function commitWith() {
-    const text = withDraft.trim();
-    if (text === "") {
-      setWithError(null);
-      onField({ with: null });
-      return;
-    }
-    try {
-      const parsed = JSON.parse(text) as Record<string, unknown>;
-      setWithError(null);
-      onField({ with: parsed });
-    } catch (error) {
-      setWithError(String(error));
-    }
-  }
+function FocusBar({
+  name,
+  color,
+  flow,
+  neverSaved,
+  dirty,
+  busy,
+  error,
+  onRename,
+  onDescription,
+  onSave,
+  onDelete,
+}: FocusBarProps) {
+  const [nameDraft, setNameDraft] = useState(name);
+  const [descDraft, setDescDraft] = useState(flow.description);
 
   return (
-    <>
-      <div className="panel__flow" style={{ color }}>
-        {flowName}
-      </div>
-      <div className="panel__title">Passo</div>
-      <input
-        className="panel__id-input"
-        value={idDraft}
-        onChange={(event) => setIdDraft(event.target.value)}
-        onBlur={commitId}
-      />
-      {idTaken && <p className="panel__error">un altro passo del flusso si chiama già così</p>}
-
-      <label className="panel__field">
-        <span>Azione</span>
-        <input list="known-actions" value={step.action} onChange={(event) => onField({ action: event.target.value })} />
-      </label>
-
-      <label className="panel__field">
-        <span>Tetto tentativi</span>
+    <div className="focusbar">
+      <span className="focusbar__dot" style={{ background: color }} />
+      {neverSaved ? (
         <input
-          type="number"
-          min={1}
-          value={step.max_attempts}
-          onChange={(event) => onField({ max_attempts: Math.max(1, Number(event.target.value) || 1) })}
+          className="focusbar__name-input"
+          value={nameDraft}
+          aria-label="nome del flusso"
+          onChange={(event) => setNameDraft(event.target.value)}
+          onBlur={() => onRename(nameDraft)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
         />
-      </label>
-
-      <div className="panel__field">
-        <span>Dipende da</span>
-        {siblingIds.length === 0 ? (
-          <p className="panel__empty">nessun altro passo in questo flusso</p>
-        ) : (
-          <div className="panel__deps">
-            {siblingIds.map((id) => (
-              <label key={id} className="panel__dep">
-                <input
-                  type="checkbox"
-                  checked={step.deps.includes(id)}
-                  onChange={(event) => onToggleDep(id, event.target.checked)}
-                />
-                {id}
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <label className="panel__field">
-        <span>Parametri (JSON)</span>
-        <textarea
-          className="panel__with"
-          rows={5}
-          value={withDraft}
-          onChange={(event) => setWithDraft(event.target.value)}
-          onBlur={commitWith}
-          placeholder="nessuno"
-        />
-      </label>
-      {withError && <p className="panel__error">JSON non valido: {withError}</p>}
-
-      <button type="button" className="panel__delete" onClick={onDelete}>
-        Elimina passo
+      ) : (
+        <span className="focusbar__name" title="il nome è quello del file: si sceglie prima di salvare">
+          {name}
+        </span>
+      )}
+      <input
+        className="focusbar__desc-input"
+        value={descDraft}
+        aria-label="descrizione del flusso"
+        placeholder="a cosa serve questo flusso"
+        onChange={(event) => setDescDraft(event.target.value)}
+        onBlur={() => onDescription(descDraft)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      {dirty && <span className="focusbar__dirty">{neverSaved ? "mai salvato" : "non salvato"}</span>}
+      <div className="focusbar__spacer" />
+      {error && <span className="focusbar__error">{error}</span>}
+      <button type="button" onClick={onSave} disabled={!dirty || busy}>
+        {busy ? "salvo…" : "Salva flusso"}
       </button>
-    </>
+      <button type="button" className="is-danger" onClick={onDelete} disabled={busy}>
+        {neverSaved ? "Scarta flusso" : "Elimina flusso"}
+      </button>
+    </div>
   );
 }
+
