@@ -391,6 +391,8 @@ dependencies = [
  "release",
  "serde",
  "serde_json",
+ "toolbox",
+ "trigger",
  "ui",
 ]
 
@@ -502,6 +504,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "toolbox"
+version = "0.1.0"
+dependencies = [
+ "actions",
+ "flow",
+ "inventory",
+ "ledger",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tracing"
 version = "0.1.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -556,6 +570,16 @@ dependencies = [
  "thread_local",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "trigger"
+version = "0.1.0"
+dependencies = [
+ "flow",
+ "serde",
+ "serde_json",
+ "toolbox",
 ]
 
 [[package]]

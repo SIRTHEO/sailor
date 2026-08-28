@@ -1,0 +1,56 @@
+{
+  "_leggimi": [
+    "Le sorgenti di segnale, spedite col prodotto. È un dato: si riscrive, si",
+    "estende e si spegne senza ricompilare niente.",
+    "",
+    "Per aggiungerne una: metti un file `.json` in `~/.sailor/triggers.d/` (o",
+    "dove punta SAILOR_TRIGGER_DESCRIPTORS) con dentro un array di descrittori,",
+    "o un oggetto con un campo `triggers`. Un `id` già presente qui dentro viene",
+    "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
+    "`\"disabled\": true`.",
+    "",
+    "`kind` è `manual` (qualcuno preme e parte, portando un testo) oppure",
+    "`terminal` (il segnale comparirebbe in una sessione di terminale). Un",
+    "terminale deve dire in `listen` dove si vedrebbe comparire: `appended_lines`",
+    "per un file che cresce e non viene mai riscritto, una riga JSON per",
+    "messaggio; `cursor_command` per un comando che, dato un cursore, stampa ciò",
+    "che è comparso dopo.",
+    "",
+    "ATTENZIONE, E VALE PER TUTTE LE VOCI `terminal`: oggi Sailor non ascolta",
+    "nessun terminale. Queste voci dichiarano la forma, e un passo che le usa si",
+    "ferma dicendo cosa manca. Solo `manual` funziona per davvero."
+  ],
+  "triggers": [
+    {
+      "id": "manual",
+      "kind": "manual",
+      "label": "A mano",
+      "note": "Qualcuno preme e parte, portando un testo. È la sorgente del pulsante di lancio: il segnale arriva insieme alla corsa, quindi non c'è niente da attendere."
+    },
+    {
+      "id": "sailor-terminal",
+      "kind": "terminal",
+      "label": "Il terminale di Sailor",
+      "listen": {
+        "kind": "appended_lines",
+        "files": ["~/.sailor/terminals/*/messages.jsonl"],
+        "text_pointer": ["text"],
+        "who_pointer": ["who"],
+        "where_pointer": ["session"]
+      },
+      "note": "Il terminale di Sailor non esiste ancora: nessun processo scrive questo file, e il percorso qui sopra è la forma che avrà, non una misura. Sta nell'elenco perché il giorno in cui quel terminale scriverà una riga, ascoltarlo sarà cambiare zero codice."
+    },
+    {
+      "id": "orca-terminal",
+      "kind": "terminal",
+      "label": "I pannelli di Orca",
+      "listen": {
+        "kind": "cursor_command",
+        "tool": "orca",
+        "args": ["terminal", "read", "--json"],
+        "cursor_argument": "--cursor"
+      },
+      "note": "Misurato il 28/08/2026. Orca registra l'uscita dei pannelli in `terminal-history/*/output.log`, che NON è una sorgente onesta: è un formato binario di frame (magic OCKL) con dentro byte di terminale ANSI — ridisegni di schermo, non messaggi — svuotato sul posto oltre i 5 MB e scritto a lotti ogni ~5 secondi, quindi un lettore in coda perde contenuto senza accorgersene. L'unica via supportata è questo comando a cursore, che restituisce testo. Richiede un descrittore di strumento con id `orca`, che non è spedito: si aggiunge in ~/.sailor/tools.d/."
+    }
+  ]
+}
