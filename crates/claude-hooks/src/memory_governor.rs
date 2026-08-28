@@ -60,6 +60,8 @@ fn thresholds() -> judge::Thresholds {
             .unwrap_or(fallback)
     };
     judge::Thresholds {
+        available_tight_mb: get("MEMGOV_AVAILABLE_TIGHT_MB", base.available_tight_mb),
+        available_critical_mb: get("MEMGOV_AVAILABLE_CRITICAL_MB", base.available_critical_mb),
         free_tight_mb: get("MEMGOV_FREE_TIGHT_MB", base.free_tight_mb),
         free_critical_mb: get("MEMGOV_FREE_CRITICAL_MB", base.free_critical_mb),
         compressor_tight_pct: get("MEMGOV_COMPRESSOR_TIGHT_PCT", base.compressor_tight_pct),
@@ -126,6 +128,24 @@ pub fn measure() -> judge::Reading {
             r.free_mb = field(&text, "Pages free:").map(|p| p * page / 1_048_576);
             r.compressor_mb =
                 field(&text, "Pages used by compressor:").map(|p| p * page / 1_048_576);
+            // LE PAGINE LIBERE NON SONO LA MEMORIA DISPONIBILE, e su macOS non
+            // ci somigliano nemmeno: il kernel tiene la RAM piena di cache di
+            // proposito e la libera quando qualcuno la chiede, quindi «free»
+            // resta vicino a zero anche su una macchina scarica. Misurato il
+            // 28/08/2026 alle 21:00: 88 MB liberi, **4.701 MB disponibili**, e
+            // il kernel che alla domanda diretta rispondeva «pressione
+            // normale». Su quel numero il freno negava ogni compilazione.
+            //
+            // Disponibile è quello che il kernel restituisce se glielo chiedi:
+            // le pagine libere più le tre famiglie che sa recuperare senza
+            // scrivere su disco.
+            let recoverable = ["Pages free:", "Pages inactive:", "Pages speculative:", "Pages purgeable:"]
+                .iter()
+                .filter_map(|name| field(&text, name))
+                .sum::<u64>();
+            if recoverable > 0 {
+                r.available_mb = Some(recoverable * page / 1_048_576);
+            }
         }
         _ => r.unreadable.push("memory_pressure".into()),
     }
@@ -199,6 +219,10 @@ fn cached() -> Option<(judge::Reading, judge::Pressure, u64)> {
     let stamp: u64 = f[0].parse().ok()?;
     let reading = judge::Reading {
         free_mb: parse_num(f[2]),
+        // L'ottavo campo è arrivato il 28/08/2026. Una riga scritta prima non
+        // ce l'ha, e non è un errore: vale `None`, cioè il ripiego sulle pagine
+        // libere, finché la prossima misura non riscrive la riga intera.
+        available_mb: f.get(7).copied().and_then(parse_num),
         compressor_mb: parse_num(f[3]),
         total_mb: parse_num(f[4]),
         swap_allocated_mb: parse_num(f[5]),
@@ -216,15 +240,19 @@ fn cached() -> Option<(judge::Reading, judge::Pressure, u64)> {
 }
 
 fn store(reading: &judge::Reading, level: judge::Pressure) {
+    // La memoria disponibile va **in fondo**, non al suo posto logico: le righe
+    // già scritte hanno sette campi e chi le rilegge conta le posizioni. Un
+    // campo aggiunto in mezzo le farebbe leggere sbagliate senza un errore.
     let line = format!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
         now_epoch(),
         level_name(level),
         num(reading.free_mb),
         num(reading.compressor_mb),
         num(reading.total_mb),
         num(reading.swap_allocated_mb),
-        reading.unreadable.join(",")
+        reading.unreadable.join(","),
+        num(reading.available_mb)
     );
     let dir = state_dir();
     let _ = std::fs::create_dir_all(&dir);
