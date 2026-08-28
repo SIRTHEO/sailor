@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "tot=$(jq -r 'select(.agent_type != \"main\") | .agent_type' \"$HOME/.claude/state/costi.jsonl\" 2>/dev/null | wc -l | tr -d ' '); [ -n \"$tot\" ] && [ \"$tot\" -gt 0 ]",
           "timeout_secs": 120

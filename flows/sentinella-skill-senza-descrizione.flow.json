@@ -73,7 +73,11 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
         "with": {
           "command": "real=$(find \"$HOME/.claude/skills\" -type f -name SKILL.md -exec sh -c 'for f do grep -qiE \"^[[:space:]-]*description:[[:space:]]*[^[:space:]]+\" \"$f\" || printf x; done' sh {} + 2>/dev/null | wc -c | tr -d ' '); [ -n \"$real\" ] && [ \"$real\" -eq 0 ]",
           "timeout_secs": 120
