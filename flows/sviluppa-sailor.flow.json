@@ -1,0 +1,551 @@
+{
+  "id": "sviluppa-sailor",
+  "description": "Sailor che sviluppa se stesso. PRIMO MANDATO, 29/08/2026: dare a un flusso il modo di guardare com'è andata — l'anello che separa un sistema che ripete da uno che accumula. Un mandato entra dall'innesco; un passo lo capisce leggendo il codice e fa un piano senza toccare niente; un secondo lo esegue scrivendo davvero; le prove girano; un quarto, su un modello più basso, apre i file e giudica — e ha l'ordine esplicito di respingere se chi ha implementato dichiara di non aver provato il proprio controllo rompendolo. CHI FA NON GIUDICA: il verificatore è un altro motore, riceve il lavoro e non l'ha scritto. È un FLUSSO DI LAVORO NOSTRO, non si spedisce col prodotto: serve a chi costruisce Sailor, e conosce Sailor. NIENTE BRIGLIE, PER DECISIONE: il passo che implementa scrive senza chiedere permesso. Il perimetro non è applicato dal motore — non esiste ancora — quindi l'unica cosa che lo tiene dentro il repo è il mandato e la cartella di lavoro. Chi lo lancia lo sa.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "who",
+            "where",
+            "source",
+            "kind"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "piano",
+        "deps": [
+          "trigger"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "opus"
+          ],
+          "timeout_secs": 2700,
+          "workdir": "/home/someone/personal/sailor",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "understanding": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "what": {
+                      "type": "string"
+                    },
+                    "where": {
+                      "type": "string"
+                    },
+                    "why": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "what",
+                    "where",
+                    "why"
+                  ],
+                  "allow_extra": false
+                }
+              },
+              "how_recognised": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "understanding",
+              "steps",
+              "how_recognised"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Ricevi un mandato di sviluppo su Sailor e NON lo esegui: lo capisci e lo pianifichi. Non modificare nessun file in questo passo.\n\nVai a leggere il codice prima di pianificare. Puoi usare gli strumenti di SocratiCode per orientarti, ma verifica sempre aprendo il file: il suo grafo delle dipendenze su questo repo dà falsi negativi.\n\nIn «how_recognised» rispondi alla domanda difficile del mandato con la tua scelta e il motivo. Se il mandato non ne ha una, scrivi «non richiesto».\n\nIL MANDATO\n\n",
+              {
+                "$from": "/text"
+              },
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "understanding": {
+                  "type": "string"
+                },
+                "steps": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "what": {
+                        "type": "string"
+                      },
+                      "where": {
+                        "type": "string"
+                      },
+                      "why": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "what",
+                      "where",
+                      "why"
+                    ],
+                    "allow_extra": false
+                  }
+                },
+                "how_recognised": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "understanding",
+                "steps",
+                "how_recognised"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "implementa",
+        "deps": [
+          "trigger",
+          "piano"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "opus",
+            "--dangerously-skip-permissions"
+          ],
+          "timeout_secs": 2700,
+          "workdir": "/home/someone/personal/sailor",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "moved": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "guard": {
+                "type": "string"
+              },
+              "mutant": {
+                "type": "string"
+              },
+              "left_out": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "files",
+              "moved",
+              "guard",
+              "mutant",
+              "left_out"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Esegui questo piano. Scrivi codice davvero.\n\nCOME SI LAVORA QUI: i commenti spiegano il PERCHÉ, non il cosa. Ogni cosa che dichiari va provata, e una prova vale solo se poteva venire diversa — quindi dopo averla scritta ROMPI APPOSTA ciò che prova e guarda che diventi rossa, poi ripristina. In «mutant» scrivi cosa hai rotto e quale prova è caduta: se non l'hai fatto, scrivi «non fatto» invece di inventarlo.\n\nIn «left_out» scrivi cosa NON hai fatto e perché. Una parte lasciata fuori e dichiarata vale più di una fatta male e taciuta.\n\nIL MANDATO\n\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\nIL PIANO DA ESEGUIRE\n",
+              {
+                "$json": "/piano/answer"
+              },
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "files": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "moved": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "guard": {
+                  "type": "string"
+                },
+                "mutant": {
+                  "type": "string"
+                },
+                "left_out": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "files",
+                "moved",
+                "guard",
+                "mutant",
+                "left_out"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "prove",
+        "deps": [
+          "implementa"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "bin": "sh",
+          "args": [
+            "-c",
+            "cd /home/someone/personal/sailor && cargo test --workspace 2>&1 | tail -40"
+          ],
+          "timeout_secs": 1800,
+          "accept": [
+            "exit_error"
+          ]
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "bin": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "bin"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": [
+          "trigger",
+          "implementa",
+          "prove"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "claude-code",
+          "args": [
+            "-p",
+            "--model",
+            "sonnet"
+          ],
+          "timeout_secs": 2700,
+          "workdir": "/home/someone/personal/sailor",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "verdict": {
+                "type": "one_of",
+                "values": [
+                  "APPROVATO",
+                  "RESPINTO"
+                ]
+              },
+              "why": {
+                "type": "string"
+              },
+              "read": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "verdict",
+              "why",
+              "read"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Ricevi un lavoro già fatto e devi dire se regge. NON rifarlo, non modificare nessun file, e non fidarti del racconto di chi l'ha fatto.\n\nCONTROLLA QUATTRO COSE, e per le prime tre vai a guardare tu:\n1. il lavoro fa quello che il mandato chiedeva — apri i file toccati e leggili;\n2. il controllo automatico promesso esiste davvero ed è collegato alla batteria delle prove: trovalo e leggilo;\n3. **il controllo poteva fallire**: guarda `git diff` e chiediti se un flusso non di sistema messo in `flows/` lo farebbe davvero diventare rosso. Se «mutant» dice «non fatto», questo è un motivo per respingere;\n4. le prove sono verdi, e se sono rosse capisci se è colpa di questo lavoro o era già così.\nIn «read» elenca i file che hai davvero aperto. Se non riesci ad aprirne nessuno, respingi.\n\nIL MANDATO\n\n",
+              {
+                "$from": "/trigger/text"
+              },
+              "\n\nCOSA DICE DI AVER FATTO\n",
+              {
+                "$json": "/implementa/answer"
+              },
+              "\n\nCOSA HANNO DETTO LE PROVE\n",
+              {
+                "$json": "/prove/stdout"
+              },
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          }
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "type": "one_of",
+                  "values": [
+                    "APPROVATO",
+                    "RESPINTO"
+                  ]
+                },
+                "why": {
+                  "type": "string"
+                },
+                "read": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "verdict",
+                "why",
+                "read"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verdetto",
+        "deps": [
+          "verifica"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "[ \"$VERDICT\" = APPROVATO ]",
+          "env": {
+            "VERDICT": {
+              "$from": "/answer/verdict"
+            }
+          },
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "text": "Sailor registra tutto quello che succede e non torna mai a leggerlo. Il deposito conserva, per ogni passo di ogni corsa: com'è finito (`outcome`), la classe del guasto se è fallito (`failure_class`), cosa ha detto (`said`), cosa gli è entrato e cosa ne è uscito (`input`, `output`), quando è iniziato e finito, quanti byte ha prodotto. Esistono già tre azioni per il deposito — `store_write`, `store_read`, `store_list` — ma leggono un archivio a chiave: fatti che un flusso ha deciso di ricordare. Nessuna azione permette a un flusso di guardare COM'È ANDATA.\n\nQuesto è l'anello che separa un sistema che ripete da uno che accumula esperienza. Finché manca, un flusso esegue sempre gli stessi passi indipendentemente da come sono andati le venti volte prima.\n\nIL LAVORO: costruisci un'azione registrata che permetta a un flusso di interrogare lo storico delle proprie corse. Deve stare in `crates/actions/`, registrarsi come le altre, e comparire in `sailor flow check` fra le azioni disponibili.\n\nLe domande a cui deve saper rispondere sono queste, e vengono da casi veri:\n- quante volte un certo passo è fallito, e con quale classe di guasto;\n- quali classi di guasto sono le più frequenti, su tutte le corse;\n- com'è andata l'ultima corsa di un certo flusso, passo per passo;\n- quanto ci mette di solito un certo passo (per accorgersi quando ci mette molto di più).\n\nTRE COSE DA DECIDERE TU, e sono la parte difficile:\n\n1. COME SI INTERROGA. Un'azione che accetta SQL sarebbe potente e sbagliata: legherebbe ogni flusso alla forma della tabella di oggi, e chiunque scriva un flusso potrebbe leggere qualunque cosa. Trova una forma di domanda dichiarativa e chiusa. Scrivi nel commento perché hai scelto quella.\n\n2. COSA NON DEVE USCIRE. `input`, `output` e `said` contengono ciò che è passato nei flussi: prompt, risposte di modelli, e potenzialmente segreti. Un'azione che li restituisce a chiunque scriva un flusso è una fuga di dati con l'aspetto di una funzione. Decidi cosa esce sempre, cosa esce solo se chiesto esplicitamente, e cosa non esce mai.\n\n3. IL DEPOSITO VUOTO. Su una macchina appena installata non c'è nessuna corsa. L'azione non deve rompersi né mentire: «nessuna corsa registrata» è una risposta, e va distinta da «zero guasti».\n\nVINCOLI. Lavora solo dentro /home/someone/personal/sailor. Non fare commit. NON toccare la cartella `desktop/` (c'è una finestra aperta che si ricompila a ogni modifica) e NON toccare `crates/ui/src/gather.rs` né `crates/toolbox/` (qualcun altro ci sta lavorando in questo momento). Non eseguire nessun flusso: due stanno girando adesso.\n\nLe prove: una prova vale solo se poteva venire diversa. Dopo averle scritte, rompi apposta ciò che provano e guarda che diventino rosse.",
+      "who": "",
+      "where": ""
+    }
+  }
+}
