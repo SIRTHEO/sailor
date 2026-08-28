@@ -104,6 +104,16 @@ impl ActionRegistry {
     pub fn get(&self, name: &str) -> Option<&dyn Action> {
         self.actions.get(name).map(Box::as_ref)
     }
+
+    /// I nomi registrati, in ordine.
+    ///
+    /// **CHI VUOLE ELENCARE LE AZIONI CHIEDE QUI, E NON TIENE UNA COPIA.** Un
+    /// elenco scritto a mano accanto al registro diverge al primo che aggiunge
+    /// un'azione, e nessun controllo locale lo mostra: il rapporto continua a
+    /// stampare una riga plausibile e vecchia.
+    pub fn names(&self) -> Vec<&str> {
+        self.actions.keys().map(String::as_str).collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
