@@ -1,6 +1,11 @@
 {
   "id": "ripara-la-voce-piu-grave",
   "description": "Lavorazione ogni-notte, peso pesante: invoca codex e poi verifica il risultato.",
+  "schedule": {
+    "recurrence": { "kind": "daily_at", "hour": 1, "minute": 0 },
+    "weight": "heavy",
+    "perimeter": []
+  },
   "graph": {
     "steps": [
       {
