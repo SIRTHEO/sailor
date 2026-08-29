@@ -18,7 +18,17 @@
     "`version` dice come chiedere la versione all'eseguibile trovato; deve essere",
     "una domanda, non un gesto: il rilevamento la esegue davvero.",
     "`config` dice dove vive la sua configurazione. `~/`, `$VAR` e `*` valgono in",
-    "tutti i percorsi."
+    "tutti i percorsi.",
+    "",
+    "`ask` dice come si fa una domanda secca a un motore, e serve perché un passo",
+    "non debba conoscere le opzioni di nessuno: `args` sono le opzioni senza il",
+    "testo della domanda, `prompt` dice dove va quel testo (`stdin` o `last_arg`),",
+    "e `unusable_when` elenca le parole con cui quel motore dichiara di NON poter",
+    "lavorare — quota finita, credenziali mancanti. Solo quelle fanno passare un",
+    "passo al motore successivo della sua catena: si dichiarano le parole del",
+    "fornitore, mai una regola generica come «errore», o un mandato sbagliato",
+    "scenderebbe tutta la catena finché qualcuno risponde comunque. Chi non",
+    "dichiara `ask` resta usabile, ma solo da un passo che scriva da sé le opzioni."
   ],
   "tools": [
     {
@@ -27,7 +37,13 @@
       "label": "Claude Code",
       "detect": { "command": "claude" },
       "version": { "args": ["--version"] },
-      "config": ["~/.claude/settings.json", "~/.claude.json"]
+      "ask": {
+        "args": ["-p"],
+        "prompt": "stdin",
+        "unusable_when": ["weekly limit", "usage limit", "rate limit"]
+      },
+      "config": ["~/.claude/settings.json", "~/.claude.json"],
+      "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare."
     },
     {
       "id": "codex",
@@ -35,8 +51,13 @@
       "label": "Codex",
       "detect": { "command": "codex" },
       "version": { "args": ["--version"] },
+      "ask": {
+        "args": ["exec", "--sandbox", "read-only"],
+        "prompt": "stdin",
+        "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota"]
+      },
       "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
-      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa."
+      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute."
     },
     {
       "id": "gemini-cli",
@@ -52,7 +73,11 @@
       "label": "agy",
       "detect": { "command": "agy" },
       "version": { "args": ["--version"] },
-      "note": "Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere."
+      "ask": {
+        "args": ["--mode", "plan", "--print"],
+        "prompt": "last_arg"
+      },
+      "note": "Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento e `--mode` va prima di `--print` (misurato il 28/08/2026: la forma inversa faceva prendere a `--print` la parola `--mode` come propria domanda). Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
     },
     {
       "id": "openrouter-cli",

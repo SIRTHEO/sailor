@@ -467,6 +467,64 @@ pub trait ToolResolver: Send + Sync {
     /// motivo per cui non si può usare, scritto per una persona: quel testo
     /// finisce dentro il passo rosso, ed è tutto ciò che chi legge avrà.
     fn resolve(&self, id: &str) -> Result<String, String>;
+
+    /// Come si fa una domanda secca a `id`, se il suo descrittore lo dichiara.
+    ///
+    /// **PERCHÉ IL PASSO NON DEVE SAPERLO.** Finché le opzioni di un motore
+    /// stanno scritte dentro un passo — `-p` per uno, `--mode plan --print` per
+    /// un altro — quel passo è legato a quel motore, e un flusso «indipendente
+    /// dal modello» lo è solo nel nome. Il 29/08/2026 sei passi su sei di un
+    /// flusso nominavano lo stesso motore: quando quello ha esaurito la quota,
+    /// il flusso è morto mentre un altro motore, installato e vivo, non è stato
+    /// nemmeno provato.
+    ///
+    /// Chi non la dichiara restituisce `None`, e il passo dovrà dire le opzioni
+    /// da sé: si funziona peggio, non in silenzio.
+    fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+        None
+    }
+}
+
+/// Dove va a finire il testo della domanda quando si interroga un motore.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromptVia {
+    /// Sull'ingresso standard.
+    Stdin,
+    /// Come ultimo argomento della riga di comando.
+    LastArg,
+}
+
+/// Come si interroga un motore in un colpo solo, e come quel motore dice di
+/// **non poter lavorare**.
+#[derive(Clone, Debug)]
+pub struct AskRecipe {
+    /// Le opzioni che vogliono una domanda secca, senza il testo della domanda.
+    pub args: Vec<String>,
+    /// Dove va il testo della domanda.
+    pub prompt: PromptVia,
+    /// I frammenti che, comparendo nell'uscita di un fallimento, dicono che
+    /// **questo motore non poteva lavorare** — quota esaurita, credenziali
+    /// mancanti — e non che il lavoro fosse sbagliato.
+    ///
+    /// **PERCHÉ LA DISTINZIONE È TUTTO.** Passare al motore successivo a ogni
+    /// fallimento sarebbe la cosa peggiore: un mandato scritto male
+    /// scenderebbe la catena fino a un modello che risponde comunque, e la
+    /// risposta sbagliata arriverebbe senza che nessuno sappia perché. Si passa
+    /// oltre **solo** quando il motore ha dichiarato di non poter lavorare, e
+    /// solo con le parole che il suo descrittore dichiara: chi non le dichiara
+    /// non fa scattare nessun ripiego.
+    pub unusable_when: Vec<String>,
+}
+
+/// Se questa uscita è il modo in cui un motore dice di non poter lavorare. Il
+/// confronto ignora maiuscole e minuscole: nessun fornitore promette di non
+/// cambiarle. Un frammento vuoto non conta — combacerebbe con tutto, e
+/// trasformerebbe ogni fallimento in un ripiego.
+fn says_it_cannot_work(marks: &[String], output: &str) -> bool {
+    let output = output.to_lowercase();
+    marks
+        .iter()
+        .any(|mark| !mark.trim().is_empty() && output.contains(&mark.to_lowercase()))
 }
 
 /// Il destinatario del passo in corso, se qualcuno sta guardando.
@@ -595,6 +653,30 @@ fn how_it_exited(code: Option<i32>) -> String {
     }
 }
 
+/// Chi eseguire: un motore, o una catena di motori da provare in ordine.
+///
+/// **PERCHÉ UNA CATENA E NON UN RIPIEGO SOLO.** Un ripiego singolo copre il
+/// caso di stanotte e non quello di domani: i motori esauriscono a scaglioni,
+/// e chi ne ha tre installati vuole che il lavoro trovi il primo che può
+/// farlo. La catena si legge nell'ordine in cui è scritta, e quell'ordine è
+/// una scelta di chi ha scritto il flusso — il migliore per primo, non il più
+/// economico.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ToolChoice {
+    One(String),
+    Chain(Vec<String>),
+}
+
+impl ToolChoice {
+    fn ids(&self) -> &[String] {
+        match self {
+            ToolChoice::One(id) => std::slice::from_ref(id),
+            ToolChoice::Chain(ids) => ids,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct EngineSpec {
     /// Il comando così com'è. Resta per un comando qualunque — `sh`, `cat`, uno
@@ -602,10 +684,11 @@ struct EngineSpec {
     /// flusso gira solo dove quel nome è nel percorso di chi esegue.
     #[serde(default)]
     bin: Option<String>,
-    /// L'identificativo dello strumento voluto, lo stesso che il rilevatore
-    /// della macchina restituisce.
+    /// L'identificativo dello strumento voluto — lo stesso che il rilevatore
+    /// della macchina restituisce — oppure una **catena** di identificativi da
+    /// provare in ordine.
     #[serde(default)]
-    tool: Option<String>,
+    tool: Option<ToolChoice>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -776,36 +859,314 @@ impl ExternalEngineAction {
         self
     }
 
-    /// Chi eseguire. `bin` e `tool` non convivono: due risposte alla stessa
-    /// domanda vorrebbero una precedenza, e una precedenza fra «il nome che ho
-    /// scritto» e «quello che c'è sulla macchina» sarebbe una regola che nessuno
-    /// ricorda al momento giusto.
-    fn executable(&self, spec: &EngineSpec) -> Result<String, ActionError> {
-        match (spec.bin.as_deref(), spec.tool.as_deref()) {
-            (Some(bin), None) => Ok(bin.to_owned()),
-            (None, Some(id)) => match &self.tools {
-                Some(tools) => tools
-                    .resolve(id)
-                    .map_err(|reason| ActionError::new("tool_unavailable", reason)),
-                None => Err(ActionError::new(
-                    "no_tool_resolver",
-                    format!(
-                        "il passo chiede lo strumento «{id}», ma questo motore è stato registrato \
-                         senza un modo per risolverlo: chi costruisce il registro deve registrare \
-                         `{EXTERNAL_ENGINE_ACTION}` con `ExternalEngineAction::resolving_with(...)`"
-                    ),
-                )),
-            },
+    /// Chi eseguire, in ordine di preferenza. `bin` e `tool` non convivono: due
+    /// risposte alla stessa domanda vorrebbero una precedenza, e una precedenza
+    /// fra «il nome che ho scritto» e «quello che c'è sulla macchina» sarebbe una
+    /// regola che nessuno ricorda al momento giusto.
+    ///
+    /// Restituisce anche i motori che **non** si possono usare qui, col motivo:
+    /// se nessuno resta, quel motivo è tutto ciò che chi legge avrà.
+    fn candidates(&self, spec: &EngineSpec) -> Result<(Vec<Candidate>, Vec<Refused>), ActionError> {
+        match (spec.bin.as_deref(), spec.tool.as_ref()) {
+            (Some(bin), None) => Ok((
+                vec![Candidate {
+                    id: None,
+                    bin: bin.to_owned(),
+                    args: spec.args.clone(),
+                    prompt: PromptVia::Stdin,
+                    unusable_when: Vec::new(),
+                }],
+                Vec::new(),
+            )),
+            (None, Some(choice)) => {
+                let Some(tools) = &self.tools else {
+                    let first = choice.ids().first().map(String::as_str).unwrap_or("");
+                    return Err(ActionError::new(
+                        "no_tool_resolver",
+                        format!(
+                            "il passo chiede lo strumento «{first}», ma questo motore è stato \
+                             registrato senza un modo per risolverlo: chi costruisce il registro \
+                             deve registrare `{EXTERNAL_ENGINE_ACTION}` con \
+                             `ExternalEngineAction::resolving_with(...)`"
+                        ),
+                    ));
+                };
+                let ids = choice.ids();
+                if ids.is_empty() {
+                    return Err(ActionError::new(
+                        "invalid_input",
+                        "il passo dichiara una catena di motori vuota: serve almeno un \
+                         identificativo, o `tool` va tolto del tutto",
+                    ));
+                }
+                let step_said_args = !spec.args.is_empty();
+                let mut usable = Vec::new();
+                let mut refused = Vec::new();
+                for id in ids {
+                    let bin = match tools.resolve(id) {
+                        Ok(bin) => bin,
+                        Err(reason) => {
+                            refused.push(Refused {
+                                id: id.clone(),
+                                reason,
+                                unresolved: true,
+                            });
+                            continue;
+                        }
+                    };
+                    // Le opzioni scritte nel passo vincono sulla ricetta: chi le
+                    // ha scritte sta dicendo qualcosa di preciso su *questa*
+                    // chiamata, e sovrascriverle sarebbe decidere al posto suo.
+                    if step_said_args {
+                        usable.push(Candidate {
+                            id: Some(id.clone()),
+                            bin,
+                            args: spec.args.clone(),
+                            prompt: PromptVia::Stdin,
+                            unusable_when: tools
+                                .ask_recipe(id)
+                                .map(|recipe| recipe.unusable_when)
+                                .unwrap_or_default(),
+                        });
+                        continue;
+                    }
+                    match tools.ask_recipe(id) {
+                        Some(recipe) => usable.push(Candidate {
+                            id: Some(id.clone()),
+                            bin,
+                            args: recipe.args,
+                            prompt: recipe.prompt,
+                            unusable_when: recipe.unusable_when,
+                        }),
+                        None => refused.push(Refused {
+                            id: id.clone(),
+                            reason: "il passo non dice con quali opzioni interrogarlo e il suo \
+                                     descrittore non dichiara come gli si fa una domanda (`ask`)"
+                                .to_owned(),
+                            unresolved: false,
+                        }),
+                    }
+                }
+                Ok((usable, refused))
+            }
             (Some(_), Some(_)) => Err(ActionError::new(
                 "invalid_input",
                 "il passo dichiara sia `bin` sia `tool`: uno solo dei due dice chi eseguire",
             )),
             (None, None) => Err(ActionError::new(
                 "invalid_input",
-                "il passo non dice chi eseguire: serve `tool` (l'identificativo di uno strumento) \
-                 oppure `bin` (un comando così com'è)",
+                "il passo non dice chi eseguire: serve `tool` (l'identificativo di uno strumento, \
+                 o una catena di identificativi) oppure `bin` (un comando così com'è)",
             )),
         }
+    }
+}
+
+/// Un motore chiesto dal passo che qui non si può nemmeno provare.
+struct Refused {
+    id: String,
+    reason: String,
+    /// Vero quando il risolutore non ha saputo dire quale eseguibile sia — la
+    /// distinzione conta: un passo che chiede **un** motore solo e non lo trova
+    /// deve dare `tool_unavailable` col motivo del risolutore, come ha sempre
+    /// fatto. La catena non deve peggiorare il caso più comune.
+    unresolved: bool,
+}
+
+impl Refused {
+    fn line(&self) -> String {
+        format!("«{}»: {}", self.id, self.reason)
+    }
+}
+
+/// Un motore che si può provare: già risolto in un eseguibile, con le opzioni
+/// con cui interrogarlo e le parole con cui dichiara di non poter lavorare.
+struct Candidate {
+    /// L'identificativo, se è stato chiesto per identificativo. `None` quando il
+    /// passo ha scritto un comando così com'è.
+    id: Option<String>,
+    bin: String,
+    args: Vec<String>,
+    prompt: PromptVia,
+    unusable_when: Vec<String>,
+}
+
+/// L'esito di una domanda a **un** motore della catena.
+enum Asked {
+    /// Questo motore ha risposto: quella è la risposta del passo, comunque sia
+    /// andata. Nessuno dopo di lui viene provato.
+    Answered(ActionOutcome),
+    /// Questo motore ha dichiarato di non poter lavorare — con le parole che il
+    /// suo descrittore dichiara, non con un'interpretazione nostra. Si prova il
+    /// prossimo.
+    CannotWork(String),
+}
+
+/// Perché ognuno è stato messo da parte, in una riga sola.
+fn each_one_why(reasons: &[String]) -> String {
+    if reasons.is_empty() {
+        return "Nessun motivo registrato.".to_owned();
+    }
+    reasons.join(" · ")
+}
+
+impl ExternalEngineAction {
+    /// Interroga un motore. `set_aside` sono quelli già scartati, e finisce nei
+    /// messaggi d'errore: chi legge un passo rosso deve vedere l'intera catena,
+    /// non solo l'ultimo anello.
+    fn ask(
+        &self,
+        candidate: &Candidate,
+        spec: &EngineSpec,
+        shape: Option<&ValueSchema>,
+        live: Option<&dyn LiveSink>,
+        set_aside: &[String],
+        solo: bool,
+    ) -> Result<Asked, ActionError> {
+        let bin = &candidate.bin;
+        let seconds = spec.timeout_secs;
+        let mut args = candidate.args.clone();
+        // Il testo della domanda va dove quel motore lo vuole: sull'ingresso per
+        // chi legge da lì, in coda agli argomenti per chi lo vuole scritto sulla
+        // riga. È l'unica differenza fra due motori che il flusso non deve più
+        // conoscere.
+        let stdin = match candidate.prompt {
+            PromptVia::Stdin => spec.stdin.clone(),
+            PromptVia::LastArg => {
+                if let Some(text) = &spec.stdin {
+                    args.push(text.clone());
+                }
+                None
+            }
+        };
+        if let (Some(live), Some(id)) = (live, candidate.id.as_deref()) {
+            if !set_aside.is_empty() {
+                live.chunk(
+                    Pipe::Stderr,
+                    format!("[sailor] passo al motore «{id}»\n").as_bytes(),
+                );
+            }
+        }
+        let invocation = EngineInvocation {
+            bin: bin.clone(),
+            args,
+            env: spec.env.clone(),
+            workdir: spec.workdir.clone(),
+            stdin: stdin.map(String::into_bytes),
+            timeout: Duration::from_secs(seconds),
+        };
+        let named = match candidate.id.as_deref() {
+            Some(id) => format!("«{id}» (`{bin}`)"),
+            None => format!("`{bin}`"),
+        };
+        let outcome = match invoke_external_engine_watched(&invocation, live) {
+            EngineResult::Ok { stdout, stderr } => match shape {
+                Some(shape) => {
+                    return shaped_answer(shape, &stdout).map(|answer| {
+                        Asked::Answered(ActionOutcome::Went(
+                            json!({"status": "ok", "answer": answer}),
+                        ))
+                    })
+                }
+                None => EngineOutcomeJson {
+                    status: "ok",
+                    stdout,
+                    stderr,
+                },
+            },
+            EngineResult::ExitError {
+                code,
+                stdout,
+                stderr,
+            } => {
+                if !tolerates(&spec.accept, "exit_error") {
+                    // La tolleranza viene prima: un passo che si aspetta un
+                    // fallimento lo vuole come dato, non vuole che qualcun altro
+                    // ci riprovi al posto suo.
+                    if !solo && candidate.says_it_cannot_work(&stdout, &stderr) {
+                        return Ok(Asked::CannotWork(format!(
+                            "{named} non poteva lavorare: {}",
+                            what_it_said(&stdout, &stderr)
+                        )));
+                    }
+                    let chain = if set_aside.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (prima: {})", each_one_why(set_aside))
+                    };
+                    return Err(ActionError::new(
+                        "engine_exit_error",
+                        format!(
+                            "{named} {}; {}{chain}",
+                            how_it_exited(code),
+                            what_it_said(&stdout, &stderr)
+                        ),
+                    ));
+                }
+                match shape {
+                    // Un motore che ha parlato deve rispettare la forma anche
+                    // quando il passo gli perdona l'uscita in errore: quella
+                    // tolleranza riguarda il codice di uscita, non la risposta.
+                    Some(shape) => {
+                        return shaped_answer(shape, &stdout).map(|answer| {
+                            Asked::Answered(ActionOutcome::Went(
+                                json!({"status": "exit_error", "answer": answer}),
+                            ))
+                        })
+                    }
+                    None => EngineOutcomeJson {
+                        status: "exit_error",
+                        stdout,
+                        stderr,
+                    },
+                }
+            }
+            EngineResult::TimedOut => {
+                // Nessun ripiego su un tetto di tempo: un motore ucciso a metà
+                // può aver già fatto qualcosa, e rifare quel lavoro altrove
+                // sarebbe farlo due volte senza saperlo.
+                if !tolerates(&spec.accept, "timed_out") {
+                    return Err(ActionError::new(
+                        "engine_timed_out",
+                        format!("{named} non ha risposto entro {seconds} secondi ed è stato ucciso"),
+                    ));
+                }
+                EngineOutcomeJson {
+                    status: "timed_out",
+                    stdout: String::new(),
+                    stderr: String::new(),
+                }
+            }
+            EngineResult::SpawnFailed { reason } => {
+                if !tolerates(&spec.accept, "spawn_failed") {
+                    // Non essersi avviato è il caso più netto di «non poteva
+                    // lavorare»: non ha fatto niente, e non serve che il suo
+                    // descrittore lo dichiari.
+                    if !solo {
+                        return Ok(Asked::CannotWork(format!(
+                            "{named} non si è potuto avviare: {reason}"
+                        )));
+                    }
+                    return Err(ActionError::new(
+                        "engine_spawn_failed",
+                        format!("{named} non si è potuto avviare: {reason}"),
+                    ));
+                }
+                EngineOutcomeJson {
+                    status: "spawn_failed",
+                    stdout: String::new(),
+                    stderr: reason,
+                }
+            }
+        };
+        Ok(Asked::Answered(ActionOutcome::Went(json!(outcome))))
+    }
+}
+
+impl Candidate {
+    fn says_it_cannot_work(&self, stdout: &str, stderr: &str) -> bool {
+        says_it_cannot_work(&self.unusable_when, stdout)
+            || says_it_cannot_work(&self.unusable_when, stderr)
     }
 }
 
@@ -828,91 +1189,51 @@ impl Action for ExternalEngineAction {
         if let Some(written) = &written_shape {
             shape_was_asked_for(written, &spec)?;
         }
-        // Prima di spendere qualunque cosa: se lo strumento non c'è, il passo si
-        // ferma qui e dice quale mancava.
-        let bin = self.executable(&spec)?;
-        let seconds = spec.timeout_secs;
-        let invocation = EngineInvocation {
-            bin: bin.clone(),
-            args: spec.args,
-            env: spec.env,
-            workdir: spec.workdir,
-            stdin: spec.stdin.map(String::into_bytes),
-            timeout: Duration::from_secs(seconds),
-        };
+        // Prima di spendere qualunque cosa: se nessuno dei motori chiesti è
+        // usabile qui, il passo si ferma e dice di ognuno perché.
+        let (candidates, refused) = self.candidates(&spec)?;
+        if candidates.is_empty() {
+            // Un motore solo che non si trova resta `tool_unavailable` col
+            // motivo del risolutore: è il caso più comune, e quel messaggio è
+            // già il migliore che si possa dare.
+            if let [only] = refused.as_slice() {
+                if only.unresolved {
+                    return Err(ActionError::new("tool_unavailable", only.reason.clone()));
+                }
+            }
+            return Err(ActionError::new(
+                "no_usable_engine",
+                format!(
+                    "nessuno dei motori che il passo chiede si può usare qui. {}",
+                    each_one_why(&refused.iter().map(Refused::line).collect::<Vec<_>>())
+                ),
+            ));
+        }
+        let mut set_aside: Vec<String> = refused.iter().map(Refused::line).collect();
         let shape = spec.answer_shape.as_ref();
-        let outcome = match invoke_external_engine_watched(&invocation, live.as_deref()) {
-            EngineResult::Ok { stdout, stderr } => match shape {
-                Some(shape) => return shaped_answer(shape, &stdout)
-                    .map(|answer| ActionOutcome::Went(json!({"status": "ok", "answer": answer}))),
-                None => EngineOutcomeJson {
-                    status: "ok",
-                    stdout,
-                    stderr,
-                },
-            },
-            EngineResult::ExitError {
-                code,
-                stdout,
-                stderr,
-            } => {
-                if !tolerates(&spec.accept, "exit_error") {
-                    return Err(ActionError::new(
-                        "engine_exit_error",
-                        format!(
-                            "`{bin}` {}; {}",
-                            how_it_exited(code),
-                            what_it_said(&stdout, &stderr)
-                        ),
-                    ));
-                }
-                match shape {
-                    // Un motore che ha parlato deve rispettare la forma anche
-                    // quando il passo gli perdona l'uscita in errore: quella
-                    // tolleranza riguarda il codice di uscita, non la risposta.
-                    Some(shape) => {
-                        return shaped_answer(shape, &stdout).map(|answer| {
-                            ActionOutcome::Went(json!({"status": "exit_error", "answer": answer}))
-                        })
-                    }
-                    None => EngineOutcomeJson {
-                        status: "exit_error",
-                        stdout,
-                        stderr,
-                    },
-                }
+        // Un passo che chiede **un** motore solo non ha nessun ripiego da fare,
+        // e deve restare identico a com'era: gli stessi esiti, gli stessi
+        // messaggi. La catena cambia il comportamento solo dove c'è una catena.
+        let solo = candidates.len() == 1 && refused.is_empty();
+        for candidate in &candidates {
+            match self.ask(candidate, &spec, shape, live.as_deref(), &set_aside, solo)? {
+                Asked::Answered(outcome) => return Ok(outcome),
+                Asked::CannotWork(why) => set_aside.push(why),
             }
-            EngineResult::TimedOut => {
-                if !tolerates(&spec.accept, "timed_out") {
-                    return Err(ActionError::new(
-                        "engine_timed_out",
-                        format!("`{bin}` non ha risposto entro {seconds} secondi ed è stato ucciso"),
-                    ));
-                }
-                EngineOutcomeJson {
-                    status: "timed_out",
-                    stdout: String::new(),
-                    stderr: String::new(),
-                }
-            }
-            EngineResult::SpawnFailed { reason } => {
-                if !tolerates(&spec.accept, "spawn_failed") {
-                    return Err(ActionError::new(
-                        "engine_spawn_failed",
-                        format!("`{bin}` non si è potuto avviare: {reason}"),
-                    ));
-                }
-                EngineOutcomeJson {
-                    status: "spawn_failed",
-                    stdout: String::new(),
-                    stderr: reason,
-                }
-            }
-        };
-        Ok(ActionOutcome::Went(json!(outcome)))
+        }
+        Err(ActionError::new(
+            "no_usable_engine",
+            format!(
+                "nessuno dei motori che il passo chiede ha potuto lavorare. {}",
+                each_one_why(&set_aside)
+            ),
+        ))
     }
 
     /// Non dichiara di potersi rifare, e quindi finisce a una persona.
+    ///
+    /// Vale anche con una catena: un motore che ha dichiarato di non poter
+    /// lavorare non ha fatto niente, ma quello che ha risposto sì.
     /// È la scelta giusta per il caso generale: dietro `bin` e `args` può
     /// esserci qualunque cosa — un motore che ha già riscritto mezzo albero,
     /// una richiesta di rete già partita — e da fuori non si distingue da un
@@ -1883,6 +2204,278 @@ mod tests {
 
         assert_eq!(error.class, "no_tool_resolver");
         assert!(error.said.contains("resolving_with"), "{}", error.said);
+    }
+
+    // ── la catena di motori ───────────────────────────────────────────
+
+    /// Una macchina finta con tre motori: uno che dichiara di essere esaurito,
+    /// uno che risponde, uno che non è installato.
+    struct Chain;
+
+    impl ToolResolver for Chain {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                // Stampa il messaggio di un motore esaurito ed esce 1.
+                "esaurito" => Ok("false-dopo-aver-parlato".to_owned()),
+                "vivo" => Ok("echo".to_owned()),
+                "rotto" => Ok("false".to_owned()),
+                "senza-ricetta" => Ok("echo".to_owned()),
+                _ => Err(format!("«{id}» non è su questa macchina")),
+            }
+        }
+
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            match id {
+                "esaurito" => Some(AskRecipe {
+                    args: Vec::new(),
+                    prompt: PromptVia::Stdin,
+                    unusable_when: vec!["weekly limit".to_owned()],
+                }),
+                "vivo" => Some(AskRecipe {
+                    args: vec!["ha-risposto-il-secondo".to_owned()],
+                    prompt: PromptVia::LastArg,
+                    unusable_when: vec!["weekly limit".to_owned()],
+                }),
+                "rotto" => Some(AskRecipe {
+                    args: Vec::new(),
+                    prompt: PromptVia::Stdin,
+                    unusable_when: vec!["weekly limit".to_owned()],
+                }),
+                // Risolvibile ma senza ricetta: un passo che non scrive le
+                // opzioni non sa come interrogarlo.
+                _ => None,
+            }
+        }
+    }
+
+    /// Un eseguibile finto che dice di essere esaurito ed esce in errore.
+    fn engine_that_says_it_is_out(dir: &std::path::Path) -> String {
+        let path = dir.join("false-dopo-aver-parlato");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\necho \"You've hit your weekly limit · resets 7am\"\nexit 1\n",
+        )
+        .expect("scrivere il finto motore");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("renderlo eseguibile");
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    struct ChainIn(String);
+
+    impl ToolResolver for ChainIn {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "esaurito" => Ok(self.0.clone()),
+                other => Chain.resolve(other),
+            }
+        }
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            Chain.ask_recipe(id)
+        }
+    }
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("sailor-catena-{name}"));
+        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        dir
+    }
+
+    /// **Il caso del 29/08/2026.** Il primo motore dichiara di essere esaurito;
+    /// il lavoro non muore, passa al secondo, e il secondo risponde.
+    #[test]
+    fn an_engine_that_says_it_is_out_hands_the_work_to_the_next_one() {
+        let dir = scratch("passa-al-secondo");
+        let action =
+            ExternalEngineAction::resolving_with(ChainIn(engine_that_says_it_is_out(&dir)));
+        let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &mut SharedState::new())
+            .expect("il secondo motore risponde")
+        else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        assert_eq!(output["status"], "ok");
+        assert_eq!(output["stdout"], "ha-risposto-il-secondo\n");
+    }
+
+    /// Un eseguibile finto che fallisce **parlando**, ma non con le parole con
+    /// cui quel motore dichiarerebbe di essere esaurito.
+    ///
+    /// **PERCHÉ NON BASTA UN COMANDO CHE FALLISCE MUTO.** La prima versione
+    /// della prova qui sotto usava `false`, che esce 1 senza dire niente, e un
+    /// mutante che faceva scattare il ripiego su *qualunque* uscita le è
+    /// passato sotto: con l'uscita vuota, «qualunque uscita» e «quelle parole»
+    /// si comportano uguale. Un fallimento vero parla, ed è quello il caso che
+    /// questa prova deve tenere.
+    fn engine_that_fails_loudly(dir: &std::path::Path) -> String {
+        let path = dir.join("fallisce-parlando");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\necho 'errore: il mandato non ha senso' >&2\nexit 1\n",
+        )
+        .expect("scrivere il finto motore");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("renderlo eseguibile");
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    struct LoudFailure(String);
+
+    impl ToolResolver for LoudFailure {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "rotto" => Ok(self.0.clone()),
+                other => Chain.resolve(other),
+            }
+        }
+        fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+            Chain.ask_recipe(id)
+        }
+    }
+
+    /// **La metà che conta di più.** Un fallimento qualunque NON scende la
+    /// catena: un mandato scritto male deve fermarsi lì, non trovare più in
+    /// basso un motore che risponde comunque — quella sarebbe una risposta
+    /// sbagliata con la faccia di una buona.
+    #[test]
+    fn an_ordinary_failure_does_not_walk_down_the_chain() {
+        let dir = scratch("fallimento-qualunque");
+        let action =
+            ExternalEngineAction::resolving_with(LoudFailure(engine_that_fails_loudly(&dir)));
+        let input = json!({"tool": ["rotto", "vivo"], "timeout_secs": 10});
+
+        let error = action
+            .execute(&input, &mut SharedState::new())
+            .expect_err("il primo è fallito senza dire di non poter lavorare");
+
+        assert_eq!(error.class, "engine_exit_error");
+        assert!(
+            error.said.contains("il mandato non ha senso"),
+            "{}",
+            error.said
+        );
+    }
+
+    /// Un descrittore scritto a mano con un frammento **vuoto** fra le parole
+    /// di `unusable_when`: quel frammento è contenuto in qualunque testo, e
+    /// senza una guardia farebbe scendere la catena a **ogni** fallimento —
+    /// cioè esattamente il guasto che la catena esiste per non introdurre. Chi
+    /// ha scritto quel descrittore non se ne accorgerebbe: funzionerebbe, e
+    /// darebbe risposte sbagliate.
+    #[test]
+    fn an_empty_mark_in_a_descriptor_does_not_make_everything_a_fallback() {
+        struct EmptyMark(String);
+        impl ToolResolver for EmptyMark {
+            fn resolve(&self, id: &str) -> Result<String, String> {
+                match id {
+                    "rotto" => Ok(self.0.clone()),
+                    other => Chain.resolve(other),
+                }
+            }
+            fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+                match id {
+                    "rotto" => Some(AskRecipe {
+                        args: Vec::new(),
+                        prompt: PromptVia::Stdin,
+                        unusable_when: vec![String::new(), "   ".to_owned()],
+                    }),
+                    other => Chain.ask_recipe(other),
+                }
+            }
+        }
+
+        let dir = scratch("frammento-vuoto");
+        let action =
+            ExternalEngineAction::resolving_with(EmptyMark(engine_that_fails_loudly(&dir)));
+        let input = json!({"tool": ["rotto", "vivo"], "timeout_secs": 10});
+
+        let error = action
+            .execute(&input, &mut SharedState::new())
+            .expect_err("un frammento vuoto non è una dichiarazione di esaurimento");
+
+        assert_eq!(error.class, "engine_exit_error");
+    }
+
+    /// Quando ogni motore della catena dichiara di non poter lavorare, il passo
+    /// è rosso con il motivo di **ognuno**: chi legge deve vedere l'intera
+    /// catena, non solo l'ultimo anello.
+    #[test]
+    fn a_chain_that_is_entirely_out_names_every_engine() {
+        let dir = scratch("tutti-esauriti");
+        let action =
+            ExternalEngineAction::resolving_with(ChainIn(engine_that_says_it_is_out(&dir)));
+        let input = json!({"tool": ["esaurito", "non-installato"], "timeout_secs": 10});
+
+        let error = action
+            .execute(&input, &mut SharedState::new())
+            .expect_err("nessuno dei due può lavorare");
+
+        assert_eq!(error.class, "no_usable_engine");
+        assert!(error.said.contains("esaurito"), "{}", error.said);
+        assert!(error.said.contains("non-installato"), "{}", error.said);
+    }
+
+    /// Il descrittore decide dove va il testo della domanda. Senza questo, un
+    /// flusso dovrebbe conoscere le opzioni di ogni motore — ed è la ragione per
+    /// cui i flussi erano legati a uno solo.
+    #[test]
+    fn the_descriptor_decides_where_the_question_goes() {
+        let action = ExternalEngineAction::resolving_with(Chain);
+        let input = json!({"tool": "vivo", "stdin": "la-domanda", "timeout_secs": 10});
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &mut SharedState::new())
+            .expect("risponde")
+        else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        // `echo` stampa i propri argomenti: se la domanda fosse finita
+        // sull'ingresso invece che in coda agli argomenti, qui non ci sarebbe.
+        assert_eq!(output["stdout"], "ha-risposto-il-secondo la-domanda\n");
+    }
+
+    /// Un motore che c'è ma non dichiara come lo si interroga non viene
+    /// indovinato: si mette da parte col motivo, e si prova il prossimo.
+    #[test]
+    fn an_engine_without_a_recipe_is_set_aside_with_the_reason() {
+        let action = ExternalEngineAction::resolving_with(Chain);
+        let input = json!({"tool": ["senza-ricetta"], "timeout_secs": 10});
+
+        let error = action
+            .execute(&input, &mut SharedState::new())
+            .expect_err("non si sa come interrogarlo");
+
+        assert_eq!(error.class, "no_usable_engine");
+        assert!(error.said.contains("ask"), "{}", error.said);
+    }
+
+    /// Le opzioni scritte nel passo vincono sulla ricetta: chi le ha scritte sta
+    /// dicendo qualcosa di preciso su questa chiamata.
+    #[test]
+    fn options_written_in_the_step_win_over_the_recipe() {
+        let action = ExternalEngineAction::resolving_with(Chain);
+        let input = json!({"tool": "vivo", "args": ["scritte-nel-passo"], "timeout_secs": 10});
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &mut SharedState::new())
+            .expect("risponde")
+        else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        assert_eq!(output["stdout"], "scritte-nel-passo\n");
     }
 
     #[test]

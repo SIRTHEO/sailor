@@ -119,6 +119,50 @@ fn default_timeout() -> u64 {
     10
 }
 
+/// Come si fa una domanda secca a un motore, e come quel motore dice di non
+/// poter lavorare.
+///
+/// **PERCHÉ STA NEL DESCRITTORE E NON NEL FLUSSO.** Finché `-p` per uno e
+/// `--mode plan --print` per un altro stanno scritti dentro i passi, un flusso
+/// è legato al motore per cui è stato scritto, e «indipendente dal modello»
+/// resta una frase. Qui la differenza fra due motori è un dato, e un motore che
+/// non esiste ancora si aggiunge scrivendo un descrittore — senza ricompilare
+/// niente, e senza che nessun flusso cambi.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Ask {
+    /// Le opzioni che vogliono una risposta sola e non una conversazione,
+    /// **senza** il testo della domanda.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Dove va il testo della domanda: `stdin` o `last_arg`.
+    #[serde(default)]
+    pub prompt: PromptPlace,
+    /// Come questo motore dice di **non poter lavorare** — quota finita,
+    /// credenziali mancanti — invece di dire che il lavoro era sbagliato.
+    ///
+    /// È ciò che permette a un passo con una catena di motori di passare al
+    /// successivo. Chi non lo dichiara non fa scattare nessun ripiego: si
+    /// funziona peggio, mai in silenzio. E si dichiarano **le parole del
+    /// fornitore**, non una regola generale: «errore» combacerebbe con
+    /// qualunque fallimento e manderebbe un mandato sbagliato giù per tutta la
+    /// catena finché qualcuno non risponde comunque.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unusable_when: Vec<String>,
+}
+
+/// Dove va il testo della domanda.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptPlace {
+    /// Sull'ingresso standard. È il caso più comune, e il valore predefinito.
+    #[default]
+    Stdin,
+    /// Come ultimo argomento della riga di comando. Misurato su `agy` il
+    /// 28/08/2026: il prompt va in un argomento, e le opzioni vanno prima.
+    LastArg,
+}
+
 /// Un descrittore che, invece di dire «questa cosa o c'è o non c'è», **scopre**
 /// più voci leggendo un file di configurazione.
 ///
@@ -189,6 +233,10 @@ pub struct Descriptor {
     pub enumerate: Option<Enumerate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<VersionProbe>,
+    /// Come gli si fa una domanda secca, per chi ne accetta una. Senza questo,
+    /// un passo che lo vuole usare deve scrivere da sé le opzioni.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<Ask>,
     /// Dove vive la sua configurazione. Ammette `~/`, `$VAR` e `*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,

@@ -72,11 +72,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "opus"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "timeout_secs": 1800,
           "answer_shape": {
@@ -137,7 +136,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
@@ -212,11 +214,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "opus"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "timeout_secs": 1800,
           "answer_shape": {
@@ -281,7 +282,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
@@ -356,11 +360,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "opus"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "timeout_secs": 1800,
           "answer_shape": {
@@ -425,7 +428,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
@@ -502,11 +508,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "opus"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "timeout_secs": 1800,
           "answer_shape": {
@@ -602,7 +607,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
@@ -702,11 +710,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "sonnet"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "timeout_secs": 1800,
           "answer_shape": {
@@ -765,7 +772,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           },
           "required": [
