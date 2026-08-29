@@ -94,9 +94,63 @@ copiarlo.
 diceva «dieci guasti» mentre il file ne elencava undici, e un verificatore ha
 respinto un'intera ricerca per quell'incoerenza — a ragione.
 
+### L'ordine di sblocco: prima le chiamate, poi l'orchestrazione, poi il ciclo
+**29/08/2026 — Theo.** Tre blocchi, in quest'ordine, e ognuno si vede funzionare
+prima del successivo:
+
+1. **Le chiamate ai modelli**, profili e fornitori insieme. Comprese le quote
+   gratuite che i fornitori dichiarano e che oggi non sfruttiamo, e le righe di
+   comando che non abbiamo ancora (DeepSeek, Grok, OpenRouter e le altre).
+2. **Orchestrare bene**: mandare il lavoro sul modello giusto per quel lavoro, e
+   disegnare flussi che si reggano.
+3. **Fortificare i flussi di sviluppo**, farli girare in un ciclo, e sotto una
+   catena di smistamento vera che usi la macchina invece di un passo alla volta
+   — sapendo se la macchina è occupata da chi ci lavora o è libera.
+
+**Perché quest'ordine**: senza il primo blocco ogni corsa dipende da un solo
+abbonamento e si ferma quando finisce, come è successo il 29/08. Senza il
+secondo, avere più motori vuol dire solo avere più modi di sprecare. Il terzo è
+quello che rende il tutto un sistema che va avanti da solo, e va per ultimo
+perché fino ad allora ogni difetto si moltiplica per il numero di corse.
+
+**Dopo questi tre**, il resto è miglioria: si seguono le voci in programma.
+
+### Ogni cosa costruita come flusso ha un flusso che la cura
+**29/08/2026 — Theo.** L'autocura e lo sviluppo non sono un progetto a parte:
+sono la coppia di flussi che tiene in piedi tutto ciò che teniamo a livello di
+flusso.
+**Perché**: ciò che non è codice non ha né compilatore né prove che lo
+sorveglino. Un flusso rotto resta rotto in silenzio finché qualcuno non lo
+lancia. Se i flussi sono il posto dove mettiamo tutto ciò che non tocca il
+mondo — ed è il vincolo permanente in cima a questo file — allora la loro
+manutenzione dev'essere altrettanto seria di quella del codice, e automatica per
+la stessa ragione.
+
+### Una voce può essere deprecata o ridecisa, e non da sola
+**29/08/2026 — Theo.** Mentre si sviluppano i flussi, le voci di lavoro
+cambiano: alcune non hanno più senso, altre vanno ripensate. **Questo si fa
+insieme a chi usa il sistema, non in autonomia.**
+**Perché**: una voce che sparisce senza che nessuno lo sappia è indistinguibile
+da una voce dimenticata, e la seconda è un guasto. Vale anche al contrario: un
+flusso che cancella da solo ciò che gli sembra superato decide al posto di chi
+deve decidere — ed è lo stesso motivo per cui la prima regola di scelta è «mai
+una voce che aspetta una decisione».
+**Cosa ne discende**: quando le voci passeranno nel deposito, lo stato non è
+«aperta/chiusa». Serve almeno **deprecata** — non si fa più, e c'è scritto
+perché — e **da ridecidere**, che è una voce che aspetta te e che nessun flusso
+può prendere. E serve che il passaggio a quegli stati sia registrato con chi
+l'ha fatto, come ogni altra cosa nel deposito.
+
 ## Raccomandato, non ancora deciso
 
 - **La soglia di un flusso che accompagna va sul prezzo, non sulla qualità.**
   Misurato: il degrado della qualità non è osservabile (21 sessioni su 44, una
   moneta); il prezzo di continuare cresce del 34% ed è monotono (37 su 45).
   Aspetta una decisione di Theo.
+
+- **Il terzo blocco ha un antefatto che non è stato ancora fatto.** «Catena di
+  smistamento e più fili» presuppone un esecutore che ne sia capace, e oggi non
+  lo è: percorre i passi pronti **in ordine, uno dopo l'altro** — è il guasto 7,
+  misurato, non ipotizzato. Due passi indipendenti da sei secondi ne impiegano
+  dodici. Finché quello non cambia, «sfruttare la macchina» non ha dove
+  appoggiarsi, e un flusso di bilancio bilancerebbe una fila indiana.
