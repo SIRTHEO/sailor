@@ -72,9 +72,6 @@ I guasti, con come si sono visti e cosa li impedirebbe, stanno in
 `docs/guasti-incontrati.md` — **cinque aperti su undici**. Qui solo quelli che
 non sono guasti ma limiti dichiarati:
 
-- **Il testo di un passo non scorre**: si vede solo a passo concluso. Un flusso
-  che lavora venti minuti è cieco per venti minuti. È un punto solo in
-  `crates/actions`. *Bloccante per il dogfooding.*
 - **I passi girano in fila, non insieme.** Il codice lo dichiara, la
   documentazione diceva il contrario (corretta il 29/08).
 - **La cassetta dei passi offre otto tipi, il motore ne esegue tre.** Chi usa uno
