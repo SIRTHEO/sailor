@@ -230,6 +230,14 @@ La prima riga è la più importante: le dieci pratiche risolvono casi puntuali,
 **non** il problema da cui la ricerca era partita — una finestra coerente per
 costruzione invece che per disciplina. Quello resta.
 
+- **Un motore può esaurire una soglia, non solo rompersi.** Il 29/08 Claude
+  Code ha risposto «You've hit your weekly limit · resets 7am» e il flusso ha
+  reagito bene — ha rotto il passo col motivo, non ha finto. Ma un limite di
+  quota è diverso da un errore: si sa *quando* torna a funzionare, quindi un
+  flusso o una ronda potrebbero aspettare fino a quell'ora invece di fallire e
+  basta, o instradare su un altro strumento dichiarato per lo stesso compito.
+  Oggi `engine_exit_error` non distingue le due cose.
+
 ## In corso adesso
 
 - Il flusso di ricerca, sul costo del passaggio di contesto.
