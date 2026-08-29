@@ -1,6 +1,6 @@
 {
   "id": "sviluppa-sailor",
-  "description": "Un giro di sviluppo, che si sceglie il lavoro da solo. IL CICLO NON STA NEL GRAFO: il motore rifiuta i cicli di proposito, quindi un flusso a ronda non è un flusso lungo — è questo flusso corto, eseguito molte volte. Un passo legge le cose da fare e ne sceglie UNA, scrivendola come un mandato che si regge da solo, perché chi lo esegue non avrà letto quei file. Non sceglie mai una voce che aspetta una decisione di una persona: quelle non sono bloccate da lavoro. Poi: un piano che non tocca niente, l'esecuzione che scrive davvero, le prove, un giudizio dato da un motore che non ha scritto il lavoro, e il commit — che dipende dal verdetto, quindi un lavoro respinto resta nel working tree da guardare invece di entrare nella storia. CHI LANCIA PUÒ INDIRIZZARE: un testo nell'innesco viene prima delle regole di scelta. NIENTE BRIGLIE, PER DECISIONE: il passo che implementa scrive senza chiedere permesso, e il perimetro non è applicato dal motore. In un ciclo questo conta il doppio: chi lo lascia girare da solo per ore deve poter vedere cosa fa mentre lo fa, e oggi il testo di un passo si vede solo quando è finito.",
+  "description": "Un giro di sviluppo, che si sceglie il lavoro da solo. IL CICLO NON STA NEL GRAFO: il motore rifiuta i cicli di proposito, quindi un flusso a ronda non è un flusso lungo — è questo flusso corto, eseguito molte volte. Un passo legge le cose da fare e ne sceglie UNA, scrivendola come un mandato che si regge da solo, perché chi lo esegue non avrà letto quei file. Non sceglie mai una voce che aspetta una decisione di una persona: quelle non sono bloccate da lavoro. Poi: un piano che non tocca niente, l'esecuzione che scrive davvero, le prove, un giudizio dato da un motore che non ha scritto il lavoro, e il commit — che dipende dal verdetto, quindi un lavoro respinto resta nel working tree da guardare invece di entrare nella storia. CHI LANCIA PUÒ INDIRIZZARE: un testo nell'innesco viene prima delle regole di scelta. NIENTE BRIGLIE, PER DECISIONE: il passo che implementa scrive senza chiedere permesso, e il perimetro non è applicato dal motore. In un ciclo questo conta il doppio: chi lo lascia girare da solo per ore deve poter vedere cosa fa mentre lo fa, e oggi il testo di un passo si vede solo quando è finito. LE PROVE ROSSE ROMPONO: prima del 29/08 erano tollerate perché il verificatore ne vedesse l'esito, e un lavoro che non compilava ha superato il gate — con cinque minuti di verifica spesi su codice che non stava in piedi.",
   "graph": {
     "steps": [
       {
@@ -457,10 +457,7 @@
             "--workspace"
           ],
           "workdir": "/Users/theo/personal/sailor",
-          "timeout_secs": 1800,
-          "accept": [
-            "exit_error"
-          ]
+          "timeout_secs": 1800
         },
         "input_schema": {
           "type": "object",
@@ -493,7 +490,7 @@
           "args": [
             "-p",
             "--model",
-            "sonnet"
+            "opus"
           ],
           "timeout_secs": 2700,
           "workdir": "/Users/theo/personal/sailor",
@@ -526,7 +523,7 @@
           },
           "stdin": {
             "$join": [
-              "Ricevi un lavoro già fatto e devi dire se regge. NON rifarlo, non modificare nessun file, e non fidarti del racconto di chi l'ha fatto.\n\nCONTROLLA QUATTRO COSE, e per le prime tre vai a guardare tu:\n1. il lavoro fa quello che il mandato chiedeva — apri i file toccati e leggili;\n2. il controllo automatico promesso esiste davvero ed è collegato alla batteria delle prove: trovalo e leggilo;\n3. **il controllo poteva fallire**: guarda `git diff` e chiediti se un flusso non di sistema messo in `flows/` lo farebbe davvero diventare rosso. Se «mutant» dice «non fatto», questo è un motivo per respingere;\n4. le prove sono verdi, e se sono rosse capisci se è colpa di questo lavoro o era già così.\nIn «read» elenca i file che hai davvero aperto. Se non riesci ad aprirne nessuno, respingi.\n\nIL MANDATO\n\n",
+              "Ricevi un lavoro già fatto e devi dire se regge. NON rifarlo, non modificare nessun file, e non fidarti del racconto di chi l'ha fatto.\n\nCONTROLLA QUATTRO COSE, e per le prime tre vai a guardare tu:\n1. il lavoro fa quello che il mandato chiedeva — apri i file toccati e leggili;\n2. il controllo automatico promesso esiste davvero ed è collegato alla batteria delle prove: trovalo e leggilo;\n3. **il controllo poteva fallire**: guarda `git diff` e chiediti se un flusso non di sistema messo in `flows/` lo farebbe davvero diventare rosso. Se «mutant» dice «non fatto», questo è un motivo per respingere;\n4. le prove sono verdi, e se sono rosse capisci se è colpa di questo lavoro o era già così.\nIn «read» elenca i file che hai davvero aperto. Se non riesci ad aprirne nessuno, respingi.\n\nIL DIFF PUÒ ESSERE GRANDE. Non riassumerlo e non raccontarlo: guarda i punti che ti servono per rispondere alle quattro domande, e scrivi solo il verdetto nella forma richiesta. Una risposta fuori forma vale come nessuna risposta e butta l'intera corsa.\n\nIL MANDATO\n\n",
               {
                 "$from": "/scegli/answer/mandate"
               },
