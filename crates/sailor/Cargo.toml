@@ -7,13 +7,11 @@ rust-version.workspace = true
 # `release` è diventato solo libreria (bersagli, timbro, prontezza del
 # servizio): questo crate assorbe i gesti — I/O e processi — che prima stavano
 # nel suo `main.rs`, così un rilascio si invoca da `sailor release`, non da un
-# binario a parte. `notte` serve allo stesso gesto di prima, `process_exists`,
 # per sapere se il pid di una ricevuta è ancora vivo. `profiles`, `models` e
 # `ui` sono arrivati il 27/08/2026 con lo stesso schema: la libreria decide,
 # `sailor` fa i gesti.
 [dependencies]
 release = { path = "../release" }
-notte = { path = "../notte" }
 profiles = { path = "../profiles" }
 models = { path = "../models" }
 ui = { path = "../ui" }

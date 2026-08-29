@@ -4,7 +4,5 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# `notte` per `split_receipt_name`: il nome di una ricevuta in `in-corso/` lo sa
 # leggere già lui, e due letture dello stesso formato divergono al primo dubbio.
 [dependencies]
-notte = { path = "../notte" }
