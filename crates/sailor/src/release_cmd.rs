@@ -506,7 +506,7 @@ fn wait_until_ready(root: &Path, service: Service, wait_secs: u64) -> Result<boo
     let started = Instant::now();
     loop {
         let names = receipt_names(&directory)?;
-        let state = readiness(&names, &notte::process_exists);
+        let state = readiness(&names, &release::process_exists);
         for name in &state.unknown {
             println!(
                 "avviso: ricevuta senza pid '{}' (non blocca il rilascio)",
