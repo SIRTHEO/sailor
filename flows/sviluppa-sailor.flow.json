@@ -739,7 +739,7 @@
   },
   "inputs": {
     "trigger": {
-      "text": "",
+      "text": "NON SCEGLIERE UN LAVORO NUOVO. Nel working tree c'è già un lavoro non committato, tuo, del giro precedente: `crates/actions/src/lib.rs` modificato per far scorrere il testo di un passo mentre gira invece di consegnarlo tutto alla fine. Quel giro si è fermato al gate delle prove — per un guasto altrui, ora aggirato — quindi NESSUNO L'HA ANCORA VERIFICATO e nessuno l'ha finito.\n\nIl mandato è: guarda `git diff`, capisci a che punto è, e PORTALO A TERMINE. Se è completo, dillo e limitati a provarlo davvero — un flusso che gira deve mostrare il testo mentre lo produce, non quando ha finito, e questo si verifica cronometrando, non leggendo il codice. Se è incompleto, completalo. Se è sbagliato, dillo e rifallo.\n\nQuesto viene prima di qualunque regola di scelta: un lavoro lasciato a metà nel working tree diventa un lavoro che il giro dopo sovrascrive senza accorgersene.",
       "who": "",
       "where": ""
     }
