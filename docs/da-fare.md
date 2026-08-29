@@ -259,3 +259,63 @@ costruzione invece che per disciplina. Quello resta.
   - **I passi di corse mai registrate in `runs` restano fuori da ogni finestra**:
     il flusso di appartenenza vive solo nell'intestazione della corsa, quindi
     senza intestazione quei passi non si possono attribuire e non si contano.
+
+## Le voci nel deposito, non nei file — misurato il 29/08/2026
+
+Theo: «il ranking dovrebbe essere un flusso ben fatto dal sistema che scrive le
+voci su db a quelle che le va a prendere… ma noi scriviamo su db? o ancora tutta
+questa cosa non c'è?»
+
+**C'è, ed è già la forma giusta.** Il deposito è a due file: `events.db` tiene la
+verità in sola aggiunta — con due innesti che fanno abortire qualunque modifica o
+cancellazione — e `state.db` tiene le proiezioni. Il segnalibro della proiezione
+è in pari con l'ultimo evento (254 su 254), quindi la macchina funziona.
+
+C'è già una tabella generica `store`, fatta di collezione, chiave, valore, **chi
+l'ha scritto e quando**, e tre azioni che i flussi possono usare — scrivere,
+leggere, elencare. Una voce di lavoro può viverci **oggi**, senza codice nuovo.
+
+**Ma nessuno la usa.** Numeri veri del 29/08/2026:
+
+| | |
+|---|---|
+| corse registrate | 16 |
+| passi registrati | 61 |
+| righe nella tabella `store` | **1**, in una sola collezione |
+| chiamate a modello registrate | **1**, e non da un flusso |
+| costo totale sulle 16 corse | **0 su tutte** |
+| voci d'inventario | 391 |
+
+La sola chiamata registrata viene dal lavoro notturno, non dall'esecutore dei
+flussi, e ha ingresso a zero e costo a zero: l'unico numero vero è l'uscita.
+
+**La conseguenza da guardare in faccia.** La tabella `model_calls` ha già le
+colonne per token d'ingresso, d'uscita, cache, costo, prezzi e mandato; il
+deposito ha già la funzione per scriverla; e la finestra ha già un cruscotto che
+somma il costo per modello. Tutto costruito. **Gli unici che lo riempiono sono le
+prove e un esempio che semina dati finti.** Nel percorso vero non lo chiama
+nessuno. È peggio del non averlo: un cruscotto che mostra numeri finti sembra
+funzionare.
+
+E le voci di lavoro oggi stanno in tre file markdown che un modello rilegge da
+capo a ogni corsa. Non sono dati: non si confrontano fra due corse, non si
+possono ordinare, e non si sa perché la classifica di ieri era diversa.
+
+### Cosa manca perché il ranking diventi un flusso
+
+1. **Le voci nella collezione `store`**, una per riga, con lo stato. Il
+   meccanismo c'è; va usato.
+2. **Un flusso che scrive le voci** — dai guasti, dalle corse fallite, da ciò che
+   un verificatore respinge — e uno che le pesca. Sono due flussi, non uno: chi
+   scrive non ordina.
+3. **La classifica come dato, non come prosa dentro un prompt.** Oggi le quattro
+   regole di scelta vivono nel testo del passo `scegli`. Un modello le riapplica
+   a occhio ogni volta.
+4. **L'impatto misurato prima di scegliere.** SocratiCode sa già dire cosa
+   toccherebbe un cambiamento, e sarebbe il numero che rende la classifica
+   confrontabile invece che opinabile. **Oggi un flusso non può chiederglielo**:
+   Sailor *riconosce* i server MCP — il rilevatore ha la famiglia `mcp_server` —
+   ma non esiste nessuna azione che ci parli. È l'anello mancante fra i due.
+5. **Il consumo scritto davvero**, che è il punto 1 di `docs/profili-e-consumo.md`
+   e serve anche qui: senza costo per voce, «cosa conviene fare prima» resta
+   un'opinione.
