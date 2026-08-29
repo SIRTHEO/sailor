@@ -107,7 +107,10 @@ impl Pipe {
 /// vuole farne.
 ///
 /// `chunk` non deve bloccare a lungo né panicare: lo chiamano i due fili che
-/// drenano le pipe, e un filo fermo è un figlio bloccato in scrittura.
+/// drenano le pipe, e un filo fermo è un figlio bloccato in scrittura. E non
+/// riceve mai un pezzo vuoto: «zero byte» è la fine della pipe, non qualcosa
+/// che il figlio ha detto, e consegnarlo farebbe scrivere una riga a chi guarda
+/// per un fatto che non è accaduto.
 pub trait LiveSink: Send + Sync {
     fn chunk(&self, pipe: Pipe, bytes: &[u8]);
 }
@@ -234,12 +237,6 @@ pub fn run_with_timeout_and_stdin_watched(
 /// l'esito riporta.
 fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<u8> {
     let mut all = Vec::new();
-    let _ = pipe.read_to_end(&mut all);
-    if let Some(sink) = sink {
-        sink.chunk(which, &all);
-    }
-    return all;
-    #[allow(unreachable_code)]
     let mut buf = [0u8; 8192];
     loop {
         match pipe.read(&mut buf) {
@@ -1152,16 +1149,26 @@ mod tests {
         );
         let seen = recorder.seen();
         let (when, pipe, bytes) = seen.first().cloned().expect("qualcosa doveva arrivare");
+        // IL TEMPO PRIMA DI TUTTO IL RESTO: è l'istante la cosa che questa prova
+        // misura, e leggerlo per ultimo nasconderebbe il motivo vero di un
+        // rosso. Vale anche contro l'asserzione sul pezzo vuoto qui sotto:
+        // rimettendo la consegna in blocco scatta *anche* quella, perché su una
+        // pipe muta `read_to_end` produce zero byte, e chi legge il rosso
+        // troverebbe il difetto minore al posto di quello grosso.
+        assert!(
+            when < secs(2),
+            "il primo pezzo è arrivato dopo {when:?}, cioè con la fine del \
+             comando e non mentre girava"
+        );
+        assert!(
+            seen.iter().all(|(_, _, bytes)| !bytes.is_empty()),
+            "un pezzo vuoto non è qualcosa che il figlio ha detto: {seen:?}"
+        );
         assert_eq!(pipe, Pipe::Stdout);
         assert!(
             String::from_utf8_lossy(&bytes).contains("primo"),
             "il primo pezzo doveva essere «primo»: {:?}",
             String::from_utf8_lossy(&bytes)
-        );
-        assert!(
-            when < secs(2),
-            "il primo pezzo è arrivato dopo {when:?}, cioè con la fine del \
-             comando e non mentre girava"
         );
         match outcome {
             RunOutcome::Finished { stdout, .. } => {

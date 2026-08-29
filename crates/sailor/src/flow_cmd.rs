@@ -355,6 +355,14 @@ fn marked(
     Ok(())
 }
 
+/// Dove finisce il testo dei passi.
+///
+/// **UNA FABBRICA E NON UNO SCRITTORE SOLO**, perché la presa sul terminale si
+/// prende e si lascia a ogni pezzo: tenerla aperta fra una consegna e l'altra
+/// bloccherebbe chiunque altro scriva, e i due fili che drenano le pipe
+/// consegnano insieme.
+type Screenward = Arc<dyn Fn() -> Box<dyn IoWrite> + Send + Sync>;
+
 /// Il destinatario di un passo: scrive sul terminale ciò che il passo dice,
 /// mentre lo dice.
 struct StepEcho {
@@ -363,6 +371,7 @@ struct StepEcho {
     /// chiamano insieme, e senza serializzazione le righe si intreccerebbero a
     /// metà — compreso il marcatore.
     state: Mutex<LineState>,
+    out: Screenward,
 }
 
 impl actions::LiveSink for StepEcho {
@@ -375,8 +384,9 @@ impl actions::LiveSink for StepEcho {
         };
         // **SU STDERR, NON SU STDOUT.** Il rapporto finale esce da stdout e non
         // cambia forma: chi lo redirige in un file non deve trovarci dentro il
-        // testo dei passi.
-        let mut out = std::io::stderr().lock();
+        // testo dei passi. Quale descrittore sia lo dice la fabbrica, decisa da
+        // chi ha costruito il destinatario.
+        let mut out = (self.out)();
         let _ = marked(&mut out, &mut state, &self.step, pipe, bytes);
         // Il flush a ogni pezzo è il punto del lavoro: senza, il testo
         // resterebbe fermo in un buffer fino alla fine, cioè il difetto di prima
@@ -391,13 +401,36 @@ impl actions::LiveSink for StepEcho {
 /// testo va a finire lo sceglie chi compone il programma. Un secondo
 /// consumatore — un file, la finestra, il deposito — sarebbe un'altra
 /// implementazione di `StepSinks`, non una modifica del crate che esegue.
-struct TerminalWatcher;
+struct TerminalWatcher {
+    out: Screenward,
+}
+
+impl TerminalWatcher {
+    /// Il terminale vero: stderr.
+    fn new() -> Self {
+        Self {
+            out: Arc::new(|| Box::new(std::io::stderr().lock())),
+        }
+    }
+
+    /// La stessa catena verso un'altra destinazione.
+    ///
+    /// **ESISTE PERCHÉ L'ARRIVO DEL TESTO SI POSSA CRONOMETRARE.** Con stderr
+    /// cablato dentro `chunk` l'unica verifica possibile era rileggere il codice
+    /// e trovarlo convincente — che è esattamente il modo in cui il difetto di
+    /// prima è passato: consegnava tutto alla fine e sembrava giusto.
+    #[cfg(test)]
+    fn writing_to(out: Screenward) -> Self {
+        Self { out }
+    }
+}
 
 impl actions::StepSinks for TerminalWatcher {
     fn sink_for(&self, step: &str) -> Arc<dyn actions::LiveSink> {
         Arc::new(StepEcho {
             step: step.to_owned(),
             state: Mutex::new(LineState::default()),
+            out: Arc::clone(&self.out),
         })
     }
 }
@@ -418,7 +451,7 @@ fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
     // non ha testo da mostrare.
     let registry = default_registry(
         Some(ledger.clone()),
-        Some(Arc::new(TerminalWatcher) as Arc<dyn actions::StepSinks>),
+        Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
     );
     let missing = missing_actions(&flow.graph, &registry);
     if !missing.is_empty() {
@@ -657,6 +690,7 @@ mod tests {
     use flow::{Clock, InMemoryRecordStore};
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -803,6 +837,133 @@ mod tests {
             "[passo · out] a meta\n\
              [passo · err] allarme\n\
              [passo · out]  e poi\n"
+        );
+    }
+
+    // ── il testo arriva allo schermo mentre il passo gira ────────────
+
+    /// Uno schermo finto che si comporta come un terminale con buffer: ciò che
+    /// gli si scrive resta invisibile finché non gli si chiede il flush.
+    ///
+    /// **REGISTRA L'ISTANTE SUL FLUSH E NON SULLA `write`**, ed è la scelta che
+    /// rende questa prova capace di venire diversa: un registratore che segna
+    /// l'ora a ogni scrittura resterebbe verde anche togliendo il flush dal
+    /// codice vero, cioè proverebbe la metà che non è in discussione. «Scritto»
+    /// e «visibile» sono due fatti distinti, e qui si misura il secondo.
+    struct Screen {
+        start: Instant,
+        pending: Mutex<Vec<u8>>,
+        shown: Mutex<Vec<(Duration, Vec<u8>)>>,
+    }
+
+    impl Screen {
+        fn new(start: Instant) -> Arc<Self> {
+            Arc::new(Self {
+                start,
+                pending: Mutex::new(Vec::new()),
+                shown: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn shown(&self) -> Vec<(Duration, Vec<u8>)> {
+            self.shown.lock().expect("nessuno panica qui").clone()
+        }
+
+        /// Tutto ciò che è diventato visibile, nell'ordine.
+        fn visible_text(&self) -> String {
+            let joined: Vec<u8> = self
+                .shown()
+                .into_iter()
+                .flat_map(|(_, bytes)| bytes)
+                .collect();
+            String::from_utf8_lossy(&joined).into_owned()
+        }
+    }
+
+    /// La presa che la fabbrica consegna a ogni pezzo: scrive nello schermo
+    /// condiviso, così le prese successive continuano lo stesso testo.
+    struct ScreenHandle(Arc<Screen>);
+
+    impl IoWrite for ScreenHandle {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .pending
+                .lock()
+                .expect("nessuno panica qui")
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            let mut pending = self.0.pending.lock().expect("nessuno panica qui");
+            if pending.is_empty() {
+                return Ok(());
+            }
+            let bytes = std::mem::take(&mut *pending);
+            self.0
+                .shown
+                .lock()
+                .expect("nessuno panica qui")
+                .push((self.0.start.elapsed(), bytes));
+            Ok(())
+        }
+    }
+
+    /// LA CATENA INTERA, CRONOMETRATA: pipe del figlio → `drain` →
+    /// `StepEcho::chunk` → `marked` → scrittura → flush → schermo. Il comando
+    /// stampa, dorme quattro secondi, stampa ancora, e non si guarda che alla
+    /// fine il testo ci sia — sarebbe verde anche mostrando tutto sulla morte
+    /// del figlio — si guarda **quando** la prima riga è diventata visibile.
+    ///
+    /// Margini larghi come nella prova gemella dentro `actions`: quattro secondi
+    /// di sonno contro una soglia di due, perché su una macchina carica non
+    /// diventi rossa a caso.
+    #[test]
+    fn the_terminal_shows_a_step_talking_while_the_step_is_still_running() {
+        let start = Instant::now();
+        let screen = Screen::new(start);
+        let watcher = TerminalWatcher::writing_to({
+            let screen = Arc::clone(&screen);
+            Arc::new(move || Box::new(ScreenHandle(Arc::clone(&screen))) as Box<dyn IoWrite>)
+        });
+        let sink = actions::StepSinks::sink_for(&watcher, "un-passo-che-parla");
+
+        let mut cmd = std::process::Command::new("sh");
+        cmd.arg("-c").arg("echo primo; sleep 4; echo secondo");
+        let outcome =
+            actions::run_with_timeout_watched(cmd, Duration::from_secs(30), Some(sink.as_ref()));
+        let whole = start.elapsed();
+        assert!(
+            whole >= Duration::from_secs(4),
+            "il comando doveva davvero durare quattro secondi, altrimenti la \
+             misura non distingue niente: {whole:?}"
+        );
+
+        let shown = screen.shown();
+        let (when, bytes) = shown
+            .first()
+            .cloned()
+            .expect("qualcosa doveva diventare visibile sullo schermo");
+        // IL TEMPO PRIMA DEL CONTENUTO: è l'istante la cosa che questa prova
+        // misura, e leggerlo per ultimo nasconderebbe il motivo vero di un rosso.
+        assert!(
+            when < Duration::from_secs(2),
+            "il primo pezzo è diventato visibile dopo {when:?}, cioè con la fine \
+             del comando e non mentre girava (durata totale {whole:?})"
+        );
+        let first = String::from_utf8_lossy(&bytes).into_owned();
+        assert!(
+            first.contains("[un-passo-che-parla · out] primo"),
+            "chi guarda deve sapere passo e pipe già dalla prima riga: {first:?}"
+        );
+        let all = screen.visible_text();
+        assert!(
+            all.contains("[un-passo-che-parla · out] secondo"),
+            "anche ciò che il passo dice dopo deve arrivare: {all:?}"
+        );
+        assert!(
+            matches!(outcome, actions::RunOutcome::Finished { .. }),
+            "doveva finire in tempo"
         );
     }
 
