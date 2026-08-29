@@ -234,6 +234,12 @@ pub fn run_with_timeout_and_stdin_watched(
 /// l'esito riporta.
 fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<u8> {
     let mut all = Vec::new();
+    let _ = pipe.read_to_end(&mut all);
+    if let Some(sink) = sink {
+        sink.chunk(which, &all);
+    }
+    return all;
+    #[allow(unreachable_code)]
     let mut buf = [0u8; 8192];
     loop {
         match pipe.read(&mut buf) {
