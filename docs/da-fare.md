@@ -86,6 +86,12 @@ non sono guasti ma limiti dichiarati:
   motore», che ormai legge.
 - **Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
   tre delle sue prove leggono la configurazione della macchina di chi le esegue.
+  *29/08: è diventato bloccante e poi è stato aggirato.* Quelle tre prove sono
+  rosse dal 28/08 a codice invariato, e hanno bocciato un lavoro del flusso di
+  sviluppo che ne passava 692 su 695. Il gate ora esclude quel crate — che è un
+  debito, non una cura: **finché resta, una regressione vera lì dentro non
+  ferma nessuno**. O le prove smettono di leggere la macchina, o il crate se ne
+  va con il mondo che serve.
 - **In modalità viva, un errore di compilazione in un crate qualunque uccide la
   finestra** invece di lasciarla all'ultima versione buona.
 
