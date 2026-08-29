@@ -13,7 +13,9 @@ use ledger::{Ledger, RunRecord};
 use ui::gather::FlowSource;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
+use std::io::Write as IoWrite;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn run(args: &[String]) -> i32 {
@@ -185,7 +187,7 @@ fn check_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let tools = toolbox::Tools::current();
     let (report, unknown) = check_report(
         &flow,
-        &default_registry(open_default_ledger()),
+        &default_registry(open_default_ledger(), None),
         Some(&tools),
     );
     if unknown.is_empty() {
@@ -297,6 +299,109 @@ fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
         .collect()
 }
 
+// ── il testo di un passo mentre il passo gira ──────────────────────────
+
+/// Da che pipe veniva la riga ancora aperta, se ce n'è una.
+///
+/// `None` vuol dire «siamo a inizio riga», cioè il prossimo byte vuole un
+/// marcatore davanti.
+#[derive(Default)]
+struct LineState {
+    open: Option<actions::Pipe>,
+}
+
+/// Riversa i byte così come sono arrivati, anteponendo `[passo · out]` o
+/// `[passo · err]` a ogni riga.
+///
+/// **NON DECODIFICA NIENTE.** I byte del testo escono di peso, nell'ordine in
+/// cui sono entrati: una sequenza UTF-8 spezzata fra due letture si ricompone da
+/// sé sul terminale, e non c'è nessun punto in cui possa diventare un carattere
+/// di sostituzione o far panicare qualcuno. L'unica cosa che questa funzione
+/// aggiunge sono i marcatori, che sono ASCII e stanno a inizio riga.
+///
+/// **UNA RIGA APPARTIENE A UNA PIPE SOLA.** Se stdout ha lasciato una riga
+/// aperta e arriva stderr, la riga si chiude prima: altrimenti due testi diversi
+/// finirebbero sotto lo stesso marcatore, e chi guarda leggerebbe un errore
+/// attribuito all'uscita normale — che è peggio di non vederlo.
+fn marked(
+    out: &mut impl IoWrite,
+    state: &mut LineState,
+    step: &str,
+    pipe: actions::Pipe,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    let mut rest = bytes;
+    while !rest.is_empty() {
+        if state.open.is_some_and(|open| open != pipe) {
+            out.write_all(b"\n")?;
+            state.open = None;
+        }
+        if state.open.is_none() {
+            write!(out, "[{step} · {}] ", pipe.name())?;
+            state.open = Some(pipe);
+        }
+        match rest.iter().position(|byte| *byte == b'\n') {
+            Some(end) => {
+                out.write_all(&rest[..=end])?;
+                state.open = None;
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.write_all(rest)?;
+                rest = &[];
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Il destinatario di un passo: scrive sul terminale ciò che il passo dice,
+/// mentre lo dice.
+struct StepEcho {
+    step: String,
+    /// Un lucchetto solo per passo: i due fili che drenano stdout e stderr
+    /// chiamano insieme, e senza serializzazione le righe si intreccerebbero a
+    /// metà — compreso il marcatore.
+    state: Mutex<LineState>,
+}
+
+impl actions::LiveSink for StepEcho {
+    fn chunk(&self, pipe: actions::Pipe, bytes: &[u8]) {
+        // Un lucchetto avvelenato non è una ragione per far cadere il passo:
+        // qui si sta solo mostrando del testo, e il lavoro vero è altrove.
+        let mut state = match self.state.lock() {
+            Ok(state) => state,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        // **SU STDERR, NON SU STDOUT.** Il rapporto finale esce da stdout e non
+        // cambia forma: chi lo redirige in un file non deve trovarci dentro il
+        // testo dei passi.
+        let mut out = std::io::stderr().lock();
+        let _ = marked(&mut out, &mut state, &self.step, pipe, bytes);
+        // Il flush a ogni pezzo è il punto del lavoro: senza, il testo
+        // resterebbe fermo in un buffer fino alla fine, cioè il difetto di prima
+        // spostato di un metro.
+        let _ = out.flush();
+    }
+}
+
+/// Chi mostra sul terminale il testo dei passi di una corsa.
+///
+/// Sta qui e non in `actions` perché è una decisione di presentazione: dove il
+/// testo va a finire lo sceglie chi compone il programma. Un secondo
+/// consumatore — un file, la finestra, il deposito — sarebbe un'altra
+/// implementazione di `StepSinks`, non una modifica del crate che esegue.
+struct TerminalWatcher;
+
+impl actions::StepSinks for TerminalWatcher {
+    fn sink_for(&self, step: &str) -> Arc<dyn actions::LiveSink> {
+        Arc::new(StepEcho {
+            step: step.to_owned(),
+            state: Mutex::new(LineState::default()),
+        })
+    }
+}
+
 fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, _) = one_flow(sources, name)?;
     // IL DEPOSITO PRIMA DEL REGISTRO, e non è un dettaglio d'ordine: i nodi
@@ -309,7 +414,12 @@ fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
             ledger_dir.display()
         )
     })?;
-    let registry = default_registry(Some(ledger.clone()));
+    // CHI GUARDA È IL TERMINALE, e solo qui: `flow check` non esegue niente e
+    // non ha testo da mostrare.
+    let registry = default_registry(
+        Some(ledger.clone()),
+        Some(Arc::new(TerminalWatcher) as Arc<dyn actions::StepSinks>),
+    );
     let missing = missing_actions(&flow.graph, &registry);
     if !missing.is_empty() {
         return Err(format!(
@@ -450,7 +560,10 @@ fn record_run(
 /// esiste ed è utile — dice `deposit: "absent"` invece di rompersi. Un'azione
 /// che legge non ha bisogno di un file per sapere di non avere niente da dire;
 /// una che scrive sì.
-fn default_registry(ledger: Option<Ledger>) -> ActionRegistry {
+fn default_registry(
+    ledger: Option<Ledger>,
+    watcher: Option<Arc<dyn actions::StepSinks>>,
+) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
     // Il rilevamento di cosa c'è sulla macchina è un'azione come le altre: un
@@ -474,7 +587,15 @@ fn default_registry(ledger: Option<Ledger>) -> ActionRegistry {
     // scritto altrove gira qui perché nomina strumenti, non binari.
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(toolbox::Tools::current()),
+        actions::ExternalEngineAction::resolving_with(toolbox::Tools::current())
+            .watched_by(watcher.clone()),
+    );
+    // **ANCHE QUESTA DOPO `register_default`, E PER LO STESSO MOTIVO.** Quella
+    // registra una verifica che non ha nessuno a cui parlare; il guardiano si
+    // attacca all'istanza che resta registrata, non a quella sostituita.
+    registry.register(
+        actions::SHELL_CHECK_ACTION,
+        actions::ShellCheckAction::new().watched_by(watcher),
     );
     // **QUESTA NON STA DENTRO IL RAMO QUI SOTTO, E LA DIFFERENZA È IL PUNTO.**
     // I nodi di `store` scrivono: senza deposito non hanno niente da fare, e
@@ -594,6 +715,97 @@ mod tests {
         )
     }
 
+    // ── il marcatore del testo in diretta ────────────────────────────
+
+    /// Il testo prodotto da `marked`, senza toccare nessun terminale.
+    fn marking(step: &str, chunks: &[(actions::Pipe, &[u8])]) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut state = LineState::default();
+        for (pipe, bytes) in chunks {
+            marked(&mut out, &mut state, step, *pipe, bytes).expect("un Vec non fallisce");
+        }
+        out
+    }
+
+    #[test]
+    fn every_line_says_which_step_and_which_pipe_it_came_from() {
+        let out = marking(
+            "prova-le-cose",
+            &[
+                (actions::Pipe::Stdout, b"prima\nseconda\n"),
+                (actions::Pipe::Stderr, b"guasto\n"),
+            ],
+        );
+        assert_eq!(
+            String::from_utf8(out).expect("ASCII puro"),
+            "[prova-le-cose · out] prima\n\
+             [prova-le-cose · out] seconda\n\
+             [prova-le-cose · err] guasto\n"
+        );
+    }
+
+    /// UN PEZZO NON È UNA RIGA: una lettura si ferma dove capita, e il marcatore
+    /// va messo a inizio riga, non a inizio pezzo — altrimenti una riga spezzata
+    /// in tre ne stamperebbe tre.
+    #[test]
+    fn a_line_split_across_chunks_gets_one_marker_only() {
+        let out = marking(
+            "passo",
+            &[
+                (actions::Pipe::Stdout, b"una riga "),
+                (actions::Pipe::Stdout, b"spezzata "),
+                (actions::Pipe::Stdout, b"in tre\n"),
+            ],
+        );
+        assert_eq!(
+            String::from_utf8(out).expect("ASCII puro"),
+            "[passo · out] una riga spezzata in tre\n"
+        );
+    }
+
+    /// NIENTE TESTO CORROTTO E NIENTE PANICO su una sequenza UTF-8 tagliata a
+    /// metà fra due letture: i byte non vengono decodificati mai, escono di peso
+    /// nell'ordine in cui sono entrati, e il carattere si ricompone da sé.
+    #[test]
+    fn a_multibyte_character_split_between_chunks_comes_out_intact() {
+        // «però» in UTF-8: la `ò` sono due byte, e qui il taglio cade in mezzo.
+        let text = "però".as_bytes();
+        let cut = text.len() - 1;
+        let out = marking(
+            "passo",
+            &[
+                (actions::Pipe::Stdout, &text[..cut]),
+                (actions::Pipe::Stdout, &text[cut..]),
+                (actions::Pipe::Stdout, b"\n"),
+            ],
+        );
+        assert_eq!(
+            String::from_utf8(out).expect("il testo si ricompone"),
+            "[passo · out] però\n"
+        );
+    }
+
+    /// Una riga appartiene a una pipe sola: se stderr interrompe una riga di
+    /// stdout ancora aperta, quella si chiude prima — altrimenti un errore
+    /// finirebbe sotto il marcatore dell'uscita normale.
+    #[test]
+    fn stderr_never_lands_inside_an_open_stdout_line() {
+        let out = marking(
+            "passo",
+            &[
+                (actions::Pipe::Stdout, b"a meta"),
+                (actions::Pipe::Stderr, b"allarme\n"),
+                (actions::Pipe::Stdout, b" e poi\n"),
+            ],
+        );
+        assert_eq!(
+            String::from_utf8(out).expect("ASCII puro"),
+            "[passo · out] a meta\n\
+             [passo · err] allarme\n\
+             [passo · out]  e poi\n"
+        );
+    }
+
     #[test]
     fn list_keeps_an_unloadable_flow_visible_with_its_reason() {
         let directory = TestDirectory::new();
@@ -680,7 +892,7 @@ mod tests {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
         let tools = tools_declaring(&["git"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
 
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
@@ -698,7 +910,7 @@ mod tests {
         let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
         let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
 
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
@@ -713,7 +925,7 @@ mod tests {
     fn without_a_detector_the_check_says_nothing_about_tools() {
         let flow = flow_wanting_tool("qualunque");
 
-        let (report, unknown) = check_report(&flow, &default_registry(None), None);
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), None);
 
         assert!(unknown.is_empty());
         assert!(!report.contains("strument"), "{report}");
@@ -724,7 +936,7 @@ mod tests {
         let json = flow_json("azione_assente", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None);
 
         assert!(report.contains("passi: 1"), "{report}");
         assert!(report.contains("cicli: nessuno"), "{report}");
@@ -748,7 +960,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None);
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
@@ -756,7 +968,7 @@ mod tests {
 
     #[test]
     fn both_default_actions_are_known_to_check() {
-        let registry = default_registry(None);
+        let registry = default_registry(None, None);
         assert!(registry.get("external_engine").is_some());
         assert!(registry.get("shell_check").is_some());
     }
@@ -770,7 +982,7 @@ mod tests {
     /// esattamente sulla macchina appena installata.
     #[test]
     fn the_history_question_is_registered_even_without_a_deposit() {
-        let registry = default_registry(None);
+        let registry = default_registry(None, None);
         assert!(registry.get("history_ask").is_some());
         assert!(
             registry.get("store_write").is_none(),
@@ -788,7 +1000,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None);
 
         assert!(report.contains("azioni disponibili: "), "{report}");
         assert!(report.contains("history_ask"), "{report}");
@@ -799,7 +1011,7 @@ mod tests {
     /// che li nomina si controlla senza che nessuno le registri a mano.
     #[test]
     fn the_trigger_and_the_detector_are_known_to_check() {
-        let registry = default_registry(None);
+        let registry = default_registry(None, None);
         assert!(registry.get("trigger").is_some());
         assert!(registry.get("detect_tools").is_some());
     }
@@ -812,7 +1024,7 @@ mod tests {
     /// *chi* si lamenta, non che lo strumento ci sia.
     #[test]
     fn the_registered_engine_knows_how_to_resolve_a_tool_id() {
-        let registry = default_registry(None);
+        let registry = default_registry(None, None);
         let engine = registry.get("external_engine").expect("il motore è registrato");
         let input = serde_json::json!({
             "tool": "nessuno-strumento-si-chiama-cosi",
@@ -865,7 +1077,7 @@ mod tests {
             let text = std::fs::read_to_string(&path).expect("leggere il flusso");
             let flow: FlowFile = serde_json::from_str(&text)
                 .unwrap_or_else(|e| panic!("{} non si carica: {e}", path.display()));
-            let unknown = missing_actions(&flow.graph, &default_registry(None));
+            let unknown = missing_actions(&flow.graph, &default_registry(None, None));
             assert!(
                 unknown.is_empty(),
                 "{} nomina azioni che il motore non conosce: {unknown:?}",
@@ -884,7 +1096,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare la forma decisa");
         assert_eq!(flow.graph.steps().len(), 1);
-        assert!(missing_actions(&flow.graph, &default_registry(None)).is_empty());
+        assert!(missing_actions(&flow.graph, &default_registry(None, None)).is_empty());
     }
 
     #[test]
@@ -898,7 +1110,7 @@ mod tests {
             &flow,
             "corsa-1",
             &mut store,
-            &default_registry(None),
+            &default_registry(None, None),
             &mut Tick(0),
         )
         .expect("eseguire il flusso");
