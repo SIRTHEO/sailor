@@ -37,12 +37,12 @@ impl TokenUsage {
         }
     }
 
-    /// Dall'uscita testuale di `codex exec`: riusa `notte::parse_codex_tokens`
+    /// Dall'uscita testuale di `codex exec`: riusa `parse_codex_tokens`
     /// invece di riscrivere il parsing (`"tokens used"` seguito dal numero
     /// con il punto come separatore delle migliaia). Codex non separa
     /// prompt e completamento, e non dichiara un costo: qui restano `None`.
     pub fn from_codex_output(output: &str) -> TokenUsage {
-        let raw = notte::parse_codex_tokens(output);
+        let raw = parse_codex_tokens(output);
         TokenUsage { total_tokens: raw.parse().ok(), ..TokenUsage::default() }
     }
 }
@@ -205,4 +205,23 @@ mod tests {
         let model = sample_model("thinkingmachines/inkling:free");
         assert!(model.accepts(Modality::Audio));
     }
+}
+
+/// I token dichiarati da `codex exec` nella sua uscita testuale.
+///
+/// Veniva da `notte`, rimosso dal repo il 29/08/2026. Sta qui perché leggere
+/// quanto un motore dichiara di aver consumato è il mestiere di questo crate.
+pub fn parse_codex_tokens(output: &str) -> String {
+    let mut lines = output.lines();
+    while let Some(line) = lines.next() {
+        if line.trim() == "tokens used" {
+            if let Some(num_line) = lines.next() {
+                let cleaned: String = num_line.trim().chars().filter(|c| *c != '.').collect();
+                if !cleaned.is_empty() && cleaned.chars().all(|c| c.is_ascii_digit()) {
+                    return cleaned;
+                }
+            }
+        }
+    }
+    "?".to_string()
 }

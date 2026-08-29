@@ -182,7 +182,7 @@ impl Readiness {
 
 /// Legge le ricevute di `in-corso/` e dice se il servizio è a metà di qualcosa.
 ///
-/// Il nome di una ricevuta lo separa `notte::split_receipt_name`, che è chi lo
+/// Il nome di una ricevuta lo separa `split_receipt_name`, che è chi lo
 /// scrive: due letture dello stesso formato divergono al primo dubbio.
 ///
 /// PERCHÉ IL PID VIVO E NON LA SOLA PRESENZA DEL FILE. Una ricevuta rimasta da
@@ -204,7 +204,7 @@ pub fn readiness(receipt_names: &[String], alive: &dyn Fn(u32) -> bool) -> Readi
         if name.starts_with('.') {
             continue;
         }
-        let (task, pid) = notte::split_receipt_name(name);
+        let (task, pid) = split_receipt_name(name);
         match pid {
             Some(pid) if alive(pid) => out.busy.push(Busy { task, pid }),
             Some(_) => {} // orfana: il servizio la recupera al prossimo avvio
@@ -340,4 +340,39 @@ mod tests {
         let contents = "\n   \n# perché è stato ricostruito\n\t abc123 \n# e una nota dopo\ndef456\n";
         assert_eq!(read_stamp(contents).as_deref(), Some("abc123"));
     }
+}
+
+/// Il nome di una ricevuta separato dal suffisso col numero di processo.
+///
+/// Veniva da `notte`, rimosso dal repo il 29/08/2026: il formato della ricevuta
+/// appartiene a chi le scrive, ed è questo crate.
+pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
+    match name.rsplit_once('.') {
+        Some((base, suffix)) if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) => {
+            (base.to_string(), suffix.parse().ok())
+        }
+        _ => (name.to_string(), None),
+    }
+}
+
+/// Se un processo con quel numero esiste ancora.
+///
+/// Veniva da `notte`, il ciclo notturno rimosso dal repo il 29/08/2026 perché
+/// instradava fra motori e giudicava esiti — cioè ciò che ora fa un flusso.
+/// Questa funzione non c'entrava con quel ciclo: serve a `release` per sapere
+/// se chi teneva un lucchetto è ancora vivo.
+///
+/// **UN ERRORE CHE NON SIA «NON ESISTE» SI CONTA COME VIVO** (tipicamente il pid
+/// c'è ma non è nostro): un falso «morto» scavalca il lucchetto di qualcun
+/// altro, un falso «vivo» al più fa aspettare un giro in più.
+pub fn process_exists(pid: u32) -> bool {
+    unsafe extern "C" {
+        fn kill(pid: i32, sig: i32) -> i32;
+    }
+    const ESRCH: i32 = 3;
+    let ret = unsafe { kill(pid as i32, 0) };
+    if ret == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(ESRCH)
 }
