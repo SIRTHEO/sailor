@@ -36,6 +36,7 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 15 | 29/08 | Per cambiare l'innesco di un flusso è stato usato uno script Python che riscrive il JSON: Sailor non ha nessun comando per operare sui propri flussi | Theo lo ha visto nel terminale e ha chiesto perché la riga di comando non chiami Sailor. Verificato: `sailor flow` ha solo `list`, `due`, `check`, `run` | Ogni cosa che una persona deve fare su un flusso è un comando di Sailor. Finché si aggira con `python3`, il sistema non si usa da sé e nessuno se ne accorge dai suoi controlli | **aperto** |
 | 16 | 29/08 | Il flusso di ricerca non è partito e il lavoro l'ha fatto una persona a mano. Tutti e sei i passi hanno `claude-code` scritto dentro, senza ripiego — mentre `agy` rispondeva | Provando i tre motori uno per uno: claude esaurito, codex 401, **agy vivo**. Nessuno li aveva provati | Un passo dichiara una **catena** di motori, non uno. E chi lancia vede su quale è finito | **aperto** |
 | 17 | 29/08 | Due passi di quel flusso chiedono competenze di Claude Code (`advise-project-approach`, `neuroarxiv`) che stanno in `~/.claude/skills` di una sola persona: il flusso non è portabile e non lo dichiara | Cercando perché non bastasse cambiare motore. `flow check` lo dà per buono: controlla gli strumenti per identificativo, **le competenze no** | Ciò che un passo chiede va dichiarato tutto, e il controllo statico lo verifica — è il guasto 3 su un'altra dimensione. Chi non ha quella capacità deve funzionare peggio, non in silenzio | **aperto** |
+| 18 | 29/08 | La casa di Sailor (`~/.config/sailor`) contiene **un solo file**, una firma. Ogni server MCP e ogni gancio che Sailor conosce li scopre leggendo la configurazione di Claude Code, Claude Desktop o Cursor: la sua dotazione è quella dei vicini | Cercando dove fossero installate le competenze del guasto 17. Non c'era nessun posto dove installarle | Una dotazione propria sotto la casa di Sailor, che viaggia col prodotto. Il rilevatore torna a dire cosa c'è sulla macchina — che è un'altra domanda | **aperto** |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
@@ -44,7 +45,7 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Nove sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
+**Dieci sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
 cosa vista da tre lati: **il sistema non sa cosa sta facendo di sé** — quali
 processi ha avviato, quante copie ha della stessa verità, se ciò che dichiara
 corrisponde a ciò che fa.
