@@ -186,6 +186,53 @@ nove è stato ancora fatto.
    *Primo passo*: In `decision_from` (crates/flow/src/executor.rs:702-731) riconoscere il riuso, con la chiave estesa all'eseguibile risolto e alla sua versione — `tool` si risolve al momento tramite `toolbox` e `Finding.version` la misura già, quindi senza quel pezzo la chiave vale solo su questa macchina. E prima ancora del salto, il comando che dice **quale** componente della chiave è cambiato: il confronto fra due digest non lo dice, e il modo normale in cui una cache così fallisce è funzionare al 3% senza che nessuno se ne accorga.
    *Riduce*: Riduce l'1 e il 5, e alleggerisce il 4 perché i passi in cache escono dalla fila. Vincolo A rispettato in pieno: tutto fuori dal motore. Vincolo B rispettato a una condizione — che la vista della corsa distingua un passo eseguito da uno riusato, e il record ha già `attempt_relation` per dirlo. Guasto in più rispetto a Nextflow, da dichiarare senza addolcirlo: un motore di intelligenza artificiale non è deterministico, quindi la cache promette «la stessa risposta di prima» e non «la risposta che avresti adesso» — va spenta sui passi che giudicano, e va spenta per dichiarazione, non per buon senso.
 
+## La finestra: dieci lavori con il punto d'innesto
+
+Dalla ricerca del 29/08 sul progetto di una finestra a nodi. Due di questi
+avrebbero preso i guasti 9 e quello del campo troncato — i due che solo
+un'immagine aveva visto — trasformandoli da aneddoto in controllo.
+
+1. **Dare corrente alla mappa degli stati: costruire `Map<string, StepRun>` dagli eventi del guscio dentro `absorb` in App.tsx, invece di passare `new Map()` a `buildUnifiedLayout` su ogni flusso vero**
+   *Primo passo*: In `absorb` (App.tsx ~250) accumulare `step_started` e `step_closed` in uno stato `Map<string, StepRun>` con la stessa identità stabile del `useMemo` di oggi, e passarlo a `buildUnifiedLayout` al posto della mappa vuota; il commento su perché non si scrive `new Map()` in linea resta valido e va conservato.
+
+2. **Uno solo insieme di stati, dichiarato nel motore e derivato dalla finestra; e una prova che oggi è rossa che confronta i due elenchi per uguaglianza, non per inclusione**
+   *Primo passo*: Scrivere in Rust la prova che serializza l'elenco degli esiti del motore e lo confronta con l'elenco che la finestra dichiara di saper disegnare, guardandola fallire; poi far salire `Stopped` e `Skipped` fino a `flow.ts` e togliere `OUTCOME_LABEL` da RunConsole facendogli leggere `STATE_LABEL`.
+
+3. **Far salire `origin` fino alla tela e trasformare la corsia in nodo genitore vero (`parentId` + `extent: 'parent'`), raggruppando per origine sopra le corsie per flusso**
+   *Primo passo*: Aggiungere `origin` a `FlowEntry` in `flow.ts` e scriverlo nell'intestazione di ogni corsia; poi, in `layout.ts:185`, dare ai passi `parentId` della corsia e posizione relativa, togliendo la somma a mano di `BAND_PAD_X`.
+
+4. **Il confronto `scrollWidth <= clientWidth` su ogni discendente con testo di un nodo reso, con una lista di eccezioni esplicita per i due troncamenti voluti**
+   *Primo passo*: Introdurre nel `desktop` un solo comando di prova con browser vero e scrivere l'unica asserzione, applicata al render di un nodo per ciascun tipo, con dati di prova volutamente lunghi; nella lista delle eccezioni entrano `.step-node__tool-why` e `.flow-band__desc`, e quella lista è il posto dove i troncamenti voluti diventano scritti.
+
+5. **Il contrasto calcolato sulle costanti del tema, non fotografato e non delegato ad axe: rapporto fra ogni tinta disegnata e il fondo su cui finisce, con soglia dichiarata**
+   *Primo passo*: Scrivere la funzione di rapporto di contrasto e la prova che scorre `STATE_COLOR`, `FLOW_COLORS` e le tinte di `ToolMark` contro i fondi effettivi del tema, con la soglia dichiarata per classe (testo 4.5:1, segni e bordi 3:1), e correggere il bordo `waiting` che oggi fallisce.
+
+6. **Il collegamento fra spazi come passo `subflow` col nome della destinazione scritto sopra sempre, non come arco che attraversa un confine né come filo invisibile finché non lo selezioni**
+   *Primo passo*: Registrare l'azione `subflow` nel motore e disegnare il passo come un nodo qualunque con il nome del flusso di destinazione nel corpo; poi la prova sul modello: ogni `subflow` nomina un flusso presente in una delle sorgenti di `flow_places`, e nessun flusso nominato è orfano.
+
+7. **L'innesco con peso visivo che sopravvive al rimpicciolimento, la minimappa che distingue i tipi, e la prova scritta a risoluzione ridotta**
+   *Primo passo*: Dare a `MiniMap` un `nodeColor` derivato dal tipo di nodo e all'innesco una barra del titolo piena invece di un bordo; poi asserire sul render a scala ridotta che esistano esattamente N regioni con la tinta d'ingresso, N pari al numero di inneschi, e che nessun'altra classe produca quella tinta.
+
+8. **Legare la riga letta al nodo che l'ha detta: il passo aperto in `RunConsole` seleziona ed evidenzia il proprio nodo sulla tela**
+   *Primo passo*: Passare il passo osservato da `RunConsole` alla tela e marcarlo come selezionato; poi l'asserzione: nella modalità di lettura, il nodo a cui il testo si riferisce è visibile e identificato.
+
+9. **Il riuso senza riesecuzione come parola nel piede del nodo con la stessa tinta di «andato», derivata da `attempt_relation`, più la prova sul divieto d'ambito**
+   *Primo passo*: Far salire `attempt_relation` in `StepPassage`, mostrarlo in `StepHistory` e aggiungere la parola sul nodo con la tinta di «andato»; poi la prova sul comportamento, non sulla documentazione: una corsa fuori dall'ambito dichiarato esegue i passi invece di riusarli.
+
+10. **Le regole strutturali dentro `sailor flow check`, con l'esito marcato sul nodo che le viola — non un pannello nuovo**
+   *Primo passo*: Aggiungere a `sailor flow check` la regola «almeno un innesco» e «nessun passo irraggiungibile», e disegnare il passo che le viola col motivo scritto sopra, riusando lo schema già in piedi di `step-node__tool-why`.
+
+### Cosa la ricerca dichiara scoperto
+
+- Il problema dichiarato all'inizio — una finestra coerente per disciplina e non per costruzione — resta scoperto per intero. Nessuna delle trentasette pratiche impedisce che il prossimo pezzo venga aggiunto fuori disegno: tutte verificano proprietà di pezzi esistenti, nessuna verifica che l'insieme sia stato pensato. Non esiste una prova di «coerenza», e chi guarda continuerà a sentire la differenza.
+- Il vincolo B non ha nessuna verifica automatica, in nessuna delle tre ricerche. Il costo di insegnare una convenzione si misura solo con una persona che non ha mai visto Sailor, cronometrata; e `docs/decisioni.md` esige che non sia chi ha costruito. Finché quella persona non esiste, ogni dichiarazione «B: rispettato» in questo documento è una previsione, non una misura.
+- Problema 6, tutto ciò che non è contrasto né troncamento: sovrapposizione fra due elementi entrambi visibili (il distintivo del nodo contro l'angolo del riquadro dello spazio), elemento disegnato fuori dal proprio riquadro, ordine di sovrapposizione sbagliato, spaziatura collassata. Le due asserzioni deterministiche adottate non li vedono, e la sola pratica che li vedrebbe è quella rimandata. È la classe che ha già colpito Sailor due volte su undici guasti.
+- Problema 1 nella sua sostanza. La prova a scala ridotta dice che l'innesco si distingue, non che chi apre il flusso sappia da dove si comincia a leggere. Che una gerarchia sia capita nessuna delle pratiche trovate lo verifica — l'unica fonte che ci prova (il punteggio di leggibilità) misura grafi di relazione, non flussi orientati.
+
+La prima riga è la più importante: le dieci pratiche risolvono casi puntuali,
+**non** il problema da cui la ricerca era partita — una finestra coerente per
+costruzione invece che per disciplina. Quello resta.
+
 ## In corso adesso
 
 - Il flusso di ricerca, sul costo del passaggio di contesto.
