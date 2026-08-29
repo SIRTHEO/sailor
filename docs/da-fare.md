@@ -10,35 +10,34 @@ si cancella e non si rimpiange.
 c'è il rimando, non la copia. Una copia a mano invecchia da sola, e lo sappiamo
 perché è già successo.
 
-Aggiornato il 29/08/2026.
+Aggiornato il 29/08/2026, dopo la prima corsa in cui Sailor ha sviluppato un pezzo di se stesso.
 
 ## Aspettano una decisione di Theo
 
 Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 
-1. **Il potere di un passo.** Oggi esiste un tipo di passo che esegue qualunque
-   comando, ed è già metà di ciò che abbiamo scritto. Finché resta così, il gate
-   delle autorizzazioni dell'autocura è una convenzione: un flusso può riscrivere
-   il file che dice cosa gli è permesso. *Novità del 29/08*: il flusso di ricerca
-   ha trovato la risposta collaudata in Bazel — **ciò che un passo non ha
-   dichiarato, il passo non può toccare** — e in OPA Gatekeeper il modo di
-   introdurla senza rompere niente: un controllo nuovo entra in osservazione
-   (`warn`), non in barriera, e la promozione è un cambio di configurazione.
-   *Per esteso*: `docs/2026-08-28-sailor-si-sviluppa-su-se-stesso.md`.
-2. **Dove vive il file delle autorizzazioni**: fuori dall'albero (difende, non si
-   vede nei diff) o versionato dentro (si vede, ma è a portata dell'autocura).
-3. **Se i flussi si spediscono col prodotto.** Chi costruisce il rilascio non
-   nomina i flussi nemmeno una volta: la scelta va fatta prima che qualcuno
-   scriva quella riga.
-4. **La soglia di un flusso che accompagna: prezzo o qualità.** Misurato: il
-   degrado della qualità non è osservabile (una moneta), il prezzo di continuare
-   sì (+34%). Raccomandato il prezzo. *Per esteso*:
-   `docs/2026-08-28-il-flusso-che-accompagna.md`.
-5. **Prima l'orologio o prima la staffetta.** Ciò che calcola quando un flusso è
+1. **La soglia di un flusso che accompagna: prezzo o qualità.** Misurato: il
+   degrado della qualità non è osservabile (una moneta, 21 sessioni su 44), il
+   prezzo di continuare sì (+34%, monotono su 37 sessioni su 45). Raccomandato il
+   prezzo. *Per esteso*: `docs/2026-08-28-il-flusso-che-accompagna.md`.
+2. **Prima l'orologio o prima la staffetta.** Ciò che calcola quando un flusso è
    dovuto esiste già; nessuno esegue ciò che calcola.
-6. **Se rimettere le istruzioni globali di Claude Code** (`~/.claude/CLAUDE.md`,
-   cancellate nella pulizia del 28/08, presenti nell'archivio).
-7. **L'ambiente Python del plugin sicurezza**, 240 MB, si ricrea da solo.
+3. **Se rimettere le istruzioni globali di Claude Code** (`~/.claude/CLAUDE.md`,
+   cancellate nella pulizia del 28/08, presenti nell'archivio). Finché mancano,
+   ogni sessione nuova parte senza sapere niente di questo progetto.
+4. **L'ambiente Python del plugin sicurezza**, 240 MB, si ricrea da solo.
+
+### Decise il 29/08, da costruire
+
+- **Il potere di un passo: modello Bazel, introdotto in osservazione.** Un passo
+  dichiara cosa gli serve e il resto per lui non esiste; il controllo parte come
+  avviso e diventa barriera con un cambio di configurazione. **Costa**: i flussi
+  esistenti vanno riscritti per dichiarare cosa toccano. *Non ancora iniziato.*
+- **I flussi di sistema si spediscono dentro il binario.** Già fatto: stanno in
+  `crates/flow/system/` e sono incorporati alla compilazione.
+- **Il file delle autorizzazioni non esiste**, e la decisione è di Theo: se il
+  modello Bazel vale per ogni passo, l'autocura non ha bisogno di un gate suo —
+  è un flusso come gli altri, con i poteri che dichiara. Un pezzo in meno.
 
 ## Chieste da Theo, non ancora iniziate
 
@@ -104,11 +103,34 @@ corsa di quel flusso; qui l'indice:
 | il caso di prova | Temporal: la storia della corsa rotta si scarica e si rigioca |
 | introdurre un controllo senza rompere | OPA Gatekeeper: `warn` prima di `deny`, promozione come configurazione |
 
+## Nato dalla serata del 29/08
+
+- **Unire i quattro flussi.** `smista-il-lavoro`, il flusso di sviluppo, la
+  ricerca e le future chiamate a SocratiCode sono le fasi di un ciclo unico.
+  Deciso di **non** fonderli in un file: si compongono, e serve **`subflow`** —
+  un passo che esegue un altro flusso. È uno dei cinque tipi che la finestra
+  offre da sempre e che il motore non ha mai avuto: costruirlo sblocca anche gli
+  altri quattro.
+- **Il flusso di sviluppo deve smettere di essere «di Sailor».** Vale per
+  qualunque progetto, quindi cambia nome. Conseguenza da affrontare: **non può
+  sapere come si provano le cose nel progetto in cui gira** — oggi dice
+  `cargo test`, che vale per Rust e per nient'altro. Serve che il progetto lo
+  dichiari, come i descrittori dichiarano gli strumenti.
+- **Il costo del passaggio di contesto.** Misurato su una corsa vera: il 96,2%
+  di ciò che entra nei prompt è contesto ereditato, il 3,8% sono le istruzioni.
+  Ricerca in corso. Le tre piste già viste: mettere il contesto comune in testa
+  invece che in coda (la cache dei prefissi paga un decimo, e oggi l'ordine la
+  rende inutile); passare riferimenti invece di contenuti (ora possibile, l'anello
+  è chiuso); dichiarare «so riprendere una sessione» come capacità di uno
+  strumento, così chi ce l'ha risparmia e chi no funziona lo stesso.
+- **La fonte di un flusso non deve cambiare mentre gira.** Il 29/08 il file dei
+  guasti è stato modificato durante una corsa che lo citava: l'analisi parlava di
+  dieci guasti, il file ne aveva undici, e il verificatore ha respinto per
+  incoerenza. Aveva ragione, e nessun altro se n'era accorto.
+
 ## In corso adesso
 
-- Il flusso di ricerca `come-lo-risolvono-gli-altri`, al terzo passo su cinque.
-- Un cantiere sui flussi di sistema e sulla ricerca degli strumenti come flusso.
-- `sviluppa-sailor` è scritto e valido, in attesa che il workspace compili.
+- Il flusso di ricerca, sul costo del passaggio di contesto.
 - **Un flusso può guardare com'è andata**: fatto il 29/08/2026. L'azione
   `history_ask` risponde a quattro domande nominate — quante volte un passo è
   fallito e con che classe, quali guasti sono i più frequenti, com'è andata
