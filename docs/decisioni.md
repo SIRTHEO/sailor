@@ -61,7 +61,7 @@ senza che si capisca perché. *Fatto: `crates/flow/system/`.*
 **Perché**: il perimetro non è ancora applicato dal motore, e aspettarlo avrebbe
 fermato tutto. Chi lancia lo sa. **Attenzione**: in un ciclo questo conta il
 doppio — chi lascia girare da solo per ore deve poter vedere cosa fa mentre lo
-fa, e oggi il testo di un passo si vede solo quando è finito.
+fa, e da questo giro il testo di un passo esce su stderr mentre il passo gira.
 
 ### Le prove rosse rompono il passo
 **29/08/2026 — dopo il primo giro fallito.** Nessuna tolleranza sul passo che
