@@ -32,6 +32,8 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 11 | 29/08 | In modalità viva, un errore di compilazione in un crate qualunque **uccide la finestra** invece di lasciarla all'ultima versione buona | La finestra è sparita mentre un altro cantiere aveva un crate a metà | La finestra sopravvive a una compilazione fallita, e lo dice invece di chiudersi | **aperto** |
 | 12 | 29/08 | `pgrep` dentro il perimetro **non vede i processi e risponde vuoto**, senza errore | Una sorveglianza ha detto «nessun flusso in esecuzione» mentre due giravano | Chiedere lo stato al deposito, non al sistema operativo: chi è vivo lo dice il dato, non un comando che il perimetro può zittire | **chiuso** — sorveglianza riscritta |
 | 13 | 29/08 | `for x in $lista` in zsh **non spezza la variabile in parole**: l'intera lista entra in un giro solo | La sorveglianza riscritta ha rifatto lo stesso falso allarme del guasto 12, per una causa diversa | Leggere riga per riga (`while read`), mai iterare una variabile non quotata. **Era già scritto in una memoria e non è stato consultato** | **chiuso** — riscritta di nuovo |
+| 14 | 29/08 | Un motore esaurito (limite settimanale) è stato registrato come guasto qualunque, e la corsa si è fermata | Leggendo il messaggio del motore: «hai raggiunto il limite settimanale, si azzera alle 7» | Distinguere «finito fino a un'ora nota» da «rotto»: il primo si aspetta o si instrada su un altro profilo, il secondo no. Serve prima che il consumo dichiarato dal motore entri nel deposito | **aperto** |
+| 15 | 29/08 | Per cambiare l'innesco di un flusso è stato usato uno script Python che riscrive il JSON: Sailor non ha nessun comando per operare sui propri flussi | Theo lo ha visto nel terminale e ha chiesto perché la riga di comando non chiami Sailor. Verificato: `sailor flow` ha solo `list`, `due`, `check`, `run` | Ogni cosa che una persona deve fare su un flusso è un comando di Sailor. Finché si aggira con `python3`, il sistema non si usa da sé e nessuno se ne accorge dai suoi controlli | **aperto** |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
@@ -40,13 +42,19 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Cinque sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
+**Sette sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
 cosa vista da tre lati: **il sistema non sa cosa sta facendo di sé** — quali
 processi ha avviato, quante copie ha della stessa verità, se ciò che dichiara
 corrisponde a ciò che fa.
 
 **Nessuno è stato trovato da un controllo automatico.** Tutti da una persona che
 guardava. Questo è il numero che deve cambiare.
+
+**Il quindicesimo dice perché.** Sailor non ha comandi per operare su se stesso,
+quindi chi ci lavora lo aggira con script esterni — e uno strumento aggirato non
+registra niente di ciò che gli succede intorno. È lo stesso difetto del quarto e
+del decimo, alla radice: **il sistema non sa cosa sta facendo di sé perché non
+passa da sé.**
 
 **Il tredicesimo era già scritto, e non è servito.** La trappola di zsh stava in
 una memoria da giorni: chi ha riscritto la sorveglianza — cioè chi aveva appena
