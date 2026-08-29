@@ -61,6 +61,23 @@ impl ValueSchema {
             (ValueSchema::Array { items: wanted }, ValueSchema::Array { items: actual }) => {
                 wanted.accepts(actual)
             }
+            // Un elenco scritto dentro un passo arriva qui come «questo valore
+            // preciso», non come «un elenco»: senza questo arco, un campo che
+            // vuole un elenco rifiuta l'unico modo che c'è di scriverne uno.
+            //
+            // **SI È VISTO IL 29/08/2026**, il giorno in cui i passi hanno
+            // smesso di nominare un motore solo per dichiarare una catena: tre
+            // flussi sono diventati «non validi» tutti insieme, e la causa non
+            // era nei flussi. Gli stessi archi per stringhe, numeri e booleani
+            // c'erano già: questo mancava perché fino a quel giorno nessun campo
+            // aveva mai voluto un elenco.
+            (ValueSchema::Array { items }, ValueSchema::OneOf { values }) => {
+                values.iter().all(|value| {
+                    value
+                        .as_array()
+                        .is_some_and(|list| list.iter().all(|item| items.validate(item).is_ok()))
+                })
+            }
             (
                 ValueSchema::Object {
                     properties: wanted,
@@ -188,5 +205,43 @@ mod tests {
         assert!(message.contains("remvoe"), "{message}");
         assert!(message.contains("keep"), "{message}");
         assert!(message.contains("remove"), "{message}");
+    }
+
+    /// Un campo che vuole un elenco di stringhe accetta l'elenco scritto dentro
+    /// un passo, che arriva qui come «questo valore preciso».
+    ///
+    /// **SENZA QUESTO, UNA CATENA DI MOTORI NON SI PUÒ SCRIVERE.** Il
+    /// 29/08/2026 tre flussi sono diventati «non validi» tutti insieme appena i
+    /// passi hanno dichiarato `"tool": ["claude-code", "agy"]`, e la causa non
+    /// era nei flussi: mancava questo arco, mentre quelli per stringhe e numeri
+    /// c'erano da sempre.
+    #[test]
+    fn a_field_that_wants_a_list_accepts_the_list_written_in_a_step() {
+        let wanted = ValueSchema::Array {
+            items: Box::new(ValueSchema::String),
+        };
+
+        let written = ValueSchema::OneOf {
+            values: vec![json!(["claude-code", "agy"])],
+        };
+
+        assert!(wanted.accepts(&written));
+    }
+
+    /// E rifiuta ciò che elenco non è, o che contiene qualcosa che non è una
+    /// stringa: un ripiego dichiarato con un numero dentro non deve passare per
+    /// buono e rompersi al momento di eseguire.
+    #[test]
+    fn a_field_that_wants_a_list_of_strings_refuses_anything_else() {
+        let wanted = ValueSchema::Array {
+            items: Box::new(ValueSchema::String),
+        };
+
+        assert!(!wanted.accepts(&ValueSchema::OneOf {
+            values: vec![json!("claude-code")],
+        }));
+        assert!(!wanted.accepts(&ValueSchema::OneOf {
+            values: vec![json!(["claude-code", 7])],
+        }));
     }
 }
