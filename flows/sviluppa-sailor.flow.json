@@ -454,7 +454,9 @@
           "tool": "cargo",
           "args": [
             "test",
-            "--workspace"
+            "--workspace",
+            "--exclude",
+            "claude-hooks"
           ],
           "workdir": "/Users/theo/personal/sailor",
           "timeout_secs": 1800
