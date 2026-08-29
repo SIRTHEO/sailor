@@ -34,6 +34,8 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 13 | 29/08 | `for x in $lista` in zsh **non spezza la variabile in parole**: l'intera lista entra in un giro solo | La sorveglianza riscritta ha rifatto lo stesso falso allarme del guasto 12, per una causa diversa | Leggere riga per riga (`while read`), mai iterare una variabile non quotata. **Era già scritto in una memoria e non è stato consultato** | **chiuso** — riscritta di nuovo |
 | 14 | 29/08 | Un motore esaurito (limite settimanale) è stato registrato come guasto qualunque, e la corsa si è fermata | Leggendo il messaggio del motore: «hai raggiunto il limite settimanale, si azzera alle 7» | Distinguere «finito fino a un'ora nota» da «rotto»: il primo si aspetta o si instrada su un altro profilo, il secondo no. Serve prima che il consumo dichiarato dal motore entri nel deposito | **aperto** |
 | 15 | 29/08 | Per cambiare l'innesco di un flusso è stato usato uno script Python che riscrive il JSON: Sailor non ha nessun comando per operare sui propri flussi | Theo lo ha visto nel terminale e ha chiesto perché la riga di comando non chiami Sailor. Verificato: `sailor flow` ha solo `list`, `due`, `check`, `run` | Ogni cosa che una persona deve fare su un flusso è un comando di Sailor. Finché si aggira con `python3`, il sistema non si usa da sé e nessuno se ne accorge dai suoi controlli | **aperto** |
+| 16 | 29/08 | Il flusso di ricerca non è partito e il lavoro l'ha fatto una persona a mano. Tutti e sei i passi hanno `claude-code` scritto dentro, senza ripiego — mentre `agy` rispondeva | Provando i tre motori uno per uno: claude esaurito, codex 401, **agy vivo**. Nessuno li aveva provati | Un passo dichiara una **catena** di motori, non uno. E chi lancia vede su quale è finito | **aperto** |
+| 17 | 29/08 | Due passi di quel flusso chiedono competenze di Claude Code (`advise-project-approach`, `neuroarxiv`) che stanno in `~/.claude/skills` di una sola persona: il flusso non è portabile e non lo dichiara | Cercando perché non bastasse cambiare motore. `flow check` lo dà per buono: controlla gli strumenti per identificativo, **le competenze no** | Ciò che un passo chiede va dichiarato tutto, e il controllo statico lo verifica — è il guasto 3 su un'altra dimensione. Chi non ha quella capacità deve funzionare peggio, non in silenzio | **aperto** |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
@@ -42,7 +44,7 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Sette sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
+**Nove sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
 cosa vista da tre lati: **il sistema non sa cosa sta facendo di sé** — quali
 processi ha avviato, quante copie ha della stessa verità, se ciò che dichiara
 corrisponde a ciò che fa.
