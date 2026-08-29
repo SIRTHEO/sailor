@@ -21,7 +21,11 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
    prezzo di continuare sì (+34%, monotono su 37 sessioni su 45). Raccomandato il
    prezzo. *Per esteso*: `docs/2026-08-28-il-flusso-che-accompagna.md`.
 2. **Prima l'orologio o prima la staffetta.** Ciò che calcola quando un flusso è
-   dovuto esiste già; nessuno esegue ciò che calcola.
+   dovuto esiste già; nessuno esegue ciò che calcola. *29/08: questa voce è
+   diventata più urgente.* Senza di essa un flusso a ronda non è ripetibile da
+   dentro Sailor, e il rimedio ovvio — uno script che rilancia — è stato scritto
+   e poi cancellato lo stesso giorno: sarebbe stato un cerotto fuori dal sistema
+   su un buco dentro il sistema, e i cerotti restano.
 3. **Se rimettere le istruzioni globali di Claude Code** (`~/.claude/CLAUDE.md`,
    cancellate nella pulizia del 28/08, presenti nell'archivio). Finché mancano,
    ogni sessione nuova parte senza sapere niente di questo progetto.
