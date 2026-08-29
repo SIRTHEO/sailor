@@ -31,10 +31,11 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 10 | 28/08 | La stessa lista di componenti scritta in due punti del programma | Si sono disallineati in un'ora, nello stesso giorno di lavoro | Una sola fonte, e le altre la chiedono invece di ricopiarla | **aperto** |
 | 11 | 29/08 | In modalità viva, un errore di compilazione in un crate qualunque **uccide la finestra** invece di lasciarla all'ultima versione buona | La finestra è sparita mentre un altro cantiere aveva un crate a metà | La finestra sopravvive a una compilazione fallita, e lo dice invece di chiudersi | **aperto** |
 | 12 | 29/08 | `pgrep` dentro il perimetro **non vede i processi e risponde vuoto**, senza errore | Una sorveglianza ha detto «nessun flusso in esecuzione» mentre due giravano | Chiedere lo stato al deposito, non al sistema operativo: chi è vivo lo dice il dato, non un comando che il perimetro può zittire | **chiuso** — sorveglianza riscritta |
+| 13 | 29/08 | `for x in $lista` in zsh **non spezza la variabile in parole**: l'intera lista entra in un giro solo | La sorveglianza riscritta ha rifatto lo stesso falso allarme del guasto 12, per una causa diversa | Leggere riga per riga (`while read`), mai iterare una variabile non quotata. **Era già scritto in una memoria e non è stato consultato** | **chiuso** — riscritta di nuovo |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
-**Sette su dodici si sono visti solo eseguendo o guardando.** Non dal codice, non
+**Otto su tredici si sono visti solo eseguendo o guardando.** Non dal codice, non
 dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
@@ -46,3 +47,11 @@ corrisponde a ciò che fa.
 
 **Nessuno è stato trovato da un controllo automatico.** Tutti da una persona che
 guardava. Questo è il numero che deve cambiare.
+
+**Il tredicesimo era già scritto, e non è servito.** La trappola di zsh stava in
+una memoria da giorni: chi ha riscritto la sorveglianza — cioè chi aveva appena
+finito di riparare il guasto 12 — non l'ha consultata e ci è ricaduto dentro
+venti minuti dopo. È la prova che una lezione scritta non vale niente se non c'è
+il momento in cui qualcuno la va a leggere. Per i flussi quel momento adesso
+esiste, ed è `docs/decisioni.md`, letto in tre punti del flusso di sviluppo. Per
+chi scrive a mano no.
