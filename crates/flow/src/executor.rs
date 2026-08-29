@@ -8,6 +8,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type SharedState = BTreeMap<String, Value>;
 
+/// La chiave sotto cui l'esecutore scrive l'identificativo del passo che sta
+/// per partire, prima di ogni `Action::execute`.
+///
+/// **PERCHÉ QUI E NON NELLA FIRMA DEL TRATTO.** Un'azione che produce testo
+/// mentre gira deve poter dire di chi è quel testo, altrimenti in un grafo con
+/// due passi vivi nessuno lo attribuisce. `execute` non riceve il passo, e
+/// aggiungerglielo toccherebbe ogni implementatore in cinque crate per un dato
+/// che serve a pochi. Il prefisso `flow.` è dell'esecutore: un flusso non ci
+/// scrive, e chi lo facesse si vedrebbe il valore sovrascritto a ogni passo.
+pub const CURRENT_STEP: &str = "flow.step";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
@@ -553,6 +564,12 @@ impl Executor for InProcessExecutor {
                 started.species = action.map(|action| action.species());
                 store.append_started(started)?;
 
+                // L'identificativo entra nello stato condiviso PRIMA
+                // dell'effetto: chi guarda deve poter marcare il testo dal
+                // primo byte, non dal secondo.
+                request
+                    .shared
+                    .insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
                 let completion = match action {
                     None => Completion {
                         outcome: Outcome::Skipped,
@@ -946,6 +963,54 @@ mod tests {
             action: action.to_owned(),
             max_attempts,
         }
+    }
+
+    /// L'ESECUTORE DICE ALL'AZIONE DI QUALE PASSO È IL LAVORO CHE STA
+    /// FACENDO, e lo dice a ogni passo: senza, un'azione che produce testo
+    /// mentre gira non saprebbe attribuirlo, e in un grafo con due passi vivi
+    /// chi guarda leggerebbe due voci mescolate senza nome.
+    #[test]
+    fn each_action_sees_the_id_of_the_step_it_is_running() {
+        struct WhoAmI(Arc<std::sync::Mutex<Vec<String>>>);
+
+        impl Action for WhoAmI {
+            fn execute(
+                &self,
+                _input: &Value,
+                shared: &mut SharedState,
+            ) -> Result<ActionOutcome, ActionError> {
+                let seen = shared
+                    .get(CURRENT_STEP)
+                    .and_then(Value::as_str)
+                    .unwrap_or("nessuno")
+                    .to_owned();
+                self.0.lock().expect("nessuno panica qui").push(seen);
+                Ok(ActionOutcome::Went(json!({})))
+            }
+        }
+
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let graph = Graph::new(vec![
+            step("primo", &[], "chi-sono", 1),
+            step("secondo", &["primo"], "chi-sono", 1),
+        ])
+        .expect("grafo valido");
+        let mut actions = ActionRegistry::default();
+        actions.register("chi-sono", WhoAmI(seen.clone()));
+        let request = ExecutionRequest {
+            run_id: "run".to_owned(),
+            root_inputs: BTreeMap::new(),
+            gates: vec![],
+            shared: SharedState::new(),
+        };
+        let mut store = InMemoryRecordStore::default();
+        InProcessExecutor
+            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .expect("esecuzione riuscita");
+        assert_eq!(
+            *seen.lock().expect("nessuno panica qui"),
+            vec!["primo".to_owned(), "secondo".to_owned()]
+        );
     }
 
     #[test]
