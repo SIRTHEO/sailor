@@ -53,18 +53,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "claude-hooks"
-version = "0.1.0"
-dependencies = [
- "guards",
- "hook-io",
- "inventory",
- "ledger",
- "regex",
- "serde_json",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -143,15 +131,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "guards"
-version = "0.1.0"
-dependencies = [
- "hook-io",
- "regex",
- "serde_json",
-]
-
-[[package]]
 name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -173,14 +152,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
 dependencies = [
  "hashbrown 0.15.5",
-]
-
-[[package]]
-name = "hook-io"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -259,18 +230,6 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "models"
 version = "0.1.0"
 dependencies = [
- "notte",
- "serde_json",
-]
-
-[[package]]
-name = "notte"
-version = "0.1.0"
-dependencies = [
- "actions",
- "flow",
- "ledger",
- "serde",
  "serde_json",
 ]
 
@@ -359,9 +318,6 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 [[package]]
 name = "release"
 version = "0.1.0"
-dependencies = [
- "notte",
-]
 
 [[package]]
 name = "rusqlite"
@@ -386,7 +342,6 @@ dependencies = [
  "inventory",
  "ledger",
  "models",
- "notte",
  "profiles",
  "release",
  "serde",
