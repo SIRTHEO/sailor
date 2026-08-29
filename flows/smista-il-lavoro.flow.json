@@ -72,11 +72,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "opus"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "answer_shape": {
             "type": "object",
@@ -113,7 +112,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "timeout_secs": {
               "type": "number"
@@ -371,11 +373,10 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "tool": "claude-code",
-          "args": [
-            "-p",
-            "--model",
-            "sonnet"
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
           ],
           "answer_shape": {
             "type": "object",
@@ -424,7 +425,10 @@
           "type": "object",
           "properties": {
             "tool": {
-              "type": "string"
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "timeout_secs": {
               "type": "number"

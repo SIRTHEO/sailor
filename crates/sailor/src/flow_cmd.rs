@@ -10,6 +10,7 @@ use flow::{
     InProcessExecutor, RecordStore, SharedState, SystemClock,
 };
 use ledger::{Ledger, RunRecord};
+use serde_json::Value;
 use ui::gather::FlowSource;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -288,15 +289,31 @@ fn check_report(
 /// campo a dire che quello è un identificativo di strumento, non l'azione che
 /// lo porta. Un'azione futura che ne chiedesse uno sarebbe controllata senza
 /// che nessuno tocchi questa funzione.
+///
+/// **CONTA ANCHE I MOTORI DENTRO UNA CATENA.** Dal 29/08/2026 un passo può
+/// scrivere `"tool": ["claude-code", "agy"]` invece di un nome solo. Chi legge
+/// solo la stringa vede quei passi come se non chiedessero niente, e il
+/// controllo chiuderebbe in verde senza aver guardato metà dei motori del
+/// flusso: sarebbe il guasto 3 rifatto da capo, con la stessa forma.
 fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
-    graph
+    let mut wanted = BTreeSet::new();
+    for tool in graph
         .steps()
         .iter()
         .filter_map(|step| step.with.as_ref())
         .filter_map(|with| with.get("tool"))
-        .filter_map(|tool| tool.as_str())
-        .map(str::to_owned)
-        .collect()
+    {
+        match tool {
+            Value::String(id) => {
+                wanted.insert(id.clone());
+            }
+            Value::Array(chain) => {
+                wanted.extend(chain.iter().filter_map(Value::as_str).map(str::to_owned));
+            }
+            _ => {}
+        }
+    }
+    wanted
 }
 
 // ── il testo di un passo mentre il passo gira ──────────────────────────

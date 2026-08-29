@@ -134,6 +134,26 @@ impl actions::ToolResolver for Tools {
             )),
         }
     }
+
+    /// La ricetta dichiarata dal descrittore, tradotta nella forma che le azioni
+    /// conoscono. Nessuna interpretazione: ciò che non è scritto non c'è, e chi
+    /// non la dichiara non diventa usabile per indovinamento.
+    fn ask_recipe(&self, id: &str) -> Option<actions::AskRecipe> {
+        let loaded = self
+            .catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?;
+        let ask = loaded.descriptor.ask.as_ref()?;
+        Some(actions::AskRecipe {
+            args: ask.args.clone(),
+            prompt: match ask.prompt {
+                crate::descriptor::PromptPlace::Stdin => actions::PromptVia::Stdin,
+                crate::descriptor::PromptPlace::LastArg => actions::PromptVia::LastArg,
+            },
+            unusable_when: ask.unusable_when.clone(),
+        })
+    }
 }
 
 #[cfg(test)]
