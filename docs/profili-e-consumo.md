@@ -118,3 +118,86 @@ altrove e il secondo no.
 - LiteLLM, chiavi virtuali, tetti e limiti — <https://docs.litellm.ai/docs/proxy/users>
 - Anthropic, conteggio dei token — <https://docs.anthropic.com/en/docs/build-with-claude/token-counting>
 - DeepSeek, cache di contesto e campi del consumo — <https://api-docs.deepseek.com/guides/kv_cache/>
+
+---
+
+# Il seguito del 29/08 sera: l'asimmetria si scioglie
+
+Ieri avevo concluso che una riga di comando con abbonamento «parla col proprio
+fornitore, non da noi», e che perciò il consumo lì non si può contare. **È vero
+solo finché non la si fa passare da noi.**
+
+## Quello che fanno i progetti seri: un punto locale in mezzo
+
+Ne esistono diversi, vivi e usati. Il più maturo — Claude Code Router — è un
+**punto d'accesso locale** verso cui si fa puntare la CLI: da lì dentro si
+decidono fornitori, modelli, account e regole d'instradamento, con **riserve di
+credenziali, rotazione delle chiavi e modelli di ripiego in ordine**. Altri
+(OmniRoute, 9router) fanno la stessa cosa con più fornitori e ripiego che tiene
+conto della quota residua.
+
+La forma è sempre la stessa, ed è banale: **la CLI non sa di essere dirottata.**
+Si cambia una variabile d'ambiente che dice dove sta il servizio, e tutto il
+resto — il suo prompt, i suoi strumenti, il suo modo di lavorare — resta uguale.
+
+**Perché per noi cambia tutto.** Se le chiamate passano da un punto nostro:
+
+- il consumo si conta **esatto**, non «quello che lo strumento si degna di
+  dichiarare»;
+- le quote per profilo diventano possibili davvero — il 10% qui, il 40%
+  riservato là — perché c'è un posto che le può far rispettare;
+- «il modello giusto per il compito» diventa una regola in un file, non un nome
+  scritto dentro un flusso;
+- un fornitore esaurito si aggira passando al successivo, invece di far fallire
+  la corsa.
+
+È lo stesso identico meccanismo che i profili già usano: **spostare una
+variabile d'ambiente invece di modificare lo strumento.** Sailor lo fa già per
+la casa di una CLI; farlo per il suo punto d'accesso è la stessa idea applicata
+un livello più in là.
+
+## I due vincoli che questa strada porta con sé, da dire prima
+
+**1. Non tutto ciò che questi progetti offrono è lecito.** Alcuni si presentano
+come «Claude illimitato e gratis» e «non raggiungerai mai i limiti»: quello è
+aggirare la quota di un fornitore, e vale il vincolo A della ricerca —
+si scarta. Ciò che invece è pienamente legittimo, e abbondante, sono le **quote
+gratuite dichiarate dai fornitori stessi**: al 2026 sono un elenco lungo — un
+grosso quantitativo di token al giorno da alcuni, migliaia di richieste
+giornaliere da altri, un miliardo di token al mese dalla fascia sperimentale di
+un altro ancora. Il patto è quello che dichiarano loro, e usarlo per quello che
+è non ha niente di storto.
+
+**2. Gratis quasi sempre vuol dire che i tuoi dati addestrano il modello.** Su
+alcune fasce è scritto esplicitamente, e su una l'accesso alla quota grossa è
+*condizionato* all'averlo accettato. Per uno strumento che gira dentro il codice
+di qualcuno **questo non può stare nascosto in una configurazione**: è il
+vincolo di chiarezza. Un fornitore, nel catalogo, deve portare scritto cosa fa
+dei dati che gli arrivano, e chi manda un lavoro deve poterlo vedere prima.
+
+Ne discende una cosa concreta sull'instradamento automatico: **non tutti i
+lavori possono andare ovunque.** Un flusso che legge codice privato e uno che
+riassume un documento pubblico non hanno lo stesso insieme di destinazioni
+ammesse. La regola d'instradamento ha bisogno di questa dimensione fin
+dall'inizio, perché aggiungerla dopo vuol dire aver già mandato qualcosa nel
+posto sbagliato.
+
+## Cosa ne discende, e dove si innesta
+
+Il punto 1 della lista di ieri — «leggere il consumo che il motore dichiara» —
+resta valido per gli strumenti che restano fuori, ma **smette di essere il primo
+passo**. Il primo passo diventa il punto locale in mezzo, perché è quello che
+rende esatti tutti i numeri a valle invece di lasciarli alla buona volontà di
+chi risponde.
+
+E il catalogo dei modelli che già esiste (`crates/models`) è il posto dove
+questa roba vive: oggi tiene i modelli con i soli gratuiti accesi. Deve tenere
+anche **da quale fornitore**, **con quale quota**, **a che patto sui dati**, e
+**quanto ne resta**.
+
+## Fonti del seguito
+
+- Claude Code Router — <https://github.com/musistudio/claude-code-router>
+- OmniRoute — <https://github.com/diegosouzapw/OmniRoute>
+- Le fasce gratuite permanenti, confronto 2026 — <https://openrouter.ai/blog/tutorials/free-llm-apis-compared/>
+- Elenco mantenuto delle interfacce gratuite — <https://github.com/cheahjs/free-llm-api-resources>
