@@ -33,46 +33,36 @@ sviluppa. Da indagare seriamente, e le due domande sono queste:
 **Un nodo connesso, non codice nostro.** Vale per la parte di finestra e per
 l'orchestrazione: se esiste un progetto vivo che fa quel pezzo, si collega.
 
-**Il progetto è Orca.** Theo, 29/08/2026. Misurato lo stesso giorno:
+*Domanda aperta, e resta aperta*: quale progetto vivo si può collegare per la
+parte di finestra. **Non è Orca** — il 29/08/2026 era stato scritto qui che lo
+fosse, per un fraintendimento: Theo aveva nominato Orca come *esempio di prodotto
+che integra un browser*, non come cosa da unire. Orca non gli piace, ed è il
+motivo per cui Sailor esiste.
 
-| | |
-|---|---|
-| repo | `stablyai/orca`, **pubblico, licenza MIT** |
-| peso | 56.742 stelle, ultimo aggiornamento **lo stesso giorno** |
-| com'è fatta | Electron + **React**, `xterm` per i terminali, `monaco` per l'editor |
-| cosa ha già | schede, terminali, worktree, e un **browser dentro** (`agent-browser`) |
-| punti d'estensione | **nessuno trovato** nel pacchetto: sarebbe un fork, non un innesto |
+L'innesto però c'è già, qualunque sia il progetto: le azioni sono un registro, e
+un progetto esterno si collega come **azione nuova** — la stessa forma con cui un
+motore nuovo si aggiunge scrivendo un descrittore. Non serve inventare un
+meccanismo, serve scegliere il progetto.
 
-**Il fatto che decide**: la finestra di Sailor è Tauri + React + `@xyflow/react`,
-Orca è Electron + React. **Il livello che disegna è lo stesso** — la tela dei
-flussi si sposta quasi com'è. A cambiare è il guscio.
+## 4. Un browser dentro, come strumento di verifica
 
-E la parte più grossa del piano sparirebbe: i terminali non si costruiscono,
-ci sono già — e con essi il browser che Theo voleva «in futuro». Il descrittore
-`orca-terminal`, oggi dichiarato e non ascoltato, smetterebbe di essere una
-promessa.
+Non è una comodità: è **l'oracolo del lavoro sull'interfaccia**. Quando si
+disegna un prodotto in React, il browser dentro serve a *vedere* il risultato —
+ed è l'unico modo di giudicarlo.
 
-**Le due strade, e la scelta è di Theo:**
+Orca, che ne ha uno integrato, è **l'esempio citato e nient'altro**: a Theo non
+piace, e Sailor nasce da lì.
 
-1. **La tela dentro Orca.** Sailor resta il motore — un binario che Orca chiama —
-   e la finestra Tauri sparisce. Si ottiene tutto subito: schede, terminali,
-   browser, la rifinitura di un progetto con 56.000 stelle. Il prezzo è che
-   Sailor diventa un pannello dentro l'applicazione di qualcun altro, e che un
-   fork di un progetto vivo si porta dietro le fusioni per sempre — a meno di
-   contribuire a monte, che è la variante seria della stessa strada.
-2. **Orca come nodo connesso.** Non si fonde niente: Sailor la guida dalla sua
-   riga di comando, che è la via già dichiarata nei descrittori d'innesco. Costa
-   poco e non dà né il browser né la finestra migliore.
+Questa direzione ha già il suo vincolo permanente, e non è nuovo: **lo schermo è
+il giudice** — «una regola di progetto che non si può verificare guardando
+un'immagine è un'opinione». Quel vincolo nacque da due difetti che né i tipi né
+le prove avevano visto, fra cui un elemento disegnato dello stesso colore dello
+sfondo. Finché un flusso che tocca la finestra non può guardare cosa ha
+prodotto, quel vincolo resta una frase: nessun passo può rispettarlo.
 
-La prima contraddice «Orca andrà a morire» del 28/08 — e va bene, perché quella
-frase nasceva dal non sapere che i sorgenti fossero aperti. **Nessuna delle due
-si decide stanotte**: prima la benzina.
-
-## 4. Un browser dentro, come fa Orca
-
-Quando ci saranno i terminali: chi guarda un flusso vede anche il browser che si
-apre. È la stessa idea della tracciabilità — vedere cosa è successo, non che sia
-successo — applicata a ciò che un flusso fa fuori dalla macchina.
+E si lega al punto 2: un flusso che sviluppa l'interfaccia **deve** poter
+aprire ciò che ha appena scritto e confrontarlo. Senza, il flusso di sviluppo
+sull'interfaccia è cieco esattamente dove il prodotto si gioca.
 
 ## Cosa viene prima di tutto questo
 
