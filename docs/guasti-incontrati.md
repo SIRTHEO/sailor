@@ -30,10 +30,11 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 9 | 28/08 | Un elemento grafico invisibile: disegnato dello stesso colore dello sfondo | Solo da un'immagine dello schermo. Né i tipi né le prove lo vedevano | Lo schermo come oracolo: un'immagine confrontata, non solo i tipi | **chiuso** — quel caso |
 | 10 | 28/08 | La stessa lista di componenti scritta in due punti del programma | Si sono disallineati in un'ora, nello stesso giorno di lavoro | Una sola fonte, e le altre la chiedono invece di ricopiarla | **aperto** |
 | 11 | 29/08 | In modalità viva, un errore di compilazione in un crate qualunque **uccide la finestra** invece di lasciarla all'ultima versione buona | La finestra è sparita mentre un altro cantiere aveva un crate a metà | La finestra sopravvive a una compilazione fallita, e lo dice invece di chiudersi | **aperto** |
+| 12 | 29/08 | `pgrep` dentro il perimetro **non vede i processi e risponde vuoto**, senza errore | Una sorveglianza ha detto «nessun flusso in esecuzione» mentre due giravano | Chiedere lo stato al deposito, non al sistema operativo: chi è vivo lo dice il dato, non un comando che il perimetro può zittire | **chiuso** — sorveglianza riscritta |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
-**Sei su undici si sono visti solo eseguendo o guardando.** Non dal codice, non
+**Sette su dodici si sono visti solo eseguendo o guardando.** Non dal codice, non
 dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.

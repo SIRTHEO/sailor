@@ -64,7 +64,74 @@ pub const SHELL_CHECK_ACTION: &str = "shell_check";
 /// `sailor flow`, che è l'unico punto dove `toolbox` e le azioni si incontrano.
 pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(EXTERNAL_ENGINE_ACTION, ExternalEngineAction::new());
-    registry.register(SHELL_CHECK_ACTION, ShellCheckAction);
+    registry.register(SHELL_CHECK_ACTION, ShellCheckAction::new());
+}
+
+// ── chi guarda il testo mentre esce ─────────────────────────────────────
+
+/// Da quale delle due pipe del figlio viene un pezzo di testo.
+///
+/// La primitiva non le tratta diversamente — accumula l'una e l'altra allo
+/// stesso modo — ma consegnarle a chi guarda senza dire quale sia quale
+/// rimetterebbe l'opacità da un'altra parte: un errore mescolato all'uscita
+/// normale e indistinguibile da lei non è più visibile di prima.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pipe {
+    Stdout,
+    Stderr,
+}
+
+impl Pipe {
+    /// Il nome breve della cosa, non la sua presentazione: chi stampa decide
+    /// come mostrarlo, ma non deve reinventare come si chiama.
+    pub fn name(self) -> &'static str {
+        match self {
+            Pipe::Stdout => "out",
+            Pipe::Stderr => "err",
+        }
+    }
+}
+
+/// Chi riceve i pezzi di uscita di un figlio **mentre** escono, invece che
+/// quando il figlio è morto.
+///
+/// **SI CONSEGNANO BYTE GREZZI, E LA SCELTA È DICHIARATA.** Una lettura si
+/// ferma dove capita, anche a metà di una sequenza UTF-8 multibyte. Decodificare
+/// qui sostituirebbe l'accento spezzato al bordo con un carattere di
+/// sostituzione — un guasto invisibile e permanente — oppure obbligherebbe
+/// questo crate a trattenere i byte incompleti fino al pezzo dopo, cioè a
+/// reintrodurre in piccolo il ritardo che il meccanismo esiste per togliere. I
+/// byte passano di peso, nel loro ordine e integri: chi guarda li riversa su un
+/// descrittore e la sequenza si ricompone da sé, oppure li accumula e decodifica
+/// quando gli serve. La decodifica è di chi guarda, che è l'unico a sapere cosa
+/// vuole farne.
+///
+/// `chunk` non deve bloccare a lungo né panicare: lo chiamano i due fili che
+/// drenano le pipe, e un filo fermo è un figlio bloccato in scrittura.
+pub trait LiveSink: Send + Sync {
+    fn chunk(&self, pipe: Pipe, bytes: &[u8]);
+}
+
+/// Una closure basta: un destinatario semplice non deve costare un tipo.
+impl<F> LiveSink for F
+where
+    F: Fn(Pipe, &[u8]) + Send + Sync,
+{
+    fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
+        self(pipe, bytes)
+    }
+}
+
+/// Dato l'identificativo di un passo, a chi consegnare i suoi pezzi.
+///
+/// **PERCHÉ DUE LIVELLI E NON UNO.** La primitiva che legge le pipe non sa cosa
+/// sia un passo e non deve saperlo: sarebbe politica dentro il crate che tocca
+/// il mondo. Chi compone il programma sa entrambe le cose e fa da giunto — è lì
+/// che si decide dove il testo va a finire, non qui. Ed è il punto dove un
+/// secondo consumatore potrà attaccarsi domani, con una fabbrica che ne alimenta
+/// due, senza che una riga di questo file cambi.
+pub trait StepSinks: Send + Sync {
+    fn sink_for(&self, step: &str) -> Arc<dyn LiveSink>;
 }
 
 // ── la primitiva: imporre un limite di durata ───────────────────────────
@@ -89,20 +156,52 @@ pub enum RunOutcome {
 /// binari. Il tetto è un ciclo di `try_wait` con `kill` alla scadenza, e due
 /// fili drenano le pipe man mano — un figlio che le riempie prima che
 /// qualcuno le legga resterebbe bloccato in scrittura per sempre.
-pub fn run_with_timeout(mut cmd: Command, limit: Duration) -> RunOutcome {
+pub fn run_with_timeout(cmd: Command, limit: Duration) -> RunOutcome {
+    run_with_timeout_watched(cmd, limit, None)
+}
+
+/// Come `run_with_timeout`, ma consegna a `sink` ogni pezzo di stdout e di
+/// stderr **appena arriva**, senza aspettare che il figlio muoia. Con `None` il
+/// comportamento è quello di sempre, byte per byte.
+///
+/// **AFFIANCATA, NON UN PARAMETRO IN PIÙ SU QUELLA DI PRIMA.** Altri crate
+/// chiamano `run_with_timeout`: cambiarle la firma per un dato che a loro non
+/// serve li costringerebbe a scrivere `None` per non chiedere niente, e una
+/// promessa additiva che rompe i chiamanti non è additiva.
+pub fn run_with_timeout_watched(
+    mut cmd: Command,
+    limit: Duration,
+    sink: Option<&dyn LiveSink>,
+) -> RunOutcome {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(error) => return RunOutcome::SpawnFailed(error.to_string()),
     };
-    drain_and_wait(child.stdout.take(), child.stderr.take(), &mut child, limit)
+    drain_and_wait(
+        child.stdout.take(),
+        child.stderr.take(),
+        &mut child,
+        limit,
+        sink,
+    )
 }
 
 /// Come `run_with_timeout`, ma scrive un testo sullo standard input del
 /// figlio subito dopo averlo avviato, poi lo chiude — un motore che legge il
 /// proprio ingresso da lì (come lo script di prova per OpenRouter) altrimenti
 /// resterebbe in attesa di un EOF che non arriva mai.
-pub fn run_with_timeout_and_stdin(mut cmd: Command, stdin: &[u8], limit: Duration) -> RunOutcome {
+pub fn run_with_timeout_and_stdin(cmd: Command, stdin: &[u8], limit: Duration) -> RunOutcome {
+    run_with_timeout_and_stdin_watched(cmd, stdin, limit, None)
+}
+
+/// La gemella guardata di `run_with_timeout_and_stdin`, per la stessa ragione.
+pub fn run_with_timeout_and_stdin_watched(
+    mut cmd: Command,
+    stdin: &[u8],
+    limit: Duration,
+    sink: Option<&dyn LiveSink>,
+) -> RunOutcome {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -115,7 +214,44 @@ pub fn run_with_timeout_and_stdin(mut cmd: Command, stdin: &[u8], limit: Duratio
         // `pipe` esce di scope qui e chiude il descrittore: il figlio vede
         // l'EOF anche se non ha altro da leggere.
     }
-    drain_and_wait(child.stdout.take(), child.stderr.take(), &mut child, limit)
+    drain_and_wait(
+        child.stdout.take(),
+        child.stderr.take(),
+        &mut child,
+        limit,
+        sink,
+    )
+}
+
+/// Svuota una pipe fino a EOF, accumulando tutto e consegnando ogni pezzo a chi
+/// guarda **una volta sola**.
+///
+/// **A PEZZI E NON `read_to_end`, ED È TUTTA LA DIFFERENZA.** Con `read_to_end`
+/// i byte esistevano in memoria appena arrivati ma nessuno poteva vederli prima
+/// del `join`, cioè prima della morte del figlio: non c'era un buffer cattivo da
+/// togliere, mancava il destinatario. L'accumulo resta identico e **non dipende
+/// dalla consegna**: chi guarda non può far mancare né raddoppiare ciò che
+/// l'esito riporta.
+fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<u8> {
+    let mut all = Vec::new();
+    let mut buf = [0u8; 8192];
+    loop {
+        match pipe.read(&mut buf) {
+            Ok(0) => break,
+            Ok(read) => {
+                all.extend_from_slice(&buf[..read]);
+                if let Some(sink) = sink {
+                    sink.chunk(which, &buf[..read]);
+                }
+            }
+            // Come faceva `read_to_end`: un segnale arrivato durante la lettura
+            // non è la fine dell'uscita, e trattarlo così troncherebbe il testo
+            // di un figlio sano.
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        }
+    }
+    all
 }
 
 fn drain_and_wait(
@@ -123,44 +259,46 @@ fn drain_and_wait(
     stderr: Option<std::process::ChildStderr>,
     child: &mut std::process::Child,
     limit: Duration,
+    sink: Option<&dyn LiveSink>,
 ) -> RunOutcome {
     let mut out_pipe = stdout.expect("stdout è piped");
     let mut err_pipe = stderr.expect("stderr è piped");
-    let out_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = out_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let err_thread = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = err_pipe.read_to_end(&mut buf);
-        buf
-    });
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if start.elapsed() >= limit {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
+    // `scope` e non `spawn`: i fili prendono in prestito il destinatario, che
+    // vive nello stack di chi ha chiamato. Con fili staccati l'API pretenderebbe
+    // un `'static` — cioè un `Arc` — da chiunque voglia guardare, compresa una
+    // prova che cattura una variabile locale.
+    std::thread::scope(|scope| {
+        let out_thread = scope.spawn(move || drain(&mut out_pipe, Pipe::Stdout, sink));
+        let err_thread = scope.spawn(move || drain(&mut err_pipe, Pipe::Stderr, sink));
+        let start = Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) => {
+                    if start.elapsed() >= limit {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        break None;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
                 }
-                std::thread::sleep(Duration::from_millis(50));
+                Err(_) => break None,
             }
-            Err(_) => break None,
+        };
+        // I `join` restano dopo la morte del figlio: è così che le pipe si
+        // chiudono e i fili finiscono. Ciò che era già stato consegnato prima
+        // dell'uccisione è già arrivato a chi guarda, e resta anche qui dentro.
+        let stdout = out_thread.join().unwrap_or_default();
+        let stderr = err_thread.join().unwrap_or_default();
+        match status {
+            Some(status) => RunOutcome::Finished {
+                status,
+                stdout,
+                stderr,
+            },
+            None => RunOutcome::TimedOut,
         }
-    };
-    let stdout = out_thread.join().unwrap_or_default();
-    let stderr = err_thread.join().unwrap_or_default();
-    match status {
-        Some(status) => RunOutcome::Finished {
-            status,
-            stdout,
-            stderr,
-        },
-        None => RunOutcome::TimedOut,
-    }
+    })
 }
 
 // ── invocare un motore esterno ───────────────────────────────────────────
@@ -205,6 +343,19 @@ pub enum EngineResult {
 }
 
 pub fn invoke_external_engine(invocation: &EngineInvocation) -> EngineResult {
+    invoke_external_engine_watched(invocation, None)
+}
+
+/// Come `invoke_external_engine`, ma passa il destinatario alla primitiva.
+///
+/// **NESSUN CAMPO NUOVO IN `EngineInvocation`**: chi la costruisce lo fa con un
+/// letterale completo (lo fa `notte`), e un campo in più romperebbe quei
+/// letterali. Il destinatario è un argomento della chiamata, non un pezzo della
+/// ricetta: non descrive *cosa* eseguire, descrive chi sta guardando.
+pub fn invoke_external_engine_watched(
+    invocation: &EngineInvocation,
+    sink: Option<&dyn LiveSink>,
+) -> EngineResult {
     let mut cmd = Command::new(&invocation.bin);
     cmd.args(&invocation.args);
     for (key, value) in &invocation.env {
@@ -214,10 +365,10 @@ pub fn invoke_external_engine(invocation: &EngineInvocation) -> EngineResult {
         cmd.current_dir(workdir);
     }
     let outcome = match &invocation.stdin {
-        Some(bytes) => run_with_timeout_and_stdin(cmd, bytes, invocation.timeout),
+        Some(bytes) => run_with_timeout_and_stdin_watched(cmd, bytes, invocation.timeout, sink),
         None => {
             cmd.stdin(Stdio::null());
-            run_with_timeout(cmd, invocation.timeout)
+            run_with_timeout_watched(cmd, invocation.timeout, sink)
         }
     };
     match outcome {
@@ -263,12 +414,21 @@ pub enum CheckResult {
 /// Esegue `command` con `sh -c`: la verifica di un compito è testo di shell
 /// scritto da chi lo definisce, non un binario risolto a monte.
 pub fn run_shell_check(invocation: &CheckInvocation) -> CheckResult {
+    run_shell_check_watched(invocation, None)
+}
+
+/// Come `run_shell_check`, ma passa il destinatario alla primitiva. Vale la
+/// stessa ragione della gemella: `CheckInvocation` non guadagna campi.
+pub fn run_shell_check_watched(
+    invocation: &CheckInvocation,
+    sink: Option<&dyn LiveSink>,
+) -> CheckResult {
     let mut cmd = Command::new("sh");
     cmd.arg("-c").arg(&invocation.command).stdin(Stdio::null());
     for (key, value) in &invocation.env {
         cmd.env(key, value);
     }
-    match run_with_timeout(cmd, invocation.timeout) {
+    match run_with_timeout_watched(cmd, invocation.timeout, sink) {
         RunOutcome::Finished { status, stderr, .. } => {
             if status.success() {
                 CheckResult::Passed
@@ -304,6 +464,24 @@ pub trait ToolResolver: Send + Sync {
     /// motivo per cui non si può usare, scritto per una persona: quel testo
     /// finisce dentro il passo rosso, ed è tutto ciò che chi legge avrà.
     fn resolve(&self, id: &str) -> Result<String, String>;
+}
+
+/// Il destinatario del passo in corso, se qualcuno sta guardando.
+///
+/// **PERCHÉ L'IDENTIFICATIVO ARRIVA DALLO STATO CONDIVISO.** `Action::execute`
+/// non riceve il passo, e cambiargli la firma toccherebbe ogni implementatore in
+/// cinque crate per un dato che serve a uno solo. L'esecutore lo scrive in
+/// `SharedState` sotto una chiave riservata (`flow::CURRENT_STEP`) prima di ogni
+/// azione. Senza guardiano, o senza quella chiave, non si guarda: un testo
+/// consegnato senza sapere di chi è sarebbe peggio del silenzio, perché in un
+/// grafo con due passi vivi nessuno saprebbe attribuirlo.
+fn sink_for_step(
+    watcher: &Option<Arc<dyn StepSinks>>,
+    shared: &SharedState,
+) -> Option<Arc<dyn LiveSink>> {
+    let watcher = watcher.as_ref()?;
+    let step = shared.get(flow::CURRENT_STEP)?.as_str()?;
+    Some(watcher.sink_for(step))
 }
 
 /// Gli esiti di fallimento che un motore esterno può produrre.
@@ -558,6 +736,7 @@ struct EngineOutcomeJson {
 /// prima. Ma va scritto, e vale solo per l'esito nominato.
 pub struct ExternalEngineAction {
     tools: Option<Arc<dyn ToolResolver>>,
+    watcher: Option<Arc<dyn StepSinks>>,
 }
 
 impl Default for ExternalEngineAction {
@@ -570,7 +749,10 @@ impl ExternalEngineAction {
     /// Senza risolutore: un passo che chiede uno strumento per identificativo
     /// riceve un errore che dice come si ripara, invece di un binario indovinato.
     pub fn new() -> Self {
-        Self { tools: None }
+        Self {
+            tools: None,
+            watcher: None,
+        }
     }
 
     /// Con un risolutore: `"tool": "codex"` diventa il percorso che vale
@@ -578,7 +760,17 @@ impl ExternalEngineAction {
     pub fn resolving_with(resolver: impl ToolResolver + 'static) -> Self {
         Self {
             tools: Some(Arc::new(resolver)),
+            watcher: None,
         }
+    }
+
+    /// Con qualcuno che guarda: il testo del motore gli arriva mentre esce,
+    /// marcato col passo che lo sta producendo. `None` vuol dire che nessuno
+    /// guarda, ed è il valore con cui l'azione nasce — chi la registra decide,
+    /// non questo crate.
+    pub fn watched_by(mut self, watcher: Option<Arc<dyn StepSinks>>) -> Self {
+        self.watcher = watcher;
+        self
     }
 
     /// Chi eseguire. `bin` e `tool` non convivono: due risposte alla stessa
@@ -618,8 +810,9 @@ impl Action for ExternalEngineAction {
     fn execute(
         &self,
         input: &Value,
-        _shared: &mut SharedState,
+        shared: &mut SharedState,
     ) -> Result<ActionOutcome, ActionError> {
+        let live = sink_for_step(&self.watcher, shared);
         let input = reference::resolve_references(input)?;
         // La forma si tiene anche com'era scritta: è quel testo, non una sua
         // riscrittura, che deve comparire nel prompt.
@@ -645,7 +838,7 @@ impl Action for ExternalEngineAction {
             timeout: Duration::from_secs(seconds),
         };
         let shape = spec.answer_shape.as_ref();
-        let outcome = match invoke_external_engine(&invocation) {
+        let outcome = match invoke_external_engine_watched(&invocation, live.as_deref()) {
             EngineResult::Ok { stdout, stderr } => match shape {
                 Some(shape) => return shaped_answer(shape, &stdout)
                     .map(|answer| ActionOutcome::Went(json!({"status": "ok", "answer": answer}))),
@@ -751,14 +944,33 @@ struct CheckSpec {
 /// Il comando è testo di shell e viene eseguito; una risposta di modello
 /// incollata lì dentro è un comando scritto da chi ha risposto. Dentro una
 /// variabile d'ambiente resta un dato, e il comando la legge fra virgolette.
-pub struct ShellCheckAction;
+#[derive(Default)]
+pub struct ShellCheckAction {
+    watcher: Option<Arc<dyn StepSinks>>,
+}
+
+impl ShellCheckAction {
+    /// Senza nessuno che guarda: il testo della verifica si vede solo alla fine,
+    /// come è sempre stato.
+    pub fn new() -> Self {
+        Self { watcher: None }
+    }
+
+    /// Con qualcuno che guarda. Vale per una verifica quanto per un motore: una
+    /// suite di prove che gira dieci minuti è cieca esattamente come lui.
+    pub fn watched_by(mut self, watcher: Option<Arc<dyn StepSinks>>) -> Self {
+        self.watcher = watcher;
+        self
+    }
+}
 
 impl Action for ShellCheckAction {
     fn execute(
         &self,
         input: &Value,
-        _shared: &mut SharedState,
+        shared: &mut SharedState,
     ) -> Result<ActionOutcome, ActionError> {
+        let live = sink_for_step(&self.watcher, shared);
         let input = reference::resolve_references(input)?;
         let spec: CheckSpec = serde_json::from_value(input)
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
@@ -770,7 +982,7 @@ impl Action for ShellCheckAction {
             env: spec.env,
             timeout: Duration::from_secs(seconds),
         };
-        let status = match run_shell_check(&invocation) {
+        let status = match run_shell_check_watched(&invocation, live.as_deref()) {
             CheckResult::Passed => "passed",
             CheckResult::Failed { code, stderr } => {
                 if !tolerates(&spec.accept, "failed") {
@@ -869,6 +1081,295 @@ mod tests {
             }
             _ => panic!("cat doveva rispondere"),
         }
+    }
+
+    // ── il testo consegnato mentre il figlio è vivo ──────────────────
+
+    /// Un destinatario che segna **quando** ha ricevuto ogni pezzo: è l'istante,
+    /// non il contenuto, la cosa che distingue «consegnato mentre girava» da
+    /// «consegnato tutto alla fine».
+    struct Recorder {
+        start: Instant,
+        chunks: std::sync::Mutex<Vec<(Duration, Pipe, Vec<u8>)>>,
+    }
+
+    impl Recorder {
+        fn new() -> Self {
+            Self {
+                start: Instant::now(),
+                chunks: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn seen(&self) -> Vec<(Duration, Pipe, Vec<u8>)> {
+            self.chunks.lock().expect("nessuno panica qui").clone()
+        }
+
+        /// Tutti i byte di una pipe, riattaccati nell'ordine di consegna.
+        fn joined(&self, want: Pipe) -> Vec<u8> {
+            self.seen()
+                .into_iter()
+                .filter(|(_, pipe, _)| *pipe == want)
+                .flat_map(|(_, _, bytes)| bytes)
+                .collect()
+        }
+    }
+
+    impl LiveSink for Recorder {
+        fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
+            self.chunks
+                .lock()
+                .expect("nessuno panica qui")
+                .push((self.start.elapsed(), pipe, bytes.to_vec()));
+        }
+    }
+
+    /// LA PROVA CHE CONTA, E CHE COL CODICE DI PRIMA SAREBBE ROSSA: il comando
+    /// stampa, dorme quattro secondi, stampa ancora. Non si guarda che alla
+    /// fine il testo ci sia — sarebbe verde anche consegnando tutto in blocco
+    /// alla morte del figlio — si guarda **quando** è arrivato il primo pezzo.
+    ///
+    /// Margini larghi di proposito: quattro secondi di sonno contro una soglia
+    /// di due, perché su una macchina carica la prova non diventi rossa a caso.
+    #[test]
+    fn the_first_chunk_arrives_while_the_child_is_still_alive() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("echo primo; sleep 4; echo secondo");
+        let recorder = Recorder::new();
+        let start = Instant::now();
+        let outcome = run_with_timeout_watched(cmd, secs(30), Some(&recorder));
+        let whole = start.elapsed();
+        assert!(
+            whole >= secs(4),
+            "il comando doveva davvero durare quattro secondi, altrimenti la \
+             misura non distingue niente: {whole:?}"
+        );
+        let seen = recorder.seen();
+        let (when, pipe, bytes) = seen.first().cloned().expect("qualcosa doveva arrivare");
+        assert_eq!(pipe, Pipe::Stdout);
+        assert!(
+            String::from_utf8_lossy(&bytes).contains("primo"),
+            "il primo pezzo doveva essere «primo»: {:?}",
+            String::from_utf8_lossy(&bytes)
+        );
+        assert!(
+            when < secs(2),
+            "il primo pezzo è arrivato dopo {when:?}, cioè con la fine del \
+             comando e non mentre girava"
+        );
+        match outcome {
+            RunOutcome::Finished { stdout, .. } => {
+                let all = String::from_utf8_lossy(&stdout).into_owned();
+                assert!(all.contains("primo") && all.contains("secondo"), "{all}");
+            }
+            _ => panic!("doveva finire in tempo"),
+        }
+    }
+
+    /// Chi guarda deve sapere da quale delle due pipe viene il testo: un errore
+    /// indistinguibile dall'uscita normale non è più visibile di prima.
+    #[test]
+    fn each_chunk_says_which_pipe_produced_it() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("echo di-fuori; echo di-errore 1>&2");
+        let recorder = Recorder::new();
+        let _ = run_with_timeout_watched(cmd, secs(10), Some(&recorder));
+        let out = String::from_utf8_lossy(&recorder.joined(Pipe::Stdout)).into_owned();
+        let err = String::from_utf8_lossy(&recorder.joined(Pipe::Stderr)).into_owned();
+        assert!(out.contains("di-fuori"), "stdout consegnato: {out:?}");
+        assert!(err.contains("di-errore"), "stderr consegnato: {err:?}");
+        assert!(!out.contains("di-errore"), "stderr finito su stdout: {out:?}");
+        assert!(!err.contains("di-fuori"), "stdout finito su stderr: {err:?}");
+    }
+
+    /// NIENTE PERSO E NIENTE DOPPIO: la somma dei pezzi consegnati è, byte per
+    /// byte, l'uscita che l'esito riporta. Molte righe apposta, perché con una
+    /// sola la pipe si svuoterebbe in una lettura e la prova non direbbe nulla
+    /// su cosa succede quando i pezzi sono tanti.
+    #[test]
+    fn the_delivered_chunks_add_up_to_the_accumulated_output() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
+            .arg("i=0; while [ $i -lt 500 ]; do echo \"riga $i di uscita normale\"; i=$((i+1)); done; echo problema 1>&2");
+        let recorder = Recorder::new();
+        match run_with_timeout_watched(cmd, secs(30), Some(&recorder)) {
+            RunOutcome::Finished { stdout, stderr, .. } => {
+                assert_eq!(recorder.joined(Pipe::Stdout), stdout);
+                assert_eq!(recorder.joined(Pipe::Stderr), stderr);
+                assert!(!stdout.is_empty(), "l'uscita non doveva essere vuota");
+            }
+            _ => panic!("doveva finire in tempo"),
+        }
+    }
+
+    /// IL TETTO CONTINUA A UCCIDERE, e il testo già consegnato prima
+    /// dell'uccisione non sparisce né arriva due volte.
+    #[test]
+    fn what_was_said_before_the_kill_is_delivered_once() {
+        let mut cmd = Command::new("sh");
+        // `exec` non è ornamento: senza, `sh` resta il figlio e `sleep` diventa
+        // un nipote che tiene aperta la pipe anche dopo l'uccisione del padre —
+        // e allora si aspetta il nipote, non il tetto. È una proprietà della
+        // shell che c'era già prima di questo lavoro e che questa prova non ha
+        // il compito di giudicare: qui si misura il tetto, quindi si fa in modo
+        // che il processo ucciso sia davvero l'unico che scrive.
+        cmd.arg("-c").arg("echo vivo; exec sleep 60");
+        let recorder = Recorder::new();
+        let start = Instant::now();
+        let outcome = run_with_timeout_watched(cmd, secs(3), Some(&recorder));
+        assert!(matches!(outcome, RunOutcome::TimedOut));
+        assert!(
+            start.elapsed() < secs(30),
+            "il tetto deve troncare: {:?}",
+            start.elapsed()
+        );
+        let out = String::from_utf8_lossy(&recorder.joined(Pipe::Stdout)).into_owned();
+        assert_eq!(
+            out.matches("vivo").count(),
+            1,
+            "«vivo» doveva arrivare una volta sola: {out:?}"
+        );
+    }
+
+    /// CHI NON GUARDA OTTIENE ESATTAMENTE QUELLO DI PRIMA: stesso comando, una
+    /// volta col destinatario e una senza, e le due uscite accumulate coincidono
+    /// byte per byte. La consegna in diretta non è un ramo che cambia l'esito.
+    #[test]
+    fn without_a_watcher_the_outcome_is_byte_for_byte_the_same() {
+        let command = "echo prima; echo dopo; echo lamentela 1>&2";
+        let mut watched_cmd = Command::new("sh");
+        watched_cmd.arg("-c").arg(command);
+        let recorder = Recorder::new();
+        let watched = run_with_timeout_watched(watched_cmd, secs(10), Some(&recorder));
+        let mut plain_cmd = Command::new("sh");
+        plain_cmd.arg("-c").arg(command);
+        let plain = run_with_timeout(plain_cmd, secs(10));
+        match (watched, plain) {
+            (
+                RunOutcome::Finished {
+                    status: watched_status,
+                    stdout: watched_out,
+                    stderr: watched_err,
+                },
+                RunOutcome::Finished {
+                    status: plain_status,
+                    stdout: plain_out,
+                    stderr: plain_err,
+                },
+            ) => {
+                assert_eq!(watched_status.code(), plain_status.code());
+                assert_eq!(watched_out, plain_out);
+                assert_eq!(watched_err, plain_err);
+                assert_eq!(
+                    String::from_utf8_lossy(&plain_out).trim(),
+                    "prima\ndopo",
+                    "l'uscita intera deve restare nell'esito"
+                );
+                assert_eq!(String::from_utf8_lossy(&plain_err).trim(), "lamentela");
+            }
+            _ => panic!("tutti e due dovevano finire in tempo"),
+        }
+    }
+
+    /// Il destinatario può essere una closure: chi ne ha uno semplice non deve
+    /// dichiarare un tipo per averlo.
+    #[test]
+    fn a_closure_is_a_watcher_too() {
+        let seen = std::sync::Mutex::new(Vec::new());
+        let sink = |pipe: Pipe, bytes: &[u8]| {
+            seen.lock()
+                .expect("nessuno panica qui")
+                .push((pipe, bytes.to_vec()));
+        };
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("echo per-la-closure");
+        let _ = run_with_timeout_watched(cmd, secs(10), Some(&sink));
+        let seen = seen.into_inner().expect("nessuno panica qui");
+        assert!(seen
+            .iter()
+            .any(|(pipe, bytes)| *pipe == Pipe::Stdout
+                && String::from_utf8_lossy(bytes).contains("per-la-closure")));
+    }
+
+    /// DI QUALE PASSO È IL TESTO: l'azione chiede il destinatario alla fabbrica
+    /// nominando il passo che lo `SharedState` le porta, e quello che consegna è
+    /// ciò che il motore ha detto.
+    #[test]
+    fn the_action_asks_the_factory_for_the_step_it_is_running() {
+        #[derive(Default)]
+        struct Fabbrica {
+            asked: std::sync::Mutex<Vec<String>>,
+            said: std::sync::Mutex<Vec<u8>>,
+        }
+
+        struct Ramo(Arc<Fabbrica>);
+
+        impl LiveSink for Ramo {
+            fn chunk(&self, _pipe: Pipe, bytes: &[u8]) {
+                self.0
+                    .said
+                    .lock()
+                    .expect("nessuno panica qui")
+                    .extend_from_slice(bytes);
+            }
+        }
+
+        /// La fabbrica sta dietro un `Arc` perché la prova deve poter leggere
+        /// ciò che ha registrato dopo che l'azione ha finito con lei.
+        struct FabbricaArc(Arc<Fabbrica>);
+
+        impl StepSinks for FabbricaArc {
+            fn sink_for(&self, step: &str) -> Arc<dyn LiveSink> {
+                self.0
+                    .asked
+                    .lock()
+                    .expect("nessuno panica qui")
+                    .push(step.to_owned());
+                Arc::new(Ramo(self.0.clone()))
+            }
+        }
+
+        let fabbrica = Arc::new(Fabbrica::default());
+        let action = ExternalEngineAction::new()
+            .watched_by(Some(Arc::new(FabbricaArc(fabbrica.clone())) as Arc<dyn StepSinks>));
+        let mut shared = SharedState::new();
+        shared.insert(flow::CURRENT_STEP.to_owned(), json!("il-passo-che-parla"));
+        let outcome = action
+            .execute(
+                &json!({"bin": "sh", "args": ["-c", "echo detto-dal-motore"], "timeout_secs": 10}),
+                &mut shared,
+            )
+            .expect("il passo doveva riuscire");
+        assert!(matches!(outcome, ActionOutcome::Went(_)));
+        assert_eq!(
+            *fabbrica.asked.lock().expect("nessuno panica qui"),
+            vec!["il-passo-che-parla".to_owned()]
+        );
+        let said = String::from_utf8_lossy(&fabbrica.said.lock().expect("nessuno panica qui"))
+            .into_owned();
+        assert!(said.contains("detto-dal-motore"), "consegnato: {said:?}");
+    }
+
+    /// Senza la chiave del passo nello stato condiviso non si consegna niente:
+    /// un testo che nessuno sa attribuire è peggio del silenzio.
+    #[test]
+    fn no_step_id_means_nobody_is_asked() {
+        struct Mai;
+
+        impl StepSinks for Mai {
+            fn sink_for(&self, _step: &str) -> Arc<dyn LiveSink> {
+                panic!("non doveva essere chiesto nessun destinatario");
+            }
+        }
+
+        let action = ExternalEngineAction::new().watched_by(Some(Arc::new(Mai) as Arc<dyn StepSinks>));
+        let mut shared = SharedState::new();
+        action
+            .execute(
+                &json!({"bin": "sh", "args": ["-c", "echo muto"], "timeout_secs": 10}),
+                &mut shared,
+            )
+            .expect("il passo doveva riuscire lo stesso");
     }
 
     // ── invoke_external_engine ───────────────────────────────────────
@@ -1393,7 +1894,7 @@ mod tests {
 
     #[test]
     fn the_shell_check_action_reads_its_json_input() {
-        let action = ShellCheckAction;
+        let action = ShellCheckAction::new();
         let input = json!({"command": "true", "timeout_secs": 5});
         let mut shared = SharedState::new();
         let ActionOutcome::Went(output) = action.execute(&input, &mut shared).unwrap() else {
@@ -1452,7 +1953,7 @@ mod tests {
                 "env": {"VERDICT": {"$from": "/stdout"}},
                 "timeout_secs": 5
             });
-            ShellCheckAction
+            ShellCheckAction::new()
                 .execute(&input, &mut SharedState::new())
                 .map(|outcome| {
                     let ActionOutcome::Went(output) = outcome else {
@@ -1477,7 +1978,7 @@ mod tests {
     #[test]
     fn a_failing_check_breaks_its_step_unless_the_step_says_otherwise() {
         let strict = json!({"command": "echo perche 1>&2; exit 2", "timeout_secs": 5});
-        let error = ShellCheckAction
+        let error = ShellCheckAction::new()
             .execute(&strict, &mut SharedState::new())
             .expect_err("una verifica fallita è un passo rotto");
         assert_eq!(error.class, "check_failed");
@@ -1489,7 +1990,7 @@ mod tests {
             "accept": ["failed"],
             "timeout_secs": 5
         });
-        let ActionOutcome::Went(output) = ShellCheckAction
+        let ActionOutcome::Went(output) = ShellCheckAction::new()
             .execute(&tolerant, &mut SharedState::new())
             .expect("l'esito è dichiarato accettabile")
         else {

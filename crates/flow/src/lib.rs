@@ -17,7 +17,7 @@ pub use executor::{
     attempt_relation, latest_for, same_gates, step_input, Action, ActionError, ActionOutcome,
     ActionRegistry, Clock, Completion, Decision, EffectStatus, Execution, ExecutionRequest,
     Executor, FlowError, InMemoryRecordStore, InProcessExecutor, ProcessProbe, Reconciliation,
-    ReconciliationRequest, RecordStore, SharedState, SystemClock,
+    ReconciliationRequest, RecordStore, SharedState, SystemClock, CURRENT_STEP,
 };
 pub use file::FlowFile;
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
