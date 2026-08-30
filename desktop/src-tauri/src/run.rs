@@ -502,6 +502,44 @@ pub struct StepPassage {
 
 /// Tutto quello che è passato per un nodo, dal più recente.
 ///
+/// Quanto è costata una corsa: token, cache e denaro, dal deposito.
+///
+/// **NON RIFÀ NESSUN CONTO.** I totali li calcola `ui::dashboard`, che è già
+/// puro e già provato, ed è lo stesso codice che serve la pagina di `sailor ui`.
+/// Due viste della stessa spesa che si sommano da sole darebbero due cifre, e la
+/// domanda «quale delle due è giusta» non avrebbe risposta.
+///
+/// **UN TOTALE PARZIALE SI DICHIARA.** `TokenTotals::is_partial` dice se qualche
+/// chiamata non ha detto i propri conteggi o non ha un prezzo: chi mostra questi
+/// numeri deve mostrare anche quello, o sta presentando una somma che nasconde
+/// ciò che non sa. Sul deposito assente si torna `None`, non un errore: un
+/// programma che non ha ancora eseguito niente non è guasto.
+///
+/// **SI LEGGE A RICHIESTA, A CORSA FINITA O QUANDO QUALCUNO GUARDA.** Aprire il
+/// deposito e scorrere le corse non è lavoro da fare a ogni battito.
+#[tauri::command]
+pub(crate) fn run_usage(run_id: String) -> Result<Option<ui::dashboard::ExecutionView>, String> {
+    let ledger_dir = default_ledger_dir();
+    let Some(data) = ui::gather::gather(&ledger_dir)
+        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?
+    else {
+        return Ok(None);
+    };
+    let Some(run) = data.runs.iter().find(|run| run.run_id == run_id) else {
+        // Una corsa appena avviata può non essere ancora nella proiezione: non è
+        // un errore, è «non ancora», e la finestra riprova al battito dopo.
+        return Ok(None);
+    };
+    let steps = data.steps_by_run.get(&run_id).cloned().unwrap_or_default();
+    let calls = data.calls_by_run.get(&run_id).cloned().unwrap_or_default();
+    Ok(Some(ui::dashboard::summarize_run(
+        run,
+        &steps,
+        &calls,
+        now_secs(),
+    )))
+}
+
 /// **SI LEGGE A RICHIESTA, NON DI CONTINUO.** Ricostruire questa storia
 /// significa aprire il deposito e scorrere le corse: è il genere di lavoro che
 /// si fa quando qualcuno clicca un nodo, non a ogni battito di una corsa che

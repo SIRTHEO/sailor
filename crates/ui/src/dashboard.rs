@@ -25,6 +25,14 @@ pub struct TokenTotals {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
+    /// I token **scritti** in cache, le due durate sommate.
+    ///
+    /// **STANNO A PARTE DA `cached_tokens` PERCHÉ SONO L'OPPOSTO.** Leggere
+    /// dalla cache costa una frazione dell'ingresso; scriverci costa più
+    /// dell'ingresso. Su una chiamata misurata il 30/08/2026 questa voce da sola
+    /// era il 96% della spesa: metterla nella stessa casella di ciò che si legge
+    /// farebbe sembrare economico esattamente ciò che è caro.
+    pub cache_write_tokens: u64,
     /// Il totale dichiarato da chi non separa i due lati (Codex e simili).
     /// Sta a parte perché sommarlo a ingresso e uscita conterebbe due volte i
     /// motori che dicono tutti e tre i numeri.
@@ -43,6 +51,8 @@ impl TokenTotals {
         self.input_tokens += call.input_tokens.unwrap_or(0);
         self.output_tokens += call.output_tokens.unwrap_or(0);
         self.cached_tokens += call.cached_tokens.unwrap_or(0);
+        self.cache_write_tokens +=
+            call.cache_write_tokens.unwrap_or(0) + call.cache_write_long_tokens.unwrap_or(0);
         // Solo per chi non ha detto i lati: chi li ha detti è già contato sopra.
         if call.input_tokens.is_none() && call.output_tokens.is_none() {
             self.total_tokens_only += call.total_tokens.unwrap_or(0);
@@ -81,6 +91,9 @@ pub struct CallView {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub cached_tokens: Option<u64>,
+    /// Scritti in cache: la voce che costa più di tutte, tenuta visibile.
+    pub cache_write_tokens: Option<u64>,
+    pub cache_write_long_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     pub cost_micros: Option<i64>,
     /// Quanto il motore ha dichiarato di suo, accanto al conto del listino:
@@ -189,6 +202,8 @@ pub fn summarize_run(
                 input_tokens: call.input_tokens,
                 output_tokens: call.output_tokens,
                 cached_tokens: call.cached_tokens,
+                cache_write_tokens: call.cache_write_tokens,
+                cache_write_long_tokens: call.cache_write_long_tokens,
                 total_tokens: call.total_tokens,
                 cost_micros: call.cost_micros,
                 declared_cost_micros: call.declared_cost_micros,
@@ -363,6 +378,32 @@ mod tests {
         assert_eq!(view.tokens_by_model["model-a"].input_tokens, 150);
         assert_eq!(view.tokens_by_model["model-a"].calls, 2);
         assert_eq!(view.tokens_by_model["model-b"].input_tokens, 200);
+    }
+
+    /// **LA VOCE PIÙ CARA NON DEVE SPARIRE DAI TOTALI.**
+    ///
+    /// I numeri sono quelli di una corsa vera del 30/08/2026: 2 token
+    /// d'ingresso, 4 d'uscita, 13.180 letti dalla cache e 8.961 scritti. Se la
+    /// scrittura non entrasse nei totali, la vista mostrerebbe una corsa da
+    /// quindicimila token e novantasei millesimi di dollaro come se il denaro
+    /// fosse venuto da qualche altra parte — un totale che non si riesce a
+    /// rifare a mano è un totale che nessuno può contestare.
+    #[test]
+    fn the_cache_that_was_written_is_counted_and_kept_apart_from_the_one_read() {
+        let mut written = call("claude-opus-5[1m]", 2, 4, 13_180, 96_310);
+        written.cache_write_long_tokens = Some(8_961);
+        let view = summarize_run(&run("run-1", 0, None), &[], &[written], 0);
+
+        assert_eq!(view.tokens.cache_write_tokens, 8_961, "la scrittura si conta");
+        assert_eq!(
+            view.tokens.cached_tokens, 13_180,
+            "e resta separata da ciò che si è letto: sono l'opposto l'uno dell'altro"
+        );
+        assert_eq!(view.tokens.cost_micros, 96_310);
+        assert!(
+            !view.tokens.is_partial(),
+            "questa chiamata ha dichiarato tutto: il totale non è parziale"
+        );
     }
 
     #[test]
