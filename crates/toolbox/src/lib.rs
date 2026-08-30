@@ -126,6 +126,22 @@ impl Report {
     }
 }
 
+/// La casa di Sailor per una macchina descritta.
+///
+/// **Una riga sola, e chiama il deposito.** Fino al 30/08/2026 questa regola era
+/// riscritta qui e in `trigger`, e la copia sbagliava: ignorava
+/// `XDG_CONFIG_HOME` e cadeva su `~/.sailor`, mentre `ledger::sailor_home` — che
+/// decide dove stanno deposito e listino dei prezzi — cade su `~/.config/sailor`.
+/// Risultato: i descrittori dell'utente in una casa, i prezzi nell'altra, e
+/// nessuno dei due si accorgeva dell'altro.
+pub fn sailor_home_for(machine: &Machine) -> PathBuf {
+    ledger::sailor_home_in(
+        machine.env.get("SAILOR_HOME").map(PathBuf::from),
+        machine.env.get("XDG_CONFIG_HOME").map(PathBuf::from),
+        machine.home.clone(),
+    )
+}
+
 /// Le sorgenti da cui si prendono i descrittori su questa macchina.
 ///
 /// Nell'ordine in cui vincono: prima quelli spediti, poi quelli dell'utente. Con
@@ -133,11 +149,7 @@ impl Report {
 /// aggiunge dove si vuole senza toccare la casa.
 pub fn default_sources(machine: &Machine) -> Vec<Source> {
     let mut out = vec![Source::Builtin];
-    let base = match machine.env.get("SAILOR_HOME") {
-        Some(dir) => PathBuf::from(dir),
-        None => machine.home.join(".sailor"),
-    };
-    out.push(Source::Dir(base.join("tools.d")));
+    out.push(Source::Dir(sailor_home_for(machine).join("tools.d")));
     if let Some(extra) = machine.env.get("SAILOR_TOOL_DESCRIPTORS") {
         for raw in extra.split(':').filter(|s| !s.is_empty()) {
             let path = PathBuf::from(machine.expand(raw));

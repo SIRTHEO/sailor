@@ -71,10 +71,17 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         error_type: opt_str_at(cols, 18),
         started_at: i64_at(cols, 19)?,
         ended_at: opt_i64_at(cols, 20),
-        // Le due colonne nate con la versione 4 della proiezione stanno in
-        // coda: un deposito più vecchio non le ha, e la riga si legge lo stesso.
+        // Le colonne nate dopo stanno in coda, nell'ordine in cui sono nate: un
+        // deposito più vecchio non le ha, e la riga si legge lo stesso.
+        // Versione 4:
         total_tokens: u64_at(cols, 21),
         declared_cost_micros: opt_i64_at(cols, 22),
+        // Versione 5, la cache scritta — la voce che mancava e che su una
+        // chiamata misurata valeva il 96% della spesa:
+        cache_write_tokens: u64_at(cols, 23),
+        cache_write_long_tokens: u64_at(cols, 24),
+        cache_write_price_micros_per_million: opt_i64_at(cols, 25),
+        cache_write_long_price_micros_per_million: opt_i64_at(cols, 26),
     })
 }
 

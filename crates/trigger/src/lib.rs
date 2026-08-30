@@ -63,11 +63,9 @@ pub struct Signal {
 /// spediti, poi quelli dell'utente.
 pub fn default_sources(machine: &Machine) -> Vec<Source> {
     let mut out = vec![Source::Builtin];
-    let base = match machine.env.get("SAILOR_HOME") {
-        Some(dir) => PathBuf::from(dir),
-        None => machine.home.join(".sailor"),
-    };
-    out.push(Source::Dir(base.join("triggers.d")));
+    out.push(Source::Dir(
+        toolbox::sailor_home_for(machine).join("triggers.d"),
+    ));
     if let Some(extra) = machine.env.get("SAILOR_TRIGGER_DESCRIPTORS") {
         for raw in extra.split(':').filter(|s| !s.is_empty()) {
             let path = PathBuf::from(machine.expand(raw));

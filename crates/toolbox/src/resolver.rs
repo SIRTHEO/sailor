@@ -101,7 +101,7 @@ impl actions::ToolResolver for Tools {
             };
             return Err(format!(
                 "nessun descrittore dichiara lo strumento «{id}»; quelli dichiarati sono: {shown}. \
-                 Se ne aggiunge uno scrivendo un file JSON in ~/.sailor/tools.d/, senza ricompilare niente"
+                 Se ne aggiunge uno scrivendo un file JSON in ~/.config/sailor/tools.d/, senza ricompilare niente"
             ));
         };
         let descriptor = &loaded.descriptor;
@@ -171,6 +171,8 @@ fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
             input_tokens: usage.input_tokens.as_ref().map(pointer),
             output_tokens: usage.output_tokens.as_ref().map(pointer),
             cached_tokens: usage.cached_tokens.as_ref().map(pointer),
+            cache_write_tokens: usage.cache_write_tokens.as_ref().map(pointer),
+            cache_write_long_tokens: usage.cache_write_long_tokens.as_ref().map(pointer),
             total_tokens: usage.total_tokens.as_ref().map(pointer),
             cost: usage.cost.as_ref().map(pointer),
             model: usage.model.as_ref().map(pointer),
@@ -184,6 +186,9 @@ fn pointer(place: &crate::descriptor::Where) -> actions::Pointer {
         crate::descriptor::Where::Path(keys) => actions::Pointer::Path(keys.clone()),
         crate::descriptor::Where::Pattern(pattern) => {
             actions::Pointer::Pattern(pattern.clone())
+        }
+        crate::descriptor::Where::FirstKeyOf { first_key_of } => {
+            actions::Pointer::FirstKey(first_key_of.clone())
         }
     }
 }
