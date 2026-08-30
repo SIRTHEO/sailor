@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { RunEvent, RunSnapshot } from "./engine";
+import { totalsArePartial, type RunUsage } from "./flow";
 
 /**
  * La vista di una corsa: cosa sta girando adesso, cosa ha finito, cosa ha detto.
@@ -311,9 +312,71 @@ interface RunConsoleProps {
    * e «non l'ho ancora chiesto».
    */
   listenFailure: string | null;
+  /**
+   * Quanto è costata questa corsa, quando il deposito lo sa. `null` mentre non
+   * lo sa ancora — e in quel caso non si mostra niente, invece di mostrare zero.
+   */
+  usage: RunUsage | null;
   onMode: (mode: ConsoleMode) => void;
   onPick: (runId: string) => void;
   onClose: () => void;
+}
+
+/** Micro-unità di valuta come le legge una persona: 128_541 → «0,1285 $». */
+function money(micros: number): string {
+  return `${(micros / 1_000_000).toFixed(4).replace(".", ",")} $`;
+}
+
+/** Migliaia separate, alla maniera italiana. */
+function tokens(count: number): string {
+  return count.toLocaleString("it-IT");
+}
+
+/**
+ * La riga della spesa.
+ *
+ * **LA CACHE SCRITTA STA IN CHIARO, SEPARATA DA QUELLA LETTA.** Sono l'opposto
+ * l'una dell'altra: leggere costa una frazione dell'ingresso, scrivere costa
+ * più dell'ingresso. Su una chiamata misurata il 30/08/2026 la sola scrittura
+ * era il 96% della spesa, con due token d'ingresso: metterle nella stessa
+ * casella nasconderebbe l'unica voce che conta davvero.
+ *
+ * **E UN TOTALE PARZIALE LO DICE.** Se qualche chiamata non ha dichiarato i
+ * propri conteggi, o non aveva un prezzo, la cifra qui sotto è più bassa del
+ * vero: tacerlo sarebbe presentare una somma che nasconde ciò che le manca.
+ */
+function Spesa({ usage }: { usage: RunUsage }) {
+  const t = usage.tokens;
+  if (t.calls === 0) return null;
+  return (
+    <div className="console__spesa">
+      <span className="console__spesa-costo">{money(usage.total_cost_micros)}</span>
+      <span>
+        {t.calls} {t.calls === 1 ? "chiamata" : "chiamate"}
+      </span>
+      <span>↑ {tokens(t.input_tokens)}</span>
+      <span>↓ {tokens(t.output_tokens)}</span>
+      {t.cached_tokens > 0 && <span title="letti dalla cache">cache letta {tokens(t.cached_tokens)}</span>}
+      {t.cache_write_tokens > 0 && (
+        <span title="scritti in cache: costano più dell'ingresso normale">
+          cache scritta {tokens(t.cache_write_tokens)}
+        </span>
+      )}
+      {t.total_tokens_only > 0 && (
+        <span title="motori che dichiarano solo il totale, senza separare i lati">
+          totale non spezzato {tokens(t.total_tokens_only)}
+        </span>
+      )}
+      {totalsArePartial(t) && (
+        <span className="console__spesa-parziale">
+          totale parziale:{" "}
+          {t.calls_without_tokens > 0 && `${t.calls_without_tokens} senza conteggi`}
+          {t.calls_without_tokens > 0 && t.calls_without_cost > 0 && ", "}
+          {t.calls_without_cost > 0 && `${t.calls_without_cost} senza prezzo`}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function RunConsole({
@@ -322,6 +385,7 @@ export function RunConsole({
   mode,
   now,
   listenFailure,
+  usage,
   onMode,
   onPick,
   onClose,
@@ -392,6 +456,8 @@ export function RunConsole({
       </div>
 
       {listenFailure && <div className="console__truth">{listenFailure}</div>}
+
+      {usage && <Spesa usage={usage} />}
 
       {mode === "inline" ? (
         <div className="console__lines" ref={tail}>

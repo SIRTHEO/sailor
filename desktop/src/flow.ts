@@ -146,3 +146,73 @@ export const DEFAULT_ACTION_FOR_KIND: Partial<Record<StepKind, string>> = {
   human: "hand_to_human",
   subflow: "subflow",
 };
+
+// ── quanto è costata una corsa ──────────────────────────────────────────────
+// Ricalcati su `crates/ui/src/dashboard.rs`, con la stessa disciplina dei tipi
+// qui sopra: chi cambia l'uno cambia l'altro.
+
+/**
+ * I conteggi di una corsa.
+ *
+ * `null` NON ESISTE QUI, E NON È UNA SVISTA: questi sono totali, e un totale di
+ * cose sconosciute è zero. Quello che non si sa lo dicono `callsWithoutTokens` e
+ * `callsWithoutCost` — chi mostra una somma senza mostrare anche quei due numeri
+ * sta presentando una cifra che nasconde ciò che le manca.
+ */
+export interface TokenTotals {
+  input_tokens: number;
+  output_tokens: number;
+  /** Letti dalla cache: costano una frazione dell'ingresso. */
+  cached_tokens: number;
+  /** Scritti nella cache: costano PIÙ dell'ingresso, ed è la voce che sorprende. */
+  cache_write_tokens: number;
+  /** Il totale di chi non separa i due lati, tenuto a parte per non contare due volte. */
+  total_tokens_only: number;
+  cost_micros: number;
+  calls: number;
+  calls_without_tokens: number;
+  calls_without_cost: number;
+}
+
+/** Una chiamata a un motore, come la registra il deposito. */
+export interface CallView {
+  call_id: string;
+  step_id: string | null;
+  cli: string;
+  actual_model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  cache_write_tokens: number | null;
+  cache_write_long_tokens: number | null;
+  total_tokens: number | null;
+  cost_micros: number | null;
+  /** Quanto il motore ha dichiarato di suo: se diverge dal nostro, si vede. */
+  declared_cost_micros: number | null;
+  error_type: string | null;
+  started_at: number;
+  ended_at: number | null;
+}
+
+/** Una corsa vista dal lato della spesa. */
+export interface RunUsage {
+  run_id: string;
+  entity: string;
+  status: string;
+  total_cost_micros: number;
+  steps_total: number;
+  steps_went: number;
+  steps_broke: number;
+  tokens: TokenTotals;
+  tokens_by_model: Record<string, TokenTotals>;
+  calls: CallView[];
+}
+
+/**
+ * Vero se questi totali nascondono qualcosa. È la stessa regola di
+ * `TokenTotals::is_partial` in Rust, e la finestra deve dirlo a schermo: un
+ * totale parziale che tace è peggio del non averlo.
+ */
+export function totalsArePartial(totals: TokenTotals): boolean {
+  return totals.calls_without_tokens > 0 || totals.calls_without_cost > 0;
+}
