@@ -37,6 +37,9 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 16 | 29/08 | Il flusso di ricerca non è partito e il lavoro l'ha fatto una persona a mano. Tutti e sei i passi hanno `claude-code` scritto dentro, senza ripiego — mentre `agy` rispondeva | Provando i tre motori uno per uno: claude esaurito, codex 401, **agy vivo**. Nessuno li aveva provati | Un passo dichiara una **catena** di motori, non uno. E chi lancia vede su quale è finito | **aperto** |
 | 17 | 29/08 | Due passi di quel flusso chiedono competenze di Claude Code (`advise-project-approach`, `neuroarxiv`) che stanno in `~/.claude/skills` di una sola persona: il flusso non è portabile e non lo dichiara | Cercando perché non bastasse cambiare motore. `flow check` lo dà per buono: controlla gli strumenti per identificativo, **le competenze no** | Ciò che un passo chiede va dichiarato tutto, e il controllo statico lo verifica — è il guasto 3 su un'altra dimensione. Chi non ha quella capacità deve funzionare peggio, non in silenzio | **aperto** |
 | 18 | 29/08 | La casa di Sailor (`~/.config/sailor`) contiene **un solo file**, una firma. Ogni server MCP e ogni gancio che Sailor conosce li scopre leggendo la configurazione di Claude Code, Claude Desktop o Cursor: la sua dotazione è quella dei vicini | Cercando dove fossero installate le competenze del guasto 17. Non c'era nessun posto dove installarle | Una dotazione propria sotto la casa di Sailor, che viaggia col prodotto. Il rilevatore torna a dire cosa c'è sulla macchina — che è un'altra domanda | **aperto** |
+| 19 | 30/08 | La casa di Sailor era **in due posti**: chi cercava deposito e listino risolveva `~/.config/sailor`, chi cercava i descrittori dell'utente `~/.sailor`, e la documentazione spedita mandava tutti nella seconda | Scrivendoci dentro il listino dei prezzi seguendo la documentazione, e vedendo che nessuno lo leggeva | Una funzione sola che dice dove sta la casa, e i chiamanti che la chiedono invece di riscriverla. Le due copie sbagliavano **insieme**, quindi si confermavano a vicenda | **chiuso** — con mutante |
+| 20 | 30/08 | Un `with` che nomina un campo inesistente viene **ignorato in silenzio**: il passo parte, il motore riceve una riga di comando monca, e l'errore che arriva è suo | Scrivendo `prompt` invece di `stdin` in un flusso di prova. Il messaggio era «Input must be provided either through stdin» — di Claude, non di Sailor | Un campo sconosciuto in un `with` è un avviso su quel campo, non silenzio: è il guasto 8 visto dall'altro lato, e `flow check` è il posto dove dirlo prima di spendere | **aperto** |
+| 21 | 30/08 | Le prove di `profiles` si rubavano la cartella temporanea a vicenda: **una esecuzione su venti falliva**, ogni volta su una prova diversa | Eseguendo la batteria molte volte di fila. Misurato: 1 su 20 prima, 0 su 50 dopo | Un contatore che cresce nel nome, invece del solo orologio: `cargo test` manda le prove sullo stesso processo e l'orologio di macOS non ha la risoluzione del nanosecondo | **chiuso** — misurato prima e dopo |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
@@ -45,13 +48,20 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Dieci sono ancora aperti**, e tre di quei cinque (4, 10, 11) sono la stessa
+**Undici sono ancora aperti** su ventuno, e tre di quelli (4, 10, 11) sono la stessa
 cosa vista da tre lati: **il sistema non sa cosa sta facendo di sé** — quali
 processi ha avviato, quante copie ha della stessa verità, se ciò che dichiara
 corrisponde a ciò che fa.
 
 **Nessuno è stato trovato da un controllo automatico.** Tutti da una persona che
 guardava. Questo è il numero che deve cambiare.
+
+**Il 30/08 ne sono arrivati tre in un giorno solo, e tutti e tre eseguendo.** Il
+19 si è visto scrivendo un file dove la documentazione diceva e guardando che
+nessuno lo leggeva; il 20 lanciando un flusso con un campo sbagliato; il 21
+rieseguendo la batteria venti volte di fila invece di una. Nessuno dei tre
+sarebbe uscito leggendo il codice: due erano d'accordo con se stessi, e il terzo
+si vedeva solo ripetendo.
 
 **Il quindicesimo dice perché.** Sailor non ha comandi per operare su se stesso,
 quindi chi ci lavora lo aggira con script esterni — e uno strumento aggirato non
