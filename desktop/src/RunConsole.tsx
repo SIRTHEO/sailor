@@ -36,12 +36,15 @@ import { totalsArePartial, type RunUsage } from "./flow";
  *
  * ## E I PASSI IN PARALLELO
  *
- * `InProcessExecutor` percorre il fronte **in serie**, anche quando i passi non
- * dipendono l'uno dall'altro (commento in `crates/flow/src/executor.rs`, e
- * misurato: due passi da sei secondi ciascuno hanno impiegato dodici secondi in
- * tutto, non sei). La vista affiancata resta il modo di leggere per passo, ma
- * lo dice invece di mostrare due barre che avanzano insieme quando una sola si
- * muove.
+ * Dal 30/08/2026 il fronte parte **insieme**: due passi indipendenti da sei
+ * secondi impiegano 6,07 secondi in tutto, tre ne impiegano 6,05. Fino a quel
+ * giorno giravano in fila — due ne impiegavano dodici — e questa vista lo
+ * dichiarava a chi guardava, perché due riquadri affiancati suggeriscono due
+ * lavori che avanzano insieme e uno solo si muoveva. Ora la riga non serve più
+ * e se n'è andata con la ragione che la teneva.
+ *
+ * Il tetto è quattro passi per ondata (`AT_ONCE` in
+ * `crates/flow/src/executor.rs`): un fronte più largo si esegue a gruppi.
  */
 
 /** Come si guarda una corsa. */
@@ -523,14 +526,13 @@ export function RunConsole({
         </div>
       )}
 
-      {mode === "split" && (
-        // Due riquadri affiancati suggeriscono due lavori che avanzano
-        // insieme. Oggi non è così, e dirlo costa una riga.
-        <div className="console__serial">
-          il motore percorre i passi in serie: anche i passi che non dipendono l'uno dall'altro
-          girano uno dopo l'altro, quindi un solo riquadro alla volta è davvero in corso
-        </div>
-      )}
+      {/* QUI C'ERA UN AVVISO, E NON C'È PIÙ PERCHÉ È DIVENTATO FALSO. Diceva
+          che due riquadri affiancati mostravano due lavori di cui uno solo
+          avanzava davvero, perché il motore percorreva i passi in fila. Dal
+          30/08/2026 il fronte parte insieme (misurato: due passi da sei secondi
+          in 6,07), quindi due riquadri che avanzano insieme adesso dicono la
+          verità. Un avviso che resta dopo che il difetto è andato via insegna a
+          non leggere gli avvisi. */}
     </section>
   );
 }

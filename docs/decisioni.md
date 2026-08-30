@@ -148,9 +148,15 @@ l'ha fatto, come ogni altra cosa nel deposito.
   moneta); il prezzo di continuare cresce del 34% ed è monotono (37 su 45).
   Aspetta una decisione di Theo.
 
-- **Il terzo blocco ha un antefatto che non è stato ancora fatto.** «Catena di
-  smistamento e più fili» presuppone un esecutore che ne sia capace, e oggi non
-  lo è: percorre i passi pronti **in ordine, uno dopo l'altro** — è il guasto 7,
-  misurato, non ipotizzato. Due passi indipendenti da sei secondi ne impiegano
-  dodici. Finché quello non cambia, «sfruttare la macchina» non ha dove
-  appoggiarsi, e un flusso di bilancio bilancerebbe una fila indiana.
+- ~~**Il terzo blocco ha un antefatto che non è stato ancora fatto.**~~ Fatto il
+  30/08/2026: il fronte parte insieme. Due passi indipendenti da sei secondi ne
+  impiegano 6,07 invece di 12,07; tre ne impiegano 6,05 invece di 18,14.
+  «Sfruttare la macchina» ora ha dove appoggiarsi.
+
+  **Resta una decisione tua**: quanti passi per ondata. Oggi sono quattro, una
+  costante dichiarata in `crates/flow/src/executor.rs`. Il numero non è tecnico —
+  la macchina ne reggerebbe di più — ma di quota e di sorveglianza: un fronte
+  largo di passi che chiamano agenti aprirebbe una decina di conversazioni a
+  pagamento per una corsa che nessuno guarda. Il giorno che esisterà un tetto di
+  spesa, questo numero dovrebbe diventarne una conseguenza invece che una
+  costante.
