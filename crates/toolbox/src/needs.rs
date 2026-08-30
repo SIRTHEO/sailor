@@ -83,7 +83,7 @@ pub struct Need {
 pub struct ToolNeedsAction;
 
 impl Action for ToolNeedsAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let input = actions::reference::resolve_references(input)?;
         let spec: NeedsSpec = serde_json::from_value(input).map_err(|error| {
             ActionError::new(
