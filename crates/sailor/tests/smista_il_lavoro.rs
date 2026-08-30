@@ -200,9 +200,18 @@ fn no_step_names_a_binary_and_no_path_belongs_to_one_machine() {
             step.id
         );
         if step.action == actions::EXTERNAL_ENGINE_ACTION {
-            let tool = with.get("tool").and_then(Value::as_str);
+            // UNO O UNA CATENA. Dal 29/08/2026 un passo può dichiarare un
+            // elenco di motori da provare in ordine invece di un nome solo.
+            // Ciò che questa prova sorveglia non cambia — nessun passo esegue
+            // un motore senza dire quale vuole — ma leggere `tool` come sola
+            // stringa lo dichiarerebbe assente proprio dove sono tre.
+            let named: Vec<&str> = match with.get("tool") {
+                Some(Value::String(id)) => vec![id.as_str()],
+                Some(Value::Array(chain)) => chain.iter().filter_map(Value::as_str).collect(),
+                _ => Vec::new(),
+            };
             assert!(
-                tool.is_some_and(|id| !id.is_empty()),
+                !named.is_empty() && named.iter().all(|id| !id.is_empty()),
                 "il passo {} esegue un motore senza dire quale strumento vuole",
                 step.id
             );
@@ -511,7 +520,20 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
         .iter()
         .find(|record| record.step_id == "dispatch")
         .expect("il passo è stato aperto");
-    assert_eq!(record.failure_class.as_deref(), Some("tool_unavailable"));
+    // LA CLASSE DIPENDE DA QUANTI NE HA CHIESTI. Un passo che nomina un motore
+    // solo e non lo trova resta `tool_unavailable`, col motivo del risolutore;
+    // uno che ne dichiara una catena e non ne trova nessuno dà
+    // `no_usable_engine`, perché «quello strumento non c'è» sarebbe una risposta
+    // parziale su tre. Ciò che questa prova difende è la stessa cosa in
+    // entrambi i casi: il flusso si ferma DICENDO quale mancava.
+    assert!(
+        matches!(
+            record.failure_class.as_deref(),
+            Some("tool_unavailable") | Some("no_usable_engine")
+        ),
+        "una macchina senza lo strumento deve fermare il flusso dicendolo: {:?}",
+        record.failure_class
+    );
     assert!(
         record.said.clone().unwrap_or_default().contains("claude-code"),
         "il messaggio deve dire quale strumento mancava: {:?}",

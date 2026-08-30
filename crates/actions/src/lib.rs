@@ -38,7 +38,18 @@ pub mod history;
 pub mod reference;
 pub mod store;
 
+/// I tipi puri con cui un descrittore dichiara dove stanno i suoi numeri,
+/// ri-esportati da qui.
+///
+/// **PERCHÉ RI-ESPORTATI E NON RIDEFINITI.** `toolbox` deve poter costruire una
+/// ricetta senza dipendere a sua volta da `models`, e una copia di questi tipi
+/// da questa parte del confine sarebbe una seconda definizione della stessa
+/// cosa: due strutture gemelle divergono al primo campo che qualcuno aggiunge a
+/// una sola delle due.
+pub use models::usage::{read_declared, Declared, Pointer, Reading, Shape};
+
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, ValueSchema};
+use ledger::{Ledger, ModelCallRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
@@ -514,6 +525,20 @@ pub struct AskRecipe {
     /// solo con le parole che il suo descrittore dichiara: chi non le dichiara
     /// non fa scattare nessun ripiego.
     pub unusable_when: Vec<String>,
+    /// Come si legge **quanto ha consumato**, se il suo descrittore lo dichiara.
+    ///
+    /// Viaggia sulla stessa strada di tutto il resto della ricetta: chi scrive
+    /// un descrittore lo dichiara una volta, e nessun flusso deve conoscerlo.
+    /// `None` è la risposta di chi non lo dichiara, e non è un guasto: quel
+    /// motore si invoca come prima e i suoi token restano sconosciuti.
+    pub usage: Option<UsageRecipe>,
+}
+
+/// Le opzioni da aggiungere per farsi dire il consumo, e dove leggerlo.
+#[derive(Clone, Debug)]
+pub struct UsageRecipe {
+    pub args: Vec<String>,
+    pub declared: Declared,
 }
 
 /// Se questa uscita è il modo in cui un motore dice di non poter lavorare. Il
@@ -823,6 +848,7 @@ struct EngineOutcomeJson {
 pub struct ExternalEngineAction {
     tools: Option<Arc<dyn ToolResolver>>,
     watcher: Option<Arc<dyn StepSinks>>,
+    ledger: Option<Ledger>,
 }
 
 impl Default for ExternalEngineAction {
@@ -838,6 +864,7 @@ impl ExternalEngineAction {
         Self {
             tools: None,
             watcher: None,
+            ledger: None,
         }
     }
 
@@ -847,6 +874,7 @@ impl ExternalEngineAction {
         Self {
             tools: Some(Arc::new(resolver)),
             watcher: None,
+            ledger: None,
         }
     }
 
@@ -856,6 +884,23 @@ impl ExternalEngineAction {
     /// non questo crate.
     pub fn watched_by(mut self, watcher: Option<Arc<dyn StepSinks>>) -> Self {
         self.watcher = watcher;
+        self
+    }
+
+    /// Con un deposito dove registrare quanto è costata ogni chiamata.
+    ///
+    /// **PERCHÉ IL DEPOSITO ARRIVA PER COSTRUZIONE E LA CORSA NO.** Chi
+    /// costruisce il registro delle azioni ha già il deposito aperto in mano —
+    /// è la stessa strada che `store::register_store` segue da sempre — ma non
+    /// ha ancora la corsa: il `run_id` nasce dopo, quando si sta per partire.
+    /// La corsa arriva quindi dallo stato condiviso (`flow::CURRENT_RUN`), che
+    /// l'esecutore riempie passo per passo.
+    ///
+    /// `None` è il valore con cui l'azione nasce, e vuol dire che non si
+    /// registra niente: un motore invocato senza deposito funziona esattamente
+    /// come prima.
+    pub fn recording_to(mut self, ledger: Option<Ledger>) -> Self {
+        self.ledger = ledger;
         self
     }
 
@@ -875,6 +920,7 @@ impl ExternalEngineAction {
                     args: spec.args.clone(),
                     prompt: PromptVia::Stdin,
                     unusable_when: Vec::new(),
+                    declared_usage: None,
                 }],
                 Vec::new(),
             )),
@@ -927,6 +973,17 @@ impl ExternalEngineAction {
                                 .ask_recipe(id)
                                 .map(|recipe| recipe.unusable_when)
                                 .unwrap_or_default(),
+                            // **NIENTE CONSUMO QUANDO LE OPZIONI LE SCRIVE IL
+                            // PASSO**, ed è la stessa regola di due righe più
+                            // su applicata al dato nuovo: le opzioni del
+                            // consumo si accodano a quelle della ricetta, e qui
+                            // la ricetta non detta niente. Accodarle lo stesso
+                            // vorrebbe dire allungare alle spalle di chi ha
+                            // scritto quella riga di comando una domanda che
+                            // non ha fatto. Il consumo resta sconosciuto — la
+                            // riga nel deposito si scrive comunque, e dice
+                            // proprio questo.
+                            declared_usage: None,
                         });
                         continue;
                     }
@@ -934,9 +991,17 @@ impl ExternalEngineAction {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
                             bin,
-                            args: recipe.args,
+                            args: match &recipe.usage {
+                                Some(usage) => {
+                                    let mut args = recipe.args;
+                                    args.extend(usage.args.iter().cloned());
+                                    args
+                                }
+                                None => recipe.args,
+                            },
                             prompt: recipe.prompt,
                             unusable_when: recipe.unusable_when,
+                            declared_usage: recipe.usage.map(|usage| usage.declared),
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
@@ -989,6 +1054,165 @@ struct Candidate {
     args: Vec<String>,
     prompt: PromptVia,
     unusable_when: Vec<String>,
+    /// Dove leggere il consumo nell'uscita di questo motore. `None` quando il
+    /// descrittore non lo dichiara, o quando le opzioni le ha scritte il passo.
+    declared_usage: Option<Declared>,
+}
+
+// ── quanto è costata una chiamata ────────────────────────────────────────
+
+/// Dove sta il listino locale su questa macchina.
+///
+/// Risposta a «il listino deve essere modificabile senza ricompilare»: è un
+/// file JSON nella casa di Sailor, accanto al deposito e ai flussi, e si
+/// riscrive con un editor di testo. `SAILOR_PRICING` lo sposta altrove — serve
+/// alle prove, e a chi tiene più listini.
+///
+/// **NON STA IN `modelli.json`**, che è la *scelta* dell'utente su quale
+/// modello usare: mescolare «cosa voglio» e «quanto costa» farebbe sì che
+/// cambiare una preferenza tocchi un listino, e viceversa.
+const PRICING_ENV: &str = "SAILOR_PRICING";
+const PRICING_FILE: &str = "pricing.json";
+
+/// Il listino, riletto a ogni chiamata.
+///
+/// **RILETTO, NON TENUTO IN MEMORIA**: un prezzo cambiato a metà di una corsa
+/// lunga vale dalla chiamata dopo, invece che dal prossimo riavvio. Il costo è
+/// una lettura di un file piccolo accanto all'avvio di un processo esterno —
+/// cioè niente, in confronto a ciò che sta per succedere.
+///
+/// Un listino assente, illeggibile o scritto male non è un guasto: lascia il
+/// costo sconosciuto. Fermare una chiamata a un motore perché non si sa quanto
+/// costerà sarebbe un tetto di spesa, che qui non c'è ed è un lavoro separato.
+fn load_pricing() -> Option<models::pricing::PriceList> {
+    let path = match std::env::var_os(PRICING_ENV).filter(|value| !value.is_empty()) {
+        Some(declared) => std::path::PathBuf::from(declared),
+        None => ledger::sailor_home()?.join(PRICING_FILE),
+    };
+    let text = std::fs::read_to_string(path).ok()?;
+    models::pricing::PriceList::parse(&text).ok()
+}
+
+/// Dove registrare quanto si è speso: deposito, corsa e passo.
+///
+/// Servono tutti e tre. Senza uno solo **non si scrive nessuna riga**, invece
+/// di scriverne una attribuita a nessuno: una riga senza corsa non si somma con
+/// nessun'altra e sporcherebbe i conti peggio di una riga mancante. È la stessa
+/// regola che `sink_for_step` applica già al testo dal vivo.
+struct Recording<'a> {
+    ledger: &'a Ledger,
+    run_id: String,
+    step_id: String,
+}
+
+fn recording_for<'a>(ledger: &'a Option<Ledger>, shared: &SharedState) -> Option<Recording<'a>> {
+    Some(Recording {
+        ledger: ledger.as_ref()?,
+        run_id: shared.get(flow::CURRENT_RUN)?.as_str()?.to_owned(),
+        step_id: shared.get(flow::CURRENT_STEP)?.as_str()?.to_owned(),
+    })
+}
+
+/// Un contatore di processo, perché due chiamate nello stesso secondo dentro lo
+/// stesso passo non si sovrascrivano a vicenda: `call_id` è chiave primaria, e
+/// una collisione farebbe sparire una spesa invece di sommarla.
+static CALLS_SO_FAR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or_default()
+}
+
+/// Ciò che si sa di una chiamata appena finita, prima di darle un prezzo.
+struct Spent {
+    reading: Reading,
+    error_type: Option<&'static str>,
+    started_at: i64,
+    ended_at: i64,
+}
+
+/// Scrive nel deposito la riga di **questa** chiamata.
+///
+/// **SI SCRIVE ANCHE QUANDO È ANDATA MALE**, ed è una scelta deliberata: un
+/// turno interrotto brucia comunque la quota, e azzerarne il costo
+/// sottostimerebbe la spesa esattamente nei minuti che precedono un
+/// esaurimento — cioè quando la misura serve. Separare «lavoro utile» da
+/// «quota consumata» è compito di chi legge le righe, non di chi le scrive.
+///
+/// **E SI SCRIVE ANCHE QUANDO I TOKEN SONO SCONOSCIUTI.** «Questo motore è
+/// stato chiamato quaranta volte, token non dichiarati» è un'informazione su
+/// cui si può agire; il silenzio nasconde il buco, e un totale che si presenta
+/// come completo mentre è parziale è la bugia da cui questo lavoro nasce.
+///
+/// Un fallimento del deposito non rompe il passo: la misura è al servizio del
+/// lavoro, non il contrario, e far fallire una chiamata già riuscita perché non
+/// si è potuto annotarla sarebbe il contrario di ciò che si sta costruendo.
+fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: &[String], spent: Spent) {
+    let Some(cli) = candidate.id.as_deref() else {
+        // Un `bin` scritto a mano nel passo non è una chiamata a un modello:
+        // `sh -c echo` non consuma nessuna quota, e riempirne il deposito
+        // renderebbe illeggibile proprio la vista che questo lavoro esiste per
+        // rendere leggibile.
+        return;
+    };
+    let reading = spent.reading;
+    let listino = load_pricing();
+    // Il legame col listino passa dal nome che il motore stesso dichiara, non
+    // da un'ipotesi: un modello presunto sarebbe un numero inventato con la
+    // faccia di una misura, creduto per sempre da chiunque lo legga.
+    let voce = listino
+        .as_ref()
+        .zip(reading.model.as_deref())
+        .and_then(|(listino, name)| listino.find(name));
+    let prices = voce.map(models::pricing::Price::micros).unwrap_or_default();
+    let cost_micros = models::pricing::cost_micros(
+        reading.input_tokens,
+        reading.output_tokens,
+        reading.cached_tokens,
+        prices,
+    );
+    let sequence = CALLS_SO_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let written = ModelCallRecord {
+        call_id: format!(
+            "{}:{}:{}:{sequence}",
+            record.run_id, record.step_id, spent.started_at
+        ),
+        run_id: record.run_id.clone(),
+        step_id: Some(record.step_id.clone()),
+        purpose: EXTERNAL_ENGINE_ACTION.to_owned(),
+        cli: cli.to_owned(),
+        // Un passo nomina lo strumento, non il modello: nessuno qui *chiede* un
+        // modello, e scriverne uno sarebbe inventarlo. Vuoto vuol dire «non
+        // dichiarato», e la finestra lo mostra come tale.
+        requested_model: String::new(),
+        actual_model: reading.model.clone().unwrap_or_default(),
+        input_tokens: reading.input_tokens,
+        output_tokens: reading.output_tokens,
+        cached_tokens: reading.cached_tokens,
+        total_tokens: reading.total_tokens,
+        cost_micros,
+        // Il costo del motore accanto al nostro, mai al posto suo.
+        declared_cost_micros: reading
+            .declared_cost
+            .map(|usd| (usd * 1_000_000.0).round() as i64),
+        // La valuta è quella del listino con cui si è calcolato: senza un conto
+        // fatto non c'è nessuna valuta da dichiarare.
+        price_currency: cost_micros
+            .and(listino.as_ref())
+            .map(|listino| listino.currency.clone()),
+        input_price_micros_per_million: prices.input,
+        output_price_micros_per_million: prices.output,
+        cached_price_micros_per_million: prices.cached,
+        mandate_name: String::new(),
+        mandate_version: String::new(),
+        retry_chain: tried_before.to_vec(),
+        error_type: spent.error_type.map(str::to_owned),
+        started_at: spent.started_at,
+        ended_at: Some(spent.ended_at),
+    };
+    let _ = record.ledger.record_model_call(&written);
 }
 
 /// L'esito di una domanda a **un** motore della catena.
@@ -1014,6 +1238,7 @@ impl ExternalEngineAction {
     /// Interroga un motore. `set_aside` sono quelli già scartati, e finisce nei
     /// messaggi d'errore: chi legge un passo rosso deve vedere l'intera catena,
     /// non solo l'ultimo anello.
+    #[allow(clippy::too_many_arguments)]
     fn ask(
         &self,
         candidate: &Candidate,
@@ -1022,6 +1247,8 @@ impl ExternalEngineAction {
         live: Option<&dyn LiveSink>,
         set_aside: &[String],
         solo: bool,
+        record: Option<&Recording<'_>>,
+        tried_before: &[String],
     ) -> Result<Asked, ActionError> {
         let bin = &candidate.bin;
         let seconds = spec.timeout_secs;
@@ -1059,26 +1286,73 @@ impl ExternalEngineAction {
             Some(id) => format!("«{id}» (`{bin}`)"),
             None => format!("`{bin}`"),
         };
-        let outcome = match invoke_external_engine_watched(&invocation, live) {
-            EngineResult::Ok { stdout, stderr } => match shape {
-                Some(shape) => {
-                    return shaped_answer(shape, &stdout).map(|answer| {
-                        Asked::Answered(ActionOutcome::Went(
-                            json!({"status": "ok", "answer": answer}),
-                        ))
-                    })
+        // Gli istanti si prendono stretti attorno alla chiamata: è la durata di
+        // *questa* invocazione, non del passo che la contiene.
+        let started_at = now_secs();
+        let result = invoke_external_engine_watched(&invocation, live);
+        let ended_at = now_secs();
+        // Il consumo si legge da ciò che il motore ha detto, secondo quanto il
+        // suo descrittore dichiara. Chi non dichiara niente lascia tutto
+        // sconosciuto — e non è un ramo `if` per fornitore: è l'assenza di un
+        // dato nel descrittore.
+        let read = |said: &str| match &candidate.declared_usage {
+            Some(declared) => models::usage::read_declared(said, declared),
+            None => Reading::default(),
+        };
+        // Ogni ramo passa di qui: anche il fallimento e anche il silenzio, che è
+        // il punto — una chiamata interrotta ha comunque bruciato la quota.
+        let note = |reading: Reading, error_type: Option<&'static str>| {
+            if let Some(record) = record {
+                record_the_call(
+                    record,
+                    candidate,
+                    tried_before,
+                    Spent {
+                        reading,
+                        error_type,
+                        started_at,
+                        ended_at,
+                    },
+                );
+            }
+        };
+        let outcome = match result {
+            EngineResult::Ok { stdout, stderr } => {
+                let reading = read(&stdout);
+                note(reading.clone(), None);
+                // **L'USCITA DEL PASSO NON CAMBIA PERCHÉ SI È MISURATO.** Se il
+                // descrittore ha chiesto un involucro per farsi dire i token,
+                // qui la risposta si tira fuori dall'involucro e `stdout` torna
+                // a essere quello di prima. Misurare non deve cambiare ciò che
+                // si misura: un flusso a valle che dichiara la forma della
+                // propria risposta diventerebbe rosso per una misura che non ha
+                // chiesto.
+                let stdout = reading.answer.unwrap_or(stdout);
+                match shape {
+                    Some(shape) => {
+                        return shaped_answer(shape, &stdout).map(|answer| {
+                            Asked::Answered(ActionOutcome::Went(
+                                json!({"status": "ok", "answer": answer}),
+                            ))
+                        })
+                    }
+                    None => EngineOutcomeJson {
+                        status: "ok",
+                        stdout,
+                        stderr,
+                    },
                 }
-                None => EngineOutcomeJson {
-                    status: "ok",
-                    stdout,
-                    stderr,
-                },
-            },
+            }
             EngineResult::ExitError {
                 code,
                 stdout,
                 stderr,
             } => {
+                // Il consumo si legge dall'uscita GREZZA, prima di qualunque
+                // altra cosa: un motore uscito in errore può aver già speso, e
+                // i suoi token vanno letti dove li ha scritti.
+                let reading = read(&stdout);
+                note(reading.clone(), Some("exit_error"));
                 if !tolerates(&spec.accept, "exit_error") {
                     // La tolleranza viene prima: un passo che si aspetta un
                     // fallimento lo vuole come dato, non vuole che qualcun altro
@@ -1103,6 +1377,9 @@ impl ExternalEngineAction {
                         ),
                     ));
                 }
+                // Come nel ramo riuscito: l'involucro si toglie, l'uscita del
+                // passo resta quella di prima.
+                let stdout = reading.answer.unwrap_or(stdout);
                 match shape {
                     // Un motore che ha parlato deve rispettare la forma anche
                     // quando il passo gli perdona l'uscita in errore: quella
@@ -1122,6 +1399,10 @@ impl ExternalEngineAction {
                 }
             }
             EngineResult::TimedOut => {
+                // Ucciso a metà: non ha detto niente, quindi non c'è niente da
+                // leggere. La riga si scrive lo stesso, coi token sconosciuti —
+                // il tempo che ha girato l'ha speso davvero.
+                note(Reading::default(), Some("timed_out"));
                 // Nessun ripiego su un tetto di tempo: un motore ucciso a metà
                 // può aver già fatto qualcosa, e rifare quel lavoro altrove
                 // sarebbe farlo due volte senza saperlo.
@@ -1138,6 +1419,11 @@ impl ExternalEngineAction {
                 }
             }
             EngineResult::SpawnFailed { reason } => {
+                // Non si è nemmeno avviato: non ha consumato niente, ma la
+                // riga dice che ci si è provati — e senza di lei una catena che
+                // ripiega su un secondo motore sembrerebbe averlo scelto per
+                // prima, invece che per ripiego.
+                note(Reading::default(), Some("spawn_failed"));
                 if !tolerates(&spec.accept, "spawn_failed") {
                     // Non essersi avviato è il caso più netto di «non poteva
                     // lavorare»: non ha fatto niente, e non serve che il suo
@@ -1177,6 +1463,10 @@ impl Action for ExternalEngineAction {
         shared: &mut SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
+        // Dove annotare la spesa. Si costruisce qui perché `shared` più avanti
+        // non c'è più, ed è `None` — cioè non si annota niente — se manca il
+        // deposito o uno dei due identificativi.
+        let record = recording_for(&self.ledger, shared);
         let input = reference::resolve_references(input)?;
         // La forma si tiene anche com'era scritta: è quel testo, non una sua
         // riscrittura, che deve comparire nel prompt.
@@ -1215,10 +1505,28 @@ impl Action for ExternalEngineAction {
         // e deve restare identico a com'era: gli stessi esiti, gli stessi
         // messaggi. La catena cambia il comportamento solo dove c'è una catena.
         let solo = candidates.len() == 1 && refused.is_empty();
+        // Gli identificativi dei motori già provati, per la catena di ripiego
+        // scritta nella riga: `set_aside` porta frasi per una persona, questo
+        // porta nomi che una somma può raggruppare.
+        let mut tried_before: Vec<String> = Vec::new();
         for candidate in &candidates {
-            match self.ask(candidate, &spec, shape, live.as_deref(), &set_aside, solo)? {
+            match self.ask(
+                candidate,
+                &spec,
+                shape,
+                live.as_deref(),
+                &set_aside,
+                solo,
+                record.as_ref(),
+                &tried_before,
+            )? {
                 Asked::Answered(outcome) => return Ok(outcome),
-                Asked::CannotWork(why) => set_aside.push(why),
+                Asked::CannotWork(why) => {
+                    set_aside.push(why);
+                    if let Some(id) = &candidate.id {
+                        tried_before.push(id.clone());
+                    }
+                }
             }
         }
         Err(ActionError::new(
@@ -2230,16 +2538,19 @@ mod tests {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
                     unusable_when: vec!["weekly limit".to_owned()],
+                    usage: None,
                 }),
                 "vivo" => Some(AskRecipe {
                     args: vec!["ha-risposto-il-secondo".to_owned()],
                     prompt: PromptVia::LastArg,
                     unusable_when: vec!["weekly limit".to_owned()],
+                    usage: None,
                 }),
                 "rotto" => Some(AskRecipe {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
                     unusable_when: vec!["weekly limit".to_owned()],
+                    usage: None,
                 }),
                 // Risolvibile ma senza ricetta: un passo che non scrive le
                 // opzioni non sa come interrogarlo.
@@ -2389,6 +2700,7 @@ mod tests {
                         args: Vec::new(),
                         prompt: PromptVia::Stdin,
                         unusable_when: vec![String::new(), "   ".to_owned()],
+                        usage: None,
                     }),
                     other => Chain.ask_recipe(other),
                 }
@@ -2630,5 +2942,611 @@ mod tests {
         register_default(&mut registry);
         assert!(registry.get(EXTERNAL_ENGINE_ACTION).is_some());
         assert!(registry.get(SHELL_CHECK_ACTION).is_some());
+    }
+}
+
+#[cfg(test)]
+mod quanto_e_costata {
+    //! Le prove della misura: quanto ha consumato una chiamata, dove finisce
+    //! scritta, e che cosa succede a chi non lo dichiara.
+    //!
+    //! **NESSUN MOTORE VERO E NESSUNA CHIAMATA A PAGAMENTO.** I motori qui
+    //! dentro sono script di shell scritti al volo, come quelli che il resto di
+    //! questo file usa già: sono l'unico modo di provare una misura senza
+    //! comprarla.
+
+    use super::*;
+    use ledger::Ledger;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-consumo-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        dir
+    }
+
+    /// Uno script eseguibile che si comporta come gli si dice.
+    fn fake_engine(dir: &std::path::Path, name: &str, body: &str) -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("scrivere il finto motore");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("renderlo eseguibile");
+        path.to_string_lossy().into_owned()
+    }
+
+    /// Il listino di prova, con la cache a un decimo dell'ingresso: è la
+    /// differenza che il criterio 3 del mandato esiste per non perdere.
+    const LISTINO: &str = r#"{
+      "currency": "USD",
+      "dated": "2026-08-29",
+      "models": [
+        { "id": "modello-di-prova", "aliases": ["prova"],
+          "input_per_million": 3.0, "output_per_million": 15.0,
+          "cached_per_million": 0.3 }
+      ]
+    }"#;
+
+    fn write_listino(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("pricing.json");
+        std::fs::write(&path, LISTINO).expect("scrivere il listino");
+        path
+    }
+
+    /// Uno stato condiviso come quello che l'esecutore prepara prima di ogni
+    /// azione: corsa e passo, sotto le chiavi riservate di `flow`.
+    fn shared(run: &str, step: &str) -> SharedState {
+        let mut shared = SharedState::new();
+        shared.insert(flow::CURRENT_RUN.to_owned(), json!(run));
+        shared.insert(flow::CURRENT_STEP.to_owned(), json!(step));
+        shared
+    }
+
+    /// Un risolutore che punta a uno script e gli attacca la ricetta che gli si
+    /// dà: è il posto dove, nella vita vera, arriva un descrittore.
+    struct Declares {
+        bin: String,
+        recipe: Option<AskRecipe>,
+    }
+
+    impl ToolResolver for Declares {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                "motore-di-prova" => Ok(self.bin.clone()),
+                other => Err(format!("«{other}» non è su questa macchina")),
+            }
+        }
+        fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+            self.recipe.clone()
+        }
+    }
+
+    fn path(keys: &[&str]) -> Option<Pointer> {
+        Some(Pointer::Path(keys.iter().map(|k| (*k).to_owned()).collect()))
+    }
+
+    /// La ricetta di un motore che sa dire quanto ha consumato: chiede
+    /// l'involucro e dichiara dove stanno i numeri, il modello e la risposta.
+    fn declaring_recipe() -> AskRecipe {
+        AskRecipe {
+            args: Vec::new(),
+            prompt: PromptVia::Stdin,
+            unusable_when: Vec::new(),
+            usage: Some(UsageRecipe {
+                args: vec!["--output-format".to_owned(), "json".to_owned()],
+                declared: Declared {
+                    read: Shape::Json,
+                    input_tokens: path(&["usage", "input_tokens"]),
+                    output_tokens: path(&["usage", "output_tokens"]),
+                    cached_tokens: path(&["usage", "cache_read_input_tokens"]),
+                    total_tokens: None,
+                    cost: path(&["total_cost_usd"]),
+                    model: path(&["model"]),
+                    answer: path(&["result"]),
+                },
+            }),
+        }
+    }
+
+    /// Un motore che risponde con l'involucro **solo** se gli si è chiesto
+    /// `--output-format json`, e in chiaro altrimenti: è il comportamento vero
+    /// di una riga di comando, e senza di lui la prova sull'uscita invariata
+    /// non proverebbe niente.
+    const WRAPS_ON_DEMAND: &str = r#"cat > /dev/null
+printf '%s\n' "$@" > "$(dirname "$0")/argv"
+if [ "$1" = "--output-format" ] && [ "$2" = "json" ]; then
+  printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'
+else
+  printf 'la risposta vera'
+fi"#;
+
+    /// **UN MOTORE CHE RISPONDE IN JSON SENZA CHE NESSUNO GLIEL'ABBIA CHIESTO.**
+    /// Serve a provare che il consumo si legge perché un DESCRITTORE lo
+    /// dichiara, non perché l'uscita per caso somiglia a un formato noto: se
+    /// qui dentro comparisse un ramo cablato su chiavi di un fornitore, i suoi
+    /// token verrebbero letti lo stesso, ed è esattamente ciò che il vincolo di
+    /// indipendenza dal modello vieta.
+    const ALWAYS_WRAPS: &str = r#"cat > /dev/null
+printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd":0.5,"usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}}'"#;
+
+    /// La riga di comando con cui il finto motore è stato davvero invocato.
+    fn argv_of(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_to_string(dir.join("argv"))
+            .expect("il motore finto ha scritto la propria riga di comando")
+            .lines()
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn calls_in(dir: &std::path::Path) -> Vec<ledger::ModelCallRecord> {
+        let ledger = Ledger::open(dir).expect("riaprire il deposito");
+        let dump = ledger
+            .projection_dump()
+            .expect("il deposito sa dire cosa contiene");
+        ui_free_parse(&dump)
+    }
+
+    /// Legge le righe di `model_calls` dal dump, per posizione. `actions` non
+    /// dipende da `ui`, quindi la lettura sta qui: è poca, e la dipendenza
+    /// inversa sarebbe un ciclo.
+    fn ui_free_parse(dump: &Value) -> Vec<ledger::ModelCallRecord> {
+        dump.get("model_calls")
+            .and_then(Value::as_array)
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| {
+                        let cols = row.as_array()?;
+                        let count = |i: usize| -> Option<u64> {
+                            let value = cols.get(i)?;
+                            value.as_u64().or_else(|| value.as_str()?.parse().ok())
+                        };
+                        Some(ledger::ModelCallRecord {
+                            call_id: cols.first()?.as_str()?.to_owned(),
+                            run_id: cols.get(1)?.as_str()?.to_owned(),
+                            step_id: cols.get(2)?.as_str().map(str::to_owned),
+                            purpose: cols.get(3)?.as_str()?.to_owned(),
+                            cli: cols.get(4)?.as_str()?.to_owned(),
+                            requested_model: cols.get(5)?.as_str()?.to_owned(),
+                            actual_model: cols.get(6)?.as_str()?.to_owned(),
+                            input_tokens: count(7),
+                            output_tokens: count(8),
+                            cached_tokens: count(9),
+                            cost_micros: cols.get(10)?.as_i64(),
+                            price_currency: cols.get(11)?.as_str().map(str::to_owned),
+                            input_price_micros_per_million: cols.get(12)?.as_i64(),
+                            output_price_micros_per_million: cols.get(13)?.as_i64(),
+                            cached_price_micros_per_million: cols.get(14)?.as_i64(),
+                            mandate_name: cols.get(15)?.as_str()?.to_owned(),
+                            mandate_version: cols.get(16)?.as_str()?.to_owned(),
+                            retry_chain: cols
+                                .get(17)
+                                .and_then(Value::as_str)
+                                .and_then(|text| serde_json::from_str(text).ok())
+                                .unwrap_or_default(),
+                            error_type: cols.get(18)?.as_str().map(str::to_owned),
+                            started_at: cols.get(19)?.as_i64()?,
+                            ended_at: cols.get(20)?.as_i64(),
+                            total_tokens: count(21),
+                            declared_cost_micros: cols.get(22)?.as_i64(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Il listino vive in un file, e le prove non devono contendersi la casa di
+    /// chi le esegue: `SAILOR_PRICING` lo sposta. Una serratura perché le prove
+    /// girano in parallelo nello stesso processo e la variabile d'ambiente è una
+    /// sola — senza, due prove si toglierebbero il listino a vicenda.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_listino<T>(listino: Option<&std::path::Path>, body: impl FnOnce() -> T) -> T {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match listino {
+            Some(path) => std::env::set_var(PRICING_ENV, path),
+            None => std::env::set_var(PRICING_ENV, "/nessun/listino/qui"),
+        }
+        let out = body();
+        std::env::remove_var(PRICING_ENV);
+        out
+    }
+
+    // ── (a) chi dichiara: token veri, cache a parte, costo dal listino ─
+
+    /// **IL CRITERIO 2 E IL CRITERIO 3 INSIEME.** Un motore che dichiara come si
+    /// legge il suo consumo produce una riga nel deposito con i token veri, la
+    /// cache in una colonna sua, e il costo calcolato dal listino locale — non
+    /// quello che il motore stesso dichiara.
+    #[test]
+    fn a_declaring_engine_writes_a_row_with_true_tokens_and_a_cost_from_the_listino() {
+        let dir = scratch("dichiara");
+        let listino = write_listino(&dir);
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let outcome = with_listino(Some(&listino), || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect("il motore risponde");
+        let ActionOutcome::Went(output) = outcome else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "una chiamata, una riga");
+        let call = &calls[0];
+        assert_eq!(call.run_id, "corsa-1");
+        assert_eq!(call.step_id.as_deref(), Some("passo-1"));
+        assert_eq!(call.cli, "motore-di-prova");
+        assert_eq!(call.actual_model, "modello-di-prova");
+        assert_eq!(call.input_tokens, Some(1_000_000));
+        assert_eq!(call.output_tokens, Some(1_000_000));
+        assert_eq!(
+            call.cached_tokens,
+            Some(1_000_000),
+            "la cache ha una colonna sua e non finisce dentro l'ingresso"
+        );
+        // 1M a 3 $ + 1M a 15 $ + 1M di cache a 0,30 $ = 18,30 $ = 18 300 000 micro.
+        assert_eq!(call.cost_micros, Some(18_300_000));
+        assert_eq!(call.price_currency.as_deref(), Some("USD"));
+        assert_eq!(call.cached_price_micros_per_million, Some(300_000));
+        // Il costo che il motore dichiara di suo sta accanto, mai al posto:
+        // 0,5 $ è volutamente diverso dal conto del listino.
+        assert_eq!(call.declared_cost_micros, Some(500_000));
+        assert_eq!(call.error_type, None);
+        assert!(call.ended_at.is_some());
+
+        // E l'uscita del passo è il testo, non l'involucro.
+        assert_eq!(output["stdout"], "la risposta vera");
+    }
+
+    /// **IL CRITERIO 3, DALLA PARTE IN CUI SI ROMPE.** Se la cache fosse contata
+    /// al prezzo dell'ingresso invece che al suo, questo costo verrebbe dieci
+    /// volte più caro sulla parte della cache. La prova sopra fissa il numero;
+    /// questa dice perché quel numero e non un altro.
+    #[test]
+    fn cache_priced_as_input_would_cost_ten_times_more() {
+        let solo_cache = models::pricing::cost_micros(
+            Some(0),
+            Some(0),
+            Some(1_000_000),
+            models::pricing::PriceList::parse(LISTINO)
+                .unwrap()
+                .find("prova")
+                .unwrap()
+                .micros(),
+        );
+        assert_eq!(solo_cache, Some(300_000), "1M di cache costa 0,30 $");
+        assert!(
+            solo_cache.unwrap() * 5 < 3_000_000,
+            "e non i 3,00 $ che costerebbe come ingresso fresco"
+        );
+    }
+
+    // ── (b) chi non dichiara niente: identico, e sconosciuto ───────────
+
+    /// **IL CRITERIO 4.** Un motore senza blocco `usage` produce la stessa
+    /// identica uscita di prima, e la sua riga porta i token a SCONOSCIUTO.
+    /// Mai zero: uno zero si somma, e nessuna vista a valle può correggerlo.
+    #[test]
+    fn an_engine_that_declares_nothing_is_unchanged_and_leaves_the_tokens_unknown() {
+        let dir = scratch("non-dichiara");
+        let listino = write_listino(&dir);
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(AskRecipe {
+                args: Vec::new(),
+                prompt: PromptVia::Stdin,
+                unusable_when: Vec::new(),
+                usage: None,
+            }),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let outcome = with_listino(Some(&listino), || {
+            action.execute(&input, &mut shared("corsa-2", "passo-2"))
+        })
+        .expect("il motore risponde");
+        let ActionOutcome::Went(output) = outcome else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        // Stessa uscita di sempre: nessun campo in più, nessun involucro.
+        assert_eq!(output["status"], "ok");
+        assert_eq!(output["stdout"], "la risposta vera");
+        assert_eq!(
+            output.as_object().unwrap().keys().collect::<Vec<_>>(),
+            vec!["status", "stdout", "stderr"],
+            "l'uscita del passo non guadagna campi perché qualcuno misura"
+        );
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "la chiamata si registra comunque");
+        let call = &calls[0];
+        assert_eq!(call.input_tokens, None, "sconosciuto, non zero");
+        assert_eq!(call.output_tokens, None, "sconosciuto, non zero");
+        assert_eq!(call.cached_tokens, None, "sconosciuto, non zero");
+        assert_eq!(call.total_tokens, None);
+        assert_eq!(call.cost_micros, None, "senza token non c'è nessun costo");
+        assert_eq!(call.actual_model, "", "nessun modello dichiarato");
+    }
+
+    // ── (c) una chiamata fallita scrive comunque la sua riga ───────────
+
+    /// **IL CRITERIO 5.** Un motore uscito in errore scrive la sua riga con la
+    /// causa: un turno interrotto brucia comunque la quota, e azzerarne il
+    /// costo sottostimerebbe la spesa proprio nei minuti che precedono un
+    /// esaurimento.
+    #[test]
+    fn a_failed_call_still_writes_its_row_with_the_cause() {
+        let dir = scratch("fallita");
+        let bin = fake_engine(&dir, "motore", "cat > /dev/null\necho 'è andata male' >&2\nexit 3");
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_listino(None, || {
+            action.execute(&input, &mut shared("corsa-3", "passo-3"))
+        })
+        .expect_err("un'uscita diversa da zero rompe il passo");
+        assert_eq!(error.class, "engine_exit_error");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "anche un fallimento lascia la sua riga");
+        assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
+        assert_eq!(calls[0].cli, "motore-di-prova");
+        assert_eq!(calls[0].input_tokens, None, "non ha fatto in tempo a dirlo");
+    }
+
+    /// Un motore che non parte lascia comunque traccia, con la causa sua: senza
+    /// questa riga una catena che ripiega sembrerebbe aver scelto il secondo
+    /// motore per primo.
+    #[test]
+    fn an_engine_that_never_starts_leaves_its_own_row_too() {
+        let dir = scratch("mai-partito");
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin: "/nessun/binario/qui-di-sicuro".to_owned(),
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_listino(None, || {
+            action.execute(&input, &mut shared("corsa-4", "passo-4"))
+        })
+        .expect_err("un binario che non c'è rompe il passo");
+        assert_eq!(error.class, "engine_spawn_failed");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].error_type.as_deref(), Some("spawn_failed"));
+    }
+
+    // ── l'uscita del passo non cambia perché si misura ─────────────────
+
+    /// **IL VINCOLO CHE NESSUNO HA CHIESTO E CHE ROMPEREBBE UN FLUSSO VERO.**
+    /// `flows/come-lo-risolvono-gli-altri.flow.json` dichiara `allow_extra: false`
+    /// sulla forma della risposta di un passo motore. Se chiedere l'involucro
+    /// lasciasse l'involucro dentro `stdout`, quel flusso diventerebbe rosso per
+    /// una misura che non ha chiesto. Qui si guarda che il testo che esce sia
+    /// **identico** con e senza la misura accesa.
+    #[test]
+    fn asking_for_a_json_envelope_does_not_change_what_the_step_receives() {
+        let dir = scratch("involucro");
+        let listino = write_listino(&dir);
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let senza = {
+            let ledger = Ledger::open(dir.join("senza")).expect("deposito");
+            let action = ExternalEngineAction::resolving_with(Declares {
+                bin: bin.clone(),
+                recipe: Some(AskRecipe {
+                    args: Vec::new(),
+                    prompt: PromptVia::Stdin,
+                    unusable_when: Vec::new(),
+                    usage: None,
+                }),
+            })
+            .recording_to(Some(ledger));
+            let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+                action.execute(&input, &mut shared("corsa-5", "passo-5"))
+            })
+            .expect("risponde") else {
+                panic!("Went")
+            };
+            output
+        };
+
+        let con = {
+            let ledger = Ledger::open(dir.join("con")).expect("deposito");
+            let action = ExternalEngineAction::resolving_with(Declares {
+                bin,
+                recipe: Some(declaring_recipe()),
+            })
+            .recording_to(Some(ledger));
+            let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+                action.execute(&input, &mut shared("corsa-6", "passo-6"))
+            })
+            .expect("risponde") else {
+                panic!("Went")
+            };
+            output
+        };
+
+        assert_eq!(
+            senza, con,
+            "misurare non deve cambiare di una virgola ciò che il passo consegna a valle"
+        );
+        // E la misura c'è stata davvero: senza questo, la prova passerebbe anche
+        // se il blocco `usage` non fosse mai arrivato al punto di invocazione.
+        assert_eq!(
+            calls_in(&dir.join("con"))[0].input_tokens,
+            Some(1_000_000),
+            "l'involucro è stato chiesto e letto"
+        );
+        assert_eq!(calls_in(&dir.join("senza"))[0].input_tokens, None);
+    }
+
+    // ── senza il posto dove scrivere, non si scrive niente ─────────────
+
+    /// Una riga attribuita a nessuno sporcherebbe le somme peggio di una riga
+    /// mancante: senza deposito, o senza corsa, non si registra.
+    #[test]
+    fn without_a_ledger_or_without_a_run_nothing_is_written() {
+        let dir = scratch("senza-appigli");
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let recipe = declaring_recipe();
+
+        // Senza deposito: il passo funziona lo stesso.
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin: bin.clone(),
+            recipe: Some(recipe.clone()),
+        });
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+        assert!(action
+            .execute(&input, &mut shared("corsa-7", "passo-7"))
+            .is_ok());
+
+        // Col deposito ma senza la chiave della corsa: nessuna riga.
+        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let mut solo_il_passo = SharedState::new();
+        solo_il_passo.insert(flow::CURRENT_STEP.to_owned(), json!("passo-8"));
+        assert!(action.execute(&input, &mut solo_il_passo).is_ok());
+        assert!(
+            calls_in(&dir.join("deposito")).is_empty(),
+            "senza corsa non si attribuisce nessuna spesa a nessuno"
+        );
+    }
+
+    /// Un `bin` scritto a mano nel passo non è una chiamata a un modello:
+    /// `sh -c echo` non consuma nessuna quota, e riempirne il deposito
+    /// renderebbe illeggibile la vista che questo lavoro esiste per rendere
+    /// leggibile.
+    #[test]
+    fn a_hand_written_bin_is_not_a_model_call() {
+        let dir = scratch("bin-a-mano");
+        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let action = ExternalEngineAction::new().recording_to(Some(ledger));
+        let input = json!({"bin": "echo", "args": ["ciao"], "timeout_secs": 10});
+
+        assert!(action
+            .execute(&input, &mut shared("corsa-9", "passo-9"))
+            .is_ok());
+        assert!(calls_in(&dir.join("deposito")).is_empty());
+    }
+
+    /// Le opzioni scritte dal passo vincono, e con loro il consumo resta
+    /// sconosciuto: allungare alle spalle di chi ha scritto quella riga di
+    /// comando una domanda che non ha fatto sarebbe decidere al posto suo. La
+    /// riga però si scrive, e dice proprio questo.
+    #[test]
+    fn when_the_step_writes_its_own_args_the_usage_is_not_asked_for() {
+        let dir = scratch("args-del-passo");
+        let listino = write_listino(&dir);
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova", "args": ["--a-modo-mio"],
+            "stdin": "ciao", "timeout_secs": 10
+        });
+
+        let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+            action.execute(&input, &mut shared("corsa-10", "passo-10"))
+        })
+        .expect("risponde") else {
+            panic!("Went")
+        };
+
+        assert_eq!(output["stdout"], "la risposta vera");
+        // **IL BRACCIO CHE CONTA**: la riga di comando è ESATTAMENTE quella che
+        // il passo ha scritto. Accodarci le opzioni del consumo sarebbe
+        // allungare alle spalle di chi l'ha scritta una domanda che non ha
+        // fatto, e da fuori non si vedrebbe: solo guardando l'argv del processo
+        // la differenza salta fuori.
+        assert_eq!(
+            argv_of(&dir),
+            vec!["--a-modo-mio".to_owned()],
+            "nessuna opzione aggiunta di nascosto"
+        );
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "la chiamata si registra lo stesso");
+        assert_eq!(calls[0].input_tokens, None, "ma non misurata");
+    }
+
+    /// **IL VINCOLO DI INDIPENDENZA DAL MODELLO, NEL PUNTO IN CUI SI ROMPE.**
+    /// Un motore che non dichiara `usage` resta non misurato ANCHE SE la sua
+    /// uscita è un involucro JSON con dentro chiavi che qualcuno riconoscerebbe.
+    /// Se il codice avesse un ramo cablato su un fornitore — «se somiglia a
+    /// questo, leggi qui» — questa prova diventerebbe rossa, e deve.
+    #[test]
+    fn output_that_merely_looks_familiar_is_not_read_without_a_declaration() {
+        let dir = scratch("nessun-ramo-cablato");
+        let listino = write_listino(&dir);
+        let bin = fake_engine(&dir, "motore", ALWAYS_WRAPS);
+        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(AskRecipe {
+                args: Vec::new(),
+                prompt: PromptVia::Stdin,
+                unusable_when: Vec::new(),
+                usage: None,
+            }),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+            action.execute(&input, &mut shared("corsa-11", "passo-11"))
+        })
+        .expect("risponde") else {
+            panic!("Went")
+        };
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1);
+        assert_eq!(
+            calls[0].input_tokens, None,
+            "quei numeri ci sono, ma nessun descrittore ha detto di leggerli"
+        );
+        assert_eq!(calls[0].cost_micros, None);
+        assert_eq!(calls[0].actual_model, "");
+        // E l'uscita del passo è quella grezza: senza `answer` dichiarato non
+        // si spacchetta niente, perché nessuno ha detto dove guardare.
+        assert!(
+            output["stdout"].as_str().unwrap().starts_with('{'),
+            "l'involucro resta tale e quale: {}",
+            output["stdout"]
+        );
     }
 }
