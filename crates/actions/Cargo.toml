@@ -9,8 +9,17 @@ rust-version.workspace = true
 # verso il deposito, perche' i due nodi di `store` danno a un flusso lo spazio
 # dove ricordare invece di farsi una struttura Rust per ogni fatto.
 # Resta vero cio' che conta: nessuna coda, nessun percorso, nessun servizio.
+#
+# `models` dal 29/08/2026, e la direzione conta: `models` non dipende da niente
+# di qui (solo `serde_json` e `regex`), quindi non c'e' ciclo — mentre il verso
+# opposto verso `toolbox` lo sarebbe, perche' `toolbox` implementa un tratto di
+# questo crate. Serve perche' leggere il consumo dichiarato da un motore e
+# calcolare un costo da un listino sono gia' scritti li': riscriverli qui
+# vorrebbe dire tenere due copie della stessa regola sui prezzi, e due copie di
+# una regola divergono.
 [dependencies]
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
+models = { path = "../models" }
 serde = { workspace = true }
 serde_json = { workspace = true }

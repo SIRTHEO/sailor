@@ -691,7 +691,14 @@ mod tests {
             "il rilascio è tornato a clonare la configurazione: {root:?}"
         );
         // Il crate del binario sta lì, e non sotto un sottoalbero `rust/`.
-        assert!(root.join("crates").join("claude-hooks").is_dir(), "{root:?}");
+        //
+        // IL PUNTO DI RIFERIMENTO È CAMBIATO IL 29/08/2026, e vale la pena dire
+        // perché: qui c'era `crates/claude-hooks`, cancellato insieme a tutto
+        // ciò che non era Sailor. Il rilascio non è cambiato di una riga — è
+        // cambiato il segnale con cui questa prova lo riconosceva. Adesso guarda
+        // il crate che dà il nome al binario: se quello non c'è, non siamo nei
+        // sorgenti di Sailor comunque sia fatto il resto.
+        assert!(root.join("crates").join("sailor").is_dir(), "{root:?}");
         assert!(!root.join("rust").exists(), "{root:?}");
     }
 

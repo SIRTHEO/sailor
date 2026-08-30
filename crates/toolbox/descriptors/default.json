@@ -28,7 +28,45 @@
     "passo al motore successivo della sua catena: si dichiarano le parole del",
     "fornitore, mai una regola generica come «errore», o un mandato sbagliato",
     "scenderebbe tutta la catena finché qualcuno risponde comunque. Chi non",
-    "dichiara `ask` resta usabile, ma solo da un passo che scriva da sé le opzioni."
+    "dichiara `ask` resta usabile, ma solo da un passo che scriva da sé le opzioni.",
+    "",
+    "`usage` dice come si legge QUANTO HA CONSUMATO quel motore, e serve perché",
+    "Sailor sappia dove sono finiti i soldi senza un ramo di codice per nessun",
+    "fornitore. `args` sono le opzioni da aggiungere per farselo dire (per",
+    "esempio `[\"--output-format\", \"json\"]`), `read` è `json` o `text`, e i",
+    "puntatori dicono dove stanno i valori: `input_tokens`, `output_tokens`,",
+    "`cached_tokens`, `total_tokens`, `cost`, `model`, `answer`. Con `read: json`",
+    "un puntatore è un cammino di chiavi (`[\"usage\", \"input_tokens\"]`); con",
+    "`read: text` è un'espressione regolare col valore nel primo gruppo.",
+    "",
+    "TRE COSE DA SAPERE PRIMA DI SCRIVERNE UNO.",
+    "1. `cached_tokens` va tenuto separato: i token letti dalla cache costano un",
+    "   ordine di grandezza meno, e un solo numero d'ingresso renderebbe la",
+    "   misura falsa proprio dove conta.",
+    "2. Se metti `args` che chiedono un involucro JSON, DEVI dichiarare anche",
+    "   `answer`, cioè dove sta il testo della risposta dentro quell'involucro:",
+    "   senza, il passo a valle riceverebbe l'involucro al posto della risposta.",
+    "   Misurare non deve cambiare ciò che si misura.",
+    "3. `model` è l'unico legame onesto col listino (`~/.sailor/pricing.json`):",
+    "   il nome che il motore dichiara si cerca fra gli `id` e gli `aliases` del",
+    "   listino. Chi non lo dichiara lascia il COSTO sconosciuto — mai zero.",
+    "",
+    "Un esempio della forma `json`, da scrivere in ~/.sailor/tools.d/ per un",
+    "motore le cui chiavi hai misurato tu su questa macchina:",
+    "  \"usage\": {",
+    "    \"args\": [\"--output-format\", \"json\"],",
+    "    \"read\": \"json\",",
+    "    \"input_tokens\": [\"usage\", \"input_tokens\"],",
+    "    \"output_tokens\": [\"usage\", \"output_tokens\"],",
+    "    \"cached_tokens\": [\"usage\", \"cache_read_input_tokens\"],",
+    "    \"cost\": [\"total_cost_usd\"],",
+    "    \"model\": [\"model\"],",
+    "    \"answer\": [\"result\"]",
+    "  }",
+    "",
+    "Chi non dichiara `usage` funziona esattamente come prima, e lascia i propri",
+    "token a SCONOSCIUTO. Non a zero: uno zero al posto di «non lo so» si somma,",
+    "e nessuna vista a valle può più correggerlo."
   ],
   "tools": [
     {
@@ -56,8 +94,12 @@
         "prompt": "stdin",
         "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota"]
       },
+      "usage": {
+        "read": "text",
+        "total_tokens": "tokens used\\s*\\n\\s*([\\d.,]+)"
+      },
       "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
-      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute."
+      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`."
     },
     {
       "id": "gemini-cli",

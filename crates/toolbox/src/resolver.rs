@@ -152,7 +152,39 @@ impl actions::ToolResolver for Tools {
                 crate::descriptor::PromptPlace::LastArg => actions::PromptVia::LastArg,
             },
             unusable_when: ask.unusable_when.clone(),
+            usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
         })
+    }
+}
+
+/// Il blocco `usage` del descrittore tradotto nella forma che le azioni
+/// conoscono. Nessuna interpretazione qui dentro: si copia ciò che c'è scritto,
+/// e ciò che non è scritto resta `None` fino in fondo.
+fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
+    actions::UsageRecipe {
+        args: usage.args.clone(),
+        declared: actions::Declared {
+            read: match usage.read {
+                crate::descriptor::ReadAs::Json => actions::Shape::Json,
+                crate::descriptor::ReadAs::Text => actions::Shape::Text,
+            },
+            input_tokens: usage.input_tokens.as_ref().map(pointer),
+            output_tokens: usage.output_tokens.as_ref().map(pointer),
+            cached_tokens: usage.cached_tokens.as_ref().map(pointer),
+            total_tokens: usage.total_tokens.as_ref().map(pointer),
+            cost: usage.cost.as_ref().map(pointer),
+            model: usage.model.as_ref().map(pointer),
+            answer: usage.answer.as_ref().map(pointer),
+        },
+    }
+}
+
+fn pointer(place: &crate::descriptor::Where) -> actions::Pointer {
+    match place {
+        crate::descriptor::Where::Path(keys) => actions::Pointer::Path(keys.clone()),
+        crate::descriptor::Where::Pattern(pattern) => {
+            actions::Pointer::Pattern(pattern.clone())
+        }
     }
 }
 
@@ -274,4 +306,117 @@ mod tests {
         assert!(reason.contains("non come qualcosa da eseguire"), "{reason}");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// **IL DATO NUOVO DEVE ARRIVARE FINO AL PUNTO DI INVOCAZIONE.** Un blocco
+    /// `usage` scritto in un descrittore e mai tradotto in `AskRecipe` è un
+    /// campo che si carica e non serve a niente: la misura resterebbe sempre
+    /// sconosciuta, e nessuna prova del motore se ne accorgerebbe — perché al
+    /// motore non arriverebbe mai una ricetta che lo dichiara. Questo è il
+    /// pezzo di strada che nessun'altra prova percorre.
+    #[test]
+    fn the_usage_block_travels_from_the_descriptor_into_the_recipe() {
+        let dir = temp_dir("usage-in-ricetta");
+        fake_executable(&dir, "misurabile");
+        let catalog = catalog_of(
+            r#"[{
+              "id": "misurabile", "family": "ai_cli",
+              "detect": { "command": "misurabile" },
+              "ask": { "args": ["-p"], "prompt": "stdin" },
+              "usage": {
+                "args": ["--output-format", "json"],
+                "read": "json",
+                "input_tokens": ["usage", "input_tokens"],
+                "cached_tokens": ["usage", "cache_read_input_tokens"],
+                "model": ["model"],
+                "answer": ["result"]
+              }
+            }]"#,
+            &dir,
+        );
+        let tools = Tools { catalog, machine: machine(&dir) };
+
+        let recipe = tools.ask_recipe("misurabile").expect("la ricetta c'è");
+        let usage = recipe.usage.expect("e porta con sé il consumo");
+        assert_eq!(usage.args, vec!["--output-format", "json"]);
+        assert_eq!(usage.declared.read, actions::Shape::Json);
+        assert_eq!(
+            usage.declared.input_tokens,
+            Some(actions::Pointer::Path(vec![
+                "usage".to_owned(),
+                "input_tokens".to_owned()
+            ]))
+        );
+        assert_eq!(
+            usage.declared.cached_tokens,
+            Some(actions::Pointer::Path(vec![
+                "usage".to_owned(),
+                "cache_read_input_tokens".to_owned()
+            ])),
+            "la cache arriva con un puntatore suo, o il criterio 3 cade qui"
+        );
+        assert_eq!(
+            usage.declared.answer,
+            Some(actions::Pointer::Path(vec!["result".to_owned()]))
+        );
+        assert_eq!(usage.declared.output_tokens, None, "e ciò che non è scritto resta assente");
+    }
+
+    /// Un descrittore senza `usage` produce una ricetta senza consumo: quel
+    /// motore si invoca come prima, e i suoi token restano sconosciuti.
+    #[test]
+    fn a_descriptor_without_usage_gives_a_recipe_without_it() {
+        let dir = temp_dir("usage-assente");
+        fake_executable(&dir, "muto");
+        let catalog = catalog_of(
+            r#"[{
+              "id": "muto", "family": "ai_cli",
+              "detect": { "command": "muto" },
+              "ask": { "args": ["-p"], "prompt": "stdin" }
+            }]"#,
+            &dir,
+        );
+        let tools = Tools { catalog, machine: machine(&dir) };
+
+        let recipe = tools.ask_recipe("muto").expect("la ricetta c'è");
+        assert!(recipe.usage.is_none());
+        assert_eq!(recipe.args, vec!["-p"], "il resto della ricetta è intatto");
+    }
+
+    /// Il descrittore spedito di `codex` arriva fino alla ricetta con la sua
+    /// espressione, e senza opzioni in più: la riga di comando di codex non
+    /// cambia perché adesso lo si misura.
+    #[test]
+    fn the_shipped_codex_recipe_carries_its_pattern_and_adds_no_arguments() {
+        let dir = temp_dir("codex-spedito");
+        fake_executable(&dir, "codex");
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let tools = Tools { catalog, machine: machine(&dir) };
+
+        let recipe = tools.ask_recipe("codex").expect("codex ha una ricetta");
+        let usage = recipe.usage.expect("e dichiara come si legge il suo consumo");
+        assert!(usage.args.is_empty(), "niente opzioni aggiunte a codex");
+        assert_eq!(usage.declared.read, actions::Shape::Text);
+        let Some(actions::Pointer::Pattern(pattern)) = usage.declared.total_tokens else {
+            panic!("codex dichiara il totale con un'espressione")
+        };
+        // E l'espressione riconosce davvero l'uscita di codex, non una che le
+        // somiglia: se fosse scritta male, il consumo resterebbe sconosciuto
+        // per sempre senza che nessuno se ne accorga.
+        let reading = actions::Reading::default();
+        let _ = reading;
+        let letto = models_read(&pattern, "roba\ntokens used\n13.910\naltro");
+        assert_eq!(letto, Some(13_910));
+    }
+
+    /// Legge un totale con l'espressione data, passando dalla stessa funzione
+    /// che il motore userà.
+    fn models_read(pattern: &str, said: &str) -> Option<u64> {
+        let declared = actions::Declared {
+            read: actions::Shape::Text,
+            total_tokens: Some(actions::Pointer::Pattern(pattern.to_owned())),
+            ..actions::Declared::default()
+        };
+        actions::read_declared(said, &declared).total_tokens
+    }
+
 }

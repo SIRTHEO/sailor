@@ -87,14 +87,16 @@ fn sample_all(ledger: &Ledger) {
             cli: "codex".to_owned(),
             requested_model: "requested".to_owned(),
             actual_model: "actual".to_owned(),
-            input_tokens: 10,
-            output_tokens: 20,
-            cached_tokens: 3,
-            cost_micros: 21,
-            price_currency: "USD".to_owned(),
-            input_price_micros_per_million: 100,
-            output_price_micros_per_million: 200,
-            cached_price_micros_per_million: 10,
+            input_tokens: Some(10),
+            output_tokens: Some(20),
+            cached_tokens: Some(3),
+            total_tokens: None,
+            cost_micros: Some(21),
+            declared_cost_micros: None,
+            price_currency: Some("USD".to_owned()),
+            input_price_micros_per_million: Some(100),
+            output_price_micros_per_million: Some(200),
+            cached_price_micros_per_million: Some(10),
             mandate_name: "repair".to_owned(),
             mandate_version: "v3".to_owned(),
             retry_chain: vec!["call-0".to_owned()],
@@ -1416,3 +1418,172 @@ fn said_leaves_one_run_only_from_broken_steps_and_says_when_it_was_clipped() {
     );
 }
 
+
+// ── i conteggi che possono essere ignoti ─────────────────────────────────
+
+/// Una chiamata coi conteggi come li si vuole.
+fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCallRecord {
+    ModelCallRecord {
+        call_id: call_id.to_owned(),
+        run_id: "run-1".to_owned(),
+        step_id: Some("compile".to_owned()),
+        purpose: "external_engine".to_owned(),
+        cli: "codex".to_owned(),
+        requested_model: String::new(),
+        actual_model: String::new(),
+        input_tokens: tokens,
+        output_tokens: tokens,
+        cached_tokens: None,
+        total_tokens: None,
+        cost_micros: cost,
+        declared_cost_micros: None,
+        price_currency: None,
+        input_price_micros_per_million: None,
+        output_price_micros_per_million: None,
+        cached_price_micros_per_million: None,
+        mandate_name: String::new(),
+        mandate_version: String::new(),
+        retry_chain: vec![],
+        error_type: None,
+        started_at: 100,
+        ended_at: Some(110),
+    }
+}
+
+/// **UNO SCONOSCIUTO SOPRAVVIVE AL VIAGGIO FINO AL DISCO E RITORNO.** È il
+/// punto in cui, se una colonna avesse un valore predefinito, un `None`
+/// tornerebbe indietro come `0` senza che nessuno se ne accorga — e da lì in
+/// poi sarebbe indistinguibile da una misura.
+#[test]
+fn an_unknown_count_stays_unknown_through_the_projection() {
+    let directory = TestDirectory::new("token-ignoti");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .record_model_call(&call_with("ignota", None, None))
+        .expect("registrare la chiamata non misurata");
+    ledger
+        .record_model_call(&call_with("misurata", Some(42), Some(7)))
+        .expect("registrare quella misurata");
+
+    let dump = ledger.projection_dump().expect("leggere la proiezione");
+    let rows = dump["model_calls"].as_array().expect("l'elenco c'è");
+    assert_eq!(rows.len(), 2);
+    let ignota = rows.iter().find(|row| row[0] == "ignota").unwrap();
+    assert_eq!(ignota[7], Value::Null, "input_tokens ignoto resta NULL");
+    assert_eq!(ignota[8], Value::Null, "output_tokens ignoto resta NULL");
+    assert_eq!(ignota[10], Value::Null, "cost_micros ignoto resta NULL");
+    assert_ne!(ignota[7], json!("0"), "e non diventa mai uno zero");
+
+    let misurata = rows.iter().find(|row| row[0] == "misurata").unwrap();
+    assert_eq!(misurata[7], json!("42"));
+    assert_eq!(misurata[10], json!(7));
+}
+
+/// Le due colonne nate con la versione 4 arrivano fino alla proiezione.
+#[test]
+fn the_total_and_the_declared_cost_reach_the_projection() {
+    let directory = TestDirectory::new("colonne-nuove");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    let mut record = call_with("solo-totale", None, None);
+    record.total_tokens = Some(13_910);
+    record.declared_cost_micros = Some(4_200);
+    ledger.record_model_call(&record).expect("registrare");
+
+    let dump = ledger.projection_dump().expect("leggere la proiezione");
+    let row = &dump["model_calls"][0];
+    assert_eq!(row[21], json!("13910"), "total_tokens");
+    assert_eq!(row[22], json!(4_200), "declared_cost_micros");
+}
+
+/// **UN DEPOSITO GIÀ SCRITTO SI ADEGUA SENZA PERDERE UNA RIGA.** La tabella
+/// vecchia ha `NOT NULL` sui conteggi, e SQLite non sa toglierlo con un
+/// `ALTER`: si rifà la tabella e ci si copiano dentro le righe. Se quel
+/// travaso perdesse qualcosa, chi aggiorna Sailor si troverebbe la propria
+/// storia di spesa dimezzata senza nessun avviso.
+#[test]
+fn an_older_ledger_is_migrated_in_place_without_losing_its_rows() {
+    let directory = TestDirectory::new("adeguamento");
+    // Si costruisce a mano un deposito nella forma della versione 3.
+    {
+        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let connection = ledger.connection.lock().expect("nessuno panica qui");
+        connection
+            .execute_batch(
+                "DROP TABLE model_calls;
+                 CREATE TABLE model_calls (
+                     call_id TEXT PRIMARY KEY,
+                     run_id TEXT NOT NULL,
+                     step_id TEXT,
+                     purpose TEXT NOT NULL,
+                     cli TEXT NOT NULL,
+                     requested_model TEXT NOT NULL,
+                     actual_model TEXT NOT NULL,
+                     input_tokens TEXT NOT NULL,
+                     output_tokens TEXT NOT NULL,
+                     cached_tokens TEXT NOT NULL,
+                     cost_micros INTEGER NOT NULL,
+                     price_currency TEXT NOT NULL,
+                     input_price_micros_per_million INTEGER NOT NULL,
+                     output_price_micros_per_million INTEGER NOT NULL,
+                     cached_price_micros_per_million INTEGER NOT NULL,
+                     mandate_name TEXT NOT NULL,
+                     mandate_version TEXT NOT NULL,
+                     retry_chain TEXT NOT NULL,
+                     error_type TEXT,
+                     started_at INTEGER NOT NULL,
+                     ended_at INTEGER
+                 );
+                 INSERT INTO model_calls VALUES
+                   ('vecchia', 'run-1', 'compile', 'repair', 'codex', 'req', 'act',
+                    '10', '20', '3', 21, 'USD', 100, 200, 10, 'repair', 'v3',
+                    '[]', NULL, 101, 110);",
+            )
+            .expect("costruire la forma vecchia");
+        connection
+            .pragma_update(None, "user_version", 3i64)
+            .expect("dichiararsi di versione 3");
+    }
+
+    // Riaprirlo lo porta alla forma nuova.
+    let ledger = Ledger::open(&directory.0).expect("riaprire il deposito");
+    let dump = ledger.projection_dump().expect("leggere la proiezione");
+    let rows = dump["model_calls"].as_array().expect("l'elenco c'è");
+    assert_eq!(rows.len(), 1, "la riga di prima è ancora lì");
+    assert_eq!(rows[0][0], json!("vecchia"));
+    assert_eq!(rows[0][7], json!("10"), "e coi suoi valori intatti");
+    assert_eq!(rows[0][21], Value::Null, "le colonne nuove nascono ignote");
+
+    // E adesso accetta ciò che prima avrebbe rifiutato.
+    ledger
+        .record_model_call(&call_with("nuova-ignota", None, None))
+        .expect("una chiamata non misurata ora entra");
+    let dump = ledger.projection_dump().expect("rileggere");
+    assert_eq!(dump["model_calls"].as_array().unwrap().len(), 2);
+}
+
+/// Un evento scritto quando i conteggi erano numeri secchi continua a
+/// leggersi: `10` diventa `Some(10)`, e un campo che non c'era diventa `None`.
+/// Senza questo, aggiornare Sailor renderebbe illeggibile il registro degli
+/// eventi già scritto — che è l'unica cosa da cui tutto il resto si ricostruisce.
+#[test]
+fn an_event_written_in_the_old_shape_still_deserialises() {
+    let vecchio = json!({
+        "call_id": "vecchia", "run_id": "run-1", "step_id": "compile",
+        "purpose": "repair", "cli": "codex",
+        "requested_model": "req", "actual_model": "act",
+        "input_tokens": 10, "output_tokens": 20, "cached_tokens": 3,
+        "cost_micros": 21, "price_currency": "USD",
+        "input_price_micros_per_million": 100,
+        "output_price_micros_per_million": 200,
+        "cached_price_micros_per_million": 10,
+        "mandate_name": "repair", "mandate_version": "v3",
+        "retry_chain": [], "error_type": null,
+        "started_at": 101, "ended_at": 110
+    });
+    let record: ModelCallRecord =
+        serde_json::from_value(vecchio).expect("un evento vecchio si legge ancora");
+    assert_eq!(record.input_tokens, Some(10));
+    assert_eq!(record.price_currency.as_deref(), Some("USD"));
+    assert_eq!(record.total_tokens, None, "un campo che non c'era è ignoto");
+    assert_eq!(record.declared_cost_micros, None);
+}

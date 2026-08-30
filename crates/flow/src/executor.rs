@@ -19,6 +19,24 @@ pub type SharedState = BTreeMap<String, Value>;
 /// scrive, e chi lo facesse si vedrebbe il valore sovrascritto a ogni passo.
 pub const CURRENT_STEP: &str = "flow.step";
 
+/// La chiave sotto cui l'esecutore scrive l'identificativo della **corsa**,
+/// accanto a quello del passo e nello stesso punto.
+///
+/// **PERCHÉ NON ARRIVA PER COSTRUZIONE COME IL DEPOSITO.** Chi registra le
+/// azioni ha in mano il deposito prima di costruire il registro, ma non ancora
+/// la corsa: il `run_id` nasce dopo, quando si sta per partire. Un'azione che
+/// deve attribuire a una corsa ciò che ha speso lo scopre qui, sulla stessa
+/// strada e per la stessa ragione di `CURRENT_STEP` — `execute` non riceve né
+/// l'uno né l'altro, e allargare la firma del tratto toccherebbe ogni
+/// implementatore in cinque crate per un dato che serve a uno solo.
+///
+/// **E NON LO DICHIARA IL FLUSSO.** Farlo scrivere nell'ingresso di un passo
+/// darebbe a un file di dati il potere di attribuire una spesa a una corsa
+/// qualunque, su una misura che esiste proprio per non doversi fidare. Il
+/// prefisso `flow.` è dell'esecutore: chi ci scrive si vede il valore
+/// sovrascritto a ogni passo.
+pub const CURRENT_RUN: &str = "flow.run";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
@@ -567,9 +585,15 @@ impl Executor for InProcessExecutor {
                 // L'identificativo entra nello stato condiviso PRIMA
                 // dell'effetto: chi guarda deve poter marcare il testo dal
                 // primo byte, non dal secondo.
+                let this_run = request.run_id.clone();
                 request
                     .shared
                     .insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
+                // La corsa accanto al passo: una spesa attribuita a un passo
+                // ma non a una corsa non si somma con nessun'altra.
+                request
+                    .shared
+                    .insert(CURRENT_RUN.to_owned(), Value::String(this_run.clone()));
                 let completion = match action {
                     None => Completion {
                         outcome: Outcome::Skipped,
