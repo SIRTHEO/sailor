@@ -534,7 +534,7 @@ fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
 fn execute_flow(
     flow: &FlowFile,
     run_id: &str,
-    store: &mut dyn RecordStore,
+    store: &dyn RecordStore,
     registry: &ActionRegistry,
     clock: &mut dyn flow::Clock,
 ) -> Result<Execution, flow::FlowError> {
@@ -671,12 +671,21 @@ mod tests {
         }
     }
 
-    struct Tick(i64);
+    /// Un orologio finto che avanza di uno a ogni domanda. Il contatore è
+    /// atomico perché l'orologio ora è condiviso fra i fili di un fronte: un
+    /// `i64` mutabile qui non compilerebbe, ed è la stessa ragione per cui il
+    /// tratto chiede `&self`.
+    struct Tick(std::sync::atomic::AtomicI64);
+
+    impl Tick {
+        fn new(start: i64) -> Self {
+            Tick(std::sync::atomic::AtomicI64::new(start))
+        }
+    }
 
     impl Clock for Tick {
-        fn now(&mut self) -> Result<i64, flow::FlowError> {
-            self.0 += 1;
-            Ok(self.0)
+        fn now(&self) -> Result<i64, flow::FlowError> {
+            Ok(self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
         }
     }
 
@@ -1225,7 +1234,7 @@ mod tests {
             "corsa-1",
             &mut store,
             &default_registry(None, None),
-            &mut Tick(0),
+            &mut Tick::new(0),
         )
         .expect("eseguire il flusso");
 

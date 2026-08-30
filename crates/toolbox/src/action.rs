@@ -63,7 +63,7 @@ fn yes() -> bool {
 pub struct DetectToolsAction;
 
 impl Action for DetectToolsAction {
-    fn execute(&self, input: &Value, _shared: &mut SharedState) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         // Un ingresso assente vale come uno vuoto: il caso più comune — «dimmi
         // cosa c'è» — non deve costringere a scrivere un oggetto di opzioni.
         let spec: DetectSpec = if input.is_null() {

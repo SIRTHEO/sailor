@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type SharedState = BTreeMap<String, Value>;
@@ -79,7 +80,7 @@ pub trait Action: Send + Sync {
     fn execute(
         &self,
         input: &Value,
-        shared: &mut SharedState,
+        shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError>;
 
     /// Un'azione senza una prova positiva non è rilanciabile automaticamente:
@@ -156,11 +157,19 @@ pub struct Completion {
     pub bytes_discarded: Option<u64>,
 }
 
-pub trait RecordStore {
+/// Dove si scrive che un passo è partito e com'è finito.
+///
+/// **PRENDE `&self`, E NON È UN DETTAGLIO DI STILE.** Con `&mut self` un fronte
+/// di passi indipendenti non si può eseguire insieme: il deposito è uno solo, e
+/// un solo filo per volta potrebbe tenerlo. Chi implementa questo tratto si
+/// procura da sé la mutabilità che gli serve — `Ledger` ha già la sua connessione
+/// dietro un lucchetto, e le sue scritture sono già transazioni. Il tratto chiede
+/// `Sync` per la stessa ragione: senza, il fronte resta una fila indiana.
+pub trait RecordStore: Sync {
     /// Deve rendere durevole l'intenzione prima di restituire al chiamante.
-    fn append_started(&mut self, record: StepRecord) -> Result<(), FlowError>;
+    fn append_started(&self, record: StepRecord) -> Result<(), FlowError>;
     fn close(
-        &mut self,
+        &self,
         run_id: &str,
         step_id: &str,
         attempt: u32,
@@ -170,23 +179,46 @@ pub trait RecordStore {
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError>;
 }
 
-#[derive(Debug, Clone, Default)]
+/// Il deposito che vive in memoria, per le prove e per chi non vuole un file.
+///
+/// **IL LUCCHETTO C'È PERCHÉ IL FRONTE GIRA INSIEME.** Prima qui c'era un `Vec`
+/// nudo e il tratto chiedeva `&mut self`: bastava, perché i passi si eseguivano
+/// in fila. Da quando un fronte parte tutto insieme, due fili scrivono qui
+/// dentro nello stesso istante, e la mutabilità se la procura la struttura
+/// invece di chiederla al chiamante — che non potrebbe darla a entrambi.
+#[derive(Debug, Default)]
 pub struct InMemoryRecordStore {
-    records: Vec<StepRecord>,
+    records: Mutex<Vec<StepRecord>>,
 }
 
 impl InMemoryRecordStore {
     pub fn from_records(records: Vec<StepRecord>) -> Self {
-        Self { records }
+        Self {
+            records: Mutex::new(records),
+        }
     }
 
-    pub fn all(&self) -> &[StepRecord] {
-        &self.records
+    /// Una copia di ciò che c'è dentro adesso.
+    ///
+    /// **RESTITUISCE UNA COPIA E NON UN RIFERIMENTO**: dietro il lucchetto non
+    /// si può prestare niente che sopravviva alla presa, e prestarlo comunque
+    /// vorrebbe dire lasciar leggere mentre un altro filo scrive.
+    pub fn all(&self) -> Vec<StepRecord> {
+        self.held().clone()
+    }
+
+    /// La presa sul contenuto. Un lucchetto avvelenato è un filo morto mentre
+    /// scriveva: si prende quello che c'è invece di propagare il panico, perché
+    /// qui dentro non ci sono invarianti a metà — ogni scrittura è un `push` o
+    /// un campo assegnato.
+    fn held(&self) -> std::sync::MutexGuard<'_, Vec<StepRecord>> {
+        self.records.lock().unwrap_or_else(|held| held.into_inner())
     }
 }
 
 impl RecordStore for InMemoryRecordStore {
-    fn append_started(&mut self, record: StepRecord) -> Result<(), FlowError> {
+    fn append_started(&self, record: StepRecord) -> Result<(), FlowError> {
+        let mut records = self.held();
         if record.outcome.is_some()
             || record.output.is_some()
             || record.said.is_some()
@@ -199,7 +231,7 @@ impl RecordStore for InMemoryRecordStore {
                 "a started record already contains closing fields".to_owned(),
             ));
         }
-        let duplicate = self.records.iter().any(|found| {
+        let duplicate = records.iter().any(|found| {
             found.run_id == record.run_id
                 && found.step_id == record.step_id
                 && found.attempt == record.attempt
@@ -210,8 +242,7 @@ impl RecordStore for InMemoryRecordStore {
                 attempt: record.attempt,
             });
         }
-        let greatest_epoch = self
-            .records
+        let greatest_epoch = records
             .iter()
             .filter(|found| found.run_id == record.run_id && found.step_id == record.step_id)
             .map(|found| found.epoch)
@@ -222,20 +253,20 @@ impl RecordStore for InMemoryRecordStore {
                 epoch: record.epoch,
             });
         }
-        self.records.push(record);
+        records.push(record);
         Ok(())
     }
 
     fn close(
-        &mut self,
+        &self,
         run_id: &str,
         step_id: &str,
         attempt: u32,
         epoch: u64,
         mut completion: Completion,
     ) -> Result<(), FlowError> {
-        let greatest_epoch = self
-            .records
+        let mut records = self.held();
+        let greatest_epoch = records
             .iter()
             .filter(|found| found.run_id == run_id && found.step_id == step_id)
             .map(|found| found.epoch)
@@ -246,8 +277,7 @@ impl RecordStore for InMemoryRecordStore {
                 epoch,
             });
         }
-        let record = self
-            .records
+        let record = records
             .iter_mut()
             .find(|found| {
                 found.run_id == run_id
@@ -280,7 +310,7 @@ impl RecordStore for InMemoryRecordStore {
 
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError> {
         Ok(self
-            .records
+            .held()
             .iter()
             .filter(|record| record.run_id == run_id)
             .cloned()
@@ -288,14 +318,16 @@ impl RecordStore for InMemoryRecordStore {
     }
 }
 
-pub trait Clock {
-    fn now(&mut self) -> Result<i64, FlowError>;
+/// Che ora è. `&self` e `Sync` per la stessa ragione del deposito: due passi che
+/// girano insieme chiedono l'ora insieme.
+pub trait Clock: Sync {
+    fn now(&self) -> Result<i64, FlowError>;
 }
 
 pub struct SystemClock;
 
 impl Clock for SystemClock {
-    fn now(&mut self) -> Result<i64, FlowError> {
+    fn now(&self) -> Result<i64, FlowError> {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|duration| duration.as_secs() as i64)
@@ -359,9 +391,9 @@ pub trait Executor {
         &self,
         graph: &Graph,
         request: ExecutionRequest,
-        store: &mut dyn RecordStore,
+        store: &dyn RecordStore,
         actions: &ActionRegistry,
-        clock: &mut dyn Clock,
+        clock: &dyn Clock,
     ) -> Result<Execution, FlowError>;
 }
 
@@ -524,9 +556,9 @@ impl Executor for InProcessExecutor {
         &self,
         graph: &Graph,
         mut request: ExecutionRequest,
-        store: &mut dyn RecordStore,
+        store: &dyn RecordStore,
         actions: &ActionRegistry,
-        clock: &mut dyn Clock,
+        clock: &dyn Clock,
     ) -> Result<Execution, FlowError> {
         let mut decisions = Vec::new();
         loop {
@@ -540,8 +572,36 @@ impl Executor for InProcessExecutor {
                 });
             };
 
-            // Il fronte è una decisione unica anche se questo esecutore lo percorre
-            // in ordine: l'esecutore di processi potrà avviarlo in parallelo.
+            // IL FRONTE PARTE INSIEME.
+            //
+            // **PERCHÉ PRIMA NO, E QUANTO COSTAVA.** Qui c'era un `for` che
+            // percorreva i passi pronti uno dopo l'altro, con un commento che lo
+            // ammetteva: «il fronte è una decisione unica anche se questo
+            // esecutore lo percorre in ordine». Misurato il 30/08/2026: due
+            // passi indipendenti da sei secondi ne impiegavano dodici, tre ne
+            // impiegavano diciotto — lineare, con la macchina ferma allo 0% di
+            // processore per tutto il tempo. È il guasto 7, documentato da due
+            // giorni e mai riparato, e regge in piedi il terzo blocco di lavoro:
+            // «sfruttare la macchina» non ha dove appoggiarsi su una fila
+            // indiana.
+            //
+            // **L'EPOCA È DEL FRONTE, NON DEL PASSO.** Si calcola una volta qui,
+            // prima di aprire qualunque passo, e vale per tutti quelli
+            // dell'ondata. Prima la calcolava ciascuno dalla stessa fotografia
+            // dei record e usciva comunque uguale per tutti: la differenza è che
+            // adesso è dichiarata invece che coincidente, e chi legge una corsa
+            // vede che quei passi sono partiti insieme perché portano la stessa
+            // epoca.
+            //
+            // **PRIMA SI APRONO TUTTI, POI SI ESEGUONO.** L'apertura è breve e
+            // ordinata; l'esecuzione è lunga e concorrente. Tenerle separate
+            // rende deterministico l'ordine in cui i passi compaiono nel
+            // deposito — che è quello del grafo, non quello in cui i fili
+            // vincono la corsa — e lascia la chiusura di ciascuno nel proprio
+            // filo, appena finisce, così chi guarda la vede arrivare quando
+            // accade.
+            let epoch = records.iter().map(|record| record.epoch).max().unwrap_or(0) + 1;
+            let mut opened: Vec<Opened<'_>> = Vec::with_capacity(front.len());
             for step_id in front {
                 let step = graph
                     .step(&step_id)
@@ -563,7 +623,6 @@ impl Executor for InProcessExecutor {
                 };
                 let previous = latest_for(step, &records);
                 let attempt = previous.map_or(1, |record| record.attempt + 1);
-                let epoch = records.iter().map(|record| record.epoch).max().unwrap_or(0) + 1;
                 let mut started = StepRecord::started(
                     &request.run_id,
                     &step.id,
@@ -581,76 +640,166 @@ impl Executor for InProcessExecutor {
                 started.held_by_pid = Some(std::process::id());
                 started.species = action.map(|action| action.species());
                 store.append_started(started)?;
+                opened.push(Opened {
+                    step,
+                    input,
+                    attempt,
+                    action,
+                });
+            }
 
-                // L'identificativo entra nello stato condiviso PRIMA
-                // dell'effetto: chi guarda deve poter marcare il testo dal
-                // primo byte, non dal secondo.
-                let this_run = request.run_id.clone();
-                request
-                    .shared
-                    .insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
-                // La corsa accanto al passo: una spesa attribuita a un passo
-                // ma non a una corsa non si somma con nessun'altra.
-                request
-                    .shared
-                    .insert(CURRENT_RUN.to_owned(), Value::String(this_run.clone()));
-                let completion = match action {
-                    None => Completion {
-                        outcome: Outcome::Skipped,
-                        output: None,
-                        said: None,
-                        failure_class: None,
-                        ended_at: clock.now()?,
-                        bytes_seen: None,
-                        bytes_discarded: None,
-                    },
-                    Some(action) => match action.execute(&input, &mut request.shared) {
-                        Ok(ActionOutcome::Went(output)) => {
-                            match step.output_schema.validate(&output) {
-                                Ok(()) => Completion {
-                                    outcome: Outcome::Went,
-                                    output: Some(output),
-                                    said: None,
-                                    failure_class: None,
-                                    ended_at: clock.now()?,
-                                    bytes_seen: None,
-                                    bytes_discarded: None,
-                                },
-                                Err(error) => Completion {
-                                    outcome: Outcome::Broke,
-                                    output: None,
-                                    said: Some(error.to_string()),
-                                    failure_class: Some("invalid_output".to_owned()),
-                                    ended_at: clock.now()?,
-                                    bytes_seen: None,
-                                    bytes_discarded: None,
-                                },
-                            }
-                        }
-                        Ok(ActionOutcome::Waiting(reason)) => Completion {
-                            outcome: Outcome::Waiting,
-                            output: None,
-                            said: Some(reason),
-                            failure_class: None,
-                            ended_at: clock.now()?,
-                            bytes_seen: None,
-                            bytes_discarded: None,
-                        },
-                        Err(error) => Completion {
-                            outcome: Outcome::Broke,
-                            output: None,
-                            said: Some(error.said),
-                            failure_class: Some(error.class),
-                            ended_at: clock.now()?,
-                            bytes_seen: None,
-                            bytes_discarded: None,
-                        },
-                    },
-                };
-                store.close(&request.run_id, &step.id, attempt, epoch, completion)?;
+            // La corsa entra nello stato condiviso una volta per tutte: è la
+            // stessa per ogni passo. Il passo, invece, è di ciascuno, e ognuno lo
+            // riceve nella propria copia — vedi `run_one`.
+            request.shared.insert(
+                CURRENT_RUN.to_owned(),
+                Value::String(request.run_id.clone()),
+            );
+
+            // A GRUPPI, E IL TETTO È UNA DECISIONE.
+            //
+            // Un fronte largo è raro in un grafo scritto a mano, ma quando
+            // capita i passi non sono conti: sono agenti. Venti insieme
+            // vorrebbero dire venti processi, venti chiamate a pagamento e una
+            // macchina in ginocchio, e nessuno l'avrebbe chiesto. `AT_ONCE`
+            // limita l'ondata; il resto aspetta il gruppo prima.
+            let mut failure: Option<FlowError> = None;
+            for group in opened.chunks(AT_ONCE) {
+                let outcomes: Vec<Result<(), FlowError>> = std::thread::scope(|scope| {
+                    let handles: Vec<_> = group
+                        .iter()
+                        .map(|work| {
+                            let shared = &request.shared;
+                            let run_id = request.run_id.as_str();
+                            scope.spawn(move || run_one(work, run_id, epoch, shared, store, clock))
+                        })
+                        .collect();
+                    handles
+                        .into_iter()
+                        .map(|handle| match handle.join() {
+                            Ok(result) => result,
+                            // Un filo che va in panico non deve portarsi via la
+                            // corsa in silenzio: diventa un guasto del passo,
+                            // con scritto che è successo qui.
+                            Err(_) => Err(FlowError::Store(
+                                "un passo del fronte è morto mentre girava".to_owned(),
+                            )),
+                        })
+                        .collect()
+                });
+                for outcome in outcomes {
+                    if let Err(error) = outcome {
+                        // **SI TIENE IL PRIMO E SI VA AVANTI FINO IN FONDO AL
+                        // GRUPPO.** Uscire subito lascerebbe i passi già aperti
+                        // dell'ondata senza chiusura, e alla ripresa
+                        // sembrerebbero tenuti da un processo vivo.
+                        failure.get_or_insert(error);
+                    }
+                }
+                if failure.is_some() {
+                    break;
+                }
+            }
+            if let Some(error) = failure {
+                return Err(error);
             }
         }
     }
+}
+
+/// Quanti passi di uno stesso fronte girano insieme.
+///
+/// **È UN TETTO DICHIARATO, NON UN LIMITE TECNICO.** La macchina ne reggerebbe
+/// di più; a non reggerne di più sono le quote dei motori e la pazienza di chi
+/// guarda. Quattro è la scelta di partenza: abbastanza da far sparire l'attesa
+/// di un fronte normale — che nei flussi scritti finora è di due o tre passi —
+/// e poco abbastanza da non aprire una decina di conversazioni a pagamento per
+/// una corsa che nessuno stava sorvegliando. Il giorno che esisterà un tetto di
+/// spesa, questo numero diventerà una sua conseguenza invece di una costante.
+const AT_ONCE: usize = 4;
+
+/// Un passo già aperto nel deposito, in attesa di essere eseguito.
+struct Opened<'a> {
+    step: &'a Step,
+    input: Value,
+    attempt: u32,
+    action: Option<&'a dyn Action>,
+}
+
+/// Esegue un passo e lo chiude. Gira nel proprio filo.
+///
+/// **LO STATO CONDIVISO È UNA COPIA, E QUI STA IL PUNTO DELICATO DI TUTTO IL
+/// LAVORO.** Un'azione che produce testo, o che registra una spesa, chiede allo
+/// stato condiviso di chi è il passo corrente (`CURRENT_STEP`). Finché i passi
+/// giravano in fila, una chiave sola bastava: c'era un solo passo vivo. Con due
+/// passi vivi quella chiave avrebbe un valore solo, e il testo e i **costi** di
+/// uno finirebbero attribuiti all'altro — in silenzio, senza che niente diventi
+/// rosso. Per questo ogni filo riceve la propria copia con dentro il proprio
+/// passo: la chiave resta una, ma la mappa è di ciascuno.
+fn run_one(
+    work: &Opened<'_>,
+    run_id: &str,
+    epoch: u64,
+    shared: &SharedState,
+    store: &dyn RecordStore,
+    clock: &dyn Clock,
+) -> Result<(), FlowError> {
+    let step = work.step;
+    let mut mine = shared.clone();
+    mine.insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
+
+    let completion = match work.action {
+        None => Completion {
+            outcome: Outcome::Skipped,
+            output: None,
+            said: None,
+            failure_class: None,
+            ended_at: clock.now()?,
+            bytes_seen: None,
+            bytes_discarded: None,
+        },
+        Some(action) => match action.execute(&work.input, &mine) {
+            Ok(ActionOutcome::Went(output)) => match step.output_schema.validate(&output) {
+                Ok(()) => Completion {
+                    outcome: Outcome::Went,
+                    output: Some(output),
+                    said: None,
+                    failure_class: None,
+                    ended_at: clock.now()?,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+                Err(error) => Completion {
+                    outcome: Outcome::Broke,
+                    output: None,
+                    said: Some(error.to_string()),
+                    failure_class: Some("invalid_output".to_owned()),
+                    ended_at: clock.now()?,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+            },
+            Ok(ActionOutcome::Waiting(reason)) => Completion {
+                outcome: Outcome::Waiting,
+                output: None,
+                said: Some(reason),
+                failure_class: None,
+                ended_at: clock.now()?,
+                bytes_seen: None,
+                bytes_discarded: None,
+            },
+            Err(error) => Completion {
+                outcome: Outcome::Broke,
+                output: None,
+                said: Some(error.said),
+                failure_class: Some(error.class),
+                ended_at: clock.now()?,
+                bytes_seen: None,
+                bytes_discarded: None,
+            },
+        },
+    };
+    store.close(run_id, &step.id, work.attempt, epoch, completion)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -915,12 +1064,19 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    struct Tick(i64);
+    /// Un orologio finto che avanza di uno a ogni domanda, con un contatore
+    /// atomico: ora l'orologio lo condividono i fili di un fronte.
+    struct Tick(std::sync::atomic::AtomicI64);
+
+    impl Tick {
+        fn new(start: i64) -> Self {
+            Tick(std::sync::atomic::AtomicI64::new(start))
+        }
+    }
 
     impl Clock for Tick {
-        fn now(&mut self) -> Result<i64, FlowError> {
-            self.0 += 1;
-            Ok(self.0)
+        fn now(&self) -> Result<i64, FlowError> {
+            Ok(self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
         }
     }
 
@@ -930,7 +1086,7 @@ mod tests {
         fn execute(
             &self,
             input: &Value,
-            _shared: &mut SharedState,
+            _shared: &SharedState,
         ) -> Result<ActionOutcome, ActionError> {
             Ok(ActionOutcome::Went(input.clone()))
         }
@@ -942,7 +1098,7 @@ mod tests {
         fn execute(
             &self,
             input: &Value,
-            _shared: &mut SharedState,
+            _shared: &SharedState,
         ) -> Result<ActionOutcome, ActionError> {
             if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
                 Err(ActionError::new("temporary", "try again"))
@@ -958,7 +1114,7 @@ mod tests {
         fn execute(
             &self,
             _input: &Value,
-            _shared: &mut SharedState,
+            _shared: &SharedState,
         ) -> Result<ActionOutcome, ActionError> {
             Ok(ActionOutcome::Waiting("source unreadable".to_owned()))
         }
@@ -970,7 +1126,7 @@ mod tests {
         fn execute(
             &self,
             _input: &Value,
-            _shared: &mut SharedState,
+            _shared: &SharedState,
         ) -> Result<ActionOutcome, ActionError> {
             Ok(ActionOutcome::Went(json!([])))
         }
@@ -1001,7 +1157,7 @@ mod tests {
             fn execute(
                 &self,
                 _input: &Value,
-                shared: &mut SharedState,
+                shared: &SharedState,
             ) -> Result<ActionOutcome, ActionError> {
                 let seen = shared
                     .get(CURRENT_STEP)
@@ -1029,7 +1185,7 @@ mod tests {
         };
         let mut store = InMemoryRecordStore::default();
         InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
             .expect("esecuzione riuscita");
         assert_eq!(
             *seen.lock().expect("nessuno panica qui"),
@@ -1058,7 +1214,7 @@ mod tests {
         };
         let mut store = InMemoryRecordStore::default();
         let result = InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
             .expect("esecuzione riuscita");
         assert_eq!(
             result.decisions,
@@ -1069,8 +1225,8 @@ mod tests {
                 Decision::Complete,
             ]
         );
-        let join = store
-            .all()
+        let records = store.all();
+        let join = records
             .iter()
             .find(|record| record.step_id == "join")
             .expect("record della giunzione");
@@ -1100,11 +1256,11 @@ mod tests {
         let mut store = InMemoryRecordStore::default();
 
         InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
             .expect("esecuzione riuscita");
 
-        let send = store
-            .all()
+        let records = store.all();
+        let send = records
             .iter()
             .find(|record| record.step_id == "send")
             .expect("record dell'invio");
@@ -1136,7 +1292,7 @@ mod tests {
                 },
                 &mut store,
                 &actions,
-                &mut Tick(0),
+                &mut Tick::new(0),
             )
             .expect("l'attesa è un esito legittimo");
 
@@ -1186,12 +1342,12 @@ mod tests {
                 },
                 &mut store,
                 &actions,
-                &mut Tick(0),
+                &mut Tick::new(0),
             )
             .expect("la giunzione parte");
 
-        let join = store
-            .all()
+        let records = store.all();
+        let join = records
             .iter()
             .find(|record| record.step_id == "join")
             .expect("record della giunzione");
@@ -1220,7 +1376,7 @@ mod tests {
         };
         let mut store = InMemoryRecordStore::default();
         InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
             .expect("il secondo tentativo riesce");
         assert_eq!(
             store
@@ -1272,7 +1428,7 @@ mod tests {
                 },
                 &mut store,
                 &actions,
-                &mut Tick(2),
+                &mut Tick::new(2),
             )
             .expect("ripresa riuscita");
 
@@ -1292,7 +1448,7 @@ mod tests {
         first.outcome = Some(Outcome::Broke);
         first.failure_class = Some("dead".to_owned());
         first.ended_at = Some(2);
-        store.records.push(first);
+        store.held().push(first);
         store
             .append_started(StepRecord::started(
                 "run",
@@ -1353,7 +1509,7 @@ mod tests {
         };
         let mut store = InMemoryRecordStore::default();
         let execution = InProcessExecutor
-            .execute(&graph, request, &mut store, &actions, &mut Tick(0))
+            .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
             .expect("condizione valutata");
         assert_eq!(count.load(Ordering::SeqCst), 0);
         assert_eq!(store.all()[0].outcome, Some(Outcome::Skipped));

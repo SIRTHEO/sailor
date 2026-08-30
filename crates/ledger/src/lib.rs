@@ -1193,14 +1193,20 @@ impl Ledger {
     }
 }
 
+/// **PRENDE `&self` PERCHÉ IL DEPOSITO ERA GIÀ PRONTO A RICEVERE PIÙ FILI.** La
+/// connessione sta dietro un `Arc<Mutex<_>>` da sempre, `append_step_started` e
+/// `close_step` lavorano già su `&self`, e ogni scrittura è già una transazione
+/// `BEGIN IMMEDIATE` con cinque secondi di attesa se un altro la sta tenendo. A
+/// bloccare l'esecuzione insieme di due passi non era il deposito: era la firma
+/// del tratto, che chiedeva una mutabilità che nessuno usava.
 impl RecordStore for Ledger {
-    fn append_started(&mut self, record: StepRecord) -> Result<(), flow::FlowError> {
+    fn append_started(&self, record: StepRecord) -> Result<(), flow::FlowError> {
         self.append_step_started(&record)
             .map_err(|error| flow::FlowError::Store(error.to_string()))
     }
 
     fn close(
-        &mut self,
+        &self,
         run_id: &str,
         step_id: &str,
         attempt: u32,
