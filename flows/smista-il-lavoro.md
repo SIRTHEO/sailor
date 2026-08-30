@@ -123,7 +123,7 @@ può nemmeno vederli, perché un passo rotto non arriva a lui.
 
 Il nodo `trigger` è il vero ingresso del flusso, e le sorgenti di segnale sono
 un **elenco di descrittori** (`crates/trigger/descriptors/default.json`), non
-codice: si aggiungono scrivendo una riga di JSON in `~/.sailor/triggers.d/`.
+codice: si aggiungono scrivendo una riga di JSON in `~/.config/sailor/triggers.d/`.
 
 - **`manual`** — vero e funzionante. Qualcuno preme e parte, portando un testo.
   È la sorgente che il pulsante di lancio della finestra userà.

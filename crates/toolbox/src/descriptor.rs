@@ -190,6 +190,16 @@ pub struct Usage {
     /// numero d'ingresso renderebbe la misura falsa proprio dove conta.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_tokens: Option<Where>,
+    /// I token d'ingresso **scritti nella cache**. Non è la stessa cosa che
+    /// leggerla: scrivere costa **più** dell'ingresso normale, leggere molto
+    /// meno. Su una chiamata misurata il 30/08/2026 questa sola voce era il 96%
+    /// della spesa — chi non la dichiara sbaglia il conto verso il basso.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_tokens: Option<Where>,
+    /// I token scritti in una cache **a lunga durata**, dove esiste e ha un
+    /// prezzo suo, più alto di quella breve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write_long_tokens: Option<Where>,
     /// Il totale, per i motori che dicono solo quello senza separare i lati.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<Where>,
@@ -237,6 +247,14 @@ pub enum ReadAs {
 pub enum Where {
     Path(Vec<String>),
     Pattern(String),
+    /// `{"first_key_of": ["modelUsage"]}` — il valore è **il nome della prima
+    /// chiave** dell'oggetto che sta a quel cammino.
+    ///
+    /// Serve ai motori che il modello non lo mettono in un campo ma lo usano
+    /// come chiave. Senza questa forma quel nome è inarrivabile, e senza il nome
+    /// nessuna voce di listino si trova: il costo resta sconosciuto anche
+    /// avendo tutti i token e un listino giusto.
+    FirstKeyOf { first_key_of: Vec<String> },
 }
 
 /// Dove va il testo della domanda.

@@ -3,7 +3,7 @@
     "L'elenco di cosa cercare, spedito col prodotto. È un dato: si riscrive, si",
     "estende e si spegne senza ricompilare niente.",
     "",
-    "Per aggiungere uno strumento: metti un file `.json` in `~/.sailor/tools.d/`",
+    "Per aggiungere uno strumento: metti un file `.json` in `~/.config/sailor/tools.d/`",
     "(o dove punta SAILOR_TOOL_DESCRIPTORS) con dentro un array di descrittori,",
     "o un oggetto con un campo `tools`. Un `id` già presente qui dentro viene",
     "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
@@ -47,11 +47,11 @@
     "   `answer`, cioè dove sta il testo della risposta dentro quell'involucro:",
     "   senza, il passo a valle riceverebbe l'involucro al posto della risposta.",
     "   Misurare non deve cambiare ciò che si misura.",
-    "3. `model` è l'unico legame onesto col listino (`~/.sailor/pricing.json`):",
+    "3. `model` è l'unico legame onesto col listino (`~/.config/sailor/pricing.json`):",
     "   il nome che il motore dichiara si cerca fra gli `id` e gli `aliases` del",
     "   listino. Chi non lo dichiara lascia il COSTO sconosciuto — mai zero.",
     "",
-    "Un esempio della forma `json`, da scrivere in ~/.sailor/tools.d/ per un",
+    "Un esempio della forma `json`, da scrivere in ~/.config/sailor/tools.d/ per un",
     "motore le cui chiavi hai misurato tu su questa macchina:",
     "  \"usage\": {",
     "    \"args\": [\"--output-format\", \"json\"],",
@@ -80,8 +80,20 @@
         "prompt": "stdin",
         "unusable_when": ["weekly limit", "usage limit", "rate limit"]
       },
+      "usage": {
+        "args": ["--output-format", "json"],
+        "read": "json",
+        "input_tokens": ["usage", "input_tokens"],
+        "output_tokens": ["usage", "output_tokens"],
+        "cached_tokens": ["usage", "cache_read_input_tokens"],
+        "cache_write_tokens": ["usage", "cache_creation", "ephemeral_5m_input_tokens"],
+        "cache_write_long_tokens": ["usage", "cache_creation", "ephemeral_1h_input_tokens"],
+        "cost": ["total_cost_usd"],
+        "model": { "first_key_of": ["modelUsage"] },
+        "answer": ["result"]
+      },
       "config": ["~/.claude/settings.json", "~/.claude.json"],
-      "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare."
+      "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare. Il blocco `usage` è misurato il 30/08/2026 su questa macchina, e ogni chiave viene da un'uscita vera, non dalla documentazione. DUE COSE NON OVVIE. (1) LA CACHE SCRITTA È LA VOCE PIÙ CARA: nella chiamata misurata — due token d'ingresso, quattro d'uscita — i 12.347 token scritti in cache erano il 96% dei 0,1285 dollari dichiarati. Le due durate hanno prezzi diversi e stanno in due chiavi diverse, quindi si dichiarano separate: sommarle sarebbe una perdita di informazione che nessuno vedrebbe più. (2) IL MODELLO NON È UN CAMPO: claude lo usa come CHIAVE di `modelUsage` (`{\"modelUsage\": {\"claude-opus-5[1m]\": {…}}}`), e per questo il puntatore è nella forma `first_key_of`. Senza quel nome nessuna voce di listino si trova, e il costo resterebbe sconosciuto pur avendo tutti i conteggi."
     },
     {
       "id": "codex",
@@ -119,7 +131,16 @@
         "args": ["--mode", "plan", "--print"],
         "prompt": "last_arg"
       },
-      "note": "Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento e `--mode` va prima di `--print` (misurato il 28/08/2026: la forma inversa faceva prendere a `--print` la parola `--mode` come propria domanda). Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
+      "usage": {
+        "args": ["--output-format", "json"],
+        "read": "json",
+        "input_tokens": ["usage", "input_tokens"],
+        "output_tokens": ["usage", "output_tokens"],
+        "cached_tokens": ["usage", "cache_read_tokens"],
+        "total_tokens": ["usage", "total_tokens"],
+        "answer": ["response"]
+      },
+      "note": "Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento e `--mode` va prima di `--print` (misurato il 28/08/2026: la forma inversa faceva prendere a `--print` la parola `--mode` come propria domanda). Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
     },
     {
       "id": "openrouter-cli",

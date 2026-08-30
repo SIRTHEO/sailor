@@ -202,7 +202,7 @@ fn check_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
         "il flusso {} chiede strumenti che nessun descrittore dichiara: {}. \
          Non è «manca su questa macchina»: quei nomi non esistono in nessun catalogo, \
          quindi il flusso non gira da nessuna parte finché non si corregge il nome o \
-         non si aggiunge un descrittore in ~/.sailor/tools.d/",
+         non si aggiunge un descrittore in ~/.config/sailor/tools.d/",
         flow.id,
         unknown.join(", ")
     ))

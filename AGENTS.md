@@ -9,10 +9,15 @@ registrato** invece che come script, gancio o binario a sé.
 Il metro di ogni lavoro: *questa cosa toglie a Theo un'approvazione, o gli porta
 un dubbio migliore?* Se non fa né l'una né l'altra, non è lavoro.
 
-**Prima di correggere qualunque cosa, leggi `~/.claude/docs/sailor-adesso.md`** —
-a che punto siamo, l'ordine dei lavori, e in fondo la tabella **«NON TOCCARE:
-sta per sparire»**. Riparare un pezzo che deve sparire è lavoro contro il piano,
-e nessun controllo locale lo mostra: resta tutto verde.
+**Prima di correggere qualunque cosa, leggi `docs/decisioni.md`** — i vincoli
+permanenti e le scelte che non si riaprono — **e `docs/da-fare.md`**, che dice a
+che punto siamo e cosa sta per sparire. Riparare un pezzo che deve sparire è
+lavoro contro il piano, e nessun controllo locale lo mostra: resta tutto verde.
+
+Queste due stanno nel repo di proposito. Fino al 30/08/2026 questa riga mandava
+a `~/.claude/docs/sailor-adesso.md`, che la pulizia del 28/08 aveva cancellato:
+per due giorni la prima istruzione di ogni sessione è stata un indirizzo vuoto,
+e nessuno se n'è accorto perché un puntatore rotto in un documento non è rosso.
 
 ## L'ordine dei lavori, deciso da Theo
 

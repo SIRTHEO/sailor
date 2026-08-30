@@ -69,13 +69,36 @@ pub fn default_directory() -> Option<PathBuf> {
 /// esegue. `None` se l'ambiente non dichiara nemmeno quella — una casa dedotta
 /// senza fondamento manderebbe a scrivere nel posto di qualcun altro.
 pub fn sailor_home() -> Option<PathBuf> {
-    if let Some(declared) = env_path("SAILOR_HOME") {
-        return Some(declared);
+    Some(sailor_home_in(
+        env_path("SAILOR_HOME"),
+        env_path("XDG_CONFIG_HOME"),
+        env_path("HOME")?,
+    ))
+}
+
+/// La stessa regola, applicata a un ambiente dichiarato invece che a quello di
+/// questo processo.
+///
+/// **Esiste perché la casa era in due posti.** Fino al 30/08/2026 questa regola
+/// stava scritta due volte: qui, e dentro chi cerca i descrittori su una
+/// macchina *descritta* (`toolbox::default_sources`, `trigger::default_sources`).
+/// La seconda copia ignorava `XDG_CONFIG_HOME` e cadeva su `~/.sailor` invece
+/// che su `~/.config/sailor`, così il listino dei prezzi e i descrittori
+/// dell'utente finivano in due case diverse — e la documentazione mandava tutti
+/// nella casa che il codice del listino non guarda. Chi cerca la casa la chiede
+/// qui, chiunque sia.
+pub fn sailor_home_in(
+    declared: Option<PathBuf>,
+    xdg_config: Option<PathBuf>,
+    home: PathBuf,
+) -> PathBuf {
+    if let Some(declared) = declared {
+        return declared;
     }
-    if let Some(config) = env_path("XDG_CONFIG_HOME") {
-        return Some(config.join("sailor"));
+    if let Some(config) = xdg_config {
+        return config.join("sailor");
     }
-    Some(env_path("HOME")?.join(".config").join("sailor"))
+    home.join(".config").join("sailor")
 }
 
 /// Una variabile d'ambiente come percorso. La stringa vuota vale come «non
@@ -234,6 +257,20 @@ pub struct ModelCallRecord {
     /// quello dell'ingresso fresco.
     #[serde(default)]
     pub cached_tokens: Option<u64>,
+    /// I token d'ingresso **scritti** nella cache, che non sono quelli letti e
+    /// non costano come loro: scrivere costa più dell'ingresso normale.
+    ///
+    /// **QUESTA COLONNA È NATA DA UNA MISURA, IL 30/08/2026.** Una chiamata con
+    /// due token d'ingresso e quattro d'uscita è costata 0,1285 dollari
+    /// dichiarati dal motore: 12.347 token scritti in cache erano il 96% di
+    /// quella cifra. Senza una colonna dove metterli, ogni riga di questa
+    /// tabella sottostimava la spesa di 24 volte — e sempre verso il basso.
+    #[serde(default)]
+    pub cache_write_tokens: Option<u64>,
+    /// I token scritti in una cache **a lunga durata**, dove il fornitore ne
+    /// offre più d'una e le fa pagare diversamente.
+    #[serde(default)]
+    pub cache_write_long_tokens: Option<u64>,
     /// Il totale, per i motori che dicono **solo** quello senza separare i due
     /// lati. Senza questo campo l'unica misura vera che quei motori danno
     /// verrebbe buttata via per non saperla spezzare in tre.
@@ -255,6 +292,13 @@ pub struct ModelCallRecord {
     pub output_price_micros_per_million: Option<i64>,
     #[serde(default)]
     pub cached_price_micros_per_million: Option<i64>,
+    /// Il prezzo applicato ai token **scritti** in cache, e quello della cache a
+    /// lunga durata. Stanno sulla riga come gli altri: un costo si deve poter
+    /// rifare a mano leggendo la riga, senza sapere quale listino c'era.
+    #[serde(default)]
+    pub cache_write_price_micros_per_million: Option<i64>,
+    #[serde(default)]
+    pub cache_write_long_price_micros_per_million: Option<i64>,
     pub mandate_name: String,
     pub mandate_version: String,
     pub retry_chain: Vec<String>,
@@ -1385,7 +1429,11 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              started_at INTEGER NOT NULL,
              ended_at INTEGER,
              total_tokens TEXT,
-             declared_cost_micros INTEGER
+             declared_cost_micros INTEGER,
+             cache_write_tokens TEXT,
+             cache_write_long_tokens TEXT,
+             cache_write_price_micros_per_million INTEGER,
+             cache_write_long_price_micros_per_million INTEGER
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -1467,6 +1515,23 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     }
     // versione 4: i conteggi e i prezzi di una chiamata possono essere ignoti.
     relax_model_calls(transaction)?;
+    // versione 5: la cache non è una sola voce. Leggerla e scriverla sono due
+    // gesti con due prezzi, e quello che mancava — la scrittura — è il più caro.
+    // Vanno in coda, nello stesso ordine in cui stanno nel `CREATE TABLE`: le
+    // righe si scrivono per posizione.
+    for (column, kind) in [
+        ("cache_write_tokens", "TEXT"),
+        ("cache_write_long_tokens", "TEXT"),
+        ("cache_write_price_micros_per_million", "INTEGER"),
+        ("cache_write_long_price_micros_per_million", "INTEGER"),
+    ] {
+        if !column_exists(transaction, "model_calls", column)? {
+            transaction.execute(
+                &format!("ALTER TABLE model_calls ADD COLUMN {column} {kind}"),
+                [],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -1891,9 +1956,21 @@ fn project_model_call(
     record: &ModelCallRecord,
 ) -> Result<(), LedgerError> {
     transaction.execute(
-        "INSERT INTO model_calls VALUES
+        // Le colonne sono nominate una per una di proposito: un `VALUES` nudo si
+        // regge sull'ordine della tabella, e la colonna aggiunta dopo — che
+        // arriva sempre — la sposta senza che niente diventi rosso.
+        "INSERT INTO model_calls (
+             call_id, run_id, step_id, purpose, cli, requested_model, actual_model,
+             input_tokens, output_tokens, cached_tokens, cost_micros, price_currency,
+             input_price_micros_per_million, output_price_micros_per_million,
+             cached_price_micros_per_million, mandate_name, mandate_version,
+             retry_chain, error_type, started_at, ended_at, total_tokens,
+             declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
+             cache_write_price_micros_per_million,
+             cache_write_long_price_micros_per_million)
+         VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -1908,7 +1985,11 @@ fn project_model_call(
           retry_chain=excluded.retry_chain, error_type=excluded.error_type,
           started_at=excluded.started_at, ended_at=excluded.ended_at,
           total_tokens=excluded.total_tokens,
-          declared_cost_micros=excluded.declared_cost_micros",
+          declared_cost_micros=excluded.declared_cost_micros,
+          cache_write_tokens=excluded.cache_write_tokens,
+          cache_write_long_tokens=excluded.cache_write_long_tokens,
+          cache_write_price_micros_per_million=excluded.cache_write_price_micros_per_million,
+          cache_write_long_price_micros_per_million=excluded.cache_write_long_price_micros_per_million",
         params![
             record.call_id,
             record.run_id,
@@ -1935,6 +2016,10 @@ fn project_model_call(
             record.ended_at,
             record.total_tokens.map(|n| n.to_string()),
             record.declared_cost_micros,
+            record.cache_write_tokens.map(|n| n.to_string()),
+            record.cache_write_long_tokens.map(|n| n.to_string()),
+            record.cache_write_price_micros_per_million,
+            record.cache_write_long_price_micros_per_million,
         ],
     )?;
     Ok(())
@@ -2233,7 +2318,7 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // disordine: chi legge questo dump lo fa per posizione, e infilarle in
         // mezzo sposterebbe ogni indice a valle senza che niente se ne accorga
         // finché un token non compare al posto di un prezzo.
-        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros",
+        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
     };

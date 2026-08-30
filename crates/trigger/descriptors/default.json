@@ -3,7 +3,7 @@
     "Le sorgenti di segnale, spedite col prodotto. È un dato: si riscrive, si",
     "estende e si spegne senza ricompilare niente.",
     "",
-    "Per aggiungerne una: metti un file `.json` in `~/.sailor/triggers.d/` (o",
+    "Per aggiungerne una: metti un file `.json` in `~/.config/sailor/triggers.d/` (o",
     "dove punta SAILOR_TRIGGER_DESCRIPTORS) con dentro un array di descrittori,",
     "o un oggetto con un campo `triggers`. Un `id` già presente qui dentro viene",
     "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
@@ -50,7 +50,7 @@
         "args": ["terminal", "read", "--json"],
         "cursor_argument": "--cursor"
       },
-      "note": "Misurato il 28/08/2026. Orca registra l'uscita dei pannelli in `terminal-history/*/output.log`, che NON è una sorgente onesta: è un formato binario di frame (magic OCKL) con dentro byte di terminale ANSI — ridisegni di schermo, non messaggi — svuotato sul posto oltre i 5 MB e scritto a lotti ogni ~5 secondi, quindi un lettore in coda perde contenuto senza accorgersene. L'unica via supportata è questo comando a cursore, che restituisce testo. Richiede un descrittore di strumento con id `orca`, che non è spedito: si aggiunge in ~/.sailor/tools.d/."
+      "note": "Misurato il 28/08/2026. Orca registra l'uscita dei pannelli in `terminal-history/*/output.log`, che NON è una sorgente onesta: è un formato binario di frame (magic OCKL) con dentro byte di terminale ANSI — ridisegni di schermo, non messaggi — svuotato sul posto oltre i 5 MB e scritto a lotti ogni ~5 secondi, quindi un lettore in coda perde contenuto senza accorgersene. L'unica via supportata è questo comando a cursore, che restituisce testo. Richiede un descrittore di strumento con id `orca`, che non è spedito: si aggiunge in ~/.config/sailor/tools.d/."
     }
   ]
 }

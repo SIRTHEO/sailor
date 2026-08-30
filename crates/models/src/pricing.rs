@@ -28,7 +28,17 @@ pub struct Price {
     pub aliases: Vec<String>,
     pub input_per_million: Option<f64>,
     pub output_per_million: Option<f64>,
+    /// Quanto costa **leggere** dalla cache. Di norma una frazione
+    /// dell'ingresso.
     pub cached_per_million: Option<f64>,
+    /// Quanto costa **scrivere** nella cache. Di norma **più** dell'ingresso, ed
+    /// è la voce che sorprende: su una chiamata misurata il 30/08/2026 era il
+    /// 96% della spesa, con due token d'ingresso e quattro d'uscita.
+    pub cache_write_per_million: Option<f64>,
+    /// Quanto costa scrivere in una cache **a lunga durata**, dove il fornitore
+    /// ne offre più d'una. Assente vuol dire «non so», e allora quei token
+    /// restano non prezzati invece di essere contati al prezzo breve.
+    pub cache_write_long_per_million: Option<f64>,
 }
 
 /// Il prices intero, con la valuta dichiarata una volta sola.
@@ -126,6 +136,8 @@ fn parse_price(value: &serde_json::Value) -> Option<Price> {
         input_per_million: money(value.get("input_per_million")),
         output_per_million: money(value.get("output_per_million")),
         cached_per_million: money(value.get("cached_per_million")),
+        cache_write_per_million: money(value.get("cache_write_per_million")),
+        cache_write_long_per_million: money(value.get("cache_write_long_per_million")),
     })
 }
 
@@ -151,12 +163,14 @@ pub fn micros_per_million(price_per_million: f64) -> i64 {
     (price_per_million * 1_000_000.0).round() as i64
 }
 
-/// I tre prezzi di una voce, in micro-unità, pronti per la riga del deposito.
+/// I prezzi di una voce, in micro-unità, pronti per la riga del deposito.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PriceMicros {
     pub input: Option<i64>,
     pub output: Option<i64>,
     pub cached: Option<i64>,
+    pub cache_write: Option<i64>,
+    pub cache_write_long: Option<i64>,
 }
 
 impl Price {
@@ -165,8 +179,28 @@ impl Price {
             input: self.input_per_million.map(micros_per_million),
             output: self.output_per_million.map(micros_per_million),
             cached: self.cached_per_million.map(micros_per_million),
+            cache_write: self.cache_write_per_million.map(micros_per_million),
+            cache_write_long: self.cache_write_long_per_million.map(micros_per_million),
         }
     }
+}
+
+/// I conteggi di una chiamata, ciascuno al proprio nome.
+///
+/// **STANNO IN UNA STRUTTURA E NON IN CINQUE ARGOMENTI.** Sono tutti
+/// `Option<u64>`: in fila su una firma, due scambiati per errore compilano
+/// benissimo e sbagliano il conto per sempre, in silenzio. Con un nome per
+/// campo lo scambio non si scrive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TokenCounts {
+    pub input: Option<u64>,
+    pub output: Option<u64>,
+    /// Letti dalla cache.
+    pub cached: Option<u64>,
+    /// Scritti nella cache, durata breve.
+    pub cache_write: Option<u64>,
+    /// Scritti nella cache, durata lunga.
+    pub cache_write_long: Option<u64>,
 }
 
 /// Il costo di una chiamata, in micro-unità di valuta, **in aritmetica intera**.
@@ -184,22 +218,19 @@ impl Price {
 /// contare, e vale lo stesso. Un conteggio sconosciuto **non** vale zero: chi
 /// legge deve poter distinguere «non ha usato la cache» da «non so se l'ha
 /// usata», e questa funzione non decide per lui.
-pub fn cost_micros(
-    input_tokens: Option<u64>,
-    output_tokens: Option<u64>,
-    cached_tokens: Option<u64>,
-    prices: PriceMicros,
-) -> Option<i64> {
+pub fn cost_micros(counts: TokenCounts, prices: PriceMicros) -> Option<i64> {
     // Serve almeno un lato misurato: un costo calcolato su nessun token è zero,
     // e uno zero qui sarebbe indistinguibile da una chiamata gratuita.
-    if input_tokens.is_none() && output_tokens.is_none() {
+    if counts.input.is_none() && counts.output.is_none() {
         return None;
     }
     let mut total: i128 = 0;
     for (tokens, price) in [
-        (input_tokens, prices.input),
-        (output_tokens, prices.output),
-        (cached_tokens, prices.cached),
+        (counts.input, prices.input),
+        (counts.output, prices.output),
+        (counts.cached, prices.cached),
+        (counts.cache_write, prices.cache_write),
+        (counts.cache_write_long, prices.cache_write_long),
     ] {
         let Some(tokens) = tokens else { continue };
         // Il conteggio c'è e il prezzo no: ignorarlo abbasserebbe il totale di
@@ -286,12 +317,26 @@ mod tests {
         assert_eq!(prices.find("x").unwrap().input_per_million, None);
     }
 
+    /// I conteggi che quasi tutte queste prove usano. La cache **scritta** ha
+    /// prove sue più sotto, perché è la voce che si dimenticava.
+    fn counts(input: Option<u64>, output: Option<u64>, cached: Option<u64>) -> TokenCounts {
+        TokenCounts {
+            input,
+            output,
+            cached,
+            ..TokenCounts::default()
+        }
+    }
+
     #[test]
     fn computes_the_cost_in_integer_micros_with_the_cache_priced_apart() {
         let prices = PriceList::parse(SAMPLE).unwrap();
         let prices = prices.find("sonnet").unwrap().micros();
         // 1M ingresso a 3 $ + 1M uscita a 15 $ + 1M cache a 0,30 $ = 18,30 $
-        let cost = cost_micros(Some(1_000_000), Some(1_000_000), Some(1_000_000), prices);
+        let cost = cost_micros(
+            counts(Some(1_000_000), Some(1_000_000), Some(1_000_000)),
+            prices,
+        );
         assert_eq!(cost, Some(18_300_000));
     }
 
@@ -303,8 +348,8 @@ mod tests {
     fn cached_tokens_are_priced_at_their_own_rate_not_at_the_input_rate() {
         let prices = PriceList::parse(SAMPLE).unwrap();
         let prices = prices.find("sonnet").unwrap().micros();
-        let with_cache = cost_micros(Some(0), Some(0), Some(1_000_000), prices).unwrap();
-        let as_if_input = cost_micros(Some(1_000_000), Some(0), None, prices).unwrap();
+        let with_cache = cost_micros(counts(Some(0), Some(0), Some(1_000_000)), prices).unwrap();
+        let as_if_input = cost_micros(counts(Some(1_000_000), Some(0), None), prices).unwrap();
         assert_eq!(with_cache, 300_000, "1M di cache a 0,30 $");
         assert_eq!(as_if_input, 3_000_000, "1M d'ingresso a 3 $");
         assert!(with_cache * 5 < as_if_input, "la differenza è di un ordine di grandezza");
@@ -315,7 +360,7 @@ mod tests {
         let prices = PriceList::parse(SAMPLE).unwrap();
         let prices = prices.find("solo-ingresso").unwrap().micros();
         assert_eq!(
-            cost_micros(Some(100), Some(100), None, prices),
+            cost_micros(counts(Some(100), Some(100), None), prices),
             None,
             "l'uscita è misurata ma non ha prezzo: il totale sarebbe una sottostima"
         );
@@ -328,7 +373,7 @@ mod tests {
         // Non sapere quanta cache ha letto non impedisce di contare il resto,
         // ma non aggiunge nulla: il costo è quello dei due lati noti.
         assert_eq!(
-            cost_micros(Some(1_000_000), Some(1_000_000), None, prices),
+            cost_micros(counts(Some(1_000_000), Some(1_000_000), None), prices),
             Some(18_000_000)
         );
     }
@@ -337,8 +382,8 @@ mod tests {
     fn without_any_token_count_there_is_no_cost_not_a_zero() {
         let prices = PriceList::parse(SAMPLE).unwrap();
         let prices = prices.find("sonnet").unwrap().micros();
-        assert_eq!(cost_micros(None, None, Some(10), prices), None);
-        assert_eq!(cost_micros(None, None, None, prices), None);
+        assert_eq!(cost_micros(counts(None, None, Some(10)), prices), None);
+        assert_eq!(cost_micros(counts(None, None, None), prices), None);
     }
 
     #[test]
@@ -347,9 +392,9 @@ mod tests {
         let prices = PriceMicros {
             input: Some(micros_per_million(1.5)),
             output: Some(0),
-            cached: None,
+            ..PriceMicros::default()
         };
-        assert_eq!(cost_micros(Some(1), Some(0), None, prices), Some(2));
+        assert_eq!(cost_micros(counts(Some(1), Some(0), None), prices), Some(2));
     }
 
     #[test]
@@ -381,14 +426,104 @@ mod l_esempio_spedito {
         assert_eq!(prices.currency, "USD");
         let sonnet = prices.find("sonnet").expect("l'alias funziona");
         assert_eq!(sonnet.id, "claude-sonnet-5");
-        assert!(cost_micros(Some(1_000), Some(1_000), Some(1_000), sonnet.micros()).is_some());
+        let mille_per_lato = TokenCounts {
+            input: Some(1_000),
+            output: Some(1_000),
+            cached: Some(1_000),
+            ..TokenCounts::default()
+        };
+        assert!(cost_micros(mille_per_lato, sonnet.micros()).is_some());
         // Un modello davvero gratuito ha 0.0 dichiarato, ed è diverso da un
         // prezzo mancante: il suo costo si calcola e viene zero.
         let gratis = prices.find("un-modello-gratuito").unwrap();
         assert_eq!(
-            cost_micros(Some(1_000_000), Some(1_000_000), None, gratis.micros()),
+            cost_micros(
+                TokenCounts {
+                    input: Some(1_000_000),
+                    output: Some(1_000_000),
+                    ..TokenCounts::default()
+                },
+                gratis.micros()
+            ),
             Some(0),
             "zero dichiarato è una misura; zero inventato no"
+        );
+    }
+
+    /// **IL BRACCIO CHE VALE PIÙ DI TUTTI, e viene da una misura vera.**
+    ///
+    /// Il 30/08/2026 una chiamata a `claude -p "rispondi solo: ok"` ha
+    /// dichiarato 0,128541 dollari con **2** token d'ingresso e **4** d'uscita.
+    /// Il resto erano 9.922 token letti dalla cache e **12.347 scritti** in una
+    /// cache a lunga durata. Questa prova rifà quel conto: se la scrittura in
+    /// cache non entra nel calcolo, il costo scende a un quarantesimo, e
+    /// nessuno se ne accorge perché il numero c'è ed è verosimile.
+    #[test]
+    fn writing_the_cache_is_what_that_call_actually_cost() {
+        let opus = PriceList::parse(
+            r#"{"currency":"USD","models":[{
+                 "id":"claude-opus-5",
+                 "input_per_million":5.0,
+                 "output_per_million":25.0,
+                 "cached_per_million":0.5,
+                 "cache_write_long_per_million":10.0
+               }]}"#,
+        )
+        .unwrap();
+        let prices = opus.find("claude-opus-5").unwrap().micros();
+        let misurato = TokenCounts {
+            input: Some(2),
+            output: Some(4),
+            cached: Some(9_922),
+            cache_write: None,
+            cache_write_long: Some(12_347),
+        };
+
+        let cost = cost_micros(misurato, prices).expect("il conto si fa");
+        // Il motore aveva dichiarato 0,128541 $: qui vengono 128.541
+        // micro-unità, cioè la stessa cifra al micro.
+        assert_eq!(cost, 128_541, "il conto nostro combacia con quello del motore");
+
+        let senza_la_scrittura = cost_micros(
+            TokenCounts {
+                cache_write_long: None,
+                ..misurato
+            },
+            prices,
+        )
+        .unwrap();
+        // 2 token d'ingresso + 4 d'uscita + 9.922 letti dalla cache = 5.071
+        // micro-unità, cioè mezzo centesimo invece di tredici.
+        assert_eq!(senza_la_scrittura, 5_071);
+        assert!(
+            cost > senza_la_scrittura * 25,
+            "dimenticare la cache scritta sbaglia di oltre venticinque volte"
+        );
+    }
+
+    /// Un conteggio di cache scritta senza il suo prezzo lascia il costo
+    /// **sconosciuto**, invece di contare quei token come gratis. È la stessa
+    /// regola degli altri lati, e vale la pena provarla sul lato nuovo: è quello
+    /// dove un listino vecchio non ha ancora la voce.
+    #[test]
+    fn a_cache_write_without_its_price_leaves_the_cost_unknown() {
+        let senza_prezzo_di_scrittura = PriceList::parse(
+            r#"{"models":[{"id":"x","input_per_million":5.0,"output_per_million":25.0}]}"#,
+        )
+        .unwrap();
+        let prices = senza_prezzo_di_scrittura.find("x").unwrap().micros();
+        assert_eq!(
+            cost_micros(
+                TokenCounts {
+                    input: Some(10),
+                    output: Some(10),
+                    cache_write: Some(10_000),
+                    ..TokenCounts::default()
+                },
+                prices
+            ),
+            None,
+            "10.000 token scritti senza prezzo: il totale sarebbe una sottostima muta"
         );
     }
 }
