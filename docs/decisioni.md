@@ -141,6 +141,52 @@ perché — e **da ridecidere**, che è una voce che aspetta te e che nessun flu
 può prendere. E serve che il passaggio a quegli stati sia registrato con chi
 l'ha fatto, come ogni altra cosa nel deposito.
 
+### Il multi-fornitore si costruisce in casa, e non è un proxy
+**30/08/2026 — Theo, dopo aver guardato free-claude-code.** Non si integra
+`free-claude-code` né nessuno degli altri intermediari (Claude Code Router,
+LiteLLM, OmniRoute, 9router). Il pezzo si fa qui.
+
+**Perché, coi numeri che l'hanno deciso.** Quel progetto è 143.000 righe di
+Python 3.14 con 157 pacchetti bloccati e un server sempre acceso, da mettere
+sotto un workspace Rust che tiene tre dipendenze per scelta scritta nel
+`Cargo.toml`. Ha 51.600 stelle e **una persona sola** che lo scrive. E soprattutto:
+**il pezzo per cui lo si voleva non c'è dentro.** Il suo catalogo ha
+identificativo, URL e nome della variabile d'ambiente — nessuna quota, nessun
+limite, niente su cosa il fornitore fa dei dati che riceve. L'«oltre 1,3
+miliardi di token gratis al mese» è **una riga di README senza un dato che la
+sostenga**. Il pezzo caro è la traduzione dei formati fra fornitori: dodicimila
+righe che loro riscrivono due volte e mezza a trimestre, e che diventerebbero
+nostre per sempre.
+
+**Cosa si prende comunque, e cosa si rifiuta.** Da rifiutare senza discussione:
+due dei loro cinquanta fornitori si presentano come un altro programma — il
+client OAuth della CLI di Codex e il suo `User-Agent` — per far passare un
+agente sull'abbonamento di qualcun altro. Non è aggirare una quota, è fingere di
+essere un altro software, e non entra qui. Da prendere, invece, **un dato che
+esiste già ed è sotto MIT**: il catalogo delle fasce gratuite di OmniRoute, che
+è l'unico dei quattro a portare quote mensili documentate per fornitore, la
+metodologia con cui le ha misurate, e — la cosa che vale di più — un verdetto
+sui termini d'uso che marca diciassette fornitori come «da evitare, i loro
+termini vietano il passaggio da un intermediario». Si prende il dataset, non il
+programma.
+
+**La strada che questo apre, e che costa quasi niente.** Sailor lancia già gli
+agenti come sottoprocessi con un ambiente configurabile (`launch.env`), e
+esistono endpoint che parlano **nativamente** il protocollo che quelle CLI già
+usano: si fa puntare lì una variabile, e non c'è nessuna traduzione da scrivere
+né da mantenere. Il lavoro che resta nostro è quello che nessuno ha fatto:
+un catalogo dei fornitori che porti **quanto danno gratis**, **a che patto sui
+dati**, e **quanto ne resta**. Sta in `crates/models`, che già tiene i modelli.
+
+**Cosa ne discende, e non è ancora costruito**: dove vivono le credenziali (oggi
+i profili spostano file e fanno collegamenti simbolici, cioè il segreto sta in
+chiaro sul disco); e la dimensione che va messa fin da subito nella regola di
+instradamento — **non tutti i lavori possono andare ovunque**, perché su certe
+fasce gratuite il patto è che i tuoi dati addestrino il modello, e un flusso che
+legge codice privato non ha lo stesso insieme di destinazioni ammesse di uno che
+riassume un documento pubblico. Aggiungerla dopo vuol dire aver già mandato
+qualcosa nel posto sbagliato.
+
 ## Raccomandato, non ancora deciso
 
 - **La soglia di un flusso che accompagna va sul prezzo, non sulla qualità.**

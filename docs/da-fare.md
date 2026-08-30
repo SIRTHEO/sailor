@@ -69,7 +69,10 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 ## Difetti noti e non riparati
 
 I guasti, con come si sono visti e cosa li impedirebbe, stanno in
-`docs/guasti-incontrati.md` — **cinque aperti su undici**. Qui solo quelli che
+`docs/guasti-incontrati.md` — **undici aperti su ventuno**. (Questa riga è già
+una copia a mano che invecchia da sola, ed è il difetto che questo stesso file
+dichiara in cima: il giorno che le voci passano nel deposito, il numero lo dà
+lui.) Qui solo quelli che
 non sono guasti ma limiti dichiarati:
 
 - ~~**I passi girano in fila, non insieme.**~~ Riparato il 30/08/2026: il fronte
