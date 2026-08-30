@@ -1,0 +1,60 @@
+{
+  "_leggimi": [
+    "IL LISTINO LOCALE. Copialo in ~/.sailor/pricing.json (o dove punta",
+    "SAILOR_PRICING) e mettici i prezzi che paghi tu. È un dato: si riscrive con",
+    "un editor di testo, senza ricompilare niente, e vale dalla chiamata dopo.",
+    "",
+    "PERCHÉ È LUI LA FONTE DI VERITÀ SUL COSTO. Alcuni motori dichiarano quanto",
+    "hanno fatto pagare. Quel numero si registra lo stesso, in una colonna sua",
+    "(`declared_cost_micros`), ma non sostituisce questo conto: un costo che",
+    "arriva dallo stesso posto da cui arriva la spesa non è una verifica di",
+    "niente. Se un giorno i due divergono sistematicamente, quella divergenza è",
+    "essa stessa l'informazione.",
+    "",
+    "COME SI LEGA UNA VOCE A UN MOTORE. Il descrittore dello strumento dichiara",
+    "dove quel motore NOMINA il modello che ha servito la chiamata (il puntatore",
+    "`model` del suo blocco `usage`). Quel nome si cerca qui fra gli `id` e gli",
+    "`aliases`, con maiuscole e minuscole indifferenti. Non c'è nessuna",
+    "somiglianza approssimata: `claude-sonnet-5-20260101` NON trova",
+    "`claude-sonnet-5`. Se lo vuoi, aggiungilo agli `aliases` — che è una cosa",
+    "che decidi tu, non che indovina il programma.",
+    "",
+    "QUANDO IL COSTO RESTA SCONOSCIUTO, e non diventa zero:",
+    "- il motore non nomina nessun modello;",
+    "- il nome che nomina non è in questo file;",
+    "- la voce c'è ma le manca un prezzo che servirebbe;",
+    "- il motore dice solo il totale dei token, senza separare i due lati.",
+    "Sconosciuto è una risposta legittima. Zero è una bugia che si somma.",
+    "",
+    "I PREZZI SONO PER MILIONE DI TOKEN, nella valuta dichiarata in cima. Ogni",
+    "prezzo è facoltativo, ed è diverso da zero: `cached_per_million` assente",
+    "vuol dire «non so quanto costa la cache», non «la cache è gratis».",
+    "",
+    "I numeri qui sotto sono UN ESEMPIO DI FORMATO, non un listino verificato:",
+    "controllali col tuo fornitore prima di credere alle cifre che ne escono."
+  ],
+  "currency": "USD",
+  "dated": "2026-08-29",
+  "models": [
+    {
+      "id": "claude-sonnet-5",
+      "aliases": ["sonnet", "anthropic/claude-sonnet-5"],
+      "input_per_million": 3.0,
+      "output_per_million": 15.0,
+      "cached_per_million": 0.3
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "aliases": ["haiku"],
+      "input_per_million": 1.0,
+      "output_per_million": 5.0,
+      "cached_per_million": 0.1
+    },
+    {
+      "id": "un-modello-gratuito",
+      "aliases": [],
+      "input_per_million": 0.0,
+      "output_per_million": 0.0
+    }
+  ]
+}

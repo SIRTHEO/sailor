@@ -6,3 +6,8 @@ rust-version = "1.89"
 
 [dependencies]
 serde_json.workspace = true
+# `regex` per la forma `text` del consumo dichiarato: un motore che dice i
+# propri token in chiaro invece che in JSON si legge con un'espressione scritta
+# nel descrittore, non con un ramo di codice per quel motore. Non aggiunge
+# niente alla compilazione del workspace — `inventory` la tira gia' dentro.
+regex.workspace = true
