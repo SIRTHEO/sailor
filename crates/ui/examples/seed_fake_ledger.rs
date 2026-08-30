@@ -98,23 +98,35 @@ fn close_step(ledger: &Ledger, run_id: &str, step_id: &str, started_at: i64, end
         .expect("passo chiuso");
 }
 
+/// Una chiamata **inventata**, e marcata come tale in ogni riga che produce.
+///
+/// **PERCHÉ LA MARCATURA È OBBLIGATORIA.** Fino al 29/08/2026 questo esempio
+/// era l'unico scrittore di `model_calls` insieme alle prove: il cruscotto
+/// sommava un costo per modello, e quel costo era interamente finzione. Un
+/// cruscotto alimentato da dati finti sembra funzionare, ed è peggio del non
+/// averlo — perché chi lo guarda crede di sapere quanto ha speso. Adesso il
+/// deposito lo riempie il motore vero; questo esempio resta per provare la
+/// pagina senza spendere, e ogni riga che scrive dice a chiare lettere di non
+/// essere una misura.
 fn fake_call(run_id: &str, step_id: &str, model: &str, input_tokens: u64, cost_micros: i64) -> ModelCallRecord {
     ModelCallRecord {
         call_id: format!("call-{run_id}-{step_id}"),
         run_id: run_id.to_owned(),
         step_id: Some(step_id.to_owned()),
-        purpose: "classifica i marcatori".into(),
+        purpose: "FINTO — seminato da seed_fake_ledger, non è una misura".into(),
         cli: "claude".into(),
         requested_model: "sonnet".into(),
         actual_model: model.to_owned(),
-        input_tokens,
-        output_tokens: input_tokens / 8,
-        cached_tokens: input_tokens / 4,
-        cost_micros,
-        price_currency: "USD".into(),
-        input_price_micros_per_million: 3_000_000,
-        output_price_micros_per_million: 15_000_000,
-        cached_price_micros_per_million: 300_000,
+        input_tokens: Some(input_tokens),
+        output_tokens: Some(input_tokens / 8),
+        cached_tokens: Some(input_tokens / 4),
+        total_tokens: None,
+        cost_micros: Some(cost_micros),
+        declared_cost_micros: None,
+        price_currency: Some("USD".into()),
+        input_price_micros_per_million: Some(3_000_000),
+        output_price_micros_per_million: Some(15_000_000),
+        cached_price_micros_per_million: Some(300_000),
         mandate_name: "prova-manuale".into(),
         mandate_version: "1".into(),
         retry_chain: vec![],

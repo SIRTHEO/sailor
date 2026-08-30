@@ -7,36 +7,86 @@ use ledger::{ModelCallRecord, RunRecord};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Sotto quale nome si raggruppano le chiamate a un motore che non ha detto
+/// quale modello ha usato. Non è un modello: è la dichiarazione che manca.
+pub const MODEL_NOT_DECLARED: &str = "(modello non dichiarato)";
+
+/// I conti di un insieme di chiamate.
+///
+/// **SI SOMMA SOLO CIÒ CHE SI SA, E SI DICE QUANTO NON SI SA.** Un conteggio
+/// sconosciuto non entra nella somma come zero: uno zero sommato sparisce, e il
+/// totale si presenta come completo mentre è parziale — che è esattamente la
+/// bugia da cui questo lavoro nasce. Accanto ai totali stanno quindi le due
+/// cifre che li qualificano: quante chiamate non hanno detto i propri token, e
+/// quante non hanno un costo. Un totale parziale che dichiara di essere parziale
+/// è una misura; un totale parziale che tace è peggio del non averlo.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct TokenTotals {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
+    /// Il totale dichiarato da chi non separa i due lati (Codex e simili).
+    /// Sta a parte perché sommarlo a ingresso e uscita conterebbe due volte i
+    /// motori che dicono tutti e tre i numeri.
+    pub total_tokens_only: u64,
     pub cost_micros: i64,
     pub calls: usize,
+    /// Quante di queste chiamate non hanno detto nessun conteggio.
+    pub calls_without_tokens: usize,
+    /// Quante non hanno un costo: il modello non era nel listino, o il listino
+    /// non aveva il suo prezzo.
+    pub calls_without_cost: usize,
 }
 
 impl TokenTotals {
     fn add(&mut self, call: &ModelCallRecord) {
-        self.input_tokens += call.input_tokens;
-        self.output_tokens += call.output_tokens;
-        self.cached_tokens += call.cached_tokens;
-        self.cost_micros += call.cost_micros;
+        self.input_tokens += call.input_tokens.unwrap_or(0);
+        self.output_tokens += call.output_tokens.unwrap_or(0);
+        self.cached_tokens += call.cached_tokens.unwrap_or(0);
+        // Solo per chi non ha detto i lati: chi li ha detti è già contato sopra.
+        if call.input_tokens.is_none() && call.output_tokens.is_none() {
+            self.total_tokens_only += call.total_tokens.unwrap_or(0);
+        }
+        self.cost_micros += call.cost_micros.unwrap_or(0);
         self.calls += 1;
+        if call.input_tokens.is_none()
+            && call.output_tokens.is_none()
+            && call.cached_tokens.is_none()
+            && call.total_tokens.is_none()
+        {
+            self.calls_without_tokens += 1;
+        }
+        if call.cost_micros.is_none() {
+            self.calls_without_cost += 1;
+        }
+    }
+
+    /// Vero se questi totali nascondono qualcosa: chi li mostra deve dirlo.
+    pub fn is_partial(&self) -> bool {
+        self.calls_without_tokens > 0 || self.calls_without_cost > 0
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+/// Una singola chiamata come la vede la pagina. I campi facoltativi escono
+/// `null` nel JSON, e la pagina ci scrive un trattino: mai uno `0`, che chi
+/// legge scambierebbe per una misura.
 pub struct CallView {
     pub call_id: String,
     pub step_id: Option<String>,
     pub purpose: String,
+    pub cli: String,
     pub requested_model: String,
     pub actual_model: String,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cached_tokens: u64,
-    pub cost_micros: i64,
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+    pub cost_micros: Option<i64>,
+    /// Quanto il motore ha dichiarato di suo, accanto al conto del listino:
+    /// se i due divergono, la divergenza si vede.
+    pub declared_cost_micros: Option<i64>,
+    pub error_type: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
 }
@@ -119,20 +169,30 @@ pub fn summarize_run(
         .iter()
         .map(|call| {
             tokens.add(call);
-            tokens_by_model
-                .entry(call.actual_model.clone())
-                .or_default()
-                .add(call);
+            // Un motore a riga di comando non nomina sempre il modello che ha
+            // servito la chiamata. Raggruppare quelle righe sotto una chiave
+            // vuota le renderebbe invisibili nell'elenco per modello: qui hanno
+            // un nome che dice cosa sono.
+            let by_model = if call.actual_model.trim().is_empty() {
+                MODEL_NOT_DECLARED.to_owned()
+            } else {
+                call.actual_model.clone()
+            };
+            tokens_by_model.entry(by_model).or_default().add(call);
             CallView {
                 call_id: call.call_id.clone(),
                 step_id: call.step_id.clone(),
                 purpose: call.purpose.clone(),
+                cli: call.cli.clone(),
                 requested_model: call.requested_model.clone(),
                 actual_model: call.actual_model.clone(),
                 input_tokens: call.input_tokens,
                 output_tokens: call.output_tokens,
                 cached_tokens: call.cached_tokens,
+                total_tokens: call.total_tokens,
                 cost_micros: call.cost_micros,
+                declared_cost_micros: call.declared_cost_micros,
+                error_type: call.error_type.clone(),
                 started_at: call.started_at,
                 ended_at: call.ended_at,
             }
@@ -217,8 +277,19 @@ mod tests {
     }
 
     fn call(actual_model: &str, input: u64, output: u64, cached: u64, cost: i64) -> ModelCallRecord {
+        measured(actual_model, Some(input), Some(output), Some(cached), Some(cost))
+    }
+
+    /// Una chiamata con i conteggi come li si vuole, compreso «non li so».
+    pub(super) fn measured(
+        actual_model: &str,
+        input: Option<u64>,
+        output: Option<u64>,
+        cached: Option<u64>,
+        cost: Option<i64>,
+    ) -> ModelCallRecord {
         ModelCallRecord {
-            call_id: format!("call-{actual_model}-{input}"),
+            call_id: format!("call-{actual_model}-{input:?}-{cost:?}"),
             run_id: "run-1".to_owned(),
             step_id: None,
             purpose: "prova".to_owned(),
@@ -228,11 +299,13 @@ mod tests {
             input_tokens: input,
             output_tokens: output,
             cached_tokens: cached,
+            total_tokens: None,
             cost_micros: cost,
-            price_currency: "USD".to_owned(),
-            input_price_micros_per_million: 0,
-            output_price_micros_per_million: 0,
-            cached_price_micros_per_million: 0,
+            declared_cost_micros: None,
+            price_currency: Some("USD".to_owned()),
+            input_price_micros_per_million: Some(0),
+            output_price_micros_per_million: Some(0),
+            cached_price_micros_per_million: Some(0),
             mandate_name: "prova".to_owned(),
             mandate_version: "1".to_owned(),
             retry_chain: vec![],
@@ -302,5 +375,93 @@ mod tests {
         let executions = build_executions(&runs, &BTreeMap::new(), &BTreeMap::new(), 100);
         assert_eq!(executions[0].run_id, "new");
         assert_eq!(executions[1].run_id, "old");
+    }
+}
+
+#[cfg(test)]
+mod cio_che_non_si_sa {
+    //! I conti quando una chiamata non ha detto quanto ha consumato.
+
+    use super::tests::measured;
+    use super::*;
+    use serde_json::json;
+
+    fn run() -> RunRecord {
+        RunRecord {
+            run_id: "run-1".to_owned(),
+            kind: "prova".to_owned(),
+            entity: "prova".to_owned(),
+            parent_run_id: None,
+            started_by: "prova".to_owned(),
+            status: "succeeded".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 0,
+            ended_at: Some(10),
+        }
+    }
+
+    /// **IL VINCOLO SULLA CHIAREZZA PER CHI GUARDA, IN UN NUMERO.** Una
+    /// chiamata non misurata non entra nella somma come zero. Se lo facesse,
+    /// questi due totali sarebbero identici e chi guarda crederebbe di avere
+    /// una misura completa dove ne ha metà.
+    #[test]
+    fn an_unmeasured_call_is_not_summed_as_zero_and_is_counted_apart() {
+        let misurata = measured("m", Some(100), Some(50), Some(10), Some(500));
+        let ignota = measured("m", None, None, None, None);
+
+        let solo_nota = summarize_run(&run(), &[], std::slice::from_ref(&misurata), 20);
+        let con_ignota = summarize_run(&run(), &[], &[misurata, ignota], 20);
+
+        // I token sommati sono gli stessi: quella ignota non ha aggiunto zeri.
+        assert_eq!(con_ignota.tokens.input_tokens, solo_nota.tokens.input_tokens);
+        assert_eq!(con_ignota.tokens.cost_micros, solo_nota.tokens.cost_micros);
+        // Ma il totale sa di essere parziale, e dice di quanto.
+        assert_eq!(con_ignota.tokens.calls, 2);
+        assert_eq!(con_ignota.tokens.calls_without_tokens, 1);
+        assert_eq!(con_ignota.tokens.calls_without_cost, 1);
+        assert!(con_ignota.tokens.is_partial());
+        assert!(
+            !solo_nota.tokens.is_partial(),
+            "un totale completo non deve dichiararsi parziale, o l'avviso perde valore"
+        );
+    }
+
+    /// Nel JSON che la pagina riceve, uno sconosciuto è `null`. Un `0` sarebbe
+    /// indistinguibile da una misura, e la pagina non avrebbe più modo di
+    /// scriverci un trattino.
+    #[test]
+    fn an_unknown_count_leaves_the_api_as_null_never_as_zero() {
+        let view = summarize_run(&run(), &[], &[measured("m", None, None, None, None)], 20);
+        let payload = json!(view);
+        let call = &payload["calls"][0];
+        assert_eq!(call["input_tokens"], json!(null));
+        assert_eq!(call["output_tokens"], json!(null));
+        assert_eq!(call["cached_tokens"], json!(null));
+        assert_eq!(call["cost_micros"], json!(null));
+    }
+
+    /// Un motore che dichiara solo il totale — codex e simili — non perde la
+    /// sua unica misura vera, e non la vede sommata a lati che non esistono.
+    #[test]
+    fn a_total_only_engine_keeps_its_one_true_measure_apart() {
+        let mut solo_totale = measured("m", None, None, None, None);
+        solo_totale.total_tokens = Some(13_910);
+        let view = summarize_run(&run(), &[], &[solo_totale], 20);
+        assert_eq!(view.tokens.input_tokens, 0, "non ha lati da sommare");
+        assert_eq!(view.tokens.total_tokens_only, 13_910);
+        assert_eq!(
+            view.tokens.calls_without_tokens, 0,
+            "un totale dichiarato è una misura: questa chiamata non è fra le mute"
+        );
+    }
+
+    /// Un motore che non nomina il modello finisce sotto un nome che dice cosa
+    /// è, non sotto una chiave vuota che nell'elenco per modello sparirebbe.
+    #[test]
+    fn calls_without_a_declared_model_are_grouped_under_a_name_that_says_so() {
+        let view = summarize_run(&run(), &[], &[measured("", Some(1), Some(1), None, None)], 20);
+        assert!(view.tokens_by_model.contains_key(MODEL_NOT_DECLARED));
+        assert!(!view.tokens_by_model.contains_key(""));
     }
 }

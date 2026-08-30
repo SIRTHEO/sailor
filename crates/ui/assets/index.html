@@ -76,6 +76,9 @@
   h1 { margin: 0; font-size: clamp(1.65rem, 4vw, 2.4rem); line-height: 1.05; letter-spacing: -0.035em; }
   h2 { margin: 0; font-size: 1.05rem; letter-spacing: -0.01em; }
   .sub { color: var(--muted); font: 0.78rem/1.45 var(--mono); }
+  /* Ciò che non è stato misurato si vede a colpo d'occhio come tale: chi legge
+     un totale deve sapere subito se è completo o se qualcuno ha taciuto. */
+  .unmeasured { color: var(--warn, #b4770a); font-style: italic; }
   .refresh-panel { display: flex; align-items: center; gap: 0.75rem; text-align: right; }
   .refresh-copy { min-width: 12rem; }
   .refresh-copy span { display: block; }
@@ -310,9 +313,34 @@ function formatCost(micros) {
   return `${(micros / 1_000_000).toLocaleString('it-IT', { style: 'currency', currency: 'USD', minimumFractionDigits: 4 })}`;
 }
 
+// UN NUMERO CHE NON SI SA È UN TRATTINO, MAI UNO ZERO. Uno zero stampato al
+// posto di «non lo so» è indistinguibile da una misura, e chi guarda somma con
+// gli occhi ciò che il totale non ha sommato.
+function formatCount(value) {
+  if (value === null || value === undefined) return '—';
+  return formatNumber(value);
+}
+
 function formatTokens(totals) {
   if (!totals) return 'token non noti';
-  return `${formatNumber(totals.input_tokens)} in · ${formatNumber(totals.output_tokens)} out · ${formatNumber(totals.cached_tokens)} cache`;
+  const lati = `${formatCount(totals.input_tokens)} in · ${formatCount(totals.output_tokens)} out · ${formatCount(totals.cached_tokens)} cache`;
+  // Chi dichiara solo il totale (codex e simili) non ha lati da mostrare: la
+  // sua unica misura vera è quella, e va detta com'è.
+  if (totals.total_tokens_only) return `${lati} · ${formatNumber(totals.total_tokens_only)} totali non ripartiti`;
+  if (totals.total_tokens) return `${formatNumber(totals.total_tokens)} totali (lati non dichiarati)`;
+  return lati;
+}
+
+// QUANTO DI QUESTO TOTALE NON È MISURATO. Un totale parziale che dichiara di
+// essere parziale è una misura; uno che tace si presenta come completo, ed è la
+// bugia da cui il conteggio dei consumi è nato.
+function unmeasuredNote(totals) {
+  if (!totals) return '';
+  const parti = [];
+  if (totals.calls_without_tokens) parti.push(`${formatNumber(totals.calls_without_tokens)} senza token dichiarati`);
+  if (totals.calls_without_cost) parti.push(`${formatNumber(totals.calls_without_cost)} senza costo noto`);
+  if (parti.length === 0) return '';
+  return ` · <span class="unmeasured">${parti.join(' · ')}</span>`;
 }
 
 function executionNeedsAttention(execution) {
@@ -338,12 +366,15 @@ function renderSummary(payload) {
   const today = payload.executions.filter(execution => isToday(execution.started_at));
   const went = today.filter(execution => !executionNeedsAttention(execution) && !executionIsOpen(execution) && execution.status === 'succeeded').length;
   const broke = today.filter(executionNeedsAttention).length;
+  // I conti arrivano già sommati sui soli valori noti, con accanto quante
+  // chiamate non sono misurate: qui si riportano, non si ricalcolano.
   const totals = today.reduce((sum, execution) => {
     sum.input += execution.tokens.input_tokens;
     sum.output += execution.tokens.output_tokens;
     sum.cached += execution.tokens.cached_tokens;
+    sum.unmeasured += execution.tokens.calls_without_tokens;
     return sum;
-  }, { input: 0, output: 0, cached: 0 });
+  }, { input: 0, output: 0, cached: 0, unmeasured: 0 });
   const models = new Map();
   today.forEach(execution => Object.entries(execution.tokens_by_model).forEach(([model, tokens]) => {
     const total = models.get(model) || { input: 0, output: 0, cached: 0 };
@@ -357,7 +388,7 @@ function renderSummary(payload) {
     <div class="metric"><span class="metric-label">Esecuzioni</span><strong class="metric-value">${formatNumber(today.length)}</strong><span class="metric-note">avviate oggi</span></div>
     <div class="metric"><span class="metric-label">Andate bene</span><strong class="metric-value">${formatNumber(went)}</strong><span class="metric-note">concluse senza rotture</span></div>
     <div class="metric ${broke ? 'danger' : ''}"><span class="metric-label">Da controllare</span><strong class="metric-value">${formatNumber(broke)}</strong><span class="metric-note">rotte o con errore</span></div>
-    <div class="metric"><span class="metric-label">Token</span><strong class="metric-value">${formatNumber(totals.input + totals.output)}</strong><span class="metric-note">${formatNumber(totals.input)} in · ${formatNumber(totals.output)} out · ${formatNumber(totals.cached)} cache</span></div>
+    <div class="metric"><span class="metric-label">Token</span><strong class="metric-value">${formatNumber(totals.input + totals.output)}</strong><span class="metric-note">${formatNumber(totals.input)} in · ${formatNumber(totals.output)} out · ${formatNumber(totals.cached)} cache${totals.unmeasured ? ` · <span class="unmeasured">${formatNumber(totals.unmeasured)} chiamate non misurate</span>` : ''}</span></div>
     <div class="metric"><span class="metric-label">Per modello</span>${modelRows ? `<ul class="model-list">${modelRows}</ul>` : '<span class="metric-note">Nessuna chiamata al modello oggi.</span>'}</div>`;
 }
 
@@ -451,7 +482,7 @@ function renderExecutions(payload) {
     const needsAttention = executionNeedsAttention(execution);
     const repeated = execution.steps_retried > 0;
     const models = Object.entries(execution.tokens_by_model).map(([model, totals]) => `<div><code>${escapeHtml(model)}</code>: ${formatTokens(totals)} · ${formatCost(totals.cost_micros)}</div>`).join('');
-    const calls = execution.calls.map(call => `<tr><td class="mono">${escapeHtml(call.call_id)}</td><td>${escapeHtml(call.step_id ?? '—')}</td><td>${escapeHtml(call.purpose)}</td><td class="mono">${escapeHtml(call.requested_model)} → ${escapeHtml(call.actual_model)}</td><td>${formatTokens(call)}</td><td>${formatCost(call.cost_micros)}</td></tr>`).join('');
+    const calls = execution.calls.map(call => `<tr><td class="mono">${escapeHtml(call.call_id)}</td><td>${escapeHtml(call.step_id ?? '—')}</td><td>${escapeHtml(call.cli || call.purpose)}${call.error_type ? ` <span class="badge broke">${escapeHtml(call.error_type)}</span>` : ''}</td><td class="mono">${escapeHtml(call.actual_model || 'modello non dichiarato')}</td><td>${formatTokens(call)}</td><td>${formatCost(call.cost_micros)}${call.declared_cost_micros !== null && call.declared_cost_micros !== undefined ? `<div class="sub">dichiarato dal motore: ${formatCost(call.declared_cost_micros)}</div>` : ''}</td></tr>`).join('');
     return `<article class="card ${needsAttention ? 'attention' : ''}">
       <div class="execution-head">
         <div class="execution-title"><strong class="mono">${escapeHtml(execution.run_id)}</strong><div class="sub">${escapeHtml(execution.kind)} · ${escapeHtml(execution.entity)}</div></div>
@@ -459,8 +490,8 @@ function renderExecutions(payload) {
         <div><time title="${escapeHtml(formatExact(execution.started_at))}" datetime="${new Date(execution.started_at * 1000).toISOString()}">iniziata ${formatRelative(execution.started_at)}</time><div class="sub">durata ${formatDuration(execution.duration_secs)}</div></div>
         <div><span class="badge went">${execution.steps_went} andati</span> ${execution.steps_broke ? `<span class="badge broke">${execution.steps_broke} rotti</span>` : ''} ${execution.steps_open.length ? `<span class="badge open">${execution.steps_open.length} aperti</span>` : ''} ${repeated ? `<span class="badge retry">${execution.steps_retried} ripetut${execution.steps_retried === 1 ? 'o' : 'i'}</span>` : ''}</div>
       </div>
-      <div class="models"><div class="token-line">${formatTokens(execution.tokens)} · ${formatCost(execution.tokens.cost_micros)} totali</div>${models ? `<div class="sub">${models}</div>` : ''}</div>
-      ${execution.calls.length ? `<details><summary>${execution.calls.length} chiamate al modello</summary><div class="table-wrap"><table><thead><tr><th>Chiamata</th><th>Passo</th><th>Scopo</th><th>Modello</th><th>Token</th><th>Costo</th></tr></thead><tbody>${calls}</tbody></table></div></details>` : ''}
+      <div class="models"><div class="token-line">${formatTokens(execution.tokens)} · ${formatCost(execution.tokens.cost_micros)} totali${unmeasuredNote(execution.tokens)}</div>${models ? `<div class="sub">${models}</div>` : ''}</div>
+      ${execution.calls.length ? `<details><summary>${execution.calls.length} chiamate al modello</summary><div class="table-wrap"><table><thead><tr><th>Chiamata</th><th>Passo</th><th>Motore</th><th>Modello</th><th>Token</th><th>Costo</th></tr></thead><tbody>${calls}</tbody></table></div></details>` : ''}
     </article>`;
   }).join('');
 }

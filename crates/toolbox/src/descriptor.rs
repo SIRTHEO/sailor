@@ -151,6 +151,94 @@ pub struct Ask {
     pub unusable_when: Vec<String>,
 }
 
+/// Come si legge **quanto ha consumato** un motore, dichiarato dal descrittore.
+///
+/// **PERCHÉ STA QUI E NON NEL CODICE.** È la stessa ragione di `Ask`, applicata
+/// al conto invece che alla domanda: finché «chiedi `--output-format json` e
+/// guarda sotto la chiave `usage`» sta scritto in un ramo `if` per un
+/// fornitore, misurare un motore nuovo vuol dire ricompilare Sailor. Qui la
+/// differenza fra due motori è un dato, e chi ne aggiunge uno scrive un file.
+///
+/// **CHI NON LO DICHIARA NON PEGGIORA.** Il campo è facoltativo: un motore
+/// senza `usage` si invoca esattamente come prima, produce la stessa uscita, e
+/// lascia i propri token a **sconosciuto** — mai a zero. Uno zero scritto al
+/// posto di «non lo so» è una bugia che nessuna vista a valle può correggere.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Usage {
+    /// Le opzioni da aggiungere alla domanda per farsi dire il consumo — per
+    /// esempio `["--output-format", "json"]`.
+    ///
+    /// Si accodano a quelle di `ask`, e **solo** quando è la ricetta del
+    /// descrittore a dettare la riga di comando: un passo che scrive i propri
+    /// argomenti sta dicendo qualcosa di preciso su *quella* chiamata, e
+    /// allungargliela alle spalle sarebbe decidere al posto suo. In quel caso
+    /// il consumo resta sconosciuto, che è il prezzo giusto da pagare.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    /// In che forma leggere l'uscita: `json` (i puntatori sono cammini di
+    /// chiavi) o `text` (i puntatori sono espressioni regolari con un gruppo di
+    /// cattura).
+    #[serde(default)]
+    pub read: ReadAs,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_tokens: Option<Where>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_tokens: Option<Where>,
+    /// I token d'ingresso **letti dalla cache**. Vanno dichiarati a parte
+    /// perché costano a parte, spesso un ordine di grandezza meno: un solo
+    /// numero d'ingresso renderebbe la misura falsa proprio dove conta.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<Where>,
+    /// Il totale, per i motori che dicono solo quello senza separare i lati.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_tokens: Option<Where>,
+    /// Dove il motore dichiara quanto ha fatto pagare. Si registra come
+    /// confronto: il listino locale resta la fonte di verità.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<Where>,
+    /// Dove il motore nomina il modello che ha davvero servito la chiamata. È
+    /// l'unico legame onesto fra una riga di comando e una voce di listino: chi
+    /// non lo dichiara lascia il costo sconosciuto, e va bene così.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<Where>,
+    /// Dove sta il testo della risposta dentro l'involucro.
+    ///
+    /// **VA DICHIARATO DA CHI CHIEDE UN INVOLUCRO.** Farsi dire i token in JSON
+    /// avvolge anche la risposta: senza questo puntatore un passo a valle
+    /// riceverebbe l'involucro al posto del testo, e un flusso che dichiara la
+    /// forma della propria risposta diventerebbe rosso per una misura che non
+    /// ha chiesto. Misurare non deve cambiare ciò che si misura.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<Where>,
+}
+
+/// In che forma un motore dice il proprio consumo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReadAs {
+    /// L'uscita è un involucro JSON.
+    #[default]
+    Json,
+    /// L'uscita è testo in chiaro.
+    Text,
+}
+
+/// Dove sta un valore dentro ciò che il motore ha detto: un cammino di chiavi
+/// (`["usage", "input_tokens"]`) se si legge JSON, un'espressione regolare col
+/// valore nel primo gruppo se si legge testo.
+///
+/// Un puntatore della forma sbagliata non trova niente e lascia il valore
+/// sconosciuto. È il modo giusto di sbagliare: un descrittore impreciso
+/// peggiora la misura, non rompe la chiamata che stava misurando, e non
+/// inventa mai un numero al posto di quello che non ha trovato.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Where {
+    Path(Vec<String>),
+    Pattern(String),
+}
+
 /// Dove va il testo della domanda.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -237,6 +325,12 @@ pub struct Descriptor {
     /// un passo che lo vuole usare deve scrivere da sé le opzioni.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ask: Option<Ask>,
+    /// Come si legge quanto ha consumato. Facoltativo, e deve restarlo: un
+    /// descrittore scritto prima che questo campo esistesse deve continuare a
+    /// caricarsi identico, altrimenti una versione nuova di Sailor spegnerebbe
+    /// gli strumenti dichiarati con la vecchia.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
     /// Dove vive la sua configurazione. Ammette `~/`, `$VAR` e `*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,
@@ -461,5 +555,179 @@ impl Catalog {
             (&a.descriptor.family, &a.descriptor.id).cmp(&(&b.descriptor.family, &b.descriptor.id))
         });
         out
+    }
+}
+
+#[cfg(test)]
+mod il_campo_nuovo_e_facoltativo {
+    //! Che cosa succede a un descrittore quando questa versione di Sailor
+    //! impara un campo che la precedente non conosceva.
+
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-descrittori-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        dir
+    }
+
+    fn loaded(name: &str, text: &str) -> Catalog {
+        let dir = scratch(name);
+        let file = dir.join("descrittori.json");
+        std::fs::write(&file, text).expect("scrivere i descrittori");
+        Catalog::load(&[Source::File(file)])
+    }
+
+    /// **IL CRITERIO (d) DEL MANDATO.** Un descrittore scritto prima che `usage`
+    /// esistesse si carica identico. Questo crate ha un guasto aperto e noto —
+    /// un campo che questa versione non conosce scarta il descrittore intero —
+    /// e il campo nuovo non deve peggiorarlo: chi non ce l'ha continua a
+    /// funzionare, altrimenti una versione nuova di Sailor spegnerebbe in
+    /// silenzio gli strumenti dichiarati con la vecchia.
+    #[test]
+    fn a_descriptor_written_before_usage_existed_still_loads() {
+        let catalog = loaded(
+            "senza-usage",
+            r#"[{
+              "id": "vecchio", "family": "ai_cli", "label": "Vecchio",
+              "detect": { "command": "vecchio" },
+              "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["quota"] }
+            }]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        assert_eq!(catalog.descriptors.len(), 1);
+        let descriptor = &catalog.descriptors[0].descriptor;
+        assert!(descriptor.usage.is_none(), "assente vuol dire assente");
+        assert!(descriptor.ask.is_some(), "e il resto arriva intatto");
+    }
+
+    /// Ogni descrittore spedito col prodotto si carica: se il campo nuovo
+    /// rendesse illeggibile anche uno solo di loro, quello strumento sparirebbe
+    /// dalla macchina di chiunque aggiorni.
+    #[test]
+    fn every_shipped_descriptor_still_loads() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        assert!(catalog.descriptors.len() > 5);
+    }
+
+    /// Il blocco `usage` nella forma con i cammini di chiavi.
+    #[test]
+    fn a_json_usage_block_is_read_pointer_by_pointer() {
+        let catalog = loaded(
+            "usage-json",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "ask": { "args": ["-p"], "prompt": "stdin" },
+              "usage": {
+                "args": ["--output-format", "json"],
+                "read": "json",
+                "input_tokens": ["usage", "input_tokens"],
+                "cached_tokens": ["usage", "cache_read_input_tokens"],
+                "cost": ["total_cost_usd"],
+                "model": ["model"],
+                "answer": ["result"]
+              }
+            }]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let usage = catalog.descriptors[0]
+            .descriptor
+            .usage
+            .as_ref()
+            .expect("il blocco c'è");
+        assert_eq!(usage.args, vec!["--output-format", "json"]);
+        assert_eq!(usage.read, ReadAs::Json);
+        assert_eq!(
+            usage.input_tokens,
+            Some(Where::Path(vec!["usage".into(), "input_tokens".into()]))
+        );
+        assert_eq!(
+            usage.cached_tokens,
+            Some(Where::Path(vec![
+                "usage".into(),
+                "cache_read_input_tokens".into()
+            ])),
+            "la cache ha un puntatore suo, separato dall'ingresso"
+        );
+        assert_eq!(usage.answer, Some(Where::Path(vec!["result".into()])));
+        assert_eq!(usage.output_tokens, None, "ciò che non è scritto non c'è");
+    }
+
+    /// La forma testuale: i puntatori sono espressioni regolari.
+    #[test]
+    fn a_text_usage_block_reads_its_pointers_as_patterns() {
+        let catalog = loaded(
+            "usage-text",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "usage": { "read": "text", "total_tokens": "tokens used\\s*\\n\\s*([\\d.,]+)" }
+            }]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let usage = catalog.descriptors[0].descriptor.usage.as_ref().unwrap();
+        assert_eq!(usage.read, ReadAs::Text);
+        assert_eq!(
+            usage.total_tokens,
+            Some(Where::Pattern("tokens used\\s*\\n\\s*([\\d.,]+)".to_owned()))
+        );
+    }
+
+    /// `deny_unknown_fields` vale anche qui: un campo inventato dentro `usage`
+    /// è un errore di chi scrive il descrittore, non un silenzio che poi lascia
+    /// il consumo sconosciuto senza dire perché.
+    #[test]
+    fn an_invented_field_inside_usage_is_reported_not_ignored() {
+        let catalog = loaded(
+            "usage-sbagliato",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "usage": { "read": "json", "token_di_ingresso": ["a"] }
+            }]"#,
+        );
+        assert_eq!(catalog.descriptors.len(), 0);
+        assert_eq!(catalog.problems.len(), 1);
+        assert!(
+            catalog.problems[0].reason.contains("token_di_ingresso"),
+            "{}",
+            catalog.problems[0].reason
+        );
+    }
+
+    /// Il descrittore di `codex` spedito col prodotto dichiara come si legge il
+    /// suo consumo, e lo dichiara nella forma testuale: è l'unico formato che
+    /// su questa macchina sia stato davvero misurato.
+    #[test]
+    fn the_shipped_codex_descriptor_declares_how_to_read_its_tokens() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let codex = catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == "codex")
+            .expect("codex è spedito col prodotto");
+        let usage = codex
+            .descriptor
+            .usage
+            .as_ref()
+            .expect("codex dichiara il proprio consumo");
+        assert_eq!(usage.read, ReadAs::Text);
+        assert!(usage.total_tokens.is_some());
+        assert!(
+            usage.args.is_empty(),
+            "codex scrive già i token da sé: chiedergli qualcosa in più \
+             cambierebbe la sua riga di comando per niente"
+        );
+        assert!(
+            usage.answer.is_none(),
+            "nessun involucro chiesto, quindi niente da spacchettare: \
+             l'uscita del passo resta quella di sempre"
+        );
     }
 }

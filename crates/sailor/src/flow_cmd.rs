@@ -635,10 +635,16 @@ fn default_registry(
     // punto del programma dove il crate che esegue e quello che sa cosa c'è
     // sulla macchina si incontrano — sopra restano indipendenti, e un flusso
     // scritto altrove gira qui perché nomina strumenti, non binari.
+    //
+    // **E QUI IL MOTORE RICEVE ANCHE IL DEPOSITO**, che è l'unico modo per
+    // sapere quanto si spende: il `run_id` non esiste ancora a questo punto —
+    // nasce quando la corsa parte — e arriva all'azione dallo stato condiviso,
+    // mentre il deposito è già aperto e in mano a chi costruisce il registro.
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
         actions::ExternalEngineAction::resolving_with(toolbox::Tools::current())
-            .watched_by(watcher.clone()),
+            .watched_by(watcher.clone())
+            .recording_to(ledger.clone()),
     );
     // **ANCHE QUESTA DOPO `register_default`, E PER LO STESSO MOTIVO.** Quella
     // registra una verifica che non ha nessuno a cui parlare; il guardiano si

@@ -87,7 +87,7 @@ fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const PROJECTION_SCHEMA_VERSION: i64 = 3;
+const PROJECTION_SCHEMA_VERSION: i64 = 4;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -201,6 +201,21 @@ pub struct InventoryChange {
     pub gone_at: Option<i64>,
 }
 
+/// Una chiamata a un modello, con quanto ha consumato e quanto è costata.
+///
+/// **QUI `None` VUOL DIRE «NON LO SO», E NON ESISTE UNO ZERO DI RIPIEGO.** I
+/// conteggi e i prezzi erano numeri secchi finché a scrivere questa riga erano
+/// solo le prove, che il numero se lo inventavano. Da quando lo scrive il
+/// motore che invoca davvero una riga di comando, la differenza fra «zero
+/// token» e «quel motore non dice quanti token ha usato» è la differenza fra
+/// una misura e una bugia: uno zero scritto al posto di «non lo so» si somma, e
+/// nessuna vista a valle può più correggerlo. Chi legge una riga con i
+/// conteggi a `None` sa di avere una chiamata non misurata, e quello è un
+/// fatto su cui si può agire.
+///
+/// I campi `Option` portano `serde(default)` perché il deposito è a eventi: un
+/// evento scritto quando erano numeri secchi continua a leggersi — `10`
+/// diventa `Some(10)` — e uno scritto dopo, senza il campo, diventa `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCallRecord {
     pub call_id: String,
@@ -210,14 +225,36 @@ pub struct ModelCallRecord {
     pub cli: String,
     pub requested_model: String,
     pub actual_model: String,
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cached_tokens: u64,
-    pub cost_micros: i64,
-    pub price_currency: String,
-    pub input_price_micros_per_million: i64,
-    pub output_price_micros_per_million: i64,
-    pub cached_price_micros_per_million: i64,
+    #[serde(default)]
+    pub input_tokens: Option<u64>,
+    #[serde(default)]
+    pub output_tokens: Option<u64>,
+    /// I token d'ingresso letti dalla cache, in una colonna loro: hanno un
+    /// prezzo per milione tutto loro, spesso un ordine di grandezza sotto
+    /// quello dell'ingresso fresco.
+    #[serde(default)]
+    pub cached_tokens: Option<u64>,
+    /// Il totale, per i motori che dicono **solo** quello senza separare i due
+    /// lati. Senza questo campo l'unica misura vera che quei motori danno
+    /// verrebbe buttata via per non saperla spezzare in tre.
+    #[serde(default)]
+    pub total_tokens: Option<u64>,
+    pub cost_micros: Option<i64>,
+    /// Il costo che il motore ha dichiarato di suo, tenuto **accanto** a
+    /// quello del listino e mai al posto suo: se un giorno i due divergono
+    /// sistematicamente, quella divergenza è essa stessa l'informazione. Un
+    /// costo che arriva dallo stesso posto da cui arriva la spesa non è una
+    /// verifica di niente.
+    #[serde(default)]
+    pub declared_cost_micros: Option<i64>,
+    #[serde(default)]
+    pub price_currency: Option<String>,
+    #[serde(default)]
+    pub input_price_micros_per_million: Option<i64>,
+    #[serde(default)]
+    pub output_price_micros_per_million: Option<i64>,
+    #[serde(default)]
+    pub cached_price_micros_per_million: Option<i64>,
     pub mandate_name: String,
     pub mandate_version: String,
     pub retry_chain: Vec<String>,
@@ -1333,20 +1370,22 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              cli TEXT NOT NULL,
              requested_model TEXT NOT NULL,
              actual_model TEXT NOT NULL,
-             input_tokens TEXT NOT NULL,
-             output_tokens TEXT NOT NULL,
-             cached_tokens TEXT NOT NULL,
-             cost_micros INTEGER NOT NULL,
-             price_currency TEXT NOT NULL,
-             input_price_micros_per_million INTEGER NOT NULL,
-             output_price_micros_per_million INTEGER NOT NULL,
-             cached_price_micros_per_million INTEGER NOT NULL,
+             input_tokens TEXT,
+             output_tokens TEXT,
+             cached_tokens TEXT,
+             cost_micros INTEGER,
+             price_currency TEXT,
+             input_price_micros_per_million INTEGER,
+             output_price_micros_per_million INTEGER,
+             cached_price_micros_per_million INTEGER,
              mandate_name TEXT NOT NULL,
              mandate_version TEXT NOT NULL,
              retry_chain TEXT NOT NULL,
              error_type TEXT,
              started_at INTEGER NOT NULL,
-             ended_at INTEGER
+             ended_at INTEGER,
+             total_tokens TEXT,
+             declared_cost_micros INTEGER
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -1426,6 +1465,71 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
             transaction.execute(&format!("ALTER TABLE steps ADD COLUMN {column} {kind}"), [])?;
         }
     }
+    // versione 4: i conteggi e i prezzi di una chiamata possono essere ignoti.
+    relax_model_calls(transaction)?;
+    Ok(())
+}
+
+/// Rifà `model_calls` nella forma in cui i conteggi e i prezzi ammettono NULL,
+/// conservando le righe già scritte.
+///
+/// **PERCHÉ UN RIFACIMENTO E NON UN `ALTER`.** SQLite non sa togliere un
+/// `NOT NULL` da una colonna esistente: l'unica strada è creare la forma nuova,
+/// copiarci dentro le righe, e sostituire la vecchia. E non si passa dalla
+/// ricostruzione da eventi — che pure esiste — perché `rebuild_projections_in`
+/// rifiuta un registro potato: su un deposito a cui qualcuno ha già tagliato la
+/// coda degli eventi quella strada non arriva in fondo, e si porterebbe via
+/// anche le righe che si stanno cercando di salvare.
+///
+/// Il riconoscimento passa da `total_tokens`, che nasce con questa versione:
+/// se c'è, il rifacimento è già stato fatto, e rieseguire questa funzione non
+/// fa niente.
+fn relax_model_calls(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
+    if column_exists(transaction, "model_calls", "total_tokens")? {
+        return Ok(());
+    }
+    transaction.execute_batch(
+        "CREATE TABLE model_calls_relaxed (
+             call_id TEXT PRIMARY KEY,
+             run_id TEXT NOT NULL,
+             step_id TEXT,
+             purpose TEXT NOT NULL,
+             cli TEXT NOT NULL,
+             requested_model TEXT NOT NULL,
+             actual_model TEXT NOT NULL,
+             input_tokens TEXT,
+             output_tokens TEXT,
+             cached_tokens TEXT,
+             cost_micros INTEGER,
+             price_currency TEXT,
+             input_price_micros_per_million INTEGER,
+             output_price_micros_per_million INTEGER,
+             cached_price_micros_per_million INTEGER,
+             mandate_name TEXT NOT NULL,
+             mandate_version TEXT NOT NULL,
+             retry_chain TEXT NOT NULL,
+             error_type TEXT,
+             started_at INTEGER NOT NULL,
+             ended_at INTEGER,
+             total_tokens TEXT,
+             declared_cost_micros INTEGER
+         );
+         INSERT INTO model_calls_relaxed (
+             call_id, run_id, step_id, purpose, cli, requested_model, actual_model,
+             input_tokens, output_tokens, cached_tokens, cost_micros, price_currency,
+             input_price_micros_per_million, output_price_micros_per_million,
+             cached_price_micros_per_million, mandate_name, mandate_version,
+             retry_chain, error_type, started_at, ended_at)
+         SELECT
+             call_id, run_id, step_id, purpose, cli, requested_model, actual_model,
+             input_tokens, output_tokens, cached_tokens, cost_micros, price_currency,
+             input_price_micros_per_million, output_price_micros_per_million,
+             cached_price_micros_per_million, mandate_name, mandate_version,
+             retry_chain, error_type, started_at, ended_at
+         FROM model_calls;
+         DROP TABLE model_calls;
+         ALTER TABLE model_calls_relaxed RENAME TO model_calls;",
+    )?;
     Ok(())
 }
 
@@ -1789,7 +1893,7 @@ fn project_model_call(
     transaction.execute(
         "INSERT INTO model_calls VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -1802,7 +1906,9 @@ fn project_model_call(
           cached_price_micros_per_million=excluded.cached_price_micros_per_million,
           mandate_name=excluded.mandate_name, mandate_version=excluded.mandate_version,
           retry_chain=excluded.retry_chain, error_type=excluded.error_type,
-          started_at=excluded.started_at, ended_at=excluded.ended_at",
+          started_at=excluded.started_at, ended_at=excluded.ended_at,
+          total_tokens=excluded.total_tokens,
+          declared_cost_micros=excluded.declared_cost_micros",
         params![
             record.call_id,
             record.run_id,
@@ -1811,9 +1917,11 @@ fn project_model_call(
             record.cli,
             record.requested_model,
             record.actual_model,
-            record.input_tokens.to_string(),
-            record.output_tokens.to_string(),
-            record.cached_tokens.to_string(),
+            // I conteggi restano colonne di testo per non perdere precisione
+            // oltre 2^53; un conteggio ignoto è un NULL, non la stringa "0".
+            record.input_tokens.map(|n| n.to_string()),
+            record.output_tokens.map(|n| n.to_string()),
+            record.cached_tokens.map(|n| n.to_string()),
             record.cost_micros,
             record.price_currency,
             record.input_price_micros_per_million,
@@ -1825,6 +1933,8 @@ fn project_model_call(
             record.error_type,
             record.started_at,
             record.ended_at,
+            record.total_tokens.map(|n| n.to_string()),
+            record.declared_cost_micros,
         ],
     )?;
     Ok(())
@@ -2119,7 +2229,11 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
         "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed",
-        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at",
+        // Le due colonne nate con la versione 4 stanno in coda, e non è un
+        // disordine: chi legge questo dump lo fa per posizione, e infilarle in
+        // mezzo sposterebbe ogni indice a valle senza che niente se ne accorga
+        // finché un token non compare al posto di un prezzo.
+        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
     };
