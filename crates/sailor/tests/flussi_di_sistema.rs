@@ -40,12 +40,20 @@ fn product_registry() -> ActionRegistry {
     registry
 }
 
-struct Tick(i64);
+/// Un orologio finto che avanza di uno a ogni domanda. Il contatore è atomico
+/// perché ora l'orologio è condiviso da più fili: un `i64` mutabile qui non
+/// compilerebbe, ed è la stessa ragione per cui il tratto chiede `&self`.
+struct Tick(std::sync::atomic::AtomicI64);
+
+impl Tick {
+    fn new(start: i64) -> Self {
+        Tick(std::sync::atomic::AtomicI64::new(start))
+    }
+}
 
 impl Clock for Tick {
-    fn now(&mut self) -> Result<i64, FlowError> {
-        self.0 += 1;
-        Ok(self.0)
+    fn now(&self) -> Result<i64, FlowError> {
+        Ok(self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
     }
 }
 
@@ -71,7 +79,7 @@ fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
             request,
             &mut store,
             &product_registry(),
-            &mut Tick(0),
+            &mut Tick::new(0),
         )
         .expect("l'esecuzione non deve rompersi");
     let records = store.records(&run_id).expect("le tracce della corsa");

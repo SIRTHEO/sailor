@@ -17,12 +17,19 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const RECORD_PATH: &str = "FLOW_CRASH_RECORD_PATH";
 const EFFECT_PATH: &str = "FLOW_CRASH_EFFECT_PATH";
 
-struct FixedClock(i64);
+/// Un orologio che avanza di uno a ogni domanda, con un contatore atomico:
+/// l'orologio è condiviso fra i fili di un fronte.
+struct FixedClock(std::sync::atomic::AtomicI64);
+
+impl FixedClock {
+    fn new(start: i64) -> Self {
+        FixedClock(std::sync::atomic::AtomicI64::new(start))
+    }
+}
 
 impl Clock for FixedClock {
-    fn now(&mut self) -> Result<i64, flow::FlowError> {
-        self.0 += 1;
-        Ok(self.0)
+    fn now(&self) -> Result<i64, flow::FlowError> {
+        Ok(self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
     }
 }
 
@@ -64,7 +71,7 @@ impl Action for FileEffect {
     fn execute(
         &self,
         _input: &Value,
-        _shared: &mut SharedState,
+        _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         self.executions.fetch_add(1, Ordering::SeqCst);
         fs::write(&self.path, b"landed")
@@ -91,7 +98,7 @@ impl Action for Echo {
     fn execute(
         &self,
         input: &Value,
-        _shared: &mut SharedState,
+        _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         Ok(ActionOutcome::Went(input.clone()))
     }
@@ -105,7 +112,7 @@ impl Action for Opaque {
     fn execute(
         &self,
         _input: &Value,
-        _shared: &mut SharedState,
+        _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         Ok(ActionOutcome::Went(json!({})))
     }
@@ -122,7 +129,7 @@ impl Action for UndoesItsEffect {
     fn execute(
         &self,
         _input: &Value,
-        _shared: &mut SharedState,
+        _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         Ok(ActionOutcome::Went(json!({})))
     }
@@ -175,7 +182,7 @@ fn reconcile_opaque(
             actions: &actions,
             shared: &SharedState::new(),
             processes: &NeverRunning,
-            clock: &mut FixedClock(20),
+            clock: &mut FixedClock::new(20),
         })
         .expect("riconciliazione riuscita");
     let decision = InProcessExecutor
@@ -286,7 +293,7 @@ fn a_step_held_by_a_living_process_is_left_alone() {
             actions: &actions,
             shared: &SharedState::new(),
             processes: &AsksTheKernel,
-            clock: &mut FixedClock(20),
+            clock: &mut FixedClock::new(20),
         })
         .expect("riconciliazione riuscita");
     assert_eq!(report.still_running, vec!["opaque"]);
@@ -310,7 +317,7 @@ fn a_step_held_by_a_living_process_is_left_alone() {
             actions: &actions,
             shared: &SharedState::new(),
             processes: &AsksTheKernel,
-            clock: &mut FixedClock(20),
+            clock: &mut FixedClock::new(20),
         })
         .expect("riconciliazione riuscita");
     assert!(report.still_running.is_empty(), "{report:?}");
@@ -350,7 +357,7 @@ fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
             },
             &mut store,
             &actions,
-            &mut FixedClock(1),
+            &mut FixedClock::new(1),
         )
         .expect("esecuzione riuscita");
     let record = store
@@ -489,7 +496,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
             actions: &actions,
             shared: &SharedState::new(),
             processes: &NeverRunning,
-            clock: &mut FixedClock(20),
+            clock: &mut FixedClock::new(20),
         })
         .expect("riconciliazione riuscita");
     let actual = InProcessExecutor
@@ -527,7 +534,7 @@ fn absent_process_without_landed_effect_closes_and_retries_itself() {
             actions: &actions,
             shared: &BTreeMap::new(),
             processes: &NeverRunning,
-            clock: &mut FixedClock(20),
+            clock: &mut FixedClock::new(20),
         })
         .expect("riconciliazione riuscita");
     assert_eq!(report.closed_as_broke, vec!["write"]);

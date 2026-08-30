@@ -1468,7 +1468,7 @@ impl Action for ExternalEngineAction {
     fn execute(
         &self,
         input: &Value,
-        shared: &mut SharedState,
+        shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         // Dove annotare la spesa. Si costruisce qui perché `shared` più avanti
@@ -1608,7 +1608,7 @@ impl Action for ShellCheckAction {
     fn execute(
         &self,
         input: &Value,
-        shared: &mut SharedState,
+        shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         let input = reference::resolve_references(input)?;

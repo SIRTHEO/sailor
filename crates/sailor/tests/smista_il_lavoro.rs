@@ -76,12 +76,19 @@ fn registry_with(resolver: impl ToolResolver + 'static) -> ActionRegistry {
     registry
 }
 
-struct Tick(i64);
+/// Un orologio finto che avanza di uno a ogni domanda. Il contatore è atomico
+/// perché l'orologio ora è condiviso fra i fili di un fronte.
+struct Tick(std::sync::atomic::AtomicI64);
+
+impl Tick {
+    fn new(start: i64) -> Self {
+        Tick(std::sync::atomic::AtomicI64::new(start))
+    }
+}
 
 impl Clock for Tick {
-    fn now(&mut self) -> Result<i64, FlowError> {
-        self.0 += 1;
-        Ok(self.0)
+    fn now(&self) -> Result<i64, FlowError> {
+        Ok(self.0.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1)
     }
 }
 
@@ -101,7 +108,7 @@ fn run_with(
         shared: SharedState::new(),
     };
     let execution = InProcessExecutor
-        .execute(graph, request, &mut store, registry, &mut Tick(0))
+        .execute(graph, request, &mut store, registry, &mut Tick::new(0))
         .expect("l'esecuzione non deve rompersi");
     (execution, store)
 }
@@ -476,8 +483,8 @@ fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
         Decision::Failed(vec!["engine_a".to_owned()]),
         "la corsa è rossa, e il rosso porta il nome del passo che ha fallito"
     );
-    let record = store
-        .all()
+    let records = store.all();
+    let record = records
         .iter()
         .find(|record| record.step_id == "engine_a")
         .expect("il passo è stato aperto");
@@ -515,8 +522,8 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
         last_decision(&execution),
         Decision::Failed(vec!["dispatch".to_owned()])
     );
-    let record = store
-        .all()
+    let records = store.all();
+    let record = records
         .iter()
         .find(|record| record.step_id == "dispatch")
         .expect("il passo è stato aperto");
