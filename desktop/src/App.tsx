@@ -32,6 +32,7 @@ import {
   listenToRuns,
   loadFlows,
   runSnapshot,
+  runUsage,
   saveFlow,
   startRun,
   type RunEvent,
@@ -43,6 +44,7 @@ import {
   type BrokenFlow,
   type FlowEntry,
   type FlowFile,
+  type RunUsage,
   type Step,
   type StepKind,
   type StepRun,
@@ -381,6 +383,46 @@ export default function App() {
     return () => window.clearInterval(tick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anyRunning, executions.size]);
+
+  // QUANTO STA COSTANDO LA CORSA CHE SI GUARDA.
+  //
+  // **SI CHIEDE AL MOTORE, NON SI SOMMA QUI.** I totali li calcola
+  // `ui::dashboard`, lo stesso codice che serve la pagina di `sailor ui`: una
+  // seconda somma scritta in TypeScript darebbe due cifre per la stessa spesa, e
+  // il 28/08 abbiamo già pagato il prezzo di una verità tenuta in due posti.
+  //
+  // **OGNI TRE SECONDI MENTRE GIRA, E UNA VOLTA QUANDO FINISCE.** Leggere la
+  // spesa vuol dire aprire il deposito e scorrere le corse: è troppo per il
+  // battito di un secondo con cui si aggiornano i passi, ed è poco per una cifra
+  // che cambia solo quando un passo chiama un motore. `null` finché il deposito
+  // non ha ancora proiettato la corsa — e allora non si mostra niente, invece di
+  // mostrare uno zero che sembrerebbe una misura.
+  const [usage, setUsage] = useState<RunUsage | null>(null);
+  useEffect(() => {
+    if (!NATIVE || !watching) {
+      setUsage(null);
+      return;
+    }
+    let alive = true;
+    const ask = () => {
+      void runUsage(watching)
+        .then((found) => {
+          if (alive) setUsage(found);
+        })
+        .catch(() => {});
+    };
+    ask();
+    const watchedRun = executions.get(watching);
+    if (watchedRun?.status !== "running") return () => {
+      alive = false;
+    };
+    const tick = window.setInterval(ask, 3000);
+    return () => {
+      alive = false;
+      window.clearInterval(tick);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watching, executions.get(watching ?? "")?.status, executions.size]);
 
   /** La corsa più recente di un flusso: è quella che chi guarda intende. */
   const latestByFlow = useMemo(() => {
@@ -1082,6 +1124,7 @@ export default function App() {
           mode={consoleMode}
           now={now}
           listenFailure={listenFailure}
+          usage={usage}
           onMode={setConsoleMode}
           onPick={setWatching}
           onClose={() => setWatching(null)}
