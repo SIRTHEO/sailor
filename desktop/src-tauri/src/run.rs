@@ -58,7 +58,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 
-use ui::gather::{default_flows_dir, default_ledger_dir};
+use ui::gather::default_ledger_dir;
 
 /// Il canale su cui la finestra riceve quello che succede in una corsa.
 pub const RUN_EVENT: &str = "sailor://run";
@@ -314,7 +314,12 @@ pub(crate) fn start_run(
             ledger_dir.display()
         )
     })?;
-    let registry = default_registry(&ledger);
+    // Il testimone resta `None`: la finestra vede i passi aprirsi e chiudersi
+    // dal deposito (`WatchedStore`), non dal testo che esce dal motore mentre
+    // gira. È il limite già dichiarato a chi guarda nella console — il testo
+    // arriva tutto insieme alla chiusura — e si toglie da qui il giorno che si
+    // toglie di là.
+    let registry = default_registry(&ledger, None);
     let missing: Vec<&str> = flow
         .graph
         .steps()
@@ -757,24 +762,24 @@ fn execution_status(execution: &Execution) -> &'static str {
     }
 }
 
-/// Le azioni che il motore sa eseguire.
+/// Le azioni che il motore sa eseguire: **la stessa lista del terminale**.
 ///
-/// **QUESTA LISTA SI DISALLINEA, E L'HA GIÀ FATTO.** È la stessa di
-/// `flow_cmd::default_registry`, che è una funzione privata di un binario e non
-/// si può richiamare da qui. Il 28/08/2026, un'ora dopo che questo modulo era
-/// scritto, il crate `trigger` è nato: di là era registrato, di qua no, e il
-/// pulsante di lancio rispondeva «azione sconosciuta: trigger» su un flusso che
-/// dalla riga di comando partiva. **Chi registra un'azione nuova la registra in
-/// tutti e due i posti** — e finché non si può fare altrimenti, il difetto si
-/// vede almeno subito: il rifiuto arriva prima di eseguire, con il nome
-/// dell'azione mancante scritto nel nodo di innesco.
-fn default_registry(ledger: &Ledger) -> ActionRegistry {
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    trigger::register_default(&mut registry);
-    toolbox::register_default(&mut registry);
-    actions::store::register_store(&mut registry, ledger.clone());
-    registry
+/// **QUESTA LISTA SI DISALLINEAVA, E L'AVEVA GIÀ FATTO TRE VOLTE.** Qui c'era
+/// una copia a mano di quella del comando `sailor flow run`, tenute allineate
+/// dalla buona volontà. Il 28/08/2026 nacque il crate `trigger`, registrato di
+/// là e non di qua: il pulsante rispondeva «azione sconosciuta: trigger» su un
+/// flusso che dal terminale partiva. Il 30/08/2026 alle 09:05 è successo di
+/// nuovo con la misura del consumo, e stavolta in silenzio — la finestra
+/// costruiva un motore **senza risolutore di strumenti** (ogni passo che nomina
+/// `claude-code` invece di un percorso cadeva con `no_tool_resolver`) e
+/// **senza deposito** (nessuna riga di costo per le corse lanciate da qui).
+///
+/// Ora la lista è una sola e sta in `crates/registry`. Il commento che stava
+/// qui diceva «chi registra un'azione nuova la registra in tutti e due i
+/// posti»: era l'istruzione giusta per un difetto che andava tolto, non
+/// rispettato.
+fn default_registry(ledger: &Ledger, watcher: Option<Arc<dyn actions::StepSinks>>) -> ActionRegistry {
+    registry::default_registry(Some(ledger.clone()), watcher)
 }
 
 /// Da dove arriva il segnale che questo guscio manda. È la finestra, sempre:
@@ -839,27 +844,43 @@ fn record_run(
         .map_err(|error| format!("non riesco a registrare la corsa {run_id}: {error}"))
 }
 
+/// Il flusso che si chiama così, cercato **dove la tela lo ha trovato**.
+///
+/// **IL DIFETTO CHE QUESTA FUNZIONE AVEVA, E COSA SI VEDEVA DA FUORI.** Fino al
+/// 30/08/2026 qui il nome diventava un percorso dentro `default_flows_dir()` —
+/// `~/.config/sailor/flows`, una cartella sola — mentre l'elenco che la finestra
+/// disegna viene da tre sorgenti: quelli spediti dentro il binario, quelli di
+/// casa e quelli del progetto. Su questa macchina i sette flussi esistenti
+/// stanno nelle altre due, e quella cartella non esiste nemmeno. Risultato:
+/// `flow_trigger` falliva su ognuno, ogni innesco restava `mute`, e **il
+/// pulsante ▶ Esegui era grigio su tutti i nodi**. Da fuori era indistinguibile
+/// da un pulsante non collegato a niente — che è come è stato descritto per due
+/// giorni, mentre il collegamento c'era ed era intero.
+///
+/// **E IL NOME NON DIVENTA PIÙ UN PERCORSO.** Cercandolo in un elenco già
+/// costruito, un nome che quell'elenco non contiene non apre niente: non c'è
+/// nessun posto da cui scappare, e il controllo che serviva prima — `safe_name`
+/// — se ne va con la ragione che lo teneva in vita. È la stessa scelta già
+/// motivata in `flow_cmd::known_flows`, e ora le due strade la condividono.
 fn load_flow(name: &str) -> Result<FlowFile, String> {
-    let id = safe_name(name)?;
-    let path = default_flows_dir().join(format!("{id}.flow.json"));
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| format!("non riesco a leggere {}: {error}", path.display()))?;
-    serde_json::from_str(&text)
-        .map_err(|error| format!("il flusso «{id}» non si carica: {error}"))
-}
-
-/// Stessa difesa di `flows::safe_flow_id`: un nome che esce dalla cartella si
-/// nega, non si ripulisce in silenzio.
-fn safe_name(name: &str) -> Result<&str, String> {
-    if name.is_empty() {
-        return Err("il nome del flusso non può essere vuoto".to_owned());
+    let known = ui::gather::load_all_flows(&ui::gather::flow_sources());
+    match known.iter().find(|(known, _, _)| known == name) {
+        Some((_, _, Ok(flow))) => Ok(flow.clone()),
+        Some((_, origin, Err(reason))) => {
+            Err(format!("il flusso «{name}» ({origin}) non si carica: {reason}"))
+        }
+        None => {
+            let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
+            Err(format!(
+                "nessun flusso si chiama «{name}»; quelli che vedo sono: {}",
+                if names.is_empty() {
+                    "nessuno".to_owned()
+                } else {
+                    names.join(", ")
+                }
+            ))
+        }
     }
-    if name.contains('/') || name.contains('\\') || name.contains("..") {
-        return Err(format!(
-            "«{name}» non è un nome di flusso sicuro: niente separatori di percorso"
-        ));
-    }
-    Ok(name)
 }
 
 fn now_secs() -> i64 {
@@ -1063,11 +1084,74 @@ mod tests {
         }
     }
 
+    /// **OGNI AZIONE DEI FLUSSI SPEDITI DEV'ESSERE NEL REGISTRO DELLA FINESTRA.**
+    ///
+    /// È lo stesso controllo che `start_run` fa prima di eseguire (e che
+    /// risponde «il flusso nomina azioni che il motore non conosce»), qui fatto
+    /// sui flussi che stanno dentro il binario. Prima del 30/08/2026 il guscio
+    /// costruiva una lista sua, più corta di quella del terminale: mancavano
+    /// `tool_needs` e il risolutore degli strumenti, quindi un flusso spedito
+    /// col prodotto veniva rifiutato dalla finestra e accettato dal terminale.
+    ///
+    /// Il deposito qui non serve: le azioni che mancavano non sono quelle che
+    /// scrivono.
     #[test]
-    fn a_flow_name_that_climbs_out_of_the_directory_is_refused() {
-        assert!(safe_name("../evaso").is_err());
-        assert!(safe_name("sotto/cartella").is_err());
-        assert!(safe_name("").is_err());
-        assert!(safe_name("prova-della-vista").is_ok());
+    fn every_action_of_a_shipped_flow_is_known_to_the_window() {
+        let registro = registry::default_registry(None, None);
+        for nome in ["strumenti-di-questa-macchina", "migrazione-a-sailor"] {
+            let flow = load_flow(nome).expect("i flussi di sistema si caricano");
+            for step in flow.graph.steps() {
+                assert!(
+                    registro.get(&step.action).is_some(),
+                    "«{}» nomina l'azione «{}», che la finestra non conosce",
+                    nome,
+                    step.action
+                );
+            }
+        }
+    }
+
+    /// **LA PROVA DELLA RIPARAZIONE, E NON LEGGE LA MACCHINA DI NESSUNO.**
+    ///
+    /// I flussi di sistema stanno **dentro il binario**: ci sono su qualunque
+    /// macchina, anche su una appena installata, anche dove `~/.config/sailor`
+    /// non esiste. Prima del 30/08/2026 questa `load_flow` non ne trovava
+    /// nemmeno uno — cercava in una cartella sola, e non era quella — quindi
+    /// `flow_trigger` falliva, l'innesco restava muto e il pulsante ▶ Esegui era
+    /// grigio su ogni nodo della tela.
+    ///
+    /// Rimettendo `default_flows_dir()` al posto dell'elenco, questa prova
+    /// diventa rossa (provato).
+    #[test]
+    fn a_flow_shipped_inside_the_binary_is_loadable_from_the_window() {
+        let flow = load_flow("strumenti-di-questa-macchina")
+            .expect("un flusso di sistema si carica ovunque, senza niente sul disco");
+        assert!(
+            !flow.graph.steps().is_empty(),
+            "e arriva col suo grafo, non come guscio vuoto"
+        );
+    }
+
+    /// **LA STESSA GARANZIA DI PRIMA, OTTENUTA IN UN ALTRO MODO.** Qui c'era una
+    /// prova su `safe_name`, il controllo che impediva a un nome di uscire dalla
+    /// cartella quando il nome diventava un percorso. Adesso il nome si cerca in
+    /// un elenco: non apre niente per costruzione, e `safe_name` non esiste più.
+    /// La prova resta, perché la cosa da garantire è la stessa — un nome storto
+    /// non deve leggere niente — ed è il comportamento che si prova, non la
+    /// funzione che lo otteneva.
+    #[test]
+    fn a_flow_name_that_climbs_out_of_the_directory_opens_nothing() {
+        for storto in ["../evaso", "sotto/cartella", "", "/etc/passwd"] {
+            let esito = load_flow(storto);
+            assert!(
+                esito.is_err(),
+                "«{storto}» non è il nome di nessun flusso: non deve caricare niente"
+            );
+            let why = esito.unwrap_err();
+            assert!(
+                why.contains("nessun flusso si chiama"),
+                "e il motivo dev'essere che non è in elenco, non un errore di lettura: {why}"
+            );
+        }
     }
 }
