@@ -441,7 +441,7 @@ impl Action for HistoryAskAction {
     fn execute(
         &self,
         input: &Value,
-        _shared: &mut SharedState,
+        _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         // La domanda si valida **prima** di guardare il deposito: un campo
         // sbagliato è sbagliato su qualunque macchina, e scoprirlo solo dove il

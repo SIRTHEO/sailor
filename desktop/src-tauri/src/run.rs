@@ -233,7 +233,7 @@ struct WatchedStore {
 }
 
 impl RecordStore for WatchedStore {
-    fn append_started(&mut self, record: StepRecord) -> Result<(), FlowError> {
+    fn append_started(&self, record: StepRecord) -> Result<(), FlowError> {
         let announced = record.clone();
         self.inner.append_started(record)?;
         self.runs.publish(
@@ -247,7 +247,7 @@ impl RecordStore for WatchedStore {
     }
 
     fn close(
-        &mut self,
+        &self,
         run_id: &str,
         step_id: &str,
         attempt: u32,

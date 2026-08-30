@@ -60,7 +60,7 @@ impl Action for TriggerAction {
     fn execute(
         &self,
         input: &Value,
-        _shared: &mut SharedState,
+        _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         let spec: TriggerSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;

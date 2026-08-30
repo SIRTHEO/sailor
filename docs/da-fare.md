@@ -72,8 +72,11 @@ I guasti, con come si sono visti e cosa li impedirebbe, stanno in
 `docs/guasti-incontrati.md` — **cinque aperti su undici**. Qui solo quelli che
 non sono guasti ma limiti dichiarati:
 
-- **I passi girano in fila, non insieme.** Il codice lo dichiara, la
-  documentazione diceva il contrario (corretta il 29/08).
+- ~~**I passi girano in fila, non insieme.**~~ Riparato il 30/08/2026: il fronte
+  parte insieme, con un tetto dichiarato di quattro passi per ondata. Misurato:
+  due passi da sei secondi in 6,07 secondi, tre in 6,05. Resta da decidere se il
+  tetto debba diventare una conseguenza di un tetto di spesa invece di una
+  costante.
 - **La cassetta dei passi offre otto tipi, il motore ne esegue tre.** Chi usa uno
   degli altri cinque costruisce un flusso che non parte. La cura è la stessa
   degli strumenti: chiedere al motore, non tenere una lista.
