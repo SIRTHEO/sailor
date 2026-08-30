@@ -13,7 +13,7 @@
 // i dati di esempio, e chi guarda deve poterlo capire dalla finestra invece che
 // dal codice.
 
-import type { FlowEntry, FlowFile } from "./flow";
+import type { FlowEntry, FlowFile, RunUsage } from "./flow";
 import { parseTools, publishTools, type Tool } from "./tools";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -247,4 +247,20 @@ export async function stepHistory(flow: string, step: string, limit?: number): P
   const invoke = invoker();
   if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da interrogare");
   return invoke<StepPassage[]>("step_history", { flow, step, limit: limit ?? null });
+}
+
+/**
+ * Quanto ha consumato una corsa: token, cache e denaro.
+ *
+ * I CONTI NON SI RIFANNO QUI. Li fa il motore (`ui::dashboard`), che è lo stesso
+ * codice che serve la pagina di `sailor ui`: due somme scritte in due linguaggi
+ * darebbero due cifre, e nessuno saprebbe quale credere.
+ *
+ * `null` non è un errore: è una corsa che il deposito non ha ancora proiettato,
+ * o un deposito che non esiste perché non è mai stato eseguito niente.
+ */
+export async function runUsage(runId: string): Promise<RunUsage | null> {
+  const invoke = invoker();
+  if (!invoke) return null;
+  return invoke<RunUsage | null>("run_usage", { runId });
 }
