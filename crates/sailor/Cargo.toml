@@ -25,5 +25,8 @@ inventory = { path = "../inventory" }
 # arriva il segnale che fa partire un flusso.
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
+# Quali azioni sa eseguire Sailor: una lista sola, condivisa con la finestra.
+# Averla in due copie ha fatto girare lo stesso flusso in due modi diversi.
+registry = { path = "../registry" }
 serde = { workspace = true }
 serde_json = { workspace = true }

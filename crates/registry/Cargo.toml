@@ -1,0 +1,22 @@
+[package]
+name = "registry"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# QUALI AZIONI SA ESEGUIRE SAILOR: una funzione sola, e il crate esiste per
+# quello.
+#
+# Non porta logica propria e non aggiunge nessuna dipendenza esterna: mette
+# insieme quelle che c'erano già. Esiste perché la stessa lista era scritta due
+# volte — una nel comando `sailor flow run`, una nel guscio della finestra — e le
+# due copie si sono disallineate almeno tre volte, l'ultima il 30/08/2026 alle
+# 09:05, quando la misura del consumo è entrata da una parte sola. Il commento
+# sopra la copia della finestra diceva testualmente «QUESTA LISTA SI DISALLINEA,
+# E L'HA GIÀ FATTO»: era vero, ed è rimasto vero finché la lista è stata due.
+[dependencies]
+actions = { path = "../actions" }
+flow = { path = "../flow" }
+ledger = { path = "../ledger" }
+toolbox = { path = "../toolbox" }
+trigger = { path = "../trigger" }
