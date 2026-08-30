@@ -28,6 +28,11 @@ flow = { path = "../../crates/flow" }
 actions = { path = "../../crates/actions" }
 ledger = { path = "../../crates/ledger" }
 
+# Quali azioni sa eseguire il motore: la stessa lista che usa il terminale.
+# Averla in copia qui ha fatto girare lo stesso flusso in due modi diversi a
+# seconda di chi lo lanciava — l'ultima volta il 30/08/2026, in silenzio.
+registry = { path = "../../crates/registry" }
+
 # Per far partire un flusso che comincia con un nodo di innesco: l'azione
 # `trigger` vive in un crate a sé, e un registro che non la contiene rifiuta il
 # flusso con «azione sconosciuta» al momento del lancio.

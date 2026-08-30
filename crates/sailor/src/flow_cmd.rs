@@ -591,81 +591,11 @@ fn record_run(
         .map_err(|error| format!("non riesco a registrare la corsa {run_id}: {error}"))
 }
 
-/// Il registro delle azioni, con i nodi del deposito se un deposito c'è.
-///
-/// **PERCHÉ IL DEPOSITO È FACOLTATIVO QUI.** `store_write` e `store_read`
-/// hanno bisogno di un deposito vero per lavorare, ma `sailor flow check` non
-/// esegue niente: guarda se il grafo nomina azioni che nessuno ha registrato.
-/// Farlo dipendere dall'apertura di un deposito vorrebbe dire che un controllo
-/// statico **crea file sul disco** — e che su una macchina dove il deposito non
-/// si apre il controllo direbbe «azione mancante» di un'azione che esiste.
-///
-/// Quando manca, quei nodi non entrano nel registro e `flow check` lo dice
-/// nella stessa forma in cui dice ogni altra azione mancante: chi legge vede
-/// che il controllo è stato fatto senza deposito, invece di credere a un
-/// grafo sano che all'esecuzione non parte.
-///
-/// **CHI LEGGE LO STORICO SEGUE LA REGOLA OPPOSTA.** `history_ask` si registra
-/// comunque, con o senza deposito, perché la sua risposta al deposito assente
-/// esiste ed è utile — dice `deposit: "absent"` invece di rompersi. Un'azione
-/// che legge non ha bisogno di un file per sapere di non avere niente da dire;
-/// una che scrive sì.
-fn default_registry(
-    ledger: Option<Ledger>,
-    watcher: Option<Arc<dyn actions::StepSinks>>,
-) -> ActionRegistry {
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    // Il rilevamento di cosa c'è sulla macchina è un'azione come le altre: un
-    // passo può chiedere «che strumenti ho qui» invece di dare per scontato che
-    // ci siano. Vive in un crate a sé perché non esegue lavoro — guarda il
-    // mondo — e perché l'elenco di cosa cercare è un dato, non codice.
-    toolbox::register_default(&mut registry);
-    // «Questi flussi girano qui?»: incrocia il rilevamento del passo prima con
-    // gli strumenti che i flussi di questa macchina chiedono. Sta accanto al
-    // rilevamento perché è la sua metà mancante — un elenco di cosa c'è non dice
-    // a nessuno cosa smetterà di funzionare.
-    toolbox::register_needs(&mut registry);
-    // Da dove arriva il segnale che fa partire un flusso: anche le sorgenti
-    // sono un elenco di descrittori, non un ramo di codice.
-    trigger::register_default(&mut registry);
-    // **QUESTA RIGA VA DOPO `actions::register_default`, E NON È UN ORDINE
-    // CASUALE**: quella registra un motore che non sa risolvere uno strumento
-    // per identificativo, questa lo sostituisce con uno che lo sa. È l'unico
-    // punto del programma dove il crate che esegue e quello che sa cosa c'è
-    // sulla macchina si incontrano — sopra restano indipendenti, e un flusso
-    // scritto altrove gira qui perché nomina strumenti, non binari.
-    //
-    // **E QUI IL MOTORE RICEVE ANCHE IL DEPOSITO**, che è l'unico modo per
-    // sapere quanto si spende: il `run_id` non esiste ancora a questo punto —
-    // nasce quando la corsa parte — e arriva all'azione dallo stato condiviso,
-    // mentre il deposito è già aperto e in mano a chi costruisce il registro.
-    registry.register(
-        actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(toolbox::Tools::current())
-            .watched_by(watcher.clone())
-            .recording_to(ledger.clone()),
-    );
-    // **ANCHE QUESTA DOPO `register_default`, E PER LO STESSO MOTIVO.** Quella
-    // registra una verifica che non ha nessuno a cui parlare; il guardiano si
-    // attacca all'istanza che resta registrata, non a quella sostituita.
-    registry.register(
-        actions::SHELL_CHECK_ACTION,
-        actions::ShellCheckAction::new().watched_by(watcher),
-    );
-    // **QUESTA NON STA DENTRO IL RAMO QUI SOTTO, E LA DIFFERENZA È IL PUNTO.**
-    // I nodi di `store` scrivono: senza deposito non hanno niente da fare, e
-    // restano fuori. Questo legge lo storico, e su una macchina appena
-    // installata «non c'è nessuna corsa registrata» è la risposta giusta.
-    // Registrarlo sotto la stessa condizione farebbe dire a `flow check` che
-    // l'azione manca proprio dove deve rispondere.
-    actions::history::register_history(&mut registry, ledger.clone());
-    if let Some(ledger) = ledger {
-        actions::store::register_store(&mut registry, ledger);
-    }
-    registry
-}
-
+/// Il registro delle azioni sta in `crates/registry`, e ci sta per una ragione
+/// misurata: questa lista era scritta anche nel guscio della finestra, le due
+/// copie si sono disallineate tre volte, e l'ultima — il 30/08/2026 — ha fatto
+/// girare lo stesso flusso in due modi diversi a seconda di chi lo lanciava.
+use registry::default_registry;
 /// Il deposito predefinito se si apre, `None` se non c'è o non si apre.
 ///
 /// Non riporta l'errore: chi la chiama sta facendo un controllo statico, e un
