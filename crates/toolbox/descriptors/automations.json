@@ -6,7 +6,7 @@
     "«migrazione-a-sailor», ed è un dato come tutti gli altri: si riscrive, si",
     "estende e si spegne senza ricompilare niente.",
     "",
-    "Per aggiungerne una: metti un file `.json` in `~/.sailor/tools.d/` con dentro",
+    "Per aggiungerne una: metti un file `.json` in `~/.config/sailor/tools.d/` con dentro",
     "un array di descrittori, e chiedila con `descriptor_paths` nel passo. Un `id`",
     "già presente qui dentro viene sostituito dal tuo; per toglierne uno, riscrivi",
     "il suo `id` con `\"disabled\": true`.",
