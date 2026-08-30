@@ -143,7 +143,8 @@ fn main() {
             run::start_run,
             run::run_snapshot,
             run::known_runs,
-            run::step_history
+            run::step_history,
+            run::run_usage
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");
