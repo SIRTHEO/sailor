@@ -258,6 +258,20 @@ pub enum Pointer {
     Path(Vec<String>),
     /// Un'espressione regolare col numero (o il testo) nel primo gruppo.
     Pattern(String),
+    /// **Il nome della prima chiave** dell'oggetto che sta a questo cammino.
+    ///
+    /// Esiste per un caso vero e per niente raro: certi motori non mettono il
+    /// nome del modello in un campo, lo usano come *chiave* di un oggetto —
+    /// `{"modelUsage": {"claude-opus-5[1m]": {...}}}`. Senza questa forma quel
+    /// nome è inarrivabile, e senza il nome nessuna voce di listino si può
+    /// trovare: il costo resterebbe sconosciuto anche con un listino perfetto.
+    ///
+    /// **Si prende la prima e basta.** Se un motore ne nomina più d'uno la
+    /// chiamata ha attraversato più modelli, e questa forma non sa dire come
+    /// spartire il consumo fra loro: prende la prima chiave nell'ordine in cui
+    /// il motore l'ha scritta (`serde_json` conserva l'ordine) e non indovina il
+    /// resto. Chi ha bisogno di quel caso dichiara un cammino esatto.
+    FirstKey(Vec<String>),
 }
 
 /// Che cosa un descrittore dichiara di saper leggere dall'uscita del proprio
@@ -272,6 +286,21 @@ pub struct Declared {
     /// milione tutto loro — spesso un ordine di grandezza sotto. Sommarli agli
     /// altri renderebbe la misura falsa proprio dove conta.
     pub cached_tokens: Option<Pointer>,
+    /// I token d'ingresso **scritti nella cache**, che è tutt'altra cosa dal
+    /// leggerla: la scrittura costa **più** dell'ingresso normale, la lettura
+    /// molto meno.
+    ///
+    /// **PERCHÉ HA UN CAMPO SUO, MISURATO IL 30/08/2026.** Una chiamata a
+    /// `claude -p` con due token d'ingresso e quattro d'uscita è costata 0,1285
+    /// dollari dichiarati: 12.347 token di scrittura in cache erano il **96%**
+    /// di quella cifra. Contarli come ingresso normale, o non contarli affatto,
+    /// sbagliava il conto di 24 volte — sempre verso il basso, cioè sempre nella
+    /// direzione che tranquillizza.
+    pub cache_write_tokens: Option<Pointer>,
+    /// I token scritti in una cache **a lunga durata**, che ha un prezzo suo,
+    /// più alto. Chi non la distingue lascia questo campo vuoto e paga il
+    /// prezzo di scrittura breve su tutto — sbagliando in modo dichiarato.
+    pub cache_write_long_tokens: Option<Pointer>,
     pub total_tokens: Option<Pointer>,
     /// Il costo che il motore dichiara di suo. Si registra come **confronto**,
     /// mai al posto del conto fatto sul listino locale.
@@ -296,6 +325,8 @@ impl Declared {
         self.input_tokens.is_none()
             && self.output_tokens.is_none()
             && self.cached_tokens.is_none()
+            && self.cache_write_tokens.is_none()
+            && self.cache_write_long_tokens.is_none()
             && self.total_tokens.is_none()
             && self.cost.is_none()
             && self.model.is_none()
@@ -310,6 +341,8 @@ pub struct Reading {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub cached_tokens: Option<u64>,
+    pub cache_write_tokens: Option<u64>,
+    pub cache_write_long_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     /// Il costo dichiarato dal motore, nella sua unità (di norma USD).
     pub declared_cost: Option<f64>,
@@ -346,10 +379,26 @@ fn read_from_json(said: &str, declared: &Declared) -> Reading {
         input_tokens: number(&declared.input_tokens),
         output_tokens: number(&declared.output_tokens),
         cached_tokens: number(&declared.cached_tokens),
+        cache_write_tokens: number(&declared.cache_write_tokens),
+        cache_write_long_tokens: number(&declared.cache_write_long_tokens),
         total_tokens: number(&declared.total_tokens),
         declared_cost: walk(&body, declared.cost.as_ref()).and_then(as_money),
-        model: walk(&body, declared.model.as_ref()).and_then(as_text),
+        model: read_name(&body, declared.model.as_ref()),
         answer: walk(&body, declared.answer.as_ref()).and_then(as_text),
+    }
+}
+
+/// Un testo che può stare in un campo **o essere il nome di una chiave**.
+fn read_name(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<String> {
+    match pointer? {
+        Pointer::FirstKey(keys) => {
+            let mut here = body;
+            for key in keys {
+                here = here.get(key)?;
+            }
+            here.as_object()?.keys().next().cloned()
+        }
+        other => walk(body, Some(other)).and_then(as_text),
     }
 }
 
@@ -364,6 +413,9 @@ fn read_from_text(said: &str, declared: &Declared) -> Reading {
         input_tokens: capture(&declared.input_tokens).and_then(|text| digits(&text)),
         output_tokens: capture(&declared.output_tokens).and_then(|text| digits(&text)),
         cached_tokens: capture(&declared.cached_tokens).and_then(|text| digits(&text)),
+        cache_write_tokens: capture(&declared.cache_write_tokens).and_then(|text| digits(&text)),
+        cache_write_long_tokens: capture(&declared.cache_write_long_tokens)
+            .and_then(|text| digits(&text)),
         total_tokens: capture(&declared.total_tokens).and_then(|text| digits(&text)),
         declared_cost: capture(&declared.cost).and_then(|text| text.trim().parse().ok()),
         model: capture(&declared.model),
@@ -466,6 +518,8 @@ mod declared_tests {
             input_tokens: path(&["usage", "input_tokens"]),
             output_tokens: path(&["usage", "output_tokens"]),
             cached_tokens: path(&["usage", "cache_read_input_tokens"]),
+            cache_write_tokens: None,
+            cache_write_long_tokens: None,
             total_tokens: None,
             cost: path(&["total_cost_usd"]),
             model: path(&["model"]),

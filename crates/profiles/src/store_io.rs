@@ -140,6 +140,7 @@ pub fn apply_symlink_swap(
 mod tests {
     use super::*;
     use crate::Profile;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     /// Cartella usa-e-getta sotto `$TMPDIR`, cancellata a fine prova. Niente
@@ -148,13 +149,24 @@ mod tests {
 
     impl TempDir {
         fn new() -> Self {
+            // **IL CONTATORE NON È UN DI PIÙ: senza, queste prove si rubavano la
+            // cartella a vicenda.** Misurato il 30/08/2026: una esecuzione su
+            // venti falliva, ogni volta su una prova diversa. `cargo test`
+            // manda le prove di uno stesso crate su più fili dello **stesso**
+            // processo, quindi il pid è identico per tutte; e l'orologio di
+            // macOS non ha davvero la risoluzione del nanosecondo, così due
+            // prove che partono insieme ottenevano lo stesso nome — e la prima
+            // che finiva cancellava, uscendo, la cartella dell'altra. Un numero
+            // che cresce a ogni chiamata non può ripetersi, l'orologio sì.
+            static NEXT: AtomicU64 = AtomicU64::new(0);
             let unique = format!(
-                "profiles-test-{}-{}",
+                "profiles-test-{}-{}-{}",
                 std::process::id(),
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
-                    .as_nanos()
+                    .as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
             );
             let path = env::temp_dir().join(unique);
             fs::create_dir_all(&path).expect("cartella di prova");
