@@ -1168,9 +1168,13 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         .and_then(|(listino, name)| listino.find(name));
     let prices = voce.map(models::pricing::Price::micros).unwrap_or_default();
     let cost_micros = models::pricing::cost_micros(
-        reading.input_tokens,
-        reading.output_tokens,
-        reading.cached_tokens,
+        models::pricing::TokenCounts {
+            input: reading.input_tokens,
+            output: reading.output_tokens,
+            cached: reading.cached_tokens,
+            cache_write: reading.cache_write_tokens,
+            cache_write_long: reading.cache_write_long_tokens,
+        },
         prices,
     );
     let sequence = CALLS_SO_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1191,6 +1195,8 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         input_tokens: reading.input_tokens,
         output_tokens: reading.output_tokens,
         cached_tokens: reading.cached_tokens,
+        cache_write_tokens: reading.cache_write_tokens,
+        cache_write_long_tokens: reading.cache_write_long_tokens,
         total_tokens: reading.total_tokens,
         cost_micros,
         // Il costo del motore accanto al nostro, mai al posto suo.
@@ -1205,6 +1211,8 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         input_price_micros_per_million: prices.input,
         output_price_micros_per_million: prices.output,
         cached_price_micros_per_million: prices.cached,
+        cache_write_price_micros_per_million: prices.cache_write,
+        cache_write_long_price_micros_per_million: prices.cache_write_long,
         mandate_name: String::new(),
         mandate_version: String::new(),
         retry_chain: tried_before.to_vec(),
@@ -3042,6 +3050,8 @@ mod quanto_e_costata {
                     input_tokens: path(&["usage", "input_tokens"]),
                     output_tokens: path(&["usage", "output_tokens"]),
                     cached_tokens: path(&["usage", "cache_read_input_tokens"]),
+                    cache_write_tokens: path(&["usage", "cache_creation_input_tokens"]),
+                    cache_write_long_tokens: None,
                     total_tokens: None,
                     cost: path(&["total_cost_usd"]),
                     model: path(&["model"]),
@@ -3115,11 +3125,17 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                             input_tokens: count(7),
                             output_tokens: count(8),
                             cached_tokens: count(9),
+                            cache_write_tokens: count(23),
+                            cache_write_long_tokens: count(24),
                             cost_micros: cols.get(10)?.as_i64(),
                             price_currency: cols.get(11)?.as_str().map(str::to_owned),
                             input_price_micros_per_million: cols.get(12)?.as_i64(),
                             output_price_micros_per_million: cols.get(13)?.as_i64(),
                             cached_price_micros_per_million: cols.get(14)?.as_i64(),
+                            cache_write_price_micros_per_million: cols.get(25).and_then(Value::as_i64),
+                            cache_write_long_price_micros_per_million: cols
+                                .get(26)
+                                .and_then(Value::as_i64),
                             mandate_name: cols.get(15)?.as_str()?.to_owned(),
                             mandate_version: cols.get(16)?.as_str()?.to_owned(),
                             retry_chain: cols
@@ -3218,9 +3234,12 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn cache_priced_as_input_would_cost_ten_times_more() {
         let solo_cache = models::pricing::cost_micros(
-            Some(0),
-            Some(0),
-            Some(1_000_000),
+            models::pricing::TokenCounts {
+                input: Some(0),
+                output: Some(0),
+                cached: Some(1_000_000),
+                ..models::pricing::TokenCounts::default()
+            },
             models::pricing::PriceList::parse(LISTINO)
                 .unwrap()
                 .find("prova")

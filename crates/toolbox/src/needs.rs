@@ -158,7 +158,7 @@ impl Action for ToolNeedsAction {
                     executable: None,
                     reason: "nessun descrittore lo dichiara: non è che manchi su questa macchina, \
                              è che Sailor non sa cosa sia. Si aggiunge scrivendo un file JSON in \
-                             ~/.sailor/tools.d/, senza ricompilare niente"
+                             ~/.config/sailor/tools.d/, senza ricompilare niente"
                         .to_string(),
                     note: String::new(),
                 }),
