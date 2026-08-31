@@ -36,6 +36,7 @@
 
 pub mod handoff;
 pub mod history;
+pub mod mcp;
 pub mod presence;
 pub mod reference;
 pub mod store;
@@ -78,6 +79,7 @@ pub const SHELL_CHECK_ACTION: &str = "shell_check";
 pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(EXTERNAL_ENGINE_ACTION, ExternalEngineAction::new());
     registry.register(SHELL_CHECK_ACTION, ShellCheckAction::new());
+    mcp::register_mcp(registry);
 }
 
 // ── chi guarda il testo mentre esce ─────────────────────────────────────
