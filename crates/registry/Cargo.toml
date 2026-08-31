@@ -14,10 +14,6 @@ rust-version.workspace = true
 # 09:05, quando la misura del consumo è entrata da una parte sola. Il commento
 # sopra la copia della finestra diceva testualmente «QUESTA LISTA SI DISALLINEA,
 # E L'HA GIÀ FATTO»: era vero, ed è rimasto vero finché la lista è stata due.
-# `serde_json` sta solo fra le prove: serve a scrivere un flusso a mano nel
-# corpo di una prova, non al crate che si spedisce. La riga sopra resta vera.
-[dev-dependencies]
-serde_json = { workspace = true }
 
 [dependencies]
 actions = { path = "../actions" }
@@ -25,3 +21,17 @@ flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
+
+# SOLO PER LE PROVE, e la riga sopra resta vera: il crate spedito non porta
+# nessuna dipendenza esterna propria. Qui serve a scrivere un flusso a mano nel
+# corpo di una prova, a costruire l'ingresso di un passo e a rileggere la
+# proiezione del deposito — cose che si scrivono in JSON perché è in JSON che
+# vivono.
+#
+# UNA SEZIONE SOLA, E STA IN FONDO. Il 31/08/2026 due rami hanno aggiunto
+# ciascuno la propria `[dev-dependencies]`, in due punti diversi del file: git
+# le ha fuse senza vedere nessun conflitto, e cargo ha rifiutato l'intero
+# workspace con «duplicate key». Un manifesto TOML non ha una prova che lo
+# guardi: la difesa è tenerne una sola, qui.
+[dev-dependencies]
+serde_json = { workspace = true }
