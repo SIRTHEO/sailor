@@ -315,7 +315,20 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
 
     let mut store = ledger.clone();
     let mut clock = SystemClock;
-    let shared = SharedState::new();
+    // **LA RIPRESA PASSA DAL COSTRUTTORE UNICO**, come la prima corsa. Costruire
+    // qui una richiesta a mano rimetterebbe in piedi la seconda copia che
+    // `registry::execution_request` esiste per togliere — e questa copia
+    // perderebbe in silenzio la radice del workspace, facendo lavorare i passi
+    // riconciliati in un posto diverso da quello dove sono nati.
+    let root = workspace_root();
+    announce_root(root.as_deref());
+    // LO STESSO IDENTIFICATIVO, e non uno nuovo: una ripresa che aprisse una
+    // corsa nuova perderebbe i passi già andati e li rifarebbe tutti, pagandoli
+    // due volte.
+    let request = registry::execution_request(flow, run_id, root.as_deref());
+    // La riconciliazione vede quello che vedrà l'esecuzione: stessa radice,
+    // stesso stato condiviso.
+    let shared = request.shared.clone();
     let probe = HandoffLease { now };
     let reconciled = InProcessExecutor
         .reconcile(flow::ReconciliationRequest {
@@ -352,16 +365,6 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
         );
     }
 
-    let request = ExecutionRequest {
-        // LO STESSO IDENTIFICATIVO, e non uno nuovo: una ripresa che aprisse una
-        // corsa nuova perderebbe i passi già andati e li rifarebbe tutti,
-        // pagandoli due volte.
-        run_id: run_id.to_owned(),
-        root_inputs: flow.inputs.clone(),
-        gates: Vec::new(),
-        shared,
-        spend_cap_micros: flow.spend_cap_micros,
-    };
     let execution = InProcessExecutor
         .execute(&flow.graph, request, ledger, &registry, &SystemClock)
         .map_err(|error| format!("la ripresa della corsa {run_id} è fallita: {error}"))?;
@@ -1607,7 +1610,7 @@ mod tests {
             None,
         )]);
         let registry = default_registry(None, None);
-        let shared = SharedState::new();
+        let shared = flow::SharedState::new();
         let probe = HandoffLease { now: 1_100 };
         let mut clock = SystemClock;
         let report = InProcessExecutor
