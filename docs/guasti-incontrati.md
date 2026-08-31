@@ -63,7 +63,7 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Dodici sono ancora aperti** su trentasei, e tre di quelli (4, 10, 11) sono la
+**Dieci sono ancora aperti** su trentasei, e tre di quelli (4, 10, 11) sono la
 stessa cosa vista da tre lati: **il sistema non sa cosa sta facendo di sé** —
 quali processi ha avviato, quante copie ha della stessa verità, se ciò che
 dichiara corrisponde a ciò che fa.
