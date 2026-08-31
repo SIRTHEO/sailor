@@ -50,7 +50,7 @@ use flow::{
     ActionRegistry, Completion, Decision, Execution, ExecutionRequest, Executor, FlowError,
     FlowFile, InProcessExecutor, RecordStore, SharedState, StepRecord, SystemClock,
 };
-use ledger::{Ledger, RunRecord};
+use ledger::Ledger;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -852,6 +852,14 @@ fn origin_label(mandate: Option<&str>) -> String {
     }
 }
 
+/// Registra l'intestazione della corsa.
+///
+/// **QUESTA COPIA NON ESISTE PIÙ, ED È IL PUNTO.** Qui c'erano le stesse venti
+/// righe di `flow_cmd`, con sotto un commento che dichiarava la duplicazione e
+/// diceva perché non si poteva chiudere. Si poteva: dal 30/08/2026 c'è un crate
+/// che le due strade condividono. Il 31/08 tutte e due scrivevano il totale a
+/// zero a mano, e riparare solo una avrebbe dato due cifre diverse per la stessa
+/// corsa a seconda del pulsante premuto.
 #[allow(clippy::too_many_arguments)]
 fn record_run(
     ledger: &Ledger,
@@ -863,23 +871,18 @@ fn record_run(
     error: Option<String>,
     started_by: &str,
 ) -> Result<(), String> {
-    ledger
-        .record_run(&RunRecord {
-            run_id: run_id.to_owned(),
-            kind: "flow".to_owned(),
-            entity: flow.id.clone(),
-            parent_run_id: None,
-            // Chi ha avviato questa corsa si legge nel deposito: una corsa
-            // partita dal pulsante non si confonde con una partita dalla riga
-            // di comando o da una pianificazione.
-            started_by: started_by.to_owned(),
-            status: status.to_owned(),
-            total_cost_micros: 0,
-            error,
+    registry::record_flow_run(
+        ledger,
+        flow,
+        registry::FlowRun {
+            run_id,
+            status,
             started_at,
             ended_at,
-        })
-        .map_err(|error| format!("non riesco a registrare la corsa {run_id}: {error}"))
+            error,
+            started_by,
+        },
+    )
 }
 
 /// Il flusso che si chiama così, cercato **dove la tela lo ha trovato**.

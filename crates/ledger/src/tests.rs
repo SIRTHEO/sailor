@@ -1595,3 +1595,74 @@ fn an_event_written_in_the_old_shape_still_deserialises() {
     assert_eq!(record.total_tokens, None, "un campo che non c'era è ignoto");
     assert_eq!(record.declared_cost_micros, None);
 }
+
+// ── quanto ha speso una corsa ────────────────────────────────────────────
+
+/// Una chiamata con la sua corsa, per misurare la spesa di una e non dell'altra.
+fn call_in_run(call_id: &str, run_id: &str, cost: Option<i64>) -> ModelCallRecord {
+    let mut record = call_with(call_id, Some(10), cost);
+    record.run_id = run_id.to_owned();
+    record
+}
+
+/// **LA SOMMA DICE ANCHE QUANTO NON SA.** Due chiamate, una che ha dichiarato
+/// il proprio costo e una no: il totale è quello della prima, e il secondo
+/// numero dice che c'è una riga fuori dal conto. Chi guardasse solo `micros`
+/// leggerebbe «la corsa è costata 7» dove la verità è «almeno 7».
+#[test]
+fn what_a_run_spent_says_how_much_of_it_is_unknown() {
+    let directory = TestDirectory::new("spesa-parziale");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .record_model_call(&call_in_run("nota", "run-1", Some(7)))
+        .expect("registrare quella col costo");
+    ledger
+        .record_model_call(&call_in_run("ignota", "run-1", None))
+        .expect("registrare quella senza");
+
+    let spesa = ledger.spent_in_run("run-1").expect("leggere la spesa");
+
+    assert_eq!(spesa.micros, 7, "somma i costi noti");
+    assert_eq!(spesa.calls, 2, "e conta tutte le chiamate, non solo quelle");
+    assert_eq!(spesa.calls_without_cost, 1);
+    assert!(
+        !spesa.is_complete(),
+        "un totale con una riga fuori non è completo, e chi decide deve saperlo"
+    );
+}
+
+/// La spesa di una corsa è **sua**: le chiamate di un'altra non entrano.
+///
+/// Senza questa, un tetto di spesa si chiuderebbe addosso a una corsa per
+/// quello che ha speso il vicino — e il primo flusso della giornata girerebbe
+/// mentre l'ultimo non partirebbe mai.
+#[test]
+fn a_runs_spending_does_not_include_the_neighbours() {
+    let directory = TestDirectory::new("spesa-di-chi");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .record_model_call(&call_in_run("mia", "run-1", Some(7)))
+        .expect("registrare la mia");
+    ledger
+        .record_model_call(&call_in_run("altrui", "run-2", Some(1_000)))
+        .expect("registrare quella dell'altra corsa");
+
+    let mia = ledger.spent_in_run("run-1").expect("leggere la mia spesa");
+
+    assert_eq!(mia.micros, 7);
+    assert_eq!(mia.calls, 1, "una sola chiamata è mia");
+    assert!(mia.is_complete());
+}
+
+/// Una corsa che non ha chiamato nessun motore ha speso zero **e** non ha
+/// niente di ignoto: le due cose insieme, o «zero» resterebbe ambiguo.
+#[test]
+fn a_run_that_called_no_engine_spent_nothing_and_hides_nothing() {
+    let directory = TestDirectory::new("spesa-vuota");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    let spesa = ledger.spent_in_run("mai-girata").expect("leggere la spesa");
+
+    assert_eq!(spesa, Spend::default());
+    assert!(spesa.is_complete(), "niente di ignoto: non c'è niente");
+}
