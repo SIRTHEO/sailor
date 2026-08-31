@@ -9,6 +9,7 @@ use flow::{
     ActionRegistry, Execution, ExecutionRequest, Executor, FlowFile, Graph,
     InProcessExecutor, RecordStore, SharedState, SystemClock,
 };
+use actions::reference;
 use ledger::Ledger;
 use serde_json::Value;
 use ui::gather::FlowSource;
@@ -328,6 +329,25 @@ fn check_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
         &default_registry(open_default_ledger(), None),
         Some(&tools),
     );
+    // **UN PERCORSO DI POSIZIONE ASSOLUTO È UN ERRORE, NON UN AVVISO.** Il
+    // flusso gira in un posto solo: altrove non fallisce, lavora nel posto
+    // sbagliato — ed è il modo in cui il guasto 25 è passato inosservato.
+    let stuck: Vec<String> = hardcoded_paths(&flow)
+        .iter()
+        .filter(|path| path.fatal)
+        .map(|path| format!("{} in «{}» ({})", path.step, path.field, path.value))
+        .collect();
+    if !stuck.is_empty() {
+        println!("{report}");
+        return Err(format!(
+            "il flusso {} ha un percorso assoluto in un campo di posizione: {}. \
+             Un flusso non deve sapere dove sta il repository — la radice viene da chi \
+             lancia. Si toglie con «sailor flow relocate {}».",
+            flow.id,
+            stuck.join("; "),
+            flow.id
+        ));
+    }
     if unknown.is_empty() {
         return Ok(report);
     }
@@ -432,7 +452,36 @@ fn check_report(
             stray.join("; ")
         );
     }
+
+    // **IL GUASTO 25, DETTO PRIMA DI PARTIRE.** Un `workdir` assoluto non si
+    // vede eseguendo: si vede dopo, guardando quale repository si è sporcato.
+    let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) =
+        hardcoded_paths(flow).into_iter().partition(|path| path.fatal);
+    if !fatal.is_empty() {
+        let _ = write!(
+            report,
+            "\npercorsi assoluti in un campo di posizione: {}",
+            describe_paths(&fatal)
+        );
+    }
+    if !advisory.is_empty() {
+        let _ = write!(
+            report,
+            "\npercorsi assoluti dentro un testo (il flusso gira, l'istruzione no): {}",
+            describe_paths(&advisory)
+        );
+    }
     (report, unknown)
+}
+
+/// Passo e campo su ogni riga: un avviso che ne perda uno non si può usare —
+/// «c'è un percorso assoluto» non dice quale dei sette passi cambiare.
+fn describe_paths(paths: &[HardcodedPath]) -> String {
+    paths
+        .iter()
+        .map(|path| format!("{} in «{}» ({})", path.step, path.field, path.value))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Una capacità chiesta da un passo a un motore preciso.
@@ -542,6 +591,118 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
              pagando di più): {}",
             gaps.join("; ")
         );
+    }
+}
+
+/// I campi che dicono **dove** un passo lavora o **quale** binario esegue.
+///
+/// Un percorso assoluto qui non è un dettaglio del testo: è la posizione in cui
+/// il passo lavorerà davvero, ed è il guasto 25 parola per parola — sette passi
+/// con `"workdir": "/home/someone/personal/sailor"`, un flusso che lanciato da un
+/// clone commetteva nel repository principale senza dirlo.
+const POSITION_FIELDS: [&str; 2] = ["workdir", "bin"];
+
+/// I prefissi che fanno di un pezzo di testo un percorso assoluto.
+///
+/// **È UN ELENCO DICHIARATO, NON UN ANALIZZATORE, E IL PREZZO È DICHIARATO.**
+/// È la stessa scelta già pagata da `identifiers_are_in_english`: un elenco non
+/// ha falsi positivi e lascia passare ciò che non conosce, mentre un
+/// analizzatore di percorsi dentro il testo libero di un prompt chiamerebbe
+/// percorso ogni `/` — a cominciare dai puntatori JSON — e verrebbe spento
+/// entro un giorno. Chi incontra un percorso che questo elenco non vede lo
+/// aggiunge qui.
+const ABSOLUTE_PREFIXES: [&str; 4] = ["/Users/", "/home/", "/private/", "~/"];
+
+/// Un percorso assoluto trovato scritto a mano dentro un flusso.
+struct HardcodedPath {
+    step: String,
+    field: String,
+    value: String,
+    /// Vero quando sta in un campo di posizione: il flusso **non gira** altrove,
+    /// quindi è un errore. Falso quando sta dentro un testo: lì il flusso gira
+    /// lo stesso e il percorso è un'istruzione a chi legge, quindi è un avviso.
+    fatal: bool,
+}
+
+/// I percorsi assoluti scritti a mano in un flusso.
+///
+/// **DUE ESITI, PERCHÉ SONO DUE GUASTI DIVERSI.** Un `workdir` assoluto decide
+/// dove il passo lavora: il flusso si può eseguire in un posto solo, e altrove
+/// fa danno invece di fallire. Un percorso dentro il testo di un prompt non
+/// impedisce al flusso di girare — è un'istruzione che diventa sbagliata
+/// altrove, e chi la riscrive sta riscrivendo un'istruzione, non un campo.
+/// Perciò il primo è un errore e il secondo un avviso: chiamarli allo stesso
+/// modo vorrebbe dire o bloccare flussi sani, o lasciar passare il guasto 25.
+///
+/// **I PUNTATORI NON SONO PERCORSI.** `{"$from": "/answer/verdict"}` comincia
+/// per `/` e non è un percorso: è un puntatore JSON, e compare in quattro
+/// flussi su cinque. Il valore di `$from` e quello di `$json` si saltano. Il
+/// testo letterale dentro un `$join` invece si guarda: l'elenco di prefissi non
+/// può scambiare `/answer/verdict` per un percorso, quindi saltarlo non
+/// comprerebbe niente e perderebbe i prompt composti a pezzi — che è dove i due
+/// percorsi di `sviluppa-sailor` stanno davvero.
+fn hardcoded_paths(flow: &FlowFile) -> Vec<HardcodedPath> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        if let Some(with) = step.with.as_ref() {
+            walk_for_paths(&step.id, "", with, &mut found);
+        }
+    }
+    // L'ingresso dichiarato è scritto a mano quanto il `with`, ed è dove sta il
+    // testo dell'innesco.
+    for (name, declared) in &flow.inputs {
+        walk_for_paths(name, "", declared, &mut found);
+    }
+    found
+}
+
+fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<HardcodedPath>) {
+    match value {
+        Value::Object(fields) => {
+            for (key, inner) in fields {
+                // Il valore di un puntatore non è un percorso, e guardarci
+                // dentro riempirebbe il rapporto di falsi positivi.
+                if key == reference::FROM_KEY || key == reference::JSON_KEY {
+                    continue;
+                }
+                let trail = if field.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{field}.{key}")
+                };
+                walk_for_paths(step, &trail, inner, found);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                walk_for_paths(step, field, item, found);
+            }
+        }
+        Value::String(text) => {
+            let is_position = field
+                .rsplit('.')
+                .next()
+                .is_some_and(|last| POSITION_FIELDS.contains(&last));
+            if is_position && (text.starts_with('/') || text.starts_with("~/")) {
+                found.push(HardcodedPath {
+                    step: step.to_owned(),
+                    field: field.to_owned(),
+                    value: text.clone(),
+                    fatal: true,
+                });
+            } else if let Some(prefix) = ABSOLUTE_PREFIXES
+                .iter()
+                .find(|prefix| text.contains(**prefix))
+            {
+                found.push(HardcodedPath {
+                    step: step.to_owned(),
+                    field: field.to_owned(),
+                    value: (*prefix).to_owned(),
+                    fatal: false,
+                });
+            }
+        }
+        _ => {}
     }
 }
 
@@ -1901,5 +2062,109 @@ mod tests {
             started_at: 100,
             ended_at: Some(105),
         }
+    }
+
+    // ── il guasto 25: i percorsi assoluti scritti dentro un flusso ────
+
+    /// Un flusso con un solo passo, il cui `with` è quello che le si passa.
+    fn flow_with(with: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova", "description": "un passo solo",
+                "graph": {{"steps": [{{
+                    "id": "unico", "deps": [], "action": "external_engine",
+                    "max_attempts": 1, "when": null,
+                    "input_schema": {{"type": "any"}},
+                    "output_schema": {{"type": "any"}},
+                    "with": {with}
+                }}]}},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// IL CASO DEL GUASTO 25. Un `workdir` assoluto decide dove il passo
+    /// lavora: il flusso si può eseguire in un posto solo, e altrove non
+    /// fallisce — fa danno nel posto sbagliato.
+    #[test]
+    fn an_absolute_workdir_is_an_error() {
+        let flow = flow_with(r#"{"workdir": "/home/someone/personal/sailor"}"#);
+
+        let found = hardcoded_paths(&flow);
+
+        assert_eq!(found.len(), 1, "uno solo: {:?}", found.len());
+        assert!(found[0].fatal, "un campo di posizione è un errore");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(found[0].field, "workdir");
+    }
+
+    /// Un `workdir` relativo è esattamente ciò che si vuole ottenere: si
+    /// risolve sulla radice di chi lancia, e non ha niente da segnalare.
+    #[test]
+    fn a_relative_workdir_is_clean() {
+        let flow = flow_with(r#"{"workdir": "crates/flow"}"#);
+
+        assert!(hardcoded_paths(&flow).is_empty());
+    }
+
+    /// **UN PUNTATORE NON È UN PERCORSO.** `{"$from": "/answer/verdict"}`
+    /// comincia per `/` e compare in quattro flussi su cinque: se il controllo
+    /// lo chiamasse percorso nascerebbe pieno di falsi positivi e verrebbe
+    /// spento entro un giorno.
+    #[test]
+    fn a_json_pointer_is_not_a_path() {
+        let flow = flow_with(
+            r#"{"stdin": {"$from": "/answer/verdict"}, "env": {"X": {"$json": "/shape"}}}"#,
+        );
+
+        assert!(hardcoded_paths(&flow).is_empty());
+    }
+
+    /// Un percorso dentro il testo di un prompt non impedisce al flusso di
+    /// girare: è un'istruzione che diventa sbagliata altrove. Avviso, non
+    /// errore — e riscriverlo è riscrivere un'istruzione, quindi lo fa una
+    /// persona.
+    #[test]
+    fn an_absolute_path_inside_a_prompt_is_a_warning() {
+        let flow = flow_with(
+            r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/personal/sailor.\n"]}}"#,
+        );
+
+        let found = hardcoded_paths(&flow);
+
+        assert_eq!(found.len(), 1);
+        assert!(!found[0].fatal, "dentro un testo è un avviso");
+        assert_eq!(found[0].field, "stdin.$join");
+    }
+
+    /// **LA PROVA CHE MISURA IL LAVORO.** È nata rossa su
+    /// `flows/sviluppa-sailor.flow.json` — sette errori e due avvisi, cioè il
+    /// guasto 25 contato — e diventa verde solo quando quel flusso è stato
+    /// davvero spostato. Non certifica: dice quanto lavoro c'era.
+    ///
+    /// Legge il file vero e non una copia: una copia si aggiornerebbe insieme
+    /// alla riparazione e resterebbe verde per sempre.
+    #[test]
+    fn the_real_development_flow_has_no_hardcoded_paths() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../flows/sviluppa-sailor.flow.json");
+        let text = fs::read_to_string(&path).expect("il flusso di sviluppo è versionato");
+        let flow: FlowFile = serde_json::from_str(&text).expect("è un flusso valido");
+
+        let found = hardcoded_paths(&flow);
+        let described: Vec<String> = found
+            .iter()
+            .map(|entry| {
+                let kind = if entry.fatal { "errore" } else { "avviso" };
+                format!("{kind}: {} in «{}» ({})", entry.step, entry.field, entry.value)
+            })
+            .collect();
+
+        assert!(
+            found.is_empty(),
+            "il flusso di sviluppo non gira su un clone: {}",
+            described.join("; ")
+        );
     }
 }
