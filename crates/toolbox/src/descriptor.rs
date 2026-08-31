@@ -138,6 +138,24 @@ pub struct Ask {
     /// Dove va il testo della domanda: `stdin` o `last_arg`.
     #[serde(default)]
     pub prompt: PromptPlace,
+    /// Le opzioni che devono stare **subito prima della domanda**, dopo tutto
+    /// il resto — comprese quelle che servono a farsi dire il consumo.
+    ///
+    /// **PERCHÉ NON BASTA `args`.** La riga si compone mettendo `args`, poi le
+    /// opzioni di `usage`, poi la domanda. Per un motore che prende la domanda
+    /// come ultimo argomento questo infila le opzioni del consumo **fra** la
+    /// bandiera che introduce la domanda e la domanda stessa: `agy` risponde
+    /// «--print took "--output-format" as its prompt», e il testo vero viene
+    /// ignorato. È il guasto 1 ricomparso da un'altra porta — allora l'ordine
+    /// sbagliato erano due opzioni di `ask` fra loro, oggi è una di `ask`
+    /// contro una di `usage` — e non si cura riordinando `args`, perché il
+    /// vincolo non è fra le opzioni di uno stesso blocco.
+    ///
+    /// Un ordine globale non lo risolve: `codex` ha `exec` come sottocomando e
+    /// vuole stare **primo**, `agy` vuole `--print` **ultimo**. Sono due
+    /// vincoli opposti sullo stesso posto, quindi li dichiara il descrittore.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args_before_prompt: Vec<String>,
     /// Come questo motore dice di **non poter lavorare** — quota finita,
     /// credenziali mancanti — invece di dire che il lavoro era sbagliato.
     ///
