@@ -103,6 +103,11 @@ mod tests {
             actions::SHELL_CHECK_ACTION,
             "detect_tools",
             "tool_needs",
+            // I due nodi che parlano con un server MCP. Prima del 31/08/2026 non
+            // c'erano: Sailor *riconosceva* i server MCP — il rilevatore ha la
+            // famiglia `mcp_server` — e nessuna azione ci parlava.
+            actions::mcp::MCP_READY_ACTION,
+            actions::mcp::MCP_ASK_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),
