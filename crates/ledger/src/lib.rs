@@ -110,7 +110,19 @@ fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const PROJECTION_SCHEMA_VERSION: i64 = 4;
+/// La forma delle proiezioni che questo codice si aspetta.
+///
+/// **VA ALZATA INSIEME ALLE COLONNE, E IL 30/08/2026 NON LO È STATA.** Quel
+/// giorno `add_missing_projection_columns` ha imparato le quattro colonne della
+/// cache scritta, e questa costante è rimasta a 4: un deposito già esistente
+/// resta registrato alla 4, `4 < 4` è falso, la migrazione non parte, e ogni
+/// lettura muore con «no such column: cache_write_tokens».
+///
+/// **NESSUNA DELLE 517 PROVE L'HA PRESO**, perché un deposito creato in una
+/// prova nasce dal `CREATE TABLE` completo e non passa mai dalla migrazione. Si
+/// vede solo su una macchina che Sailor l'aveva già usato — cioè su quella di
+/// chi lo sviluppa, il giorno dopo.
+const PROJECTION_SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug)]
 pub enum LedgerError {

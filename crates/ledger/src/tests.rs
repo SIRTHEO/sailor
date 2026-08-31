@@ -1666,3 +1666,86 @@ fn a_run_that_called_no_engine_spent_nothing_and_hides_nothing() {
     assert_eq!(spend, Spend::default());
     assert!(spend.is_complete(), "niente di ignoto: non c'è niente");
 }
+
+/// **UN DEPOSITO CHE SI DICHIARA GIÀ AGGIORNATO, MA NON LO È.**
+///
+/// Il guasto del 31/08/2026, e il modo esatto in cui è sfuggito a 517 prove.
+/// Il 30/08 la migrazione ha imparato le quattro colonne della cache scritta e
+/// `PROJECTION_SCHEMA_VERSION` è rimasta a 4: un deposito già esistente si
+/// dichiarava della versione corrente, il confronto `4 < 4` era falso, la
+/// migrazione non partiva, e **ogni lettura moriva** con «no such column:
+/// cache_write_tokens».
+///
+/// **PERCHÉ LE PROVE CHE C'ERANO NON BASTAVANO.** Un deposito creato in una
+/// prova nasce dal `CREATE TABLE` completo e non passa mai di lì; e la prova
+/// sulla versione 3 migrava comunque, perché `3 < 4` era vero — quindi
+/// l'aggiunta di colonne senza alzare il numero le passava sotto entrambe. Il
+/// caso scoperto era proprio questo: **versione già pari alla costante, colonne
+/// mancanti**. Si vede solo su una macchina che aveva già usato Sailor, cioè
+/// quella di chi lo sviluppa, il giorno dopo.
+#[test]
+fn a_ledger_that_claims_to_be_current_but_lacks_the_new_columns_is_still_migrated() {
+    let directory = TestDirectory::new("versione-bugiarda");
+    {
+        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let connection = ledger.connection.lock().expect("nessuno panica qui");
+        // La forma della versione 4: tutto fino a `declared_cost_micros`, e
+        // nessuna delle quattro colonne della cache scritta.
+        connection
+            .execute_batch(
+                "DROP TABLE model_calls;
+                 CREATE TABLE model_calls (
+                     call_id TEXT PRIMARY KEY,
+                     run_id TEXT NOT NULL,
+                     step_id TEXT,
+                     purpose TEXT NOT NULL,
+                     cli TEXT NOT NULL,
+                     requested_model TEXT NOT NULL,
+                     actual_model TEXT NOT NULL,
+                     input_tokens TEXT,
+                     output_tokens TEXT,
+                     cached_tokens TEXT,
+                     cost_micros INTEGER,
+                     price_currency TEXT,
+                     input_price_micros_per_million INTEGER,
+                     output_price_micros_per_million INTEGER,
+                     cached_price_micros_per_million INTEGER,
+                     mandate_name TEXT NOT NULL,
+                     mandate_version TEXT NOT NULL,
+                     retry_chain TEXT NOT NULL,
+                     error_type TEXT,
+                     started_at INTEGER NOT NULL,
+                     ended_at INTEGER,
+                     total_tokens TEXT,
+                     declared_cost_micros INTEGER
+                 );
+                 INSERT INTO model_calls VALUES
+                   ('di-ieri', 'run-1', 'compile', 'repair', 'codex', 'req', 'act',
+                    '10', '20', '3', 21, 'USD', 100, 200, 10, 'repair', 'v4',
+                    '[]', NULL, 101, 110, NULL, NULL);",
+            )
+            .expect("costruire la forma della versione 4");
+        connection
+            .pragma_update(None, "user_version", 4i64)
+            .expect("e dichiararsi già aggiornato");
+    }
+
+    // Riaprirlo deve bastare: è l'unico gesto che chi aggiorna Sailor compie.
+    let ledger = Ledger::open(&directory.0).expect("riaprire il deposito");
+
+    // La lettura è il punto: prima moriva qui, non all'apertura.
+    let dump = ledger
+        .projection_dump()
+        .expect("leggere la proiezione di un deposito che si diceva aggiornato");
+    let rows = dump["model_calls"].as_array().expect("l'elenco c'è");
+    assert_eq!(rows.len(), 1, "la riga di ieri è ancora lì");
+    assert_eq!(rows[0][0], json!("di-ieri"));
+    assert_eq!(rows[0][7], json!("10"), "coi suoi valori intatti");
+    assert_eq!(rows[0][23], Value::Null, "e le colonne nuove nascono ignote");
+
+    // E la somma della spesa, che è ciò che il comando `flow cost` chiede,
+    // adesso si può fare: prima era la query che falliva.
+    let spend = ledger.spent_in_run("run-1").expect("leggere la spesa");
+    assert_eq!(spend.micros, 21);
+    assert_eq!(spend.calls, 1);
+}
