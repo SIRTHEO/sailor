@@ -103,7 +103,13 @@
     "",
     "I nomi usati qui: `ask_without_interaction`, `response_shape`,",
     "`resume_session`, `fork_session`, `isolate_from_user_config`,",
-    "`receive_equipment`, `native_spend_cap`, `choose_model`, `fallback_model`.",
+    "`receive_equipment`, `native_spend_cap`, `choose_model`, `fallback_model`,",
+    "`read_remaining_quota`. Quest'ultima non è una bandiera ma un canale, ed è",
+    "la prova che il blocco regge anche per ciò che non sta sulla riga di",
+    "comando: dichiara che quello strumento sa dire quanta quota la PERSONA ha",
+    "già consumato. Chi non ce l'ha continua a funzionare senza saperlo — che è",
+    "il ripiego di sempre — e chi la dichiara `false` sta dicendo che qualcuno",
+    "ha guardato, non che è impossibile.",
     "Non sono un elenco chiuso — non c'è nessun posto nel codice dove sia",
     "scritto — ma chi ne inventa uno accanto a uno che c'è già ottiene che due",
     "descrittori parlino di due cose che nessuno può confrontare."
@@ -177,6 +183,9 @@
           "args": ["--fallback-model"],
           "takes_value": true,
           "note": "elenco separato da virgole, provato in ordine; solo con --print"
+        },
+        "read_remaining_quota": {
+          "note": "Non è una bandiera: è un canale. Il gettone OAuth sta in ~/.claude/.credentials.json sotto claudeAiOauth.accessToken, e https://api.anthropic.com/api/oauth/usage risponde con le finestre di quota — `utilization` in percentuale e `resets_at` — con l'intestazione `anthropic-beta: oauth-2025-04-20`. Misurato con una risposta HTTP 200 il 01/09/2026 su questa macchina: five_hour al 2%, seven_day al 32%. È quota DELLA PERSONA su tutte le sue sessioni, mai il consumo di una corsa. Solo lettura, nessun costo. Il lettore è `models::remaining`."
         }
       },
       "config": ["~/.claude/settings.json", "~/.claude.json"],
@@ -225,10 +234,11 @@
         ],
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
-        "fallback_model": false
+        "fallback_model": false,
+        "read_remaining_quota": false
       },
       "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
-      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina: `codex exec --sandbox read-only < /dev/null` esce 1 e stampa «Reading prompt from stdin...» seguito da «No prompt provided via stdin.». Si dichiara solo la seconda riga: la prima dice che sta aspettando, non che ha rinunciato."
+      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina: `codex exec --sandbox read-only < /dev/null` esce 1 e stampa «Reading prompt from stdin...» seguito da «No prompt provided via stdin.». Si dichiara solo la seconda riga: la prima dice che sta aspettando, non che ha rinunciato. `read_remaining_quota` è `false` perché PROVATO E NON RIUSCITO il 01/09/2026, che è diverso da impossibile — ed ecco fin dove si è arrivati, così chi riprova non ricomincia da zero. Il metodo ESISTE nel protocollo pubblicato: `codex app-server generate-json-schema --out DIR` elenca `account/rateLimits/read` fra le richieste del client, con `params` di tipo `null`. `initialize` risponde in un istante. La richiesta successiva NON riceve risposta: provata due volte, 45 e 50 secondi, con e senza la notifica `initialized` che il protocollo prevede, e nemmeno `account/read` risponde. Nessun errore, nessun diniego: silenzio. Da provare ancora: il sottocomando `app-server proxy` verso il socket del demone già acceso, invece di un processo nuovo che parte da zero. E `~/.codex/state_5.sqlite` ha `tokens_used` per filo, che sono token consumati, non quota residua: non è la stessa domanda. Nota per chi riprova dentro un perimetro: `codex app-server` vuole SCRIVERE sotto `~/.codex`, e se non può muore con «failed to initialize sqlite state runtime» — un diniego di scrittura che si presenta come un guasto del motore."
     },
     {
       "id": "gemini-cli",
