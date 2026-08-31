@@ -5,7 +5,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { FlowBandNode, StepNode, type FlowBandData, type StepNodeData } from "./StepNode";
-import { RunGroup } from "./Now";
+import { Now, RunGroup } from "./Now";
+import { History } from "./History";
+import { Installed } from "./Installed";
 import type { OpenRun } from "./engine";
 import type { Step, StepRun, StepState } from "./flow";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
@@ -113,6 +115,7 @@ describe("la prima schermata: cosa sta succedendo adesso", () => {
         entity: "esamina-la-repo",
         state: "waiting",
         open_steps: 0,
+        open_now: [],
         since: 0,
         started_here: true,
       },
@@ -121,6 +124,10 @@ describe("la prima schermata: cosa sta succedendo adesso", () => {
         entity: "",
         state: "working",
         open_steps: 3,
+        open_now: [
+          { step_id: "implementa", attempt: 1, open_for_secs: 412 },
+          { step_id: "prove", attempt: 2, open_for_secs: 31 },
+        ],
         since: 0,
         started_here: false,
       },
@@ -132,7 +139,135 @@ describe("la prima schermata: cosa sta succedendo adesso", () => {
     );
     expect(screen.getByText("aspetta te")).toBeTruthy();
     expect(screen.getByText("senza nome")).toBeTruthy();
+    // Il tentativo che non e' il primo: un passo aperto alla seconda volta
+    // vuol dire che il primo giro e' caduto, ed e' quello che una riga verde
+    // nasconde.
+    expect(screen.getByText("2ª volta")).toBeTruthy();
     expect(measure(20)).toEqual([]);
+  });
+});
+
+/**
+ * Finge il guscio nativo, con risposte scritte a mano.
+ *
+ * **SI MISURANO I COMPONENTI VERI, NON UN LORO FRAMMENTO.** Estrarre la
+ * tabella per poterla disegnare da sola misurerebbe una cosa che nella finestra
+ * non esiste: basterebbe un colore messo sul contenitore attorno perché la
+ * misura restasse verde e lo schermo no. Qui la risposta del motore è finta e
+ * il componente è quello.
+ */
+function pretendShell(answers: Record<string, unknown>): () => void {
+  const before = (window as unknown as { __TAURI__?: unknown }).__TAURI__;
+  (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+    core: { invoke: (command: string) => Promise.resolve(answers[command]) },
+  };
+  return () => {
+    (window as unknown as { __TAURI__?: unknown }).__TAURI__ = before;
+  };
+}
+
+describe("la storia delle esecuzioni", () => {
+  test("una corsa rotta, una andata e una aperta restano leggibili", async () => {
+    const stop = pretendShell({
+      execution_history: [
+        {
+          run_id: "r1", kind: "flow", entity: "sviluppa-sailor", status: "failed",
+          started_at: 1000, ended_at: 1100, duration_secs: 100, total_cost_micros: 412000,
+          error: "il passo «prove» è caduto: 1 failed", steps_total: 5, steps_went: 3,
+          steps_broke: 1, steps_retried: 2, steps_open: [],
+          tokens: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 412000, calls: 1, calls_without_tokens: 0, calls_without_cost: 0 },
+        },
+        {
+          run_id: "r2", kind: "flow", entity: "relay", status: "succeeded",
+          started_at: 900, ended_at: 950, duration_secs: 50, total_cost_micros: 0,
+          error: null, steps_total: 2, steps_went: 2, steps_broke: 0, steps_retried: 0, steps_open: [],
+          tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 0, calls: 0, calls_without_tokens: 0, calls_without_cost: 0 },
+        },
+        {
+          run_id: "r3", kind: "flow", entity: "", status: "running",
+          started_at: 800, ended_at: null, duration_secs: null, total_cost_micros: 3000,
+          error: null, steps_total: 4, steps_went: 1, steps_broke: 0, steps_retried: 0,
+          steps_open: [{ step_id: "implementa", attempt: 1, started_at: 800, open_for_secs: 300 }],
+          tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 3000, calls: 1, calls_without_tokens: 1, calls_without_cost: 0 },
+        },
+      ],
+    });
+    try {
+      render(
+        <div className="app">
+          <History native />
+        </div>,
+      );
+      await screen.findByText("rotta");
+      expect(screen.getByText("andata")).toBeTruthy();
+      expect(screen.getByText("aperta")).toBeTruthy();
+      expect(measure(30)).toEqual([]);
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("cosa è installato", () => {
+  test("i tre stati di raggiungibilità restano leggibili, col motivo", async () => {
+    const stop = pretendShell({
+      machine_inventory: {
+        entries: [
+          { kind: "skill", name: "handoff", description: "La staffetta fra sessioni.", origin: "casa", path: "/a", reach: { state: "active" }, by_model: true },
+          { kind: "agent", name: "verificatore", description: "Chi crea non giudica.", origin: "repo sailor", path: "/b", reach: { state: "inactive", reason: "il plugin che la contiene è spento" }, by_model: true },
+          { kind: "rule", name: "R05", description: "I permessi.", origin: "repo gyver", path: "/c", reach: { state: "unknown", reason: "dipende da dove si apre la sessione" }, by_model: false },
+        ],
+        roots: ["/Users/theo", "/Users/theo/personal/sailor"],
+        stale_plugin_copies: 2,
+      },
+    });
+    try {
+      render(
+        <div className="app">
+          <Installed native />
+        </div>,
+      );
+      await screen.findByText("attiva");
+      expect(screen.getByText("spenta")).toBeTruthy();
+      expect(screen.getByText("non lo so")).toBeTruthy();
+      // Il motivo è tutto il valore della terza voce: se sparisse, «spenta»
+      // resterebbe una parola che non si può correggere.
+      expect(screen.getByText("il plugin che la contiene è spento")).toBeTruthy();
+      expect(measure(30)).toEqual([]);
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("il riepilogo di oggi", () => {
+  test("CIÒ CHE NON È STATO MISURATO SI LEGGE, e non è sbiadito", async () => {
+    // La riga più importante di tutta la schermata, e quella che negli altri
+    // strumenti manca: `--warn` su `--bg` deve stare sopra 4,5:1 come tutto il
+    // resto, altrimenti l'avvertimento c'è e non si legge.
+    const stop = pretendShell({
+      open_runs: [],
+      day_summary: {
+        ledger_present: true, runs: 13, went: 11, broke: 2, still_open: 0,
+        input_tokens: 400000, output_tokens: 20000, cached_tokens: 900000, cache_write_tokens: 5000,
+        cost_micros: 1840000, unmeasured: 3, unpriced: 1, tokens_by_model: {},
+      },
+    });
+    try {
+      render(
+        <div className="app">
+          <Now native onOpen={() => {}} />
+        </div>,
+      );
+      await screen.findByText(/chiamate senza token/);
+      expect(screen.getByText("Non sta girando niente, e niente aspetta te.")).toBeTruthy();
+      // 13 accoppiate: e' la scena piu' scarna che la finestra sappia mostrare
+      // — il riepilogo e una frase — e va bene cosi', perche' e' anche quella
+      // che una macchina tranquilla mostra per ore.
+      expect(measure(12)).toEqual([]);
+    } finally {
+      stop();
+    }
   });
 });
 
