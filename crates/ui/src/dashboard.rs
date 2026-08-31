@@ -424,7 +424,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod cio_che_non_si_sa {
+mod what_is_not_known {
     //! I conti quando una chiamata non ha detto quanto ha consumato.
 
     use super::tests::measured;
@@ -452,22 +452,22 @@ mod cio_che_non_si_sa {
     /// una misura completa dove ne ha metà.
     #[test]
     fn an_unmeasured_call_is_not_summed_as_zero_and_is_counted_apart() {
-        let misurata = measured("m", Some(100), Some(50), Some(10), Some(500));
-        let ignota = measured("m", None, None, None, None);
+        let known = measured("m", Some(100), Some(50), Some(10), Some(500));
+        let unknown = measured("m", None, None, None, None);
 
-        let solo_nota = summarize_run(&run(), &[], std::slice::from_ref(&misurata), 20);
-        let con_ignota = summarize_run(&run(), &[], &[misurata, ignota], 20);
+        let only_known = summarize_run(&run(), &[], std::slice::from_ref(&known), 20);
+        let with_unknown = summarize_run(&run(), &[], &[known, unknown], 20);
 
         // I token sommati sono gli stessi: quella ignota non ha aggiunto zeri.
-        assert_eq!(con_ignota.tokens.input_tokens, solo_nota.tokens.input_tokens);
-        assert_eq!(con_ignota.tokens.cost_micros, solo_nota.tokens.cost_micros);
+        assert_eq!(with_unknown.tokens.input_tokens, only_known.tokens.input_tokens);
+        assert_eq!(with_unknown.tokens.cost_micros, only_known.tokens.cost_micros);
         // Ma il totale sa di essere parziale, e dice di quanto.
-        assert_eq!(con_ignota.tokens.calls, 2);
-        assert_eq!(con_ignota.tokens.calls_without_tokens, 1);
-        assert_eq!(con_ignota.tokens.calls_without_cost, 1);
-        assert!(con_ignota.tokens.is_partial());
+        assert_eq!(with_unknown.tokens.calls, 2);
+        assert_eq!(with_unknown.tokens.calls_without_tokens, 1);
+        assert_eq!(with_unknown.tokens.calls_without_cost, 1);
+        assert!(with_unknown.tokens.is_partial());
         assert!(
-            !solo_nota.tokens.is_partial(),
+            !only_known.tokens.is_partial(),
             "un totale completo non deve dichiararsi parziale, o l'avviso perde valore"
         );
     }
@@ -490,9 +490,9 @@ mod cio_che_non_si_sa {
     /// sua unica misura vera, e non la vede sommata a lati che non esistono.
     #[test]
     fn a_total_only_engine_keeps_its_one_true_measure_apart() {
-        let mut solo_totale = measured("m", None, None, None, None);
-        solo_totale.total_tokens = Some(13_910);
-        let view = summarize_run(&run(), &[], &[solo_totale], 20);
+        let mut total_only = measured("m", None, None, None, None);
+        total_only.total_tokens = Some(13_910);
+        let view = summarize_run(&run(), &[], &[total_only], 20);
         assert_eq!(view.tokens.input_tokens, 0, "non ha lati da sommare");
         assert_eq!(view.tokens.total_tokens_only, 13_910);
         assert_eq!(

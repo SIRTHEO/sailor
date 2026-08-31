@@ -1158,15 +1158,15 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         return;
     };
     let reading = spent.reading;
-    let listino = load_pricing();
+    let price_list = load_pricing();
     // Il legame col listino passa dal nome che il motore stesso dichiara, non
     // da un'ipotesi: un modello presunto sarebbe un numero inventato con la
     // faccia di una misura, creduto per sempre da chiunque lo legga.
-    let voce = listino
+    let entry = price_list
         .as_ref()
         .zip(reading.model.as_deref())
-        .and_then(|(listino, name)| listino.find(name));
-    let prices = voce.map(models::pricing::Price::micros).unwrap_or_default();
+        .and_then(|(list, name)| list.find(name));
+    let prices = entry.map(models::pricing::Price::micros).unwrap_or_default();
     let cost_micros = models::pricing::cost_micros(
         models::pricing::TokenCounts {
             input: reading.input_tokens,
@@ -1206,8 +1206,8 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         // La valuta è quella del listino con cui si è calcolato: senza un conto
         // fatto non c'è nessuna valuta da dichiarare.
         price_currency: cost_micros
-            .and(listino.as_ref())
-            .map(|listino| listino.currency.clone()),
+            .and(price_list.as_ref())
+            .map(|list| list.currency.clone()),
         input_price_micros_per_million: prices.input,
         output_price_micros_per_million: prices.output,
         cached_price_micros_per_million: prices.cached,
@@ -1978,14 +1978,14 @@ mod tests {
     #[test]
     fn the_action_asks_the_factory_for_the_step_it_is_running() {
         #[derive(Default)]
-        struct Fabbrica {
+        struct Factory {
             asked: std::sync::Mutex<Vec<String>>,
             said: std::sync::Mutex<Vec<u8>>,
         }
 
-        struct Ramo(Arc<Fabbrica>);
+        struct Branch(Arc<Factory>);
 
-        impl LiveSink for Ramo {
+        impl LiveSink for Branch {
             fn chunk(&self, _pipe: Pipe, bytes: &[u8]) {
                 self.0
                     .said
@@ -1997,22 +1997,22 @@ mod tests {
 
         /// La fabbrica sta dietro un `Arc` perché la prova deve poter leggere
         /// ciò che ha registrato dopo che l'azione ha finito con lei.
-        struct FabbricaArc(Arc<Fabbrica>);
+        struct FactoryArc(Arc<Factory>);
 
-        impl StepSinks for FabbricaArc {
+        impl StepSinks for FactoryArc {
             fn sink_for(&self, step: &str) -> Arc<dyn LiveSink> {
                 self.0
                     .asked
                     .lock()
                     .expect("nessuno panica qui")
                     .push(step.to_owned());
-                Arc::new(Ramo(self.0.clone()))
+                Arc::new(Branch(self.0.clone()))
             }
         }
 
-        let fabbrica = Arc::new(Fabbrica::default());
+        let factory = Arc::new(Factory::default());
         let action = ExternalEngineAction::new()
-            .watched_by(Some(Arc::new(FabbricaArc(fabbrica.clone())) as Arc<dyn StepSinks>));
+            .watched_by(Some(Arc::new(FactoryArc(factory.clone())) as Arc<dyn StepSinks>));
         let mut shared = SharedState::new();
         shared.insert(flow::CURRENT_STEP.to_owned(), json!("il-passo-che-parla"));
         let outcome = action
@@ -2023,10 +2023,10 @@ mod tests {
             .expect("il passo doveva riuscire");
         assert!(matches!(outcome, ActionOutcome::Went(_)));
         assert_eq!(
-            *fabbrica.asked.lock().expect("nessuno panica qui"),
+            *factory.asked.lock().expect("nessuno panica qui"),
             vec!["il-passo-che-parla".to_owned()]
         );
-        let said = String::from_utf8_lossy(&fabbrica.said.lock().expect("nessuno panica qui"))
+        let said = String::from_utf8_lossy(&factory.said.lock().expect("nessuno panica qui"))
             .into_owned();
         assert!(said.contains("detto-dal-motore"), "consegnato: {said:?}");
     }
@@ -2035,15 +2035,16 @@ mod tests {
     /// un testo che nessuno sa attribuire è peggio del silenzio.
     #[test]
     fn no_step_id_means_nobody_is_asked() {
-        struct Mai;
+        struct Never;
 
-        impl StepSinks for Mai {
+        impl StepSinks for Never {
             fn sink_for(&self, _step: &str) -> Arc<dyn LiveSink> {
                 panic!("non doveva essere chiesto nessun destinatario");
             }
         }
 
-        let action = ExternalEngineAction::new().watched_by(Some(Arc::new(Mai) as Arc<dyn StepSinks>));
+        let action =
+            ExternalEngineAction::new().watched_by(Some(Arc::new(Never) as Arc<dyn StepSinks>));
         let mut shared = SharedState::new();
         action
             .execute(
@@ -2138,7 +2139,7 @@ mod tests {
     }
 
     #[test]
-    fn engine_stdin_reaches_a_motore_that_reads_it() {
+    fn engine_stdin_reaches_an_engine_that_reads_it() {
         let invocation = EngineInvocation {
             bin: "cat".to_string(),
             args: vec![],
@@ -2985,7 +2986,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod quanto_e_costata {
+mod what_it_cost {
     //! Le prove della misura: quanto ha consumato una chiamata, dove finisce
     //! scritta, e che cosa succede a chi non lo dichiara.
     //!
@@ -3019,7 +3020,7 @@ mod quanto_e_costata {
 
     /// Il listino di prova, con la cache a un decimo dell'ingresso: è la
     /// differenza che il criterio 3 del mandato esiste per non perdere.
-    const LISTINO: &str = r#"{
+    const PRICE_LIST: &str = r#"{
       "currency": "USD",
       "dated": "2026-08-29",
       "models": [
@@ -3029,9 +3030,9 @@ mod quanto_e_costata {
       ]
     }"#;
 
-    fn write_listino(dir: &std::path::Path) -> std::path::PathBuf {
+    fn write_price_list(dir: &std::path::Path) -> std::path::PathBuf {
         let path = dir.join("pricing.json");
-        std::fs::write(&path, LISTINO).expect("scrivere il listino");
+        std::fs::write(&path, PRICE_LIST).expect("scrivere il listino");
         path
     }
 
@@ -3192,9 +3193,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// sola — senza, due prove si toglierebbero il listino a vicenda.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    fn with_listino<T>(listino: Option<&std::path::Path>, body: impl FnOnce() -> T) -> T {
+    fn with_price_list<T>(price_list: Option<&std::path::Path>, body: impl FnOnce() -> T) -> T {
         let _guard = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        match listino {
+        match price_list {
             Some(path) => std::env::set_var(PRICING_ENV, path),
             None => std::env::set_var(PRICING_ENV, "/nessun/listino/qui"),
         }
@@ -3210,9 +3211,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// cache in una colonna sua, e il costo calcolato dal listino locale — non
     /// quello che il motore stesso dichiara.
     #[test]
-    fn a_declaring_engine_writes_a_row_with_true_tokens_and_a_cost_from_the_listino() {
+    fn a_declaring_engine_writes_a_row_with_true_tokens_and_a_cost_from_the_price_list() {
         let dir = scratch("dichiara");
-        let listino = write_listino(&dir);
+        let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -3222,7 +3223,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let outcome = with_listino(Some(&listino), || {
+        let outcome = with_price_list(Some(&price_list), || {
             action.execute(&input, &mut shared("corsa-1", "passo-1"))
         })
         .expect("il motore risponde");
@@ -3271,7 +3272,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 cached: Some(1_000_000),
                 ..models::pricing::TokenCounts::default()
             },
-            models::pricing::PriceList::parse(LISTINO)
+            models::pricing::PriceList::parse(PRICE_LIST)
                 .unwrap()
                 .find("prova")
                 .unwrap()
@@ -3292,7 +3293,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn an_engine_that_declares_nothing_is_unchanged_and_leaves_the_tokens_unknown() {
         let dir = scratch("non-dichiara");
-        let listino = write_listino(&dir);
+        let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -3307,7 +3308,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let outcome = with_listino(Some(&listino), || {
+        let outcome = with_price_list(Some(&price_list), || {
             action.execute(&input, &mut shared("corsa-2", "passo-2"))
         })
         .expect("il motore risponde");
@@ -3353,7 +3354,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let error = with_listino(None, || {
+        let error = with_price_list(None, || {
             action.execute(&input, &mut shared("corsa-3", "passo-3"))
         })
         .expect_err("un'uscita diversa da zero rompe il passo");
@@ -3397,7 +3398,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let error = with_listino(None, || {
+        let error = with_price_list(None, || {
             action.execute(&input, &mut shared("corsa-esaurita", "passo-1"))
         })
         .expect_err("un motore esaurito e solo non può fare il lavoro");
@@ -3443,7 +3444,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let error = with_listino(None, || {
+        let error = with_price_list(None, || {
             action.execute(&input, &mut shared("corsa-rotta", "passo-1"))
         })
         .expect_err("un'uscita diversa da zero rompe il passo");
@@ -3467,7 +3468,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let error = with_listino(None, || {
+        let error = with_price_list(None, || {
             action.execute(&input, &mut shared("corsa-4", "passo-4"))
         })
         .expect_err("un binario che non c'è rompe il passo");
@@ -3489,11 +3490,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn asking_for_a_json_envelope_does_not_change_what_the_step_receives() {
         let dir = scratch("involucro");
-        let listino = write_listino(&dir);
+        let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let senza = {
+        let without = {
             let ledger = Ledger::open(dir.join("senza")).expect("deposito");
             let action = ExternalEngineAction::resolving_with(Declares {
                 bin: bin.clone(),
@@ -3505,7 +3506,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 }),
             })
             .recording_to(Some(ledger));
-            let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+            let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
                 action.execute(&input, &mut shared("corsa-5", "passo-5"))
             })
             .expect("risponde") else {
@@ -3514,14 +3515,14 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             output
         };
 
-        let con = {
+        let with = {
             let ledger = Ledger::open(dir.join("con")).expect("deposito");
             let action = ExternalEngineAction::resolving_with(Declares {
                 bin,
                 recipe: Some(declaring_recipe()),
             })
             .recording_to(Some(ledger));
-            let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+            let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
                 action.execute(&input, &mut shared("corsa-6", "passo-6"))
             })
             .expect("risponde") else {
@@ -3531,7 +3532,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         };
 
         assert_eq!(
-            senza, con,
+            without, with,
             "misurare non deve cambiare di una virgola ciò che il passo consegna a valle"
         );
         // E la misura c'è stata davvero: senza questo, la prova passerebbe anche
@@ -3571,9 +3572,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             recipe: Some(recipe),
         })
         .recording_to(Some(ledger));
-        let mut solo_il_passo = SharedState::new();
-        solo_il_passo.insert(flow::CURRENT_STEP.to_owned(), json!("passo-8"));
-        assert!(action.execute(&input, &mut solo_il_passo).is_ok());
+        let mut only_the_step = SharedState::new();
+        only_the_step.insert(flow::CURRENT_STEP.to_owned(), json!("passo-8"));
+        assert!(action.execute(&input, &mut only_the_step).is_ok());
         assert!(
             calls_in(&dir.join("deposito")).is_empty(),
             "senza corsa non si attribuisce nessuna spesa a nessuno"
@@ -3604,7 +3605,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn when_the_step_writes_its_own_args_the_usage_is_not_asked_for() {
         let dir = scratch("args-del-passo");
-        let listino = write_listino(&dir);
+        let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
         let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -3617,7 +3618,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             "stdin": "ciao", "timeout_secs": 10
         });
 
-        let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+        let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
             action.execute(&input, &mut shared("corsa-10", "passo-10"))
         })
         .expect("risponde") else {
@@ -3648,7 +3649,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn output_that_merely_looks_familiar_is_not_read_without_a_declaration() {
         let dir = scratch("nessun-ramo-cablato");
-        let listino = write_listino(&dir);
+        let price_list = write_price_list(&dir);
         let bin = fake_engine(&dir, "motore", ALWAYS_WRAPS);
         let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
@@ -3663,7 +3664,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .recording_to(Some(ledger));
         let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
 
-        let ActionOutcome::Went(output) = with_listino(Some(&listino), || {
+        let ActionOutcome::Went(output) = with_price_list(Some(&price_list), || {
             action.execute(&input, &mut shared("corsa-11", "passo-11"))
         })
         .expect("risponde") else {

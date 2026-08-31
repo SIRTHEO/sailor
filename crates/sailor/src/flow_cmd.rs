@@ -980,7 +980,7 @@ mod tests {
     /// Un catalogo deciso dalla prova, così l'esito non dipende da cosa è
     /// installato su chi la esegue.
     fn tools_declaring(ids: &[&str]) -> toolbox::Tools {
-        let voci: Vec<String> = ids
+        let entries: Vec<String> = ids
             .iter()
             .map(|id| {
                 format!(
@@ -989,7 +989,7 @@ mod tests {
             })
             .collect();
         let file = std::env::temp_dir().join(format!("prova-strumenti-{}.json", ids.join("-")));
-        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, voci.join(","))).expect("scrivere");
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, entries.join(","))).expect("scrivere");
         let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
         toolbox::Tools::new(catalog, toolbox::Machine::current())
     }

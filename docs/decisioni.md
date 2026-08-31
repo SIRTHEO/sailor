@@ -32,6 +32,28 @@ aspetto.
 
 ## Le decisioni prese
 
+### La lingua: identificatori in inglese, tutto il resto in italiano
+**31/08/2026.** Ogni cosa che il compilatore legge sta in inglese — funzioni,
+tipi, campi, variabili, moduli, costanti, **nomi di file**, classi CSS, chiavi
+JSON. Ogni cosa che legge una persona sta in italiano: commenti, messaggi
+d'errore, testo nella finestra, documenti, e i **dati** delle prove.
+**Perché sta qui e non solo in `AGENTS.md`.** Ci stava solo lì, e il 31/08 se ne
+contavano 136 violazioni — quasi tutte scritte nei tre giorni precedenti, da
+sessioni che avevano ricevuto «rispondi in italiano» come istruzione forte e
+questa riga come una fra molte in un documento. Questo file è la memoria che si
+rilegge prima di correggere qualunque cosa: se una regola non è qui, non è
+vincolante nei fatti, qualunque cosa dica altrove.
+**E soprattutto ha una misura.** `cargo test -p sailor --test
+identifiers_are_in_english` cerca parole italiane in posizione di dichiarazione,
+e conosce anche i nomi dei file. Non è un analizzatore: è un elenco di parole,
+che non ha falsi positivi e lascia passare quelle che non conosce. Il prezzo è
+dichiarato; l'alternativa era continuare a non misurare niente.
+**La lezione, che vale oltre la lingua.** Una regola che nessun controllo
+interroga non diventa rossa mai — è lo stesso difetto del puntatore morto che
+`AGENTS.md` racconta di sé, e del guasto 22, dove uno zero mai calcolato è
+passato per una misura. Chi scrive una regola nuova scrive anche ciò che la
+rende rossa.
+
 ### Il tetto di spesa è del flusso, e la larghezza del fronte ne discende
 **31/08/2026.** Un flusso può dichiarare `spend_cap_micros`: quanto una sua
 corsa può spendere. Prima di aprire ogni fronte l'esecutore chiede al deposito
