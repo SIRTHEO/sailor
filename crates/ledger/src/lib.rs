@@ -178,6 +178,34 @@ pub struct RunRecord {
     pub ended_at: Option<i64>,
 }
 
+/// Quanto è stato speso, e quanto di quella spesa resta sconosciuto.
+///
+/// **NON HA UN `Option` PERCHÉ NON È UNA MISURA SOLA.** La tentazione era
+/// rispondere `Option<i64>` — «il totale, oppure non lo so» — ma i due casi
+/// veri sono tre: non ho speso niente, ho speso questo e lo so tutto, ho speso
+/// almeno questo e su N chiamate non lo so. Un `Option` collassa il terzo sul
+/// secondo o sul primo, e in entrambi i modi la cifra che resta è più bassa del
+/// vero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Spend {
+    /// La somma dei costi noti, in micro-unità di valuta.
+    pub micros: i64,
+    /// Le chiamate registrate per quella corsa, comunque siano andate.
+    pub calls: i64,
+    /// Quante di quelle non portano un costo. `micros` le esclude.
+    pub calls_without_cost: i64,
+}
+
+impl Spend {
+    /// Il totale è completo, cioè ogni chiamata ha detto quanto è costata.
+    ///
+    /// Serve a chi deve **dichiarare** su cosa sta decidendo: un tetto
+    /// rispettato con questo a `false` è rispettato solo per quanto si sa.
+    pub fn is_complete(&self) -> bool {
+        self.calls_without_cost == 0
+    }
+}
+
 /// Una voce vista da una scansione dell'inventario.
 ///
 /// I campi sono testo e basta: il deposito **non** dipende dal crate che li
@@ -907,6 +935,37 @@ impl Ledger {
             [],
             |row| row.get(0),
         )?)
+    }
+
+    /// Quanto una corsa ha speso finora, e su quante chiamate non si sa.
+    ///
+    /// **IL SECONDO NUMERO NON È UN ORNAMENTO: È CIÒ CHE RENDE IL PRIMO
+    /// LEGGIBILE.** Un motore che non dichiara i propri token lascia la riga
+    /// col costo a `NULL` — codex fa esattamente questo, dichiara un totale e
+    /// non i due lati, e da un totale non si ricava un costo senza inventare la
+    /// proporzione. Sommare solo i costi noti dà quindi una **sottostima
+    /// sistematica**, e un tetto di spesa che si fidasse di quella somma da
+    /// sola lascerebbe passare corse che hanno speso il doppio. Chi legge questa
+    /// struttura ha entrambi i numeri e può decidere; chi ne guardasse uno solo
+    /// starebbe leggendo una rassicurazione.
+    ///
+    /// Una corsa senza nessuna chiamata risponde con tutti zeri, ed è la
+    /// risposta giusta: non ha speso niente **e** non c'è niente che non si sa.
+    pub fn spent_in_run(&self, run_id: &str) -> Result<Spend, LedgerError> {
+        let connection = self.lock()?;
+        let (micros, calls, calls_without_cost) = connection.query_row(
+            "SELECT COALESCE(SUM(cost_micros), 0),
+                    COUNT(*),
+                    COALESCE(SUM(CASE WHEN cost_micros IS NULL THEN 1 ELSE 0 END), 0)
+             FROM model_calls WHERE run_id = ?1",
+            params![run_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
+        Ok(Spend {
+            micros,
+            calls,
+            calls_without_cost,
+        })
     }
 
     /// Quante corse cadono davvero nella finestra chiesta.
