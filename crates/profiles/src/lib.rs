@@ -108,6 +108,28 @@ pub fn find_cli(id: &str) -> Result<&'static KnownCli, String> {
         .ok_or_else(|| format!("riga di comando sconosciuta: {id}"))
 }
 
+/// La riga di comando che si sta per lanciare, riconosciuta dall'**eseguibile**.
+///
+/// **PERCHÉ DALL'ESEGUIBILE E NON DALL'IDENTIFICATIVO DELLO STRUMENTO.** Un
+/// descrittore di `toolbox` chiama `claude-code` ciò che questa tabella chiama
+/// `claude`, e i due elenchi non coincidono né devono: uno risponde a «cosa c'è
+/// su questa macchina», l'altro a «come si sposta la casa di questa riga di
+/// comando». A leggere `CLAUDE_CONFIG_DIR` è il **binario** `claude`, qualunque
+/// nome gli dia chi lo nomina — quindi il legame onesto è quello, e una tabella
+/// di corrispondenze fra i due elenchi sarebbe una terza cosa da tenere
+/// allineata a mano.
+///
+/// Riceve un percorso perché è ciò che il risolutore restituisce: si guarda solo
+/// l'ultimo segmento. `None` per un binario che questa tabella non conosce — un
+/// `sh` scritto a mano in un passo non ha nessuna casa da spostare.
+pub fn cli_for_executable(bin: &str) -> Option<&'static KnownCli> {
+    // L'ultimo segmento e nient'altro: nessun prefisso, nessuna somiglianza. Un
+    // `claude-wrapper` che ricevesse la casa di `claude` partirebbe con le
+    // credenziali di un altro, e nessuno se ne accorgerebbe guardando il passo.
+    let name = Path::new(bin).file_name()?.to_str()?;
+    known_clis().iter().find(|cli| cli.executable == name)
+}
+
 /// Un profilo: nome scelto dall'utente, a quale riga di comando appartiene,
 /// dove sta la sua cartella di casa.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -348,6 +370,43 @@ mod tests {
     fn find_cli_finds_a_known_id_and_rejects_an_unknown_one() {
         assert_eq!(find_cli("codex").map(|c| c.id), Ok("codex"));
         assert!(find_cli("non-esiste").is_err());
+    }
+
+    /// **UN PERCORSO RISOLTO PORTA ALLA SUA RIGA DI COMANDO.** È il legame che
+    /// mancava al guasto 18: un passo di flusso riceve dal risolutore il
+    /// percorso di un eseguibile, e senza questo non c'era modo di sapere di
+    /// quale casa quel binario legga la configurazione.
+    ///
+    /// I quattro bracci contano tutti: il percorso assoluto è la forma vera che
+    /// arriva dal risolutore, il nome nudo è la forma che arriva da un `bin`
+    /// scritto a mano, e i due rifiuti dicono che non si indovina — `claude-code`
+    /// è l'identificativo del **descrittore**, non il nome dell'eseguibile, e
+    /// accettarlo qui vorrebbe dire tenere due elenchi allineati a mano.
+    #[test]
+    fn a_resolved_path_leads_back_to_the_command_line_that_reads_that_home() {
+        assert_eq!(
+            cli_for_executable("/opt/homebrew/bin/claude").map(|c| c.id),
+            Some("claude")
+        );
+        assert_eq!(cli_for_executable("codex").map(|c| c.id), Some("codex"));
+        assert_eq!(cli_for_executable("/bin/sh").map(|c| c.id), None);
+        assert_eq!(cli_for_executable("claude-code").map(|c| c.id), None);
+    }
+
+    /// **UN NOME CHE SOMIGLIA NON È LO STESSO NOME.** `claudia` finisce con
+    /// `claude`? No — ma `claude-wrapper` comincia con `claude`, e un confronto
+    /// per prefisso gli darebbe la casa di Claude Code. Sbagliare qui vuol dire
+    /// lanciare una riga di comando con le credenziali di un'altra, in silenzio:
+    /// è la stessa regola per cui `PriceList::find` non conosce prefissi.
+    #[test]
+    fn a_name_that_merely_resembles_an_executable_is_not_that_executable() {
+        for near in ["claude-wrapper", "myclaude", "codexx", "gemini2"] {
+            assert_eq!(
+                cli_for_executable(near).map(|cli| cli.id),
+                None,
+                "«{near}» non è un eseguibile in tabella"
+            );
+        }
     }
 
     #[test]
