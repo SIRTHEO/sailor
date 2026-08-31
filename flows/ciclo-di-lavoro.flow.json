@@ -1,0 +1,44 @@
+{
+  "id": "ciclo-di-lavoro",
+  "description": "IL PRIMO FLUSSO CHE NE ESEGUE ALTRI. Non aggiunge un passo di lavoro: mette in fila due flussi che esistono già e restano usabili da soli — 'smista-il-lavoro' prima, 'sviluppa-sailor' dopo. È la decisione di Theo del 29/08/2026 messa in pratica: ricerca, smistamento, sviluppo e interrogazione del codice sono le fasi di un ciclo unico, ma restano flussi separati che si chiamano fra loro, perché un flusso di dieci passi che fa tutto non si può usare a metà. COSA GUARDARE QUI DENTRO. (1) Il flusso da eseguire si nomina, non si incorpora: 'flow' è un nome, e chi lo risolve guarda nelle stesse tre sorgenti di 'sailor flow run' — spediti col binario, casa tua, progetto — dove a parità di nome vince la più specifica. Chi vuole un altro 'smista-il-lavoro' ne scrive uno con quel nome nel proprio progetto, e questo ciclo eseguirà il suo senza cambiare una riga qui. (2) Gli ingressi del flusso interno stanno scritti nel passo, sotto 'inputs': il figlio non eredita niente dal padre, quindi si legge da qui cosa entra dove. (3) Il secondo passo dipende dal primo: parte solo se lo smistamento è andato, e riceve nel proprio ingresso l'uscita del primo — dentro cui c'è il 'run_id' della corsa figlia, che è come si risale dal passo al lavoro che ha fatto. (4) Il tetto di spesa è di questo flusso e vale per tutto il ciclo: i figli ricevono ciascuno quello che resta, e nessuno dei due può spendere di più spostando il lavoro dentro di sé. IL LIMITE DA CONOSCERE: la spesa di una corsa figlia è registrata sotto la corsa figlia, quindi il residuo del padre non cala per quello che i figli hanno speso — con due passi 'subflow' il caso peggiore è due volte il tetto. Si chiude facendo sommare al deposito anche le corse figlie risalendo 'parent_run_id'.",
+  "spend_cap_micros": 2000000,
+  "graph": {
+    "steps": [
+      {
+        "id": "smista",
+        "deps": [],
+        "action": "subflow",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "flow": "smista-il-lavoro",
+          "inputs": {
+            "trigger": {
+              "text": "La consegna da smistare. Si cambia questa riga, non il grafo: il lavoro entra da qui e nessun passo lo porta scritto dentro."
+            }
+          }
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "sviluppa",
+        "deps": ["smista"],
+        "action": "subflow",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "flow": "sviluppa-sailor",
+          "inputs": {
+            "trigger": {
+              "text": "La consegna da implementare, dopo che lo smistamento ha detto se sta in piedi."
+            }
+          }
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {}
+}
