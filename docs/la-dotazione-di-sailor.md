@@ -9,6 +9,17 @@ installate **in** Sailor? Perché è successo?»
 **Sailor ha una casa, ed è vuota.** `~/.config/sailor` contiene un file solo, una
 firma, dal 10/08/2026. Niente competenze, niente server, niente dotazione.
 
+> **Aggiornato il 31/08/2026 — questa riga non è più vera, e va letta come
+> storia.** La casa ha adesso quattro voci: `signing-identity`, `pricing.json`,
+> `flows/` (cinque flussi) e `equipment/tastemaker/`, che è un plugin vero.
+> Ma **il guasto 18 non è chiuso**, e va detto perché la casa piena inganna:
+> `equipment/` non arriva a nessun motore. `profiles::build_environment`
+> produce già la sovrapposizione d'ambiente, e la chiama **solo** `sailor run`
+> — un motore lanciato da un passo di flusso eredita l'ambiente di chi ha
+> aperto il terminale, cioè legge ancora la casa del vicino. E i cinque
+> descrittori di server MCP puntano dove puntavano. La dotazione esiste; non è
+> ancora *raggiunta*.
+
 **Il rilevatore conosce 36 strumenti, e ogni cosa che non sia un eseguibile la
 scopre leggendo la configurazione di un altro programma.** I cinque descrittori
 di server MCP puntano tutti là: `~/.claude.json`, `~/.claude/settings.json`,
