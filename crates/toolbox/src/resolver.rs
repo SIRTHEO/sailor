@@ -12,6 +12,7 @@
 //! questo distingue «non c'è» da «non ho potuto guardare», e riporta la nota del
 //! descrittore, che è il posto dove sta scritto da dove si installa.
 
+use crate::descriptor::CapabilityState;
 use crate::{default_sources, probe_one, Catalog, Machine, Presence};
 
 /// Il rilevatore, caricato una volta e interrogato tante.
@@ -56,6 +57,20 @@ impl Tools {
             .live()
             .into_iter()
             .any(|loaded| loaded.descriptor.id == id)
+    }
+
+    /// Come sta messo uno strumento rispetto a una capacità chiesta da un passo.
+    ///
+    /// **`None` NON È «NON CE L'HA».** È «nessun descrittore dichiara questo
+    /// strumento», che è una terza domanda ancora, e chi controlla un flusso la
+    /// dice già con parole sue: rispondere qui con un'assenza la nasconderebbe
+    /// dietro un avviso sulla capacità sbagliata.
+    pub fn capability(&self, id: &str, name: &str) -> Option<CapabilityState> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)
+            .map(|loaded| loaded.descriptor.capability(name))
     }
 
     /// Gli identificativi dichiarati, in ordine: è ciò che si mostra a chi ne ha
