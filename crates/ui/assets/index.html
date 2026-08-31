@@ -323,12 +323,12 @@ function formatCount(value) {
 
 function formatTokens(totals) {
   if (!totals) return 'token non noti';
-  const lati = `${formatCount(totals.input_tokens)} in · ${formatCount(totals.output_tokens)} out · ${formatCount(totals.cached_tokens)} cache`;
+  const sides = `${formatCount(totals.input_tokens)} in · ${formatCount(totals.output_tokens)} out · ${formatCount(totals.cached_tokens)} cache`;
   // Chi dichiara solo il totale (codex e simili) non ha lati da mostrare: la
   // sua unica misura vera è quella, e va detta com'è.
-  if (totals.total_tokens_only) return `${lati} · ${formatNumber(totals.total_tokens_only)} totali non ripartiti`;
+  if (totals.total_tokens_only) return `${sides} · ${formatNumber(totals.total_tokens_only)} totali non ripartiti`;
   if (totals.total_tokens) return `${formatNumber(totals.total_tokens)} totali (lati non dichiarati)`;
-  return lati;
+  return sides;
 }
 
 // QUANTO DI QUESTO TOTALE NON È MISURATO. Un totale parziale che dichiara di
@@ -336,11 +336,11 @@ function formatTokens(totals) {
 // bugia da cui il conteggio dei consumi è nato.
 function unmeasuredNote(totals) {
   if (!totals) return '';
-  const parti = [];
-  if (totals.calls_without_tokens) parti.push(`${formatNumber(totals.calls_without_tokens)} senza token dichiarati`);
-  if (totals.calls_without_cost) parti.push(`${formatNumber(totals.calls_without_cost)} senza costo noto`);
-  if (parti.length === 0) return '';
-  return ` · <span class="unmeasured">${parti.join(' · ')}</span>`;
+  const parts = [];
+  if (totals.calls_without_tokens) parts.push(`${formatNumber(totals.calls_without_tokens)} senza token dichiarati`);
+  if (totals.calls_without_cost) parts.push(`${formatNumber(totals.calls_without_cost)} senza costo noto`);
+  if (parts.length === 0) return '';
+  return ` · <span class="unmeasured">${parts.join(' · ')}</span>`;
 }
 
 function executionNeedsAttention(execution) {
