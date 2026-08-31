@@ -69,7 +69,7 @@
           "trigger"
         ],
         "action": "external_engine",
-        "max_attempts": 1,
+        "max_attempts": 2,
         "when": null,
         "with": {
           "tool": [
@@ -211,7 +211,7 @@
           "letteratura"
         ],
         "action": "external_engine",
-        "max_attempts": 1,
+        "max_attempts": 2,
         "when": null,
         "with": {
           "tool": [
@@ -357,7 +357,7 @@
           "progetti"
         ],
         "action": "external_engine",
-        "max_attempts": 1,
+        "max_attempts": 2,
         "when": null,
         "with": {
           "tool": [
@@ -505,7 +505,7 @@
           "nostro"
         ],
         "action": "external_engine",
-        "max_attempts": 1,
+        "max_attempts": 2,
         "when": null,
         "with": {
           "tool": [
@@ -707,7 +707,7 @@
           "sintesi"
         ],
         "action": "external_engine",
-        "max_attempts": 1,
+        "max_attempts": 2,
         "when": null,
         "with": {
           "tool": [
