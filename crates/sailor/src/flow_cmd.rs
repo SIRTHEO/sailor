@@ -133,6 +133,16 @@ fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
     // turno l'8% in più di una sessione sola, e consuma il doppio — perché di
     // turni ne fa il doppio. Chi legge «7 chiamate» senza sapere quanti turni
     // sono non ha in mano la quantità su cui si interviene.
+    //
+    // **IL CONTEGGIO GREZZO E BASTA: QUI NON SI STAMPA `cache letta ÷ turni`.**
+    // Sembra «il contesto di una richiesta» e non lo è: sui quattro passi di una
+    // corsa vera il quoziente dà 21.165 / 13.566 / 48.984 / 50.885 contro i
+    // 46.702 / 31.651 / 63.266 / 71.173 che le richieste leggono davvero — sbaglia
+    // da 1,29 a 2,33 volte, e il fattore cambia **fra i passi della stessa
+    // corsa**. È la media di una rampa, non il prefisso, e non è confrontabile
+    // né fra passi né fra un flusso e una sessione sola. Un numero stampato
+    // viene usato per decidere: questo manderebbe a intervenire nel posto
+    // sbagliato con l'aria di una misura.
     if tokens.turns > 0 {
         let _ = write!(report, " in {} turni", tokens.turns);
     }

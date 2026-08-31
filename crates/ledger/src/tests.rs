@@ -1792,3 +1792,63 @@ fn the_dump_carries_every_column_the_table_has() {
          sono invisibili a tutto ciò che legge il dump, e nessun errore lo dice"
     );
 }
+
+/// **UN DEPOSITO CHE ARRIVA DA UNA VERSIONE VECCHIA DEVE FINIRE CON LA STESSA
+/// FORMA DI UNO NUOVO.**
+///
+/// Il guasto 24 era una colonna imparata dal `CREATE TABLE` e non dalla
+/// migrazione, con il numero di versione fermo: un deposito già esistente non
+/// migrava e ogni lettura moriva. La prova nata da quel guasto parte dalla
+/// versione 4, e quindi **non vede** una colonna aggiunta oggi sotto la 6: la
+/// migrazione 5→6 ha funzionato per fortuna, non per costruzione.
+///
+/// Questa non guarda nessuna colonna in particolare e non invecchia. Confronta
+/// la forma di un deposito **migrato** con quella di uno **nato adesso**: ogni
+/// colonna che entra nel `CREATE TABLE` senza il proprio `ALTER` la rende rossa,
+/// oggi e fra dieci versioni.
+#[test]
+fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
+    fn columns(ledger: &Ledger, table: &str) -> Vec<String> {
+        let connection = ledger.lock().expect("la connessione");
+        let mut statement = connection
+            .prepare(&format!("SELECT name FROM pragma_table_info('{table}') ORDER BY cid"))
+            .expect("interrogare la forma");
+        let names = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("leggere i nomi")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("nomi validi");
+        names
+    }
+
+    let fresh_dir = TestDirectory::new("forma-nuova");
+    let fresh = Ledger::open(&fresh_dir.0).expect("aprire un deposito nuovo");
+    let expected = columns(&fresh, "model_calls");
+
+    // Un deposito della versione più vecchia che la migrazione sa ancora
+    // riprendere, dichiarato tale.
+    let old_dir = TestDirectory::new("forma-vecchia");
+    {
+        let ledger = Ledger::open(&old_dir.0).expect("aprire il deposito");
+        let connection = ledger.connection.lock().expect("nessuno panica qui");
+        for column in ["turns", "cache_write_tokens", "cache_write_long_tokens",
+                       "cache_write_price_micros_per_million",
+                       "cache_write_long_price_micros_per_million"] {
+            connection
+                .execute(&format!("ALTER TABLE model_calls DROP COLUMN {column}"), [])
+                .unwrap_or_else(|error| panic!("togliere {column}: {error}"));
+        }
+        connection
+            .pragma_update(None, "user_version", 3i64)
+            .expect("e dichiararsi di tre versioni fa");
+    }
+
+    let migrated = Ledger::open(&old_dir.0).expect("riaprire il deposito vecchio");
+    assert_eq!(
+        columns(&migrated, "model_calls"),
+        expected,
+        "un deposito migrato non ha la forma di uno nuovo: una colonna è stata \
+         aggiunta al CREATE TABLE senza il suo ALTER, e su ogni macchina che \
+         aveva già un deposito quella colonna non esisterà mai"
+    );
+}
