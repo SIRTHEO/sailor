@@ -49,7 +49,7 @@ pub mod store;
 /// da questa parte del confine sarebbe una seconda definizione della stessa
 /// cosa: due strutture gemelle divergono al primo campo che qualcuno aggiunge a
 /// una sola delle due.
-pub use models::usage::{read_declared, Declared, Pointer, Reading, Shape};
+pub use models::usage::{read_declared, read_text, Declared, Pointer, Reading, Shape};
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, ValueSchema};
 use ledger::{Ledger, ModelCallRecord};
@@ -555,6 +555,73 @@ pub trait ToolResolver: Send + Sync {
     fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
         None
     }
+
+    /// Come **questo** motore apre, riprende e ramifica una sessione, se lo sa
+    /// fare.
+    ///
+    /// **IL PREDEFINITO È `None`, E QUEL `None` È IL VINCOLO PERMANENTE.** Un
+    /// motore che non sa riprendere non diventa un errore e non diventa un ramo
+    /// `if` scritto per lui: riceve la riga di comando di sempre, riparte da
+    /// zero, e paga di più. È l'unica forma che «indipendenza dal modello»
+    /// può prendere qui — la capacità è un dato di chi la dichiara, non una
+    /// costante scritta accanto al codice che la userebbe.
+    fn session_recipe(&self, _id: &str) -> Option<SessionRecipe> {
+        None
+    }
+}
+
+/// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
+/// posto dell'identificativo della sessione.
+///
+/// Sta qui e non in `toolbox` perché è **il contratto fra i due**: chi scrive
+/// un file di capacità e chi monta la riga di comando devono nominare la stessa
+/// cosa, e due costanti gemelle in due crate divergono al primo che la cambia.
+pub const SESSION_PLACEHOLDER: &str = "{session}";
+
+/// Cosa un motore sa fare con le proprie sessioni, in opzioni già scritte.
+///
+/// **OGNI MODO PORTA LA RIGA INTERA, NON LE OPZIONI IN PIÙ.** Sembra una
+/// duplicazione di `AskRecipe::args` e non lo è: su `codex` riprendere non è
+/// un'opzione aggiunta, è **un sottocomando diverso** — `codex exec resume
+/// <id>` contro `codex exec` — e su `codex` ramificare è un terzo sottocomando
+/// ancora, `codex exec fork <id>`. Un modello «aggiungi queste opzioni» non
+/// saprebbe esprimere nessuno dei due, e li escluderebbe entrambi per sempre.
+/// Verificato il 31/08/2026 con `codex exec --help` su questa macchina.
+///
+/// Ciò che resta condiviso con la ricetta della domanda resta condiviso: le
+/// opzioni del consumo e quelle che devono stare attaccate alla domanda si
+/// accodano qui come si accodano là, perché **misurare non deve smettere di
+/// funzionare quando si riprende** — sarebbe il modo più elegante di perdere
+/// proprio i numeri che dicono se la ripresa conviene.
+///
+/// `None` su un modo vuol dire che quel motore non lo sa fare: si riparte da
+/// zero, e si paga di più.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SessionRecipe {
+    /// Apre una sessione. Se la riga contiene il segnaposto, l'identificativo
+    /// lo scegliamo noi; se non lo contiene, lo conia il motore e lo si va a
+    /// leggere con `id_from`.
+    pub open: Option<Vec<String>>,
+    /// Riprende una sessione esistente, che resta la stessa.
+    pub resume: Option<Vec<String>>,
+    /// Ramifica una sessione esistente: il tronco resta dov'è, e il lavoro di
+    /// questo passo non lo tocca.
+    pub fork: Option<Vec<String>>,
+    /// Dove, in ciò che il motore ha detto, sta l'identificativo della sessione
+    /// **che ha appena usato**.
+    ///
+    /// **SERVE PERCHÉ NON TUTTI LASCIANO SCEGLIERE IL NOME, ED È LA MAGGIORANZA.**
+    /// Verificato il 31/08/2026: `codex` non ha nessuna opzione per imporre un
+    /// identificativo, ma lo **stampa** — `session id: <uuid>` — nello stesso
+    /// flusso di testo da cui il suo descrittore legge già i token. Senza
+    /// questa via, i motori che coniano da sé sarebbero esclusi per sempre da
+    /// una capacità che hanno.
+    ///
+    /// **E VALE ANCHE DOPO UNA RAMIFICAZIONE**, che è dove rende di più: un
+    /// ramo nasce con un identificativo nuovo che nessuno ci ha chiesto, e
+    /// leggerlo è l'unico modo perché un passo ancora più avanti possa
+    /// continuare **quel ramo** invece del tronco.
+    pub id_from: Option<Pointer>,
 }
 
 /// Dove va a finire il testo della domanda quando si interroga un motore.
@@ -577,7 +644,18 @@ pub enum PromptVia {
 /// che è come il guasto 1 è arrivato in produzione e come ci è tornato il
 /// 31/08/2026 da un'altra porta.
 pub fn command_line(recipe: &AskRecipe) -> Vec<String> {
-    let mut args = recipe.args.clone();
+    command_line_with(recipe, &recipe.args)
+}
+
+/// La stessa riga, con le opzioni della domanda sostituite da altre.
+///
+/// Serve alle sessioni: `codex exec resume <id>` non è `codex exec` con
+/// qualcosa in coda, è un'altra riga. Ciò che sta **dopo** le opzioni della
+/// domanda — il consumo e ciò che deve restare attaccato al testo — non cambia,
+/// ed è il motivo per cui questa funzione esiste invece di lasciar montare la
+/// riga a chi chiama: un motore ripreso deve continuare a dire quanto consuma.
+pub fn command_line_with(recipe: &AskRecipe, ask_args: &[String]) -> Vec<String> {
+    let mut args = ask_args.to_vec();
     if let Some(usage) = &recipe.usage {
         args.extend(usage.args.iter().cloned());
     }
@@ -941,6 +1019,47 @@ fn how_it_exited(code: Option<i32>) -> String {
     }
 }
 
+/// Cosa un passo chiede alla sessione del motore.
+///
+/// **UN PASSO NOMINA UN PASSO, NON UN IDENTIFICATIVO.** L'identificativo di una
+/// sessione nasce mentre la corsa gira; chi scrive un flusso non lo può
+/// conoscere, e un flusso che lo contenesse varrebbe per una corsa sola. Si
+/// scrive quindi da chi si continua — `{"fork": "scopri"}` — e l'identificativo
+/// lo va a cercare il deposito, che è il posto dove il passo `scopri` l'ha
+/// posato.
+///
+/// **RIPRENDERE E RAMIFICARE NON SONO LA STESSA COSA, E CONFONDERLE COSTA.**
+/// Chi riprende continua la sessione: due passi che riprendessero lo stesso
+/// tronco si scriverebbero addosso a vicenda, e in un fronte parallelo
+/// l'ordine con cui lo fanno non è deciso da nessuno. Chi ramifica parte dallo
+/// stesso contesto e prosegue per conto suo: è il modo giusto per tre passi
+/// indipendenti che guardano lo stesso albero, ed è il caso che rende di più —
+/// la scoperta si paga una volta invece di tre.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum SessionUse {
+    /// `"session": "open"` — apre una sessione nuova e la registra, così i
+    /// passi dopo possono continuarla.
+    Open,
+    /// `"session": {"resume": "scopri"}` — continua la sessione del passo
+    /// nominato.
+    Resume(String),
+    /// `"session": {"fork": "scopri"}` — parte dal contesto del passo nominato
+    /// senza toccarlo.
+    Fork(String),
+}
+
+impl SessionUse {
+    /// Il modo, detto a parole per chi guarda.
+    fn word(&self) -> &'static str {
+        match self {
+            SessionUse::Open => "aprire una sessione",
+            SessionUse::Resume(_) => "riprendere una sessione",
+            SessionUse::Fork(_) => "ramificare una sessione",
+        }
+    }
+}
+
 /// Chi eseguire: un motore, o una catena di motori da provare in ordine.
 ///
 /// **PERCHÉ UNA CATENA E NON UN RIPIEGO SOLO.** Un ripiego singolo copre il
@@ -1049,6 +1168,15 @@ struct EngineSpec {
     #[allow(dead_code)]
     #[serde(default)]
     needs_capabilities: Vec<String>,
+    /// Se questo passo apre una sessione, ne riprende una, o ne ramifica una.
+    ///
+    /// Assente — il valore predefinito — vuol dire che il passo apre un
+    /// processo che non sa niente di ciò che è già stato letto: è come ha
+    /// sempre funzionato, ed è ciò che il 31/08/2026 è stato misurato costare
+    /// 2,79 volte un prompt solo, perché quattro passi hanno riscoperto lo
+    /// stesso albero quattro volte.
+    #[serde(default)]
+    session: Option<SessionUse>,
     timeout_secs: u64,
     /// Tutto ciò che questa azione non riconosce.
     ///
@@ -1235,6 +1363,7 @@ impl ExternalEngineAction {
                     // niente che dichiari che sia un motore, e infatti la riga
                     // non si scrive già per via dell'`id` assente.
                     can_be_asked: false,
+                    session: SessionRecipe::default(),
                 }],
                 Vec::new(),
             )),
@@ -1303,6 +1432,7 @@ impl ExternalEngineAction {
                             // riga nel deposito si scrive comunque, e dice
                             // proprio questo.
                             declared_usage: None,
+                            session: SessionRecipe::default(),
                         });
                         continue;
                     }
@@ -1312,6 +1442,7 @@ impl ExternalEngineAction {
                             bin,
                             args: command_line(&recipe),
                             prompt: recipe.prompt,
+                            session: session_lines(&recipe, tools.session_recipe(id)),
                             unusable_when: recipe.unusable_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
                             // Siamo dentro il ramo che ha trovato una ricetta
@@ -1388,6 +1519,227 @@ struct Candidate {
     /// interrogato a modo proprio è sempre un motore, e la sua riga si scrive —
     /// col consumo sconosciuto, che è l'informazione giusta.
     can_be_asked: bool,
+    /// Le righe di comando alternative con cui questo motore apre, riprende o
+    /// ramifica una sessione — già montate col resto della ricetta, e ancora
+    /// col segnaposto al posto dell'identificativo.
+    ///
+    /// Tutta vuota per chi non lo sa fare, e per chi si è scritto le opzioni
+    /// nel passo: chi scrive la propria riga di comando la sta decidendo lui, e
+    /// infilarci dentro un'opzione che non ha chiesto sarebbe decidere al posto
+    /// suo — la stessa regola che vale già per le opzioni del consumo.
+    session: SessionRecipe,
+}
+
+// ── riprendere invece di riscoprire ──────────────────────────────────────
+
+/// Le opzioni di sessione dichiarate dal motore, montate col resto della sua
+/// ricetta. Quello che il motore non dichiara resta `None` fin qui.
+fn session_lines(recipe: &AskRecipe, declared: Option<SessionRecipe>) -> SessionRecipe {
+    let Some(declared) = declared else {
+        return SessionRecipe::default();
+    };
+    let line = |args: Option<Vec<String>>| args.map(|args| command_line_with(recipe, &args));
+    SessionRecipe {
+        open: line(declared.open),
+        resume: line(declared.resume),
+        fork: line(declared.fork),
+        id_from: declared.id_from,
+    }
+}
+
+/// Le opzioni col segnaposto sostituito dall'identificativo vero.
+///
+/// La sostituzione è **dentro** l'opzione, non al posto suo: `codex` vuole
+/// l'identificativo come argomento a sé, `claude` pure, ma niente vieta a un
+/// motore futuro di volerlo attaccato a un `--session=`.
+fn with_session_id(args: &[String], id: &str) -> Vec<String> {
+    args.iter()
+        .map(|arg| arg.replace(SESSION_PLACEHOLDER, id))
+        .collect()
+}
+
+/// Un identificativo di sessione nuovo, nella forma che le righe di comando
+/// chiedono (un UUID).
+///
+/// **NON SERVE CHE SIA IMPREVEDIBILE, SERVE CHE SIA UNICO.** Non protegge
+/// niente: nomina una conversazione sul disco di chi la esegue. Dentro un
+/// processo il contatore basta da solo; fra processi diversi il seme casuale di
+/// `RandomState` — che il sistema operativo dà a ogni processo — separa le
+/// serie. Tirarsi dentro una dipendenza per questo violerebbe la scelta scritta
+/// nel `Cargo.toml` del workspace, che di dipendenze ne tiene tre.
+fn fresh_session_id() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    static MINTED_SO_FAR: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seed = std::collections::hash_map::RandomState::new();
+    let mut halves = [0u64; 2];
+    for (round, half) in halves.iter_mut().enumerate() {
+        let mut hasher = seed.build_hasher();
+        hasher.write_u64(MINTED_SO_FAR.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+        hasher.write_u64(round as u64);
+        hasher.write_u32(std::process::id());
+        hasher.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|since| since.as_nanos())
+                .unwrap_or_default(),
+        );
+        *half = hasher.finish();
+    }
+    let [high, low] = halves;
+    format!(
+        "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
+        (high >> 32) as u32,
+        (high >> 16) as u16,
+        (high & 0x0fff) as u16,
+        // La variante che un UUID deve dichiarare: due bit fissi in cima.
+        ((low >> 48) as u16 & 0x3fff) | 0x8000,
+        low & 0xffff_ffff_ffff
+    )
+}
+
+/// Con quali opzioni girare, e sotto quale identificativo di sessione questa
+/// chiamata risulta essere girata.
+struct SessionPlan {
+    /// La riga di comando della sessione. `None` vuol dire «quella di sempre»,
+    /// cioè si riparte da zero.
+    args: Option<Vec<String>>,
+    /// Cosa scrivere nella colonna `session_id` del deposito **se il motore non
+    /// dice il proprio**. Vedi il commento su `ModelCallRecord::session_id`.
+    recorded: Option<String>,
+    /// Dove leggere, in ciò che il motore dirà, l'identificativo vero. Quando
+    /// c'è **vince su `recorded`**: la parola del motore su quale sessione ha
+    /// usato batte la nostra su quale gli avevamo chiesto.
+    read_id_from: Option<Pointer>,
+}
+
+impl SessionPlan {
+    /// Da zero, come è sempre stato.
+    fn from_scratch() -> Self {
+        Self {
+            args: None,
+            recorded: None,
+            read_id_from: None,
+        }
+    }
+
+    /// L'identificativo da registrare, dopo che il motore ha parlato.
+    fn session_id(&self, said: &str) -> Option<String> {
+        match &self.read_id_from {
+            Some(pointer) => read_text(said, pointer),
+            None => self.recorded.clone(),
+        }
+    }
+}
+
+/// Lo dice a chi guarda mentre succede, non solo al deposito dopo.
+///
+/// **UN RIPIEGO MUTO È LA PEGGIORE DELLE DUE COSE**: si paga il prezzo della
+/// riscoperta e non si sa di averlo pagato, e chi legge il flusso continuerà a
+/// credere che quel passo riprenda. È il vincolo «chiarezza per chi guarda»
+/// applicato al caso in cui l'ottimizzazione **non** scatta.
+fn say_it_starts_over(live: Option<&dyn LiveSink>, named: &str, why: &str) {
+    if let Some(live) = live {
+        live.chunk(
+            Pipe::Stderr,
+            format!("[sailor] {named} riparte da zero: {why}\n").as_bytes(),
+        );
+    }
+}
+
+/// Decide se questa chiamata apre, riprende, ramifica, o riparte da zero.
+///
+/// **NON FALLISCE MAI, E LA SCELTA È IL VINCOLO.** Ogni impedimento — il motore
+/// non sa riprendere, il passo prima non ha lasciato nessuna sessione, non c'è
+/// un deposito dove cercarla — porta alla riga di comando di sempre. Un flusso
+/// scritto su una macchina dove `claude-code` c'è deve girare su una macchina
+/// dove c'è solo un motore che non sa riprendere: gira peggio, non gira meno.
+fn session_plan(
+    candidate: &Candidate,
+    asked: Option<&SessionUse>,
+    record: Option<&Recording<'_>>,
+    live: Option<&dyn LiveSink>,
+    named: &str,
+) -> SessionPlan {
+    let Some(asked) = asked else {
+        return SessionPlan::from_scratch();
+    };
+    let Some(record) = record else {
+        // Il deposito è il posto dove una sessione si posa e si ritrova: senza,
+        // non c'è niente da aprire perché non ci sarebbe niente da riprendere.
+        say_it_starts_over(
+            live,
+            named,
+            &format!(
+                "il passo chiede di {}, ma questa corsa non ha un deposito dove posarla",
+                asked.word()
+            ),
+        );
+        return SessionPlan::from_scratch();
+    };
+    match asked {
+        SessionUse::Open => {
+            let Some(line) = &candidate.session.open else {
+                say_it_starts_over(live, named, "non sa aprire una sessione ritrovabile");
+                return SessionPlan::from_scratch();
+            };
+            // **SI CONIA UN IDENTIFICATIVO SOLO SE SI HA DOVE METTERLO.** Una
+            // riga senza segnaposto è quella di un motore che il nome se lo dà
+            // da sé: registrare lì il nostro scriverebbe nel deposito una
+            // sessione che su quella macchina non esiste, e il passo dopo
+            // andrebbe a riprendere il nulla — dopo aver speso.
+            let ours = line
+                .iter()
+                .any(|arg| arg.contains(SESSION_PLACEHOLDER))
+                .then(fresh_session_id);
+            SessionPlan {
+                args: Some(match &ours {
+                    Some(id) => with_session_id(line, id),
+                    None => line.clone(),
+                }),
+                recorded: ours,
+                read_id_from: candidate.session.id_from.clone(),
+            }
+        }
+        SessionUse::Resume(step) | SessionUse::Fork(step) => {
+            let forking = matches!(asked, SessionUse::Fork(_));
+            let line = if forking {
+                &candidate.session.fork
+            } else {
+                &candidate.session.resume
+            };
+            let Some(line) = line else {
+                say_it_starts_over(live, named, &format!("non sa {}", asked.word()));
+                return SessionPlan::from_scratch();
+            };
+            // Senza identificativo di strumento non c'è nessun motore a cui
+            // attribuire una sessione: è un `bin` scritto a mano nel passo.
+            let Some(cli) = candidate.id.as_deref() else {
+                return SessionPlan::from_scratch();
+            };
+            let found = record
+                .ledger
+                .session_opened_by(&record.run_id, step, cli)
+                .ok()
+                .flatten();
+            let Some(id) = found else {
+                say_it_starts_over(
+                    live,
+                    named,
+                    &format!("il passo «{step}» non ha lasciato nessuna sessione di «{cli}» da continuare"),
+                );
+                return SessionPlan::from_scratch();
+            };
+            SessionPlan {
+                args: Some(with_session_id(line, &id)),
+                // Ramificare conia un identificativo nuovo: se il motore non lo
+                // dice, questo ramo resta senza nome, e nessuno potrà
+                // continuarlo. Se lo dice, `read_id_from` lo raccoglie e il
+                // ramo diventa continuabile come il tronco.
+                recorded: if forking { None } else { Some(id) },
+                read_id_from: candidate.session.id_from.clone(),
+            }
+        }
+    }
 }
 
 // ── quanto è costata una chiamata ────────────────────────────────────────
@@ -1462,6 +1814,8 @@ struct Spent {
     error_type: Option<&'static str>,
     started_at: i64,
     ended_at: i64,
+    /// La sessione sotto cui questa chiamata è girata, quando si sa qual è.
+    session_id: Option<String>,
 }
 
 /// Scrive nel deposito la riga di **questa** chiamata.
@@ -1566,6 +1920,7 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         error_type: spent.error_type.map(str::to_owned),
         started_at: spent.started_at,
         ended_at: Some(spent.ended_at),
+        session_id: spent.session_id,
     };
     let _ = record.ledger.record_model_call(&written);
 }
@@ -1607,7 +1962,17 @@ impl ExternalEngineAction {
     ) -> Result<Asked, ActionError> {
         let bin = &candidate.bin;
         let seconds = spec.timeout_secs;
-        let mut args = candidate.args.clone();
+        let named = match candidate.id.as_deref() {
+            Some(id) => format!("«{id}» (`{bin}`)"),
+            None => format!("`{bin}`"),
+        };
+        // Prima di montare la riga: questa chiamata continua qualcosa, o parte
+        // da zero? Non può fallire — al massimo riparte da zero dicendolo.
+        let session = session_plan(candidate, spec.session.as_ref(), record, live, &named);
+        let mut args = session
+            .args
+            .clone()
+            .unwrap_or_else(|| candidate.args.clone());
         // Il testo della domanda va dove quel motore lo vuole: sull'ingresso per
         // chi legge da lì, in coda agli argomenti per chi lo vuole scritto sulla
         // riga. È l'unica differenza fra due motori che il flusso non deve più
@@ -1637,10 +2002,6 @@ impl ExternalEngineAction {
             stdin: stdin.map(String::into_bytes),
             timeout: Duration::from_secs(seconds),
         };
-        let named = match candidate.id.as_deref() {
-            Some(id) => format!("«{id}» (`{bin}`)"),
-            None => format!("`{bin}`"),
-        };
         // Gli istanti si prendono stretti attorno alla chiamata: è la durata di
         // *questa* invocazione, non del passo che la contiene.
         let started_at = now_secs();
@@ -1656,7 +2017,10 @@ impl ExternalEngineAction {
         };
         // Ogni ramo passa di qui: anche il fallimento e anche il silenzio, che è
         // il punto — una chiamata interrotta ha comunque bruciato la quota.
-        let note = |reading: Reading, error_type: Option<&'static str>| {
+        // `said` è l'uscita **grezza**, prima che l'involucro venga tolto: è lì
+        // che un motore scrive di quale sessione ha parlato, nello stesso posto
+        // in cui scrive i propri token.
+        let note = |reading: Reading, error_type: Option<&'static str>, said: &str| {
             if let Some(record) = record {
                 record_the_call(
                     record,
@@ -1667,6 +2031,7 @@ impl ExternalEngineAction {
                         error_type,
                         started_at,
                         ended_at,
+                        session_id: session.session_id(said),
                     },
                 );
             }
@@ -1674,7 +2039,7 @@ impl ExternalEngineAction {
         let outcome = match result {
             EngineResult::Ok { stdout, stderr } => {
                 let reading = read(&stdout);
-                note(reading.clone(), None);
+                note(reading.clone(), None, &stdout);
                 // **L'USCITA DEL PASSO NON CAMBIA PERCHÉ SI È MISURATO.** Se il
                 // descrittore ha chiesto un involucro per farsi dire i token,
                 // qui la risposta si tira fuori dall'involucro e `stdout` torna
@@ -1724,6 +2089,7 @@ impl ExternalEngineAction {
                 note(
                     reading.clone(),
                     Some(if exhausted { "exhausted" } else { "exit_error" }),
+                    &stdout,
                 );
                 if !tolerates(&spec.accept, "exit_error") {
                     // La tolleranza viene prima: un passo che si aspetta un
@@ -1788,7 +2154,11 @@ impl ExternalEngineAction {
                 // Ucciso a metà: non ha detto niente, quindi non c'è niente da
                 // leggere. La riga si scrive lo stesso, coi token sconosciuti —
                 // il tempo che ha girato l'ha speso davvero.
-                note(Reading::default(), Some("timed_out"));
+                // Ucciso a metà non ha detto niente: nessun identificativo da
+                // leggere, e la sessione resta ignota anche se ne aveva aperta
+                // una. Riprendere quella di un passo interrotto vorrebbe dire
+                // ripartire da un contesto tagliato in un punto qualunque.
+                note(Reading::default(), Some("timed_out"), "");
                 // Nessun ripiego su un tetto di tempo: un motore ucciso a metà
                 // può aver già fatto qualcosa, e rifare quel lavoro altrove
                 // sarebbe farlo due volte senza saperlo.
@@ -1809,7 +2179,7 @@ impl ExternalEngineAction {
                 // riga dice che ci si è provati — e senza di lei una catena che
                 // ripiega su un secondo motore sembrerebbe averlo scelto per
                 // prima, invece che per ripiego.
-                note(Reading::default(), Some("spawn_failed"));
+                note(Reading::default(), Some("spawn_failed"), "");
                 if !tolerates(&spec.accept, "spawn_failed") {
                     // Non essersi avviato è il caso più netto di «non poteva
                     // lavorare»: non ha fatto niente, e non serve che il suo
@@ -3838,6 +4208,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                             ended_at: cols.get(20)?.as_i64(),
                             total_tokens: count(21),
                             turns: count(27),
+                            session_id: cols.get(28).and_then(Value::as_str).map(str::to_owned),
                             declared_cost_micros: cols.get(22)?.as_i64(),
                         })
                     })
@@ -4402,5 +4773,448 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             output["stdout"]
         );
     }
+}
 
+#[cfg(test)]
+mod resuming_instead_of_rediscovering {
+    //! Le prove della ripresa: un passo continua la sessione di un altro invece
+    //! di riaprire un processo che non sa niente.
+    //!
+    //! **NESSUN MOTORE VERO.** I motori qui dentro sono script di shell che
+    //! scrivono la propria riga di comando su un file: quello che si prova è
+    //! **cosa arriva al motore** e **cosa resta nel deposito**, che sono le due
+    //! cose su cui questo lavoro sta o cade. Quanto si risparmi in token lo
+    //! dice una corsa vera, non una prova: qui non si può misurare e non si
+    //! finge di farlo.
+
+    use super::*;
+    use ledger::Ledger;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("sailor-sessione-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("cartella di lavoro");
+        dir
+    }
+
+    /// Un motore che scrive **in coda** la riga di comando con cui è stato
+    /// invocato: in coda perché una prova sola lo chiama quattro volte, e
+    /// sovrascrivere terrebbe solo l'ultima.
+    const LOGS_ITS_ARGUMENTS: &str = r#"cat > /dev/null
+printf '%s\n' "$*" >> "$(dirname "$0")/invocations"
+printf 'ok'"#;
+
+    /// Un motore che, oltre a registrare la riga, **annuncia** la sessione con
+    /// cui sta parlando — e ne annuncia una diversa a ogni invocazione, come fa
+    /// un motore vero quando ramifica.
+    const ANNOUNCES_ITS_SESSION: &str = r#"cat > /dev/null
+here="$(dirname "$0")"
+printf '%s\n' "$*" >> "$here/invocations"
+n=$(cat "$here/counter" 2>/dev/null || echo 0)
+n=$((n + 1))
+printf '%s' "$n" > "$here/counter"
+printf 'session id: sessione-%s\nok\n' "$n""#;
+
+    fn fake_engine(dir: &std::path::Path) -> String {
+        engine_that(dir, LOGS_ITS_ARGUMENTS)
+    }
+
+    fn engine_that(dir: &std::path::Path, body: &str) -> String {
+        let path = dir.join("engine");
+        std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).expect("scrivere il finto motore");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("renderlo eseguibile");
+        path.to_string_lossy().into_owned()
+    }
+
+    fn invocations(dir: &std::path::Path) -> Vec<String> {
+        std::fs::read_to_string(dir.join("invocations"))
+            .expect("il motore finto ha scritto le proprie invocazioni")
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn shared(run: &str, step: &str) -> SharedState {
+        let mut shared = SharedState::new();
+        shared.insert(flow::CURRENT_RUN.to_owned(), json!(run));
+        shared.insert(flow::CURRENT_STEP.to_owned(), json!(step));
+        shared
+    }
+
+    const TOOL: &str = "motore-di-prova";
+
+    /// Un risolutore che dichiara la ricetta della domanda e — separatamente —
+    /// cosa quel motore sa fare con le proprie sessioni. Le due cose viaggiano
+    /// separate anche nella vita vera.
+    struct Declares {
+        bin: String,
+        sessions: Option<SessionRecipe>,
+    }
+
+    impl ToolResolver for Declares {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            match id {
+                TOOL => Ok(self.bin.clone()),
+                other => Err(format!("«{other}» non è su questa macchina")),
+            }
+        }
+        fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+            Some(AskRecipe {
+                args: vec!["--ask".to_owned()],
+                prompt: PromptVia::Stdin,
+                args_before_prompt: Vec::new(),
+                unusable_when: Vec::new(),
+                usage: None,
+            })
+        }
+        fn session_recipe(&self, _id: &str) -> Option<SessionRecipe> {
+            self.sessions.clone()
+        }
+    }
+
+    /// Un motore che sa tutti e tre i modi, come `claude-code`.
+    fn knows_all_three() -> SessionRecipe {
+        SessionRecipe {
+            open: Some(vec![
+                "--ask".to_owned(),
+                "--session-id".to_owned(),
+                SESSION_PLACEHOLDER.to_owned(),
+            ]),
+            resume: Some(vec![
+                "--ask".to_owned(),
+                "--resume".to_owned(),
+                SESSION_PLACEHOLDER.to_owned(),
+            ]),
+            fork: Some(vec![
+                "--ask".to_owned(),
+                "--resume".to_owned(),
+                SESSION_PLACEHOLDER.to_owned(),
+                "--fork-session".to_owned(),
+            ]),
+            id_from: None,
+        }
+    }
+
+    /// Un motore che l'identificativo se lo conia da sé e lo **stampa**, come
+    /// `codex`: apre con la riga di sempre, e il nome si va a leggere.
+    fn mints_its_own() -> SessionRecipe {
+        SessionRecipe {
+            open: Some(vec!["--ask".to_owned()]),
+            resume: Some(vec![
+                "--ask".to_owned(),
+                "resume".to_owned(),
+                SESSION_PLACEHOLDER.to_owned(),
+            ]),
+            fork: Some(vec![
+                "--ask".to_owned(),
+                "fork".to_owned(),
+                SESSION_PLACEHOLDER.to_owned(),
+            ]),
+            id_from: Some(Pointer::Pattern("session id: ([0-9a-z-]+)".to_owned())),
+        }
+    }
+
+    fn step_that(session: Value) -> Value {
+        json!({
+            "tool": TOOL,
+            "stdin": "guarda l'albero",
+            "timeout_secs": 20,
+            "session": session,
+        })
+    }
+
+    fn ran(action: &ExternalEngineAction, input: &Value, run: &str, step: &str) {
+        match action.execute(input, &shared(run, step)) {
+            Ok(ActionOutcome::Went(_)) => {}
+            other => panic!("il passo «{step}» doveva andare: {other:?}"),
+        }
+    }
+
+    /// **CHI APRE POSA L'IDENTIFICATIVO NEL DEPOSITO, O NESSUNO POTRÀ
+    /// RIPRENDERLO.** Le due metà si provano insieme di proposito: un
+    /// identificativo passato al motore e non registrato è indistinguibile,
+    /// dal passo dopo, da una sessione mai aperta.
+    #[test]
+    fn a_step_that_opens_a_session_hands_it_to_the_engine_and_writes_it_down() {
+        let dir = scratch("apre");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-1", "scopri");
+
+        let line = invocations(&dir).remove(0);
+        let written = ledger
+            .session_opened_by("corsa-1", "scopri", TOOL)
+            .expect("il deposito risponde")
+            .expect("e ha registrato la sessione");
+        assert!(
+            line.contains("--session-id") && line.contains(&written),
+            "il motore deve ricevere lo stesso identificativo che il deposito conserva: \
+             riga «{line}», registrato «{written}»"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **IL CASO CHE RENDE DI PIÙ, ED È IL MOTIVO DI TUTTO IL LAVORO.** Tre
+    /// passi indipendenti guardano lo stesso albero nello stesso momento: senza
+    /// ramificazione fanno tre scoperte identiche e le pagano tre volte. Qui
+    /// devono ricevere tutti e tre lo stesso tronco, e ognuno il proprio ramo.
+    ///
+    /// **E OGNUNO DEI TRE DEVE REGISTRARE UNA SESSIONE IGNOTA.** Ramificare
+    /// conia un identificativo che il motore non ci dice: scrivere lì quello
+    /// del padre farebbe riprendere il tronco a chi crede di stare sul proprio
+    /// ramo — in silenzio, che è il modo peggiore.
+    #[test]
+    fn three_independent_steps_fork_one_discovery_instead_of_doing_it_three_times() {
+        let dir = scratch("ramifica");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-2", "scopri");
+        for step in ["struttura", "rischi", "attrito"] {
+            ran(&action, &step_that(json!({ "fork": "scopri" })), "corsa-2", step);
+        }
+
+        let trunk = ledger
+            .session_opened_by("corsa-2", "scopri", TOOL)
+            .expect("il deposito risponde")
+            .expect("il tronco è registrato");
+        let lines = invocations(&dir);
+        assert_eq!(lines.len(), 4, "una scoperta e tre rami");
+        for line in &lines[1..] {
+            assert!(
+                line.contains(&trunk) && line.contains("--fork-session"),
+                "ogni ramo parte dal tronco senza continuarlo: «{line}»"
+            );
+        }
+        for step in ["struttura", "rischi", "attrito"] {
+            assert_eq!(
+                ledger
+                    .session_opened_by("corsa-2", step, TOOL)
+                    .expect("il deposito risponde"),
+                None,
+                "il ramo di «{step}» ha un identificativo che il motore non ci ha detto"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Chi riprende continua la **stessa** sessione, e la lascia in eredità:
+    /// tre passi in fila devono poter continuare l'uno dall'altro.
+    #[test]
+    fn resuming_keeps_the_same_session_so_the_next_step_can_take_it_too() {
+        let dir = scratch("riprende");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-3", "scopri");
+        ran(&action, &step_that(json!({ "resume": "scopri" })), "corsa-3", "piano");
+        ran(&action, &step_that(json!({ "resume": "piano" })), "corsa-3", "implementa");
+
+        let trunk = ledger
+            .session_opened_by("corsa-3", "scopri", TOOL)
+            .expect("il deposito risponde")
+            .expect("il tronco è registrato");
+        assert_eq!(
+            ledger.session_opened_by("corsa-3", "piano", TOOL).expect("risponde"),
+            Some(trunk.clone()),
+            "chi riprende non cambia sessione, e per questo la può passare avanti"
+        );
+        let lines = invocations(&dir);
+        assert!(
+            lines[2].contains(&trunk) && !lines[2].contains("--fork-session"),
+            "il terzo passo continua lo stesso tronco: «{}»",
+            lines[2]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **IL VINCOLO PERMANENTE, PROVATO.** Un motore che non sa ramificare non
+    /// diventa rosso e non diventa un caso speciale: riceve la riga di sempre,
+    /// riparte da zero e paga di più. Se un giorno qualcuno facesse fallire il
+    /// passo «per non nascondere il problema», questa prova lo prenderebbe.
+    #[test]
+    fn an_engine_that_cannot_fork_starts_over_instead_of_breaking() {
+        let dir = scratch("non-sa-ramificare");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(SessionRecipe {
+                open: knows_all_three().open,
+                resume: None,
+                fork: None,
+                id_from: None,
+            }),
+        })
+        .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-4", "scopri");
+        ran(&action, &step_that(json!({ "fork": "scopri" })), "corsa-4", "rischi");
+
+        let lines = invocations(&dir);
+        assert_eq!(
+            lines[1], "--ask",
+            "chi non sa ramificare riceve la riga di sempre, non una riga monca"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un motore che non dichiara **niente** sulle sessioni funziona come
+    /// prima, anche quando il passo chiede di aprirne una: è il caso di tre dei
+    /// quattro motori installati su questa macchina.
+    #[test]
+    fn an_engine_that_declares_no_sessions_works_exactly_as_before() {
+        let dir = scratch("muto");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares { bin, sessions: None })
+            .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-5", "scopri");
+
+        assert_eq!(invocations(&dir), vec!["--ask".to_owned()]);
+        assert_eq!(
+            ledger.session_opened_by("corsa-5", "scopri", TOOL).expect("risponde"),
+            None,
+            "non c'è nessuna sessione da registrare, e non se ne inventa una"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Ramificare da un passo che non ha lasciato niente riparte da zero. È il
+    /// caso di chi scrive `{"fork": "un-passo-che-non-c-e"}` — un refuso — e di
+    /// chi ramifica da un passo che quel giorno è finito su un altro motore.
+    #[test]
+    fn forking_from_a_step_that_left_no_session_starts_over() {
+        let dir = scratch("nessun-tronco");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(knows_all_three()),
+        })
+        .recording_to(Some(ledger));
+
+        ran(
+            &action,
+            &step_that(json!({ "fork": "un-passo-che-non-c-e" })),
+            "corsa-6",
+            "rischi",
+        );
+
+        assert_eq!(invocations(&dir), vec!["--ask".to_owned()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **UN MOTORE CHE IL NOME SE LO DÀ DA SÉ NON È UN MOTORE ESCLUSO.**
+    /// Verificato il 31/08/2026 su `codex`, che non ha nessuna opzione per
+    /// imporre un identificativo e lo **stampa**: senza questa via i motori che
+    /// coniano da sé sarebbero fuori da una capacità che hanno.
+    ///
+    /// E il ramo diventa **continuabile a sua volta**: il terzo passo ramifica
+    /// dal secondo, non dal primo. Senza leggere l'identificativo del ramo, una
+    /// catena di tre passi tornerebbe di colpo alla scoperta iniziale, e nessun
+    /// errore lo direbbe — arriverebbe solo un contesto sbagliato.
+    #[test]
+    fn an_engine_that_names_its_own_session_is_read_and_its_branch_is_continuable() {
+        let dir = scratch("si-nomina-da-se");
+        let bin = engine_that(&dir, ANNOUNCES_ITS_SESSION);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: Some(mints_its_own()),
+        })
+        .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-7", "scopri");
+        ran(&action, &step_that(json!({ "fork": "scopri" })), "corsa-7", "rischi");
+        ran(&action, &step_that(json!({ "fork": "rischi" })), "corsa-7", "dettaglio");
+
+        assert_eq!(
+            ledger.session_opened_by("corsa-7", "scopri", TOOL).expect("risponde"),
+            Some("sessione-1".to_owned()),
+            "l'identificativo lo dice il motore, non lo decidiamo noi"
+        );
+        assert_eq!(
+            ledger.session_opened_by("corsa-7", "rischi", TOOL).expect("risponde"),
+            Some("sessione-2".to_owned()),
+            "e il ramo ha il proprio, non quello del tronco"
+        );
+        let lines = invocations(&dir);
+        assert_eq!(lines[1], "--ask fork sessione-1", "il ramo parte dal tronco");
+        assert_eq!(lines[2], "--ask fork sessione-2", "e il ramo dopo parte dal ramo");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **NON SI CONIA UN NOME CHE NON SI PUÒ CONSEGNARE.** Un motore che apre
+    /// con la riga di sempre non riceve nessun identificativo: scriverne uno
+    /// nostro nel deposito farebbe riprendere al passo dopo una sessione che su
+    /// quella macchina non esiste — e se ne accorgerebbe dopo aver speso.
+    #[test]
+    fn a_session_we_cannot_name_is_not_named_by_us() {
+        let dir = scratch("nome-non-consegnabile");
+        let bin = fake_engine(&dir);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            // Apre con la riga di sempre e non dice dove scrive il proprio
+            // nome: è il caso di chi non ha nessuna delle due vie.
+            sessions: Some(SessionRecipe {
+                open: Some(vec!["--ask".to_owned()]),
+                ..SessionRecipe::default()
+            }),
+        })
+        .recording_to(Some(ledger.clone()));
+
+        ran(&action, &step_that(json!("open")), "corsa-8", "scopri");
+
+        assert_eq!(invocations(&dir), vec!["--ask".to_owned()]);
+        assert_eq!(
+            ledger.session_opened_by("corsa-8", "scopri", TOOL).expect("risponde"),
+            None,
+            "una sessione che non si sa nominare resta senza nome nel deposito"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Due chiamate non ricevono mai lo stesso identificativo: se lo
+    /// ricevessero, due sessioni diverse si scriverebbero addosso sul disco di
+    /// chi esegue, e il passo dopo riprenderebbe un miscuglio.
+    #[test]
+    fn two_sessions_never_get_the_same_identifier() {
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..1000 {
+            assert!(seen.insert(fresh_session_id()), "un identificativo ripetuto");
+        }
+        // E la forma è quella che le righe di comando chiedono: cinque gruppi
+        // separati da trattini, la versione al posto giusto.
+        let one = fresh_session_id();
+        let groups: Vec<&str> = one.split('-').collect();
+        assert_eq!(
+            groups.iter().map(|group| group.len()).collect::<Vec<_>>(),
+            vec![8, 4, 4, 4, 12],
+            "«{one}» non ha la forma di un UUID"
+        );
+        assert!(one.starts_with(|c: char| c.is_ascii_hexdigit()));
+        assert!(groups[2].starts_with('4'), "la versione: «{one}»");
+    }
 }

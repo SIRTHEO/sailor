@@ -3771,6 +3771,7 @@ mod tests {
             error_type: None,
             started_at: 100,
             ended_at: Some(105),
+            session_id: None,
         }
     }
 

@@ -1,0 +1,15 @@
+[
+  {
+    "tool": "claude-code",
+    "open": ["-p", "--session-id", "{session}"],
+    "resume": ["-p", "--resume", "{session}"],
+    "fork": ["-p", "--resume", "{session}", "--fork-session"]
+  },
+  {
+    "tool": "codex",
+    "open": ["exec", "--sandbox", "read-only"],
+    "resume": ["exec", "--sandbox", "read-only", "resume", "{session}", "-"],
+    "fork": ["exec", "--sandbox", "read-only", "fork", "{session}", "-"],
+    "id_from": { "pattern": "session id: ([0-9a-fA-F][0-9a-fA-F-]{7,})" }
+  }
+]

@@ -380,6 +380,27 @@ pub fn read_declared(said: &str, declared: &Declared) -> Reading {
     }
 }
 
+/// Un solo testo, letto dove il puntatore dice.
+///
+/// **LA FORMA LA DICE IL PUNTATORE, E NON SI CHIEDE DUE VOLTE.** Un cammino di
+/// chiavi vale su un corpo JSON, un'espressione regolare sul testo: è la stessa
+/// corrispondenza che `Pointer` dichiara di sé. Chiedere anche la forma
+/// permetterebbe di rispondere in modo incoerente, e quella incoerenza non
+/// darebbe un errore — darebbe un valore sconosciuto senza motivo visibile.
+///
+/// Serve a leggere ciò che un motore dichiara di sé **fuori dal consumo**: per
+/// primo l'identificativo della sessione che ha appena aperto, che è l'unico
+/// modo di riprenderla per i motori che lo coniano da sé.
+pub fn read_text(said: &str, pointer: &Pointer) -> Option<String> {
+    match pointer {
+        Pointer::Pattern(pattern) => first_group(said, pattern),
+        path => {
+            let body = serde_json::from_str::<serde_json::Value>(said.trim()).ok()?;
+            read_name(&body, Some(path))
+        }
+    }
+}
+
 fn read_from_json(said: &str, declared: &Declared) -> Reading {
     // Un involucro illeggibile non è un guasto: è un motore che ha risposto in
     // chiaro dove ci si aspettava JSON — quota finita, errore di rete, un
