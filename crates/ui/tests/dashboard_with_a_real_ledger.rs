@@ -205,6 +205,7 @@ fn the_http_server_serves_valid_and_broken_flows_in_the_payload() {
             graph: valid_graph,
             inputs: std::collections::BTreeMap::new(),
             schedule: None,
+            spend_cap_micros: None,
         }),
     );
     flows.insert(

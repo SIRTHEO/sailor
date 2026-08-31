@@ -6,7 +6,7 @@
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
 use flow::{
-    ActionRegistry, Decision, Execution, ExecutionRequest, Executor, FlowFile, Graph,
+    ActionRegistry, Execution, ExecutionRequest, Executor, FlowFile, Graph,
     InProcessExecutor, RecordStore, SharedState, SystemClock,
 };
 use ledger::Ledger;
@@ -494,6 +494,10 @@ fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
+            // Il tetto raggiunto porta con sé i numeri: finiscono nella riga
+            // della corsa, così chi rilegge lo storico fra una settimana sa
+            // quanto era il tetto allora e quanto si era speso.
+            let why = registry::stopped_by_cap(&execution);
             record_run(
                 &ledger,
                 &flow,
@@ -501,15 +505,18 @@ fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
                 status,
                 started_at,
                 Some(now_secs()?),
-                None,
+                why.clone(),
             )?;
             if exit_ok {
                 Ok(format!("flusso {} completato; corsa {run_id}", flow.id))
             } else {
-                Err(format!(
-                    "flusso {} terminato con stato {status}; corsa {run_id}",
-                    flow.id
-                ))
+                Err(match why {
+                    Some(why) => format!("flusso {}: {why}; corsa {run_id}", flow.id),
+                    None => format!(
+                        "flusso {} terminato con stato {status}; corsa {run_id}",
+                        flow.id
+                    ),
+                })
             }
         }
         Err(error) => {
@@ -553,17 +560,16 @@ fn execution_request(flow: &FlowFile, run_id: &str) -> ExecutionRequest {
         root_inputs: flow.inputs.clone(),
         gates: Vec::new(),
         shared: SharedState::new(),
+        // Il tetto è del flusso e viaggia con la corsa: chi lancia non lo
+        // inventa, lo porta.
+        spend_cap_micros: flow.spend_cap_micros,
     }
 }
 
+/// Com'è finita la corsa. Il corpo sta in `registry`, con la sua gemella del
+/// guscio: erano due, e un `Decision` nuovo le avrebbe fatte divergere.
 fn execution_status(execution: &Execution) -> (&'static str, bool) {
-    match execution.decisions.last() {
-        Some(Decision::Complete) => ("complete", true),
-        Some(Decision::Waiting(_)) => ("waiting", false),
-        Some(Decision::Stopped(_)) => ("stopped", false),
-        Some(Decision::Failed(_)) => ("failed", false),
-        Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
-    }
+    registry::execution_status(execution)
 }
 
 /// Registra l'intestazione della corsa.
@@ -645,7 +651,7 @@ fn new_run_id(flow_id: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::{Clock, InMemoryRecordStore};
+    use flow::{Clock, Decision, InMemoryRecordStore};
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};

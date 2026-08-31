@@ -72,6 +72,7 @@ fn run(flow: &FlowFile) -> (Execution, Vec<flow::StepRecord>) {
         root_inputs: flow.inputs.clone().into_iter().collect(),
         gates: Vec::new(),
         shared: SharedState::new(),
+        spend_cap_micros: None,
     };
     let execution = InProcessExecutor
         .execute(
