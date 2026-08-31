@@ -320,7 +320,28 @@ pub struct ModelCallRecord {
     pub cache_write_price_micros_per_million: Option<i64>,
     #[serde(default)]
     pub cache_write_long_price_micros_per_million: Option<i64>,
+    /// **LA DOTAZIONE SOTTO CUI QUESTA CHIAMATA È GIRATA**, nella forma
+    /// `<riga di comando>/<profilo>`. Vuoto quando nessun profilo era in forza,
+    /// ed è un'informazione anche quello.
+    ///
+    /// **PERCHÉ SERVE.** Senza, due corse dello stesso flusso non sono la stessa
+    /// misura: la stessa catena di passi, sotto due profili, dà due consumi
+    /// diversi per una ragione che la riga non porta. Fino al 01/09/2026 questa
+    /// colonna la scriveva vuota **ogni** chiamata — è il guasto 18, dove la
+    /// dotazione di Sailor non arrivava ai motori e nessuno poteva accorgersene
+    /// leggendo il deposito.
+    ///
+    /// **IL NOME DELLA COLONNA È DEBITO DICHIARATO, NON UNA SCELTA.** `mandate`
+    /// viene da una tabella `current_mandate` che non esiste più; qui dentro sta
+    /// un profilo, quindi il nome dice una cosa e il contenuto un'altra.
+    /// Rinominarla è una migrazione del deposito e un cambio in
+    /// `ui::parse::parse_model_call_row`, che legge per **posizione**: sta al
+    /// proprietario, e sta scritto qui perché non si perda in un commit.
     pub mandate_name: String,
+    /// **SEMPRE VUOTA, E NON PER DIMENTICANZA.** Un profilo non ha una versione:
+    /// riempirla con la data o con un contatore sarebbe inventare un dato con la
+    /// faccia di una misura. Resta perché il deposito la porta già, e toglierla
+    /// costerebbe una migrazione a nessun beneficio.
     pub mandate_version: String,
     pub retry_chain: Vec<String>,
     pub error_type: Option<String>,
