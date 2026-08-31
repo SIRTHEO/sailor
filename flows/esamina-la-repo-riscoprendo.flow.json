@@ -1,0 +1,81 @@
+{
+  "id": "esamina-la-repo-riscoprendo",
+  "description": "IL CONTROLLO DELL'A/B, e non serve ad altro. Stesso lavoro, stessi quattro mandati parola per parola di `esamina-la-repo-ramificando`, stessa catena di motori: l'unica differenza e' che qui nessun passo dichiara `session`, quindi ognuno apre un processo che non sa niente e riscopre l'albero da capo. E' come Sailor ha sempre funzionato, e il numero che esce da qui e' il termine di paragone. PERCHE' E' UN FILE E NON UNA RIGA TOLTA A MANO: una misura ottenuta togliendo una riga e rimettendola non la puo' rifare nessun altro, e un risparmio dichiarato una volta sola invecchia come qualunque numero copiato.",
+  "graph": {
+    "steps": [
+      {
+        "id": "innesco",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": { "source": "manual" },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "scopri",
+        "deps": ["innesco"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": ["codex", "claude-code"],
+          "stdin": "Leggi l'albero di codice in cui ti trovi: i file in cima, il Cargo.toml, i nomi dei crate e a cosa serve ognuno. Non scrivere niente su disco. Rispondi in italiano con al massimo dieci righe: cos'e' questo progetto e come e' diviso.",
+          "workdir": { "$from": "/text" },
+          "timeout_secs": 900
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "struttura",
+        "deps": ["scopri", "innesco"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": ["codex", "claude-code"],
+          "stdin": "Sull'albero che hai gia' letto: quali crate dipendono da quali, e dove sta il confine fra cio' che tocca il mondo e cio' che decide. Non scrivere niente su disco. Rispondi in italiano, al massimo dieci righe.",
+          "workdir": { "$from": "/text" },
+          "timeout_secs": 900
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "rischi",
+        "deps": ["scopri", "innesco"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": ["codex", "claude-code"],
+          "stdin": "Sull'albero che hai gia' letto: i tre punti dove un guasto farebbe piu' danno, e perche' nessun controllo attuale li prenderebbe. Non scrivere niente su disco. Rispondi in italiano, al massimo dieci righe.",
+          "workdir": { "$from": "/text" },
+          "timeout_secs": 900
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "attrito",
+        "deps": ["scopri", "innesco"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": ["codex", "claude-code"],
+          "stdin": "Sull'albero che hai gia' letto: cosa rallenta chi ci lavora ogni giorno — compilazione, prove, cose da ricordare a memoria. Non scrivere niente su disco. Rispondi in italiano, al massimo dieci righe.",
+          "workdir": { "$from": "/text" },
+          "timeout_secs": 900
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "innesco": { "text": "esamina l'albero in cui giri" }
+  }
+}

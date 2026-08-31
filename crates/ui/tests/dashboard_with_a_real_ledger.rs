@@ -104,6 +104,7 @@ fn seed(dir: &Path) {
             error_type: None,
             started_at: 1001,
             ended_at: Some(1009),
+            session_id: None,
         })
         .expect("registrare la chiamata al modello");
 }
