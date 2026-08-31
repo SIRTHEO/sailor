@@ -106,6 +106,7 @@ fn run_with(
             .collect(),
         gates: Vec::new(),
         shared: SharedState::new(),
+        spend_cap_micros: None,
     };
     let execution = InProcessExecutor
         .execute(graph, request, &mut store, registry, &mut Tick::new(0))
