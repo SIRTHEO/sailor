@@ -1,0 +1,63 @@
+{
+  "_leggimi": [
+    "Un'uscita di /api/oauth/usage SCRITTA A MANO, con la forma misurata su questa",
+    "macchina il 01/09/2026 e valori inventati apposta. Non è una cattura: una",
+    "risposta vera porta le percentuali di consumo di una persona e i nomi interni",
+    "delle finestre del fornitore, e non è roba da versionare in un repository.",
+    "",
+    "Ogni caso qui dentro è uno che la risposta vera contiene davvero:",
+    "  five_hour, seven_day  finestre piene, con azzeramento",
+    "  seven_day_opus        finestra dichiarata NULLA: non si applica a questo conto",
+    "  nimbus_quill          una finestra col nome che questa versione non conosce,",
+    "                        e che il lettore deve riportare lo stesso",
+    "  no_reset              conosciuta e senza istante di azzeramento",
+    "  extra_usage           un oggetto con `utilization` a null: non è una misura",
+    "  spend                 un oggetto che di `utilization` non parla proprio",
+    "  limits                un array, non un oggetto",
+    "  member_dashboard_available  un booleano"
+  ],
+  "five_hour": {
+    "utilization": 50.0,
+    "resets_at": "2026-09-01T03:29:59.801054+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day": {
+    "utilization": 32.0,
+    "resets_at": "2026-09-06T04:59:59.801078+00:00",
+    "limit_dollars": null,
+    "used_dollars": null,
+    "remaining_dollars": null,
+    "locked_reason": null
+  },
+  "seven_day_opus": null,
+  "nimbus_quill": {
+    "utilization": 7.5,
+    "resets_at": "2026-09-03T00:00:00+00:00"
+  },
+  "no_reset": {
+    "utilization": 0.0,
+    "resets_at": null
+  },
+  "extra_usage": {
+    "is_enabled": false,
+    "utilization": null,
+    "user_disabled": true
+  },
+  "spend": {
+    "percent": 0,
+    "severity": "normal",
+    "enabled": false
+  },
+  "limits": [
+    {
+      "kind": "session",
+      "percent": 50,
+      "severity": "normal",
+      "resets_at": "2026-09-01T03:29:59.801054+00:00"
+    }
+  ],
+  "member_dashboard_available": false
+}
