@@ -12,7 +12,7 @@ use flow::{
 use ledger::Ledger;
 use serde_json::Value;
 use ui::gather::FlowSource;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
 use std::path::PathBuf;
@@ -36,7 +36,10 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
     match args {
         [command] if command == "list" => list_flows(sources),
         [command] if command == "due" => due_flows(sources),
-        [command, name] if command == "check" => check_flow(sources, name),
+        [command, name] if command == "check" => check_flow(sources, name, true),
+        [command, name, flag] if command == "check" && flag == "--no-engines" => {
+            check_flow(sources, name, false)
+        }
         [command, name] if command == "run" => run_flow(sources, name, None),
         [command, name, text] if command == "run" => run_flow(sources, name, Some(text)),
         [command, name] if command == "cost" => cost_of(name),
@@ -227,7 +230,8 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 }
 
 fn usage() -> String {
-    "uso: sailor flow <list|due|check <nome>|run <nome> [mandato]|cost <nome>>".to_owned()
+    "uso: sailor flow <list|due|check <nome> [--no-engines]|run <nome> [mandato]|cost <nome>>"
+        .to_owned()
 }
 
 /// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
@@ -320,13 +324,20 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     Ok(report)
 }
 
-fn check_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
+/// **LE RIGHE SI PROVANO SE NESSUNO DICE DI NO.** Un controllo dietro una
+/// bandiera è un controllo che nessuno interroga, e il guasto 27 è la prova:
+/// nessuno avrebbe scritto `--engines` per scoprire un difetto che non sapeva
+/// di avere. `--no-engines` resta per chi lavora scollegato o ha fretta.
+fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<String, String> {
     let (flow, _) = one_flow(sources, name)?;
     let tools = toolbox::Tools::current();
+    let real = actions::RealDryProbe;
+    let probe: Option<&dyn actions::DryProbe> = if try_engines { Some(&real) } else { None };
     let (report, unknown) = check_report(
         &flow,
         &default_registry(open_default_ledger(), None),
         Some(&tools),
+        probe,
     );
     if unknown.is_empty() {
         return Ok(report);
@@ -361,6 +372,7 @@ fn check_report(
     flow: &FlowFile,
     registry: &ActionRegistry,
     tools: Option<&toolbox::Tools>,
+    probe: Option<&dyn actions::DryProbe>,
 ) -> (String, Vec<String>) {
     let dependency_count: usize = flow.graph.steps().iter().map(|step| step.deps.len()).sum();
     let missing = missing_actions(&flow.graph, registry);
@@ -416,6 +428,12 @@ fn check_report(
                 );
             }
             capabilities_into(&mut report, &flow.graph, tools);
+            // Senza sonda il rapporto **tace** su questo, invece di dichiarare
+            // sane righe che non ha guardato: è la stessa regola del rilevatore
+            // assente qui sopra.
+            if let Some(probe) = probe {
+                engine_lines_into(&mut report, &flow.graph, tools, probe);
+            }
         }
     }
 
@@ -470,15 +488,7 @@ fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
             Some(Value::String(name)) => vec![name.clone()],
             _ => continue,
         };
-        let engines: Vec<String> = match with.get("tool") {
-            Some(Value::String(id)) => vec![id.clone()],
-            Some(Value::Array(chain)) => chain
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect(),
-            _ => Vec::new(),
-        };
+        let engines = engines_of(with);
         for capability in &asked {
             for tool in &engines {
                 wanted.push(WantedCapability {
@@ -545,6 +555,203 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
     }
 }
 
+// ── le righe di comando, montate e provate senza domanda ────────────────
+
+/// Un motore su cui un passo si affida al descrittore per comporre la riga.
+struct WantedEngine {
+    step: String,
+    tool: String,
+}
+
+/// I motori di cui `flow check` deve provare la riga, passo per passo e
+/// **motore per motore della catena**.
+///
+/// **TUTTA LA CATENA, NON IL PRIMO.** Il guasto 16 è nato da sei passi che
+/// nominavano un motore solo; il guasto 27 dice che il difetto stava nel
+/// *secondo* — nessun flusso mette `agy` per primo, quindi quel ramo non era
+/// mai stato eseguito e la riga sbagliata è vissuta indisturbata. Guardare solo
+/// il primo motore è non guardare dove il difetto era.
+///
+/// **E SOLO I PASSI CHE LA RIGA NON SE LA SCRIVONO.** Un passo che dichiara i
+/// propri `args` vince sulla ricetta — lo decide `ExternalEngineAction`, e qui
+/// si legge la stessa regola, non una seconda copia di essa. Sono i passi che
+/// invocano `cargo` o `git` attraverso la stessa azione: la loro riga non viene
+/// da nessun blocco `ask`, e chiamarla «non montabile» sarebbe un allarme su un
+/// passo sano.
+fn engines_wanted(graph: &Graph) -> Vec<WantedEngine> {
+    let mut wanted = Vec::new();
+    for step in graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        if with.get("args").is_some() {
+            continue;
+        }
+        for tool in engines_of(with) {
+            wanted.push(WantedEngine {
+                step: step.id.clone(),
+                tool,
+            });
+        }
+    }
+    wanted
+}
+
+/// Cosa si è potuto sapere della riga di un motore.
+enum EngineOutcome {
+    /// Il motore non è invocabile qui, e il rilevatore dice perché.
+    NotHere(String),
+    /// Nessun blocco `ask`: la riga non si compone affatto, e non c'è niente
+    /// da provare. È un'assenza nel descrittore, non un difetto della riga.
+    NotAssemblable,
+    /// La riga si è montata e si è provata: ecco com'è venuta e cosa ha detto.
+    Tried {
+        line: String,
+        verdict: actions::ProbeVerdict,
+    },
+}
+
+/// Monta la riga di ogni motore di ogni catena, la prova **senza dare la
+/// domanda**, e scrive nel rapporto come sta messa.
+///
+/// **QUI `flow check` CAMBIA NATURA, E VA DETTO.** `resolver.rs` dichiara in
+/// testa che risolvere un nome non deve eseguire niente, e resta vero: è questa
+/// funzione che avvia processi, non la risoluzione. Da qui in poi `flow check`
+/// avvia un processo per ogni motore dichiarato — **senza rete, senza denaro,
+/// con un tetto di tempo**, perché senza la domanda nessuno di quei processi
+/// chiama un fornitore. Il prezzo è che un controllo statico non è più solo
+/// statico; il ricavo è che la cura scritta accanto al guasto 1 esiste davvero.
+///
+/// **ACCESO IN MODO PREDEFINITO.** Un controllo dietro una bandiera è un
+/// controllo che nessuno interroga: il guasto 27 sarebbe rimasto invisibile
+/// esattamente come è rimasto, perché nessuno avrebbe scritto la bandiera. Chi
+/// non lo vuole scrive `--no-engines`, e allora il rapporto **tace** invece di
+/// dichiarare sane righe che non ha guardato.
+///
+/// **L'ASSE «È STATO CHIAMATO DAVVERO» NON È QUESTO, E RESTA SEPARATO.** Una
+/// riga sana non dice che quel motore abbia mai risposto a una domanda vera:
+/// quello lo sa il deposito, che registra le chiamate. Mescolare le due cose
+/// farebbe passare per «usato» un motore che nessuna corsa ha mai nominato —
+/// che è precisamente il guasto 32.
+fn engine_lines_into(
+    report: &mut String,
+    graph: &Graph,
+    tools: &toolbox::Tools,
+    probe: &dyn actions::DryProbe,
+) {
+    use actions::{ProbeVerdict, ToolResolver};
+
+    // Un motore si prova UNA VOLTA SOLA anche quando lo nominano sei passi: la
+    // riga che si monta viene dal descrittore, non dal passo, quindi sei prove
+    // avvierebbero sei processi per sapere sei volte la stessa cosa. Il
+    // rapporto resta passo per passo, che è ciò che chi legge deve correggere.
+    let mut judged: BTreeMap<String, EngineOutcome> = BTreeMap::new();
+
+    let mut sound = Vec::new();
+    let mut broken = Vec::new();
+    let mut untried = Vec::new();
+    let mut unassemblable = Vec::new();
+    let mut exhausted = Vec::new();
+
+    for wanted in engines_wanted(graph) {
+        // Uno strumento che nessun descrittore dichiara è già nominato sopra:
+        // ripeterlo qui manderebbe a cercare due difetti dove ce n'è uno.
+        if !tools.declares(&wanted.tool) {
+            continue;
+        }
+        if !judged.contains_key(&wanted.tool) {
+            let outcome = match tools.resolve(&wanted.tool) {
+                Err(reason) => EngineOutcome::NotHere(reason),
+                Ok(bin) => match tools.ask_recipe(&wanted.tool) {
+                    None => EngineOutcome::NotAssemblable,
+                    Some(recipe) => {
+                        let line = std::iter::once(bin.clone())
+                            .chain(actions::command_line(&recipe))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        EngineOutcome::Tried {
+                            verdict: actions::probe_dry_run(probe, &bin, &recipe),
+                            line,
+                        }
+                    }
+                },
+            };
+            judged.insert(wanted.tool.clone(), outcome);
+        }
+
+        let who = format!("{} → {}", wanted.step, wanted.tool);
+        match judged.get(&wanted.tool).expect("appena inserito") {
+            EngineOutcome::NotHere(reason) => {
+                untried.push(format!("{who}: il motore non è invocabile qui — {reason}"))
+            }
+            EngineOutcome::NotAssemblable => unassemblable.push(format!(
+                "{who}: il suo descrittore non dichiara un blocco `ask`, quindi non \
+                 esiste nessuna riga da montare e il passo dovrà scrivere da sé le opzioni"
+            )),
+            EngineOutcome::Tried { line, verdict } => match verdict {
+                ProbeVerdict::Sound => sound.push(who),
+                // LE PAROLE DEL MOTORE PER INTERO, E LA RIGA CHE LE HA
+                // PRODOTTE. Sul guasto 27 la frase di `agy` diceva quale
+                // bandiera aveva mangiato quale argomento: una diagnosi che
+                // nessuna parola nostra avrebbe potuto sostituire. Tagliarla, o
+                // riassumerla, riporterebbe chi legge a indovinare.
+                ProbeVerdict::Broken { said } => broken.push(format!(
+                    "{who}: riga montata «{line}»; il motore ha risposto: «{said}»"
+                )),
+                ProbeVerdict::CannotWork { said } => {
+                    exhausted.push(format!("{who}: «{said}»"))
+                }
+                ProbeVerdict::NotDeclared => untried.push(format!(
+                    "{who}: il suo descrittore non dichiara come rifiuta la riga senza \
+                     domanda (`refuses_without_prompt`), quindi non c'è modo di dire se \
+                     la riga «{line}» sia sana — si misura eseguendola senza la domanda"
+                )),
+                ProbeVerdict::TimedOut { why } => untried.push(format!(
+                    "{who}: nessuna risposta alla riga «{line}» — {why}"
+                )),
+            },
+        }
+    }
+
+    if !sound.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando sane (montate e provate senza domanda, senza spendere): {}",
+            sound.join("; ")
+        );
+    }
+    if !broken.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando ROTTE (il motore si è lamentato di qualcosa che non è \
+             la domanda mancante): {}",
+            broken.join("; ")
+        );
+    }
+    if !exhausted.is_empty() {
+        let _ = write!(
+            report,
+            "\nmotori che adesso non possono lavorare (la riga non c'entra, si \
+             riprova quando tornano): {}",
+            exhausted.join("; ")
+        );
+    }
+    if !untried.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando non provate (non si sa se siano sane): {}",
+            untried.join("; ")
+        );
+    }
+    if !unassemblable.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando non montabili (non c'è niente da provare): {}",
+            unassemblable.join("; ")
+        );
+    }
+}
+
 /// I campi scritti a mano che l'azione del passo non riconosce.
 ///
 /// Guarda in due posti, e sono i due posti dove scrive una persona: il `with`
@@ -585,24 +792,38 @@ fn stray_fields(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
 /// controllo chiuderebbe in verde senza aver guardato metà dei motori del
 /// flusso: sarebbe il guasto 3 rifatto da capo, con la stessa forma.
 fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
-    let mut wanted = BTreeSet::new();
-    for tool in graph
+    graph
         .steps()
         .iter()
         .filter_map(|step| step.with.as_ref())
-        .filter_map(|with| with.get("tool"))
-    {
-        match tool {
-            Value::String(id) => {
-                wanted.insert(id.clone());
-            }
-            Value::Array(chain) => {
-                wanted.extend(chain.iter().filter_map(Value::as_str).map(str::to_owned));
-            }
-            _ => {}
-        }
+        .flat_map(engines_of)
+        .collect()
+}
+
+/// I motori che un `with` nomina, **nell'ordine in cui li ha scritti chi ha
+/// scritto il passo**: un nome solo, o una catena.
+///
+/// **UNA COPIA SOLA PERCHÉ LA DOMANDA È UNA SOLA.** Fino al 31/08/2026 questa
+/// lettura stava scritta due volte — dentro `tools_wanted` e dentro
+/// `capabilities_wanted` — e la seconda era nata perché la prima buttava via il
+/// passo. Due copie della stessa regola divergono sul primo dettaglio che
+/// qualcuno cambia a una sola delle due, ed è il guasto 10: qui ne serviva una
+/// terza, e la terza è il momento giusto per fermarsi.
+///
+/// **L'ORDINE È UN DATO, NON UN CASO.** In una catena il primo è quello che si
+/// prova per primo e gli altri sono il ripiego; un `BTreeSet` lo perderebbe, e
+/// chi legge il rapporto non saprebbe più su quale motore finisce una corsa
+/// quando il primo muore.
+fn engines_of(with: &Value) -> Vec<String> {
+    match with.get("tool") {
+        Some(Value::String(id)) => vec![id.clone()],
+        Some(Value::Array(chain)) => chain
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
     }
-    wanted
 }
 
 // ── il testo di un passo mentre il passo gira ──────────────────────────
@@ -1085,7 +1306,7 @@ mod tests {
         let json = flow_json("external_engine", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(
             report.contains("campi che l'azione non conosce"),
@@ -1107,7 +1328,7 @@ mod tests {
         let json = flow_json("external_engine", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(
             !report.contains("campi che l'azione non conosce"),
@@ -1436,7 +1657,7 @@ mod tests {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
         let tools = tools_declaring(&["git"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
@@ -1454,7 +1675,7 @@ mod tests {
         let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
         let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
@@ -1521,7 +1742,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": false}"#);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "resta un avviso, non un errore: {unknown:?}");
         assert!(report.contains("root"), "nomina il passo: {report}");
@@ -1542,7 +1763,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"choose_model": true}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(
             report.contains("nessuno ha guardato"),
@@ -1564,7 +1785,7 @@ mod tests {
             r#"{"response_shape": {"args": ["--json-schema"], "takes_value": true}}"#,
         );
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(
             !report.contains("capacità che il motore non dichiara"),
@@ -1586,7 +1807,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": true}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(
             !report.contains("campi che l'azione non conosce"),
@@ -1600,7 +1821,7 @@ mod tests {
     fn without_a_detector_the_check_says_nothing_about_tools() {
         let flow = flow_wanting_tool("qualunque");
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), None);
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(unknown.is_empty());
         assert!(!report.contains("strument"), "{report}");
@@ -1611,7 +1832,7 @@ mod tests {
         let json = flow_json("azione_assente", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(report.contains("passi: 1"), "{report}");
         assert!(report.contains("cicli: nessuno"), "{report}");
@@ -1635,7 +1856,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
@@ -1675,7 +1896,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(report.contains("azioni disponibili: "), "{report}");
         assert!(report.contains("history_ask"), "{report}");
@@ -1867,6 +2088,305 @@ mod tests {
             serde_json::json!(100_000),
             "il totale è la somma delle due chiamate, non uno zero scritto a mano"
         );
+    }
+
+    // ── le righe di comando provate a secco ───────────────────────────
+
+    /// Una macchina finta con dei motori dentro, e i loro descrittori.
+    ///
+    /// Niente dipende da cosa è installato su chi esegue: il percorso è una
+    /// cartella temporanea, e i motori sono file vuoti col bit di esecuzione —
+    /// non vengono mai avviati, perché la sonda di queste prove è finta.
+    fn tools_with_engines(entries: &[(&str, &str)]) -> toolbox::Tools {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "prova-motori-{}-{serial}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("la cartella di prova");
+        let mut declared = Vec::new();
+        for (id, ask) in entries {
+            let path = dir.join(id);
+            std::fs::write(&path, "").expect("il finto eseguibile");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                    .expect("bit di esecuzione");
+            }
+            declared.push(format!(
+                r#"{{"id":"{id}","family":"ai_cli","label":"{id}","detect":{{"command":"{id}"}}{ask}}}"#
+            ));
+        }
+        let file = dir.join("tools.json");
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, declared.join(","))).expect("scrivere");
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
+        toolbox::Tools::new(
+            catalog,
+            toolbox::Machine {
+                path_dirs: vec![dir.clone()],
+                home: dir,
+                env: BTreeMap::new(),
+                version_probes: false,
+            },
+        )
+    }
+
+    /// Una sonda che non esegue niente e risponde ciò che le diciamo, in base a
+    /// come si chiama l'eseguibile che le viene passato.
+    struct ScriptedProbe(Vec<(&'static str, &'static str)>);
+
+    impl actions::DryProbe for ScriptedProbe {
+        fn run(&self, bin: &str, _args: &[String], _stdin: Option<Vec<u8>>) -> actions::DryRun {
+            let said = self
+                .0
+                .iter()
+                .find(|(name, _)| bin.ends_with(name))
+                .map(|(_, said)| *said)
+                .unwrap_or("");
+            actions::DryRun::Answered {
+                stdout: String::new(),
+                stderr: said.to_owned(),
+            }
+        }
+    }
+
+    fn flow_with_chain(chain: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova",
+                "description": "flusso di prova",
+                "graph": {{
+                    "steps": [{{
+                        "id": "chiedi",
+                        "deps": [],
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "when": null,
+                        "with": {{"tool": {chain}, "stdin": "ciao", "timeout_secs": 10}},
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}}
+                    }}],
+                    "skippable_dependencies": []
+                }},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    const REFUSES: &str = r#","ask":{"args":["-p"],"prompt":"stdin","refuses_without_prompt":["input must be provided"]}"#;
+    const SAYS_NOTHING: &str = r#","ask":{"args":["-p"],"prompt":"stdin"}"#;
+    const NO_ASK: &str = "";
+
+    /// **UNA RIGA SANA SI VEDE, E COSTA ZERO.** È il controllo che il guasto 1
+    /// aveva chiesto il 28/08 e che nessuno aveva scritto perché sembrava voler
+    /// dire spendere.
+    #[test]
+    fn a_line_the_engine_only_complains_about_the_missing_prompt_is_called_sound() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+        let probe = ScriptedProbe(vec![("motore", "Input must be provided through stdin")]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(report.contains("righe di comando sane"), "{report}");
+        assert!(report.contains("chiedi → motore"), "{report}");
+    }
+
+    /// **LE PAROLE DEL MOTORE SONO LA DIAGNOSI, E VANNO SCRITTE PER INTERO.**
+    /// Sul guasto 27 la frase di `agy` diceva quale bandiera aveva mangiato
+    /// quale argomento; un rapporto che dicesse solo «rotta» rimanderebbe a
+    /// indovinare, cioè non varrebbe più della sua assenza.
+    #[test]
+    fn a_broken_line_is_reported_with_the_engines_own_words_and_the_line_that_produced_it() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+        let probe = ScriptedProbe(vec![(
+            "motore",
+            "--print took \"--output-format\" as its prompt",
+        )]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(report.contains("righe di comando ROTTE"), "{report}");
+        assert!(
+            report.contains("--print took \"--output-format\" as its prompt"),
+            "senza le parole del motore la riga rossa non dice cosa correggere: {report}"
+        );
+        assert!(
+            report.contains("riga montata «") && report.contains("-p»"),
+            "e senza la riga montata non si sa nemmeno cosa è stato provato: {report}"
+        );
+    }
+
+    /// **SI GUARDA TUTTA LA CATENA, NON IL PRIMO.** Il guasto 27 stava nel
+    /// **secondo** motore di ogni catena, ed è vissuto indisturbato proprio
+    /// perché nessun flusso lo metteva per primo. Un controllo che leggesse
+    /// solo il primo motore sarebbe un controllo che non guarda dov'era il
+    /// difetto.
+    #[test]
+    fn every_engine_of_the_chain_is_tried_not_only_the_first() {
+        let flow = flow_with_chain(r#"["primo", "secondo", "terzo"]"#);
+        let tools = tools_with_engines(&[
+            ("primo", REFUSES),
+            ("secondo", REFUSES),
+            ("terzo", REFUSES),
+        ]);
+        let probe = ScriptedProbe(vec![
+            ("primo", "Input must be provided through stdin"),
+            ("secondo", "took --output-format as its prompt"),
+            ("terzo", "Input must be provided through stdin"),
+        ]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(
+            report.contains("chiedi → secondo"),
+            "il secondo della catena non è stato guardato: {report}"
+        );
+        assert!(
+            report.contains("took --output-format as its prompt"),
+            "{report}"
+        );
+        assert!(report.contains("chiedi → terzo"), "né il terzo: {report}");
+    }
+
+    /// **«NON PROVATA» E «NON MONTABILE» SONO DUE FATTI DIVERSI.** Un motore
+    /// senza blocco `ask` non ha nessuna riga da provare — si ripara scrivendo
+    /// il descrittore; uno che ha la riga ma non dichiara come rifiuta ce l'ha
+    /// e nessuno l'ha guardata — si ripara eseguendola. Sotto la stessa parola
+    /// manderebbero a fare il lavoro sbagliato, ed è il guasto 32 che vive
+    /// nella prima delle due.
+    #[test]
+    fn a_missing_ask_block_is_not_confused_with_a_line_nobody_looked_at() {
+        let flow = flow_with_chain(r#"["senza-ask", "senza-rifiuto"]"#);
+        let tools = tools_with_engines(&[("senza-ask", NO_ASK), ("senza-rifiuto", SAYS_NOTHING)]);
+        let probe = ScriptedProbe(vec![("senza-rifiuto", "un errore qualunque")]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        let untried = report
+            .lines()
+            .find(|line| line.starts_with("righe di comando non provate"))
+            .unwrap_or_else(|| panic!("manca la riga «non provate»: {report}"));
+        let unassemblable = report
+            .lines()
+            .find(|line| line.starts_with("righe di comando non montabili"))
+            .unwrap_or_else(|| panic!("manca la riga «non montabili»: {report}"));
+
+        assert!(untried.contains("senza-rifiuto"), "{untried}");
+        assert!(
+            !untried.contains("senza-ask"),
+            "un motore senza `ask` non è una riga non provata: {untried}"
+        );
+        assert!(unassemblable.contains("senza-ask"), "{unassemblable}");
+        assert!(
+            !unassemblable.contains("senza-rifiuto"),
+            "{unassemblable}"
+        );
+    }
+
+    /// **UN MOTORE ESAURITO NON È UNA RIGA ROTTA**, e la sua frase è la quarta.
+    /// Confonderli manderebbe a correggere un descrittore sano mentre bastava
+    /// aspettare.
+    #[test]
+    fn an_engine_that_cannot_work_now_gets_its_own_sentence() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[(
+            "motore",
+            r#","ask":{"args":["-p"],"prompt":"stdin","unusable_when":["weekly limit"],"refuses_without_prompt":["input must be provided"]}"#,
+        )]);
+        let probe = ScriptedProbe(vec![("motore", "You've hit your weekly limit")]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(
+            report.contains("motori che adesso non possono lavorare"),
+            "{report}"
+        );
+        assert!(
+            !report.contains("righe di comando ROTTE"),
+            "la riga è sana, è la quota che è finita: {report}"
+        );
+    }
+
+    /// **SENZA SONDA IL RAPPORTO TACE**, non dichiara sane righe che non ha
+    /// guardato: è la stessa regola del rilevatore assente, e senza di essa
+    /// `--no-engines` diventerebbe un modo per far dire al controllo una cosa
+    /// che non ha verificato.
+    #[test]
+    fn with_no_engines_the_report_says_nothing_about_command_lines() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+
+        assert!(!report.contains("righe di comando"), "{report}");
+    }
+
+    /// I passi che scrivono i propri `args` non compongono nessuna riga dal
+    /// descrittore: sono quelli che invocano `cargo` o `git` attraverso la
+    /// stessa azione, e chiamarli «non montabili» sarebbe un allarme su un
+    /// passo sano — cioè rumore che insegna a non leggere il rapporto.
+    #[test]
+    fn a_step_that_writes_its_own_arguments_is_not_reported_as_unassemblable() {
+        let json = r#"{
+            "id": "prova",
+            "description": "flusso di prova",
+            "graph": {
+                "steps": [{
+                    "id": "prove",
+                    "deps": [],
+                    "action": "external_engine",
+                    "max_attempts": 1,
+                    "when": null,
+                    "with": {"tool": "cargo", "args": ["test"], "timeout_secs": 10},
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"}
+                }],
+                "skippable_dependencies": []
+            },
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let tools = tools_with_engines(&[("cargo", NO_ASK)]);
+        let probe = ScriptedProbe(vec![]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(!report.contains("righe di comando"), "{report}");
     }
 
     /// Una chiamata già costata, per misurare il totale di una corsa.
