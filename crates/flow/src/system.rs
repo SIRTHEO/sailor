@@ -130,6 +130,25 @@ pub fn sources(
     sources
 }
 
+/// Le stesse sorgenti, lette dall'ambiente di questo processo.
+///
+/// **ESISTE PERCHÉ QUESTE SEI RIGHE STAVANO PER NASCERE UNA SECONDA VOLTA.**
+/// La prima copia è `ui::gather::flow_sources`; la seconda serviva a chi
+/// costruisce il registro delle azioni, perché il passo `subflow` deve cercare
+/// il flusso che chiama esattamente dove lo cerca `sailor flow run` — o due
+/// macchine eseguono flussi diversi con lo stesso nome senza dirlo. Due copie
+/// di una regola di precedenza è il difetto che `file.rs` e `registry` hanno
+/// già pagato ciascuno una volta: la regola sta qui, e chi la vuole la importa.
+///
+/// La casa resta un argomento: chi la conosce è `ledger::sailor_home`, e questo
+/// crate non dipende da `ledger` — è la direzione che tiene in piedi tutto il
+/// resto.
+pub fn sources_from_env(home_flows: &Path) -> Vec<FlowSource> {
+    let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
+    let working = std::env::current_dir().ok();
+    sources(home_flows, working.as_deref(), declared.as_deref())
+}
+
 /// La cartella dei flussi del progetto, cercata risalendo.
 ///
 /// **SI RISALE, E NON È UN LUSSO.** Un programma non viene quasi mai avviato

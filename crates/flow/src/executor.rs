@@ -38,6 +38,22 @@ pub const CURRENT_STEP: &str = "flow.step";
 /// sovrascritto a ogni passo.
 pub const CURRENT_RUN: &str = "flow.run";
 
+/// La chiave sotto cui l'esecutore scrive il **tetto di spesa** della corsa,
+/// quando la corsa ne ha uno. Assente vuol dire «nessun tetto», non zero.
+///
+/// **PERCHÉ UN'AZIONE DEVE POTERLO LEGGERE.** Il tetto lo fa rispettare
+/// l'esecutore, e nessuna azione ha motivo di conoscerlo — tranne una: quella
+/// che fa partire **un'altra corsa**. Un sotto-flusso senza tetto lanciato da
+/// una corsa che ne ha uno lo annullerebbe, e basterebbe spostare la spesa
+/// dentro il figlio per spendere quanto si vuole. Perché il figlio possa
+/// ereditare il residuo, il residuo deve essere leggibile da dove si decide, e
+/// si decide dentro l'azione.
+///
+/// **E NON LO DICHIARA IL FLUSSO**, per la stessa ragione di [`CURRENT_RUN`]:
+/// il prefisso `flow.` è dell'esecutore, e un file di dati che potesse scrivere
+/// qui alzerebbe da solo il proprio tetto.
+pub const CURRENT_CAP: &str = "flow.cap_micros";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
@@ -458,6 +474,30 @@ pub struct Execution {
     pub shared: SharedState,
 }
 
+/// Com'è finita una corsa, e se chi l'ha lanciata può dirsi soddisfatto.
+///
+/// **STA QUI PERCHÉ `Decision` STA QUI.** Questa traduzione è nata in
+/// `sailor::flow_cmd` e ne esisteva una copia nel guscio della finestra; il
+/// 30/08/2026 le due sono state riunite in `registry::execution_status`.
+/// Adesso ne serve una terza a chi esegue un **sotto-flusso**, che vive nel
+/// crate del flusso e non può guardare in `registry`. La regola vale come le
+/// altre volte: invece di ricopiarla si sposta dove tutti la vedono, cioè
+/// accanto al tipo che traduce. `registry::execution_status` resta il nome
+/// pubblico che i due chiamanti già usano, e chiama questa.
+///
+/// Il booleano è la seconda metà della risposta: `cap_reached` e `waiting` non
+/// sono guasti, ma nemmeno «è andata».
+pub fn run_status(execution: &Execution) -> (&'static str, bool) {
+    match execution.decisions.last() {
+        Some(Decision::Complete) => ("complete", true),
+        Some(Decision::Waiting(_)) => ("waiting", false),
+        Some(Decision::Stopped(_)) => ("stopped", false),
+        Some(Decision::Failed(_)) => ("failed", false),
+        Some(Decision::CapReached(_)) => ("cap_reached", false),
+        Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExecutionRequest {
     pub run_id: String,
@@ -795,6 +835,16 @@ impl Executor for InProcessExecutor {
                 CURRENT_RUN.to_owned(),
                 Value::String(request.run_id.clone()),
             );
+            // Il tetto entra accanto alla corsa, e solo se c'è: la chiave
+            // assente è «nessun tetto dichiarato», che non è `Some(0)`. Serve a
+            // un'azione sola — quella che lancia un altro flusso — e senza di
+            // questa riga quel figlio girerebbe senza limite sotto un padre che
+            // ne ha uno.
+            if let Some(cap) = request.spend_cap_micros {
+                request
+                    .shared
+                    .insert(CURRENT_CAP.to_owned(), Value::from(cap));
+            }
 
             // A GRUPPI, E LA LARGHEZZA VIENE DAI SOLDI.
             //
