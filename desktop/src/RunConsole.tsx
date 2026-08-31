@@ -267,6 +267,7 @@ function readAction(payload: Record<string, unknown> | null): string | null {
  */
 const FAILURE_LABEL: Record<string, string> = {
   engine_exit_error: "il motore è uscito con un errore",
+  engine_exhausted: "il motore ha finito la propria quota — non si è rotto",
   engine_timed_out: "il motore ha superato il tempo massimo",
   engine_spawn_failed: "il motore non è partito",
   tool_unavailable: "lo strumento non c'è su questa macchina",
