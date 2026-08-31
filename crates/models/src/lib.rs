@@ -12,5 +12,6 @@ pub mod command;
 pub mod config;
 pub mod fetch;
 pub mod pricing;
+pub mod remaining;
 pub mod store;
 pub mod usage;
