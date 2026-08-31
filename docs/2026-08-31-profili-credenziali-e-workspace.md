@@ -130,6 +130,15 @@ dichiarazioni che **solo `sailor flow check` legge**, per stampare un avviso.
 È il guasto 18, ancora aperto. Il modo in cui la dotazione viene davvero
 raggiunta oggi è un percorso assoluto scritto a mano in cima a un passo.
 
+> **01/09/2026 — il guasto 18 è ora chiuso in parte, e questo paragrafo resta
+> vero.** Ciò che è cambiato è l'**ambiente**: `ExternalEngineAction` sovrappone
+> la casa del profilo attivo (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+> `GEMINI_CLI_HOME`) sotto ciò che il passo dichiara, e un motore lanciato da un
+> flusso non eredita più quella di chi ha aperto il terminale. Le **bandiere**
+> di cui parla questo capitolo — `--setting-sources`, `--mcp-config`,
+> `--plugin-dir` — nessuna riga le appende ancora, e `receive_equipment` resta
+> una dichiarazione che solo `flow check` legge.
+
 Nello stesso stato: il campo `equipment` esiste in `sailor.json` **ed è letto da
 zero righe di codice**. Anzi, `declaration_at` non è chiamata da **nessun** codice
 di produzione: del marcatore si usa oggi **solo la posizione**.
