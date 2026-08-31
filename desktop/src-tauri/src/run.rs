@@ -357,8 +357,8 @@ pub(crate) fn start_run(
     record_run(&ledger, &flow, &run_id, "running", started_at, None, None, &origin)?;
 
     {
-        let mut registro = runs.lock_map();
-        registro.insert(
+        let mut known = runs.lock_map();
+        known.insert(
             run_id.clone(),
             RunState {
                 flow: flow.id.clone(),
@@ -443,8 +443,8 @@ pub(crate) fn start_run(
 /// Tutto quello che una corsa ha detto finora, per chi si affaccia adesso.
 #[tauri::command]
 pub(crate) fn run_snapshot(runs: State<'_, Arc<Runs>>, run_id: String) -> Result<RunSnapshot, String> {
-    let registro = runs.lock_map();
-    let state = registro
+    let known = runs.lock_map();
+    let state = known
         .get(&run_id)
         .ok_or_else(|| format!("la corsa {run_id} non è nota a questa finestra"))?;
     Ok(RunSnapshot {
@@ -463,8 +463,8 @@ pub(crate) fn run_snapshot(runs: State<'_, Arc<Runs>>, run_id: String) -> Result
 /// guarda.
 #[tauri::command]
 pub(crate) fn known_runs(runs: State<'_, Arc<Runs>>) -> Vec<RunSnapshot> {
-    let registro = runs.lock_map();
-    let mut all: Vec<RunSnapshot> = registro
+    let known = runs.lock_map();
+    let mut all: Vec<RunSnapshot> = known
         .iter()
         .map(|(run_id, state)| RunSnapshot {
             run_id: run_id.clone(),
@@ -1151,14 +1151,14 @@ mod tests {
     /// scrivono.
     #[test]
     fn every_action_of_a_shipped_flow_is_known_to_the_window() {
-        let registro = registry::default_registry(None, None);
-        for nome in ["strumenti-di-questa-macchina", "migrazione-a-sailor"] {
-            let flow = load_flow(nome).expect("i flussi di sistema si caricano");
+        let known = registry::default_registry(None, None);
+        for name in ["strumenti-di-questa-macchina", "migrazione-a-sailor"] {
+            let flow = load_flow(name).expect("i flussi di sistema si caricano");
             for step in flow.graph.steps() {
                 assert!(
-                    registro.get(&step.action).is_some(),
+                    known.get(&step.action).is_some(),
                     "«{}» nomina l'azione «{}», che la finestra non conosce",
-                    nome,
+                    name,
                     step.action
                 );
             }
@@ -1195,13 +1195,13 @@ mod tests {
     /// funzione che lo otteneva.
     #[test]
     fn a_flow_name_that_climbs_out_of_the_directory_opens_nothing() {
-        for storto in ["../evaso", "sotto/cartella", "", "/etc/passwd"] {
-            let esito = load_flow(storto);
+        for malformed in ["../evaso", "sotto/cartella", "", "/etc/passwd"] {
+            let outcome = load_flow(malformed);
             assert!(
-                esito.is_err(),
-                "«{storto}» non è il nome di nessun flusso: non deve caricare niente"
+                outcome.is_err(),
+                "«{malformed}» non è il nome di nessun flusso: non deve caricare niente"
             );
-            let why = esito.unwrap_err();
+            let why = outcome.unwrap_err();
             assert!(
                 why.contains("nessun flusso si chiama"),
                 "e il motivo dev'essere che non è in elenco, non un errore di lettura: {why}"

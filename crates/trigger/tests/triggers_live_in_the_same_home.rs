@@ -66,16 +66,16 @@ fn triggers_and_tools_share_one_home() {
         ),
     ] {
         let machine = machine_with("/home/tizio", &env);
-        let casa = PathBuf::from(expected_home);
+        let home = PathBuf::from(expected_home);
 
         assert_eq!(
             user_dir(&trigger::default_sources(&machine)),
-            casa.join("triggers.d"),
+            home.join("triggers.d"),
             "gli inneschi vanno cercati nella casa, qualunque essa sia (env: {env:?})"
         );
         assert_eq!(
             tool_user_dir(&toolbox::default_sources(&machine)),
-            casa.join("tools.d"),
+            home.join("tools.d"),
             "e gli strumenti nella stessa (env: {env:?})"
         );
     }

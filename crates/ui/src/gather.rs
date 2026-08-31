@@ -339,20 +339,20 @@ mod tests {
         // Prima della modifica entrambi venivano ignorati in silenzio e registry.len() era 0
         assert_eq!(registry.len(), 2, "entrambi i flussi rotti devono essere nel registro");
 
-        let tronco = registry.get("flusso-tronco").expect("flusso tronco presente");
-        assert!(tronco.is_err(), "il file tronco deve essere marcato come errore");
-        let reason_tronco = tronco.as_ref().unwrap_err();
+        let truncated = registry.get("flusso-tronco").expect("flusso tronco presente");
+        assert!(truncated.is_err(), "il file tronco deve essere marcato come errore");
+        let reason_truncated = truncated.as_ref().unwrap_err();
         assert!(
-            reason_tronco.contains("non è un flusso valido"),
-            "motivo: {reason_tronco}"
+            reason_truncated.contains("non è un flusso valido"),
+            "motivo: {reason_truncated}"
         );
 
-        let ciclico = registry.get("flusso-ciclico").expect("flusso ciclico presente");
-        assert!(ciclico.is_err(), "il flusso con ciclo deve essere marcato come errore");
-        let reason_ciclico = ciclico.as_ref().unwrap_err();
+        let cyclic = registry.get("flusso-ciclico").expect("flusso ciclico presente");
+        assert!(cyclic.is_err(), "il flusso con ciclo deve essere marcato come errore");
+        let reason_cyclic = cyclic.as_ref().unwrap_err();
         assert!(
-            reason_ciclico.contains("backward dependency") || reason_ciclico.contains("non è un flusso valido"),
-            "motivo: {reason_ciclico}"
+            reason_cyclic.contains("backward dependency") || reason_cyclic.contains("non è un flusso valido"),
+            "motivo: {reason_cyclic}"
         );
 
         let _ = fs::remove_dir_all(&dir);

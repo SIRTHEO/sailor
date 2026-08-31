@@ -242,17 +242,19 @@ fn a_path_probe_tells_missing_from_blocked() {
         ),
     );
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
-    let assente = report.findings.iter().find(|f| f.name == "assente").unwrap();
-    let coperto = report.findings.iter().find(|f| f.name == "coperto").unwrap();
+    // I nomi cercati sono dati della fixture e restano in italiano; le
+    // variabili che li tengono no.
+    let absent = report.findings.iter().find(|f| f.name == "assente").unwrap();
+    let covered = report.findings.iter().find(|f| f.name == "coperto").unwrap();
     assert!(
-        matches!(assente.presence, Presence::Absent(_)),
+        matches!(absent.presence, Presence::Absent(_)),
         "{:?}",
-        assente.presence
+        absent.presence
     );
     assert!(
-        matches!(coperto.presence, Presence::Undetermined(_)),
+        matches!(covered.presence, Presence::Undetermined(_)),
         "{:?}",
-        coperto.presence
+        covered.presence
     );
 }
 
@@ -374,11 +376,11 @@ fn a_banner_before_the_version_is_skipped_by_the_descriptor() {
 fn with_version_probes_off_nothing_is_executed() {
     let sandbox = Sandbox::new("noprobe");
     let bin_dir = sandbox.dir("bin");
-    let spia = sandbox.root.join("spia");
+    let probe = sandbox.root.join("spia");
     fake_binary(
         &bin_dir,
         "attrezzo",
-        &format!("touch '{}'; echo 1.0", spia.to_string_lossy()),
+        &format!("touch '{}'; echo 1.0", probe.to_string_lossy()),
     );
     let descriptors = sandbox.write(
         "tools.json",
@@ -393,7 +395,7 @@ fn with_version_probes_off_nothing_is_executed() {
         report.findings[0].version,
         VersionReading::NotAsked(_)
     ));
-    assert!(!spia.exists(), "spente, le esecuzioni non devono avvenire");
+    assert!(!probe.exists(), "spente, le esecuzioni non devono avvenire");
 }
 
 // ── un descrittore malformato non fa cadere il rilevamento ──────────────
@@ -443,12 +445,12 @@ fn a_broken_file_does_not_take_the_other_files_down() {
     let sandbox = Sandbox::new("brokenfile");
     let bin_dir = sandbox.dir("bin");
     fake_binary(&bin_dir, "buono", "echo ok");
-    let rotto = sandbox.write("rotto.json", "{ questo non è json");
-    let sano = sandbox.write(
+    let broken = sandbox.write("rotto.json", "{ questo non è json");
+    let sound = sandbox.write(
         "sano.json",
         r#"[{"id": "buono", "family": "tool", "detect": {"command": "buono"}}]"#,
     );
-    let catalog = Catalog::load(&[Source::File(rotto), Source::File(sano)]);
+    let catalog = Catalog::load(&[Source::File(broken), Source::File(sound)]);
     assert_eq!(catalog.problems.len(), 1, "{:?}", catalog.problems);
     let report = toolbox::detect(&catalog, &machine(vec![bin_dir], &sandbox.root));
     assert_eq!(report.findings.len(), 1);
@@ -490,26 +492,26 @@ fn a_user_file_overrides_and_switches_off_a_shipped_descriptor() {
     let sandbox = Sandbox::new("override");
     let bin_dir = sandbox.dir("bin");
     fake_binary(&bin_dir, "attrezzo", "echo 1.0");
-    let spediti = sandbox.write(
+    let shipped = sandbox.write(
         "spediti.json",
         r#"[{"id": "attrezzo", "family": "tool", "label": "quello di serie",
              "detect": {"command": "attrezzo"}},
             {"id": "da-togliere", "family": "tool", "detect": {"command": "attrezzo"}}]"#,
     );
-    let miei = sandbox.write(
+    let mine = sandbox.write(
         "miei.json",
         r#"[{"id": "attrezzo", "family": "tool", "label": "il mio",
              "detect": {"command": "attrezzo"}},
             {"id": "da-togliere", "family": "tool", "detect": {"command": "attrezzo"},
              "disabled": true}]"#,
     );
-    let catalog = Catalog::load(&[Source::File(spediti), Source::File(miei.clone())]);
+    let catalog = Catalog::load(&[Source::File(shipped), Source::File(mine.clone())]);
     let report = toolbox::detect(&catalog, &machine(vec![bin_dir], &sandbox.root));
     assert_eq!(report.findings.len(), 1, "{:?}", report.findings);
     assert_eq!(report.findings[0].label, "il mio");
     assert_eq!(
         report.findings[0].descriptor_source,
-        miei.to_string_lossy()
+        mine.to_string_lossy()
     );
 }
 
@@ -525,13 +527,13 @@ fn the_shipped_descriptors_all_load() {
         catalog.problems
     );
     assert!(catalog.live().len() > 10, "{}", catalog.live().len());
-    let famiglie: Vec<&str> = catalog
+    let families: Vec<&str> = catalog
         .live()
         .iter()
         .map(|l| l.descriptor.family.as_str())
         .collect();
-    for attesa in ["ai_cli", "mcp_server", "tool"] {
-        assert!(famiglie.contains(&attesa), "manca la famiglia {attesa}");
+    for expected in ["ai_cli", "mcp_server", "tool"] {
+        assert!(families.contains(&expected), "manca la famiglia {expected}");
     }
 }
 
@@ -551,8 +553,8 @@ fn servers_declared_in_a_config_file_are_discovered_one_by_one() {
                                          "pointer": ["mcpServers"]}}}]"#,
     );
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
-    let nomi: Vec<&str> = report.findings.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(nomi, vec!["context7", "socraticode"], "{nomi:?}");
+    let names: Vec<&str> = report.findings.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, vec!["context7", "socraticode"], "{names:?}");
     // Ogni voce sa da dove viene: il descrittore e il file che la dichiara.
     assert_eq!(report.findings[0].descriptor_id, "server");
     assert!(
@@ -568,7 +570,7 @@ fn servers_declared_in_a_config_file_are_discovered_one_by_one() {
 fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
     let sandbox = Sandbox::new("enumblocked");
     sandbox.write("vuoto.json", r#"{"mcpServers": {}}"#);
-    let rotto = sandbox.write("rotto.json", "{ non json");
+    let broken = sandbox.write("rotto.json", "{ non json");
     let descriptors = sandbox.write(
         "tools.json",
         &format!(
@@ -581,7 +583,7 @@ fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
                 {{"id": "inesistente", "family": "mcp_server",
                   "enumerate": {{"json_keys": {{"files": ["~/mai-scritto.json"],
                                                 "pointer": ["mcpServers"]}}}}}}]"#,
-            rotto.to_string_lossy()
+            broken.to_string_lossy()
         ),
     );
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
@@ -624,8 +626,8 @@ fn a_star_in_the_pointer_reaches_the_per_project_declarations() {
                                          "pointer": ["projects", "*", "mcpServers"]}}}]"#,
     );
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
-    let nomi: Vec<&str> = report.findings.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(nomi, vec!["due", "uno"], "{nomi:?}");
+    let names: Vec<&str> = report.findings.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, vec!["due", "uno"], "{names:?}");
 }
 
 // ── dove vive la configurazione ─────────────────────────────────────────
