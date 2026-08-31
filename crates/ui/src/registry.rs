@@ -98,6 +98,8 @@ mod tests {
             // Un flusso che si lancia a mano: qui si guarda la forma dei passi,
             // non quando girerebbe da solo.
             schedule: None,
+            // Nessun tetto: queste prove non spendono niente.
+            spend_cap_micros: None,
         }
     }
 

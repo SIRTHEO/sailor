@@ -20,7 +20,9 @@
 
 mod run_record;
 
-pub use run_record::{record_flow_run, FlowRun};
+pub use run_record::{
+    execution_status, record_flow_run, stopped_by_cap, why_it_stopped, FlowRun,
+};
 
 use std::sync::Arc;
 

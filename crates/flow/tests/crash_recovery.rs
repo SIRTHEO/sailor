@@ -354,6 +354,7 @@ fn the_engine_records_the_holder_and_the_species_when_it_opens_a_step() {
                 root_inputs: BTreeMap::new(),
                 gates: vec![],
                 shared: SharedState::new(),
+                spend_cap_micros: None,
             },
             &mut store,
             &actions,
