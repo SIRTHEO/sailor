@@ -82,6 +82,9 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         cache_write_long_tokens: u64_at(cols, 24),
         cache_write_price_micros_per_million: opt_i64_at(cols, 25),
         cache_write_long_price_micros_per_million: opt_i64_at(cols, 26),
+        // Versione 6, i turni: la quantita' che spiega perche' una catena di
+        // passi costa piu' di una sessione sola.
+        turns: u64_at(cols, 27),
     })
 }
 

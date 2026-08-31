@@ -22,6 +22,7 @@ use toolbox::resolver::Tools;
 /// scritti in una cache a lunga durata, e 0,128541 dollari dichiarati.
 const REAL_OUTPUT: &str = r#"{
   "stop_reason": "end_turn",
+  "num_turns": 3,
   "total_cost_usd": 0.128541,
   "usage": {
     "input_tokens": 2,
@@ -112,6 +113,13 @@ fn the_shipped_claude_descriptor_reads_a_real_call_and_prices_it() {
 
     // Il motore aveva dichiarato 0,128541 $. Il nostro conto, partito dai soli
     // conteggi e dal listino, arriva alla stessa cifra al micro.
+    // I TURNI SI LEGGONO DALLA STESSA USCITA DEI TOKEN, e fino al 31/08/2026
+    // venivano buttati via. Sono la quantita' che spiega il conto di una
+    // catena di passi: misurato quel giorno, un flusso di quattro passi legge
+    // per turno l'8% in piu' di una sessione sola che fa lo stesso lavoro, e
+    // consuma il doppio -- perche' fa il doppio dei turni.
+    assert_eq!(reading.turns, Some(3), "il descrittore spedito legge `num_turns`");
+
     let declared = (reading.declared_cost.unwrap() * 1_000_000.0).round() as i64;
     assert_eq!(declared, 128_541);
     assert_eq!(

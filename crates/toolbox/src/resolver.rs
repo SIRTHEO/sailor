@@ -175,6 +175,7 @@ fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
             cache_write_tokens: usage.cache_write_tokens.as_ref().map(pointer),
             cache_write_long_tokens: usage.cache_write_long_tokens.as_ref().map(pointer),
             total_tokens: usage.total_tokens.as_ref().map(pointer),
+            turns: usage.turns.as_ref().map(pointer),
             cost: usage.cost.as_ref().map(pointer),
             model: usage.model.as_ref().map(pointer),
             answer: usage.answer.as_ref().map(pointer),
