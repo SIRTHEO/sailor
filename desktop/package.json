@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vitest run && vite build",
     "preview": "vite preview",
     "desktop": "cargo tauri dev",
+    "live": "cargo run --manifest-path ../Cargo.toml -p supervisor --bin sailor-live -- --root ..",
     "desktop:build": "cargo tauri build",
     "test": "vitest run"
   },
