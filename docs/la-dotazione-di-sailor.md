@@ -67,5 +67,7 @@ contro cui confrontare.
 È lo stesso di sempre, alla terza forma. Sailor non ha comandi per operare su di
 sé (guasto 15), non registra ciò che spende pur avendo le tabelle pronte, e non
 possiede ciò che usa. **Un sistema che vive di roba altrui non può sapere cosa
-sta facendo di sé**, e infatti nessuno dei diciassette guasti è stato trovato da
-un controllo automatico.
+sta facendo di sé**, e infatti **nessuno** dei guasti incontrati è stato
+trovato da un controllo automatico. (Un numero preciso stava qui e invecchiava:
+lo si conta in `docs/guasti-incontrati.md`, che dal 31/08/2026 ha una prova che
+lo tiene onesto.)
