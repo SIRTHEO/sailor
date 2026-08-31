@@ -344,6 +344,7 @@ mod tests {
             error_type: None,
             started_at: 0,
             ended_at: None,
+            session_id: None,
         }
     }
 

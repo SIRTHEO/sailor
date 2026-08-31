@@ -25,12 +25,14 @@ pub mod descriptor;
 pub mod needs;
 pub mod probe;
 pub mod resolver;
+pub mod session;
 
 pub use action::{register_default, DetectToolsAction, DETECT_TOOLS_ACTION};
 pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
 pub use descriptor::{builtin_catalog, Catalog, Descriptor, Loaded, Problem, Source, BUILTIN_CATALOGS};
 pub use probe::{Look, Machine, VersionReading};
 pub use resolver::Tools;
+pub use session::{SessionAbilities, SessionAbility};
 
 // I TIPI DELL'ESITO SI LEGGONO ANCHE IN INGRESSO, dal 29/08/2026: un passo che
 // riceve il rilevamento fatto dal passo prima lo deserializza come qualunque
