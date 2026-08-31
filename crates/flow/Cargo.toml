@@ -8,3 +8,19 @@ rust-version.workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = "0.10"
+
+# IL DEPOSITO VERO ENTRA SOLO NELLE PROVE, E IL VERSO È VOLUTO.
+#
+# `ledger` dipende da `flow` — implementa `RecordStore` per `Ledger` — quindi
+# metterlo fra le dipendenze normali sarebbe un ciclo che cargo rifiuta. Qui è
+# un ciclo di sole prove, che cargo ammette apposta: la libreria `flow` continua
+# a non sapere niente di SQLite, e a saperlo è solo la prova che verifica i due
+# insieme.
+#
+# **PERCHÉ SERVE.** `the_spending_cap.rs` finge `spent()` con un deposito
+# scritto nella prova stessa, e `spent_in_run` è provato da solo in `ledger`.
+# Nessuna delle due dice che l'esecutore, con un `Ledger` vero sotto, veda
+# salire la spesa **mentre la corsa gira** — che è il solo istante in cui il
+# tetto funziona o non funziona.
+[dev-dependencies]
+ledger = { path = "../ledger" }
