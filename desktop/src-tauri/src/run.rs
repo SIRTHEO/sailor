@@ -46,9 +46,13 @@
 //! **dove si cambierebbe**: `drain_and_wait`, sostituendo `read_to_end` con un
 //! `BufReader::lines()` che spinga ogni riga in un canale.
 
+// `Decision` non compare più: la traduzione da decisione a stato è passata in
+// `registry` insieme alla sua gemella della riga di comando, e l'importazione
+// era rimasta. Nessuno l'aveva vista perché questo guscio sta fuori dal
+// workspace, quindi i suoi avvisi non li stampa `cargo test --workspace`.
 use flow::{
-    ActionRegistry, Completion, Decision, Execution, ExecutionRequest, Executor, FlowError,
-    FlowFile, InProcessExecutor, RecordStore, SharedState, StepRecord, SystemClock,
+    ActionRegistry, Completion, Execution, ExecutionRequest, Executor, FlowError, FlowFile,
+    InProcessExecutor, RecordStore, SharedState, StepRecord, SystemClock,
 };
 use ledger::Ledger;
 use serde::Serialize;
