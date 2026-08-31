@@ -14,6 +14,11 @@ rust-version.workspace = true
 # 09:05, quando la misura del consumo è entrata da una parte sola. Il commento
 # sopra la copia della finestra diceva testualmente «QUESTA LISTA SI DISALLINEA,
 # E L'HA GIÀ FATTO»: era vero, ed è rimasto vero finché la lista è stata due.
+# `serde_json` sta solo fra le prove: serve a scrivere un flusso a mano nel
+# corpo di una prova, non al crate che si spedisce. La riga sopra resta vera.
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [dependencies]
 actions = { path = "../actions" }
 flow = { path = "../flow" }
