@@ -23,6 +23,11 @@
 > - **Restano scoperti** il guasto 18 (la dotazione esiste e non arriva ai
 >   motori), il 14 (dove dorme una corsa sospesa), e i due dati che non si
 >   possono inventare: come `agy` e `gemini` dicono di aver finito la quota.
+> - *01/09/2026 — il 18 è ora **chiuso in parte**: l'ambiente del profilo
+>   arriva a ogni motore invocato da un passo, sotto ciò che il passo dichiara.
+>   Resta scoperto ciò che la cura chiedeva per primo, cioè una dotazione che
+>   viaggi col prodotto: `~/.config/sailor/equipment/` non è versionata e
+>   nessun codice la legge.*
 
 **31/08/2026.** Cinque passi, 142 turni, 12,5639 $ equivalenti. Il passo di
 verifica ha aperto le fonti e il codice e ha detto **approvato**, con quattro
