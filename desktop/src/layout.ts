@@ -102,7 +102,30 @@ export function toEdges(graph: Graph): Edge[] {
 
 const BAND_GAP = 56;
 const BAND_PAD_X = 28;
-const BAND_PAD_TOP = 54;
+
+/**
+ * L'altezza riservata all'intestazione di una corsia, prima del primo nodo.
+ *
+ * **È UN NUMERO CHE DIPENDE DAL FOGLIO DI STILE, E NIENTE LO SA.** Sotto
+ * `FAR_ZOOM` le etichette di una corsia crescono, e lo zoom che la tela sceglie
+ * da sola con due flussi è 0,5: la modalità «da lontano» **è la vista
+ * d'apertura**. Quando i corpi sono passati da 13/11px a 15/15px questo numero
+ * è rimasto 54, e la descrizione della corsia è finita 4px dentro il primo
+ * nodo — sulla prima schermata, dove si vede per forza.
+ *
+ * `layout.test.ts` rifà il conto leggendo `styles.css`: se un corpo o
+ * un'interlinea di `.flow-band__*` cambia e questo numero resta fermo, diventa
+ * rosso. Il conto è: padding in alto + la riga più alta dell'intestazione +
+ * lo stacco della descrizione + due righe di descrizione + `BAND_HEAD_GAP`.
+ */
+export const BAND_PAD_TOP = 88;
+
+/** Quanto respiro deve restare fra la descrizione e il primo nodo. */
+export const BAND_HEAD_GAP = 8;
+
+/** La descrizione di una corsia è tagliata a due righe da `styles.css`. */
+export const BAND_DESC_LINES = 2;
+
 const BAND_PAD_BOTTOM = 24;
 const STEP_WIDTH = 232;
 

@@ -306,12 +306,17 @@ export function FlowBandNode({ data }: NodeProps) {
   // Come per un passo: da lontano l'etichetta cresce invece di restare
   // disegnata alta sei pixel.
   const far = useStore((s) => s.transform[2]) < FAR_ZOOM;
+  // LA TINTA DELLA CORSIA ESCE QUANDO LA CORSIA NON È A FUOCO, e il bordo torna
+  // al filo neutro. Prima a ritrarsi era `opacity: 0.3` su tutta la corsia, cioè
+  // anche sulle sue parole: la descrizione faceva 1,47:1. Quale ramo si sta
+  // guardando si vede dai segni — il velo, il bordo, il bollino — mai dal testo.
+  const borderColor = dimmed ? undefined : color;
   return (
     <div
       className="flow-band"
       data-dimmed={dimmed || undefined}
       data-far={far || undefined}
-      style={{ borderColor: color }}
+      style={{ borderColor }}
     >
       <div className="flow-band__head">
         {/* IL COLORE DELLA CORSIA È UN SEGNO, NON UN COLORE DI TESTO.
