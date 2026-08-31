@@ -477,6 +477,113 @@ pub(crate) fn run_snapshot(runs: State<'_, Arc<Runs>>, run_id: String) -> Result
     })
 }
 
+/// In che modo una corsa è aperta.
+///
+/// **DUE MODI, NON UNO, E IL DEPOSITO LI TIENE IN DUE POSTI DIVERSI.** Una
+/// corsa al lavoro ha un passo **senza esito**; una corsa consegnata a una
+/// persona ha il passo **chiuso** con esito `Waiting`, perché chi deve
+/// eseguirlo non è un processo di cui si aspetta la morte. Chiedere una sola
+/// delle due domande fa sparire l'altra metà — è il guasto che
+/// `waiting_runs` documenta al 31/08/2026: una consegna che nessuno raccoglieva
+/// spariva, e l'unico modo di ritrovarla era ricordarsene.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum OpenState {
+    /// Qualcuno o qualcosa ci sta lavorando adesso.
+    Working,
+    /// È ferma, e riparte solo se una persona fa qualcosa.
+    Waiting,
+}
+
+/// Una corsa aperta, chiunque l'abbia avviata.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct OpenRun {
+    pub run_id: String,
+    /// Su cosa lavorava: il flusso, o la cosa che la corsa nomina.
+    pub entity: String,
+    /// Al lavoro, o ferma ad aspettare una persona.
+    pub state: OpenState,
+    /// Quanti passi hanno ancora l'esito aperto. Zero per chi aspetta.
+    pub open_steps: usize,
+    /// Da quando dura questo stato: l'apertura del passo più vecchio per chi
+    /// lavora, l'inizio dell'attesa per chi aspetta.
+    pub since: i64,
+    /// Vero se questa finestra è quella che l'ha avviata.
+    pub started_here: bool,
+}
+
+/// **Tutte** le corse che hanno almeno un passo aperto, non solo le nostre.
+///
+/// **PERCHÉ NON BASTAVA `known_runs`.** Quella legge una mappa in memoria di
+/// questo processo: una corsa lanciata dal terminale, da un'altra finestra o da
+/// un demone non compare, e la prima schermata di Sailor — che deve dire «cosa
+/// sta succedendo adesso» — direbbe il falso a chiunque lavori in più di un
+/// posto. È il vincolo permanente «chiarezza per chi guarda»: un'interfaccia
+/// che mostra solo il proprio angolo è peggio di una che non mostra niente,
+/// perché sembra completa.
+///
+/// **IL DEPOSITO È L'ORACOLO, E LA MEMORIA È SOLO UN'ETICHETTA.** L'elenco
+/// viene da due domande al deposito — `unfinished_runs` per chi lavora,
+/// `waiting_runs` per chi aspetta una persona; ciò che questo processo sa in
+/// più serve solo a dire *quali* sono sue, perché una corsa avviata qui si può
+/// seguire dal vivo e una avviata altrove no. Se il deposito non c'è, l'elenco
+/// è vuoto: non è un errore, è una macchina su cui non è ancora girato niente.
+///
+/// **CHI ASPETTA VINCE SU CHI LAVORA** quando una corsa comparisse in tutte e
+/// due le risposte. Non è una preferenza estetica: dei due stati uno solo
+/// chiede qualcosa a chi guarda, e mostrarlo come «al lavoro» lo farebbe
+/// aspettare in eterno un processo che non tornerà.
+#[tauri::command]
+pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, String> {
+    let ledger_dir = default_ledger_dir();
+    if !ledger_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let ledger = Ledger::open(&ledger_dir)
+        .map_err(|error| format!("non riesco ad aprire il deposito: {error}"))?;
+    let unfinished = ledger
+        .unfinished_runs()
+        .map_err(|error| format!("non riesco a leggere le corse aperte: {error}"))?;
+    let waiting = ledger
+        .waiting_runs()
+        .map_err(|error| format!("non riesco a leggere le corse in attesa: {error}"))?;
+    let known = runs.lock_map();
+
+    let mut all: Vec<OpenRun> = waiting
+        .into_iter()
+        .map(|run| OpenRun {
+            started_here: known.contains_key(&run.run_id),
+            run_id: run.run_id,
+            entity: run.entity,
+            state: OpenState::Waiting,
+            open_steps: 0,
+            since: run.waiting_since,
+        })
+        .collect();
+    let held: std::collections::HashSet<String> =
+        all.iter().map(|run| run.run_id.clone()).collect();
+    all.extend(
+        unfinished
+            .into_iter()
+            .filter(|run| !held.contains(&run.run_id))
+            .map(|run| OpenRun {
+                started_here: known.contains_key(&run.run_id),
+                run_id: run.run_id,
+                entity: run.entity,
+                state: OpenState::Working,
+                open_steps: run.open_steps,
+                since: run.oldest_started_at,
+            }),
+    );
+
+    // La più vecchia in cima: chi guarda cerca prima ciò che è fermo da più
+    // tempo, non ciò che è appena partito. Qui l'ordine è solo sul tempo —
+    // raggruppare per stato è una scelta di chi disegna, e questo comando serve
+    // anche a chi non disegna niente.
+    all.sort_by_key(|run| run.since);
+    Ok(all)
+}
+
 /// Le corse che questa finestra ha avviato, la più recente per ultima.
 ///
 /// Serve a chi ricarica la pagina mentre un flusso gira: senza questo elenco la

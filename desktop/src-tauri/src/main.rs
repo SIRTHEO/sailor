@@ -155,6 +155,7 @@ fn main() {
             run::start_run,
             run::run_snapshot,
             run::known_runs,
+            run::open_runs,
             run::step_history,
             run::run_usage
         ])
