@@ -702,6 +702,24 @@ impl ToolChoice {
     }
 }
 
+/// **PERCHÉ QUESTA STRUTTURA RACCOGLIE CIÒ CHE NON CONOSCE INVECE DI SCARTARLO.**
+///
+/// Il 30/08/2026 un flusso di prova scriveva `"prompt"` dove va `"stdin"`. Il
+/// passo è partito lo stesso, il motore ha ricevuto una riga di comando monca,
+/// e l'errore che è tornato era suo: «Input must be provided either through
+/// stdin». Una chiamata a pagamento spesa per un refuso, e nessuno che potesse
+/// dirlo prima. È il guasto 20.
+///
+/// **`deny_unknown_fields` NON È LA RISPOSTA, E ROMPEREBBE TUTTO.** A tempo di
+/// esecuzione l'ingresso di un passo *è* l'uscita della sua dipendenza, col
+/// `with` sovrapposto: arriva quindi ogni campo che il passo prima ha prodotto.
+/// Rifiutarli renderebbe impossibile ogni passo con una dipendenza — lo stesso
+/// motivo per cui `toolbox::needs::NeedsSpec` lo dichiara e lo rifiuta.
+///
+/// Qui i campi non riconosciuti finiscono in `extra` e vengono ignorati come
+/// prima. La differenza è che adesso **si possono chiedere**, e `flow check` li
+/// chiede sul `with` — che è testo scritto a mano, dove un campo di troppo non è
+/// l'uscita di nessuno: è un refuso.
 #[derive(Debug, Deserialize)]
 struct EngineSpec {
     /// Il comando così com'è. Resta per un comando qualunque — `sh`, `cat`, uno
@@ -747,6 +765,13 @@ struct EngineSpec {
     #[serde(default)]
     answer_shape: Option<ValueSchema>,
     timeout_secs: u64,
+    /// Tutto ciò che questa azione non riconosce.
+    ///
+    /// A tempo di esecuzione è l'uscita della dipendenza e si ignora; a tempo di
+    /// controllo, sul solo `with`, è l'elenco dei refusi. Vedi il commento sopra
+    /// la struttura.
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
 }
 
 /// Il testo da leggere come JSON dentro ciò che un motore ha detto.
@@ -1496,6 +1521,25 @@ impl Candidate {
 }
 
 impl Action for ExternalEngineAction {
+    /// I campi che questa azione non conosce, letti dalla **struttura vera**.
+    ///
+    /// Non è un elenco scritto a mano accanto a `EngineSpec`: sarebbe una
+    /// seconda copia della stessa verità, e le seconde copie divergono. Qui si
+    /// tenta la deserializzazione e si guarda cosa è finito in `extra` — quindi
+    /// aggiungere un campo alla specifica basta, non c'è nient'altro da
+    /// aggiornare.
+    ///
+    /// Un ingresso che non si deserializza affatto non produce niente: a
+    /// controllo il `with` è **parziale** per costruzione — il resto arriva
+    /// dalle dipendenze — e lamentarsi di un `timeout_secs` mancante direbbe
+    /// una cosa falsa.
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        match serde_json::from_value::<EngineSpec>(declared.clone()) {
+            Ok(spec) => spec.extra.into_keys().collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     fn execute(
         &self,
         input: &Value,
@@ -1604,6 +1648,9 @@ struct CheckSpec {
     #[serde(default)]
     accept: Vec<String>,
     timeout_secs: u64,
+    /// Ciò che non è riconosciuto, per la stessa ragione di `EngineSpec::extra`.
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
 }
 
 /// Esegue una verifica di shell con un tempo massimo, leggendo comando,
@@ -1636,6 +1683,14 @@ impl ShellCheckAction {
 }
 
 impl Action for ShellCheckAction {
+    /// Come per il motore, e dalla stessa struttura.
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        match serde_json::from_value::<CheckSpec>(declared.clone()) {
+            Ok(spec) => spec.extra.into_keys().collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     fn execute(
         &self,
         input: &Value,
@@ -2154,6 +2209,60 @@ mod tests {
             }
             _ => panic!("doveva riuscire"),
         }
+    }
+
+    /// **UN PASSO CON UNA DIPENDENZA CONTINUA A GIRARE, E QUI STA IL RISCHIO
+    /// DEL CONTROLLO NUOVO.**
+    ///
+    /// L'ingresso vero di un passo è l'uscita del passo prima, col `with`
+    /// sovrapposto: `status`, `stdout`, `stderr` e qualunque altra cosa quel
+    /// passo abbia prodotto arrivano qui dentro. Se `EngineSpec` li rifiutasse —
+    /// la strada ovvia, `deny_unknown_fields` — nessun passo con una dipendenza
+    /// partirebbe più, e il rimedio al guasto 20 sarebbe molto peggio del
+    /// guasto. Questa prova tiene quella porta chiusa.
+    #[test]
+    fn an_input_carrying_the_previous_step_output_still_runs() {
+        let action = ExternalEngineAction::new();
+        let input = json!({
+            "bin": "echo",
+            "args": ["fatto"],
+            "timeout_secs": 10,
+            // Quello che arriva dal passo prima, e che questa azione non
+            // conosce né deve conoscere.
+            "status": "ok",
+            "stdout": "l'uscita di chi mi precede\n",
+            "stderr": "",
+        });
+
+        let outcome = action
+            .execute(&input, &mut SharedState::new())
+            .expect("un ingresso con l'uscita della dipendenza deve girare");
+
+        let ActionOutcome::Went(output) = outcome else {
+            panic!("doveva riuscire")
+        };
+        assert_eq!(output["stdout"], "fatto\n", "e fa il proprio lavoro");
+    }
+
+    /// La gemella del controllo statico, provata **qui** dove vive la verità:
+    /// gli stessi campi che a esecuzione si ignorano, a controllo si nominano.
+    #[test]
+    fn the_action_can_name_the_fields_it_does_not_know() {
+        let action = ExternalEngineAction::new();
+
+        let stray = action.unknown_fields(&json!({
+            "tool": "claude-code",
+            "prompt": "ciao",
+            "timeout_secs": 10,
+        }));
+
+        assert_eq!(stray, vec!["prompt".to_owned()]);
+        assert!(
+            action
+                .unknown_fields(&json!({"tool": "claude-code", "stdin": "ciao", "timeout_secs": 10}))
+                .is_empty(),
+            "e su un ingresso scritto bene non nomina niente"
+        );
     }
 
     // ── run_shell_check ───────────────────────────────────────────────
