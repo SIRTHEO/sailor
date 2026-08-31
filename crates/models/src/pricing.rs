@@ -1,19 +1,81 @@
-//! Il prices locale: quanto costa un milione di token, per modello.
+//! Il listino: quanto costa un milione di token, per modello.
 //!
-//! **È LA FONTE DI VERITÀ SUL COSTO, E STA IN UN FILE.** Un costo che arriva
-//! dallo stesso posto da cui arriva la spesa non è una verifica di niente: se
-//! un motore dichiara quanto ha fatto pagare, quel numero si registra a parte
-//! come confronto e il conto lo fa questo prices. E sta in un file perché i
-//! prezzi cambiano più spesso di quanto si ricompili: `$SAILOR_HOME/pricing.json`
-//! si riscrive con un editor di testo.
+//! **È LA FONTE DI VERITÀ SUL COSTO.** Un costo che arriva dallo stesso posto da
+//! cui arriva la spesa non è una verifica di niente: se un motore dichiara
+//! quanto ha fatto pagare, quel numero si registra a parte come confronto e il
+//! conto lo fa questo listino.
+//!
+//! **NE ESISTONO DUE, E IL SECONDO SOVRASCRIVE IL PRIMO.** Quello spedito col
+//! prodotto è incorporato nel binario ([`BUILTIN`], [`shipped`]); quello di casa
+//! — `$SAILOR_HOME/pricing.json` — si riscrive con un editor di testo e vince
+//! per `id`, perché i prezzi cambiano più spesso di quanto si ricompili.
+//!
+//! **PERCHÉ NON BASTAVA QUELLO DI CASA, ED È IL GUASTO 35.** Fino al 31/08/2026
+//! il listino esisteva **solo** lì, e in git c'era un esempio dichiarato non
+//! verificato. Su una macchina dove quel file mancava ogni `cost_micros` restava
+//! `None`, ogni corsa risultava costata zero, e un flusso con `spend_cap_micros`
+//! girava fino in fondo senza nessun errore: un freno che non frena. La cura non
+//! è ammorbidire il tetto — è spedire il listino, come si spediscono i
+//! descrittori degli strumenti e i flussi di sistema.
+//!
+//! **È LA STESSA MALATTIA DEL GUASTO 18**, e vale la pena vederla una volta
+//! sola: Sailor aveva il dato in casa propria e non lo usava. Il listino c'era e
+//! non viaggiava col prodotto; la dotazione c'era e non arrivava ai motori.
+//! Finché un dato vive solo nella casa di chi esegue, il prodotto sta usando la
+//! casa del vicino.
 //!
 //! **MAI 0 PER UN PREZZO CHE MANCA.** È la stessa regola già scritta in
 //! `catalog::Model`: `0.0` resta ai modelli davvero gratuiti. Una voce senza
-//! prezzo, o un modello che nel prices non c'è, lascia il costo **sconosciuto**
+//! prezzo, o un modello che nel listino non c'è, lascia il costo **sconosciuto**
 //! — non a zero, che sarebbe una sottostima con la faccia di una misura.
 //!
 //! Puro: testo dentro, valori fuori. Chi legge il file da disco sta altrove,
 //! come per `catalog` e `usage`.
+
+/// Il listino che il prodotto si porta dietro.
+///
+/// Incorporato nel binario, non cercato in una cartella di installazione: è lo
+/// stesso schema di `toolbox::descriptor::BUILTIN` e dei flussi di sistema, e
+/// per la stessa ragione — un binario copiato altrove continua a rispondere, e
+/// non c'è nessun percorso da indovinare. Resta comunque un dato: chi lo vuole
+/// diverso riscrive la voce per `id` nel proprio file di casa.
+pub const BUILTIN: &str = include_str!("../pricing.default.json");
+
+/// Come si dice a chi legge da dove viene un listino che nessuno ha scritto su
+/// questa macchina. Non è un percorso e non deve sembrarlo: chi andasse a
+/// cercarlo su disco non troverebbe niente.
+pub const BUILTIN_SOURCE: &str = "incorporato";
+
+/// Il listino spedito col prodotto.
+///
+/// **PANICA SE NON SI LEGGE, DI PROPOSITO.** Un listino incorporato malformato
+/// non è una condizione del mondo — è un difetto di compilazione, e cadere in
+/// silenzio su un listino vuoto rimetterebbe in piedi esattamente il guasto 35.
+/// La prova `the_shipped_price_list_is_readable` lo prende prima che esca di
+/// qui.
+pub fn shipped() -> PriceList {
+    PriceList::parse(BUILTIN).expect("il listino spedito col prodotto si legge")
+}
+
+/// Che cosa questo listino sa dire del nome di un modello.
+///
+/// **TRE ESITI E NON DUE, PERCHÉ SONO DUE RIPARAZIONI DIVERSE.** Un nome che il
+/// listino non conosce si ripara aggiungendo una voce — o un alias, se è lo
+/// stesso modello con un altro nome. Una voce che c'è ma non ha i prezzi si
+/// ripara scrivendo i prezzi. Chiamarli tutti e due «sconosciuto» manderebbe a
+/// cercare nel posto sbagliato, e il costo resta sconosciuto in tutti e due i
+/// casi — che è precisamente ciò che rende la differenza invisibile a chi
+/// guarda solo il numero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Known {
+    /// C'è, e ha i due prezzi che servono a fare un conto.
+    Priced,
+    /// C'è, ma le manca l'ingresso o l'uscita: il costo resterà sconosciuto lo
+    /// stesso, e nessuno se ne accorgerebbe guardando il listino da lontano.
+    ListedWithoutPrice,
+    /// Nessuna voce porta questo nome, né come `id` né come alias.
+    Absent,
+}
 
 /// Quanto costa un modello, per milione di token. Ogni prezzo è facoltativo:
 /// un prices può conoscere l'ingresso e non la cache, ed è un'informazione
@@ -113,6 +175,78 @@ impl PriceList {
                     .any(|alias| alias.trim().to_lowercase() == wanted)
         })
     }
+
+    /// Che cosa si sa del costo di questo nome, prima di spendere.
+    ///
+    /// Serve a `sailor flow check` e a `sailor flow cost`: chi non ha un prezzo
+    /// per un modello deve **saperlo**, non scoprirlo con uno zero. Vedi
+    /// [`Known`].
+    pub fn knows(&self, name: &str) -> Known {
+        match self.find(name) {
+            None => Known::Absent,
+            Some(entry) => {
+                if entry.input_per_million.is_some() && entry.output_per_million.is_some() {
+                    Known::Priced
+                } else {
+                    Known::ListedWithoutPrice
+                }
+            }
+        }
+    }
+
+    /// Questo listino, con sopra quello scritto in casa dall'utente.
+    ///
+    /// **SI SOSTITUISCE UNA VOCE INTERA, NON I SUOI CAMPI.** È la disciplina dei
+    /// descrittori e dei flussi di sistema: un `id` già presente viene
+    /// rimpiazzato da quello di casa, alias compresi. Fondere campo per campo
+    /// lascerebbe in piedi un alias spedito che chi riscrive la voce credeva di
+    /// aver tolto, e lo scoprirebbe solo trovando prezzato un nome che non
+    /// aveva più dichiarato.
+    ///
+    /// **LE VOCI DI CASA VENGONO PRIMA, E L'ORDINE NON È ESTETICO.** [`find`]
+    /// prende la prima che risponde: un alias di casa che collide con l'`id` di
+    /// una voce spedita deve vincere, altrimenti l'utente avrebbe riscritto un
+    /// nome e continuerebbe a essere servito dall'altro.
+    ///
+    /// **DUE VALUTE NON SI MESCOLANO, E QUESTO È IL BRACCIO CHE CONTA.** Se il
+    /// file di casa dichiara una valuta diversa da quella spedita, le voci
+    /// spedite **non entrano**: il listino di casa vale da solo. Sommare euro e
+    /// dollari nella stessa colonna è precisamente ciò che questa struttura
+    /// evita dichiarando la valuta una volta sola, e una fusione ingenua lo
+    /// rifarebbe da dietro — senza che nessuno lo veda, perché il totale esce
+    /// lo stesso.
+    ///
+    /// [`find`]: PriceList::find
+    pub fn overridden_by(self, home: PriceList) -> PriceList {
+        if !same_currency(&self.currency, &home.currency) {
+            return home;
+        }
+        let taken: Vec<String> = home
+            .entries
+            .iter()
+            .map(|entry| entry.id.trim().to_lowercase())
+            .collect();
+        let mut entries = home.entries;
+        entries.extend(
+            self.entries
+                .into_iter()
+                .filter(|entry| !taken.contains(&entry.id.trim().to_lowercase())),
+        );
+        PriceList {
+            currency: home.currency,
+            // La data è quella di chi ha scritto per ultimo: chi guarda una
+            // cifra vuole sapere quanto è vecchio il listino che ha in mano, e
+            // quello di casa è il solo che qualcuno abbia toccato.
+            dated: home.dated.or(self.dated),
+            entries,
+        }
+    }
+}
+
+/// Due valute sono la stessa se si scrivono uguali a meno di maiuscole e spazi:
+/// la stessa tolleranza che [`PriceList::find`] applica ai nomi dei modelli.
+fn same_currency(one: &str, other: &str) -> bool {
+    one.trim().to_lowercase() == other.trim().to_lowercase()
 }
 
 fn parse_price(value: &serde_json::Value) -> Option<Price> {
@@ -409,45 +543,145 @@ mod tests {
         assert_eq!(prices.entries.len(), 1);
         assert!(prices.find("buono").is_some());
     }
+
+    /// Un modello davvero gratuito ha `0.0` dichiarato, ed è diverso da un
+    /// prezzo mancante: il suo costo si calcola e viene zero. La distinzione sta
+    /// nel lettore, non nel file — per questo si prova su un listino scritto
+    /// qui, e non su quello spedito, che non ha nessun modello gratuito e non
+    /// deve guadagnarne uno finto per far passare una prova.
+    #[test]
+    fn a_declared_zero_is_a_measure_and_a_missing_price_is_not() {
+        let prices = PriceList::parse(
+            r#"{"models":[{"id":"gratis","input_per_million":0.0,"output_per_million":0.0}]}"#,
+        )
+        .unwrap();
+        let a_million_each_side = TokenCounts {
+            input: Some(1_000_000),
+            output: Some(1_000_000),
+            ..TokenCounts::default()
+        };
+        assert_eq!(
+            cost_micros(a_million_each_side, prices.find("gratis").unwrap().micros()),
+            Some(0),
+            "zero dichiarato è una misura; zero inventato no"
+        );
+        assert_eq!(
+            cost_micros(a_million_each_side, PriceList::default().find("gratis").map(Price::micros).unwrap_or_default()),
+            None,
+            "un modello che il listino non conosce non costa zero: non si sa"
+        );
+    }
 }
 
 #[cfg(test)]
-mod the_shipped_example {
+mod the_shipped_price_list {
     use super::*;
 
-    /// L'esempio spedito col prodotto deve essere leggibile da questo codice.
-    /// Un esempio che il programma stesso rifiuterebbe manderebbe chi lo copia
-    /// a cercare l'errore nel posto sbagliato — e lo troverebbe solo scoprendo
-    /// che il costo resta sempre sconosciuto, senza mai sapere perché.
+    /// Il listino spedito col prodotto deve essere leggibile da questo codice.
+    /// [`shipped`] panica se non lo è, quindi questa prova è il posto in cui quel
+    /// panico viene alla luce prima di uscire dal repository.
     #[test]
-    fn the_shipped_example_parses_and_prices_what_it_declares() {
-        let prices = PriceList::parse(include_str!("../pricing.example.json"))
-            .expect("l'esempio si legge");
+    fn the_shipped_price_list_is_readable() {
+        let prices = shipped();
         assert_eq!(prices.currency, "USD");
-        let sonnet = prices.find("sonnet").expect("l'alias funziona");
-        assert_eq!(sonnet.id, "claude-sonnet-5");
+        assert!(
+            prices.dated.is_some(),
+            "un listino senza data non dice a chi lo legge quanto è vecchio"
+        );
+    }
+
+    /// **LA PROVA DEL GUASTO 35, E VALE PIÙ DI TUTTE LE ALTRE QUI DENTRO.**
+    ///
+    /// Su una macchina appena installata non c'è nessun `~/.config/sailor/pricing.json`.
+    /// Prima del 01/09/2026 quello era l'unico listino esistente: `cost_micros`
+    /// restava `None` per ogni chiamata, ogni corsa risultava costata zero, e un
+    /// flusso con un tetto di spesa girava fino in fondo senza che il tetto
+    /// scattasse mai — in silenzio. Qui il listino spedito, e nient'altro, deve
+    /// bastare a dare un prezzo al motore che si usa di più.
+    ///
+    /// **SVUOTA `models` in `pricing.default.json` e questa diventa rossa**: è
+    /// il difetto originale, rimesso esattamente dov'era.
+    #[test]
+    fn the_shipped_list_alone_prices_the_engine_used_most() {
+        let prices = shipped();
+        let entry = prices
+            .find("claude-opus-5")
+            .expect("il listino spedito conosce il modello con cui Sailor lavora");
         let a_thousand_each_side = TokenCounts {
             input: Some(1_000),
             output: Some(1_000),
             cached: Some(1_000),
             ..TokenCounts::default()
         };
-        assert!(cost_micros(a_thousand_each_side, sonnet.micros()).is_some());
-        // Un modello davvero gratuito ha 0.0 dichiarato, ed è diverso da un
-        // prezzo mancante: il suo costo si calcola e viene zero.
-        let free = prices.find("un-modello-gratuito").unwrap();
-        assert_eq!(
-            cost_micros(
-                TokenCounts {
-                    input: Some(1_000_000),
-                    output: Some(1_000_000),
-                    ..TokenCounts::default()
-                },
-                free.micros()
-            ),
-            Some(0),
-            "zero dichiarato è una misura; zero inventato no"
+        assert!(
+            cost_micros(a_thousand_each_side, entry.micros()).is_some(),
+            "senza il listino spedito il costo di ogni chiamata resta sconosciuto"
         );
+    }
+
+    /// **IL BRACCIO CHE LEGA IL LISTINO SPEDITO A UNA MISURA VERA.**
+    ///
+    /// Il 30/08/2026 una chiamata a `claude -p "rispondi solo: ok"` ha dichiarato
+    /// 0,128541 dollari con **2** token d'ingresso e **4** d'uscita: il resto
+    /// erano 9.922 token letti dalla cache e **12.347 scritti** in una cache a
+    /// lunga durata. Il listino spedito deve rifare quel conto alla micro-unità,
+    /// partendo dai soli conteggi. Se una delle cinque voci di prezzo fosse
+    /// sbagliata, il numero uscirebbe lo stesso — verosimile e falso — e questa è
+    /// l'unica prova che lo vede.
+    ///
+    /// Il nome cercato è quello che il motore **dichiara di suo**,
+    /// `claude-opus-5[1m]`: se il listino spedito perdesse quell'alias, il costo
+    /// tornerebbe sconosciuto senza che nessun prezzo sia cambiato.
+    #[test]
+    fn the_shipped_list_reproduces_a_real_call_to_the_micro_unit() {
+        let prices = shipped();
+        let entry = prices
+            .find("claude-opus-5[1m]")
+            .expect("il listino spedito conosce il nome che il motore dichiara");
+        let measured = TokenCounts {
+            input: Some(2),
+            output: Some(4),
+            cached: Some(9_922),
+            cache_write: None,
+            cache_write_long: Some(12_347),
+        };
+        assert_eq!(
+            cost_micros(measured, entry.micros()),
+            Some(128_541),
+            "il conto sul listino spedito e quello del motore devono coincidere"
+        );
+    }
+
+    /// Ogni voce spedita ha i due prezzi che servono a fare un conto. Una voce a
+    /// metà nel listino di casa è una scelta di chi lo scrive; nel listino
+    /// spedito sarebbe un costo sconosciuto che nessuno ha deciso, e si
+    /// scoprirebbe solo guardando una spesa che non torna.
+    #[test]
+    fn every_shipped_entry_can_actually_price_a_call() {
+        for entry in &shipped().entries {
+            assert_eq!(
+                shipped().knows(&entry.id),
+                Known::Priced,
+                "la voce spedita «{}» non ha i prezzi per fare un conto",
+                entry.id
+            );
+        }
+    }
+
+    /// I nomi non si ripetono, né fra gli `id` né fra gli alias. [`PriceList::find`]
+    /// prende la prima voce che risponde: un nome dichiarato due volte farebbe
+    /// pagare a un modello il prezzo di un altro, e la riga nel deposito
+    /// sembrerebbe giusta.
+    #[test]
+    fn no_shipped_name_is_declared_twice() {
+        let mut seen: Vec<String> = Vec::new();
+        for entry in &shipped().entries {
+            for name in std::iter::once(&entry.id).chain(entry.aliases.iter()) {
+                let name = name.trim().to_lowercase();
+                assert!(!seen.contains(&name), "il nome «{name}» è dichiarato due volte");
+                seen.push(name);
+            }
+        }
     }
 
     /// **IL BRACCIO CHE VALE PIÙ DI TUTTI, e viene da una misura vera.**
@@ -524,6 +758,158 @@ mod the_shipped_example {
             ),
             None,
             "10.000 token scritti senza prezzo: il totale sarebbe una sottostima muta"
+        );
+    }
+}
+
+/// Il listino di casa sopra quello spedito, con la disciplina dei descrittori.
+#[cfg(test)]
+mod the_home_list_wins {
+    use super::*;
+
+    const SHIPPED: &str = r#"{
+      "currency": "USD",
+      "dated": "2026-01-01",
+      "models": [
+        { "id": "uno", "aliases": ["primo"], "input_per_million": 5.0, "output_per_million": 25.0 },
+        { "id": "due", "input_per_million": 1.0, "output_per_million": 2.0 }
+      ]
+    }"#;
+
+    fn shipped_sample() -> PriceList {
+        PriceList::parse(SHIPPED).unwrap()
+    }
+
+    /// Quello che c'è solo nel listino spedito continua a rispondere: il file di
+    /// casa aggiunge e corregge, non azzera.
+    #[test]
+    fn what_only_the_shipped_list_declares_survives_the_override() {
+        let home = PriceList::parse(r#"{"currency":"USD","models":[{"id":"uno","input_per_million":9.0,"output_per_million":9.0}]}"#).unwrap();
+        let merged = shipped_sample().overridden_by(home);
+        assert_eq!(merged.find("due").unwrap().input_per_million, Some(1.0));
+    }
+
+    /// **UNA VOCE SI SOSTITUISCE INTERA, ALIAS COMPRESI.** Il prezzo di casa
+    /// vince, e l'alias che il listino spedito dichiarava sparisce con la voce
+    /// che lo portava: chi riscrive `uno` senza `primo` ha detto che quel nome
+    /// non è più suo.
+    #[test]
+    fn an_id_already_there_is_replaced_whole_not_merged_field_by_field() {
+        let home = PriceList::parse(
+            r#"{"currency":"USD","models":[{"id":"uno","input_per_million":9.0,"output_per_million":9.0}]}"#,
+        )
+        .unwrap();
+        let merged = shipped_sample().overridden_by(home);
+        assert_eq!(merged.find("uno").unwrap().input_per_million, Some(9.0));
+        assert_eq!(
+            merged.find("primo"),
+            None,
+            "l'alias della voce sostituita è sparito con lei"
+        );
+    }
+
+    /// Un alias di casa che collide con l'`id` di una voce spedita deve vincere:
+    /// [`PriceList::find`] prende la prima che risponde, e le voci di casa
+    /// stanno davanti apposta.
+    #[test]
+    fn a_home_alias_beats_a_shipped_id_with_the_same_name() {
+        let home = PriceList::parse(
+            r#"{"currency":"USD","models":[{"id":"mio","aliases":["due"],"input_per_million":7.0,"output_per_million":7.0}]}"#,
+        )
+        .unwrap();
+        let merged = shipped_sample().overridden_by(home);
+        assert_eq!(merged.find("due").unwrap().id, "mio");
+    }
+
+    /// **IL BRACCIO CHE CONTA: DUE VALUTE NON SI MESCOLANO.** Un listino di casa
+    /// in euro non deve tirarsi dietro le voci spedite in dollari, perché
+    /// finirebbero sommate nella stessa colonna e il totale uscirebbe lo stesso —
+    /// verosimile e senza senso. Togli il controllo sulla valuta in
+    /// `overridden_by` e `due` torna a rispondere: è precisamente il difetto.
+    #[test]
+    fn a_home_list_in_another_currency_stands_alone() {
+        let home = PriceList::parse(
+            r#"{"currency":"EUR","models":[{"id":"uno","input_per_million":4.0,"output_per_million":4.0}]}"#,
+        )
+        .unwrap();
+        let merged = shipped_sample().overridden_by(home);
+        assert_eq!(merged.currency, "EUR");
+        assert_eq!(merged.find("uno").unwrap().input_per_million, Some(4.0));
+        assert_eq!(
+            merged.find("due"),
+            None,
+            "una voce in dollari è entrata in un listino in euro"
+        );
+    }
+
+    /// La stessa valuta scritta in un altro modo resta la stessa valuta: la
+    /// tolleranza è quella che `find` applica già ai nomi dei modelli.
+    #[test]
+    fn the_same_currency_written_differently_still_merges() {
+        let home =
+            PriceList::parse(r#"{"currency":" usd ","models":[{"id":"tre"}]}"#).unwrap();
+        let merged = shipped_sample().overridden_by(home);
+        assert!(merged.find("due").is_some());
+    }
+
+    /// La data è di chi ha scritto per ultimo, e non sparisce se il file di casa
+    /// non ne dichiara una: chi guarda una cifra vuole sapere di quando sono i
+    /// prezzi con cui è stata calcolata.
+    #[test]
+    fn the_date_comes_from_whoever_wrote_last_and_never_vanishes() {
+        let dated = PriceList::parse(r#"{"currency":"USD","dated":"2026-09-01","models":[]}"#).unwrap();
+        assert_eq!(
+            shipped_sample().overridden_by(dated).dated.as_deref(),
+            Some("2026-09-01")
+        );
+        let undated = PriceList::parse(r#"{"currency":"USD","models":[]}"#).unwrap();
+        assert_eq!(
+            shipped_sample().overridden_by(undated).dated.as_deref(),
+            Some("2026-01-01")
+        );
+    }
+}
+
+/// Chi non ha un prezzo per un modello deve **saperlo**, non scoprirlo con uno
+/// zero: le tre risposte di [`PriceList::knows`].
+#[cfg(test)]
+mod knowing_what_is_not_priced {
+    use super::*;
+
+    const LIST: &str = r#"{
+      "currency": "USD",
+      "models": [
+        { "id": "intero", "aliases": ["scorciatoia"], "input_per_million": 5.0, "output_per_million": 25.0 },
+        { "id": "a-meta", "input_per_million": 5.0 }
+      ]
+    }"#;
+
+    #[test]
+    fn a_fully_priced_entry_is_priced_by_its_id_and_by_its_alias() {
+        let prices = PriceList::parse(LIST).unwrap();
+        assert_eq!(prices.knows("intero"), Known::Priced);
+        assert_eq!(prices.knows("scorciatoia"), Known::Priced);
+    }
+
+    /// **I DUE MODI DI RESTARE SENZA PREZZO NON SI CONFONDONO**, perché sono due
+    /// riparazioni diverse: uno si ripara aggiungendo una voce, l'altro
+    /// scrivendo i prezzi in quella che c'è già. Fai rispondere `Absent` anche al
+    /// secondo caso e chi legge va a riscrivere una voce che esiste.
+    #[test]
+    fn an_entry_without_prices_is_not_the_same_as_a_name_nobody_declared() {
+        let prices = PriceList::parse(LIST).unwrap();
+        assert_eq!(prices.knows("a-meta"), Known::ListedWithoutPrice);
+        assert_eq!(prices.knows("mai-visto"), Known::Absent);
+        // E il costo resta sconosciuto in tutti e due i casi: è per questo che
+        // la differenza non si vede guardando il numero.
+        let counts = TokenCounts {
+            input: Some(10),
+            output: Some(10),
+            ..TokenCounts::default()
+        };
+        assert_eq!(
+            cost_micros(counts, prices.find("a-meta").unwrap().micros()),
+            None
         );
     }
 }
