@@ -40,7 +40,13 @@ pub struct FlowFile {
     /// vorrebbe dire che qualcosa, prima o poi, lo fa partire da solo. `None`
     /// significa «gira quando qualcuno lo chiede», che è un fatto, non un vuoto
     /// da riempire.
-    #[serde(default)]
+    ///
+    /// **ASSENTE SI SCRIVE ASSENTE, NON `null`.** Chi riscrive un flusso —
+    /// `sailor flow cap`, o la tela — non deve aggiungergli righe che nessuno ha
+    /// scritto: `"schedule": null` non dice niente più dell'assenza, e riempie
+    /// di rumore il diff di chi rilegge il proprio flusso dopo il comando. Le
+    /// due forme si rileggono identiche, e una prova lo tiene fermo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<Schedule>,
     /// Quanto una corsa di questo flusso può spendere, in micro-unità di
     /// valuta. Un milione è un'unità: `1_000_000` è un dollaro.
@@ -58,7 +64,11 @@ pub struct FlowFile {
     /// Il tetto è quindi una garanzia su ciò che si sa, e chi lo legge lo vede
     /// dichiarato: la corsa fermata dice anche quante chiamate erano fuori dal
     /// conto.
-    #[serde(default)]
+    ///
+    /// Come `schedule`: nessun tetto si scrive non scrivendo il campo. Un
+    /// `"spend_cap_micros": null` in un flusso a cui nessuno ha messo un limite
+    /// sarebbe una riga in più da leggere per dire ciò che l'assenza dice già.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spend_cap_micros: Option<i64>,
 }
 
