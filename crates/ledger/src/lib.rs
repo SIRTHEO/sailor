@@ -122,7 +122,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// prova nasce dal `CREATE TABLE` completo e non passa mai dalla migrazione. Si
 /// vede solo su una macchina che Sailor l'aveva già usato — cioè su quella di
 /// chi lo sviluppa, il giorno dopo.
-const PROJECTION_SCHEMA_VERSION: i64 = 6;
+const PROJECTION_SCHEMA_VERSION: i64 = 7;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -326,6 +326,31 @@ pub struct ModelCallRecord {
     pub error_type: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
+    /// **LA SESSIONE SOTTO CUI QUESTA CHIAMATA È GIRATA, QUANDO SI SA QUAL È.**
+    ///
+    /// Non è un dato decorativo: è la sola cosa che permette a un passo dopo di
+    /// **riprendere** invece di riscoprire. Il 31/08/2026 una catena di quattro
+    /// passi ha letto 2.545.109 token dalla cache per guardare lo stesso albero
+    /// quattro volte; il rimedio è che il secondo passo continui la sessione del
+    /// primo, e per continuarla bisogna sapere come si chiama.
+    ///
+    /// **PERCHÉ NEL DEPOSITO E NON IN MEMORIA.** Una variabile in memoria muore
+    /// col processo, e una corsa sospesa — il ramo «aspettare» di un motore
+    /// esaurito, che `docs/piano-consumo-e-profili.md` lascia scoperto — deve
+    /// poter riprendere domani mattina da un altro processo. Se lo stato che
+    /// permette la ripresa non è registrato, non c'è nessuna ripresa: c'è un
+    /// rifacimento con un altro nome.
+    ///
+    /// **`None` VUOL DIRE «NON LO SO», COME OVUNQUE QUI DENTRO**, e ne esistono
+    /// tre casi diversi che portano tutti allo stesso valore perché a valle si
+    /// comportano allo stesso modo: il motore non sa aprire sessioni; il passo
+    /// non ne ha chiesta una; oppure il passo ha **ramificato**, e il motore ha
+    /// coniato per il ramo un identificativo che non ci ha detto. L'ultimo è il
+    /// più insidioso, e scrivere lì l'identificativo del padre sarebbe una
+    /// bugia: chi lo riprendesse ripartirebbe dal tronco credendo di essere sul
+    /// ramo, in silenzio.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1049,6 +1074,41 @@ impl Ledger {
         })
     }
 
+    /// La sessione che un passo di questa corsa ha aperto **su quel motore**.
+    ///
+    /// È la domanda che rende possibile «riprendi la sessione del passo prima»:
+    /// il passo dopo nomina il passo, non l'identificativo, perché
+    /// l'identificativo nasce a tempo di esecuzione e chi scrive il flusso non
+    /// lo può conoscere.
+    ///
+    /// **IL MOTORE FA PARTE DELLA DOMANDA, E TOGLIERLO SAREBBE UN GUASTO
+    /// SILENZIOSO.** Un passo con una catena di motori può essere finito su
+    /// `codex` perché `claude-code` aveva esaurito la quota: dare al passo dopo
+    /// una sessione di `claude-code` da riprendere con `codex` gli farebbe
+    /// passare un identificativo che quel motore non conosce, e la chiamata
+    /// morirebbe **dopo** essere partita — cioè dopo aver speso.
+    ///
+    /// L'ultima per inizio, non la prima: un passo rifatto ne ha aperte due, e
+    /// quella buona è la più recente.
+    pub fn session_opened_by(
+        &self,
+        run_id: &str,
+        step_id: &str,
+        cli: &str,
+    ) -> Result<Option<String>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT session_id FROM model_calls
+             WHERE run_id = ?1 AND step_id = ?2 AND cli = ?3 AND session_id IS NOT NULL
+             ORDER BY started_at DESC LIMIT 1",
+        )?;
+        let mut rows = statement.query(params![run_id, step_id, cli])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row.get(0)?)),
+            None => Ok(None),
+        }
+    }
+
     /// Quante corse cadono davvero nella finestra chiesta.
     ///
     /// Chi riceve un conteggio deve sapere su quanto è stato calcolato: una
@@ -1586,7 +1646,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              cache_write_long_tokens TEXT,
              cache_write_price_micros_per_million INTEGER,
              cache_write_long_price_micros_per_million INTEGER,
-             turns TEXT
+             turns TEXT,
+             session_id TEXT
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -1688,6 +1749,14 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     // versione 6: i turni. Si paga per turno, e nessuna colonna li contava.
     if !column_exists(transaction, "model_calls", "turns")? {
         transaction.execute("ALTER TABLE model_calls ADD COLUMN turns TEXT", [])?;
+    }
+    // versione 7: la sessione. Senza una colonna dove posarla, «riprendi la
+    // sessione del passo prima» non si può nemmeno formulare — e la costante
+    // qui sopra va alzata insieme, o su un deposito già esistente questa riga
+    // non gira mai (è il guasto che il commento di `PROJECTION_SCHEMA_VERSION`
+    // racconta, ed è costato una mattina il 30/08/2026).
+    if !column_exists(transaction, "model_calls", "session_id")? {
+        transaction.execute("ALTER TABLE model_calls ADD COLUMN session_id TEXT", [])?;
     }
     Ok(())
 }
@@ -2124,10 +2193,10 @@ fn project_model_call(
              retry_chain, error_type, started_at, ended_at, total_tokens,
              declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
              cache_write_price_micros_per_million,
-             cache_write_long_price_micros_per_million, turns)
+             cache_write_long_price_micros_per_million, turns, session_id)
          VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -2147,7 +2216,8 @@ fn project_model_call(
           cache_write_long_tokens=excluded.cache_write_long_tokens,
           cache_write_price_micros_per_million=excluded.cache_write_price_micros_per_million,
           cache_write_long_price_micros_per_million=excluded.cache_write_long_price_micros_per_million,
-          turns=excluded.turns",
+          turns=excluded.turns,
+          session_id=excluded.session_id",
         params![
             record.call_id,
             record.run_id,
@@ -2179,6 +2249,7 @@ fn project_model_call(
             record.cache_write_price_micros_per_million,
             record.cache_write_long_price_micros_per_million,
             record.turns.map(|n| n.to_string()),
+            record.session_id,
         ],
     )?;
     Ok(())
@@ -2477,7 +2548,7 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // disordine: chi legge questo dump lo fa per posizione, e infilarle in
         // mezzo sposterebbe ogni indice a valle senza che niente se ne accorga
         // finché un token non compare al posto di un prezzo.
-        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns",
+        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
     };

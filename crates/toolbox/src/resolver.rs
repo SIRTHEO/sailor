@@ -13,6 +13,7 @@
 //! descrittore, che è il posto dove sta scritto da dove si installa.
 
 use crate::descriptor::CapabilityState;
+use crate::session::SessionAbilities;
 use crate::{default_sources, probe_one, Catalog, Machine, Presence};
 
 /// Il rilevatore, caricato una volta e interrogato tante.
@@ -24,6 +25,9 @@ use crate::{default_sources, probe_one, Catalog, Machine, Presence};
 pub struct Tools {
     catalog: Catalog,
     machine: Machine,
+    /// Chi sa riprendere una sessione, e con quali opzioni. Viaggia in un file
+    /// suo, separato dai descrittori: vedi la testa di `session.rs`.
+    sessions: SessionAbilities,
 }
 
 impl Tools {
@@ -33,14 +37,28 @@ impl Tools {
         let mut machine = Machine::current();
         machine.version_probes = false;
         let catalog = Catalog::load(&default_sources(&machine));
-        Self { catalog, machine }
+        Self {
+            catalog,
+            machine,
+            sessions: SessionAbilities::current(),
+        }
     }
 
     /// Un elenco e un mondo decisi da chi chiama: è così che una prova verifica
     /// la risoluzione senza dipendere da cosa c'è installato su chi la esegue.
     pub fn new(catalog: Catalog, mut machine: Machine) -> Self {
         machine.version_probes = false;
-        Self { catalog, machine }
+        Self {
+            catalog,
+            machine,
+            sessions: SessionAbilities::shipped(),
+        }
+    }
+
+    /// Le stesse cose, con le capacità di sessione decise da chi chiama.
+    pub fn with_sessions(mut self, sessions: SessionAbilities) -> Self {
+        self.sessions = sessions;
+        self
     }
 
     /// Esiste un descrittore con questo identificativo?
@@ -171,6 +189,15 @@ impl actions::ToolResolver for Tools {
             refuses_without_prompt: ask.refuses_without_prompt.clone(),
             usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
         })
+    }
+
+    /// Cosa questo strumento sa fare con le proprie sessioni.
+    ///
+    /// **NON CHIEDE AL CATALOGO SE LO STRUMENTO ESISTE**, e non è una svista:
+    /// chi arriva qui ha già risolto un eseguibile, e riguardare nel catalogo
+    /// aggiungerebbe una scansione per rispondere a una domanda già risposta.
+    fn session_recipe(&self, id: &str) -> Option<actions::SessionRecipe> {
+        self.sessions.for_tool(id)
     }
 }
 
@@ -356,7 +383,7 @@ mod tests {
             }]"#,
             &dir,
         );
-        let tools = Tools { catalog, machine: machine(&dir) };
+        let tools = Tools::new(catalog, machine(&dir));
 
         let recipe = tools.ask_recipe("misurabile").expect("la ricetta c'è");
         let usage = recipe.usage.expect("e porta con sé il consumo");
@@ -458,7 +485,7 @@ mod tests {
             }]"#,
             &dir,
         );
-        let tools = Tools { catalog, machine: machine(&dir) };
+        let tools = Tools::new(catalog, machine(&dir));
 
         let recipe = tools.ask_recipe("muto").expect("la ricetta c'è");
         assert!(recipe.usage.is_none());
@@ -473,7 +500,7 @@ mod tests {
         let dir = temp_dir("codex-spedito");
         fake_executable(&dir, "codex");
         let catalog = Catalog::load(&[Source::Builtin]);
-        let tools = Tools { catalog, machine: machine(&dir) };
+        let tools = Tools::new(catalog, machine(&dir));
 
         let recipe = tools.ask_recipe("codex").expect("codex ha una ricetta");
         let usage = recipe.usage.expect("e dichiara come si legge il suo consumo");

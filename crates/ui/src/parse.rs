@@ -85,6 +85,9 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         // Versione 6, i turni: la quantita' che spiega perche' una catena di
         // passi costa piu' di una sessione sola.
         turns: u64_at(cols, 27),
+        // Versione 7, la sessione: il dato che permette a un passo di
+        // riprendere invece di riscoprire.
+        session_id: opt_str_at(cols, 28),
     })
 }
 

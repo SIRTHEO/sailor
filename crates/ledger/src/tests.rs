@@ -108,6 +108,7 @@ fn sample_all(ledger: &Ledger) {
             error_type: Some("rate_limit".to_owned()),
             started_at: 101,
             ended_at: Some(110),
+            session_id: None,
         })
         .expect("registrare la chiamata");
     ledger
@@ -1532,6 +1533,7 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         error_type: None,
         started_at: 100,
         ended_at: Some(110),
+        session_id: None,
     }
 }
 
@@ -1680,6 +1682,71 @@ fn call_in_run(call_id: &str, run_id: &str, cost: Option<i64>) -> ModelCallRecor
     let mut record = call_with(call_id, Some(10), cost);
     record.run_id = run_id.to_owned();
     record
+}
+
+/// Una chiamata con la sessione dichiarata, per le prove che seguono.
+fn call_with_session(call_id: &str, step_id: &str, cli: &str, session: &str) -> ModelCallRecord {
+    let mut record = call_with(call_id, Some(10), Some(1));
+    record.step_id = Some(step_id.to_owned());
+    record.cli = cli.to_owned();
+    record.session_id = Some(session.to_owned());
+    record
+}
+
+/// **LA SESSIONE DI UN MOTORE NON SI DÀ A UN ALTRO MOTORE.** Un passo con una
+/// catena può finire su `codex` perché `claude-code` aveva esaurito: passare al
+/// passo dopo una sessione di `claude-code` da riprendere con `codex`
+/// significherebbe consegnargli un identificativo che quel motore non conosce,
+/// e la chiamata morirebbe **dopo** essere partita, cioè dopo aver speso.
+#[test]
+fn a_session_belongs_to_the_engine_that_opened_it() {
+    let directory = TestDirectory::new("sessione-di-chi");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .record_model_call(&call_with_session("call-1", "scopri", "un-motore", "sessione-1"))
+        .expect("registrare la chiamata");
+
+    assert_eq!(
+        ledger
+            .session_opened_by("run-1", "scopri", "un-motore")
+            .expect("il deposito risponde"),
+        Some("sessione-1".to_owned())
+    );
+    assert_eq!(
+        ledger
+            .session_opened_by("run-1", "scopri", "un-altro-motore")
+            .expect("il deposito risponde"),
+        None,
+        "un altro motore non eredita la sessione di questo"
+    );
+    assert_eq!(
+        ledger
+            .session_opened_by("run-2", "scopri", "un-motore")
+            .expect("il deposito risponde"),
+        None,
+        "e nemmeno un'altra corsa"
+    );
+}
+
+/// Un passo rifatto ne ha aperte due: quella buona è **l'ultima**, e riprendere
+/// la prima vorrebbe dire continuare la conversazione che era andata storta.
+#[test]
+fn a_step_that_ran_twice_hands_over_its_latest_session() {
+    let directory = TestDirectory::new("sessione-rifatta");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    let mut first = call_with_session("call-1", "scopri", "un-motore", "sessione-vecchia");
+    first.started_at = 100;
+    let mut second = call_with_session("call-2", "scopri", "un-motore", "sessione-nuova");
+    second.started_at = 200;
+    ledger.record_model_call(&first).expect("la prima");
+    ledger.record_model_call(&second).expect("la seconda");
+
+    assert_eq!(
+        ledger
+            .session_opened_by("run-1", "scopri", "un-motore")
+            .expect("il deposito risponde"),
+        Some("sessione-nuova".to_owned())
+    );
 }
 
 /// **LA SOMMA DICE ANCHE QUANTO NON SA.** Due chiamate, una che ha dichiarato
@@ -1900,15 +1967,32 @@ fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
     let fresh = Ledger::open(&fresh_dir.0).expect("aprire un deposito nuovo");
     let expected = columns(&fresh, "model_calls");
 
+    // La forma della versione 3, che è quella con cui `relax_model_calls`
+    // rifà la tabella: è **congelata**, perché la versione 3 non guadagnerà
+    // mai una colonna.
+    //
+    // **LA FINESTRA SI RICAVA, NON SI ELENCA, E IL 31/08/2026 QUESTA PROVA HA
+    // PRESO SE STESSA.** Prima l'elenco era quello delle colonne **da
+    // togliere**: cioè invecchiava a ogni versione, esattamente come le due
+    // prove che questa era nata per sostituire. Una colonna aggiunta alla
+    // versione 7 restava nel deposito «vecchio», e la prova diventava rossa
+    // per un difetto della propria impalcatura invece che del codice — il
+    // rumore che fa zittire un controllo.
+    const AS_OF_VERSION_3: &[&str] = &[
+        "call_id", "run_id", "step_id", "purpose", "cli", "requested_model", "actual_model",
+        "input_tokens", "output_tokens", "cached_tokens", "cost_micros", "price_currency",
+        "input_price_micros_per_million", "output_price_micros_per_million",
+        "cached_price_micros_per_million", "mandate_name", "mandate_version", "retry_chain",
+        "error_type", "started_at", "ended_at", "total_tokens", "declared_cost_micros",
+    ];
+
     // Un deposito della versione più vecchia che la migrazione sa ancora
     // riprendere, dichiarato tale.
     let old_dir = TestDirectory::new("forma-vecchia");
     {
         let ledger = Ledger::open(&old_dir.0).expect("aprire il deposito");
         let connection = ledger.connection.lock().expect("nessuno panica qui");
-        for column in ["turns", "cache_write_tokens", "cache_write_long_tokens",
-                       "cache_write_price_micros_per_million",
-                       "cache_write_long_price_micros_per_million"] {
+        for column in expected.iter().filter(|name| !AS_OF_VERSION_3.contains(&name.as_str())) {
             connection
                 .execute(&format!("ALTER TABLE model_calls DROP COLUMN {column}"), [])
                 .unwrap_or_else(|error| panic!("togliere {column}: {error}"));
