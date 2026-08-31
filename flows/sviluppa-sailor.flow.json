@@ -77,7 +77,6 @@
             "agy",
             "codex"
           ],
-          "workdir": "/Users/theo/personal/sailor",
           "timeout_secs": 900,
           "answer_shape": {
             "type": "object",
@@ -105,7 +104,7 @@
           },
           "stdin": {
             "$join": [
-              "Scegli il prossimo lavoro da fare, uno solo, e scrivilo come un mandato eseguibile. NON eseguirlo e non modificare nessun file in questo passo.\n\nPRIMA DI TUTTO LEGGI «docs/decisioni.md»: sono le scelte già prese, coi vincoli permanenti in cima. Una voce che riprende una strada già scartata NON si sceglie, e un lavoro che violerebbe un vincolo permanente non si propone. È il file che esiste perché il sistema non ricominci da capo ogni volta.\n\nDOVE GUARDARE POI: «docs/da-fare.md» ha le cose da fare divise per gruppo; «docs/guasti-incontrati.md» ha i guasti veri, ognuno con «cosa lo impedirebbe». Leggili tutti e due, e guarda anche «git log» per capire cosa è già stato fatto: una voce può essere scritta come aperta ed essere già chiusa da un lavoro successivo.\n\nCOME SI SCEGLIE, in quest'ordine:\n1. mai una voce che il file dichiara come «aspetta una decisione»: quelle non sono bloccate da lavoro, e sceglierne una vorrebbe dire decidere al posto di chi deve decidere;\n2. preferisci ciò che SBLOCCA altre cose: una voce marcata bloccante viene prima di una più grossa ma isolata;\n3. preferisci ciò che è autocontenuto: un lavoro che tocca un punto solo si verifica, uno che ne tocca dieci si spera;\n4. a parità, la voce più vecchia.\n\nIL MANDATO CHE SCRIVI verrà eseguito da un altro motore che non ha letto questi file: deve reggersi da solo. Dentro ci vanno il problema, dove sta nel codice, cosa deve essere vero quando è finito, e cosa NON va toccato. Se il lavoro ha una domanda difficile senza risposta ovvia, scrivila come domanda da risolvere invece di rispondere tu.\n\nNEL MANDATO CHE SCRIVI, RIPORTA I VINCOLI PERMANENTI che quel lavoro tocca, presi da «docs/decisioni.md» e scritti per esteso: chi eseguirà non avrà letto quel file.\n\nVINCOLI DA RIPETERE SEMPRE nel mandato che scrivi: lavorare solo dentro /Users/theo/personal/sailor; nessun commit; non eseguire nessun flusso; una prova vale solo se poteva venire diversa, quindi va rotta apposta per vedere che diventi rossa.\n\nIN «blocked_by»: se la voce che avresti scelto è ferma per qualcosa, dillo e scegli la successiva. In «nothing_left»: se non è rimasto niente di eseguibile, scrivi perché e metti «mandate» a stringa vuota — è una risposta buona, non un fallimento.\n\nSE L'INNESCO PORTA UN TESTO, quello è un'indicazione di chi ha lanciato e viene prima delle tue regole:\n",
+              "Scegli il prossimo lavoro da fare, uno solo, e scrivilo come un mandato eseguibile. NON eseguirlo e non modificare nessun file in questo passo.\n\nPRIMA DI TUTTO LEGGI «docs/decisioni.md»: sono le scelte già prese, coi vincoli permanenti in cima. Una voce che riprende una strada già scartata NON si sceglie, e un lavoro che violerebbe un vincolo permanente non si propone. È il file che esiste perché il sistema non ricominci da capo ogni volta.\n\nDOVE GUARDARE POI: «docs/da-fare.md» ha le cose da fare divise per gruppo; «docs/guasti-incontrati.md» ha i guasti veri, ognuno con «cosa lo impedirebbe». Leggili tutti e due, e guarda anche «git log» per capire cosa è già stato fatto: una voce può essere scritta come aperta ed essere già chiusa da un lavoro successivo.\n\nCOME SI SCEGLIE, in quest'ordine:\n1. mai una voce che il file dichiara come «aspetta una decisione»: quelle non sono bloccate da lavoro, e sceglierne una vorrebbe dire decidere al posto di chi deve decidere;\n2. preferisci ciò che SBLOCCA altre cose: una voce marcata bloccante viene prima di una più grossa ma isolata;\n3. preferisci ciò che è autocontenuto: un lavoro che tocca un punto solo si verifica, uno che ne tocca dieci si spera;\n4. a parità, la voce più vecchia.\n\nIL MANDATO CHE SCRIVI verrà eseguito da un altro motore che non ha letto questi file: deve reggersi da solo. Dentro ci vanno il problema, dove sta nel codice, cosa deve essere vero quando è finito, e cosa NON va toccato. Se il lavoro ha una domanda difficile senza risposta ovvia, scrivila come domanda da risolvere invece di rispondere tu.\n\nNEL MANDATO CHE SCRIVI, RIPORTA I VINCOLI PERMANENTI che quel lavoro tocca, presi da «docs/decisioni.md» e scritti per esteso: chi eseguirà non avrà letto quel file.\n\nVINCOLI DA RIPETERE SEMPRE nel mandato che scrivi: lavorare solo dentro la radice del progetto, cioè la cartella in cui ti trovi — non nominare un percorso assoluto e non uscire da lì; nessun commit; non eseguire nessun flusso; una prova vale solo se poteva venire diversa, quindi va rotta apposta per vedere che diventi rossa.\n\nIN «blocked_by»: se la voce che avresti scelto è ferma per qualcosa, dillo e scegli la successiva. In «nothing_left»: se non è rimasto niente di eseguibile, scrivi perché e metti «mandate» a stringa vuota — è una risposta buona, non un fallimento.\n\nSE L'INNESCO PORTA UN TESTO, quello è un'indicazione di chi ha lanciato e viene prima delle tue regole:\n",
               {
                 "$from": "/text"
               },
@@ -187,7 +186,6 @@
             "codex"
           ],
           "timeout_secs": 2700,
-          "workdir": "/Users/theo/personal/sailor",
           "answer_shape": {
             "type": "object",
             "properties": {
@@ -329,7 +327,6 @@
             "codex"
           ],
           "timeout_secs": 2700,
-          "workdir": "/Users/theo/personal/sailor",
           "answer_shape": {
             "type": "object",
             "properties": {
@@ -463,7 +460,6 @@
             "--exclude",
             "claude-hooks"
           ],
-          "workdir": "/Users/theo/personal/sailor",
           "timeout_secs": 1800
         },
         "input_schema": {
@@ -499,7 +495,6 @@
             "codex"
           ],
           "timeout_secs": 2700,
-          "workdir": "/Users/theo/personal/sailor",
           "answer_shape": {
             "type": "object",
             "properties": {
@@ -666,7 +661,6 @@
             "add",
             "-A"
           ],
-          "workdir": "/Users/theo/personal/sailor",
           "timeout_secs": 120
         },
         "input_schema": {
@@ -698,7 +692,6 @@
         "when": null,
         "with": {
           "tool": "git",
-          "workdir": "/Users/theo/personal/sailor",
           "timeout_secs": 120,
           "args": [
             "commit",
@@ -746,7 +739,7 @@
   },
   "inputs": {
     "trigger": {
-      "text": "LA BENZINA. Fai SOLO questo lavoro, ignorando la scelta libera: è il primo dei\ncinque punti di `docs/piano-consumo-e-profili.md`, e senza di lui gli altri\nquattro non hanno dati su cui esistere.\n\nIL PROBLEMA. Sailor invoca motori a riga di comando e non sa quanto spende. Il\n29/08/2026 una corsa si è fermata su un limite settimanale e nessuno sapeva\nquanto restasse. Verificato: in `crates/actions/src/lib.rs` non compare né\n`usage` né `--output-format`, e sulle 16 corse registrate il costo è zero su\ntutte.\n\nIL VASO È GIÀ SCAVATO E VUOTO, ed è la ragione per cui questo lavoro è il primo:\n- la tabella `model_calls` ha già le colonne per token d'ingresso, d'uscita,\n  cache, costo, valuta e prezzi per milione (`crates/ledger/src/lib.rs`);\n- `Ledger::record_model_call` esiste già;\n- la finestra ha già un cruscotto che somma il costo per modello;\n- e a riempirli oggi sono SOLO le prove e un esempio che semina dati finti.\nUn cruscotto alimentato da dati finti sembra funzionare: è peggio del non\naverlo, ed è il motivo per cui nessuno si è accorto del buco.\n\nCOSA DEVE ESSERE VERO QUANDO HAI FINITO.\n1. Un descrittore di motore può dichiarare COME si legge il suo consumo: quale\n   argomento chiederglielo (per esempio `--output-format json`) e dove stanno i\n   token nella risposta. È un dato nel descrittore, come il blocco `ask` che\n   c'è già — mai una costante nel codice, mai un ramo `if` per un fornitore.\n2. Quando un motore lo dichiara, ogni chiamata scrive una riga in `model_calls`\n   col consumo vero e col costo calcolato da un listino locale.\n3. I token d'ingresso letti dalla cache stanno in una colonna loro: un solo\n   numero d'ingresso nasconde una differenza di prezzo di un ordine di\n   grandezza, e renderebbe la misura falsa proprio dove conta.\n4. Un motore che NON dichiara niente continua a funzionare esattamente come\n   oggi, e lascia i token a sconosciuto — MAI uno zero inventato. Uno zero\n   scritto al posto di «non lo so» è una bugia che nessuna vista può correggere.\n5. Anche una chiamata FALLITA scrive la sua riga, con la causa e con i token che\n   ha fatto in tempo a consumare. Questa è una scelta deliberata e va rispettata:\n   un turno interrotto brucia comunque la quota, e azzerarne il costo\n   sottostimerebbe la spesa esattamente nei minuti che precedono un esaurimento.\n   Separare «lavoro utile» da «quota consumata» è compito di chi legge, non di\n   chi misura.\n\nDOVE INNESTARLO. `crates/actions/src/lib.rs`: la struct dell'esito di un motore\ncattura oggi solo stdout e stderr; il ramo che gestisce la risposta buona sta\ndentro `ExternalEngineAction::ask`, e i rami di fallimento subito sotto. Il\ndescrittore sta in `crates/toolbox` (guarda com'è fatto `ask`, e imita quella\nforma). Il listino sta in `crates/models`, che ha già i prezzi per milione.\n\nNON TOCCARE la logica della catena di motori: è appena stata scritta e provata.\n\nVINCOLI PERMANENTI CHE QUESTO LAVORO TOCCA, presi da `docs/decisioni.md`:\n- INDIPENDENZA DAL MODELLO: una soluzione che funziona solo su un motore preciso\n  va dichiarata come capacità di quello strumento, e chi non ce l'ha deve\n  continuare a funzionare pagando di più.\n- CHIAREZZA PER CHI GUARDA: chi usa Sailor deve poter vedere dove sono finiti i\n  suoi soldi.\n- A CODICE SOLO CIÒ CHE TOCCA IL MONDO: leggere l'uscita di un processo tocca il\n  mondo e sta a codice; quali parole cercarci dentro è un dato nel descrittore.\n- UNA PROVA VALE SOLO SE POTEVA VENIRE DIVERSA: dopo averla scritta rompi\n  apposta ciò che prova e guarda che diventi rossa. Se non l'hai fatto, dillo.\n\nVINCOLI DI LAVORO: solo dentro /Users/theo/personal/sailor; nessun commit; non\neseguire nessun flusso.\n\nNOTA: `crates/notte` è stato rimosso dal repo il 29/08/2026 insieme a tutto ciò\nche non era Sailor. Se un documento lo nomina, quel riferimento è scaduto.",
+      "text": "LA BENZINA. Fai SOLO questo lavoro, ignorando la scelta libera: è il primo dei\ncinque punti di `docs/piano-consumo-e-profili.md`, e senza di lui gli altri\nquattro non hanno dati su cui esistere.\n\nIL PROBLEMA. Sailor invoca motori a riga di comando e non sa quanto spende. Il\n29/08/2026 una corsa si è fermata su un limite settimanale e nessuno sapeva\nquanto restasse. Verificato: in `crates/actions/src/lib.rs` non compare né\n`usage` né `--output-format`, e sulle 16 corse registrate il costo è zero su\ntutte.\n\nIL VASO È GIÀ SCAVATO E VUOTO, ed è la ragione per cui questo lavoro è il primo:\n- la tabella `model_calls` ha già le colonne per token d'ingresso, d'uscita,\n  cache, costo, valuta e prezzi per milione (`crates/ledger/src/lib.rs`);\n- `Ledger::record_model_call` esiste già;\n- la finestra ha già un cruscotto che somma il costo per modello;\n- e a riempirli oggi sono SOLO le prove e un esempio che semina dati finti.\nUn cruscotto alimentato da dati finti sembra funzionare: è peggio del non\naverlo, ed è il motivo per cui nessuno si è accorto del buco.\n\nCOSA DEVE ESSERE VERO QUANDO HAI FINITO.\n1. Un descrittore di motore può dichiarare COME si legge il suo consumo: quale\n   argomento chiederglielo (per esempio `--output-format json`) e dove stanno i\n   token nella risposta. È un dato nel descrittore, come il blocco `ask` che\n   c'è già — mai una costante nel codice, mai un ramo `if` per un fornitore.\n2. Quando un motore lo dichiara, ogni chiamata scrive una riga in `model_calls`\n   col consumo vero e col costo calcolato da un listino locale.\n3. I token d'ingresso letti dalla cache stanno in una colonna loro: un solo\n   numero d'ingresso nasconde una differenza di prezzo di un ordine di\n   grandezza, e renderebbe la misura falsa proprio dove conta.\n4. Un motore che NON dichiara niente continua a funzionare esattamente come\n   oggi, e lascia i token a sconosciuto — MAI uno zero inventato. Uno zero\n   scritto al posto di «non lo so» è una bugia che nessuna vista può correggere.\n5. Anche una chiamata FALLITA scrive la sua riga, con la causa e con i token che\n   ha fatto in tempo a consumare. Questa è una scelta deliberata e va rispettata:\n   un turno interrotto brucia comunque la quota, e azzerarne il costo\n   sottostimerebbe la spesa esattamente nei minuti che precedono un esaurimento.\n   Separare «lavoro utile» da «quota consumata» è compito di chi legge, non di\n   chi misura.\n\nDOVE INNESTARLO. `crates/actions/src/lib.rs`: la struct dell'esito di un motore\ncattura oggi solo stdout e stderr; il ramo che gestisce la risposta buona sta\ndentro `ExternalEngineAction::ask`, e i rami di fallimento subito sotto. Il\ndescrittore sta in `crates/toolbox` (guarda com'è fatto `ask`, e imita quella\nforma). Il listino sta in `crates/models`, che ha già i prezzi per milione.\n\nNON TOCCARE la logica della catena di motori: è appena stata scritta e provata.\n\nVINCOLI PERMANENTI CHE QUESTO LAVORO TOCCA, presi da `docs/decisioni.md`:\n- INDIPENDENZA DAL MODELLO: una soluzione che funziona solo su un motore preciso\n  va dichiarata come capacità di quello strumento, e chi non ce l'ha deve\n  continuare a funzionare pagando di più.\n- CHIAREZZA PER CHI GUARDA: chi usa Sailor deve poter vedere dove sono finiti i\n  suoi soldi.\n- A CODICE SOLO CIÒ CHE TOCCA IL MONDO: leggere l'uscita di un processo tocca il\n  mondo e sta a codice; quali parole cercarci dentro è un dato nel descrittore.\n- UNA PROVA VALE SOLO SE POTEVA VENIRE DIVERSA: dopo averla scritta rompi\n  apposta ciò che prova e guarda che diventi rossa. Se non l'hai fatto, dillo.\n\nVINCOLI DI LAVORO: solo dentro la radice del progetto, cioè la cartella in cui\nti trovi; nessun commit; non eseguire nessun flusso.\n\nNOTA: `crates/notte` è stato rimosso dal repo il 29/08/2026 insieme a tutto ciò\nche non era Sailor. Se un documento lo nomina, quel riferimento è scaduto.",
       "who": "",
       "where": ""
     }

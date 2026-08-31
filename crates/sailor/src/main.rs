@@ -28,6 +28,7 @@ mod release_cmd;
 mod run_cmd;
 mod ui_cmd;
 mod version_cmd;
+mod workspace_cmd;
 
 /// Ogni sottocomando: il nome sulla riga di comando e una riga di spiegazione.
 /// Elenco a mano perché il dispatch è un `match`, e i due non possono
@@ -42,6 +43,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("run", "lancia una riga di comando col suo profilo attivo, sostituendo questo processo"),
     ("inventory", "elenca competenze, agenti, comandi, regole e ganci, e dice quali sono spenti"),
     ("version", "la versione di questo binario"),
+    ("workspace", "dichiara la radice del progetto, così un flusso non deve saperla"),
 ];
 
 fn print_usage() {
@@ -101,6 +103,7 @@ fn main() {
         Route::Known("run") => std::process::exit(run_cmd::run(&args[2..])),
         Route::Known("inventory") => std::process::exit(inventory_cmd::run(&args[2..])),
         Route::Known("version") => std::process::exit(version_cmd::run(&args[2..])),
+        Route::Known("workspace") => std::process::exit(workspace_cmd::run(&args[2..])),
         Route::Known(other) => unreachable!("comando registrato senza un braccio: {other}"),
         Route::Unknown(other) => {
             eprintln!("{}", unknown_command_message(other));
