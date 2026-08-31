@@ -27,6 +27,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas } from "./BlankCanvas";
+import { Now } from "./Now";
 import { StepEditor } from "./StepEditor";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
@@ -78,6 +79,18 @@ const NATIVE = insideTheWindow();
 
 /** Da dove vengono i flussi che si stanno guardando. */
 type Source = "loading" | "sample" | "engine" | "failed";
+
+/**
+ * I posti della finestra.
+ *
+ * **LA FINESTRA SI APRE SU «ADESSO», NON SULLA TELA**, ed è un cambio di
+ * scuola, non di disposizione. Aprire sull'inventario dei flussi — come fanno
+ * n8n, Zapier e Dify — risponde alla domanda «cosa potrei far girare»; chi
+ * riapre la finestra ne ha un'altra in testa, «cosa sta succedendo», e fino a
+ * stasera per rispondere doveva andarsela a cercare. La tela non sparisce:
+ * diventa il posto dove si va per guardare dentro.
+ */
+type Place = "now" | "flows";
 
 /**
  * Un flusso in modifica: quello che si vede e quello che è già sul disco.
@@ -147,6 +160,8 @@ export default function App() {
   const [broken, setBroken] = useState<BrokenFlow[]>(() => (NATIVE ? [] : splitEntries(SAMPLE).broken));
   const [source, setSource] = useState<Source>(NATIVE ? "loading" : "sample");
   const [failure, setFailure] = useState<string | null>(null);
+
+  const [place, setPlace] = useState<Place>("now");
 
   // Il fuoco è del ramo, non della tela: la colonna indica un percorso dentro
   // il grafo unico, non sceglie più quale grafo mostrare.
@@ -977,7 +992,32 @@ export default function App() {
         )}
       </header>
 
-      {focusName && focusedWorking && focusedBand && (
+      {/* I POSTI, NOMINATI. Una finestra che cambia contenuto senza dire dove
+          si è costringe a ricostruirlo dall'aspetto della pagina. Due posti
+          adesso, e nessuno finto: quelli che mancano — spazi, profili,
+          strumenti, terminali — si aggiungono quando esiste il motore che li
+          risponde, non prima. */}
+      <nav className="places">
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "now" || undefined}
+          onClick={() => setPlace("now")}
+        >
+          Adesso
+        </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "flows" || undefined}
+          onClick={() => setPlace("flows")}
+        >
+          Flussi
+          <span className="places__count">{flows.size}</span>
+        </button>
+      </nav>
+
+      {place === "flows" && focusName && focusedWorking && focusedBand && (
         <FocusBar
           key={focusName}
           name={focusName}
@@ -997,7 +1037,15 @@ export default function App() {
       <RunContext.Provider value={controls}>
       <StepRunContext.Provider value={stepStates}>
       <StepUsageContext.Provider value={stepUsage}>
-      <div className="body">
+      {place === "now" && (
+        <Now
+          native={NATIVE}
+          onOpen={(runId) => {
+            setWatching(runId);
+          }}
+        />
+      )}
+      <div className="body" hidden={place !== "flows"}>
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
           <button
