@@ -337,9 +337,19 @@ possono ordinare, e non si sa perché la classifica di ieri era diversa.
    a occhio ogni volta.
 4. **L'impatto misurato prima di scegliere.** SocratiCode sa già dire cosa
    toccherebbe un cambiamento, e sarebbe il numero che rende la classifica
-   confrontabile invece che opinabile. **Oggi un flusso non può chiederglielo**:
+   confrontabile invece che opinabile. ~~Oggi un flusso non può chiederglielo:
    Sailor *riconosce* i server MCP — il rilevatore ha la famiglia `mcp_server` —
-   ma non esiste nessuna azione che ci parli. È l'anello mancante fra i due.
+   ma non esiste nessuna azione che ci parli. È l'anello mancante fra i due.~~
+   **L'anello c'è dal 31/08/2026**: `mcp_ready` e `mcp_ask` in
+   `crates/actions/src/mcp.rs`, con l'esempio in
+   `flows/chiedi-all-indice.flow.json`. **Ma il numero che serve qui non si può
+   ancora prendere da lì**, e la corsa vera del 31/08 lo mostra: `codebase_impact`
+   su `crates/flow/src/graph.rs` ha risposto «Total impacted files: 0 — No
+   callers found», sullo stesso file di tre giorni prima. Un impatto che dice
+   zero su un crate che 22 file usano non rende una classifica confrontabile: la
+   rende sbagliata con sicurezza. Quel numero lo deve dare `cargo`, e l'indice
+   serve a orientare la ricerca — è la regola che l'azione si porta dietro nel
+   proprio campo `caveat`.
 5. **Il consumo scritto davvero**, che è il punto 1 di `docs/profili-e-consumo.md`
    e serve anche qui: senza costo per voce, «cosa conviene fare prima» resta
    un'opinione.
