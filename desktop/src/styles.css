@@ -43,11 +43,23 @@
       tabulari. Un costo in carattere proporzionale non si confronta a colpo
       d'occhio, e confrontarli è tutto il punto.
 
+   COME QUESTI DIVIETI DIVENTANO ROSSI. `desktop/src/stylesheet.test.ts` legge
+   questo foglio e rifiuta un carattere, un raggio, un'ombra o un colore che non
+   passi da un ruolo; `desktop/src/contrast.test.tsx` cammina il DOM disegnato e
+   rifiuta un'accoppiata sotto 4,5:1, anche con un flusso a fuoco. Il divieto 6
+   era rimasto un turno intero senza niente che lo interrogasse: rimettere
+   `--muted: #94a3b8` — due caratteri — lasciava tutta la batteria verde con lo
+   schermo pieno di testo illeggibile. Oggi la stessa modifica rende rosse tutte
+   e tre le scene: 38 accoppiate sotto soglia a riposo, 38 con un flusso a
+   fuoco, 42 sui sei stati di un passo.
+
    CIÒ CHE QUESTA DIREZIONE NON FA ANCORA. Il tema scuro. La plancia ce l'ha,
-   questa finestra no: restano ~40 tinte scritte a mano nei blocchi di avviso e
-   di guasto più in basso, e un tema scuro che ne riverniciasse solo la testa
-   lascerebbe testo chiaro su fondo chiaro — esattamente il difetto da cui il
-   vincolo nasce. Si accende quando quelle tinte saranno passate ai ruoli.
+   questa finestra no — e il motivo NON è che restino tinte scritte a mano: fuori
+   da `:root` non c'è più nessun colore letterale, e il controllo qui sopra lo
+   pretende. Manca la seconda serie di ruoli e la misura di ognuna delle sue
+   accoppiate: il divieto 6 vale sul fondo scuro come su questo, e un tema
+   dichiarato senza quelle misure sarebbe la stessa promessa non verificata che
+   questo commit è stato respinto per aver fatto.
    =========================================================================== */
 
 :root {
@@ -58,6 +70,10 @@
   --raised: #ffffff;  /* campi di testo e ciò che si apre sopra un pannello */
   --rail: #f2f0e9;    /* alias storico, = --bg */
   --line: #d8d7ce;    /* filo di 1px, mai portatore di stato da solo */
+  /* Il velo d'inchiostro sotto una corsia: si vede che il riquadro c'è, e non
+     sposta nessuna accoppiata di contrasto. Era l'ultimo colore letterale
+     rimasto fuori da qui. */
+  --band-fill: rgb(34 38 31 / 2.5%);
 
   /* --- TESTO. Due livelli, tutti e due leggibili ovunque. Misurati:
          ink   su --paper 15,08:1 · su --bg 13,81:1
@@ -559,7 +575,10 @@ button.is-primary {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 30px rgb(15 23 42 / 8%);
+  /* L'unica ombra (divieto 3), e questo riquadro galleggia davvero sopra la
+     tela. Prima era una seconda ombra scritta a mano, col nero-ardesia della
+     tavolozza precedente: la sola tinta letterale rimasta fuori dai ruoli. */
+  box-shadow: var(--shadow);
 }
 
 .blank__card h2 {
@@ -1102,7 +1121,18 @@ button.is-primary {
   height: 2px;
 }
 
+/* SPENTO NON VUOL DIRE ILLEGGIBILE (divieto 6, e divieto 5 di riflesso).
+   Qui c'era `opacity: 0.3` su tutto il nodo: a un clic di distanza dalla vista
+   d'apertura il nome di un passo faceva 1,86:1 e la sua parola di stato 1,48:1
+   — più aggressivo dello 0,4 che questa direzione ha tolto dalla cassetta dei
+   passi, e con lo stesso meccanismo che condanna. Adesso a ritrarsi sono i
+   SEGNI: il nodo perde il proprio foglio e si confonde col fondo della tela, e
+   il bollino della corsia si spegne. Le parole restano quelle di prima. */
 .step-node[data-dimmed] {
+  background: var(--bg);
+}
+
+.step-node[data-dimmed] .step-node__flow {
   opacity: 0.3;
 }
 
@@ -1122,12 +1152,22 @@ button.is-primary {
   box-sizing: border-box;
   border: 1px dashed;
   border-radius: var(--radius-lg);
-  background: rgb(34 38 31 / 2.5%);
+  background: var(--band-fill);
   padding: var(--space-3) var(--space-4);
-  transition: opacity var(--motion) var(--ease);
+  transition:
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
 }
 
+/* Come per un nodo: la corsia non a fuoco perde il velo e il suo segno, non le
+   sue parole. Il nome faceva 1,85:1 e la descrizione 1,47:1. */
 .flow-band[data-dimmed] {
+  background: transparent;
+  border-color: var(--line);
+  border-style: dotted;
+}
+
+.flow-band[data-dimmed] .flow-band__mark {
   opacity: 0.3;
 }
 
@@ -1142,14 +1182,21 @@ button.is-primary {
 .flow-band__mark {
   width: 10px;
   height: 10px;
-  border-radius: 2px;
+  border-radius: var(--radius);
   flex-shrink: 0;
   align-self: center;
 }
 
+/* LE TRE INTERLINEE QUI SOTTO SONO DICHIARATE, NON LASCIATE A `normal`, e non
+   è una scelta di gusto: `BAND_PAD_TOP` in `layout.ts` riserva a questa
+   intestazione un'altezza calcolata proprio da questi numeri, e
+   `layout.test.ts` rifà il conto leggendo questo foglio. Con `normal` il conto
+   dipenderebbe dalle metriche del carattere installato sulla macchina, cioè da
+   niente che una prova possa vedere. */
 .flow-band__name {
   font-family: var(--font-data);
   font-size: var(--text-mid);
+  line-height: 1.2;
   font-weight: 700;
   color: var(--ink);
 }
@@ -1162,6 +1209,7 @@ button.is-primary {
 .flow-band__count {
   font-family: var(--font-display);
   font-size: var(--text-micro);
+  line-height: 1.2;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1179,13 +1227,17 @@ button.is-primary {
   font-size: var(--text-mid);
 }
 
-/* DUE RIGHE AL MASSIMO, e il resto passando sopra: l'intestazione della corsia
-   ha un'altezza riservata nella disposizione, e una descrizione lunga la
-   sfonda — sulla tela il testo finiva scritto in mezzo ai primi nodi, sopra i
-   loro nomi. Un flusso si descrive per esteso nel suo file, non addosso ai
-   passi di qualcun altro. */
+/* DUE RIGHE AL MASSIMO, e il resto passando sopra: un flusso si descrive per
+   esteso nel suo file, non addosso ai passi di qualcun altro.
+   TAGLIARE A DUE RIGHE NON BASTA, e questa riga di commento diceva il contrario
+   da un giorno intero. L'altezza riservata è `BAND_PAD_TOP`, ed è un numero: se
+   i corpi qui sopra crescono e quel numero resta fermo, la descrizione finisce
+   sotto i primi nodi anche a due righe. È successo qui — 15px al posto di 11px
+   da lontano, `BAND_PAD_TOP` fermo a 54 — e sulla vista d'apertura, che a due
+   flussi apre proprio a zoom 0,5, il testo entrava di 4px nel primo nodo. */
 .flow-band__desc {
   font-size: var(--text-body);
+  line-height: 1.2;
   color: var(--muted);
   margin-top: var(--space-1);
   max-width: 520px;
@@ -1232,7 +1284,10 @@ button.is-primary {
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  /* Le iniziali di uno strumento sono una targa, non una frase: il carattere è
+     quello delle targhe. Prima era una quarta famiglia scritta a mano — contro
+     il divieto 1, che vieta `system-ui` anche come ripiego. */
+  font-family: var(--font-display);
 }
 
 .tool-mark[data-off] .tool-mark__monogram {
@@ -1449,7 +1504,7 @@ button.is-primary {
 .trigger-node__mark {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
@@ -1714,7 +1769,7 @@ button.is-primary {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-data);
   font-size: var(--text-small);
   line-height: 1.55;
   white-space: pre-wrap;
@@ -2005,7 +2060,7 @@ button.is-primary {
 
 .passage__code {
   margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-data);
   font-size: var(--text-small);
   line-height: 1.45;
   white-space: pre-wrap;
