@@ -83,6 +83,70 @@ impl TokenTotals {
     pub fn is_partial(&self) -> bool {
         self.calls_without_tokens > 0 || self.calls_without_cost > 0
     }
+
+    /// Come si legge `cost_micros`: il totale, un pavimento, o niente.
+    ///
+    /// **PASSA DA `Spend` INVECE DI RIFARE LA REGOLA.** La distinzione fra un
+    /// totale e un pavimento la decide l'esecutore, che su di essa ferma una
+    /// corsa al tetto; riscriverla qui darebbe due regole che si confermano a
+    /// vicenda finché non divergono — e a divergere sarebbe quella che una
+    /// persona legge, cioè la sola che nessun tipo controlla.
+    pub fn cost_reading(&self) -> flow::CostReading {
+        flow::Spend {
+            micros: self.cost_micros,
+            calls: self.calls as i64,
+            calls_without_cost: self.calls_without_cost as i64,
+            // Non serve a leggere un totale: dice quanto può sforare chi apre
+            // più passi insieme, ed è una domanda di chi decide, non di chi
+            // guarda.
+            dearest_micros: None,
+        }
+        .reading()
+    }
+}
+
+/// La cifra del costo come va scritta a una persona, in una riga.
+///
+/// **IL QUALIFICATORE STA DENTRO LA RIGA DEL NUMERO, E QUESTO È TUTTO IL
+/// LAVORO.** Prima esisteva già una nota che diceva «parziale: 3 chiamate senza
+/// costo noto», ed era vera: stava due righe più in basso, e la corsa dell'A/B
+/// del 31/08/2026 è stata letta come 1,6674 dollari mentre ne era costati
+/// 7,2080. Una nota sotto un numero non corregge il numero — lo accompagna, e
+/// chi legge tiene il numero.
+///
+/// **PERCHÉ IL PAVIMENTO E NON L'ELENCO DELLE VOCI.** Le due strade dicevano il
+/// vero tutte e due. Un elenco per chiamata però non risponde alla domanda per
+/// cui si guarda questo comando — «posso lanciarne un'altra?» — e la lascia fare
+/// a mente a chi legge, che sommerà le voci che vede e tornerà al totale
+/// sbagliato. Un pavimento risponde: *tanto è già andato, e non è tutto*.
+pub fn how_the_cost_reads(reading: &flow::CostReading) -> String {
+    match reading {
+        flow::CostReading::Nothing => "costo equivalente: 0 (nessuna chiamata ha speso)".to_owned(),
+        flow::CostReading::Exact(micros) => format!(
+            "costo equivalente: {:.4} (quanto sarebbe costato via API, non una spesa)",
+            *micros as f64 / 1_000_000.0
+        ),
+        // Senza nemmeno una misura non c'è nessun pavimento da dichiarare:
+        // «almeno 0,0000» è vero, non dice niente, e si legge come una spesa
+        // piccola. È il terzo caso di `Spend` portato fino in fondo.
+        flow::CostReading::AtLeast {
+            known_micros: 0,
+            calls,
+            ..
+        } => format!(
+            "costo equivalente: sconosciuto — nessuna delle {calls} chiamate ha dichiarato \
+             un costo, e il consumo di un passo consegnato è autodichiarato"
+        ),
+        flow::CostReading::AtLeast {
+            known_micros,
+            calls,
+            calls_without_cost,
+        } => format!(
+            "costo equivalente: almeno {:.4}, e il vero è più alto — {calls_without_cost} \
+             chiamate su {calls} non sono misurate",
+            *known_micros as f64 / 1_000_000.0
+        ),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
