@@ -1,7 +1,20 @@
+import { createContext, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { Step, StepKind, StepRun, StepState } from "./flow";
+import { nodeId } from "./layout";
 import { MODEL_KEY, toolOf, useTool, useToolsAreKnown } from "./tools";
 import { ToolMark } from "./ToolMark";
+
+/**
+ * Lo stato vero dei passi, chiavato `flusso::passo`.
+ *
+ * **PASSA DA UN CONTESTO E NON DAI `data` DEL NODO**, per la stessa ragione già
+ * scritta accanto all'innesco: i `data` fanno parte dell'elenco dei nodi, e un
+ * elenco ricostruito a ogni fatto in arrivo è bastato una volta a mandare la
+ * tela in ciclo infinito. Qui i fatti cambiano il valore del contesto, non
+ * l'identità dei nodi: si ridisegna quello che è cambiato, e basta.
+ */
+export const StepRunContext = createContext<Map<string, StepRun>>(new Map());
 
 export interface StepNodeData extends Record<string, unknown> {
   step: Step;
@@ -95,7 +108,11 @@ function StepTool({ id, model }: { id: string; model: string }) {
 }
 
 export function StepNode({ data, selected }: NodeProps) {
-  const { step, kind, run, flowName, color: flowColor, dimmed } = data as StepNodeData;
+  const { step, kind, run: fromData, flowName, color: flowColor, dimmed } = data as StepNodeData;
+  // I FATTI VERI VINCONO SULL'ESEMPIO. `run` nei `data` esiste ancora perché è
+  // così che i dati d'esempio colorano la tela fuori dal guscio nativo; quando
+  // una corsa vera esiste, è la sua a contare.
+  const run = useContext(StepRunContext).get(nodeId(flowName, step.id)) ?? fromData;
   const state: StepState = run?.state ?? "waiting";
   const color = STATE_COLOR[state];
   const isAgent = kind === "engine";
