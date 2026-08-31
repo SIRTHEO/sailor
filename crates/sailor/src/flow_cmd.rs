@@ -415,6 +415,7 @@ fn check_report(
                     unknown.join(", ")
                 );
             }
+            capabilities_into(&mut report, &flow.graph, tools);
         }
     }
 
@@ -432,6 +433,116 @@ fn check_report(
         );
     }
     (report, unknown)
+}
+
+/// Una capacità chiesta da un passo a un motore preciso.
+///
+/// I tre nomi stanno insieme perché un avviso che ne perda uno non si può usare:
+/// «manca `response_shape`» non dice a chi legge quale passo cambiare, e in un
+/// flusso che chiede lo stesso al primo e al terzo motore della catena non dice
+/// nemmeno quale dei due.
+struct WantedCapability {
+    step: String,
+    tool: String,
+    capability: String,
+}
+
+/// Le capacità che i passi chiedono, passo per passo e motore per motore.
+///
+/// **IL PRODOTTO CARTESIANO È VOLUTO.** Un passo che scrive `"tool":
+/// ["claude-code", "agy"]` chiede quella capacità a tutti e due: il ripiego può
+/// finire su chiunque della catena, e un controllo che guardasse solo il primo
+/// tacerebbe proprio sul motore su cui la corsa finisce quando il primo muore.
+/// È la stessa ragione per cui `tools_wanted` conta i motori dentro una catena.
+fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
+    let mut wanted = Vec::new();
+    for step in graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        let asked: Vec<String> = match with.get("needs_capabilities") {
+            Some(Value::Array(names)) => names
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
+            // Un nome solo si scrive senza le parentesi quadre, come ovunque.
+            Some(Value::String(name)) => vec![name.clone()],
+            _ => continue,
+        };
+        let engines: Vec<String> = match with.get("tool") {
+            Some(Value::String(id)) => vec![id.clone()],
+            Some(Value::Array(chain)) => chain
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
+            _ => Vec::new(),
+        };
+        for capability in &asked {
+            for tool in &engines {
+                wanted.push(WantedCapability {
+                    step: step.id.clone(),
+                    tool: tool.clone(),
+                    capability: capability.clone(),
+                });
+            }
+        }
+    }
+    wanted
+}
+
+/// Scrive nel rapporto le capacità chieste dai passi e come stanno messe.
+///
+/// **È UN AVVISO, NON UN ERRORE, E LA DIFFERENZA È LA STESSA DEL 28/08/2026.**
+/// Uno strumento che qui non è installato non rende rotto un flusso; una
+/// capacità che un motore non ha non lo rende rotto nemmeno: chi non sa imporre
+/// una forma alla risposta se la fa chiedere nel prompt e paga più token. È il
+/// vincolo permanente «indipendenza dal modello» — una capacità assente è una
+/// condizione dichiarata, non un guasto — e per questo il flusso continua a
+/// passare il controllo. Quello che cambia è che chi lancia lo sa **prima** di
+/// spendere, invece di leggerlo nella risposta del motore.
+///
+/// **E LE DUE ASSENZE SI DICONO CON DUE FRASI DIVERSE.** «Dichiara di non
+/// averla» si ripara cambiando motore; «nessuno ha guardato» si ripara
+/// misurando quello che si ha. Metterle sotto la stessa parola farebbe passare
+/// per misurata ogni omissione — che è esattamente ciò che il blocco
+/// `capabilities` esiste per non fare.
+fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
+    let mut available = Vec::new();
+    let mut gaps = Vec::new();
+    for wanted in capabilities_wanted(graph) {
+        // Uno strumento che nessun descrittore dichiara è già stato nominato
+        // sopra: ripeterlo qui con parole diverse manderebbe a cercare due
+        // difetti dove ce n'è uno.
+        let Some(state) = tools.capability(&wanted.tool, &wanted.capability) else {
+            continue;
+        };
+        let line = format!(
+            "{} chiede {} a {}",
+            wanted.step, wanted.capability, wanted.tool
+        );
+        match state {
+            toolbox::CapabilityState::Available => available.push(line),
+            toolbox::CapabilityState::Absent => {
+                gaps.push(format!("{line}, che dichiara di non averla"))
+            }
+            toolbox::CapabilityState::NotLookedAt => gaps.push(format!(
+                "{line}, che non la dichiara — nessuno ha guardato se ce l'ha"
+            )),
+        }
+    }
+    if !available.is_empty() {
+        let _ = write!(report, "\ncapacità chieste: {}", available.join("; "));
+    }
+    if !gaps.is_empty() {
+        let _ = write!(
+            report,
+            "\ncapacità che il motore non dichiara (il passo funziona lo stesso, \
+             pagando di più): {}",
+            gaps.join("; ")
+        );
+    }
 }
 
 /// I campi scritti a mano che l'azione del passo non riconosce.
@@ -1348,6 +1459,137 @@ mod tests {
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
             report.contains("strumenti chiesti: strumento-dichiarato-mai-installato"),
+            "{report}"
+        );
+    }
+
+    /// Un catalogo con un motore solo, e le capacità che la prova gli attribuisce.
+    ///
+    /// **IL NOME DEL FILE PORTA UN CONTATORE**, e non è pignoleria: `cargo test`
+    /// manda le prove sullo stesso processo, quindi due prove che scrivono lo
+    /// stesso identificativo si ruberebbero il file a vicenda — è il guasto 21,
+    /// che si vede una volta su venti e sempre su una prova diversa.
+    fn tools_with_capabilities(id: &str, capabilities: &str) -> toolbox::Tools {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let file = std::env::temp_dir().join(format!(
+            "prova-capacita-{}-{}-{id}.json",
+            std::process::id(),
+            SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        std::fs::write(
+            &file,
+            format!(
+                r#"{{"tools":[{{"id":"{id}","family":"ai_cli","label":"{id}",
+                    "detect":{{"command":"{id}"}},"capabilities":{capabilities}}}]}}"#
+            ),
+        )
+        .expect("scrivere");
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
+        toolbox::Tools::new(catalog, toolbox::Machine::current())
+    }
+
+    fn flow_needing_capability(tool: &str, capability: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova",
+                "description": "flusso di prova",
+                "graph": {{
+                    "steps": [{{
+                        "id": "root",
+                        "deps": [],
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "when": null,
+                        "with": {{"tool": "{tool}", "needs_capabilities": ["{capability}"], "timeout_secs": 10}},
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}}
+                    }}],
+                    "skippable_dependencies": []
+                }},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// **IL TERZO CASO CHE IL CONTROLLO NON SAPEVA DIRE.** Sapeva distinguere
+    /// «lo strumento non c'è qui» da «non esiste in nessun catalogo»; un passo
+    /// che chiede a un motore qualcosa che quel motore non sa fare passava per
+    /// buono, e il difetto si scopriva pagando la chiamata.
+    #[test]
+    fn a_capability_the_engine_declares_absent_is_named_with_step_and_engine() {
+        let flow = flow_needing_capability("un-motore", "response_shape");
+        let tools = tools_with_capabilities("un-motore", r#"{"response_shape": false}"#);
+
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+
+        assert!(unknown.is_empty(), "resta un avviso, non un errore: {unknown:?}");
+        assert!(report.contains("root"), "nomina il passo: {report}");
+        assert!(report.contains("un-motore"), "nomina il motore: {report}");
+        assert!(report.contains("response_shape"), "nomina la capacità: {report}");
+        assert!(
+            report.contains("dichiara di non averla"),
+            "e dice che qualcuno ha guardato: {report}"
+        );
+    }
+
+    /// **E LA DISTINZIONE ARRIVA FINO A CHI LEGGE.** Se le due frasi fossero
+    /// una sola, il blocco `capabilities` avrebbe potuto essere un elenco di ciò
+    /// che c'è, e ogni silenzio passerebbe per una misura. Il rimedio è diverso:
+    /// nel caso di sopra si cambia motore, qui si misura quello che si ha.
+    #[test]
+    fn a_capability_nobody_measured_is_told_apart_from_one_declared_absent() {
+        let flow = flow_needing_capability("un-motore", "response_shape");
+        let tools = tools_with_capabilities("un-motore", r#"{"choose_model": true}"#);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+
+        assert!(
+            report.contains("nessuno ha guardato"),
+            "il descrittore tace su quella capacità: {report}"
+        );
+        assert!(
+            !report.contains("dichiara di non averla"),
+            "e tacere non è dichiarare un'assenza: {report}"
+        );
+    }
+
+    /// Una capacità dichiarata e ottenibile non produce nessun avviso: un
+    /// controllo che si lamenta anche quando va tutto bene smette di essere letto.
+    #[test]
+    fn a_capability_the_engine_has_raises_no_warning() {
+        let flow = flow_needing_capability("un-motore", "response_shape");
+        let tools = tools_with_capabilities(
+            "un-motore",
+            r#"{"response_shape": {"args": ["--json-schema"], "takes_value": true}}"#,
+        );
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+
+        assert!(
+            !report.contains("capacità che il motore non dichiara"),
+            "{report}"
+        );
+        assert!(
+            report.contains("capacità chieste: root chiede response_shape a un-motore"),
+            "quello che c'è si vede lo stesso: {report}"
+        );
+    }
+
+    /// **UN PASSO CHE DICHIARA LE PROPRIE CAPACITÀ NON HA UN CAMPO DI TROPPO.**
+    /// Senza `needs_capabilities` dentro la specifica del motore, lo stesso
+    /// rapporto direbbe anche «campi che l'azione non conosce», e chi legge
+    /// andrebbe a cercare un refuso che non c'è: è il guasto 20 al contrario,
+    /// un avviso vero su un campo giusto.
+    #[test]
+    fn declaring_needed_capabilities_is_not_a_stray_field() {
+        let flow = flow_needing_capability("un-motore", "response_shape");
+        let tools = tools_with_capabilities("un-motore", r#"{"response_shape": true}"#);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+
+        assert!(
+            !report.contains("campi che l'azione non conosce"),
             "{report}"
         );
     }

@@ -831,6 +831,28 @@ struct EngineSpec {
     /// quando la forma tollererebbe campi in più.
     #[serde(default)]
     answer_shape: Option<ValueSchema>,
+    /// Le capacità che questo passo chiede al motore: `response_shape`,
+    /// `resume_session`, e qualunque altro nome un descrittore dichiari.
+    ///
+    /// **DICHIARATO QUI E NON ANCORA USATO, DI PROPOSITO.** Chi lo legge oggi è
+    /// `sailor flow check`, che avvisa prima di spendere quando il motore
+    /// scelto non dichiara quella capacità. L'esecuzione non cambia: chi non sa
+    /// imporre una forma alla risposta continua a farsela chiedere nel prompt
+    /// con `answer_shape`, e paga più token — è il vincolo permanente
+    /// «indipendenza dal modello», e quel ripiego resta il ripiego.
+    ///
+    /// **E STA NELLA SPECIFICA PER NON DIVENTARE UN REFUSO.** I campi che
+    /// questa azione non riconosce finiscono in `extra`, e il controllo li
+    /// nomina come «campi che l'azione non conosce»: un passo che dichiara
+    /// onestamente ciò che gli serve si vedrebbe accusare di un errore di
+    /// battitura.
+    ///
+    /// Nessuno lo legge da qui dentro finché le azioni non useranno le
+    /// capacità: il permesso è sulla riga sopra e non su tutta la struttura,
+    /// così il giorno che qualcuno lo usa il permesso sparisce con lui.
+    #[allow(dead_code)]
+    #[serde(default)]
+    needs_capabilities: Vec<String>,
     timeout_secs: u64,
     /// Tutto ciò che questa azione non riconosce.
     ///

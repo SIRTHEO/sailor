@@ -28,7 +28,10 @@ pub mod resolver;
 
 pub use action::{register_default, DetectToolsAction, DETECT_TOOLS_ACTION};
 pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
-pub use descriptor::{builtin_catalog, Catalog, Descriptor, Loaded, Problem, Source, BUILTIN_CATALOGS};
+pub use descriptor::{
+    builtin_catalog, Capability, CapabilityForm, CapabilityState, Catalog, Descriptor, Loaded,
+    Problem, Source, BUILTIN_CATALOGS,
+};
 pub use probe::{Look, Machine, VersionReading};
 pub use resolver::Tools;
 
