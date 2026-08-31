@@ -197,6 +197,15 @@ interface StepPane {
   spoke: boolean;
   /** L'azione del passo, per dire se conserva testo o solo un esito. */
   action: string | null;
+  /**
+   * Cosa è entrato nel passo.
+   *
+   * Arrivava già dentro `step_started` e veniva letto **solo** per indovinare
+   * l'azione, poi buttato. Chi guardava una corsa vedeva cosa ogni passo aveva
+   * detto e mai cosa gli era stato dato: metà del vincolo «chiarezza per chi
+   * guarda» mancava, ed era la metà che spiega l'altra.
+   */
+  input: unknown;
 }
 
 export function panesFromEvents(events: RunEvent[]): StepPane[] {
@@ -217,6 +226,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         spoke: false,
         // Il record del passo porta l'input, da cui si legge cosa esegue.
         action: readAction(payload),
+        input: payload?.input ?? null,
       });
     } else if (event.kind === "step_closed") {
       const pane = panes.get(event.step_id);
@@ -501,6 +511,16 @@ export function RunConsole({
                 </span>
               </header>
               <div className="pane__body">
+                {/* COSA È ENTRATO, prima di cosa è uscito: è l'ordine in cui si
+                    capisce un passo, e finora c'era solo la seconda metà.
+                    Chiuso di suo — un input lungo seppellirebbe il testo del
+                    passo, che resta la cosa che si guarda per prima. */}
+                {pane.input !== null && pane.input !== undefined && (
+                  <details className="pane__input">
+                    <summary className="pane__input-head">è entrato</summary>
+                    <pre className="pane__code">{JSON.stringify(pane.input, null, 2)}</pre>
+                  </details>
+                )}
                 {/* «Righe» non è «testo del passo»: le righe di sistema —
                     partito, ha chiuso — ci sono sempre, e contarle come testo
                     farebbe sparire la nota proprio nei riquadri che ne hanno
