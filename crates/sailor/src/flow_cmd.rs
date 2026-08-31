@@ -6,8 +6,8 @@
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
 use flow::{
-    ActionRegistry, Execution, ExecutionRequest, Executor, FlowFile, Graph,
-    InProcessExecutor, RecordStore, SharedState, SystemClock,
+    ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
+    SystemClock,
 };
 use actions::reference;
 use ledger::Ledger;
@@ -16,7 +16,7 @@ use ui::gather::FlowSource;
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -1012,24 +1012,38 @@ fn execute_flow(
     registry: &ActionRegistry,
     clock: &mut dyn flow::Clock,
 ) -> Result<Execution, flow::FlowError> {
+    let root = workspace_root();
+    announce_root(root.as_deref());
     InProcessExecutor.execute(
         &flow.graph,
-        execution_request(flow, run_id),
+        registry::execution_request(flow, run_id, root.as_deref()),
         store,
         registry,
         clock,
     )
 }
 
-fn execution_request(flow: &FlowFile, run_id: &str) -> ExecutionRequest {
-    ExecutionRequest {
-        run_id: run_id.to_owned(),
-        root_inputs: flow.inputs.clone(),
-        gates: Vec::new(),
-        shared: SharedState::new(),
-        // Il tetto è del flusso e viaggia con la corsa: chi lancia non lo
-        // inventa, lo porta.
-        spend_cap_micros: flow.spend_cap_micros,
+/// La radice del progetto per questa corsa, risalendo da dove si è lanciato.
+fn workspace_root() -> Option<PathBuf> {
+    let working = std::env::current_dir().ok()?;
+    flow::workspace::find_root(&working)
+}
+
+/// **CHI LANCIA DICE DOVE HA DECISO DI LAVORARE, PRIMA DI PARTIRE.**
+///
+/// Senza questa riga il piano ha un modo silenzioso di sbagliare, ed è
+/// **lo stesso** del guasto che chiude: il flusso lavora in un posto che
+/// nessuno ha visto scritto da nessuna parte. Che la radice manchi è
+/// un'informazione quanto il suo valore — dice in anticipo perché un passo con
+/// `workdir` sta per fallire.
+fn announce_root(root: Option<&Path>) {
+    match root {
+        Some(root) => println!("radice del progetto: {}", root.display()),
+        None => println!(
+            "radice del progetto: nessuna (nessun {} risalendo da qui); \
+             i passi che dichiarano «workdir» falliranno",
+            flow::workspace::MARKER
+        ),
     }
 }
 
@@ -1868,7 +1882,7 @@ mod tests {
         });
 
         let error = engine
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &mut flow::SharedState::new())
             .expect_err("quell'identificativo non esiste");
 
         assert_eq!(error.class, "tool_unavailable", "{}", error.said);
@@ -1880,7 +1894,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let request = execution_request(&flow, "corsa-1");
+        let request = registry::execution_request(&flow, "corsa-1", None);
 
         assert_eq!(request.root_inputs, flow.inputs);
         assert_eq!(request.run_id, "corsa-1");
