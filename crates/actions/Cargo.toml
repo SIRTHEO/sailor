@@ -17,9 +17,18 @@ rust-version.workspace = true
 # calcolare un costo da un listino sono gia' scritti li': riscriverli qui
 # vorrebbe dire tenere due copie della stessa regola sui prezzi, e due copie di
 # una regola divergono.
+#
+# `profiles` dal 01/09/2026, ed e' il guasto 18. Fino a quel giorno la
+# sovrapposizione d'ambiente che porta un motore nella casa di Sailor
+# (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME`) era chiamata da un
+# posto solo: `sailor run`. Un motore lanciato da un passo di flusso ereditava
+# quindi l'ambiente di chi aveva aperto il terminale, cioe' leggeva la casa del
+# vicino — e due corse dello stesso flusso non erano la stessa misura. Stessa
+# direzione di `models`: `profiles` dipende solo da serde, quindi non c'e' ciclo.
 [dependencies]
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 models = { path = "../models" }
+profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
