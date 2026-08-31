@@ -28,6 +28,8 @@ import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas } from "./BlankCanvas";
 import { Now } from "./Now";
+import { History } from "./History";
+import { Installed } from "./Installed";
 import { StepEditor } from "./StepEditor";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
@@ -90,7 +92,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * stasera per rispondere doveva andarsela a cercare. La tela non sparisce:
  * diventa il posto dove si va per guardare dentro.
  */
-type Place = "now" | "flows";
+type Place = "now" | "history" | "flows" | "installed";
 
 /**
  * Un flusso in modifica: quello che si vede e quello che è già sul disco.
@@ -992,11 +994,21 @@ export default function App() {
         )}
       </header>
 
-      {/* I POSTI, NOMINATI. Una finestra che cambia contenuto senza dire dove
-          si è costringe a ricostruirlo dall'aspetto della pagina. Due posti
-          adesso, e nessuno finto: quelli che mancano — spazi, profili,
-          strumenti, terminali — si aggiungono quando esiste il motore che li
-          risponde, non prima. */}
+      {/* I POSTI, NOMINATI E DIVISI IN DUE INTENZIONI. Una finestra che cambia
+          contenuto senza dire dove si è costringe a ricostruirlo dall'aspetto
+          della pagina.
+
+          La divisione — guardare a sinistra, amministrare a destra — è il
+          criterio che Inngest ha adottato riprogettando la propria
+          navigazione, e lo misura in clic: «i run falliti a un clic dalla barra
+          laterale» invece che scavando dentro la pagina delle funzioni. È
+          l'unico documento della ricognizione che nomina un criterio invece di
+          descrivere una disposizione.
+
+          Quelli che mancano — spazi, profili, terminali, server MCP — si
+          aggiungono quando esiste il motore che li risponde, non prima: una
+          voce che apre una schermata vuota è una promessa non mantenuta a ogni
+          clic. */}
       <nav className="places">
         <button
           type="button"
@@ -1009,11 +1021,28 @@ export default function App() {
         <button
           type="button"
           className="places__item"
+          data-here={place === "history" || undefined}
+          onClick={() => setPlace("history")}
+        >
+          Storia
+        </button>
+        <span className="places__gap" />
+        <button
+          type="button"
+          className="places__item"
           data-here={place === "flows" || undefined}
           onClick={() => setPlace("flows")}
         >
           Flussi
           <span className="places__count">{flows.size}</span>
+        </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "installed" || undefined}
+          onClick={() => setPlace("installed")}
+        >
+          Installato
         </button>
       </nav>
 
@@ -1045,6 +1074,8 @@ export default function App() {
           }}
         />
       )}
+      {place === "history" && <History native={NATIVE} />}
+      {place === "installed" && <Installed native={NATIVE} />}
       <div className="body" hidden={place !== "flows"}>
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>

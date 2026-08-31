@@ -22,11 +22,86 @@
 // in cima, e la parola sta accanto alla tinta perché il divieto 5 della
 // direzione visiva non ammette che il colore porti da solo uno stato.
 
-import { useCallback, useEffect, useState } from "react";
-import { openRuns, type OpenRun } from "./engine";
+import { useAsk, useClock } from "./ask";
+import { openRuns, todaySummary, type DaySummary, type OpenRun } from "./engine";
 
 /** Ogni quanto si richiede l'elenco al deposito. */
 const REFRESH_MS = 4000;
+
+/** Il riepilogo di oggi cambia più lentamente: somma corse intere. */
+const SUMMARY_MS = 30000;
+
+/** Un numero con i separatori delle migliaia, come lo legge una persona. */
+function count(value: number): string {
+  return value.toLocaleString("it-IT");
+}
+
+/** Da micro-unità a euro con tre decimali: sotto il millesimo non si decide. */
+function money(micros: number): string {
+  return `${(micros / 1_000_000).toLocaleString("it-IT", {
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
+  })} $`;
+}
+
+/**
+ * Il riepilogo di oggi.
+ *
+ * **DICE ANCHE QUELLO CHE NON HA POTUTO MISURARE.** È la riga che negli altri
+ * prodotti manca, e la ricognizione del 31/08/2026 ha trovato perché conta:
+ * Langfuse mostrava 4.509 token dove erano 2.265, LangSmith gonfia di 75-200
+ * volte con le immagini e non conta la cache dei prompt, e uno di Arize dice di
+ * Phoenix che «il costo è calcolato correttamente nel database, ma è difficile
+ * capirlo dalla UI». Un numero mostrato con autorità e sbagliato è peggio di un
+ * numero assente. Qui, se qualche chiamata non ha portato token o prezzo, la
+ * cifra si legge accanto al numero di chiamate che non la compongono.
+ */
+function Today({ summary }: { summary: DaySummary }) {
+  if (!summary.ledger_present) {
+    return (
+      <p className="now__mute">
+        Il deposito non esiste ancora: su questa macchina non è mai girato niente. Nessun conteggio è noto — che
+        non è la stessa cosa di «zero».
+      </p>
+    );
+  }
+  const seen = summary.input_tokens + summary.output_tokens + summary.cached_tokens + summary.cache_write_tokens;
+  return (
+    <section className="today">
+      <span className="today__label">Oggi</span>
+      <span className="today__cell">
+        <b>{count(summary.runs)}</b> corse
+      </span>
+      <span className="today__cell">
+        <b>{count(summary.went)}</b> andate
+      </span>
+      {summary.broke > 0 && (
+        <span className="today__cell" data-gravity="danger">
+          <b>{count(summary.broke)}</b> rotte
+        </span>
+      )}
+      {summary.still_open > 0 && (
+        <span className="today__cell">
+          <b>{count(summary.still_open)}</b> ancora aperte
+        </span>
+      )}
+      <span className="today__cell">
+        <b>{count(seen)}</b> token
+      </span>
+      <span className="today__cell">
+        <b>{money(summary.cost_micros)}</b>
+      </span>
+      {(summary.unmeasured > 0 || summary.unpriced > 0) && (
+        <span className="today__caveat" data-gravity="warn">
+          {summary.unmeasured > 0 && `${count(summary.unmeasured)} chiamate senza token`}
+          {summary.unmeasured > 0 && summary.unpriced > 0 && " · "}
+          {summary.unpriced > 0 && `${count(summary.unpriced)} senza prezzo`}
+          {" — le cifre qui sopra non le contengono"}
+        </span>
+      )}
+    </section>
+  );
+}
 
 /**
  * Da quanto dura, detto come lo direbbe una persona.
@@ -62,12 +137,6 @@ export function groupRuns(runs: OpenRun[]): { waiting: OpenRun[]; working: OpenR
   };
 }
 
-/** Come sta l'interrogazione del deposito, dal punto di vista di chi guarda. */
-type Asking =
-  | { state: "asking" }
-  | { state: "answered"; runs: OpenRun[]; at: number }
-  | { state: "mute"; why: string };
-
 interface NowProps {
   /** Vero dentro il guscio nativo: fuori non c'è deposito da interrogare. */
   native: boolean;
@@ -76,43 +145,23 @@ interface NowProps {
 }
 
 export function Now({ native, onOpen }: NowProps) {
-  const [asking, setAsking] = useState<Asking>(() =>
-    native ? { state: "asking" } : { state: "mute", why: "fuori dal guscio: il deposito lo legge il motore" },
-  );
-  // L'orologio che fa invecchiare le durate. Senza, «ferma da 2 min» resta
-  // scritto per un'ora: la riga sembrerebbe viva e sarebbe congelata.
-  const [now, setNow] = useState(() => Date.now() / 1000);
+  const outside = "fuori dal guscio: il deposito lo legge il motore";
+  const { asked } = useAsk<OpenRun[]>(native, openRuns, REFRESH_MS, outside);
+  const { asked: day } = useAsk<DaySummary>(native, todaySummary, SUMMARY_MS, outside);
+  const now = useClock();
 
-  const ask = useCallback(() => {
-    openRuns()
-      .then((runs) => setAsking({ state: "answered", runs, at: Date.now() / 1000 }))
-      .catch((error: unknown) => setAsking({ state: "mute", why: String(error) }));
-  }, []);
-
-  useEffect(() => {
-    if (!native) return;
-    ask();
-    const tick = window.setInterval(ask, REFRESH_MS);
-    return () => window.clearInterval(tick);
-  }, [native, ask]);
-
-  useEffect(() => {
-    const tick = window.setInterval(() => setNow(Date.now() / 1000), 1000);
-    return () => window.clearInterval(tick);
-  }, []);
-
-  if (asking.state === "mute") {
+  if (asked.state === "mute") {
     // UN DEPOSITO MUTO SI DICE. Una schermata vuota e un deposito irraggiungibile
     // si assomigliano troppo, e la seconda è quella in cui si continua a lavorare
     // credendo che non stia girando niente.
     return (
       <div className="now">
-        <p className="now__mute">Non riesco a chiedere cosa sta girando: {asking.why}</p>
+        <p className="now__mute">Non riesco a chiedere cosa sta girando: {asked.why}</p>
       </div>
     );
   }
 
-  if (asking.state === "asking") {
+  if (asked.state === "asking") {
     return (
       <div className="now">
         <p className="now__mute">Chiedo al deposito cosa è aperto…</p>
@@ -120,18 +169,14 @@ export function Now({ native, onOpen }: NowProps) {
     );
   }
 
-  const { waiting, working } = groupRuns(asking.runs);
-
-  if (asking.runs.length === 0) {
-    return (
-      <div className="now">
-        <p className="now__empty">Non sta girando niente, e niente aspetta te.</p>
-      </div>
-    );
-  }
+  const { waiting, working } = groupRuns(asked.value);
 
   return (
     <div className="now">
+      {day.state === "answered" && <Today summary={day.value} />}
+      {asked.value.length === 0 && (
+        <p className="now__empty">Non sta girando niente, e niente aspetta te.</p>
+      )}
       {waiting.length > 0 && (
         <RunGroup
           title="Aspettano te"
@@ -178,7 +223,7 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
             <th>corsa</th>
             <th>stato</th>
             <th className="now__num">da</th>
-            <th className="now__num">passi aperti</th>
+            <th>cosa sta facendo</th>
             <th>avviata</th>
           </tr>
         </thead>
@@ -194,7 +239,26 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
                 {run.state === "waiting" ? "aspetta te" : "in corso"}
               </td>
               <td className="now__num">{howLong(now - run.since)}</td>
-              <td className="now__num">{run.state === "waiting" ? "—" : run.open_steps}</td>
+              {/* QUALE PASSO, NON QUANTI. «3 passi aperti» non dice niente:
+                  un passo aperto da sei minuti lavora, lo stesso da tre ore e'
+                  appeso. Il tentativo si scrive solo se non e' il primo —
+                  «2ª volta» su un passo aperto vuol dire che il primo giro e'
+                  caduto, ed e' l'informazione che una riga verde nasconde. */}
+              <td className="now__steps">
+                {run.state === "waiting" ? (
+                  "—"
+                ) : run.open_now.length === 0 ? (
+                  run.open_steps
+                ) : (
+                  run.open_now.map((step) => (
+                    <span className="now__step" key={`${step.step_id}::${String(step.attempt)}`}>
+                      {step.step_id}
+                      {step.attempt > 1 && <b>{step.attempt}ª volta</b>}
+                      <i>{howLong(step.open_for_secs)}</i>
+                    </span>
+                  ))
+                )}
+              </td>
               {/* SI APRE SOLO CIÒ CHE SI PUÒ DAVVERO APRIRE. Il testo dal vivo
                   di una corsa vive nella memoria del guscio che l'ha avviata:
                   una corsa partita dal terminale si vede qui — ed è tutto il

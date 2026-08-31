@@ -50,6 +50,12 @@ trigger = { path = "../../crates/trigger" }
 # file invece di aspettare una versione nuova del programma.
 toolbox = { path = "../../crates/toolbox" }
 
+# Per dire, dentro la finestra, cosa è installato su questa macchina:
+# competenze, agenti, comandi, regole, ganci. Le radici da guardare stanno nel
+# crate e non nei chiamanti, perché la riga di comando e la finestra dicano lo
+# stesso numero sulla stessa macchina.
+inventory = { path = "../../crates/inventory" }
+
 # FUORI DAL WORKSPACE, DI PROPOSITO. Un `[workspace]` vuoto stacca questo crate
 # da quello alla radice, e non è pigrizia: `sailor release` esegue
 # `cargo test --release --workspace` per **qualunque** bersaglio, quindi da

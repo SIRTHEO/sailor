@@ -18,6 +18,7 @@ function run(over: Partial<OpenRun>): OpenRun {
     entity: "sviluppa-sailor",
     state: "working",
     open_steps: 1,
+    open_now: [],
     since: 0,
     started_here: false,
     ...over,

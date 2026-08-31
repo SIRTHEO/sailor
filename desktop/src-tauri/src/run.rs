@@ -51,7 +51,7 @@
 // era rimasta. Nessuno l'aveva vista perché questo guscio sta fuori dal
 // workspace, quindi i suoi avvisi non li stampa `cargo test --workspace`.
 use flow::{
-    ActionRegistry, Completion, Decision, Execution, Executor, FlowError, FlowFile,
+    ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile,
     InProcessExecutor, RecordStore, StepRecord, SystemClock,
 };
 use ledger::Ledger;
@@ -495,6 +495,24 @@ pub(crate) enum OpenState {
     Waiting,
 }
 
+/// Un passo che è aperto adesso, e da quanto.
+///
+/// **«TRE PASSI APERTI» NON È UNA RISPOSTA.** La domanda vera è *quale*, e da
+/// quanto: un passo aperto da sei minuti sta lavorando, lo stesso passo aperto
+/// da tre ore è appeso. Nella ricognizione del 31/08/2026 il modello è la
+/// sezione «Pending Activities» di Temporal — tipo dell'attività, tentativo
+/// corrente, tentativi rimasti, battito — costruita apposta perché la
+/// cronologia degli eventi da sola non basta: `ActivityTaskStarted` non compare
+/// finché l'attività non è finita o non ha esaurito i tentativi. Nessuno degli
+/// strumenti per agenti confrontati ha un equivalente.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct OpenStep {
+    pub step_id: String,
+    /// Quale tentativo: `2` su un passo aperto vuol dire che il primo è caduto.
+    pub attempt: u32,
+    pub open_for_secs: i64,
+}
+
 /// Una corsa aperta, chiunque l'abbia avviata.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct OpenRun {
@@ -505,6 +523,8 @@ pub(crate) struct OpenRun {
     pub state: OpenState,
     /// Quanti passi hanno ancora l'esito aperto. Zero per chi aspetta.
     pub open_steps: usize,
+    /// **Quali** passi, e da quanto. Vuoto per chi aspetta.
+    pub open_now: Vec<OpenStep>,
     /// Da quando dura questo stato: l'apertura del passo più vecchio per chi
     /// lavora, l'inizio dell'attesa per chi aspetta.
     pub since: i64,
@@ -549,6 +569,7 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
         .map_err(|error| format!("non riesco a leggere le corse in attesa: {error}"))?;
     let known = runs.lock_map();
 
+    let now = now_secs();
     let mut all: Vec<OpenRun> = waiting
         .into_iter()
         .map(|run| OpenRun {
@@ -557,24 +578,45 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
             entity: run.entity,
             state: OpenState::Waiting,
             open_steps: 0,
+            open_now: Vec::new(),
             since: run.waiting_since,
         })
         .collect();
     let held: std::collections::HashSet<String> =
         all.iter().map(|run| run.run_id.clone()).collect();
-    all.extend(
-        unfinished
-            .into_iter()
-            .filter(|run| !held.contains(&run.run_id))
-            .map(|run| OpenRun {
-                started_here: known.contains_key(&run.run_id),
-                run_id: run.run_id,
-                entity: run.entity,
-                state: OpenState::Working,
-                open_steps: run.open_steps,
-                since: run.oldest_started_at,
-            }),
-    );
+    for run in unfinished.into_iter().filter(|run| !held.contains(&run.run_id)) {
+        // UNA DOMANDA IN PIÙ PER CORSA APERTA, e sono poche per costruzione:
+        // qui ci finisce solo ciò che è in volo adesso, non la storia. Se un
+        // giorno fossero tante, il posto dove si ripara è il deposito con una
+        // sola interrogazione che porti anche i passi — non qui, saltando il
+        // dettaglio, perché è il dettaglio la risposta.
+        let open_now = ledger
+            .steps(&run.run_id)
+            .map(|steps| {
+                steps
+                    .into_iter()
+                    .filter(|step| step.outcome.is_none())
+                    .map(|step| OpenStep {
+                        step_id: step.step_id,
+                        attempt: step.attempt,
+                        open_for_secs: now - step.started_at,
+                    })
+                    .collect()
+            })
+            // Un passo che non si riesce a leggere non fa sparire la corsa:
+            // il conteggio resta, il dettaglio manca, e la riga si vede lo
+            // stesso. Perdere la riga sarebbe il danno grosso.
+            .unwrap_or_default();
+        all.push(OpenRun {
+            started_here: known.contains_key(&run.run_id),
+            run_id: run.run_id,
+            entity: run.entity,
+            state: OpenState::Working,
+            open_steps: run.open_steps,
+            open_now,
+            since: run.oldest_started_at,
+        });
+    }
 
     // La più vecchia in cima: chi guarda cerca prima ciò che è fermo da più
     // tempo, non ciò che è appena partito. Qui l'ordine è solo sul tempo —
