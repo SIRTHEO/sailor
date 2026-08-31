@@ -280,7 +280,48 @@ fn check_report(
             }
         }
     }
+
+    // **I CAMPI CHE L'AZIONE NON CONOSCE, DETTI PRIMA DI SPENDERE.** Il guasto
+    // 20: `"prompt"` scritto dove va `"stdin"` partiva in silenzio, il motore
+    // riceveva una riga monca, e l'errore che tornava era suo — dopo aver
+    // pagato la chiamata. Qui si guarda solo ciò che una persona ha scritto a
+    // mano nel flusso, dove un campo di troppo non è l'uscita di nessuno.
+    let stray = stray_fields(flow, registry);
+    if !stray.is_empty() {
+        let _ = write!(
+            report,
+            "\ncampi che l'azione non conosce (verranno ignorati): {}",
+            stray.join("; ")
+        );
+    }
     (report, unknown)
+}
+
+/// I campi scritti a mano che l'azione del passo non riconosce.
+///
+/// Guarda in due posti, e sono i due posti dove scrive una persona: il `with`
+/// del passo nel grafo, e l'ingresso dichiarato in `inputs`. Non guarda
+/// l'ingresso che il passo riceve davvero — quello contiene l'uscita delle
+/// dipendenze, dove i campi estranei sono la normalità e non un errore.
+fn stray_fields(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        let Some(action) = registry.get(&step.action) else {
+            // L'azione non c'è: lo dice già `azioni mancanti`, e dirlo due
+            // volte con parole diverse manderebbe a cercare due difetti.
+            continue;
+        };
+        for declared in [step.with.as_ref(), flow.inputs.get(&step.id)]
+            .into_iter()
+            .flatten()
+        {
+            let stray = action.unknown_fields(declared);
+            if !stray.is_empty() {
+                found.push(format!("{}: {}", step.id, stray.join(", ")));
+            }
+        }
+    }
+    found
 }
 
 /// Gli strumenti che un flusso chiede per identificativo.
@@ -720,6 +761,67 @@ mod tests {
                 "inputs": {inputs}
             }}"#
         )
+    }
+
+    // ── i campi che l'azione non conosce ─────────────────────────────
+
+    /// **IL REFUSO DEL 30/08/2026, PRESO PRIMA DI PAGARLO.**
+    ///
+    /// Un flusso scriveva `"prompt"` dove va `"stdin"`. Il passo è partito lo
+    /// stesso, il motore ha ricevuto una riga di comando monca, e l'errore che è
+    /// tornato era suo: «Input must be provided either through stdin». Una
+    /// chiamata a pagamento per un refuso di sette lettere.
+    #[test]
+    fn a_field_the_action_does_not_know_is_named_before_the_run() {
+        let inputs = r#"{"root":{"tool":"claude-code","prompt":"ciao","timeout_secs":10}}"#;
+        let json = flow_json("external_engine", "[]", inputs);
+        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+
+        assert!(
+            report.contains("campi che l'azione non conosce"),
+            "il controllo deve nominarli: {report}"
+        );
+        assert!(
+            report.contains("root: prompt"),
+            "e dire in quale passo e quale campo: {report}"
+        );
+    }
+
+    /// La gemella: lo **stesso** flusso col campo giusto non dice niente.
+    ///
+    /// Senza di lei, un controllo che si lamentasse sempre passerebbe la prova
+    /// sopra e renderebbe illeggibile ogni rapporto.
+    #[test]
+    fn the_same_flow_written_right_says_nothing() {
+        let inputs = r#"{"root":{"tool":"claude-code","stdin":"ciao","timeout_secs":10}}"#;
+        let json = flow_json("external_engine", "[]", inputs);
+        let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+
+        assert!(
+            !report.contains("campi che l'azione non conosce"),
+            "un flusso scritto bene non deve essere accusato: {report}"
+        );
+    }
+
+    /// **NESSUN FLUSSO SPEDITO PORTA UN CAMPO IGNOTO.** Vale come misura del
+    /// controllo appena aggiunto: se dicesse cose a caso, questa lo direbbe
+    /// subito su codice vero invece che su un flusso inventato.
+    #[test]
+    fn no_shipped_flow_carries_a_field_nobody_reads() {
+        let registry = default_registry(None, None);
+        for (name, text) in flow::system::FLOWS {
+            let flow: FlowFile = serde_json::from_str(text)
+                .unwrap_or_else(|why| panic!("il flusso «{name}» non si carica: {why}"));
+            assert!(
+                stray_fields(&flow, &registry).is_empty(),
+                "«{name}» ha campi che nessuno legge: {:?}",
+                stray_fields(&flow, &registry)
+            );
+        }
     }
 
     // ── il marcatore del testo in diretta ────────────────────────────

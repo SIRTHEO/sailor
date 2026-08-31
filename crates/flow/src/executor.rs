@@ -83,6 +83,22 @@ pub trait Action: Send + Sync {
         shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError>;
 
+    /// I campi di un `with` scritto a mano che questa azione **non**
+    /// riconosce.
+    ///
+    /// **SI CHIEDE SOLO A TEMPO DI CONTROLLO, MAI MENTRE SI ESEGUE.** A tempo
+    /// di esecuzione l'ingresso di un passo è l'uscita della sua dipendenza,
+    /// dove i campi estranei sono la norma; nel `with` no — quello lo scrive una
+    /// persona, e un campo che l'azione non conosce lì dentro è un refuso che
+    /// costa una chiamata a pagamento per essere scoperto.
+    ///
+    /// Chi non risponde non fa dire niente a `flow check`: il valore
+    /// predefinito è il silenzio, perché un'azione che non sa elencare i propri
+    /// campi non deve poter accusare chi la usa.
+    fn unknown_fields(&self, _declared: &Value) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Un'azione senza una prova positiva non è rilanciabile automaticamente:
     /// `Unknown` conserva l'ambiguità invece di duplicare un effetto esterno.
     fn inspect_effect(
