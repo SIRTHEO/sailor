@@ -1742,6 +1742,111 @@ fn session_plan(
     }
 }
 
+// ── la dotazione con cui un motore parte ─────────────────────────────────
+
+/// Con che cosa una chiamata a un motore esterno parte davvero.
+///
+/// **PERCHÉ I DUE CAMPI STANNO INSIEME.** L'ambiente decide *quale casa* quel
+/// motore leggerà; il nome del profilo è ciò che finisce nel deposito. Separarli
+/// vorrebbe dire risolvere due volte lo stesso profilo e poter sbagliare in un
+/// posto solo — cioè scrivere nel deposito una dotazione diversa da quella con
+/// cui la chiamata è girata, che è peggio di non scriverla.
+pub struct Equipment {
+    /// Da sovrapporre all'ambiente ereditato prima di lanciare.
+    pub env: BTreeMap<String, String>,
+    /// Sotto quale profilo la chiamata è girata: `<riga di comando>/<profilo>`,
+    /// vuoto quando nessun profilo era in forza. Vuoto e «non lo so» qui sono la
+    /// stessa cosa e va bene: nessun profilo attivo *è* l'informazione.
+    pub profile: String,
+}
+
+/// La dotazione per invocare `bin`, secondo lo stato dei profili dato.
+///
+/// **IL GUASTO 18, ED È LA STESSA MALATTIA DEL 35.** Tutte e due sono «Sailor ha
+/// un dato in casa propria e non lo usa». Il listino c'era e non viaggiava col
+/// prodotto; la dotazione c'era — `~/.config/sailor/` ha `equipment/`, `flows/`,
+/// un listino, una firma — e non arrivava ai motori, perché la sovrapposizione
+/// d'ambiente la chiamava solo `sailor run`. Un motore lanciato da un passo di
+/// flusso ereditava l'ambiente di chi aveva aperto il terminale: leggeva la casa
+/// del vicino, e due corse dello stesso flusso non erano la stessa misura.
+///
+/// **L'AMBIENTE DEL PROFILO STA SOTTO QUELLO DEL PASSO, E IL VERSO È LA
+/// DECISIONE.** Chi scrive una variabile dentro un passo sta dicendo qualcosa di
+/// preciso su *quella* chiamata — un profilo diverso per un solo passo, una casa
+/// usa-e-getta per una prova — e non deve poter essere scavalcato da uno stato
+/// che vive altrove e che quel passo non nomina. Il verso opposto renderebbe la
+/// riga scritta nel flusso inerte, in silenzio.
+///
+/// **PURO: LO STATO ENTRA, LA DOTAZIONE ESCE.** Chi legge il file dei profili sta
+/// in [`current_equipment_for`], per la stessa ragione di `price_list_from`.
+pub fn equipment_for(
+    store: &profiles::ProfileStore,
+    bin: &str,
+    step_env: &BTreeMap<String, String>,
+) -> Equipment {
+    let Some(cli) = profiles::cli_for_executable(bin) else {
+        // Un comando qualunque — `sh`, uno script — non ha nessuna casa da
+        // spostare, e dargliene una non vorrebbe dire niente.
+        return Equipment {
+            env: step_env.clone(),
+            profile: String::new(),
+        };
+    };
+    let resolved = store.active.get(cli.id).and_then(|active| {
+        store
+            .profiles
+            .iter()
+            // **UNO STATO CHE NOMINA UN PROFILO SPARITO NON INVENTA UNA
+            // CARTELLA.** Comporre il percorso dal nome darebbe una casa vuota,
+            // cioè senza credenziali, con l'aria di aver applicato un profilo.
+            .find(|profile| profile.cli_id == cli.id && &profile.name == active)
+    });
+    let Some(profile) = resolved else {
+        return Equipment {
+            env: step_env.clone(),
+            profile: String::new(),
+        };
+    };
+    // **VUOTO QUANDO IL MECCANISMO NON PASSA DA UNA VARIABILE.** Una riga di
+    // comando che sposta la casa scambiando un collegamento simbolico riceve un
+    // ambiente vuoto da `build_environment`: lì l'identità dipende da dove punta
+    // un file sul disco, e questa funzione non tocca il disco. Nessuna variabile
+    // sovrapposta vuol dire nessuna dotazione applicata, quindi il deposito non
+    // deve leggere il nome di un profilo che non è stato messo in forza.
+    let from_the_profile = profiles::build_environment(cli, &profile.home_dir);
+    let applied = !from_the_profile.is_empty();
+    // Il profilo prima, il passo sopra: chi scrive una variabile nel passo vince.
+    let mut env = from_the_profile;
+    env.extend(
+        step_env
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone())),
+    );
+    Equipment {
+        env,
+        profile: if applied {
+            format!("{}/{}", cli.id, profile.name)
+        } else {
+            String::new()
+        },
+    }
+}
+
+/// La dotazione di **questa** macchina per invocare `bin`.
+///
+/// **RILETTA A OGNI CHIAMATA**, per la stessa ragione del listino: un profilo
+/// cambiato a metà di una corsa lunga vale dalla chiamata dopo, invece che dal
+/// prossimo riavvio, e leggere un file piccolo accanto all'avvio di un processo
+/// esterno non costa niente.
+///
+/// Uno stato dei profili illeggibile non ferma la chiamata: si parte senza
+/// sovrapporre niente, che è come si è sempre partiti. Fermare un passo perché
+/// non si è potuto leggere un file di preferenze punirebbe chi non c'entra.
+fn current_equipment_for(bin: &str, step_env: &BTreeMap<String, String>) -> Equipment {
+    let store = profiles::store_io::load_store().unwrap_or_default();
+    equipment_for(&store, bin, step_env)
+}
+
 // ── quanto è costata una chiamata ────────────────────────────────────────
 
 /// Dove sta il listino locale su questa macchina.
@@ -1837,6 +1942,11 @@ struct Spent {
     ended_at: i64,
     /// La sessione sotto cui questa chiamata è girata, quando si sa qual è.
     session_id: Option<String>,
+    /// La dotazione sotto cui è girata: `<riga di comando>/<profilo>`, vuoto
+    /// quando nessun profilo era in forza. Senza, due corse dello stesso flusso
+    /// non sono la stessa misura — e la riga non porta la ragione per cui i due
+    /// consumi differiscono.
+    profile: String,
 }
 
 /// Scrive nel deposito la riga di **questa** chiamata.
@@ -1933,7 +2043,22 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         cached_price_micros_per_million: prices.cached,
         cache_write_price_micros_per_million: prices.cache_write,
         cache_write_long_price_micros_per_million: prices.cache_write_long,
-        mandate_name: String::new(),
+        // **LA DOTAZIONE SOTTO CUI QUESTA CHIAMATA È GIRATA.** Fino al
+        // 01/09/2026 queste due colonne erano scritte vuote da ogni chiamata,
+        // e senza di loro due corse dello stesso flusso non sono la stessa
+        // misura: la stessa catena di passi, sotto due profili, dà due consumi
+        // diversi per una ragione che la riga non porta.
+        //
+        // **IL NOME DELLA COLONNA È DEBITO DICHIARATO.** `mandate_name` viene da
+        // una tabella `current_mandate` che non esiste più; qui dentro tiene un
+        // profilo, e finché si chiama così il nome dice una cosa e il contenuto
+        // un'altra. Rinominarla è una migrazione del deposito, non una riga: sta
+        // al proprietario, e sta scritto qui perché non si perda.
+        mandate_name: spent.profile,
+        // **VUOTA, E NON PER DIMENTICANZA.** Un profilo non ha una versione:
+        // riempirla con qualcosa — la data, un contatore — sarebbe inventare un
+        // dato con la faccia di una misura, che è il guasto 22 in un'altra
+        // forma.
         mandate_version: String::new(),
         retry_chain: tried_before.to_vec(),
         error_type: spent.error_type.map(str::to_owned),
@@ -2013,10 +2138,17 @@ impl ExternalEngineAction {
                 );
             }
         }
+        // **LA DOTAZIONE DI SAILOR, NON QUELLA DEL TERMINALE.** È il guasto 18:
+        // fino al 01/09/2026 questa riga era `env: spec.env.clone()`, e un
+        // motore lanciato da un passo di flusso ereditava l'ambiente di chi
+        // aveva aperto il terminale — cioè leggeva la casa del vicino, mentre
+        // `sailor run` lo stesso motore lo portava nella propria. Il profilo sta
+        // **sotto** `spec.env`: chi scrive una variabile nel passo vince.
+        let equipment = current_equipment_for(bin, &spec.env);
         let invocation = EngineInvocation {
             bin: bin.clone(),
             args,
-            env: spec.env.clone(),
+            env: equipment.env,
             workdir: spec.workdir.clone(),
             stdin: stdin.map(String::into_bytes),
             timeout: Duration::from_secs(seconds),
@@ -2051,6 +2183,7 @@ impl ExternalEngineAction {
                         started_at,
                         ended_at,
                         session_id: session.session_id(said),
+                        profile: equipment.profile.clone(),
                     },
                 );
             }
@@ -4791,6 +4924,106 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             "l'involucro resta tale e quale: {}",
             output["stdout"]
         );
+    }
+
+    // ── (f) sotto quale dotazione la chiamata è girata ─────────────────
+
+    /// La stessa serratura di `with_price_list`, per lo stato dei profili:
+    /// `PROFILES_STATE_PATH` è una variabile sola come `SAILOR_PRICING`, e due
+    /// prove che la scrivessero insieme si toglierebbero la dotazione a vicenda.
+    /// Il listino si punta al vuoto apposta — qui si guarda il profilo, non il
+    /// costo, e dipendere dal file di casa di chi esegue le prove sarebbe un
+    /// modo di venire diversi senza che niente sia cambiato.
+    fn with_profiles_state<T>(state: &std::path::Path, body: impl FnOnce() -> T) -> T {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::set_var("PROFILES_STATE_PATH", state);
+        std::env::set_var(PRICING_ENV, "/nessun/listino/qui");
+        let out = body();
+        std::env::remove_var("PROFILES_STATE_PATH");
+        std::env::remove_var(PRICING_ENV);
+        out
+    }
+
+    /// **LA DOTAZIONE SOTTO CUI LA CHIAMATA È GIRATA FINISCE NELLA SUA RIGA.**
+    ///
+    /// Guasto 18, seconda metà. Senza, due corse dello stesso flusso non sono la
+    /// stessa misura: la stessa catena di passi, sotto due profili, dà due
+    /// consumi diversi per una ragione che la riga non porta. Fino al
+    /// 01/09/2026 questa colonna la scriveva vuota ogni chiamata.
+    ///
+    /// *Mutante eseguito*: rimettere `mandate_name: String::new()` in
+    /// `record_the_call`. Questa diventa rossa e la gemella qui sotto resta
+    /// verde — ed è per questo che ci sono tutte e due.
+    #[test]
+    fn the_row_says_under_which_equipment_the_call_ran() {
+        let dir = scratch("dotazione");
+        // Il nome del file È il legame: `cli_for_executable` riconosce la riga
+        // di comando dall'eseguibile, non dall'identificativo del descrittore.
+        let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
+        let state = dir.join("profili.json");
+        std::fs::write(
+            &state,
+            json!({
+                "profiles": [
+                    {"name": "lavoro", "cli_id": "codex", "home_dir": dir.join("casa")}
+                ],
+                "active": {"codex": "lavoro"}
+            })
+            .to_string(),
+        )
+        .expect("scrivere lo stato dei profili");
+
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        with_profiles_state(&state, || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect("il motore risponde");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "una chiamata, una riga");
+        assert_eq!(
+            calls[0].mandate_name, "codex/lavoro",
+            "la riga non dice sotto quale dotazione la chiamata è girata"
+        );
+        // **E LA VERSIONE RESTA VUOTA, CHE NON È UNA DIMENTICANZA.** Un profilo
+        // non ha una versione: riempirla sarebbe inventare un dato con la
+        // faccia di una misura.
+        assert_eq!(calls[0].mandate_version, "");
+    }
+
+    /// La gemella: senza nessun profilo attivo la colonna resta vuota, invece di
+    /// portare un nome inventato. Senza di lei un mutante che scrivesse sempre
+    /// la stessa stringa passerebbe la prova qui sopra.
+    #[test]
+    fn with_no_profile_in_force_the_row_says_nothing_instead_of_guessing() {
+        let dir = scratch("nessuna-dotazione");
+        let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
+        let state = dir.join("profili.json");
+        std::fs::write(&state, r#"{"profiles":[],"active":{}}"#)
+            .expect("scrivere lo stato dei profili");
+
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        with_profiles_state(&state, || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect("il motore risponde");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].mandate_name, "");
     }
 }
 

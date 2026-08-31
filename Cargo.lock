@@ -9,6 +9,7 @@ dependencies = [
  "flow",
  "ledger",
  "models",
+ "profiles",
  "serde",
  "serde_json",
 ]
