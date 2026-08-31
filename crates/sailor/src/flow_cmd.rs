@@ -285,16 +285,34 @@ impl flow::ProcessProbe for HandoffLease {
 fn resume_run(run_id: &str) -> Result<String, String> {
     let ledger = crate::step_cmd::open_ledger()?;
     let flow = crate::step_cmd::flow_of_run(&ledger, run_id)?;
+    resume_run_in(&ledger, &flow, run_id)
+}
+
+/// Il corpo di `resume`, col deposito e il flusso dichiarati invece che dedotti
+/// da `HOME` e dalla cartella corrente: sono tutti e due globali al processo, e
+/// una prova che li scrivesse rovinerebbe le altre a caso.
+fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
+    let header = ledger
+        .run_header(run_id)
+        .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?
+        .ok_or_else(|| format!("nessuna corsa si chiama {run_id} in questo deposito"))?;
     let registry = default_registry(
         Some(ledger.clone()),
         Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
     );
-    let started_at = now_secs()?;
+    // **L'ISTANTE DI PARTENZA È QUELLO DI PRIMA, NON ADESSO.** L'intestazione si
+    // riscrive intera a ogni aggiornamento: mettere qui l'ora della ripresa
+    // farebbe risultare la corsa partita quando è stata ripresa. Ne dipendono
+    // `last_started_at` — cioè quali flussi `sailor flow due` dichiara dovuti — e
+    // la durata che la finestra mostra. Una corsa consegnata e ripresa il giorno
+    // dopo risulterebbe durata un minuto.
+    let started_at = header.started_at;
+    let now = now_secs()?;
 
     let mut store = ledger.clone();
     let mut clock = SystemClock;
     let shared = SharedState::new();
-    let probe = HandoffLease { now: started_at };
+    let probe = HandoffLease { now };
     let reconciled = InProcessExecutor
         .reconcile(flow::ReconciliationRequest {
             graph: &flow.graph,
@@ -341,14 +359,14 @@ fn resume_run(run_id: &str) -> Result<String, String> {
         spend_cap_micros: flow.spend_cap_micros,
     };
     let execution = InProcessExecutor
-        .execute(&flow.graph, request, &ledger, &registry, &SystemClock)
+        .execute(&flow.graph, request, ledger, &registry, &SystemClock)
         .map_err(|error| format!("la ripresa della corsa {run_id} è fallita: {error}"))?;
 
     let (status, exit_ok) = execution_status(&execution);
     let why = registry::stopped_by_cap(&execution);
     record_run(
-        &ledger,
-        &flow,
+        ledger,
+        flow,
         run_id,
         status,
         started_at,
@@ -1246,6 +1264,96 @@ mod tests {
             store.all()[0].outcome.is_none(),
             "il record deve restare aperto"
         );
+    }
+
+    /// **UNA RIPRESA NON RISCRIVE L'ISTANTE DI PARTENZA.**
+    ///
+    /// L'intestazione di una corsa si riscrive intera a ogni aggiornamento.
+    /// Mettendoci l'ora della ripresa, una corsa consegnata la sera e ripresa il
+    /// mattino dopo risulterebbe partita al mattino: `sailor flow due` la
+    /// crederebbe appena girata e non dichiarerebbe dovuto il suo flusso, e la
+    /// durata mostrata sarebbe un minuto invece di dieci ore.
+    #[test]
+    fn resuming_a_run_keeps_the_hour_it_started() {
+        let home = TestDirectory::new();
+        let flow_file: FlowFile = serde_json::from_str(
+            r#"{
+                "id": "ripresa-di-prova",
+                "description": "un passo gia' andato",
+                "graph": {"steps": [{
+                    "id": "implementa",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "handed_to_agent",
+                    "max_attempts": 3
+                }]},
+                "inputs": {}
+            }"#,
+        )
+        .expect("il flusso di prova è valido");
+
+        let ledger = Ledger::open(&home.0).expect("aprire il deposito");
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "run-vecchia".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "ripresa-di-prova".to_owned(),
+                parent_run_id: None,
+                started_by: "prova".to_owned(),
+                status: "waiting".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 1_000,
+                ended_at: Some(1_500),
+            })
+            .expect("registrare la corsa");
+        let mut record = StepRecord::started(
+            "run-vecchia",
+            "implementa",
+            1,
+            1,
+            vec![],
+            serde_json::json!({"handoff_timeout_secs": 60}),
+            vec![],
+            1_100,
+        );
+        record.species = Some(flow::StepSpecies::Repeatable);
+        ledger.append_step_started(&record).expect("aprire il passo");
+        ledger
+            .close_step(
+                "run-vecchia",
+                "implementa",
+                1,
+                1,
+                flow::Completion {
+                    outcome: flow::Outcome::Went,
+                    output: Some(serde_json::json!({})),
+                    said: None,
+                    failure_class: None,
+                    ended_at: 1_500,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+            )
+            .expect("chiudere il passo");
+
+        let report = resume_run_in(&ledger, &flow_file, "run-vecchia")
+            .expect("la corsa si riprende: l'unico passo è già andato");
+        assert!(report.contains("complete"), "{report}");
+
+        let header = ledger
+            .run_header("run-vecchia")
+            .expect("l'intestazione si rilegge")
+            .expect("la corsa esiste");
+        assert_eq!(
+            header.started_at, 1_000,
+            "l'istante di partenza resta quello della prima corsa: con l'ora della \
+             ripresa, una corsa consegnata la sera e ripresa il mattino dopo \
+             risulterebbe partita al mattino"
+        );
+        assert_eq!(header.status, "complete", "la ripresa aggiorna lo stato");
     }
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
