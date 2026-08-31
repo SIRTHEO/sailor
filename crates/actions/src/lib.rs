@@ -268,12 +268,55 @@ fn drain(pipe: &mut impl Read, which: Pipe, sink: Option<&dyn LiveSink>) -> Vec<
     all
 }
 
+/// La prima pausa fra due `try_wait`. Piccola apposta: un comando di shell che
+/// dura cinque millisecondi veniva comunque atteso cinquanta, e in un flusso di
+/// molti passi brevi quella era latenza pura, pagata a ogni passo.
+const FIRST_POLL_PAUSE: Duration = Duration::from_millis(1);
+
+/// Dove la crescita si ferma. **Non un millisecondo sopra i cinquanta di
+/// prima**: su un figlio che dura minuti il numero di risvegli resta quello di
+/// sempre, e lo scarto massimo fra la scadenza del tetto di tempo e il `kill`
+/// che ne discende non peggiora di niente rispetto a ieri.
+const MAX_POLL_PAUSE: Duration = Duration::from_millis(50);
+
+/// Raddoppia fino al tetto e lì resta.
+///
+/// **STA FUORI DAL CICLO PERCHÉ SI POSSA GUARDARE DA SOLA.** Dentro allo
+/// `scope`, in mezzo al `try_wait` e all'uccisione, sarebbe una riga che nessuno
+/// può interrogare senza avviare un processo.
+fn next_poll_pause(current: Duration) -> Duration {
+    (current * 2).min(MAX_POLL_PAUSE)
+}
+
 fn drain_and_wait(
     stdout: Option<std::process::ChildStdout>,
     stderr: Option<std::process::ChildStderr>,
     child: &mut std::process::Child,
     limit: Duration,
     sink: Option<&dyn LiveSink>,
+) -> RunOutcome {
+    drain_and_wait_paced(stdout, stderr, child, limit, sink, &mut |how_long| {
+        std::thread::sleep(how_long)
+    })
+}
+
+/// Il corpo vero, con la pausa passata da fuori.
+///
+/// **PERCHÉ LA PAUSA È UN PARAMETRO E NON UNA `sleep` CABLATA.** La sola cosa
+/// che distingue questo ciclo da quello di prima è la *sequenza* delle durate
+/// che chiede: `1ms, 2ms, 4ms…` invece di `50ms, 50ms…`. Cronometrare da fuori
+/// per vederla non funziona — una macchina carica può solo allungare i tempi,
+/// mai accorciarli, quindi la prova o mente quando la macchina è occupata o si
+/// dà un margine così largo da non distinguere più i due codici. È la stessa
+/// trappola che il guasto 7 ha già respinto. Qui invece chi prova osserva la
+/// sequenza, che il codice decide e l'orologio non tocca.
+fn drain_and_wait_paced(
+    stdout: Option<std::process::ChildStdout>,
+    stderr: Option<std::process::ChildStderr>,
+    child: &mut std::process::Child,
+    limit: Duration,
+    sink: Option<&dyn LiveSink>,
+    pause: &mut dyn FnMut(Duration),
 ) -> RunOutcome {
     let mut out_pipe = stdout.expect("stdout è piped");
     let mut err_pipe = stderr.expect("stderr è piped");
@@ -285,6 +328,7 @@ fn drain_and_wait(
         let out_thread = scope.spawn(move || drain(&mut out_pipe, Pipe::Stdout, sink));
         let err_thread = scope.spawn(move || drain(&mut err_pipe, Pipe::Stderr, sink));
         let start = Instant::now();
+        let mut poll_pause = FIRST_POLL_PAUSE;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break Some(status),
@@ -294,7 +338,8 @@ fn drain_and_wait(
                         let _ = child.wait();
                         break None;
                     }
-                    std::thread::sleep(Duration::from_millis(50));
+                    pause(poll_pause);
+                    poll_pause = next_poll_pause(poll_pause);
                 }
                 Err(_) => break None,
             }
@@ -3092,6 +3137,83 @@ mod tests {
         assert!(registry.get(EXTERNAL_ENGINE_ACTION).is_some());
         assert!(registry.get(SHELL_CHECK_ACTION).is_some());
     }
+    // ── la pausa fra due `try_wait` ──────────────────────────────────
+
+    /// Avvia un figlio con le pipe collegate e registra ogni durata che il
+    /// ciclo chiede di aspettare, dormendola davvero.
+    ///
+    /// **QUESTO È IL PUNTO DI INIEZIONE, ED È IL MOTIVO PER CUI QUESTE DUE
+    /// PROVE NON CRONOMETRANO.** La sequenza delle durate la decide il codice:
+    /// è la stessa a macchina ferma e a macchina in ginocchio. Il carico può
+    /// cambiare solo *quanti* elementi ha, e su quello non si afferma niente.
+    fn pauses_asked_while_running(script: &str) -> Vec<Duration> {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg(script);
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cmd.spawn().expect("sh esiste");
+        let mut asked = Vec::new();
+        let outcome = drain_and_wait_paced(
+            child.stdout.take(),
+            child.stderr.take(),
+            &mut child,
+            secs(30),
+            None,
+            &mut |how_long| {
+                asked.push(how_long);
+                std::thread::sleep(how_long);
+            },
+        );
+        assert!(
+            matches!(outcome, RunOutcome::Finished { .. }),
+            "il figlio doveva finire da solo: il tetto di tempo non c'entra"
+        );
+        asked
+    }
+
+    /// LA MISURA CHE POTEVA VENIRE DIVERSA: col codice di prima la prima durata
+    /// chiesta era 50 ms, e un comando finito in cinque millisecondi restava
+    /// comunque appeso per quarantacinque.
+    #[test]
+    fn the_first_poll_pause_is_short_not_fifty_milliseconds() {
+        let asked = pauses_asked_while_running("sleep 0.1");
+        assert!(
+            !asked.is_empty(),
+            "il ciclo deve aver aspettato almeno una volta, o non prova niente"
+        );
+        assert!(
+            asked[0] <= Duration::from_millis(2),
+            "la prima pausa dev'essere dell'ordine del millisecondo, non di cinquanta: {:?}",
+            asked[0]
+        );
+    }
+
+    /// L'altra metà: la crescita si ferma. Senza tetto un figlio di dieci
+    /// minuti verrebbe raccolto minuti dopo essere morto.
+    ///
+    /// Nessuna affermazione sul *numero* di risvegli — quello dipende dalla
+    /// durata reale del figlio, cioè dal carico della macchina. Solo sulla
+    /// forma: non decrescente, mai sopra il tetto, e ferma sul tetto alla fine.
+    #[test]
+    fn the_poll_pause_grows_up_to_the_cap_and_stays_there() {
+        assert!(
+            MAX_POLL_PAUSE <= Duration::from_millis(50),
+            "il tetto non può superare i 50 ms che il ciclo già pagava"
+        );
+        let asked = pauses_asked_while_running("sleep 0.6");
+        assert!(
+            asked.windows(2).all(|pair| pair[0] <= pair[1]),
+            "la sequenza deve crescere, non oscillare: {asked:?}"
+        );
+        assert!(
+            asked.iter().all(|&one| one <= MAX_POLL_PAUSE),
+            "nessuna pausa sopra il tetto: {asked:?}"
+        );
+        assert_eq!(
+            asked.last().copied(),
+            Some(MAX_POLL_PAUSE),
+            "dopo mezzo secondo la crescita dev'essere arrivata al tetto e restarci: {asked:?}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -3796,4 +3918,5 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             output["stdout"]
         );
     }
+
 }
