@@ -47,6 +47,8 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name] if command == "cost" => cost_of(name),
         [command, name] if command == "relocate" => relocate_flow(sources, name, None),
         [command, name, from] if command == "relocate" => relocate_flow(sources, name, Some(from)),
+        [command, name] if command == "cap" => cap_of(sources, name),
+        [command, name, value] if command == "cap" => set_cap(sources, name, value),
         _ => Err(usage()),
     }
 }
@@ -186,6 +188,333 @@ fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
     report
 }
 
+// ── il tetto di spesa di un flusso ───────────────────────────────────────
+
+/// Quanto costa una unità di valuta in micro. Un milione: `1_000_000` è un
+/// dollaro.
+const MICROS_IN_A_UNIT: f64 = 1_000_000.0;
+
+/// **QUANTE CORSE COSTATE SERVONO PER SUGGERIRE UN TETTO.**
+///
+/// Tre, e non è una soglia arrotondata: sotto tre non c'è nessuna dispersione da
+/// guardare. Con due campioni il massimo e il minimo sono gli unici due valori,
+/// e chiamare «peggiore osservata» il maggiore di due è un dato inventato con la
+/// faccia di una misura — che è precisamente il guasto 22, uno zero mai
+/// calcolato passato per una misura, in un'altra forma. Sotto la soglia il
+/// comando **rifiuta di suggerire** e dice cosa c'è.
+const RUNS_BEFORE_SUGGESTING: usize = 3;
+
+/// Che cosa il deposito ha visto spendere a un flusso.
+struct Observed {
+    /// Le corse di quel flusso registrate, comunque siano andate.
+    runs: usize,
+    /// Quelle che hanno speso qualcosa di noto: le sole su cui si può contare.
+    costed_runs: usize,
+    /// La corsa più cara osservata, in micro.
+    worst_run_micros: i64,
+    /// La chiamata più cara osservata, in micro.
+    dearest_call_micros: i64,
+    /// Quante chiamate non hanno dichiarato un costo. Non entrano nelle cifre
+    /// sopra, e chi legge un suggerimento deve sapere quante ne mancano.
+    calls_without_cost: usize,
+}
+
+/// Il conto vero e proprio: una corsa per riga, e per ogni corsa il costo di
+/// ciascuna sua chiamata — `None` quando quel motore non l'ha dichiarato.
+///
+/// **PRENDE I COSTI E NON IL DEPOSITO, PER POTER ESSERE PROVATO.** Il deposito
+/// predefinito è uno solo per processo, e le prove girano in parallelo dentro lo
+/// stesso: una prova che volesse puntarlo altrove dovrebbe scrivere una
+/// variabile d'ambiente, cioè rovinare le altre a caso. Qui la regola — cos'è
+/// una «corsa costata», quale sia la peggiore, quale la chiamata più cara — si
+/// interroga senza aprire niente.
+fn observed_from(runs: &[Vec<Option<i64>>]) -> Observed {
+    let mut seen = Observed {
+        runs: runs.len(),
+        costed_runs: 0,
+        worst_run_micros: 0,
+        dearest_call_micros: 0,
+        calls_without_cost: 0,
+    };
+    for calls in runs {
+        let mut spent = 0i64;
+        for call in calls {
+            match call {
+                Some(cost) => {
+                    spent += cost;
+                    seen.dearest_call_micros = seen.dearest_call_micros.max(*cost);
+                }
+                None => seen.calls_without_cost += 1,
+            }
+        }
+        // **UNA CORSA COSTATA È UNA CHE HA SPESO, NON UNA CHE HA CHIAMATO.** Le
+        // 28 corse su 34 che questo deposito porta a zero il 31/08/2026 sono il
+        // guasto 22 — il costo era la costante zero fino al 30/08 — e contarle
+        // come campioni farebbe scendere ogni suggerimento verso lo zero, cioè
+        // verso un tetto che ferma ogni flusso prima del primo passo.
+        if spent > 0 {
+            seen.costed_runs += 1;
+            seen.worst_run_micros = seen.worst_run_micros.max(spent);
+        }
+    }
+    seen
+}
+
+/// Quel che il deposito sa della spesa di un flusso.
+///
+/// **UN DEPOSITO ASSENTE NON È UN ERRORE**: è una macchina su cui quel flusso
+/// non è mai girato, e la risposta giusta è «zero corse», non un guasto. Chi
+/// legge deve poter chiedere il tetto di un flusso appena scritto.
+fn observed_spending(flow_id: &str) -> Result<Observed, String> {
+    let Ok(dir) = default_ledger_dir() else {
+        return Ok(observed_from(&[]));
+    };
+    let Some(data) = ui::gather::gather(&dir).map_err(|error| error.to_string())? else {
+        return Ok(observed_from(&[]));
+    };
+    let runs: Vec<Vec<Option<i64>>> = data
+        .runs
+        .iter()
+        .filter(|run| run.entity == flow_id)
+        .map(|run| {
+            data.calls_by_run
+                .get(&run.run_id)
+                .map(|calls| calls.iter().map(|call| call.cost_micros).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+    Ok(observed_from(&runs))
+}
+
+/// Le micro-unità come le legge una persona.
+fn in_units(micros: i64) -> String {
+    format!("{:.2}", micros as f64 / MICROS_IN_A_UNIT)
+}
+
+/// **QUELLO CHE IL TETTO NON PROMETTE**, scritto ogni volta che un tetto c'è.
+///
+/// Senza queste due righe il tetto si legge come una garanzia sulla spesa, e non
+/// lo è. Chi mette un tetto e poi trova una fattura più alta ha ragione di
+/// sentirsi tradito: meglio dirglielo quando lo mette.
+const WHAT_THE_CAP_DOES_NOT_PROMISE: &str = "\nquello che il tetto non promette:\
+    \n  - non arriva ai motori: il freno sta prima di aprire un fronte, mai dentro \
+      una chiamata già partita, e nessun motore sa che il tetto esiste\
+    \n  - il primo fronte di una corsa non è mai frenato: senza nessuna chiamata \
+      osservata la larghezza resta al soffitto di quattro, perché stringere su un \
+      numero che non esiste sarebbe inventarlo\
+    \n  - conta solo le chiamate che dichiarano un costo; quelle che non lo \
+      dichiarano restano fuori dalla somma, quindi la spesa vera è più alta di \
+      quella contata";
+
+/// `sailor flow cap <nome>`: il tetto che c'è, e cosa il deposito ha visto.
+fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    let (flow, origin) = one_flow(sources, name)?;
+    let mut report = format!("flusso: {} ({origin})", flow.id);
+    match flow.spend_cap_micros {
+        None => report.push_str(
+            "\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede",
+        ),
+        Some(cap) => {
+            let _ = write!(
+                report,
+                "\ntetto: {cap} micro ({} di costo equivalente)",
+                in_units(cap)
+            );
+            report.push_str(WHAT_THE_CAP_DOES_NOT_PROMISE);
+        }
+    }
+
+    report.push_str(&what_the_ledger_saw(&observed_spending(&flow.id)?));
+    Ok(report)
+}
+
+/// Cosa il deposito ha visto, e se da lì esce un suggerimento.
+///
+/// Sta a parte da `cap_of` perché la regola delle tre corse si deve poter
+/// interrogare senza un deposito: `cap_of` ne apre uno vero, e un deposito vero
+/// in una prova è una variabile d'ambiente globale al processo.
+fn what_the_ledger_saw(seen: &Observed) -> String {
+    let mut said = format!(
+        "\nnel deposito: {} corse, di cui {} {} speso qualcosa di noto",
+        seen.runs,
+        seen.costed_runs,
+        if seen.costed_runs == 1 { "ha" } else { "hanno" }
+    );
+    if seen.calls_without_cost > 0 {
+        let _ = write!(
+            said,
+            "\n{} chiamate non hanno dichiarato un costo, e non entrano in nessuna \
+             delle cifre qui sopra",
+            seen.calls_without_cost
+        );
+    }
+
+    if seen.costed_runs < RUNS_BEFORE_SUGGESTING {
+        let _ = write!(
+            said,
+            "\nnessun suggerimento: servono almeno {RUNS_BEFORE_SUGGESTING} corse \
+             costate, e {}. Un numero calcolato su meno campioni è un dato \
+             inventato con la faccia di una misura, e chi lo riceve ci appoggia \
+             una decisione",
+            match seen.costed_runs {
+                0 => "non ce n'è nessuna".to_owned(),
+                1 => "ce n'è una".to_owned(),
+                many => format!("ce ne sono {many}"),
+            }
+        );
+        return said;
+    }
+
+    // **PERCHÉ SI SOMMA LA CHIAMATA PIÙ CARA, E NON È PRUDENZA.** Il controllo
+    // scatta *prima* di aprire un fronte, mai dentro una chiamata: la corsa si
+    // ferma con la granularità di una chiamata, non di un micro. Un tetto messo
+    // esattamente sulla peggiore osservata è quindi un tetto che taglia le corse
+    // di quella taglia in modo imprevedibile — dipende da come la spesa si
+    // distribuisce fra i fronti. La somma dice: «la corsa più cara che ho visto,
+    // più la grana con cui so fermarmi».
+    let suggested = seen.worst_run_micros + seen.dearest_call_micros;
+    let _ = write!(
+        said,
+        "\nsuggerimento: {suggested} micro ({}) — la corsa più cara osservata \
+         ({}) più la chiamata più cara osservata ({}). Il secondo addendo non è \
+         un margine di sicurezza: è la grana con cui il tetto sa fermarsi, \
+         perché il controllo sta prima di aprire un fronte",
+        in_units(suggested),
+        in_units(seen.worst_run_micros),
+        in_units(seen.dearest_call_micros)
+    );
+    said
+}
+
+/// La parola che toglie il tetto invece di metterne uno.
+///
+/// Serve perché senza di lei il comando saprebbe entrare in uno stato e non
+/// uscirne: `0` non è «nessuno», è «questo flusso non deve spendere niente».
+const NO_CAP: &str = "nessuno";
+
+/// `sailor flow cap <nome> <micro|nessuno>`: mette o toglie il tetto.
+fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, String> {
+    let wanted = if value == NO_CAP {
+        None
+    } else {
+        let micros: i64 = value.parse().map_err(|_| {
+            format!(
+                "«{value}» non è un numero di micro-unità né la parola «{NO_CAP}». \
+                 Un milione è un'unità di valuta: `sailor flow cap {name} 1000000` \
+                 mette un tetto di 1,00"
+            )
+        })?;
+        if micros < 0 {
+            return Err(format!(
+                "un tetto negativo non vuol dire niente: {micros}. Zero è «non deve \
+                 spendere niente», «{NO_CAP}» è «nessuno ha messo un limite»"
+            ));
+        }
+        Some(micros)
+    };
+
+    let (mut flow, source) = where_it_lives(sources, name)?;
+    // **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON SE NE SCRIVE UNO DI
+    // NASCOSTO.** Sta dentro il binario: non c'è nessun file da modificare. La
+    // strada è un omonimo in casa propria, che vince per la regola di
+    // precedenza — ma quel file lo deve creare chi lo vuole, sapendo di averne
+    // creato uno. Scriverne uno qui vorrebbe dire che da domani gira un flusso
+    // diverso da quello spedito senza che nessuno l'abbia deciso, e la sola
+    // traccia sarebbe l'origine in una colonna di `sailor flow list`.
+    if source.is_builtin() {
+        return Err(format!(
+            "«{name}» è un flusso di sistema, spedito dentro il binario: non c'è \
+             nessun file da riscrivere. Per dargli un tetto scrivi un flusso con lo \
+             stesso nome in casa tua o nel progetto — vince il tuo — e mettilo lì. \
+             Non lo faccio io: un flusso comparso da sé è un flusso che nessuno sa \
+             di avere"
+        ));
+    }
+
+    // **IL FILE SI CHIAMA COME L'`id`, O NE COMPARIREBBE UN SECONDO.** Il
+    // registro indicizza per nome di file, la scrittura per `id`: dove i due
+    // divergono, riscrivere non sostituirebbe niente — creerebbe un flusso
+    // gemello che da domani vince o perde a seconda dell'ordine alfabetico. È lo
+    // stesso rifiuto del flusso di sistema, per la stessa ragione: qui non
+    // compare niente che nessuno abbia chiesto.
+    let target = source.dir.join(format!("{}.flow.json", flow.id));
+    if !target.exists() {
+        return Err(format!(
+            "«{name}» sta in un file che non si chiama «{}.flow.json», che è come si \
+             chiamerebbe scrivendolo: riscriverlo creerebbe un secondo flusso invece \
+             di sostituire questo. Rinomina il file come il suo `id`, o cambia l'`id` \
+             perché coincida col nome del file",
+            flow.id
+        ));
+    }
+
+    let before = flow.spend_cap_micros;
+    if before == wanted {
+        return Ok(format!(
+            "flusso {name} ({}): il tetto era già {}, non ho toccato niente",
+            source.origin,
+            said_cap(before)
+        ));
+    }
+    flow.spend_cap_micros = wanted;
+    flow::system::save_in(&source.dir, &flow)?;
+    Ok(format!(
+        "flusso {name} ({}): tetto {} → {}; scritto in {}",
+        source.origin,
+        said_cap(before),
+        said_cap(wanted),
+        source.dir.display()
+    ))
+}
+
+/// Un tetto come lo legge una persona, compreso quando non c'è.
+fn said_cap(cap: Option<i64>) -> String {
+    match cap {
+        None => NO_CAP.to_owned(),
+        Some(micros) => format!("{micros} micro ({})", in_units(micros)),
+    }
+}
+
+/// Il flusso **e la sorgente da cui viene**: per riscriverlo serve la cartella,
+/// non il nome dell'origine.
+///
+/// Si guarda dalla più specifica alla meno specifica, cioè al contrario
+/// dell'ordine in cui le sorgenti sono elencate: a parità di nome vince
+/// l'ultima, e chi riscrive deve riscrivere **quella che gira**. Riscrivere la
+/// copia meno specifica lascerebbe il comando a dire «fatto» mentre la corsa
+/// continua a leggere l'altra.
+fn where_it_lives<'a>(
+    sources: &'a [FlowSource],
+    name: &str,
+) -> Result<(FlowFile, &'a FlowSource), String> {
+    for source in sources.iter().rev() {
+        match flow::system::registry_of(source).remove(name) {
+            Some(Ok(flow)) => return Ok((flow, source)),
+            Some(Err(reason)) => {
+                return Err(format!(
+                    "il flusso {name} ({}) non si carica, quindi non lo riscrivo: {reason}",
+                    source.origin
+                ))
+            }
+            None => continue,
+        }
+    }
+    match one_flow(sources, name) {
+        // Lo stesso messaggio di `one_flow`, con lo stesso elenco di nomi: due
+        // parole diverse per lo stesso «non c'è» manderebbero a cercare due
+        // difetti dove ce n'è uno.
+        Err(reason) => Err(reason),
+        // Non può succedere — `one_flow` legge le stesse sorgenti del giro qui
+        // sopra — e se succedesse vorrebbe dire che le due strade che cercano un
+        // flusso si sono separate. Dirlo vale più che panicare in mano a chi sta
+        // usando il comando.
+        Ok(_) => Err(format!(
+            "il flusso {name} si carica ma non risulta in nessuna sorgente: le due \
+             strade che cercano i flussi si sono separate"
+        )),
+    }
+}
+
 /// I flussi che questa macchina vede, con l'origine di ciascuno.
 ///
 /// **LA RIGA DI COMANDO E LA FINESTRA DEVONO GUARDARE NEGLI STESSI POSTI.** Fino
@@ -235,7 +564,8 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 
 fn usage() -> String {
     "uso: sailor flow <list|due|check <nome> [--no-engines]|run <nome> [mandato]|\
-     resume <corsa>|cost <nome>|relocate <nome> [prefisso-da-togliere]>"
+     resume <corsa>|cost <nome>|cap <nome> [micro|nessuno]|\
+     relocate <nome> [prefisso-da-togliere]>"
         .to_owned()
 }
 
@@ -597,6 +927,23 @@ fn check_report(
             step.deps.join(", ")
         };
         let _ = write!(report, "\n  {} <- {}", step.id, dependencies);
+    }
+    // **IL TETTO STA NEL RAPPORTO, E CON LUI CIÒ CHE NON PROMETTE.** Chi
+    // controlla un flusso prima di lanciarlo sta decidendo se può permetterselo:
+    // un tetto invisibile qui si scopre solo a corsa fermata, e uno che si vede
+    // senza i suoi limiti si legge come una garanzia sulla spesa — che non è.
+    // La riga c'è sempre, anche quando il tetto non c'è: «nessuno» è
+    // un'informazione, e un rapporto che tace quando non c'è niente da dire
+    // lascia chi legge a chiedersi se il controllo abbia guardato.
+    match flow.spend_cap_micros {
+        None => report.push_str("\ntetto di spesa: nessuno"),
+        Some(cap) => {
+            let _ = write!(
+                report,
+                "\ntetto di spesa: {cap} micro ({} di costo equivalente){WHAT_THE_CAP_DOES_NOT_PROMISE}",
+                in_units(cap)
+            );
+        }
     }
     // **CHI CONTROLLA UN FLUSSO DEVE VEDERE COSA PUÒ SCRIVERCI DENTRO.** Il
     // rapporto nominava solo le azioni mancanti, cioè rispondeva a «questo
@@ -2592,6 +2939,227 @@ mod tests {
 
         assert!(unknown.is_empty());
         assert!(!report.contains("strument"), "{report}");
+    }
+
+    // ── il tetto di spesa: `flow check` e `flow cap` ────────────────────
+
+    /// **DUE FLUSSI IDENTICI TRANNE IL TETTO DANNO DUE RAPPORTI DIVERSI.**
+    ///
+    /// **IL CONFRONTO È FRA I DUE RAPPORTI, NON CON UNA PAROLA.** Una prova che
+    /// cercasse «tetto» resterebbe verde davanti a un mutante che stampa sempre
+    /// la stessa riga — la parola ci sarebbe comunque. Qui l'unica differenza
+    /// fra i due ingressi è il tetto, quindi due uscite uguali dicono che il
+    /// controllo non lo sta guardando.
+    ///
+    /// *Mutante eseguito*: nel ramo `Some(cap)` di `check_report` stampare
+    /// `"\ntetto di spesa: nessuno"` come nel ramo `None`. I due rapporti
+    /// diventano identici e questa prova diventa rossa.
+    #[test]
+    fn two_flows_that_differ_only_by_the_cap_get_two_different_reports() {
+        let json = flow_json("shell_check", "[]", "{}");
+        let without: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let mut with = without.clone();
+        with.spend_cap_micros = Some(2_500_000);
+
+        let registry = default_registry(None, None);
+        let (said_without, _) = check_report(&without, &registry, None, None);
+        let (said_with, _) = check_report(&with, &registry, None, None);
+
+        assert_ne!(
+            said_without, said_with,
+            "il tetto non compare nel rapporto: {said_with}"
+        );
+        assert!(said_without.contains("tetto di spesa: nessuno"), "{said_without}");
+        assert!(said_with.contains("2500000 micro"), "{said_with}");
+    }
+
+    /// **UN TETTO CHE C'È PORTA CON SÉ CIÒ CHE NON PROMETTE.**
+    ///
+    /// Un numero da solo si legge come una garanzia sulla spesa. I tre limiti
+    /// veri — il freno non arriva ai motori, il primo fronte non è mai frenato,
+    /// le chiamate senza costo restano fuori — devono stare accanto al numero,
+    /// non in un documento che nessuno apre mentre lancia.
+    #[test]
+    fn a_cap_in_the_report_declares_what_it_does_not_promise() {
+        let json = flow_json("shell_check", "[]", "{}");
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        flow.spend_cap_micros = Some(1);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+
+        assert!(report.contains("non arriva ai motori"), "{report}");
+        assert!(report.contains("primo fronte"), "{report}");
+        assert!(report.contains("restano fuori dalla somma"), "{report}");
+    }
+
+    /// **SOTTO TRE CORSE COSTATE NON SI SUGGERISCE NIENTE, E SI DICE PERCHÉ.**
+    ///
+    /// È la regola che tiene fuori il guasto 22: nel deposito di questa macchina
+    /// il 31/08/2026 sei corse su trentaquattro hanno un costo diverso da zero,
+    /// e nessun flusso ne ha tre. Una mediana su quella colonna darebbe zero per
+    /// ogni flusso, cioè un tetto che ferma ogni corsa prima del primo passo.
+    #[test]
+    fn under_three_costed_runs_no_cap_is_suggested() {
+        let two = observed_from(&[vec![Some(100)], vec![Some(200)]]);
+
+        let said = what_the_ledger_saw(&two);
+
+        assert!(said.contains("nessun suggerimento"), "{said}");
+        // La riga del suggerimento comincia a capo: cercare «suggerimento: »
+        // senza l'a-capo troverebbe anche «nessun suggerimento: ».
+        assert!(!said.contains("\nsuggerimento: "), "{said}");
+        assert!(said.contains("ce ne sono 2"), "e dice cosa c'è: {said}");
+    }
+
+    /// **CON TRE, IL SUGGERIMENTO È LA PEGGIORE PIÙ LA CHIAMATA PIÙ CARA.**
+    ///
+    /// La gemella di quella sopra: senza di lei un comando che non suggerisse
+    /// mai passerebbe l'altra e non servirebbe a niente.
+    #[test]
+    fn with_three_costed_runs_the_suggestion_is_the_worst_plus_the_dearest_call() {
+        let three = observed_from(&[
+            vec![Some(100), Some(50)],
+            vec![Some(400), Some(300)],
+            vec![Some(200)],
+        ]);
+
+        let said = what_the_ledger_saw(&three);
+
+        // Peggiore corsa 700, chiamata più cara 400: 1100.
+        assert!(said.contains("\nsuggerimento: 1100 micro"), "{said}");
+        assert!(!said.contains("nessun suggerimento"), "{said}");
+    }
+
+    /// **UNA CORSA CHE NON HA SPESO NON È UN CAMPIONE.**
+    ///
+    /// Ventotto delle trentaquattro corse di questo deposito portano zero perché
+    /// il costo *era* la costante zero fino al 30/08/2026. Contarle farebbe
+    /// scendere ogni suggerimento verso lo zero — cioè verso un tetto che ferma
+    /// tutto — con l'aria di una misura su molti campioni.
+    #[test]
+    fn runs_that_spent_nothing_are_not_samples() {
+        let seen = observed_from(&[
+            vec![Some(0)],
+            vec![],
+            vec![None, None],
+            vec![Some(900)],
+        ]);
+
+        assert_eq!(seen.runs, 4, "le corse ci sono tutte");
+        assert_eq!(seen.costed_runs, 1, "ma una sola ha speso");
+        assert_eq!(seen.worst_run_micros, 900);
+        assert_eq!(seen.calls_without_cost, 2, "e due chiamate restano fuori");
+    }
+
+    /// **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON NE COMPARE UNO NUOVO.**
+    ///
+    /// Sta dentro il binario: non c'è nessun file da modificare. La strada è un
+    /// omonimo in casa propria — che quel file lo crei chi lo vuole, sapendo di
+    /// averlo creato. Un flusso comparso da sé cambierebbe cosa gira senza che
+    /// nessuno l'abbia deciso.
+    #[test]
+    fn a_system_flow_refuses_the_cap_instead_of_growing_a_twin() {
+        let home = TestDirectory::new();
+        let sources = flow::system::sources(&home.0, None, None);
+        let shipped = flow::system::FLOWS[0].0;
+
+        let error = set_cap(&sources, shipped, "1000000").expect_err("un flusso di sistema");
+
+        assert!(error.contains("di sistema"), "{error}");
+        assert!(
+            entries_of(&home.0).is_empty(),
+            "non deve essere comparso nessun file in casa: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// Mettere il tetto scrive **nella cartella da cui il flusso viene**, e non
+    /// tocca nient'altro del file.
+    #[test]
+    fn setting_the_cap_writes_where_the_flow_lives() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let said = set_cap(&sources, "prova", "750000").expect("il tetto si scrive");
+
+        assert!(said.contains("750000 micro"), "{said}");
+        let after = written_flow(&home.0, "prova");
+        assert_eq!(after.spend_cap_micros, Some(750_000));
+        assert_eq!(after.description, "flusso di prova", "il resto è intatto");
+        assert_eq!(after.graph.steps().len(), 1);
+        assert_eq!(
+            entries_of(&home.0).len(),
+            1,
+            "e non è comparso nessun gemello: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// **UN FILE CHE NON SI CHIAMA COME IL PROPRIO `id` NON SI RISCRIVE.**
+    ///
+    /// Il registro indicizza per nome di file, la scrittura per `id`: dove i due
+    /// divergono, riscrivere creerebbe un secondo flusso invece di sostituire
+    /// questo. Senza questo rifiuto il comando direbbe «fatto» lasciando in
+    /// cartella due flussi con lo stesso `id`.
+    #[test]
+    fn a_file_named_differently_from_its_id_is_refused_instead_of_duplicated() {
+        let home = TestDirectory::new();
+        home.write("altro-nome.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let error = set_cap(&sources, "altro-nome", "500").expect_err("nome e id divergono");
+
+        assert!(error.contains("secondo flusso"), "{error}");
+        assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
+    }
+
+    /// Un valore che non è un numero né «nessuno» si rifiuta dicendo cos'è un
+    /// micro: chi sbaglia unità mette un tetto mille volte più basso di quello
+    /// che credeva, e la corsa si ferma senza che lui capisca perché.
+    #[test]
+    fn a_cap_that_is_not_a_number_is_refused_with_the_unit_spelled_out() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let error = set_cap(&sources, "prova", "1,50").expect_err("non è un numero di micro");
+        assert!(error.contains("micro"), "{error}");
+
+        let negative = set_cap(&sources, "prova", "-1").expect_err("un tetto negativo");
+        assert!(negative.contains("negativo"), "{negative}");
+    }
+
+    /// **`nessuno` TOGLIE IL TETTO, E NON LO METTE A ZERO.** Senza questa parola
+    /// il comando saprebbe entrare in uno stato e non uscirne: `0` è «non deve
+    /// spendere niente», che ferma la corsa prima del primo passo.
+    #[test]
+    fn the_word_for_no_cap_clears_it_instead_of_setting_zero() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+        set_cap(&sources, "prova", "500").expect("prima si mette");
+
+        set_cap(&sources, "prova", NO_CAP).expect("poi si toglie");
+
+        assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
+    }
+
+    fn written_flow(dir: &std::path::Path, name: &str) -> FlowFile {
+        let text = fs::read_to_string(dir.join(format!("{name}.flow.json")))
+            .expect("il flusso scritto si rilegge");
+        serde_json::from_str(&text).expect("e si deserializza")
+    }
+
+    fn entries_of(dir: &std::path::Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     #[test]

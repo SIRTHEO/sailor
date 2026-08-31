@@ -24,7 +24,10 @@
 
 use crate::FlowFile;
 use std::collections::BTreeMap;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Che cosa si scrive alla voce «dove» per la sorgente di sistema.
 ///
@@ -310,10 +313,142 @@ pub fn load_all(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<Flo
     found
 }
 
+// ── scrivere un flusso, e cancellarlo ────────────────────────────────────
+//
+// **PERCHÉ QUESTE FUNZIONI SONO ARRIVATE QUI IL 31/08/2026.** Stavano in
+// `desktop/src-tauri/src/flows.rs`, cioè nel guscio della finestra, che è
+// **fuori dal workspace Rust**: la riga di comando non le poteva chiamare, e
+// `sailor flow cap` — che deve riscrivere un `.flow.json` — avrebbe dovuto
+// riscriverle. Sarebbero diventate due autori dello stesso file, con due idee
+// diverse su cosa sia un nome sicuro e su come si sostituisce un file senza
+// farlo vedere a metà. È il guasto 10, e questo modulo è già il posto che sa
+// dove stanno i flussi e con quale precedenza: chi sa dove stanno è chi li
+// scrive. Stesso trasloco già fatto per `registry::record_flow_run`.
+//
+// **COSA È RIMASTO AL GUSCIO, E NON PER DIMENTICANZA.** Il controllo che le
+// azioni nominate esistano: la lista delle azioni la conoscono `actions`,
+// `trigger` e `registry`, che dipendono tutti da questo crate. Farla entrare qui
+// sarebbe un ciclo — e sarebbe anche sbagliato: quali azioni esistano dipende da
+// chi compone il programma, non dal formato del flusso.
+
+/// Scrive un flusso nella cartella dei flussi.
+///
+/// **PRENDE UN `FlowFile` GIÀ COSTRUITO, NON DEL JSON.** Chi arriva da un
+/// `serde_json::Value` — la tela della finestra — lo deserializza da sé, e così
+/// l'errore che vede è quello della validazione del grafo, con le parole di
+/// `Graph::validate`. Chi invece ha già il flusso in mano — `sailor flow cap`,
+/// che l'ha appena letto per cambiargli un campo — non deve rifare il giro da
+/// JSON per riottenere ciò che ha già.
+pub fn save_in(flows_dir: &Path, flow: &FlowFile) -> Result<(), String> {
+    let id = safe_flow_id(&flow.id)?;
+    fs::create_dir_all(flows_dir)
+        .map_err(|error| format!("non riesco a preparare la cartella dei flussi: {error}"))?;
+    let file_name = format!("{id}.flow.json");
+    reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
+    let target = flows_dir.join(&file_name);
+    let mut text = serde_json::to_string_pretty(flow)
+        .map_err(|error| format!("non riesco a comporre il flusso in JSON: {error}"))?;
+    // Un file di testo finisce con un a-capo: senza, `git diff` lo dichiara su
+    // ogni flusso riscritto, e la riga che qualcuno aggiungerà a mano comparirà
+    // attaccata all'ultima.
+    text.push('\n');
+    write_atomically(&target, text.as_bytes())
+}
+
+/// Cancella un flusso dalla cartella dei flussi.
+pub fn delete_in(flows_dir: &Path, name: &str) -> Result<(), String> {
+    let id = safe_flow_id(name)?;
+    let target = flows_dir.join(format!("{id}.flow.json"));
+    match fs::remove_file(&target) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Err(format!("il flusso \"{name}\" non esiste"))
+        }
+        Err(error) => Err(format!(
+            "non riesco a cancellare {}: {error}",
+            target.display()
+        )),
+    }
+}
+
+/// Un id che uscirebbe dalla cartella dei flussi (vuoto, con `/` o `\`, o con
+/// `..`) è un percorso di attraversamento: si nega, non si ripulisce in
+/// silenzio — chi guarda deve vedere che il nome è stato rifiutato.
+pub fn safe_flow_id(id: &str) -> Result<&str, String> {
+    if id.is_empty() {
+        return Err("il nome del flusso non può essere vuoto".to_owned());
+    }
+    if id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(format!(
+            "\"{id}\" non è un nome di flusso sicuro: niente separatori di percorso"
+        ));
+    }
+    Ok(id)
+}
+
+/// DUE NOMI CHE DIFFERISCONO SOLO PER LE MAIUSCOLE SONO LO STESSO FILE, e il
+/// disco non lo dice. Su APFS come lo installa macOS — e su Windows — salvare
+/// «mioflusso» sopra un «MioFlusso» esistente non dà nessun errore: sostituisce
+/// il contenuto e lascia il nome vecchio. Chi salva crede di aver creato un
+/// flusso nuovo, e ne ha cancellato un altro.
+///
+/// Il controllo non sta in `safe_flow_id`, che giudica il nome da solo: qui
+/// serve guardare cosa c'è già nella cartella. E si nega invece di scegliere
+/// per conto di chi salva — «volevi sovrascrivere quello?» è una domanda che
+/// deve fare chi ha una persona davanti, non un file system.
+fn reject_a_name_that_collides_only_by_case(
+    flows_dir: &Path,
+    file_name: &str,
+) -> Result<(), String> {
+    let Ok(entries) = fs::read_dir(flows_dir) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let existing = entry.file_name();
+        let existing = existing.to_string_lossy();
+        if existing.as_ref() != file_name && existing.eq_ignore_ascii_case(file_name) {
+            return Err(format!(
+                "esiste già «{existing}», che su questo disco è lo stesso file di \
+                 «{file_name}»: scrivendolo lo sostituiresti senza accorgertene. \
+                 Scegli un altro nome, o modifica quello che c'è."
+            ));
+        }
+    }
+    Ok(())
+}
+
+static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// Scrittura atomica: file temporaneo accanto al bersaglio, poi `rename`. Chi
+/// rilegge la cartella (la finestra, o una corsa) non deve poter vedere un
+/// file a metà scritto — `rename` sullo stesso filesystem è indivisibile,
+/// una `write` diretta sul bersaglio no.
+fn write_atomically(target: &Path, contents: &[u8]) -> Result<(), String> {
+    let temp_path = temp_path_for(target);
+    fs::write(&temp_path, contents).map_err(|error| {
+        format!(
+            "non riesco a scrivere il file temporaneo {}: {error}",
+            temp_path.display()
+        )
+    })?;
+    fs::rename(&temp_path, target).map_err(|error| {
+        let _ = fs::remove_file(&temp_path);
+        format!("non riesco a sostituire {}: {error}", target.display())
+    })
+}
+
+fn temp_path_for(target: &Path) -> PathBuf {
+    let file_name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("flow");
+    let unique = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    target.with_file_name(format!(".{file_name}.tmp-{}-{unique}", std::process::id()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     fn scratch(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -516,5 +651,252 @@ mod tests {
         assert_eq!(last.origin, crate::workspace::ORIGIN_GUESSED);
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    // ── scrivere un flusso ──────────────────────────────────────────────
+    //
+    // Queste prove erano nel guscio della finestra, che sta **fuori dal
+    // workspace**: `cargo test --workspace` non le eseguiva. Sono arrivate qui
+    // col codice che provano, e da oggi girano insieme a tutte le altre.
+
+    /// Un flusso completo: due passi, una dipendenza, una pianificazione, degli
+    /// ingressi. Serve alla prova d'identità — un flusso povero non potrebbe
+    /// perdere niente nel giro.
+    fn a_full_flow(id: &str) -> FlowFile {
+        let text = format!(
+            r#"{{
+                "id": "{id}",
+                "description": "due passi, una ricorrenza e degli ingressi",
+                "graph": {{
+                    "steps": [
+                        {{
+                            "id": "primo", "deps": [], "action": "shell_check",
+                            "max_attempts": 1, "when": null,
+                            "input_schema": {{"type": "any"}},
+                            "output_schema": {{"type": "any"}}
+                        }},
+                        {{
+                            "id": "secondo", "deps": ["primo"], "action": "shell_check",
+                            "max_attempts": 3, "when": null,
+                            "with": {{"command": "true"}},
+                            "input_schema": {{"type": "any"}},
+                            "output_schema": {{"type": "any"}}
+                        }}
+                    ]
+                }},
+                "inputs": {{ "primo": {{ "command": "true", "timeout_secs": 5 }} }},
+                "schedule": {{
+                    "recurrence": {{ "kind": "daily_at", "hour": 3, "minute": 30 }},
+                    "weight": "heavy",
+                    "perimeter": ["/una/cartella"]
+                }}
+            }}"#
+        );
+        serde_json::from_str(&text).expect("il flusso di prova è valido")
+    }
+
+    fn read_back(dir: &Path, id: &str) -> FlowFile {
+        let text = fs::read_to_string(dir.join(format!("{id}.flow.json")))
+            .expect("il file scritto si rilegge");
+        serde_json::from_str(&text).expect("e si deserializza")
+    }
+
+    fn entries(dir: &Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .expect("cartella leggibile")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// **METTERE UN TETTO NON DEVE PERDERE NIENT'ALTRO.**
+    ///
+    /// È il rischio vero di `sailor flow cap`: si legge un flusso, gli si cambia
+    /// un campo, lo si riscrive — e nel giro sparisce la pianificazione, o un
+    /// `with` di un passo, e nessuno se ne accorge finché quel flusso non manca
+    /// all'appuntamento notturno.
+    ///
+    /// **IL CONFRONTO È SUL `FlowFile`, NON SUL TESTO.** Confrontare il testo
+    /// direbbe rosso a un `serde_json::to_string_pretty` che cambia
+    /// l'indentazione, cioè a una differenza che non è una perdita.
+    ///
+    /// **IL MUTANTE CHE CONTA**: un campo che il giro perde. Marcando
+    /// `FlowFile::schedule` con `#[serde(skip_serializing)]` — che è ciò che
+    /// succede a chi aggiunge un campo e non aggiorna la scrittura — il flusso
+    /// riletto torna senza pianificazione e questa prova diventa rossa.
+    #[test]
+    fn setting_the_cap_leaves_the_rest_of_the_flow_identical() {
+        let dir = scratch("tetto-e-identita");
+        let before = a_full_flow("con-tetto");
+        save_in(&dir, &before).expect("prima scrittura");
+
+        let mut with_cap = read_back(&dir, "con-tetto");
+        with_cap.spend_cap_micros = Some(250_000);
+        save_in(&dir, &with_cap).expect("riscrittura col tetto");
+        let after = read_back(&dir, "con-tetto");
+
+        assert_eq!(
+            after.spend_cap_micros,
+            Some(250_000),
+            "il tetto è quello che si è messo"
+        );
+        // E tutto il resto è quello di prima, campo per campo: se un giorno
+        // `FlowFile` cresce, questo confronto cresce con lui senza che nessuno
+        // debba ricordarsene.
+        let mut without_the_cap = after.clone();
+        without_the_cap.spend_cap_micros = None;
+        assert_eq!(
+            without_the_cap, before,
+            "il giro ha cambiato qualcosa oltre al tetto"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Togliere il tetto lo riporta a `None`, che non è `Some(0)`: il primo è
+    /// «nessuno ha messo un limite», il secondo è «non deve spendere niente».
+    #[test]
+    fn clearing_the_cap_writes_no_cap_instead_of_a_zero() {
+        let dir = scratch("tetto-tolto");
+        let mut flow = a_full_flow("senza-tetto");
+        flow.spend_cap_micros = Some(500);
+        save_in(&dir, &flow).expect("scrittura col tetto");
+
+        flow.spend_cap_micros = None;
+        save_in(&dir, &flow).expect("riscrittura senza");
+
+        assert_eq!(read_back(&dir, "senza-tetto").spend_cap_micros, None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// **UN FILE DI TESTO FINISCE CON UN A-CAPO.**
+    ///
+    /// Senza, `git diff` scrive «\ No newline at end of file» su ogni flusso che
+    /// passa di qui, e la riga successiva che qualcuno aggiungerà a mano
+    /// comparirà attaccata all'ultima. Costa un carattere e si vede subito su
+    /// ogni flusso riscritto da `sailor flow cap`.
+    #[test]
+    fn a_written_flow_ends_with_a_newline() {
+        let dir = scratch("a-capo");
+        save_in(&dir, &a_full_flow("finito-bene")).expect("scrittura");
+
+        let text = fs::read_to_string(dir.join("finito-bene.flow.json")).expect("rileggere");
+
+        assert!(text.ends_with('\n'), "il file non finisce con un a-capo");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// **UN CAMPO CHE NON C'ERA NON DEVE COMPARIRE COME `null`.**
+    ///
+    /// Riscrivere un flusso per cambiargli il tetto non deve aggiungergli righe
+    /// che nessuno ha scritto: `"schedule": null` e `"spend_cap_micros": null`
+    /// non dicono niente che l'assenza non dica già, e riempiono di rumore il
+    /// diff di chi rilegge il proprio flusso dopo il comando. Assente e `null`
+    /// si rileggono uguali — lo prova `clearing_the_cap_writes_no_cap`.
+    #[test]
+    fn a_field_that_was_absent_does_not_come_back_as_null() {
+        let dir = scratch("niente-null");
+        let mut bare = a_full_flow("nudo");
+        bare.schedule = None;
+        bare.spend_cap_micros = None;
+        save_in(&dir, &bare).expect("scrittura");
+
+        let text = fs::read_to_string(dir.join("nudo.flow.json")).expect("rileggere");
+
+        assert!(!text.contains("schedule"), "{text}");
+        assert!(!text.contains("spend_cap_micros"), "{text}");
+        assert_eq!(read_back(&dir, "nudo"), bare, "e si rilegge identico");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// LA MISURA CHE POTEVA VENIRE DIVERSA: senza il controllo su `..` questo
+    /// id scriverebbe fuori dalla cartella dei flussi, nel suo genitore.
+    #[test]
+    fn a_flow_id_that_climbs_out_of_the_directory_is_refused() {
+        let dir = scratch("evasione");
+        // Il bersaglio dell'evasione sta fuori dalla cartella usa-e-getta: va
+        // ripulito prima e dopo, o un mutante che la lascia passare sporca
+        // `$TMPDIR` per i giri successivi invece di farsi vedere qui.
+        let escaped = dir
+            .parent()
+            .expect("la prova ha un genitore")
+            .join("evaso.flow.json");
+        let _ = fs::remove_file(&escaped);
+
+        let error = save_in(&dir, &a_full_flow("../evaso")).expect_err("id con .. rifiutato");
+
+        assert!(error.contains("percorso"), "{error}");
+        assert!(entries(&dir).is_empty(), "la cartella resta vuota");
+        assert!(!escaped.exists(), "e niente è uscito dalla cartella");
+        let _ = fs::remove_file(&escaped);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_flow_id_with_a_path_separator_is_refused() {
+        let dir = scratch("separatore");
+        let error =
+            save_in(&dir, &a_full_flow("sotto/cartella")).expect_err("id con / rifiutato");
+        assert!(error.contains("percorso"), "{error}");
+        assert!(entries(&dir).is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_flow_id_is_refused_and_writes_nothing() {
+        let dir = scratch("id-vuoto");
+        let error = save_in(&dir, &a_full_flow("")).expect_err("id vuoto rifiutato");
+        assert!(error.contains("vuoto"), "{error}");
+        assert!(entries(&dir).is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// IL FILE SYSTEM NON DICE CHE SONO LO STESSO FILE. Su APFS come lo
+    /// installa macOS, salvare «mioflusso» sopra un «MioFlusso» esistente
+    /// sostituisce il contenuto senza un errore e lascia il nome vecchio.
+    #[test]
+    fn a_name_that_differs_only_by_case_is_refused() {
+        let dir = scratch("maiuscole");
+        save_in(&dir, &a_full_flow("MioFlusso")).expect("il primo si scrive");
+
+        let error = save_in(&dir, &a_full_flow("mioflusso")).expect_err("il secondo è rifiutato");
+
+        assert!(error.contains("MioFlusso"), "{error}");
+        // E quello che c'era resta intero: il rifiuto non deve aver toccato
+        // niente, che è il motivo per cui esiste.
+        assert_eq!(read_back(&dir, "MioFlusso").id, "MioFlusso");
+        assert_eq!(entries(&dir).len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// LA MISURA CHE POTEVA VENIRE DIVERSA: la seconda scrittura porta una
+    /// descrizione diversa. Un mutante che salti `fs::rename` lascerebbe la
+    /// prima sul disco.
+    #[test]
+    fn a_second_write_replaces_the_content_instead_of_leaving_it() {
+        let dir = scratch("sostituzione");
+        save_in(&dir, &a_full_flow("stesso-id")).expect("prima scrittura");
+        let mut second = a_full_flow("stesso-id");
+        second.description = "seconda versione, diversa dalla prima".to_owned();
+        save_in(&dir, &second).expect("seconda scrittura");
+
+        assert_eq!(
+            read_back(&dir, "stesso-id").description,
+            "seconda versione, diversa dalla prima"
+        );
+        assert_eq!(entries(&dir).len(), 1, "e nessun file temporaneo rimasto");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn deleting_removes_the_flow_and_says_so_when_there_is_nothing_to_remove() {
+        let dir = scratch("cancellazione");
+        save_in(&dir, &a_full_flow("da-cancellare")).expect("scrittura");
+        delete_in(&dir, "da-cancellare").expect("cancellazione");
+        assert!(entries(&dir).is_empty());
+
+        let error = delete_in(&dir, "mai-esistito").expect_err("un assente non si cancella");
+        assert!(error.contains("non esiste"), "{error}");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
