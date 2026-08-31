@@ -246,6 +246,56 @@ impl Spend {
     pub fn is_complete(&self) -> bool {
         self.calls_without_cost == 0
     }
+
+    /// I tre casi, nella forma in cui si mostrano a una persona.
+    ///
+    /// **ESISTE PERCHÉ LA DISTINZIONE C'ERA GIÀ E NON ARRIVAVA A CHI LEGGE.**
+    /// `Spend` documenta tre casi da quando è nato, ma il solo modo di
+    /// interrogarli era `is_complete()` — un booleano che chi stampa poteva
+    /// scrivere **accanto** al numero invece che **al posto** del numero. È
+    /// esattamente quello che `sailor flow cost` faceva: la corsa dell'A/B del
+    /// 31/08/2026 stampava «1,6674» ed era costata 7,2080, con la nota
+    /// «parziale: 3 chiamate senza costo noto» una riga più sotto. Chi legge un
+    /// totale legge il numero. Restituire il caso invece del booleano toglie a
+    /// chi mostra la possibilità di sbagliarsi.
+    pub fn reading(&self) -> CostReading {
+        if !self.is_complete() {
+            return CostReading::AtLeast {
+                known_micros: self.micros,
+                calls: self.calls,
+                calls_without_cost: self.calls_without_cost,
+            };
+        }
+        if self.micros == 0 {
+            CostReading::Nothing
+        } else {
+            CostReading::Exact(self.micros)
+        }
+    }
+}
+
+/// Come si legge il totale di una spesa.
+///
+/// **TRE CASI, GLI STESSI CHE `Spend` DICHIARA.** «Non ho speso niente», «ho
+/// speso questo e lo so tutto», «ho speso **almeno** questo». Il terzo è il
+/// motivo per cui questo tipo esiste: collassarlo su uno degli altri due — un
+/// `Option<i64>`, o un numero con una nota accanto — lascia in mano a chi legge
+/// una cifra più bassa del vero, e su una corsa con passi consegnati «più bassa»
+/// è stata 4,3 volte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CostReading {
+    /// Niente da mostrare: nessuna chiamata ha speso, e nessuna tace.
+    Nothing,
+    /// Il totale, e **è** il totale: ogni chiamata ha dichiarato il suo costo.
+    Exact(i64),
+    /// Un pavimento, non una somma. `known_micros` è quanto si sa; le altre due
+    /// cifre dicono su quanto lavoro quel numero non ha visto niente — senza,
+    /// «almeno 1,67» non si distingue da «1,67 e manca un centesimo».
+    AtLeast {
+        known_micros: i64,
+        calls: i64,
+        calls_without_cost: i64,
+    },
 }
 
 /// Dove si scrive che un passo è partito e com'è finito.

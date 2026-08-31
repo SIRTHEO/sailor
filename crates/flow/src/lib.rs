@@ -17,7 +17,8 @@ pub mod workspace;
 
 pub use executor::{
     attempt_relation, latest_for, run_status, same_gates, step_input, Action, ActionError,
-    ActionOutcome, ActionRegistry, Clock, Completion, Decision, EffectStatus, Execution,
+    ActionOutcome, ActionRegistry, Clock, Completion, CostReading, Decision, EffectStatus,
+    Execution,
     ExecutionRequest, Executor, FlowError, InMemoryRecordStore, InProcessExecutor, ProcessProbe,
     Reconciliation, ReconciliationRequest, RecordStore, SharedState, Spend, SpendStop, SystemClock,
     CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, WORKDIR_FIELD, WORKSPACE_ROOT,
