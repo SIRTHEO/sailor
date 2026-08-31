@@ -1778,13 +1778,17 @@ pub fn price_list_from(home_text: Option<&str>) -> models::pricing::PriceList {
     }
 }
 
-/// Il listino, riletto a ogni chiamata.
+/// Il listino di questa macchina: quello spedito, sovrascritto dal file di casa.
 ///
-/// **RILETTO, NON TENUTO IN MEMORIA**: un prezzo cambiato a metà di una corsa
-/// lunga vale dalla chiamata dopo, invece che dal prossimo riavvio. Il costo è
-/// una lettura di un file piccolo accanto all'avvio di un processo esterno —
-/// cioè niente, in confronto a ciò che sta per succedere.
-fn load_pricing() -> models::pricing::PriceList {
+/// **RILETTO A OGNI CHIAMATA, NON TENUTO IN MEMORIA**: un prezzo cambiato a metà
+/// di una corsa lunga vale dalla chiamata dopo, invece che dal prossimo riavvio.
+/// Il costo è una lettura di un file piccolo accanto all'avvio di un processo
+/// esterno — cioè niente, in confronto a ciò che sta per succedere.
+///
+/// **PUBBLICA PERCHÉ `sailor flow check` DEVE POTER DIRE COSA NON SA PREZZARE.**
+/// Un freno che non frena si deve vedere prima di lanciare, e chi lo mostra è un
+/// comando, non questo crate.
+pub fn current_price_list() -> models::pricing::PriceList {
     let path = match std::env::var_os(PRICING_ENV).filter(|value| !value.is_empty()) {
         Some(declared) => Some(std::path::PathBuf::from(declared)),
         None => ledger::sailor_home().map(|home| home.join(PRICING_FILE)),
@@ -1872,7 +1876,7 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         return;
     }
     let reading = spent.reading;
-    let price_list = load_pricing();
+    let price_list = current_price_list();
     // Il legame col listino passa dal nome che il motore stesso dichiara, non
     // da un'ipotesi: un modello presunto sarebbe un numero inventato con la
     // faccia di una misura, creduto per sempre da chiunque lo legga.
