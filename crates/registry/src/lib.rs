@@ -110,7 +110,16 @@ pub fn default_registry(
     // sostituita: perciò anche questa va dopo `register_default`.
     registry.register(
         actions::SHELL_CHECK_ACTION,
-        actions::ShellCheckAction::new().watched_by(watcher),
+        actions::ShellCheckAction::new().watched_by(watcher.clone()),
+    );
+    // Il passo che **non** avvia niente: descrive il lavoro e lo lascia
+    // all'agente già vivo nel terminale. Va dopo `register_default` come le
+    // altre due, e per la stessa ragione — il guardiano si attacca all'istanza
+    // che resta registrata. Senza guardiano il mandato si vedrebbe solo a corsa
+    // finita, cioè quando non serve più a nessuno.
+    registry.register(
+        actions::handoff::HANDED_TO_AGENT_ACTION,
+        actions::handoff::HandoffAction::new().watched_by(watcher),
     );
     actions::history::register_history(&mut registry, ledger.clone());
     if let Some(ledger) = ledger {
@@ -137,6 +146,7 @@ mod tests {
         for wanted in [
             actions::EXTERNAL_ENGINE_ACTION,
             actions::SHELL_CHECK_ACTION,
+            actions::handoff::HANDED_TO_AGENT_ACTION,
             "detect_tools",
             "tool_needs",
         ] {
