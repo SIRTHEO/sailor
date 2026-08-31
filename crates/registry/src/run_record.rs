@@ -26,19 +26,14 @@ use ledger::{Ledger, RunRecord};
 /// obbliga a toccarle tutte e due: il compilatore lo chiede su entrambe, ma
 /// nessuno garantisce che ricevano la **stessa** parola. Due parole diverse per
 /// lo stesso stato sono due storici che non si possono confrontare.
+/// **DAL 31/08/2026 IL CORPO STA IN `flow::run_status`, E PER LA TERZA VOLTA
+/// PER LA STESSA RAGIONE.** Ne serviva una copia anche al passo `subflow`, che
+/// vive nel crate del flusso e in `registry` non può guardare: sarebbe stata la
+/// terza. La traduzione è scesa accanto a `Decision`, cioè accanto al tipo che
+/// traduce, dove la vedono tutti e tre. Questo nome resta perché due chiamanti
+/// lo usano — la riga di comando e il guscio della finestra.
 pub fn execution_status(execution: &Execution) -> (&'static str, bool) {
-    match execution.decisions.last() {
-        Some(Decision::Complete) => ("complete", true),
-        Some(Decision::Waiting(_)) => ("waiting", false),
-        Some(Decision::Stopped(_)) => ("stopped", false),
-        Some(Decision::Failed(_)) => ("failed", false),
-        // **NON È UN GUASTO, E LO STATO LO DICE.** Una corsa fermata al tetto
-        // ha una parola sua: chi legge lo storico deve poter distinguere «si è
-        // rotto qualcosa» da «è finito il budget», o smetterà di guardare
-        // tutti e due.
-        Some(Decision::CapReached(_)) => ("cap_reached", false),
-        Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
-    }
+    flow::run_status(execution)
 }
 
 /// La riga che spiega a una persona perché la corsa si è fermata.
@@ -130,6 +125,37 @@ pub struct FlowRun<'a> {
 /// Si ricalcola a ogni scrittura, compresa quella d'apertura, dove viene zero
 /// perché non è stato ancora speso niente.
 pub fn record_flow_run(ledger: &Ledger, flow: &FlowFile, run: FlowRun<'_>) -> Result<(), String> {
+    write_run(ledger, flow, run, None)
+}
+
+/// La stessa riga, per una corsa **figlia**: in più il legame con la corsa che
+/// l'ha chiamata.
+///
+/// **PERCHÉ UNA FUNZIONE E NON UN CAMPO IN PIÙ SU `FlowRun`.** Un campo nuovo su
+/// una struttura costruita a letterale in due crate li avrebbe rotti tutti e
+/// due per un dato che riguarda un solo chiamante. Qui il corpo è uno; la firma
+/// dice chi ha bisogno di cosa.
+///
+/// **IL LEGAME VA NEL DEPOSITO, NON SOLO NEL NOME.** `parent_run_id` è una
+/// colonna che il deposito aveva già e che nessuno riempiva: una corsa figlia
+/// senza quel valore si può solo indovinare dal prefisso del proprio
+/// identificativo, e indovinare non è risalire. Il verso opposto lo porta il
+/// passo del padre, che si tiene il `run_id` del figlio nella propria uscita.
+pub fn record_child_run(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run: FlowRun<'_>,
+    parent_run_id: &str,
+) -> Result<(), String> {
+    write_run(ledger, flow, run, Some(parent_run_id.to_owned()))
+}
+
+fn write_run(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run: FlowRun<'_>,
+    parent_run_id: Option<String>,
+) -> Result<(), String> {
     let spent = ledger.spent_in_run(run.run_id).map_err(|error| {
         format!(
             "non riesco a leggere la spesa della corsa {}: {error}",
@@ -141,7 +167,7 @@ pub fn record_flow_run(ledger: &Ledger, flow: &FlowFile, run: FlowRun<'_>) -> Re
             run_id: run.run_id.to_owned(),
             kind: "flow".to_owned(),
             entity: flow.id.clone(),
-            parent_run_id: None,
+            parent_run_id,
             started_by: run.started_by.to_owned(),
             status: run.status.to_owned(),
             total_cost_micros: spent.micros,

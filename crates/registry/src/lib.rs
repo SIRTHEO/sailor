@@ -19,10 +19,12 @@
 //! Chi aggiunge un'azione la aggiunge qui, e la trovano tutti.
 
 mod run_record;
+mod subflow_host;
 
 pub use run_record::{
-    execution_status, record_flow_run, stopped_by_cap, why_it_stopped, FlowRun,
+    execution_status, record_child_run, record_flow_run, stopped_by_cap, why_it_stopped, FlowRun,
 };
+pub use subflow_host::LedgerHost;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -119,9 +121,22 @@ pub fn default_registry(
     // finita, cioè quando non serve più a nessuno.
     registry.register(
         actions::handoff::HANDED_TO_AGENT_ACTION,
-        actions::handoff::HandoffAction::new().watched_by(watcher),
+        actions::handoff::HandoffAction::new().watched_by(watcher.clone()),
     );
     actions::history::register_history(&mut registry, ledger.clone());
+    // UN FLUSSO CHE NE ESEGUE UN ALTRO. Si registra **anche senza deposito**,
+    // e la differenza è la stessa dichiarata sopra: `flow check` deve poter
+    // dire che un passo `subflow` nomina un'azione che esiste, senza aprire
+    // niente. A eseguire, invece, senza deposito si rifiuta dicendolo — una
+    // corsa figlia che nessuno può ricollegare al passo che l'ha chiesta è
+    // proprio l'opacità per cui questo passo è stato costruito.
+    registry.register(
+        flow::subflow::SUBFLOW_ACTION,
+        flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(
+            ledger.clone(),
+            watcher,
+        ))),
+    );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger.clone());
         // Chi sta lavorando su cosa. Sta qui e non solo nella finestra perché
@@ -158,6 +173,10 @@ mod tests {
             // famiglia `mcp_server` — e nessuna azione ci parlava.
             actions::mcp::MCP_READY_ACTION,
             actions::mcp::MCP_ASK_ACTION,
+            // La finestra offre il nodo `subflow` da sempre; fino al
+            // 31/08/2026 il motore non lo conosceva, e un flusso disegnato con
+            // quel nodo veniva rifiutato come «azione che non conosco».
+            flow::subflow::SUBFLOW_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),
@@ -255,5 +274,83 @@ mod tests {
             registry.get("store_put").is_none(),
             "scrivere no: senza deposito non ha dove mettere niente"
         );
+    }
+
+    /// **`subflow` C'È ANCHE SENZA DEPOSITO, MA NON ESEGUE.**
+    ///
+    /// Le due metà stanno insieme apposta. Deve **esserci**, o `flow check` —
+    /// che un deposito non lo apre — direbbe che un passo `subflow` nomina
+    /// un'azione sconosciuta, cioè rifiuterebbe un flusso valido. E deve
+    /// **rifiutarsi di eseguire**, perché una corsa figlia che non finisce nel
+    /// deposito non è risalibile dal passo che l'ha chiamata: sarebbe
+    /// esattamente il lavoro-che-sparisce-dentro-un-altro per cui questo passo
+    /// è stato costruito.
+    #[test]
+    fn without_a_ledger_the_subflow_step_is_registered_but_refuses_to_run() {
+        let registry = default_registry(None, None);
+        let step = registry
+            .get(flow::subflow::SUBFLOW_ACTION)
+            .expect("registrata anche senza deposito");
+
+        let mut shared = flow::SharedState::new();
+        shared.insert(flow::CURRENT_RUN.to_owned(), "una-corsa".into());
+        shared.insert(flow::CURRENT_STEP.to_owned(), "un-passo".into());
+        let refused = step
+            .execute(&serde_json::json!({ "flow": "qualunque" }), &shared)
+            .expect_err("senza deposito non deve eseguire");
+
+        assert_eq!(refused.class, "no_ledger");
+        assert!(
+            refused.said.contains("risalibile"),
+            "e dice perché, non solo che non può: {}",
+            refused.said
+        );
+    }
+
+    /// La corsa figlia porta il padre nel deposito, non solo nel proprio nome.
+    /// Senza `parent_run_id` scritto, «risalire» vorrebbe dire indovinare da una
+    /// stringa — e chi ha lanciato il figlio si legge in `started_by`.
+    #[test]
+    fn a_child_run_carries_the_parent_and_the_step_that_started_it() {
+        let dir = std::env::temp_dir().join(format!("sailor-registry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let ledger = Ledger::open(&dir).expect("deposito di prova");
+        let flow: flow::FlowFile = serde_json::from_str(
+            r#"{"id":"figlio","description":"x","graph":{"steps":[]},"inputs":{}}"#,
+        )
+        .expect("flusso valido");
+
+        record_child_run(
+            &ledger,
+            &flow,
+            FlowRun {
+                run_id: "corsa-figlia",
+                status: "complete",
+                started_at: 1,
+                ended_at: Some(2),
+                error: None,
+                started_by: "subflow chiamata",
+            },
+            "corsa-del-padre",
+        )
+        .expect("registrata");
+
+        // **SI LEGGE DALLA PROIEZIONE, PERCHÉ IL DEPOSITO NON HA UN LETTORE PER
+        // QUESTA COLONNA.** `FinishedRun` non porta `parent_run_id`: la colonna
+        // esisteva e nessuno la riempiva, quindi nessuno l'ha mai riletta. Il
+        // dump la espone per posizione — `run_id, kind, entity, parent_run_id,
+        // started_by, …` — ed è l'unica strada che non chiede di modificare il
+        // deposito.
+        let dump = ledger.projection_dump().expect("proiezione");
+        let child = dump["runs"]
+            .as_array()
+            .expect("le corse")
+            .iter()
+            .find(|row| row[0] == "corsa-figlia")
+            .expect("la corsa figlia c'è");
+        assert_eq!(child[2], "figlio", "il flusso eseguito");
+        assert_eq!(child[3], "corsa-del-padre", "la corsa che l'ha chiamata");
+        assert_eq!(child[4], "subflow chiamata", "e il passo che l'ha aperta");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
