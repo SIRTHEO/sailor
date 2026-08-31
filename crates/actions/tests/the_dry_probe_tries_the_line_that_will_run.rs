@@ -16,12 +16,16 @@
 //! sarebbe partita non autenticata, e `flow check` avrebbe continuato a dire che
 //! la riga è sana.
 //!
-//! **LA CURA NON È UN CONTROLLO NUOVO SULLE CREDENZIALI.** Un «esiste
-//! `auth.json`?» sarebbe una seconda copia della verità, da tenere allineata a
-//! mano per ogni motore — e i descrittori dichiarano **già** con quali parole un
-//! motore dice di non poter lavorare (`unusable_when`, che nomina proprio le
-//! credenziali mancanti). Basta che il vaglio parta dove partirà la corsa: la
-//! diagnosi la dà il motore stesso, con le sue parole.
+//! **QUESTA PROVA NON DICE CHE LA CASA SIA AUTENTICATA, E IL CONFINE VA
+//! SCRITTO.** Chi l'ha scritta aveva prima dichiarato che, partendo dalla casa
+//! giusta, le credenziali mancanti le avrebbe nominate il motore con le proprie
+//! parole (`unusable_when` le elenca). **Misurato dopo, è falso**: il vaglio
+//! toglie la domanda apposta, il motore si ferma lì, e non arriva mai ai
+//! controlli che verrebbero dopo. `CODEX_HOME=<cartella vuota> codex exec <
+//! /dev/null` risponde «No prompt provided via stdin» ed esce **zero**, uguale a
+//! una casa piena, e `flow check` continua a dire «riga sana». Qui si chiude
+//! solo la divergenza fra il mondo provato e il mondo in cui si lavora — che è
+//! già la cosa che rassicurava a torto.
 //!
 //! **UN SOLO `#[test]` IN QUESTO FILE**, per la stessa ragione scritta in
 //! `the_engine_really_starts_in_sailors_home`: `PROFILES_STATE_PATH` è di
