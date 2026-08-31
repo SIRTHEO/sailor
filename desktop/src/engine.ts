@@ -186,6 +186,8 @@ export interface OpenRun {
   /** «working» lavora, «waiting» è ferma e riparte solo se fai qualcosa. */
   state: "working" | "waiting";
   open_steps: number;
+  /** **Quali** passi sono aperti, e da quanto. Vuoto per chi aspetta. */
+  open_now: Array<{ step_id: string; attempt: number; open_for_secs: number }>;
   /** Da quando dura questo stato, in secondi dall'epoca. */
   since: number;
   /** Vero se questa finestra è quella che l'ha avviata. */
@@ -206,6 +208,105 @@ export async function openRuns(): Promise<OpenRun[]> {
   const invoke = invoker();
   if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da interrogare");
   return invoke<OpenRun[]>("open_runs");
+}
+
+// ── quello che la plancia sapeva dire, e adesso lo dice la finestra ──────
+
+/** Un riepilogo di giornata. Ricalca `DaySummary` di `board.rs`. */
+export interface DaySummary {
+  ledger_present: boolean;
+  runs: number;
+  went: number;
+  broke: number;
+  still_open: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_tokens: number;
+  cache_write_tokens: number;
+  cost_micros: number;
+  /** Chiamate al modello che non hanno riportato token. */
+  unmeasured: number;
+  /** Chiamate al modello che non hanno riportato un prezzo. */
+  unpriced: number;
+  tokens_by_model: Record<string, number>;
+}
+
+/**
+ * Il riepilogo delle corse cominciate dopo un certo istante.
+ *
+ * **L'ISTANTE LO CALCOLA QUESTA FUNZIONE**, perché «oggi» è un giorno di
+ * calendario locale e il fuso lo sa il sistema che disegna, non il motore. La
+ * somma invece la fa il motore, una volta sola: due somme in due linguaggi
+ * darebbero due cifre e nessuno saprebbe quale credere.
+ */
+export async function todaySummary(): Promise<DaySummary> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da riepilogare");
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  return invoke<DaySummary>("day_summary", { since: Math.floor(midnight.getTime() / 1000) });
+}
+
+/** Una corsa nella storia. Ricalca `ExecutionView` di `crates/ui/src/dashboard.rs`. */
+export interface Execution {
+  run_id: string;
+  kind: string;
+  entity: string;
+  status: string;
+  started_at: number;
+  ended_at: number | null;
+  duration_secs: number | null;
+  total_cost_micros: number;
+  error: string | null;
+  steps_total: number;
+  steps_went: number;
+  steps_broke: number;
+  steps_retried: number;
+  steps_open: Array<{ step_id: string; attempt: number; started_at: number; open_for_secs: number }>;
+  tokens: {
+    input_tokens: number;
+    output_tokens: number;
+    cached_tokens: number;
+    cache_write_tokens: number;
+    cost_micros: number;
+    calls: number;
+    calls_without_tokens: number;
+    calls_without_cost: number;
+  };
+}
+
+/** Tutte le corse che il deposito ricorda, dalla più recente. */
+export async function executionHistory(): Promise<Execution[]> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("fuori dal guscio nativo: nessuna storia da leggere");
+  return invoke<Execution[]>("execution_history");
+}
+
+/** Una cosa installata su questa macchina. Ricalca `Entry` di `crates/inventory`. */
+export interface InstalledEntry {
+  kind: "skill" | "agent" | "command" | "rule" | "hook";
+  name: string;
+  description: string;
+  /** Da dove viene: `casa`, `plugin <nome>`, `repo <nome>`. */
+  origin: string;
+  path: string;
+  reach: { state: "active" } | { state: "inactive"; reason: string } | { state: "unknown"; reason: string };
+  /** Il modello la può invocare da sé, o solo la persona che digita. */
+  by_model: boolean;
+}
+
+export interface Installed {
+  entries: InstalledEntry[];
+  /** Dove ha guardato davvero: un elenco che non lo dice non si può smentire. */
+  roots: string[];
+  stale_plugin_copies: number;
+}
+
+/** Competenze, agenti, comandi, regole, ganci: cosa c'è su questa macchina. */
+export async function machineInventory(): Promise<Installed> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("fuori dal guscio nativo: il censimento lo fa il motore");
+  return invoke<Installed>("machine_inventory");
 }
 
 type Unlisten = () => void;
