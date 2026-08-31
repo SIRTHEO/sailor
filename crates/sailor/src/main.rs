@@ -28,7 +28,6 @@ mod profiles_cmd;
 mod release_cmd;
 mod run_cmd;
 mod step_cmd;
-mod ui_cmd;
 mod version_cmd;
 mod workspace_cmd;
 
@@ -65,11 +64,6 @@ const COMMANDS: &[Command] = &[
         name: "models",
         description: "elenca il catalogo dei modelli, mostra o cambia quale usare",
         run: models_cmd::run,
-    },
-    Command {
-        name: "ui",
-        description: "avvia la pagina locale che mostra i flussi di Sailor",
-        run: ui_cmd::run,
     },
     Command {
         name: "flow",
@@ -225,10 +219,13 @@ mod tests {
     }
 
     #[test]
-    fn profiles_models_ui_flow_and_run_reach_their_commands() {
+    fn profiles_models_flow_and_run_reach_their_commands() {
         assert_eq!(route(&args(&["sailor", "profiles", "list"])).reached(), Some("profiles"));
         assert_eq!(route(&args(&["sailor", "models", "list"])).reached(), Some("models"));
-        assert_eq!(route(&args(&["sailor", "ui", "--port", "9"])).reached(), Some("ui"));
+        // `ui` NON C'E' PIU', e la riga che lo provava e' diventata questa:
+        // dal 31/08/2026 l'unica interfaccia e' la finestra, e un comando che
+        // apriva una seconda pagina su una porta da ricordare non esiste.
+        assert!(route(&args(&["sailor", "ui"])).reached().is_none());
         assert_eq!(route(&args(&["sailor", "flow", "list"])).reached(), Some("flow"));
         assert_eq!(route(&args(&["sailor", "run", "codex"])).reached(), Some("run"));
         assert_eq!(

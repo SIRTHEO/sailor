@@ -1,11 +1,18 @@
 //! Prova end-to-end: un deposito vero (in una cartella temporanea, fuori
-//! dall'albero) con esecuzioni finte, letto dalla pipeline pura e servito
-//! dal vero servitore HTTP su un socket vero.
+//! dall'albero) con esecuzioni finte, letto dalla pipeline pura.
+//!
+//! **IL SERVITORE HTTP NON C'E' PIU', LE SUE DOMANDE SI'.** Fino al 31/08/2026
+//! tre prove qui dentro aprivano un socket vero e interrogavano
+//! `127.0.0.1`. Quel servitore e' stato tolto — l'unica interfaccia e' la
+//! finestra — ma cio' che quelle prove difendevano non era il socket: era che
+//! i conti arrivino a chi guarda **con i nomi di campo che chi guarda legge**.
+//! Quella parte e' rimasta, girata sulla serializzazione invece che sulla
+//! rete. Togliere le prove insieme al trasporto avrebbe tolto anche il
+//! controllo, che e' il modo in cui una riscrittura perde pezzi senza
+//! accorgersene.
 
 use flow::{Completion, Outcome, StepRecord};
 use ledger::{Ledger, ModelCallRecord, RunRecord};
-use std::io::{Read, Write};
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -147,47 +154,38 @@ fn a_ledger_directory_that_was_never_written_is_reported_as_absent_not_as_an_err
 }
 
 #[test]
-fn the_http_server_answers_the_real_dashboard_over_a_real_socket() {
-    let dir = temp_dir("http");
+fn the_shape_the_window_reads_survives_serialization() {
+    // I NOMI DEI CAMPI SONO UN CONTRATTO, e vive fra due linguaggi: `ExecutionView`
+    // di qui e `Execution` di `desktop/src/engine.ts`. Rinominarne uno da questa
+    // parte non fa cadere niente — la finestra legge `undefined` e disegna una
+    // colonna vuota. Questa prova e' cio' che rende rossa quella modifica.
+    let dir = temp_dir("shape");
     seed(&dir);
-    let state = std::sync::Arc::new(ui::server::ServerState {
-        ledger_dir: dir.clone(),
-        flows: Default::default(),
-    });
+    let data = ui::gather::gather(&dir).expect("lettura riuscita").expect("deposito presente");
+    let executions =
+        ui::dashboard::build_executions(&data.runs, &data.steps_by_run, &data.calls_by_run, 1100);
+    let body = serde_json::to_value(&executions).expect("le viste si serializzano");
 
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind su una porta libera");
-    let addr = listener.local_addr().expect("indirizzo assegnato dal sistema");
-    let acceptor = listener.try_clone().expect("duplicare il listener");
-    let accepted = std::thread::spawn(move || acceptor.accept().expect("connessione in arrivo"));
-
-    let mut client = std::net::TcpStream::connect(addr).expect("connessione al servitore");
-    client
-        .write_all(b"GET /api/dashboard HTTP/1.1\r\nHost: localhost\r\n\r\n")
-        .expect("richiesta inviata");
-
-    let (connection, _) = accepted.join().expect("il thread di ascolto non è andato in panico");
-    let handler =
-        std::thread::spawn(move || ui::server::handle_connection(connection, &state).expect("risposta scritta"));
-
-    let mut response = String::new();
-    client.read_to_string(&mut response).expect("risposta letta fino alla chiusura");
-    handler.join().expect("il servitore ha risposto senza andare in panico");
-
-    assert!(response.starts_with("HTTP/1.1 200"), "risposta inattesa: {response}");
-    let body_start = response.find("\r\n\r\n").expect("separatore fra intestazioni e corpo") + 4;
-    let body: serde_json::Value = serde_json::from_str(&response[body_start..]).expect("corpo JSON valido");
-    assert_eq!(body["ledger_present"], true);
-    assert_eq!(body["executions"][0]["run_id"], "run-1");
-    assert_eq!(body["executions"][0]["tokens"]["input_tokens"].as_u64(), Some(100));
-    assert_eq!(body["executions"][0]["steps_open"][0]["step_id"], "remove_markers");
+    assert_eq!(body[0]["run_id"], "run-1");
+    assert_eq!(body[0]["tokens"]["input_tokens"].as_u64(), Some(100));
+    assert_eq!(body[0]["steps_open"][0]["step_id"], "remove_markers");
+    // Le due cifre che devono restare affiancate: quella che Sailor calcola e
+    // quella che il motore dichiara. Se una delle due sparisse dal JSON, la
+    // finestra mostrerebbe una colonna vuota invece di un disaccordo.
+    assert!(body[0]["calls"][0].get("cost_micros").is_some());
+    assert!(body[0]["calls"][0].get("declared_cost_micros").is_some());
+    // E cio' che non e' stato misurato, che e' la riga piu' importante di tutte.
+    assert!(body[0]["tokens"].get("calls_without_tokens").is_some());
+    assert!(body[0]["tokens"].get("calls_without_cost").is_some());
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn the_http_server_serves_valid_and_broken_flows_in_the_payload() {
-    let dir = temp_dir("http_flows");
-    let mut flows = ui::registry::FlowRegistry::new();
+fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
+    // UN FLUSSO ROTTO NON SPARISCE. Un elenco che si accorcia in silenzio fa
+    // credere che il flusso non esista, e nessuno va a cercare un file che
+    // secondo l'elenco non c'e'.
     let valid_graph = flow::Graph::new(vec![flow::Step {
         id: "step-1".into(),
         deps: vec![],
@@ -199,6 +197,7 @@ fn the_http_server_serves_valid_and_broken_flows_in_the_payload() {
         max_attempts: 1,
     }])
     .expect("grafo valido");
+    let mut flows = ui::registry::FlowRegistry::new();
     flows.insert(
         "valido".into(),
         Ok(ui::registry::FlowFile {
@@ -210,51 +209,20 @@ fn the_http_server_serves_valid_and_broken_flows_in_the_payload() {
             spend_cap_micros: None,
         }),
     );
-    flows.insert(
-        "rotto".into(),
-        Err("errore: ciclo nel grafo".into()),
-    );
+    flows.insert("rotto".into(), Err("errore: ciclo nel grafo".into()));
 
-    let state = std::sync::Arc::new(ui::server::ServerState {
-        ledger_dir: dir.clone(),
-        flows,
-    });
-
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind su una porta libera");
-    let addr = listener.local_addr().expect("indirizzo assegnato dal sistema");
-    let acceptor = listener.try_clone().expect("duplicare il listener");
-    let accepted = std::thread::spawn(move || acceptor.accept().expect("connessione in arrivo"));
-
-    let mut client = std::net::TcpStream::connect(addr).expect("connessione al servitore");
-    client
-        .write_all(b"GET /api/dashboard HTTP/1.1\r\nHost: localhost\r\n\r\n")
-        .expect("richiesta inviata");
-
-    let (connection, _) = accepted.join().expect("il thread di ascolto non è andato in panico");
-    let handler =
-        std::thread::spawn(move || ui::server::handle_connection(connection, &state).expect("risposta scritta"));
-
-    let mut response = String::new();
-    client.read_to_string(&mut response).expect("risposta letta fino alla chiusura");
-    handler.join().expect("il servitore ha risposto senza andare in panico");
-
-    assert!(response.starts_with("HTTP/1.1 200"), "risposta inattesa: {response}");
-    let body_start = response.find("\r\n\r\n").expect("separatore fra intestazioni e corpo") + 4;
-    let body: serde_json::Value = serde_json::from_str(&response[body_start..]).expect("corpo JSON valido");
-
-    let flows_array = body["flows"].as_array().expect("array dei flussi");
-    assert_eq!(flows_array.len(), 2);
+    let views = serde_json::to_value(ui::registry::flow_views(&flows)).expect("le viste si serializzano");
+    let array = views.as_array().expect("array dei flussi");
+    assert_eq!(array.len(), 2);
 
     // I nomi cercati restano in italiano: sono i dati del flusso di prova, non
-    // identificatori. È la variabile che li tiene a dover essere in inglese.
-    let broken = flows_array.iter().find(|f| f["name"] == "rotto").expect("flusso rotto presente");
+    // identificatori. E' la variabile che li tiene a dover essere in inglese.
+    let broken = array.iter().find(|entry| entry["name"] == "rotto").expect("flusso rotto presente");
     assert_eq!(broken["error"], "errore: ciclo nel grafo");
-    assert_eq!(broken["steps"].as_array().map(|s| s.len()), Some(0));
+    assert_eq!(broken["steps"].as_array().map(|steps| steps.len()), Some(0));
 
-    let valid = flows_array.iter().find(|f| f["name"] == "valido").expect("flusso valido presente");
+    let valid = array.iter().find(|entry| entry["name"] == "valido").expect("flusso valido presente");
     assert_eq!(valid["error"], serde_json::Value::Null);
     assert_eq!(valid["description"], "Flusso valido di prova");
-    assert_eq!(valid["steps"].as_array().map(|s| s.len()), Some(1));
-
-    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(valid["steps"].as_array().map(|steps| steps.len()), Some(1));
 }

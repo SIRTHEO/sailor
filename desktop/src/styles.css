@@ -724,6 +724,26 @@ button.is-primary {
   margin-left: var(--space-1);
 }
 
+/* Il dettaglio di una corsa: sotto la sua riga, senza il filo che le separa —
+   sono la stessa cosa guardata piu' da vicino. */
+.now__detail td {
+  border-bottom: 1px solid var(--line);
+  padding-top: 0;
+}
+
+.calls__head {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.calls .now__table {
+  margin-top: var(--space-2);
+}
+
 .roots {
   margin-top: var(--space-5);
 }

@@ -273,6 +273,40 @@ export interface Execution {
     calls_without_tokens: number;
     calls_without_cost: number;
   };
+  /** Token visti per modello, gia' sommati dal motore. */
+  tokens_by_model: Record<string, { input_tokens: number; output_tokens: number; cached_tokens: number; cache_write_tokens: number; cost_micros: number; calls: number }>;
+  calls: ModelCall[];
+}
+
+/**
+ * Una chiamata al modello dentro una corsa.
+ *
+ * **`declared_cost_micros` NON E' UN DOPPIONE DI `cost_micros`.** Uno e' il
+ * prezzo che Sailor calcola dai token, l'altro e' quello che il motore dice di
+ * aver speso. Tenerli affiancati e' l'unico modo di accorgersi che uno dei due
+ * ha torto — ed e' esattamente il difetto che nella ricognizione del 31/08/2026
+ * e' rimasto invisibile a Langfuse, LangSmith e Phoenix, tutti e tre con numeri
+ * sbagliati mostrati con autorita'.
+ */
+export interface ModelCall {
+  call_id: string;
+  step_id: string | null;
+  purpose: string;
+  cli: string;
+  requested_model: string;
+  actual_model: string;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cached_tokens: number | null;
+  cache_write_tokens: number | null;
+  total_tokens: number | null;
+  turns: number | null;
+  cost_micros: number | null;
+  /** Quanto il motore dice di aver speso, quando lo dice. */
+  declared_cost_micros: number | null;
+  error_type: string | null;
+  started_at: number;
+  ended_at: number | null;
 }
 
 /** Tutte le corse che il deposito ricorda, dalla più recente. */
