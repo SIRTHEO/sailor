@@ -47,8 +47,8 @@
 //! `BufReader::lines()` che spinga ogni riga in un canale.
 
 use flow::{
-    ActionRegistry, Completion, Decision, Execution, ExecutionRequest, Executor, FlowError,
-    FlowFile, InProcessExecutor, RecordStore, SharedState, StepRecord, SystemClock,
+    ActionRegistry, Completion, Decision, Execution, Executor, FlowError, FlowFile,
+    InProcessExecutor, RecordStore, StepRecord, SystemClock,
 };
 use ledger::Ledger;
 use serde::Serialize;
@@ -377,6 +377,22 @@ pub(crate) fn start_run(
         started_at,
     };
 
+    // **CHI LANCIA DICE DOVE HA DECISO DI LAVORARE, PRIMA DI PARTIRE**, e vale
+    // per il pulsante quanto per il terminale: senza questa riga il piano ha un
+    // modo silenzioso di sbagliare, che è lo stesso del guasto 25. Si risolve
+    // qui e non dentro il filo, così la riga esce prima che la corsa cominci.
+    let root = std::env::current_dir()
+        .ok()
+        .and_then(|working| flow::workspace::find_root(&working));
+    match root.as_deref() {
+        Some(root) => println!("radice del progetto: {}", root.display()),
+        None => println!(
+            "radice del progetto: nessuna (nessun {} risalendo da qui); \
+             i passi che dichiarano «workdir» falliranno",
+            flow::workspace::MARKER
+        ),
+    }
+
     // IL LAVORO NON STA SUL FILO DELLA FINESTRA. `execute` è bloccante e non
     // riporta niente finché non ha finito: lasciarlo sul thread che serve i
     // comandi congelerebbe l'interfaccia per tutta la durata della corsa —
@@ -388,16 +404,17 @@ pub(crate) fn start_run(
             runs: handle.clone(),
             run_id: run_id.clone(),
         };
-        let request = ExecutionRequest {
-            run_id: run_id.clone(),
-            root_inputs: inputs,
-            gates: Vec::new(),
-            shared: SharedState::new(),
-            // Il tetto è del flusso: il pulsante non ne inventa uno suo, e non
-            // ne toglie uno. Un flusso lanciato dalla finestra spende quanto
-            // spenderebbe dal terminale.
-            spend_cap_micros: flow.spend_cap_micros,
-        };
+        // **LA RICHIESTA LA COSTRUISCE `registry`, NON QUESTO FILE.** Era
+        // scritta anche qui, ed è il guasto 10 in posizione: le due copie si
+        // sono già disallineate tre volte. Con la radice del progetto in mezzo
+        // la prossima divergenza sarebbe stata una corsa dalla finestra che
+        // lavora dove sta il processo mentre la stessa corsa dal terminale
+        // lavora nella radice giusta — e nessuna delle due lo direbbe.
+        //
+        // L'ingresso resta quello che il pulsante ha in mano: la finestra può
+        // lanciare lo stesso flusso con un mandato diverso.
+        let mut request = registry::execution_request(&flow, &run_id, root.as_deref());
+        request.root_inputs = inputs;
         let result = InProcessExecutor.execute(
             &flow.graph,
             request,

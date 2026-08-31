@@ -24,10 +24,46 @@ pub use run_record::{
     execution_status, record_flow_run, stopped_by_cap, why_it_stopped, FlowRun,
 };
 
+use std::path::Path;
 use std::sync::Arc;
 
-use flow::ActionRegistry;
+use flow::{ActionRegistry, ExecutionRequest, FlowFile, SharedState};
 use ledger::Ledger;
+
+/// La richiesta con cui una corsa parte, costruita **una volta sola**.
+///
+/// **PERCHÉ STA QUI E NON NEI DUE CHIAMANTI.** Era scritta due volte — nel
+/// comando `sailor flow run` e nel guscio della finestra — ed è esattamente la
+/// forma del guasto 10: le due copie si sono già disallineate almeno tre volte,
+/// l'ultima con `total_cost_micros: 0` scritto a mano da una parte sola. La
+/// radice del progetto è il dato nuovo che le avrebbe fatte divergere di nuovo,
+/// e nel modo peggiore: una corsa lanciata dalla finestra che lavora dove sta il
+/// processo mentre la stessa corsa dal terminale lavora nella radice giusta.
+///
+/// **LA RADICE PUÒ MANCARE, E ALLORA NON C'È.** `None` non diventa la cartella
+/// corrente: chi ha bisogno di una radice fallisce dicendolo, al momento di
+/// comporre l'ingresso del passo. Un ripiego silenzioso qui rimetterebbe in
+/// piedi il guasto 25 nel punto esatto che deve chiuderlo.
+pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> ExecutionRequest {
+    let mut shared = SharedState::new();
+    if let Some(root) = root {
+        // Il tipo del valore lo dà `SharedState`: così questo crate resta senza
+        // dipendenze esterne proprie, che è la ragione per cui esiste.
+        shared.insert(
+            flow::WORKSPACE_ROOT.to_owned(),
+            root.display().to_string().into(),
+        );
+    }
+    ExecutionRequest {
+        run_id: run_id.to_owned(),
+        root_inputs: flow.inputs.clone(),
+        gates: Vec::new(),
+        shared,
+        // Il tetto è del flusso e viaggia con la corsa: chi lancia non lo
+        // inventa, lo porta.
+        spend_cap_micros: flow.spend_cap_micros,
+    }
+}
 
 /// Il registro delle azioni: tutto ciò che un passo può chiedere di fare.
 ///
@@ -109,6 +145,81 @@ mod tests {
                 "«{wanted}» deve stare nel registro: senza, un flusso che lo nomina non parte"
             );
         }
+    }
+
+    /// **LA RADICE ARRIVA A OGNI AZIONE, NON A QUELLE CHE SE LA VANNO A
+    /// PRENDERE.** Un'azione finta registra lo `shared` che riceve: è l'unico
+    /// modo di provare che il dato viaggia per costruzione e non per
+    /// cortesia di chi lo legge — il guasto 28 dice cosa succede quando è il
+    /// secondo caso.
+    #[test]
+    fn the_root_reaches_the_action_through_the_shared_state() {
+        use flow::{Action, ActionError, ActionOutcome, Executor, SharedState as Shared};
+        use std::sync::Mutex;
+
+        /// Non fa niente e ricorda cosa le è arrivato.
+        struct Spy(Arc<Mutex<Option<Shared>>>);
+        impl Action for Spy {
+            fn execute(
+                &self,
+                _input: &serde_json::Value,
+                shared: &Shared,
+            ) -> Result<ActionOutcome, ActionError> {
+                *self.0.lock().expect("il registratore") = Some(shared.clone());
+                Ok(ActionOutcome::Went(serde_json::Value::Null))
+            }
+        }
+
+        let seen = Arc::new(Mutex::new(None));
+        let mut registry = ActionRegistry::default();
+        registry.register("spia", Spy(seen.clone()));
+
+        let json = r#"{
+            "id": "prova", "description": "un passo solo",
+            "graph": {"steps": [{
+                "id": "unico", "deps": [], "action": "spia", "max_attempts": 1,
+                "when": null, "input_schema": {"type": "any"},
+                "output_schema": {"type": "any"}
+            }]},
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let request = execution_request(&flow, "corsa-1", Some(Path::new("/una/radice")));
+
+        let mut store = flow::InMemoryRecordStore::default();
+        flow::InProcessExecutor
+            .execute(
+                &flow.graph,
+                request,
+                &mut store,
+                &registry,
+                &mut flow::SystemClock,
+            )
+            .expect("la corsa gira");
+
+        let shared = seen.lock().expect("il registratore").clone().expect("il passo è girato");
+        assert_eq!(
+            shared.get(flow::WORKSPACE_ROOT).and_then(|root| root.as_str()),
+            Some("/una/radice"),
+            "la radice deve arrivare all'azione senza che l'azione la chieda"
+        );
+    }
+
+    /// Senza radice non si scrive niente: **assente non è la cartella
+    /// corrente**. Uno zero al posto di «non lo so» è la bugia da cui il
+    /// guasto 25 è nato.
+    #[test]
+    fn without_a_root_nothing_is_written_into_the_shared_state() {
+        let json = r#"{"id": "p", "description": "d",
+            "graph": {"steps": []}, "inputs": {}}"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+
+        let request = execution_request(&flow, "corsa-1", None);
+
+        assert!(
+            !request.shared.contains_key(flow::WORKSPACE_ROOT),
+            "nessun ripiego silenzioso sulla cartella del processo"
+        );
     }
 
     /// Senza deposito i nodi che scrivono restano fuori, quello che legge no.
