@@ -4360,7 +4360,15 @@ mod tests {
     /// Una chiamata come il deposito la conserva, coi soli campi che questo
     /// conto guarda. `cost` a `None` è una chiamata **non misurata**: è la
     /// forma che `sailor step close --turns` scrive per un passo consegnato.
-    fn a_call(call_id: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
+    ///
+    /// **IL NOME DICE DA COSA SI RICONOSCE**, e non è pignoleria: fino al
+    /// 01/09/2026 questa e la sorella qui sopra si chiamavano tutte e due
+    /// `a_call`, nate su due rami diversi lo stesso giorno. Git le ha fuse senza
+    /// segnalare niente — nessuna riga in comune — e a rifiutare l'albero è
+    /// stato `cargo`. È il guasto 36 di `docs/guasti-incontrati.md` che si
+    /// ripete: il confine sui file non vede i nomi che vivono nello stesso
+    /// modulo.
+    fn a_call_named(call_id: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
         ledger::ModelCallRecord {
             call_id: call_id.to_owned(),
             run_id: "run-1".to_owned(),
@@ -4409,9 +4417,21 @@ mod tests {
         }
     }
 
+    /// **IL LISTINO CONOSCE IL MODELLO DI QUESTE PROVE, ED È DELIBERATO.** Qui
+    /// si guarda una cosa sola: la forma del totale quando una chiamata non è
+    /// misurata. Con un listino che non conoscesse `m`, ogni rapporto porterebbe
+    /// anche la riga dei modelli scoperti — un secondo motivo di lacuna,
+    /// scritto sopra al primo — e una prova rossa non direbbe più quale delle
+    /// due cose si è rotta.
     fn report_for(calls: &[ledger::ModelCallRecord]) -> String {
+        let prices = PriceList::parse(
+            r#"{"currency":"USD","models":[
+                {"id":"m","input_per_million":5.0,"output_per_million":25.0}
+            ]}"#,
+        )
+        .expect("il listino di prova si legge");
         let view = ui::dashboard::summarize_run(&a_run(), &[], calls, 100);
-        spending_report(&view)
+        spending_report(&view, &prices)
     }
 
     /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
@@ -4431,10 +4451,10 @@ mod tests {
     #[test]
     fn a_total_with_an_unmeasured_call_is_never_a_bare_figure() {
         let report = report_for(&[
-            a_call("misurata", Some(1_667_400)),
-            a_call("consegnata-1", None),
-            a_call("consegnata-2", None),
-            a_call("consegnata-3", None),
+            a_call_named("misurata", Some(1_667_400)),
+            a_call_named("consegnata-1", None),
+            a_call_named("consegnata-2", None),
+            a_call_named("consegnata-3", None),
         ]);
 
         assert!(
@@ -4456,7 +4476,10 @@ mod tests {
     /// sempre non distingue più i due casi, ed è lo stesso difetto al contrario.
     #[test]
     fn a_total_where_every_call_is_measured_stays_a_plain_figure() {
-        let report = report_for(&[a_call("una", Some(1_000_000)), a_call("due", Some(667_400))]);
+        let report = report_for(&[
+            a_call_named("una", Some(1_000_000)),
+            a_call_named("due", Some(667_400)),
+        ]);
 
         assert!(
             report.contains(&bare_total(1_667_400)),
@@ -4473,7 +4496,7 @@ mod tests {
     /// non dice niente, e chi lo legge crede di aver visto una spesa piccola.
     #[test]
     fn a_run_where_nothing_is_measured_says_unknown_instead_of_at_least_zero() {
-        let report = report_for(&[a_call("consegnata", None)]);
+        let report = report_for(&[a_call_named("consegnata", None)]);
 
         assert!(
             report.contains("sconosciuto"),
