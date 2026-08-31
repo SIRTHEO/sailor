@@ -19,7 +19,7 @@ import { StepNode, StepRunContext, type StepNodeData } from "./StepNode";
 // «trovato piu di un elemento» nasconde il vero esito.
 afterEach(cleanup);
 
-const PASSO: Step = {
+const STEP: Step = {
   id: "implementa",
   action: "external_engine",
   deps: [],
@@ -28,9 +28,9 @@ const PASSO: Step = {
   max_attempts: 1,
 } as unknown as Step;
 
-function montaNodo(data: Partial<StepNodeData>, states: Map<string, StepRun>) {
+function mountNode(data: Partial<StepNodeData>, states: Map<string, StepRun>) {
   const full: StepNodeData = {
-    step: PASSO,
+    step: STEP,
     kind: "engine",
     flowName: "sviluppa-sailor",
     color: "#000",
@@ -60,18 +60,18 @@ function montaNodo(data: Partial<StepNodeData>, states: Map<string, StepRun>) {
   );
 }
 
-function corsa(state: StepRun["state"]): StepRun {
+function runIn(state: StepRun["state"]): StepRun {
   return { step_id: "implementa", state, attempt: 1 };
 }
 
 describe("il nodo e lo stato della corsa", () => {
   test("senza nessuna corsa dice «in attesa», e non inventa niente", () => {
-    montaNodo({}, new Map());
+    mountNode({}, new Map());
     expect(screen.getByText("in attesa")).toBeDefined();
   });
 
   test("con una corsa vera dice quello che sta succedendo, adesso", () => {
-    montaNodo({}, new Map([["sviluppa-sailor::implementa", corsa("running")]]));
+    mountNode({}, new Map([["sviluppa-sailor::implementa", runIn("running")]]));
     expect(screen.getByText("in corso")).toBeDefined();
   });
 
@@ -79,9 +79,9 @@ describe("il nodo e lo stato della corsa", () => {
     // È il difetto, nella sua forma esatta: il nodo portava nei propri `data`
     // uno stato che sui flussi veri era sempre assente, e nessuno gli passava
     // quello vero. Qui i due ci sono entrambi e vince il vero.
-    montaNodo(
-      { run: corsa("waiting") },
-      new Map([["sviluppa-sailor::implementa", corsa("broke")]]),
+    mountNode(
+      { run: runIn("waiting") },
+      new Map([["sviluppa-sailor::implementa", runIn("broke")]]),
     );
     expect(screen.getByText("rotto, si ritenta")).toBeDefined();
   });
@@ -90,7 +90,7 @@ describe("il nodo e lo stato della corsa", () => {
     // Fra i flussi veri di questa macchina `verifica`, `trigger` e `verdetto`
     // sono ripetuti: con una chiave non qualificata il nodo si colorerebbe con
     // la corsa di un flusso che non è il suo.
-    montaNodo({}, new Map([["un-altro-flusso::implementa", corsa("went")]]));
+    mountNode({}, new Map([["un-altro-flusso::implementa", runIn("went")]]));
     expect(screen.getByText("in attesa")).toBeDefined();
   });
 });
