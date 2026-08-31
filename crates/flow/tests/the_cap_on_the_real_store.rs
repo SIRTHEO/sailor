@@ -114,6 +114,9 @@ fn a_call_that_cost(call_id: &str, run_id: &str, micros: i64) -> ModelCallRecord
         call_id: call_id.to_owned(),
         run_id: run_id.to_owned(),
         step_id: None,
+        // Nessuna sessione: questa prova guarda il tetto di spesa, e una riga
+        // che non ne apre né ne riprende una è il caso normale.
+        session_id: None,
         purpose: "external_engine".to_owned(),
         cli: "motore-di-prova".to_owned(),
         requested_model: String::new(),
