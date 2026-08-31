@@ -318,6 +318,44 @@ legge codice privato non ha lo stesso insieme di destinazioni ammesse di uno che
 riassume un documento pubblico. Aggiungerla dopo vuol dire aver già mandato
 qualcosa nel posto sbagliato.
 
+### Un'azione dichiara la superficie a cui appartiene, e i poteri che pretende
+
+**31/08/2026 — Theo**, dopo il censimento di `dev-stack` (27 script di un altro
+progetto, candidati a diventare flussi).
+
+Le superfici sono quattro, e un'azione ne dichiara **una sola**: `sense` legge il
+mondo senza toccarlo, `act` lo tocca, `remember` è il deposito interrogabile,
+`gate` è dove entra il permesso di una persona. Insieme alla superficie, ogni
+azione dichiara **i poteri che pretende** — rete, disco, processi, denaro,
+segreti — e le `sense` dichiarano in più **cosa rispondono quando non possono
+vedere**.
+
+**Perché non è una tassonomia estetica.** Il censimento cercava «quali script
+diventano flussi» e ha trovato un'altra cosa: 15 voci ferme su **cinque poteri
+mancanti**, non su quindici nodi. La domanda giusta non è quale nodo manca, è
+**quale potere non abbiamo e quale flusso lo dimostra**. E la regola che ne
+discende è una sola riga: *se un'orchestrazione richiede codice nuovo, manca un
+potere — non manca un flusso.*
+
+**Perché la terza dichiarazione esiste.** Viene dal guasto 12: un comando zittito
+dal perimetro rispondeva «vuoto» senza errore, e la sorveglianza ha detto
+«nessun flusso in esecuzione» mentre due giravano. Un sensore che confonde zero
+con cieco è peggio di un sensore assente, perché chi sta a valle si fida.
+
+**Cosa la rende rossa** — senza questo non sarebbe vincolante, come la regola
+sulla lingua prima del 31/08: una prova che scorre il registro delle azioni e
+fallisce se una non dichiara superficie e poteri, e se una `sense` non dichiara
+la propria risposta da cieca. **Nasce rossa su tutte e nove le azioni di oggi.**
+
+**Il debito, dichiarato.** I sette cantieri aperti il 31/08 (`supervisor`,
+`terminal`, `presence`, `mcp`, e gli altri) hanno prodotto crate **prima** di
+questo criterio. Se non si adeguano prima di chiudere, la regola nasce con
+quattro eccezioni non scritte — che è esattamente come la finestra è arrivata a
+offrire otto tipi di passo mentre il motore ne esegue tre.
+
+*Per esteso, con le tre proprietà di un sistema aperto e i numeri del
+censimento*: `docs/2026-08-31-le-quattro-superfici.md`.
+
 ## Raccomandato, non ancora deciso
 
 - **La soglia di un flusso che accompagna va sul prezzo, non sulla qualità.**
