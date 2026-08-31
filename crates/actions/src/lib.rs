@@ -1757,23 +1757,40 @@ fn session_plan(
 const PRICING_ENV: &str = "SAILOR_PRICING";
 const PRICING_FILE: &str = "pricing.json";
 
+/// Il listino da applicare: quello spedito col prodotto, sovrascritto da quello
+/// scritto in casa.
+///
+/// **PURO, E NON È UN VEZZO.** Il testo di casa entra come argomento e il
+/// listino esce: così la regola — «senza niente in casa il costo si sa lo
+/// stesso» — si interroga senza toccare il disco e senza scrivere una variabile
+/// d'ambiente, che è di **processo** e rovinerebbe le prove che girano in
+/// parallelo nello stesso. Chi legge il file sta in [`load_pricing`].
+///
+/// **UN FILE DI CASA ILLEGGIBILE NON TOGLIE IL LISTINO A TUTTI.** Si torna a
+/// quello spedito: prima del 01/09/2026 un JSON scritto male lasciava il costo
+/// sconosciuto per l'intera corsa, che è il guasto 35 nella sua forma più
+/// silenziosa — un errore di battitura che spegne un tetto di spesa.
+pub fn price_list_from(home_text: Option<&str>) -> models::pricing::PriceList {
+    let shipped = models::pricing::shipped();
+    match home_text.and_then(|text| models::pricing::PriceList::parse(text).ok()) {
+        Some(home) => shipped.overridden_by(home),
+        None => shipped,
+    }
+}
+
 /// Il listino, riletto a ogni chiamata.
 ///
 /// **RILETTO, NON TENUTO IN MEMORIA**: un prezzo cambiato a metà di una corsa
 /// lunga vale dalla chiamata dopo, invece che dal prossimo riavvio. Il costo è
 /// una lettura di un file piccolo accanto all'avvio di un processo esterno —
 /// cioè niente, in confronto a ciò che sta per succedere.
-///
-/// Un listino assente, illeggibile o scritto male non è un guasto: lascia il
-/// costo sconosciuto. Fermare una chiamata a un motore perché non si sa quanto
-/// costerà sarebbe un tetto di spesa, che qui non c'è ed è un lavoro separato.
-fn load_pricing() -> Option<models::pricing::PriceList> {
+fn load_pricing() -> models::pricing::PriceList {
     let path = match std::env::var_os(PRICING_ENV).filter(|value| !value.is_empty()) {
-        Some(declared) => std::path::PathBuf::from(declared),
-        None => ledger::sailor_home()?.join(PRICING_FILE),
+        Some(declared) => Some(std::path::PathBuf::from(declared)),
+        None => ledger::sailor_home().map(|home| home.join(PRICING_FILE)),
     };
-    let text = std::fs::read_to_string(path).ok()?;
-    models::pricing::PriceList::parse(&text).ok()
+    let text = path.and_then(|path| std::fs::read_to_string(path).ok());
+    price_list_from(text.as_deref())
 }
 
 /// Dove registrare quanto si è speso: deposito, corsa e passo.
@@ -1859,10 +1876,10 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
     // Il legame col listino passa dal nome che il motore stesso dichiara, non
     // da un'ipotesi: un modello presunto sarebbe un numero inventato con la
     // faccia di una misura, creduto per sempre da chiunque lo legga.
-    let entry = price_list
-        .as_ref()
-        .zip(reading.model.as_deref())
-        .and_then(|(list, name)| list.find(name));
+    let entry = reading
+        .model
+        .as_deref()
+        .and_then(|name| price_list.find(name));
     let prices = entry.map(models::pricing::Price::micros).unwrap_or_default();
     let cost_micros = models::pricing::cost_micros(
         models::pricing::TokenCounts {
@@ -1906,9 +1923,7 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
             .map(|usd| (usd * 1_000_000.0).round() as i64),
         // La valuta è quella del listino con cui si è calcolato: senza un conto
         // fatto non c'è nessuna valuta da dichiarare.
-        price_currency: cost_micros
-            .and(price_list.as_ref())
-            .map(|list| list.currency.clone()),
+        price_currency: cost_micros.map(|_| price_list.currency.clone()),
         input_price_micros_per_million: prices.input,
         output_price_micros_per_million: prices.output,
         cached_price_micros_per_million: prices.cached,

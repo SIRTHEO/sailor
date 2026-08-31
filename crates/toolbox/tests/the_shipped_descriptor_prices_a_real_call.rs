@@ -4,9 +4,17 @@
 //! pezzo per volta con dati costruiti apposta, e passano anche quando i pezzi non
 //! si toccano fra loro. Qui i tre pezzi sono quelli veri: il descrittore che
 //! viene spedito col prodotto, l'uscita che `claude -p --output-format json` ha
-//! davvero scritto su questa macchina il 30/08/2026, e un listino coi prezzi
-//! pubblicati. Il numero che ne esce si confronta col costo che il motore ha
-//! dichiarato di suo — due strade indipendenti verso la stessa cifra.
+//! davvero scritto su questa macchina il 30/08/2026, e — dal 01/09/2026 — il
+//! **listino spedito**, non più uno scritto qui accanto. Il numero che ne esce si
+//! confronta col costo che il motore ha dichiarato di suo: due strade
+//! indipendenti verso la stessa cifra.
+//!
+//! **IL LISTINO SCRITTO QUI ERA L'ULTIMO PEZZO FINTO, ED È IL GUASTO 35.** Finché
+//! stava in questa prova, la catena era intera solo dentro questo file: il
+//! prodotto spediva il descrittore e non il listino, e su una macchina senza
+//! `~/.config/sailor/pricing.json` la stessa chiamata costava zero. Una prova
+//! verde su un pezzo che non viaggia col prodotto è precisamente il modo in cui
+//! quel guasto è rimasto invisibile.
 //!
 //! Fino a stamattina questa catena non arrivava in fondo: `claude-code` non
 //! dichiarava nessun blocco `usage`, quindi ogni chiamata al motore che si usa
@@ -45,22 +53,6 @@ const REAL_OUTPUT: &str = r#"{
   "type": "result"
 }"#;
 
-/// Un listino coi prezzi pubblicati per quel modello. Il prezzo della cache a
-/// lunga durata è il doppio dell'ingresso: non è una supposizione, è ciò che
-/// rende il conto uguale a quello del motore.
-const PRICES: &str = r#"{
-  "currency": "USD",
-  "models": [{
-    "id": "claude-opus-5",
-    "aliases": ["claude-opus-5[1m]"],
-    "input_per_million": 5.0,
-    "output_per_million": 25.0,
-    "cached_per_million": 0.5,
-    "cache_write_per_million": 6.25,
-    "cache_write_long_per_million": 10.0
-  }]
-}"#;
-
 /// Solo i descrittori spediti col prodotto: quello che ha chiunque lo installi,
 /// senza niente di questa macchina attorno.
 fn shipped_only() -> Tools {
@@ -95,10 +87,13 @@ fn the_shipped_claude_descriptor_reads_a_real_call_and_prices_it() {
     // E l'uscita del passo resta la risposta, non l'involucro.
     assert_eq!(reading.answer.as_deref(), Some("ok"));
 
-    let prices = models::pricing::PriceList::parse(PRICES).unwrap();
+    // **IL LISTINO È QUELLO SPEDITO, NON UNO SCRITTO QUI ACCANTO.** Svuota
+    // `models` in `crates/models/pricing.default.json` e questa riga cade: è il
+    // guasto 35 rimesso dov'era.
+    let prices = models::pricing::shipped();
     let entry = prices
         .find(reading.model.as_deref().unwrap())
-        .expect("l'alias porta alla voce di listino");
+        .expect("l'alias porta alla voce del listino spedito");
     let cost = models::pricing::cost_micros(
         models::pricing::TokenCounts {
             input: reading.input_tokens,
@@ -149,7 +144,7 @@ fn a_engine_that_names_no_model_leaves_the_cost_unknown_not_zero() {
         "agy non nomina nessun modello, e nessuno lo inventa per lui"
     );
 
-    let prices = models::pricing::PriceList::parse(PRICES).unwrap();
+    let prices = models::pricing::shipped();
     assert!(
         reading
             .model
