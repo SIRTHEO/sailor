@@ -30,6 +30,19 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
    cancellate nella pulizia del 28/08, presenti nell'archivio). Finché mancano,
    ogni sessione nuova parte senza sapere niente di questo progetto.
 4. **L'ambiente Python del plugin sicurezza**, 240 MB, si ricrea da solo.
+5. **Il nome del marcatore di progetto, e cosa può contenere `checks`.** Il
+   31/08 il guasto 25 ha portato dentro `sailor.json`: un file che dichiara la
+   radice, così un flusso non se la scrive più addosso. Il meccanismo c'è ed è
+   provato; **due scelte non le ha prese nessuno** e finché mancano il terzo
+   strato delle regole non si costruisce. (a) `sailor.json` è il nome giusto, o
+   deve stare sotto `.sailor/`? Cambiarlo dopo che qualcuno l'ha scritto è una
+   migrazione. (b) `checks` è oggi una mappa `nome → comando`: se Sailor un
+   giorno la **esegue**, un file di progetto diventa capace di far girare un
+   comando qualunque su chi apre quel progetto. Oggi nessuno la legge, e nasce
+   **vuota** apposta — `workspace init` non indovina `cargo test`, perché
+   indovinare una verifica è deciderla al posto di chi lavora lì.
+   Il terreno è pronto: `Declaration` ha già `rules`, `checks` ed `equipment`, e
+   tiene i campi che non conosce invece di rifiutare il file (guasto 8).
 
 ### Decise il 29/08, da costruire
 
