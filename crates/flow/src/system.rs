@@ -121,13 +121,38 @@ pub fn sources(
         origin: "tuoi",
         dir: home_flows.to_path_buf(),
     });
-    if let Some(project) = working.and_then(|working| project_flows_from(working, home_flows)) {
-        sources.push(FlowSource {
-            origin: "del progetto",
-            dir: project,
-        });
+    if let Some((origin, dir)) = working.and_then(|working| project_flows(working, home_flows)) {
+        sources.push(FlowSource { origin, dir });
     }
     sources
+}
+
+/// La cartella dei flussi del progetto e l'origine da mostrare, decise in
+/// quest'ordine: **prima il marcatore, poi la vecchia risalita per `flows/`**.
+///
+/// **PERCHÉ IL MARCATORE VINCE, E VINCE DA SOLO.** Il marcatore dice dov'è la
+/// radice; la cartella `flows/` la fa indovinare. Consultare la seconda quando
+/// la prima ha già risposto vorrebbe dire che un `flows/` più in alto può
+/// scavalcare il progetto che si è dichiarato — cioè che la dichiarazione non
+/// dichiara niente. Quando il marcatore c'è, `root.join("flows")` è la
+/// risposta anche se quella cartella non esiste: un progetto senza flussi è uno
+/// stato onesto, e mostrarlo vuoto è più utile che mostrargli quelli di
+/// qualcun altro.
+///
+/// **PERCHÉ IL RIPIEGO RESTA.** Toglierlo farebbe sparire di colpo i flussi di
+/// ogni progetto che non si è ancora dichiarato — compreso questo repository
+/// finché non gli si scrive il marcatore. È una deprecazione, e una
+/// deprecazione non si fa da soli: resta, e si vede che è un ripiego
+/// dall'origine che porta scritta addosso.
+fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, PathBuf)> {
+    if let Some(root) = crate::workspace::find_root(working) {
+        let flows = root.join("flows");
+        // La casa non è mai anche il progetto: contarla due volte mostrerebbe
+        // ogni flusso in doppia copia.
+        return (flows != home_flows).then_some((crate::workspace::ORIGIN_DECLARED, flows));
+    }
+    project_flows_from(working, home_flows)
+        .map(|flows| (crate::workspace::ORIGIN_GUESSED, flows))
 }
 
 /// La cartella dei flussi del progetto, cercata risalendo.
@@ -448,5 +473,48 @@ mod tests {
     #[test]
     fn counting_the_builtin_source_does_not_count_a_folder() {
         assert_eq!(registry_of(&FlowSource::builtin()).len(), FLOWS.len());
+    }
+
+    /// **UNA `flows/` PIÙ IN ALTO NON SCAVALCA IL MARCATORE.** È la prova della
+    /// precedenza, non della risalita: se il ripiego venisse consultato per
+    /// primo, il progetto dichiarato perderebbe i propri flussi a favore di
+    /// quelli del progetto che lo contiene — e chi ha scritto `sailor.json`
+    /// non avrebbe dichiarato niente.
+    #[test]
+    fn a_flows_folder_above_the_marker_does_not_win() {
+        let outer = scratch("marcatore-contro-flows");
+        put_flow(&outer.join("flows"), "di-chi-sta-sopra");
+        let project = outer.join("progetto");
+        fs::create_dir_all(&project).expect("cartella del progetto");
+        fs::write(project.join(crate::workspace::MARKER), "{}").expect("marcatore");
+        let deep = project.join("crates").join("dentro");
+        fs::create_dir_all(&deep).expect("sottocartella");
+
+        let places = sources(Path::new("/casa/flows"), Some(&deep), None);
+
+        let last = places.last().expect("almeno una");
+        assert_eq!(last.dir, project.join("flows"), "vince la radice dichiarata");
+        assert_eq!(last.origin, crate::workspace::ORIGIN_DECLARED);
+
+        let _ = fs::remove_dir_all(&outer);
+    }
+
+    /// Senza marcatore il ripiego resta, e **si dichiara**: l'origine dice che
+    /// la radice è stata indovinata, così chi guarda sa perché i flussi sono
+    /// quelli e non altri.
+    #[test]
+    fn without_a_marker_the_climb_still_works_and_says_so() {
+        let root = scratch("ripiego");
+        put_flow(&root.join("flows"), "uno");
+        let deep = root.join("desktop").join("src-tauri");
+        fs::create_dir_all(&deep).expect("sottocartella");
+
+        let places = sources(Path::new("/casa/flows"), Some(&deep), None);
+
+        let last = places.last().expect("almeno una");
+        assert_eq!(last.dir, root.join("flows"));
+        assert_eq!(last.origin, crate::workspace::ORIGIN_GUESSED);
+
+        let _ = fs::remove_dir_all(&root);
     }
 }
