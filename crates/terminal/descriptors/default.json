@@ -1,0 +1,53 @@
+{
+  "_leggimi": [
+    "Le regole di smistamento di un terminale di Sailor: quali forme di richiesta",
+    "vanno a un flusso, e a quale. È un dato, spedito col prodotto e incorporato",
+    "nel binario: si riscrive, si estende e si spegne senza ricompilare niente.",
+    "",
+    "Per aggiungerne una: metti un file `.json` in `~/.config/sailor/routes.d/` (o",
+    "dove punta SAILOR_ROUTE_DESCRIPTORS) con dentro un array di regole, o un",
+    "oggetto con un campo `routes`. Un `id` già presente qui dentro viene",
+    "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
+    "`\"disabled\": true`. Per spegnere lo smistamento del tutto, spegni ogni id:",
+    "un terminale senza regole è un terminale normale, che è il valore predefinito.",
+    "",
+    "`when.kind` è `starts_with` (la riga comincia con questo testo) oppure",
+    "`contains_all` (tutte queste parole compaiono nella riga, come parole",
+    "intere). Il confronto non guarda le maiuscole.",
+    "",
+    "LA GUARDIA NON SI PUÒ SPEGNERE DA QUI, ED È IL MOTIVO PER CUI QUESTO FILE È",
+    "SICURO. Prima di guardare qualunque regola, il terminale controlla se la",
+    "riga è un comando: prima parola eseguibile su questa macchina, sintassi di",
+    "shell, un percorso. Se lo è, passa, e nessuna regola la vede. Una regola",
+    "scritta male può quindi mancare uno smistamento, mai mangiarsi un `git",
+    "status`. L'unica eccezione è `\"explicit\": true`, che vale solo per un",
+    "marcatore — un `starts_with` il cui testo NON può iniziare un comando — e il",
+    "caricamento rifiuta le regole esplicite che non lo rispettano.",
+    "",
+    "`minimum_words` è la seconda difesa, e serve alle regole per parole: una",
+    "richiesta in lingua è lunga, una riga di comando è corta. Sotto quel numero",
+    "di parole la regola non scatta.",
+    "",
+    "`strip_match` toglie il marcatore dal testo consegnato al flusso: il flusso",
+    "riceve la richiesta, non il modo in cui l'hai marcata."
+  ],
+  "routes": [
+    {
+      "id": "marked-request",
+      "label": "Il punto interrogativo: questa è una richiesta, non un comando",
+      "flow": "smista-il-lavoro",
+      "when": { "kind": "starts_with", "text": "? " },
+      "explicit": true,
+      "strip_match": true,
+      "note": "L'unica forma che scavalca la guardia, e può farlo perché nessuna shell esegue una riga che comincia con «? »: il punto interrogativo da solo non è un nome di comando e non è un percorso. È la via d'uscita per chi vuole mandare al flusso una frase che assomiglia a un comando — «? find dove sta la regola» — senza discutere con l'euristica."
+    },
+    {
+      "id": "sailor-request",
+      "label": "Una richiesta in lingua che nomina Sailor",
+      "flow": "smista-il-lavoro",
+      "when": { "kind": "contains_all", "words": ["sailor"] },
+      "minimum_words": 4,
+      "note": "La forma naturale in un terminale aperto sulla repo di Sailor: «trova i residui di configurazione di sailor». Quattro parole almeno, perché `sailor flow run x` ne ha quattro ma è un comando — e infatti non arriva mai qui: la guardia lo ferma prima, perché `sailor` è un eseguibile. Questa regola scatta solo dove quel binario NON c'è, o dove la frase non comincia con lui."
+    }
+  ]
+}
