@@ -483,6 +483,62 @@ offrire otto tipi di passo mentre il motore ne esegue tre.
 *Per esteso, con le tre proprietà di un sistema aperto e i numeri del
 censimento*: `docs/2026-08-31-le-quattro-superfici.md`.
 
+### Un totale con dentro un'incognita si mostra come pavimento, mai come cifra
+
+**01/09/2026**, dal guasto 37.
+
+Un totale di costo che contiene anche **una sola** chiamata senza `cost_micros`
+non si stampa come numero. Si legge da `Spend::reading()`, che restituisce uno
+dei tre casi — niente, il totale, **almeno** questo — e chi mostra scrive la
+frase che ne discende: «almeno 1,6674, e il vero è più alto: 3 chiamate su 4 non
+sono misurate». Senza nemmeno una misura si dice **sconosciuto**, non «almeno
+0,0000»: quest'ultimo è vero, non dice niente, e si legge come una spesa piccola.
+
+**Perché la nota accanto non bastava, ed è la parte da ricordare.** La nota
+c'era. `sailor flow cost` stampava già «parziale: 3 chiamate senza costo noto»,
+una riga sotto il numero, e la corsa consegnata dell'A/B del 31/08 è stata letta
+come **1,6674 $** mentre ne era costati **7,2080** — 4,3 volte. *Chi legge un
+totale legge il numero.* Un qualificatore che non occupa il posto della cifra non
+qualifica niente. Vale per ogni cifra che Sailor mostra, non solo per questa.
+
+**E la regola sta in un posto solo.** `Spend` distingueva i tre casi dal giorno
+in cui è nato: la distinzione era giusta nel motore e non arrivava a chi legge,
+perché l'unico modo di interrogarla era un booleano. Chi rifà il confronto nel
+proprio `format!` crea una seconda regola che diverge — e a divergere sarebbe
+quella che una persona legge, cioè la sola che nessun tipo controlla.
+
+### La quota di una persona non è il costo di una corsa, e non stanno insieme
+
+**01/09/2026**, dalla seconda metà del guasto 37.
+
+Sailor sa leggere quanta quota una persona ha già consumato: `models::remaining`
+interroga il canale OAuth di Claude Code — solo lettura, nessun costo — e ne
+ricava `Remaining { engine, unit, used_fraction, resets_at, observed_at }`. È la
+prima cosa in tutto il sistema che **misura** un consumo invece di chiederlo a
+chi lavora.
+
+**Non sostituisce il costo di un passo, e le due non vanno nello stesso
+riquadro.** Quella quota conta *tutte* le sessioni di quella persona: la corsa di
+Sailor, il terminale accanto, il lavoro di ieri che ricade nella stessa finestra
+di sette giorni. Fra due istanti se ne ricava quanta quota è passata, mai quanta
+ne ha consumata una corsa — non c'è modo di sapere chi altro scriveva in mezzo.
+Un numero preso da lì e scritto accanto a un passo sarebbe una misura con la
+faccia giusta e il significato sbagliato, cioè il modo in cui il guasto 37 è
+nato, non la sua cura. Per questo sta in `sailor remaining` e non in `flow cost`:
+due numeri nello stesso rapporto si sottraggono.
+
+**Il consumo autodichiarato resta, marcato.** `sailor step close --turns` non si
+tocca: la dichiarazione di un agente è un dato che vale, purché non si confonda
+con un conto. Resta scritta con `cost_micros` a `None`, così il totale che la
+contiene si legge come pavimento invece che come somma.
+
+**È dichiarata come capacità dello strumento, non cablata.** Il descrittore di
+`claude-code` porta `read_remaining_quota`; `codex` lo porta `false` — provato il
+01/09/2026 e non riuscito, con scritto nella sua nota fin dove si era arrivati,
+che è diverso da impossibile. Chi non ce l'ha continua a funzionare senza sapere
+quanta quota gli resta, che è il ripiego di sempre. Vincolo permanente
+«indipendenza dal modello».
+
 ## Raccomandato, non ancora deciso
 
 - **La soglia di un flusso che accompagna va sul prezzo, non sulla qualità.**

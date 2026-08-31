@@ -18,6 +18,7 @@
 //!     sailor step <open|close> [opzioni]     prende in carico e chiude un passo consegnato
 //!     sailor run <cli> [argomenti...]        lancia una CLI col profilo attivo
 //!     sailor inventory [--kind K] [--json]   che cosa è installato, e cosa è spento
+//!     sailor remaining                        quanta quota della persona è già consumata
 //!     sailor version                          la versione di questo binario
 //!     sailor --help                           l'elenco dei comandi
 
@@ -26,6 +27,7 @@ mod inventory_cmd;
 mod models_cmd;
 mod profiles_cmd;
 mod release_cmd;
+mod remaining_cmd;
 mod run_cmd;
 mod step_cmd;
 mod version_cmd;
@@ -84,6 +86,11 @@ const COMMANDS: &[Command] = &[
         name: "inventory",
         description: "elenca competenze, agenti, comandi, regole e ganci, e dice quali sono spenti",
         run: inventory_cmd::run,
+    },
+    Command {
+        name: "remaining",
+        description: "quanta quota ha già consumato la persona, letta dal motore invece che chiesta",
+        run: remaining_cmd::run,
     },
     Command {
         name: "version",

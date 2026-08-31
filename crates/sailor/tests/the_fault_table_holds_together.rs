@@ -32,6 +32,26 @@ struct Fault {
     partly: bool,
 }
 
+impl Fault {
+    /// Un guasto conta come aperto finché la cura che dichiara non è fatta.
+    ///
+    /// **«CHIUSO IN PARTE» È APERTO, E IL CONTEGGIO DEVE DIRLO.** Uno stato di
+    /// mezzo serve a raccontare quale metà è fatta, non a togliere una riga dal
+    /// conto: chi legge «undici aperti» crede che ne restino undici da fare, e
+    /// invece ne restano dodici. La direzione dell'errore non è casuale — è
+    /// sempre quella che tranquillizza, e per questo la regola sta qui e non
+    /// nella testa di chi aggiorna la prosa.
+    ///
+    /// Il caso vero: il guasto 37 è stato marcato «chiuso in parte» il
+    /// 01/09/2026 con la bugia riparata e **la misura ancora da fare**, cioè la
+    /// metà che vale. Il campo `partly` esisteva già e non lo interrogava
+    /// nessuno: un campo calcolato e mai letto non è una difesa, è la forma di
+    /// una difesa.
+    fn still_open(&self) -> bool {
+        self.open || self.partly
+    }
+}
+
 fn faults() -> Vec<Fault> {
     let path = repository_root().join("docs/guasti-incontrati.md");
     let text = std::fs::read_to_string(&path)
@@ -149,7 +169,7 @@ fn spelled(number: usize) -> &'static str {
 #[test]
 fn the_counts_written_in_prose_match_the_table_they_come_from() {
     let faults = faults();
-    let open = faults.iter().filter(|fault| fault.open).count();
+    let open = faults.iter().filter(|fault| fault.still_open()).count();
     let total = faults.len();
 
     let path = repository_root().join("docs/guasti-incontrati.md");
