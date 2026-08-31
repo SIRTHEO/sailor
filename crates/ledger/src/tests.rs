@@ -1404,8 +1404,8 @@ fn said_leaves_one_run_only_from_broken_steps_and_says_when_it_was_clipped() {
     let directory = TestDirectory::new("storico-detto");
     let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
     a_run(&ledger, "run-1", "alpha", 100, Some(400));
-    let lungo = "à".repeat(400);
-    a_step(&ledger, "run-1", "rotto", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, Some(&lungo))));
+    let long_text = "à".repeat(400);
+    a_step(&ledger, "run-1", "rotto", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, Some(&long_text))));
     a_step(&ledger, "run-1", "riuscito", 1, 1, 160, Some((Outcome::Went, None, 170, Some("tutto bene"))));
     a_run(&ledger, "run-2", "alpha", 500, Some(600));
     a_step(&ledger, "run-2", "altrove", 1, 1, 500, Some((Outcome::Broke, Some("timeout"), 550, Some("di un'altra corsa"))));
@@ -1476,15 +1476,15 @@ fn an_unknown_count_stays_unknown_through_the_projection() {
     let dump = ledger.projection_dump().expect("leggere la proiezione");
     let rows = dump["model_calls"].as_array().expect("l'elenco c'è");
     assert_eq!(rows.len(), 2);
-    let ignota = rows.iter().find(|row| row[0] == "ignota").unwrap();
-    assert_eq!(ignota[7], Value::Null, "input_tokens ignoto resta NULL");
-    assert_eq!(ignota[8], Value::Null, "output_tokens ignoto resta NULL");
-    assert_eq!(ignota[10], Value::Null, "cost_micros ignoto resta NULL");
-    assert_ne!(ignota[7], json!("0"), "e non diventa mai uno zero");
+    let unknown = rows.iter().find(|row| row[0] == "ignota").unwrap();
+    assert_eq!(unknown[7], Value::Null, "input_tokens ignoto resta NULL");
+    assert_eq!(unknown[8], Value::Null, "output_tokens ignoto resta NULL");
+    assert_eq!(unknown[10], Value::Null, "cost_micros ignoto resta NULL");
+    assert_ne!(unknown[7], json!("0"), "e non diventa mai uno zero");
 
-    let misurata = rows.iter().find(|row| row[0] == "misurata").unwrap();
-    assert_eq!(misurata[7], json!("42"));
-    assert_eq!(misurata[10], json!(7));
+    let measured = rows.iter().find(|row| row[0] == "misurata").unwrap();
+    assert_eq!(measured[7], json!("42"));
+    assert_eq!(measured[10], json!(7));
 }
 
 /// Le due colonne nate con la versione 4 arrivano fino alla proiezione.
@@ -1575,7 +1575,7 @@ fn an_older_ledger_is_migrated_in_place_without_losing_its_rows() {
 /// eventi già scritto — che è l'unica cosa da cui tutto il resto si ricostruisce.
 #[test]
 fn an_event_written_in_the_old_shape_still_deserialises() {
-    let vecchio = json!({
+    let old_shape = json!({
         "call_id": "vecchia", "run_id": "run-1", "step_id": "compile",
         "purpose": "repair", "cli": "codex",
         "requested_model": "req", "actual_model": "act",
@@ -1589,7 +1589,7 @@ fn an_event_written_in_the_old_shape_still_deserialises() {
         "started_at": 101, "ended_at": 110
     });
     let record: ModelCallRecord =
-        serde_json::from_value(vecchio).expect("un evento vecchio si legge ancora");
+        serde_json::from_value(old_shape).expect("un evento vecchio si legge ancora");
     assert_eq!(record.input_tokens, Some(10));
     assert_eq!(record.price_currency.as_deref(), Some("USD"));
     assert_eq!(record.total_tokens, None, "un campo che non c'era è ignoto");
@@ -1620,13 +1620,13 @@ fn what_a_run_spent_says_how_much_of_it_is_unknown() {
         .record_model_call(&call_in_run("ignota", "run-1", None))
         .expect("registrare quella senza");
 
-    let spesa = ledger.spent_in_run("run-1").expect("leggere la spesa");
+    let spend = ledger.spent_in_run("run-1").expect("leggere la spesa");
 
-    assert_eq!(spesa.micros, 7, "somma i costi noti");
-    assert_eq!(spesa.calls, 2, "e conta tutte le chiamate, non solo quelle");
-    assert_eq!(spesa.calls_without_cost, 1);
+    assert_eq!(spend.micros, 7, "somma i costi noti");
+    assert_eq!(spend.calls, 2, "e conta tutte le chiamate, non solo quelle");
+    assert_eq!(spend.calls_without_cost, 1);
     assert!(
-        !spesa.is_complete(),
+        !spend.is_complete(),
         "un totale con una riga fuori non è completo, e chi decide deve saperlo"
     );
 }
@@ -1647,11 +1647,11 @@ fn a_runs_spending_does_not_include_the_neighbours() {
         .record_model_call(&call_in_run("altrui", "run-2", Some(1_000)))
         .expect("registrare quella dell'altra corsa");
 
-    let mia = ledger.spent_in_run("run-1").expect("leggere la mia spesa");
+    let mine = ledger.spent_in_run("run-1").expect("leggere la mia spesa");
 
-    assert_eq!(mia.micros, 7);
-    assert_eq!(mia.calls, 1, "una sola chiamata è mia");
-    assert!(mia.is_complete());
+    assert_eq!(mine.micros, 7);
+    assert_eq!(mine.calls, 1, "una sola chiamata è mia");
+    assert!(mine.is_complete());
 }
 
 /// Una corsa che non ha chiamato nessun motore ha speso zero **e** non ha
@@ -1661,8 +1661,8 @@ fn a_run_that_called_no_engine_spent_nothing_and_hides_nothing() {
     let directory = TestDirectory::new("spesa-vuota");
     let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
 
-    let spesa = ledger.spent_in_run("mai-girata").expect("leggere la spesa");
+    let spend = ledger.spent_in_run("mai-girata").expect("leggere la spesa");
 
-    assert_eq!(spesa, Spend::default());
-    assert!(spesa.is_complete(), "niente di ignoto: non c'è niente");
+    assert_eq!(spend, Spend::default());
+    assert!(spend.is_complete(), "niente di ignoto: non c'è niente");
 }

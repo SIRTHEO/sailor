@@ -577,7 +577,7 @@ impl Catalog {
 }
 
 #[cfg(test)]
-mod il_campo_nuovo_e_facoltativo {
+mod the_new_field_is_optional {
     //! Che cosa succede a un descrittore quando questa versione di Sailor
     //! impara un campo che la precedente non conosceva.
 

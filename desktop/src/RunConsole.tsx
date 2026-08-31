@@ -349,12 +349,12 @@ function tokens(count: number): string {
  * propri conteggi, o non aveva un prezzo, la cifra qui sotto è più bassa del
  * vero: tacerlo sarebbe presentare una somma che nasconde ciò che le manca.
  */
-function Spesa({ usage }: { usage: RunUsage }) {
+function Spend({ usage }: { usage: RunUsage }) {
   const t = usage.tokens;
   if (t.calls === 0) return null;
   return (
-    <div className="console__spesa">
-      <span className="console__spesa-costo">{money(usage.total_cost_micros)}</span>
+    <div className="console__spend">
+      <span className="console__spend-cost">{money(usage.total_cost_micros)}</span>
       <span>
         {t.calls} {t.calls === 1 ? "chiamata" : "chiamate"}
       </span>
@@ -372,7 +372,7 @@ function Spesa({ usage }: { usage: RunUsage }) {
         </span>
       )}
       {totalsArePartial(t) && (
-        <span className="console__spesa-parziale">
+        <span className="console__spend-partial">
           totale parziale:{" "}
           {t.calls_without_tokens > 0 && `${t.calls_without_tokens} senza conteggi`}
           {t.calls_without_tokens > 0 && t.calls_without_cost > 0 && ", "}
@@ -461,7 +461,7 @@ export function RunConsole({
 
       {listenFailure && <div className="console__truth">{listenFailure}</div>}
 
-      {usage && <Spesa usage={usage} />}
+      {usage && <Spend usage={usage} />}
 
       {mode === "inline" ? (
         <div className="console__lines" ref={tail}>
