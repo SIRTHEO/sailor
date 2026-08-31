@@ -302,6 +302,101 @@ pub enum PromptPlace {
     LastArg,
 }
 
+/// Una delle forme con cui si ottiene una capacità: le opzioni da mettere sulla
+/// riga di comando, e se l'ultima di loro vuole un valore dopo di sé.
+///
+/// **PERCHÉ UNA FORMA E NON UNA STRINGA.** `--session-id <uuid>` e
+/// `--fork-session` si scrivono uguali in una tabella e si compongono in modo
+/// diverso: la prima vuole un valore attaccato, la seconda no. Chi comporrà la
+/// riga deve saperlo dal dato, non indovinarlo dal nome — è la stessa ragione
+/// per cui `ask.args_before_prompt` esiste invece di un ordine globale.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+pub struct CapabilityForm {
+    /// Le opzioni, o il sottocomando, con cui la capacità si ottiene.
+    /// `["exec", "resume"]` è tanto valido quanto `["--resume"]`: un
+    /// sottocomando è un argomento come gli altri.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    /// L'ultima delle `args` vuole un valore subito dopo.
+    #[serde(default)]
+    pub takes_value: bool,
+    /// I valori ammessi, quando sono un insieme chiuso e misurato — le fonti di
+    /// `--setting-sources`, i formati di `--output-format`. Vuoto non vuol dire
+    /// «nessuno»: vuol dire che non è un insieme chiuso, o che nessuno l'ha
+    /// scritto.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub values: Vec<String>,
+    /// Il vincolo che la tabella non porta: «solo con `--print`», «perde le
+    /// credenziali». È testo per chi legge, e non entra in nessuna decisione.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    /// I campi non capiti, per la stessa ragione di `Descriptor::extra`.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// Che cosa un descrittore dichiara su una capacità.
+///
+/// **TRE STATI E NON DUE, ED È IL PUNTO DI TUTTO IL BLOCCO.** `false` dice
+/// «qualcuno ha guardato e non c'è»; tacere dice «nessuno ha guardato». Sono due
+/// fatti diversi, e l'unico modo per non confonderli è avere un modo di scrivere
+/// il primo. Un blocco che permettesse solo di elencare ciò che c'è farebbe
+/// sembrare misurata ogni assenza, compresa quella di uno strumento che nessuno
+/// ha mai aperto.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Capability {
+    /// `false`: misurata e non c'è. `true`: c'è, e non ci sono opzioni da
+    /// dichiarare — la capacità è nel comportamento, non in una bandiera.
+    Known(bool),
+    /// Un modo solo, scritto senza le parentesi quadre: chi dichiara il caso
+    /// semplice non deve conoscere quello complicato. Stessa scelta di
+    /// [`Probes`].
+    One(CapabilityForm),
+    /// Più modi per la stessa capacità: `claude` riprende una sessione con
+    /// `--resume`, con `--session-id` o con `--continue`, e sono tre.
+    Many(Vec<CapabilityForm>),
+}
+
+impl Capability {
+    /// Vero se lo strumento la offre.
+    pub fn is_available(&self) -> bool {
+        match self {
+            Capability::Known(has) => *has,
+            Capability::One(_) => true,
+            // Un elenco vuoto dichiara di aver guardato senza trovare nessun
+            // modo: è un'assenza, non una presenza senza istruzioni.
+            Capability::Many(forms) => !forms.is_empty(),
+        }
+    }
+
+    /// I modi dichiarati, che possono essere zero anche quando c'è.
+    pub fn forms(&self) -> &[CapabilityForm] {
+        match self {
+            Capability::Known(_) => &[],
+            Capability::One(form) => std::slice::from_ref(form),
+            Capability::Many(forms) => forms,
+        }
+    }
+}
+
+/// Come sta messo uno strumento rispetto a una capacità chiesta da un passo.
+///
+/// **PERCHÉ NON BASTA UN BOOLEANO.** È la stessa distinzione che
+/// [`crate::Presence`] tiene fra «non c'è» e «non ho potuto guardare», portata
+/// dal mondo al vocabolario: chi legge un avviso deve sapere se rimediare
+/// cambiando motore o misurando quello che ha.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapabilityState {
+    /// Dichiarata, e si ottiene.
+    Available,
+    /// Dichiarata assente: qualcuno ha guardato, e questo strumento non ce l'ha.
+    Absent,
+    /// Il descrittore non la nomina. Non è «non ce l'ha»: è «nessuno ha
+    /// guardato», e il rimedio è misurare, non cambiare motore.
+    NotLookedAt,
+}
+
 /// Un descrittore che, invece di dire «questa cosa o c'è o non c'è», **scopre**
 /// più voci leggendo un file di configurazione.
 ///
@@ -391,6 +486,24 @@ pub struct Descriptor {
     /// gli strumenti dichiarati con la vecchia.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
+    /// Che cosa questo strumento sa fare oltre a rispondere: riprendere una
+    /// sessione, imporre una forma alla risposta, isolarsi dalla configurazione
+    /// di chi lo ospita, ricevere una dotazione, tenere un tetto di spesa suo.
+    ///
+    /// **IL CODICE NON CONOSCE NESSUN NOME DI CAPACITÀ, E NON DEVE.** È una
+    /// mappa da nome a dichiarazione: aggiungere una capacità a uno strumento
+    /// nuovo è scrivere un file JSON, mai ricompilare. È il vincolo permanente
+    /// «programmiamo a codice solo ciò che tocca il mondo» applicato a un
+    /// vocabolario — e il giorno che una riga di comando espone qualcosa che
+    /// oggi non esiste, il suo descrittore lo dichiara e questo campo non cambia.
+    ///
+    /// **CHI NON DICHIARA NIENTE CONTINUA A FUNZIONARE.** Una capacità assente
+    /// non è un errore: è una condizione dichiarata, e chi non ce l'ha paga di
+    /// più — la forma della risposta chiesta nel prompt invece che imposta dal
+    /// motore. È il vincolo permanente «indipendenza dal modello», e il ripiego
+    /// di oggi resta il ripiego.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub capabilities: BTreeMap<String, Capability>,
     /// Dove vive la sua configurazione. Ammette `~/`, `$VAR` e `*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,
@@ -425,7 +538,27 @@ impl Descriptor {
         if let Some(usage) = &self.usage {
             found.extend(usage.extra.keys().map(|key| format!("usage.{key}")));
         }
+        // Il nome della capacità non è un campo ignoto — nessun nome lo è, per
+        // costruzione. Ignoto è quello che sta dentro una delle sue forme.
+        for (name, capability) in &self.capabilities {
+            for form in capability.forms() {
+                found.extend(
+                    form.extra
+                        .keys()
+                        .map(|key| format!("capabilities.{name}.{key}")),
+                );
+            }
+        }
         found
+    }
+
+    /// Come sta messo questo strumento rispetto a una capacità chiesta.
+    pub fn capability(&self, name: &str) -> CapabilityState {
+        match self.capabilities.get(name) {
+            None => CapabilityState::NotLookedAt,
+            Some(capability) if capability.is_available() => CapabilityState::Available,
+            Some(_) => CapabilityState::Absent,
+        }
     }
 }
 
@@ -826,6 +959,13 @@ mod the_new_field_is_optional {
     /// **UN CAMPO INVENTATO AL PRIMO LIVELLO, STESSA REGOLA.** Il caso vero per
     /// cui il guasto 8 esiste: un descrittore scritto per una versione più nuova
     /// di Sailor, o copiato da un esempio più recente.
+    ///
+    /// **L'ESEMPIO ERA `capabilities`, E IL 31/08/2026 HA SMESSO DI ESSERLO.**
+    /// Quel campo adesso questa versione lo conosce, quindi non è più ignoto: un
+    /// esempio che invecchia così non fa diventare rossa la prova nel punto
+    /// giusto, la fa diventare rossa e basta. Serve un nome che nessuna versione
+    /// legga, e questo è il difetto di ogni prova che usa come «ignoto» un nome
+    /// plausibile.
     #[test]
     fn a_descriptor_from_a_newer_version_still_loads() {
         let catalog = loaded(
@@ -833,7 +973,7 @@ mod the_new_field_is_optional {
             r#"[{
               "id": "nuovo", "family": "ai_cli",
               "detect": { "command": "nuovo" },
-              "capabilities": { "vision": true }
+              "streams_partial_answers": true
             }]"#,
         );
 
@@ -841,7 +981,7 @@ mod the_new_field_is_optional {
         assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
         assert_eq!(catalog.notes.len(), 1);
         assert!(
-            catalog.notes[0].reason.contains("capabilities"),
+            catalog.notes[0].reason.contains("streams_partial_answers"),
             "{}",
             catalog.notes[0].reason
         );
@@ -857,7 +997,7 @@ mod the_new_field_is_optional {
             r#"[{
               "id": "nuovo", "family": "ai_cli",
               "detect": { "command": "nuovo" },
-              "capabilities": { "vision": true }
+              "streams_partial_answers": true
             }]"#,
         );
 
@@ -865,9 +1005,191 @@ mod the_new_field_is_optional {
             .expect("un descrittore in memoria si riscrive sempre");
 
         assert_eq!(
-            written["capabilities"],
-            serde_json::json!({"vision": true}),
+            written["streams_partial_answers"],
+            serde_json::json!(true),
             "il campo ignoto torna fuori com'era: {written}"
+        );
+    }
+
+    /// **CHI NON DICHIARA NIENTE CONTINUA A FUNZIONARE.** Un descrittore
+    /// scritto prima che `capabilities` esistesse si carica identico e risponde
+    /// «nessuno ha guardato» a qualunque domanda: è il vincolo permanente
+    /// «indipendenza dal modello»: una capacità assente non è un errore.
+    #[test]
+    fn a_descriptor_written_before_capabilities_existed_still_loads() {
+        let catalog = loaded(
+            "senza-capacita",
+            r#"[{
+              "id": "vecchio", "family": "ai_cli", "label": "Vecchio",
+              "detect": { "command": "vecchio" },
+              "ask": { "args": ["-p"], "prompt": "stdin" }
+            }]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        assert!(catalog.notes.is_empty(), "{:?}", catalog.notes);
+        let descriptor = &catalog.descriptors[0].descriptor;
+
+        assert!(descriptor.capabilities.is_empty());
+        assert_eq!(
+            descriptor.capability("response_shape"),
+            CapabilityState::NotLookedAt
+        );
+        assert!(descriptor.ask.is_some(), "e il resto arriva intatto");
+    }
+
+    /// **LE TRE RISPOSTE POSSIBILI SU UNA CAPACITÀ, IN UNA PROVA SOLA.** Se
+    /// «dichiarata assente» e «mai guardata» dessero la stessa risposta, il
+    /// blocco intero non servirebbe a niente: si potrebbe elencare solo ciò che
+    /// c'è, e ogni silenzio passerebbe per una misura.
+    #[test]
+    fn a_capability_can_be_present_declared_absent_or_never_looked_at() {
+        let catalog = loaded(
+            "tre-stati",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "capabilities": {
+                "choose_model": { "args": ["--model"], "takes_value": true },
+                "fork_session": false
+              }
+            }]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let descriptor = &catalog.descriptors[0].descriptor;
+
+        assert_eq!(
+            descriptor.capability("choose_model"),
+            CapabilityState::Available
+        );
+        assert_eq!(
+            descriptor.capability("fork_session"),
+            CapabilityState::Absent,
+            "scritto `false` vuol dire che qualcuno ha guardato"
+        );
+        assert_eq!(
+            descriptor.capability("resume_session"),
+            CapabilityState::NotLookedAt,
+            "non nominata non vuol dire assente"
+        );
+    }
+
+    /// Una capacità con più modi si scrive come elenco; una con un modo solo
+    /// senza le parentesi quadre. Le due forme convivono nello stesso blocco.
+    #[test]
+    fn one_way_needs_no_brackets_and_several_ways_are_a_list() {
+        let catalog = loaded(
+            "modi",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "capabilities": {
+                "resume_session": [
+                  { "args": ["--resume"] },
+                  { "args": ["--session-id"], "takes_value": true }
+                ],
+                "fork_session": { "args": ["--fork-session"] }
+              }
+            }]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let descriptor = &catalog.descriptors[0].descriptor;
+
+        let resume = &descriptor.capabilities["resume_session"];
+        assert_eq!(resume.forms().len(), 2);
+        assert_eq!(resume.forms()[0].args, vec!["--resume"]);
+        assert!(
+            !resume.forms()[0].takes_value,
+            "una bandiera non vuole un valore attaccato"
+        );
+        assert!(
+            resume.forms()[1].takes_value,
+            "e `--session-id` sì: chi compone la riga lo deve leggere dal dato"
+        );
+
+        let fork = &descriptor.capabilities["fork_session"];
+        assert_eq!(fork.forms().len(), 1, "un modo solo, senza parentesi quadre");
+    }
+
+    /// **UN CAMPO INVENTATO DENTRO UNA FORMA NON PORTA VIA LO STRUMENTO.** È il
+    /// guasto 8 sul blocco nuovo: la regola vale per intero o non vale.
+    #[test]
+    fn an_invented_field_inside_a_capability_is_named_without_losing_the_tool() {
+        let catalog = loaded(
+            "capacita-sbagliata",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "capabilities": { "resume_session": { "opzioni": ["--resume"] } }
+            }]"#,
+        );
+
+        assert_eq!(catalog.descriptors.len(), 1, "lo strumento resta usabile");
+        assert!(
+            catalog.problems.is_empty(),
+            "e non è una voce persa: {:?}",
+            catalog.problems
+        );
+        assert_eq!(catalog.notes.len(), 1, "ma non è nemmeno un silenzio");
+        assert!(
+            catalog.notes[0]
+                .reason
+                .contains("capabilities.resume_session.opzioni"),
+            "la nota dice quale campo, dentro quale capacità: {}",
+            catalog.notes[0].reason
+        );
+    }
+
+    /// **I QUATTRO MOTORI SPEDITI DICHIARANO OGNI CAPACITÀ DEL VOCABOLARIO.**
+    ///
+    /// Non che ce l'abbiano: che l'abbiano **guardata**. Un motore che tace su
+    /// una capacità è indistinguibile da uno che non ce l'ha, e il blocco esiste
+    /// per non confonderli — quindi il primo posto dove la distinzione va
+    /// rispettata sono i descrittori spediti col prodotto.
+    #[test]
+    fn every_shipped_engine_answers_about_every_capability() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let vocabulary = [
+            "ask_without_interaction",
+            "response_shape",
+            "resume_session",
+            "fork_session",
+            "isolate_from_user_config",
+            "receive_equipment",
+            "native_spend_cap",
+            "choose_model",
+            "fallback_model",
+        ];
+        for id in ["claude-code", "codex", "agy", "gemini-cli"] {
+            let engine = catalog
+                .live()
+                .into_iter()
+                .find(|loaded| loaded.descriptor.id == id)
+                .unwrap_or_else(|| panic!("{id} è spedito col prodotto"));
+            for name in vocabulary {
+                assert_ne!(
+                    engine.descriptor.capability(name),
+                    CapabilityState::NotLookedAt,
+                    "{id} non dice niente su «{name}»: «non ce l'ha» e «nessuno ha \
+                     guardato» sono due fatti diversi"
+                );
+            }
+        }
+    }
+
+    /// E almeno un'assenza dichiarata c'è davvero, misurata su questa macchina:
+    /// senza, la prova qui sopra passerebbe anche dichiarando tutto presente.
+    #[test]
+    fn a_shipped_engine_declares_a_capability_it_does_not_have() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let agy = catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == "agy")
+            .expect("agy è spedito col prodotto");
+        assert_eq!(
+            agy.descriptor.capability("native_spend_cap"),
+            CapabilityState::Absent,
+            "misurato con --help il 31/08/2026: agy non ha nessun tetto di spesa suo"
         );
     }
 
