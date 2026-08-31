@@ -492,6 +492,10 @@ fn write_self_declared_turns(
             call_id: format!("{run_id}:{step_id}:{now}:handed"),
             run_id: run_id.to_owned(),
             step_id: Some(step_id.to_owned()),
+            // Nessuna sessione: questo passo non apre nessun processo — il
+            // lavoro va a un agente che è già vivo nel terminale, e la sua
+            // conversazione non è di Sailor e non si può riprendere da qui.
+            session_id: None,
             // Il perché della riga sta nel `purpose`: chi somma le chiamate di
             // una corsa deve poter separare ciò che il motore ha misurato da ciò
             // che qualcuno ha dichiarato di sé.

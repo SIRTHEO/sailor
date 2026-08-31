@@ -4867,6 +4867,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
                 prompt: PromptVia::Stdin,
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
+                refuses_without_prompt: Vec::new(),
                 usage: None,
             })
         }
