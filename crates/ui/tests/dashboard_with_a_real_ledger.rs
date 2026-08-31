@@ -243,14 +243,16 @@ fn the_http_server_serves_valid_and_broken_flows_in_the_payload() {
     let flows_array = body["flows"].as_array().expect("array dei flussi");
     assert_eq!(flows_array.len(), 2);
 
-    let rotto = flows_array.iter().find(|f| f["name"] == "rotto").expect("flusso rotto presente");
-    assert_eq!(rotto["error"], "errore: ciclo nel grafo");
-    assert_eq!(rotto["steps"].as_array().map(|s| s.len()), Some(0));
+    // I nomi cercati restano in italiano: sono i dati del flusso di prova, non
+    // identificatori. È la variabile che li tiene a dover essere in inglese.
+    let broken = flows_array.iter().find(|f| f["name"] == "rotto").expect("flusso rotto presente");
+    assert_eq!(broken["error"], "errore: ciclo nel grafo");
+    assert_eq!(broken["steps"].as_array().map(|s| s.len()), Some(0));
 
-    let valido = flows_array.iter().find(|f| f["name"] == "valido").expect("flusso valido presente");
-    assert_eq!(valido["error"], serde_json::Value::Null);
-    assert_eq!(valido["description"], "Flusso valido di prova");
-    assert_eq!(valido["steps"].as_array().map(|s| s.len()), Some(1));
+    let valid = flows_array.iter().find(|f| f["name"] == "valido").expect("flusso valido presente");
+    assert_eq!(valid["error"], serde_json::Value::Null);
+    assert_eq!(valid["description"], "Flusso valido di prova");
+    assert_eq!(valid["steps"].as_array().map(|s| s.len()), Some(1));
 
     let _ = std::fs::remove_dir_all(&dir);
 }
