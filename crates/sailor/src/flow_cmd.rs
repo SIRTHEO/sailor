@@ -39,6 +39,7 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name] if command == "check" => check_flow(sources, name),
         [command, name] if command == "run" => run_flow(sources, name, None),
         [command, name, text] if command == "run" => run_flow(sources, name, Some(text)),
+        [command, run_id] if command == "resume" => resume_run(run_id),
         [command, name] if command == "cost" => cost_of(name),
         _ => Err(usage()),
     }
@@ -227,7 +228,169 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 }
 
 fn usage() -> String {
-    "uso: sailor flow <list|due|check <nome>|run <nome> [mandato]|cost <nome>>".to_owned()
+    "uso: sailor flow <list|due|check <nome>|run <nome> [mandato]|resume <corsa>|cost <nome>>"
+        .to_owned()
+}
+
+/// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
+/// processo.
+///
+/// **NON CHIEDE NIENTE AL SISTEMA OPERATIVO, E IL DIVIETO HA UN NUMERO.** È il
+/// guasto 12: dentro il perimetro `pgrep` risponde vuoto *senza errore*, e una
+/// sorveglianza ha dichiarato «nessun flusso in esecuzione» mentre due giravano.
+/// Un agente in un terminale non è comunque figlio di questo processo, e il
+/// kernel non lo distingue da nessun altro: la domanda giusta non è «vive
+/// ancora?» ma «il tempo che si era dato è passato?».
+///
+/// **UN RECORD CON UN PID SI DICHIARA TENUTO, SEMPRE.** Quel record l'ha aperto
+/// l'esecutore in processo, non una consegna: questa sonda non ha modo di
+/// guardare quel processo, e *non so vedere* non è *è morto*. Dichiararlo morto
+/// chiuderebbe sotto i piedi di chi lavora un passo che sta girando davvero.
+struct HandoffLease {
+    now: i64,
+}
+
+impl flow::ProcessProbe for HandoffLease {
+    fn is_running(&self, record: &flow::StepRecord) -> Result<bool, flow::FlowError> {
+        if record.held_by_pid.is_some() {
+            return Ok(true);
+        }
+        let Some(limit) = record
+            .input
+            .get("handoff_timeout_secs")
+            .and_then(Value::as_i64)
+        else {
+            // Nessuna scadenza leggibile: si tiene. L'ambiguità si conserva,
+            // non si chiude dalla parte comoda.
+            return Ok(true);
+        };
+        Ok(self.now < record.started_at.saturating_add(limit))
+    }
+}
+
+/// Riprende una corsa: prima riconcilia ciò che è rimasto aperto, poi esegue
+/// **con lo stesso identificativo**.
+///
+/// **PERCHÉ È SEPARATO DA `sailor step close`.** Sono due poteri diversi e vanno
+/// tenuti separati: `close` **ricorda** — scrive un esito e non spende niente —
+/// mentre `resume` **agisce**, apre fronti e paga chiamate a pagamento. Fonderli
+/// vorrebbe dire che dichiarare com'è andato un lavoro fa partire il lavoro
+/// dopo, cioè che una scrittura nel deposito spende soldi. Chi chiude a mezzanotte
+/// non ha chiesto quello.
+///
+/// **`reconcile` NON ERA MAI STATO ESEGUITO IN PRODUZIONE.** Fino al 31/08/2026
+/// lo chiamavano solo le prove: nessun comando del programma ci passava. Questa
+/// è la sua prima messa in servizio, ed è il motivo per cui la sonda qui sopra è
+/// scritta per non dichiarare morto niente di cui non sa niente.
+fn resume_run(run_id: &str) -> Result<String, String> {
+    let ledger = crate::step_cmd::open_ledger()?;
+    let flow = crate::step_cmd::flow_of_run(&ledger, run_id)?;
+    let registry = default_registry(
+        Some(ledger.clone()),
+        Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
+    );
+    let started_at = now_secs()?;
+
+    let mut store = ledger.clone();
+    let mut clock = SystemClock;
+    let shared = SharedState::new();
+    let probe = HandoffLease { now: started_at };
+    let reconciled = InProcessExecutor
+        .reconcile(flow::ReconciliationRequest {
+            graph: &flow.graph,
+            run_id,
+            store: &mut store,
+            actions: &registry,
+            shared: &shared,
+            processes: &probe,
+            clock: &mut clock,
+        })
+        .map_err(|error| format!("non riesco a riconciliare la corsa {run_id}: {error}"))?;
+
+    let mut report = format!("corsa {run_id} — flusso {}", flow.id);
+    if !reconciled.still_running.is_empty() {
+        let _ = write!(
+            report,
+            "\ntenuti, la scadenza non è passata: {}",
+            reconciled.still_running.join(", ")
+        );
+    }
+    if !reconciled.closed_as_broke.is_empty() {
+        let _ = write!(
+            report,
+            "\nscaduti e rimessi fra i pronti: {}",
+            reconciled.closed_as_broke.join(", ")
+        );
+    }
+    if !reconciled.closed_as_waiting.is_empty() {
+        let _ = write!(
+            report,
+            "\nlasciati a una persona: {}",
+            reconciled.closed_as_waiting.join(", ")
+        );
+    }
+
+    let request = ExecutionRequest {
+        // LO STESSO IDENTIFICATIVO, e non uno nuovo: una ripresa che aprisse una
+        // corsa nuova perderebbe i passi già andati e li rifarebbe tutti,
+        // pagandoli due volte.
+        run_id: run_id.to_owned(),
+        root_inputs: flow.inputs.clone(),
+        gates: Vec::new(),
+        shared,
+        spend_cap_micros: flow.spend_cap_micros,
+    };
+    let execution = InProcessExecutor
+        .execute(&flow.graph, request, &ledger, &registry, &SystemClock)
+        .map_err(|error| format!("la ripresa della corsa {run_id} è fallita: {error}"))?;
+
+    let (status, exit_ok) = execution_status(&execution);
+    let why = registry::stopped_by_cap(&execution);
+    record_run(
+        &ledger,
+        &flow,
+        run_id,
+        status,
+        started_at,
+        Some(now_secs()?),
+        why.clone(),
+    )?;
+    let _ = write!(report, "\nstato: {status}");
+    if exit_ok {
+        Ok(report)
+    } else {
+        match why {
+            Some(why) => Err(format!("{report}\n{why}")),
+            None => Err(report),
+        }
+    }
+}
+
+/// Le corse ferme in attesa di qualcuno, in coda a un elenco.
+///
+/// **STA IN CODA A `list` E A `due` PERCHÉ È LÌ CHE SI GUARDA.** Una consegna
+/// che nessuno raccoglie non compare da nessuna parte: non è un passo aperto,
+/// quindi `unfinished_runs` non la trova, e il flusso da cui viene risulta
+/// «girato di recente», quindi `due` lo dichiara non dovuto. Sparisce due volte.
+fn waiting_report() -> String {
+    let waiting = default_ledger_dir()
+        .ok()
+        .filter(|dir| dir.join("state.db").exists())
+        .and_then(|dir| Ledger::open(&dir).ok())
+        .and_then(|ledger| ledger.waiting_runs().ok())
+        .unwrap_or_default();
+    if waiting.is_empty() {
+        return "nessuna corsa in attesa di qualcuno".to_owned();
+    }
+    let mut report = format!("{} corse aspettano qualcuno:", waiting.len());
+    for run in waiting {
+        let _ = write!(
+            report,
+            "\n  {}\t{}\tsailor flow resume {}",
+            run.run_id, run.entity, run.run_id
+        );
+    }
+    report
 }
 
 /// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
@@ -286,7 +449,8 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
     }
     let _ = write!(
         report,
-        "{due} dovuti adesso; {unplanned} senza pianificazione, che partono solo a mano"
+        "{due} dovuti adesso; {unplanned} senza pianificazione, che partono solo a mano\n{}",
+        waiting_report()
     );
     Ok(report)
 }
@@ -316,7 +480,7 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
             }
         }
     }
-    report.pop();
+    let _ = write!(report, "{}", waiting_report());
     Ok(report)
 }
 
@@ -957,10 +1121,132 @@ fn new_run_id(flow_id: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::{Clock, Decision, InMemoryRecordStore};
+    use flow::{Clock, Decision, InMemoryRecordStore, ProcessProbe, StepRecord};
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
+
+    // ── la sonda della consegna ──────────────────────────────────────────
+
+    fn a_handed_record(started_at: i64, limit: Option<i64>, pid: Option<u32>) -> StepRecord {
+        let input = match limit {
+            Some(limit) => serde_json::json!({"handoff_timeout_secs": limit}),
+            None => serde_json::json!({"mandate": "senza scadenza"}),
+        };
+        let mut record = StepRecord::started(
+            "run-1",
+            "implementa",
+            1,
+            1,
+            vec![],
+            input,
+            vec![],
+            started_at,
+        );
+        record.held_by_pid = pid;
+        record
+    }
+
+    /// La scadenza nel futuro tiene il passo; passata, lo lascia andare.
+    #[test]
+    fn the_lease_reads_the_deadline_and_not_the_kernel() {
+        let probe = HandoffLease { now: 1_000 };
+        assert!(
+            probe
+                .is_running(&a_handed_record(900, Some(600), None))
+                .expect("la sonda risponde"),
+            "la scadenza è nel futuro: il passo è tenuto"
+        );
+        assert!(
+            !probe
+                .is_running(&a_handed_record(100, Some(600), None))
+                .expect("la sonda risponde"),
+            "la scadenza è passata: nessuno l'ha preso in carico"
+        );
+    }
+
+    /// **NON SO VEDERE, QUINDI NON DICHIARO MORTO.** Un record con un pid l'ha
+    /// aperto l'esecutore in processo; questa sonda non ha modo di guardare quel
+    /// processo — e non deve chiederlo al sistema operativo, che è il guasto 12.
+    /// Lo stesso vale per un record senza scadenza leggibile.
+    #[test]
+    fn what_the_lease_cannot_see_it_does_not_declare_dead() {
+        let probe = HandoffLease { now: 1_000_000 };
+        assert!(
+            probe
+                .is_running(&a_handed_record(1, Some(1), Some(4321)))
+                .expect("la sonda risponde"),
+            "con un pid scritto il passo si tiene, anche con la scadenza passata"
+        );
+        assert!(
+            probe
+                .is_running(&a_handed_record(1, None, None))
+                .expect("la sonda risponde"),
+            "senza una scadenza leggibile l'ambiguità si conserva"
+        );
+    }
+
+    /// **UNA CONSEGNA VIVA NON SI CHIUDE SOTTO I PIEDI DI CHI CI LAVORA.**
+    ///
+    /// È il mutante che conta di tutto questo lavoro: una sonda che risponde
+    /// sempre «no» fa chiudere `Broke` un passo che qualcuno sta eseguendo, e la
+    /// ripresa lo rilancia — due agenti sullo stesso mandato, e nessuno dei due
+    /// lo sa.
+    #[test]
+    fn a_live_handoff_is_not_closed_under_the_agent_who_holds_it() {
+        let flow: FlowFile = serde_json::from_str(
+            r#"{
+                "id": "consegna-viva",
+                "description": "un passo consegnato e ancora nei tempi",
+                "graph": {"steps": [{
+                    "id": "implementa",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "handed_to_agent",
+                    "max_attempts": 3
+                }]},
+                "inputs": {}
+            }"#,
+        )
+        .expect("il flusso di prova è valido");
+
+        let mut store = InMemoryRecordStore::from_records(vec![a_handed_record(
+            1_000,
+            Some(3_600),
+            None,
+        )]);
+        let registry = default_registry(None, None);
+        let shared = SharedState::new();
+        let probe = HandoffLease { now: 1_100 };
+        let mut clock = SystemClock;
+        let report = InProcessExecutor
+            .reconcile(flow::ReconciliationRequest {
+                graph: &flow.graph,
+                run_id: "run-1",
+                store: &mut store,
+                actions: &registry,
+                shared: &shared,
+                processes: &probe,
+                clock: &mut clock,
+            })
+            .expect("la riconciliazione risponde");
+
+        assert_eq!(
+            report.still_running,
+            vec!["implementa".to_owned()],
+            "il passo è tenuto: la scadenza non è passata"
+        );
+        assert!(
+            report.closed_as_broke.is_empty(),
+            "chiuderlo lo rimetterebbe fra i pronti mentre qualcuno ci lavora: {report:?}"
+        );
+        assert!(
+            store.all()[0].outcome.is_none(),
+            "il record deve restare aperto"
+        );
+    }
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
