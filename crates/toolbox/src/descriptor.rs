@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -129,7 +130,6 @@ fn default_timeout() -> u64 {
 /// non esiste ancora si aggiunge scrivendo un descrittore — senza ricompilare
 /// niente, e senza che nessun flusso cambi.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Ask {
     /// Le opzioni che vogliono una risposta sola e non una conversazione,
     /// **senza** il testo della domanda.
@@ -149,6 +149,9 @@ pub struct Ask {
     /// catena finché qualcuno non risponde comunque.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unusable_when: Vec<String>,
+    /// I campi non capiti, per la stessa ragione di `Descriptor::extra`.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 /// Come si legge **quanto ha consumato** un motore, dichiarato dal descrittore.
@@ -164,7 +167,6 @@ pub struct Ask {
 /// lascia i propri token a **sconosciuto** — mai a zero. Uno zero scritto al
 /// posto di «non lo so» è una bugia che nessuna vista a valle può correggere.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Usage {
     /// Le opzioni da aggiungere alla domanda per farsi dire il consumo — per
     /// esempio `["--output-format", "json"]`.
@@ -221,6 +223,9 @@ pub struct Usage {
     /// ha chiesto. Misurare non deve cambiare ciò che si misura.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answer: Option<Where>,
+    /// I campi non capiti, per la stessa ragione di `Descriptor::extra`.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 /// In che forma un motore dice il proprio consumo.
@@ -318,8 +323,17 @@ impl Enumerate {
 }
 
 /// Una riga dell'elenco di cosa cercare.
+///
+/// **NON RIFIUTA I CAMPI CHE NON CONOSCE, E PRIMA SÌ.** Fino al 31/08/2026
+/// portava `deny_unknown_fields`: un descrittore scritto per una versione più
+/// nuova di Sailor — o copiato da un esempio più recente — veniva **scartato
+/// intero** per un campo in più, e con lui spariva lo strumento. È il guasto 8.
+///
+/// Adesso il campo di troppo finisce in `extra`, la voce vive, e chi carica
+/// lascia una nota che lo nomina. `extra` è anche serializzato: chi rilegge e
+/// riscrive un descrittore non perde i campi che questa versione non capisce —
+/// il difetto opposto, e altrettanto silenzioso.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct Descriptor {
     /// L'identità della riga. Due descrittori con lo stesso `id` non
     /// convivono: l'ultimo caricato vince, ed è così che un utente riscrive un
@@ -360,6 +374,31 @@ pub struct Descriptor {
     /// uno di quelli spediti: si riscrive il suo `id` con `disabled: true`.
     #[serde(default)]
     pub disabled: bool,
+    /// I campi che questa versione di Sailor non conosce.
+    ///
+    /// Vivono qui invece di far cadere la voce, e vengono riscritti tali e
+    /// quali quando il descrittore si serializza. Chi carica li nomina in una
+    /// nota: ignorare in silenzio sarebbe il guasto 20 su un altro oggetto.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+impl Descriptor {
+    /// I campi che non sono stati capiti, col percorso per trovarli.
+    ///
+    /// Guarda anche dentro `ask` e `usage`: un campo ignoto là sotto faceva
+    /// cadere la voce esattamente come uno di primo livello, e chi legge la nota
+    /// deve sapere **dove** cercarlo, non solo che c'è.
+    pub fn unknown_fields(&self) -> Vec<String> {
+        let mut found: Vec<String> = self.extra.keys().cloned().collect();
+        if let Some(ask) = &self.ask {
+            found.extend(ask.extra.keys().map(|key| format!("ask.{key}")));
+        }
+        if let Some(usage) = &self.usage {
+            found.extend(usage.extra.keys().map(|key| format!("usage.{key}")));
+        }
+        found
+    }
 }
 
 /// Un descrittore caricato, con da dove viene: chi legge il risultato deve
@@ -384,7 +423,16 @@ pub struct Problem {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Catalog {
     pub descriptors: Vec<Loaded>,
+    /// Le voci **perse**: non sono nel catalogo, e qui c'è il perché.
     pub problems: Vec<Problem>,
+    /// Le voci **tenute**, con qualcosa che è stato ignorato.
+    ///
+    /// **NON STANNO IN `problems`, E LA DIFFERENZA È TUTTA.** Un problema dice
+    /// «questo strumento non c'è»; una nota dice «c'è, e di lui ho ignorato un
+    /// campo». Metterle insieme farebbe contare come guasti delle voci che
+    /// funzionano — e ci sono prove che contano `problems` una per una, che
+    /// diventerebbero rosse per un descrittore perfettamente vivo.
+    pub notes: Vec<Problem>,
 }
 
 /// Il testo di un catalogo spedito, per nome.
@@ -517,6 +565,21 @@ impl Catalog {
                     continue;
                 }
             };
+            // **UN CAMPO IGNOTO È UNA NOTA, NON UN RIFIUTO.** Prima faceva
+            // cadere la voce intera, e con lei spariva lo strumento: guasto 8.
+            // La nota va in `notes` e non in `problems`, perché il descrittore
+            // c'è ed è vivo — chi conta i problemi conta le voci perse.
+            let unknown = descriptor.unknown_fields();
+            if !unknown.is_empty() {
+                self.notes.push(Problem {
+                    source: source.to_string(),
+                    about: about.clone(),
+                    reason: format!(
+                        "campi che questa versione non conosce, ignorati: {}",
+                        unknown.join(", ")
+                    ),
+                });
+            }
             if descriptor.detect.is_none() && descriptor.enumerate.is_none() {
                 self.problems.push(Problem {
                     source: source.to_string(),
@@ -697,11 +760,18 @@ mod the_new_field_is_optional {
         );
     }
 
-    /// `deny_unknown_fields` vale anche qui: un campo inventato dentro `usage`
-    /// è un errore di chi scrive il descrittore, non un silenzio che poi lascia
-    /// il consumo sconosciuto senza dire perché.
+    /// **UN CAMPO INVENTATO SI DICE, MA NON PORTA VIA LO STRUMENTO.**
+    ///
+    /// **QUESTA PROVA DICEVA IL CONTRARIO, E IL RIBALTAMENTO È DELIBERATO.**
+    /// Prima pretendeva `descriptors.len() == 0`: un refuso dentro `usage`
+    /// faceva cadere l'intero descrittore, e con lui spariva lo strumento — è il
+    /// guasto 8. La ragione scritta allora era buona («non un silenzio che poi
+    /// lascia il consumo sconosciuto senza dire perché») ed è **ancora
+    /// rispettata**: il campo viene nominato. Quello che cambia è il prezzo —
+    /// prima si perdeva il motore, adesso si perde solo il campo che nessuno
+    /// sapeva leggere.
     #[test]
-    fn an_invented_field_inside_usage_is_reported_not_ignored() {
+    fn an_invented_field_inside_usage_is_named_without_losing_the_tool() {
         let catalog = loaded(
             "usage-sbagliato",
             r#"[{
@@ -710,12 +780,66 @@ mod the_new_field_is_optional {
               "usage": { "read": "json", "token_di_ingresso": ["a"] }
             }]"#,
         );
-        assert_eq!(catalog.descriptors.len(), 0);
-        assert_eq!(catalog.problems.len(), 1);
+
+        assert_eq!(catalog.descriptors.len(), 1, "lo strumento resta usabile");
         assert!(
-            catalog.problems[0].reason.contains("token_di_ingresso"),
+            catalog.problems.is_empty(),
+            "e non è una voce persa: {:?}",
+            catalog.problems
+        );
+        assert_eq!(catalog.notes.len(), 1, "ma non è nemmeno un silenzio");
+        assert!(
+            catalog.notes[0].reason.contains("usage.token_di_ingresso"),
+            "la nota dice quale campo e dove sta: {}",
+            catalog.notes[0].reason
+        );
+    }
+
+    /// **UN CAMPO INVENTATO AL PRIMO LIVELLO, STESSA REGOLA.** Il caso vero per
+    /// cui il guasto 8 esiste: un descrittore scritto per una versione più nuova
+    /// di Sailor, o copiato da un esempio più recente.
+    #[test]
+    fn a_descriptor_from_a_newer_version_still_loads() {
+        let catalog = loaded(
+            "dal-futuro",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "capabilities": { "vision": true }
+            }]"#,
+        );
+
+        assert_eq!(catalog.descriptors.len(), 1);
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        assert_eq!(catalog.notes.len(), 1);
+        assert!(
+            catalog.notes[0].reason.contains("capabilities"),
             "{}",
-            catalog.problems[0].reason
+            catalog.notes[0].reason
+        );
+    }
+
+    /// **E CIÒ CHE NON SI CAPISCE NON SI PERDE RISCRIVENDOLO.** Un descrittore
+    /// riletto e riscritto da questa versione conserva i campi del futuro:
+    /// perderli sarebbe il difetto opposto, e altrettanto silenzioso.
+    #[test]
+    fn what_this_version_does_not_understand_survives_a_round_trip() {
+        let catalog = loaded(
+            "andata-e-ritorno",
+            r#"[{
+              "id": "nuovo", "family": "ai_cli",
+              "detect": { "command": "nuovo" },
+              "capabilities": { "vision": true }
+            }]"#,
+        );
+
+        let written = serde_json::to_value(&catalog.descriptors[0].descriptor)
+            .expect("un descrittore in memoria si riscrive sempre");
+
+        assert_eq!(
+            written["capabilities"],
+            serde_json::json!({"vision": true}),
+            "il campo ignoto torna fuori com'era: {written}"
         );
     }
 
