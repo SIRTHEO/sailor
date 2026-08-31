@@ -38,7 +38,7 @@
         "who_pointer": ["who"],
         "where_pointer": ["session"]
       },
-      "note": "Il terminale di Sailor non esiste ancora: nessun processo scrive questo file, e il percorso qui sopra è la forma che avrà, non una misura. Sta nell'elenco perché il giorno in cui quel terminale scriverà una riga, ascoltarlo sarà cambiare zero codice."
+      "note": "Il motore dei terminali adesso esiste — `crates/terminal`, dal 31/08/2026 — ma QUESTO FILE CONTINUA A NON ESSERE SCRITTO DA NESSUNO, e il percorso qui sopra resta la forma che avrà, non una misura. Il motivo è una scelta, non una dimenticanza: un terminale che gira nello stesso processo consegna la richiesta smistata direttamente all'innesco `manual`, che porta il segnale con sé — passare da un file sarebbe scrivere per rileggersi. Questa voce serve al caso che ancora non c'è: un terminale in un ALTRO processo, che deve far arrivare la propria richiesta a un Sailor che sta altrove. Per quello mancano ancora le due cose scritte in `trigger::action`: un processo che resti in piedi ad aspettare, e un lettore che tenga il punto raggiunto."
     },
     {
       "id": "orca-terminal",
