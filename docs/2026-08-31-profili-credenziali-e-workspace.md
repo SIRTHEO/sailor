@@ -179,7 +179,82 @@ un'uscita di iniettare `args` o `env` nel passo successivo.
 commento.** La prima azione scritta la settimana prossima che restituisca un
 corpo JSON di terzi «così com'è» la rompe, e nessun controllo diventa rosso.
 
-### 10. Come lo risolvono gli altri
+### 10. n8n: la domanda è mal posta, ed è quello il difetto
+
+Theo ha citato n8n come il caso da non ripetere. La domanda era: *un workflow può
+usare una credenziale che non gli è stata esplicitamente concessa?*
+
+**Sì — e la domanda non ha senso in n8n, che è precisamente il problema.**
+L'unità di autorizzazione è l'**utente**, o al massimo il progetto. Mai il
+workflow. Non esiste nessun punto in cui si dichiari «questo flusso può usare
+queste credenziali e nessun'altra»: un nodo contiene solo un puntatore per
+identificativo, e chi modifica il workflow sceglie dal menu a tendina qualunque
+credenziale la *sua* identità raggiunga.
+
+Tre frasi, tutte dalla documentazione ufficiale di n8n:
+
+> «La condivisione di un workflow permette agli editor di usare **tutte le
+> credenziali usate nel workflow**. Questo include **credenziali che non sono
+> state esplicitamente condivise con loro**.»
+
+> «Chiunque possa modificare un workflow potrebbe potenzialmente leggere il
+> vostro database, la chiave di cifratura, le credenziali memorizzate e le
+> variabili d'ambiente.»
+
+> [sull'allowlist dei domini] «Non ha alcun effetto quando la credenziale è usata
+> nel proprio nodo dedicato.»
+
+La terza è la più istruttiva, perché n8n **aveva l'idea giusta** — legare una
+credenziale alle destinazioni ammesse — e l'ha applicata nel posto sbagliato:
+nodo per nodo, invece che nel punto in cui il segreto lascia il processo. Il
+22/07/2026 sono stati pubblicati **oltre quaranta advisory in blocco**, e nove
+riguardano esattamente questo perimetro. Il pattern è **uno solo, ripetuto nove
+volte**: il controllo è a monte (al salvataggio, sul tipo dichiarato, sul nodo),
+l'uso è a valle (a runtime, sul tipo reale, in un altro nodo). Ogni nodo nuovo è
+una nuova occasione di divergenza.
+
+**Due sistemi vicini hanno chiuso la porta, e vale la pena copiare come.**
+Zapier, dal 29/05/2026, verifica **all'accensione** che il proprietario abbia
+accesso a ogni connessione usata: se manca, lo Zap non si accende. Windmill
+risolve il segreto **a runtime con i permessi del chiamante**, e *«il job
+fallisce se i permessi ereditati non consentono l'accesso alla variabile»*.
+
+### 11. La lista dei permessi è diventata il contenitore del segreto
+
+Questo riguarda questa macchina, non un'azienda lontana.
+
+GitGuardian, agosto 2026: **4.576 token n8n unici** trovati in commit pubblici su
+GitHub; su 896 istanze raggiungibili, **321 accettavano un token trapelato**. E
+fra i luoghi da cui i token sono usciti, oltre ai soliti `.env`, i ricercatori
+citano **`.claude/settings.json` e `.claude/settings.local.json`** — la lista dei
+permessi di Claude Code — dove l'URL e la chiave finiscono dentro un comando
+`curl` inserito nell'allowlist, *«senza le stesse protezioni di `.gitignore` che
+gli sviluppatori applicano di solito ai file `.env`»*.
+
+> **Una allowlist che memorizza il comando letterale memorizza anche il segreto
+> dentro il comando.**
+
+È un avvertimento diretto per qualunque cosa Sailor costruisca in materia di
+permessi, di comandi approvati e di verifiche: il posto dove si scrive «questo è
+consentito» diventa il posto dove il segreto si posa.
+
+### 12. Il fallback all'ambiente è la vulnerabilità, non la comodità
+
+Il caso più vicino a noi ha un numero: **CVE-2026-45707**, su `n8n-mcp`, maggio
+2026. Le richieste che omettevano gli header di identità — **o ne fornivano solo
+uno** — *«ripiegavano silenziosamente sulle credenziali a livello di processo
+configurate per l'istanza dell'operatore»*. Un utente autenticato eseguiva contro
+l'istanza di qualcun altro.
+
+**La correzione non è stata un controllo migliore: è stato il rifiuto.** Il
+progetto ora *«si rifiuta di costruire un client con le credenziali d'ambiente»*
+quando è in modalità multi-utente.
+
+E la risposta giusta esiste da trent'anni, in uno strumento che tutti usano:
+`sudo` ha **`env_reset` attivo per difetto**, ambiente minimo, e una lista
+esplicita di ciò che si conserva.
+
+### 13. Come lo risolvono gli altri
 
 **Nessuno l'ha risolto bene, e chi l'ha risolto l'ha fatto nel 2017.**
 
@@ -372,10 +447,12 @@ Elencate perché la tentazione, costruendo, è di toglierle senza accorgersene.
 
 ## Cosa resta aperto, e non è stato misurato
 
-- **n8n non è stato analizzato.** Era la parte espressamente chiesta — Theo l'ha
-  citato come il caso da non ripetere — e la ricerca ha consegnato solo le
-  correzioni, non il corpo. La domanda a cui manca risposta: *un workflow può
-  usare una credenziale che non gli è stata esplicitamente concessa?*
+- **L'elenco per piattaforma delle variabili che un server MCP stdio eredita non
+  esiste.** La documentazione ufficiale dice che ne eredita «solo un
+  sottoinsieme limitato, e l'insieme esatto dipende dalla piattaforma», e quale
+  sia non è scritto da nessuna parte. Il sottoinsieme è contemporaneamente
+  **troppo piccolo** per far partire i server (i noti fallimenti di `PATH` da
+  interfaccia grafica) e **troppo grande** per stare tranquilli.
 - **Cosa fanno `--ignore-user-config` di codex e `--extensions` di gemini** coi
   loro server MCP: provato solo Claude Code.
 - **`agy` non è nella tabella dei profili**, pur essendo installato e usato dai
@@ -402,3 +479,23 @@ del progetto:
 dichiarato non deve mai significare «usa quello globale»: deve significare
 fermarsi e dirlo. È la sola differenza fra questo sistema e le sette ore di dati
 che KeepTheScore ha perso perché una variabile non era stata esportata.
+
+E ha già un precedente con un numero di CVE: la correzione di `n8n-mcp` non è
+stata un controllo migliore sul ripiego, **è stata la rimozione del ripiego**.
+
+## Una nota per chi costruirà, e non è una raccomandazione di prudenza
+
+Tre cose che questo lavoro ha trovato e che conviene tenere insieme, perché sono
+la stessa cosa vista da tre lati:
+
+- **Una allowlist che memorizza un comando letterale memorizza il segreto dentro
+  il comando.** È successo davvero, dentro `.claude/settings.json`, su questa
+  stessa famiglia di strumenti.
+- **`CLAUDE_CONFIG_DIR` sposta anche la voce del portachiavi di macOS**, non solo
+  la cartella: una sessione con una cartella diversa legge una voce diversa. È la
+  leva per processo che serve, e nessuno la tira per difetto.
+- **Il posto dove si scrive «questo è consentito» è il posto dove il segreto si
+  posa.** Vale per le allowlist, per i comandi approvati, per i descrittori e per
+  i flussi versionati. Un segreto non deve mai poter entrare in un file che
+  qualcuno vorrà versionare, condividere o mostrare — e l'unico modo di
+  garantirlo è che quel file contenga **un riferimento**, mai un valore.
