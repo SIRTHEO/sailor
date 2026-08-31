@@ -25,7 +25,10 @@ fn spent(micros: i64, calls: i64, calls_without_cost: i64) -> Spend {
 /// sempre incompleta passerebbe le altre due prove.
 #[test]
 fn every_call_measured_reads_as_the_total() {
-    assert_eq!(spent(1_667_400, 4, 0).reading(), CostReading::Exact(1_667_400));
+    assert_eq!(
+        spent(1_667_400, 4, 0).reading(),
+        CostReading::Exact(1_667_400)
+    );
 }
 
 /// **UNA SOLA CHIAMATA MUTA CAMBIA IL VERSO DELLA LETTURA.** Sono i numeri veri
@@ -75,7 +78,12 @@ fn nothing_spent_and_nothing_known_are_two_different_readings() {
 /// suo.
 #[test]
 fn the_reading_agrees_with_what_the_engine_calls_complete() {
-    for spend in [spent(0, 0, 0), spent(500, 1, 0), spent(500, 3, 2), spent(0, 1, 1)] {
+    for spend in [
+        spent(0, 0, 0),
+        spent(500, 1, 0),
+        spent(500, 3, 2),
+        spent(0, 1, 1),
+    ] {
         let reads_as_a_floor = matches!(spend.reading(), CostReading::AtLeast { .. });
         assert_eq!(
             reads_as_a_floor,
