@@ -38,8 +38,91 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command] if command == "due" => due_flows(sources),
         [command, name] if command == "check" => check_flow(sources, name),
         [command, name] if command == "run" => run_flow(sources, name),
+        [command, name] if command == "cost" => cost_of(name),
         _ => Err(usage()),
     }
+}
+
+/// Quanto ha consumato l'ultima corsa di un flusso.
+///
+/// **PERCHÉ ESISTE, E PERCHÉ ADESSO.** Il consumo entra nel deposito dal
+/// 30/08/2026, e fino al 31 l'unico modo di leggerlo era aprire SQLite a mano —
+/// cioè aggirare Sailor, che è il guasto 15: uno strumento aggirato non
+/// registra niente di ciò che gli succede intorno. Serve a rispondere alla
+/// domanda che decide come si scrivono i flussi: **un flusso consuma più o meno
+/// di un prompt solo?** Senza un modo di chiederlo, quella domanda si risponde a
+/// impressione.
+///
+/// **I TOKEN VENGONO PRIMA DEL COSTO, E NON È UNA PREFERENZA DI STILE.** Con una
+/// riga di comando locale non si paga a chiamata: si paga un abbonamento, e
+/// quello che si consuma è **quota**, che si misura in token. La cifra in valuta
+/// è quanto sarebbe costato via API — un metro utile per confrontare, non una
+/// fattura. E ci sono motori che i token li dichiarano e il costo no: mostrare
+/// solo il costo li renderebbe invisibili.
+fn cost_of(flow: &str) -> Result<String, String> {
+    let dir = default_ledger_dir()?;
+    let Some(data) = ui::gather::gather(&dir).map_err(|error| error.to_string())? else {
+        return Err(format!(
+            "nessun deposito in {}: non è ancora girato niente",
+            dir.display()
+        ));
+    };
+    // L'ultima per inizio, non l'ultima scritta: una corsa aperta e una chiusa
+    // possono arrivare in ordine inverso nella proiezione.
+    let run = data
+        .runs
+        .iter()
+        .filter(|run| run.entity == flow)
+        .max_by_key(|run| run.started_at)
+        .ok_or_else(|| format!("il flusso {flow} non è mai girato su questa macchina"))?;
+    let view = ui::dashboard::summarize_run(
+        run,
+        data.steps_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
+        data.calls_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
+        now_secs()?,
+    );
+    Ok(spending_report(&view))
+}
+
+/// Il consumo di una corsa, per una persona.
+fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
+    let tokens = &view.tokens;
+    let mut report = format!(
+        "corsa {} — flusso {} — {}\npassi: {} ({} andati, {} rotti)\nchiamate: {}",
+        view.run_id, view.entity, view.status, view.steps_total, view.steps_went, view.steps_broke,
+        tokens.calls
+    );
+    let _ = write!(
+        report,
+        "\ntoken: {} in · {} out · {} letti da cache · {} scritti in cache",
+        tokens.input_tokens,
+        tokens.output_tokens,
+        tokens.cached_tokens,
+        tokens.cache_write_tokens
+    );
+    if tokens.total_tokens_only > 0 {
+        let _ = write!(
+            report,
+            "\ntotali non ripartiti (chi non dichiara i due lati): {}",
+            tokens.total_tokens_only
+        );
+    }
+    let _ = write!(
+        report,
+        "\ncosto equivalente: {:.4} (quanto sarebbe costato via API, non una spesa)",
+        tokens.cost_micros as f64 / 1_000_000.0
+    );
+    // **QUELLO CHE MANCA SI DICE, O IL TOTALE SI LEGGE COME COMPLETO.** È la
+    // stessa regola della finestra: una somma che tace su ciò che non ha
+    // contato è una rassicurazione, non una misura.
+    if tokens.calls_without_tokens > 0 || tokens.calls_without_cost > 0 {
+        let _ = write!(
+            report,
+            "\nparziale: {} chiamate senza token dichiarati, {} senza costo noto",
+            tokens.calls_without_tokens, tokens.calls_without_cost
+        );
+    }
+    report
 }
 
 /// I flussi che questa macchina vede, con l'origine di ciascuno.
@@ -90,7 +173,7 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 }
 
 fn usage() -> String {
-    "uso: sailor flow <list|due|check <nome>|run <nome>>".to_owned()
+    "uso: sailor flow <list|due|check <nome>|run <nome>|cost <nome>>".to_owned()
 }
 
 /// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
