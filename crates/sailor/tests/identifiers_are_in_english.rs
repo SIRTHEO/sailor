@@ -84,9 +84,15 @@ fn sources_under(dir: &Path, found: &mut Vec<PathBuf>) {
         if name == "identifiers_are_in_english.rs" {
             continue;
         }
+        // **ANCHE GLI `.html`, E NON PER COMPLETEZZA.** `crates/ui/assets/index.html`
+        // porta dentro di sé il JavaScript della pagina del cruscotto: due
+        // `const` italiane vivevano lì, invisibili al primo giro di questo
+        // controllo perché il file non finiva in `.ts`. Nessun type-checker
+        // guarda quel codice, quindi è l'unico posto dove una rinomina
+        // sbagliata non dà errore — cioè quello dove serve di più.
         if matches!(
             path.extension().and_then(|e| e.to_str()),
-            Some("rs") | Some("ts") | Some("tsx")
+            Some("rs") | Some("ts") | Some("tsx") | Some("html")
         ) {
             found.push(path);
         }
