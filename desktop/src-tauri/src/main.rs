@@ -18,6 +18,7 @@ use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
 mod flows;
+mod live;
 mod run;
 mod tools;
 
@@ -133,9 +134,20 @@ fn main() {
         // girando: il registro sta qui, e chi si riaffaccia ritrova tutto
         // quello che è stato detto mentre non guardava.
         .manage(std::sync::Arc::new(run::Runs::default()))
+        // LA MODALITÀ VIVA SI DICHIARA — guasto 11. Il supervisore
+        // (`sailor-live`) tiene accesa questa finestra anche quando la
+        // ricostruzione fallisce; senza questa riga la terrebbe accesa **in
+        // silenzio**, cioè mostrerebbe codice vecchio facendolo passare per
+        // nuovo. Fuori dalla modalità viva il file di stato non esiste e questo
+        // filo non dice mai niente.
+        .setup(|app| {
+            live::watch(&app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             flows,
             flow_places,
+            live::live_status,
             flows::save_flow,
             flows::delete_flow,
             tools::discover_tools,
