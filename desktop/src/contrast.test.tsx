@@ -176,12 +176,31 @@ describe("la storia delle esecuzioni", () => {
           error: "il passo «prove» è caduto: 1 failed", steps_total: 5, steps_went: 3,
           steps_broke: 1, steps_retried: 2, steps_open: [],
           tokens: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 412000, calls: 1, calls_without_tokens: 0, calls_without_cost: 0 },
+          tokens_by_model: {},
+          calls: [
+            {
+              call_id: "c1", step_id: "implementa", purpose: "implementa", cli: "claude-code",
+              requested_model: "sonnet", actual_model: "claude-sonnet-4-6", input_tokens: 12000,
+              output_tokens: 3000, cached_tokens: 90000, cache_write_tokens: 400, total_tokens: 105400,
+              turns: 8, cost_micros: 412000, declared_cost_micros: 409000, error_type: null,
+              started_at: 1000, ended_at: 1100,
+            },
+            {
+              // La chiamata che non ha detto niente: «non detto» e non zero.
+              call_id: "c2", step_id: "prove", purpose: "prove", cli: "codex",
+              requested_model: "", actual_model: "", input_tokens: null, output_tokens: null,
+              cached_tokens: null, cache_write_tokens: null, total_tokens: null, turns: null,
+              cost_micros: null, declared_cost_micros: null, error_type: "uscita 3",
+              started_at: 1050, ended_at: 1090,
+            },
+          ],
         },
         {
           run_id: "r2", kind: "flow", entity: "relay", status: "succeeded",
           started_at: 900, ended_at: 950, duration_secs: 50, total_cost_micros: 0,
           error: null, steps_total: 2, steps_went: 2, steps_broke: 0, steps_retried: 0, steps_open: [],
           tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 0, calls: 0, calls_without_tokens: 0, calls_without_cost: 0 },
+          tokens_by_model: {}, calls: [],
         },
         {
           run_id: "r3", kind: "flow", entity: "", status: "running",
@@ -189,6 +208,7 @@ describe("la storia delle esecuzioni", () => {
           error: null, steps_total: 4, steps_went: 1, steps_broke: 0, steps_retried: 0,
           steps_open: [{ step_id: "implementa", attempt: 1, started_at: 800, open_for_secs: 300 }],
           tokens: { input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0, cost_micros: 3000, calls: 1, calls_without_tokens: 1, calls_without_cost: 0 },
+          tokens_by_model: {}, calls: [],
         },
       ],
     });
@@ -201,6 +221,14 @@ describe("la storia delle esecuzioni", () => {
       await screen.findByText("rotta");
       expect(screen.getByText("andata")).toBeTruthy();
       expect(screen.getByText("aperta")).toBeTruthy();
+      // IL COSTO CALCOLATO E QUELLO DICHIARATO, AFFIANCATI. Se divergono, il
+      // posto in cui accorgersene e' questo — ed e' il controllo che manca ai
+      // tre strumenti di osservabilita' con bug pubblici sui numeri.
+      // Due volte: il totale della corsa e la chiamata che lo compone.
+      expect(screen.getAllByText("0,412 $").length).toBe(2);
+      expect(screen.getByText("0,409 $")).toBeTruthy();
+      // Una chiamata che non ha dichiarato token non ne ha consumati zero.
+      expect(screen.getAllByText("non detto").length).toBeGreaterThan(0);
       expect(measure(30)).toEqual([]);
     } finally {
       stop();
@@ -267,6 +295,45 @@ describe("il riepilogo di oggi", () => {
       expect(measure(12)).toEqual([]);
     } finally {
       stop();
+    }
+  });
+});
+
+describe("un deposito che non c'e'", () => {
+  test("«NON LO SO» NON DIVENTA «ZERO»", () => {
+    // Questa riga esisteva nella plancia — `the_embedded_page_marks_missing_
+    // ledger_counts_as_unknown` — ed e' l'unica delle sue quattordici prove che
+    // difendeva una distinzione invece di un trasporto. Riscrivere la vista
+    // senza riscrivere il controllo l'avrebbe persa in silenzio: e' esattamente
+    // il modo in cui Airflow 3 si e' accorto otto mesi dopo di aver tolto la
+    // vista calendario.
+    //
+    // Zero corse e' una macchina tranquilla. Un deposito che non esiste e' una
+    // macchina di cui non sappiamo niente, e chi legge deve poterle distinguere
+    // prima di concludere che oggi non e' successo nulla.
+    const stop = pretendShell({
+      open_runs: [],
+      day_summary: {
+        ledger_present: false, runs: 0, went: 0, broke: 0, still_open: 0,
+        input_tokens: 0, output_tokens: 0, cached_tokens: 0, cache_write_tokens: 0,
+        cost_micros: 0, unmeasured: 0, unpriced: 0, tokens_by_model: {},
+      },
+    });
+    try {
+      render(
+        <div className="app">
+          <Now native onOpen={() => {}} />
+        </div>,
+      );
+      return screen.findByText(/non e' la stessa cosa|non è la stessa cosa/).then(() => {
+        // E nessun numero: uno zero scritto accanto a «non lo so» si legge
+        // comunque come zero.
+        expect(screen.queryByText("0")).toBeNull();
+        stop();
+      });
+    } catch (error) {
+      stop();
+      throw error;
     }
   });
 });

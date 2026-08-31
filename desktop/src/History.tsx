@@ -12,7 +12,7 @@
 // rossa non è.
 
 import { useAsk, useClock } from "./ask";
-import { executionHistory, type Execution } from "./engine";
+import { executionHistory, type Execution, type ModelCall } from "./engine";
 
 /** Ogni quanto si rilegge: la storia cresce piano. */
 const REFRESH_MS = 15000;
@@ -75,6 +75,70 @@ function money(micros: number): string {
   })} $`;
 }
 
+/** Token visti da una chiamata: quelli che ha dichiarato, non una stima. */
+function seenTokens(call: ModelCall): number {
+  const parts = [call.input_tokens, call.output_tokens, call.cached_tokens, call.cache_write_tokens];
+  const known = parts.filter((part): part is number => part !== null);
+  // NESSUN NUMERO NON E' ZERO. Una chiamata che non ha dichiarato token non ne
+  // ha consumati zero: non lo sappiamo, e scrivere zero e' la bugia comoda.
+  if (known.length === 0) return call.total_tokens ?? -1;
+  return known.reduce((sum, part) => sum + part, 0);
+}
+
+/**
+ * Le chiamate al modello di una corsa, aperte solo se si chiedono.
+ *
+ * **IL COSTO CALCOLATO E QUELLO DICHIARATO STANNO AFFIANCATI.** Uno lo ricava
+ * Sailor dai token, l'altro lo dice il motore: se divergono, il posto in cui
+ * accorgersene e' questo. E' il controllo che nella ricognizione del
+ * 31/08/2026 manca a Langfuse, LangSmith e Phoenix — tutti e tre con bug
+ * pubblici sui numeri, tutti e tre senza una seconda fonte da confrontare.
+ */
+function Calls({ calls }: { calls: ModelCall[] }) {
+  if (calls.length === 0) return null;
+  return (
+    <details className="calls">
+      <summary className="calls__head">
+        {calls.length} chiamat{calls.length === 1 ? "a" : "e"} al modello
+      </summary>
+      <table className="now__table">
+        <thead>
+          <tr>
+            <th>passo</th>
+            <th>motore</th>
+            <th>modello</th>
+            <th className="now__num">token</th>
+            <th className="now__num">costo</th>
+            <th className="now__num">dichiarato</th>
+          </tr>
+        </thead>
+        <tbody>
+          {calls.map((call) => {
+            const tokens = seenTokens(call);
+            return (
+              <tr key={call.call_id}>
+                <td className="now__when">{call.step_id ?? "—"}</td>
+                <td className="now__when">
+                  {call.cli === "" ? call.purpose : call.cli}
+                  {call.error_type !== null && <span className="now__why">{call.error_type}</span>}
+                </td>
+                <td className="now__when">
+                  {call.actual_model === "" ? "modello non dichiarato" : call.actual_model}
+                </td>
+                <td className="now__num">{tokens < 0 ? "non detto" : tokens.toLocaleString("it-IT")}</td>
+                <td className="now__num">{call.cost_micros === null ? "non detto" : money(call.cost_micros)}</td>
+                <td className="now__num">
+                  {call.declared_cost_micros === null ? "—" : money(call.declared_cost_micros)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
 export function History({ native }: { native: boolean }) {
   const { asked } = useAsk<Execution[]>(
     native,
@@ -131,7 +195,7 @@ export function History({ native }: { native: boolean }) {
         <tbody>
           {shown.map((run) => {
             const outcome = outcomeOf(run);
-            return (
+            const row = (
               <tr key={run.run_id}>
                 <td className="now__entity">
                   {run.entity === "" ? <span className="now__unnamed">senza nome</span> : run.entity}
@@ -156,6 +220,19 @@ export function History({ native }: { native: boolean }) {
                 <td className="now__num">{money(run.total_cost_micros)}</td>
               </tr>
             );
+            // LE CHIAMATE STANNO SOTTO LA CORSA, CHIUSE. Aperte sempre, una
+            // corsa con quaranta chiamate seppellirebbe le altre righe; in una
+            // pagina a parte, il confronto fra costo calcolato e costo
+            // dichiarato costerebbe un viaggio. Chiuse qui e' il compromesso
+            // che tiene tutte e due le domande a portata.
+            const detail = run.calls.length > 0 && (
+              <tr key={`${run.run_id}::calls`} className="now__detail">
+                <td colSpan={7}>
+                  <Calls calls={run.calls} />
+                </td>
+              </tr>
+            );
+            return detail === false ? row : [row, detail];
           })}
         </tbody>
       </table>
