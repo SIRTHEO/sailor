@@ -168,6 +168,7 @@ impl actions::ToolResolver for Tools {
             },
             args_before_prompt: ask.args_before_prompt.clone(),
             unusable_when: ask.unusable_when.clone(),
+            refuses_without_prompt: ask.refuses_without_prompt.clone(),
             usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
         })
     }
@@ -381,6 +382,66 @@ mod tests {
             Some(actions::Pointer::Path(vec!["result".to_owned()]))
         );
         assert_eq!(usage.declared.output_tokens, None, "e ciò che non è scritto resta assente");
+    }
+
+    /// **E COSÌ IL RIFIUTO SENZA DOMANDA**, per la stessa ragione e su un altro
+    /// pezzo di strada.
+    ///
+    /// **PERCHÉ NON BASTA LA PROVA SUI DESCRITTORI SPEDITI.** Quella pretende
+    /// che il campo sia *scritto*; questa pretende che *arrivi*. Sono due
+    /// difetti diversi, e il secondo è invisibile al primo: se `ask_recipe`
+    /// dimenticasse questa riga, i descrittori resterebbero pieni, la prova
+    /// spedita resterebbe verde, e la sonda giudicherebbe ogni riga «non
+    /// dichiarata» — cioè smetterebbe di controllare senza diventare rossa. È
+    /// il mutante che separa le due prove.
+    #[test]
+    fn the_refusal_without_a_prompt_travels_from_the_descriptor_into_the_recipe() {
+        let dir = temp_dir("rifiuto-in-ricetta");
+        fake_executable(&dir, "schizzinoso");
+        let catalog = catalog_of(
+            r#"[{
+              "id": "schizzinoso", "family": "ai_cli",
+              "detect": { "command": "schizzinoso" },
+              "ask": {
+                "args": ["-p"],
+                "prompt": "stdin",
+                "unusable_when": ["quota"],
+                "refuses_without_prompt": ["input must be provided"]
+              }
+            }]"#,
+            &dir,
+        );
+        let tools = Tools { catalog, machine: machine(&dir) };
+
+        let recipe = tools.ask_recipe("schizzinoso").expect("la ricetta c'è");
+        assert_eq!(
+            recipe.refuses_without_prompt,
+            vec!["input must be provided".to_owned()],
+            "il campo arriva fino alla ricetta, o la sonda non ha con cosa giudicare"
+        );
+        // Le due liste restano distinte fin qui: confonderle farebbe chiamare
+        // «rotto» un motore esaurito, che è il caso opposto.
+        assert_eq!(recipe.unusable_when, vec!["quota".to_owned()]);
+    }
+
+    /// Chi non lo dichiara arriva alla ricetta con l'elenco vuoto, che la sonda
+    /// legge come «nessuno ha guardato» — mai come «la riga è sana».
+    #[test]
+    fn a_descriptor_that_says_nothing_about_refusing_gives_an_empty_list() {
+        let dir = temp_dir("rifiuto-taciuto");
+        fake_executable(&dir, "silenzioso");
+        let catalog = catalog_of(
+            r#"[{
+              "id": "silenzioso", "family": "ai_cli",
+              "detect": { "command": "silenzioso" },
+              "ask": { "args": ["-p"], "prompt": "stdin" }
+            }]"#,
+            &dir,
+        );
+        let tools = Tools { catalog, machine: machine(&dir) };
+
+        let recipe = tools.ask_recipe("silenzioso").expect("la ricetta c'è");
+        assert!(recipe.refuses_without_prompt.is_empty());
     }
 
     /// Un descrittore senza `usage` produce una ricetta senza consumo: quel
