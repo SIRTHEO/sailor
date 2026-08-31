@@ -283,6 +283,13 @@ impl RecordStore for WatchedStore {
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError> {
         self.inner.records(run_id)
     }
+
+    /// La spesa la sa il deposito sotto, e questo decoratore non la commenta:
+    /// **un guscio che rispondesse zero renderebbe il tetto muto solo nella
+    /// finestra**, cioè proprio dove qualcuno sta guardando una corsa partire.
+    fn spent(&self, run_id: &str) -> Result<flow::Spend, FlowError> {
+        self.inner.spent(run_id)
+    }
 }
 
 // ── i comandi che la finestra chiama ────────────────────────────────────
@@ -386,6 +393,10 @@ pub(crate) fn start_run(
             root_inputs: inputs,
             gates: Vec::new(),
             shared: SharedState::new(),
+            // Il tetto è del flusso: il pulsante non ne inventa uno suo, e non
+            // ne toglie uno. Un flusso lanciato dalla finestra spende quanto
+            // spenderebbe dal terminale.
+            spend_cap_micros: flow.spend_cap_micros,
         };
         let result = InProcessExecutor.execute(
             &flow.graph,
@@ -397,7 +408,13 @@ pub(crate) fn start_run(
 
         let ended_at = now_secs();
         let (status, error) = match &result {
-            Ok(execution) => (execution_status(execution).to_owned(), None),
+            // Una corsa fermata dal tetto porta i numeri con sé: quanto era il
+            // tetto, quanto risultava speso, e quali passi non sono partiti.
+            // Senza, nella finestra resterebbe una parola sola e nessun motivo.
+            Ok(execution) => (
+                execution_status(execution).to_owned(),
+                registry::stopped_by_cap(execution),
+            ),
             Err(failure) => ("failed".to_owned(), Some(failure.to_string())),
         };
         let _ = record_run(
@@ -788,16 +805,12 @@ fn inputs_with_mandate(
     }
 }
 
-/// La stessa traduzione di `flow_cmd::execution_status`, senza il booleano che
-/// lì serve al codice d'uscita del processo.
+/// Com'è finita la corsa. **Non è più una copia**: era scritta anche qui, con
+/// sopra un commento che diceva di essere la stessa di `flow_cmd`. Lo era, per
+/// buona volontà; adesso lo è per costruzione. Il booleano serve solo al codice
+/// d'uscita di un processo, e qui non c'è nessun processo che esce.
 fn execution_status(execution: &Execution) -> &'static str {
-    match execution.decisions.last() {
-        Some(Decision::Complete) => "complete",
-        Some(Decision::Waiting(_)) => "waiting",
-        Some(Decision::Stopped(_)) => "stopped",
-        Some(Decision::Failed(_)) => "failed",
-        Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => "incomplete",
-    }
+    registry::execution_status(execution).0
 }
 
 /// Le azioni che il motore sa eseguire: **la stessa lista del terminale**.
