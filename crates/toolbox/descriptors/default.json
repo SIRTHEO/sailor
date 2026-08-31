@@ -30,6 +30,16 @@
     "scenderebbe tutta la catena finché qualcuno risponde comunque. Chi non",
     "dichiara `ask` resta usabile, ma solo da un passo che scriva da sé le opzioni.",
     "",
+    "`refuses_without_prompt` elenca le parole con cui quel motore rifiuta la riga",
+    "MONTATA SENZA LA DOMANDA. Serve a provare una riga di comando vera a costo",
+    "zero: senza domanda non si chiama nessun fornitore, ma si percorre lo stesso",
+    "parsing di argomenti di una chiamata vera, e una riga malformata lo dice lì",
+    "invece che alla prima corsa che si paga. Si dichiarano le parole del motore e",
+    "non un codice d'uscita: misurato il 31/08/2026, `agy` esce 2 sia quando",
+    "rifiuta bene sia quando la riga è quella malformata del guasto 27, quindi",
+    "l'esito non distingue i due casi e il testo sì. Vuoto vuol dire «nessuno ha",
+    "guardato», mai «la riga è sana».",
+    "",
     "`usage` dice come si legge QUANTO HA CONSUMATO quel motore, e serve perché",
     "Sailor sappia dove sono finiti i soldi senza un ramo di codice per nessun",
     "fornitore. `args` sono le opzioni da aggiungere per farselo dire (per",
@@ -108,7 +118,8 @@
       "ask": {
         "args": ["-p"],
         "prompt": "stdin",
-        "unusable_when": ["weekly limit", "usage limit", "rate limit"]
+        "unusable_when": ["weekly limit", "usage limit", "rate limit"],
+        "refuses_without_prompt": ["input must be provided either through stdin"]
       },
       "usage": {
         "args": ["--output-format", "json"],
@@ -169,7 +180,7 @@
         }
       },
       "config": ["~/.claude/settings.json", "~/.claude.json"],
-      "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare. Il blocco `usage` è misurato il 30/08/2026 su questa macchina, e ogni chiave viene da un'uscita vera, non dalla documentazione. DUE COSE NON OVVIE. (1) LA CACHE SCRITTA È LA VOCE PIÙ CARA: nella chiamata misurata — due token d'ingresso, quattro d'uscita — i 12.347 token scritti in cache erano il 96% dei 0,1285 dollari dichiarati. Le due durate hanno prezzi diversi e stanno in due chiavi diverse, quindi si dichiarano separate: sommarle sarebbe una perdita di informazione che nessuno vedrebbe più. (2) IL MODELLO NON È UN CAMPO: claude lo usa come CHIAVE di `modelUsage` (`{\"modelUsage\": {\"claude-opus-5[1m]\": {…}}}`), e per questo il puntatore è nella forma `first_key_of`. Senza quel nome nessuna voce di listino si trova, e il costo resterebbe sconosciuto pur avendo tutti i conteggi."
+      "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare. Il blocco `usage` è misurato il 30/08/2026 su questa macchina, e ogni chiave viene da un'uscita vera, non dalla documentazione. DUE COSE NON OVVIE. (1) LA CACHE SCRITTA È LA VOCE PIÙ CARA: nella chiamata misurata — due token d'ingresso, quattro d'uscita — i 12.347 token scritti in cache erano il 96% dei 0,1285 dollari dichiarati. Le due durate hanno prezzi diversi e stanno in due chiavi diverse, quindi si dichiarano separate: sommarle sarebbe una perdita di informazione che nessuno vedrebbe più. (2) IL MODELLO NON È UN CAMPO: claude lo usa come CHIAVE di `modelUsage` (`{\"modelUsage\": {\"claude-opus-5[1m]\": {…}}}`), e per questo il puntatore è nella forma `first_key_of`. Senza quel nome nessuna voce di listino si trova, e il costo resterebbe sconosciuto pur avendo tutti i conteggi. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina montando la riga vera senza la domanda: `claude -p --output-format json < /dev/null` esce 1 e stampa «Error: Input must be provided either through stdin or as a prompt argument when using --print»."
     },
     {
       "id": "codex",
@@ -180,7 +191,8 @@
       "ask": {
         "args": ["exec", "--sandbox", "read-only"],
         "prompt": "stdin",
-        "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota"]
+        "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota"],
+        "refuses_without_prompt": ["no prompt provided via stdin"]
       },
       "usage": {
         "read": "text",
@@ -216,7 +228,7 @@
         "fallback_model": false
       },
       "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
-      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`."
+      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina: `codex exec --sandbox read-only < /dev/null` esce 1 e stampa «Reading prompt from stdin...» seguito da «No prompt provided via stdin.». Si dichiara solo la seconda riga: la prima dice che sta aspettando, non che ha rinunciato."
     },
     {
       "id": "gemini-cli",
@@ -258,7 +270,8 @@
       "ask": {
         "args": ["--mode", "plan"],
         "args_before_prompt": ["--print"],
-        "prompt": "last_arg"
+        "prompt": "last_arg",
+        "refuses_without_prompt": ["flag needs an argument: -print"]
       },
       "usage": {
         "args": ["--output-format", "json"],
@@ -270,7 +283,7 @@
         "answer": ["response"]
       },
       "capabilities": {
-        "ask_without_interaction": { "args": ["--print"], "note": "la forma breve è -p; `--prompt` è un alias della stessa cosa" },
+        "ask_without_interaction": { "args": ["--print"], "takes_value": true, "note": "la forma breve è -p; `--prompt` è un alias della stessa cosa. `takes_value` era assente — cioè diceva `false` — fino al 31/08/2026, e diceva il falso: `agy --mode plan --output-format json --print` risponde «flag needs an argument: -print». Era il guasto 27 su un campo che ancora nessuno legge, cioè la stessa verità scritta in due blocchi che si smentivano; corretto sulla misura, non sulla documentazione" },
         "response_shape": {
           "args": ["--json-schema"],
           "takes_value": true,
@@ -287,7 +300,7 @@
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false
       },
-      "note": "Il blocco `capabilities` è misurato con `agy --help` il 31/08/2026, e le quattro assenze sono scritte `false` di proposito: agy non ha nessun modo di ramificare una sessione, di isolarsi dalla configurazione dell'utente, di tenere un tetto di spesa suo né di ripiegare su un altro modello. «Non ce l'ha» e «nessuno ha guardato» sono due fatti diversi, e omettere la riga direbbe il secondo. Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento, e `--print` sta in `args_before_prompt` perche deve restare attaccato alla domanda: misurato il 28/08/2026 che `--print` prende come domanda la parola che lo segue, e rimisurato il 31/08/2026 che le opzioni di `usage`, accodandosi dopo `ask`, gli finivano proprio li in mezzo - `agy` rispondeva \u00abError: --print took \"--output-format\" as its prompt\u00bb e il testo vero veniva ignorato. Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
+      "note": "Il blocco `capabilities` è misurato con `agy --help` il 31/08/2026, e le quattro assenze sono scritte `false` di proposito: agy non ha nessun modo di ramificare una sessione, di isolarsi dalla configurazione dell'utente, di tenere un tetto di spesa suo né di ripiegare su un altro modello. «Non ce l'ha» e «nessuno ha guardato» sono due fatti diversi, e omettere la riga direbbe il secondo. Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento, e `--print` sta in `args_before_prompt` perche deve restare attaccato alla domanda: misurato il 28/08/2026 che `--print` prende come domanda la parola che lo segue, e rimisurato il 31/08/2026 che le opzioni di `usage`, accodandosi dopo `ask`, gli finivano proprio li in mezzo - `agy` rispondeva \u00abError: --print took \"--output-format\" as its prompt\u00bb e il testo vero veniva ignorato. Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque — è il guasto 31, e finché resta aperto un agy esaurito in mezzo a una catena la uccide invece di lasciar provare il motore dopo. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina: `agy --mode plan --output-format json --print` esce 2 e stampa «flag needs an argument: -print». LA STESSA MISURA MOSTRA PERCHÉ IL VERDETTO NON PUÒ VENIRE DAL CODICE D'USCITA: la riga malformata del guasto 27 — `agy --mode plan --print --output-format json` — esce 2 anche lei, e dice tutt'altro («--print took \"--output-format\" as its prompt»). E `--help` non serve a provare niente: `agy --mode nonsense-value --not-a-real-flag --help` esce 0, perché cortocircuita prima di leggere gli argomenti."
     },
     {
       "id": "openrouter-cli",
