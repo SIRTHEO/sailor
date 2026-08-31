@@ -65,7 +65,43 @@ per una garanzia che il prompt singolo non offre. La domanda giusta resta
 «quanto costa un lavoro **accettato**», e un prompt singolo che sbaglia e va
 rifatto due volte costa due volte.
 
-## Esito
+## Lato A: il «prompt singolo» non è una chiamata sola
 
-*Da riempire quando i due lati hanno finito. Se questa sezione resta vuota,
-l'esperimento non è stato concluso e nessuna delle righe sopra è una conclusione.*
+Prima sorpresa, e cambia la domanda. `claude -p` con quel mandato ha fatto
+**trenta turni** in cinque minuti. Non è un prompt: è una sessione agentica.
+
+| | token | prezzo/M | costo | quota |
+|---|---:|---:|---:|---:|
+| input nuovo | 52 | 5,00 | 0,0003 $ | 0,0% |
+| output | 14.195 | 25,00 | 0,3549 $ | 25,2% |
+| **cache letta** | **1.140.373** | 0,50 | **0,5702 $** | **40,4%** |
+| **cache scritta (1h)** | **48.483** | 10,00 | **0,4848 $** | **34,4%** |
+| **totale** | **1.203.103** | | **1,4102 $** | |
+
+Il totale calcolato dal nostro listino coincide al centesimo con quello che il
+motore dichiara (1,4102 contro 1,4102): la catena di misura regge.
+
+**Il 98,8% dei token che il modello ha visto è contesto** — riletto o riscritto —
+e **il 74,8% del costo non è produzione**. L'input davvero nuovo è 52 token: lo
+zero per cento.
+
+### Cosa questo fa alla domanda di partenza
+
+La premessa era «un prompt consuma meno di un flusso perché il flusso ripaga il
+contesto a ogni passo». Il primo pezzo di misura dice che **anche una sessione
+ripaga il contesto a ogni turno**: trenta volte, qui. La differenza fra i due non
+è *se* si ripaga il contesto — è **a che prezzo**:
+
+- una sessione lo rilegge dalla **cache dei prefissi**, a 0,50 $/M;
+- un passo di flusso è un processo nuovo con un prompt diverso, quindi lo paga
+  come **input**, a 5,00 $/M.
+
+**Dieci volte tanto, sulla voce che pesa il 40%.** È lì che si gioca la domanda
+di Theo, ed è esattamente la pista già annotata in `da-fare.md`: mettere il
+contesto comune **in testa** invece che in coda, perché la cache dei prefissi
+possa agganciarlo. Oggi l'ordine la rende inutile.
+
+## Esito del confronto
+
+*Da riempire quando anche il lato B ha finito. Finché questa sezione è vuota,
+sopra c'è la misura di un lato solo — che non è un confronto.*
