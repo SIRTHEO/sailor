@@ -777,10 +777,30 @@ pub struct RealDryProbe;
 
 impl DryProbe for RealDryProbe {
     fn run(&self, bin: &str, args: &[String], stdin: Option<Vec<u8>>) -> DryRun {
+        // **LA STESSA DOTAZIONE DELLA CORSA VERA, E QUI STA TUTTO IL VALORE DEL
+        // VAGLIO.** Fino al 01/09/2026 questa riga era `BTreeMap::new()`: il
+        // vaglio provava il motore nella casa di chi aveva aperto il terminale —
+        // autenticata — e il passo lo faceva partire in quella del profilo
+        // attivo, che può non avere nessuna credenziale. `flow check` chiudeva
+        // in verde e la corsa falliva, e chi aveva letto il verde non aveva
+        // sbagliato niente. Un controllo che prova un mondo diverso da quello in
+        // cui si lavora è peggio di nessun controllo, perché rassicura.
+        //
+        // **NIENTE DALLO SPAZIO DI UN PASSO, ED È DELIBERATO.** Il vaglio non
+        // sta provando un passo: sta provando la riga che il **descrittore**
+        // monta, quella sola volta per motore. Le variabili che un passo
+        // dichiara valgono per quella chiamata lì, e infilarle qui darebbe un
+        // verdetto che non vale per gli altri passi che nominano lo stesso
+        // motore.
+        //
+        // Le credenziali mancanti non le riconosce nessun controllo scritto qui:
+        // le dichiara il descrittore in `unusable_when`, e a nominarle è il
+        // motore con le proprie parole. Bastava partire dove partirà la corsa.
+        let equipment = current_equipment_for(bin, &BTreeMap::new());
         let result = invoke_external_engine(&EngineInvocation {
             bin: bin.to_owned(),
             args: args.to_vec(),
-            env: BTreeMap::new(),
+            env: equipment.env,
             workdir: None,
             stdin,
             timeout: DRY_PROBE_TIMEOUT,
