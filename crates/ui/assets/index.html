@@ -100,7 +100,7 @@
   .section-index { color: var(--muted); font: 0.72rem var(--mono); }
   .summary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(15rem, 1.4fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(14.5rem, 1.35fr);
     overflow: hidden;
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -110,7 +110,11 @@
   .metric { min-height: 8.3rem; padding: 1rem; border-right: 1px solid var(--border); }
   .metric:last-child { border-right: 0; }
   .metric-label { display: block; color: var(--muted); font: 0.69rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-  .metric-value { display: block; margin-top: 0.45rem; font-size: clamp(1.7rem, 4vw, 2.45rem); font-weight: 700; line-height: 1; }
+  /* IL VALORE SI RESTRINGE PRIMA DI SBORDARE. Un totale onesto è più lungo di
+     uno parziale — sette cifre invece di cinque — e con la misura di prima
+     usciva dalla propria cella e si sovrapponeva alla colonna accanto: il
+     numero giusto reso illeggibile vale quanto quello sbagliato. */
+  .metric-value { display: block; margin-top: 0.45rem; font-size: clamp(1.25rem, 2.05vw, 2.1rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.015em; overflow-wrap: anywhere; }
   .metric-note { display: block; margin-top: 0.55rem; color: var(--muted); font-size: 0.77rem; }
   .metric.danger { box-shadow: inset 0 4px 0 var(--danger); }
   .model-list { margin: 0.65rem 0 0; padding: 0; list-style: none; font: 0.76rem var(--mono); }
@@ -321,9 +325,38 @@ function formatCount(value) {
   return formatNumber(value);
 }
 
+// NEL RIQUADRO IL COSTO SI LEGGE A COLPO D'OCCHIO. I quattro decimali servono
+// su una chiamata sola, che può costare mezzo millesimo di dollaro; su una
+// giornata intera allungano il numero fino a spezzarlo a metà parola, e non
+// cambiano nessuna decisione di chi guarda.
+function formatCostBrief(micros) {
+  if (micros === null || micros === undefined) return 'non noto';
+  return (micros / 1_000_000).toLocaleString('it-IT', {
+    style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol', maximumFractionDigits: 2,
+  });
+}
+
+// TUTTI I TOKEN CHE IL MODELLO HA VISTO, tutte e quattro le voci.
+//
+// **UN TOTALE CHE NE SOMMA DUE SU QUATTRO SI PRESENTA COME COMPLETO E NON LO
+// È.** Sul deposito di questa macchina ingresso più uscita fanno 89.402 token
+// mentre ne sono stati consumati 5.687.230: sessantatré volte meno. Chi legge
+// quel numero decide se può lanciare un'altra corsa, e lo decide sul falso.
+//
+// Le quattro voci hanno prezzi diversi fino a venti volte, quindi la somma non
+// è una misura di spesa — quella sta nel riquadro accanto. È la misura di
+// **quanta quota è stata bruciata**, che con un abbonamento è il vincolo vero.
+function seenTokens(totals) {
+  return totals.input + totals.output + totals.cached + totals.written;
+}
+
+// LA CACHE SCRITTA È UNA VOCE, NON UN DETTAGLIO: a parità di token costa venti
+// volte la cache letta e il doppio dell'ingresso. Tenerla fuori da questa riga
+// faceva sembrare gratis la voce che su una corsa misurata è risultata il 44,8%
+// della spesa.
 function formatTokens(totals) {
   if (!totals) return 'token non noti';
-  const sides = `${formatCount(totals.input_tokens)} in · ${formatCount(totals.output_tokens)} out · ${formatCount(totals.cached_tokens)} cache`;
+  const sides = `${formatCount(totals.input_tokens)} in · ${formatCount(totals.output_tokens)} out · ${formatCount(totals.cached_tokens)} cache letta · ${formatCount(totals.cache_write_tokens)} cache scritta`;
   // Chi dichiara solo il totale (codex e simili) non ha lati da mostrare: la
   // sua unica misura vera è quella, e va detta com'è.
   if (totals.total_tokens_only) return `${sides} · ${formatNumber(totals.total_tokens_only)} totali non ripartiti`;
@@ -372,23 +405,28 @@ function renderSummary(payload) {
     sum.input += execution.tokens.input_tokens;
     sum.output += execution.tokens.output_tokens;
     sum.cached += execution.tokens.cached_tokens;
+    sum.written += execution.tokens.cache_write_tokens;
+    sum.cost += execution.tokens.cost_micros;
     sum.unmeasured += execution.tokens.calls_without_tokens;
+    sum.unpriced += execution.tokens.calls_without_cost;
     return sum;
-  }, { input: 0, output: 0, cached: 0, unmeasured: 0 });
+  }, { input: 0, output: 0, cached: 0, written: 0, cost: 0, unmeasured: 0, unpriced: 0 });
   const models = new Map();
   today.forEach(execution => Object.entries(execution.tokens_by_model).forEach(([model, tokens]) => {
-    const total = models.get(model) || { input: 0, output: 0, cached: 0 };
+    const total = models.get(model) || { input: 0, output: 0, cached: 0, written: 0 };
     total.input += tokens.input_tokens;
     total.output += tokens.output_tokens;
     total.cached += tokens.cached_tokens;
+    total.written += tokens.cache_write_tokens;
     models.set(model, total);
   }));
-  const modelRows = [...models.entries()].map(([model, tokens]) => `<li><code>${escapeHtml(model)}</code><span>${formatNumber(tokens.input + tokens.output)} token</span></li>`).join('');
+  const modelRows = [...models.entries()].map(([model, tokens]) => `<li><code>${escapeHtml(model)}</code><span>${formatNumber(seenTokens(tokens))} token</span></li>`).join('');
   element.innerHTML = `
     <div class="metric"><span class="metric-label">Esecuzioni</span><strong class="metric-value">${formatNumber(today.length)}</strong><span class="metric-note">avviate oggi</span></div>
     <div class="metric"><span class="metric-label">Andate bene</span><strong class="metric-value">${formatNumber(went)}</strong><span class="metric-note">concluse senza rotture</span></div>
     <div class="metric ${broke ? 'danger' : ''}"><span class="metric-label">Da controllare</span><strong class="metric-value">${formatNumber(broke)}</strong><span class="metric-note">rotte o con errore</span></div>
-    <div class="metric"><span class="metric-label">Token</span><strong class="metric-value">${formatNumber(totals.input + totals.output)}</strong><span class="metric-note">${formatNumber(totals.input)} in · ${formatNumber(totals.output)} out · ${formatNumber(totals.cached)} cache${totals.unmeasured ? ` · <span class="unmeasured">${formatNumber(totals.unmeasured)} chiamate non misurate</span>` : ''}</span></div>
+    <div class="metric"><span class="metric-label">Token</span><strong class="metric-value">${formatNumber(seenTokens(totals))}</strong><span class="metric-note">${formatNumber(totals.input)} in · ${formatNumber(totals.output)} out · ${formatNumber(totals.cached)} cache letta · ${formatNumber(totals.written)} cache scritta${totals.unmeasured ? ` · <span class="unmeasured">${formatNumber(totals.unmeasured)} chiamate non misurate</span>` : ''}</span></div>
+    <div class="metric"><span class="metric-label">Costo</span><strong class="metric-value">${formatCostBrief(totals.cost)}</strong><span class="metric-note">quanto sarebbe costato via API: con un abbonamento si paga in quota, non in dollari${totals.unpriced ? ` · <span class="unmeasured">${formatNumber(totals.unpriced)} senza costo noto</span>` : ''}</span></div>
     <div class="metric"><span class="metric-label">Per modello</span>${modelRows ? `<ul class="model-list">${modelRows}</ul>` : '<span class="metric-note">Nessuna chiamata al modello oggi.</span>'}</div>`;
 }
 
