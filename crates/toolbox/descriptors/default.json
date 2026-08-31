@@ -128,7 +128,8 @@
       "detect": { "command": "agy" },
       "version": { "args": ["--version"] },
       "ask": {
-        "args": ["--mode", "plan", "--print"],
+        "args": ["--mode", "plan"],
+        "args_before_prompt": ["--print"],
         "prompt": "last_arg"
       },
       "usage": {
@@ -140,7 +141,7 @@
         "total_tokens": ["usage", "total_tokens"],
         "answer": ["response"]
       },
-      "note": "Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento e `--mode` va prima di `--print` (misurato il 28/08/2026: la forma inversa faceva prendere a `--print` la parola `--mode` come propria domanda). Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
+      "note": "Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento, e `--print` sta in `args_before_prompt` perche deve restare attaccato alla domanda: misurato il 28/08/2026 che `--print` prende come domanda la parola che lo segue, e rimisurato il 31/08/2026 che le opzioni di `usage`, accodandosi dopo `ask`, gli finivano proprio li in mezzo - `agy` rispondeva \u00abError: --print took \"--output-format\" as its prompt\u00bb e il testo vero veniva ignorato. Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
     },
     {
       "id": "openrouter-cli",

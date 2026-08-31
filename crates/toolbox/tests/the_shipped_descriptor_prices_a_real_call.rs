@@ -151,3 +151,41 @@ fn a_engine_that_names_no_model_leaves_the_cost_unknown_not_zero() {
         "senza nome non c'è voce di listino, quindi nessun prezzo da applicare"
     );
 }
+
+/// La riga di comando che il descrittore **spedito** compone per `agy`, dove il
+/// prompt è un argomento e non l'ingresso standard.
+///
+/// **QUESTA È LA PROVA CHE MANCAVA AL GUASTO 1, E CHE LO HA LASCIATO TORNARE.**
+/// Allora l'ordine sbagliato erano due opzioni di `ask` fra loro, e la cura
+/// scritta accanto — «una prova che esegue davvero ogni riga di comando prima
+/// che finisca in un flusso» — non è mai stata costruita. Il 31/08/2026 il
+/// difetto è ricomparso da un'altra porta: le opzioni di `usage`, accodandosi
+/// dopo quelle di `ask`, si infilavano fra `--print` e la domanda, e `agy`
+/// rispondeva «--print took "--output-format" as its prompt» ignorando il testo
+/// vero. I due blocchi erano giusti separatamente e sbagliati insieme, che è
+/// esattamente ciò che una prova per blocco non può vedere.
+///
+/// Non esegue niente: la sequenza la decide il codice, quindi è identica su una
+/// macchina carica, senza rete e senza `agy` installato. Ciò che resta scoperto
+/// — eseguire davvero ogni riga composta — è ancora la cura del guasto 1.
+#[test]
+fn the_prompt_flag_stays_glued_to_the_prompt_it_introduces() {
+    let recipe = shipped_only().ask_recipe("agy").expect("agy è spedito");
+    assert_eq!(
+        recipe.prompt,
+        actions::PromptVia::LastArg,
+        "questa prova ha senso solo se la domanda è un argomento"
+    );
+
+    let line = actions::command_line(&recipe);
+    assert_eq!(
+        line,
+        vec!["--mode", "plan", "--output-format", "json", "--print"],
+        "le opzioni del consumo vanno prima di quella che introduce la domanda"
+    );
+    assert_eq!(
+        line.last().map(String::as_str),
+        Some("--print"),
+        "fra la bandiera che introduce la domanda e la domanda non entra niente"
+    );
+}

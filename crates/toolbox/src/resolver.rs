@@ -151,6 +151,7 @@ impl actions::ToolResolver for Tools {
                 crate::descriptor::PromptPlace::Stdin => actions::PromptVia::Stdin,
                 crate::descriptor::PromptPlace::LastArg => actions::PromptVia::LastArg,
             },
+            args_before_prompt: ask.args_before_prompt.clone(),
             unusable_when: ask.unusable_when.clone(),
             usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
         })

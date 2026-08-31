@@ -550,6 +550,25 @@ pub enum PromptVia {
     LastArg,
 }
 
+/// La riga di comando di una ricetta, **senza** il testo della domanda.
+///
+/// L'ordine è: le opzioni della domanda, quelle che servono a farsi dire il
+/// consumo, e per ultime quelle che devono restare attaccate alla domanda.
+///
+/// **STA FUORI DAL PUNTO CHE LA USA PERCHÉ SI POSSA GUARDARE SENZA ESEGUIRE
+/// NIENTE.** Un ordine sbagliato qui non rompe la compilazione e non rompe
+/// nessuna prova sui singoli blocchi: si vede solo lanciando il motore giusto,
+/// che è come il guasto 1 è arrivato in produzione e come ci è tornato il
+/// 31/08/2026 da un'altra porta.
+pub fn command_line(recipe: &AskRecipe) -> Vec<String> {
+    let mut args = recipe.args.clone();
+    if let Some(usage) = &recipe.usage {
+        args.extend(usage.args.iter().cloned());
+    }
+    args.extend(recipe.args_before_prompt.iter().cloned());
+    args
+}
+
 /// Come si interroga un motore in un colpo solo, e come quel motore dice di
 /// **non poter lavorare**.
 #[derive(Clone, Debug)]
@@ -558,6 +577,9 @@ pub struct AskRecipe {
     pub args: Vec<String>,
     /// Dove va il testo della domanda.
     pub prompt: PromptVia,
+    /// Le opzioni che devono restare **attaccate alla domanda**, dopo quelle
+    /// del consumo. Vuoto per quasi tutti; vedi `Ask::args_before_prompt`.
+    pub args_before_prompt: Vec<String>,
     /// I frammenti che, comparendo nell'uscita di un fallimento, dicono che
     /// **questo motore non poteva lavorare** — quota esaurita, credenziali
     /// mancanti — e non che il lavoro fosse sbagliato.
@@ -1061,14 +1083,7 @@ impl ExternalEngineAction {
                         Some(recipe) => usable.push(Candidate {
                             id: Some(id.clone()),
                             bin,
-                            args: match &recipe.usage {
-                                Some(usage) => {
-                                    let mut args = recipe.args;
-                                    args.extend(usage.args.iter().cloned());
-                                    args
-                                }
-                                None => recipe.args,
-                            },
+                            args: command_line(&recipe),
                             prompt: recipe.prompt,
                             unusable_when: recipe.unusable_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
@@ -2731,18 +2746,21 @@ mod tests {
                 "esaurito" => Some(AskRecipe {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
+                    args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     usage: None,
                 }),
                 "vivo" => Some(AskRecipe {
                     args: vec!["ha-risposto-il-secondo".to_owned()],
                     prompt: PromptVia::LastArg,
+                    args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     usage: None,
                 }),
                 "rotto" => Some(AskRecipe {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
+                    args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     usage: None,
                 }),
@@ -2893,6 +2911,7 @@ mod tests {
                     "rotto" => Some(AskRecipe {
                         args: Vec::new(),
                         prompt: PromptVia::Stdin,
+                        args_before_prompt: Vec::new(),
                         unusable_when: vec![String::new(), "   ".to_owned()],
                         usage: None,
                     }),
@@ -3347,6 +3366,7 @@ mod what_it_cost {
         AskRecipe {
             args: Vec::new(),
             prompt: PromptVia::Stdin,
+            args_before_prompt: Vec::new(),
             unusable_when: Vec::new(),
             usage: Some(UsageRecipe {
                 args: vec!["--output-format".to_owned(), "json".to_owned()],
@@ -3574,6 +3594,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             recipe: Some(AskRecipe {
                 args: Vec::new(),
                 prompt: PromptVia::Stdin,
+                args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 usage: None,
             }),
@@ -3774,6 +3795,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 recipe: Some(AskRecipe {
                     args: Vec::new(),
                     prompt: PromptVia::Stdin,
+                    args_before_prompt: Vec::new(),
                     unusable_when: Vec::new(),
                     usage: None,
                 }),
@@ -3930,6 +3952,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             recipe: Some(AskRecipe {
                 args: Vec::new(),
                 prompt: PromptVia::Stdin,
+                args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 usage: None,
             }),
