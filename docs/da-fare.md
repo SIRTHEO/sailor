@@ -69,10 +69,11 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 ## Difetti noti e non riparati
 
 I guasti, con come si sono visti e cosa li impedirebbe, stanno in
-`docs/guasti-incontrati.md` — **undici aperti su ventuno**. (Questa riga è già
-una copia a mano che invecchia da sola, ed è il difetto che questo stesso file
-dichiara in cima: il giorno che le voci passano nel deposito, il numero lo dà
-lui.) Qui solo quelli che
+`docs/guasti-incontrati.md` — **dieci aperti su trenta**. (Questa riga era una
+copia a mano che invecchiava da sola, ed era sbagliata in quattro documenti su
+quattro: dal 31/08/2026 una prova la confronta con la tabella e diventa rossa
+quando divergono — `cargo test -p sailor --test the_fault_table_holds_together`.
+Resta che il numero lo dovrà dare il deposito, il giorno che le voci ci passano.) Qui solo quelli che
 non sono guasti ma limiti dichiarati:
 
 - ~~**I passi girano in fila, non insieme.**~~ Riparato il 30/08/2026: il fronte
