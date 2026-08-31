@@ -416,10 +416,16 @@ fn a_malformed_descriptor_does_not_take_the_others_down() {
         ]"#,
     );
     let catalog = catalog_from(&descriptors);
+    // **DUE PERSE E UNA TENUTA, E PRIMA ERANO TRE PERSE.** `campo-inventato`
+    // stava in questo elenco: un campo che questa versione non conosce lo faceva
+    // cadere insieme a quelli davvero sbagliati, e con lui spariva lo strumento.
+    // È il guasto 8, e il senso di ripararlo è tutto qui — le due righe che non
+    // dicono chi sono o come si verificano restano perse, perché di loro non c'è
+    // niente da salvare.
     assert_eq!(
         catalog.problems.len(),
-        3,
-        "tre righe sbagliate, tre segnalazioni: {:?}",
+        2,
+        "due righe irrecuperabili, due segnalazioni: {:?}",
         catalog.problems
     );
     // La segnalazione dice DI CHI PARLA: «un descrittore è sbagliato» non si
@@ -427,16 +433,30 @@ fn a_malformed_descriptor_does_not_take_the_others_down() {
     let about: Vec<&str> = catalog.problems.iter().map(|p| p.about.as_str()).collect();
     assert!(about.contains(&"senza-famiglia"), "{about:?}");
     assert!(about.contains(&"senza-verifica"), "{about:?}");
+    assert!(
+        !about.contains(&"campo-inventato"),
+        "un campo ignoto non è una voce persa: {about:?}"
+    );
+    let noted: Vec<&str> = catalog.notes.iter().map(|p| p.about.as_str()).collect();
+    assert_eq!(noted, vec!["campo-inventato"], "ma non è nemmeno taciuto");
 
     let report = toolbox::detect(&catalog, &machine(vec![bin_dir], &sandbox.root));
-    assert_eq!(report.findings.len(), 1, "{:?}", report.findings);
+    // Due adesso: quello buono, e quello che prima si perdeva — che risulta
+    // assente, perché il suo binario `x` non c'è davvero. Assente è una
+    // risposta; sparito non lo era.
+    assert_eq!(report.findings.len(), 2, "{:?}", report.findings);
+    let good = report
+        .findings
+        .iter()
+        .find(|f| f.name == "buono")
+        .expect("quello buono c'è");
     assert_eq!(
-        report.findings[0].version,
+        good.version,
         VersionReading::Declared("buono 1.0".to_string())
     );
     // Le segnalazioni viaggiano col rapporto: chi legge deve sapere che l'elenco
     // è parziale, o crederà che quello che manca non ci sia.
-    assert_eq!(report.problems.len(), 3);
+    assert_eq!(report.problems.len(), 2);
 }
 
 /// Un file intero illeggibile non porta giù gli altri file di descrittori.
