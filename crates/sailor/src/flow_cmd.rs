@@ -170,14 +170,17 @@ fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
             tokens.total_tokens_only
         );
     }
-    let _ = write!(
-        report,
-        "\ncosto equivalente: {:.4} (quanto sarebbe costato via API, non una spesa)",
-        tokens.cost_micros as f64 / 1_000_000.0
-    );
+    // **LA CIFRA NON SI COMPONE QUI.** Se la scrivesse questa funzione,
+    // rifarebbe la regola dei tre casi in un `format!` — e la prima volta che
+    // qualcuno tocca uno dei due posti le due versioni divergono in silenzio.
+    // Chi decide quanti passi aprire e chi legge il consumo devono leggere la
+    // stessa frase.
+    let _ = write!(report, "\n{}", ui::dashboard::how_the_cost_reads(&tokens.cost_reading()));
     // **QUELLO CHE MANCA SI DICE, O IL TOTALE SI LEGGE COME COMPLETO.** È la
     // stessa regola della finestra: una somma che tace su ciò che non ha
-    // contato è una rassicurazione, non una misura.
+    // contato è una rassicurazione, non una misura. Resta anche adesso che il
+    // costo lo dice da sé: i token mancanti sono un'altra lacuna, e una corsa
+    // può avere quella e non l'altra.
     if tokens.calls_without_tokens > 0 || tokens.calls_without_cost > 0 {
         let _ = write!(
             report,
@@ -3990,6 +3993,136 @@ mod tests {
             found.is_empty(),
             "il flusso di sviluppo non gira su un clone: {}",
             described.join("; ")
+        );
+    }
+
+    // ── il totale che contiene un'incognita ──────────────────────────────
+
+    /// Una chiamata come il deposito la conserva, coi soli campi che questo
+    /// conto guarda. `cost` a `None` è una chiamata **non misurata**: è la
+    /// forma che `sailor step close --turns` scrive per un passo consegnato.
+    fn a_call(call_id: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
+        ledger::ModelCallRecord {
+            call_id: call_id.to_owned(),
+            run_id: "run-1".to_owned(),
+            step_id: None,
+            purpose: "prova".to_owned(),
+            cli: "claude".to_owned(),
+            requested_model: "m".to_owned(),
+            actual_model: "m".to_owned(),
+            input_tokens: Some(10),
+            output_tokens: Some(2),
+            cached_tokens: Some(1),
+            cache_write_tokens: None,
+            cache_write_long_tokens: None,
+            total_tokens: None,
+            turns: Some(3),
+            cost_micros: cost,
+            declared_cost_micros: None,
+            price_currency: None,
+            input_price_micros_per_million: None,
+            output_price_micros_per_million: None,
+            cached_price_micros_per_million: None,
+            cache_write_price_micros_per_million: None,
+            cache_write_long_price_micros_per_million: None,
+            mandate_name: String::new(),
+            mandate_version: String::new(),
+            retry_chain: vec![],
+            error_type: None,
+            started_at: 0,
+            ended_at: Some(1),
+            session_id: None,
+        }
+    }
+
+    fn a_run() -> ledger::RunRecord {
+        ledger::RunRecord {
+            run_id: "run-1".to_owned(),
+            kind: "flow".to_owned(),
+            entity: "prova".to_owned(),
+            parent_run_id: None,
+            started_by: "prova".to_owned(),
+            status: "succeeded".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 0,
+            ended_at: Some(10),
+        }
+    }
+
+    fn report_for(calls: &[ledger::ModelCallRecord]) -> String {
+        let view = ui::dashboard::summarize_run(&a_run(), &[], calls, 100);
+        spending_report(&view)
+    }
+
+    /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
+    /// rapporto parziale, chi legge ha in mano un numero che non è il totale.
+    fn bare_total(micros: i64) -> String {
+        format!("costo equivalente: {:.4}", micros as f64 / 1_000_000.0)
+    }
+
+    /// **UN TOTALE CHE CONTIENE UN'INCOGNITA NON È UN TOTALE.**
+    ///
+    /// È il guasto 37 misurato: la corsa consegnata dell'A/B del 31/08/2026 ha
+    /// stampato `1,6674` mentre era costata `7,2080` — 4,3 volte — perché tre
+    /// chiamate su quattro non avevano un costo e la nota che lo diceva stava
+    /// **sotto** il numero. Chi legge un totale legge il numero, non la nota.
+    /// Qui la nota prende il posto del numero: la cifra secca non deve esistere
+    /// da nessuna parte nel rapporto.
+    #[test]
+    fn a_total_with_an_unmeasured_call_is_never_a_bare_figure() {
+        let report = report_for(&[
+            a_call("misurata", Some(1_667_400)),
+            a_call("consegnata-1", None),
+            a_call("consegnata-2", None),
+            a_call("consegnata-3", None),
+        ]);
+
+        assert!(
+            !report.contains(&bare_total(1_667_400)),
+            "la cifra secca non deve comparire: si legge come il totale vero.\n{report}"
+        );
+        assert!(
+            report.contains("almeno"),
+            "il numero va letto come un pavimento, non come una somma.\n{report}"
+        );
+        assert!(
+            report.contains("3 chiamate su 4"),
+            "quanto manca si dice accanto alla cifra, non in fondo.\n{report}"
+        );
+    }
+
+    /// **E QUANDO SI SA TUTTO, IL NUMERO RESTA SECCO.** Senza questa metà
+    /// l'avviso non varrebbe niente: un rapporto che si dichiara incompleto
+    /// sempre non distingue più i due casi, ed è lo stesso difetto al contrario.
+    #[test]
+    fn a_total_where_every_call_is_measured_stays_a_plain_figure() {
+        let report = report_for(&[a_call("una", Some(1_000_000)), a_call("due", Some(667_400))]);
+
+        assert!(
+            report.contains(&bare_total(1_667_400)),
+            "tutto misurato: la somma è la somma.\n{report}"
+        );
+        assert!(
+            !report.contains("almeno"),
+            "niente pavimenti dove non manca niente.\n{report}"
+        );
+    }
+
+    /// **NESSUNA CHIAMATA MISURATA NON È «ALMENO ZERO».** È il terzo caso di
+    /// `Spend`, quello che un `Option` collasserebbe: «almeno 0,0000» è vero e
+    /// non dice niente, e chi lo legge crede di aver visto una spesa piccola.
+    #[test]
+    fn a_run_where_nothing_is_measured_says_unknown_instead_of_at_least_zero() {
+        let report = report_for(&[a_call("consegnata", None)]);
+
+        assert!(
+            report.contains("sconosciuto"),
+            "senza nemmeno una misura non c'è un pavimento da dichiarare.\n{report}"
+        );
+        assert!(
+            !report.contains(&bare_total(0)),
+            "e soprattutto non c'è uno zero.\n{report}"
         );
     }
 }
