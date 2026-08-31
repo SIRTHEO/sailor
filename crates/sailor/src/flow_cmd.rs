@@ -11,6 +11,7 @@ use flow::{
 };
 use actions::reference;
 use ledger::Ledger;
+use models::pricing::{Known, PriceList};
 use serde_json::Value;
 use ui::gather::FlowSource;
 use std::collections::{BTreeMap, BTreeSet};
@@ -125,11 +126,15 @@ fn cost_of(flow: &str) -> Result<String, String> {
         data.calls_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
         now_secs()?,
     );
-    Ok(spending_report(&view))
+    Ok(spending_report(&view, &actions::current_price_list()))
 }
 
 /// Il consumo di una corsa, per una persona.
-fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
+///
+/// **IL LISTINO ARRIVA DA FUORI, E NON È PIGNOLERIA:** così questa funzione si
+/// interroga con un listino scritto nella prova, invece di dipendere da quale
+/// file esista sulla macchina che esegue la batteria.
+fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> String {
     let tokens = &view.tokens;
     let mut report = format!(
         "corsa {} — flusso {} — {}\npassi: {} ({} andati, {} rotti)\nchiamate: {}",
@@ -183,6 +188,30 @@ fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
             report,
             "\nparziale: {} chiamate senza token dichiarati, {} senza costo noto",
             tokens.calls_without_tokens, tokens.calls_without_cost
+        );
+    }
+    // **E SI DICE QUALE MODELLO, NON SOLO QUANTE CHIAMATE.** «Tre senza costo
+    // noto» è un numero su cui non si può agire; il nome del modello scoperto è
+    // una riga da scrivere nel listino. È la seconda metà della cura del guasto
+    // 35: chi non ha un prezzo per un modello deve saperlo, non dedurlo da uno
+    // zero. I nomi vengono da `tokens_by_model`, cioè da chi ha davvero
+    // risposto in questa corsa.
+    let unpriced = cannot_be_priced(
+        prices,
+        &view
+            .tokens_by_model
+            .keys()
+            .filter(|name| !name.trim().is_empty())
+            .cloned()
+            .collect(),
+    );
+    if !unpriced.is_empty() {
+        let _ = write!(
+            report,
+            "\nmodelli che il listino non sa prezzare: {}\
+             \n  il loro consumo è nei token qui sopra, il loro costo no: la cifra in \
+             valuta è più bassa di quella vera",
+            unpriced.join(", ")
         );
     }
     report
@@ -286,6 +315,38 @@ fn observed_spending(flow_id: &str) -> Result<Observed, String> {
     Ok(observed_from(&runs))
 }
 
+/// I modelli che le corse passate di questo flusso hanno davvero usato.
+///
+/// **DAL DEPOSITO E NON DAL FLUSSO, PERCHÉ IL FLUSSO NON LO SA.** Un passo nomina
+/// lo strumento — `claude-code`, `codex` — non il modello: quale modello risponda
+/// lo decide quella riga di comando, e lo si scopre solo dopo, da ciò che ha
+/// dichiarato. Un elenco dedotto dal file del flusso sarebbe indovinato.
+///
+/// **`None` NON È UN INSIEME VUOTO, ED È LA DISTINZIONE CHE CONTA.** Un deposito
+/// che non si apre — non c'è, non si legge, i permessi lo negano — non dice
+/// «questo flusso non ha mai usato nessun modello»: dice che nessuno ha potuto
+/// guardare. Confonderli farebbe stampare «mai girato qui» a un flusso girato
+/// cento volte, ed è la stessa regola per cui il rilevatore assente fa tacere il
+/// rapporto invece di dichiarare sano ciò che non ha visto.
+fn models_seen_by(flow_id: &str) -> Option<BTreeSet<String>> {
+    let dir = default_ledger_dir().ok()?;
+    let data = ui::gather::gather(&dir).ok()??;
+    Some(
+        data.runs
+            .iter()
+            .filter(|run| run.entity == flow_id)
+            .filter_map(|run| data.calls_by_run.get(&run.run_id))
+            .flatten()
+            // Una chiamata senza modello dichiarato non è un modello senza
+            // prezzo: è un motore che non dice chi ha risposto, e nominare la
+            // stringa vuota fra i modelli scoperti manderebbe a cercare una
+            // voce di listino per un nome che non esiste.
+            .filter(|call| !call.actual_model.trim().is_empty())
+            .map(|call| call.actual_model.clone())
+            .collect(),
+    )
+}
+
 /// Le micro-unità come le legge una persona.
 fn in_units(micros: i64) -> String {
     format!("{:.2}", micros as f64 / MICROS_IN_A_UNIT)
@@ -305,6 +366,91 @@ const WHAT_THE_CAP_DOES_NOT_PROMISE: &str = "\nquello che il tetto non promette:
     \n  - conta solo le chiamate che dichiarano un costo; quelle che non lo \
       dichiarano restano fuori dalla somma, quindi la spesa vera è più alta di \
       quella contata";
+
+// ── quello che il listino non sa prezzare ────────────────────────────────
+
+/// I nomi che questo listino non sa prezzare, ciascuno col perché.
+///
+/// **IL PERCHÉ STA ACCANTO AL NOME PERCHÉ SONO DUE RIPARAZIONI DIVERSE.** Un
+/// nome che il listino non conosce si ripara aggiungendo una voce — o un alias,
+/// se è lo stesso modello con un altro nome; una voce che c'è ma non ha i prezzi
+/// si ripara scrivendo i prezzi. Un elenco di soli nomi manderebbe a riscrivere
+/// una voce che esiste già.
+fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> {
+    seen.iter()
+        .filter_map(|name| match prices.knows(name) {
+            Known::Priced => None,
+            Known::Absent => Some(format!("{name} (nessuna voce nel listino)")),
+            Known::ListedWithoutPrice => Some(format!("{name} (voce senza prezzi)")),
+        })
+        .collect()
+}
+
+/// Che cosa il listino sa dire di questo flusso, **prima** di lanciarlo.
+///
+/// **PERCHÉ UN FRENO CHE NON FRENA SI DEVE VEDERE PRIMA.** È la seconda metà
+/// della cura del guasto 35, e senza di lei la prima non basta: adesso il
+/// listino viaggia col prodotto, ma i modelli che nessuno ha prezzato — quelli di
+/// OpenAI e di Google, tenuti fuori di proposito perché nessuno ne ha verificato
+/// i prezzi — continuano a lasciare il costo sconosciuto. Chi non ha un prezzo
+/// per un modello deve **saperlo**, non scoprirlo con uno zero.
+///
+/// **I MODELLI ARRIVANO DAL DEPOSITO, NON DAL FLUSSO.** Un passo nomina lo
+/// strumento, non il modello: nessuno *chiede* un modello, e indovinarne uno
+/// sarebbe inventarlo. L'unica fonte onesta è chi ha già risposto, cioè le corse
+/// passate — per questo un flusso mai girato qui non riceve un elenco vuoto ma
+/// una frase che dice che non si sa, come per il rilevatore assente.
+fn what_is_priced(
+    prices: &PriceList,
+    seen: Option<&BTreeSet<String>>,
+    cap: Option<i64>,
+) -> String {
+    let mut said = format!("\nlistino: {} modelli prezzati", prices.entries.len());
+    let Some(seen) = seen else {
+        said.push_str(
+            "\nmodelli: il deposito non si è potuto leggere, quindi non si sa quali \
+             modelli questo flusso abbia usato",
+        );
+        return said;
+    };
+    if seen.is_empty() {
+        said.push_str(
+            "\nmodelli: questo flusso non è mai girato qui, quindi non si sa quali \
+             risponderanno né se il listino saprà prezzarli",
+        );
+        return said;
+    }
+    let unpriced = cannot_be_priced(prices, seen);
+    if unpriced.is_empty() {
+        let _ = write!(
+            said,
+            "\nmodelli usati dalle corse passate: tutti prezzati ({})",
+            seen.iter().cloned().collect::<Vec<_>>().join(", ")
+        );
+        return said;
+    }
+    let _ = write!(
+        said,
+        "\nmodelli usati dalle corse passate che il listino non sa prezzare: {}\
+         \n  il loro costo resta sconosciuto, non zero: la spesa contata è più bassa \
+         di quella vera\
+         \n  si ripara scrivendo la voce in ~/.config/sailor/pricing.json, che vince su \
+         quella spedita",
+        unpriced.join(", ")
+    );
+    // **LA RIGA DEL TETTO SOLO QUANDO LE DUE COSE COINCIDONO.** Un tetto senza
+    // modelli scoperti non ha niente da dichiarare, e modelli scoperti senza
+    // tetto non fermano niente: è la coincidenza a essere pericolosa, ed è la
+    // frase per cui il guasto 35 è stato scritto — un freno che non frena si
+    // deve vedere prima di lanciare, non a fattura arrivata.
+    if cap.is_some() {
+        said.push_str(
+            "\n  e il tetto di spesa non conterà quelle chiamate: si fermerà più tardi \
+             di quanto dichiara, o non si fermerà affatto",
+        );
+    }
+    said
+}
 
 /// `sailor flow cap <nome>`: il tetto che c'è, e cosa il deposito ha visto.
 fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
@@ -851,12 +997,21 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
     let tools = toolbox::Tools::current();
     let real = actions::RealDryProbe;
     let probe: Option<&dyn actions::DryProbe> = if try_engines { Some(&real) } else { None };
-    let (report, unknown) = check_report(
+    let (mut report, unknown) = check_report(
         &flow,
         &default_registry(open_default_ledger(), None),
         Some(&tools),
         probe,
     );
+    // **IL LISTINO SI GUARDA QUI E NON DENTRO `check_report`.** Quel rapporto è
+    // puro — flusso, registro, rilevatore, sonda, tutti passati da fuori — e i
+    // modelli che un flusso ha usato li sa solo il deposito. Tenerlo fuori
+    // lascia `check_report` provabile senza aprirne uno.
+    report.push_str(&what_is_priced(
+        &actions::current_price_list(),
+        models_seen_by(&flow.id).as_ref(),
+        flow.spend_cap_micros,
+    ));
     // **UN PERCORSO DI POSIZIONE ASSOLUTO È UN ERRORE, NON UN AVVISO.** Il
     // flusso gira in un posto solo: altrove non fallisce, lavora nel posto
     // sbagliato — ed è il modo in cui il guasto 25 è passato inosservato.
@@ -2990,6 +3145,210 @@ mod tests {
         assert!(report.contains("non arriva ai motori"), "{report}");
         assert!(report.contains("primo fronte"), "{report}");
         assert!(report.contains("restano fuori dalla somma"), "{report}");
+    }
+
+    // ── quello che il listino non sa prezzare ────────────────────────────
+
+    /// Un listino che conosce un modello solo, con i suoi prezzi, e una voce
+    /// dichiarata a metà: bastano a distinguere le tre risposte.
+    fn a_small_price_list() -> PriceList {
+        PriceList::parse(
+            r#"{"currency":"USD","models":[
+                {"id":"prezzato","input_per_million":5.0,"output_per_million":25.0},
+                {"id":"a-meta","input_per_million":5.0}
+            ]}"#,
+        )
+        .expect("il listino di prova si legge")
+    }
+
+    fn names(list: &[&str]) -> BTreeSet<String> {
+        list.iter().map(|name| (*name).to_owned()).collect()
+    }
+
+    /// **CHI NON HA UN PREZZO PER UN MODELLO DEVE SAPERLO, E SAPERE QUALE.**
+    ///
+    /// È la seconda metà della cura del guasto 35. Il primo modello è prezzato e
+    /// non deve comparire; gli altri due no, e devono comparire **col perché**,
+    /// perché si riparano in due modi diversi.
+    ///
+    /// *Mutante eseguito*: far restituire a `cannot_be_priced` un elenco vuoto.
+    /// Il rapporto torna a tacere e questa prova diventa rossa — che è
+    /// esattamente il difetto: uno zero al posto di una risposta.
+    #[test]
+    fn a_model_without_a_price_is_named_and_the_reason_with_it() {
+        let said = what_is_priced(
+            &a_small_price_list(),
+            Some(&names(&["prezzato", "a-meta", "mai-visto"])),
+            None,
+        );
+
+        assert!(!said.contains("prezzato ("), "un modello prezzato non si segnala: {said}");
+        assert!(said.contains("mai-visto (nessuna voce nel listino)"), "{said}");
+        assert!(said.contains("a-meta (voce senza prezzi)"), "{said}");
+        assert!(said.contains("sconosciuto"), "e dice cosa gli succede: {said}");
+    }
+
+    /// **QUANDO SONO TUTTI PREZZATI LO DICE LO STESSO.** Un rapporto che tace
+    /// lascia chi legge a chiedersi se il controllo abbia guardato — è la stessa
+    /// regola per cui la riga del tetto c'è anche quando il tetto non c'è.
+    #[test]
+    fn when_everything_is_priced_the_report_says_so_instead_of_falling_silent() {
+        let said = what_is_priced(&a_small_price_list(), Some(&names(&["prezzato"])), None);
+
+        assert!(said.contains("tutti prezzati"), "{said}");
+        assert!(!said.contains("nessuna voce"), "{said}");
+    }
+
+    /// **«MAI GIRATO QUI» E «NON HO POTUTO GUARDARE» SONO DUE FRASI DIVERSE.**
+    ///
+    /// Un deposito che non si apre — non c'è, i permessi lo negano — non dice
+    /// che il flusso non è mai girato: dice che nessuno ha potuto guardare.
+    /// Confonderli fa stampare «mai girato qui» a un flusso girato cento volte,
+    /// ed è la stessa regola per cui il rilevatore assente fa tacere il rapporto
+    /// invece di dichiarare sano ciò che non ha visto.
+    ///
+    /// *Mutante eseguito*: far collassare il ramo `None` su quello dell'insieme
+    /// vuoto. Le due frasi diventano una e questa prova diventa rossa.
+    #[test]
+    fn a_ledger_that_could_not_be_read_is_not_a_flow_that_never_ran() {
+        let unreadable = what_is_priced(&a_small_price_list(), None, None);
+        let never_ran = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
+
+        assert_ne!(unreadable, never_ran);
+        assert!(unreadable.contains("non si è potuto leggere"), "{unreadable}");
+        assert!(!unreadable.contains("mai girato"), "{unreadable}");
+    }
+
+    /// **UN FLUSSO MAI GIRATO QUI NON RICEVE UN ELENCO VUOTO, MA UNA FRASE.**
+    ///
+    /// I modelli si sanno solo da chi ha già risposto: un passo nomina lo
+    /// strumento, non il modello. Dire «tutti prezzati» senza aver visto niente
+    /// sarebbe una rassicurazione costruita sul nulla — è la stessa distinzione
+    /// che il rilevatore tiene fra «non c'è» e «non ho potuto guardare».
+    #[test]
+    fn a_flow_that_never_ran_here_is_told_that_nothing_is_known_yet() {
+        let said = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
+
+        assert!(!said.contains("tutti prezzati"), "{said}");
+        assert!(said.contains("mai girato"), "{said}");
+    }
+
+    /// **UN TETTO CHE NON PUÒ SCATTARE SI DEVE VEDERE PRIMA DI LANCIARE.**
+    ///
+    /// È la frase per cui il guasto 35 è stato scritto: il tetto si misura sui
+    /// costi noti, quindi un modello senza prezzo lo rende più largo di quanto
+    /// dice — e chi lancia lo scopre a fattura arrivata. La riga compare solo
+    /// quando tutte e due le condizioni ci sono, perché è la loro coincidenza a
+    /// essere pericolosa.
+    ///
+    /// *Mutante eseguito*: togliere il ramo che guarda `cap` e stampare la frase
+    /// sempre. Il terzo braccio — flusso senza tetto — diventa rosso.
+    #[test]
+    fn a_cap_that_cannot_fire_is_declared_before_the_run_not_after() {
+        let unpriced = names(&["mai-visto"]);
+        let priced = names(&["prezzato"]);
+
+        let with_cap = what_is_priced(&a_small_price_list(), Some(&unpriced), Some(5_000_000));
+        assert!(with_cap.contains("il tetto"), "{with_cap}");
+
+        let all_priced = what_is_priced(&a_small_price_list(), Some(&priced), Some(5_000_000));
+        assert!(
+            !all_priced.contains("il tetto"),
+            "senza modelli scoperti il tetto non ha niente da dichiarare: {all_priced}"
+        );
+
+        let no_cap = what_is_priced(&a_small_price_list(), Some(&unpriced), None);
+        assert!(
+            !no_cap.contains("il tetto"),
+            "un flusso senza tetto non ha un tetto da avvisare: {no_cap}"
+        );
+    }
+
+    /// Una chiamata registrata: il modello che ha risposto, i suoi token, e se
+    /// un costo è stato calcolato o no.
+    fn a_call(actual_model: &str, cost: Option<i64>) -> ledger::ModelCallRecord {
+        ledger::ModelCallRecord {
+            call_id: format!("call-{actual_model}"),
+            run_id: "run-1".to_owned(),
+            step_id: None,
+            purpose: "external_engine".to_owned(),
+            cli: "claude-code".to_owned(),
+            requested_model: String::new(),
+            actual_model: actual_model.to_owned(),
+            input_tokens: Some(100),
+            output_tokens: Some(100),
+            cached_tokens: None,
+            cache_write_tokens: None,
+            cache_write_long_tokens: None,
+            total_tokens: None,
+            turns: Some(1),
+            cost_micros: cost,
+            declared_cost_micros: None,
+            price_currency: cost.map(|_| "USD".to_owned()),
+            input_price_micros_per_million: None,
+            output_price_micros_per_million: None,
+            cached_price_micros_per_million: None,
+            cache_write_price_micros_per_million: None,
+            cache_write_long_price_micros_per_million: None,
+            mandate_name: String::new(),
+            mandate_version: String::new(),
+            retry_chain: vec![],
+            error_type: None,
+            started_at: 0,
+            ended_at: Some(1),
+            session_id: None,
+        }
+    }
+
+    fn a_finished_run() -> ledger::RunRecord {
+        ledger::RunRecord {
+            run_id: "run-1".to_owned(),
+            kind: "flow".to_owned(),
+            entity: "prova".to_owned(),
+            parent_run_id: None,
+            started_by: "prova".to_owned(),
+            status: "went".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 0,
+            ended_at: Some(10),
+        }
+    }
+
+    /// **`flow cost` NOMINA IL MODELLO SCOPERTO, NON SOLO QUANTE CHIAMATE.**
+    ///
+    /// «Una chiamata senza costo noto» è un numero su cui non si può agire; il
+    /// nome del modello è una riga da scrivere nel listino. La corsa ha due
+    /// chiamate — una prezzata e una no — e solo la seconda deve comparire:
+    /// nominarle tutte e due manderebbe a correggere una voce che c'è già.
+    ///
+    /// *Mutante eseguito*: far restituire a `cannot_be_priced` un elenco vuoto.
+    /// Il rapporto torna a dire solo «1 senza costo noto» e questa diventa rossa.
+    #[test]
+    fn the_cost_report_names_the_model_that_has_no_price() {
+        let calls = vec![a_call("prezzato", Some(1_000)), a_call("mai-visto", None)];
+        let view = ui::dashboard::summarize_run(&a_finished_run(), &[], &calls, 100);
+
+        let said = spending_report(&view, &a_small_price_list());
+
+        assert!(said.contains("mai-visto (nessuna voce nel listino)"), "{said}");
+        assert!(
+            !said.contains("prezzato ("),
+            "un modello prezzato non si segnala: {said}"
+        );
+        assert!(said.contains("più bassa di quella vera"), "{said}");
+    }
+
+    /// La gemella: quando tutto è prezzato la riga non compare. Senza di lei un
+    /// mutante che la stampasse sempre passerebbe la prova qui sopra.
+    #[test]
+    fn a_run_where_everything_is_priced_gets_no_such_line() {
+        let calls = vec![a_call("prezzato", Some(1_000))];
+        let view = ui::dashboard::summarize_run(&a_finished_run(), &[], &calls, 100);
+
+        let said = spending_report(&view, &a_small_price_list());
+
+        assert!(!said.contains("non sa prezzare"), "{said}");
     }
 
     /// **SOTTO TRE CORSE COSTATE NON SI SUGGERISCE NIENTE, E SI DICE PERCHÉ.**
