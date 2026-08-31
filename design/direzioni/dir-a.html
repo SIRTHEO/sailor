@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>A</title><style>
+:root{
+  --ink:#111d1b; --muted:#4e5855; --bg:#f2fdfa; --surface:#e8f3f0; --line:#d7e2df;
+  --focus:#ae5775;
+  --state-waiting:#4e5855; --state-running:#0e5794; --state-went:#0a672e;
+  --state-broke:#972620; --state-capped:#764b09; --state-human:#663e8e;
+  --prose:"Charter","Georgia",serif; --data:"PT Mono","Menlo",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--prose);font-size:14px}
+.top{display:flex;align-items:baseline;gap:16px;padding:10px 20px;border-bottom:1px solid var(--line)}
+.brand{font-size:16px;letter-spacing:.02em}
+.count{font-family:var(--data);font-size:12px;color:var(--muted)}
+.scale{margin-left:auto;font-family:var(--data);font-size:12px;color:var(--muted)}
+table{width:100%;border-collapse:collapse}
+th{font-family:var(--prose);font-size:12px;font-weight:400;text-transform:uppercase;
+   letter-spacing:.1em;color:var(--muted);text-align:left;padding:8px 20px 6px;
+   border-bottom:1px solid var(--line)}
+th.num,td.num{text-align:right}
+td{height:26px;padding:0 20px;border-bottom:1px solid var(--line);vertical-align:middle}
+.name{font-size:14px}
+.proj{font-size:12px;color:var(--muted)}
+.st{font-family:var(--data);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.num{font-family:var(--data);font-size:12px}
+.band{position:relative;height:10px;background:var(--surface)}
+.seg{position:absolute;top:0;height:10px}
+.now{position:absolute;top:-4px;width:1px;height:18px;background:var(--focus)}
+.cap{position:absolute;top:-2px;width:1px;height:14px;background:var(--state-capped)}
+.mark{width:14px;height:14px;display:inline-block;text-align:center;line-height:14px;
+      font-family:var(--data);font-size:10px;color:var(--bg)}
+</style></head><body>
+<div class="top"><span class="brand">Sailor</span>
+<span class="count">6 aperte · 2 chiedono te · 1,84 $ oggi</span>
+<span class="scale">— 5 min/px +</span></div>
+<table>
+<tr><th style="width:230px">corsa</th><th style="width:150px">progetto</th>
+    <th style="width:130px">stato</th><th class="num" style="width:80px">da</th>
+    <th class="num" style="width:90px">costo</th><th>tempo</th></tr>
+
+<tr><td class="name">sviluppa-sailor <span class="proj">· implementa</span></td>
+    <td class="proj">sailor</td>
+    <td class="st" style="color:var(--state-running)">in corso</td>
+    <td class="num">14 m</td><td class="num">0,412 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:12%;background:var(--state-went)"></div>
+      <div class="seg" style="left:12%;width:9%;background:var(--state-went)"></div>
+      <div class="seg" style="left:21%;width:47%;background:var(--state-running)"></div>
+      <div class="now" style="left:68%"></div><div class="cap" style="left:83%"></div>
+    </div></td></tr>
+
+<tr><td class="name">esamina-la-repo <span class="proj">· controprova</span></td>
+    <td class="proj">other-repo/api</td>
+    <td class="st" style="color:var(--state-human)">aspetta te</td>
+    <td class="num">31 m</td><td class="num">1,204 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:34%;background:var(--state-went)"></div>
+      <div class="seg" style="left:34%;width:52%;background:var(--state-human)"></div>
+      <div class="now" style="left:86%"></div>
+    </div></td></tr>
+
+<tr><td class="name">chiedi-all-indice <span class="proj">· verifica</span></td>
+    <td class="proj">sailor</td>
+    <td class="st" style="color:var(--state-broke)">rotto</td>
+    <td class="num">2 m</td><td class="num">0,000 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:6%;background:var(--state-broke)"></div>
+    </div></td></tr>
+
+<tr><td class="name">smista-il-lavoro <span class="proj">· dispatch</span></td>
+    <td class="proj">sailor</td>
+    <td class="st" style="color:var(--state-capped)">fermo al tetto</td>
+    <td class="num">8 m</td><td class="num">0,200 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:22%;background:var(--state-went)"></div>
+      <div class="seg" style="left:22%;width:4%;background:var(--state-capped)"></div>
+      <div class="cap" style="left:26%"></div>
+    </div></td></tr>
+
+<tr><td class="name">costruisci-una-pagina <span class="proj">· schermo</span></td>
+    <td class="proj">other-repo/web</td>
+    <td class="st" style="color:var(--state-waiting)">in attesa</td>
+    <td class="num">3 m</td><td class="num">0,024 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:8%;background:var(--state-went)"></div>
+      <div class="seg" style="left:8%;width:5%;background:var(--state-waiting)"></div>
+      <div class="now" style="left:13%"></div>
+    </div></td></tr>
+
+<tr><td class="name">relay <span class="proj">· send-clear</span></td>
+    <td class="proj">sailor</td>
+    <td class="st" style="color:var(--state-running)">in corso · 2ª di 3</td>
+    <td class="num">47 s</td><td class="num">0,003 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:3%;background:var(--state-running)"></div>
+      <div class="now" style="left:3%"></div>
+    </div></td></tr>
+</table>
+</body></html>
