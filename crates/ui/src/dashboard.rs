@@ -40,6 +40,13 @@ pub struct TokenTotals {
     pub cost_micros: i64,
     pub calls: usize,
     /// Quante di queste chiamate non hanno detto nessun conteggio.
+    /// **QUANTI TURNI IN TUTTO.** Un turno e' un giro del modello dentro una
+    /// sola chiamata, e su una misura del 31/08/2026 e' la quantita' che spiega
+    /// perche' una catena di passi costa piu' di una sessione sola: per turno
+    /// legge l'8% in piu', ma di turni ne fa il doppio. Chi guarda un totale di
+    /// token senza sapere in quanti turni e' stato speso non sa dove
+    /// intervenire.
+    pub turns: u64,
     pub calls_without_tokens: usize,
     /// Quante non hanno un costo: il modello non era nel listino, o il listino
     /// non aveva il suo prezzo.
@@ -53,6 +60,7 @@ impl TokenTotals {
         self.cached_tokens += call.cached_tokens.unwrap_or(0);
         self.cache_write_tokens +=
             call.cache_write_tokens.unwrap_or(0) + call.cache_write_long_tokens.unwrap_or(0);
+        self.turns += call.turns.unwrap_or(0);
         // Solo per chi non ha detto i lati: chi li ha detti è già contato sopra.
         if call.input_tokens.is_none() && call.output_tokens.is_none() {
             self.total_tokens_only += call.total_tokens.unwrap_or(0);
@@ -95,6 +103,9 @@ pub struct CallView {
     pub cache_write_tokens: Option<u64>,
     pub cache_write_long_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
+    /// I turni di questa chiamata: quante volte il modello e' tornato a parlare
+    /// dentro una sola invocazione.
+    pub turns: Option<u64>,
     pub cost_micros: Option<i64>,
     /// Quanto il motore ha dichiarato di suo, accanto al conto del listino:
     /// se i due divergono, la divergenza si vede.
@@ -205,6 +216,7 @@ pub fn summarize_run(
                 cache_write_tokens: call.cache_write_tokens,
                 cache_write_long_tokens: call.cache_write_long_tokens,
                 total_tokens: call.total_tokens,
+                turns: call.turns,
                 cost_micros: call.cost_micros,
                 declared_cost_micros: call.declared_cost_micros,
                 error_type: call.error_type.clone(),
@@ -317,6 +329,7 @@ mod tests {
             cache_write_tokens: None,
             cache_write_long_tokens: None,
             total_tokens: None,
+            turns: None,
             cost_micros: cost,
             declared_cost_micros: None,
             price_currency: Some("USD".to_owned()),

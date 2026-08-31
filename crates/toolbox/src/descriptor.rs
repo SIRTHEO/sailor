@@ -223,6 +223,16 @@ pub struct Usage {
     /// Il totale, per i motori che dicono solo quello senza separare i lati.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_tokens: Option<Where>,
+    /// Quanti turni ha fatto la chiamata: quante volte il modello e' tornato a
+    /// parlare dentro una sola invocazione.
+    ///
+    /// **E' LA VOCE CHE SPIEGA IL CONTO DI UNA CATENA DI PASSI.** Misurato il
+    /// 31/08/2026: un flusso di quattro passi legge per turno l'8% in piu' di
+    /// una sola sessione che fa lo stesso lavoro, ma fa il doppio dei turni --
+    /// e il suo consumo e' il doppio. Chi vuole far costare meno un flusso deve
+    /// muovere questo numero, e finora non era misurato da nessuna parte.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turns: Option<Where>,
     /// Dove il motore dichiara quanto ha fatto pagare. Si registra come
     /// confronto: il listino locale resta la fonte di verità.
     #[serde(default, skip_serializing_if = "Option::is_none")]

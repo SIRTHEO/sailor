@@ -123,6 +123,7 @@ fn fake_call(run_id: &str, step_id: &str, model: &str, input_tokens: u64, cost_m
         cache_write_tokens: None,
         cache_write_long_tokens: None,
         total_tokens: None,
+        turns: None,
         cost_micros: Some(cost_micros),
         declared_cost_micros: None,
         price_currency: Some("USD".into()),
