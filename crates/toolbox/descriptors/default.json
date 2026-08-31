@@ -66,7 +66,37 @@
     "",
     "Chi non dichiara `usage` funziona esattamente come prima, e lascia i propri",
     "token a SCONOSCIUTO. Non a zero: uno zero al posto di «non lo so» si somma,",
-    "e nessuna vista a valle può più correggerlo."
+    "e nessuna vista a valle può più correggerlo.",
+    "",
+    "`capabilities` dice CHE COSA QUEL MOTORE SA FARE OLTRE A RISPONDERE, e con",
+    "quali argomenti lo si ottiene. È una mappa da nome a dichiarazione, e il",
+    "codice non conosce nessuno di quei nomi: aggiungerne uno è scrivere qui",
+    "dentro, mai ricompilare. Ogni voce si scrive in uno di tre modi:",
+    "  \"choose_model\": { \"args\": [\"--model\"], \"takes_value\": true }",
+    "  \"resume_session\": [ {\"args\": [\"--resume\"]}, {\"args\": [\"--continue\"]} ]",
+    "  \"fork_session\": false",
+    "Una forma ha `args` (le opzioni, o il sottocomando), `takes_value` (l'ultima",
+    "vuole un valore subito dopo), `values` (l'insieme chiuso, dove esiste) e",
+    "`note` (il vincolo che la tabella non porta: «solo con --print»).",
+    "",
+    "SCRIVERE `false` NON È LA STESSA COSA CHE TACERE, ed è la ragione per cui",
+    "questo blocco esiste in questa forma. `false` dice «qualcuno ha guardato e",
+    "non c'è»; l'assenza della riga dice «nessuno ha guardato». Un blocco che",
+    "permettesse solo di elencare ciò che c'è farebbe passare per misurata ogni",
+    "assenza, compresa quella di uno strumento che nessuno ha mai aperto.",
+    "",
+    "CHI NON DICHIARA NIENTE CONTINUA A FUNZIONARE. Una capacità che manca non è",
+    "un errore: chi non sa imporre una forma alla risposta se la fa chiedere nel",
+    "prompt e paga più token — che è il comportamento di sempre, e resta il",
+    "ripiego. Un passo dichiara ciò che gli serve con `needs_capabilities`, e",
+    "`sailor flow check` avvisa nominando passo, motore e capacità.",
+    "",
+    "I nomi usati qui: `ask_without_interaction`, `response_shape`,",
+    "`resume_session`, `fork_session`, `isolate_from_user_config`,",
+    "`receive_equipment`, `native_spend_cap`, `choose_model`, `fallback_model`.",
+    "Non sono un elenco chiuso — non c'è nessun posto nel codice dove sia",
+    "scritto — ma chi ne inventa uno accanto a uno che c'è già ottiene che due",
+    "descrittori parlino di due cose che nessuno può confrontare."
   ],
   "tools": [
     {
@@ -93,6 +123,51 @@
         "model": { "first_key_of": ["modelUsage"] },
         "answer": ["result"]
       },
+      "capabilities": {
+        "ask_without_interaction": { "args": ["-p"], "note": "`--print` è la forma lunga della stessa bandiera" },
+        "response_shape": {
+          "args": ["--json-schema"],
+          "takes_value": true,
+          "note": "prende uno schema JSON per intero, non un nome di formato: è l'unico dei quattro che imponga la forma dei campi e non solo l'involucro"
+        },
+        "resume_session": [
+          { "args": ["--resume"], "note": "il valore è facoltativo: senza, apre il selettore" },
+          { "args": ["--session-id"], "takes_value": true, "note": "vuole un UUID valido" },
+          { "args": ["--continue"], "note": "riprende l'ultima conversazione di questa cartella" }
+        ],
+        "fork_session": {
+          "args": ["--fork-session"],
+          "note": "va insieme a --resume o a --continue: da solo non ha niente da ramificare"
+        },
+        "isolate_from_user_config": [
+          {
+            "args": ["--setting-sources"],
+            "takes_value": true,
+            "values": ["user", "project", "local"],
+            "note": "con il valore vuoto la riga di comando nasce vergine E RESTA AUTENTICATA: le competenze dell'utente spariscono, restano le incorporate. È la forma da usare per equipaggiare un motore senza scrivere in casa d'altri"
+          },
+          {
+            "args": ["--bare"],
+            "note": "isola di più e costa le credenziali: senza ANTHROPIC_API_KEY risponde «Not logged in», perché OAuth e portachiavi non vengono letti"
+          }
+        ],
+        "receive_equipment": [
+          { "args": ["--plugin-dir"], "takes_value": true, "note": "ripetibile; una cartella o uno .zip, solo per questa sessione" },
+          { "args": ["--mcp-config"], "takes_value": true },
+          { "args": ["--agents"], "takes_value": true, "note": "un oggetto JSON, non un percorso" }
+        ],
+        "native_spend_cap": {
+          "args": ["--max-budget-usd"],
+          "takes_value": true,
+          "note": "funziona solo insieme a --print"
+        },
+        "choose_model": { "args": ["--model"], "takes_value": true },
+        "fallback_model": {
+          "args": ["--fallback-model"],
+          "takes_value": true,
+          "note": "elenco separato da virgole, provato in ordine; solo con --print"
+        }
+      },
       "config": ["~/.claude/settings.json", "~/.claude.json"],
       "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare. Il blocco `usage` è misurato il 30/08/2026 su questa macchina, e ogni chiave viene da un'uscita vera, non dalla documentazione. DUE COSE NON OVVIE. (1) LA CACHE SCRITTA È LA VOCE PIÙ CARA: nella chiamata misurata — due token d'ingresso, quattro d'uscita — i 12.347 token scritti in cache erano il 96% dei 0,1285 dollari dichiarati. Le due durate hanno prezzi diversi e stanno in due chiavi diverse, quindi si dichiarano separate: sommarle sarebbe una perdita di informazione che nessuno vedrebbe più. (2) IL MODELLO NON È UN CAMPO: claude lo usa come CHIAVE di `modelUsage` (`{\"modelUsage\": {\"claude-opus-5[1m]\": {…}}}`), e per questo il puntatore è nella forma `first_key_of`. Senza quel nome nessuna voce di listino si trova, e il costo resterebbe sconosciuto pur avendo tutti i conteggi."
     },
@@ -111,6 +186,35 @@
         "read": "text",
         "total_tokens": "tokens used\\s*\\n\\s*([\\d.,]+)"
       },
+      "capabilities": {
+        "ask_without_interaction": { "args": ["exec"], "note": "sottocomando, non bandiera: vuole stare primo sulla riga" },
+        "response_shape": {
+          "args": ["--output-schema"],
+          "takes_value": true,
+          "note": "vuole il PERCORSO di un file con dentro lo schema, non lo schema"
+        },
+        "resume_session": {
+          "args": ["exec", "resume"],
+          "takes_value": true,
+          "note": "l'identificativo è facoltativo se si aggiunge --last"
+        },
+        "fork_session": {
+          "args": ["exec", "fork"],
+          "takes_value": true,
+          "note": "l'identificativo è OBBLIGATORIO. Misurato con `codex exec fork --help` il 31/08/2026: non compare fra le opzioni di `codex --help`, solo fra i sottocomandi di `exec`, ed è per questo che una lettura delle sole opzioni lo dà per assente"
+        },
+        "isolate_from_user_config": [
+          { "args": ["--ignore-user-config"], "note": "non carica $CODEX_HOME/config.toml; le credenziali restano" },
+          { "args": ["--ephemeral"], "note": "non scrive i file di sessione su disco" }
+        ],
+        "receive_equipment": [
+          { "args": ["--profile"], "takes_value": true, "note": "sovrappone $CODEX_HOME/<nome>.config.toml alla configurazione base; la forma breve è -p, che su codex NON vuol dire «stampa»" },
+          { "args": ["-c"], "takes_value": true, "note": "chiave=valore, ripetibile; il valore si legge come TOML" }
+        ],
+        "native_spend_cap": false,
+        "choose_model": { "args": ["--model"], "takes_value": true },
+        "fallback_model": false
+      },
       "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
       "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`."
     },
@@ -120,7 +224,30 @@
       "label": "Gemini CLI",
       "detect": { "command": "gemini" },
       "version": { "args": ["--version"] },
-      "config": ["~/.gemini/settings.json"]
+      "capabilities": {
+        "ask_without_interaction": { "args": ["--prompt"], "takes_value": true, "note": "la forma breve è -p; il testo va nell'opzione, non in un argomento libero" },
+        "response_shape": {
+          "args": ["--output-format"],
+          "takes_value": true,
+          "values": ["text", "json", "stream-json"],
+          "note": "SCEGLIE L'INVOLUCRO, NON I CAMPI: è un insieme chiuso di tre formati, non uno schema. Un passo che pretende una forma di campi precisa da gemini deve continuare a chiederla nel prompt"
+        },
+        "resume_session": [
+          { "args": ["--resume"], "takes_value": true, "note": "«latest» o il numero d'indice, non un UUID" },
+          { "args": ["--session-id"], "takes_value": true, "note": "apre una sessione NUOVA con l'UUID dato: non ne riprende una" }
+        ],
+        "fork_session": false,
+        "isolate_from_user_config": {
+          "args": ["--skip-trust"],
+          "note": "salta la fiducia sulla cartella di lavoro, non la configurazione dell'utente: è il più debole dei tre isolamenti misurati"
+        },
+        "receive_equipment": { "args": ["--extensions"], "takes_value": true, "note": "elenco di estensioni; senza l'opzione si caricano tutte" },
+        "native_spend_cap": false,
+        "choose_model": { "args": ["--model"], "takes_value": true },
+        "fallback_model": false
+      },
+      "config": ["~/.gemini/settings.json"],
+      "note": "Nessun blocco `ask`: la riga per una domanda secca è misurata — `--prompt` col testo attaccato — ma dove metta i token e come dichiari di essere esaurito no, e un `ask` senza `unusable_when` farebbe entrare gemini nelle catene senza ripiego. Il blocco `capabilities` è misurato con `gemini --help` il 31/08/2026."
     },
     {
       "id": "agy",
@@ -142,7 +269,25 @@
         "total_tokens": ["usage", "total_tokens"],
         "answer": ["response"]
       },
-      "note": "Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento, e `--print` sta in `args_before_prompt` perche deve restare attaccato alla domanda: misurato il 28/08/2026 che `--print` prende come domanda la parola che lo segue, e rimisurato il 31/08/2026 che le opzioni di `usage`, accodandosi dopo `ask`, gli finivano proprio li in mezzo - `agy` rispondeva \u00abError: --print took \"--output-format\" as its prompt\u00bb e il testo vero veniva ignorato. Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
+      "capabilities": {
+        "ask_without_interaction": { "args": ["--print"], "note": "la forma breve è -p; `--prompt` è un alias della stessa cosa" },
+        "response_shape": {
+          "args": ["--json-schema"],
+          "takes_value": true,
+          "note": "accetta lo schema per intero o il percorso di un file che lo contiene"
+        },
+        "resume_session": [
+          { "args": ["--conversation"], "takes_value": true, "note": "riprende per identificativo" },
+          { "args": ["--continue"], "note": "l'ultima conversazione; la forma breve è -c" }
+        ],
+        "fork_session": false,
+        "isolate_from_user_config": false,
+        "receive_equipment": { "args": ["--add-dir"], "takes_value": true, "note": "aggiunge una cartella allo spazio di lavoro, ripetibile: è tutto ciò che si può passargli da fuori" },
+        "native_spend_cap": false,
+        "choose_model": { "args": ["--model"], "takes_value": true },
+        "fallback_model": false
+      },
+      "note": "Il blocco `capabilities` è misurato con `agy --help` il 31/08/2026, e le quattro assenze sono scritte `false` di proposito: agy non ha nessun modo di ramificare una sessione, di isolarsi dalla configurazione dell'utente, di tenere un tetto di spesa suo né di ripiegare su un altro modello. «Non ce l'ha» e «nessuno ha guardato» sono due fatti diversi, e omettere la riga direbbe il secondo. Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. Nessun percorso di configurazione dichiarato: non è stato misurato dove lo tiene, e inventarne uno sarebbe peggio che tacere. Il prompt va in un argomento, e `--print` sta in `args_before_prompt` perche deve restare attaccato alla domanda: misurato il 28/08/2026 che `--print` prende come domanda la parola che lo segue, e rimisurato il 31/08/2026 che le opzioni di `usage`, accodandosi dopo `ask`, gli finivano proprio li in mezzo - `agy` rispondeva \u00abError: --print took \"--output-format\" as its prompt\u00bb e il testo vero veniva ignorato. Nessun `unusable_when`: non è stato visto come dichiara di essere esaurito, e inventarlo vorrebbe dire far scattare un ripiego su un fallimento qualunque."
     },
     {
       "id": "openrouter-cli",
