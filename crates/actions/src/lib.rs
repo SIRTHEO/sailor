@@ -459,6 +459,15 @@ pub struct CheckInvocation {
     pub command: String,
     pub env: BTreeMap<String, String>,
     pub timeout: Duration,
+    /// Dove gira la verifica.
+    ///
+    /// **PRIMA DEL 31/08/2026 NON C'ERA, E IL DIFETTO ERA INVISIBILE**: una
+    /// verifica girava sempre dove sta il processo, cioè dove capita che sia
+    /// stata lanciata la finestra o il terminale. Un `cargo test` che passa
+    /// perché è stato eseguito nell'albero sbagliato non fallisce: dice di sì.
+    /// La gemella `EngineInvocation` questo campo ce l'aveva già, e la
+    /// differenza fra le due non era una scelta.
+    pub workdir: Option<String>,
 }
 
 /// Asimmetrico di proposito: chi passa non ha niente da spiegare, chi fallisce
@@ -486,6 +495,9 @@ pub fn run_shell_check_watched(
     cmd.arg("-c").arg(&invocation.command).stdin(Stdio::null());
     for (key, value) in &invocation.env {
         cmd.env(key, value);
+    }
+    if let Some(workdir) = &invocation.workdir {
+        cmd.current_dir(workdir);
     }
     match run_with_timeout_watched(cmd, invocation.timeout, sink) {
         RunOutcome::Finished { status, stderr, .. } => {
@@ -1734,6 +1746,12 @@ struct CheckSpec {
     #[serde(default)]
     accept: Vec<String>,
     timeout_secs: u64,
+    /// Dove gira la verifica. Non lo scrive quasi mai una persona: ce lo mette
+    /// l'esecutore quando compone l'ingresso, prendendolo dalla radice del
+    /// progetto. Un percorso assoluto scritto qui a mano non arriva mai fin
+    /// qui — `step_input` lo rifiuta prima.
+    #[serde(default)]
+    workdir: Option<String>,
     /// Ciò che non è riconosciuto, per la stessa ragione di `EngineSpec::extra`.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
@@ -1793,6 +1811,7 @@ impl Action for ShellCheckAction {
             command: spec.command,
             env: spec.env,
             timeout: Duration::from_secs(seconds),
+            workdir: spec.workdir,
         };
         let status = match run_shell_check_watched(&invocation, live.as_deref()) {
             CheckResult::Passed => "passed",
@@ -2359,6 +2378,7 @@ mod tests {
             command: "true".to_string(),
             env: BTreeMap::new(),
             timeout: secs(5),
+            workdir: None,
         };
         assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
     }
@@ -2369,6 +2389,7 @@ mod tests {
             command: "false".to_string(),
             env: BTreeMap::new(),
             timeout: secs(5),
+            workdir: None,
         };
         assert!(matches!(
             run_shell_check(&invocation),
@@ -2382,6 +2403,7 @@ mod tests {
             command: "sleep 60".to_string(),
             env: BTreeMap::new(),
             timeout: secs(1),
+            workdir: None,
         };
         assert!(matches!(
             run_shell_check(&invocation),
@@ -2397,8 +2419,33 @@ mod tests {
             command: "test -n \"$NOTTE_OUTPUT_FILE\"".to_string(),
             env,
             timeout: secs(5),
+            workdir: None,
         };
         assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+    }
+
+    /// **UNA VERIFICA GIRA DOVE LE SI DICE**, e prima del 31/08/2026 non c'era
+    /// modo di dirglielo: girava dove sta il processo. Un `cargo test` che
+    /// passa perché eseguito nell'albero sbagliato non fallisce — dice di sì,
+    /// ed è il difetto peggiore che una verifica possa avere.
+    #[test]
+    fn a_check_runs_where_it_is_told() {
+        let elsewhere = std::env::temp_dir().join(format!(
+            "sailor-verifica-altrove-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&elsewhere).expect("cartella di prova");
+        std::fs::write(elsewhere.join("il-testimone"), "x").expect("testimone");
+        let invocation = CheckInvocation {
+            command: "test -f il-testimone".to_string(),
+            env: BTreeMap::new(),
+            timeout: secs(5),
+            workdir: Some(elsewhere.display().to_string()),
+        };
+
+        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+
+        let _ = std::fs::remove_dir_all(&elsewhere);
     }
 
     // ── le azioni registrabili ─────────────────────────────────────────
