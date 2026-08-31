@@ -82,18 +82,22 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
 ## Difetti noti e non riparati
 
 I guasti, con come si sono visti e cosa li impedirebbe, stanno in
-`docs/guasti-incontrati.md` — **dieci aperti su trenta**. (Questa riga era una
-copia a mano che invecchiava da sola, ed era sbagliata in quattro documenti su
-quattro: dal 31/08/2026 una prova la confronta con la tabella e diventa rossa
-quando divergono — `cargo test -p sailor --test the_fault_table_holds_together`.
-Resta che il numero lo dovrà dare il deposito, il giorno che le voci ci passano.) Qui solo quelli che
-non sono guasti ma limiti dichiarati:
+`docs/guasti-incontrati.md`, che porta anche **quanti sono e quanti aperti**.
+(Qui il numero c'era, scritto a mano, ed era già scaduto: diceva «dieci aperti
+su trenta» mentre la tabella ne portava altri due. La prova nata il 31/08/2026 —
+`cargo test -p sailor --test the_fault_table_holds_together` — confronta la
+prosa **dentro quel file** con la tabella da cui viene, e questa copia non la
+vedeva nessuno. Un numero che il sistema sa dare non si ricopia: ci si rimanda,
+ed è la decisione del 29/08.) Qui solo quelli che non sono guasti ma limiti
+dichiarati:
 
 - ~~**I passi girano in fila, non insieme.**~~ Riparato il 30/08/2026: il fronte
   parte insieme, con un tetto dichiarato di quattro passi per ondata. Misurato:
-  due passi da sei secondi in 6,07 secondi, tre in 6,05. Resta da decidere se il
-  tetto debba diventare una conseguenza di un tetto di spesa invece di una
-  costante.
+  due passi da sei secondi in 6,07 secondi, tre in 6,05. ~~Resta da decidere se
+  il tetto debba diventare una conseguenza di un tetto di spesa invece di una
+  costante.~~ Sciolto il 31/08/2026: quattro è il **soffitto**, e sotto un tetto
+  di spesa la larghezza la calcola `how_many_fit` dal residuo diviso la chiamata
+  più cara vista in quella corsa.
 - **La cassetta dei passi offre otto tipi, il motore ne esegue tre.** Chi usa uno
   degli altri cinque costruisce un flusso che non parte. La cura è la stessa
   degli strumenti: chiedere al motore, non tenere una lista.

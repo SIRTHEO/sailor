@@ -138,6 +138,41 @@ ha messo un limite», il secondo è «questo flusso non deve spendere niente». 
 tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di fermare, e
 lo farebbe la notte.
 
+### Un tetto non si tara su meno di tre corse costate, e oggi non se ne tara nessuno
+**31/08/2026.** `sailor flow cap <nome>` suggerisce un valore **solo** con
+almeno tre corse di quel flusso che abbiano speso qualcosa di noto. Sotto la
+soglia rifiuta di suggerire e dice cosa c'è. Il suggerimento, quando c'è, è
+*peggiore corsa osservata + chiamata più cara osservata*.
+
+**Perché tre, e perché il secondo addendo.** Con due campioni il massimo e il
+minimo sono gli unici due valori: chiamare «peggiore osservata» il maggiore di
+due è un dato inventato con la faccia di una misura, ed è il guasto 22 in
+un'altra forma. Il secondo addendo non è prudenza: il controllo scatta *prima*
+di aprire un fronte, mai dentro una chiamata, quindi la corsa si ferma con la
+grana di una chiamata e non di un micro — la somma dice «la corsa più cara che
+ho visto, più la grana con cui so fermarmi».
+
+**E oggi nessun flusso raggiunge la soglia. Misurato sul deposito di questa
+macchina il 31/08/2026, in sola lettura**: 34 corse, e **6 con un costo diverso
+da zero** — `come-lo-risolvono-gli-altri` 2, `esamina-la-repo` 2,
+`prova-dei-turni` 1, `sviluppa-sailor` 1. Le altre 28 sono il guasto 22, dove il
+costo era la costante zero fino al 30/08. **La proposta scartata era «mediana +
+50%»**: su quella colonna la mediana darebbe zero per ogni flusso, cioè un tetto
+che ferma ogni corsa prima del primo passo — e lo farebbe di notte, con l'aria
+di una taratura su molti campioni. Chi vorrà tarare i tetti lo farà quando i
+campioni ci saranno, non prima.
+
+**Il tetto non si collega a `native_spend_cap`**, la capacità dichiarata dal
+solo claude-code: portata diversa (una corsa contro un'invocazione), parola
+diversa per fermarsi, e un motore su quattro ce l'ha. Farne dipendere il freno
+significherebbe che il tetto vale o non vale a seconda di chi risponde.
+
+**E la cifra si chiama «costo equivalente» dovunque si mostri.** Resta in micro
+di valuta, ma «spesi 5,00 su un tetto di 5,00» fa credere che sia stata fermata
+una fattura: con una riga di comando locale si paga un abbonamento, e quello che
+si consuma è quota. `sailor flow cost` lo diceva già; `why_it_stopped` no, e lo
+stesso numero si leggeva in due modi a seconda del comando che lo mostrava.
+
 ### Le capacità di uno strumento sono un dato, e l'assenza si scrive
 **31/08/2026.** Un descrittore dichiara, oltre a `detect`, `version`, `ask` e
 `usage`, un blocco **`capabilities`**: che cosa quel motore sa fare oltre a
