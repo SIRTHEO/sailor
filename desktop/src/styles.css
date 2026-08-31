@@ -402,6 +402,180 @@ button.is-primary {
   min-height: 0;
 }
 
+/* LA TELA RESTA MONTATA ANCHE QUANDO NON SI VEDE. Smontarla a ogni cambio di
+   posto rifarebbe la disposizione dei nodi e perderebbe l'inquadratura: chi
+   torna sui flussi si ritroverebbe altrove ogni volta. `hidden` da solo non
+   basta contro un `display: flex`. */
+.body[hidden] {
+  display: none;
+}
+
+/* ── i posti della finestra ─────────────────────────────────────────────── */
+
+.places {
+  display: flex;
+  gap: var(--space-5);
+  flex-shrink: 0;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.places__item {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-2) 0;
+  cursor: pointer;
+}
+
+/* Dove si è: il filo sotto, non un fondo colorato. Il divieto 4 riserva la
+   tinta allo stato della macchina, e «sono qui» non è uno stato della
+   macchina — ma la parola cambia peso, quindi il posto non lo porta il solo
+   colore. */
+.places__item[data-here] {
+  color: var(--ink);
+  border-bottom-color: var(--focus);
+}
+
+.places__count {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  letter-spacing: 0;
+  color: var(--muted);
+  margin-left: var(--space-1);
+}
+
+/* ── adesso ─────────────────────────────────────────────────────────────── */
+
+.now {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
+}
+
+.now__mute,
+.now__empty {
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.now__group + .now__group {
+  margin-top: var(--space-6);
+}
+
+.now__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.now__title {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink);
+  margin: 0;
+}
+
+.now__count {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.now__note {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.now__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.now__table th {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  text-align: left;
+  font-weight: 400;
+  padding: var(--space-1) var(--space-3) var(--space-1) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.now__table td {
+  font-size: var(--text-body);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: baseline;
+}
+
+.now__entity {
+  color: var(--ink);
+}
+
+.now__unnamed {
+  color: var(--muted);
+}
+
+/* L'identificativo della corsa sta sotto il nome e non accanto: è il dato che
+   si copia, non quello che si legge. */
+.now__id {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.now__state {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.now__state[data-state="waiting"] {
+  color: var(--state-human);
+}
+
+.now__state[data-state="working"] {
+  color: var(--state-running);
+}
+
+/* I numeri che si confrontano fra righe: divieto 10. */
+.now__num {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.now__open {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--focus);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.now__elsewhere {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
 .rail {
   width: 232px;
   flex-shrink: 0;

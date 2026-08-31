@@ -176,6 +176,38 @@ export async function knownRuns(): Promise<RunSnapshot[]> {
   return invoke<RunSnapshot[]>("known_runs");
 }
 
+/**
+ * Una corsa aperta, chiunque l'abbia avviata. Ricalca `OpenRun` di
+ * `desktop/src-tauri/src/run.rs`: chi cambia l'uno cambia l'altro.
+ */
+export interface OpenRun {
+  run_id: string;
+  entity: string;
+  /** «working» lavora, «waiting» è ferma e riparte solo se fai qualcosa. */
+  state: "working" | "waiting";
+  open_steps: number;
+  /** Da quando dura questo stato, in secondi dall'epoca. */
+  since: number;
+  /** Vero se questa finestra è quella che l'ha avviata. */
+  started_here: boolean;
+}
+
+/**
+ * Tutte le corse aperte sulla macchina, non solo quelle di questa finestra.
+ *
+ * **NON È `knownRuns` CON PIÙ RIGHE.** Quella legge la memoria del guscio e
+ * conosce solo ciò che questa finestra ha avviato; questa interroga il
+ * deposito, e vede anche una corsa partita dal terminale, da un'altra finestra
+ * o da una pianificazione notturna. È la differenza fra una schermata che dice
+ * «cosa sta succedendo» e una che dice «cosa ho fatto io» credendo siano la
+ * stessa cosa.
+ */
+export async function openRuns(): Promise<OpenRun[]> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da interrogare");
+  return invoke<OpenRun[]>("open_runs");
+}
+
 type Unlisten = () => void;
 
 interface EventGlobal {

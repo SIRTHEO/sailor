@@ -5,6 +5,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { FlowBandNode, StepNode, type FlowBandData, type StepNodeData } from "./StepNode";
+import { RunGroup } from "./Now";
+import type { OpenRun } from "./engine";
 import type { Step, StepRun, StepState } from "./flow";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
 
@@ -86,9 +88,58 @@ describe("il foglio di stile, letto come regole", () => {
   });
 });
 
+/**
+ * Porta la finestra sulla tela dei flussi.
+ *
+ * **LA FINESTRA NON SI APRE PIÙ DI LÌ**, e queste due scene lo hanno scoperto
+ * cadendo: dal 31/08/2026 si apre su «Adesso», e la tela sta dietro un posto
+ * che va scelto. Erano scese da 79 accoppiate a 8 senza che una riga del
+ * disegno fosse peggiorata — la misura era diventata cieca, e lo ha detto.
+ */
+function goToFlows(): void {
+  const place = screen.getByRole("button", { name: /^Flussi/ });
+  fireEvent.click(place);
+}
+
+describe("la prima schermata: cosa sta succedendo adesso", () => {
+  test("le corse aperte restano leggibili, tutte e due gli stati", () => {
+    // Si disegna `RunGroup` e non `Now`: fuori dal guscio nativo `Now` non ha
+    // un deposito a cui chiedere e mostrerebbe una frase sola. Misurare quella
+    // frase e chiamarla «la prima schermata» è il modo esatto in cui questo
+    // controllo tornerebbe a essere una decorazione.
+    const runs: OpenRun[] = [
+      {
+        run_id: "run-01JZ",
+        entity: "esamina-la-repo",
+        state: "waiting",
+        open_steps: 0,
+        since: 0,
+        started_here: true,
+      },
+      {
+        run_id: "run-01K0",
+        entity: "",
+        state: "working",
+        open_steps: 3,
+        since: 0,
+        started_here: false,
+      },
+    ];
+    render(
+      <div className="app">
+        <RunGroup title="Aspettano te" note="ferme finché non fai qualcosa" runs={runs} now={9000} onOpen={() => {}} />
+      </div>,
+    );
+    expect(screen.getByText("aspetta te")).toBeTruthy();
+    expect(screen.getByText("senza nome")).toBeTruthy();
+    expect(measure(20)).toEqual([]);
+  });
+});
+
 describe("la finestra a riposo", () => {
   test("nessuna accoppiata testo/sfondo sotto 4,5:1", () => {
     render(<App />);
+    goToFlows();
     // 79 accoppiate quando questa riga è stata scritta: la soglia lascia
     // margine a chi toglie un pezzo di finestra, non a chi ne perde metà.
     expect(measure(70)).toEqual([]);
@@ -103,6 +154,7 @@ describe("la finestra con un flusso a fuoco", () => {
     // sotto soglia: la descrizione a 1,47:1. Lo stesso meccanismo che il
     // divieto 5 condanna altrove, e più aggressivo di quello che ha tolto.
     const { container } = render(<App />);
+    goToFlows();
     const rail = Array.from(container.querySelectorAll("button.rail__item")).find(
       (button) => button.querySelector(".rail__label")?.textContent === "relay",
     );
