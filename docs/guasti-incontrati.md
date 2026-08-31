@@ -65,11 +65,19 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Undici sono ancora aperti** su trentotto, e tre di quelli (10, 28, 32) sono la
-stessa cosa vista da tre lati: **la stessa verità scritta in più posti, e
+**Quattordici sono ancora aperti** su trentotto, e tre di quelli (10, 28, 32)
+sono la stessa cosa vista da tre lati: **la stessa verità scritta in più posti, e
 nessun controllo che li confronti** — due copie di un elenco di componenti, sei
 copie della risoluzione dei rinvii, due blocchi di un descrittore che dicono
 cose diverse sulla stessa bandiera.
+
+*Tre di quei quattordici (14, 33, 37) dicono «chiuso in parte», e fino al
+01/09/2026 uno stato di mezzo li toglieva dal conto: la prosa diceva undici
+perché il controllo contava solo la parola «aperto». Nessuno l'aveva deciso —
+il 14 e il 33 erano usciti dal conto il 31/08 senza che nessuno se ne
+accorgesse, e la direzione dell'errore era quella che tranquillizza. Adesso un
+guasto conta come aperto finché la cura che dichiara non è fatta, e lo stato di
+mezzo serve solo a raccontare quale metà è fatta.*
 
 *Fino al 31/08 questa riga nominava il 4, il 10 e l'11 e diceva «il sistema non
 sa cosa sta facendo di sé». Il 4 e l'11 sono stati chiusi lo stesso giorno — il
