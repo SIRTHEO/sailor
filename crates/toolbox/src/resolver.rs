@@ -438,7 +438,13 @@ mod tests {
             }]"#,
             &dir,
         );
-        let tools = Tools { catalog, machine: machine(&dir) };
+        // Nessuna capacità di sessione: questa prova guarda come si chiede una
+        // cosa a un motore, non come gli si riprende una conversazione.
+        let tools = Tools {
+            catalog,
+            machine: machine(&dir),
+            sessions: SessionAbilities::default(),
+        };
 
         let recipe = tools.ask_recipe("schizzinoso").expect("la ricetta c'è");
         assert_eq!(
@@ -465,7 +471,13 @@ mod tests {
             }]"#,
             &dir,
         );
-        let tools = Tools { catalog, machine: machine(&dir) };
+        // Nessuna capacità di sessione: questa prova guarda come si chiede una
+        // cosa a un motore, non come gli si riprende una conversazione.
+        let tools = Tools {
+            catalog,
+            machine: machine(&dir),
+            sessions: SessionAbilities::default(),
+        };
 
         let recipe = tools.ask_recipe("silenzioso").expect("la ricetta c'è");
         assert!(recipe.refuses_without_prompt.is_empty());
