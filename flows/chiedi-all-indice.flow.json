@@ -1,0 +1,270 @@
+{
+  "id": "chiedi-all-indice",
+  "description": "IL GIRO INTERO CONTRO UN SERVER MCP: prima si verifica, poi si chiede, e se la verifica non passa la corsa si ferma rossa dicendo quale dei quattro esiti è successo. NIENTE È CABLATO: quale server avviare, quale strumento chiamare, con quali argomenti e quali verifiche preliminari stanno tutti nel flusso — nel codice c'è solo ciò che apre la connessione. TRE FATTI DISTINTI, MAI CONFUSI FRA LORO: «il server risponde» non è «il server offre questo strumento a questa sessione» (misurato il 31/08/2026: «claude mcp list» dichiarava socraticode connesso mentre la sessione che lo interrogava non lo aveva affatto); «l'indice è di questa cartella» non è «l'indice è sano e segue i cambiamenti»; e nessuna delle tre è «il server ha risposto che non lo sa». I testi cercati dai «proves» non sono inventati: vengono dalle risposte vere di questo server, lette il 31/08/2026 — la prima versione di questo flusso cercava «100%» in «codebase_status», che risponde invece «Status: green», e la corsa vera l'ha fatto vedere in venti secondi. Il quarto esito, quello che si perde più facilmente, è «non ho potuto guardare»: con l'archivio vettoriale spento l'indice risponde CON SUCCESSO un testo che dice di non essere raggiungibile, e chi lo giudica solo sul contenuto lo scambia per «il progetto non è indicizzato» — cioè afferma sul mondo una cosa che nessuno ha verificato. Per questo ogni verifica porta un «blind_if». PERCHÉ «verifica» E «chiedi» SONO DUE PASSI: la chiamata vera costa, e un passo che scopre a metà che l'indice era vecchio ha già pagato; «chiedi» rifà comunque la verifica nella propria conversazione, quindi non è una scorciatoia per saltarla. PERCHÉ «accept»: senza, un indice spento chiuderebbe il passo rosso e il ramo che segue non saprebbe QUALE dei cinque esiti è successo; la tolleranza è dichiarata esito per esito, e il rigore resta il valore predefinito. COSA SI FA SE LA VERIFICA NON PASSA: «verdetto» non porta «when», gira sempre, e diventa rosso con la parola dell'esito e il suo motivo — il flusso si ferma invece di lavorare su un indice di cui non si sa niente. NESSUN VERDE FALSO: un flusso che salta tutti i propri rami e chiude verde è il difetto da cui «smista-il-lavoro» si difende togliendo del tutto i «when», e qui lo tiene lontano il passo finale che gira sempre. NIENTE VA RICOPIATO NEL DEPOSITO A MANO: l'esito della verifica, con le sue voci una per una, è già l'uscita registrata del passo «verifica» — «il testo non ripete numeri che il sistema sa dare», e una copia scritta da un passo accanto invecchierebbe da sola. LA REGOLA VIAGGIA COL NODO: «caveat» esce dall'azione e finisce nel prompt del passo che legge la risposta, con un rinvio — la ricerca semantica serve a orientarsi, il grafo delle dipendenze non decide mai un perimetro, il perimetro lo decide cargo. Chi userà questo nodo fra sei mesi non avrà letto il documento che lo ha misurato, e non deve averne bisogno.",
+  "graph": {
+    "steps": [
+      {
+        "id": "innesco",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "text": { "type": "string" },
+            "who": { "type": "string" },
+            "where": { "type": "string" }
+          },
+          "required": ["source", "text"],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "who": { "type": "string" },
+            "where": { "type": "string" },
+            "source": { "type": "string" },
+            "kind": { "type": "string" }
+          },
+          "required": ["text", "who", "where", "source", "kind"],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verifica",
+        "deps": ["innesco"],
+        "action": "mcp_ready",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "server": {
+            "command": "npx",
+            "args": ["-y", "socraticode"]
+          },
+          "server_tool": "codebase_impact",
+          "project_root": { "$from": "/where" },
+          "checks": [
+            {
+              "name": "l'indice è di questa cartella",
+              "server_tool": "codebase_list_projects",
+              "arguments": {},
+              "proves": { "$from": "/where" },
+              "blind_if": ["Could not connect", "is not available", "Run codebase_index first"]
+            },
+            {
+              "name": "l'indice è sano",
+              "server_tool": "codebase_status",
+              "arguments": { "projectPath": { "$from": "/where" } },
+              "proves": "Status: green",
+              "blind_if": ["Could not connect", "is not available", "Run codebase_index first"]
+            },
+            {
+              "name": "l'indice segue i cambiamenti della cartella",
+              "server_tool": "codebase_status",
+              "arguments": { "projectPath": { "$from": "/where" } },
+              "proves": "File watcher: active",
+              "blind_if": ["Could not connect", "is not available", "Run codebase_index first"]
+            }
+          ],
+          "timeout_secs": 180,
+          "accept": ["unreachable", "tool_not_offered", "could_not_look", "check_failed"]
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "server_tool": { "type": "string" },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["server_tool", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": ["ready", "unreachable", "tool_not_offered", "could_not_look", "check_failed"]
+            },
+            "said": { "type": "string" },
+            "project_root": { "type": "string" },
+            "checks": { "type": "array", "items": { "type": "any" } },
+            "caveat": { "type": "string" }
+          },
+          "required": ["status", "said", "project_root", "caveat"],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "chiedi",
+        "deps": ["innesco", "verifica"],
+        "action": "mcp_ask",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/verifica/status",
+          "value": "ready"
+        },
+        "with": {
+          "server": {
+            "command": "npx",
+            "args": ["-y", "socraticode"]
+          },
+          "server_tool": "codebase_impact",
+          "arguments": {
+            "projectPath": { "$from": "/innesco/where" },
+            "target": { "$from": "/innesco/text" }
+          },
+          "project_root": { "$from": "/innesco/where" },
+          "checks": [
+            {
+              "name": "l'indice è ancora di questa cartella",
+              "server_tool": "codebase_list_projects",
+              "arguments": {},
+              "proves": { "$from": "/innesco/where" },
+              "blind_if": ["Could not connect", "is not available", "Run codebase_index first"]
+            }
+          ],
+          "timeout_secs": 300,
+          "accept": ["unreachable", "tool_not_offered", "could_not_look", "check_failed", "tool_failed"]
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "server_tool": { "type": "string" },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["server_tool", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": ["ok", "unreachable", "tool_not_offered", "could_not_look", "check_failed", "tool_failed"]
+            },
+            "said": { "type": "string" },
+            "server_tool": { "type": "string" },
+            "project_root": { "type": "string" },
+            "caveat": { "type": "string" }
+          },
+          "required": ["status", "said", "server_tool", "project_root", "caveat"],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "leggi",
+        "deps": ["chiedi"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/status",
+          "value": "ok"
+        },
+        "with": {
+          "tool": ["claude-code", "agy", "codex"],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "orientation": { "type": "string" },
+              "what_cargo_must_confirm": { "type": "string" }
+            },
+            "required": ["orientation", "what_cargo_must_confirm"],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Ricevi la risposta di un indice esterno del codice. Non è un verdetto: è un punto di partenza.\n\n=== LA REGOLA CHE ARRIVA INSIEME ALLA RISPOSTA ===\n",
+              { "$from": "/caveat" },
+              "\n\n=== CHE COSA È STATO CHIESTO ===\nStrumento: ",
+              { "$from": "/server_tool" },
+              "\nCartella: ",
+              { "$from": "/project_root" },
+              "\n\n=== CHE COSA HA RISPOSTO ===\n",
+              { "$from": "/text" },
+              "\n\n=== COSA DEVI PRODURRE ===\nIn «orientation» scrivi dove conviene guardare per primo, secondo questa risposta. In «what_cargo_must_confirm» scrivi il comando cargo che deve confermare il perimetro prima che qualcuno lo usi per decidere: un elenco di dipendenze preso da un indice non è un perimetro, e su questo repository è già stato misurato che quell'indice sbaglia nella direzione «nessuno dipende da questo».",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              { "$json": "/answer_shape" }
+            ]
+          },
+          "timeout_secs": 600
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": { "type": "array", "items": { "type": "string" } },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["tool", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "one_of", "values": ["ok"] },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "orientation": { "type": "string" },
+                "what_cargo_must_confirm": { "type": "string" }
+              },
+              "required": ["orientation", "what_cargo_must_confirm"],
+              "allow_extra": false
+            }
+          },
+          "required": ["status", "answer"],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verdetto",
+        "deps": ["verifica"],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "[ \"$STATUS\" = ready ] || { echo \"l'indice non era interrogabile: $STATUS — $SAID\" >&2; exit 1; }",
+          "env": {
+            "STATUS": { "$from": "/status" },
+            "SAID": { "$from": "/said" }
+          },
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": { "type": "string" },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["command", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "one_of", "values": ["passed"] }
+          },
+          "required": ["status"],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": [
+      { "step": "leggi", "dependency": "chiedi" }
+    ]
+  },
+  "inputs": {
+    "innesco": {
+      "text": "crates/flow/src/graph.rs",
+      "who": "theo",
+      "where": "/home/someone/personal/sailor"
+    }
+  }
+}
