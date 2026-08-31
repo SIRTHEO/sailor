@@ -36,6 +36,26 @@ impl ValueSchema {
         self.validate_at(value, "$".to_owned())
     }
 
+    /// Vero se questo schema accetterebbe un campo con questo nome.
+    ///
+    /// **SERVE A OFFRIRE UN VALORE SOLO A CHI PUÒ RICEVERLO.** La radice del
+    /// progetto si aggiunge all'ingresso dei passi che non dichiarano un
+    /// `workdir`; aggiungerla a un passo il cui schema è chiuso lo farebbe
+    /// morire su «declared property» — misurato sul passo d'innesco di
+    /// `sviluppa-sailor`, che è chiuso e non ha niente a che fare con una
+    /// cartella di lavoro.
+    pub fn accepts_property(&self, name: &str) -> bool {
+        match self {
+            ValueSchema::Any => true,
+            ValueSchema::Object {
+                properties,
+                allow_extra,
+                ..
+            } => *allow_extra || properties.contains_key(name),
+            _ => false,
+        }
+    }
+
     /// Dice se ogni valore prodotto dal secondo schema è accettato dal primo.
     pub fn accepts(&self, produced: &ValueSchema) -> bool {
         match (self, produced) {
