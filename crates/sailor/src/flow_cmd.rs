@@ -6,16 +6,17 @@
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
 use flow::{
-    ActionRegistry, Execution, ExecutionRequest, Executor, FlowFile, Graph,
-    InProcessExecutor, RecordStore, SharedState, SystemClock,
+    ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
+    SystemClock,
 };
+use actions::reference;
 use ledger::Ledger;
 use serde_json::Value;
 use ui::gather::FlowSource;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -36,10 +37,18 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
     match args {
         [command] if command == "list" => list_flows(sources),
         [command] if command == "due" => due_flows(sources),
-        [command, name] if command == "check" => check_flow(sources, name),
+        [command, name] if command == "check" => check_flow(sources, name, true),
+        [command, name, flag] if command == "check" && flag == "--no-engines" => {
+            check_flow(sources, name, false)
+        }
         [command, name] if command == "run" => run_flow(sources, name, None),
         [command, name, text] if command == "run" => run_flow(sources, name, Some(text)),
+        [command, run_id] if command == "resume" => resume_run(run_id),
         [command, name] if command == "cost" => cost_of(name),
+        [command, name] if command == "relocate" => relocate_flow(sources, name, None),
+        [command, name, from] if command == "relocate" => relocate_flow(sources, name, Some(from)),
+        [command, name] if command == "cap" => cap_of(sources, name),
+        [command, name, value] if command == "cap" => set_cap(sources, name, value),
         _ => Err(usage()),
     }
 }
@@ -179,6 +188,333 @@ fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
     report
 }
 
+// ── il tetto di spesa di un flusso ───────────────────────────────────────
+
+/// Quanto costa una unità di valuta in micro. Un milione: `1_000_000` è un
+/// dollaro.
+const MICROS_IN_A_UNIT: f64 = 1_000_000.0;
+
+/// **QUANTE CORSE COSTATE SERVONO PER SUGGERIRE UN TETTO.**
+///
+/// Tre, e non è una soglia arrotondata: sotto tre non c'è nessuna dispersione da
+/// guardare. Con due campioni il massimo e il minimo sono gli unici due valori,
+/// e chiamare «peggiore osservata» il maggiore di due è un dato inventato con la
+/// faccia di una misura — che è precisamente il guasto 22, uno zero mai
+/// calcolato passato per una misura, in un'altra forma. Sotto la soglia il
+/// comando **rifiuta di suggerire** e dice cosa c'è.
+const RUNS_BEFORE_SUGGESTING: usize = 3;
+
+/// Che cosa il deposito ha visto spendere a un flusso.
+struct Observed {
+    /// Le corse di quel flusso registrate, comunque siano andate.
+    runs: usize,
+    /// Quelle che hanno speso qualcosa di noto: le sole su cui si può contare.
+    costed_runs: usize,
+    /// La corsa più cara osservata, in micro.
+    worst_run_micros: i64,
+    /// La chiamata più cara osservata, in micro.
+    dearest_call_micros: i64,
+    /// Quante chiamate non hanno dichiarato un costo. Non entrano nelle cifre
+    /// sopra, e chi legge un suggerimento deve sapere quante ne mancano.
+    calls_without_cost: usize,
+}
+
+/// Il conto vero e proprio: una corsa per riga, e per ogni corsa il costo di
+/// ciascuna sua chiamata — `None` quando quel motore non l'ha dichiarato.
+///
+/// **PRENDE I COSTI E NON IL DEPOSITO, PER POTER ESSERE PROVATO.** Il deposito
+/// predefinito è uno solo per processo, e le prove girano in parallelo dentro lo
+/// stesso: una prova che volesse puntarlo altrove dovrebbe scrivere una
+/// variabile d'ambiente, cioè rovinare le altre a caso. Qui la regola — cos'è
+/// una «corsa costata», quale sia la peggiore, quale la chiamata più cara — si
+/// interroga senza aprire niente.
+fn observed_from(runs: &[Vec<Option<i64>>]) -> Observed {
+    let mut seen = Observed {
+        runs: runs.len(),
+        costed_runs: 0,
+        worst_run_micros: 0,
+        dearest_call_micros: 0,
+        calls_without_cost: 0,
+    };
+    for calls in runs {
+        let mut spent = 0i64;
+        for call in calls {
+            match call {
+                Some(cost) => {
+                    spent += cost;
+                    seen.dearest_call_micros = seen.dearest_call_micros.max(*cost);
+                }
+                None => seen.calls_without_cost += 1,
+            }
+        }
+        // **UNA CORSA COSTATA È UNA CHE HA SPESO, NON UNA CHE HA CHIAMATO.** Le
+        // 28 corse su 34 che questo deposito porta a zero il 31/08/2026 sono il
+        // guasto 22 — il costo era la costante zero fino al 30/08 — e contarle
+        // come campioni farebbe scendere ogni suggerimento verso lo zero, cioè
+        // verso un tetto che ferma ogni flusso prima del primo passo.
+        if spent > 0 {
+            seen.costed_runs += 1;
+            seen.worst_run_micros = seen.worst_run_micros.max(spent);
+        }
+    }
+    seen
+}
+
+/// Quel che il deposito sa della spesa di un flusso.
+///
+/// **UN DEPOSITO ASSENTE NON È UN ERRORE**: è una macchina su cui quel flusso
+/// non è mai girato, e la risposta giusta è «zero corse», non un guasto. Chi
+/// legge deve poter chiedere il tetto di un flusso appena scritto.
+fn observed_spending(flow_id: &str) -> Result<Observed, String> {
+    let Ok(dir) = default_ledger_dir() else {
+        return Ok(observed_from(&[]));
+    };
+    let Some(data) = ui::gather::gather(&dir).map_err(|error| error.to_string())? else {
+        return Ok(observed_from(&[]));
+    };
+    let runs: Vec<Vec<Option<i64>>> = data
+        .runs
+        .iter()
+        .filter(|run| run.entity == flow_id)
+        .map(|run| {
+            data.calls_by_run
+                .get(&run.run_id)
+                .map(|calls| calls.iter().map(|call| call.cost_micros).collect())
+                .unwrap_or_default()
+        })
+        .collect();
+    Ok(observed_from(&runs))
+}
+
+/// Le micro-unità come le legge una persona.
+fn in_units(micros: i64) -> String {
+    format!("{:.2}", micros as f64 / MICROS_IN_A_UNIT)
+}
+
+/// **QUELLO CHE IL TETTO NON PROMETTE**, scritto ogni volta che un tetto c'è.
+///
+/// Senza queste due righe il tetto si legge come una garanzia sulla spesa, e non
+/// lo è. Chi mette un tetto e poi trova una fattura più alta ha ragione di
+/// sentirsi tradito: meglio dirglielo quando lo mette.
+const WHAT_THE_CAP_DOES_NOT_PROMISE: &str = "\nquello che il tetto non promette:\
+    \n  - non arriva ai motori: il freno sta prima di aprire un fronte, mai dentro \
+      una chiamata già partita, e nessun motore sa che il tetto esiste\
+    \n  - il primo fronte di una corsa non è mai frenato: senza nessuna chiamata \
+      osservata la larghezza resta al soffitto di quattro, perché stringere su un \
+      numero che non esiste sarebbe inventarlo\
+    \n  - conta solo le chiamate che dichiarano un costo; quelle che non lo \
+      dichiarano restano fuori dalla somma, quindi la spesa vera è più alta di \
+      quella contata";
+
+/// `sailor flow cap <nome>`: il tetto che c'è, e cosa il deposito ha visto.
+fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    let (flow, origin) = one_flow(sources, name)?;
+    let mut report = format!("flusso: {} ({origin})", flow.id);
+    match flow.spend_cap_micros {
+        None => report.push_str(
+            "\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede",
+        ),
+        Some(cap) => {
+            let _ = write!(
+                report,
+                "\ntetto: {cap} micro ({} di costo equivalente)",
+                in_units(cap)
+            );
+            report.push_str(WHAT_THE_CAP_DOES_NOT_PROMISE);
+        }
+    }
+
+    report.push_str(&what_the_ledger_saw(&observed_spending(&flow.id)?));
+    Ok(report)
+}
+
+/// Cosa il deposito ha visto, e se da lì esce un suggerimento.
+///
+/// Sta a parte da `cap_of` perché la regola delle tre corse si deve poter
+/// interrogare senza un deposito: `cap_of` ne apre uno vero, e un deposito vero
+/// in una prova è una variabile d'ambiente globale al processo.
+fn what_the_ledger_saw(seen: &Observed) -> String {
+    let mut said = format!(
+        "\nnel deposito: {} corse, di cui {} {} speso qualcosa di noto",
+        seen.runs,
+        seen.costed_runs,
+        if seen.costed_runs == 1 { "ha" } else { "hanno" }
+    );
+    if seen.calls_without_cost > 0 {
+        let _ = write!(
+            said,
+            "\n{} chiamate non hanno dichiarato un costo, e non entrano in nessuna \
+             delle cifre qui sopra",
+            seen.calls_without_cost
+        );
+    }
+
+    if seen.costed_runs < RUNS_BEFORE_SUGGESTING {
+        let _ = write!(
+            said,
+            "\nnessun suggerimento: servono almeno {RUNS_BEFORE_SUGGESTING} corse \
+             costate, e {}. Un numero calcolato su meno campioni è un dato \
+             inventato con la faccia di una misura, e chi lo riceve ci appoggia \
+             una decisione",
+            match seen.costed_runs {
+                0 => "non ce n'è nessuna".to_owned(),
+                1 => "ce n'è una".to_owned(),
+                many => format!("ce ne sono {many}"),
+            }
+        );
+        return said;
+    }
+
+    // **PERCHÉ SI SOMMA LA CHIAMATA PIÙ CARA, E NON È PRUDENZA.** Il controllo
+    // scatta *prima* di aprire un fronte, mai dentro una chiamata: la corsa si
+    // ferma con la granularità di una chiamata, non di un micro. Un tetto messo
+    // esattamente sulla peggiore osservata è quindi un tetto che taglia le corse
+    // di quella taglia in modo imprevedibile — dipende da come la spesa si
+    // distribuisce fra i fronti. La somma dice: «la corsa più cara che ho visto,
+    // più la grana con cui so fermarmi».
+    let suggested = seen.worst_run_micros + seen.dearest_call_micros;
+    let _ = write!(
+        said,
+        "\nsuggerimento: {suggested} micro ({}) — la corsa più cara osservata \
+         ({}) più la chiamata più cara osservata ({}). Il secondo addendo non è \
+         un margine di sicurezza: è la grana con cui il tetto sa fermarsi, \
+         perché il controllo sta prima di aprire un fronte",
+        in_units(suggested),
+        in_units(seen.worst_run_micros),
+        in_units(seen.dearest_call_micros)
+    );
+    said
+}
+
+/// La parola che toglie il tetto invece di metterne uno.
+///
+/// Serve perché senza di lei il comando saprebbe entrare in uno stato e non
+/// uscirne: `0` non è «nessuno», è «questo flusso non deve spendere niente».
+const NO_CAP: &str = "nessuno";
+
+/// `sailor flow cap <nome> <micro|nessuno>`: mette o toglie il tetto.
+fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, String> {
+    let wanted = if value == NO_CAP {
+        None
+    } else {
+        let micros: i64 = value.parse().map_err(|_| {
+            format!(
+                "«{value}» non è un numero di micro-unità né la parola «{NO_CAP}». \
+                 Un milione è un'unità di valuta: `sailor flow cap {name} 1000000` \
+                 mette un tetto di 1,00"
+            )
+        })?;
+        if micros < 0 {
+            return Err(format!(
+                "un tetto negativo non vuol dire niente: {micros}. Zero è «non deve \
+                 spendere niente», «{NO_CAP}» è «nessuno ha messo un limite»"
+            ));
+        }
+        Some(micros)
+    };
+
+    let (mut flow, source) = where_it_lives(sources, name)?;
+    // **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON SE NE SCRIVE UNO DI
+    // NASCOSTO.** Sta dentro il binario: non c'è nessun file da modificare. La
+    // strada è un omonimo in casa propria, che vince per la regola di
+    // precedenza — ma quel file lo deve creare chi lo vuole, sapendo di averne
+    // creato uno. Scriverne uno qui vorrebbe dire che da domani gira un flusso
+    // diverso da quello spedito senza che nessuno l'abbia deciso, e la sola
+    // traccia sarebbe l'origine in una colonna di `sailor flow list`.
+    if source.is_builtin() {
+        return Err(format!(
+            "«{name}» è un flusso di sistema, spedito dentro il binario: non c'è \
+             nessun file da riscrivere. Per dargli un tetto scrivi un flusso con lo \
+             stesso nome in casa tua o nel progetto — vince il tuo — e mettilo lì. \
+             Non lo faccio io: un flusso comparso da sé è un flusso che nessuno sa \
+             di avere"
+        ));
+    }
+
+    // **IL FILE SI CHIAMA COME L'`id`, O NE COMPARIREBBE UN SECONDO.** Il
+    // registro indicizza per nome di file, la scrittura per `id`: dove i due
+    // divergono, riscrivere non sostituirebbe niente — creerebbe un flusso
+    // gemello che da domani vince o perde a seconda dell'ordine alfabetico. È lo
+    // stesso rifiuto del flusso di sistema, per la stessa ragione: qui non
+    // compare niente che nessuno abbia chiesto.
+    let target = source.dir.join(format!("{}.flow.json", flow.id));
+    if !target.exists() {
+        return Err(format!(
+            "«{name}» sta in un file che non si chiama «{}.flow.json», che è come si \
+             chiamerebbe scrivendolo: riscriverlo creerebbe un secondo flusso invece \
+             di sostituire questo. Rinomina il file come il suo `id`, o cambia l'`id` \
+             perché coincida col nome del file",
+            flow.id
+        ));
+    }
+
+    let before = flow.spend_cap_micros;
+    if before == wanted {
+        return Ok(format!(
+            "flusso {name} ({}): il tetto era già {}, non ho toccato niente",
+            source.origin,
+            said_cap(before)
+        ));
+    }
+    flow.spend_cap_micros = wanted;
+    flow::system::save_in(&source.dir, &flow)?;
+    Ok(format!(
+        "flusso {name} ({}): tetto {} → {}; scritto in {}",
+        source.origin,
+        said_cap(before),
+        said_cap(wanted),
+        source.dir.display()
+    ))
+}
+
+/// Un tetto come lo legge una persona, compreso quando non c'è.
+fn said_cap(cap: Option<i64>) -> String {
+    match cap {
+        None => NO_CAP.to_owned(),
+        Some(micros) => format!("{micros} micro ({})", in_units(micros)),
+    }
+}
+
+/// Il flusso **e la sorgente da cui viene**: per riscriverlo serve la cartella,
+/// non il nome dell'origine.
+///
+/// Si guarda dalla più specifica alla meno specifica, cioè al contrario
+/// dell'ordine in cui le sorgenti sono elencate: a parità di nome vince
+/// l'ultima, e chi riscrive deve riscrivere **quella che gira**. Riscrivere la
+/// copia meno specifica lascerebbe il comando a dire «fatto» mentre la corsa
+/// continua a leggere l'altra.
+fn where_it_lives<'a>(
+    sources: &'a [FlowSource],
+    name: &str,
+) -> Result<(FlowFile, &'a FlowSource), String> {
+    for source in sources.iter().rev() {
+        match flow::system::registry_of(source).remove(name) {
+            Some(Ok(flow)) => return Ok((flow, source)),
+            Some(Err(reason)) => {
+                return Err(format!(
+                    "il flusso {name} ({}) non si carica, quindi non lo riscrivo: {reason}",
+                    source.origin
+                ))
+            }
+            None => continue,
+        }
+    }
+    match one_flow(sources, name) {
+        // Lo stesso messaggio di `one_flow`, con lo stesso elenco di nomi: due
+        // parole diverse per lo stesso «non c'è» manderebbero a cercare due
+        // difetti dove ce n'è uno.
+        Err(reason) => Err(reason),
+        // Non può succedere — `one_flow` legge le stesse sorgenti del giro qui
+        // sopra — e se succedesse vorrebbe dire che le due strade che cercano un
+        // flusso si sono separate. Dirlo vale più che panicare in mano a chi sta
+        // usando il comando.
+        Ok(_) => Err(format!(
+            "il flusso {name} si carica ma non risulta in nessuna sorgente: le due \
+             strade che cercano i flussi si sono separate"
+        )),
+    }
+}
+
 /// I flussi che questa macchina vede, con l'origine di ciascuno.
 ///
 /// **LA RIGA DI COMANDO E LA FINESTRA DEVONO GUARDARE NEGLI STESSI POSTI.** Fino
@@ -227,7 +563,192 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 }
 
 fn usage() -> String {
-    "uso: sailor flow <list|due|check <nome>|run <nome> [mandato]|cost <nome>>".to_owned()
+    "uso: sailor flow <list|due|check <nome> [--no-engines]|run <nome> [mandato]|\
+     resume <corsa>|cost <nome>|cap <nome> [micro|nessuno]|\
+     relocate <nome> [prefisso-da-togliere]>"
+        .to_owned()
+}
+
+/// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
+/// processo.
+///
+/// **NON CHIEDE NIENTE AL SISTEMA OPERATIVO, E IL DIVIETO HA UN NUMERO.** È il
+/// guasto 12: dentro il perimetro `pgrep` risponde vuoto *senza errore*, e una
+/// sorveglianza ha dichiarato «nessun flusso in esecuzione» mentre due giravano.
+/// Un agente in un terminale non è comunque figlio di questo processo, e il
+/// kernel non lo distingue da nessun altro: la domanda giusta non è «vive
+/// ancora?» ma «il tempo che si era dato è passato?».
+///
+/// **UN RECORD CON UN PID SI DICHIARA TENUTO, SEMPRE.** Quel record l'ha aperto
+/// l'esecutore in processo, non una consegna: questa sonda non ha modo di
+/// guardare quel processo, e *non so vedere* non è *è morto*. Dichiararlo morto
+/// chiuderebbe sotto i piedi di chi lavora un passo che sta girando davvero.
+struct HandoffLease {
+    now: i64,
+}
+
+impl flow::ProcessProbe for HandoffLease {
+    fn is_running(&self, record: &flow::StepRecord) -> Result<bool, flow::FlowError> {
+        if record.held_by_pid.is_some() {
+            return Ok(true);
+        }
+        let Some(limit) = record
+            .input
+            .get("handoff_timeout_secs")
+            .and_then(Value::as_i64)
+        else {
+            // Nessuna scadenza leggibile: si tiene. L'ambiguità si conserva,
+            // non si chiude dalla parte comoda.
+            return Ok(true);
+        };
+        Ok(self.now < record.started_at.saturating_add(limit))
+    }
+}
+
+/// Riprende una corsa: prima riconcilia ciò che è rimasto aperto, poi esegue
+/// **con lo stesso identificativo**.
+///
+/// **PERCHÉ È SEPARATO DA `sailor step close`.** Sono due poteri diversi e vanno
+/// tenuti separati: `close` **ricorda** — scrive un esito e non spende niente —
+/// mentre `resume` **agisce**, apre fronti e paga chiamate a pagamento. Fonderli
+/// vorrebbe dire che dichiarare com'è andato un lavoro fa partire il lavoro
+/// dopo, cioè che una scrittura nel deposito spende soldi. Chi chiude a mezzanotte
+/// non ha chiesto quello.
+///
+/// **`reconcile` NON ERA MAI STATO ESEGUITO IN PRODUZIONE.** Fino al 31/08/2026
+/// lo chiamavano solo le prove: nessun comando del programma ci passava. Questa
+/// è la sua prima messa in servizio, ed è il motivo per cui la sonda qui sopra è
+/// scritta per non dichiarare morto niente di cui non sa niente.
+fn resume_run(run_id: &str) -> Result<String, String> {
+    let ledger = crate::step_cmd::open_ledger()?;
+    let flow = crate::step_cmd::flow_of_run(&ledger, run_id)?;
+    resume_run_in(&ledger, &flow, run_id)
+}
+
+/// Il corpo di `resume`, col deposito e il flusso dichiarati invece che dedotti
+/// da `HOME` e dalla cartella corrente: sono tutti e due globali al processo, e
+/// una prova che li scrivesse rovinerebbe le altre a caso.
+fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
+    let header = ledger
+        .run_header(run_id)
+        .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?
+        .ok_or_else(|| format!("nessuna corsa si chiama {run_id} in questo deposito"))?;
+    let registry = default_registry(
+        Some(ledger.clone()),
+        Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
+    );
+    // **L'ISTANTE DI PARTENZA È QUELLO DI PRIMA, NON ADESSO.** L'intestazione si
+    // riscrive intera a ogni aggiornamento: mettere qui l'ora della ripresa
+    // farebbe risultare la corsa partita quando è stata ripresa. Ne dipendono
+    // `last_started_at` — cioè quali flussi `sailor flow due` dichiara dovuti — e
+    // la durata che la finestra mostra. Una corsa consegnata e ripresa il giorno
+    // dopo risulterebbe durata un minuto.
+    let started_at = header.started_at;
+    let now = now_secs()?;
+
+    let mut store = ledger.clone();
+    let mut clock = SystemClock;
+    // **LA RIPRESA PASSA DAL COSTRUTTORE UNICO**, come la prima corsa. Costruire
+    // qui una richiesta a mano rimetterebbe in piedi la seconda copia che
+    // `registry::execution_request` esiste per togliere — e questa copia
+    // perderebbe in silenzio la radice del workspace, facendo lavorare i passi
+    // riconciliati in un posto diverso da quello dove sono nati.
+    let root = workspace_root();
+    announce_root(root.as_deref());
+    // LO STESSO IDENTIFICATIVO, e non uno nuovo: una ripresa che aprisse una
+    // corsa nuova perderebbe i passi già andati e li rifarebbe tutti, pagandoli
+    // due volte.
+    let request = registry::execution_request(flow, run_id, root.as_deref());
+    // La riconciliazione vede quello che vedrà l'esecuzione: stessa radice,
+    // stesso stato condiviso.
+    let shared = request.shared.clone();
+    let probe = HandoffLease { now };
+    let reconciled = InProcessExecutor
+        .reconcile(flow::ReconciliationRequest {
+            graph: &flow.graph,
+            run_id,
+            store: &mut store,
+            actions: &registry,
+            shared: &shared,
+            processes: &probe,
+            clock: &mut clock,
+        })
+        .map_err(|error| format!("non riesco a riconciliare la corsa {run_id}: {error}"))?;
+
+    let mut report = format!("corsa {run_id} — flusso {}", flow.id);
+    if !reconciled.still_running.is_empty() {
+        let _ = write!(
+            report,
+            "\ntenuti, la scadenza non è passata: {}",
+            reconciled.still_running.join(", ")
+        );
+    }
+    if !reconciled.closed_as_broke.is_empty() {
+        let _ = write!(
+            report,
+            "\nscaduti e rimessi fra i pronti: {}",
+            reconciled.closed_as_broke.join(", ")
+        );
+    }
+    if !reconciled.closed_as_waiting.is_empty() {
+        let _ = write!(
+            report,
+            "\nlasciati a una persona: {}",
+            reconciled.closed_as_waiting.join(", ")
+        );
+    }
+
+    let execution = InProcessExecutor
+        .execute(&flow.graph, request, ledger, &registry, &SystemClock)
+        .map_err(|error| format!("la ripresa della corsa {run_id} è fallita: {error}"))?;
+
+    let (status, exit_ok) = execution_status(&execution);
+    let why = registry::stopped_by_cap(&execution);
+    record_run(
+        ledger,
+        flow,
+        run_id,
+        status,
+        started_at,
+        Some(now_secs()?),
+        why.clone(),
+    )?;
+    let _ = write!(report, "\nstato: {status}");
+    if exit_ok {
+        Ok(report)
+    } else {
+        match why {
+            Some(why) => Err(format!("{report}\n{why}")),
+            None => Err(report),
+        }
+    }
+}
+
+/// Le corse ferme in attesa di qualcuno, in coda a un elenco.
+///
+/// **STA IN CODA A `list` E A `due` PERCHÉ È LÌ CHE SI GUARDA.** Una consegna
+/// che nessuno raccoglie non compare da nessuna parte: non è un passo aperto,
+/// quindi `unfinished_runs` non la trova, e il flusso da cui viene risulta
+/// «girato di recente», quindi `due` lo dichiara non dovuto. Sparisce due volte.
+fn waiting_report() -> String {
+    let waiting = default_ledger_dir()
+        .ok()
+        .filter(|dir| dir.join("state.db").exists())
+        .and_then(|dir| Ledger::open(&dir).ok())
+        .and_then(|ledger| ledger.waiting_runs().ok())
+        .unwrap_or_default();
+    if waiting.is_empty() {
+        return "nessuna corsa in attesa di qualcuno".to_owned();
+    }
+    let mut report = format!("{} corse aspettano qualcuno:", waiting.len());
+    for run in waiting {
+        let _ = write!(
+            report,
+            "\n  {}\t{}\tsailor flow resume {}",
+            run.run_id, run.entity, run.run_id
+        );
+    }
+    report
 }
 
 /// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
@@ -286,7 +807,8 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
     }
     let _ = write!(
         report,
-        "{due} dovuti adesso; {unplanned} senza pianificazione, che partono solo a mano"
+        "{due} dovuti adesso; {unplanned} senza pianificazione, che partono solo a mano\n{}",
+        waiting_report()
     );
     Ok(report)
 }
@@ -316,18 +838,44 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
             }
         }
     }
-    report.pop();
+    let _ = write!(report, "{}", waiting_report());
     Ok(report)
 }
 
-fn check_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
+/// **LE RIGHE SI PROVANO SE NESSUNO DICE DI NO.** Un controllo dietro una
+/// bandiera è un controllo che nessuno interroga, e il guasto 27 è la prova:
+/// nessuno avrebbe scritto `--engines` per scoprire un difetto che non sapeva
+/// di avere. `--no-engines` resta per chi lavora scollegato o ha fretta.
+fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<String, String> {
     let (flow, _) = one_flow(sources, name)?;
     let tools = toolbox::Tools::current();
+    let real = actions::RealDryProbe;
+    let probe: Option<&dyn actions::DryProbe> = if try_engines { Some(&real) } else { None };
     let (report, unknown) = check_report(
         &flow,
         &default_registry(open_default_ledger(), None),
         Some(&tools),
+        probe,
     );
+    // **UN PERCORSO DI POSIZIONE ASSOLUTO È UN ERRORE, NON UN AVVISO.** Il
+    // flusso gira in un posto solo: altrove non fallisce, lavora nel posto
+    // sbagliato — ed è il modo in cui il guasto 25 è passato inosservato.
+    let stuck: Vec<String> = hardcoded_paths(&flow)
+        .iter()
+        .filter(|path| path.fatal)
+        .map(|path| format!("{} in «{}» ({})", path.step, path.field, path.value))
+        .collect();
+    if !stuck.is_empty() {
+        println!("{report}");
+        return Err(format!(
+            "il flusso {} ha un percorso assoluto in un campo di posizione: {}. \
+             Un flusso non deve sapere dove sta il repository — la radice viene da chi \
+             lancia. Si toglie con «sailor flow relocate {}».",
+            flow.id,
+            stuck.join("; "),
+            flow.id
+        ));
+    }
     if unknown.is_empty() {
         return Ok(report);
     }
@@ -361,6 +909,7 @@ fn check_report(
     flow: &FlowFile,
     registry: &ActionRegistry,
     tools: Option<&toolbox::Tools>,
+    probe: Option<&dyn actions::DryProbe>,
 ) -> (String, Vec<String>) {
     let dependency_count: usize = flow.graph.steps().iter().map(|step| step.deps.len()).sum();
     let missing = missing_actions(&flow.graph, registry);
@@ -378,6 +927,23 @@ fn check_report(
             step.deps.join(", ")
         };
         let _ = write!(report, "\n  {} <- {}", step.id, dependencies);
+    }
+    // **IL TETTO STA NEL RAPPORTO, E CON LUI CIÒ CHE NON PROMETTE.** Chi
+    // controlla un flusso prima di lanciarlo sta decidendo se può permetterselo:
+    // un tetto invisibile qui si scopre solo a corsa fermata, e uno che si vede
+    // senza i suoi limiti si legge come una garanzia sulla spesa — che non è.
+    // La riga c'è sempre, anche quando il tetto non c'è: «nessuno» è
+    // un'informazione, e un rapporto che tace quando non c'è niente da dire
+    // lascia chi legge a chiedersi se il controllo abbia guardato.
+    match flow.spend_cap_micros {
+        None => report.push_str("\ntetto di spesa: nessuno"),
+        Some(cap) => {
+            let _ = write!(
+                report,
+                "\ntetto di spesa: {cap} micro ({} di costo equivalente){WHAT_THE_CAP_DOES_NOT_PROMISE}",
+                in_units(cap)
+            );
+        }
     }
     // **CHI CONTROLLA UN FLUSSO DEVE VEDERE COSA PUÒ SCRIVERCI DENTRO.** Il
     // rapporto nominava solo le azioni mancanti, cioè rispondeva a «questo
@@ -416,6 +982,12 @@ fn check_report(
                 );
             }
             capabilities_into(&mut report, &flow.graph, tools);
+            // Senza sonda il rapporto **tace** su questo, invece di dichiarare
+            // sane righe che non ha guardato: è la stessa regola del rilevatore
+            // assente qui sopra.
+            if let Some(probe) = probe {
+                engine_lines_into(&mut report, &flow.graph, tools, probe);
+            }
         }
     }
 
@@ -432,7 +1004,36 @@ fn check_report(
             stray.join("; ")
         );
     }
+
+    // **IL GUASTO 25, DETTO PRIMA DI PARTIRE.** Un `workdir` assoluto non si
+    // vede eseguendo: si vede dopo, guardando quale repository si è sporcato.
+    let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) =
+        hardcoded_paths(flow).into_iter().partition(|path| path.fatal);
+    if !fatal.is_empty() {
+        let _ = write!(
+            report,
+            "\npercorsi assoluti in un campo di posizione: {}",
+            describe_paths(&fatal)
+        );
+    }
+    if !advisory.is_empty() {
+        let _ = write!(
+            report,
+            "\npercorsi assoluti dentro un testo (il flusso gira, l'istruzione no): {}",
+            describe_paths(&advisory)
+        );
+    }
     (report, unknown)
+}
+
+/// Passo e campo su ogni riga: un avviso che ne perda uno non si può usare —
+/// «c'è un percorso assoluto» non dice quale dei sette passi cambiare.
+fn describe_paths(paths: &[HardcodedPath]) -> String {
+    paths
+        .iter()
+        .map(|path| format!("{} in «{}» ({})", path.step, path.field, path.value))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Una capacità chiesta da un passo a un motore preciso.
@@ -470,15 +1071,7 @@ fn capabilities_wanted(graph: &Graph) -> Vec<WantedCapability> {
             Some(Value::String(name)) => vec![name.clone()],
             _ => continue,
         };
-        let engines: Vec<String> = match with.get("tool") {
-            Some(Value::String(id)) => vec![id.clone()],
-            Some(Value::Array(chain)) => chain
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect(),
-            _ => Vec::new(),
-        };
+        let engines = engines_of(with);
         for capability in &asked {
             for tool in &engines {
                 wanted.push(WantedCapability {
@@ -545,6 +1138,508 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
     }
 }
 
+/// Toglie da un flusso i percorsi assoluti che stanno sotto la radice.
+///
+/// **PERCHÉ LO FA UN COMANDO E NON UNO SCRIPT.** È il guasto 15: il 29/08/2026
+/// per cambiare l'innesco di un flusso è stato usato uno script Python che
+/// riscriveva il JSON, perché `sailor flow` aveva solo `list`, `due`, `check`
+/// e `run`. Uno strumento che si aggira non registra niente di ciò che gli
+/// succede intorno.
+///
+/// **RISCRIVE I CAMPI, NON I PROMPT.** Un `workdir` è un campo: il suo valore
+/// ha un significato solo per il programma, e sostituirlo è una traduzione. Il
+/// testo di un prompt è un'istruzione scritta da una persona per un'altra
+/// intelligenza: riscriverlo è riscrivere l'istruzione, e nessuno ha chiesto a
+/// questo comando di farlo. Quelli li **stampa** e basta.
+///
+/// **IL PREFISSO SI PUÒ DICHIARARE, PERCHÉ IL CASO NORMALE È UN ALTRO ALBERO.**
+/// Un flusso da spostare quasi sempre nomina la copia su cui è stato scritto —
+/// un altro clone, o la macchina di qualcun altro — e quel percorso **non sta
+/// sotto** la radice di chi lo sta spostando. Senza dirlo, il comando non può
+/// sapere se `/Users/tizio/progetto` volesse dire «la radice» o una cartella
+/// vera che deve restare dov'è: indovinare qui vorrebbe dire riscrivere un
+/// percorso legittimo. Si dichiara come secondo argomento — posizionale come
+/// il mandato di `run`, che è la forma di questa riga di comando — e quello che
+/// non combacia si vede nel rapporto invece di sparire.
+fn relocate_flow(
+    sources: &[FlowSource],
+    name: &str,
+    from: Option<&str>,
+) -> Result<String, String> {
+    let root = workspace_root().ok_or_else(|| {
+        format!(
+            "non c'è nessuna radice di progetto risalendo da qui: manca un {}. \
+             Si crea con «sailor workspace init»",
+            flow::workspace::MARKER
+        )
+    })?;
+    // Il prefisso da togliere: quello dichiarato, o la radice stessa quando il
+    // flusso è stato scritto proprio qui.
+    let old_root = from.map(PathBuf::from).unwrap_or_else(|| root.clone());
+    let path = flow_file_path(sources, name)?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|error| format!("non riesco a leggere {}: {error}", path.display()))?;
+    // Si lavora sul documento grezzo e non sul `FlowFile` tipato: un flusso può
+    // avere campi che questa versione non conosce, e riscriverlo dal tipo li
+    // perderebbe in silenzio — è il guasto 8 applicato a un file dell'utente.
+    let mut document: Value = serde_json::from_str(&text)
+        .map_err(|error| format!("{} non è un JSON valido: {error}", path.display()))?;
+
+    let (moved, left_alone) = relocate_workdirs(&mut document, &old_root)
+        .ok_or_else(|| format!("{} non ha passi da spostare", path.display()))?;
+
+    if !moved.is_empty() {
+        let mut rewritten = serde_json::to_string_pretty(&document)
+            .map_err(|error| format!("non riesco a ricomporre il flusso: {error}"))?;
+        rewritten.push('\n');
+        std::fs::write(&path, rewritten)
+            .map_err(|error| format!("non riesco a scrivere {}: {error}", path.display()))?;
+    }
+
+    let mut report = format!(
+        "radice: {}\nprefisso tolto: {}\nflusso: {}",
+        root.display(),
+        old_root.display(),
+        path.display()
+    );
+    let _ = write!(
+        report,
+        "\ncampi spostati: {}",
+        if moved.is_empty() {
+            "nessuno".to_owned()
+        } else {
+            format!("{}\n  {}", moved.len(), moved.join("\n  "))
+        }
+    );
+    if !left_alone.is_empty() {
+        let _ = write!(
+            report,
+            "\nfuori dal prefisso, lasciati come stanno \
+             (il prefisso si dichiara come secondo argomento): {}",
+            left_alone.join("; ")
+        );
+    }
+    // I percorsi dentro i testi si mostrano e non si toccano: chi legge decide.
+    let flow: FlowFile = serde_json::from_str(&text)
+        .map_err(|error| format!("{} non è un flusso valido: {error}", path.display()))?;
+    let in_text: Vec<String> = hardcoded_paths(&flow)
+        .iter()
+        .filter(|found| !found.fatal)
+        .map(|found| format!("{} in «{}» ({})", found.step, found.field, found.value))
+        .collect();
+    if !in_text.is_empty() {
+        let _ = write!(
+            report,
+            "\n\nDA CORREGGERE A MANO — percorsi dentro un testo, {} in tutto:\n  {}\n\
+             Non li riscrivo: un prompt è un'istruzione, e riscriverla è deciderla.",
+            in_text.len(),
+            in_text.join("\n  ")
+        );
+    }
+    Ok(report)
+}
+
+/// Toglie il prefisso dai `workdir` del documento, senza toccare il disco.
+///
+/// Sta separata dal comando perché è la parte che si può provare: quella
+/// intorno legge la cartella corrente e scrive un file, e una prova che
+/// cambiasse la cartella del processo rovinerebbe le altre che girano insieme
+/// — è il guasto 21, che qui si evita non avendo bisogno del processo.
+///
+/// Torna `None` se il documento non ha nemmeno un elenco di passi.
+fn relocate_workdirs(
+    document: &mut Value,
+    old_root: &Path,
+) -> Option<(Vec<String>, Vec<String>)> {
+    let mut moved = Vec::new();
+    let mut left_alone = Vec::new();
+    let steps = document
+        .get_mut("graph")
+        .and_then(|graph| graph.get_mut("steps"))
+        .and_then(Value::as_array_mut)?;
+    for step in steps {
+        let step_id = step
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("(senza id)")
+            .to_owned();
+        let Some(with) = step.get_mut("with").and_then(Value::as_object_mut) else {
+            continue;
+        };
+        // Solo un testo: un `{"$from": …}` è un rinvio, e va risolto a
+        // esecuzione da chi sa contro cosa. Riscriverlo sarebbe inventare.
+        let Some(Value::String(declared)) = with.get(WORKDIR_KEY).cloned() else {
+            continue;
+        };
+        match relative_to(old_root, &declared) {
+            // Coincide con la radice: il campo non serve più, e un `workdir`
+            // che vale la radice è rumore che invita a riscriverlo assoluto.
+            Some(rest) if rest.is_empty() => {
+                // **`shift_remove` E NON `remove`.** Con `preserve_order`
+                // acceso — e lo è — `remove` è uno *swap*: tira l'ultima
+                // chiave dentro il buco e riordina il file. Un comando che
+                // toglie un campo e in cambio rimescola l'oggetto produce un
+                // diff illeggibile, e chi lo rilegge non distingue più ciò che
+                // è stato deciso da ciò che è stato spostato. Misurato il
+                // 31/08/2026: 62 righe cambiate al posto di 7.
+                with.shift_remove(WORKDIR_KEY);
+                moved.push(format!("{step_id}: tolto (era la radice)"));
+            }
+            Some(rest) => {
+                with.insert(WORKDIR_KEY.to_owned(), Value::String(rest.clone()));
+                moved.push(format!("{step_id}: «{declared}» → «{rest}»"));
+            }
+            // Fuori dal prefisso: non è questo comando a decidere cosa voleva
+            // dire chi l'ha scritto.
+            None => left_alone.push(format!("{step_id}: «{declared}»")),
+        }
+    }
+    Some((moved, left_alone))
+}
+
+/// Il file da cui viene un flusso, cercato nelle sorgenti che sono cartelle.
+fn flow_file_path(sources: &[FlowSource], name: &str) -> Result<PathBuf, String> {
+    // Si guarda dalla più specifica alla meno: è quella che vince a esecuzione,
+    // e riscrivere una che non gira lascerebbe il guasto dov'era.
+    for source in sources.iter().rev() {
+        if source.is_builtin() {
+            continue;
+        }
+        let candidate = source.dir.join(format!("{name}.flow.json"));
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!(
+        "il flusso {name} non è un file su disco: i flussi spediti col prodotto \
+         stanno dentro il binario e non si riscrivono — se ne scrive uno con lo \
+         stesso nome nel progetto"
+    ))
+}
+
+/// Il resto di `path` sotto `root`, o `None` se non ci sta sotto.
+///
+/// Restituisce la stringa vuota quando i due coincidono: è il caso in cui il
+/// campo va tolto, non riscritto.
+fn relative_to(root: &Path, path: &str) -> Option<String> {
+    let candidate = Path::new(path);
+    let rest = candidate.strip_prefix(root).ok()?;
+    Some(rest.display().to_string())
+}
+
+/// Il campo che dice dove un passo lavora. Il nome sta nel crate del flusso:
+/// due costanti con lo stesso valore in due crate sono il guasto 10 in piccolo.
+const WORKDIR_KEY: &str = flow::WORKDIR_FIELD;
+
+/// I campi che dicono **dove** un passo lavora o **quale** binario esegue.
+///
+/// Un percorso assoluto qui non è un dettaglio del testo: è la posizione in cui
+/// il passo lavorerà davvero, ed è il guasto 25 parola per parola — sette passi
+/// con `"workdir": "/home/someone/personal/sailor"`, un flusso che lanciato da un
+/// clone commetteva nel repository principale senza dirlo.
+const POSITION_FIELDS: [&str; 2] = ["workdir", "bin"];
+
+/// I prefissi che fanno di un pezzo di testo un percorso assoluto.
+///
+/// **È UN ELENCO DICHIARATO, NON UN ANALIZZATORE, E IL PREZZO È DICHIARATO.**
+/// È la stessa scelta già pagata da `identifiers_are_in_english`: un elenco non
+/// ha falsi positivi e lascia passare ciò che non conosce, mentre un
+/// analizzatore di percorsi dentro il testo libero di un prompt chiamerebbe
+/// percorso ogni `/` — a cominciare dai puntatori JSON — e verrebbe spento
+/// entro un giorno. Chi incontra un percorso che questo elenco non vede lo
+/// aggiunge qui.
+const ABSOLUTE_PREFIXES: [&str; 4] = ["/Users/", "/home/", "/private/", "~/"];
+
+/// Un percorso assoluto trovato scritto a mano dentro un flusso.
+struct HardcodedPath {
+    step: String,
+    field: String,
+    value: String,
+    /// Vero quando sta in un campo di posizione: il flusso **non gira** altrove,
+    /// quindi è un errore. Falso quando sta dentro un testo: lì il flusso gira
+    /// lo stesso e il percorso è un'istruzione a chi legge, quindi è un avviso.
+    fatal: bool,
+}
+
+/// I percorsi assoluti scritti a mano in un flusso.
+///
+/// **DUE ESITI, PERCHÉ SONO DUE GUASTI DIVERSI.** Un `workdir` assoluto decide
+/// dove il passo lavora: il flusso si può eseguire in un posto solo, e altrove
+/// fa danno invece di fallire. Un percorso dentro il testo di un prompt non
+/// impedisce al flusso di girare — è un'istruzione che diventa sbagliata
+/// altrove, e chi la riscrive sta riscrivendo un'istruzione, non un campo.
+/// Perciò il primo è un errore e il secondo un avviso: chiamarli allo stesso
+/// modo vorrebbe dire o bloccare flussi sani, o lasciar passare il guasto 25.
+///
+/// **I PUNTATORI NON SONO PERCORSI.** `{"$from": "/answer/verdict"}` comincia
+/// per `/` e non è un percorso: è un puntatore JSON, e compare in quattro
+/// flussi su cinque. Il valore di `$from` e quello di `$json` si saltano. Il
+/// testo letterale dentro un `$join` invece si guarda: l'elenco di prefissi non
+/// può scambiare `/answer/verdict` per un percorso, quindi saltarlo non
+/// comprerebbe niente e perderebbe i prompt composti a pezzi — che è dove i due
+/// percorsi di `sviluppa-sailor` stanno davvero.
+fn hardcoded_paths(flow: &FlowFile) -> Vec<HardcodedPath> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        if let Some(with) = step.with.as_ref() {
+            walk_for_paths(&step.id, "", with, &mut found);
+        }
+    }
+    // L'ingresso dichiarato è scritto a mano quanto il `with`, ed è dove sta il
+    // testo dell'innesco.
+    for (name, declared) in &flow.inputs {
+        walk_for_paths(name, "", declared, &mut found);
+    }
+    found
+}
+
+fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<HardcodedPath>) {
+    match value {
+        Value::Object(fields) => {
+            for (key, inner) in fields {
+                // Il valore di un puntatore non è un percorso, e guardarci
+                // dentro riempirebbe il rapporto di falsi positivi.
+                if key == reference::FROM_KEY || key == reference::JSON_KEY {
+                    continue;
+                }
+                let trail = if field.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{field}.{key}")
+                };
+                walk_for_paths(step, &trail, inner, found);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                walk_for_paths(step, field, item, found);
+            }
+        }
+        Value::String(text) => {
+            let is_position = field
+                .rsplit('.')
+                .next()
+                .is_some_and(|last| POSITION_FIELDS.contains(&last));
+            if is_position && (text.starts_with('/') || text.starts_with("~/")) {
+                found.push(HardcodedPath {
+                    step: step.to_owned(),
+                    field: field.to_owned(),
+                    value: text.clone(),
+                    fatal: true,
+                });
+            } else if let Some(prefix) = ABSOLUTE_PREFIXES
+                .iter()
+                .find(|prefix| text.contains(**prefix))
+            {
+                found.push(HardcodedPath {
+                    step: step.to_owned(),
+                    field: field.to_owned(),
+                    value: (*prefix).to_owned(),
+                    fatal: false,
+                });
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── le righe di comando, montate e provate senza domanda ────────────────
+
+/// Un motore su cui un passo si affida al descrittore per comporre la riga.
+struct WantedEngine {
+    step: String,
+    tool: String,
+}
+
+/// I motori di cui `flow check` deve provare la riga, passo per passo e
+/// **motore per motore della catena**.
+///
+/// **TUTTA LA CATENA, NON IL PRIMO.** Il guasto 16 è nato da sei passi che
+/// nominavano un motore solo; il guasto 27 dice che il difetto stava nel
+/// *secondo* — nessun flusso mette `agy` per primo, quindi quel ramo non era
+/// mai stato eseguito e la riga sbagliata è vissuta indisturbata. Guardare solo
+/// il primo motore è non guardare dove il difetto era.
+///
+/// **E SOLO I PASSI CHE LA RIGA NON SE LA SCRIVONO.** Un passo che dichiara i
+/// propri `args` vince sulla ricetta — lo decide `ExternalEngineAction`, e qui
+/// si legge la stessa regola, non una seconda copia di essa. Sono i passi che
+/// invocano `cargo` o `git` attraverso la stessa azione: la loro riga non viene
+/// da nessun blocco `ask`, e chiamarla «non montabile» sarebbe un allarme su un
+/// passo sano.
+fn engines_wanted(graph: &Graph) -> Vec<WantedEngine> {
+    let mut wanted = Vec::new();
+    for step in graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        if with.get("args").is_some() {
+            continue;
+        }
+        for tool in engines_of(with) {
+            wanted.push(WantedEngine {
+                step: step.id.clone(),
+                tool,
+            });
+        }
+    }
+    wanted
+}
+
+/// Cosa si è potuto sapere della riga di un motore.
+enum EngineOutcome {
+    /// Il motore non è invocabile qui, e il rilevatore dice perché.
+    NotHere(String),
+    /// Nessun blocco `ask`: la riga non si compone affatto, e non c'è niente
+    /// da provare. È un'assenza nel descrittore, non un difetto della riga.
+    NotAssemblable,
+    /// La riga si è montata e si è provata: ecco com'è venuta e cosa ha detto.
+    Tried {
+        line: String,
+        verdict: actions::ProbeVerdict,
+    },
+}
+
+/// Monta la riga di ogni motore di ogni catena, la prova **senza dare la
+/// domanda**, e scrive nel rapporto come sta messa.
+///
+/// **QUI `flow check` CAMBIA NATURA, E VA DETTO.** `resolver.rs` dichiara in
+/// testa che risolvere un nome non deve eseguire niente, e resta vero: è questa
+/// funzione che avvia processi, non la risoluzione. Da qui in poi `flow check`
+/// avvia un processo per ogni motore dichiarato — **senza rete, senza denaro,
+/// con un tetto di tempo**, perché senza la domanda nessuno di quei processi
+/// chiama un fornitore. Il prezzo è che un controllo statico non è più solo
+/// statico; il ricavo è che la cura scritta accanto al guasto 1 esiste davvero.
+///
+/// **ACCESO IN MODO PREDEFINITO.** Un controllo dietro una bandiera è un
+/// controllo che nessuno interroga: il guasto 27 sarebbe rimasto invisibile
+/// esattamente come è rimasto, perché nessuno avrebbe scritto la bandiera. Chi
+/// non lo vuole scrive `--no-engines`, e allora il rapporto **tace** invece di
+/// dichiarare sane righe che non ha guardato.
+///
+/// **L'ASSE «È STATO CHIAMATO DAVVERO» NON È QUESTO, E RESTA SEPARATO.** Una
+/// riga sana non dice che quel motore abbia mai risposto a una domanda vera:
+/// quello lo sa il deposito, che registra le chiamate. Mescolare le due cose
+/// farebbe passare per «usato» un motore che nessuna corsa ha mai nominato —
+/// che è precisamente il guasto 32.
+fn engine_lines_into(
+    report: &mut String,
+    graph: &Graph,
+    tools: &toolbox::Tools,
+    probe: &dyn actions::DryProbe,
+) {
+    use actions::{ProbeVerdict, ToolResolver};
+
+    // Un motore si prova UNA VOLTA SOLA anche quando lo nominano sei passi: la
+    // riga che si monta viene dal descrittore, non dal passo, quindi sei prove
+    // avvierebbero sei processi per sapere sei volte la stessa cosa. Il
+    // rapporto resta passo per passo, che è ciò che chi legge deve correggere.
+    let mut judged: BTreeMap<String, EngineOutcome> = BTreeMap::new();
+
+    let mut sound = Vec::new();
+    let mut broken = Vec::new();
+    let mut untried = Vec::new();
+    let mut unassemblable = Vec::new();
+    let mut exhausted = Vec::new();
+
+    for wanted in engines_wanted(graph) {
+        // Uno strumento che nessun descrittore dichiara è già nominato sopra:
+        // ripeterlo qui manderebbe a cercare due difetti dove ce n'è uno.
+        if !tools.declares(&wanted.tool) {
+            continue;
+        }
+        if !judged.contains_key(&wanted.tool) {
+            let outcome = match tools.resolve(&wanted.tool) {
+                Err(reason) => EngineOutcome::NotHere(reason),
+                Ok(bin) => match tools.ask_recipe(&wanted.tool) {
+                    None => EngineOutcome::NotAssemblable,
+                    Some(recipe) => {
+                        let line = std::iter::once(bin.clone())
+                            .chain(actions::command_line(&recipe))
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        EngineOutcome::Tried {
+                            verdict: actions::probe_dry_run(probe, &bin, &recipe),
+                            line,
+                        }
+                    }
+                },
+            };
+            judged.insert(wanted.tool.clone(), outcome);
+        }
+
+        let who = format!("{} → {}", wanted.step, wanted.tool);
+        match judged.get(&wanted.tool).expect("appena inserito") {
+            EngineOutcome::NotHere(reason) => {
+                untried.push(format!("{who}: il motore non è invocabile qui — {reason}"))
+            }
+            EngineOutcome::NotAssemblable => unassemblable.push(format!(
+                "{who}: il suo descrittore non dichiara un blocco `ask`, quindi non \
+                 esiste nessuna riga da montare e il passo dovrà scrivere da sé le opzioni"
+            )),
+            EngineOutcome::Tried { line, verdict } => match verdict {
+                ProbeVerdict::Sound => sound.push(who),
+                // LE PAROLE DEL MOTORE PER INTERO, E LA RIGA CHE LE HA
+                // PRODOTTE. Sul guasto 27 la frase di `agy` diceva quale
+                // bandiera aveva mangiato quale argomento: una diagnosi che
+                // nessuna parola nostra avrebbe potuto sostituire. Tagliarla, o
+                // riassumerla, riporterebbe chi legge a indovinare.
+                ProbeVerdict::Broken { said } => broken.push(format!(
+                    "{who}: riga montata «{line}»; il motore ha risposto: «{said}»"
+                )),
+                ProbeVerdict::CannotWork { said } => {
+                    exhausted.push(format!("{who}: «{said}»"))
+                }
+                ProbeVerdict::NotDeclared => untried.push(format!(
+                    "{who}: il suo descrittore non dichiara come rifiuta la riga senza \
+                     domanda (`refuses_without_prompt`), quindi non c'è modo di dire se \
+                     la riga «{line}» sia sana — si misura eseguendola senza la domanda"
+                )),
+                ProbeVerdict::TimedOut { why } => untried.push(format!(
+                    "{who}: nessuna risposta alla riga «{line}» — {why}"
+                )),
+            },
+        }
+    }
+
+    if !sound.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando sane (montate e provate senza domanda, senza spendere): {}",
+            sound.join("; ")
+        );
+    }
+    if !broken.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando ROTTE (il motore si è lamentato di qualcosa che non è \
+             la domanda mancante): {}",
+            broken.join("; ")
+        );
+    }
+    if !exhausted.is_empty() {
+        let _ = write!(
+            report,
+            "\nmotori che adesso non possono lavorare (la riga non c'entra, si \
+             riprova quando tornano): {}",
+            exhausted.join("; ")
+        );
+    }
+    if !untried.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando non provate (non si sa se siano sane): {}",
+            untried.join("; ")
+        );
+    }
+    if !unassemblable.is_empty() {
+        let _ = write!(
+            report,
+            "\nrighe di comando non montabili (non c'è niente da provare): {}",
+            unassemblable.join("; ")
+        );
+    }
+}
+
 /// I campi scritti a mano che l'azione del passo non riconosce.
 ///
 /// Guarda in due posti, e sono i due posti dove scrive una persona: il `with`
@@ -585,24 +1680,38 @@ fn stray_fields(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
 /// controllo chiuderebbe in verde senza aver guardato metà dei motori del
 /// flusso: sarebbe il guasto 3 rifatto da capo, con la stessa forma.
 fn tools_wanted(graph: &Graph) -> BTreeSet<String> {
-    let mut wanted = BTreeSet::new();
-    for tool in graph
+    graph
         .steps()
         .iter()
         .filter_map(|step| step.with.as_ref())
-        .filter_map(|with| with.get("tool"))
-    {
-        match tool {
-            Value::String(id) => {
-                wanted.insert(id.clone());
-            }
-            Value::Array(chain) => {
-                wanted.extend(chain.iter().filter_map(Value::as_str).map(str::to_owned));
-            }
-            _ => {}
-        }
+        .flat_map(engines_of)
+        .collect()
+}
+
+/// I motori che un `with` nomina, **nell'ordine in cui li ha scritti chi ha
+/// scritto il passo**: un nome solo, o una catena.
+///
+/// **UNA COPIA SOLA PERCHÉ LA DOMANDA È UNA SOLA.** Fino al 31/08/2026 questa
+/// lettura stava scritta due volte — dentro `tools_wanted` e dentro
+/// `capabilities_wanted` — e la seconda era nata perché la prima buttava via il
+/// passo. Due copie della stessa regola divergono sul primo dettaglio che
+/// qualcuno cambia a una sola delle due, ed è il guasto 10: qui ne serviva una
+/// terza, e la terza è il momento giusto per fermarsi.
+///
+/// **L'ORDINE È UN DATO, NON UN CASO.** In una catena il primo è quello che si
+/// prova per primo e gli altri sono il ripiego; un `BTreeSet` lo perderebbe, e
+/// chi legge il rapporto non saprebbe più su quale motore finisce una corsa
+/// quando il primo muore.
+fn engines_of(with: &Value) -> Vec<String> {
+    match with.get("tool") {
+        Some(Value::String(id)) => vec![id.clone()],
+        Some(Value::Array(chain)) => chain
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        _ => Vec::new(),
     }
-    wanted
 }
 
 // ── il testo di un passo mentre il passo gira ──────────────────────────
@@ -851,24 +1960,38 @@ fn execute_flow(
     registry: &ActionRegistry,
     clock: &mut dyn flow::Clock,
 ) -> Result<Execution, flow::FlowError> {
+    let root = workspace_root();
+    announce_root(root.as_deref());
     InProcessExecutor.execute(
         &flow.graph,
-        execution_request(flow, run_id),
+        registry::execution_request(flow, run_id, root.as_deref()),
         store,
         registry,
         clock,
     )
 }
 
-fn execution_request(flow: &FlowFile, run_id: &str) -> ExecutionRequest {
-    ExecutionRequest {
-        run_id: run_id.to_owned(),
-        root_inputs: flow.inputs.clone(),
-        gates: Vec::new(),
-        shared: SharedState::new(),
-        // Il tetto è del flusso e viaggia con la corsa: chi lancia non lo
-        // inventa, lo porta.
-        spend_cap_micros: flow.spend_cap_micros,
+/// La radice del progetto per questa corsa, risalendo da dove si è lanciato.
+fn workspace_root() -> Option<PathBuf> {
+    let working = std::env::current_dir().ok()?;
+    flow::workspace::find_root(&working)
+}
+
+/// **CHI LANCIA DICE DOVE HA DECISO DI LAVORARE, PRIMA DI PARTIRE.**
+///
+/// Senza questa riga il piano ha un modo silenzioso di sbagliare, ed è
+/// **lo stesso** del guasto che chiude: il flusso lavora in un posto che
+/// nessuno ha visto scritto da nessuna parte. Che la radice manchi è
+/// un'informazione quanto il suo valore — dice in anticipo perché un passo con
+/// `workdir` sta per fallire.
+fn announce_root(root: Option<&Path>) {
+    match root {
+        Some(root) => println!("radice del progetto: {}", root.display()),
+        None => println!(
+            "radice del progetto: nessuna (nessun {} risalendo da qui); \
+             i passi che dichiarano «workdir» falliranno",
+            flow::workspace::MARKER
+        ),
     }
 }
 
@@ -957,10 +2080,222 @@ fn new_run_id(flow_id: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flow::{Clock, Decision, InMemoryRecordStore};
+    use flow::{Clock, Decision, InMemoryRecordStore, ProcessProbe, StepRecord};
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
+
+    // ── la sonda della consegna ──────────────────────────────────────────
+
+    fn a_handed_record(started_at: i64, limit: Option<i64>, pid: Option<u32>) -> StepRecord {
+        let input = match limit {
+            Some(limit) => serde_json::json!({"handoff_timeout_secs": limit}),
+            None => serde_json::json!({"mandate": "senza scadenza"}),
+        };
+        let mut record = StepRecord::started(
+            "run-1",
+            "implementa",
+            1,
+            1,
+            vec![],
+            input,
+            vec![],
+            started_at,
+        );
+        record.held_by_pid = pid;
+        record
+    }
+
+    /// La scadenza nel futuro tiene il passo; passata, lo lascia andare.
+    #[test]
+    fn the_lease_reads_the_deadline_and_not_the_kernel() {
+        let probe = HandoffLease { now: 1_000 };
+        assert!(
+            probe
+                .is_running(&a_handed_record(900, Some(600), None))
+                .expect("la sonda risponde"),
+            "la scadenza è nel futuro: il passo è tenuto"
+        );
+        assert!(
+            !probe
+                .is_running(&a_handed_record(100, Some(600), None))
+                .expect("la sonda risponde"),
+            "la scadenza è passata: nessuno l'ha preso in carico"
+        );
+    }
+
+    /// **NON SO VEDERE, QUINDI NON DICHIARO MORTO.** Un record con un pid l'ha
+    /// aperto l'esecutore in processo; questa sonda non ha modo di guardare quel
+    /// processo — e non deve chiederlo al sistema operativo, che è il guasto 12.
+    /// Lo stesso vale per un record senza scadenza leggibile.
+    #[test]
+    fn what_the_lease_cannot_see_it_does_not_declare_dead() {
+        let probe = HandoffLease { now: 1_000_000 };
+        assert!(
+            probe
+                .is_running(&a_handed_record(1, Some(1), Some(4321)))
+                .expect("la sonda risponde"),
+            "con un pid scritto il passo si tiene, anche con la scadenza passata"
+        );
+        assert!(
+            probe
+                .is_running(&a_handed_record(1, None, None))
+                .expect("la sonda risponde"),
+            "senza una scadenza leggibile l'ambiguità si conserva"
+        );
+    }
+
+    /// **UNA CONSEGNA VIVA NON SI CHIUDE SOTTO I PIEDI DI CHI CI LAVORA.**
+    ///
+    /// È il mutante che conta di tutto questo lavoro: una sonda che risponde
+    /// sempre «no» fa chiudere `Broke` un passo che qualcuno sta eseguendo, e la
+    /// ripresa lo rilancia — due agenti sullo stesso mandato, e nessuno dei due
+    /// lo sa.
+    #[test]
+    fn a_live_handoff_is_not_closed_under_the_agent_who_holds_it() {
+        let flow: FlowFile = serde_json::from_str(
+            r#"{
+                "id": "consegna-viva",
+                "description": "un passo consegnato e ancora nei tempi",
+                "graph": {"steps": [{
+                    "id": "implementa",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "handed_to_agent",
+                    "max_attempts": 3
+                }]},
+                "inputs": {}
+            }"#,
+        )
+        .expect("il flusso di prova è valido");
+
+        let mut store = InMemoryRecordStore::from_records(vec![a_handed_record(
+            1_000,
+            Some(3_600),
+            None,
+        )]);
+        let registry = default_registry(None, None);
+        let shared = flow::SharedState::new();
+        let probe = HandoffLease { now: 1_100 };
+        let mut clock = SystemClock;
+        let report = InProcessExecutor
+            .reconcile(flow::ReconciliationRequest {
+                graph: &flow.graph,
+                run_id: "run-1",
+                store: &mut store,
+                actions: &registry,
+                shared: &shared,
+                processes: &probe,
+                clock: &mut clock,
+            })
+            .expect("la riconciliazione risponde");
+
+        assert_eq!(
+            report.still_running,
+            vec!["implementa".to_owned()],
+            "il passo è tenuto: la scadenza non è passata"
+        );
+        assert!(
+            report.closed_as_broke.is_empty(),
+            "chiuderlo lo rimetterebbe fra i pronti mentre qualcuno ci lavora: {report:?}"
+        );
+        assert!(
+            store.all()[0].outcome.is_none(),
+            "il record deve restare aperto"
+        );
+    }
+
+    /// **UNA RIPRESA NON RISCRIVE L'ISTANTE DI PARTENZA.**
+    ///
+    /// L'intestazione di una corsa si riscrive intera a ogni aggiornamento.
+    /// Mettendoci l'ora della ripresa, una corsa consegnata la sera e ripresa il
+    /// mattino dopo risulterebbe partita al mattino: `sailor flow due` la
+    /// crederebbe appena girata e non dichiarerebbe dovuto il suo flusso, e la
+    /// durata mostrata sarebbe un minuto invece di dieci ore.
+    #[test]
+    fn resuming_a_run_keeps_the_hour_it_started() {
+        let home = TestDirectory::new();
+        let flow_file: FlowFile = serde_json::from_str(
+            r#"{
+                "id": "ripresa-di-prova",
+                "description": "un passo gia' andato",
+                "graph": {"steps": [{
+                    "id": "implementa",
+                    "deps": [],
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"},
+                    "when": null,
+                    "action": "handed_to_agent",
+                    "max_attempts": 3
+                }]},
+                "inputs": {}
+            }"#,
+        )
+        .expect("il flusso di prova è valido");
+
+        let ledger = Ledger::open(&home.0).expect("aprire il deposito");
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "run-vecchia".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "ripresa-di-prova".to_owned(),
+                parent_run_id: None,
+                started_by: "prova".to_owned(),
+                status: "waiting".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 1_000,
+                ended_at: Some(1_500),
+            })
+            .expect("registrare la corsa");
+        let mut record = StepRecord::started(
+            "run-vecchia",
+            "implementa",
+            1,
+            1,
+            vec![],
+            serde_json::json!({"handoff_timeout_secs": 60}),
+            vec![],
+            1_100,
+        );
+        record.species = Some(flow::StepSpecies::Repeatable);
+        ledger.append_step_started(&record).expect("aprire il passo");
+        ledger
+            .close_step(
+                "run-vecchia",
+                "implementa",
+                1,
+                1,
+                flow::Completion {
+                    outcome: flow::Outcome::Went,
+                    output: Some(serde_json::json!({})),
+                    said: None,
+                    failure_class: None,
+                    ended_at: 1_500,
+                    bytes_seen: None,
+                    bytes_discarded: None,
+                },
+            )
+            .expect("chiudere il passo");
+
+        let report = resume_run_in(&ledger, &flow_file, "run-vecchia")
+            .expect("la corsa si riprende: l'unico passo è già andato");
+        assert!(report.contains("complete"), "{report}");
+
+        let header = ledger
+            .run_header("run-vecchia")
+            .expect("l'intestazione si rilegge")
+            .expect("la corsa esiste");
+        assert_eq!(
+            header.started_at, 1_000,
+            "l'istante di partenza resta quello della prima corsa: con l'ora della \
+             ripresa, una corsa consegnata la sera e ripresa il mattino dopo \
+             risulterebbe partita al mattino"
+        );
+        assert_eq!(header.status, "complete", "la ripresa aggiorna lo stato");
+    }
 
     static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -1085,7 +2420,7 @@ mod tests {
         let json = flow_json("external_engine", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(
             report.contains("campi che l'azione non conosce"),
@@ -1107,7 +2442,7 @@ mod tests {
         let json = flow_json("external_engine", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(
             !report.contains("campi che l'azione non conosce"),
@@ -1436,7 +2771,7 @@ mod tests {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
         let tools = tools_declaring(&["git"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
@@ -1454,7 +2789,7 @@ mod tests {
         let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
         let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
@@ -1521,7 +2856,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": false}"#);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "resta un avviso, non un errore: {unknown:?}");
         assert!(report.contains("root"), "nomina il passo: {report}");
@@ -1542,7 +2877,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"choose_model": true}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(
             report.contains("nessuno ha guardato"),
@@ -1564,7 +2899,7 @@ mod tests {
             r#"{"response_shape": {"args": ["--json-schema"], "takes_value": true}}"#,
         );
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(
             !report.contains("capacità che il motore non dichiara"),
@@ -1586,7 +2921,7 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": true}"#);
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools));
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(
             !report.contains("campi che l'azione non conosce"),
@@ -1600,10 +2935,231 @@ mod tests {
     fn without_a_detector_the_check_says_nothing_about_tools() {
         let flow = flow_wanting_tool("qualunque");
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), None);
+        let (report, unknown) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(unknown.is_empty());
         assert!(!report.contains("strument"), "{report}");
+    }
+
+    // ── il tetto di spesa: `flow check` e `flow cap` ────────────────────
+
+    /// **DUE FLUSSI IDENTICI TRANNE IL TETTO DANNO DUE RAPPORTI DIVERSI.**
+    ///
+    /// **IL CONFRONTO È FRA I DUE RAPPORTI, NON CON UNA PAROLA.** Una prova che
+    /// cercasse «tetto» resterebbe verde davanti a un mutante che stampa sempre
+    /// la stessa riga — la parola ci sarebbe comunque. Qui l'unica differenza
+    /// fra i due ingressi è il tetto, quindi due uscite uguali dicono che il
+    /// controllo non lo sta guardando.
+    ///
+    /// *Mutante eseguito*: nel ramo `Some(cap)` di `check_report` stampare
+    /// `"\ntetto di spesa: nessuno"` come nel ramo `None`. I due rapporti
+    /// diventano identici e questa prova diventa rossa.
+    #[test]
+    fn two_flows_that_differ_only_by_the_cap_get_two_different_reports() {
+        let json = flow_json("shell_check", "[]", "{}");
+        let without: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        let mut with = without.clone();
+        with.spend_cap_micros = Some(2_500_000);
+
+        let registry = default_registry(None, None);
+        let (said_without, _) = check_report(&without, &registry, None, None);
+        let (said_with, _) = check_report(&with, &registry, None, None);
+
+        assert_ne!(
+            said_without, said_with,
+            "il tetto non compare nel rapporto: {said_with}"
+        );
+        assert!(said_without.contains("tetto di spesa: nessuno"), "{said_without}");
+        assert!(said_with.contains("2500000 micro"), "{said_with}");
+    }
+
+    /// **UN TETTO CHE C'È PORTA CON SÉ CIÒ CHE NON PROMETTE.**
+    ///
+    /// Un numero da solo si legge come una garanzia sulla spesa. I tre limiti
+    /// veri — il freno non arriva ai motori, il primo fronte non è mai frenato,
+    /// le chiamate senza costo restano fuori — devono stare accanto al numero,
+    /// non in un documento che nessuno apre mentre lancia.
+    #[test]
+    fn a_cap_in_the_report_declares_what_it_does_not_promise() {
+        let json = flow_json("shell_check", "[]", "{}");
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+        flow.spend_cap_micros = Some(1);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
+
+        assert!(report.contains("non arriva ai motori"), "{report}");
+        assert!(report.contains("primo fronte"), "{report}");
+        assert!(report.contains("restano fuori dalla somma"), "{report}");
+    }
+
+    /// **SOTTO TRE CORSE COSTATE NON SI SUGGERISCE NIENTE, E SI DICE PERCHÉ.**
+    ///
+    /// È la regola che tiene fuori il guasto 22: nel deposito di questa macchina
+    /// il 31/08/2026 sei corse su trentaquattro hanno un costo diverso da zero,
+    /// e nessun flusso ne ha tre. Una mediana su quella colonna darebbe zero per
+    /// ogni flusso, cioè un tetto che ferma ogni corsa prima del primo passo.
+    #[test]
+    fn under_three_costed_runs_no_cap_is_suggested() {
+        let two = observed_from(&[vec![Some(100)], vec![Some(200)]]);
+
+        let said = what_the_ledger_saw(&two);
+
+        assert!(said.contains("nessun suggerimento"), "{said}");
+        // La riga del suggerimento comincia a capo: cercare «suggerimento: »
+        // senza l'a-capo troverebbe anche «nessun suggerimento: ».
+        assert!(!said.contains("\nsuggerimento: "), "{said}");
+        assert!(said.contains("ce ne sono 2"), "e dice cosa c'è: {said}");
+    }
+
+    /// **CON TRE, IL SUGGERIMENTO È LA PEGGIORE PIÙ LA CHIAMATA PIÙ CARA.**
+    ///
+    /// La gemella di quella sopra: senza di lei un comando che non suggerisse
+    /// mai passerebbe l'altra e non servirebbe a niente.
+    #[test]
+    fn with_three_costed_runs_the_suggestion_is_the_worst_plus_the_dearest_call() {
+        let three = observed_from(&[
+            vec![Some(100), Some(50)],
+            vec![Some(400), Some(300)],
+            vec![Some(200)],
+        ]);
+
+        let said = what_the_ledger_saw(&three);
+
+        // Peggiore corsa 700, chiamata più cara 400: 1100.
+        assert!(said.contains("\nsuggerimento: 1100 micro"), "{said}");
+        assert!(!said.contains("nessun suggerimento"), "{said}");
+    }
+
+    /// **UNA CORSA CHE NON HA SPESO NON È UN CAMPIONE.**
+    ///
+    /// Ventotto delle trentaquattro corse di questo deposito portano zero perché
+    /// il costo *era* la costante zero fino al 30/08/2026. Contarle farebbe
+    /// scendere ogni suggerimento verso lo zero — cioè verso un tetto che ferma
+    /// tutto — con l'aria di una misura su molti campioni.
+    #[test]
+    fn runs_that_spent_nothing_are_not_samples() {
+        let seen = observed_from(&[
+            vec![Some(0)],
+            vec![],
+            vec![None, None],
+            vec![Some(900)],
+        ]);
+
+        assert_eq!(seen.runs, 4, "le corse ci sono tutte");
+        assert_eq!(seen.costed_runs, 1, "ma una sola ha speso");
+        assert_eq!(seen.worst_run_micros, 900);
+        assert_eq!(seen.calls_without_cost, 2, "e due chiamate restano fuori");
+    }
+
+    /// **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON NE COMPARE UNO NUOVO.**
+    ///
+    /// Sta dentro il binario: non c'è nessun file da modificare. La strada è un
+    /// omonimo in casa propria — che quel file lo crei chi lo vuole, sapendo di
+    /// averlo creato. Un flusso comparso da sé cambierebbe cosa gira senza che
+    /// nessuno l'abbia deciso.
+    #[test]
+    fn a_system_flow_refuses_the_cap_instead_of_growing_a_twin() {
+        let home = TestDirectory::new();
+        let sources = flow::system::sources(&home.0, None, None);
+        let shipped = flow::system::FLOWS[0].0;
+
+        let error = set_cap(&sources, shipped, "1000000").expect_err("un flusso di sistema");
+
+        assert!(error.contains("di sistema"), "{error}");
+        assert!(
+            entries_of(&home.0).is_empty(),
+            "non deve essere comparso nessun file in casa: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// Mettere il tetto scrive **nella cartella da cui il flusso viene**, e non
+    /// tocca nient'altro del file.
+    #[test]
+    fn setting_the_cap_writes_where_the_flow_lives() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let said = set_cap(&sources, "prova", "750000").expect("il tetto si scrive");
+
+        assert!(said.contains("750000 micro"), "{said}");
+        let after = written_flow(&home.0, "prova");
+        assert_eq!(after.spend_cap_micros, Some(750_000));
+        assert_eq!(after.description, "flusso di prova", "il resto è intatto");
+        assert_eq!(after.graph.steps().len(), 1);
+        assert_eq!(
+            entries_of(&home.0).len(),
+            1,
+            "e non è comparso nessun gemello: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// **UN FILE CHE NON SI CHIAMA COME IL PROPRIO `id` NON SI RISCRIVE.**
+    ///
+    /// Il registro indicizza per nome di file, la scrittura per `id`: dove i due
+    /// divergono, riscrivere creerebbe un secondo flusso invece di sostituire
+    /// questo. Senza questo rifiuto il comando direbbe «fatto» lasciando in
+    /// cartella due flussi con lo stesso `id`.
+    #[test]
+    fn a_file_named_differently_from_its_id_is_refused_instead_of_duplicated() {
+        let home = TestDirectory::new();
+        home.write("altro-nome.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let error = set_cap(&sources, "altro-nome", "500").expect_err("nome e id divergono");
+
+        assert!(error.contains("secondo flusso"), "{error}");
+        assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
+    }
+
+    /// Un valore che non è un numero né «nessuno» si rifiuta dicendo cos'è un
+    /// micro: chi sbaglia unità mette un tetto mille volte più basso di quello
+    /// che credeva, e la corsa si ferma senza che lui capisca perché.
+    #[test]
+    fn a_cap_that_is_not_a_number_is_refused_with_the_unit_spelled_out() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let error = set_cap(&sources, "prova", "1,50").expect_err("non è un numero di micro");
+        assert!(error.contains("micro"), "{error}");
+
+        let negative = set_cap(&sources, "prova", "-1").expect_err("un tetto negativo");
+        assert!(negative.contains("negativo"), "{negative}");
+    }
+
+    /// **`nessuno` TOGLIE IL TETTO, E NON LO METTE A ZERO.** Senza questa parola
+    /// il comando saprebbe entrare in uno stato e non uscirne: `0` è «non deve
+    /// spendere niente», che ferma la corsa prima del primo passo.
+    #[test]
+    fn the_word_for_no_cap_clears_it_instead_of_setting_zero() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+        set_cap(&sources, "prova", "500").expect("prima si mette");
+
+        set_cap(&sources, "prova", NO_CAP).expect("poi si toglie");
+
+        assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
+    }
+
+    fn written_flow(dir: &std::path::Path, name: &str) -> FlowFile {
+        let text = fs::read_to_string(dir.join(format!("{name}.flow.json")))
+            .expect("il flusso scritto si rilegge");
+        serde_json::from_str(&text).expect("e si deserializza")
+    }
+
+    fn entries_of(dir: &std::path::Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     #[test]
@@ -1611,7 +3167,7 @@ mod tests {
         let json = flow_json("azione_assente", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(report.contains("passi: 1"), "{report}");
         assert!(report.contains("cicli: nessuno"), "{report}");
@@ -1635,7 +3191,7 @@ mod tests {
         }"#;
         let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(report.contains("dipendenze: 1"), "{report}");
         assert!(report.contains("child <- root"), "{report}");
@@ -1675,7 +3231,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", "{}");
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let (report, _) = check_report(&flow, &default_registry(None, None), None);
+        let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
         assert!(report.contains("azioni disponibili: "), "{report}");
         assert!(report.contains("history_ask"), "{report}");
@@ -1707,7 +3263,7 @@ mod tests {
         });
 
         let error = engine
-            .execute(&input, &mut SharedState::new())
+            .execute(&input, &mut flow::SharedState::new())
             .expect_err("quell'identificativo non esiste");
 
         assert_eq!(error.class, "tool_unavailable", "{}", error.said);
@@ -1719,7 +3275,7 @@ mod tests {
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
 
-        let request = execution_request(&flow, "corsa-1");
+        let request = registry::execution_request(&flow, "corsa-1", None);
 
         assert_eq!(request.root_inputs, flow.inputs);
         assert_eq!(request.run_id, "corsa-1");
@@ -1774,8 +3330,16 @@ mod tests {
         assert!(missing_actions(&flow.graph, &default_registry(None, None)).is_empty());
     }
 
+    /// **CIÒ CHE IL FLUSSO DICHIARA ARRIVA ALL'AZIONE, PIÙ LA RADICE.**
+    ///
+    /// Fino al 31/08/2026 questa prova chiedeva l'uguaglianza esatta con
+    /// l'ingresso dichiarato. Adesso non vale più, ed è voluto: chi compone
+    /// l'ingresso ci aggiunge `workdir`, altrimenti un passo senza cartella
+    /// dichiarata girerebbe dove sta il processo — che è il guasto 25. La
+    /// prova chiede tutte e due le cose, perché sono due garanzie diverse:
+    /// quello che una persona ha scritto non viene toccato, e la radice c'è.
     #[test]
-    fn run_executes_the_registered_action_with_the_declared_input() {
+    fn run_executes_the_registered_action_with_the_declared_input_plus_the_root() {
         let inputs = r#"{"root":{"command":"true","env":{},"timeout_secs":1}}"#;
         let json = flow_json("shell_check", "[]", inputs);
         let flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
@@ -1792,7 +3356,15 @@ mod tests {
 
         assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
         assert_eq!(store.all().len(), 1);
-        assert_eq!(store.all()[0].input, flow.inputs["root"]);
+        let seen = &store.all()[0].input;
+        for (field, value) in flow.inputs["root"].as_object().expect("un oggetto") {
+            assert_eq!(seen.get(field), Some(value), "«{field}» non deve cambiare");
+        }
+        assert_eq!(
+            seen.get("workdir").and_then(Value::as_str),
+            workspace_root().as_deref().map(|root| root.to_str().expect("un percorso leggibile")),
+            "la cartella di lavoro è la radice, non dove sta il processo"
+        );
     }
 
     /// UN NOME NON DIVENTA PIÙ UN PERCORSO, e la protezione cambia di natura:
@@ -1869,6 +3441,305 @@ mod tests {
         );
     }
 
+    // ── le righe di comando provate a secco ───────────────────────────
+
+    /// Una macchina finta con dei motori dentro, e i loro descrittori.
+    ///
+    /// Niente dipende da cosa è installato su chi esegue: il percorso è una
+    /// cartella temporanea, e i motori sono file vuoti col bit di esecuzione —
+    /// non vengono mai avviati, perché la sonda di queste prove è finta.
+    fn tools_with_engines(entries: &[(&str, &str)]) -> toolbox::Tools {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!(
+            "prova-motori-{}-{serial}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("la cartella di prova");
+        let mut declared = Vec::new();
+        for (id, ask) in entries {
+            let path = dir.join(id);
+            std::fs::write(&path, "").expect("il finto eseguibile");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                    .expect("bit di esecuzione");
+            }
+            declared.push(format!(
+                r#"{{"id":"{id}","family":"ai_cli","label":"{id}","detect":{{"command":"{id}"}}{ask}}}"#
+            ));
+        }
+        let file = dir.join("tools.json");
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, declared.join(","))).expect("scrivere");
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
+        toolbox::Tools::new(
+            catalog,
+            toolbox::Machine {
+                path_dirs: vec![dir.clone()],
+                home: dir,
+                env: BTreeMap::new(),
+                version_probes: false,
+            },
+        )
+    }
+
+    /// Una sonda che non esegue niente e risponde ciò che le diciamo, in base a
+    /// come si chiama l'eseguibile che le viene passato.
+    struct ScriptedProbe(Vec<(&'static str, &'static str)>);
+
+    impl actions::DryProbe for ScriptedProbe {
+        fn run(&self, bin: &str, _args: &[String], _stdin: Option<Vec<u8>>) -> actions::DryRun {
+            let said = self
+                .0
+                .iter()
+                .find(|(name, _)| bin.ends_with(name))
+                .map(|(_, said)| *said)
+                .unwrap_or("");
+            actions::DryRun::Answered {
+                stdout: String::new(),
+                stderr: said.to_owned(),
+            }
+        }
+    }
+
+    fn flow_with_chain(chain: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova",
+                "description": "flusso di prova",
+                "graph": {{
+                    "steps": [{{
+                        "id": "chiedi",
+                        "deps": [],
+                        "action": "external_engine",
+                        "max_attempts": 1,
+                        "when": null,
+                        "with": {{"tool": {chain}, "stdin": "ciao", "timeout_secs": 10}},
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}}
+                    }}],
+                    "skippable_dependencies": []
+                }},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    const REFUSES: &str = r#","ask":{"args":["-p"],"prompt":"stdin","refuses_without_prompt":["input must be provided"]}"#;
+    const SAYS_NOTHING: &str = r#","ask":{"args":["-p"],"prompt":"stdin"}"#;
+    const NO_ASK: &str = "";
+
+    /// **UNA RIGA SANA SI VEDE, E COSTA ZERO.** È il controllo che il guasto 1
+    /// aveva chiesto il 28/08 e che nessuno aveva scritto perché sembrava voler
+    /// dire spendere.
+    #[test]
+    fn a_line_the_engine_only_complains_about_the_missing_prompt_is_called_sound() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+        let probe = ScriptedProbe(vec![("motore", "Input must be provided through stdin")]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(report.contains("righe di comando sane"), "{report}");
+        assert!(report.contains("chiedi → motore"), "{report}");
+    }
+
+    /// **LE PAROLE DEL MOTORE SONO LA DIAGNOSI, E VANNO SCRITTE PER INTERO.**
+    /// Sul guasto 27 la frase di `agy` diceva quale bandiera aveva mangiato
+    /// quale argomento; un rapporto che dicesse solo «rotta» rimanderebbe a
+    /// indovinare, cioè non varrebbe più della sua assenza.
+    #[test]
+    fn a_broken_line_is_reported_with_the_engines_own_words_and_the_line_that_produced_it() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+        let probe = ScriptedProbe(vec![(
+            "motore",
+            "--print took \"--output-format\" as its prompt",
+        )]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(report.contains("righe di comando ROTTE"), "{report}");
+        assert!(
+            report.contains("--print took \"--output-format\" as its prompt"),
+            "senza le parole del motore la riga rossa non dice cosa correggere: {report}"
+        );
+        assert!(
+            report.contains("riga montata «") && report.contains("-p»"),
+            "e senza la riga montata non si sa nemmeno cosa è stato provato: {report}"
+        );
+    }
+
+    /// **SI GUARDA TUTTA LA CATENA, NON IL PRIMO.** Il guasto 27 stava nel
+    /// **secondo** motore di ogni catena, ed è vissuto indisturbato proprio
+    /// perché nessun flusso lo metteva per primo. Un controllo che leggesse
+    /// solo il primo motore sarebbe un controllo che non guarda dov'era il
+    /// difetto.
+    #[test]
+    fn every_engine_of_the_chain_is_tried_not_only_the_first() {
+        let flow = flow_with_chain(r#"["primo", "secondo", "terzo"]"#);
+        let tools = tools_with_engines(&[
+            ("primo", REFUSES),
+            ("secondo", REFUSES),
+            ("terzo", REFUSES),
+        ]);
+        let probe = ScriptedProbe(vec![
+            ("primo", "Input must be provided through stdin"),
+            ("secondo", "took --output-format as its prompt"),
+            ("terzo", "Input must be provided through stdin"),
+        ]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(
+            report.contains("chiedi → secondo"),
+            "il secondo della catena non è stato guardato: {report}"
+        );
+        assert!(
+            report.contains("took --output-format as its prompt"),
+            "{report}"
+        );
+        assert!(report.contains("chiedi → terzo"), "né il terzo: {report}");
+    }
+
+    /// **«NON PROVATA» E «NON MONTABILE» SONO DUE FATTI DIVERSI.** Un motore
+    /// senza blocco `ask` non ha nessuna riga da provare — si ripara scrivendo
+    /// il descrittore; uno che ha la riga ma non dichiara come rifiuta ce l'ha
+    /// e nessuno l'ha guardata — si ripara eseguendola. Sotto la stessa parola
+    /// manderebbero a fare il lavoro sbagliato, ed è il guasto 32 che vive
+    /// nella prima delle due.
+    #[test]
+    fn a_missing_ask_block_is_not_confused_with_a_line_nobody_looked_at() {
+        let flow = flow_with_chain(r#"["senza-ask", "senza-rifiuto"]"#);
+        let tools = tools_with_engines(&[("senza-ask", NO_ASK), ("senza-rifiuto", SAYS_NOTHING)]);
+        let probe = ScriptedProbe(vec![("senza-rifiuto", "un errore qualunque")]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        let untried = report
+            .lines()
+            .find(|line| line.starts_with("righe di comando non provate"))
+            .unwrap_or_else(|| panic!("manca la riga «non provate»: {report}"));
+        let unassemblable = report
+            .lines()
+            .find(|line| line.starts_with("righe di comando non montabili"))
+            .unwrap_or_else(|| panic!("manca la riga «non montabili»: {report}"));
+
+        assert!(untried.contains("senza-rifiuto"), "{untried}");
+        assert!(
+            !untried.contains("senza-ask"),
+            "un motore senza `ask` non è una riga non provata: {untried}"
+        );
+        assert!(unassemblable.contains("senza-ask"), "{unassemblable}");
+        assert!(
+            !unassemblable.contains("senza-rifiuto"),
+            "{unassemblable}"
+        );
+    }
+
+    /// **UN MOTORE ESAURITO NON È UNA RIGA ROTTA**, e la sua frase è la quarta.
+    /// Confonderli manderebbe a correggere un descrittore sano mentre bastava
+    /// aspettare.
+    #[test]
+    fn an_engine_that_cannot_work_now_gets_its_own_sentence() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[(
+            "motore",
+            r#","ask":{"args":["-p"],"prompt":"stdin","unusable_when":["weekly limit"],"refuses_without_prompt":["input must be provided"]}"#,
+        )]);
+        let probe = ScriptedProbe(vec![("motore", "You've hit your weekly limit")]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(
+            report.contains("motori che adesso non possono lavorare"),
+            "{report}"
+        );
+        assert!(
+            !report.contains("righe di comando ROTTE"),
+            "la riga è sana, è la quota che è finita: {report}"
+        );
+    }
+
+    /// **SENZA SONDA IL RAPPORTO TACE**, non dichiara sane righe che non ha
+    /// guardato: è la stessa regola del rilevatore assente, e senza di essa
+    /// `--no-engines` diventerebbe un modo per far dire al controllo una cosa
+    /// che non ha verificato.
+    #[test]
+    fn with_no_engines_the_report_says_nothing_about_command_lines() {
+        let flow = flow_with_chain(r#""motore""#);
+        let tools = tools_with_engines(&[("motore", REFUSES)]);
+
+        let (report, _) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+
+        assert!(!report.contains("righe di comando"), "{report}");
+    }
+
+    /// I passi che scrivono i propri `args` non compongono nessuna riga dal
+    /// descrittore: sono quelli che invocano `cargo` o `git` attraverso la
+    /// stessa azione, e chiamarli «non montabili» sarebbe un allarme su un
+    /// passo sano — cioè rumore che insegna a non leggere il rapporto.
+    #[test]
+    fn a_step_that_writes_its_own_arguments_is_not_reported_as_unassemblable() {
+        let json = r#"{
+            "id": "prova",
+            "description": "flusso di prova",
+            "graph": {
+                "steps": [{
+                    "id": "prove",
+                    "deps": [],
+                    "action": "external_engine",
+                    "max_attempts": 1,
+                    "when": null,
+                    "with": {"tool": "cargo", "args": ["test"], "timeout_secs": 10},
+                    "input_schema": {"type": "any"},
+                    "output_schema": {"type": "any"}
+                }],
+                "skippable_dependencies": []
+            },
+            "inputs": {}
+        }"#;
+        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let tools = tools_with_engines(&[("cargo", NO_ASK)]);
+        let probe = ScriptedProbe(vec![]);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&probe),
+        );
+
+        assert!(!report.contains("righe di comando"), "{report}");
+    }
+
     /// Una chiamata già costata, per misurare il totale di una corsa.
     fn spent_call(call_id: &str, run_id: &str, cost: i64) -> ledger::ModelCallRecord {
         ledger::ModelCallRecord {
@@ -1901,5 +3772,223 @@ mod tests {
             started_at: 100,
             ended_at: Some(105),
         }
+    }
+
+    // ── il guasto 25: i percorsi assoluti scritti dentro un flusso ────
+
+    /// Un flusso con un solo passo, il cui `with` è quello che le si passa.
+    fn flow_with(with: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova", "description": "un passo solo",
+                "graph": {{"steps": [{{
+                    "id": "unico", "deps": [], "action": "external_engine",
+                    "max_attempts": 1, "when": null,
+                    "input_schema": {{"type": "any"}},
+                    "output_schema": {{"type": "any"}},
+                    "with": {with}
+                }}]}},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// IL CASO DEL GUASTO 25. Un `workdir` assoluto decide dove il passo
+    /// lavora: il flusso si può eseguire in un posto solo, e altrove non
+    /// fallisce — fa danno nel posto sbagliato.
+    #[test]
+    fn an_absolute_workdir_is_an_error() {
+        let flow = flow_with(r#"{"workdir": "/home/someone/personal/sailor"}"#);
+
+        let found = hardcoded_paths(&flow);
+
+        assert_eq!(found.len(), 1, "uno solo: {:?}", found.len());
+        assert!(found[0].fatal, "un campo di posizione è un errore");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(found[0].field, "workdir");
+    }
+
+    /// Un `workdir` relativo è esattamente ciò che si vuole ottenere: si
+    /// risolve sulla radice di chi lancia, e non ha niente da segnalare.
+    #[test]
+    fn a_relative_workdir_is_clean() {
+        let flow = flow_with(r#"{"workdir": "crates/flow"}"#);
+
+        assert!(hardcoded_paths(&flow).is_empty());
+    }
+
+    /// **UN PUNTATORE NON È UN PERCORSO.** `{"$from": "/answer/verdict"}`
+    /// comincia per `/` e compare in quattro flussi su cinque: se il controllo
+    /// lo chiamasse percorso nascerebbe pieno di falsi positivi e verrebbe
+    /// spento entro un giorno.
+    #[test]
+    fn a_json_pointer_is_not_a_path() {
+        let flow = flow_with(
+            r#"{"stdin": {"$from": "/answer/verdict"}, "env": {"X": {"$json": "/shape"}}}"#,
+        );
+
+        assert!(hardcoded_paths(&flow).is_empty());
+    }
+
+    /// Un percorso dentro il testo di un prompt non impedisce al flusso di
+    /// girare: è un'istruzione che diventa sbagliata altrove. Avviso, non
+    /// errore — e riscriverlo è riscrivere un'istruzione, quindi lo fa una
+    /// persona.
+    #[test]
+    fn an_absolute_path_inside_a_prompt_is_a_warning() {
+        let flow = flow_with(
+            r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/personal/sailor.\n"]}}"#,
+        );
+
+        let found = hardcoded_paths(&flow);
+
+        assert_eq!(found.len(), 1);
+        assert!(!found[0].fatal, "dentro un testo è un avviso");
+        assert_eq!(found[0].field, "stdin.$join");
+    }
+
+    // ── spostare un flusso da un albero all'altro ─────────────────────
+
+    fn document_with_workdir(workdir: &str) -> Value {
+        serde_json::json!({
+            "id": "prova", "description": "d",
+            "graph": {"steps": [{
+                "id": "unico", "deps": [], "action": "external_engine",
+                "max_attempts": 1, "when": null,
+                "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
+                // **`workdir` NON È IL PENULTIMO, E LA POSIZIONE È LA PROVA.**
+                // Togliendo il penultimo campo, lo swap e lo scorrimento danno
+                // lo stesso ordine: una fixture così lascia passare il difetto.
+                // Qui ne restano due dopo, quindi i due modi divergono.
+                "with": {
+                    "tool": "git", "workdir": workdir,
+                    "timeout_secs": 5, "args": ["status"]
+                }
+            }]},
+            "inputs": {}
+        })
+    }
+
+    /// Coincide con la radice: il campo sparisce. Tenerlo come `"."` sarebbe
+    /// rumore che invita il prossimo a riscriverlo assoluto.
+    #[test]
+    fn a_workdir_equal_to_the_root_is_removed() {
+        let mut document = document_with_workdir("/vecchio/albero");
+
+        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
+            .expect("ha dei passi");
+
+        assert_eq!(moved.len(), 1);
+        assert!(left.is_empty());
+        assert!(document["graph"]["steps"][0]["with"]
+            .get("workdir")
+            .is_none());
+    }
+
+    /// Sotto la radice: resta il pezzo relativo, che è ciò che rende il flusso
+    /// eseguibile su un clone qualunque.
+    #[test]
+    fn a_workdir_under_the_root_keeps_only_the_rest() {
+        let mut document = document_with_workdir("/vecchio/albero/desktop");
+
+        relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+
+        assert_eq!(document["graph"]["steps"][0]["with"]["workdir"], "desktop");
+    }
+
+    /// **TOGLIERE UN CAMPO NON DEVE RIORDINARE IL FILE.** Con `preserve_order`
+    /// acceso `Map::remove` è uno *swap*: tira l'ultima chiave dentro il buco.
+    /// Misurato il 31/08/2026 sul flusso vero: 62 righe cambiate invece di 7,
+    /// e un diff in cui non si distingue più ciò che è stato deciso da ciò che
+    /// è stato spostato.
+    #[test]
+    fn removing_a_workdir_does_not_reorder_the_other_fields() {
+        let mut document = document_with_workdir("/vecchio/albero");
+
+        relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
+
+        let keys: Vec<&str> = document["graph"]["steps"][0]["with"]
+            .as_object()
+            .expect("un oggetto")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["tool", "timeout_secs", "args"],
+            "l'ordine resta quello: uno swap metterebbe «args» prima di «timeout_secs»"
+        );
+    }
+
+    /// Fuori dal prefisso: si lascia stare e si dice. Indovinare che
+    /// `/altro/posto` volesse dire «la radice» vorrebbe dire riscrivere un
+    /// percorso che qualcuno aveva messo lì apposta.
+    #[test]
+    fn a_workdir_outside_the_prefix_is_left_alone_and_reported() {
+        let mut document = document_with_workdir("/altro/posto");
+
+        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
+            .expect("ha dei passi");
+
+        assert!(moved.is_empty());
+        assert_eq!(left.len(), 1);
+        assert_eq!(document["graph"]["steps"][0]["with"]["workdir"], "/altro/posto");
+    }
+
+    /// **UN RINVIO NON SI RISCRIVE.** `{"$from": "/innesco/text"}` è un
+    /// puntatore che si risolve a esecuzione contro l'ingresso vero: qui non
+    /// c'è niente da spostare, e toccarlo vorrebbe dire inventare.
+    #[test]
+    fn a_workdir_that_is_a_reference_is_never_touched() {
+        let mut document = serde_json::json!({
+            "id": "prova", "description": "d",
+            "graph": {"steps": [{
+                "id": "unico", "deps": [], "action": "external_engine",
+                "max_attempts": 1, "when": null,
+                "input_schema": {"type": "any"}, "output_schema": {"type": "any"},
+                "with": {"workdir": {"$from": "/innesco/text"}}
+            }]},
+            "inputs": {}
+        });
+
+        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
+            .expect("ha dei passi");
+
+        assert!(moved.is_empty() && left.is_empty());
+        assert_eq!(
+            document["graph"]["steps"][0]["with"]["workdir"],
+            serde_json::json!({"$from": "/innesco/text"})
+        );
+    }
+
+    /// **LA PROVA CHE MISURA IL LAVORO.** È nata rossa su
+    /// `flows/sviluppa-sailor.flow.json` — sette errori e due avvisi, cioè il
+    /// guasto 25 contato — e diventa verde solo quando quel flusso è stato
+    /// davvero spostato. Non certifica: dice quanto lavoro c'era.
+    ///
+    /// Legge il file vero e non una copia: una copia si aggiornerebbe insieme
+    /// alla riparazione e resterebbe verde per sempre.
+    #[test]
+    fn the_real_development_flow_has_no_hardcoded_paths() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../flows/sviluppa-sailor.flow.json");
+        let text = fs::read_to_string(&path).expect("il flusso di sviluppo è versionato");
+        let flow: FlowFile = serde_json::from_str(&text).expect("è un flusso valido");
+
+        let found = hardcoded_paths(&flow);
+        let described: Vec<String> = found
+            .iter()
+            .map(|entry| {
+                let kind = if entry.fatal { "errore" } else { "avviso" };
+                format!("{kind}: {} in «{}» ({})", entry.step, entry.field, entry.value)
+            })
+            .collect();
+
+        assert!(
+            found.is_empty(),
+            "il flusso di sviluppo non gira su un clone: {}",
+            described.join("; ")
+        );
     }
 }

@@ -34,6 +34,7 @@
 //! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
 //! ferma con un messaggio utile dove non lo trova.
 
+pub mod handoff;
 pub mod history;
 pub mod reference;
 pub mod store;
@@ -459,6 +460,15 @@ pub struct CheckInvocation {
     pub command: String,
     pub env: BTreeMap<String, String>,
     pub timeout: Duration,
+    /// Dove gira la verifica.
+    ///
+    /// **PRIMA DEL 31/08/2026 NON C'ERA, E IL DIFETTO ERA INVISIBILE**: una
+    /// verifica girava sempre dove sta il processo, cioè dove capita che sia
+    /// stata lanciata la finestra o il terminale. Un `cargo test` che passa
+    /// perché è stato eseguito nell'albero sbagliato non fallisce: dice di sì.
+    /// La gemella `EngineInvocation` questo campo ce l'aveva già, e la
+    /// differenza fra le due non era una scelta.
+    pub workdir: Option<String>,
 }
 
 /// Asimmetrico di proposito: chi passa non ha niente da spiegare, chi fallisce
@@ -486,6 +496,9 @@ pub fn run_shell_check_watched(
     cmd.arg("-c").arg(&invocation.command).stdin(Stdio::null());
     for (key, value) in &invocation.env {
         cmd.env(key, value);
+    }
+    if let Some(workdir) = &invocation.workdir {
+        cmd.current_dir(workdir);
     }
     match run_with_timeout_watched(cmd, invocation.timeout, sink) {
         RunOutcome::Finished { status, stderr, .. } => {
@@ -569,6 +582,168 @@ pub fn command_line(recipe: &AskRecipe) -> Vec<String> {
     args
 }
 
+// ── la prova a secco di una riga di comando ─────────────────────────────
+
+/// Come sta messa una riga di comando montata da un descrittore, provata
+/// **senza dare la domanda**.
+///
+/// **PERCHÉ NON C'È UN «PASSATO/FALLITO».** Cinque esiti perché ci sono cinque
+/// riparazioni diverse, e chi legge deve sapere quale gli tocca: una riga rotta
+/// si corregge nel descrittore, un motore esaurito si aspetta, un descrittore
+/// che tace si misura, un motore che non risponde si indaga. Metterne due sotto
+/// la stessa parola manda a fare il lavoro sbagliato.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProbeVerdict {
+    /// Il motore ha detto «mancava solo la domanda»: la riga è montata bene.
+    Sound,
+    /// Il motore si è lamentato di **qualcos'altro**: la riga è malformata, e
+    /// le sue parole sono la diagnosi. Sul guasto 27 la frase di `agy` diceva
+    /// esattamente quale bandiera aveva mangiato quale argomento — nessuna
+    /// classificazione nostra avrebbe potuto dire altrettanto.
+    Broken { said: String },
+    /// Il motore ha detto di non poter lavorare adesso — quota, credenziali —
+    /// e questo non dice niente sulla riga: si riprova quando torna.
+    CannotWork { said: String },
+    /// Il descrittore non dichiara come questo motore rifiuta senza domanda.
+    /// **Non è «la riga è sana»**: è che nessuno ha guardato.
+    NotDeclared,
+    /// Nessuna risposta dentro il tetto di tempo, o processo che non è partito.
+    ///
+    /// Il motivo viaggia col verdetto perché le due cose si riparano in modi
+    /// diversi, e un rapporto che le confondesse manderebbe a cercare un motore
+    /// lento dove c'è un eseguibile che non parte.
+    TimedOut { why: String },
+}
+
+/// Il verdetto su una riga provata a secco, **senza eseguire niente**.
+///
+/// **PERCHÉ È UNA FUNZIONE PURA E SEPARATA DA CHI ESEGUE.** Perché il giudizio
+/// è la parte che si sbaglia, e una prova che debba avviare un motore vero per
+/// interrogarlo non si scrive: si prova con i testi che i motori hanno detto
+/// davvero, copiati una volta e poi fermi lì.
+///
+/// **IL VERDETTO STA NEL TESTO, NON NEL CODICE D'USCITA**, e non è una
+/// preferenza. Misurato il 31/08/2026 su questa macchina: `agy` esce **2** sia
+/// quando rifiuta bene («flag needs an argument: -print») sia quando la riga è
+/// quella malformata del guasto 27 («--print took "--output-format" as its
+/// prompt…»). Una sonda che giudicasse dall'esito vedrebbe i due casi identici,
+/// e passerebbe sopra al guasto 27 esattamente come ci è passato sopra chi
+/// l'ha scritto. Per questo questa funzione non riceve nemmeno il codice
+/// d'uscita: non c'è modo di usarlo per sbaglio.
+///
+/// **L'ORDINE DI LETTURA È VINCOLANTE: PRIMA `unusable_when`.** Un motore che
+/// ha finito la quota si lamenta di quello, non della riga; letto nell'ordine
+/// opposto, un `claude` esaurito verrebbe dichiarato **rotto** — e chi legge
+/// andrebbe a correggere un descrittore sano mentre bastava aspettare. Un
+/// motore esaurito non è un motore rotto.
+pub fn judge_dry_run(recipe: &AskRecipe, stdout: &str, stderr: &str) -> ProbeVerdict {
+    // Le due pipe si guardano insieme: chi scrive il rifiuto su stdout e chi lo
+    // scrive su stderr sono lo stesso caso, e sceglierne una sola avrebbe reso
+    // il verdetto dipendente da un dettaglio che nessun descrittore dichiara.
+    let said = [stdout.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|piece| !piece.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if says_it_cannot_work(&recipe.unusable_when, &said) {
+        return ProbeVerdict::CannotWork { said };
+    }
+    if recipe
+        .refuses_without_prompt
+        .iter()
+        .all(|mark| mark.trim().is_empty())
+    {
+        return ProbeVerdict::NotDeclared;
+    }
+    if mentions_any(&recipe.refuses_without_prompt, &said) {
+        return ProbeVerdict::Sound;
+    }
+    ProbeVerdict::Broken { said }
+}
+
+/// Cosa ha detto un motore alla riga montata senza domanda, o perché non ha
+/// detto niente.
+#[derive(Clone, Debug)]
+pub enum DryRun {
+    Answered { stdout: String, stderr: String },
+    NoAnswer { why: String },
+}
+
+/// Chi esegue la prova a secco.
+///
+/// **PERCHÉ UN TRATTO E NON UNA CHIAMATA DIRETTA.** Perché altrimenti ogni
+/// prova su questo codice dovrebbe avviare `claude`, `codex` e `agy` veri: la
+/// batteria dipenderebbe da cosa è installato su chi la esegue e da come sta
+/// messa la quota di quel giorno — cioè non potrebbe venire diversa per la
+/// ragione che dichiara. Con un tratto le prove iniettano quattro finti
+/// eseguibili e ottengono quattro verdetti, sempre gli stessi.
+pub trait DryProbe: Send + Sync {
+    fn run(&self, bin: &str, args: &[String], stdin: Option<Vec<u8>>) -> DryRun;
+}
+
+/// Il tetto di tempo di una prova a secco.
+///
+/// **SERVE UN TETTO ESPLICITO PERCHÉ SU QUESTA MACCHINA `timeout` E `gtimeout`
+/// NON ESISTONO**: verificato il 31/08/2026 con `command -v`. Chi si aspettasse
+/// di poterli mettere davanti alla riga scoprirebbe il contrario solo quando un
+/// motore si mette ad aspettare qualcosa e blocca il controllo di tutti gli
+/// altri. Il tetto lo mette `invoke_external_engine`, che ce l'ha già.
+pub const DRY_PROBE_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// La sonda vera: monta la riga e la esegue senza dare la domanda.
+pub struct RealDryProbe;
+
+impl DryProbe for RealDryProbe {
+    fn run(&self, bin: &str, args: &[String], stdin: Option<Vec<u8>>) -> DryRun {
+        let result = invoke_external_engine(&EngineInvocation {
+            bin: bin.to_owned(),
+            args: args.to_vec(),
+            env: BTreeMap::new(),
+            workdir: None,
+            stdin,
+            timeout: DRY_PROBE_TIMEOUT,
+        });
+        match result {
+            // Un rifiuto è un'uscita non-zero, quindi il caso normale sta qui;
+            // ma un motore che esce **zero** senza domanda è a maggior ragione
+            // qualcosa da guardare, e buttarlo via lo nasconderebbe.
+            EngineResult::Ok { stdout, stderr } | EngineResult::ExitError { stdout, stderr, .. } => {
+                DryRun::Answered { stdout, stderr }
+            }
+            EngineResult::TimedOut => DryRun::NoAnswer {
+                why: format!(
+                    "nessuna risposta entro {} secondi",
+                    DRY_PROBE_TIMEOUT.as_secs()
+                ),
+            },
+            EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
+                why: format!("il processo non è partito: {reason}"),
+            },
+        }
+    }
+}
+
+/// Monta la riga di una ricetta senza la domanda, la fa provare, e giudica.
+///
+/// **COME SI TOGLIE LA DOMANDA DIPENDE DA DOVE ANDAVA**, ed è la sola parte del
+/// montaggio che questa funzione decide: a chi la vuole sull'ingresso si dà un
+/// ingresso **vuoto e chiuso** — che è ciò che fa `< /dev/null` — e a chi la
+/// vuole come ultimo argomento si dà la riga senza quell'argomento. Sbagliare
+/// qui non darebbe un errore: darebbe un motore che *aspetta*, e la prova a
+/// secco diventerebbe un modo per appendere il controllo.
+pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> ProbeVerdict {
+    let args = command_line(recipe);
+    let stdin = match recipe.prompt {
+        PromptVia::Stdin => Some(Vec::new()),
+        PromptVia::LastArg => None,
+    };
+    match probe.run(bin, &args, stdin) {
+        DryRun::Answered { stdout, stderr } => judge_dry_run(recipe, &stdout, &stderr),
+        DryRun::NoAnswer { why } => ProbeVerdict::TimedOut { why },
+    }
+}
+
 /// Come si interroga un motore in un colpo solo, e come quel motore dice di
 /// **non poter lavorare**.
 #[derive(Clone, Debug)]
@@ -592,6 +767,14 @@ pub struct AskRecipe {
     /// solo con le parole che il suo descrittore dichiara: chi non le dichiara
     /// non fa scattare nessun ripiego.
     pub unusable_when: Vec<String>,
+    /// I frammenti con cui questo motore rifiuta la riga **montata senza la
+    /// domanda**: «la riga andava bene, mancava solo il testo».
+    ///
+    /// Viaggia con la ricetta e non accanto, perché serve esattamente dove
+    /// serve la riga: chi monta `command_line` per provarla a secco deve poter
+    /// giudicare la risposta senza tornare a chiedere niente al catalogo.
+    /// Vuoto vuol dire «nessuno ha guardato», mai «la riga è sana».
+    pub refuses_without_prompt: Vec<String>,
     /// Come si legge **quanto ha consumato**, se il suo descrittore lo dichiara.
     ///
     /// Viaggia sulla stessa strada di tutto il resto della ricetta: chi scrive
@@ -608,15 +791,25 @@ pub struct UsageRecipe {
     pub declared: Declared,
 }
 
-/// Se questa uscita è il modo in cui un motore dice di non poter lavorare. Il
-/// confronto ignora maiuscole e minuscole: nessun fornitore promette di non
-/// cambiarle. Un frammento vuoto non conta — combacerebbe con tutto, e
-/// trasformerebbe ogni fallimento in un ripiego.
-fn says_it_cannot_work(marks: &[String], output: &str) -> bool {
+/// Se questa uscita contiene una delle parole dichiarate. Il confronto ignora
+/// maiuscole e minuscole: nessun fornitore promette di non cambiarle. Un
+/// frammento vuoto non conta — combacerebbe con tutto, e trasformerebbe
+/// qualunque uscita in una corrispondenza.
+///
+/// **STA QUI IN UNA COPIA SOLA** perché i due elenchi che un descrittore
+/// dichiara — «non posso lavorare» e «mancava la domanda» — si leggono nello
+/// stesso identico modo. Due funzioni gemelle divergerebbero sul primo
+/// dettaglio che qualcuno cambia a una sola delle due, ed è il guasto 10.
+fn mentions_any(marks: &[String], output: &str) -> bool {
     let output = output.to_lowercase();
     marks
         .iter()
         .any(|mark| !mark.trim().is_empty() && output.contains(&mark.to_lowercase()))
+}
+
+/// Se questa uscita è il modo in cui un motore dice di non poter lavorare.
+fn says_it_cannot_work(marks: &[String], output: &str) -> bool {
+    mentions_any(marks, output)
 }
 
 /// Il destinatario del passo in corso, se qualcuno sta guardando.
@@ -1035,6 +1228,10 @@ impl ExternalEngineAction {
                     prompt: PromptVia::Stdin,
                     unusable_when: Vec::new(),
                     declared_usage: None,
+                    // Un comando scritto a mano non ha un descrittore: non c'è
+                    // niente che dichiari che sia un motore, e infatti la riga
+                    // non si scrive già per via dell'`id` assente.
+                    can_be_asked: false,
                 }],
                 Vec::new(),
             )),
@@ -1078,13 +1275,18 @@ impl ExternalEngineAction {
                     // ha scritte sta dicendo qualcosa di preciso su *questa*
                     // chiamata, e sovrascriverle sarebbe decidere al posto suo.
                     if step_said_args {
+                        let declared = tools.ask_recipe(id);
                         usable.push(Candidate {
                             id: Some(id.clone()),
                             bin,
                             args: spec.args.clone(),
                             prompt: PromptVia::Stdin,
-                            unusable_when: tools
-                                .ask_recipe(id)
+                            // Il descrittore dice se questo strumento è un
+                            // motore, anche quando le opzioni non vengono da
+                            // lui: `git` e `cargo` non dichiarano `ask`, e le
+                            // loro esecuzioni non sono chiamate a un modello.
+                            can_be_asked: declared.is_some(),
+                            unusable_when: declared
                                 .map(|recipe| recipe.unusable_when)
                                 .unwrap_or_default(),
                             // **NIENTE CONSUMO QUANDO LE OPZIONI LE SCRIVE IL
@@ -1109,6 +1311,10 @@ impl ExternalEngineAction {
                             prompt: recipe.prompt,
                             unusable_when: recipe.unusable_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
+                            // Siamo dentro il ramo che ha trovato una ricetta
+                            // `ask`: questo strumento è per definizione un
+                            // motore.
+                            can_be_asked: true,
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
@@ -1164,6 +1370,21 @@ struct Candidate {
     /// Dove leggere il consumo nell'uscita di questo motore. `None` quando il
     /// descrittore non lo dichiara, o quando le opzioni le ha scritte il passo.
     declared_usage: Option<Declared>,
+    /// **QUESTO STRUMENTO È UN MOTORE**, cioè il suo descrittore dichiara come
+    /// gli si fa una domanda (`ask`).
+    ///
+    /// Serve a decidere se la sua invocazione va in `model_calls`. `git` e
+    /// `cargo` stanno nel catalogo e si eseguono da un passo come tutti gli
+    /// altri, ma non si interrogano: non consumano quota di nessun
+    /// abbonamento, e contarli fra le chiamate ai modelli falsa ogni totale che
+    /// le somma. **Il criterio è del descrittore e non di un elenco di nomi
+    /// scritto qui**: un elenco a mano invecchia al primo strumento nuovo, e
+    /// nessun controllo lo direbbe.
+    ///
+    /// Resta vero anche quando le opzioni le scrive il passo: un motore
+    /// interrogato a modo proprio è sempre un motore, e la sua riga si scrive —
+    /// col consumo sconosciuto, che è l'informazione giusta.
+    can_be_asked: bool,
 }
 
 // ── quanto è costata una chiamata ────────────────────────────────────────
@@ -1264,6 +1485,18 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         // rendere leggibile.
         return;
     };
+    if !candidate.can_be_asked {
+        // **E NON LO È NEMMENO UNO STRUMENTO CHE NON SI PUÒ INTERROGARE.**
+        // `git` e `cargo` stanno nel catalogo, si eseguono da un passo, e non
+        // consumano quota di nessun abbonamento. Contarli fra le chiamate ai
+        // modelli non è solo rumore: arrivano senza costo, quindi rendono
+        // `Spend::is_complete()` falso su **ogni** corsa vera — misurato il
+        // 31/08/2026 sul deposito di questa macchina, tre righe su ventiquattro
+        // — e la frase d'onestà del tetto («la spesa vera è più alta») si
+        // accende sempre, anche quando non c'è niente di ignoto. Un avviso
+        // sempre acceso non lo legge nessuno, e a perdersi è quello vero.
+        return;
+    }
     let reading = spent.reading;
     let price_list = load_pricing();
     // Il legame col listino passa dal nome che il motore stesso dichiara, non
@@ -1734,6 +1967,12 @@ struct CheckSpec {
     #[serde(default)]
     accept: Vec<String>,
     timeout_secs: u64,
+    /// Dove gira la verifica. Non lo scrive quasi mai una persona: ce lo mette
+    /// l'esecutore quando compone l'ingresso, prendendolo dalla radice del
+    /// progetto. Un percorso assoluto scritto qui a mano non arriva mai fin
+    /// qui — `step_input` lo rifiuta prima.
+    #[serde(default)]
+    workdir: Option<String>,
     /// Ciò che non è riconosciuto, per la stessa ragione di `EngineSpec::extra`.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
@@ -1793,6 +2032,7 @@ impl Action for ShellCheckAction {
             command: spec.command,
             env: spec.env,
             timeout: Duration::from_secs(seconds),
+            workdir: spec.workdir,
         };
         let status = match run_shell_check_watched(&invocation, live.as_deref()) {
             CheckResult::Passed => "passed",
@@ -2359,6 +2599,7 @@ mod tests {
             command: "true".to_string(),
             env: BTreeMap::new(),
             timeout: secs(5),
+            workdir: None,
         };
         assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
     }
@@ -2369,6 +2610,7 @@ mod tests {
             command: "false".to_string(),
             env: BTreeMap::new(),
             timeout: secs(5),
+            workdir: None,
         };
         assert!(matches!(
             run_shell_check(&invocation),
@@ -2382,6 +2624,7 @@ mod tests {
             command: "sleep 60".to_string(),
             env: BTreeMap::new(),
             timeout: secs(1),
+            workdir: None,
         };
         assert!(matches!(
             run_shell_check(&invocation),
@@ -2397,8 +2640,33 @@ mod tests {
             command: "test -n \"$NOTTE_OUTPUT_FILE\"".to_string(),
             env,
             timeout: secs(5),
+            workdir: None,
         };
         assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+    }
+
+    /// **UNA VERIFICA GIRA DOVE LE SI DICE**, e prima del 31/08/2026 non c'era
+    /// modo di dirglielo: girava dove sta il processo. Un `cargo test` che
+    /// passa perché eseguito nell'albero sbagliato non fallisce — dice di sì,
+    /// ed è il difetto peggiore che una verifica possa avere.
+    #[test]
+    fn a_check_runs_where_it_is_told() {
+        let elsewhere = std::env::temp_dir().join(format!(
+            "sailor-verifica-altrove-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&elsewhere).expect("cartella di prova");
+        std::fs::write(elsewhere.join("il-testimone"), "x").expect("testimone");
+        let invocation = CheckInvocation {
+            command: "test -f il-testimone".to_string(),
+            env: BTreeMap::new(),
+            timeout: secs(5),
+            workdir: Some(elsewhere.display().to_string()),
+        };
+
+        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+
+        let _ = std::fs::remove_dir_all(&elsewhere);
     }
 
     // ── le azioni registrabili ─────────────────────────────────────────
@@ -2774,6 +3042,7 @@ mod tests {
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
+                    refuses_without_prompt: Vec::new(),
                     usage: None,
                 }),
                 "vivo" => Some(AskRecipe {
@@ -2781,6 +3050,7 @@ mod tests {
                     prompt: PromptVia::LastArg,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
+                    refuses_without_prompt: Vec::new(),
                     usage: None,
                 }),
                 "rotto" => Some(AskRecipe {
@@ -2788,6 +3058,7 @@ mod tests {
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
+                    refuses_without_prompt: Vec::new(),
                     usage: None,
                 }),
                 // Risolvibile ma senza ricetta: un passo che non scrive le
@@ -2852,6 +3123,68 @@ mod tests {
 
         assert_eq!(output["status"], "ok");
         assert_eq!(output["stdout"], "ha-risposto-il-secondo\n");
+    }
+
+    /// **IL GUASTO 31, RESO UN FATTO INVECE DI UNA LETTURA.**
+    ///
+    /// Lo stesso motore esaurito di qui sopra, con la sola differenza che
+    /// conta: il suo descrittore **non dichiara nessuna parola** di
+    /// `unusable_when`. `says_it_cannot_work` su un elenco vuoto è `false`,
+    /// quindi il suo esaurirsi passa per un fallimento qualunque, il passo
+    /// muore lì, e il motore successivo **non parte mai**. È il descrittore di
+    /// `agy` così com'è spedito il 31/08/2026, ed è la ragione per cui nella
+    /// catena `claude-code → agy → codex` un `agy` esaurito uccide il passo e
+    /// `codex` non viene nemmeno provato.
+    ///
+    /// **PERCHÉ NON BASTA LA GEMELLA SUI FRAMMENTI VUOTI.** Quella prova un
+    /// descrittore scritto male; questa prova un descrittore che **tace**, che
+    /// è il caso vero e quello che nessuno legge come un difetto: un campo
+    /// assente sembra una scelta, un campo pieno di stringhe vuote sembra un
+    /// errore. Il comportamento è lo stesso, e la differenza è che al primo
+    /// nessuno guarda.
+    ///
+    /// La coppia con la prova qui sopra è tutta la dimostrazione: elenco
+    /// popolato, il secondo parte; elenco vuoto, il secondo non parte.
+    #[test]
+    fn an_engine_that_declares_no_exhaustion_words_kills_the_chain() {
+        /// Come `ChainIn`, ma al primo motore si toglie ciò che `agy` non ha.
+        struct NoMarks(String);
+        impl ToolResolver for NoMarks {
+            fn resolve(&self, id: &str) -> Result<String, String> {
+                match id {
+                    "esaurito" => Ok(self.0.clone()),
+                    other => Chain.resolve(other),
+                }
+            }
+            fn ask_recipe(&self, id: &str) -> Option<AskRecipe> {
+                let recipe = Chain.ask_recipe(id)?;
+                if id == "esaurito" {
+                    return Some(AskRecipe {
+                        unusable_when: Vec::new(),
+                        ..recipe
+                    });
+                }
+                Some(recipe)
+            }
+        }
+
+        let dir = scratch("catena-senza-parole");
+        let action = ExternalEngineAction::resolving_with(NoMarks(engine_that_says_it_is_out(&dir)));
+        let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
+
+        let error = action
+            .execute(&input, &mut SharedState::new())
+            .expect_err("il passo muore sul primo motore");
+
+        assert_eq!(
+            error.class, "engine_exit_error",
+            "un esaurimento non dichiarato passa per un fallimento qualunque"
+        );
+        assert!(
+            !error.said.contains("ha-risposto-il-secondo"),
+            "il secondo motore non doveva nemmeno partire: {}",
+            error.said
+        );
     }
 
     /// Un eseguibile finto che fallisce **parlando**, ma non con le parole con
@@ -2939,6 +3272,7 @@ mod tests {
                         prompt: PromptVia::Stdin,
                         args_before_prompt: Vec::new(),
                         unusable_when: vec![String::new(), "   ".to_owned()],
+                        refuses_without_prompt: Vec::new(),
                         usage: None,
                     }),
                     other => Chain.ask_recipe(other),
@@ -3394,6 +3728,7 @@ mod what_it_cost {
             prompt: PromptVia::Stdin,
             args_before_prompt: Vec::new(),
             unusable_when: Vec::new(),
+            refuses_without_prompt: Vec::new(),
             usage: Some(UsageRecipe {
                 args: vec!["--output-format".to_owned(), "json".to_owned()],
                 declared: Declared {
@@ -3624,6 +3959,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 prompt: PromptVia::Stdin,
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
+                refuses_without_prompt: Vec::new(),
                 usage: None,
             }),
         })
@@ -3825,6 +4161,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
                     unusable_when: Vec::new(),
+                    refuses_without_prompt: Vec::new(),
                     usage: None,
                 }),
             })
@@ -3921,10 +4258,60 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert!(calls_in(&dir.join("deposito")).is_empty());
     }
 
+    /// **`cargo` E `git` NON SONO CHIAMATE A UN MODELLO, E IL DEPOSITO NON DEVE
+    /// CONTARLE.**
+    ///
+    /// Misurato sul deposito di questa macchina il 31/08/2026: su ventiquattro
+    /// righe di `model_calls`, due sono `git` e una `cargo`. Nessuna delle tre
+    /// consuma quota di nessun abbonamento, e tutte e tre arrivano senza costo —
+    /// quindi `Spend::is_complete()` è **falso su ogni corsa vera**, e la frase
+    /// d'onestà del tetto («la spesa vera è più alta») si accende sempre, anche
+    /// quando non c'è niente di ignoto. Un avviso sempre acceso non lo legge
+    /// nessuno, ed è così che si perde quello vero — la riga di codex, che il
+    /// costo davvero non lo dichiara.
+    ///
+    /// **CHI DECIDE È IL DESCRITTORE, NON UN ELENCO DI NOMI SCRITTO QUI.** Uno
+    /// strumento è un motore se dichiara **come gli si fa una domanda**
+    /// (`ask`): `git` e `cargo` non lo dichiarano, e nessun elenco di nomi qui
+    /// dentro invecchierebbe bene. È la stessa regola del guasto 3 — quello che
+    /// il catalogo dichiara vale più di quello che il codice indovina.
+    #[test]
+    fn a_tool_that_cannot_be_asked_anything_is_not_a_model_call() {
+        let dir = scratch("non-e-un-motore");
+        let bin = fake_engine(&dir, "finto-cargo", "printf 'ok'");
+        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            // Nessuna ricetta `ask`: è com'è dichiarato `cargo` nel catalogo
+            // spedito, e il passo si scrive le proprie opzioni.
+            recipe: None,
+        })
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova", "args": ["test"], "timeout_secs": 10
+        });
+
+        assert!(action
+            .execute(&input, &mut shared("corsa-cargo", "prove"))
+            .is_ok());
+
+        assert!(
+            calls_in(&dir.join("deposito")).is_empty(),
+            "una riga di `cargo` nel conto delle chiamate ai modelli rende falso \
+             ogni totale che la somma: {:?}",
+            calls_in(&dir.join("deposito"))
+        );
+    }
+
     /// Le opzioni scritte dal passo vincono, e con loro il consumo resta
     /// sconosciuto: allungare alle spalle di chi ha scritto quella riga di
     /// comando una domanda che non ha fatto sarebbe decidere al posto suo. La
     /// riga però si scrive, e dice proprio questo.
+    ///
+    /// **È LA GEMELLA DELLA PROVA QUI SOPRA**, e le due vanno lette insieme: un
+    /// motore vero interrogato con le opzioni del passo **resta** nel conto, e
+    /// solo chi non è un motore ne esce. Senza questa, il filtro potrebbe
+    /// svuotare la tabella e la prova sopra sarebbe verde lo stesso.
     #[test]
     fn when_the_step_writes_its_own_args_the_usage_is_not_asked_for() {
         let dir = scratch("args-del-passo");
@@ -3982,6 +4369,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 prompt: PromptVia::Stdin,
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
+                refuses_without_prompt: Vec::new(),
                 usage: None,
             }),
         })
