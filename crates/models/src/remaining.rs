@@ -217,9 +217,7 @@ pub fn from_claude_oauth_usage(
 ) -> Result<Vec<Remaining>, RemainingError> {
     let parsed: serde_json::Value =
         serde_json::from_str(body).map_err(|_| RemainingError::NotUnderstood)?;
-    let windows = parsed
-        .as_object()
-        .ok_or(RemainingError::NotUnderstood)?;
+    let windows = parsed.as_object().ok_or(RemainingError::NotUnderstood)?;
 
     // **UN RIFIUTO SI RICONOSCE PRIMA DI CONTARE LE FINESTRE.** Il rifiuto di
     // questo fornitore è un JSON valido con dentro un oggetto e nessun
@@ -247,7 +245,10 @@ pub fn from_claude_oauth_usage(
         let Some(fields) = window.as_object() else {
             continue;
         };
-        let Some(percent) = fields.get("utilization").and_then(serde_json::Value::as_f64) else {
+        let Some(percent) = fields
+            .get("utilization")
+            .and_then(serde_json::Value::as_f64)
+        else {
             continue;
         };
         found.push(Remaining {
@@ -340,15 +341,26 @@ mod tests {
         let found = from_claude_oauth_usage(SAMPLE, 1_000).expect("il campione si legge");
 
         let five_hour = window(&found, "five_hour").expect("la finestra di cinque ore c'è");
-        assert_eq!(five_hour.used_fraction, 0.5, "50.0 per cento è mezza finestra");
+        assert_eq!(
+            five_hour.used_fraction, 0.5,
+            "50.0 per cento è mezza finestra"
+        );
         assert_eq!(five_hour.engine, CLAUDE_CODE);
         assert_eq!(
             five_hour.resets_at.as_deref(),
             Some("2026-09-01T03:29:59.801054+00:00")
         );
-        assert_eq!(five_hour.observed_at, 1_000, "una quota senza istante invecchia in silenzio");
+        assert_eq!(
+            five_hour.observed_at, 1_000,
+            "una quota senza istante invecchia in silenzio"
+        );
 
-        assert_eq!(window(&found, "seven_day").expect("e quella di sette giorni").used_fraction, 0.32);
+        assert_eq!(
+            window(&found, "seven_day")
+                .expect("e quella di sette giorni")
+                .used_fraction,
+            0.32
+        );
     }
 
     /// **UNA FINESTRA CHE QUESTA VERSIONE NON CONOSCE ESCE LO STESSO.** La
@@ -376,7 +388,11 @@ mod tests {
                 "«{absent}» non dichiara un consumo: non deve comparire fra le quote. Trovate: {units:?}"
             );
         }
-        assert_eq!(units.len(), 4, "le sole quattro con un `utilization` numerico: {units:?}");
+        assert_eq!(
+            units.len(),
+            4,
+            "le sole quattro con un `utilization` numerico: {units:?}"
+        );
     }
 
     /// Una finestra reale e senza istante di azzeramento resta nell'elenco: il
@@ -491,7 +507,10 @@ mod tests {
         let broken = format!("{{\"claudeAiOauth\": {{\"accessToken\": \"{A_SECRET}\"}}");
         let refused = Token::from_credentials(&broken).expect_err("il JSON è troncato");
         let said = format!("{refused} / {refused:?}");
-        assert!(!said.contains(A_SECRET), "il gettone è finito nell'errore: {said}");
+        assert!(
+            !said.contains(A_SECRET),
+            "il gettone è finito nell'errore: {said}"
+        );
 
         let no_key = Token::from_credentials(r#"{"claudeAiOauth": {}}"#).expect_err("manca");
         assert_eq!(no_key, RemainingError::NoToken);
@@ -504,9 +523,15 @@ mod tests {
     fn the_secret_travels_on_the_pipe_and_never_in_an_argument() {
         let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("c'è");
         let config = token.curl_config();
-        assert!(config.contains(A_SECRET), "senza il gettone la richiesta non è autenticata");
+        assert!(
+            config.contains(A_SECRET),
+            "senza il gettone la richiesta non è autenticata"
+        );
         assert!(config.contains(USAGE_URL));
-        assert!(config.contains(BETA_HEADER), "il canale è versionato: la versione si dichiara");
+        assert!(
+            config.contains(BETA_HEADER),
+            "il canale è versionato: la versione si dichiara"
+        );
     }
 
     /// Un motore non autenticato qui non è un guasto: è una lettura che non

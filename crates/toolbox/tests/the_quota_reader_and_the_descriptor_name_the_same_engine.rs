@@ -13,7 +13,7 @@
 //! l'`id` di un descrittore **spedito** che dichiara `read_remaining_quota`
 //! disponibile. Se qualcuno rinomina l'uno senza l'altro, questa cade.
 
-use toolbox::descriptor::{Catalog, CapabilityState, Source};
+use toolbox::descriptor::{CapabilityState, Catalog, Source};
 
 /// Il nome della capacità, come i descrittori la scrivono.
 const READ_REMAINING_QUOTA: &str = "read_remaining_quota";
