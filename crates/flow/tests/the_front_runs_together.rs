@@ -115,6 +115,7 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
         root_inputs: Default::default(),
         gates: vec![],
         shared: SharedState::new(),
+        spend_cap_micros: None,
     };
 
     let execution = InProcessExecutor

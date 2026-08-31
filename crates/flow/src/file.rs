@@ -42,6 +42,24 @@ pub struct FlowFile {
     /// da riempire.
     #[serde(default)]
     pub schedule: Option<Schedule>,
+    /// Quanto una corsa di questo flusso può spendere, in micro-unità di
+    /// valuta. Un milione è un'unità: `1_000_000` è un dollaro.
+    ///
+    /// **`None` NON È ZERO, E LA DIFFERENZA È TUTTA.** `None` è «nessuno ha
+    /// messo un limite», ed è come si sono comportati i flussi fino al
+    /// 31/08/2026; `Some(0)` è «questo flusso non deve spendere niente», e si
+    /// ferma prima della prima chiamata a pagamento. Il predefinito è `None`,
+    /// perché un tetto che comparisse da sé fermerebbe corse che nessuno ha
+    /// chiesto di fermare — e lo farebbe la notte, quando nessuno guarda.
+    ///
+    /// **CHE COSA IL TETTO NON PUÒ PROMETTERE.** Si misura sui costi che i
+    /// motori dichiarano: chi non li dichiara — codex dice il totale dei token
+    /// e non i due lati — lascia righe senza costo, che nel conto non entrano.
+    /// Il tetto è quindi una garanzia su ciò che si sa, e chi lo legge lo vede
+    /// dichiarato: la corsa fermata dice anche quante chiamate erano fuori dal
+    /// conto.
+    #[serde(default)]
+    pub spend_cap_micros: Option<i64>,
 }
 
 #[cfg(test)]

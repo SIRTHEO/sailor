@@ -157,6 +157,45 @@ pub struct Completion {
     pub bytes_discarded: Option<u64>,
 }
 
+/// Quanto una corsa ha speso, e quanto di quella spesa resta sconosciuto.
+///
+/// **STA QUI E NON NEL DEPOSITO PERCHÉ SERVE A DECIDERE, NON SOLO A MOSTRARE.**
+/// Chi ferma una corsa al tetto è l'esecutore, che di depositi non sa niente:
+/// chiede al proprio `RecordStore`. Il deposito vero è solo una delle risposte
+/// possibili.
+///
+/// **NON È UN `Option<i64>`, E IL MOTIVO È IL TERZO CASO.** «Il totale, oppure
+/// non lo so» ne copre due; i casi veri sono tre — non ho speso niente, ho speso
+/// questo e lo so tutto, ho speso **almeno** questo. Un `Option` collassa il
+/// terzo su uno degli altri, e in tutti e due i modi la cifra che resta è più
+/// bassa del vero: cioè un tetto che lascia passare.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Spend {
+    /// La somma dei costi noti, in micro-unità di valuta.
+    pub micros: i64,
+    /// Le chiamate registrate per quella corsa, comunque siano andate.
+    pub calls: i64,
+    /// Quante di quelle non portano un costo. `micros` le esclude.
+    pub calls_without_cost: i64,
+    /// La più cara osservata, se se ne conosce almeno una.
+    ///
+    /// Serve a chi deve decidere **quanti passi aprire insieme**: con N in volo
+    /// lo sforamento peggiore è N volte questa. `None` quando nessuna chiamata
+    /// ha dichiarato un costo — e allora quel calcolo non si può fare, e chi lo
+    /// facesse lo starebbe inventando.
+    pub dearest_micros: Option<i64>,
+}
+
+impl Spend {
+    /// Il totale è completo: ogni chiamata ha detto quanto è costata.
+    ///
+    /// Serve a chi deve **dichiarare** su cosa sta decidendo. Un tetto
+    /// rispettato con questo a `false` è rispettato solo per quanto si sa.
+    pub fn is_complete(&self) -> bool {
+        self.calls_without_cost == 0
+    }
+}
+
 /// Dove si scrive che un passo è partito e com'è finito.
 ///
 /// **PRENDE `&self`, E NON È UN DETTAGLIO DI STILE.** Con `&mut self` un fronte
@@ -177,6 +216,18 @@ pub trait RecordStore: Sync {
         completion: Completion,
     ) -> Result<(), FlowError>;
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError>;
+
+    /// Quanto quella corsa ha speso finora.
+    ///
+    /// **NON HA UNA RISPOSTA PREDEFINITA, ED È VOLUTO.** La tentazione era dare
+    /// al tratto un corpo che risponde `Spend::default()` — zero — così le
+    /// implementazioni esistenti non cambiavano. Ma zero vuol dire «questa
+    /// corsa non ha ancora speso niente», ed è un'affermazione: un tetto che la
+    /// riceve da un deposito che semplicemente non tiene i costi **non scatta
+    /// mai**, e non lo dice a nessuno. Chi implementa questo tratto dichiara
+    /// cosa sa, anche quando la risposta onesta è «niente, perché non registro
+    /// le chiamate».
+    fn spent(&self, run_id: &str) -> Result<Spend, FlowError>;
 }
 
 /// Il deposito che vive in memoria, per le prove e per chi non vuole un file.
@@ -316,6 +367,16 @@ impl RecordStore for InMemoryRecordStore {
             .cloned()
             .collect())
     }
+
+    /// **QUESTO DEPOSITO NON REGISTRA LE CHIAMATE, QUINDI NON SA NIENTE DELLA
+    /// SPESA.** E qui lo zero è la risposta vera, non un ripiego: nessuna
+    /// chiamata scritta, nessun costo, niente di ignoto. Chi usa questo deposito
+    /// e dichiara un tetto ottiene un tetto che non scatta — ed è corretto, però
+    /// va saputo: le prove che misurano il tetto usano un deposito che i costi
+    /// li tiene, non questo.
+    fn spent(&self, _run_id: &str) -> Result<Spend, FlowError> {
+        Ok(Spend::default())
+    }
 }
 
 /// Che ora è. `&self` e `Sync` per la stessa ragione del deposito: due passi che
@@ -346,7 +407,33 @@ pub enum Decision {
     Waiting(Vec<String>),
     Stopped(Vec<String>),
     Failed(Vec<String>),
+    /// La corsa si è fermata da sé per non superare il tetto di spesa.
+    ///
+    /// **PERCHÉ UNA PAROLA SUA E NON `Stopped` NÉ `Failed`.** `Failed` direbbe
+    /// che qualcosa si è rotto, e un flusso notturno che tocca il proprio tetto
+    /// ogni notte apparirebbe guasto ogni notte: chi guarda smetterebbe di
+    /// guardare. `Stopped` esiste già e vuol dire un'altra cosa — un passo che
+    /// il deposito porta fermo. Qui non si è fermato un passo: si è fermata la
+    /// corsa, e per una ragione che si può leggere in soldi.
+    CapReached(SpendStop),
     Complete,
+}
+
+/// Perché la corsa si è fermata, con i numeri per giudicarlo.
+///
+/// **PORTA I DATI, NON LA FRASE.** La frase la compone chi mostra — il
+/// terminale in una riga, la finestra in un riquadro — e in due lingue diverse
+/// se un giorno servirà. Un messaggio già formattato qui dentro obbligherebbe
+/// tutti e due a disfarlo per rifarlo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpendStop {
+    /// Il tetto dichiarato per questa corsa, in micro-unità.
+    pub cap_micros: i64,
+    /// Quanto risulta speso, e quanto di quello resta ignoto.
+    pub spent: Spend,
+    /// I passi che erano pronti e non sono partiti. Non sono guasti: sono da
+    /// fare, e una ripresa con un tetto più alto li trova lì.
+    pub not_started: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,6 +448,16 @@ pub struct ExecutionRequest {
     pub root_inputs: BTreeMap<String, Value>,
     pub gates: Vec<String>,
     pub shared: SharedState,
+    /// Quanto questa corsa può spendere, in micro-unità di valuta.
+    ///
+    /// **`None` VUOL DIRE «NESSUN TETTO DICHIARATO», E NON ZERO.** Sono due
+    /// cose opposte: `Some(0)` è un flusso che non deve spendere niente — e si
+    /// ferma prima della prima chiamata a pagamento, il che è un modo legittimo
+    /// di provarlo — mentre `None` è un flusso a cui nessuno ha messo un limite.
+    /// Il valore predefinito è `None`, cioè come si è sempre comportato: un
+    /// tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di
+    /// fermare.
+    pub spend_cap_micros: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -572,6 +669,33 @@ impl Executor for InProcessExecutor {
                 });
             };
 
+            // IL TETTO SI GUARDA PRIMA DI APRIRE, NON DOPO AVER SPESO.
+            //
+            // Qui, e non dentro l'azione che chiama il motore: un passo che
+            // scopre a metà di aver sforato ha già pagato. L'unico momento in
+            // cui fermarsi costa zero è prima di aprire il fronte.
+            //
+            // **IL CONFRONTO È `>=`, NON `>`.** Con `>` un tetto di zero
+            // lascerebbe passare la prima chiamata — cioè proprio il caso in
+            // cui qualcuno sta dicendo «questo flusso non deve spendere
+            // niente».
+            let mut at_once = AT_ONCE;
+            if let Some(cap) = request.spend_cap_micros {
+                let spent = store.spent(&request.run_id)?;
+                if spent.micros >= cap {
+                    decisions.push(Decision::CapReached(SpendStop {
+                        cap_micros: cap,
+                        spent,
+                        not_started: front,
+                    }));
+                    return Ok(Execution {
+                        decisions,
+                        shared: request.shared,
+                    });
+                }
+                at_once = how_many_fit(cap - spent.micros, spent.dearest_micros);
+            }
+
             // IL FRONTE PARTE INSIEME.
             //
             // **PERCHÉ PRIMA NO, E QUANTO COSTAVA.** Qui c'era un `for` che
@@ -656,15 +780,19 @@ impl Executor for InProcessExecutor {
                 Value::String(request.run_id.clone()),
             );
 
-            // A GRUPPI, E IL TETTO È UNA DECISIONE.
+            // A GRUPPI, E LA LARGHEZZA VIENE DAI SOLDI.
             //
             // Un fronte largo è raro in un grafo scritto a mano, ma quando
             // capita i passi non sono conti: sono agenti. Venti insieme
-            // vorrebbero dire venti processi, venti chiamate a pagamento e una
-            // macchina in ginocchio, e nessuno l'avrebbe chiesto. `AT_ONCE`
-            // limita l'ondata; il resto aspetta il gruppo prima.
+            // vorrebbero dire venti processi e venti chiamate a pagamento, e
+            // nessuno l'avrebbe chiesto.
+            //
+            // **QUANTI, ADESSO, LO DECIDE IL RESIDUO.** `AT_ONCE` non è più il
+            // numero: è il soffitto. Sotto un tetto di spesa la larghezza si
+            // stringe man mano che il residuo cala, fino a uno — vedi
+            // `how_many_fit`. Senza tetto resta quella di sempre.
             let mut failure: Option<FlowError> = None;
-            for group in opened.chunks(AT_ONCE) {
+            for group in opened.chunks(at_once) {
                 let outcomes: Vec<Result<(), FlowError>> = std::thread::scope(|scope| {
                     let handles: Vec<_> = group
                         .iter()
@@ -707,16 +835,51 @@ impl Executor for InProcessExecutor {
     }
 }
 
-/// Quanti passi di uno stesso fronte girano insieme.
+/// Il **soffitto** di quanti passi girano insieme, non il numero.
 ///
-/// **È UN TETTO DICHIARATO, NON UN LIMITE TECNICO.** La macchina ne reggerebbe
-/// di più; a non reggerne di più sono le quote dei motori e la pazienza di chi
-/// guarda. Quattro è la scelta di partenza: abbastanza da far sparire l'attesa
-/// di un fronte normale — che nei flussi scritti finora è di due o tre passi —
-/// e poco abbastanza da non aprire una decina di conversazioni a pagamento per
-/// una corsa che nessuno stava sorvegliando. Il giorno che esisterà un tetto di
-/// spesa, questo numero diventerà una sua conseguenza invece di una costante.
+/// **NON È UN LIMITE TECNICO.** La macchina ne reggerebbe di più; a non
+/// reggerne di più sono le quote dei motori e la pazienza di chi guarda.
+/// Quattro: abbastanza da far sparire l'attesa di un fronte normale — che nei
+/// flussi scritti finora è di due o tre passi — e poco abbastanza da non aprire
+/// una decina di conversazioni a pagamento per una corsa che nessuno sorveglia.
+///
+/// Dal 31/08/2026 è un massimo e non più la scelta: sotto un tetto di spesa il
+/// numero vero lo calcola `how_many_fit`, e questa costante dice solo fin dove
+/// può salire.
 const AT_ONCE: usize = 4;
+
+/// Quanti passi si possono aprire insieme con questo residuo.
+///
+/// **IL PROBLEMA CHE RISOLVE, DETTO IN UNA RIGA:** un tetto non si può
+/// rispettare con un fronte largo. Quattro chiamate partono nello stesso
+/// istante, nessuna delle quattro sa delle altre, e quando la prima registra il
+/// proprio costo le altre tre hanno già speso. Lo sforamento peggiore non è di
+/// una chiamata: è di quante ne sono in volo. Quindi la larghezza del fronte è
+/// una **conseguenza aritmetica** del residuo, non una preferenza.
+///
+/// **CON CHE MISURA.** La chiamata più cara vista *in questa corsa*: è il caso
+/// peggiore osservato, non una media — una media lascerebbe sforare ogni volta
+/// che la prossima è sopra la media, cioè in metà dei casi. Non si guarda alla
+/// storia di altre corse apposta: un flusso che chiama un modello piccolo non
+/// deve stringersi perché ieri un altro flusso ne ha chiamato uno grande.
+///
+/// **QUANDO NON SI SA, NON SI STRINGE.** Senza nessuna chiamata dichiarata —
+/// primo fronte di una corsa, oppure motori che il costo non lo dicono — questa
+/// divisione non si può fare. Restituire 1 «per prudenza» sembrerebbe la scelta
+/// sicura ed è invece una scelta arbitraria travestita: renderebbe seriale ogni
+/// corsa con un tetto, per sempre, sulla base di un numero che non esiste. Si
+/// resta al soffitto, e la corsa si ferma al controllo del fronte dopo — che è
+/// dove il tetto lavora davvero.
+fn how_many_fit(remaining_micros: i64, dearest_micros: Option<i64>) -> usize {
+    let Some(dearest) = dearest_micros.filter(|dearest| *dearest > 0) else {
+        return AT_ONCE;
+    };
+    // Il residuo è positivo per costruzione: chi chiama ha già verificato che la
+    // spesa non abbia raggiunto il tetto. La divisione intera tronca verso il
+    // basso, che è il verso giusto — tre chiamate e mezzo di margine sono tre.
+    let fit = (remaining_micros / dearest).clamp(1, AT_ONCE as i64);
+    fit as usize
+}
 
 /// Un passo già aperto nel deposito, in attesa di essere eseguito.
 struct Opened<'a> {
@@ -1182,6 +1345,7 @@ mod tests {
             root_inputs: BTreeMap::new(),
             gates: vec![],
             shared: SharedState::new(),
+            spend_cap_micros: None,
         };
         let mut store = InMemoryRecordStore::default();
         InProcessExecutor
@@ -1211,6 +1375,7 @@ mod tests {
                 .collect(),
             gates: vec!["filesystem".to_owned()],
             shared: [("budget".to_owned(), json!(10))].into_iter().collect(),
+            spend_cap_micros: None,
         };
         let mut store = InMemoryRecordStore::default();
         let result = InProcessExecutor
@@ -1252,6 +1417,7 @@ mod tests {
             .collect(),
             gates: vec![],
             shared: SharedState::new(),
+            spend_cap_micros: None,
         };
         let mut store = InMemoryRecordStore::default();
 
@@ -1289,6 +1455,7 @@ mod tests {
                     root_inputs: BTreeMap::new(),
                     gates: vec![],
                     shared: SharedState::new(),
+                    spend_cap_micros: None,
                 },
                 &mut store,
                 &actions,
@@ -1339,6 +1506,7 @@ mod tests {
                         .collect(),
                     gates: vec![],
                     shared: SharedState::new(),
+                    spend_cap_micros: None,
                 },
                 &mut store,
                 &actions,
@@ -1373,6 +1541,7 @@ mod tests {
             root_inputs: [("first".to_owned(), json!("input"))].into_iter().collect(),
             gates: vec![],
             shared: SharedState::new(),
+            spend_cap_micros: None,
         };
         let mut store = InMemoryRecordStore::default();
         InProcessExecutor
@@ -1425,6 +1594,7 @@ mod tests {
                     root_inputs: [("work".to_owned(), input)].into_iter().collect(),
                     gates: vec!["network".to_owned(), "filesystem".to_owned()],
                     shared: SharedState::new(),
+                    spend_cap_micros: None,
                 },
                 &mut store,
                 &actions,
@@ -1506,6 +1676,7 @@ mod tests {
             .collect(),
             gates: vec![],
             shared: SharedState::new(),
+            spend_cap_micros: None,
         };
         let mut store = InMemoryRecordStore::default();
         let execution = InProcessExecutor

@@ -13,8 +13,73 @@
 //! seconda di chi l'aveva lanciata — che è esattamente il guasto per cui questo
 //! crate è nato.
 
-use flow::FlowFile;
+use flow::{Decision, Execution, FlowFile, SpendStop};
 use ledger::{Ledger, RunRecord};
+
+/// Com'è finita una corsa, e se il processo che l'ha lanciata può uscire con
+/// zero.
+///
+/// **ERA SCRITTA DUE VOLTE, E LE DUE SONO SEMPRE STATE D'ACCORDO PER FORTUNA.**
+/// Il guscio ne teneva una copia identica meno il booleano, con sopra un
+/// commento che diceva «la stessa traduzione di `flow_cmd::execution_status`».
+/// Un `Decision` nuovo — ed è successo il 31/08/2026, con il tetto di spesa —
+/// obbliga a toccarle tutte e due: il compilatore lo chiede su entrambe, ma
+/// nessuno garantisce che ricevano la **stessa** parola. Due parole diverse per
+/// lo stesso stato sono due storici che non si possono confrontare.
+pub fn execution_status(execution: &Execution) -> (&'static str, bool) {
+    match execution.decisions.last() {
+        Some(Decision::Complete) => ("complete", true),
+        Some(Decision::Waiting(_)) => ("waiting", false),
+        Some(Decision::Stopped(_)) => ("stopped", false),
+        Some(Decision::Failed(_)) => ("failed", false),
+        // **NON È UN GUASTO, E LO STATO LO DICE.** Una corsa fermata al tetto
+        // ha una parola sua: chi legge lo storico deve poter distinguere «si è
+        // rotto qualcosa» da «è finito il budget», o smetterà di guardare
+        // tutti e due.
+        Some(Decision::CapReached(_)) => ("cap_reached", false),
+        Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
+    }
+}
+
+/// La riga che spiega a una persona perché la corsa si è fermata.
+///
+/// **DICE ANCHE QUELLO CHE NON SA.** Il totale è la somma dei costi noti: se
+/// qualche chiamata non ne aveva uno, la frase lo porta — la spesa vera è più
+/// alta di quella scritta, e chi sta per alzare il tetto e rilanciare deve
+/// saperlo prima, non dopo.
+pub fn why_it_stopped(stop: &SpendStop) -> String {
+    let unknown = if stop.spent.is_complete() {
+        String::new()
+    } else {
+        format!(
+            ", e {} delle {} chiamate non hanno dichiarato un costo — la spesa vera è più alta",
+            stop.spent.calls_without_cost, stop.spent.calls
+        )
+    };
+    format!(
+        "fermata dal tetto di spesa: {} spesi su un tetto di {}{unknown}. Passi non partiti: {}",
+        in_units(stop.spent.micros),
+        in_units(stop.cap_micros),
+        if stop.not_started.is_empty() {
+            "nessuno".to_owned()
+        } else {
+            stop.not_started.join(", ")
+        }
+    )
+}
+
+/// Perché la corsa si è fermata, se si è fermata per il tetto.
+pub fn stopped_by_cap(execution: &Execution) -> Option<String> {
+    match execution.decisions.last() {
+        Some(Decision::CapReached(stop)) => Some(why_it_stopped(stop)),
+        _ => None,
+    }
+}
+
+/// Le micro-unità come le legge una persona, con due decimali.
+fn in_units(micros: i64) -> String {
+    format!("{:.2}", micros as f64 / 1_000_000.0)
+}
 
 /// Quel che si sa di una corsa nel momento in cui la si registra.
 ///

@@ -51,6 +51,17 @@ export interface FlowFile {
   description: string;
   graph: Graph;
   inputs: Record<string, unknown>;
+  /**
+   * Quanto una corsa di questo flusso può spendere, in micro-unità: un milione
+   * è un'unità di valuta.
+   *
+   * `null` o assente vuol dire «nessun tetto», e NON zero — `0` è un flusso a
+   * cui qualcuno ha detto di non spendere niente, e si ferma prima della prima
+   * chiamata a pagamento. Il tetto si misura sui costi che i motori dichiarano:
+   * chi non li dichiara lascia righe fuori dal conto, e la corsa fermata lo
+   * scrive nel proprio motivo.
+   */
+  spend_cap_micros?: number | null;
 }
 
 /**

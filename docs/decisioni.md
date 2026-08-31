@@ -32,6 +32,27 @@ aspetto.
 
 ## Le decisioni prese
 
+### Il tetto di spesa è del flusso, e la larghezza del fronte ne discende
+**31/08/2026.** Un flusso può dichiarare `spend_cap_micros`: quanto una sua
+corsa può spendere. Prima di aprire ogni fronte l'esecutore chiede al deposito
+quanto è stato speso; se il tetto è raggiunto la corsa si ferma con una parola
+sua — `cap_reached`, non `failed` — e dice quali passi non sono partiti.
+**Perché prima di aprire e non dentro l'azione**: un passo che scopre a metà di
+aver sforato ha già pagato. L'unico istante in cui fermarsi costa zero è prima
+di aprire il fronte.
+**Perché una parola sua e non un guasto**: un flusso notturno che tocca il
+proprio tetto ogni notte apparirebbe rotto ogni notte, e chi guarda smetterebbe
+di guardare.
+**Che cosa il tetto non promette**: si misura sui costi che i motori
+dichiarano. Codex dichiara il totale dei token e non i due lati, quindi la sua
+riga resta senza costo e non entra nel conto. Il tetto è una garanzia **su ciò
+che si sa**, e la corsa fermata scrive quante chiamate erano fuori — perché chi
+sta per alzarlo e rilanciare deve saperlo prima, non dopo.
+**Il predefinito è nessun tetto.** `None` non è `Some(0)`: il primo è «nessuno
+ha messo un limite», il secondo è «questo flusso non deve spendere niente». Un
+tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di fermare, e
+lo farebbe la notte.
+
 ### Il potere di un passo: modello Bazel, in osservazione
 **29/08/2026 — Theo.** Un passo dichiara cosa gli serve, e il resto per lui non
 esiste. Il controllo entra come **avviso** e diventa barriera solo con un cambio
@@ -199,10 +220,14 @@ qualcosa nel posto sbagliato.
   impiegano 6,07 invece di 12,07; tre ne impiegano 6,05 invece di 18,14.
   «Sfruttare la macchina» ora ha dove appoggiarsi.
 
-  **Resta una decisione tua**: quanti passi per ondata. Oggi sono quattro, una
-  costante dichiarata in `crates/flow/src/executor.rs`. Il numero non è tecnico —
-  la macchina ne reggerebbe di più — ma di quota e di sorveglianza: un fronte
-  largo di passi che chiamano agenti aprirebbe una decina di conversazioni a
-  pagamento per una corsa che nessuno guarda. Il giorno che esisterà un tetto di
-  spesa, questo numero dovrebbe diventarne una conseguenza invece che una
-  costante.
+  ~~**Resta una decisione tua**: quanti passi per ondata.~~ **Sciolta il
+  31/08/2026, e non con una scelta: con un'aritmetica.** Quattro non è più il
+  numero, è il soffitto. Sotto un tetto di spesa la larghezza del fronte la
+  calcola `how_many_fit` dal residuo diviso la chiamata più cara vista in quella
+  corsa. Il motivo per cui non poteva restare una costante: **un tetto non si
+  rispetta con un fronte largo** — quattro chiamate partono nello stesso istante,
+  nessuna sa delle altre, e quando la prima registra il proprio costo le altre
+  tre hanno già speso. Lo sforamento peggiore non è di una chiamata, è di quante
+  ne sono in volo. Senza nessun costo osservato non si stringe: restituire 1 «per
+  prudenza» renderebbe seriale ogni corsa con un tetto, per sempre, sulla base di
+  un numero che non esiste.
