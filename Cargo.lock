@@ -324,6 +324,7 @@ dependencies = [
  "actions",
  "flow",
  "ledger",
+ "serde_json",
  "toolbox",
  "trigger",
 ]
