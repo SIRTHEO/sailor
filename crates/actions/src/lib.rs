@@ -35,6 +35,7 @@
 //! ferma con un messaggio utile dove non lo trova.
 
 pub mod history;
+pub mod presence;
 pub mod reference;
 pub mod store;
 
