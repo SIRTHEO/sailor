@@ -1360,16 +1360,47 @@ impl ExternalEngineAction {
                 // altra cosa: un motore uscito in errore può aver già speso, e
                 // i suoi token vanno letti dove li ha scritti.
                 let reading = read(&stdout);
-                note(reading.clone(), Some("exit_error"));
+                // **ESAURITO NON È ROTTO, E SI GUARDA PRIMA DI SCRIVERE LA
+                // RIGA.** Fino al 31/08/2026 questa distinzione stava dieci
+                // righe più in basso e valeva solo quando c'era una catena
+                // (`!solo && ...`): un passo con un motore solo che aveva finito
+                // la quota veniva registrato come `exit_error`, indistinguibile
+                // da un motore che si rompe. È il guasto 14, e il 29/08 è
+                // costato una serata — Claude era al limite settimanale, la
+                // corsa si è fermata come se fosse rotto, e `agy` era vivo.
+                //
+                // La specie della riga nel deposito cambia di conseguenza:
+                // `exhausted` è una cosa che passa da sé alle sette del mattino,
+                // `exit_error` no, e una somma che le mescola non dice niente a
+                // nessuno.
+                let exhausted = candidate.says_it_cannot_work(&stdout, &stderr);
+                note(
+                    reading.clone(),
+                    Some(if exhausted { "exhausted" } else { "exit_error" }),
+                );
                 if !tolerates(&spec.accept, "exit_error") {
                     // La tolleranza viene prima: un passo che si aspetta un
                     // fallimento lo vuole come dato, non vuole che qualcun altro
                     // ci riprovi al posto suo.
-                    if !solo && candidate.says_it_cannot_work(&stdout, &stderr) {
-                        return Ok(Asked::CannotWork(format!(
-                            "{named} non poteva lavorare: {}",
-                            what_it_said(&stdout, &stderr)
-                        )));
+                    if exhausted {
+                        // Con una catena si passa al prossimo; da solo non c'è
+                        // nessun prossimo, ma l'errore dice comunque **quale
+                        // delle due cose** è successa. Chi legge «esaurito» sa
+                        // che deve aspettare o cambiare profilo; chi legge
+                        // «uscito in errore» va a cercare un guasto che non c'è.
+                        if !solo {
+                            return Ok(Asked::CannotWork(format!(
+                                "{named} non poteva lavorare: {}",
+                                what_it_said(&stdout, &stderr)
+                            )));
+                        }
+                        return Err(ActionError::new(
+                            "engine_exhausted",
+                            format!(
+                                "{named} ha finito la propria quota, non si è rotto: {}",
+                                what_it_said(&stdout, &stderr)
+                            ),
+                        ));
                     }
                     let chain = if set_aside.is_empty() {
                         String::new()
@@ -3333,6 +3364,93 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
         assert_eq!(calls[0].cli, "motore-di-prova");
         assert_eq!(calls[0].input_tokens, None, "non ha fatto in tempo a dirlo");
+    }
+
+    /// **ESAURITO E ROTTO SONO DUE COSE, ANCHE QUANDO IL MOTORE È UNO SOLO.**
+    ///
+    /// Il guasto 14, per esteso. Il 29/08/2026 Claude era al limite settimanale
+    /// e il passo si è fermato con un errore che diceva «uscito in errore»: chi
+    /// l'ha letto è andato a cercare un guasto che non c'era, mentre la cosa da
+    /// fare era aspettare le sette o cambiare motore. La distinzione esisteva
+    /// già nel codice ma valeva **solo con una catena** (`!solo && ...`), cioè
+    /// mai nel caso in cui è capitato.
+    ///
+    /// Si guarda in due posti perché sono due lettori diversi: la classe
+    /// dell'errore la legge una persona adesso, `error_type` nel deposito la
+    /// legge una somma fra un mese — e una somma che mescola le quote finite coi
+    /// guasti veri non dice niente a nessuno.
+    #[test]
+    fn a_single_engine_that_ran_out_is_not_reported_as_broken() {
+        let dir = scratch("esaurito-da-solo");
+        let bin = fake_engine(
+            &dir,
+            "motore-esaurito",
+            "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"\nexit 1",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["weekly limit".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_listino(None, || {
+            action.execute(&input, &mut shared("corsa-esaurita", "passo-1"))
+        })
+        .expect_err("un motore esaurito e solo non può fare il lavoro");
+
+        assert_eq!(
+            error.class, "engine_exhausted",
+            "non «engine_exit_error»: chi legge deve sapere che è finita la quota"
+        );
+        assert!(
+            error.said.contains("quota"),
+            "e il messaggio lo dice a parole: {}",
+            error.said
+        );
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "la chiamata ha bruciato quota: la riga c'è");
+        assert_eq!(
+            calls[0].error_type.as_deref(),
+            Some("exhausted"),
+            "e la riga distingue la quota finita da un guasto"
+        );
+    }
+
+    /// **UN GUASTO VERO RESTA UN GUASTO.** La gemella della prova sopra: stesso
+    /// motore solo, stessa ricetta con le stesse parole di esaurimento, ma
+    /// un'uscita che quelle parole non le contiene. Senza questa, far dire
+    /// «esaurito» a *qualunque* fallimento passerebbe verde.
+    #[test]
+    fn a_single_engine_that_truly_broke_is_still_reported_as_broken() {
+        let dir = scratch("rotto-da-solo");
+        let bin = fake_engine(
+            &dir,
+            "motore-rotto",
+            "cat > /dev/null\necho 'errore: il mandato non ha senso' >&2\nexit 3",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["weekly limit".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_listino(None, || {
+            action.execute(&input, &mut shared("corsa-rotta", "passo-1"))
+        })
+        .expect_err("un'uscita diversa da zero rompe il passo");
+
+        assert_eq!(error.class, "engine_exit_error");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
     }
 
     /// Un motore che non parte lascia comunque traccia, con la causa sua: senza
