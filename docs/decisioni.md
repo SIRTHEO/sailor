@@ -32,6 +32,50 @@ aspetto.
 
 ## Le decisioni prese
 
+### Un passo si può consegnare all'agente vivo; il giudizio no
+**31/08/2026.** Un passo può dichiarare l'azione `handed_to_agent`: descrive il
+lavoro e **non avvia niente**. A eseguirlo è l'agente già vivo nel terminale, che
+poi rientra nel sistema con `sailor step open` e `sailor step close`. Il record
+del passo resta quello di sempre — intenzione scritta prima, esito scritto dopo —
+e la corsa non si accorge di chi c'era in mezzo.
+
+**Perché, con la misura.** Un flusso di quattro passi costa **2,79 volte** un
+singolo prompt sullo stesso compito, e il rapporto dei consumi **è il rapporto
+dei turni**: 62 contro 30. Non legge di più per turno (+8%): fa il doppio dei
+turni, perché ogni passo avvia un processo che riscopre il repository da zero.
+Ingrossare il passaggio fra i passi peggiorerebbe le cose; la cura è non
+riaprire una conversazione che è già aperta.
+
+**Che cosa questo non concede, ed è il punto.** Consegnare l'esecuzione non è
+consegnare il verdetto. Chi ha chiuso un passo **non può aprire né chiudere** un
+passo che da quello dipende: è il vincolo permanente «chi crea non giudica»
+applicato al gesto in cui il giudizio si scrive. Il rifiuto vale in tutti e due i
+punti apposta — solo all'apertura si aggirerebbe aprendo con un nome e chiudendo
+con un altro.
+
+**La negazione è il predefinito, non una lista di permessi.** Un flusso che vuole
+davvero la stessa mano lo dichiara passo per passo con `"same_holder_ok": true`.
+Il verso conta: una lista di permessi dimenticata lascia passare tutto e nessuno
+se ne accorge; una negazione dimenticata al massimo ferma un lavoro, e si vede
+subito.
+
+**Chi tiene un passo consegnato è una scadenza, non un processo.** `held_by_pid`
+resta vuoto e nessuno chiede niente al sistema operativo: è il guasto 12, dove
+`pgrep` dentro il perimetro rispondeva vuoto *senza errore*. La ripresa
+(`sailor flow resume`) confronta `handoff_timeout_secs` con `started_at`; ciò che
+non sa vedere — un record con un pid, o senza scadenza leggibile — **non lo
+dichiara morto**.
+
+**Due debolezze dichiarate, scritte nel codice e non solo qui.** (1) `--as <chi>`
+è un nome che se lo sceglie chi lo scrive: Sailor non ha nessun identificativo di
+sessione da leggere, quindi il rifiuto qui sopra vale contro la distrazione, non
+contro chi vuole aggirarlo. (2) Su un flusso con consegne il **tetto di spesa
+smette di essere una garanzia**, perché il consumo dell'agente è autodichiarato
+(`sailor step close --turns`). Per questo quella riga porta `cost_micros` vuoto e
+non un numero stimato: così entra in `Spend::calls_without_cost`, `is_complete()`
+diventa falso, e ogni posto che mostra il tetto dice già che la spesa vera è più
+alta. Un costo inventato renderebbe *completa* una somma che non lo è.
+
 ### La lingua: identificatori in inglese, tutto il resto in italiano
 **31/08/2026.** Ogni cosa che il compilatore legge sta in inglese — funzioni,
 tipi, campi, variabili, moduli, costanti, **nomi di file**, classi CSS, chiavi

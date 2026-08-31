@@ -306,6 +306,21 @@ fn close_step_in(
             )
         })?;
 
+    // **SI CHIUDE SOLO CIÒ CHE `sailor step open` HA APERTO.** Un record con un
+    // pid l'ha aperto l'esecutore in processo, e quel processo sta girando
+    // adesso: chiuderlo da qui gli toglie il passo di sotto, e la sua chiusura
+    // fallirà con «già chiuso» — un guasto della corsa per un gesto fatto in un
+    // altro terminale. Un passo consegnato non porta pid, quindi la regola
+    // separa esattamente i due casi senza doverli indovinare.
+    if open.held_by_pid.is_some() {
+        return Err(format!(
+            "il passo {step_id} è tenuto dal processo {}: non è stato consegnato a nessuno, \
+             lo sta eseguendo il motore. Se quel processo è morto, usa \
+             `sailor flow resume {run_id}`",
+            open.held_by_pid.unwrap_or_default()
+        ));
+    }
+
     // Il rifiuto vale soprattutto qui: la chiusura è il gesto che scrive un
     // verdetto, e un verdetto sul proprio lavoro non vale.
     refuse_the_author_as_judge(ledger, run_id, step_id, holder, open)?;
@@ -319,25 +334,43 @@ fn close_step_in(
     })?;
 
     let output = match outcome {
-        Outcome::Went => {
-            let value = match found.get("output-file") {
-                None => Value::Null,
-                Some(path) => {
-                    let text = std::fs::read_to_string(path)
-                        .map_err(|error| format!("non riesco a leggere {path}: {error}"))?;
-                    serde_json::from_str(&text)
-                        .map_err(|error| format!("{path} non è JSON valido: {error}"))?
+        Outcome::Went => match found.get("output-file") {
+            // **SENZA UN FILE NON SI SCRIVE UN'USCITA VUOTA, SI RIFIUTA SE
+            // QUALCUNO LA ASPETTA.** Il deposito non sa distinguere «uscita
+            // nulla» da «nessuna uscita»: nel registro degli eventi tutte e due
+            // diventano `"output": null`, e rileggendo tornano `None` (guasto
+            // 31, misurato sulla prima corsa vera del 31/08/2026). Chiudere
+            // `went` senza uscita mentre un altro passo dipende da questo fa
+            // fallire quel passo con «non ha uscita tipata» — cioè il difetto
+            // ricompare più tardi, su un passo innocente, che è esattamente ciò
+            // che questa funzione esiste per impedire.
+            None => {
+                let waiting_on_it = dependents_of(flow, step_id);
+                if !waiting_on_it.is_empty() {
+                    return Err(format!(
+                        "il passo {step_id} si chiuderebbe senza uscita, ma {} dipende da lui \
+                         e ne pretende una tipata: la corsa si fermerebbe lì. Dichiarala con \
+                         `--output-file <file>`",
+                        waiting_on_it.join(", ")
+                    ));
                 }
-            };
-            step.output_schema.validate(&value).map_err(|error| {
-                format!(
-                    "l'uscita dichiarata non rispetta lo schema del passo {step_id}: {error}. \
-                     Il passo non è stato chiuso — un'uscita malformata accettata qui \
-                     ucciderebbe la corsa più avanti, e la colpa cadrebbe su un altro passo"
-                )
-            })?;
-            Some(value)
-        }
+                None
+            }
+            Some(path) => {
+                let text = std::fs::read_to_string(path)
+                    .map_err(|error| format!("non riesco a leggere {path}: {error}"))?;
+                let value: Value = serde_json::from_str(&text)
+                    .map_err(|error| format!("{path} non è JSON valido: {error}"))?;
+                step.output_schema.validate(&value).map_err(|error| {
+                    format!(
+                        "l'uscita dichiarata non rispetta lo schema del passo {step_id}: {error}. \
+                         Il passo non è stato chiuso — un'uscita malformata accettata qui \
+                         ucciderebbe la corsa più avanti, e la colpa cadrebbe su un altro passo"
+                    )
+                })?;
+                Some(value)
+            }
+        },
         // Un passo rotto non ha uscita da validare: non ne ha prodotta nessuna.
         _ => None,
     };
@@ -493,6 +526,22 @@ fn write_self_declared_turns(
 }
 
 // ── gli attrezzi comuni ──────────────────────────────────────────────────
+
+/// I passi che pretendono l'uscita tipata di questo.
+///
+/// Una dipendenza dichiarata saltabile non conta: quel passo sa già andare
+/// avanti senza, ed è il motivo per cui la si dichiara.
+fn dependents_of(flow: &FlowFile, step_id: &str) -> Vec<String> {
+    flow.graph
+        .steps()
+        .iter()
+        .filter(|other| {
+            other.deps.iter().any(|dependency| dependency == step_id)
+                && !flow.graph.dependency_is_skippable(&other.id, step_id)
+        })
+        .map(|other| other.id.clone())
+        .collect()
+}
 
 /// L'ultimo tentativo su un passo, comunque sia andato.
 fn last_attempt<'a>(records: &'a [StepRecord], step_id: &str) -> Option<&'a StepRecord> {
@@ -850,6 +899,8 @@ mod tests {
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "autore")]),
         )
         .expect("l'autore prende il lavoro");
+        let done = directory.0.join("implementa.json");
+        std::fs::write(&done, r#"{"fatto": true}"#).expect("scrivere l'uscita");
         close_step_in(
             &ledger,
             &a_flow(),
@@ -858,6 +909,7 @@ mod tests {
                 ("step", "implementa"),
                 ("as", "autore"),
                 ("outcome", "went"),
+                ("output-file", done.to_str().expect("percorso leggibile")),
             ]),
         )
         .expect("l'autore chiude il proprio lavoro");
@@ -941,6 +993,8 @@ mod tests {
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "autore")]),
         )
         .expect("l'autore prende il lavoro");
+        let done = directory.0.join("implementa.json");
+        std::fs::write(&done, r#"{"fatto": true}"#).expect("scrivere l'uscita");
         close_step_in(
             &ledger,
             &a_flow(),
@@ -949,6 +1003,7 @@ mod tests {
                 ("step", "implementa"),
                 ("as", "autore"),
                 ("outcome", "went"),
+                ("output-file", done.to_str().expect("percorso leggibile")),
             ]),
         )
         .expect("l'autore chiude");
@@ -958,6 +1013,110 @@ mod tests {
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
         )
         .expect("il passo lo dichiara ammesso, quindi passa");
+    }
+
+    /// **CHIUDERE «ANDATO» SENZA USCITA, MENTRE QUALCUNO L'ASPETTA, SI
+    /// RIFIUTA.**
+    ///
+    /// Il deposito non distingue «uscita nulla» da «nessuna uscita»: nel
+    /// registro degli eventi diventano tutte e due `"output": null` e tornano
+    /// `None` (guasto 31). Senza questo rifiuto la corsa si ferma al passo
+    /// **dopo**, con «non ha uscita tipata», e chi guarda va a cercare il difetto
+    /// nel passo sbagliato. È la stessa ragione per cui l'uscita si valida qui:
+    /// un difetto che si manifesta lontano da dove è nato costa il doppio.
+    #[test]
+    fn closing_as_went_without_an_output_is_refused_when_a_step_waits_for_it() {
+        let directory = TestDirectory::new("uscita-che-manca");
+        let ledger = a_handed_run(&directory, "implementa", vec![]);
+        open_step_in(
+            &ledger,
+            &options(&[("run", "run-1"), ("step", "implementa"), ("as", "chi")]),
+        )
+        .expect("il passo si prende in carico");
+
+        let error = close_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "implementa"),
+                ("as", "chi"),
+                ("outcome", "went"),
+            ]),
+        )
+        .expect_err("senza uscita il passo dopo non partirebbe");
+        assert!(error.contains("verdetto"), "deve nominare chi aspetta: {error}");
+        assert!(error.contains("--output-file"), "{error}");
+    }
+
+    /// Un passo che non ha nessuno a valle si chiude senza uscita: pretenderla
+    /// sarebbe una formalità che ferma un lavoro finito.
+    #[test]
+    fn a_last_step_closes_without_an_output() {
+        let directory = TestDirectory::new("ultimo-passo");
+        let ledger = a_handed_run(&directory, "verdetto", vec!["implementa".to_owned()]);
+        open_step_in(
+            &ledger,
+            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "chi")]),
+        )
+        .expect("il passo si prende in carico");
+        close_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi"),
+                ("outcome", "went"),
+            ]),
+        )
+        .expect("nessuno dipende da «verdetto»: si chiude senza uscita");
+    }
+
+    /// **UN PASSO CHE STA GIRANDO DAVVERO NON SI CHIUDE A MANO.**
+    ///
+    /// Un record con un pid l'ha aperto l'esecutore, e quel processo sta
+    /// lavorando: chiuderlo da un altro terminale gli toglie il passo di sotto,
+    /// e la sua chiusura fallisce con «già chiuso» — cioè un gesto fatto altrove
+    /// rompe una corsa sana.
+    #[test]
+    fn a_step_a_live_executor_holds_cannot_be_closed_by_hand() {
+        let directory = TestDirectory::new("tenuto-dal-motore");
+        let ledger = a_handed_run(&directory, "implementa", vec![]);
+        // Come lo aprirebbe il motore: col proprio pid scritto dentro.
+        let mut record = StepRecord::started(
+            "run-1",
+            "implementa",
+            2,
+            2,
+            vec![],
+            handed_input("implementa"),
+            vec![],
+            200,
+        );
+        record.held_by_pid = Some(std::process::id());
+        ledger.append_step_started(&record).expect("il motore apre");
+
+        let error = close_step_in(
+            &ledger,
+            &a_flow(),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "implementa"),
+                ("as", "chi"),
+                ("outcome", "went"),
+            ]),
+        )
+        .expect_err("un passo tenuto dal motore non si chiude a mano");
+        assert!(error.contains("lo sta eseguendo il motore"), "{error}");
+        assert!(
+            ledger
+                .steps("run-1")
+                .expect("rileggere i passi")
+                .iter()
+                .any(|found| found.attempt == 2 && found.outcome.is_none()),
+            "il tentativo del motore resta aperto: chiuderlo romperebbe la corsa che gira"
+        );
     }
 
     /// Un passo che non è in attesa non si prende in carico: non è stato
