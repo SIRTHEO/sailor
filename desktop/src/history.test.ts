@@ -38,6 +38,8 @@ function run(over: Partial<Execution>): Execution {
       calls_without_tokens: 0,
       calls_without_cost: 0,
     },
+    tokens_by_model: {},
+    calls: [],
     ...over,
   };
 }
