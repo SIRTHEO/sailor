@@ -138,5 +138,6 @@ fn fake_call(run_id: &str, step_id: &str, model: &str, input_tokens: u64, cost_m
         error_type: None,
         started_at: 1_756_000_001,
         ended_at: Some(1_756_000_009),
+        session_id: None,
     }
 }
