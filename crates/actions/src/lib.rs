@@ -36,6 +36,7 @@
 
 pub mod handoff;
 pub mod history;
+pub mod presence;
 pub mod reference;
 pub mod store;
 
