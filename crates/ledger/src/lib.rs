@@ -397,6 +397,99 @@ pub struct StoreRecord {
     pub written_at: i64,
 }
 
+/// Un processo che Sailor ha avviato.
+///
+/// **PERCHÉ STA NEL DEPOSITO E NON IN MEMORIA — guasto 4.** Il 29/08/2026 un
+/// processo di sviluppo orfano teneva una porta e impediva l'avvio, *due volte,
+/// a due persone diverse, nella stessa notte*, e la seconda non sapeva della
+/// prima. Un registro che vivesse dentro la finestra risponderebbe solo a chi
+/// ha la finestra aperta: proprio non a chi arriva il giorno dopo e trova la
+/// porta occupata. Qui l'avvio è un evento come gli altri — sopravvive alla
+/// finestra, alla sessione e al riavvio, perché è su disco.
+///
+/// **PERCHÉ TIENE LA RIGA DI COMANDO PER INTERO.** Chi trova un orfano deve
+/// decidere se spegnerlo, e quella decisione ha bisogno di sapere *cos'è*. Un
+/// pid da solo non la sostiene: si finisce a chiedere al sistema operativo cosa
+/// sia quel numero, che è la strada su cui il guasto 12 aspetta.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessRecord {
+    /// Il nome con cui chi l'ha avviato lo ritrova. Non è il pid: un pid si
+    /// riusa, e chi riprende dopo un riavvio deve poter nominare la cosa che
+    /// cerca prima di sapere che numero ha oggi.
+    pub process_id: String,
+    pub pid: u32,
+    pub command: String,
+    pub args: Vec<String>,
+    pub working_directory: String,
+    /// La porta che occupa, se ne occupa una. È la chiave con cui il guasto 4 si
+    /// è presentato: la domanda non era «quali processi ci sono», era «chi tiene
+    /// la 5183».
+    pub port: Option<u16>,
+    /// A cosa serve: `live` per la modalità viva, il nome dell'azione per un
+    /// processo di flusso. Chi trova un orfano deve capire se serve ancora.
+    pub purpose: String,
+    /// Chi l'ha acceso. Senza questo campo l'orfano resta senza padrone, che è
+    /// esattamente com'è stato trovato.
+    pub started_by: String,
+    /// La corsa a cui appartiene, se appartiene a una.
+    pub run_id: Option<String>,
+    pub started_at: i64,
+}
+
+/// La chiusura di un processo registrato. Separata dall'avvio perché arriva
+/// dopo e da un altro punto del codice: unirle vorrebbe dire riscrivere l'avvio,
+/// e il registro degli eventi non si riscrive.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcessEndRecord {
+    pub process_id: String,
+    pub exit_code: Option<i32>,
+    pub ended_at: i64,
+}
+
+/// Quel pid esiste ancora?
+///
+/// **NON È `pgrep`, E LA DIFFERENZA È LA FORMA DELLA RISPOSTA.** Il guasto 12:
+/// dentro certi perimetri `pgrep` non vede i processi e risponde con un elenco
+/// vuoto *senza errore*, quindi «non c'è nessuno» e «non mi è permesso guardare»
+/// arrivano identici, e una sorveglianza dichiarò «nessun flusso in esecuzione»
+/// mentre due giravano. Qui non si chiede un elenco: si chiede di **un** pid che
+/// il deposito ha già scritto, e `kill(pid, 0)` — che non manda nessun segnale,
+/// controlla solo — distingue i casi. `EPERM` vuol dire *esiste ma è di un
+/// altro utente*: è un sì, e trattarlo da no rifarebbe il guasto 12 con un'altra
+/// chiamata.
+///
+/// **I LIMITI, DICHIARATI — sono due, e il secondo è stato misurato.**
+///
+/// *Uno.* I numeri di processo si riusano. Un pid vivo non dimostra che sia *lo
+/// stesso* processo che il deposito ha scritto; per quello servirebbe
+/// confrontare l'ora d'avvio, che macOS non regala senza `libproc`. Quindi
+/// questa funzione **conferma**, non decide: la fonte di cosa è stato avviato
+/// resta il deposito.
+///
+/// *Due.* **Un figlio morto e non raccolto risulta vivo**, ed è stato visto: la
+/// prima stesura di `the_dead_are_closed_and_the_living_are_left_alone` uccideva
+/// un figlio senza aspettarlo e questa funzione rispondeva «vivo». È corretto —
+/// uno zombie *è* una voce nella tabella dei processi — e riguarda soltanto i
+/// figli di chi chiama. Un orfano vero, quello del guasto 4, ha per padre il
+/// processo iniziale, che lo raccoglie appena muore: lì non c'è zombie. Chi
+/// accende un processo e vuole sapere se è finito usa `Process::exited`, che
+/// aspetta il proprio figlio; questa funzione risponde su pid altrui.
+pub fn pid_is_alive(pid: u32) -> bool {
+    // Il pid 0 è il gruppo di processi di chi chiama: mandargli anche il
+    // segnale nullo vorrebbe dire chiedere di sé, e la risposta sarebbe un sì
+    // che non riguarda nessuno.
+    if pid == 0 {
+        return false;
+    }
+    // SAFETY: `kill` con segnale 0 non consegna niente e non tocca memoria
+    // nostra; legge un intero e torna un intero.
+    let outcome = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    if outcome == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailedStep {
     pub run_id: String,
@@ -539,6 +632,8 @@ enum StoredEvent {
     SnapshotRecorded(SnapshotRecord),
     InventoryScanned(InventoryScan),
     RecordWritten(StoreRecord),
+    ProcessStarted(ProcessRecord),
+    ProcessEnded(ProcessEndRecord),
     Trace(TraceRecord),
 }
 
@@ -624,6 +719,67 @@ impl Ledger {
     /// Deposita una scansione dell'inventario.
     pub fn record_inventory(&self, scan: &InventoryScan) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::InventoryScanned(scan.clone()))
+    }
+
+    /// Scrive che Sailor ha avviato un processo — guasto 4.
+    ///
+    /// Va chiamata **dopo** che il processo esiste, cioè col pid vero in mano:
+    /// registrare l'intenzione di avviare qualcosa che poi non parte metterebbe
+    /// nell'elenco un orfano che non c'è, e chi lo legge andrebbe a cercare un
+    /// pid inesistente. Meglio perdere il caso in cui l'avvio fallisce: lì non
+    /// resta niente da spegnere.
+    pub fn record_process_started(&self, record: &ProcessRecord) -> Result<(), LedgerError> {
+        if record.process_id.trim().is_empty() {
+            return Err(LedgerError::InvalidRecord("process id is empty".into()));
+        }
+        self.write_event(StoredEvent::ProcessStarted(record.clone()))
+    }
+
+    /// Scrive che un processo registrato è finito.
+    pub fn record_process_ended(&self, record: &ProcessEndRecord) -> Result<(), LedgerError> {
+        if record.process_id.trim().is_empty() {
+            return Err(LedgerError::InvalidRecord("process id is empty".into()));
+        }
+        self.write_event(StoredEvent::ProcessEnded(record.clone()))
+    }
+
+    /// I processi avviati per cui non è mai arrivata una chiusura.
+    ///
+    /// **QUESTA È LA RISPOSTA ALLA DOMANDA DEL GUASTO 4**, e la dà il dato, non
+    /// il sistema operativo: chi chiede «cosa ho lasciato acceso» riceve ciò che
+    /// è stato scritto quando è stato acceso. Un processo ucciso da fuori non
+    /// scrive la sua chiusura e resta qui: per questo esiste `pid_is_alive`, che
+    /// **conferma** una riga per volta invece di sostituire l'elenco. Le due
+    /// domande sono diverse — «cosa ho avviato» e «cosa respira» — e tenerle
+    /// separate è ciò che impedisce di ricadere nel guasto 12.
+    pub fn processes_left_running(&self) -> Result<Vec<ProcessRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {PROCESS_COLUMNS} FROM processes
+             WHERE ended_at IS NULL ORDER BY started_at DESC"
+        ))?;
+        let rows = statement
+            .query_map([], read_process_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Chi tiene una porta, per quanto ne sa il deposito.
+    ///
+    /// Il più recente vince: se due avvii hanno rivendicato la stessa porta e
+    /// solo uno l'ha ottenuta, è l'ultimo — il primo era già morto quando il
+    /// secondo è partito, altrimenti il secondo non sarebbe partito.
+    pub fn process_holding_port(&self, port: u16) -> Result<Option<ProcessRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(&format!(
+            "SELECT {PROCESS_COLUMNS} FROM processes
+             WHERE port = ?1 AND ended_at IS NULL
+             ORDER BY started_at DESC LIMIT 1"
+        ))?;
+        let row = statement
+            .query_row([port], read_process_row)
+            .optional()?;
+        Ok(row)
     }
 
     /// Scrive una voce nella collezione che il flusso ha nominato.
@@ -1678,6 +1834,26 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              written_at INTEGER NOT NULL,
              PRIMARY KEY (collection, key)
          );
+         -- I processi che Sailor ha avviato — guasto 4. Nasce completa, quindi
+         -- un deposito già esistente la riceve da questo `IF NOT EXISTS` e non
+         -- da `add_missing_projection_columns`: non ci sono colonne da
+         -- aggiungere a una tabella che prima non c'era, e per la stessa
+         -- ragione `PROJECTION_SCHEMA_VERSION` non si muove. Il guasto 24 —
+         -- colonne nuove con la versione ferma — riguarda il caso opposto.
+         CREATE TABLE IF NOT EXISTS processes (
+             process_id TEXT PRIMARY KEY,
+             pid INTEGER NOT NULL,
+             command TEXT NOT NULL,
+             args TEXT NOT NULL,
+             working_directory TEXT NOT NULL,
+             port INTEGER,
+             purpose TEXT NOT NULL,
+             started_by TEXT NOT NULL,
+             run_id TEXT,
+             started_at INTEGER NOT NULL,
+             ended_at INTEGER,
+             exit_code INTEGER
+         );
          CREATE TABLE IF NOT EXISTS projection_watermark (
              singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
              last_applied_seq INTEGER NOT NULL CHECK(last_applied_seq >= 0)
@@ -1702,7 +1878,13 @@ fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError>
          CREATE INDEX IF NOT EXISTS snapshots_run_idx
              ON snapshots(run_id, step_id, phase);
          CREATE UNIQUE INDEX IF NOT EXISTS snapshots_phase_idx
-             ON snapshots(run_id, IFNULL(step_id, ''), phase);",
+             ON snapshots(run_id, IFNULL(step_id, ''), phase);
+         -- «Chi tiene questa porta» è la domanda con cui il guasto 4 si è
+         -- presentato, quindi ha il suo indice invece di una scansione.
+         CREATE INDEX IF NOT EXISTS processes_port_idx
+             ON processes(port, ended_at);
+         CREATE INDEX IF NOT EXISTS processes_open_idx
+             ON processes(ended_at, started_at DESC);",
     )?;
     Ok(())
 }
@@ -2007,6 +2189,22 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
             None,
             Some(record.created_at),
         ),
+        StoredEvent::ProcessStarted(record) => (
+            "process_started",
+            record.run_id.as_deref(),
+            None,
+            None,
+            None,
+            Some(record.started_at),
+        ),
+        StoredEvent::ProcessEnded(record) => (
+            "process_ended",
+            None,
+            None,
+            None,
+            None,
+            Some(record.ended_at),
+        ),
         StoredEvent::InventoryScanned(scan) => {
             ("inventory_scanned", None, None, None, None, Some(scan.taken_at))
         }
@@ -2026,9 +2224,89 @@ fn project_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(
         StoredEvent::SnapshotRecorded(record) => project_snapshot(transaction, record),
         StoredEvent::InventoryScanned(scan) => project_inventory(transaction, scan),
         StoredEvent::RecordWritten(record) => project_record(transaction, record),
+        StoredEvent::ProcessStarted(record) => project_process_started(transaction, record),
+        StoredEvent::ProcessEnded(record) => project_process_ended(transaction, record),
         StoredEvent::Trace(_) => Ok(()),
     }
 }
+
+/// L'avvio di un processo entra nella tabella che risponde a «cosa è acceso».
+///
+/// **Riavviare con lo stesso nome sostituisce la riga.** Chi rilancia la
+/// modalità viva vuole sapere qual è il processo di adesso, non collezionare i
+/// suoi antenati: la storia sta nel registro degli eventi, dove ogni avvio
+/// resta con la sua data. Senza questa sostituzione l'elenco «ancora acceso»
+/// riempirebbe di fantasmi ogni riavvio, e nessuno lo leggerebbe più.
+fn project_process_started(
+    transaction: &Transaction<'_>,
+    record: &ProcessRecord,
+) -> Result<(), LedgerError> {
+    transaction.execute(
+        "INSERT INTO processes
+         (process_id, pid, command, args, working_directory, port, purpose,
+          started_by, run_id, started_at, ended_at, exit_code)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL, NULL)
+         ON CONFLICT(process_id) DO UPDATE SET
+          pid=excluded.pid, command=excluded.command, args=excluded.args,
+          working_directory=excluded.working_directory, port=excluded.port,
+          purpose=excluded.purpose, started_by=excluded.started_by,
+          run_id=excluded.run_id, started_at=excluded.started_at,
+          ended_at=NULL, exit_code=NULL",
+        params![
+            record.process_id,
+            record.pid,
+            record.command,
+            serde_json::to_string(&record.args)?,
+            record.working_directory,
+            record.port,
+            record.purpose,
+            record.started_by,
+            record.run_id,
+            record.started_at,
+        ],
+    )?;
+    Ok(())
+}
+
+/// La chiusura di un processo che nessuno aveva registrato non crea una riga.
+///
+/// **È voluto, e il silenzio è la risposta giusta qui.** Inventare una riga da
+/// una chiusura vorrebbe dire scrivere un processo di cui non si sa né il
+/// comando né la porta né chi l'ha acceso: una voce che sembra una misura e non
+/// lo è. Il registro degli eventi conserva comunque la chiusura.
+fn project_process_ended(
+    transaction: &Transaction<'_>,
+    record: &ProcessEndRecord,
+) -> Result<(), LedgerError> {
+    transaction.execute(
+        "UPDATE processes SET ended_at = ?2, exit_code = ?3 WHERE process_id = ?1",
+        params![record.process_id, record.ended_at, record.exit_code],
+    )?;
+    Ok(())
+}
+
+fn read_process_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessRecord> {
+    let args: String = row.get(3)?;
+    Ok(ProcessRecord {
+        process_id: row.get(0)?,
+        pid: row.get(1)?,
+        command: row.get(2)?,
+        // Una riga scritta a mano nel deposito potrebbe non essere JSON: si
+        // legge come nessun argomento invece di far morire la lettura di tutto
+        // l'elenco. Chi cerca un orfano ha bisogno dell'elenco, non della
+        // perfezione di una riga.
+        args: serde_json::from_str(&args).unwrap_or_default(),
+        working_directory: row.get(4)?,
+        port: row.get(5)?,
+        purpose: row.get(6)?,
+        started_by: row.get(7)?,
+        run_id: row.get(8)?,
+        started_at: row.get(9)?,
+    })
+}
+
+const PROCESS_COLUMNS: &str = "process_id, pid, command, args, working_directory, port, \
+                               purpose, started_by, run_id, started_at";
 
 /// Una voce, un valore: l'ultima scrittura sostituisce la precedente.
 ///
