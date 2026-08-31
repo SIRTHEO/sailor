@@ -1852,3 +1852,158 @@ fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
          aveva già un deposito quella colonna non esisterà mai"
     );
 }
+
+// ---------------------------------------------------------------------------
+// I processi che Sailor avvia — guasto 4.
+// ---------------------------------------------------------------------------
+
+fn spawned(process_id: &str, port: Option<u16>) -> ProcessRecord {
+    ProcessRecord {
+        process_id: process_id.to_owned(),
+        pid: 4242,
+        command: "npm".to_owned(),
+        args: vec!["run".to_owned(), "dev".to_owned()],
+        working_directory: "/Users/theo/personal/sailor/desktop".to_owned(),
+        port,
+        purpose: "live".to_owned(),
+        started_by: "supervisor".to_owned(),
+        run_id: None,
+        started_at: 1_700_000_000,
+    }
+}
+
+/// **UN PROCESSO AVVIATO RESTA SCRITTO ANCHE SE CHI L'HA AVVIATO SE N'È ANDATO.**
+///
+/// È il caso del guasto 4 alla lettera: l'orfano è stato trovato *il giorno
+/// dopo*, da un'altra persona, e nessuno sapeva chi l'avesse acceso. Un registro
+/// che vive in memoria dentro la finestra non avrebbe risposto — la finestra era
+/// chiusa. Qui il deposito si riapre da zero, che è ciò che fa chi arriva dopo.
+#[test]
+fn a_started_process_survives_the_window_that_started_it() {
+    let directory = TestDirectory::new("processi-vivi");
+
+    {
+        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        ledger
+            .record_process_started(&spawned("vite-1", Some(5183)))
+            .expect("registrare il processo avviato");
+    }
+
+    // Nessuno stato in memoria sopravvive a questa riga: è un altro `Ledger`.
+    let later = Ledger::open(&directory.0).expect("riaprire il deposito domani");
+    let left = later.processes_left_running().expect("chiedere chi è rimasto");
+    assert_eq!(left.len(), 1, "l'orfano non è nel deposito: {left:?}");
+    assert_eq!(left[0].process_id, "vite-1");
+    assert_eq!(left[0].pid, 4242);
+    assert_eq!(left[0].port, Some(5183));
+    assert_eq!(left[0].command, "npm");
+    assert_eq!(left[0].args, vec!["run".to_owned(), "dev".to_owned()]);
+    assert_eq!(
+        left[0].started_by, "supervisor",
+        "senza chi l'ha avviato, chi lo trova non sa a chi chiedere"
+    );
+}
+
+/// Un processo chiuso esce dall'elenco. Senza questo, l'elenco cresce e basta,
+/// e chi lo legge smette di crederci — che è come non averlo.
+#[test]
+fn a_closed_process_leaves_the_list() {
+    let directory = TestDirectory::new("processi-chiusi");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    ledger
+        .record_process_started(&spawned("vite-1", Some(5183)))
+        .expect("registrare l'avvio");
+    ledger
+        .record_process_started(&spawned("vite-2", Some(5184)))
+        .expect("registrare il secondo avvio");
+    ledger
+        .record_process_ended(&ProcessEndRecord {
+            process_id: "vite-1".to_owned(),
+            exit_code: Some(0),
+            ended_at: 1_700_000_060,
+        })
+        .expect("registrare la chiusura");
+
+    let left = ledger.processes_left_running().expect("chiedere chi è rimasto");
+    let ids: Vec<&str> = left.iter().map(|record| record.process_id.as_str()).collect();
+    assert_eq!(ids, vec!["vite-2"], "chi è uscito è rimasto nell'elenco");
+}
+
+/// **LA DOMANDA CHE HA CAUSATO IL GUASTO ERA SULLA PORTA**, non sul processo:
+/// «chi occupa la 5183 e mi impedisce di partire». Il deposito deve rispondere
+/// con quella chiave, altrimenti chi è bloccato deve leggere l'elenco intero e
+/// indovinare.
+#[test]
+fn the_ledger_answers_who_holds_a_port() {
+    let directory = TestDirectory::new("processi-porta");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    ledger
+        .record_process_started(&spawned("vite-1", Some(5183)))
+        .expect("registrare l'avvio");
+    ledger
+        .record_process_started(&spawned("senza-porta", None))
+        .expect("registrare un processo che non occupa niente");
+
+    let holder = ledger
+        .process_holding_port(5183)
+        .expect("chiedere chi tiene la porta");
+    assert_eq!(
+        holder.map(|record| record.process_id),
+        Some("vite-1".to_owned())
+    );
+
+    assert!(
+        ledger
+            .process_holding_port(9999)
+            .expect("chiedere di una porta libera")
+            .is_none(),
+        "il deposito ha inventato un occupante per una porta libera"
+    );
+
+    // E una volta chiuso, la porta risulta libera: è il segnale che dice a chi
+    // arriva dopo che può partire senza uccidere niente.
+    ledger
+        .record_process_ended(&ProcessEndRecord {
+            process_id: "vite-1".to_owned(),
+            exit_code: Some(0),
+            ended_at: 1_700_000_060,
+        })
+        .expect("registrare la chiusura");
+    assert!(
+        ledger
+            .process_holding_port(5183)
+            .expect("richiedere dopo la chiusura")
+            .is_none(),
+        "la porta risulta ancora occupata da un processo chiuso"
+    );
+}
+
+/// **NON È `pgrep`, ED È IL PUNTO.** Il guasto 12 dice che dentro certi
+/// perimetri `pgrep` non vede i processi e **risponde vuoto senza errore**:
+/// un elenco vuoto è indistinguibile da «non c'è nessuno». Qui si chiede di un
+/// solo pid, conosciuto perché il deposito l'ha scritto, e la risposta è un sì o
+/// un no su quel pid: non esiste la forma «elenco vuoto» in cui il difetto del
+/// guasto 12 possa nascondersi.
+#[test]
+fn liveness_asks_about_one_known_pid_not_for_a_list() {
+    // Questo processo è vivo per definizione: è quello che sta eseguendo la prova.
+    assert!(
+        pid_is_alive(std::process::id()),
+        "il processo che sta girando risulta morto"
+    );
+
+    // Un figlio atteso è morto davvero, e il sistema lo sa finché nessuno
+    // riusa il numero.
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", "exit 0"])
+        .spawn()
+        .expect("avviare un figlio che muore subito");
+    let pid = child.id();
+    child.wait().expect("aspettarlo");
+    assert!(
+        !pid_is_alive(pid),
+        "un processo atteso e sepolto risulta ancora vivo: pid {pid}"
+    );
+}
