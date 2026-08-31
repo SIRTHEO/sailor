@@ -1,5 +1,29 @@
 # Come lo risolvono gli altri — e cosa non risolve nessuno
 
+> **Questo documento è il verbale della ricerca, non lo stato di adesso.** Il
+> giorno stesso quattro delle nove voci sono state costruite, e alcune frasi qui
+> sotto sono diventate false. Le lascio come sono scritte — un verbale
+> riscritto dopo non è più un verbale — e dichiaro qui cosa è cambiato:
+>
+> - **Voce 1, il tetto.** Costruito. `sailor flow cap` lo scrive, `flow check`
+>   lo dichiara coi suoi tre limiti, e `Decision::CapReached` è passato da zero
+>   esecuzioni a due, in una corsa vera a costo zero. Resta vero che nessun
+>   flusso lo dichiara ancora: tararlo richiede tre corse costate che nessun
+>   flusso ha.
+> - **Voce 2, la porta.** Costruita. `handed_to_agent`, `sailor step
+>   open|close`, `sailor flow resume`, e le corse in attesa che il deposito sa
+>   nominare. **L'A/B che la giudica non è stato fatto**: finché non lo è,
+>   questa voce è un montaggio provato dalle prove, non una risposta misurata.
+> - **Voce 4, il vaglio a secco.** Costruito, e il guasto 27 rimesso nel
+>   descrittore vero viene colto a costo zero, con le parole del motore.
+> - **Il guasto 25, dichiarato qui «interamente scoperto»: è chiuso.** La
+>   radice si dichiara con un marcatore, viaggia nello stato condiviso, e i
+>   sette percorsi assoluti di `sviluppa-sailor` sono spariti — tolti da
+>   `sailor flow relocate`, non da una mano.
+> - **Restano scoperti** il guasto 18 (la dotazione esiste e non arriva ai
+>   motori), il 14 (dove dorme una corsa sospesa), e i due dati che non si
+>   possono inventare: come `agy` e `gemini` dicono di aver finito la quota.
+
 **31/08/2026.** Cinque passi, 142 turni, 12,5639 $ equivalenti. Il passo di
 verifica ha aperto le fonti e il codice e ha detto **approvato**, con quattro
 riserve. Questo documento tiene il risultato; il verdetto integrale e le riserve
