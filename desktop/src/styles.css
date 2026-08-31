@@ -1,12 +1,167 @@
+/* ===========================================================================
+   LA DIREZIONE — carta calda, lettering da targa, e il colore riservato allo
+   stato della macchina.
+   ---------------------------------------------------------------------------
+   Sailor non è un documento: è uno strumento con cui si guarda lavorare delle
+   macchine. Quindi «bello» qui vuol dire **leggibile**, ed è il vincolo
+   permanente «chiarezza per chi guarda» applicato all'aspetto.
+
+   La lingua visiva non è nuova: è quella che la plancia
+   (`crates/ui/assets/index.html`) usa già — carta calda, verde profondo,
+   griglia da carta millimetrata. Prima di oggi le due superfici sembravano due
+   prodotti diversi. Adesso sono una.
+
+   COSA QUESTA DIREZIONE VIETA. Senza questo elenco non guida niente, e al primo
+   componente scritto di fretta tornano l'ombra morbida e l'angolo raccordato.
+
+   1. VIETATI Inter, Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat,
+      Space Grotesk — e vietato `system-ui` come prima scelta. Tre famiglie, e
+      solo quelle: targa, prosa, dato.
+   2. VIETATO un raggio che non sia `--radius` (4px), `--radius-lg` (10px) o
+      `--radius-pill`. Prima ce n'erano dodici.
+   3. UNA SOLA OMBRA (`--shadow`), e solo per ciò che galleggia sopra la tela.
+      VIETATA l'ombra su un nodo o su una corsia: un nodo è una targa incisa,
+      non una scheda che levita. Si stacca col bordo e con la barra di stato.
+   4. IL COLORE È RISERVATO ALLO STATO DELLA MACCHINA. Un pulsante non ha tinta,
+      un pannello non ha tinta, un bordo decorativo non esiste. Le uniche tinte
+      sono i sei stati di un passo, le tre gravità (ok/avviso/guasto), la
+      corsia del flusso e l'anello di fuoco.
+   5. VIETATO che il colore sia l'unico portatore di uno stato: accanto alla
+      tinta c'è sempre la parola. È il difetto da cui nasce «lo schermo è il
+      giudice».
+   6. VIETATA qualunque accoppiata testo/sfondo sotto 4,5:1. Misurata, non a
+      occhio: i numeri stanno accanto a ogni ruolo qui sotto.
+   7. DUE LIVELLI DI TESTO, non tre. `--faint` era #94a3b8 su bianco — 2,56:1,
+      cioè un grigio che nessuno legge. Non è stato schiarito: è stato
+      **abolito**. La differenza fra un'etichetta e una frase la fanno il
+      carattere, le maiuscole e la spaziatura, MAI lo sbiadire.
+   8. VIETATO un corpo fuori dalla scala e uno spazio fuori dal reticolo di 4px.
+      Prima c'erano quattordici corpi, di cui `8.5px` e `9.5px`.
+   9. VIETATI sfumature, vetro smerigliato e sfocature. VIETATO il pulsante a
+      pillola: la pillola è dei bollini di stato e di nient'altro.
+  10. I NUMERI CHE SI CONFRONTANO FRA RIGHE stanno in `--font-data` con cifre
+      tabulari. Un costo in carattere proporzionale non si confronta a colpo
+      d'occhio, e confrontarli è tutto il punto.
+
+   COME QUESTI DIVIETI DIVENTANO ROSSI. `desktop/src/stylesheet.test.ts` legge
+   questo foglio e rifiuta un carattere, un raggio, un'ombra o un colore che non
+   passi da un ruolo; `desktop/src/contrast.test.tsx` cammina il DOM disegnato e
+   rifiuta un'accoppiata sotto 4,5:1, anche con un flusso a fuoco. Il divieto 6
+   era rimasto un turno intero senza niente che lo interrogasse: rimettere
+   `--muted: #94a3b8` — due caratteri — lasciava tutta la batteria verde con lo
+   schermo pieno di testo illeggibile. Oggi la stessa modifica rende rosse tutte
+   e tre le scene: 38 accoppiate sotto soglia a riposo, 38 con un flusso a
+   fuoco, 42 sui sei stati di un passo.
+
+   CIÒ CHE QUESTA DIREZIONE NON FA ANCORA. Il tema scuro. La plancia ce l'ha,
+   questa finestra no — e il motivo NON è che restino tinte scritte a mano: fuori
+   da `:root` non c'è più nessun colore letterale, e il controllo qui sopra lo
+   pretende. Manca la seconda serie di ruoli e la misura di ognuna delle sue
+   accoppiate: il divieto 6 vale sul fondo scuro come su questo, e un tema
+   dichiarato senza quelle misure sarebbe la stessa promessa non verificata che
+   questo commit è stato respinto per aver fatto.
+   =========================================================================== */
+
 :root {
-  --ink: #0f172a;
-  --muted: #64748b;
-  --faint: #94a3b8;
-  --line: #e2e8f0;
-  --paper: #ffffff;
-  --rail: #fafbfc;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  /* --- SUPERFICI. Carta calda, non bianco: il bianco puro sotto una tela di
+         nodi affatica, e la plancia aveva già scelto questo. --- */
+  --bg: #f2f0e9;      /* la tela e la colonna: il fondo di tutto */
+  --paper: #fbfaf6;   /* nodi, pannelli, schede: ciò che sta sopra il fondo */
+  --raised: #ffffff;  /* campi di testo e ciò che si apre sopra un pannello */
+  --rail: #f2f0e9;    /* alias storico, = --bg */
+  --line: #d8d7ce;    /* filo di 1px, mai portatore di stato da solo */
+  /* Il velo d'inchiostro sotto una corsia: si vede che il riquadro c'è, e non
+     sposta nessuna accoppiata di contrasto. Era l'ultimo colore letterale
+     rimasto fuori da qui. */
+  --band-fill: rgb(34 38 31 / 2.5%);
+
+  /* --- TESTO. Due livelli, tutti e due leggibili ovunque. Misurati:
+         ink   su --paper 15,08:1 · su --bg 13,81:1
+         muted su --paper  5,24:1 · su --bg  4,80:1 · su --raised 5,47:1 --- */
+  --ink: #20241f;
+  --muted: #656b63;
+  --faint: #656b63;   /* VOLUTAMENTE identico a --muted: vedi il divieto 7 */
+
+  /* --- LO STATO DI UN PASSO. Sei finali che non sono intercambiabili.
+         Tutti misurati su --paper (#fbfaf6), tutti sopra 4,5:1:
+         waiting 5,24 · running 6,44 · went 6,83 · broke 6,40 ·
+         capped 5,79 · human 6,56
+         Prima erano #cbd5e1/#3b82f6/#22c55e/#ef4444/#f59e0b/#a855f7: il
+         migliore faceva 3,79:1 e «in attesa» 1,42:1, mentre erano il colore
+         del testo della parola di stato su ogni nodo. --- */
+  --state-waiting: #656b63;
+  --state-running: #1a5f96;
+  --state-went: #146447;
+  --state-broke: #a13930;
+  --state-capped: #92531b;
+  --state-human: #6b46a8;
+
+  /* --- GRAVITÀ. Le stesse tre della plancia, e i loro fondi tenui. --- */
+  --ok: #146447;
+  --ok-soft: #dcebe3;
+  --warn: #92531b;
+  --warn-soft: #f7e8ce;
+  --danger: #a13930;
+  --danger-soft: #f6dedb;
+
+  /* --- FUOCO. L'unica tinta non di stato, e serve solo a dire «qui». --- */
+  --focus: #1a5f96;
+
+  /* --- CARATTERI. Tre ruoli, nessuna scelta per omissione.
+         targa: DIN Alternate, il lettering delle targhe di macchina e dei
+                cartelli stradali. Esiste solo in Bold, e va benissimo: si usa
+                SOLO in maiuscoletto spaziato per le etichette e gli stati.
+         prosa: Avenir Next, per le frasi che una persona legge.
+         dato:  SF Mono, per tutto ciò che si confronta — id, modelli, token,
+                costi, durate. Cifre tabulari, allineate in colonna. --- */
+  --font-display: "DIN Alternate", "DIN Condensed", "Avenir Next Condensed", "Avenir Next", sans-serif;
+  --font-prose: "Avenir Next", Avenir, Optima, "Gill Sans", sans-serif;
+  --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+
+  /* --- CORPI. Sei, da 10 a 22, invece di quattordici fra 8,5 e 18. --- */
+  --text-micro: 10px;  /* solo targa, maiuscolo, +0.09em */
+  --text-small: 12px;
+  --text-body: 13px;
+  --text-mid: 15px;
+  --text-large: 18px;
+  --text-display: 22px;
+
+  /* --- SPAZIO. Reticolo di 4px, sette gradini. Niente fuori da qui. --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* --- FORME. Due raggi e una pillola. --- */
+  --radius: 4px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* --- L'UNICA OMBRA, e solo per ciò che galleggia sopra la tela. --- */
+  --shadow: 0 10px 30px rgb(34 38 31 / 8%);
+
+  /* --- MOVIMENTO. Due durate e una curva. Il movimento conferma un gesto,
+         non intrattiene: niente entra in scena, niente rimbalza. --- */
+  --motion-fast: 120ms;
+  --motion: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
   color: var(--ink);
+  /* Le cifre stanno in colonna dappertutto: confrontarle è il mestiere. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chi ha chiesto meno movimento non ne riceve. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion: 0ms;
+  }
 }
 
 * {
@@ -15,7 +170,30 @@
 
 body {
   margin: 0;
-  background: var(--paper);
+  background: var(--bg);
+  font-family: var(--font-prose);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* L'anello di fuoco è uno solo, e si vede: chi naviga da tastiera deve sapere
+   dov'è senza indovinarlo. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* La targa: l'unico posto dove si usa DIN, sempre così. */
+.label,
+.rail__title,
+.panel__title,
+.history__title {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .app {
@@ -45,42 +223,42 @@ body {
 }
 
 .bar__flow {
-  font-size: 14px;
+  font-size: var(--text-mid);
 }
 
 /* La provenienza dei dati: discreta quando è il disco, in evidenza quando è un
    esempio o un guasto — sono i due casi in cui chi guarda rischia di credere
    vero quello che non lo è. */
 .bar__source {
-  font-size: 11.5px;
+  font-size: var(--text-small);
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   color: var(--muted);
 }
 
 .bar__source[data-source="sample"] {
-  color: #92400e;
-  border-color: #fcd34d;
-  background: #fffbeb;
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-soft);
 }
 
 .bar__source[data-source="failed"] {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 /* Il bollino di modifiche non salvate: chi chiude la finestra deve vederlo
    prima di perdere il lavoro, non scoprirlo dopo. */
 .bar__dirty {
-  font-size: 11.5px;
+  font-size: var(--text-small);
   font-weight: 600;
   padding: 3px 8px;
-  border-radius: 999px;
-  color: #92400e;
-  border: 1px solid #fcd34d;
-  background: #fffbeb;
+  border-radius: var(--radius-pill);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  background: var(--warn-soft);
 }
 
 .bar__spacer {
@@ -102,44 +280,44 @@ body {
 .focusbar__dot {
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
 .focusbar__name {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: var(--font-data);
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 
 .focusbar__desc {
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--muted);
 }
 
 /* Il nome si scrive solo finché il flusso non ha un file: dopo, rinominarlo
    lascerebbe due file sul disco. */
 .focusbar__name-input {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: var(--font-data);
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--text-body);
   width: 160px;
   padding: 4px 7px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--paper);
   color: var(--ink);
 }
 
 .focusbar__desc-input {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-small);
   color: var(--muted);
   flex-grow: 1;
   max-width: 420px;
   padding: 4px 7px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: transparent;
 }
 
@@ -150,18 +328,18 @@ body {
 }
 
 .focusbar__dirty {
-  font-size: 11px;
+  font-size: var(--text-small);
   font-weight: 600;
   padding: 2px 7px;
-  border-radius: 999px;
-  color: #92400e;
-  border: 1px solid #fcd34d;
-  background: #fffbeb;
+  border-radius: var(--radius-pill);
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  background: var(--warn-soft);
 }
 
 .focusbar__error {
-  font-size: 11.5px;
-  color: #b91c1c;
+  font-size: var(--text-small);
+  color: var(--danger);
 }
 
 .focusbar__spacer {
@@ -169,24 +347,51 @@ body {
 }
 
 button.is-danger {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 button {
   font: inherit;
-  font-size: 12.5px;
-  padding: 7px 13px;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius);
   background: var(--paper);
+  color: var(--ink);
   cursor: pointer;
+  transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+/**
+ * UN PULSANTE SPENTO SI LEGGE ANCORA.
+ *
+ * È il difetto da cui nasce «lo schermo è il giudice», e stava ancora qui:
+ * `opacity: 0.4` sopra il grigio che il browser mette da sé sui controlli
+ * spenti dava testo `rgba(16,16,16,0.12)` su bianco — **1,30:1**. I sette nomi
+ * della cassetta dei passi erano, alla lettera, disegnati del colore dello
+ * sfondo. Adesso sono `--muted` su `--bg`: 4,80:1.
+ *
+ * Il divieto che ne discende: SPENTO NON SI DICE COL COLORE. Si dice col bordo
+ * tratteggiato e col cursore, e la parola resta leggibile — perché chi guarda
+ * deve poter sapere che cosa non può fare, e per saperlo deve leggerlo.
+ */
+button:disabled {
+  color: var(--muted);
+  background: var(--bg);
+  border-style: dashed;
+  cursor: not-allowed;
 }
 
 button.is-primary {
   background: var(--ink);
-  color: var(--paper);
+  color: var(--bg);
   border-color: var(--ink);
   font-weight: 600;
 }
@@ -207,7 +412,7 @@ button.is-primary {
 }
 
 .rail__title {
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -224,7 +429,7 @@ button.is-primary {
   background: var(--paper);
   padding: 8px 10px;
   margin-bottom: 8px;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--muted);
 }
@@ -254,13 +459,13 @@ button.is-primary {
   display: inline-block;
   width: 7px;
   height: 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   margin-right: 6px;
 }
 
 .rail__label {
   display: block;
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 500;
 }
 
@@ -268,14 +473,14 @@ button.is-primary {
   display: inline-block;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
-  background: #f59e0b;
-  margin-left: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--warn);
+  margin-left: var(--space-1);
 }
 
 .rail__note {
   display: block;
-  font-size: 10.5px;
+  font-size: var(--text-small);
   color: var(--faint);
   margin-top: 3px;
   margin-left: 13px;
@@ -288,11 +493,11 @@ button.is-primary {
 }
 
 .rail__item[data-broken] .rail__label {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .rail__item[data-broken] .rail__note {
-  color: #dc2626;
+  color: var(--danger);
   margin-left: 0;
 }
 
@@ -320,7 +525,7 @@ button.is-primary {
 }
 
 .rail__hint {
-  font-size: 11px;
+  font-size: var(--text-small);
   color: var(--faint);
   margin: 0 8px 8px;
   line-height: 1.4;
@@ -334,15 +539,13 @@ button.is-primary {
 }
 
 .palette__item {
-  font-size: 11px;
-  padding: 7px 4px;
+  font-size: var(--text-small);
+  padding: var(--space-2) var(--space-1);
   text-align: center;
 }
 
-.palette__item:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+/* Niente `opacity` qui: lo spento lo dice la regola globale su `button`, e lo
+   dice restando leggibile. */
 
 .canvas {
   flex-grow: 1;
@@ -371,26 +574,29 @@ button.is-primary {
   padding: 26px 28px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 14px;
-  box-shadow: 0 8px 30px rgb(15 23 42 / 8%);
+  border-radius: var(--radius-lg);
+  /* L'unica ombra (divieto 3), e questo riquadro galleggia davvero sopra la
+     tela. Prima era una seconda ombra scritta a mano, col nero-ardesia della
+     tavolozza precedente: la sola tinta letterale rimasta fuori dai ruoli. */
+  box-shadow: var(--shadow);
 }
 
 .blank__card h2 {
-  font-size: 17px;
+  font-size: var(--text-large);
   margin: 0 0 10px;
 }
 
 .blank__card p {
-  font-size: 13px;
+  font-size: var(--text-body);
   line-height: 1.6;
   color: var(--muted);
   margin: 0 0 14px;
 }
 
 .blank__card p.blank__why {
-  font-size: 11.5px;
+  font-size: var(--text-small);
   color: var(--faint);
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: var(--font-data);
   word-break: break-word;
 }
 
@@ -400,12 +606,12 @@ button.is-primary {
 }
 
 .broken h2 {
-  font-size: 18px;
+  font-size: var(--text-large);
   margin: 0 0 10px;
 }
 
 .broken p {
-  font-size: 13.5px;
+  font-size: var(--text-body);
   line-height: 1.6;
   color: var(--muted);
   margin: 0 0 10px;
@@ -413,7 +619,7 @@ button.is-primary {
 
 .broken__why {
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: var(--text-small);
 }
 
 .panel {
@@ -425,7 +631,7 @@ button.is-primary {
 }
 
 .panel__title {
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -433,20 +639,20 @@ button.is-primary {
 }
 
 .panel__id {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 14px;
+  font-family: var(--font-data);
+  font-size: var(--text-mid);
   font-weight: 600;
   margin: 4px 0 14px;
 }
 
 .panel__empty {
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--faint);
   line-height: 1.5;
 }
 
 .panel dt {
-  font-size: 10.5px;
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--muted);
   margin-top: 12px;
@@ -454,15 +660,15 @@ button.is-primary {
 
 .panel dd {
   margin: 4px 0 0;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 11.5px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   word-break: break-word;
 }
 
 /* ── il pannello di modifica del passo ──────────────────────────────── */
 
 .panel__flow {
-  font-size: 11px;
+  font-size: var(--text-small);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -470,8 +676,8 @@ button.is-primary {
 
 .panel__id-input {
   width: 100%;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 14px;
+  font-family: var(--font-data);
+  font-size: var(--text-mid);
   font-weight: 600;
   margin: 6px 0 12px;
   padding: 6px 8px;
@@ -480,7 +686,7 @@ button.is-primary {
 .panel__field {
   display: block;
   margin-top: 12px;
-  font-size: 10.5px;
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--muted);
 }
@@ -492,8 +698,8 @@ button.is-primary {
   width: 100%;
   margin-top: 4px;
   padding: 6px 8px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 12px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   font-weight: 400;
   color: var(--ink);
 }
@@ -503,8 +709,8 @@ button.is-primary {
   width: 100%;
   margin-top: 4px;
   padding: 6px 8px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   font-weight: 400;
   color: var(--ink);
   resize: vertical;
@@ -518,7 +724,7 @@ button.is-primary {
   margin-top: 18px;
   padding: 12px 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-lg);
   background: var(--rail);
 }
 
@@ -532,26 +738,26 @@ button.is-primary {
   margin-top: 4px;
   padding: 6px 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 400;
   color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 /* La scoperta che non ha (ancora) risposto si dice, non si nasconde dietro un
    elenco vuoto che sembra «non c'è niente da scegliere». */
 .panel__note {
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 600;
-  color: #92400e;
+  color: var(--warn);
   margin: 8px 0 0;
 }
 
 .panel__note-why {
-  font-size: 10.5px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: var(--text-small);
+  font-family: var(--font-data);
   color: var(--faint);
   margin: 3px 0 0;
   line-height: 1.4;
@@ -559,26 +765,26 @@ button.is-primary {
 }
 
 .panel__tool-detail {
-  font-size: 10.5px;
+  font-size: var(--text-small);
   color: var(--muted);
   margin: 6px 0 0;
   line-height: 1.5;
 }
 
 .panel__tool-detail[data-off] {
-  color: #b45309;
+  color: var(--warn);
 }
 
 .panel__tool-kind {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
-  font-size: 9.5px;
+  font-size: var(--text-small);
 }
 
 .panel__tool-path {
   display: block;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: var(--font-data);
   color: var(--faint);
   word-break: break-all;
 }
@@ -591,12 +797,12 @@ button.is-primary {
 /* Un'avvertenza non è un errore: il campo si scrive comunque, ma chi salva sa
    cosa succederà al caricamento. */
 .panel__warn {
-  font-size: 10.5px;
+  font-size: var(--text-small);
   line-height: 1.5;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 6px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
   padding: 6px 8px;
   margin: 8px 0 0;
 }
@@ -607,12 +813,12 @@ button.is-primary {
   margin-top: 4px;
   padding: 6px 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 400;
   line-height: 1.5;
   color: var(--ink);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   resize: vertical;
 }
 
@@ -621,7 +827,7 @@ button.is-primary {
   max-height: 140px;
   overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 6px 8px;
 }
 
@@ -629,69 +835,109 @@ button.is-primary {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: var(--text-small);
   font-weight: 400;
   color: var(--ink);
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: var(--font-data);
   padding: 3px 0;
 }
 
 .panel__error {
-  font-size: 11px;
-  color: #b91c1c;
+  font-size: var(--text-small);
+  color: var(--danger);
   margin: 4px 0 0;
 }
 
 .panel__delete {
   width: 100%;
   margin-top: 20px;
-  color: #b91c1c;
-  background: #fef2f2;
-  border-color: #fecaca;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
   font-weight: 600;
 }
 
 /* ── il nodo ─────────────────────────────────────────────────────────── */
 
+/* IL NODO È UNA TARGA, NON UNA SCHEDA CHE LEVITA: nessuna ombra (divieto 3), un
+   filo di 1px, e sul fianco sinistro la barra dello stato — 3px di tinta che si
+   leggono a qualunque zoom, anche quando le parole non si leggono più. */
 .step-node {
   position: relative;
-  width: 196px;
+  width: 232px;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 9px 11px;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 8%);
+  border-left: 3px solid var(--state, var(--line));
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* La tinta di stato entra una volta sola e da qui scende su tutto il nodo. */
+.step-node[data-state="waiting"] { --state: var(--state-waiting); }
+.step-node[data-state="running"] { --state: var(--state-running); }
+.step-node[data-state="went"] { --state: var(--state-went); }
+.step-node[data-state="broke"] { --state: var(--state-broke); }
+.step-node[data-state="capped"] { --state: var(--state-capped); }
+.step-node[data-state="handed_to_human"] { --state: var(--state-human); }
+
+.step-node[data-selected] {
+  border-color: var(--focus);
+  border-left-color: var(--state, var(--focus));
+  box-shadow: inset 0 0 0 1px var(--focus);
 }
 
 .step-node[data-agent] {
-  width: 232px;
+  width: 264px;
+}
+
+/* Da lontano un nodo non finge di essere leggibile: tiene il nome e la barra
+   di stato, e lascia cadere il resto. Prima, a zoom 0,5, il titolo di una
+   corsia era alto 6,5px e nessuno poteva leggerlo — ma c'era. */
+.step-node[data-far] {
+  padding: var(--space-3);
+}
+
+/* Ingrandito quanto basta a leggerlo, non tanto da troncarlo: `--text-large` su
+   232px tagliava `working-tree-is-clean` a metà, e un nome tagliato è meno
+   leggibile di uno piccolo. Da lontano va a capo invece di sparire. */
+.step-node[data-far] .step-node__id {
+  font-size: var(--text-mid);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin-bottom: var(--space-1);
 }
 
 .step-node__head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .step-node__kind {
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .step-node__when {
-  font-size: 9px;
-  color: #9333ea;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--state-human);
 }
 
 .step-node__id {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 12px;
+  font-family: var(--font-data);
+  font-size: var(--text-body);
   font-weight: 600;
-  margin: 3px 0 6px;
+  margin: var(--space-1) 0 var(--space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Lo strumento che esegue il nodo, sulla tela: si legge senza aprire nulla.
@@ -700,20 +946,33 @@ button.is-primary {
 .step-node__tool {
   display: flex;
   align-items: flex-start;
-  gap: 5px;
+  gap: var(--space-2);
   max-width: 100%;
   color: var(--muted);
-  background: #f1f5f9;
-  border-radius: 5px;
-  padding: 3px 5px;
-  margin-bottom: 6px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  margin-bottom: var(--space-2);
 }
 
 /* Spento non è nascosto: resta leggibile, e si vede che è spento. */
 .step-node__tool[data-off] {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  padding: 2px 4px;
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* NESSUN MOTORE È UN FATTO, NON UN VUOTO. Un passo che non dichiara con cosa
+   gira lo dice: prima il riquadro semplicemente non compariva, e un nodo senza
+   motore era indistinguibile da un nodo di cui non si era guardato il motore. */
+.step-node__tool[data-none] {
+  border-style: dashed;
+  background: transparent;
+}
+
+.step-node__tool[data-none] .step-node__tool-name {
+  color: var(--muted);
+  font-style: italic;
 }
 
 .step-node__tool-text {
@@ -724,7 +983,7 @@ button.is-primary {
 }
 
 .step-node__tool-name {
-  font-size: 10px;
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--ink);
   overflow: hidden;
@@ -733,13 +992,26 @@ button.is-primary {
 }
 
 .step-node__tool[data-off] .step-node__tool-name {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .step-node__tool-model {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 9px;
-  color: var(--faint);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* IL MODELLO CHE HA GIRATO DAVVERO, quando è diverso da quello scritto nel
+   passo. È la differenza fra ciò che il flusso chiede e ciò che il fornitore ha
+   concesso, e finora non si vedeva da nessuna parte: `actual_model` arrivava
+   dal deposito a ogni corsa e non lo leggeva nessuno. */
+.step-node__tool-actual {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--state-running);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -748,75 +1020,128 @@ button.is-primary {
 /* Il motivo sta su due righe al massimo: deve stare dentro un nodo senza
    allargarlo, e per intero si legge passandoci sopra. */
 .step-node__tool-why {
-  font-size: 8.5px;
-  color: #b45309;
+  font-size: var(--text-small);
+  color: var(--danger);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
+/* LA RIGA DEL CONTO: cosa è entrato, cosa è uscito, quanto è costato — per
+   QUESTO passo. Erano dati già in casa, schiacciati in un unico totale in
+   fondo alla console. */
+.step-node__meter {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  margin-bottom: var(--space-2);
+}
+
+.step-node__cost {
+  margin-left: auto;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* Un costo che non conta tutte le chiamate lo dichiara: il tetto di spesa si
+   misura su ciò che i motori dichiarano, e Codex non dichiara i due lati. */
+.step-node__partial {
+  color: var(--warn);
+}
+
 .step-node__foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 10.5px;
-  gap: 8px;
+  gap: var(--space-2);
+}
+
+/* LA PAROLA DI STATO, MAI IL SOLO COLORE (divieto 5). La tinta è la stessa
+   della barra sul fianco, ma la parola resta leggibile da sola. */
+.step-node__state {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--state, var(--muted));
 }
 
 .step-node__attempt {
-  font-family: ui-monospace, monospace;
-  font-size: 9.5px;
-  color: #b45309;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 4px;
-  padding: 1px 5px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1);
 }
 
 .step-node__agent {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #f1f5f9;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
 }
 
 .step-node__pid {
-  font-family: ui-monospace, monospace;
-  font-size: 9.5px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   color: var(--muted);
 }
 
 .step-node__actions {
   display: flex;
-  gap: 4px;
-  margin-top: 6px;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
 }
 
 .step-node__actions button {
   flex: 1;
-  padding: 4px 0;
-  font-size: 10.5px;
-  border-radius: 5px;
+  padding: var(--space-1) 0;
+  font-size: var(--text-small);
+  border-radius: var(--radius);
 }
 
 .step-node__actions button.is-stop {
-  color: #b91c1c;
-  background: #fef2f2;
-  border-color: #fecaca;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger);
   font-weight: 600;
 }
 
+/* Il bollino di corsia sta in alto, sottile: dice a quale flusso appartiene il
+   passo senza rubare la tinta allo stato, che è la cosa che si guarda. */
 .step-node__flow {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 3px;
-  border-radius: 9px 9px 0 0;
+  height: 2px;
 }
 
+/* SPENTO NON VUOL DIRE ILLEGGIBILE (divieto 6, e divieto 5 di riflesso).
+   Qui c'era `opacity: 0.3` su tutto il nodo: a un clic di distanza dalla vista
+   d'apertura il nome di un passo faceva 1,86:1 e la sua parola di stato 1,48:1
+   — più aggressivo dello 0,4 che questa direzione ha tolto dalla cassetta dei
+   passi, e con lo stesso meccanismo che condanna. Adesso a ritrarsi sono i
+   SEGNI: il nodo perde il proprio foglio e si confonde col fondo della tela, e
+   il bollino della corsia si spegne. Le parole restano quelle di prima. */
 .step-node[data-dimmed] {
+  background: var(--bg);
+}
+
+.step-node[data-dimmed] .step-node__flow {
   opacity: 0.3;
+}
+
+/* L'attribuzione di React Flow resta — è dovuta, e `hideAttribution: false` è
+   una scelta — ma il suo `#999` su questo fondo fa 2,67:1. Il divieto sulle
+   accoppiate sotto soglia non ha un'eccezione per il testo di qualcun altro:
+   se sta sul nostro schermo, si legge. */
+.react-flow__attribution a {
+  color: var(--muted);
 }
 
 /* ── la corsia di un flusso, sulla tela unica ───────────────────────── */
@@ -825,14 +1150,24 @@ button.is-primary {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  border: 1.5px dashed;
-  border-radius: 16px;
-  background: rgb(15 23 42 / 2.5%);
-  padding: 12px 16px;
-  transition: opacity 0.2s;
+  border: 1px dashed;
+  border-radius: var(--radius-lg);
+  background: var(--band-fill);
+  padding: var(--space-3) var(--space-4);
+  transition:
+    background var(--motion) var(--ease),
+    border-color var(--motion) var(--ease);
 }
 
+/* Come per un nodo: la corsia non a fuoco perde il velo e il suo segno, non le
+   sue parole. Il nome faceva 1,85:1 e la descrizione 1,47:1. */
 .flow-band[data-dimmed] {
+  background: transparent;
+  border-color: var(--line);
+  border-style: dotted;
+}
+
+.flow-band[data-dimmed] .flow-band__mark {
   opacity: 0.3;
 }
 
@@ -842,26 +1177,69 @@ button.is-primary {
   gap: 8px;
 }
 
+/* Il segno della corsia: quadrato, non pastiglia, per non confonderlo coi
+   bollini di stato — che sono tondi e vogliono dire un'altra cosa. */
+.flow-band__mark {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* LE TRE INTERLINEE QUI SOTTO SONO DICHIARATE, NON LASCIATE A `normal`, e non
+   è una scelta di gusto: `BAND_PAD_TOP` in `layout.ts` riserva a questa
+   intestazione un'altezza calcolata proprio da questi numeri, e
+   `layout.test.ts` rifà il conto leggendo questo foglio. Con `normal` il conto
+   dipenderebbe dalle metriche del carattere installato sulla macchina, cioè da
+   niente che una prova possa vedere. */
 .flow-band__name {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 13px;
+  font-family: var(--font-data);
+  font-size: var(--text-mid);
+  line-height: 1.2;
   font-weight: 700;
+  color: var(--ink);
+}
+
+.flow-band[data-far] .flow-band__mark {
+  width: 14px;
+  height: 14px;
 }
 
 .flow-band__count {
-  font-size: 10.5px;
-  color: var(--faint);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  line-height: 1.2;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
-/* DUE RIGHE AL MASSIMO, e il resto passando sopra: l'intestazione della corsia
-   ha un'altezza riservata nella disposizione, e una descrizione lunga la
-   sfonda — sulla tela il testo finiva scritto in mezzo ai primi nodi, sopra i
-   loro nomi. Un flusso si descrive per esteso nel suo file, non addosso ai
-   passi di qualcun altro. */
+/* Il nome del flusso è l'etichetta più grande della tela e deve reggere lo
+   zoom indietro: a 0,5 era alto 6,5px. Da lontano cresce, per la stessa
+   ragione per cui cresce il nome di un passo. */
+.flow-band[data-far] .flow-band__name {
+  font-size: var(--text-display);
+}
+
+.flow-band[data-far] .flow-band__count,
+.flow-band[data-far] .flow-band__desc {
+  font-size: var(--text-mid);
+}
+
+/* DUE RIGHE AL MASSIMO, e il resto passando sopra: un flusso si descrive per
+   esteso nel suo file, non addosso ai passi di qualcun altro.
+   TAGLIARE A DUE RIGHE NON BASTA, e questa riga di commento diceva il contrario
+   da un giorno intero. L'altezza riservata è `BAND_PAD_TOP`, ed è un numero: se
+   i corpi qui sopra crescono e quel numero resta fermo, la descrizione finisce
+   sotto i primi nodi anche a due righe. È successo qui — 15px al posto di 11px
+   da lontano, `BAND_PAD_TOP` fermo a 54 — e sulla vista d'apertura, che a due
+   flussi apre proprio a zoom 0,5, il testo entrava di 4px nel primo nodo. */
 .flow-band__desc {
-  font-size: 11px;
+  font-size: var(--text-body);
+  line-height: 1.2;
   color: var(--muted);
-  margin-top: 3px;
+  margin-top: var(--space-1);
   max-width: 520px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -900,19 +1278,22 @@ button.is-primary {
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 5px;
-  background: var(--mark-tint, #64748b);
-  color: #fff;
+  border-radius: var(--radius);
+  background: var(--mark-tint, var(--muted));
+  color: var(--paper);
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  /* Le iniziali di uno strumento sono una targa, non una frase: il carattere è
+     quello delle targhe. Prima era una quarta famiglia scritta a mano — contro
+     il divieto 1, che vieta `system-ui` anche come ripiego. */
+  font-family: var(--font-display);
 }
 
 .tool-mark[data-off] .tool-mark__monogram {
   background: transparent;
-  color: #94a3b8;
-  border: 1px dashed #94a3b8;
+  color: var(--muted);
+  border: 1px dashed var(--muted);
 }
 
 /* ── la scelta dello strumento, nel pannello ────────────────────────────── */
@@ -937,18 +1318,18 @@ button.is-primary {
 /* Il motivo del rilevamento: quando c'è dice da dove, quando manca dice
    perché. Va letto, non solo scoperto passandoci sopra. */
 .panel__tool-why {
-  font-size: 10px;
+  font-size: var(--text-micro);
   line-height: 1.45;
   color: var(--muted);
 }
 
 .panel__tool-detail[data-off] .panel__tool-why {
-  color: #b45309;
+  color: var(--warn);
   font-weight: 600;
 }
 
 .panel__tool-src {
-  font-size: 9.5px;
+  font-size: var(--text-small);
   color: var(--faint);
   font-style: italic;
 }
@@ -957,7 +1338,7 @@ button.is-primary {
 
 .panel__subtitle {
   margin-top: 14px;
-  font-size: 9.5px;
+  font-size: var(--text-small);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -997,12 +1378,12 @@ button.is-primary {
 .panel__option-value {
   min-width: 0;
   padding: 5px 7px;
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 11px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
 }
 
 .panel__option-key {
@@ -1015,7 +1396,7 @@ button.is-primary {
 
 .panel__option-flag {
   flex: 1 1 auto;
-  font-size: 10px;
+  font-size: var(--text-micro);
   font-style: italic;
   color: var(--faint);
 }
@@ -1024,7 +1405,7 @@ button.is-primary {
   display: flex;
   align-items: center;
   gap: 3px;
-  font-size: 9px;
+  font-size: var(--text-micro);
   font-weight: 600;
   color: var(--muted);
   white-space: nowrap;
@@ -1039,24 +1420,24 @@ button.is-primary {
   width: 22px;
   height: 22px;
   padding: 0;
-  font-size: 14px;
+  font-size: var(--text-mid);
   line-height: 1;
   color: var(--faint);
   background: transparent;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
 .panel__option-drop:hover {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .panel__option-help {
   margin: 2px 0 0;
-  font-size: 9.5px;
+  font-size: var(--text-small);
   color: var(--faint);
   line-height: 1.4;
 }
@@ -1064,12 +1445,12 @@ button.is-primary {
 .panel__option-add {
   margin-top: 8px;
   padding: 5px 9px;
-  font-size: 10.5px;
+  font-size: var(--text-small);
   font-weight: 600;
   color: var(--muted);
   background: var(--paper);
   border: 1px dashed var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   cursor: pointer;
 }
 
@@ -1082,19 +1463,19 @@ button.is-primary {
    non è quello che finisce nel file — sul disco restano le opzioni per nome. */
 .panel__option-preview {
   margin: 8px 0 0;
-  font-size: 10px;
+  font-size: var(--text-micro);
   color: var(--muted);
   line-height: 1.5;
   word-break: break-all;
 }
 
 .panel__option-preview code {
-  font-family: ui-monospace, "JetBrains Mono", monospace;
-  font-size: 10px;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
   color: var(--ink);
   background: var(--rail);
-  border-radius: 4px;
-  padding: 1px 4px;
+  border-radius: var(--radius);
+  padding: 1px var(--space-1);
 }
 
 /* ── il nodo di innesco, e la vista dell'esecuzione ─────────────────────── */
@@ -1106,9 +1487,9 @@ button.is-primary {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-left-width: 3px;
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--rail);
-  font-size: 12px;
+  font-size: var(--text-small);
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -1123,12 +1504,12 @@ button.is-primary {
 .trigger-node__mark {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
 .trigger-node__kind {
-  font-size: 10.5px;
+  font-size: var(--text-small);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1136,23 +1517,23 @@ button.is-primary {
 
 .trigger-node__flow {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--text-body);
   word-break: break-word;
 }
 
 .trigger-node__note {
-  font-size: 11px;
+  font-size: var(--text-small);
   color: var(--muted);
 }
 
 /* Perché una consegna non ha dove andare si legge prima di premere, non dopo. */
 .trigger-node__why {
-  font-size: 11px;
+  font-size: var(--text-small);
   line-height: 1.4;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fcd34d;
-  border-radius: 6px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
   padding: 5px 7px;
 }
 
@@ -1161,11 +1542,11 @@ button.is-primary {
   min-height: 62px;
   resize: vertical;
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--text-small);
   line-height: 1.4;
   padding: 6px 7px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: var(--paper);
   color: var(--ink);
 }
@@ -1179,58 +1560,62 @@ button.is-primary {
 .trigger-node__go {
   flex-grow: 1;
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid transparent;
-  background: #2563eb;
-  color: #fff;
+  background: var(--state-running);
+  color: var(--paper);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 600;
   cursor: pointer;
 }
 
+/* Spento e ancora leggibile: `--muted` su `--line` faceva 3,79:1, sotto la
+   soglia. Il fondo torna quello della pagina, dove `--muted` fa 4,80:1. */
 .trigger-node__go:disabled {
-  background: var(--line);
-  color: var(--faint);
+  background: var(--bg);
+  color: var(--muted);
+  border-color: var(--line);
+  border-style: dashed;
   cursor: not-allowed;
 }
 
 .trigger-node__watch {
   padding: 5px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--paper);
   color: var(--muted);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--text-small);
   cursor: pointer;
 }
 
 /* Una corsa viva si vede da lontano: è la sola informazione che chi guarda
    cerca sulla tela senza aprire niente. */
 .trigger-node__watch[data-status="running"] {
-  color: #1d4ed8;
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  color: var(--state-running);
+  border-color: var(--state-running);
+  background: var(--bg);
   font-weight: 600;
 }
 
 .trigger-node__watch[data-status="complete"] {
-  color: #15803d;
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok-soft);
 }
 
 .trigger-node__watch[data-status="failed"] {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .trigger-node__error {
-  font-size: 11px;
+  font-size: var(--text-small);
   line-height: 1.4;
-  color: #b91c1c;
+  color: var(--danger);
   word-break: break-word;
 }
 
@@ -1257,16 +1642,16 @@ button.is-primary {
 
 .console__title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--text-body);
 }
 
 .console__pick,
 .console__modes button,
 .console__close {
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--text-small);
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius);
   border: 1px solid var(--line);
   background: var(--paper);
   color: var(--ink);
@@ -1285,29 +1670,29 @@ button.is-primary {
 }
 
 .console__status {
-  font-size: 11.5px;
+  font-size: var(--text-small);
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   color: var(--muted);
 }
 
 .console__status[data-status="running"] {
-  color: #1d4ed8;
-  border-color: #bfdbfe;
-  background: #eff6ff;
+  color: var(--state-running);
+  border-color: var(--state-running);
+  background: var(--bg);
 }
 
 .console__status[data-status="failed"] {
-  color: #b91c1c;
-  border-color: #fecaca;
-  background: #fef2f2;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .console__status[data-status="complete"] {
-  color: #15803d;
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  color: var(--ok);
+  border-color: var(--ok);
+  background: var(--ok-soft);
 }
 
 .console__spacer {
@@ -1321,16 +1706,16 @@ button.is-primary {
 .console__serial {
   flex-shrink: 0;
   padding: 6px 12px;
-  font-size: 11px;
+  font-size: var(--text-small);
   line-height: 1.45;
-  color: #92400e;
-  background: #fffbeb;
-  border-bottom: 1px solid #fde68a;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--warn);
 }
 
 .console__serial {
   border-bottom: none;
-  border-top: 1px solid #fde68a;
+  border-top: 1px solid var(--warn);
 }
 
 /* LA SPESA DELLA CORSA.
@@ -1344,27 +1729,27 @@ button.is-primary {
   align-items: baseline;
   gap: 4px 14px;
   padding: 7px 12px;
-  font-size: 11.5px;
+  font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
-  color: var(--faint);
-  background: #f8fafc;
+  color: var(--muted);
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 
 .console__spend-cost {
   font-weight: 600;
-  font-size: 12.5px;
+  font-size: var(--text-small);
   color: var(--ink);
 }
 
 /* Un totale parziale non si mimetizza col resto: chi legge deve accorgersi
    che la cifra accanto è più bassa del vero. */
 .console__spend-partial {
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 4px;
-  padding: 1px 6px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: 1px var(--space-2);
 }
 
 .console__lines,
@@ -1376,7 +1761,7 @@ button.is-primary {
 
 .console__empty {
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--text-small);
   padding: 8px 0;
 }
 
@@ -1384,8 +1769,8 @@ button.is-primary {
   display: flex;
   gap: 10px;
   align-items: baseline;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1418,16 +1803,16 @@ button.is-primary {
 }
 
 .console__line[data-stream="stderr"] .console__text {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .console__line[data-stream="said"] .console__text {
-  color: #7c3aed;
+  color: var(--state-human);
 }
 
 .console__waiting {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: var(--text-small);
   color: var(--muted);
   font-style: italic;
 }
@@ -1442,7 +1827,7 @@ button.is-primary {
 
 .pane {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1451,7 +1836,7 @@ button.is-primary {
 }
 
 .pane[data-open] {
-  border-color: #bfdbfe;
+  border-color: var(--state-running);
 }
 
 .pane__bar {
@@ -1465,7 +1850,7 @@ button.is-primary {
 
 .pane__id {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--text-small);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1473,22 +1858,22 @@ button.is-primary {
 
 .pane__state {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: var(--text-small);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .pane__state[data-outcome="open"] {
-  color: #1d4ed8;
+  color: var(--state-running);
 }
 
 .pane__state[data-outcome="Went"] {
-  color: #15803d;
+  color: var(--state-went);
 }
 
 .pane__state[data-outcome="Broke"] {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .pane__body {
@@ -1497,9 +1882,39 @@ button.is-primary {
   max-height: 240px;
 }
 
+/* Cosa è entrato nel passo: chiuso, e quando si apre sta in un riquadro suo,
+   perché non si confonda col testo che il passo ha prodotto. */
+.pane__input {
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.pane__input-head {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.pane__code {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+
 .pane__line {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1510,16 +1925,16 @@ button.is-primary {
 }
 
 .pane__line[data-stream="stderr"] {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .pane__line[data-stream="said"] {
-  color: #7c3aed;
+  color: var(--state-human);
 }
 
 /* Un riquadro senza righe non è un riquadro rotto: dice perché è vuoto. */
 .pane__note {
-  font-size: 11px;
+  font-size: var(--text-small);
   color: var(--faint);
   font-style: italic;
   line-height: 1.45;
@@ -1527,8 +1942,8 @@ button.is-primary {
 
 .pane__failure {
   margin-top: 6px;
-  font-size: 11px;
-  color: #b91c1c;
+  font-size: var(--text-small);
+  color: var(--danger);
 }
 
 /* ── cosa è entrato in un passo, nel tempo ──────────────────────────────── */
@@ -1542,7 +1957,7 @@ button.is-primary {
 }
 
 .history__title {
-  font-size: 11px;
+  font-size: var(--text-small);
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1550,7 +1965,7 @@ button.is-primary {
 }
 
 .history__note {
-  font-size: 11.5px;
+  font-size: var(--text-small);
   color: var(--faint);
   font-style: italic;
 }
@@ -1558,7 +1973,7 @@ button.is-primary {
 .passage {
   border: 1px solid var(--line);
   border-left-width: 3px;
-  border-radius: 7px;
+  border-radius: var(--radius);
   padding: 7px 9px;
   display: flex;
   flex-direction: column;
@@ -1567,15 +1982,15 @@ button.is-primary {
 }
 
 .passage[data-outcome="Went"] {
-  border-left-color: #22c55e;
+  border-left-color: var(--state-went);
 }
 
 .passage[data-outcome="Broke"] {
-  border-left-color: #ef4444;
+  border-left-color: var(--state-broke);
 }
 
 .passage[data-outcome="open"] {
-  border-left-color: #3b82f6;
+  border-left-color: var(--state-running);
 }
 
 .passage__head {
@@ -1593,14 +2008,14 @@ button.is-primary {
 }
 
 .passage__when {
-  font-size: 12px;
+  font-size: var(--text-small);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
 .passage__outcome {
   margin-left: auto;
-  font-size: 10.5px;
+  font-size: var(--text-small);
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -1608,28 +2023,28 @@ button.is-primary {
 /* Da dove è partita la chiamata: è la riga che risponde a «chi l'ha
    chiamato», e non si abbrevia. */
 .passage__origin {
-  font-size: 11px;
+  font-size: var(--text-small);
   color: var(--muted);
 }
 
 .passage__attempt {
-  font-size: 10.5px;
-  color: #92400e;
+  font-size: var(--text-small);
+  color: var(--warn);
 }
 
 .passage__mandate {
-  font-size: 11px;
+  font-size: var(--text-small);
   line-height: 1.45;
   color: var(--ink);
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius);
   padding: 5px 6px;
 }
 
 .passage__label {
   display: block;
-  font-size: 9.5px;
+  font-size: var(--text-small);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--faint);
@@ -1645,26 +2060,26 @@ button.is-primary {
 
 .passage__code {
   margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 5px;
+  border-radius: var(--radius);
   padding: 6px 7px;
   max-height: 220px;
   overflow: auto;
 }
 
 .passage__failure {
-  font-size: 11px;
-  color: #b91c1c;
+  font-size: var(--text-small);
+  color: var(--danger);
 }
 
 .passage__run {
-  font-size: 10px;
+  font-size: var(--text-micro);
   color: var(--faint);
   word-break: break-all;
 }

@@ -15,7 +15,16 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { FlowBandNode, KIND_LABEL, StepNode, StepRunContext, type StepNodeData } from "./StepNode";
+import {
+  FlowBandNode,
+  KIND_LABEL,
+  StepNode,
+  STATE_COLOR,
+  StepRunContext,
+  StepUsageContext,
+  type StepNodeData,
+} from "./StepNode";
+import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas } from "./BlankCanvas";
 import { StepEditor } from "./StepEditor";
@@ -424,6 +433,19 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watching, executions.get(watching ?? "")?.status, executions.size]);
+
+  /**
+   * La spesa per passo della corsa guardata, pronta per i nodi.
+   *
+   * Le chiamate portano lo `step_id` ma non il flusso: lo mette qui chi sa
+   * quale corsa si sta guardando, perché la chiave dei nodi è `flusso::passo` e
+   * `verifica` esiste in più flussi.
+   */
+  const stepUsage = useMemo(() => {
+    const watchedRun = watching ? executions.get(watching) : undefined;
+    if (!watchedRun) return new Map<string, StepUsage>();
+    return stepUsageOfRun(usage, watchedRun.flow);
+  }, [usage, watching, executions]);
 
   /** La corsa più recente di un flusso: è quella che chi guarda intende. */
   const latestByFlow = useMemo(() => {
@@ -974,6 +996,7 @@ export default function App() {
 
       <RunContext.Provider value={controls}>
       <StepRunContext.Provider value={stepStates}>
+      <StepUsageContext.Provider value={stepUsage}>
       <div className="body">
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
@@ -1063,7 +1086,20 @@ export default function App() {
           >
             <Background gap={20} />
             <Controls />
-            <MiniMap pannable zoomable />
+            {/* LA MINIMAPPA DICE DOVE GUARDARE, non «c'è della roba». Era un
+                blocco grigio uniforme: adesso ogni passo ci sta con la tinta
+                del proprio stato, così un guasto in fondo a un flusso fuori
+                schermo si vede senza scorrere. */}
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={(node) => {
+                if (node.type !== "step") return "#d8d7ce";
+                const data = node.data as StepNodeData;
+                const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
+                return STATE_COLOR[state ?? "waiting"];
+              }}
+            />
           </ReactFlow>
 
           {/* Una tela senza flussi non resta muta: dice cos'è un flusso e offre
@@ -1144,6 +1180,7 @@ export default function App() {
           onClose={() => setWatching(null)}
         />
       )}
+      </StepUsageContext.Provider>
       </StepRunContext.Provider>
       </RunContext.Provider>
     </div>
