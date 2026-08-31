@@ -9,7 +9,7 @@ use flow::{
     ActionRegistry, Decision, Execution, ExecutionRequest, Executor, FlowFile, Graph,
     InProcessExecutor, RecordStore, SharedState, SystemClock,
 };
-use ledger::{Ledger, RunRecord};
+use ledger::Ledger;
 use serde_json::Value;
 use ui::gather::FlowSource;
 use std::collections::BTreeSet;
@@ -566,6 +566,13 @@ fn execution_status(execution: &Execution) -> (&'static str, bool) {
     }
 }
 
+/// Registra l'intestazione della corsa.
+///
+/// **IL CORPO STA IN `registry`, E NON PER ELEGANZA.** Queste venti righe erano
+/// scritte anche nel guscio della finestra, con un commento che lo dichiarava.
+/// Fino al 31/08/2026 tutte e due scrivevano `total_cost_micros: 0` a mano su
+/// un campo che la finestra mostra: riparare una sola delle due avrebbe dato
+/// due totali diversi per la stessa corsa a seconda di chi l'aveva lanciata.
 fn record_run(
     ledger: &Ledger,
     flow: &FlowFile,
@@ -575,20 +582,18 @@ fn record_run(
     ended_at: Option<i64>,
     error: Option<String>,
 ) -> Result<(), String> {
-    ledger
-        .record_run(&RunRecord {
-            run_id: run_id.to_owned(),
-            kind: "flow".to_owned(),
-            entity: flow.id.clone(),
-            parent_run_id: None,
-            started_by: "sailor flow".to_owned(),
-            status: status.to_owned(),
-            total_cost_micros: 0,
-            error,
+    registry::record_flow_run(
+        ledger,
+        flow,
+        registry::FlowRun {
+            run_id,
+            status,
             started_at,
             ended_at,
-        })
-        .map_err(|error| format!("non riesco a registrare la corsa {run_id}: {error}"))
+            error,
+            started_by: "sailor flow",
+        },
+    )
 }
 
 /// Il registro delle azioni sta in `crates/registry`, e ci sta per una ragione
@@ -1281,5 +1286,72 @@ mod tests {
             assert!(report.contains(name), "manca «{name}» in:\n{report}");
         }
         assert!(report.contains("di sistema"), "{report}");
+    }
+
+    /// **IL TOTALE DI UNA CORSA È QUELLO DELLE SUE CHIAMATE, NON UNO ZERO.**
+    /// Il difetto che questa prova esiste per prendere ha vissuto in silenzio
+    /// finché il costo delle chiamate non è diventato vero: `record_run`
+    /// scriveva `total_cost_micros: 0` a mano, e la finestra mostrava quello
+    /// zero accanto alla somma giusta calcolata altrove.
+    #[test]
+    fn a_runs_total_is_what_its_calls_cost() {
+        let directory = TestDirectory::new();
+        let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+        let flow: FlowFile = serde_json::from_str(&flow_json("shell_check", "[]", "{}"))
+            .expect("caricare il flusso");
+        for (call_id, cost) in [("prima", 96_310), ("seconda", 3_690)] {
+            ledger
+                .record_model_call(&spent_call(call_id, "corsa-costosa", cost))
+                .expect("registrare la chiamata");
+        }
+
+        record_run(&ledger, &flow, "corsa-costosa", "complete", 100, Some(110), None)
+            .expect("registrare la corsa");
+
+        let dump = ledger.projection_dump().expect("leggere la proiezione");
+        let run = dump["runs"]
+            .as_array()
+            .expect("l'elenco delle corse c'è")
+            .iter()
+            .find(|row| row[0] == "corsa-costosa")
+            .expect("la corsa registrata si ritrova");
+        assert_eq!(
+            run[6],
+            serde_json::json!(100_000),
+            "il totale è la somma delle due chiamate, non uno zero scritto a mano"
+        );
+    }
+
+    /// Una chiamata già costata, per misurare il totale di una corsa.
+    fn spent_call(call_id: &str, run_id: &str, cost: i64) -> ledger::ModelCallRecord {
+        ledger::ModelCallRecord {
+            call_id: call_id.to_owned(),
+            run_id: run_id.to_owned(),
+            step_id: Some("chiedi".to_owned()),
+            purpose: "external_engine".to_owned(),
+            cli: "claude-code".to_owned(),
+            requested_model: String::new(),
+            actual_model: String::new(),
+            input_tokens: Some(2),
+            output_tokens: Some(4),
+            cached_tokens: None,
+            cache_write_tokens: None,
+            cache_write_long_tokens: None,
+            total_tokens: None,
+            cost_micros: Some(cost),
+            declared_cost_micros: None,
+            price_currency: None,
+            input_price_micros_per_million: None,
+            output_price_micros_per_million: None,
+            cached_price_micros_per_million: None,
+            cache_write_price_micros_per_million: None,
+            cache_write_long_price_micros_per_million: None,
+            mandate_name: String::new(),
+            mandate_version: String::new(),
+            retry_chain: vec![],
+            error_type: None,
+            started_at: 100,
+            ended_at: Some(105),
+        }
     }
 }
