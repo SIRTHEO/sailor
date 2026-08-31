@@ -1,53 +1,25 @@
-//! Prova end-to-end: la rotta `/api/inventory` sul vero servitore HTTP,
-//! su un socket vero — sulla falsariga di `dashboard_with_a_real_ledger.rs`.
+//! La forma con cui il censimento della macchina arriva a chi guarda.
+//!
+//! **ERA UNA PROVA SU UN SOCKET, ADESSO E' UNA PROVA SULLA FORMA.** Fino al
+//! 31/08/2026 questa apriva `127.0.0.1` e chiedeva `/api/inventory`. Il
+//! servitore non c'e' piu' — la finestra chiama `machine_inventory` — ma cio'
+//! che la prova difendeva non era il trasporto: era che ogni voce dichiari un
+//! genere noto, un nome, un'origine, e che chi non e' raggiungibile porti il
+//! motivo scritto. Senza quel motivo, «spenta» e' una parola che non si puo'
+//! correggere.
 //!
 //! Le radici sono quelle vere di questa macchina (`$HOME`), non un deposito
 //! finto: l'inventario non ha un punto di iniezione, e verificarne la forma
 //! non richiede contarne il contenuto esatto.
 
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-
-fn temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("ui-crate-test-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
-}
-
-fn get(path: &Path, target: &str) -> serde_json::Value {
-    let state = std::sync::Arc::new(ui::server::ServerState {
-        ledger_dir: path.to_path_buf(),
-        flows: Default::default(),
-    });
-
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind su una porta libera");
-    let addr = listener.local_addr().expect("indirizzo assegnato dal sistema");
-    let acceptor = listener.try_clone().expect("duplicare il listener");
-    let accepted = std::thread::spawn(move || acceptor.accept().expect("connessione in arrivo"));
-
-    let mut client = std::net::TcpStream::connect(addr).expect("connessione al servitore");
-    client
-        .write_all(format!("GET {target} HTTP/1.1\r\nHost: localhost\r\n\r\n").as_bytes())
-        .expect("richiesta inviata");
-
-    let (connection, _) = accepted.join().expect("il thread di ascolto non è andato in panico");
-    let handler =
-        std::thread::spawn(move || ui::server::handle_connection(connection, &state).expect("risposta scritta"));
-
-    let mut response = String::new();
-    client.read_to_string(&mut response).expect("risposta letta fino alla chiusura");
-    handler.join().expect("il servitore ha risposto senza andare in panico");
-
-    assert!(response.starts_with("HTTP/1.1 200"), "risposta inattesa: {response}");
-    let body_start = response.find("\r\n\r\n").expect("separatore fra intestazioni e corpo") + 4;
-    serde_json::from_str(&response[body_start..]).expect("corpo JSON valido")
+fn census() -> serde_json::Value {
+    let found = inventory::collect(&inventory::default_roots());
+    serde_json::to_value(&found).expect("il censimento si serializza")
 }
 
 #[test]
-fn the_inventory_route_answers_with_the_shape_the_page_expects() {
-    let dir = temp_dir("inventory");
-    let body = get(&dir, "/api/inventory");
+fn the_census_answers_with_the_shape_the_window_reads() {
+    let body = census();
 
     let entries = body["entries"].as_array().expect("array di voci");
     let roots = body["roots"].as_array().expect("array di radici");
@@ -82,6 +54,4 @@ fn the_inventory_route_answers_with_the_shape_the_page_expects() {
     // superare in modo assurdo il numero di voci trovate — è solo una difesa
     // contro un errore grossolano di lettura, non un valore atteso preciso.
     assert!(stale < 1_000_000, "numero di copie in cache implausibile: {stale}");
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
