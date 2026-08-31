@@ -238,3 +238,65 @@ trovare, un passaggio dopo, il buco che il flusso stesso si era lasciato dentro.
 Nessuno di questi tre punti è stato provato. Sono la lista da cui partire, e il
 modo di sapere se hanno funzionato è rifare questa misura — che adesso si fa con
 due comandi.
+
+## Il punto 1, provato: la riscoperta cala, la spesa no
+
+**31/08/2026, sera.** Il punto 1 è stato costruito — un passo può **ramificare**
+la sessione di un altro invece di riaprire un processo che non sa niente — ed è
+stato misurato. Il risultato non è quello che la lista prometteva, e va scritto
+com'è.
+
+**Il disegno.** Due flussi gemelli, `esamina-la-repo-ramificando` e
+`esamina-la-repo-riscoprendo`: gli stessi quattro mandati parola per parola, lo
+stesso albero, lo stesso motore. L'unica differenza è che nel primo i tre passi
+indipendenti dichiarano `{"fork": "scopri"}`. Il motore è `codex`, perché è
+l'unico dei quattro installati su cui il giro completo si è potuto verificare —
+`claude --print --session-id` accetta l'identificativo e lo ridichiara
+nell'uscita, ma su questa macchina non scrive nessun file di sessione, e il
+`--resume` dopo risponde «No conversation found».
+
+**I numeri, due giri per lato, in token dichiarati da `codex`:**
+
+| | scopri | struttura | rischi | attrito | totale |
+|---|---:|---:|---:|---:|---:|
+| riscoprendo, 1º giro | 32.519 | 40.861 | 57.103 | 32.365 | **162.848** |
+| ramificando, 1º giro | 23.912 | 33.106 | 39.627 | 15.976 | **112.621** |
+| riscoprendo, 2º giro | 32.505 | 28.132 | 32.548 | 24.413 | **117.598** |
+| ramificando, 2º giro | 43.691 | 27.192 | 47.311 | 47.168 | **165.362** |
+
+**280.446 contro 277.983: nessuna differenza.** Lo 0,9% che separa i due totali
+è più piccolo della distanza fra i due giri dello stesso lato — il passo
+`scopri`, mandato identico e albero identico, è costato 23.912 token una volta e
+43.691 un'altra, cioè 1,83 volte. **La varianza di questo motore su un ingresso
+fermo è più grande dell'effetto che si voleva misurare**, ed è il terzo dei tre
+modi di mentire elencati in cima a questo documento: un campione per lato non
+vale, e due nemmeno.
+
+**Ma una cosa si vede, e non è ambigua: quanti comandi ha eseguito ogni passo
+per riscoprire l'albero.**
+
+| | struttura | rischi | attrito | totale |
+|---|---:|---:|---:|---:|
+| riscoprendo, i due giri | 2 · 3 | 5 · 2 | 3 · 2 | **17** |
+| ramificando, i due giri | 0 · 0 | 2 · 1 | 0 · 1 | **4** |
+
+Quattro contro diciassette, e nessun passo ramificato ha superato il **minimo**
+dei passi che riscoprono. Un ramo che risponde senza aprire un file ha davvero
+il contesto del tronco: il meccanismo fa quello che dichiara.
+
+**La lettura onesta è questa.** Il gesto funziona — la riscoperta cala del 76% —
+e **il risparmio in token non è osservabile** a questo numero di corse. Le due
+frasi stanno insieme senza contraddirsi: `codex` dichiara un totale unico, senza
+separare ingresso, uscita e cache, quindi il conto che vediamo mescola il
+contesto ereditato (che il ramo paga, ed è grosso) con la riscoperta risparmiata
+(che non paga). Il primo cresce quanto il secondo cala, e il totale non si
+muove.
+
+**Cosa servirebbe per rispondere davvero**, e non è stato fatto: rifare la
+misura su un motore che i due lati li dichiara — `claude`, con `usage` separato
+per cache letta e scritta — dove si vedrebbe se il contesto ereditato arriva
+dalla cache a 0,50 $/M invece che come ingresso fresco a 5,00. È lì che la
+ramificazione o vince o non vince, e su `codex` quella domanda **non si può
+nemmeno formulare**. Finché il giro non si chiude su `claude` su questa
+macchina, il punto 1 resta: *costruito, provato nel meccanismo, non provato nel
+prezzo.*
