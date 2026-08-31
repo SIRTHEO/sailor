@@ -793,9 +793,15 @@ impl DryProbe for RealDryProbe {
         // verdetto che non vale per gli altri passi che nominano lo stesso
         // motore.
         //
-        // Le credenziali mancanti non le riconosce nessun controllo scritto qui:
-        // le dichiara il descrittore in `unusable_when`, e a nominarle è il
-        // motore con le proprie parole. Bastava partire dove partirà la corsa.
+        // **QUESTO NON DICE SE LA CASA È AUTENTICATA, ED È UN LIMITE DELLA
+        // TECNICA.** Il vaglio toglie la domanda apposta, quindi il motore si
+        // ferma sulla domanda mancante e non arriva mai ai controlli che
+        // verrebbero dopo — le credenziali stanno di là. Misurato il
+        // 01/09/2026: `CODEX_HOME=<cartella vuota> codex exec < /dev/null`
+        // risponde «No prompt provided via stdin» ed esce **zero**, identico a
+        // una casa piena. Chi vuole sapere se una casa è autenticata deve
+        // guardare la casa: qui si chiude solo la divergenza fra il mondo
+        // provato e il mondo in cui si lavora.
         let equipment = current_equipment_for(bin, &BTreeMap::new());
         let result = invoke_external_engine(&EngineInvocation {
             bin: bin.to_owned(),
