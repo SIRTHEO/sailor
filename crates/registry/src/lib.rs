@@ -1,4 +1,9 @@
-//! Quali azioni sa eseguire Sailor, in un posto solo.
+//! Ciò che la riga di comando e la finestra devono fare allo stesso modo.
+//!
+//! Due cose, oggi: **quali azioni** Sailor sa eseguire, e **come si registra
+//! l'intestazione di una corsa**. Sono entrambe arrivate qui per la stessa
+//! strada — erano scritte due volte e si sono disallineate — e chi ne trova una
+//! terza la porti qui invece di ricopiarla.
 //!
 //! **PERCHÉ QUESTO CRATE ESISTE.** Questa lista viveva in due copie: una nel
 //! comando `sailor flow run`, una nel guscio della finestra. Le due si sono
@@ -12,6 +17,10 @@
 //! nessun modo di accorgersene se non provandoli tutti e due.
 //!
 //! Chi aggiunge un'azione la aggiunge qui, e la trovano tutti.
+
+mod run_record;
+
+pub use run_record::{record_flow_run, FlowRun};
 
 use std::sync::Arc;
 

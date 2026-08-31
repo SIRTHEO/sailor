@@ -40,6 +40,7 @@ qualcuno.** Una voce senza la colonna «cosa lo impedirebbe» non è finita.
 | 19 | 30/08 | La casa di Sailor era **in due posti**: chi cercava deposito e listino risolveva `~/.config/sailor`, chi cercava i descrittori dell'utente `~/.sailor`, e la documentazione spedita mandava tutti nella seconda | Scrivendoci dentro il listino dei prezzi seguendo la documentazione, e vedendo che nessuno lo leggeva | Una funzione sola che dice dove sta la casa, e i chiamanti che la chiedono invece di riscriverla. Le due copie sbagliavano **insieme**, quindi si confermavano a vicenda | **chiuso** — con mutante |
 | 20 | 30/08 | Un `with` che nomina un campo inesistente viene **ignorato in silenzio**: il passo parte, il motore riceve una riga di comando monca, e l'errore che arriva è suo | Scrivendo `prompt` invece di `stdin` in un flusso di prova. Il messaggio era «Input must be provided either through stdin» — di Claude, non di Sailor | Un campo sconosciuto in un `with` è un avviso su quel campo, non silenzio: è il guasto 8 visto dall'altro lato, e `flow check` è il posto dove dirlo prima di spendere | **aperto** |
 | 21 | 30/08 | Le prove di `profiles` si rubavano la cartella temporanea a vicenda: **una esecuzione su venti falliva**, ogni volta su una prova diversa | Eseguendo la batteria molte volte di fila. Misurato: 1 su 20 prima, 0 su 50 dopo | Un contatore che cresce nel nome, invece del solo orologio: `cargo test` manda le prove sullo stesso processo e l'orologio di macOS non ha la risoluzione del nanosecondo | **chiuso** — misurato prima e dopo |
+| 22 | 31/08 | Il costo totale di una corsa era la **costante `0`**, scritta a mano in due punti, mentre le sue chiamate portavano il costo giusto una per una. La finestra mostrava lo zero accanto alla somma vera | Cercando su quale numero appoggiare un tetto di spesa. Era già registrato in `docs/da-fare.md` dal 29/08 — «costo totale sulle 16 corse: 0 su tutte» — e nessuno l'aveva letto come un guasto | Un totale non si dichiara: si chiede a chi tiene le righe. E le due copie di quella scrittura diventano una, nel crate che le due strade condividono già | **chiuso** — con mutante |
 
 ## Cosa dice questa tabella, letta tutta insieme
 
@@ -48,10 +49,18 @@ dai tipi, non dalle prove: cronometrando, aprendo il deposito, facendo uno
 screenshot, controllando il peso di una cartella. È la ragione per cui una prova
 che non poteva venire diversa non è una prova.
 
-**Undici sono ancora aperti** su ventuno, e tre di quelli (4, 10, 11) sono la stessa
+**Undici sono ancora aperti** su ventidue, e tre di quelli (4, 10, 11) sono la stessa
 cosa vista da tre lati: **il sistema non sa cosa sta facendo di sé** — quali
 processi ha avviato, quante copie ha della stessa verità, se ciò che dichiara
 corrisponde a ciò che fa.
+
+**Il ventiduesimo era già scritto, e non contava come guasto.** Il numero «costo
+totale sulle 16 corse: 0 su tutte» stava in `docs/da-fare.md` dal 29/08, in una
+tabella di stato del deposito. Nessuno l'ha letto come un difetto finché non è
+servito appoggiarci sopra una decisione: uno zero in una colonna di misure
+sembra un sistema che non ha ancora speso, non un sistema che non sa contare. Un
+dato mancante si traveste da dato tranquillo, e l'unico modo per smascherarlo è
+provare a usarlo per decidere qualcosa.
 
 **Nessuno è stato trovato da un controllo automatico.** Tutti da una persona che
 guardava. Questo è il numero che deve cambiare.
