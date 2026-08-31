@@ -37,9 +37,44 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command] if command == "list" => list_flows(sources),
         [command] if command == "due" => due_flows(sources),
         [command, name] if command == "check" => check_flow(sources, name),
-        [command, name] if command == "run" => run_flow(sources, name),
+        [command, name] if command == "run" => run_flow(sources, name, None),
+        [command, name, text] if command == "run" => run_flow(sources, name, Some(text)),
         [command, name] if command == "cost" => cost_of(name),
         _ => Err(usage()),
+    }
+}
+
+/// Mette il mandato nell'ingresso del passo di innesco.
+///
+/// Il passo si riconosce dall'**azione** che nomina, non dal suo identificativo:
+/// un flusso può chiamare il proprio innesco come vuole, e cercare un passo di
+/// nome «trigger» funzionerebbe solo su quelli scritti finora.
+fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
+    let trigger = flow
+        .graph
+        .steps()
+        .iter()
+        .find(|step| step.action == "trigger")
+        .map(|step| step.id.clone())
+        .ok_or_else(|| {
+            format!(
+                "il flusso {} non ha un passo di innesco: non c'è dove mettere un mandato",
+                flow.id
+            )
+        })?;
+    let entry = flow
+        .inputs
+        .entry(trigger)
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    match entry {
+        Value::Object(fields) => {
+            fields.insert("text".to_owned(), Value::String(text.to_owned()));
+            Ok(())
+        }
+        other => Err(format!(
+            "l'ingresso dell'innesco di {} non è un oggetto ma {other}: non so dove mettere il testo",
+            flow.id
+        )),
     }
 }
 
@@ -173,7 +208,7 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 }
 
 fn usage() -> String {
-    "uso: sailor flow <list|due|check <nome>|run <nome>|cost <nome>>".to_owned()
+    "uso: sailor flow <list|due|check <nome>|run <nome> [mandato]|cost <nome>>".to_owned()
 }
 
 /// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
@@ -576,8 +611,25 @@ impl actions::StepSinks for TerminalWatcher {
     }
 }
 
-fn run_flow(sources: &[FlowSource], name: &str) -> Result<String, String> {
-    let (flow, _) = one_flow(sources, name)?;
+/// Esegue un flusso, con un mandato facoltativo che entra dall'innesco.
+///
+/// **PERCHÉ IL MANDATO SI PASSA E NON SI SCRIVE NEL FILE.** Il 31/08/2026, per
+/// misurare quanto consuma un flusso rispetto a un prompt solo, serviva dare a
+/// tutti e due lo stesso identico incarico. Dalla riga di comando non si poteva:
+/// l'unico modo era riscrivere il `.flow.json` a mano prima di ogni corsa —
+/// esattamente il guasto 15, «Sailor non ha nessun comando per operare sui
+/// propri flussi, quindi chi ci lavora lo aggira». Un flusso il cui incarico si
+/// cambia modificando il file non si può nemmeno lanciare due volte di seguito
+/// con due incarichi diversi.
+///
+/// Il testo sostituisce il campo `text` dell'ingresso del passo di innesco, che
+/// è dove i flussi già lo mettono. Un flusso senza innesco lo rifiuta dicendolo,
+/// invece di ignorarlo in silenzio — che sarebbe il guasto 20 su un'altra porta.
+fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>) -> Result<String, String> {
+    let (mut flow, _) = one_flow(sources, name)?;
+    if let Some(text) = mandate {
+        put_mandate(&mut flow, text)?;
+    }
     // IL DEPOSITO PRIMA DEL REGISTRO, e non è un dettaglio d'ordine: i nodi
     // `store_write`/`store_read` lo possiedono, quindi un registro costruito
     // prima non li avrebbe e dichiarerebbe mancanti due azioni che esistono.
@@ -844,6 +896,49 @@ mod tests {
                 "inputs": {inputs}
             }}"#
         )
+    }
+
+    // ── il mandato che entra dall'innesco ────────────────────────────
+
+    /// **LO STESSO FLUSSO CON DUE MANDATI DIVERSI, SENZA TOCCARE IL FILE.**
+    /// Prima l'unico modo era riscrivere il `.flow.json`, quindi due corse di
+    /// seguito con due incarichi diversi non erano possibili — ed è il difetto
+    /// che ha reso impossibile misurare un flusso contro un prompt.
+    #[test]
+    fn a_mandate_from_the_command_line_reaches_the_trigger() {
+        let json = r#"{
+            "id": "prova", "description": "flusso con innesco",
+            "graph": {"steps": [{
+                "id": "innesco", "deps": [], "action": "trigger", "max_attempts": 1,
+                "when": null, "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
+            }]},
+            "inputs": {"innesco": {"source": "manual", "text": "quello di prima"}}
+        }"#;
+        let mut flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+
+        put_mandate(&mut flow, "il lavoro di adesso").expect("il mandato entra");
+
+        assert_eq!(flow.inputs["innesco"]["text"], "il lavoro di adesso");
+        assert_eq!(
+            flow.inputs["innesco"]["source"], "manual",
+            "e non porta via il resto dell'ingresso"
+        );
+    }
+
+    /// Un flusso senza innesco **rifiuta** il mandato invece di ingoiarlo: un
+    /// incarico che non arriva da nessuna parte farebbe girare il flusso su
+    /// tutt'altro, e chi lo ha scritto crederebbe di averlo indirizzato.
+    #[test]
+    fn a_flow_without_a_trigger_refuses_the_mandate() {
+        let json = flow_json("shell_check", "[]", "{}");
+        let mut flow: FlowFile = serde_json::from_str(&json).expect("caricare il flusso");
+
+        let refused = put_mandate(&mut flow, "un incarico").expect_err("non deve accettarlo");
+
+        assert!(
+            refused.contains("non ha un passo di innesco"),
+            "e dice perché: {refused}"
+        );
     }
 
     // ── i campi che l'azione non conosce ─────────────────────────────
