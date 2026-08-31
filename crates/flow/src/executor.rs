@@ -38,6 +38,25 @@ pub const CURRENT_STEP: &str = "flow.step";
 /// sovrascritto a ogni passo.
 pub const CURRENT_RUN: &str = "flow.run";
 
+/// La chiave sotto cui **chi lancia** scrive la radice del progetto.
+///
+/// **PERCHÉ LO STATO CONDIVISO E NON UN RINVIO NEL FLUSSO.** Un `{"$root": …}`
+/// dovrebbe passare da `resolve_references`, che il guasto 28 ha misurato
+/// essere chiamata da due azioni su nove: le altre sette riceverebbero la
+/// radice come un oggetto e morirebbero, o peggio la scriverebbero letterale.
+/// Lo stato condiviso arriva a **ogni** `Action::execute` per costruzione,
+/// comprese le azioni che nessuno ha ancora scritto.
+///
+/// **PERCHÉ IL PREFISSO NON È `flow.`.** Quello è dell'esecutore, che scrive
+/// passo e corsa a ogni giro. Questa non la scrive l'esecutore: la porta chi
+/// lancia, prima che la corsa cominci, e resta la stessa per tutta la corsa.
+/// Due prefissi diversi dicono a chi legge chi è il proprietario del dato.
+///
+/// **ASSENTE VUOL DIRE ASSENTE.** Nessun ripiego sulla cartella del processo:
+/// è il guasto 25: un flusso che lavora dove capita senza dirlo fa danno
+/// invece di fallire.
+pub const WORKSPACE_ROOT: &str = "workspace.root";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
