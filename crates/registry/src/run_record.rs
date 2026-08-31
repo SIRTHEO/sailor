@@ -47,6 +47,14 @@ pub fn execution_status(execution: &Execution) -> (&'static str, bool) {
 /// qualche chiamata non ne aveva uno, la frase lo porta — la spesa vera è più
 /// alta di quella scritta, e chi sta per alzare il tetto e rilanciare deve
 /// saperlo prima, non dopo.
+///
+/// **E DICE CHE COS'È LA CIFRA.** «spesi 5,00 su un tetto di 5,00» fa credere
+/// che sia stata fermata una fattura, e non lo è: con una riga di comando
+/// locale non si paga a chiamata, si paga un abbonamento, e quello che si
+/// consuma è quota. La cifra in valuta è quanto sarebbe costato via API — un
+/// metro per confrontare. `sailor flow cost` lo scriveva già sulla propria riga
+/// del costo; qui mancava, e lo stesso numero si leggeva in due modi diversi a
+/// seconda di quale comando lo mostrava.
 pub fn why_it_stopped(stop: &SpendStop) -> String {
     let unknown = if stop.spent.is_complete() {
         String::new()
@@ -57,7 +65,8 @@ pub fn why_it_stopped(stop: &SpendStop) -> String {
         )
     };
     format!(
-        "fermata dal tetto di spesa: {} spesi su un tetto di {}{unknown}. Passi non partiti: {}",
+        "fermata dal tetto di spesa: {} su un tetto di {}, in costo equivalente \
+         (quanto sarebbe costato via API, non una spesa){unknown}. Passi non partiti: {}",
         in_units(stop.spent.micros),
         in_units(stop.cap_micros),
         if stop.not_started.is_empty() {
@@ -146,4 +155,95 @@ pub fn record_flow_run(ledger: &Ledger, flow: &FlowFile, run: FlowRun<'_>) -> Re
                 run.run_id
             )
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flow::Spend;
+
+    fn stopped_at(cap: i64, spent: Spend, not_started: Vec<String>) -> SpendStop {
+        SpendStop {
+            cap_micros: cap,
+            spent,
+            not_started,
+        }
+    }
+
+    /// **LA CIFRA È UN COSTO EQUIVALENTE, NON UNA FATTURA, E LA FRASE LO DICE.**
+    ///
+    /// «spesi 5,00 su un tetto di 5,00» fa credere che sia stata fermata una
+    /// spesa vera. Con una riga di comando locale non si paga a chiamata: si
+    /// paga un abbonamento, e quello che si consuma è **quota**. La cifra in
+    /// valuta è quanto sarebbe costato via API — un metro per confrontare, non
+    /// un addebito. È la stessa regola che `sailor flow cost` applica già alla
+    /// propria riga del costo, e che qui mancava: due posti che mostrano lo
+    /// stesso numero con due significati diversi sono due lettori che decidono
+    /// su cose diverse credendo di guardare la stessa.
+    #[test]
+    fn the_reason_calls_the_figure_an_equivalent_cost_and_not_a_bill() {
+        let said = why_it_stopped(&stopped_at(
+            5_000_000,
+            Spend {
+                micros: 5_000_000,
+                calls: 2,
+                calls_without_cost: 0,
+                dearest_micros: Some(3_000_000),
+            },
+            vec!["verifica".to_owned()],
+        ));
+
+        assert!(
+            said.contains("costo equivalente"),
+            "la frase deve dire che cifra è: {said}"
+        );
+        assert!(said.contains("5.00"), "e portare il numero: {said}");
+        assert!(
+            said.contains("verifica"),
+            "e dire quale passo non è partito: {said}"
+        );
+    }
+
+    /// **QUELLO CHE NON SI SA STA NELLA STESSA FRASE.** Chi sta per alzare il
+    /// tetto e rilanciare deve sapere che la spesa vera è più alta di quella
+    /// contata, e saperlo prima di rilanciare, non dopo.
+    #[test]
+    fn what_the_count_is_missing_is_said_in_the_same_sentence() {
+        let said = why_it_stopped(&stopped_at(
+            100,
+            Spend {
+                micros: 150,
+                calls: 3,
+                calls_without_cost: 2,
+                dearest_micros: Some(150),
+            },
+            vec![],
+        ));
+
+        assert!(said.contains("2 delle 3 chiamate"), "{said}");
+        assert!(said.contains("più alta"), "{said}");
+        assert!(
+            said.contains("nessuno"),
+            "e un fronte vuoto si dice, invece di lasciare la riga monca: {said}"
+        );
+    }
+
+    /// La gemella: un conto completo non deve portarsi dietro l'avviso. Senza
+    /// di lei un avviso sempre acceso passerebbe la prova sopra, e un avviso
+    /// sempre acceso non lo legge nessuno.
+    #[test]
+    fn a_complete_count_carries_no_warning() {
+        let said = why_it_stopped(&stopped_at(
+            100,
+            Spend {
+                micros: 150,
+                calls: 1,
+                calls_without_cost: 0,
+                dearest_micros: Some(150),
+            },
+            vec![],
+        ));
+
+        assert!(!said.contains("più alta"), "{said}");
+    }
 }
