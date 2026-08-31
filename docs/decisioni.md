@@ -127,6 +127,54 @@ ancora nessuna capacità: il vocabolario e il controllo che lo interroga esiston
 l'uso no. `needs_capabilities` è dichiarato in `EngineSpec` perché un passo
 onesto non venga accusato di un refuso, e non è letto a esecuzione.
 
+### `flow check` esegue: monta ogni riga di comando e la prova senza la domanda
+**31/08/2026.** Dal guasto 1 in poi la cura scritta accanto a ogni guasto sulle
+righe di comando è la stessa — «una prova che esegue davvero ogni riga di comando
+prima che finisca in un flusso» — ed è rimasta scoperta per tre giorni, perché
+eseguire sembrava voler dire spendere. Non vuol dire. **Un motore invocato con la
+riga vera e senza la domanda non chiama nessun fornitore, e percorre lo stesso
+parsing di argomenti di una chiamata vera**: se la riga è malformata lo dice lì,
+gratis. Da oggi `sailor flow check` monta la riga di ogni motore di ogni catena,
+la esegue senza la domanda, e riporta come sta messa.
+
+**Il verdetto sta nel testo, mai nel codice d'uscita.** Misurato su questa
+macchina: `agy` esce **2** sia quando rifiuta bene («flag needs an argument:
+-print») sia quando la riga è quella malformata del guasto 27 («--print took
+"--output-format" as its prompt»). Una sonda che giudicasse dall'esito avrebbe
+visto i due casi identici e sarebbe passata sopra al guasto 27 — che è
+esattamente ciò che è successo. Per questo il descrittore dichiara
+`ask.refuses_without_prompt`, **le parole del motore**, come già fa per
+`unusable_when`; e per questo `judge_dry_run` non riceve nemmeno il codice
+d'uscita, così non c'è modo di usarlo per sbaglio.
+
+**`--help` è la forma innocua sbagliata.** `agy --mode nonsense-value
+--not-a-real-flag --help` esce **0**: cortocircuita prima di leggere gli
+argomenti, quindi approva un valore invalido e una bandiera inventata. La forma
+giusta è montare la riga vera e non dare la domanda.
+
+**Cambia la natura del comando, e va detto.** `resolver.rs` dichiara che
+risolvere un nome non deve eseguire niente, e resta vero: è il controllo che
+avvia processi, non la risoluzione. `flow check` non è più solo statico — senza
+rete, senza denaro, con un tetto di tempo esplicito, perché su questa macchina
+`timeout` e `gtimeout` non esistono.
+
+**Acceso in modo predefinito, con `--no-engines` per spegnerlo.** Un controllo
+dietro una bandiera è un controllo che nessuno interroga: nessuno avrebbe scritto
+`--engines` per cercare un difetto che non sapeva di avere. Spento, il rapporto
+**tace** invece di dichiarare sane righe che non ha guardato — stessa regola del
+rilevatore assente.
+
+**Cinque esiti, cinque frasi, perché sono cinque riparazioni diverse:** sana;
+rotta (con le parole del motore per intero e la riga montata); non provata (tre
+motivi distinti: il descrittore tace, il motore non è qui, nessuna risposta); non
+montabile (nessun blocco `ask`); non può lavorare adesso. E `unusable_when` si
+legge **prima** di `refuses_without_prompt`: un motore esaurito non è un motore
+rotto, e letto al contrario manderebbe a correggere un descrittore sano.
+
+**Cosa questo non dice.** Che un motore sia stato **chiamato davvero**: quello lo
+sa il deposito, e resta un asse separato. Mescolarli farebbe passare per usato un
+motore che nessuna corsa ha mai nominato — che è il guasto 32.
+
 ### Il potere di un passo: modello Bazel, in osservazione
 **29/08/2026 — Theo.** Un passo dichiara cosa gli serve, e il resto per lui non
 esiste. Il controllo entra come **avviso** e diventa barriera solo con un cambio
