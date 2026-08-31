@@ -52,7 +52,7 @@ import {
 import { MODEL_KEY, type Tool, type ToolDiscovery } from "./tools";
 
 const nodeTypes = { step: StepNode, flowBand: FlowBandNode, trigger: TriggerNode };
-const CASSETTE_KINDS = Object.keys(DEFAULT_ACTION_FOR_KIND) as StepKind[];
+const PALETTE_KINDS = Object.keys(DEFAULT_ACTION_FOR_KIND) as StepKind[];
 
 /** Quanto spazio prende l'innesco a sinistra della sua corsia. */
 const TRIGGER_WIDTH = 240;
@@ -1007,15 +1007,15 @@ export default function App() {
             + Nuovo flusso
           </button>
 
-          <div className="rail__cassette">
+          <div className="rail__palette">
             <div className="rail__title">Cassetta dei passi</div>
             {focusName === null && <p className="rail__hint">scegli un flusso per aggiungere un passo</p>}
-            <div className="cassette__grid">
-              {CASSETTE_KINDS.map((kind) => (
+            <div className="palette__grid">
+              {PALETTE_KINDS.map((kind) => (
                 <button
                   key={kind}
                   type="button"
-                  className="cassette__item"
+                  className="palette__item"
                   disabled={focusName === null}
                   title={focusName ? `aggiungi un passo di tipo «${KIND_LABEL[kind]}»` : "scegli prima un flusso"}
                   onClick={() => focusName && addStep(focusName, kind)}

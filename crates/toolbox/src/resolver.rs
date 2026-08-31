@@ -409,8 +409,8 @@ mod tests {
         // per sempre senza che nessuno se ne accorga.
         let reading = actions::Reading::default();
         let _ = reading;
-        let letto = models_read(&pattern, "roba\ntokens used\n13.910\naltro");
-        assert_eq!(letto, Some(13_910));
+        let read = models_read(&pattern, "roba\ntokens used\n13.910\naltro");
+        assert_eq!(read, Some(13_910));
     }
 
     /// Legge un totale con l'espressione data, passando dalla stessa funzione

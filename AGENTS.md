@@ -57,9 +57,26 @@ Trappole già pagate su questa macchina:
 
 ## Come si scrive
 
-- **Identificatori in inglese** — nomi di funzione, tipi, campi, opzioni.
+- **Identificatori in inglese.** Nomi di funzione, tipi, campi, opzioni,
+  **variabili locali**, **moduli**, **costanti**, **nomi di file e cartelle**,
+  **classi CSS**, **chiavi JSON**. In Rust un file *è* un modulo: il suo nome è
+  un identificatore come gli altri.
+
+  **Questo elenco era più corto, e la differenza è costata 136 rinomine.** Fino
+  al 31/08/2026 diceva «nomi di funzione, tipi, campi, opzioni»: chi scriveva un
+  `let listino` o un file `smista_il_lavoro.rs` non trovava il proprio caso
+  nell'elenco, e la direttiva di sessione — che dice «italiano» senza dire
+  «tranne gli identificatori» — vinceva. Una regola incompleta non è una regola
+  parziale: è un permesso.
+
+  **La misura è `cargo test -p sailor --test identifiers_are_in_english`**, e
+  vale più di questa riga: una regola che nessuno interroga non diventa rossa
+  mai. Chi incontra una parola italiana che il controllo non conosce la aggiunge
+  al suo elenco.
 - **Commenti e messaggi in italiano.** Un commento dice *perché*, non *cosa*: il
-  cosa lo dice il codice.
+  cosa lo dice il codice. Vale anche per i **dati di prova**: `f.name ==
+  "assente"` resta così com'è — è un dato, non un identificatore — mentre la
+  variabile che lo tiene si chiama `absent`.
 - **Scritture solo con gli strumenti di modifica file**, mai con `sed`, heredoc o
   uno script interprete: le scritture da interprete saltano i controlli di casa.
 - **Percorsi assoluti**, mai `cd X && comando`.

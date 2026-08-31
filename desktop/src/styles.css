@@ -313,7 +313,7 @@ button.is-primary {
   border-color: var(--ink);
 }
 
-.rail__cassette {
+.rail__palette {
   margin-top: 18px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
@@ -326,20 +326,20 @@ button.is-primary {
   line-height: 1.4;
 }
 
-.cassette__grid {
+.palette__grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 5px;
   padding: 0 2px;
 }
 
-.cassette__item {
+.palette__item {
   font-size: 11px;
   padding: 7px 4px;
   text-align: center;
 }
 
-.cassette__item:disabled {
+.palette__item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -1337,7 +1337,7 @@ button.is-primary {
    Sta sotto l'intestazione e sopra le righe, perché è un fatto della corsa
    intera e non di un passo. I numeri sono a larghezza fissa: una cifra che
    balla mentre sale è una cifra che non si riesce a leggere. */
-.console__spesa {
+.console__spend {
   flex-shrink: 0;
   display: flex;
   flex-wrap: wrap;
@@ -1351,7 +1351,7 @@ button.is-primary {
   border-bottom: 1px solid var(--line);
 }
 
-.console__spesa-costo {
+.console__spend-cost {
   font-weight: 600;
   font-size: 12.5px;
   color: var(--ink);
@@ -1359,7 +1359,7 @@ button.is-primary {
 
 /* Un totale parziale non si mimetizza col resto: chi legge deve accorgersi
    che la cifra accanto è più bassa del vero. */
-.console__spesa-parziale {
+.console__spend-partial {
   color: #92400e;
   background: #fffbeb;
   border: 1px solid #fde68a;

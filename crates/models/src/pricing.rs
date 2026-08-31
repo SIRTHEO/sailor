@@ -296,10 +296,10 @@ mod tests {
     #[test]
     fn a_missing_price_is_none_never_zero() {
         let prices = PriceList::parse(SAMPLE).unwrap();
-        let voce = prices.find("senza-prezzi").unwrap();
-        assert_eq!(voce.input_per_million, None);
-        assert_eq!(voce.output_per_million, None);
-        assert_eq!(voce.cached_per_million, None);
+        let entry = prices.find("senza-prezzi").unwrap();
+        assert_eq!(entry.input_per_million, None);
+        assert_eq!(entry.output_per_million, None);
+        assert_eq!(entry.cached_per_million, None);
     }
 
     #[test]
@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn a_listino_that_is_not_json_is_an_error_not_an_empty_list() {
+    fn a_price_list_that_is_not_json_is_an_error_not_an_empty_list() {
         assert!(PriceList::parse("non è json").is_err());
     }
 
@@ -412,7 +412,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod l_esempio_spedito {
+mod the_shipped_example {
     use super::*;
 
     /// L'esempio spedito col prodotto deve essere leggibile da questo codice.
@@ -426,16 +426,16 @@ mod l_esempio_spedito {
         assert_eq!(prices.currency, "USD");
         let sonnet = prices.find("sonnet").expect("l'alias funziona");
         assert_eq!(sonnet.id, "claude-sonnet-5");
-        let mille_per_lato = TokenCounts {
+        let a_thousand_each_side = TokenCounts {
             input: Some(1_000),
             output: Some(1_000),
             cached: Some(1_000),
             ..TokenCounts::default()
         };
-        assert!(cost_micros(mille_per_lato, sonnet.micros()).is_some());
+        assert!(cost_micros(a_thousand_each_side, sonnet.micros()).is_some());
         // Un modello davvero gratuito ha 0.0 dichiarato, ed è diverso da un
         // prezzo mancante: il suo costo si calcola e viene zero.
-        let gratis = prices.find("un-modello-gratuito").unwrap();
+        let free = prices.find("un-modello-gratuito").unwrap();
         assert_eq!(
             cost_micros(
                 TokenCounts {
@@ -443,7 +443,7 @@ mod l_esempio_spedito {
                     output: Some(1_000_000),
                     ..TokenCounts::default()
                 },
-                gratis.micros()
+                free.micros()
             ),
             Some(0),
             "zero dichiarato è una misura; zero inventato no"
@@ -471,7 +471,7 @@ mod l_esempio_spedito {
         )
         .unwrap();
         let prices = opus.find("claude-opus-5").unwrap().micros();
-        let misurato = TokenCounts {
+        let measured = TokenCounts {
             input: Some(2),
             output: Some(4),
             cached: Some(9_922),
@@ -479,24 +479,24 @@ mod l_esempio_spedito {
             cache_write_long: Some(12_347),
         };
 
-        let cost = cost_micros(misurato, prices).expect("il conto si fa");
+        let cost = cost_micros(measured, prices).expect("il conto si fa");
         // Il motore aveva dichiarato 0,128541 $: qui vengono 128.541
         // micro-unità, cioè la stessa cifra al micro.
         assert_eq!(cost, 128_541, "il conto nostro combacia con quello del motore");
 
-        let senza_la_scrittura = cost_micros(
+        let without_the_write = cost_micros(
             TokenCounts {
                 cache_write_long: None,
-                ..misurato
+                ..measured
             },
             prices,
         )
         .unwrap();
         // 2 token d'ingresso + 4 d'uscita + 9.922 letti dalla cache = 5.071
         // micro-unità, cioè mezzo centesimo invece di tredici.
-        assert_eq!(senza_la_scrittura, 5_071);
+        assert_eq!(without_the_write, 5_071);
         assert!(
-            cost > senza_la_scrittura * 25,
+            cost > without_the_write * 25,
             "dimenticare la cache scritta sbaglia di oltre venticinque volte"
         );
     }
@@ -507,11 +507,11 @@ mod l_esempio_spedito {
     /// dove un listino vecchio non ha ancora la voce.
     #[test]
     fn a_cache_write_without_its_price_leaves_the_cost_unknown() {
-        let senza_prezzo_di_scrittura = PriceList::parse(
+        let without_write_price = PriceList::parse(
             r#"{"models":[{"id":"x","input_per_million":5.0,"output_per_million":25.0}]}"#,
         )
         .unwrap();
-        let prices = senza_prezzo_di_scrittura.find("x").unwrap().micros();
+        let prices = without_write_price.find("x").unwrap().micros();
         assert_eq!(
             cost_micros(
                 TokenCounts {
