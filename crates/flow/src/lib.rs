@@ -11,15 +11,16 @@ mod graph;
 mod record;
 mod schedule;
 mod schema;
+pub mod subflow;
 pub mod system;
 pub mod workspace;
 
 pub use executor::{
-    attempt_relation, latest_for, same_gates, step_input, Action, ActionError, ActionOutcome,
-    ActionRegistry, Clock, Completion, Decision, EffectStatus, Execution, ExecutionRequest,
-    Executor, FlowError, InMemoryRecordStore, InProcessExecutor, ProcessProbe, Reconciliation,
-    ReconciliationRequest, RecordStore, SharedState, Spend, SpendStop, SystemClock, CURRENT_RUN,
-    CURRENT_STEP, WORKDIR_FIELD, WORKSPACE_ROOT,
+    attempt_relation, latest_for, run_status, same_gates, step_input, Action, ActionError,
+    ActionOutcome, ActionRegistry, Clock, Completion, Decision, EffectStatus, Execution,
+    ExecutionRequest, Executor, FlowError, InMemoryRecordStore, InProcessExecutor, ProcessProbe,
+    Reconciliation, ReconciliationRequest, RecordStore, SharedState, Spend, SpendStop, SystemClock,
+    CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::FlowFile;
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Step};
