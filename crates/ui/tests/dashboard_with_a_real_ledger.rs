@@ -89,6 +89,7 @@ fn seed(dir: &Path) {
             cache_write_tokens: None,
             cache_write_long_tokens: None,
             total_tokens: None,
+            turns: None,
             cost_micros: Some(500),
             declared_cost_micros: None,
             price_currency: Some("USD".into()),

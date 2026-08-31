@@ -93,6 +93,7 @@ fn sample_all(ledger: &Ledger) {
             cache_write_tokens: None,
             cache_write_long_tokens: None,
             total_tokens: None,
+            turns: None,
             cost_micros: Some(21),
             declared_cost_micros: None,
             price_currency: Some("USD".to_owned()),
@@ -1441,6 +1442,7 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         cache_write_tokens: None,
         cache_write_long_tokens: None,
         total_tokens: None,
+        turns: None,
         cost_micros: cost,
         declared_cost_micros: None,
         price_currency: None,
@@ -1748,4 +1750,45 @@ fn a_ledger_that_claims_to_be_current_but_lacks_the_new_columns_is_still_migrate
     let spend = ledger.spent_in_run("run-1").expect("leggere la spesa");
     assert_eq!(spend.micros, 21);
     assert_eq!(spend.calls, 1);
+}
+
+/// **IL DUMP DEVE PORTARE OGNI COLONNA CHE LA TABELLA HA.**
+///
+/// `dump_table` elenca le colonne **a mano**, e chi legge quel dump lo fa **per
+/// posizione**: una colonna aggiunta alla tabella e dimenticata nell'elenco non
+/// rompe niente, non fa fallire nessuna prova, e semplicemente non esiste per
+/// tutto ciò che sta a valle. È successo il 31/08/2026 con `turns`: la colonna
+/// c'era, la migrazione l'aveva creata, la scrittura la riempiva, e `flow cost`
+/// mostrava zero — perché il dump non la chiedeva.
+///
+/// Questa prova non guarda una colonna in particolare: confronta **quante** ne
+/// porta una riga del dump con quante ne ha la tabella. Vale per ogni colonna
+/// che verrà aggiunta dopo, senza che nessuno debba ricordarsi di aggiornarla.
+#[test]
+fn the_dump_carries_every_column_the_table_has() {
+    let directory = TestDirectory::new("dump-columns");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+    ledger
+        .record_model_call(&call_with("call-colonne", Some(7), Some(11)))
+        .expect("registrare una chiamata");
+
+    let dump = ledger.projection_dump().expect("il dump si legge");
+    let row = dump["model_calls"][0]
+        .as_array()
+        .expect("la riga c'è")
+        .len();
+
+    let connection = ledger.lock().expect("la connessione");
+    let mut statement = connection
+        .prepare("SELECT COUNT(*) FROM pragma_table_info('model_calls')")
+        .expect("interrogare la forma della tabella");
+    let columns: i64 = statement
+        .query_row([], |row| row.get(0))
+        .expect("contare le colonne");
+
+    assert_eq!(
+        row as i64, columns,
+        "il dump porta {row} colonne e la tabella ne ha {columns}: quelle che mancano \
+         sono invisibili a tutto ciò che legge il dump, e nessun errore lo dice"
+    );
 }

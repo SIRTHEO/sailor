@@ -1277,6 +1277,10 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         // dichiarato», e la finestra lo mostra come tale.
         requested_model: String::new(),
         actual_model: reading.model.clone().unwrap_or_default(),
+        // I turni arrivano dalla stessa uscita da cui arrivano i token, e
+        // finora venivano buttati via. Sono la quantita' che spiega perche' una
+        // catena di passi costa piu' di una sessione sola.
+        turns: reading.turns,
         input_tokens: reading.input_tokens,
         output_tokens: reading.output_tokens,
         cached_tokens: reading.cached_tokens,
@@ -3378,6 +3382,7 @@ mod what_it_cost {
                     cache_write_tokens: path(&["usage", "cache_creation_input_tokens"]),
                     cache_write_long_tokens: None,
                     total_tokens: None,
+                    turns: None,
                     cost: path(&["total_cost_usd"]),
                     model: path(&["model"]),
                     answer: path(&["result"]),
@@ -3472,6 +3477,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                             started_at: cols.get(19)?.as_i64()?,
                             ended_at: cols.get(20)?.as_i64(),
                             total_tokens: count(21),
+                            turns: count(27),
                             declared_cost_micros: cols.get(22)?.as_i64(),
                         })
                     })

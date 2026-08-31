@@ -127,6 +127,15 @@ fn spending_report(view: &ui::dashboard::ExecutionView) -> String {
         view.run_id, view.entity, view.status, view.steps_total, view.steps_went, view.steps_broke,
         tokens.calls
     );
+    // **I TURNI ACCANTO ALLE CHIAMATE, E NON È UN DETTAGLIO.** Una chiamata a un
+    // motore agentico non è un giro: ne sono decine, e il conto lo fa quel
+    // numero. Misurato il 31/08/2026: una catena di quattro passi legge per
+    // turno l'8% in più di una sessione sola, e consuma il doppio — perché di
+    // turni ne fa il doppio. Chi legge «7 chiamate» senza sapere quanti turni
+    // sono non ha in mano la quantità su cui si interviene.
+    if tokens.turns > 0 {
+        let _ = write!(report, " in {} turni", tokens.turns);
+    }
     let _ = write!(
         report,
         "\ntoken: {} in · {} out · {} letti da cache · {} scritti in cache",
@@ -1624,6 +1633,7 @@ mod tests {
             cache_write_tokens: None,
             cache_write_long_tokens: None,
             total_tokens: None,
+            turns: None,
             cost_micros: Some(cost),
             declared_cost_micros: None,
             price_currency: None,
