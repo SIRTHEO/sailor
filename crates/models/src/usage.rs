@@ -302,6 +302,18 @@ pub struct Declared {
     /// prezzo di scrittura breve su tutto — sbagliando in modo dichiarato.
     pub cache_write_long_tokens: Option<Pointer>,
     pub total_tokens: Option<Pointer>,
+    /// **QUANTI TURNI HA FATTO LA CHIAMATA**, cioè quante volte il modello è
+    /// tornato a parlare dentro una sola invocazione.
+    ///
+    /// **PERCHÉ È UNA VOCE E NON UNA CURIOSITÀ.** Misurato il 31/08/2026: un
+    /// flusso di quattro passi consuma 2,23 volte la cache letta di una sola
+    /// sessione che fa lo stesso lavoro, e fa 2,07 volte i suoi turni — 62
+    /// contro 30. Per turno legge **l'8% in più**, non il doppio. Il costo di
+    /// una catena di passi non è quanto contesto porta ciascuno: è quante volte
+    /// ciascuno ci ripassa sopra. Senza questo numero nel deposito, ogni
+    /// proposta per far costare meno un flusso è una scommessa, perché la cosa
+    /// che decide il conto non è misurata.
+    pub turns: Option<Pointer>,
     /// Il costo che il motore dichiara di suo. Si registra come **confronto**,
     /// mai al posto del conto fatto sul listino locale.
     pub cost: Option<Pointer>,
@@ -344,6 +356,8 @@ pub struct Reading {
     pub cache_write_tokens: Option<u64>,
     pub cache_write_long_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
+    /// Quanti turni ha fatto la chiamata, quando il motore lo dichiara.
+    pub turns: Option<u64>,
     /// Il costo dichiarato dal motore, nella sua unità (di norma USD).
     pub declared_cost: Option<f64>,
     /// Il modello che il motore dice di aver usato.
@@ -382,6 +396,7 @@ fn read_from_json(said: &str, declared: &Declared) -> Reading {
         cache_write_tokens: number(&declared.cache_write_tokens),
         cache_write_long_tokens: number(&declared.cache_write_long_tokens),
         total_tokens: number(&declared.total_tokens),
+        turns: number(&declared.turns),
         declared_cost: walk(&body, declared.cost.as_ref()).and_then(as_money),
         model: read_name(&body, declared.model.as_ref()),
         answer: walk(&body, declared.answer.as_ref()).and_then(as_text),
@@ -417,6 +432,7 @@ fn read_from_text(said: &str, declared: &Declared) -> Reading {
         cache_write_long_tokens: capture(&declared.cache_write_long_tokens)
             .and_then(|text| digits(&text)),
         total_tokens: capture(&declared.total_tokens).and_then(|text| digits(&text)),
+        turns: capture(&declared.turns).and_then(|text| digits(&text)),
         declared_cost: capture(&declared.cost).and_then(|text| text.trim().parse().ok()),
         model: capture(&declared.model),
         answer: capture(&declared.answer),
@@ -521,6 +537,7 @@ mod declared_tests {
             cache_write_tokens: None,
             cache_write_long_tokens: None,
             total_tokens: None,
+            turns: None,
             cost: path(&["total_cost_usd"]),
             model: path(&["model"]),
             answer: path(&["result"]),
