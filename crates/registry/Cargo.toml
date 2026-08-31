@@ -20,3 +20,10 @@ flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
+
+# SOLO PER LE PROVE, e la riga sopra resta vera: il crate spedito non porta
+# nessuna dipendenza esterna propria. Qui serve a costruire l'ingresso di un
+# passo e a rileggere la proiezione del deposito — due cose che si scrivono in
+# JSON perché è in JSON che vivono.
+[dev-dependencies]
+serde_json = { workspace = true }
