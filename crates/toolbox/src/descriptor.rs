@@ -167,6 +167,36 @@ pub struct Ask {
     /// catena finché qualcuno non risponde comunque.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unusable_when: Vec<String>,
+    /// Come questo motore rifiuta la riga **montata senza la domanda**: le
+    /// parole con cui dice «la riga andava bene, mancava solo il testo».
+    ///
+    /// **A COSA SERVE.** È la sola forma innocua di provare una riga di comando
+    /// vera. Un motore invocato senza domanda non chiama nessun fornitore e non
+    /// costa niente, ma percorre lo stesso parsing di argomenti di una chiamata
+    /// vera: se la riga è malformata lo dice qui, gratis, invece di dirlo alla
+    /// prima corsa che si paga. È la cura scritta accanto al guasto 1 e rimasta
+    /// scoperta fino al guasto 27 — **eseguire davvero** la riga composta.
+    ///
+    /// **PERCHÉ È UN DATO E NON UNA REGOLA SCRITTA NEL CODICE.** Perché i
+    /// motori non si somigliano, e la misura del 31/08/2026 su questa macchina
+    /// lo dice in due modi. Primo: ognuno rifiuta con parole sue — «Input must
+    /// be provided either through stdin or as a prompt argument when using
+    /// --print», «No prompt provided via stdin.», «flag needs an argument:
+    /// -print» — e nessuna regola generale le copre tutte e tre senza combaciare
+    /// anche con un fallimento vero. Secondo, ed è il motivo per cui il verdetto
+    /// non può venire dal codice d'uscita: i quattro motori rifiutano con **due
+    /// soli codici** (1 per `claude` e `codex`, 2 per `agy`), e i **due** esiti
+    /// di `agy` che contano — il rifiuto sano e la riga malformata del guasto 27
+    /// — escono **tutti e due 2**. Chi giudicasse dall'esito li vedrebbe uguali,
+    /// e passerebbe sopra al guasto 27 come ci è passato sopra chi l'ha scritto.
+    ///
+    /// **VUOTO VUOL DIRE «NESSUNO HA GUARDATO», MAI «VA BENE».** È la stessa
+    /// distinzione del blocco `capabilities`, applicata alla riga invece che
+    /// alle capacità: un motore che non dichiara come rifiuta non è un motore la
+    /// cui riga è sana — è un motore la cui riga non è stata provata, e chi
+    /// legge il rapporto deve poter distinguere le due cose.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refuses_without_prompt: Vec<String>,
     /// I campi non capiti, per la stessa ragione di `Descriptor::extra`.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -1190,6 +1220,158 @@ mod the_new_field_is_optional {
             agy.descriptor.capability("native_spend_cap"),
             CapabilityState::Absent,
             "misurato con --help il 31/08/2026: agy non ha nessun tetto di spesa suo"
+        );
+    }
+
+    /// **CHI DICE COME SI CHIEDE DICE ANCHE COME RIFIUTA.**
+    ///
+    /// La gemella della prova qui sopra, sul blocco `ask` invece che su
+    /// `capabilities`, e per la stessa ragione: un motore che dichiara come
+    /// gli si fa una domanda ha una riga di comando composta, e una riga
+    /// composta che nessuno ha mai eseguito è esattamente il guasto 1 e il
+    /// guasto 27. Le opzioni erano state lette dalla documentazione, ognuna
+    /// giusta per conto suo, e sbagliate insieme.
+    ///
+    /// **QUESTA PROVA NON PUÒ ESSERE VERDE PER OMISSIONE.** Il campo si riempie
+    /// solo montando la riga vera e guardando cosa risponde il motore: non c'è
+    /// un valore ragionevole da indovinare, e un elenco vuoto la lascia rossa.
+    /// È nata rossa su tutti e tre i motori che hanno un blocco `ask`.
+    #[test]
+    fn every_shipped_engine_that_asks_declares_how_it_refuses_without_a_prompt() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let mut checked = 0;
+        for loaded in catalog.live() {
+            let Some(ask) = loaded.descriptor.ask.as_ref() else {
+                continue;
+            };
+            checked += 1;
+            assert!(
+                !ask.refuses_without_prompt.is_empty(),
+                "«{}» dichiara come gli si fa una domanda ma non come rifiuta la \
+                 riga montata senza domanda: la sua riga di comando non è mai \
+                 stata eseguita, e nessun controllo se ne accorgerebbe. Si \
+                 misura montando la riga e non dando il testo — non costa niente",
+                loaded.descriptor.id
+            );
+            for mark in &ask.refuses_without_prompt {
+                assert!(
+                    !mark.trim().is_empty(),
+                    "«{}» dichiara un frammento vuoto, che combacia con qualunque \
+                     uscita e farebbe passare per sana ogni riga rotta",
+                    loaded.descriptor.id
+                );
+            }
+        }
+        // Senza questa riga la prova sarebbe verde su un catalogo svuotato, che
+        // è il modo più silenzioso di smettere di controllare.
+        assert!(
+            checked >= 3,
+            "solo {checked} motori spediti hanno un blocco `ask`: erano tre il \
+             31/08/2026, e se sono meno qualcuno l'ha tolto"
+        );
+    }
+
+    /// Il nome della capacità che parla di domande secche.
+    const ASKING: &str = "ask_without_interaction";
+
+    /// **CHI HA LA RIGA DICHIARA ANCHE DI AVERLA, E CON LE STESSE OPZIONI.**
+    ///
+    /// Metà del guasto 32, e la metà che oggi regge: `ask` e `capabilities` sono
+    /// due blocchi dello stesso file che rispondono alla stessa domanda — «si
+    /// può interrogare questo motore senza aprirci una conversazione?» — e
+    /// finché nessuno li confronta possono dire cose diverse senza che niente
+    /// diventi rosso.
+    #[test]
+    fn a_shipped_engine_with_an_ask_block_declares_the_capability_with_the_same_options() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        for loaded in catalog.live() {
+            let Some(ask) = loaded.descriptor.ask.as_ref() else {
+                continue;
+            };
+            let id = &loaded.descriptor.id;
+            assert_eq!(
+                loaded.descriptor.capability(ASKING),
+                CapabilityState::Available,
+                "«{id}» dichiara come gli si fa una domanda e poi non dichiara di \
+                 saperne ricevere: due blocchi dello stesso file che si smentiscono"
+            );
+            let declared: Vec<&str> = ask
+                .args
+                .iter()
+                .chain(ask.args_before_prompt.iter())
+                .map(String::as_str)
+                .collect();
+            for form in loaded.descriptor.capabilities[ASKING].forms() {
+                for option in &form.args {
+                    assert!(
+                        declared.contains(&option.as_str()),
+                        "«{id}» dichiara la capacità con «{option}», che nel suo \
+                         blocco `ask` non compare: la riga che si monta davvero è \
+                         quella di `ask`, quindi la capacità sta descrivendo un \
+                         motore che non è questo"
+                    );
+                }
+            }
+        }
+    }
+
+    /// **E CHI DICHIARA DI SAPER RISPONDERE HA UNA RIGA CON CUI GLIELO SI
+    /// CHIEDE.** L'altra metà, e resta rossa: è il guasto 32.
+    ///
+    /// `gemini-cli` dichiara `ask_without_interaction` e non ha nessun blocco
+    /// `ask`. La riga non si compone, nessuna catena lo nomina, e in 23 chiamate
+    /// registrate non è mai stato invocato: una capacità dichiarata che non
+    /// serve a niente somiglia in tutto a una capacità che c'è.
+    ///
+    /// **PERCHÉ `#[ignore]` E NON ROSSA PER SEMPRE.** Perché la cura è scrivere
+    /// quel blocco `ask`, e scriverlo bene oggi non si può: i puntatori del suo
+    /// `usage` non sono misurati, e soprattutto non si sa come `gemini` dichiari
+    /// di essere esaurito — un `ask` senza `unusable_when` lo farebbe entrare
+    /// nelle catene senza ripiego, cioè creerebbe un quarto guasto 31 per
+    /// chiudere il 32. Una batteria rossa per sempre, intanto, spegnerebbe il
+    /// passo `prove` di `sviluppa-sailor` e metterebbe fretta a chi passa: il
+    /// modo più veloce di far tornare il verde sarebbe inventare i due dati che
+    /// mancano.
+    ///
+    /// **IL DEBITO STA DOVE SI LEGGE**: guasto 32 in `docs/guasti-incontrati.md`,
+    /// **aperto**, in una tabella con un controllo suo.
+    #[test]
+    #[ignore = "guasto 32 aperto: gemini-cli dichiara di saper rispondere e non ha blocco `ask`. Non si scrive senza misurare come dichiara di essere esaurito"]
+    fn a_shipped_engine_that_says_it_can_be_asked_has_a_line_to_ask_it_with() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        for loaded in catalog.live() {
+            if loaded.descriptor.capability(ASKING) != CapabilityState::Available {
+                continue;
+            }
+            assert!(
+                loaded.descriptor.ask.is_some(),
+                "«{}» dichiara di saper rispondere a una domanda secca, ma nessuna \
+                 riga si può montare per fargliela: la capacità è vera e inservibile",
+                loaded.descriptor.id
+            );
+        }
+    }
+
+    /// **E NESSUN ALTRO OLTRE A QUELLO GIÀ REGISTRATO**, o un quarto motore muto
+    /// entrerebbe nel prodotto dietro un `#[ignore]` che parla d'altro. Questa
+    /// gira sempre: è ciò che impedisce al guasto 32 di allargarsi in silenzio.
+    #[test]
+    fn no_engine_beyond_the_registered_one_claims_an_ask_it_cannot_compose() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        // `gemini-cli` è il guasto 32, aperto in `docs/guasti-incontrati.md`.
+        let registered = ["gemini-cli"];
+        let unexpected: Vec<String> = catalog
+            .live()
+            .into_iter()
+            .filter(|loaded| loaded.descriptor.capability(ASKING) == CapabilityState::Available)
+            .filter(|loaded| loaded.descriptor.ask.is_none())
+            .map(|loaded| loaded.descriptor.id.clone())
+            .filter(|id| !registered.contains(&id.as_str()))
+            .collect();
+        assert!(
+            unexpected.is_empty(),
+            "questi dichiarano di saper rispondere senza avere una riga da montare, \
+             e non sono il guasto 32 registrato: {unexpected:?}"
         );
     }
 
