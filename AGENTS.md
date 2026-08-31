@@ -77,6 +77,11 @@ Trappole già pagate su questa macchina:
   cosa lo dice il codice. Vale anche per i **dati di prova**: `f.name ==
   "assente"` resta così com'è — è un dato, non un identificatore — mentre la
   variabile che lo tiene si chiama `absent`.
+- **Gli `id` dei flussi e dei passi restano in italiano**, e i nomi dei file
+  `.flow.json` con loro. Il confine è questo: **ciò che il compilatore legge sta
+  in inglese, ciò che il deposito conserva è un dato.** Rinominare un passo
+  farebbe apparire le corse già registrate come passi sconosciuti. Deciso da
+  Theo il 31/08/2026, per esteso in `docs/decisioni.md`.
 - **Scritture solo con gli strumenti di modifica file**, mai con `sed`, heredoc o
   uno script interprete: le scritture da interprete saltano i controlli di casa.
 - **Percorsi assoluti**, mai `cd X && comando`.

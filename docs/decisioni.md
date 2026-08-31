@@ -54,6 +54,25 @@ interroga non diventa rossa mai — è lo stesso difetto del puntatore morto che
 passato per una misura. Chi scrive una regola nuova scrive anche ciò che la
 rende rossa.
 
+### Gli identificativi dei flussi e dei passi restano in italiano
+**31/08/2026 — Theo.** `sviluppa-sailor`, `verdetto`, `implementa`, i nomi dei
+file `.flow.json`: restano come sono. Il confine non è fra codice e dati in
+astratto — è questo: **ciò che il compilatore legge sta in inglese; ciò che il
+deposito conserva è un dato, e i dati non si rinominano per stile.**
+**Perché**, con le due conseguenze che nessun compilatore prende. (1) Il
+deposito ha corse già registrate con quegli `step_id`: un passo `verdetto`
+diventato `verdict` fa apparire il vecchio come sconosciuto e il nuovo come mai
+eseguito, e la ripresa dopo crash non ritrova più i propri passi. (2) La
+decisione «i flussi di sistema stanno dentro il binario» dice che chi ne vuole
+uno diverso ne scrive uno **con lo stesso nome** in casa propria, e vince il
+suo: cambiare il nome spedito farebbe smettere di vincere, **in silenzio**, un
+flusso che qualcuno ha già scritto.
+**Cosa ne discende.** Il controllo `identifiers_are_in_english` non guarda i
+`.flow.json` e non guarderà mai gli `id`: non è una dimenticanza da completare.
+Chi in futuro lo estende ai dati sta rompendo questa decisione, non applicandola.
+Resta l'asimmetria dichiarata: `flows/smista-il-lavoro.flow.json` ha l'id in
+italiano e i passi in inglese, e va bene così — sono tutti e due dati.
+
 ### Il tetto di spesa è del flusso, e la larghezza del fronte ne discende
 **31/08/2026.** Un flusso può dichiarare `spend_cap_micros`: quanto una sua
 corsa può spendere. Prima di aprire ogni fronte l'esecutore chiede al deposito

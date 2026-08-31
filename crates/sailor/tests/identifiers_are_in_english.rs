@@ -18,6 +18,17 @@
 //! `docs/`: lì l'italiano è la regola, non l'eccezione. E i nomi delle *fixture*
 //! dentro le stringhe di prova — `f.name == "assente"` — restano quello che
 //! sono: dati, non identificatori.
+//!
+//! **E NON GUARDA I FLUSSI, PER DECISIONE.** Gli `id` dei flussi e dei passi —
+//! `sviluppa-sailor`, `verdetto` — e i nomi dei file `.flow.json` restano in
+//! italiano: decisione di Theo del 31/08/2026, scritta in `docs/decisioni.md`.
+//! Sono dati che il **deposito conserva**: rinominare un passo farebbe apparire
+//! le corse già registrate come passi sconosciuti, e cambiare il nome di un
+//! flusso spedito farebbe smettere di vincere — in silenzio — il flusso che un
+//! utente ha scritto in casa propria per sostituirlo.
+//!
+//! **Chi estende questo controllo ai `.flow.json` sta rompendo quella
+//! decisione, non completandola.** Non è una dimenticanza.
 
 use std::path::{Path, PathBuf};
 
