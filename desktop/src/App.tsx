@@ -15,7 +15,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { FlowBandNode, KIND_LABEL, StepNode, type StepNodeData } from "./StepNode";
+import { FlowBandNode, KIND_LABEL, StepNode, StepRunContext, type StepNodeData } from "./StepNode";
+import { stepStatesOfCanvas } from "./runstate";
 import { BlankCanvas } from "./BlankCanvas";
 import { StepEditor } from "./StepEditor";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
@@ -529,6 +530,18 @@ export default function App() {
     [source],
   );
 
+  // LO STATO VERO DEI NODI, e non passa di qui sopra apposta.
+  //
+  // `runs` entra nel disegno, quindi ogni suo cambiamento ricostruisce l'elenco
+  // dei nodi — che è la cosa che questa tela non sopporta. Gli stati veri vanno
+  // invece nel valore di un contesto: i nodi restano gli stessi oggetti, e a
+  // ridisegnarsi è solo chi legge il contesto. Chiave `flusso::passo`, perché
+  // fra i flussi veri tre identificativi sono già ripetuti.
+  const stepStates = useMemo(
+    () => stepStatesOfCanvas(executions.values()),
+    [executions],
+  );
+
   const layout = useMemo(() => buildUnifiedLayout(flowList, runs, focusName), [flowList, runs, focusName]);
 
   /**
@@ -960,6 +973,7 @@ export default function App() {
       )}
 
       <RunContext.Provider value={controls}>
+      <StepRunContext.Provider value={stepStates}>
       <div className="body">
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
@@ -1130,6 +1144,7 @@ export default function App() {
           onClose={() => setWatching(null)}
         />
       )}
+      </StepRunContext.Provider>
       </RunContext.Provider>
     </div>
   );
