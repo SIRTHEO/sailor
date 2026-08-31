@@ -285,7 +285,10 @@ Ma ciò che accomuna tutte le scuole è l'unica cosa che conta:
 > nominarla confermerebbe che la risorsa esiste.
 
 **Verificato**: `curl` su un repo privato reale e su uno inventato restituisce
-corpi **byte-identici**.
+corpi **byte-identici**. E GitHub lo dichiara per iscritto nella propria
+documentazione: *«Le richieste che richiedono autenticazione restituiscono in
+alcuni punti `404 Not Found` invece di `403 Forbidden`. Questo per evitare la
+divulgazione accidentale di repository privati a utenti non autorizzati.»*
 
 Da cui la conseguenza operativa: **poiché l'errore non può dire chi sei, il
 sistema deve dirlo sempre, da sé, prima.** È la ragione per cui esistono
