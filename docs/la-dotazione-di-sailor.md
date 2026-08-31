@@ -20,6 +20,22 @@ firma, dal 10/08/2026. Niente competenze, niente server, niente dotazione.
 > descrittori di server MCP puntano dove puntavano. La dotazione esiste; non è
 > ancora *raggiunta*.
 
+> **Aggiornato il 01/09/2026 — metà del paragrafo qui sopra è a sua volta
+> diventata storia.** La sovrapposizione d'ambiente **non** è più chiamata solo
+> da `sailor run`: `actions` dipende da `profiles`, e `ExternalEngineAction` la
+> applica a ogni motore invocato da un passo, **sotto** ciò che il passo
+> dichiara nel proprio `env`. Il profilo risolto finisce anche nella riga del
+> deposito, dove prima si scriveva sempre vuoto. Il legame fra un binario e la
+> sua riga di comando passa dall'**eseguibile** (`profiles::cli_for_executable`),
+> non dall'identificativo del descrittore: a leggere `CLAUDE_CONFIG_DIR` è il
+> binario `claude`, e `claude-code` è il nome che gli dà un catalogo diverso.
+>
+> **Resta vero il resto, ed è la parte che la cura chiedeva per prima:**
+> `~/.config/sailor/equipment/` non viaggia col prodotto — non è versionata, e
+> nessun codice la legge — e i cinque descrittori di server MCP puntano ancora
+> dove puntavano. Il guasto 18 è **chiuso in parte**: la strada c'è, la
+> dotazione da mandarci ancora no.
+
 **Il rilevatore conosce 36 strumenti, e ogni cosa che non sia un eseguibile la
 scopre leggendo la configurazione di un altro programma.** I cinque descrittori
 di server MCP puntano tutti là: `~/.claude.json`, `~/.claude/settings.json`,
