@@ -126,9 +126,18 @@ mod tests {
             a_window("five_hour", 0.5, Some("2026-09-01T03:29:59+00:00")),
             a_window("seven_day", 0.32, None),
         ]);
-        assert!(said.contains("claude-code · five_hour: consumato 50.0%"), "{said}");
-        assert!(said.contains("si azzera il 2026-09-01T03:29:59+00:00"), "{said}");
-        assert!(said.contains("claude-code · seven_day: consumato 32.0%"), "{said}");
+        assert!(
+            said.contains("claude-code · five_hour: consumato 50.0%"),
+            "{said}"
+        );
+        assert!(
+            said.contains("si azzera il 2026-09-01T03:29:59+00:00"),
+            "{said}"
+        );
+        assert!(
+            said.contains("claude-code · seven_day: consumato 32.0%"),
+            "{said}"
+        );
         assert!(
             !said.contains("seven_day: consumato 32.0%, si azzera"),
             "un istante che il fornitore non dice non si inventa: {said}"
