@@ -321,8 +321,12 @@ pub fn save_in(flows_dir: &Path, flow: &FlowFile) -> Result<(), String> {
     let file_name = format!("{id}.flow.json");
     reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
     let target = flows_dir.join(&file_name);
-    let text = serde_json::to_string_pretty(flow)
+    let mut text = serde_json::to_string_pretty(flow)
         .map_err(|error| format!("non riesco a comporre il flusso in JSON: {error}"))?;
+    // Un file di testo finisce con un a-capo: senza, `git diff` lo dichiara su
+    // ogni flusso riscritto, e la riga che qualcuno aggiungerà a mano comparirà
+    // attaccata all'ultima.
+    text.push('\n');
     write_atomically(&target, text.as_bytes())
 }
 
@@ -694,6 +698,46 @@ mod tests {
         save_in(&dir, &flow).expect("riscrittura senza");
 
         assert_eq!(read_back(&dir, "senza-tetto").spend_cap_micros, None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// **UN FILE DI TESTO FINISCE CON UN A-CAPO.**
+    ///
+    /// Senza, `git diff` scrive «\ No newline at end of file» su ogni flusso che
+    /// passa di qui, e la riga successiva che qualcuno aggiungerà a mano
+    /// comparirà attaccata all'ultima. Costa un carattere e si vede subito su
+    /// ogni flusso riscritto da `sailor flow cap`.
+    #[test]
+    fn a_written_flow_ends_with_a_newline() {
+        let dir = scratch("a-capo");
+        save_in(&dir, &a_full_flow("finito-bene")).expect("scrittura");
+
+        let text = fs::read_to_string(dir.join("finito-bene.flow.json")).expect("rileggere");
+
+        assert!(text.ends_with('\n'), "il file non finisce con un a-capo");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// **UN CAMPO CHE NON C'ERA NON DEVE COMPARIRE COME `null`.**
+    ///
+    /// Riscrivere un flusso per cambiargli il tetto non deve aggiungergli righe
+    /// che nessuno ha scritto: `"schedule": null` e `"spend_cap_micros": null`
+    /// non dicono niente che l'assenza non dica già, e riempiono di rumore il
+    /// diff di chi rilegge il proprio flusso dopo il comando. Assente e `null`
+    /// si rileggono uguali — lo prova `clearing_the_cap_writes_no_cap`.
+    #[test]
+    fn a_field_that_was_absent_does_not_come_back_as_null() {
+        let dir = scratch("niente-null");
+        let mut bare = a_full_flow("nudo");
+        bare.schedule = None;
+        bare.spend_cap_micros = None;
+        save_in(&dir, &bare).expect("scrittura");
+
+        let text = fs::read_to_string(dir.join("nudo.flow.json")).expect("rileggere");
+
+        assert!(!text.contains("schedule"), "{text}");
+        assert!(!text.contains("spend_cap_micros"), "{text}");
+        assert_eq!(read_back(&dir, "nudo"), bare, "e si rilegge identico");
         let _ = fs::remove_dir_all(&dir);
     }
 

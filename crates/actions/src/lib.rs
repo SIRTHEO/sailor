@@ -1035,6 +1035,10 @@ impl ExternalEngineAction {
                     prompt: PromptVia::Stdin,
                     unusable_when: Vec::new(),
                     declared_usage: None,
+                    // Un comando scritto a mano non ha un descrittore: non c'è
+                    // niente che dichiari che sia un motore, e infatti la riga
+                    // non si scrive già per via dell'`id` assente.
+                    can_be_asked: false,
                 }],
                 Vec::new(),
             )),
@@ -1078,13 +1082,18 @@ impl ExternalEngineAction {
                     // ha scritte sta dicendo qualcosa di preciso su *questa*
                     // chiamata, e sovrascriverle sarebbe decidere al posto suo.
                     if step_said_args {
+                        let declared = tools.ask_recipe(id);
                         usable.push(Candidate {
                             id: Some(id.clone()),
                             bin,
                             args: spec.args.clone(),
                             prompt: PromptVia::Stdin,
-                            unusable_when: tools
-                                .ask_recipe(id)
+                            // Il descrittore dice se questo strumento è un
+                            // motore, anche quando le opzioni non vengono da
+                            // lui: `git` e `cargo` non dichiarano `ask`, e le
+                            // loro esecuzioni non sono chiamate a un modello.
+                            can_be_asked: declared.is_some(),
+                            unusable_when: declared
                                 .map(|recipe| recipe.unusable_when)
                                 .unwrap_or_default(),
                             // **NIENTE CONSUMO QUANDO LE OPZIONI LE SCRIVE IL
@@ -1109,6 +1118,10 @@ impl ExternalEngineAction {
                             prompt: recipe.prompt,
                             unusable_when: recipe.unusable_when,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
+                            // Siamo dentro il ramo che ha trovato una ricetta
+                            // `ask`: questo strumento è per definizione un
+                            // motore.
+                            can_be_asked: true,
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
@@ -1164,6 +1177,21 @@ struct Candidate {
     /// Dove leggere il consumo nell'uscita di questo motore. `None` quando il
     /// descrittore non lo dichiara, o quando le opzioni le ha scritte il passo.
     declared_usage: Option<Declared>,
+    /// **QUESTO STRUMENTO È UN MOTORE**, cioè il suo descrittore dichiara come
+    /// gli si fa una domanda (`ask`).
+    ///
+    /// Serve a decidere se la sua invocazione va in `model_calls`. `git` e
+    /// `cargo` stanno nel catalogo e si eseguono da un passo come tutti gli
+    /// altri, ma non si interrogano: non consumano quota di nessun
+    /// abbonamento, e contarli fra le chiamate ai modelli falsa ogni totale che
+    /// le somma. **Il criterio è del descrittore e non di un elenco di nomi
+    /// scritto qui**: un elenco a mano invecchia al primo strumento nuovo, e
+    /// nessun controllo lo direbbe.
+    ///
+    /// Resta vero anche quando le opzioni le scrive il passo: un motore
+    /// interrogato a modo proprio è sempre un motore, e la sua riga si scrive —
+    /// col consumo sconosciuto, che è l'informazione giusta.
+    can_be_asked: bool,
 }
 
 // ── quanto è costata una chiamata ────────────────────────────────────────
@@ -1264,6 +1292,18 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         // rendere leggibile.
         return;
     };
+    if !candidate.can_be_asked {
+        // **E NON LO È NEMMENO UNO STRUMENTO CHE NON SI PUÒ INTERROGARE.**
+        // `git` e `cargo` stanno nel catalogo, si eseguono da un passo, e non
+        // consumano quota di nessun abbonamento. Contarli fra le chiamate ai
+        // modelli non è solo rumore: arrivano senza costo, quindi rendono
+        // `Spend::is_complete()` falso su **ogni** corsa vera — misurato il
+        // 31/08/2026 sul deposito di questa macchina, tre righe su ventiquattro
+        // — e la frase d'onestà del tetto («la spesa vera è più alta») si
+        // accende sempre, anche quando non c'è niente di ignoto. Un avviso
+        // sempre acceso non lo legge nessuno, e a perdersi è quello vero.
+        return;
+    }
     let reading = spent.reading;
     let price_list = load_pricing();
     // Il legame col listino passa dal nome che il motore stesso dichiara, non
@@ -3921,10 +3961,60 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert!(calls_in(&dir.join("deposito")).is_empty());
     }
 
+    /// **`cargo` E `git` NON SONO CHIAMATE A UN MODELLO, E IL DEPOSITO NON DEVE
+    /// CONTARLE.**
+    ///
+    /// Misurato sul deposito di questa macchina il 31/08/2026: su ventiquattro
+    /// righe di `model_calls`, due sono `git` e una `cargo`. Nessuna delle tre
+    /// consuma quota di nessun abbonamento, e tutte e tre arrivano senza costo —
+    /// quindi `Spend::is_complete()` è **falso su ogni corsa vera**, e la frase
+    /// d'onestà del tetto («la spesa vera è più alta») si accende sempre, anche
+    /// quando non c'è niente di ignoto. Un avviso sempre acceso non lo legge
+    /// nessuno, ed è così che si perde quello vero — la riga di codex, che il
+    /// costo davvero non lo dichiara.
+    ///
+    /// **CHI DECIDE È IL DESCRITTORE, NON UN ELENCO DI NOMI SCRITTO QUI.** Uno
+    /// strumento è un motore se dichiara **come gli si fa una domanda**
+    /// (`ask`): `git` e `cargo` non lo dichiarano, e nessun elenco di nomi qui
+    /// dentro invecchierebbe bene. È la stessa regola del guasto 3 — quello che
+    /// il catalogo dichiara vale più di quello che il codice indovina.
+    #[test]
+    fn a_tool_that_cannot_be_asked_anything_is_not_a_model_call() {
+        let dir = scratch("non-e-un-motore");
+        let bin = fake_engine(&dir, "finto-cargo", "printf 'ok'");
+        let ledger = Ledger::open(dir.join("deposito")).expect("deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            // Nessuna ricetta `ask`: è com'è dichiarato `cargo` nel catalogo
+            // spedito, e il passo si scrive le proprie opzioni.
+            recipe: None,
+        })
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova", "args": ["test"], "timeout_secs": 10
+        });
+
+        assert!(action
+            .execute(&input, &mut shared("corsa-cargo", "prove"))
+            .is_ok());
+
+        assert!(
+            calls_in(&dir.join("deposito")).is_empty(),
+            "una riga di `cargo` nel conto delle chiamate ai modelli rende falso \
+             ogni totale che la somma: {:?}",
+            calls_in(&dir.join("deposito"))
+        );
+    }
+
     /// Le opzioni scritte dal passo vincono, e con loro il consumo resta
     /// sconosciuto: allungare alle spalle di chi ha scritto quella riga di
     /// comando una domanda che non ha fatto sarebbe decidere al posto suo. La
     /// riga però si scrive, e dice proprio questo.
+    ///
+    /// **È LA GEMELLA DELLA PROVA QUI SOPRA**, e le due vanno lette insieme: un
+    /// motore vero interrogato con le opzioni del passo **resta** nel conto, e
+    /// solo chi non è un motore ne esce. Senza questa, il filtro potrebbe
+    /// svuotare la tabella e la prova sopra sarebbe verde lo stesso.
     #[test]
     fn when_the_step_writes_its_own_args_the_usage_is_not_asked_for() {
         let dir = scratch("args-del-passo");
