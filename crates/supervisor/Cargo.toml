@@ -1,0 +1,16 @@
+[package]
+name = "supervisor"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Tiene accesa la finestra mentre si aggiusta la macchina di sotto."
+
+[dependencies]
+ledger = { path = "../ledger" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Il programma che sostituisce `cargo tauri dev` in modalità viva.
+[[bin]]
+name = "sailor-live"
+path = "src/main.rs"
