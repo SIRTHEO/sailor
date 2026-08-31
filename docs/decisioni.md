@@ -94,6 +94,39 @@ ha messo un limite», il secondo è «questo flusso non deve spendere niente». 
 tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di fermare, e
 lo farebbe la notte.
 
+### Le capacità di uno strumento sono un dato, e l'assenza si scrive
+**31/08/2026.** Un descrittore dichiara, oltre a `detect`, `version`, `ask` e
+`usage`, un blocco **`capabilities`**: che cosa quel motore sa fare oltre a
+rispondere — riprendere una sessione, ramificarla, imporre una forma alla
+risposta, isolarsi dalla configurazione di chi lo ospita, ricevere una dotazione,
+tenere un tetto di spesa suo, scegliere il modello, ripiegare su un altro. È una
+mappa da nome a dichiarazione: **il codice non conosce nessun nome di capacità**,
+quindi aggiungerne una a uno strumento nuovo è scrivere un file JSON in
+`~/.config/sailor/tools.d/`, mai ricompilare. Vincolo permanente «programmiamo a
+codice solo ciò che tocca il mondo», applicato a un vocabolario.
+
+**Scrivere `false` non è la stessa cosa che tacere, ed è il punto di tutto il
+blocco.** `false` dice «qualcuno ha guardato e non c'è»; l'assenza della riga
+dice «nessuno ha guardato». Un blocco che permettesse solo di elencare ciò che
+c'è farebbe passare per misurata ogni omissione — ed è la stessa distinzione che
+il rilevamento tiene fra «non c'è» e «non ho potuto guardare». Per questo i
+quattro motori spediti rispondono su **tutte e nove** le capacità del
+vocabolario, e una prova lo pretende.
+
+**Chi non ce l'ha continua a funzionare, e il ripiego resta quello di oggi.** Una
+capacità assente non è un errore: chi non sa imporre una forma alla risposta se
+la fa chiedere nel prompt con `answer_shape` e paga più token. Vincolo permanente
+«indipendenza dal modello». Un passo dichiara ciò che gli serve con
+`needs_capabilities`, e `sailor flow check` **avvisa** nominando passo, motore e
+capacità — non fallisce: un flusso scritto per un motore più capace non è rotto,
+è un flusso che qui costa di più, ed è la stessa ragione per cui uno strumento
+non installato è un avviso e un nome inesistente è un errore.
+
+**Cosa questo non fa, e non deve sembrare che faccia.** Le azioni non usano
+ancora nessuna capacità: il vocabolario e il controllo che lo interroga esistono,
+l'uso no. `needs_capabilities` è dichiarato in `EngineSpec` perché un passo
+onesto non venga accusato di un refuso, e non è letto a esecuzione.
+
 ### Il potere di un passo: modello Bazel, in osservazione
 **29/08/2026 — Theo.** Un passo dichiara cosa gli serve, e il resto per lui non
 esiste. Il controllo entra come **avviso** e diventa barriera solo con un cambio
@@ -155,6 +188,42 @@ copiarlo.
 **Perché**: una copia a mano invecchia da sola. È già successo: un documento
 diceva «dieci guasti» mentre il file ne elencava undici, e un verificatore ha
 respinto un'intera ricerca per quell'incoerenza — a ragione.
+
+### L'ordine di sblocco è cambiato: prima usare Sailor, poi staccarsi da Orca
+**31/08/2026 — Theo.** L'ordine scritto il 29/08 — chiamate, orchestrazione,
+ciclo — resta valido come sequenza tecnica, ma **non è più il criterio con cui
+si sceglie cosa fare**. Il criterio nuovo è uno solo: *cosa manca perché Theo
+possa lavorare dentro Sailor invece che dentro Orca.* Tre blocchi, in
+quest'ordine, e il terzo è la conseguenza dei primi due:
+
+1. **Sailor si sviluppa senza morire mentre lo si usa.** Si deve poter
+   aggiustare la macchina di sotto mentre qualcuno ci lavora sopra: niente
+   riavvii, niente finestra che sparisce. Oggi è impedito da due guasti aperti —
+   il **4** (Sailor non sa quali processi ha avviato, quindi non può né
+   spegnerli né riprenderli) e l'**11** (in modalità viva un errore di
+   compilazione in un crate qualunque uccide la finestra invece di lasciarla
+   all'ultima versione buona).
+2. **I terminali.** Un terminale si apre **legato a uno spazio di lavoro** — una
+   repo, un progetto — e ciò che l'utente scrive viene **smistato**: se la
+   richiesta riguarda un flusso, va al flusso; altrimenti resta un terminale
+   normale. Oggi non esiste niente: `desktop/src-tauri` ha quattro file e nessuna
+   riga di pseudo-terminale, e la sorgente d'innesco `sailor-terminal` è
+   dichiarata nel catalogo come «la forma che avrà, non una misura».
+3. **Il distacco da Orca**, che non è un lavoro a sé: è ciò che succede quando i
+   primi due sono fatti.
+
+**Perché quest'ordine e non quello di prima.** Il vecchio ordine ottimizzava la
+correttezza del motore; questo ottimizza il momento in cui il sistema smette di
+essere un progetto e diventa lo strumento con cui si lavora. Finché Theo sviluppa
+Sailor dentro Orca, ogni difetto di Sailor lo paga qualcun altro — e nessuno dei
+suoi guasti viene trovato usandolo, che è l'unico modo in cui i guasti di questo
+repo sono stati trovati finora.
+
+**Cosa ne discende, e va detto perché cambia le priorità di chi legge.** Un
+lavoro che rende Sailor più corretto ma non più *usabile da dentro* non viene
+prima di uno che lo rende usabile. Vale anche per i flussi: scriverne di nuovi
+non è nei primi due blocchi, e chi ne scrive uno mentre questi tre sono aperti
+sta lavorando fuori dall'ordine.
 
 ### L'ordine di sblocco: prima le chiamate, poi l'orchestrazione, poi il ciclo
 **29/08/2026 — Theo.** Tre blocchi, in quest'ordine, e ognuno si vede funzionare
