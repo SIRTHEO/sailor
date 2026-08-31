@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Sailor</title><style>
+:root{
+  --ink:#111d1b; --muted:#4e5855; --bg:#f2fdfa; --surface:#e8f3f0; --line:#d7e2df;
+  --focus:#ae5775;
+  --waiting:#4e5855; --running:#0e5794; --went:#0a672e;
+  --broke:#972620; --capped:#764b09; --human:#663e8e;
+  --prose:"Charter","Georgia",serif; --data:"PT Mono","Menlo",monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--prose);font-size:14px}
+
+/* ── barra: chi sono e dove sto ─────────────────────────── */
+.bar{display:flex;align-items:center;gap:14px;padding:9px 20px;border-bottom:1px solid var(--line)}
+.brand{font-size:16px;letter-spacing:.02em}
+.where{display:flex;align-items:baseline;gap:7px;padding:3px 9px;background:var(--surface)}
+.where b{font-weight:400;font-size:13px}
+.where span{font-family:var(--data);font-size:11px;color:var(--muted)}
+.sums{margin-left:auto;display:flex;gap:18px;font-family:var(--data);font-size:12px;color:var(--muted)}
+.sums em{font-style:normal;color:var(--ink)}
+.sums .call{color:var(--human)}
+
+/* ── navigazione ────────────────────────────────────────── */
+.nav{display:flex;gap:26px;padding:0 20px;border-bottom:1px solid var(--line)}
+.nav a{font-size:13px;color:var(--muted);text-decoration:none;padding:7px 0;
+       border-bottom:2px solid transparent;letter-spacing:.01em}
+.nav a.on{color:var(--ink);border-bottom-color:var(--focus)}
+.nav a i{font-style:normal;font-family:var(--data);font-size:11px;color:var(--muted)}
+
+/* ── tabella ────────────────────────────────────────────── */
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:400;text-transform:uppercase;letter-spacing:.1em;
+   color:var(--muted);text-align:left;padding:7px 20px 5px;border-bottom:1px solid var(--line)}
+th.n{text-align:right}
+td{height:26px;padding:0 20px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.open td{border-bottom:none}
+.nm{font-size:14px} .sub{font-size:12px;color:var(--muted)}
+.st{font-family:var(--data);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+.n{font-family:var(--data);font-size:12px;text-align:right}
+.band{position:relative;height:10px;background:var(--surface)}
+.seg{position:absolute;top:0;height:10px}
+.now{position:absolute;top:-4px;width:1px;height:18px;background:var(--focus)}
+.cap{position:absolute;top:-2px;width:1px;height:14px;background:var(--capped)}
+
+/* ── la corsa aperta, in linea ──────────────────────────── */
+.detail{background:var(--surface);border-bottom:1px solid var(--line)}
+.dgrid{display:grid;grid-template-columns:1fr 470px}
+.steps{padding:10px 20px 12px}
+.srow{display:grid;grid-template-columns:150px 96px 60px 74px 1fr;align-items:center;
+      gap:12px;height:24px}
+.sname{font-family:var(--data);font-size:12px}
+.sbar{position:relative;height:8px;background:var(--bg)}
+.sseg{position:absolute;top:0;height:8px}
+.live{border-left:1px solid var(--line);padding:10px 20px 12px}
+.lhead{display:flex;gap:10px;align-items:baseline;font-family:var(--data);font-size:11px;
+       color:var(--muted);padding-bottom:5px}
+.lhead b{font-weight:400;color:var(--ink)}
+.stream{font-family:var(--data);font-size:11px;line-height:1.55;color:var(--muted);
+        height:104px;overflow:hidden}
+.stream u{text-decoration:none;color:var(--ink)}
+.acts{display:flex;gap:16px;padding:7px 20px 0;font-family:var(--data);font-size:11px}
+.acts a{color:var(--focus);text-decoration:none}
+.acts a.q{color:var(--muted)}
+</style></head><body>
+
+<div class="bar">
+  <span class="brand">Sailor</span>
+  <span class="where"><b>gyver/api</b><span>codex · lavoro</span></span>
+  <span class="where"><b>sailor</b><span>claude · personale</span></span>
+  <span class="sums">
+    <span><em>6</em> aperte</span>
+    <span class="call"><em>2</em> chiedono te</span>
+    <span><em>1,84 $</em> oggi</span>
+    <span>— 5 min/px +</span>
+  </span>
+</div>
+
+<div class="nav">
+  <a href="#" class="on">Corse <i>6</i></a>
+  <a href="#">Flussi <i>17</i></a>
+  <a href="#">Spazi <i>2</i></a>
+  <a href="#">Strumenti <i>4</i></a>
+  <a href="#">Server MCP <i>2</i></a>
+  <a href="#">Profili <i>2</i></a>
+  <a href="#">Terminali <i>1</i></a>
+</div>
+
+<table>
+<tr><th style="width:236px">corsa</th><th style="width:120px">spazio</th>
+    <th style="width:132px">stato</th><th class="n" style="width:66px">da</th>
+    <th class="n" style="width:84px">costo</th><th>tempo</th></tr>
+
+<tr><td class="nm">esamina-la-repo <span class="sub">· controprova</span></td>
+    <td class="sub">gyver/api</td>
+    <td class="st" style="color:var(--human)">aspetta te</td>
+    <td class="n">31 m</td><td class="n">1,204 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:34%;background:var(--went)"></div>
+      <div class="seg" style="left:34%;width:52%;background:var(--human)"></div>
+      <div class="now" style="left:86%"></div></div></td></tr>
+
+<tr><td class="nm">chiedi-all-indice <span class="sub">· verifica</span></td>
+    <td class="sub">sailor</td>
+    <td class="st" style="color:var(--broke)">rotto</td>
+    <td class="n">2 m</td><td class="n">0,000 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:6%;background:var(--broke)"></div></div></td></tr>
+
+<tr class="open"><td class="nm">sviluppa-sailor <span class="sub">· implementa</span></td>
+    <td class="sub">sailor</td>
+    <td class="st" style="color:var(--running)">in corso</td>
+    <td class="n">14 m</td><td class="n">0,412 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:12%;background:var(--went)"></div>
+      <div class="seg" style="left:12%;width:9%;background:var(--went)"></div>
+      <div class="seg" style="left:21%;width:47%;background:var(--running)"></div>
+      <div class="now" style="left:68%"></div>
+      <div class="cap" style="left:83%"></div></div></td></tr>
+</table>
+
+<div class="detail"><div class="dgrid">
+  <div class="steps">
+    <div class="srow"><span class="sname">scegli</span>
+      <span class="st" style="color:var(--went)">andato</span>
+      <span class="n">1 m 48</span><span class="n">0,031 $</span>
+      <span class="sbar"><span class="sseg" style="left:0;width:12%;background:var(--went)"></span></span></div>
+    <div class="srow"><span class="sname">piano</span>
+      <span class="st" style="color:var(--went)">andato</span>
+      <span class="n">1 m 21</span><span class="n">0,048 $</span>
+      <span class="sbar"><span class="sseg" style="left:12%;width:9%;background:var(--went)"></span></span></div>
+    <div class="srow"><span class="sname">implementa</span>
+      <span class="st" style="color:var(--running)">in corso</span>
+      <span class="n">6 m 52</span><span class="n">0,333 $</span>
+      <span class="sbar"><span class="sseg" style="left:21%;width:47%;background:var(--running)"></span></span></div>
+    <div class="srow"><span class="sname">prove</span>
+      <span class="st" style="color:var(--waiting)">in attesa</span>
+      <span class="n">—</span><span class="n">—</span>
+      <span class="sbar"></span></div>
+    <div class="srow"><span class="sname">verifica</span>
+      <span class="st" style="color:var(--waiting)">in attesa</span>
+      <span class="n">—</span><span class="n">—</span>
+      <span class="sbar"></span></div>
+    <div class="acts">
+      <a href="#">apri il grafo</a><a href="#">terminale qui</a>
+      <a href="#">alza il tetto</a><a href="#" class="q">ferma la corsa</a>
+    </div>
+  </div>
+  <div class="live">
+    <div class="lhead"><b>implementa</b><span>claude-code · sonnet-4.6</span>
+      <span>ramifica da «piano»</span><span>1&#170; di 3</span></div>
+    <div class="stream">
+      <u>&gt;</u> leggo crates/actions/src/mcp.rs (812 righe)<br>
+      <u>&gt;</u> il campo «answer» esce grezzo: nessun trattamento<br>
+      <u>&gt;</u> scrivo la prova prima della riparazione, come chiede AGENTS.md<br>
+      <u>&gt;</u> cargo test -p actions --lib provenance &gt; /tmp/p.log<br>
+      &nbsp;&nbsp;&nbsp;test result: FAILED. 1 failed &#8212; <u>nasce rossa</u><br>
+      <u>&gt;</u> ora la riparazione in step_input, dove l'ingresso si compone
+    </div>
+  </div>
+</div></div>
+
+<table>
+<tr><td class="nm" style="width:236px">smista-il-lavoro <span class="sub">· dispatch</span></td>
+    <td class="sub" style="width:120px">sailor</td>
+    <td class="st" style="width:132px;color:var(--capped)">fermo al tetto</td>
+    <td class="n" style="width:66px">8 m</td><td class="n" style="width:84px">0,200 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:22%;background:var(--went)"></div>
+      <div class="seg" style="left:22%;width:4%;background:var(--capped)"></div>
+      <div class="cap" style="left:26%"></div></div></td></tr>
+
+<tr><td class="nm">costruisci-una-pagina <span class="sub">· schermo</span></td>
+    <td class="sub">gyver/web</td>
+    <td class="st" style="color:var(--waiting)">in attesa</td>
+    <td class="n">3 m</td><td class="n">0,024 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:8%;background:var(--went)"></div>
+      <div class="seg" style="left:8%;width:5%;background:var(--waiting)"></div>
+      <div class="now" style="left:13%"></div></div></td></tr>
+
+<tr><td class="nm">relay <span class="sub">· send-clear</span></td>
+    <td class="sub">sailor</td>
+    <td class="st" style="color:var(--running)">in corso · 2&#170; di 3</td>
+    <td class="n">47 s</td><td class="n">0,003 $</td>
+    <td><div class="band">
+      <div class="seg" style="left:0;width:3%;background:var(--running)"></div>
+      <div class="now" style="left:3%"></div></div></td></tr>
+</table>
+
+</body></html>
