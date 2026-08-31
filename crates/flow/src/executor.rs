@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -693,6 +694,14 @@ impl Executor for InProcessExecutor {
         clock: &dyn Clock,
     ) -> Result<Execution, FlowError> {
         let mut decisions = Vec::new();
+        // La radice si legge una volta sola e si tiene per valore: resta la
+        // stessa per tutta la corsa, e un riferimento dentro `request.shared`
+        // impedirebbe all'esecutore di scriverci la corsa poco più sotto.
+        let root: Option<PathBuf> = request
+            .shared
+            .get(WORKSPACE_ROOT)
+            .and_then(Value::as_str)
+            .map(PathBuf::from);
         loop {
             let records = store.records(&request.run_id)?;
             let decision = decision_from(graph, &records)?;
@@ -765,7 +774,8 @@ impl Executor for InProcessExecutor {
                 let step = graph
                     .step(&step_id)
                     .ok_or_else(|| FlowError::UnknownStep(step_id.clone()))?;
-                let input = step_input(graph, step, &request.root_inputs, &records)?;
+                let input =
+                    step_input(graph, step, &request.root_inputs, &records, root.as_deref())?;
                 step.input_schema.validate(&input)?;
                 let condition_met = step
                     .when
@@ -1014,6 +1024,18 @@ pub enum FlowError {
     MissingOutput(String),
     Schema(SchemaError),
     Action(ActionError),
+    /// Un campo di posizione con un percorso assoluto scritto dentro il flusso.
+    AbsolutePath {
+        step: String,
+        field: String,
+        value: String,
+    },
+    /// Un passo ha bisogno della radice del progetto e nessuno l'ha portata.
+    NoWorkspaceRoot {
+        step: String,
+        field: String,
+        value: String,
+    },
 }
 
 impl From<SchemaError> for FlowError {
@@ -1051,6 +1073,24 @@ impl Display for FlowError {
             FlowError::MissingOutput(step) => write!(formatter, "step {step} has no typed output"),
             FlowError::Schema(error) => Display::fmt(error, formatter),
             FlowError::Action(error) => Display::fmt(error, formatter),
+            // In italiano, come dice `AGENTS.md`. Le righe qui sopra sono in
+            // inglese: sono più vecchie della regola, e tradurle tutte è un
+            // lavoro a sé che cambierebbe messaggi già visti da chi usa il
+            // programma. Non si scrive un messaggio nuovo sbagliato per
+            // assomigliare a quelli vecchi.
+            FlowError::AbsolutePath { step, field, value } => write!(
+                formatter,
+                "il passo {step} dichiara «{field}» con un percorso assoluto ({value}): \
+                 un flusso non deve sapere dove sta il progetto, o gira in un posto solo. \
+                 Si toglie con «sailor flow relocate»"
+            ),
+            FlowError::NoWorkspaceRoot { step, field, value } => write!(
+                formatter,
+                "il passo {step} dichiara «{field}» relativo ({value}) ma non c'è nessuna \
+                 radice di progetto: manca un {} risalendo da dove hai lanciato. \
+                 Si crea con «sailor workspace init»",
+                crate::workspace::MARKER
+            ),
         }
     }
 }
@@ -1141,11 +1181,143 @@ fn dependencies_satisfied(graph: &Graph, step: &Step, records: &[StepRecord]) ->
     })
 }
 
+#[cfg(test)]
+mod workdir_tests {
+    use super::*;
+    use crate::schema::ValueSchema;
+
+    fn step_named(id: &str, with: Value, schema: ValueSchema) -> Step {
+        let json = serde_json::json!({
+            "id": id, "deps": [], "action": "qualunque", "max_attempts": 1,
+            "when": null,
+            "input_schema": schema,
+            "output_schema": {"type": "any"},
+            "with": with
+        });
+        serde_json::from_value(json).expect("un passo valido")
+    }
+
+    fn open_object() -> ValueSchema {
+        serde_json::from_value(serde_json::json!({
+            "type": "object", "properties": {}, "required": [], "allow_extra": true
+        }))
+        .expect("schema aperto")
+    }
+
+    fn resolved(with: Value, root: Option<&str>) -> Result<Value, FlowError> {
+        let step = step_named("passo", with, open_object());
+        let input = step.with.clone().expect("il with c'è");
+        resolve_workdir(&step, input, root.map(Path::new))
+    }
+
+    /// **UN PERCORSO RELATIVO SI ATTACCA ALLA RADICE**, ed è tutto il punto:
+    /// lo stesso flusso lavora in due cloni diversi senza cambiare una riga.
+    #[test]
+    fn a_relative_workdir_hangs_off_the_root() {
+        let out = resolved(serde_json::json!({"workdir": "crates/flow"}), Some("/qui"))
+            .expect("si risolve");
+
+        assert_eq!(out["workdir"], "/qui/crates/flow");
+    }
+
+    /// Assoluto: errore che nomina passo e valore. Non «gira altrove»: gira nel
+    /// posto sbagliato, ed è il modo in cui il guasto 25 è passato inosservato.
+    #[test]
+    fn an_absolute_workdir_is_refused_by_name() {
+        let refused = resolved(
+            serde_json::json!({"workdir": "/Users/theo/personal/sailor"}),
+            Some("/qui"),
+        )
+        .expect_err("non deve risolversi");
+
+        match refused {
+            FlowError::AbsolutePath { step, value, .. } => {
+                assert_eq!(step, "passo");
+                assert_eq!(value, "/Users/theo/personal/sailor");
+            }
+            altro => panic!("errore sbagliato: {altro}"),
+        }
+    }
+
+    /// Assente: eredita la radice. È ciò che rende possibile togliere i sette
+    /// `workdir` dal flusso di sviluppo senza che i passi cambino posto.
+    #[test]
+    fn an_absent_workdir_inherits_the_root() {
+        let out = resolved(serde_json::json!({"command": "true"}), Some("/qui"))
+            .expect("si risolve");
+
+        assert_eq!(out["workdir"], "/qui");
+    }
+
+    /// **MA SOLO A CHI PUÒ RICEVERLA.** Il passo d'innesco di `sviluppa-sailor`
+    /// ha uno schema chiuso e niente a che fare con una cartella: offrirgliela
+    /// lo farebbe morire su un campo che non ha chiesto.
+    #[test]
+    fn a_closed_schema_is_not_given_a_workdir_it_never_asked_for() {
+        let closed: ValueSchema = serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {"source": {"type": "string"}},
+            "required": [],
+            "allow_extra": false
+        }))
+        .expect("schema chiuso");
+        let step = step_named("innesco", serde_json::json!({"source": "manual"}), closed);
+        let input = step.with.clone().expect("il with c'è");
+
+        let out = resolve_workdir(&step, input, Some(Path::new("/qui"))).expect("si risolve");
+
+        assert!(out.get("workdir").is_none(), "niente campi non richiesti");
+        step.input_schema.validate(&out).expect("lo schema regge");
+    }
+
+    /// **SENZA RADICE SI FALLISCE DICENDOLO, MAI SUL `cwd`.** Un ripiego
+    /// silenzioso sulla cartella del processo è esattamente il guasto 25:
+    /// lavorare dove capita senza che nessuno lo veda scritto.
+    #[test]
+    fn a_relative_workdir_without_a_root_fails_out_loud() {
+        let refused = resolved(serde_json::json!({"workdir": "crates/flow"}), None)
+            .expect_err("non deve ripiegare sul cwd");
+
+        match refused {
+            FlowError::NoWorkspaceRoot { step, value, .. } => {
+                assert_eq!(step, "passo");
+                assert_eq!(value, "crates/flow");
+            }
+            altro => panic!("errore sbagliato: {altro}"),
+        }
+        assert!(
+            refused_says_how_to_fix(&resolved(
+                serde_json::json!({"workdir": "crates/flow"}),
+                None
+            )),
+            "il messaggio deve dire cosa fare"
+        );
+    }
+
+    fn refused_says_how_to_fix(outcome: &Result<Value, FlowError>) -> bool {
+        match outcome {
+            Err(error) => error.to_string().contains(crate::workspace::MARKER),
+            Ok(_) => false,
+        }
+    }
+}
+
+/// Il campo con cui un passo dice **dove** lavora.
+///
+/// **IL CRATE DEL FLUSSO CONOSCE QUESTA PAROLA, E SI PAGA APPOSTA.** Finché la
+/// risoluzione stava dentro le azioni, ogni azione nuova nasceva senza — è il
+/// guasto 28 sulla stessa dimensione: `resolve_references` è chiamata da due
+/// azioni su nove, e le altre sette non lo sanno. Qui la risoluzione avviene
+/// **una volta sola dove l'ingresso si compone**, quindi ogni azione
+/// registrata la eredita, comprese quelle che nessuno ha ancora scritto.
+pub const WORKDIR_FIELD: &str = "workdir";
+
 pub fn step_input(
     graph: &Graph,
     step: &Step,
     root_inputs: &BTreeMap<String, Value>,
     records: &[StepRecord],
+    root: Option<&Path>,
 ) -> Result<Value, FlowError> {
     let input = match step.deps.as_slice() {
         [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
@@ -1166,7 +1338,58 @@ pub fn step_input(
             Ok(Value::Object(values))
         }
     }?;
-    Ok(overlay_input(input, step.with.as_ref()))
+    resolve_workdir(step, overlay_input(input, step.with.as_ref()), root)
+}
+
+/// Dove il passo lavorerà, deciso qui e non dentro l'azione.
+///
+/// Quattro casi, e nessuno di essi è un ripiego silenzioso:
+/// - **assoluto** → errore che nomina passo e valore: il flusso girerebbe in un
+///   posto solo, e altrove non fallirebbe, lavorerebbe nel posto sbagliato;
+/// - **relativo** → si attacca alla radice;
+/// - **assente** → la radice, ma **solo a chi può riceverla** (vedi
+///   `accepts_property`): offrirla a uno schema chiuso lo farebbe morire su un
+///   campo che non ha chiesto;
+/// - **radice assente e passo che ne ha bisogno** → errore leggibile. **Mai il
+///   `cwd`**: lavorare dove sta il processo senza dirlo è il guasto 25.
+fn resolve_workdir(step: &Step, input: Value, root: Option<&Path>) -> Result<Value, FlowError> {
+    let Value::Object(mut fields) = input else {
+        return Ok(input);
+    };
+    match fields.get(WORKDIR_FIELD).cloned() {
+        Some(Value::String(declared)) => {
+            if declared.starts_with('/') || declared.starts_with("~/") {
+                return Err(FlowError::AbsolutePath {
+                    step: step.id.clone(),
+                    field: WORKDIR_FIELD.to_owned(),
+                    value: declared,
+                });
+            }
+            let Some(root) = root else {
+                return Err(FlowError::NoWorkspaceRoot {
+                    step: step.id.clone(),
+                    field: WORKDIR_FIELD.to_owned(),
+                    value: declared,
+                });
+            };
+            fields.insert(
+                WORKDIR_FIELD.to_owned(),
+                root.join(declared).display().to_string().into(),
+            );
+        }
+        // Dichiarato ma non come testo: non è un percorso, e inventarne uno
+        // sarebbe peggio che lasciarlo passare a chi sa cosa farne.
+        Some(_) => {}
+        None => {
+            if let Some(root) = root.filter(|_| step.input_schema.accepts_property(WORKDIR_FIELD)) {
+                fields.insert(
+                    WORKDIR_FIELD.to_owned(),
+                    root.display().to_string().into(),
+                );
+            }
+        }
+    }
+    Ok(Value::Object(fields))
 }
 
 fn overlay_input(input: Value, with: Option<&Value>) -> Value {
