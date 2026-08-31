@@ -1,0 +1,43 @@
+[package]
+name = "terminal"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Il motore dei terminali: apre uno pseudo-terminale dentro uno spazio di lavoro,
+# gli scrive, ne legge l'uscita mentre esce, lo ridimensiona e lo chiude.
+#
+# NESSUNA DIPENDENZA VERSO LA FINESTRA, ED È IL PUNTO. Qui dentro non compare
+# Tauri, non compare `desktop/`, e non compare nessun elemento di interfaccia:
+# così il motore si prova da riga di comando con `cargo test -p terminal`, e la
+# finestra ci si attacca sopra invece di contenerlo.
+#
+# `libc` per lo pseudo-terminale, ed è l'unica dipendenza esterna aggiunta.
+# La scelta è argomentata: `posix_openpt`/`grantpt`/`unlockpt`/`ptsname` sono
+# POSIX e stanno tutte lì, senza nessun crate transitivo e senza codice di
+# nessun altro fra noi e il sistema operativo. `libc` era GIÀ nel `Cargo.lock`
+# di questo workspace (0.2.189, tirato da `rusqlite` per il deposito): aggiungerla
+# qui non scarica niente, non compila niente di nuovo e non allarga la superficie
+# da aggiornare — che è esattamente ciò che il commento sulle dipendenze del
+# `Cargo.toml` del workspace chiede di non fare. Le alternative pesano di più e
+# darebbero meno: `portable-pty` si porta dietro una decina di crate transitivi
+# per darci un'astrazione su Windows che qui non serve.
+#
+# `toolbox` per due cose e nient'altro. `Machine` — espandere `~`, `$VAR` e
+# trovare la casa di Sailor è già risolto lì, e una seconda copia di quella
+# regola è un guasto già pagato il 30/08/2026. E `probe::look_up`, che è la
+# guardia dello smistamento: dice se una parola è un eseguibile su QUESTA
+# macchina, e sa dire «non so» invece di tirare a indovinare.
+[dependencies]
+toolbox = { path = "../toolbox" }
+libc = "0.2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Solo per la prova che collega lo smistamento al flusso: una richiesta smistata
+# diventa il segnale dell'innesco manuale, e i passi a valle la leggono. Il
+# collegamento si prova, ma non si spedisce: il motore dei terminali non deve
+# dipendere né dai flussi né dagli inneschi per aprire un terminale.
+[dev-dependencies]
+trigger = { path = "../trigger" }
+flow = { path = "../flow" }
