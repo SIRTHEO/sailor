@@ -85,23 +85,156 @@ motore dichiara (1,4102 contro 1,4102): la catena di misura regge.
 e **il 74,8% del costo non è produzione**. L'input davvero nuovo è 52 token: lo
 zero per cento.
 
-### Cosa questo fa alla domanda di partenza
+Prima conseguenza, e vale per tutti e due i lati: **anche una sessione ripaga il
+contesto a ogni turno**, trenta volte qui. La differenza fra prompt e flusso non
+è *se* si ripaga il contesto.
 
-La premessa era «un prompt consuma meno di un flusso perché il flusso ripaga il
-contesto a ogni passo». Il primo pezzo di misura dice che **anche una sessione
-ripaga il contesto a ogni turno**: trenta volte, qui. La differenza fra i due non
-è *se* si ripaga il contesto — è **a che prezzo**:
+## Lato B: quattro sessioni, non quattro chiamate
 
-- una sessione lo rilegge dalla **cache dei prefissi**, a 0,50 $/M;
-- un passo di flusso è un processo nuovo con un prompt diverso, quindi lo paga
-  come **input**, a 5,00 $/M.
+| passo | turni | durata | costo | cache letta | 1º turno: già in cache |
+|---|---:|---:|---:|---:|---:|
+| `scegli` | 10 | 84 s | 0,6227 $ | 211.647 | 46.702 |
+| `piano` | 7 | 130 s | 0,5526 $ | 94.959 | 31.651 |
+| `implementa` | 27 | 294 s | 1,5008 $ | 1.322.565 | 63.266 |
+| `verifica` | 18 | 172 s | 1,2657 $ | 915.938 | 71.173 |
+| **totale** | **62** | **679 s** | **3,9418 $** | **2.545.109** | |
 
-**Dieci volte tanto, sulla voce che pesa il 40%.** È lì che si gioca la domanda
-di Theo, ed è esattamente la pista già annotata in `da-fare.md`: mettere il
-contesto comune **in testa** invece che in coda, perché la cache dei prefissi
-possa agganciarlo. Oggi l'ordine la rende inutile.
+Anche qui il calcolato dal nostro listino coincide col dichiarato: 3,9418 contro
+3,9418, su quattro processi separati. La catena di misura regge in tutti e due i
+sensi.
 
-## Esito del confronto
+**3,9418 $ contro 1,4102 $: il flusso costa 2,79 volte il prompt.** In tokens:
+2.757.958 contro 1.203.103, cioè 2,29 volte. Il costo cresce più dei token
+perché la cache *scritta* — 10 $/M, la voce più cara dopo l'output — è il 44,8%
+della spesa del flusso contro il 34,4% di quella del prompt: **quattro sessioni
+scrivono quattro cache invece di una.**
 
-*Da riempire quando anche il lato B ha finito. Finché questa sezione è vuota,
-sopra c'è la misura di un lato solo — che non è un confronto.*
+## Perché il flusso costa di più, e non è quello che pensavo
+
+Un'ora fa, con solo il lato A misurato, avevo scritto qui che un passo di flusso
+paga il contesto come **input nuovo** a 5,00 $/M mentre una sessione lo rilegge
+dalla cache a 0,50, e che la cura era mettere il contesto comune in testa.
+**È falso, e il lato B lo mostra nell'ultima colonna della tabella.**
+
+Il primo turno di `piano` — un processo appena nato, che non ha ancora fatto
+niente — legge **31.651 token dalla cache**. Quello di `verifica`, 71.173. La
+cache dei prefissi attraversa già i processi: il preambolo dell'armatura è
+identico da un passo all'altro e viene agganciato. L'input davvero nuovo su
+tutto il flusso è **100 token**, lo 0,0% della spesa. La cura che avevo annotato
+curava una malattia che non c'è.
+
+Quello che il flusso paga davvero sta nella colonna «cache letta», e si legge
+meglio così: `implementa` da solo ne legge 1.322.565, più dell'intero lato A.
+Ogni passo apre una sessione che **riscopre il repository da capo**. `scegli`
+legge `da-fare.md` e `decisioni.md`; `piano` va a rileggersi il codice; `implementa`
+lo rilegge una terza volta; `verifica` una quarta, e per giunta rifà le mutazioni.
+Nessuno passa al successivo ciò che ha già letto: passano solo la propria
+risposta in JSON, poche migliaia di caratteri.
+
+**Il flusso non paga il contesto al prezzo sbagliato. Paga quattro volte per
+scoprirlo.**
+
+## Ma il lato B ha fatto qualcosa che il lato A non ha fatto
+
+Il verificatore del flusso non si è fidato del racconto di chi aveva scritto:
+si è copiato l'albero in `$TMPDIR`, **ha rimesso il difetto** in due modi diversi
+e ha guardato che le due prove nuove diventassero rosse una per una, poi ha
+cancellato la copia. È esattamente il controllo che `docs/decisioni.md` pretende
+— «una prova vale solo se poteva venire diversa» — e nessuno gliel'aveva chiesto
+in quei termini: era nel mandato che il passo `scegli` si era scritto da solo.
+
+Il lato A dichiara «RIPARATO: sì, 523 prove passate». È vero. Ma è il suo stesso
+autore a dirlo, e il mandato che gli era arrivato non conteneva la domanda sul
+cronometro, perché quella domanda l'ha aggiunta il passo `scegli` del flusso
+leggendo la chiusura del guasto 7. Il flusso ha speso 0,62 $ per scriversi un
+mandato migliore di quello che gli avevo dato io.
+
+## Quello che è andato storto nell'esperimento, e che va detto
+
+**L'isolamento dichiarato non c'è stato.** Il disegno prevedeva due cloni
+separati. `flows/sviluppa-sailor.flow.json` però scrive `"workdir":
+"/home/someone/personal/sailor"` in chiaro su ogni passo: lanciato dal clone
+`ab-flusso`, il lato B ha comunque lavorato nel repository principale, e ci ha
+anche commesso sopra. Il confronto delle due diff regge — stesso commit di
+partenza, stesso file, nessuna delle due ha visto l'altra — ma **un flusso con
+un `workdir` assoluto non si può eseguire su un clone**, ed è un guasto suo, non
+dell'esperimento.
+
+**Un campione per lato resta un campione per lato.** Era il primo dei tre modi
+di mentire elencati sopra, e non è stato tolto: due giri dello stesso flusso
+hanno già dato 4 e 9 su una misura precedente. I rapporti 2,79× e 2,29× sono
+**una osservazione, non una costante**.
+
+## Il giudizio cieco
+
+Le due diff sono andate a un motore che non aveva scritto né l'una né l'altra,
+in una cartella dove non poteva risalire alla provenienza — il repository
+l'avrebbe tradito, perché il lavoro del lato B era già in `HEAD`. Quale fosse
+`diff-1` l'ha deciso un sorteggio, non io. (Prima ci ho provato con `codex`, che
+è stato ucciso senza uscita dopo aver letto i file: guasto suo, non del disegno.)
+
+**Ha scelto la diff 1, che era il flusso.** La ragione decisiva è esattamente la
+domanda che il flusso si era aggiunto da solo nel mandato e che il mio non
+conteneva:
+
+> «*la sola prova discriminante della diff 2 cronometra dieci spawn di `sh`
+> contro un budget di 250 ms e dipende pure dalla corsa "il figlio è già morto
+> al primo `try_wait`", quindi può venire rossa a caso e verde col difetto
+> rimesso*»
+
+Le due riparazioni del codice il giudice le dà per equivalenti. A separarle è
+solo la prova — cioè la cosa su cui il flusso aveva speso un passo in più.
+
+### Ma il vincitore aveva un buco, e il giudice l'ha trovato
+
+`the_poll_pause_grows_up_to_the_cap_and_stays_there` chiedeva che la sequenza
+fosse **non decrescente**, mai sopra il tetto, e finisse sul tetto. La sequenza
+del polling fisso, `[50, 50, 50…]`, soddisfa tutte e tre. **La prova passava col
+difetto rimesso.** Verificato rimettendolo davvero, non leggendolo:
+
+    test tests::the_first_poll_pause_is_short_not_fifty_milliseconds ... FAILED
+    test tests::the_poll_pause_grows_up_to_the_cap_and_stays_there ... ok
+
+Il verificatore del flusso aveva fatto le mutazioni — sul serio, in `$TMPDIR` —
+ma aveva mutato *il tetto*, non *la crescita*, e su quella mutazione la prova
+diventava rossa davvero. **Rompere una prova non basta: bisogna romperla nel
+punto in cui stava il difetto originale.** È il buco che «chi crea non giudica»
+esiste per trovare, e la catena l'ha trovato solo al terzo passaggio — autore,
+verificatore, giudice cieco.
+
+Riparato: la prova ora chiede che ci sia una salita *prima* del tetto, e ne è
+nata una terza che interroga la regola di crescita da sola, senza avviare
+niente — cosa che un commento prometteva a chi legge e nessuno faceva. Con
+l'attesa fissa rimessa ora falliscono tutte e due; con `*3` al posto di `*2`
+fallisce solo la terza. 526 prove verdi, uscita 0.
+
+## Esito
+
+Alla domanda di Theo — «*un flusso ben scritto deve consumare meno e lavorare
+meglio di un singolo prompt*» — oggi la risposta misurata è: **lavora meglio,
+consuma 2,79 volte tanto.**
+
+E la seconda metà non è una legge di natura. Il 44,8% della spesa del flusso è
+cache *scritta* da quattro sessioni che si ignorano, e il 92,3% dei suoi token è
+cache *letta* per riscoprire quattro volte lo stesso repository. Sono i due
+numeri su cui si lavora, e nessuno dei due si cura mettendo il contesto in testa.
+
+Il «meglio» invece è misurato, non dichiarato: l'ha detto un terzo che non
+sapeva quale diff fosse quale, e la ragione che ha dato — la prova del flusso
+regge sotto carico, quella del prompt no — è la stessa che ha permesso di
+trovare, un passaggio dopo, il buco che il flusso stesso si era lasciato dentro.
+
+**Dove si lavora, in ordine di quanto rende:**
+
+1. **Passare al passo successivo ciò che il precedente ha già letto**, invece
+   della sola risposta in JSON. Oggi `implementa` rilegge da zero il file che
+   `piano` aveva appena finito di studiare, e da solo consuma più dell'intero
+   lato A. È il 92,3% dei token del flusso.
+2. **Non aprire quattro sessioni dove ne bastano meno.** Ogni sessione paga la
+   propria cache scritta a 10 $/M: è il 44,8% della spesa. `scegli` e `piano`
+   fanno due letture della stessa cosa a otto minuti di distanza.
+3. **Non toccare l'ordine del prompt.** Misurato: non serve.
+
+Nessuno di questi tre punti è stato provato. Sono la lista da cui partire, e il
+modo di sapere se hanno funzionato è rifare questa misura — che adesso si fa con
+due comandi.

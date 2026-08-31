@@ -3192,7 +3192,45 @@ mod tests {
     ///
     /// Nessuna affermazione sul *numero* di risvegli — quello dipende dalla
     /// durata reale del figlio, cioè dal carico della macchina. Solo sulla
-    /// forma: non decrescente, mai sopra il tetto, e ferma sul tetto alla fine.
+    /// forma: prima sale davvero, poi si ferma sul tetto e lì resta.
+    ///
+    /// **«NON DECRESCENTE» NON BASTAVA, ed è il difetto con cui questa prova è
+    /// nata**: la sequenza `[50, 50, 50…]` del polling fisso è non decrescente,
+    /// non supera il tetto e finisce sul tetto — passava tutte e tre le
+    /// asserzioni di prima. Serve chiedere che ci sia una salita *prima* del
+    /// tetto, perché è esattamente quella che il difetto vecchio non ha.
+    /// La regola di crescita interrogata da sola, **senza avviare niente**: è
+    /// quello che il commento su `next_poll_pause` promette a chi legge, e
+    /// finché nessuno lo faceva era una promessa scritta e non mantenuta.
+    ///
+    /// Da sola non prova niente sul ciclo — una `sleep` fissa rimessa dentro al
+    /// `loop` lascerebbe questa verde. È la prova qui sotto che lega la regola
+    /// al ciclo; questa fissa la regola.
+    #[test]
+    fn the_growth_rule_doubles_and_saturates_without_running_anything() {
+        let mut pause = FIRST_POLL_PAUSE;
+        let mut seen = vec![pause];
+        for _ in 0..16 {
+            pause = next_poll_pause(pause);
+            seen.push(pause);
+        }
+        assert_eq!(
+            &seen[..4],
+            &[
+                Duration::from_millis(1),
+                Duration::from_millis(2),
+                Duration::from_millis(4),
+                Duration::from_millis(8),
+            ],
+            "la crescita è un raddoppio: {seen:?}"
+        );
+        assert_eq!(
+            seen.last().copied(),
+            Some(MAX_POLL_PAUSE),
+            "sedici raddoppi devono aver saturato sul tetto: {seen:?}"
+        );
+    }
+
     #[test]
     fn the_poll_pause_grows_up_to_the_cap_and_stays_there() {
         assert!(
@@ -3200,18 +3238,22 @@ mod tests {
             "il tetto non può superare i 50 ms che il ciclo già pagava"
         );
         let asked = pauses_asked_while_running("sleep 0.6");
+        let reached = asked
+            .iter()
+            .position(|&one| one == MAX_POLL_PAUSE)
+            .unwrap_or_else(|| panic!("mezzo secondo deve bastare per arrivare al tetto: {asked:?}"));
+        let (climbing, at_cap) = asked.split_at(reached);
         assert!(
-            asked.windows(2).all(|pair| pair[0] <= pair[1]),
-            "la sequenza deve crescere, non oscillare: {asked:?}"
+            !climbing.is_empty(),
+            "la prima pausa è già il tetto: qui non cresce niente, è l'attesa fissa di prima — {asked:?}"
         );
         assert!(
-            asked.iter().all(|&one| one <= MAX_POLL_PAUSE),
-            "nessuna pausa sopra il tetto: {asked:?}"
+            climbing.windows(2).all(|pair| pair[0] < pair[1]),
+            "finché non tocca il tetto ogni pausa dev'essere più lunga della precedente: {asked:?}"
         );
-        assert_eq!(
-            asked.last().copied(),
-            Some(MAX_POLL_PAUSE),
-            "dopo mezzo secondo la crescita dev'essere arrivata al tetto e restarci: {asked:?}"
+        assert!(
+            at_cap.iter().all(|&one| one == MAX_POLL_PAUSE),
+            "arrivata al tetto la pausa non deve più muoversi: {asked:?}"
         );
     }
 }
