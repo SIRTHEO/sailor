@@ -123,7 +123,11 @@ pub fn default_registry(
     );
     actions::history::register_history(&mut registry, ledger.clone());
     if let Some(ledger) = ledger {
-        actions::store::register_store(&mut registry, ledger);
+        actions::store::register_store(&mut registry, ledger.clone());
+        // Chi sta lavorando su cosa. Sta qui e non solo nella finestra perché
+        // la domanda deve poterla fare **un agente**: registrata nel registro,
+        // è un passo che qualunque flusso può scrivere.
+        actions::presence::register_presence(&mut registry, ledger);
     }
     registry
 }
