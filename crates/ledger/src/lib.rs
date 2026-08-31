@@ -400,6 +400,22 @@ pub struct UnfinishedRun {
     pub oldest_started_at: i64,
 }
 
+/// Una corsa ferma perché aspetta qualcuno.
+///
+/// **NON PORTA `open_steps`, E L'ASSENZA È UN'AFFERMAZIONE.** Una corsa in
+/// attesa non ha passi aperti: quello consegnato è chiuso con esito `Waiting`.
+/// Un campo che dicesse sempre zero farebbe credere a chi legge che la corsa sia
+/// stata abbandonata a metà, che è la storia sbagliata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WaitingRun {
+    pub run_id: String,
+    /// Su quale flusso. Vuota se nessuno l'ha mai registrata.
+    pub entity: String,
+    /// Da quando aspetta: l'istante in cui la corsa si è fermata, o quello in
+    /// cui è partita se non si è ancora fermata.
+    pub waiting_since: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscardedOutputStep {
     pub run_id: String,
@@ -818,6 +834,73 @@ impl Ledger {
                 entity: row.get(1)?,
                 open_steps: open as usize,
                 oldest_started_at: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// L'intestazione di una corsa, se ne esiste una con quel nome.
+    ///
+    /// **SERVE A RITROVARE IL FLUSSO DA CUI UNA CORSA È NATA.** Chi riprende una
+    /// corsa ha in mano il suo identificativo e nient'altro: senza `entity` non
+    /// sa quale grafo caricare, e con il grafo sbagliato validerebbe l'uscita di
+    /// un passo contro lo schema di un altro. `None` non è un guasto — è una
+    /// corsa che nessuno ha registrato, e chi chiede deve poterlo distinguere da
+    /// un deposito rotto.
+    pub fn run_header(&self, run_id: &str) -> Result<Option<RunRecord>, LedgerError> {
+        let connection = self.lock()?;
+        let found = connection
+            .query_row(
+                "SELECT run_id, kind, entity, parent_run_id, started_by, status,
+                        total_cost_micros, error, started_at, ended_at
+                 FROM runs WHERE run_id = ?1",
+                params![run_id],
+                |row| {
+                    Ok(RunRecord {
+                        run_id: row.get(0)?,
+                        kind: row.get(1)?,
+                        entity: row.get(2)?,
+                        parent_run_id: row.get(3)?,
+                        started_by: row.get(4)?,
+                        status: row.get(5)?,
+                        total_cost_micros: row.get(6)?,
+                        error: row.get(7)?,
+                        started_at: row.get(8)?,
+                        ended_at: row.get(9)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(found)
+    }
+
+    /// Le corse ferme in attesa di una persona o di un agente.
+    ///
+    /// **NON È `unfinished_runs` CON UN ALTRO FILTRO, ED È IL PUNTO DI TUTTO.**
+    /// Quella domanda cerca i passi **aperti** — `steps.outcome IS NULL` — cioè
+    /// un'intenzione scritta senza esito. Un passo consegnato non è così: è
+    /// **chiuso**, con esito `Waiting`, perché chi doveva eseguirlo non è un
+    /// processo di cui si aspetta la morte. Fino al 31/08/2026 nessuna
+    /// interrogazione trovava quelle corse: una consegna che nessuno raccoglieva
+    /// spariva, e l'unico modo di ritrovarla era ricordarsene.
+    ///
+    /// Niente migrazione: `runs.status` è testo libero e `waiting` ci viene già
+    /// scritto da `execution_status`.
+    ///
+    /// L'ordine è quello dell'attesa: si guarda per prima quella ferma da più
+    /// tempo.
+    pub fn waiting_runs(&self) -> Result<Vec<WaitingRun>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT run_id, entity, COALESCE(ended_at, started_at)
+             FROM runs WHERE status = 'waiting'
+             ORDER BY COALESCE(ended_at, started_at), run_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(WaitingRun {
+                run_id: row.get(0)?,
+                entity: row.get(1)?,
+                waiting_since: row.get(2)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)

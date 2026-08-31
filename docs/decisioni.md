@@ -32,6 +32,50 @@ aspetto.
 
 ## Le decisioni prese
 
+### Un passo si può consegnare all'agente vivo; il giudizio no
+**31/08/2026.** Un passo può dichiarare l'azione `handed_to_agent`: descrive il
+lavoro e **non avvia niente**. A eseguirlo è l'agente già vivo nel terminale, che
+poi rientra nel sistema con `sailor step open` e `sailor step close`. Il record
+del passo resta quello di sempre — intenzione scritta prima, esito scritto dopo —
+e la corsa non si accorge di chi c'era in mezzo.
+
+**Perché, con la misura.** Un flusso di quattro passi costa **2,79 volte** un
+singolo prompt sullo stesso compito, e il rapporto dei consumi **è il rapporto
+dei turni**: 62 contro 30. Non legge di più per turno (+8%): fa il doppio dei
+turni, perché ogni passo avvia un processo che riscopre il repository da zero.
+Ingrossare il passaggio fra i passi peggiorerebbe le cose; la cura è non
+riaprire una conversazione che è già aperta.
+
+**Che cosa questo non concede, ed è il punto.** Consegnare l'esecuzione non è
+consegnare il verdetto. Chi ha chiuso un passo **non può aprire né chiudere** un
+passo che da quello dipende: è il vincolo permanente «chi crea non giudica»
+applicato al gesto in cui il giudizio si scrive. Il rifiuto vale in tutti e due i
+punti apposta — solo all'apertura si aggirerebbe aprendo con un nome e chiudendo
+con un altro.
+
+**La negazione è il predefinito, non una lista di permessi.** Un flusso che vuole
+davvero la stessa mano lo dichiara passo per passo con `"same_holder_ok": true`.
+Il verso conta: una lista di permessi dimenticata lascia passare tutto e nessuno
+se ne accorge; una negazione dimenticata al massimo ferma un lavoro, e si vede
+subito.
+
+**Chi tiene un passo consegnato è una scadenza, non un processo.** `held_by_pid`
+resta vuoto e nessuno chiede niente al sistema operativo: è il guasto 12, dove
+`pgrep` dentro il perimetro rispondeva vuoto *senza errore*. La ripresa
+(`sailor flow resume`) confronta `handoff_timeout_secs` con `started_at`; ciò che
+non sa vedere — un record con un pid, o senza scadenza leggibile — **non lo
+dichiara morto**.
+
+**Due debolezze dichiarate, scritte nel codice e non solo qui.** (1) `--as <chi>`
+è un nome che se lo sceglie chi lo scrive: Sailor non ha nessun identificativo di
+sessione da leggere, quindi il rifiuto qui sopra vale contro la distrazione, non
+contro chi vuole aggirarlo. (2) Su un flusso con consegne il **tetto di spesa
+smette di essere una garanzia**, perché il consumo dell'agente è autodichiarato
+(`sailor step close --turns`). Per questo quella riga porta `cost_micros` vuoto e
+non un numero stimato: così entra in `Spend::calls_without_cost`, `is_complete()`
+diventa falso, e ogni posto che mostra il tetto dice già che la spesa vera è più
+alta. Un costo inventato renderebbe *completa* una somma che non lo è.
+
 ### La lingua: identificatori in inglese, tutto il resto in italiano
 **31/08/2026.** Ogni cosa che il compilatore legge sta in inglese — funzioni,
 tipi, campi, variabili, moduli, costanti, **nomi di file**, classi CSS, chiavi
@@ -94,6 +138,41 @@ ha messo un limite», il secondo è «questo flusso non deve spendere niente». 
 tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di fermare, e
 lo farebbe la notte.
 
+### Un tetto non si tara su meno di tre corse costate, e oggi non se ne tara nessuno
+**31/08/2026.** `sailor flow cap <nome>` suggerisce un valore **solo** con
+almeno tre corse di quel flusso che abbiano speso qualcosa di noto. Sotto la
+soglia rifiuta di suggerire e dice cosa c'è. Il suggerimento, quando c'è, è
+*peggiore corsa osservata + chiamata più cara osservata*.
+
+**Perché tre, e perché il secondo addendo.** Con due campioni il massimo e il
+minimo sono gli unici due valori: chiamare «peggiore osservata» il maggiore di
+due è un dato inventato con la faccia di una misura, ed è il guasto 22 in
+un'altra forma. Il secondo addendo non è prudenza: il controllo scatta *prima*
+di aprire un fronte, mai dentro una chiamata, quindi la corsa si ferma con la
+grana di una chiamata e non di un micro — la somma dice «la corsa più cara che
+ho visto, più la grana con cui so fermarmi».
+
+**E oggi nessun flusso raggiunge la soglia. Misurato sul deposito di questa
+macchina il 31/08/2026, in sola lettura**: 34 corse, e **6 con un costo diverso
+da zero** — `come-lo-risolvono-gli-altri` 2, `esamina-la-repo` 2,
+`prova-dei-turni` 1, `sviluppa-sailor` 1. Le altre 28 sono il guasto 22, dove il
+costo era la costante zero fino al 30/08. **La proposta scartata era «mediana +
+50%»**: su quella colonna la mediana darebbe zero per ogni flusso, cioè un tetto
+che ferma ogni corsa prima del primo passo — e lo farebbe di notte, con l'aria
+di una taratura su molti campioni. Chi vorrà tarare i tetti lo farà quando i
+campioni ci saranno, non prima.
+
+**Il tetto non si collega a `native_spend_cap`**, la capacità dichiarata dal
+solo claude-code: portata diversa (una corsa contro un'invocazione), parola
+diversa per fermarsi, e un motore su quattro ce l'ha. Farne dipendere il freno
+significherebbe che il tetto vale o non vale a seconda di chi risponde.
+
+**E la cifra si chiama «costo equivalente» dovunque si mostri.** Resta in micro
+di valuta, ma «spesi 5,00 su un tetto di 5,00» fa credere che sia stata fermata
+una fattura: con una riga di comando locale si paga un abbonamento, e quello che
+si consuma è quota. `sailor flow cost` lo diceva già; `why_it_stopped` no, e lo
+stesso numero si leggeva in due modi a seconda del comando che lo mostrava.
+
 ### Le capacità di uno strumento sono un dato, e l'assenza si scrive
 **31/08/2026.** Un descrittore dichiara, oltre a `detect`, `version`, `ask` e
 `usage`, un blocco **`capabilities`**: che cosa quel motore sa fare oltre a
@@ -126,6 +205,54 @@ non installato è un avviso e un nome inesistente è un errore.
 ancora nessuna capacità: il vocabolario e il controllo che lo interroga esistono,
 l'uso no. `needs_capabilities` è dichiarato in `EngineSpec` perché un passo
 onesto non venga accusato di un refuso, e non è letto a esecuzione.
+
+### `flow check` esegue: monta ogni riga di comando e la prova senza la domanda
+**31/08/2026.** Dal guasto 1 in poi la cura scritta accanto a ogni guasto sulle
+righe di comando è la stessa — «una prova che esegue davvero ogni riga di comando
+prima che finisca in un flusso» — ed è rimasta scoperta per tre giorni, perché
+eseguire sembrava voler dire spendere. Non vuol dire. **Un motore invocato con la
+riga vera e senza la domanda non chiama nessun fornitore, e percorre lo stesso
+parsing di argomenti di una chiamata vera**: se la riga è malformata lo dice lì,
+gratis. Da oggi `sailor flow check` monta la riga di ogni motore di ogni catena,
+la esegue senza la domanda, e riporta come sta messa.
+
+**Il verdetto sta nel testo, mai nel codice d'uscita.** Misurato su questa
+macchina: `agy` esce **2** sia quando rifiuta bene («flag needs an argument:
+-print») sia quando la riga è quella malformata del guasto 27 («--print took
+"--output-format" as its prompt»). Una sonda che giudicasse dall'esito avrebbe
+visto i due casi identici e sarebbe passata sopra al guasto 27 — che è
+esattamente ciò che è successo. Per questo il descrittore dichiara
+`ask.refuses_without_prompt`, **le parole del motore**, come già fa per
+`unusable_when`; e per questo `judge_dry_run` non riceve nemmeno il codice
+d'uscita, così non c'è modo di usarlo per sbaglio.
+
+**`--help` è la forma innocua sbagliata.** `agy --mode nonsense-value
+--not-a-real-flag --help` esce **0**: cortocircuita prima di leggere gli
+argomenti, quindi approva un valore invalido e una bandiera inventata. La forma
+giusta è montare la riga vera e non dare la domanda.
+
+**Cambia la natura del comando, e va detto.** `resolver.rs` dichiara che
+risolvere un nome non deve eseguire niente, e resta vero: è il controllo che
+avvia processi, non la risoluzione. `flow check` non è più solo statico — senza
+rete, senza denaro, con un tetto di tempo esplicito, perché su questa macchina
+`timeout` e `gtimeout` non esistono.
+
+**Acceso in modo predefinito, con `--no-engines` per spegnerlo.** Un controllo
+dietro una bandiera è un controllo che nessuno interroga: nessuno avrebbe scritto
+`--engines` per cercare un difetto che non sapeva di avere. Spento, il rapporto
+**tace** invece di dichiarare sane righe che non ha guardato — stessa regola del
+rilevatore assente.
+
+**Cinque esiti, cinque frasi, perché sono cinque riparazioni diverse:** sana;
+rotta (con le parole del motore per intero e la riga montata); non provata (tre
+motivi distinti: il descrittore tace, il motore non è qui, nessuna risposta); non
+montabile (nessun blocco `ask`); non può lavorare adesso. E `unusable_when` si
+legge **prima** di `refuses_without_prompt`: un motore esaurito non è un motore
+rotto, e letto al contrario manderebbe a correggere un descrittore sano.
+
+**Cosa questo non dice.** Che un motore sia stato **chiamato davvero**: quello lo
+sa il deposito, e resta un asse separato. Mescolarli farebbe passare per usato un
+motore che nessuna corsa ha mai nominato — che è il guasto 32.
 
 ### Il potere di un passo: modello Bazel, in osservazione
 **29/08/2026 — Theo.** Un passo dichiara cosa gli serve, e il resto per lui non

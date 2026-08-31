@@ -1238,6 +1238,81 @@ fn a_step(
     }
 }
 
+/// **UNA CORSA CONSEGNATA SI RITROVA, E `unfinished_runs` NON LA VEDE.**
+///
+/// Le due domande sembrano una sola e sono opposte. `unfinished_runs` cerca
+/// `steps.outcome IS NULL`: un'intenzione scritta senza esito, cioè un processo
+/// morto a metà. Un passo consegnato a un agente è **chiuso**, con esito
+/// `Waiting` — quindi quella domanda non lo trova, e fino al 31/08/2026 non lo
+/// trovava nessuno: una consegna che nessuno raccoglieva spariva dal sistema.
+///
+/// La prova tiene le due corse insieme apposta. Chiedere l'una e ricevere
+/// l'altra è il difetto vero, e con una corsa sola nel deposito non si vedrebbe.
+#[test]
+fn a_handed_run_is_found_by_the_waiting_question_and_not_by_the_unfinished_one() {
+    let directory = TestDirectory::new("corse-in-attesa");
+    let ledger = Ledger::open(&directory.0).expect("aprire il deposito");
+
+    // Consegnata: il passo è chiuso con esito «in attesa», e l'intestazione
+    // porta lo stato che l'esecutore le scrive.
+    a_run(&ledger, "run-handed", "sviluppa-sailor", 100, Some(150));
+    ledger
+        .record_run(&RunRecord {
+            run_id: "run-handed".to_owned(),
+            kind: "flow".to_owned(),
+            entity: "sviluppa-sailor".to_owned(),
+            parent_run_id: None,
+            started_by: "prova".to_owned(),
+            status: "waiting".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 100,
+            ended_at: Some(150),
+        })
+        .expect("registrare la corsa consegnata");
+    a_step(
+        &ledger,
+        "run-handed",
+        "implementa",
+        1,
+        1,
+        110,
+        Some((Outcome::Waiting, None, 150, Some("consegnato a «claude-vivo»"))),
+    );
+
+    // Interrotta a metà: un passo aperto e nessun esito. Questa è di
+    // `unfinished_runs`, e non deve comparire fra quelle in attesa.
+    a_run(&ledger, "run-halfway", "sviluppa-sailor", 200, None);
+    a_step(&ledger, "run-halfway", "implementa", 1, 1, 210, None);
+
+    let waiting = ledger.waiting_runs().expect("le corse in attesa si chiedono");
+    assert_eq!(
+        waiting.len(),
+        1,
+        "una sola corsa aspetta qualcuno, e non è quella interrotta: {waiting:?}"
+    );
+    assert_eq!(waiting[0].run_id, "run-handed");
+    assert_eq!(waiting[0].entity, "sviluppa-sailor");
+    assert_eq!(
+        waiting[0].waiting_since, 150,
+        "aspetta da quando si è fermata, non da quando è partita"
+    );
+
+    let unfinished = ledger
+        .unfinished_runs()
+        .expect("le corse interrotte si chiedono");
+    let names: Vec<&str> = unfinished
+        .iter()
+        .map(|run| run.run_id.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        vec!["run-halfway"],
+        "la corsa consegnata non è interrotta: il suo passo è chiuso. \
+         Se compare qui, le due domande si sono confuse"
+    );
+}
+
 /// Un deposito appena nato risponde, e risponde zero.
 ///
 /// Cade se una di queste letture tratta l'assenza come un guasto — per esempio
