@@ -17,6 +17,7 @@
 use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
+mod board;
 mod flows;
 mod live;
 mod run;
@@ -157,7 +158,10 @@ fn main() {
             run::known_runs,
             run::open_runs,
             run::step_history,
-            run::run_usage
+            run::run_usage,
+            board::execution_history,
+            board::day_summary,
+            board::machine_inventory
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");
