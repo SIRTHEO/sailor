@@ -88,6 +88,7 @@
         "cached_tokens": ["usage", "cache_read_input_tokens"],
         "cache_write_tokens": ["usage", "cache_creation", "ephemeral_5m_input_tokens"],
         "cache_write_long_tokens": ["usage", "cache_creation", "ephemeral_1h_input_tokens"],
+        "turns": ["num_turns"],
         "cost": ["total_cost_usd"],
         "model": { "first_key_of": ["modelUsage"] },
         "answer": ["result"]

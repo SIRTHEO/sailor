@@ -122,7 +122,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// prova nasce dal `CREATE TABLE` completo e non passa mai dalla migrazione. Si
 /// vede solo su una macchina che Sailor l'aveva già usato — cioè su quella di
 /// chi lo sviluppa, il giorno dopo.
-const PROJECTION_SCHEMA_VERSION: i64 = 5;
+const PROJECTION_SCHEMA_VERSION: i64 = 6;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -288,6 +288,15 @@ pub struct ModelCallRecord {
     /// verrebbe buttata via per non saperla spezzare in tre.
     #[serde(default)]
     pub total_tokens: Option<u64>,
+    /// **QUANTI TURNI HA FATTO QUESTA CHIAMATA.** Non e' una curiosita': su una
+    /// misura del 31/08/2026 una catena di quattro passi ha letto per turno
+    /// l'8% in piu' di una sessione sola che faceva lo stesso lavoro, e ha
+    /// consumato il doppio -- perche' ha fatto il doppio dei turni. Il numero
+    /// che spiega il conto di un flusso e' questo, e fino a ora non era in
+    /// nessuna colonna: chi voleva far costare meno una catena stava lavorando
+    /// su una quantita' che nessuno misurava.
+    #[serde(default)]
+    pub turns: Option<u64>,
     pub cost_micros: Option<i64>,
     /// Il costo che il motore ha dichiarato di suo, tenuto **accanto** a
     /// quello del listino e mai al posto suo: se un giorno i due divergono
@@ -1493,7 +1502,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              cache_write_tokens TEXT,
              cache_write_long_tokens TEXT,
              cache_write_price_micros_per_million INTEGER,
-             cache_write_long_price_micros_per_million INTEGER
+             cache_write_long_price_micros_per_million INTEGER,
+             turns TEXT
          );
          CREATE TABLE IF NOT EXISTS snapshots (
              snapshot_id TEXT PRIMARY KEY,
@@ -1591,6 +1601,10 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
                 [],
             )?;
         }
+    }
+    // versione 6: i turni. Si paga per turno, e nessuna colonna li contava.
+    if !column_exists(transaction, "model_calls", "turns")? {
+        transaction.execute("ALTER TABLE model_calls ADD COLUMN turns TEXT", [])?;
     }
     Ok(())
 }
@@ -2027,10 +2041,10 @@ fn project_model_call(
              retry_chain, error_type, started_at, ended_at, total_tokens,
              declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
              cache_write_price_micros_per_million,
-             cache_write_long_price_micros_per_million)
+             cache_write_long_price_micros_per_million, turns)
          VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -2049,7 +2063,8 @@ fn project_model_call(
           cache_write_tokens=excluded.cache_write_tokens,
           cache_write_long_tokens=excluded.cache_write_long_tokens,
           cache_write_price_micros_per_million=excluded.cache_write_price_micros_per_million,
-          cache_write_long_price_micros_per_million=excluded.cache_write_long_price_micros_per_million",
+          cache_write_long_price_micros_per_million=excluded.cache_write_long_price_micros_per_million,
+          turns=excluded.turns",
         params![
             record.call_id,
             record.run_id,
@@ -2080,6 +2095,7 @@ fn project_model_call(
             record.cache_write_long_tokens.map(|n| n.to_string()),
             record.cache_write_price_micros_per_million,
             record.cache_write_long_price_micros_per_million,
+            record.turns.map(|n| n.to_string()),
         ],
     )?;
     Ok(())
@@ -2378,7 +2394,7 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // disordine: chi legge questo dump lo fa per posizione, e infilarle in
         // mezzo sposterebbe ogni indice a valle senza che niente se ne accorga
         // finché un token non compare al posto di un prezzo.
-        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million",
+        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns",
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
     };
