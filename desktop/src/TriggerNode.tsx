@@ -96,6 +96,9 @@ const RUNNING_LABEL: Record<string, string> = {
   failed: "fallito",
   waiting: "in attesa",
   stopped: "fermato",
+  // Non è «fallito»: la corsa ha rispettato un limite che qualcuno le ha
+  // messo. Chi le vede uguali smette di guardare tutte e due.
+  cap_reached: "fermato dal tetto di spesa",
   incomplete: "incompleto",
 };
 
