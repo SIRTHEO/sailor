@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
@@ -1302,7 +1303,12 @@ export default function App() {
             fitView
             proOptions={{ hideAttribution: false }}
           >
-            <Background gap={20} />
+            {/* GRAPH PAPER AT TWO PITCHES, not generic dots: the fine one
+                gives the eye a measure, the coarse one gives it a place. Both
+                are declared under 1.5:1, because a grid that reads competes
+                with the nodes and the nodes are the figure. */}
+            <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
+            <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
             <Controls />
             {/* LA MINIMAPPA DICE DOVE GUARDARE, non «c'è della roba». Era un
                 blocco grigio uniforme: adesso ogni passo ci sta con la tinta
