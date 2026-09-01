@@ -217,6 +217,26 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             unpriced.join(", ")
         );
     }
+    // **CON QUALE IDENTITÀ SONO PARTITI I PROCESSI DI QUESTA CORSA.**
+    //
+    // «Se un processo AI si avvia deve esserci un profilo associato»: fino al
+    // 01/09/2026 quel dato era scritto nel deposito, riletto dentro una
+    // struttura, e non arrivava a **nessuna** schermata né a nessun comando.
+    // Un dato raccolto e mai guardato è a un passo dal diventare un dato
+    // sbagliato che nessuno nota, e questo è il posto dove una persona guarda
+    // quando qualcosa è andato storto.
+    //
+    // **QUI NON COMPARE NESSUN GETTONE**, e non è una svista da riparare: si
+    // dice quale casa e come è stata scelta, che è ciò su cui si va a guardare.
+    // Cosa c'è dentro quella casa non è affare di un rapporto sul consumo.
+    let identities = ui::dashboard::identities_of(&view.calls);
+    if !identities.is_empty() {
+        report.push_str("\nidentità:");
+        for (identity, how_many) in identities {
+            let word = if how_many == 1 { "chiamata" } else { "chiamate" };
+            let _ = write!(report, "\n  {identity} — {how_many} {word}");
+        }
+    }
     report
 }
 
@@ -1013,12 +1033,19 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
     let (flow, _) = one_flow(sources, name)?;
     let tools = toolbox::Tools::current();
     let real = actions::RealDryProbe;
-    let probe: Option<&dyn actions::DryProbe> = if try_engines { Some(&real) } else { None };
+    // **UNO STATO DEI PROFILI ILLEGGIBILE NON FERMA IL CONTROLLO**, per la
+    // stessa ragione per cui non ferma una corsa: si guarda un mondo senza
+    // profili, e la sezione delle case tace invece di dire una cosa falsa.
+    let profiles = profiles::store_io::load_store().unwrap_or_default();
+    let world = EngineWorld {
+        probe: &real,
+        profiles: &profiles,
+    };
     let (mut report, unknown) = check_report(
         &flow,
         &default_registry(open_default_ledger(), None),
         Some(&tools),
-        probe,
+        if try_engines { Some(&world) } else { None },
     );
     // **IL LISTINO SI GUARDA QUI E NON DENTRO `check_report`.** Quel rapporto è
     // puro — flusso, registro, rilevatore, sonda, tutti passati da fuori — e i
@@ -1096,11 +1123,45 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
 /// solo eseguendo. Solo il secondo caso è un errore; il primo è un avviso,
 /// perché un prodotto che gira su macchine diverse non può chiamare rotto un
 /// flusso che non è il suo.
+/// Chi fa le domande locali ai motori, e in quale casa gliele fa.
+///
+/// **PERCHÉ I DUE VIAGGIANO INSIEME.** Le domande a costo zero che `flow check`
+/// fa a un motore sono due — «la riga che ti monto è sana?» e «la casa da cui
+/// parti è autenticata?» — e la seconda non ha senso senza sapere quale casa:
+/// lo stato dei profili è l'altra metà della stessa domanda. Passarli separati
+/// costringerebbe ogni luogo di chiamata a portarsi due argomenti che valgono
+/// sempre la stessa cosa insieme.
+///
+/// **LO STATO DEI PROFILI ENTRA DA FUORI, E NON SI LEGGE QUI.** `check_report`
+/// resta puro — flusso, registro, rilevatore, mondo, tutti passati — ed è la sola
+/// ragione per cui una prova può metterci dentro una casa usa-e-getta invece di
+/// dipendere da come è configurata la macchina di chi la esegue.
+struct EngineWorld<'a> {
+    probe: &'a dyn actions::EngineProbe,
+    profiles: &'a profiles::ProfileStore,
+}
+
+#[cfg(test)]
+impl<'a> EngineWorld<'a> {
+    /// Un mondo in cui **nessun profilo è dichiarato**: è lo stato di una
+    /// macchina appena installata, ed è quello giusto per le prove che parlano
+    /// delle righe di comando e non delle case. Senza profilo attivo la sezione
+    /// delle credenziali tace, quindi quelle prove restano su ciò che provano.
+    fn without_profiles(probe: &'a dyn actions::EngineProbe) -> Self {
+        static NO_PROFILES: std::sync::OnceLock<profiles::ProfileStore> =
+            std::sync::OnceLock::new();
+        Self {
+            probe,
+            profiles: NO_PROFILES.get_or_init(profiles::ProfileStore::default),
+        }
+    }
+}
+
 fn check_report(
     flow: &FlowFile,
     registry: &ActionRegistry,
     tools: Option<&toolbox::Tools>,
-    probe: Option<&dyn actions::DryProbe>,
+    world: Option<&EngineWorld>,
 ) -> (String, Vec<String>) {
     let dependency_count: usize = flow.graph.steps().iter().map(|step| step.deps.len()).sum();
     let missing = missing_actions(&flow.graph, registry);
@@ -1176,8 +1237,9 @@ fn check_report(
             // Senza sonda il rapporto **tace** su questo, invece di dichiarare
             // sane righe che non ha guardato: è la stessa regola del rilevatore
             // assente qui sopra.
-            if let Some(probe) = probe {
-                engine_lines_into(&mut report, &flow.graph, tools, probe);
+            if let Some(world) = world {
+                engine_lines_into(&mut report, &flow.graph, tools, world.probe);
+                login_states_into(&mut report, &flow.graph, tools, world);
             }
         }
     }
@@ -1698,6 +1760,138 @@ fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<Hardco
             }
         }
         _ => {}
+    }
+}
+
+// ── le case di credenziali, chieste al motore ────────────────────────────
+
+/// **UNA CASA DICHIARATA E VUOTA SI APPLICA IN SILENZIO, ED È QUELLO CHE QUESTA
+/// SEZIONE ROMPE.**
+///
+/// Dal 01/09/2026 un motore lanciato da un passo parte nella casa del profilo
+/// attivo — è la cura del guasto 18 — e un profilo che punta a una cartella
+/// senza credenziali fa partire ogni chiamata **non autenticata** senza che
+/// niente lo dica. Il vaglio a secco non può vederlo e non deve provarci: toglie
+/// la domanda apposta, quindi il motore si ferma su «non mi hai dato niente da
+/// fare» e non arriva mai ai controlli che vengono dopo. È il guasto 39, e la
+/// metà che restava scoperta.
+///
+/// **SI CHIEDE AL MOTORE, E COME SI CHIEDE LO DICE IL DESCRITTORE.** Non si va a
+/// cercare `auth.json` sul disco: sarebbe una seconda copia della verità, una per
+/// motore, da tenere allineata a mano. Chi non dichiara `login_status` non fa
+/// scattare niente — **vuoto vuol dire «nessuno ha guardato», mai «è
+/// autenticato»** — ed è la stessa regola di `refuses_without_prompt`.
+///
+/// **NON FA FALLIRE IL CONTROLLO, E IL VERSO È DELIBERATO.** Fermare un flusso
+/// perché un profilo non è autenticato punirebbe chi non c'entra — è la cura
+/// sbagliata del guasto 35 — e chi controlla un flusso lo fa anche per capirlo,
+/// non solo per lanciarlo. Deve **vedersi**, e basta.
+///
+/// **COSTA ZERO E LO STESSO ESEGUE.** `codex login status` e `claude auth status`
+/// leggono un file locale: nessun modello, nessun fornitore, nessun denaro.
+/// Restano processi avviati, quindi vivono dietro la stessa sonda delle righe di
+/// comando e tacciono insieme a lei con `--no-engines`.
+fn login_states_into(
+    report: &mut String,
+    graph: &Graph,
+    tools: &toolbox::Tools,
+    world: &EngineWorld,
+) {
+    use actions::{LoginVerdict, ToolResolver};
+
+    let mut unauthenticated = Vec::new();
+    let mut authenticated = Vec::new();
+    let mut unknown = Vec::new();
+
+    let mut asked: BTreeSet<String> = BTreeSet::new();
+    for wanted in engines_wanted(graph) {
+        // Un motore si interroga UNA VOLTA SOLA anche quando lo nominano sei
+        // passi: la casa viene dal profilo attivo, non dal passo, quindi sei
+        // domande darebbero sei volte la stessa risposta. Il rapporto nomina il
+        // motore e il profilo, che è ciò che chi legge deve cambiare.
+        if !tools.declares(&wanted.tool) || !asked.insert(wanted.tool.clone()) {
+            continue;
+        }
+        // Un motore che non è invocabile qui è già nominato dalla sezione delle
+        // righe: ripeterlo manderebbe a cercare due difetti dove ce n'è uno.
+        let Ok(bin) = tools.resolve(&wanted.tool) else {
+            continue;
+        };
+        // **SOLO DOVE UN PROFILO È IN FORZA.** Senza profilo attivo il motore
+        // parte nella casa di chi ha aperto il terminale, che è la casa di
+        // sempre: non c'è nessuna scelta di Sailor da rendere visibile, e
+        // un avviso qui parlerebbe di una cosa che questo comando non governa.
+        let equipment = actions::equipment_for(world.profiles, &bin, &BTreeMap::new());
+        let ledger::EngineIdentity::ProfileInForce {
+            cli_id,
+            profile_name,
+            ..
+        } = &equipment.identity
+        else {
+            continue;
+        };
+        // La casa si mostra come la riceve il motore — variabile e valore — e
+        // non ricalcolata da un'altra parte: due strade che compongono la stessa
+        // cosa divergono al primo che cambia.
+        let home = equipment
+            .env
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let who = format!(
+            "{} (profilo «{cli_id}/{profile_name}», {home})",
+            wanted.tool
+        );
+
+        let Some(recipe) = tools.login_recipe(&wanted.tool) else {
+            unknown.push(format!(
+                "{who}: il suo descrittore non dichiara come chiedergli se è \
+                 autenticato (`login_status`), quindi nessuno ha guardato — che \
+                 non vuol dire che lo sia"
+            ));
+            continue;
+        };
+        match actions::probe_login_status(world.probe, &bin, &equipment.env, &recipe) {
+            LoginVerdict::LoggedIn { .. } => authenticated.push(who),
+            // LE PAROLE DEL MOTORE, come per una riga rotta: «non autenticato»
+            // detto da noi non dice quale credenziale manca, e la frase sua sì.
+            LoginVerdict::LoggedOut { said } => unauthenticated.push(format!("{who}: «{said}»")),
+            LoginVerdict::NotDeclared => unknown.push(format!(
+                "{who}: il suo descrittore dichiara `login_status` a metà — servono \
+                 le parole del sì e quelle del no — quindi non si può leggere niente"
+            )),
+            LoginVerdict::Unrecognised { said } => unknown.push(format!(
+                "{who}: ha risposto «{said}», che non somiglia a nessuna delle due \
+                 forme dichiarate"
+            )),
+            LoginVerdict::NoAnswer { why } => {
+                unknown.push(format!("{who}: nessuna risposta — {why}"))
+            }
+        }
+    }
+
+    if !unauthenticated.is_empty() {
+        let _ = write!(
+            report,
+            "\nCASE SENZA CREDENZIALI (la corsa parte lo stesso, e le chiamate a \
+             questi motori partiranno NON AUTENTICATE): {}",
+            unauthenticated.join("; ")
+        );
+    }
+    if !authenticated.is_empty() {
+        let _ = write!(
+            report,
+            "\ncase autenticate (chiesto al motore, senza spendere): {}",
+            authenticated.join("; ")
+        );
+    }
+    if !unknown.is_empty() {
+        let _ = write!(
+            report,
+            "\ncase di cui non si sa se sono autenticate: {}",
+            unknown.join("; ")
+        );
     }
 }
 
@@ -3393,8 +3587,7 @@ mod tests {
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 0,
@@ -3440,6 +3633,54 @@ mod tests {
             "un modello prezzato non si segnala: {said}"
         );
         assert!(said.contains("più bassa di quella vera"), "{said}");
+    }
+
+    /// **IL RAPPORTO DICE CON QUALE IDENTITÀ OGNI PROCESSO È PARTITO.**
+    ///
+    /// Fino al 01/09/2026 quel dato era scritto nel deposito, riletto dentro
+    /// `CallView`, e non arrivava a **nessuna** schermata né a nessun comando —
+    /// cercato in `crates/ui`, `desktop/src` e `crates/sailor`. Un dato raccolto
+    /// e mai guardato è a un passo dal diventare un dato sbagliato che nessuno
+    /// nota; questo è il posto dove una persona guarda quando qualcosa è andato
+    /// storto.
+    ///
+    /// **E IL PERCORSO DELLA CASA CI DEVE STARE**, perché è il fondo su cui una
+    /// diagnostica si appoggia: un nome di profilo dice sotto quale etichetta si
+    /// è girato, un percorso dice dove andare a guardare.
+    ///
+    /// *Mutante eseguito*: togliere da `spending_report` il blocco che scrive
+    /// «identità:». Questa diventa rossa e nessun'altra.
+    #[test]
+    fn the_cost_report_says_which_identity_each_process_started_with() {
+        let mut in_force = a_call("prezzato", Some(1_000));
+        in_force.engine_identity = ledger::EngineIdentity::ProfileInForce {
+            cli_id: "codex".to_owned(),
+            profile_name: "lavoro".to_owned(),
+            home_dir: "/case/codex/lavoro".into(),
+        };
+        let mut again = in_force.clone();
+        again.call_id = "call-due".to_owned();
+        let mut by_the_step = a_call("prezzato", Some(1_000));
+        by_the_step.call_id = "call-passo".to_owned();
+        by_the_step.engine_identity = ledger::EngineIdentity::ChosenByTheStep {
+            cli_id: "codex".to_owned(),
+            home_dir: "/una/casa/scritta/nel/passo".into(),
+        };
+
+        let calls = vec![in_force, again, by_the_step];
+        let view = ui::dashboard::summarize_run(&a_finished_run(), &[], &calls, 100);
+
+        let said = spending_report(&view, &a_small_price_list());
+
+        assert!(said.contains("identità:"), "{said}");
+        assert!(
+            said.contains("profilo codex/lavoro — casa /case/codex/lavoro — 2 chiamate"),
+            "{said}"
+        );
+        assert!(
+            said.contains("casa scelta dal passo (codex) — casa /una/casa/scritta/nel/passo — 1 chiamata"),
+            "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
+        );
     }
 
     /// La gemella: quando tutto è prezzato la riga non compare. Senza di lei un
@@ -3903,6 +4144,224 @@ mod tests {
         );
     }
 
+    // ── le case di credenziali ────────────────────────────────────────
+
+    /// Un finto `codex` che si comporta come quello vero **su questa domanda**:
+    /// risponde su stderr, dice «Not logged in» quando in casa non c'è
+    /// `auth.json`, e «Logged in using ChatGPT» quando c'è. Anche i due codici
+    /// d'uscita sono quelli misurati il 01/09/2026 — 1 e 0 — apposta: se un
+    /// giorno qualcuno facesse dipendere il verdetto dall'esito, questa prova
+    /// resterebbe verde, e la prova gemella in `crates/actions/tests` dice
+    /// perché non basterebbe.
+    ///
+    /// **SI CHIAMA `codex` PERCHÉ IL LEGAME È L'ESEGUIBILE**: è su quel nome che
+    /// `profiles::cli_for_executable` decide quale variabile sposta la casa.
+    fn a_fake_codex_that_answers_about_its_home(dir: &Path) -> String {
+        let path = dir.join("codex");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\n\
+             if [ \"$1\" = login ] && [ \"$2\" = status ]; then\n\
+             \x20 if [ -f \"$CODEX_HOME/auth.json\" ]; then\n\
+             \x20   echo 'Logged in using ChatGPT' >&2; exit 0\n\
+             \x20 fi\n\
+             \x20 echo 'Not logged in' >&2; exit 1\n\
+             fi\n\
+             echo 'No prompt provided via stdin.' >&2\n\
+             exit 1\n",
+        )
+        .expect("scrivere il finto motore");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("bit di esecuzione");
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    /// Una cartella usa-e-getta con dentro il finto motore e il suo descrittore.
+    fn a_machine_with_a_real_fake_codex(declares_login: bool) -> (PathBuf, toolbox::Tools) {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("prova-case-{}-{serial}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("la cartella di prova");
+        a_fake_codex_that_answers_about_its_home(&dir);
+
+        let login = if declares_login {
+            r#","login_status":{"args":["login","status"],
+               "logged_in_when":["logged in using"],
+               "logged_out_when":["not logged in"]}"#
+        } else {
+            ""
+        };
+        let file = dir.join("tools.json");
+        std::fs::write(
+            &file,
+            format!(
+                r#"{{"tools":[{{"id":"codex","family":"ai_cli","label":"codex",
+                   "detect":{{"command":"codex"}},
+                   "ask":{{"args":["exec"],"prompt":"stdin",
+                           "refuses_without_prompt":["no prompt provided via stdin"]}}
+                   {login}}}]}}"#
+            ),
+        )
+        .expect("scrivere i descrittori");
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
+        let tools = toolbox::Tools::new(
+            catalog,
+            toolbox::Machine {
+                path_dirs: vec![dir.clone()],
+                home: dir.clone(),
+                env: BTreeMap::new(),
+                version_probes: false,
+            },
+        );
+        (dir, tools)
+    }
+
+    /// Uno stato dei profili che dichiara una casa sola, attiva.
+    fn a_store_pointing_at(home: &Path) -> profiles::ProfileStore {
+        profiles::ProfileStore {
+            profiles: vec![profiles::Profile {
+                name: "prove".to_owned(),
+                cli_id: "codex".to_owned(),
+                home_dir: home.to_path_buf(),
+            }],
+            active: [("codex".to_owned(), "prove".to_owned())]
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    /// **IL GUASTO 39, L'ALTRA METÀ, CONTRO UN PROCESSO VERO.**
+    ///
+    /// Il vaglio a secco continua a dire «riga sana» in tutti e due i casi — è
+    /// quello che deve fare, toglie la domanda apposta — e accanto compare la
+    /// cosa che nessuno diceva: da quale casa parte questo motore, e se quella
+    /// casa ha delle credenziali.
+    ///
+    /// **DUE BRACCI, E SERVONO TUTTI E DUE.** Il primo da solo resterebbe verde
+    /// con un controllo che gridasse sempre; il secondo da solo resterebbe verde
+    /// con un controllo che non guarda niente. Insieme dicono che la risposta
+    /// viene dalla casa.
+    ///
+    /// **E LA SONDA È QUELLA VERA.** `RealDryProbe` avvia un processo: una
+    /// finta risponderebbe quello che le diciamo noi, cioè proverebbe che
+    /// sappiamo scrivere una risposta. Qui il motore la legge dal disco.
+    ///
+    /// *Mutanti eseguiti*: (a) leggere `logged_in_when` prima di
+    /// `logged_out_when` in `judge_login_status` — il primo braccio diventa
+    /// rosso, cioè si rimette il silenzio originale; (b) togliere
+    /// `login_status` dal descrittore — vedi la prova qui sotto.
+    #[test]
+    fn a_flow_check_says_which_home_the_engine_starts_from_and_whether_it_has_credentials() {
+        let (dir, tools) = a_machine_with_a_real_fake_codex(true);
+        let flow = flow_with_chain(r#""codex""#);
+        let real = actions::RealDryProbe;
+
+        let empty = dir.join("casa-vuota");
+        std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
+        let store = a_store_pointing_at(&empty);
+        let (report, unknown) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&EngineWorld {
+                probe: &real,
+                profiles: &store,
+            }),
+        );
+        assert!(
+            report.contains("CASE SENZA CREDENZIALI"),
+            "una casa senza credenziali si applica in silenzio: {report}"
+        );
+        assert!(
+            report.contains(&empty.display().to_string()) && report.contains("codex/prove"),
+            "chi legge deve sapere QUALE profilo e QUALE casa, o non sa cosa cambiare: {report}"
+        );
+        assert!(
+            report.contains("Not logged in"),
+            "le parole del motore sono la diagnosi: {report}"
+        );
+        assert!(
+            report.contains("righe di comando sane"),
+            "il vaglio a secco continua a dire la sua, e continua a dire il vero: {report}"
+        );
+        assert!(
+            unknown.is_empty(),
+            "un profilo senza credenziali NON fa fallire il controllo: punire chi non \
+             c'entra è la cura sbagliata"
+        );
+
+        let full = dir.join("casa-piena");
+        std::fs::create_dir_all(&full).expect("la casa autenticata");
+        std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
+        let store = a_store_pointing_at(&full);
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&EngineWorld {
+                probe: &real,
+                profiles: &store,
+            }),
+        );
+        assert!(
+            report.contains("case autenticate"),
+            "una casa piena deve risultare piena: {report}"
+        );
+        assert!(
+            !report.contains("CASE SENZA CREDENZIALI"),
+            "e non deve comparire fra quelle vuote: {report}"
+        );
+    }
+
+    /// **CHI NON DICHIARA IL BLOCCO NON FA SCATTARE NIENTE — E NON DICE
+    /// «AUTENTICATO».**
+    ///
+    /// È il mutante (b) scritto una volta per tutte invece che eseguito una
+    /// volta sola: la casa è vuota identica a quella del primo braccio qui
+    /// sopra, e il solo cambiamento è che il descrittore non dice come si
+    /// chiede. Il rapporto deve dire **che nessuno ha guardato**, mai tacere e
+    /// mai rassicurare. Un predefinito comodo qui rimetterebbe il difetto per
+    /// ogni motore che il blocco non ce l'ha ancora — cioè per tutti quelli che
+    /// verranno.
+    #[test]
+    fn a_descriptor_without_the_block_makes_the_check_say_nobody_looked() {
+        let (dir, tools) = a_machine_with_a_real_fake_codex(false);
+        let flow = flow_with_chain(r#""codex""#);
+        let real = actions::RealDryProbe;
+        let empty = dir.join("casa-vuota");
+        std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
+        let store = a_store_pointing_at(&empty);
+
+        let (report, _) = check_report(
+            &flow,
+            &default_registry(None, None),
+            Some(&tools),
+            Some(&EngineWorld {
+                probe: &real,
+                profiles: &store,
+            }),
+        );
+
+        assert!(
+            report.contains("case di cui non si sa se sono autenticate")
+                && report.contains("nessuno ha guardato"),
+            "un'assenza deve dirsi: {report}"
+        );
+        assert!(
+            !report.contains("case autenticate"),
+            "«nessuno ha guardato» non è «è autenticato»: {report}"
+        );
+        assert!(
+            !report.contains("CASE SENZA CREDENZIALI"),
+            "e non è nemmeno «non è autenticato»: inventare un no dove non si è \
+             guardato manderebbe a riparare una casa sana: {report}"
+        );
+    }
+
     // ── le righe di comando provate a secco ───────────────────────────
 
     /// Una macchina finta con dei motori dentro, e i loro descrittori.
@@ -3965,6 +4424,23 @@ mod tests {
         }
     }
 
+    /// Alla domanda sulle credenziali non risponde niente: queste prove parlano
+    /// delle righe di comando, e senza profilo attivo la domanda non si fa
+    /// nemmeno. Un finto che rispondesse qualcosa direbbe qualcosa di questo
+    /// mondo, e ci sono prove apposta per quello.
+    impl actions::LoginProbe for ScriptedProbe {
+        fn ask(
+            &self,
+            _bin: &str,
+            _args: &[String],
+            _env: &BTreeMap<String, String>,
+        ) -> actions::DryRun {
+            actions::DryRun::NoAnswer {
+                why: "questa sonda non risponde alla domanda sulle credenziali".to_owned(),
+            }
+        }
+    }
+
     fn flow_with_chain(chain: &str) -> FlowFile {
         let json = format!(
             r#"{{
@@ -4006,7 +4482,7 @@ mod tests {
             &flow,
             &default_registry(None, None),
             Some(&tools),
-            Some(&probe),
+            Some(&EngineWorld::without_profiles(&probe)),
         );
 
         assert!(report.contains("righe di comando sane"), "{report}");
@@ -4030,7 +4506,7 @@ mod tests {
             &flow,
             &default_registry(None, None),
             Some(&tools),
-            Some(&probe),
+            Some(&EngineWorld::without_profiles(&probe)),
         );
 
         assert!(report.contains("righe di comando ROTTE"), "{report}");
@@ -4067,7 +4543,7 @@ mod tests {
             &flow,
             &default_registry(None, None),
             Some(&tools),
-            Some(&probe),
+            Some(&EngineWorld::without_profiles(&probe)),
         );
 
         assert!(
@@ -4097,7 +4573,7 @@ mod tests {
             &flow,
             &default_registry(None, None),
             Some(&tools),
-            Some(&probe),
+            Some(&EngineWorld::without_profiles(&probe)),
         );
 
         let untried = report
@@ -4137,7 +4613,7 @@ mod tests {
             &flow,
             &default_registry(None, None),
             Some(&tools),
-            Some(&probe),
+            Some(&EngineWorld::without_profiles(&probe)),
         );
 
         assert!(
@@ -4196,7 +4672,7 @@ mod tests {
             &flow,
             &default_registry(None, None),
             Some(&tools),
-            Some(&probe),
+            Some(&EngineWorld::without_profiles(&probe)),
         );
 
         assert!(!report.contains("righe di comando"), "{report}");
@@ -4227,8 +4703,7 @@ mod tests {
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 100,
@@ -4550,8 +5025,7 @@ mod tests {
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 0,

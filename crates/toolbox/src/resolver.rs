@@ -91,6 +91,39 @@ impl Tools {
             .map(|loaded| loaded.descriptor.capability(name))
     }
 
+    /// Lo strumento che, su questa macchina, **è** quell'eseguibile: il suo
+    /// identificativo e il percorso a cui si è risolto.
+    ///
+    /// **IL LEGAME È L'ESEGUIBILE, NON UNA TABELLA DI CORRISPONDENZE.** Questi
+    /// descrittori chiamano `claude-code` ciò che la tabella dei profili chiama
+    /// `claude`: due elenchi che rispondono a due domande diverse, e appaiarli
+    /// con una terza tabella vorrebbe dire tenerne allineate tre a mano. A
+    /// leggere `CLAUDE_CONFIG_DIR` è il **binario**, qualunque nome gli dia chi
+    /// lo nomina — è la stessa scelta di `profiles::cli_for_executable`, presa
+    /// dal lato opposto.
+    ///
+    /// **RISOLVE DAVVERO, E QUESTO È IL PUNTO.** Non guarda cosa il descrittore
+    /// *dice* di cercare: guarda a cosa si risolve qui, che è l'unica cosa che
+    /// un passo eseguirà. Un descrittore che dichiarasse `codex` e ne trovasse
+    /// un altro darebbe qui la stessa risposta che darà alla corsa.
+    pub fn declared_as_executable(&self, executable: &str) -> Option<(String, String)> {
+        use actions::ToolResolver;
+        for loaded in self.catalog.live() {
+            let id = &loaded.descriptor.id;
+            let Ok(path) = self.resolve(id) else {
+                continue;
+            };
+            if std::path::Path::new(&path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                == Some(executable)
+            {
+                return Some((id.clone(), path));
+            }
+        }
+        None
+    }
+
     /// Gli identificativi dichiarati, in ordine: è ciò che si mostra a chi ne ha
     /// scritto uno che non esiste.
     pub fn declared_ids(&self) -> Vec<String> {
@@ -198,6 +231,24 @@ impl actions::ToolResolver for Tools {
     /// aggiungerebbe una scansione per rispondere a una domanda già risposta.
     fn session_recipe(&self, id: &str) -> Option<actions::SessionRecipe> {
         self.sessions.for_tool(id)
+    }
+
+    /// Come si chiede a questo motore se la casa da cui parte è autenticata.
+    /// Nessuna interpretazione, come sopra: chi non lo dichiara resta senza, e
+    /// il controllo tace su di lui invece di rassicurare.
+    fn login_recipe(&self, id: &str) -> Option<actions::LoginRecipe> {
+        let loaded = self
+            .catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?;
+        let login = loaded.descriptor.login_status.as_ref()?;
+        Some(actions::LoginRecipe {
+            args: login.args.clone(),
+            answer: login.answer.as_ref().map(pointer),
+            logged_in_when: login.logged_in_when.clone(),
+            logged_out_when: login.logged_out_when.clone(),
+        })
     }
 }
 

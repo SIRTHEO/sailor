@@ -49,14 +49,15 @@ pub mod store;
 /// da questa parte del confine sarebbe una seconda definizione della stessa
 /// cosa: due strutture gemelle divergono al primo campo che qualcuno aggiunge a
 /// una sola delle due.
-pub use models::usage::{read_declared, read_text, Declared, Pointer, Reading, Shape};
+pub use models::usage::{read_declared, read_scalar, read_text, Declared, Pointer, Reading, Shape};
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, ValueSchema};
-use ledger::{Ledger, ModelCallRecord};
+use ledger::{EngineIdentity, Ledger, ModelCallRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -580,6 +581,18 @@ pub trait ToolResolver: Send + Sync {
     fn session_recipe(&self, _id: &str) -> Option<SessionRecipe> {
         None
     }
+
+    /// Come si chiede a `id` se la casa da cui parte è autenticata.
+    ///
+    /// **`None` VUOL DIRE «NESSUNO HA GUARDATO», MAI «È AUTENTICATO».** Chi non
+    /// la dichiara non fa scattare nessun avviso e non ne fa scattare nemmeno
+    /// uno tranquillizzante: il controllo tace su quel motore, e chi legge sa
+    /// che tace. È la stessa regola di `refuses_without_prompt`, e il verso
+    /// conta — un predefinito che dicesse di sì renderebbe silenziosa proprio la
+    /// condizione che questo canale esiste per rendere visibile.
+    fn login_recipe(&self, _id: &str) -> Option<LoginRecipe> {
+        None
+    }
 }
 
 /// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
@@ -808,12 +821,18 @@ impl DryProbe for RealDryProbe {
         // **QUESTO NON DICE SE LA CASA È AUTENTICATA, ED È UN LIMITE DELLA
         // TECNICA.** Il vaglio toglie la domanda apposta, quindi il motore si
         // ferma sulla domanda mancante e non arriva mai ai controlli che
-        // verrebbero dopo — le credenziali stanno di là. Misurato il
-        // 01/09/2026: `CODEX_HOME=<cartella vuota> codex exec < /dev/null`
-        // risponde «No prompt provided via stdin» ed esce **zero**, identico a
-        // una casa piena. Chi vuole sapere se una casa è autenticata deve
-        // guardare la casa: qui si chiude solo la divergenza fra il mondo
-        // provato e il mondo in cui si lavora.
+        // verrebbero dopo — le credenziali stanno di là. Rimisurato il
+        // 01/09/2026 nelle due case: `codex exec < /dev/null` risponde **la
+        // stessa cosa** — «No prompt provided via stdin.» — e esce 1 tutte e due
+        // le volte. (Fino a quella misura questa riga diceva «esce zero»: il
+        // numero era falso, l'identità delle due risposte no, ed è quella che
+        // porta la conclusione.)
+        //
+        // **LA DOMANDA CHE MANCA SI FA A PARTE, E ADESSO ESISTE**: è
+        // `probe_login_status`, che chiede al motore con le parole che il
+        // descrittore dichiara in `login_status`. Non va infilata qui: questa
+        // sonda prova *la riga*, e mescolare i due verdetti renderebbe
+        // impossibile dire quale dei due ha detto di no.
         let equipment = current_equipment_for(bin, &BTreeMap::new());
         let result = invoke_external_engine(&EngineInvocation {
             bin: bin.to_owned(),
@@ -860,6 +879,241 @@ pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> Pro
     match probe.run(bin, &args, stdin) {
         DryRun::Answered { stdout, stderr } => judge_dry_run(recipe, &stdout, &stderr),
         DryRun::NoAnswer { why } => ProbeVerdict::TimedOut { why },
+    }
+}
+
+// ── la casa è autenticata? lo dice il motore ─────────────────────────────
+
+/// Come si chiede a un motore **se la casa da cui parte è autenticata**, e con
+/// quali parole risponde di sì e di no.
+///
+/// **PERCHÉ NON SI GUARDA IL DISCO.** Cercare `auth.json` sarebbe una seconda
+/// copia della verità, da riscrivere per ogni motore e da tenere allineata a
+/// mano mentre i motori cambiano dove mettono le cose. Chi sa rispondere è il
+/// motore; il descrittore dichiara soltanto **come si chiede** e **come si
+/// riconosce la risposta** — la stessa disciplina di `unusable_when` e
+/// `refuses_without_prompt`, applicata a una terza domanda.
+///
+/// **PERCHÉ SERVE UN CANALE A SÉ, E IL VAGLIO A SECCO NON BASTA.** `flow check`
+/// prova la riga **senza la domanda**: il motore si ferma su «non mi hai dato
+/// niente da fare» e non arriva mai ai controlli che vengono dopo, dove stanno
+/// le credenziali. Misurato il 01/09/2026 nelle due case: `codex exec <
+/// /dev/null` risponde «No prompt provided via stdin.» ed esce 1 **in tutte e
+/// due**, parola per parola la stessa cosa. È un limite della tecnica, non un
+/// difetto da riparare in essa: la domanda sulle credenziali si fa a parte, e
+/// costa zero perché è locale — nessun fornitore viene chiamato.
+#[derive(Clone, Debug)]
+pub struct LoginRecipe {
+    /// Le opzioni, o il sottocomando, con cui si fa la domanda: `["login",
+    /// "status"]`, `["auth", "status"]`.
+    pub args: Vec<String>,
+    /// Dove sta la risposta dentro ciò che il motore ha detto.
+    ///
+    /// **È IL PUNTATORE DI `usage`, NON UN SECONDO MECCANISMO**, e la ragione è
+    /// che il problema è lo stesso: due motori dicono la stessa cosa in due
+    /// forme diverse. `codex` risponde in prosa — «Logged in using ChatGPT» — e
+    /// allora non c'è niente da puntare, il soggetto è tutto ciò che ha detto.
+    /// `claude` risponde con un involucro JSON e mette la risposta in un campo
+    /// booleano, `"loggedIn": true`, e allora il cammino di chiavi la raggiunge.
+    ///
+    /// `None` non è «non guardare»: è «il soggetto è l'uscita intera», che è la
+    /// forma più comune e quella che non richiede di dichiarare niente.
+    pub answer: Option<Pointer>,
+    /// Le parole con cui questo motore dichiara di **essere** autenticato.
+    pub logged_in_when: Vec<String>,
+    /// Le parole con cui dichiara di **non** esserlo.
+    ///
+    /// **VANNO DICHIARATE TUTTE E DUE, E LA MANCANZA DI UNA SPEGNE IL
+    /// CONTROLLO.** Un descrittore che sapesse riconoscere solo il sì
+    /// chiamerebbe «non riconosciuto» ogni no, e chi legge non saprebbe
+    /// distinguere un motore non autenticato da uno che ha risposto qualcosa di
+    /// strano. Meglio tacere: vedi [`LoginVerdict::NotDeclared`].
+    pub logged_out_when: Vec<String>,
+}
+
+/// Che cosa si è potuto sapere sulle credenziali di una casa.
+///
+/// **QUATTRO ESITI E NON DUE, PER LA RAGIONE DI SEMPRE.** «Nessuno ha guardato»,
+/// «ha risposto e non l'ho capito» e «ha detto di no» sono tre fatti diversi, e
+/// **nessuno dei tre è un sì**. Un tipo a due stati costringerebbe a scegliere
+/// da che parte far cadere i primi due, e la direzione comoda è sempre quella
+/// che tranquillizza — cioè quella che rimette il difetto.
+#[derive(Clone, Debug)]
+pub enum LoginVerdict {
+    /// Il motore dichiara di essere autenticato in questa casa.
+    LoggedIn { said: String },
+    /// Il motore dichiara di **non** esserlo: le chiamate partiranno senza
+    /// credenziali.
+    LoggedOut { said: String },
+    /// Il descrittore non dichiara il blocco, o lo dichiara a metà. **Nessuno
+    /// ha guardato**, e non c'è niente da dire su questa casa.
+    NotDeclared,
+    /// Ha risposto, e la risposta non somiglia a nessuna delle due forme
+    /// dichiarate. Le sue parole sono la diagnosi.
+    Unrecognised { said: String },
+    /// Non ha risposto affatto: non è partito, o ha superato il tetto di tempo.
+    NoAnswer { why: String },
+}
+
+impl LoginVerdict {
+    /// Vero **solo** quando il motore ha detto di sì. Ogni altro esito, dubbio
+    /// compreso, risponde di no: è la forma in cui il verso dell'errore si
+    /// scrive una volta sola invece che a ogni luogo di lettura.
+    pub fn is_logged_in(&self) -> bool {
+        matches!(self, LoginVerdict::LoggedIn { .. })
+    }
+}
+
+/// Legge la risposta di un motore alla domanda «sei autenticato?».
+///
+/// **PURA, E SEPARATA DA CHI ESEGUE**, per la stessa ragione di
+/// [`judge_dry_run`]: il giudizio è la parte che si sbaglia, e una prova che
+/// dovesse lanciare `codex` direbbe com'è messa la macchina di chi la esegue
+/// invece che se il riconoscimento funziona.
+///
+/// **IL CODICE D'USCITA NON ENTRA NEMMENO QUI.** Sui due motori misurati il
+/// 01/09/2026 l'esito *distinguerebbe* — `codex login status` esce 1 non
+/// autenticato e 0 autenticato, e `claude auth status` fa lo stesso — ma è un
+/// fatto di quei due e non una regola che si possa scrivere nel codice: un
+/// motore che rispondesse «Not logged in» uscendo zero verrebbe dichiarato
+/// autenticato da chiunque leggesse l'esito, e nessuno se ne accorgerebbe. Il
+/// testo lo dichiara il descrittore, l'esito no.
+///
+/// **L'ORDINE DI LETTURA È VINCOLANTE: PRIMA IL NO.** «Not logged in»
+/// *contiene* «logged in», e in generale il modo di dire di no è il modo di dire
+/// di sì con una negazione davanti. Letto nell'ordine opposto, una casa vuota
+/// risulterebbe autenticata — che è precisamente il silenzio che questo blocco
+/// esiste per rompere. Le parole dichiarate misurate lo eviterebbero già; questo
+/// lo evita anche quando chi scrive il descrittore è stato distratto.
+pub fn judge_login_status(recipe: &LoginRecipe, stdout: &str, stderr: &str) -> LoginVerdict {
+    // **LE DUE PIPE INSIEME, E QUI NON È UN DETTAGLIO**: `codex login status`
+    // non scrive niente su stdout — la risposta è tutta su stderr, misurato il
+    // 01/09/2026. Chi ne leggesse una sola non troverebbe mai nessuna delle due
+    // forme e direbbe sempre «nessuno ha guardato».
+    let said = [stdout.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|piece| !piece.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let declared = |marks: &[String]| marks.iter().any(|mark| !mark.trim().is_empty());
+    if !declared(&recipe.logged_in_when) || !declared(&recipe.logged_out_when) {
+        return LoginVerdict::NotDeclared;
+    }
+
+    // Il puntatore sceglie il soggetto, e basta: le parole si cercano dentro
+    // quello, con la stessa regola di `unusable_when`. Senza puntatore il
+    // soggetto è ciò che il motore ha detto per intero.
+    let subject = match recipe.answer.as_ref() {
+        None => Some(said.clone()),
+        Some(pointer) => read_scalar(&said, pointer),
+    };
+    // Un puntatore che non trova niente non è un sì: l'involucro non era quello
+    // che il descrittore dichiarava, e la risposta resta sconosciuta.
+    let Some(subject) = subject else {
+        return LoginVerdict::Unrecognised { said };
+    };
+
+    // **SI MOSTRA IL SOGGETTO, NON L'INVOLUCRO CHE LO CONTENEVA.** La risposta
+    // vera di `claude auth status` porta con sé l'indirizzo di posta del
+    // proprietario, l'identificativo e il nome della sua organizzazione e il
+    // tipo di abbonamento; questo testo finisce in `sailor profiles list` e nel
+    // rapporto di `sailor flow check`, cioè in due uscite che si incollano in
+    // una consegna e si versano in un registro. **Una diagnosi non deve
+    // portarsi dietro chi la usa.**
+    //
+    // Non si perde niente: dove un puntatore c'è, il valore che ha isolato *è*
+    // la risposta — «false» è più preciso dell'involucro, non meno — e dove non
+    // c'è, il soggetto è già tutto ciò che il motore ha detto. È la stessa
+    // regola delle righe rotte («le parole del motore per intero») applicata a
+    // un motore che risponde con un campo invece che con una frase.
+    let shown = if recipe.answer.is_some() {
+        subject.clone()
+    } else {
+        said
+    };
+
+    if mentions_any(&recipe.logged_out_when, &subject) {
+        return LoginVerdict::LoggedOut { said: shown };
+    }
+    if mentions_any(&recipe.logged_in_when, &subject) {
+        return LoginVerdict::LoggedIn { said: shown };
+    }
+    LoginVerdict::Unrecognised { said: shown }
+}
+
+/// Chi fa la domanda locale «sei autenticato?», **dentro una casa precisa**.
+///
+/// **PERCHÉ UN TRATTO A SÉ E NON [`DryProbe`].** Sono due domande diverse su due
+/// mondi diversi: il vaglio a secco prova la riga nella casa del profilo attivo,
+/// e chi la compone non la sceglie; questa domanda va fatta **in una casa
+/// nominata** — `sailor profiles list` la fa a ogni profilo, non solo a quello
+/// in forza, e con `DryProbe` non avrebbe modo di dirlo. L'ambiente è quindi un
+/// argomento, non una cosa che l'esecutore va a leggersi da solo.
+pub trait LoginProbe: Send + Sync {
+    fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun;
+}
+
+/// Le due domande locali che si possono fare a un motore senza spendere.
+///
+/// Sta insieme perché chi controlla un flusso le fa tutte e due nello stesso
+/// momento e sullo stesso mondo; separate, ogni luogo di chiamata dovrebbe
+/// portarsi due argomenti che valgono sempre la stessa cosa.
+pub trait EngineProbe: DryProbe + LoginProbe {}
+
+impl<T: DryProbe + LoginProbe> EngineProbe for T {}
+
+impl LoginProbe for RealDryProbe {
+    fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun {
+        let result = invoke_external_engine(&EngineInvocation {
+            bin: bin.to_owned(),
+            args: args.to_vec(),
+            env: env.clone(),
+            workdir: None,
+            // **L'INGRESSO VUOTO E CHIUSO, CIOÈ `< /dev/null`.** Un motore che
+            // si mettesse ad aspettare qualcosa dall'ingresso appenderebbe il
+            // controllo di tutti gli altri: è la trappola già pagata su `codex
+            // exec`, e costa un carattere evitarla.
+            stdin: Some(Vec::new()),
+            timeout: DRY_PROBE_TIMEOUT,
+        });
+        match result {
+            EngineResult::Ok { stdout, stderr }
+            | EngineResult::ExitError { stdout, stderr, .. } => DryRun::Answered { stdout, stderr },
+            EngineResult::TimedOut => DryRun::NoAnswer {
+                why: format!(
+                    "nessuna risposta entro {} secondi",
+                    DRY_PROBE_TIMEOUT.as_secs()
+                ),
+            },
+            EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
+                why: format!("il processo non è partito: {reason}"),
+            },
+        }
+    }
+}
+
+/// Chiede a `bin`, dentro la casa che `env` dichiara, se è autenticato.
+///
+/// **NON COSTA NIENTE E NON CHIAMA NESSUN FORNITORE.** Misurato il 01/09/2026:
+/// `codex login status` e `claude auth status` leggono un file locale e
+/// rispondono. Sono l'unico modo di sapere la cosa senza andare a guardare il
+/// disco al posto del motore.
+pub fn probe_login_status(
+    probe: &dyn LoginProbe,
+    bin: &str,
+    env: &BTreeMap<String, String>,
+    recipe: &LoginRecipe,
+) -> LoginVerdict {
+    // Un descrittore che non dichiara non fa partire nessun processo: chiedere
+    // per poi non saper leggere la risposta sarebbe tempo speso per niente.
+    let declared = |marks: &[String]| marks.iter().any(|mark| !mark.trim().is_empty());
+    if !declared(&recipe.logged_in_when) || !declared(&recipe.logged_out_when) {
+        return LoginVerdict::NotDeclared;
+    }
+    match probe.ask(bin, &recipe.args, env) {
+        DryRun::Answered { stdout, stderr } => judge_login_status(recipe, &stdout, &stderr),
+        DryRun::NoAnswer { why } => LoginVerdict::NoAnswer { why },
     }
 }
 
@@ -1792,10 +2046,9 @@ fn session_plan(
 pub struct Equipment {
     /// Da sovrapporre all'ambiente ereditato prima di lanciare.
     pub env: BTreeMap<String, String>,
-    /// Sotto quale profilo la chiamata è girata: `<riga di comando>/<profilo>`,
-    /// vuoto quando nessun profilo era in forza. Vuoto e «non lo so» qui sono la
-    /// stessa cosa e va bene: nessun profilo attivo *è* l'informazione.
-    pub profile: String,
+    /// Con quale identità il processo parte: **quale casa** e **come è stata
+    /// scelta**. Risponde sempre — non esiste il caso «vuoto».
+    pub identity: EngineIdentity,
 }
 
 /// La dotazione per invocare `bin`, secondo lo stato dei profili dato.
@@ -1827,10 +2080,11 @@ pub fn equipment_for(
         // spostare, e dargliene una non vorrebbe dire niente.
         return Equipment {
             env: step_env.clone(),
-            profile: String::new(),
+            identity: EngineIdentity::NotAKnownEngine,
         };
     };
-    let resolved = store.active.get(cli.id).and_then(|active| {
+    let named = store.active.get(cli.id);
+    let resolved = named.and_then(|active| {
         store
             .profiles
             .iter()
@@ -1839,20 +2093,9 @@ pub fn equipment_for(
             // cioè senza credenziali, con l'aria di aver applicato un profilo.
             .find(|profile| profile.cli_id == cli.id && &profile.name == active)
     });
-    let Some(profile) = resolved else {
-        return Equipment {
-            env: step_env.clone(),
-            profile: String::new(),
-        };
-    };
-    // **VUOTO QUANDO IL MECCANISMO NON PASSA DA UNA VARIABILE.** Una riga di
-    // comando che sposta la casa scambiando un collegamento simbolico riceve un
-    // ambiente vuoto da `build_environment`: lì l'identità dipende da dove punta
-    // un file sul disco, e questa funzione non tocca il disco. Nessuna variabile
-    // sovrapposta vuol dire nessuna dotazione applicata, quindi il deposito non
-    // deve leggere il nome di un profilo che non è stato messo in forza.
-    let from_the_profile = profiles::build_environment(cli, &profile.home_dir);
-    let applied = !from_the_profile.is_empty();
+    let from_the_profile = resolved
+        .map(|profile| profiles::build_environment(cli, &profile.home_dir))
+        .unwrap_or_default();
     // Il profilo prima, il passo sopra: chi scrive una variabile nel passo vince.
     let mut env = from_the_profile;
     env.extend(
@@ -1862,11 +2105,80 @@ pub fn equipment_for(
     );
     Equipment {
         env,
-        profile: if applied {
-            format!("{}/{}", cli.id, profile.name)
-        } else {
-            String::new()
+        identity: identity_of(cli, named.map(String::as_str), resolved, step_env),
+    }
+}
+
+/// Con quale identità questa invocazione parte davvero.
+///
+/// **IL PASSO SI GUARDA PER PRIMO, ED È LA CURA DEL DIFETTO.** Fino al
+/// 01/09/2026 questa decisione era un booleano — «un profilo è stato applicato»
+/// — che restava vero anche quando il passo aveva scritto da sé la variabile di
+/// casa. Il motore partiva nella casa del passo e la riga nel deposito nominava
+/// il profilo attivo: **il registro diceva un'identità e il processo ne aveva
+/// usata un'altra**, proprio nel caso in cui qualcuno l'aveva cambiata apposta.
+/// L'ordine qui sotto è quello della sovrapposizione vera, non quello dello
+/// stato: si registra ciò che accade.
+fn identity_of(
+    cli: &profiles::KnownCli,
+    named: Option<&str>,
+    resolved: Option<&profiles::Profile>,
+    step_env: &BTreeMap<String, String>,
+) -> EngineIdentity {
+    let cli_id = cli.id.to_owned();
+    if let profiles::HomeMechanism::EnvVar(variable) = cli.home {
+        if let Some(home) = step_env.get(variable) {
+            return EngineIdentity::ChosenByTheStep {
+                cli_id,
+                home_dir: PathBuf::from(home),
+            };
+        }
+    }
+    match (resolved, named) {
+        (Some(profile), _) => match cli.home {
+            profiles::HomeMechanism::EnvVar(_) => EngineIdentity::ProfileInForce {
+                cli_id,
+                profile_name: profile.name.clone(),
+                home_dir: profile.home_dir.clone(),
+            },
+            // **UN PROFILO DICHIARATO NON È UN PROFILO IN FORZA.** Dove la casa
+            // si sposta scambiando un collegamento simbolico, o dove non si sa
+            // come si sposti, questa funzione non ha messo niente
+            // nell'ambiente: l'identità dipende da dove punta un file sul disco,
+            // e questo codice il disco non lo tocca.
+            mechanism => EngineIdentity::NotMovedByAnEnvVar {
+                cli_id,
+                profile_name: profile.name.clone(),
+                why: why_it_stays_where_it_is(mechanism).to_owned(),
+            },
         },
+        (None, Some(active)) => EngineIdentity::ProfileVanished {
+            cli_id,
+            profile_name: active.to_owned(),
+        },
+        // **«EREDITATA» NON È «NIENTE».** Il processo parte con la casa di chi ha
+        // aperto il terminale, che è un'identità vera e nominabile: dirlo è più
+        // utile che lasciare un vuoto in cui questo caso si confonde con gli
+        // altri quattro.
+        (None, None) => EngineIdentity::InheritedFromTheTerminal { cli_id },
+    }
+}
+
+/// Perché un profilo dichiarato non è finito nell'ambiente, con le parole del
+/// meccanismo che lo impedisce.
+fn why_it_stays_where_it_is(mechanism: profiles::HomeMechanism) -> &'static str {
+    match mechanism {
+        profiles::HomeMechanism::CredentialSymlink { .. } => {
+            "questa riga di comando non ha una variabile che sposti la casa: il profilo scambia un collegamento simbolico, e l'identità dipende da dove punta quel file sul disco"
+        }
+        profiles::HomeMechanism::Unknown => {
+            "non si sa come questa riga di comando sposti la propria casa, quindi non è stato sovrapposto niente"
+        }
+        // Un meccanismo a variabile qui non ci arriva: chi chiama lo ha già
+        // trattato sopra. Se un giorno ci arrivasse, la frase dice il vero.
+        profiles::HomeMechanism::EnvVar(_) => {
+            "il meccanismo passa da una variabile, ma non è stata sovrapposta"
+        }
     }
 }
 
@@ -1980,11 +2292,10 @@ struct Spent {
     ended_at: i64,
     /// La sessione sotto cui questa chiamata è girata, quando si sa qual è.
     session_id: Option<String>,
-    /// La dotazione sotto cui è girata: `<riga di comando>/<profilo>`, vuoto
-    /// quando nessun profilo era in forza. Senza, due corse dello stesso flusso
-    /// non sono la stessa misura — e la riga non porta la ragione per cui i due
-    /// consumi differiscono.
-    profile: String,
+    /// Con quale identità il processo è partito: quale casa, e come è stata
+    /// scelta. Senza, due corse dello stesso flusso non sono la stessa misura —
+    /// e la riga non porta la ragione per cui i due consumi differiscono.
+    identity: EngineIdentity,
 }
 
 /// Scrive nel deposito la riga di **questa** chiamata.
@@ -2081,23 +2392,12 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         cached_price_micros_per_million: prices.cached,
         cache_write_price_micros_per_million: prices.cache_write,
         cache_write_long_price_micros_per_million: prices.cache_write_long,
-        // **LA DOTAZIONE SOTTO CUI QUESTA CHIAMATA È GIRATA.** Fino al
-        // 01/09/2026 queste due colonne erano scritte vuote da ogni chiamata,
-        // e senza di loro due corse dello stesso flusso non sono la stessa
-        // misura: la stessa catena di passi, sotto due profili, dà due consumi
-        // diversi per una ragione che la riga non porta.
-        //
-        // **IL NOME DELLA COLONNA È DEBITO DICHIARATO.** `mandate_name` viene da
-        // una tabella `current_mandate` che non esiste più; qui dentro tiene un
-        // profilo, e finché si chiama così il nome dice una cosa e il contenuto
-        // un'altra. Rinominarla è una migrazione del deposito, non una riga: sta
-        // al proprietario, e sta scritto qui perché non si perda.
-        mandate_name: spent.profile,
-        // **VUOTA, E NON PER DIMENTICANZA.** Un profilo non ha una versione:
-        // riempirla con qualcosa — la data, un contatore — sarebbe inventare un
-        // dato con la faccia di una misura, che è il guasto 22 in un'altra
-        // forma.
-        mandate_version: String::new(),
+        // **CON QUALE IDENTITÀ QUESTO PROCESSO È PARTITO.** Non «sotto quale
+        // profilo»: quale casa, e come è stata scelta. La differenza è il difetto
+        // che questa riga esisteva per avere e non aveva — un passo che scriveva
+        // da sé la variabile di casa faceva partire il motore altrove, e qui
+        // finiva scritto il nome del profilo attivo.
+        engine_identity: spent.identity,
         retry_chain: tried_before.to_vec(),
         error_type: spent.error_type.map(str::to_owned),
         started_at: spent.started_at,
@@ -2221,7 +2521,7 @@ impl ExternalEngineAction {
                         started_at,
                         ended_at,
                         session_id: session.session_id(said),
-                        profile: equipment.profile.clone(),
+                        identity: equipment.identity.clone(),
                     },
                 );
             }
@@ -4540,64 +4840,22 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let dump = ledger
             .projection_dump()
             .expect("il deposito sa dire cosa contiene");
-        ui_free_parse(&dump)
-    }
-
-    /// Legge le righe di `model_calls` dal dump, per posizione. `actions` non
-    /// dipende da `ui`, quindi la lettura sta qui: è poca, e la dipendenza
-    /// inversa sarebbe un ciclo.
-    fn ui_free_parse(dump: &Value) -> Vec<ledger::ModelCallRecord> {
-        dump.get("model_calls")
-            .and_then(Value::as_array)
-            .map(|rows| {
-                rows.iter()
-                    .filter_map(|row| {
-                        let cols = row.as_array()?;
-                        let count = |i: usize| -> Option<u64> {
-                            let value = cols.get(i)?;
-                            value.as_u64().or_else(|| value.as_str()?.parse().ok())
-                        };
-                        Some(ledger::ModelCallRecord {
-                            call_id: cols.first()?.as_str()?.to_owned(),
-                            run_id: cols.get(1)?.as_str()?.to_owned(),
-                            step_id: cols.get(2)?.as_str().map(str::to_owned),
-                            purpose: cols.get(3)?.as_str()?.to_owned(),
-                            cli: cols.get(4)?.as_str()?.to_owned(),
-                            requested_model: cols.get(5)?.as_str()?.to_owned(),
-                            actual_model: cols.get(6)?.as_str()?.to_owned(),
-                            input_tokens: count(7),
-                            output_tokens: count(8),
-                            cached_tokens: count(9),
-                            cache_write_tokens: count(23),
-                            cache_write_long_tokens: count(24),
-                            cost_micros: cols.get(10)?.as_i64(),
-                            price_currency: cols.get(11)?.as_str().map(str::to_owned),
-                            input_price_micros_per_million: cols.get(12)?.as_i64(),
-                            output_price_micros_per_million: cols.get(13)?.as_i64(),
-                            cached_price_micros_per_million: cols.get(14)?.as_i64(),
-                            cache_write_price_micros_per_million: cols.get(25).and_then(Value::as_i64),
-                            cache_write_long_price_micros_per_million: cols
-                                .get(26)
-                                .and_then(Value::as_i64),
-                            mandate_name: cols.get(15)?.as_str()?.to_owned(),
-                            mandate_version: cols.get(16)?.as_str()?.to_owned(),
-                            retry_chain: cols
-                                .get(17)
-                                .and_then(Value::as_str)
-                                .and_then(|text| serde_json::from_str(text).ok())
-                                .unwrap_or_default(),
-                            error_type: cols.get(18)?.as_str().map(str::to_owned),
-                            started_at: cols.get(19)?.as_i64()?,
-                            ended_at: cols.get(20)?.as_i64(),
-                            total_tokens: count(21),
-                            turns: count(27),
-                            session_id: cols.get(28).and_then(Value::as_str).map(str::to_owned),
-                            declared_cost_micros: cols.get(22)?.as_i64(),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
+        // **UNA SOLA LETTURA DELLA PROIEZIONE, E NON È PIÙ QUI.**
+        //
+        // Fino al 01/09/2026 questo modulo teneva una copia privata di
+        // `ui::parse::parse_model_call_row` — ventotto indici scritti a mano,
+        // uguali a quelli dell'originale — perché «`actions` non dipende da
+        // `ui`, e la dipendenza inversa sarebbe un ciclo». Non lo era: `ui` non
+        // ha mai dipeso da `actions`, e comunque un ciclo di sole prove cargo lo
+        // ammette apposta, com'è scritto nel `Cargo.toml` di `flow`.
+        //
+        // Il costo di quella copia era preciso: una colonna spostata avrebbe
+        // fatto sbagliare **le due letture allo stesso modo**, e le prove che
+        // confrontano l'una con l'altra sarebbero rimaste verdi. Adesso a
+        // leggere è una sola, e a tenerla onesta c'è
+        // `ledger::MODEL_CALL_DUMP_COLUMNS`, che non è né la lettura né la
+        // scrittura.
+        ui::parse::parse_model_calls(&dump)
     }
 
     /// Il listino vive in un file, e le prove non devono contendersi la casa di
@@ -5182,8 +5440,12 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// consumi diversi per una ragione che la riga non porta. Fino al
     /// 01/09/2026 questa colonna la scriveva vuota ogni chiamata.
     ///
-    /// *Mutante eseguito*: rimettere `mandate_name: String::new()` in
-    /// `record_the_call`. Questa diventa rossa e la gemella qui sotto resta
+    /// **E IL PERCORSO DELLA CASA CI STA DENTRO**, che è il dato su cui una
+    /// diagnostica si appoggia: un nome di profilo si riusa, si sposta e si
+    /// cancella, un percorso è il posto dove si va a guardare.
+    ///
+    /// *Mutante eseguito*: rimettere `engine_identity: EngineIdentity::default()`
+    /// in `record_the_call`. Questa diventa rossa e la gemella qui sotto resta
     /// verde — ed è per questo che ci sono tutte e due.
     #[test]
     fn the_row_says_under_which_equipment_the_call_ran() {
@@ -5220,20 +5482,28 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         let calls = calls_in(&dir.join("deposito"));
         assert_eq!(calls.len(), 1, "una chiamata, una riga");
         assert_eq!(
-            calls[0].mandate_name, "codex/lavoro",
-            "la riga non dice sotto quale dotazione la chiamata è girata"
+            calls[0].engine_identity,
+            EngineIdentity::ProfileInForce {
+                cli_id: "codex".to_owned(),
+                profile_name: "lavoro".to_owned(),
+                home_dir: dir.join("casa"),
+            },
+            "la riga non dice con quale identità la chiamata è girata"
         );
-        // **E LA VERSIONE RESTA VUOTA, CHE NON È UNA DIMENTICANZA.** Un profilo
-        // non ha una versione: riempirla sarebbe inventare un dato con la
-        // faccia di una misura.
-        assert_eq!(calls[0].mandate_version, "");
     }
 
-    /// La gemella: senza nessun profilo attivo la colonna resta vuota, invece di
-    /// portare un nome inventato. Senza di lei un mutante che scrivesse sempre
-    /// la stessa stringa passerebbe la prova qui sopra.
+    /// La gemella: senza nessun profilo attivo la riga dice **ereditata**, non un
+    /// nome inventato e nemmeno un vuoto. Senza di lei un mutante che scrivesse
+    /// sempre la stessa identità passerebbe la prova qui sopra.
+    ///
+    /// **«EREDITATA» È IL PUNTO DELLA CURA.** Prima qui c'era la stringa vuota,
+    /// la stessa che usciva quando il binario non era un motore conosciuto,
+    /// quando il profilo era sparito, e quando la casa non si sposta con una
+    /// variabile. Quattro fatti diversi e un vuoto solo: adesso questo dice che
+    /// il processo è partito con la casa di chi ha aperto il terminale, e quale
+    /// riga di comando era.
     #[test]
-    fn with_no_profile_in_force_the_row_says_nothing_instead_of_guessing() {
+    fn with_no_profile_in_force_the_row_says_the_identity_was_inherited() {
         let dir = scratch("nessuna-dotazione");
         let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
         let state = dir.join("profili.json");
@@ -5254,7 +5524,143 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         .expect("il motore risponde");
 
         let calls = calls_in(&dir.join("deposito"));
-        assert_eq!(calls[0].mandate_name, "");
+        assert_eq!(
+            calls[0].engine_identity,
+            EngineIdentity::InheritedFromTheTerminal {
+                cli_id: "codex".to_owned()
+            }
+        );
+    }
+
+    /// Un finto `codex` che dice **con quale casa è partito davvero**: la scrive
+    /// su un file accanto a sé, e poi risponde nell'involucro come gli altri.
+    /// Senza questo file la prova qui sotto guarderebbe solo il deposito, cioè
+    /// solo metà del difetto.
+    const WRITES_DOWN_ITS_HOME: &str = r#"cat > /dev/null
+printf '%s' "$CODEX_HOME" > "$(dirname "$0")/casa"
+printf '{"result":"la risposta vera","model":"modello-di-prova","usage":{"input_tokens":1,"output_tokens":1}}'"#;
+
+    /// **IL DEPOSITO REGISTRA UN'IDENTITÀ CHE IL PROCESSO NON HA USATO.**
+    ///
+    /// Che il passo vinca è la decisione, non il difetto. Il difetto è che la
+    /// riga continua a nominare il profilo attivo: il motore è partito nella
+    /// casa scritta nel passo, e chi legge il deposito per sapere con quali
+    /// credenziali quel processo ha girato legge il nome di un profilo che non è
+    /// mai stato messo in forza. È il caso in cui qualcuno ha cambiato identità
+    /// apposta — cioè esattamente quello che una diagnostica o un controllo di
+    /// sicurezza esiste per vedere — ed è il caso in cui il dato mente.
+    ///
+    /// **LE DUE METÀ SI GUARDANO INSIEME.** Cosa ha ricevuto il processo, e cosa
+    /// dice la riga. Separate, ognuna delle due resta verde col difetto dentro.
+    #[test]
+    fn the_row_does_not_name_a_profile_the_step_replaced() {
+        let dir = scratch("dotazione-scavalcata");
+        let bin = fake_engine(&dir, "codex", WRITES_DOWN_ITS_HOME);
+        let state = dir.join("profili.json");
+        std::fs::write(
+            &state,
+            json!({
+                "profiles": [
+                    {"name": "lavoro", "cli_id": "codex", "home_dir": dir.join("casa-del-profilo")}
+                ],
+                "active": {"codex": "lavoro"}
+            })
+            .to_string(),
+        )
+        .expect("scrivere lo stato dei profili");
+
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": "ciao",
+            "env": {"CODEX_HOME": "/una/casa/scritta/nel/passo"},
+            "timeout_secs": 10
+        });
+
+        with_profiles_state(&state, || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect("il motore risponde");
+
+        let home_it_started_in =
+            std::fs::read_to_string(dir.join("casa")).expect("il motore ha scritto la sua casa");
+        assert_eq!(
+            home_it_started_in, "/una/casa/scritta/nel/passo",
+            "il verso della sovrapposizione è cambiato: il profilo ha scavalcato il passo"
+        );
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "una chiamata, una riga");
+        assert_eq!(
+            calls[0].engine_identity,
+            EngineIdentity::ChosenByTheStep {
+                cli_id: "codex".to_owned(),
+                home_dir: PathBuf::from("/una/casa/scritta/nel/passo"),
+            },
+            "la riga nomina un'identità che il processo non ha usato: è partito in {home_it_started_in}"
+        );
+    }
+
+    /// **IL GETTONE NON ENTRA IN NESSUN CAMPO DELL'IDENTITÀ.**
+    ///
+    /// Un passo può portare nel proprio ambiente qualunque variabile, chiavi
+    /// comprese. Ciò che finisce nel deposito è **quale casa** e **come è stata
+    /// scelta**, mai cosa c'era intorno: una riga di registro si legge in una
+    /// diagnostica, si copia in un rapporto e si manda a qualcuno.
+    ///
+    /// *Mutante eseguito*: vedi la consegna — far portare all'identità l'intero
+    /// ambiente rende rossa questa e nessun'altra.
+    #[test]
+    fn no_secret_from_the_step_ends_up_in_the_recorded_identity() {
+        let dir = scratch("nessun-gettone");
+        let bin = fake_engine(&dir, "codex", ALWAYS_WRAPS);
+        let state = dir.join("profili.json");
+        std::fs::write(
+            &state,
+            json!({
+                "profiles": [
+                    {"name": "lavoro", "cli_id": "codex", "home_dir": dir.join("casa")}
+                ],
+                "active": {"codex": "lavoro"}
+            })
+            .to_string(),
+        )
+        .expect("scrivere lo stato dei profili");
+
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger));
+        // Un gettone riconoscibile: se comparisse da qualche parte, si vede.
+        let input = json!({
+            "tool": "motore-di-prova",
+            "stdin": "ciao",
+            "env": {"OPENAI_API_KEY": "sk-questo-non-deve-comparire"},
+            "timeout_secs": 10
+        });
+
+        with_profiles_state(&state, || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect("il motore risponde");
+
+        let calls = calls_in(&dir.join("deposito"));
+        let written = calls[0].engine_identity.to_column();
+        assert!(
+            !written.contains("sk-questo-non-deve-comparire"),
+            "un gettone del passo è finito nell'identità registrata: {written}"
+        );
+        assert!(
+            !calls[0].engine_identity.to_string().contains("sk-"),
+            "un gettone del passo è finito in ciò che si stampa a una persona"
+        );
     }
 }
 

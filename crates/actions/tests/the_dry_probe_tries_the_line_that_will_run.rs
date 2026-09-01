@@ -22,10 +22,19 @@
 //! parole (`unusable_when` le elenca). **Misurato dopo, è falso**: il vaglio
 //! toglie la domanda apposta, il motore si ferma lì, e non arriva mai ai
 //! controlli che verrebbero dopo. `CODEX_HOME=<cartella vuota> codex exec <
-//! /dev/null` risponde «No prompt provided via stdin» ed esce **zero**, uguale a
-//! una casa piena, e `flow check` continua a dire «riga sana». Qui si chiude
-//! solo la divergenza fra il mondo provato e il mondo in cui si lavora — che è
-//! già la cosa che rassicurava a torto.
+//! /dev/null` risponde «No prompt provided via stdin» **identico** a una casa
+//! piena — rimisurato il 01/09/2026: stesse parole, e uscita 1 tutte e due le
+//! volte, non zero come diceva questa riga fino ad allora — e `flow check`
+//! continua a dire «riga sana». Qui si chiude solo la divergenza fra il mondo
+//! provato e il mondo in cui si lavora — che è già la cosa che rassicurava a
+//! torto.
+//!
+//! **LA DOMANDA CHE MANCAVA ADESSO SI FA, E NON È QUI.** Dal 01/09/2026 i
+//! descrittori dichiarano `login_status` — come si chiede a un motore se la casa
+//! da cui parte è autenticata — e `flow check` lo chiede accanto a questo
+//! vaglio: vedi `crates/actions/tests/the_engine_says_whether_the_home_is_authenticated`.
+//! Le due cose restano separate perché sono due domande, e questa continua a
+//! rispondere solo alla propria.
 //!
 //! **UN SOLO `#[test]` IN QUESTO FILE**, per la stessa ragione scritta in
 //! `the_engine_really_starts_in_sailors_home`: `PROFILES_STATE_PATH` è di

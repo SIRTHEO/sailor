@@ -132,8 +132,9 @@ fn fake_call(run_id: &str, step_id: &str, model: &str, input_tokens: u64, cost_m
         cached_price_micros_per_million: Some(300_000),
         cache_write_price_micros_per_million: None,
         cache_write_long_price_micros_per_million: None,
-        mandate_name: "prova-manuale".into(),
-        mandate_version: "1".into(),
+        engine_identity: ledger::EngineIdentity::InheritedFromTheTerminal {
+            cli_id: "claude".into(),
+        },
         retry_chain: vec![],
         error_type: None,
         started_at: 1_756_000_001,
