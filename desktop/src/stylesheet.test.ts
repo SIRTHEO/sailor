@@ -205,3 +205,20 @@ describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta"
     });
   });
 });
+
+/**
+ * PROHIBITION 9, which had nothing asking after it. Writing the corner marks I
+ * put a gradient in this sheet — two identical stops, a solid rectangle spelt
+ * as a gradient — and the whole battery stayed green. Put that line back and
+ * this goes red, naming the rule it is in.
+ */
+describe("prohibition 9 — no gradients, frosted glass or blur", () => {
+  test("no rule in the sheet declares one", () => {
+    const forbidden = /(linear|radial|conic)-gradient|backdrop-filter|blur\s*\(/i;
+    const guilty = sheet.rules
+      .flatMap((rule) => rule.declarations.map(([property, value]) => ({ rule, property, value })))
+      .filter(({ value }) => forbidden.test(value))
+      .map(({ rule, property, value }) => `${rule.selector} { ${property}: ${value} }`);
+    expect(guilty, "a gradient got into the sheet").toEqual([]);
+  });
+});

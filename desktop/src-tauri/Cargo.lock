@@ -781,6 +781,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "faults"
+version = "0.1.0"
+dependencies = [
+ "ledger",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "fdeflate"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2684,6 +2694,7 @@ name = "sailor"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "faults",
  "flow",
  "inventory",
  "ledger",
@@ -2697,6 +2708,7 @@ dependencies = [
  "toolbox",
  "trigger",
  "ui",
+ "workspace",
 ]
 
 [[package]]
@@ -2719,6 +2731,7 @@ dependencies = [
  "toolbox",
  "trigger",
  "ui",
+ "workspace",
 ]
 
 [[package]]
@@ -4666,6 +4679,13 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "workspace"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "writeable"

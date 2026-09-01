@@ -1,31 +1,24 @@
 /**
- * GLI OCCHI DEL FLUSSO: disegna la finestra, la fotografa, e ne scrive l'albero.
+ * The eyes: draws the window, photographs it, and writes down its tree.
  *
- * Il contratto lo fissa il passo `schermo` dei flussi di design
- * (`~/.config/sailor/flows/`): uno script npm chiamato `screenshots` che avvii
- * il progetto, catturi a 375 e a 1440 pixel di larghezza, e salvi in
- * `design/screenshots/`. Chi cambia quel contratto cambia anche questo file.
+ * Contract, set by the `schermo` step of the design flows: an npm script named
+ * `screenshots` that starts the project, captures at 375 and 1440 pixels, and
+ * saves into `design/screenshots/`.
  *
- * PERCHÉ DUE USCITE E NON UNA. Ogni scena produce un PNG **e** un albero di
- * accessibilità.
- *   · L'albero costa poche centinaia di token, dice i ruoli e i nomi, ed è
- *     deterministico: è quello che serve per sapere *cosa c'è*.
- *   · Il PNG costa molto di più e serve per la sola domanda a cui l'albero non
- *     può rispondere: *come appare*. Nessun albero dice che una pagina non ha
- *     gerarchia, perché la gerarchia è una relazione fra dimensioni, pesi e
- *     spazi — cioè esattamente ciò che l'albero butta via per essere leggero.
- * Su questa finestra c'è una terza ragione: la tela è fatta di corde, corsie e
- * posizioni. Sono geometria, e l'albero non porta la geometria — dice che ci
- * sono otto nodi, non che si accavallano.
+ * Two outputs per scene, and they are not interchangeable. The tree costs a few
+ * hundred tokens and says what is there: roles, names, which cords join which
+ * nodes. The image costs far more and answers the one question the tree cannot:
+ * how it looks. No tree says a page has no hierarchy, because hierarchy is a
+ * relation between sizes, weights and spacing — exactly what the tree drops to
+ * stay small. On a canvas there is a third reason: lanes, cords and positions
+ * are geometry, and a tree says there are eight nodes, not that they overlap.
  *
- * PERCHÉ SENZA IL GUSCIO NATIVO. Fuori da Tauri `insideTheWindow()` è falso e
- * la finestra disegna `SAMPLE`: una tela popolata, sempre la stessa, senza il
- * supervisor dietro. È il contrario di un limite — una scena che cambia a ogni
- * corsa non si può confrontare con quella di ieri.
+ * Outside the native shell the window draws `SAMPLE`: a populated canvas,
+ * always the same, with no supervisor behind it. A scene that changed every run
+ * could not be compared with yesterday's.
  *
- * UNA SCENA CHE NON SI RAGGIUNGE NON SI INVENTA: finisce in `missing.txt` con
- * il motivo, e la corsa prosegue. Un giudizio visivo dato su un'immagine che
- * non esiste è peggio di nessun giudizio, perché nessuno va a ricontrollare.
+ * A scene that cannot be reached is not invented: it lands in `missing.txt`
+ * with the reason.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
@@ -37,30 +30,29 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const outDir = join(root, "design", "screenshots");
 
-/** Fissa in `vite.config.ts`, perché il guscio nativo la apre per nome. */
+/** Fixed in `vite.config.ts`: the native shell opens it by name. */
 const PORT = 5183;
 const URL = `http://localhost:${PORT}/`;
 
-/** Le due larghezze che il contratto impone: il telefono e la scrivania. */
+/** The two widths the contract sets: the phone and the desk. */
 const WIDTHS = [
   { name: "375", width: 375, height: 812 },
   { name: "1440", width: 1440, height: 900 },
 ];
 
 type Scene = {
-  /** Il nome del file. Inglese, come ogni identificatore di questo albero. */
+  /** The file name. */
   name: string;
-  /** Cosa questa scena serve a far vedere, per chi legge il giudizio. */
+  /** What this scene exists to show, for whoever reads the judgement. */
   what: string;
-  /** Porta la finestra nello stato voluto. Se non ci riesce, alza. */
+  /** Brings the window to the wanted state, or throws. */
   reach: (page: Page) => Promise<void>;
 };
 
 /**
- * Apre una delle viste della barra in alto. Il nome si cerca sul testo del
- * pulsante e non su una classe: le classi si rinominano senza che nessuno se
- * ne accorga, il nome che una persona legge sullo schermo no — e se cambia,
- * è cambiato il prodotto e questa cattura *deve* accorgersene.
+ * Opens one of the top-bar places by the text a person reads, not by a class:
+ * classes get renamed unnoticed, and if the visible name changes, the product
+ * changed and this capture has to notice.
  */
 async function openView(page: Page, label: string): Promise<void> {
   const tab = page.getByRole("button", { name: new RegExp(`^\\s*${label}`, "i") }).first();
@@ -69,24 +61,19 @@ async function openView(page: Page, label: string): Promise<void> {
 }
 
 /**
- * Porta alla tela e sceglie il primo flusso della colonna.
+ * Reaches the canvas and focuses the first flow, then frames it.
  *
- * POI INQUADRA, E L'INQUADRATURA NON È UN DETTAGLIO DI CATTURA. Scegliendo un
- * flusso dalla colonna la tela resta ferma dov'era: i nodi esistono, sono nel
- * DOM, e stanno fuori dalla vista — si vedono solo nella minimappa. Chi
- * fotografa senza inquadrare fotografa una tela vuota e la chiama «il flusso a
- * fuoco»; chi la guarda giudica un vuoto che il prodotto non ha.
- *
- * Che poi sia il prodotto a doverlo fare da sé quando si sceglie un flusso è
- * una domanda vera, e sta nella cattura solo perché qui si è vista per prima.
+ * Framing is not a capture detail: whoever photographs without it photographs
+ * an empty canvas and calls it "the flow in focus", and whoever looks judges an
+ * emptiness the product does not have.
  */
 async function focusFirstFlow(page: Page): Promise<void> {
   await openView(page, "flussi");
   const first = page.locator(".rail__item").first();
 
   // Below the narrow threshold the flow list withdraws so the canvas survives,
-  // and with it goes the only way to pick a flow. That is a product gap, not a
-  // capture failure, and saying so is worth more than a timeout nobody reads.
+  // and with it goes the only way to pick a flow: a product gap, not a capture
+  // failure.
   if (!(await first.isVisible().catch(() => false))) {
     throw new Error(
       "no way to choose a flow at this width: the flow column is withdrawn and " +
@@ -95,33 +82,31 @@ async function focusFirstFlow(page: Page): Promise<void> {
   }
 
   await first.click();
-  // Si aspetta un nodo, non un tempo fisso: un'attesa a orologio è il difetto
-  // che fa passare una prova per il motivo sbagliato.
+  // Wait for a node, not for a duration: a clock wait passes for the wrong
+  // reason.
   await page.locator(".react-flow__node-step").first().waitFor({ timeout: 5000 });
 
-  // Su schermo stretto il controllo può finire sotto la barra degli attrezzi.
-  // Allora si fotografa senza inquadrare invece di far cadere la scena — ma la
-  // differenza si legge nell'immagine, e chi giudica deve saperlo.
+  // On a narrow screen the control can end up under the toolbar. Then the
+  // scene is photographed unframed rather than dropped, and says so.
   try {
     const fitView = page.locator(".react-flow__controls-fitview");
     await fitView.click({ timeout: 3000 });
-    // L'inquadratura è una transizione: si aspetta che un nodo sia davvero
-    // nella vista, non che sia passato del tempo.
+    // Wait for a node to actually be in view, not for time to pass.
     await page.locator(".react-flow__node-step").first().waitFor({ state: "visible", timeout: 5000 });
   } catch {
-    console.log("    · inquadratura non riuscita: la tela resta dov'era");
+    console.log("    · framing failed: the canvas stays where it was");
   }
 }
 
 const SCENES: Scene[] = [
   {
     name: "now",
-    what: "la vista di apertura. Fuori dal guscio nativo il deposito non si legge, quindi questa è anche la scena del guasto — uno degli stati che nessuno guarda mai, e dove il default sopravvive più a lungo",
+    what: "the opening view. Outside the native shell the ledger cannot be read, so this doubles as the failure scene — one of the states nobody looks at, where the default survives longest",
     reach: async () => {},
   },
   {
     name: "flows-canvas",
-    what: "la tela dei flussi con la colonna: LA superficie del prodotto, quella che si disegna con oggetti JavaScript e che il lettore del foglio di stile non apre mai",
+    what: "the flow canvas with its rail: THE surface of this product, drawn with JavaScript objects and never opened by whatever reads the stylesheet",
     reach: async (page) => {
       await openView(page, "flussi");
       await page.locator(".react-flow").waitFor({ state: "visible", timeout: 5000 });
@@ -129,24 +114,17 @@ const SCENES: Scene[] = [
   },
   {
     name: "flow-in-focus",
-    what: "un flusso scelto: la sua corsia, i suoi nodi e le corde fra loro — la geometria, che nessun albero di accessibilità porta",
+    what: "a flow in focus: its lane, its nodes and the cords between them — the geometry no accessibility tree carries",
     reach: focusFirstFlow,
   },
   {
     name: "step-selected",
-    what: "un passo a fuoco e il pannello che lo descrive: il caso più denso di tutti",
+    what: "a selected step and the panel describing it: the densest case",
     reach: async (page) => {
       await focusFirstFlow(page);
-      // SI CLICCA UN NODO CHE STA DENTRO LA FINESTRA, non il primo del
-      // documento e nemmeno il primo che lo strumento chiama «visibile».
-      // «Visibile» per Playwright vuol dire che ha dimensioni e non è
-      // nascosto: un nodo sei schermate a destra è visibile in quel senso e
-      // non arriva sotto il puntatore mai. Su schermo stretto l'inquadratura
-      // ne tiene dentro due su otto — e i sei fuori sono giusti che stiano
-      // fuori: un flusso più largo dello schermo non ci sta, e non è un
-      // difetto della finestra.
-      //
-      // Quindi lo si sceglie per geometria, come faceva chi guardava.
+      // "Visible" to the driver means sized and not hidden: a node six screens
+      // to the right is visible in that sense and never reaches the pointer.
+      // So the node is chosen by geometry, the way whoever looks chooses it.
       const id = await page.evaluate(`(() => {
         var pane = document.querySelector(".react-flow");
         if (!pane) return null;
@@ -160,7 +138,7 @@ const SCENES: Scene[] = [
         }
         return null;
       })()`);
-      if (id === null) throw new Error("nessun nodo sta per intero dentro la tela a questa larghezza");
+      if (id === null) throw new Error("no node fits entirely inside the canvas at this width");
       const node = page.locator(`.react-flow__node-step[data-id="${id}"]`);
       await node.click({ timeout: 5000 });
       await page.locator(".panel").waitFor({ state: "visible", timeout: 5000 });
@@ -168,21 +146,21 @@ const SCENES: Scene[] = [
   },
   {
     name: "installed",
-    what: "cosa questa macchina ha montato: una vista di soli dati, dove il ritmo verticale si giudica meglio che altrove",
+    what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
       await openView(page, "installato");
     },
   },
   {
     name: "history",
-    what: "la storia delle corse: l'altra vista densa, e quella che invecchia peggio",
+    what: "the run history: the other dense view, and the one that ages worst",
     reach: async (page) => {
       await openView(page, "storia");
     },
   },
 ];
 
-/** Aspetta che vite risponda, invece di dormire un tempo indovinato. */
+/** Waits for vite to answer, rather than sleeping a guessed duration. */
 async function waitForVite(timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -190,11 +168,11 @@ async function waitForVite(timeoutMs: number): Promise<void> {
       const response = await fetch(URL, { signal: AbortSignal.timeout(1000) });
       if (response.ok) return;
     } catch {
-      // non è ancora in ascolto: si riprova
+      // not listening yet
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`vite non risponde su ${URL} dopo ${timeoutMs}ms`);
+  throw new Error(`vite does not answer on ${URL} after ${timeoutMs}ms`);
 }
 
 async function main(): Promise<void> {
@@ -203,8 +181,8 @@ async function main(): Promise<void> {
 
   const missing: string[] = [];
 
-  // Se qualcosa è già in ascolto sulla porta, è di qualcun altro: non lo si
-  // uccide e non se ne avvia un secondo (`strictPort` fallirebbe comunque).
+  // Something already on the port belongs to someone else: it is not killed,
+  // and a second one would fail `strictPort` anyway.
   let vite: ChildProcess | null = null;
   let alreadyServing = false;
   try {
@@ -215,26 +193,25 @@ async function main(): Promise<void> {
   }
 
   if (alreadyServing) {
-    console.log(`--- ${URL} risponde già: uso quello che c'è ---`);
+    console.log(`--- ${URL} already answers: using it ---`);
   } else {
-    console.log("--- avvio vite ---");
+    console.log("--- starting vite ---");
     vite = spawn("npm", ["run", "dev"], { cwd: root, stdio: "ignore" });
     await waitForVite(30_000);
   }
 
   let browser: Browser | null = null;
   try {
-    // Si usa il Chrome installato invece di scaricare i browser di Playwright:
-    // un download di centinaia di megabyte per fotografare tre scene è un
-    // prezzo che questo albero non deve pagare.
+    // The installed Chrome, not a download: hundreds of megabytes to
+    // photograph a few scenes is a price this tree need not pay.
     browser = await chromium.launch({ channel: "chrome" });
 
     for (const size of WIDTHS) {
       const context = await browser.newContext({
         viewport: { width: size.width, height: size.height },
         deviceScaleFactor: 2,
-        // Il divieto sul movimento vale anche qui: una cattura che prende
-        // un'animazione a metà non è confrontabile con quella di ieri.
+        // A capture that catches an animation halfway cannot be compared
+        // with yesterday's.
         reducedMotion: "reduce",
       });
       const page = await context.newPage();
@@ -251,8 +228,7 @@ async function main(): Promise<void> {
             fullPage: false,
           });
 
-          // L'albero: i ruoli e i nomi di ciò che c'è, in poche centinaia di
-          // token invece che in un'immagine.
+          // The tree: roles and names, in a few hundred tokens.
           const tree = await page.locator("body").ariaSnapshot();
           await writeFile(
             join(outDir, `${stem}.aria.txt`),
@@ -264,7 +240,7 @@ async function main(): Promise<void> {
         } catch (error) {
           const why = error instanceof Error ? error.message : String(error);
           missing.push(`${stem}: ${why}`);
-          console.log(`  ✖ ${stem} — non raggiunta: ${why}`);
+          console.log(`  ✖ ${stem} — not reached: ${why}`);
         }
       }
 
@@ -275,22 +251,21 @@ async function main(): Promise<void> {
     vite?.kill();
   }
 
-  // Ciò che non si è raggiunto si scrive, sempre: un elenco vuoto e un elenco
-  // mai prodotto si leggono uguali, e si decide in modo opposto.
+  // What was not reached is always written: an empty list and a list never
+  // produced read the same, and are decided on oppositely.
   await writeFile(
     join(outDir, "missing.txt"),
     missing.length === 0
-      ? "nessuna scena mancante: tutte raggiunte e catturate.\n"
-      : `${missing.length} scene non raggiunte:\n${missing.map((m) => `- ${m}`).join("\n")}\n`,
+      ? "no scene missing: all reached and captured.\n"
+      : `${missing.length} scenes not reached:\n${missing.map((m) => `- ${m}`).join("\n")}\n`,
     "utf-8",
   );
 
   console.log(`\n--- ${outDir} ---`);
   if (missing.length > 0) {
-    console.log(`${missing.length} scene mancanti: vedi missing.txt`);
-    // Non si esce rossi: il passo `schermo` tollera il proprio fallimento, e
-    // una cattura parziale vale più di nessuna cattura. Chi giudica legge
-    // `missing.txt` e dichiara cosa non ha visto.
+    console.log(`${missing.length} scenes missing: see missing.txt`);
+    // Not red: the `schermo` step tolerates its own failure, and a partial
+    // capture is worth more than none.
   }
 }
 

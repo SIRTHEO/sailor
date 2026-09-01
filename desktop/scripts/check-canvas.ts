@@ -1,33 +1,12 @@
 /**
- * **CIÒ CHE SI MISURA SOLO SU UNA SUPERFICIE DISEGNATA.**
+ * What only a drawn surface can be measured on.
  *
- * `stylesheet.test.ts` legge il foglio e trova le cause: una colonna rigida
- * senza via d'uscita, un carattere fuori dai ruoli. `contrast.test.tsx`
- * cammina il DOM calcolato e pesa le accoppiate. Nessuno dei due sa quanto è
- * larga una colonna in una finestra vera, né se ciò che c'è nel documento sia
- * dentro l'inquadratura: sono proprietà della geometria, e la geometria esiste
- * solo quando qualcosa disegna.
+ * The sheet test reads rules and the contrast test walks a computed DOM;
+ * neither knows how wide a column ends up in a real window, nor whether what
+ * is in the document sits inside the frame. Runs apart from `npm test`, which
+ * stays browserless: `npm run check:canvas`.
  *
- * Questo controllo apre un browser vero e misura le conseguenze. Gira a parte
- * da `npm test` — che deve restare di tre secondi e senza browser — e si
- * chiama con `npm run check:canvas`.
- *
- * **DUE COSE, E TUTTE E DUE SONO STATE ROSSE il 01/09/2026.**
- *
- * 1. LA TELA NON VA A ZERO. A 375 pixel colonna e pannello sommavano 520 e la
- *    tela — la superficie principale di questo prodotto — restava larga zero.
- *    La causa è riparata nel foglio (divieto 11); questo ne guarda l'effetto,
- *    che è l'unico posto dove si vedrebbe tornare per un'altra strada.
- *
- * 2. LA TELA INQUADRA CIÒ CHE CONTIENE. Aprendo la vista dei flussi c'erano
- *    otto nodi nel documento e **zero dentro la vista**, a ogni larghezza: chi
- *    apriva «FLUSSI» vedeva una tela vuota e i propri nodi solo come macchie
- *    nella minimappa. Il `fitView` iniziale gira al primo disegno, quando i
- *    nodi non sono ancora arrivati — entrano un giro dopo — e nessuno
- *    reinquadrava più.
- *
- * Questo file NON prova che la finestra sia bella: prova che c'è. Il giudizio
- * sull'aspetto lo dà chi guarda le immagini di `npm run screenshots`.
+ * This does not prove the window is good. It proves it is there.
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -37,13 +16,12 @@ import { chromium, type Browser } from "playwright";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const URL = "http://localhost:5183/";
 
-/** Le larghezze provate: le due del contratto di cattura, più le due soglie. */
+/** The two capture widths, plus the two thresholds between them. */
 const WIDTHS = [375, 760, 1100, 1440];
 
 /**
- * Misurato dentro la pagina. Scritto in ES5 e senza funzioni nominate: lo
- * strumento che compila questo file inserisce un aiuto per i nomi che dentro
- * `evaluate` non esiste, e la misura muore con «__name is not defined».
+ * ES5 and no named functions on purpose: the compiler injects a name helper
+ * that does not exist inside `evaluate`, and the measure dies there.
  */
 const MEASURE = `(() => {
   var width = function (selector) {
@@ -60,12 +38,12 @@ const MEASURE = `(() => {
       if (b.left < pane.right && b.right > pane.left && b.top < pane.bottom && b.bottom > pane.top) inside++;
     }
   }
-  // Chi c'e' DAVVERO sotto il puntatore, al centro della tela. Una larghezza
-  // non basta: un pannello che galleggia lascia la tela larga e la copre.
+  // A width is not enough: a floating panel leaves the canvas wide and covers
+  // it, so ask what is actually under the pointer.
   var reachable = null;
   if (pane) {
     var hit = document.elementFromPoint(pane.left + pane.width / 2, pane.top + pane.height / 2);
-    reachable = hit ? (hit.closest(".panel") ? "pannello" : "tela") : "niente";
+    reachable = hit ? (hit.closest(".panel") ? "panel" : "canvas") : "nothing";
   }
   var panelEl = document.querySelector(".panel");
   var panelEmpty = !!(panelEl && panelEl.querySelector(".panel__empty"));
@@ -84,15 +62,15 @@ async function serving(): Promise<boolean> {
 async function main(): Promise<void> {
   let vite: ChildProcess | null = null;
   if (await serving()) {
-    console.log(`--- ${URL} risponde già: uso quello che c'è ---`);
+    console.log(`--- ${URL} already answers: using it ---`);
   } else {
-    console.log("--- avvio vite ---");
+    console.log("--- starting vite ---");
     vite = spawn("npm", ["run", "dev"], { cwd: root, stdio: "ignore" });
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline && !(await serving())) {
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
-    if (!(await serving())) throw new Error(`vite non risponde su ${URL}`);
+    if (!(await serving())) throw new Error(`vite does not answer on ${URL}`);
   }
 
   const failures: string[] = [];
@@ -110,8 +88,7 @@ async function main(): Promise<void> {
       await page.goto(URL, { waitUntil: "networkidle" });
       await page.getByRole("button", { name: /^\s*flussi/i }).first().click();
       await page.locator(".react-flow__node-step").first().waitFor({ timeout: 8000 });
-      // L'inquadratura è una transizione dichiarata: le si lascia finire, poi
-      // si misura dove sono finite le cose.
+      // The framing is a declared transition: let it finish before measuring.
       await page.waitForTimeout(900);
 
       const m = (await page.evaluate(MEASURE)) as {
@@ -125,29 +102,24 @@ async function main(): Promise<void> {
       };
 
       const line =
-        `${String(width).padStart(5)}px  colonna ${String(m.rail).padStart(3)} · ` +
-        `tela ${String(m.canvas).padStart(4)} · pannello ${String(m.panel).padStart(3)}   ` +
-        `nodi in vista: ${m.inView}/${m.nodes}`;
+        `${String(width).padStart(5)}px  rail ${String(m.rail).padStart(3)} · ` +
+        `canvas ${String(m.canvas).padStart(4)} · panel ${String(m.panel).padStart(3)}   ` +
+        `nodes in view: ${m.inView}/${m.nodes}`;
 
-      // 1. la tela esiste. La soglia non è zero: una tela di trenta pixel non è
-      //    una tela, è un residuo di calcolo che nessuno guarderebbe.
+      // The floor is not zero: a thirty-pixel canvas is a leftover of the
+      // layout maths, not something anyone would look at.
       const canvasOk = (m.canvas ?? 0) >= 120;
-      // 2. la tela inquadra ciò che contiene. Non «tutti»: un flusso più largo
-      //    dello schermo non ci sta, ed è giusto così. Ma zero su otto vuol
-      //    dire che chi apre non vede niente.
+      // Not "all of them": a flow wider than the screen does not fit, and that
+      // is right. None of them means whoever opens it sees nothing.
       const framedOk = m.nodes === 0 || m.inView > 0;
-      // 3. la tela si può toccare. Una larghezza non basta: sotto la soglia
-      //    stretta il pannello galleggia SOPRA la tela, e se galleggia anche
-      //    quando non ha niente da dire copre ciò che copre per niente. È il
-      //    difetto che la riparazione del divieto 11 ha creato, ed è stato
-      //    trovato dallo strumento di cattura — un clic su un nodo che non
-      //    arrivava mai.
-      const reachableOk = !m.panelEmpty || m.reachable !== "pannello";
+      // Below the narrow threshold the inspector floats over the canvas. One
+      // that floats with nothing to say covers what it covers for nothing.
+      const reachableOk = !m.panelEmpty || m.reachable !== "panel";
 
-      console.log(`${canvasOk && framedOk && reachableOk ? "  ✓" : "  ✖"} ${line}   al centro: ${m.reachable}`);
-      if (!canvasOk) failures.push(`${width}px: la tela è larga ${m.canvas}px — sotto i 120 non è una tela`);
-      if (!framedOk) failures.push(`${width}px: ${m.nodes} nodi nel documento e nessuno dentro la vista`);
-      if (!reachableOk) failures.push(`${width}px: al centro della tela c'è il pannello, e il pannello è vuoto`);
+      console.log(`${canvasOk && framedOk && reachableOk ? "  ✓" : "  ✖"} ${line}   at the centre: ${m.reachable}`);
+      if (!canvasOk) failures.push(`${width}px: canvas is ${m.canvas}px wide — under 120 it is not a canvas`);
+      if (!framedOk) failures.push(`${width}px: ${m.nodes} nodes in the document, none inside the view`);
+      if (!reachableOk) failures.push(`${width}px: the panel sits at the centre of the canvas, and it is empty`);
 
       await context.close();
     }
@@ -157,11 +129,11 @@ async function main(): Promise<void> {
   }
 
   if (failures.length > 0) {
-    console.error(`\n✖ ${failures.length} guasti:`);
+    console.error(`\n✖ ${failures.length} failures:`);
     for (const failure of failures) console.error(`  - ${failure}`);
     process.exit(1);
   }
-  console.log("\n✓ la tela c'è a ogni larghezza, e inquadra ciò che contiene.");
+  console.log("\n✓ the canvas is there at every width, and frames what it holds.");
 }
 
 main().catch((error) => {

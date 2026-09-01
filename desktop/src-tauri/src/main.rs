@@ -23,6 +23,7 @@ mod live;
 mod manual;
 mod run;
 mod terminal;
+mod worktree;
 mod tools;
 
 /// Un flusso come lo riceve la tela. Ricalca `FlowEntry` di
@@ -170,7 +171,10 @@ fn main() {
             terminal::terminal_press,
             terminal::terminal_resize,
             terminal::terminal_close,
-            terminal::terminal_list
+            terminal::terminal_list,
+            worktree::worktree_list,
+            worktree::worktree_create,
+            worktree::worktree_remove
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");
