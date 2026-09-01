@@ -27,6 +27,7 @@
 
 pub mod bridge;
 pub mod inbox;
+pub mod mandate;
 pub mod pty;
 pub mod routing;
 pub mod session;
