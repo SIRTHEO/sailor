@@ -28,5 +28,10 @@ trigger = { path = "../trigger" }
 # Quali azioni sa eseguire Sailor: una lista sola, condivisa con la finestra.
 # Averla in due copie ha fatto girare lo stesso flusso in due modi diversi.
 registry = { path = "../registry" }
+# Il tracciamento dei terminali: `sailor session` è solo i gesti — leggere
+# standard input, chiedere il proprio tty, stampare — mentre l'ancora, il
+# deposito delle sessioni e il censimento stanno lì, dove si provano senza
+# passare dalla riga di comando.
+sessions = { path = "../sessions" }
 serde = { workspace = true }
 serde_json = { workspace = true }

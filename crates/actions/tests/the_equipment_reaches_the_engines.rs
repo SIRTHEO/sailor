@@ -13,6 +13,7 @@
 //! viaggiava col prodotto; la dotazione c'era e non arrivava ai motori.
 
 use actions::equipment_for;
+use ledger::EngineIdentity;
 use profiles::{Profile, ProfileStore};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -117,7 +118,14 @@ fn a_profile_that_exists_but_is_not_active_moves_nothing() {
     );
 
     assert!(equipment.env.is_empty(), "{:?}", equipment.env);
-    assert!(equipment.profile.is_empty());
+    // **E NON È UN VUOTO: È «EREDITATA».** Il processo parte con la casa di chi
+    // ha aperto il terminale, che è un'identità vera e nominabile.
+    assert_eq!(
+        equipment.identity,
+        EngineIdentity::InheritedFromTheTerminal {
+            cli_id: "claude".to_owned()
+        }
+    );
 }
 
 /// Un comando che non è una riga di comando conosciuta — un `sh` scritto a mano
@@ -127,20 +135,89 @@ fn a_plain_command_gets_no_home_of_anyones() {
     let equipment = equipment_for(&a_store_with_one_active_profile(), "/bin/sh", &BTreeMap::new());
 
     assert!(equipment.env.is_empty(), "{:?}", equipment.env);
-    assert!(equipment.profile.is_empty());
+    assert_eq!(equipment.identity, EngineIdentity::NotAKnownEngine);
 }
 
 /// **IL PROFILO RISOLTO SI SCRIVE, O DUE CORSE NON SONO LA STESSA MISURA.**
 ///
-/// Chi legge una riga del deposito e non sa sotto quale dotazione quella
-/// chiamata è girata non può confrontarla con nessun'altra: la stessa catena di
-/// passi, sotto due profili, dà due consumi diversi per una ragione che la riga
-/// non porta.
+/// Chi legge una riga del deposito e non sa sotto quale identità quella chiamata
+/// è girata non può confrontarla con nessun'altra: la stessa catena di passi,
+/// sotto due profili, dà due consumi diversi per una ragione che la riga non
+/// porta. **E il percorso della casa ci sta dentro**: è il fondo su cui una
+/// diagnostica si appoggia, mentre un nome si riusa e si sposta.
 #[test]
 fn the_resolved_profile_is_written_down_not_left_to_be_guessed() {
     let equipment = equipment_for(&a_store_with_one_active_profile(), "codex", &BTreeMap::new());
 
-    assert_eq!(equipment.profile, "codex/lavoro");
+    assert_eq!(
+        equipment.identity,
+        EngineIdentity::ProfileInForce {
+            cli_id: "codex".to_owned(),
+            profile_name: "lavoro".to_owned(),
+            home_dir: PathBuf::from("/case/codex/lavoro"),
+        }
+    );
+}
+
+/// **IL PASSO CHE SCAVALCA LO DICE, E QUESTA È LA CURA DEL DIFETTO.**
+///
+/// Fino al 01/09/2026 la riga nel deposito diceva `codex/lavoro` anche qui: il
+/// motore partiva nella casa scritta nel passo e il registro nominava il profilo
+/// attivo. **Il registro diceva un'identità e il processo ne aveva usata
+/// un'altra**, proprio nel caso in cui qualcuno l'aveva cambiata apposta — cioè
+/// quello che una diagnostica o un controllo di sicurezza esiste per vedere.
+///
+/// *Mutante eseguito*: togliere da `identity_of` il ramo che guarda `step_env`
+/// per primo. Questa diventa rossa e le altre restano verdi.
+#[test]
+fn a_step_that_writes_the_home_variable_is_recorded_as_the_one_who_chose() {
+    let equipment = equipment_for(
+        &a_store_with_one_active_profile(),
+        "codex",
+        &step_env(&[("CODEX_HOME", "/una/casa/scritta/nel/passo")]),
+    );
+
+    assert_eq!(
+        equipment.identity,
+        EngineIdentity::ChosenByTheStep {
+            cli_id: "codex".to_owned(),
+            home_dir: PathBuf::from("/una/casa/scritta/nel/passo"),
+        },
+        "la riga direbbe un profilo che il processo non ha usato"
+    );
+}
+
+/// **UN PROFILO DICHIARATO NON È UN PROFILO IN FORZA.** `antigravity` non ha una
+/// variabile che sposti la casa: lì l'identità dipende da dove punta un file sul
+/// disco, e questa funzione il disco non lo tocca. Prima usciva la stessa
+/// stringa vuota di «nessun profilo», e i due casi si confondevano; adesso la
+/// riga dice anche **perché**.
+#[test]
+fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
+    let mut store = ProfileStore::default();
+    store.profiles.push(Profile {
+        name: "lavoro".to_owned(),
+        cli_id: "antigravity".to_owned(),
+        home_dir: PathBuf::from("/case/antigravity/lavoro"),
+    });
+    store
+        .active
+        .insert("antigravity".to_owned(), "lavoro".to_owned());
+
+    let equipment = equipment_for(&store, "antigravity", &BTreeMap::new());
+
+    assert!(equipment.env.is_empty(), "{:?}", equipment.env);
+    let EngineIdentity::NotMovedByAnEnvVar {
+        cli_id,
+        profile_name,
+        why,
+    } = equipment.identity
+    else {
+        panic!("un profilo non messo in forza si legge come qualcos'altro");
+    };
+    assert_eq!(cli_id, "antigravity");
+    assert_eq!(profile_name, "lavoro");
+    assert!(!why.is_empty(), "manca la ragione, che è metà del dato");
 }
 
 /// **UNO STATO CHE NOMINA UN PROFILO SPARITO NON INVENTA UNA CASA.**
@@ -150,7 +227,9 @@ fn the_resolved_profile_is_written_down_not_left_to_be_guessed() {
 /// fermarlo per uno stato invecchiato punirebbe chi non c'entra — ma inventare
 /// una cartella dal nome del profilo sarebbe peggio: si partirebbe con una casa
 /// vuota, cioè senza credenziali, con l'aria di aver applicato un profilo. Non
-/// si sovrappone niente, e il deposito lo dice tacendo.
+/// si sovrappone niente — e il deposito lo **dice**, invece di tacerlo: fra i
+/// cinque casi che finivano tutti nella stessa stringa vuota, questo è il solo
+/// che chiede di intervenire, perché c'è uno stato da riparare.
 #[test]
 fn a_stale_active_name_that_matches_no_profile_moves_nothing() {
     let mut store = a_store_with_one_active_profile();
@@ -159,5 +238,11 @@ fn a_stale_active_name_that_matches_no_profile_moves_nothing() {
     let equipment = equipment_for(&store, "codex", &BTreeMap::new());
 
     assert!(equipment.env.is_empty(), "{:?}", equipment.env);
-    assert!(equipment.profile.is_empty());
+    assert_eq!(
+        equipment.identity,
+        EngineIdentity::ProfileVanished {
+            cli_id: "codex".to_owned(),
+            profile_name: "sparito".to_owned(),
+        }
+    );
 }

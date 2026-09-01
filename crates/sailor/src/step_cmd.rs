@@ -27,7 +27,7 @@ use actions::handoff::{holder_key, HOLDER_COLLECTION};
 use flow::{
     Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord,
 };
-use ledger::{Ledger, ModelCallRecord, StoreRecord};
+use ledger::{EngineIdentity, Ledger, ModelCallRecord, StoreRecord};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -53,11 +53,15 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     }
 }
 
+/// Le forme di `sailor step`, una per riga. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &[
+    "sailor step open --run <corsa> --step <passo> --as <chi>",
+    "sailor step close --run <corsa> --step <passo> --as <chi> --outcome <went|broke> \
+     [--output-file <file>] [--turns <n>] [--said <testo>]",
+];
+
 fn usage() -> String {
-    "uso: sailor step open --run <corsa> --step <passo> --as <chi>\n     \
-     sailor step close --run <corsa> --step <passo> --as <chi> \
-     --outcome <went|broke> [--output-file <file>] [--turns <n>] [--said <testo>]"
-        .to_owned()
+    format!("uso:\n  {}", USAGE.join("\n  "))
 }
 
 /// Le opzioni scritte sulla riga, in coppie `--nome valore`.
@@ -519,8 +523,13 @@ fn write_self_declared_turns(
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            // **DICHIARATA DA UN AGENTE, E NON «NESSUNA».** Qui Sailor non ha
+            // avviato niente: a lavorare è stato l'agente già vivo nel
+            // terminale, e con quale identità l'abbia fatto Sailor non lo sa e
+            // non può saperlo. Lasciare il vuoto confonderebbe questo fatto con
+            // «nessun profilo in forza», che è un'altra cosa: lì la casa è
+            // quella del processo, e si può andare a guardarla.
+            engine_identity: EngineIdentity::DeclaredByAnAgent,
             retry_chain: Vec::new(),
             error_type: None,
             started_at: now,

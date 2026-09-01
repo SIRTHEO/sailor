@@ -343,6 +343,32 @@ export async function machineInventory(): Promise<Installed> {
   return invoke<Installed>("machine_inventory");
 }
 
+/** Un comando della riga di comando, come lo dichiara il binario. */
+export interface CommandDoc {
+  /** Il nome che si digita: `flow`, `step`, `release`. */
+  name: string;
+  /** La riga che dice a cosa serve — la stessa di `sailor --help`. */
+  description: string;
+  /** Le forme complete, una per riga. */
+  usage: string[];
+}
+
+/**
+ * I comandi che questo Sailor sa eseguire.
+ *
+ * **NON C'È NESSUN ELENCO DI COMANDI IN TYPESCRIPT, ED È IL PUNTO.** Scriverli
+ * qui sarebbe stata mezz'ora di lavoro e una pagina che diverge dal binario
+ * alla prima opzione aggiunta: il guasto 10, che in questo repo si è già
+ * ripresentato cinque volte — l'ultima lo stesso giorno, sul vocabolario delle
+ * azioni. `crates/sailor` è lib+bin apposta, e `manual` traduce soltanto la
+ * forma.
+ */
+export async function manual(): Promise<CommandDoc[]> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("fuori dal guscio nativo: i comandi li dichiara il binario");
+  return invoke<CommandDoc[]>("manual");
+}
+
 type Unlisten = () => void;
 
 interface EventGlobal {
