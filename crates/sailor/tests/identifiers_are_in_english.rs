@@ -281,7 +281,8 @@ fn every_source_file_is_named_in_english() {
 ///
 /// Le due prove qui sopra guardano `.rs`, `.ts`, `.tsx`, `.html`. Un file
 /// `.yml` non è codice per nessuna di loro, quindi
-/// `.github/workflows/la-batteria.yml` è nato con tre lavori chiamati `prove`,
+/// il file della CI — che allora si chiamava `la-batteria.yml`, oggi
+/// `the-battery.yml` — è nato con tre lavori chiamati `prove`,
 /// `stile` e `finestra` e **nessuno ha protestato**. Non è che la regola non
 /// c'era: è che nessuno la interrogava su quel tipo di file, e una regola che
 /// nessuno interroga lì, lì non diventa rossa mai. È la stessa forma per cui
