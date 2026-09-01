@@ -1,14 +1,9 @@
 //! What Sailor says, in the language the reader asked for.
 //!
-//! **ENGLISH IS THE SOURCE, ITALIAN IS A LAYER ON TOP.** The other way round the
-//! default rots first: a key born Italian reaches whoever publishes as a
-//! sentence they cannot read, and nothing turns red. This way a key with no
-//! Italian falls back to English, which is behaviour and not a hole.
-//!
-//! The contract is [`desktop/src/i18n.ts`], deliberately: same files, same keys,
-//! same fallback, same named substitutions. Where the two must agree, the test
-//! that says so lives here, because `cargo test --workspace` is the battery that
-//! runs on every gate and `vitest` is not.
+//! **ENGLISH IS THE SOURCE, ITALIAN IS A LAYER ON TOP.** The other way round a
+//! key born Italian would reach whoever publishes as a sentence they cannot
+//! read, with nothing turning red. `desktop/src/i18n.ts` is the same contract
+//! over the same files; the test that holds the two together lives on this side.
 
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
@@ -98,11 +93,9 @@ pub fn try_say(key: &str, values: &[(&str, &str)]) -> Option<String> {
 
 /// **NAMED SUBSTITUTIONS, NEVER POSITIONAL.** Word order moves between the two
 /// languages, so `{0}` makes a correct translation impossible without editing
-/// the sentence it came from.
-///
-/// A name nobody supplied is left standing as `{name}` rather than blanked: the
-/// hole is then visible in the output, and whoever reads it knows a value went
-/// missing instead of reading a sentence with a word cut out of it.
+/// the sentence it came from. A name nobody supplied is left standing as
+/// `{name}` rather than blanked: the hole stays visible, instead of reading as
+/// a sentence with a word cut out of it.
 fn fill(text: &str, values: &[(&str, &str)]) -> String {
     if values.is_empty() {
         return text.to_owned();

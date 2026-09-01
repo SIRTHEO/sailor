@@ -652,11 +652,10 @@ fn a_flow_i_may_rewrite<'a>(
     let (flow, source) = where_it_lives(sources, name)?;
     if source.is_builtin() {
         return Err(format!(
-            "«{name}» è un flusso di sistema, spedito dentro il binario: non c'è \
-             nessun file da riscrivere. Per cambiarlo scrivi un flusso con lo \
-             stesso nome in casa tua o nel progetto — vince il tuo — e cambia \
-             quello. Non lo faccio io: un flusso comparso da sé è un flusso che \
-             nessuno sa di avere"
+            "«{name}» ships inside the binary: there is no file to rewrite. To \
+             change it, write a flow of the same name in your home or in the \
+             project — yours wins — and change that one. I will not do it for \
+             you: a flow that appeared by itself is a flow nobody knows they have"
         ));
     }
     // **SI CONFRONTANO I DUE NOMI, NON SI CHIEDE SE UN FILE ESISTE.** Qui c'era
@@ -4601,7 +4600,7 @@ mod tests {
 
         let error = set_cap(&sources, shipped, "1000000").expect_err("un flusso di sistema");
 
-        assert!(error.contains("di sistema"), "{error}");
+        assert!(error.contains("ships inside the binary"), "{error}");
         assert!(
             entries_of(&home.0).is_empty(),
             "non deve essere comparso nessun file in casa: {:?}",
@@ -4872,7 +4871,7 @@ mod tests {
         let error = set_schedule(&sources, shipped, "3600s", Some(LIGHT))
             .expect_err("un flusso di sistema");
 
-        assert!(error.contains("di sistema"), "{error}");
+        assert!(error.contains("ships inside the binary"), "{error}");
         assert!(
             entries_of(&home.0).is_empty(),
             "non deve essere comparso nessun file in casa: {:?}",
@@ -5291,7 +5290,7 @@ mod tests {
         for (name, _) in flow::system::FLOWS {
             assert!(report.contains(name), "manca «{name}» in:\n{report}");
         }
-        assert!(report.contains("di sistema"), "{report}");
+        assert!(report.contains("built in"), "{report}");
     }
 
     /// **IL TOTALE DI UNA CORSA È QUELLO DELLE SUE CHIAMATE, NON UNO ZERO.**

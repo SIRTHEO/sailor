@@ -193,7 +193,7 @@ mod flow_sources_tests {
         // from `BUILTIN_ORIGIN`, so comparing the two asks the value whether it
         // equals itself and cannot fail. The constant's own doc asks for the
         // literal, so the label moves in one edit with every reader of it.
-        assert_eq!(sources[0].origin, "di sistema");
+        assert_eq!(sources[0].origin, "built in");
         assert!(sources[0].is_builtin());
         assert!(
             !load_flow_registry(&sources[0].dir).is_empty(),
