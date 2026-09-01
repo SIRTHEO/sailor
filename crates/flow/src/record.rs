@@ -261,7 +261,10 @@ mod tests {
         record.species = Some(StepSpecies::Compensable);
         record.held_by_pid = Some(4321);
         let text = serde_json::to_string(&record).expect("serializable record");
-        assert!(text.contains("\"compensable\""), "species is written lowercase: {text}");
+        assert!(
+            text.contains("\"compensable\""),
+            "species is written lowercase: {text}"
+        );
         let back: StepRecord = serde_json::from_str(&text).expect("record reads back");
         assert_eq!(back.species, Some(StepSpecies::Compensable));
         assert_eq!(back.held_by_pid, Some(4321));

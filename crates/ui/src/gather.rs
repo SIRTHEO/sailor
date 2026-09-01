@@ -55,7 +55,10 @@ pub fn gather(dir: &Path) -> Result<Option<GatheredData>, GatherError> {
 
     let mut calls_by_run: BTreeMap<String, Vec<ModelCallRecord>> = BTreeMap::new();
     for call in calls {
-        calls_by_run.entry(call.run_id.clone()).or_default().push(call);
+        calls_by_run
+            .entry(call.run_id.clone())
+            .or_default()
+            .push(call);
     }
 
     Ok(Some(GatheredData {
@@ -218,7 +221,10 @@ mod tests {
     use std::fs;
 
     fn temp_test_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("sailor-ui-gather-test-{label}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "sailor-ui-gather-test-{label}-{}",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("creating the temporary directory");
         dir
@@ -311,10 +317,19 @@ mod tests {
 
         let registry = load_flow_registry(&dir);
         // Both used to be skipped in silence, leaving registry.len() at 0.
-        assert_eq!(registry.len(), 2, "both broken flows must be in the registry");
+        assert_eq!(
+            registry.len(),
+            2,
+            "both broken flows must be in the registry"
+        );
 
-        let truncated = registry.get("flusso-tronco").expect("truncated flow present");
-        assert!(truncated.is_err(), "the truncated file must be marked as an error");
+        let truncated = registry
+            .get("flusso-tronco")
+            .expect("truncated flow present");
+        assert!(
+            truncated.is_err(),
+            "the truncated file must be marked as an error"
+        );
         let reason_truncated = truncated.as_ref().unwrap_err();
         // The reason must say **what is wrong**, not merely name a file: a
         // reason made of nothing but a path would pass a check on the path.
@@ -324,7 +339,10 @@ mod tests {
         );
 
         let cyclic = registry.get("flusso-ciclico").expect("cyclic flow present");
-        assert!(cyclic.is_err(), "the flow with a cycle must be marked as an error");
+        assert!(
+            cyclic.is_err(),
+            "the flow with a cycle must be marked as an error"
+        );
         let reason_cyclic = cyclic.as_ref().unwrap_err();
         assert!(
             reason_cyclic.contains("backward dependency")
@@ -373,7 +391,10 @@ mod tests {
         fs::write(dir.join(".DS_Store"), "binary data").expect("writing the file");
 
         let registry = load_flow_registry(&dir);
-        assert!(registry.is_empty(), "files that are not JSON must stay out of the registry");
+        assert!(
+            registry.is_empty(),
+            "files that are not JSON must stay out of the registry"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -399,7 +420,10 @@ mod tests {
     #[test]
     fn the_explicit_folder_wins_over_the_home() {
         assert_eq!(
-            flows_dir_from(Some(PathBuf::from("/here/the/flows")), PathBuf::from("/home/sailor")),
+            flows_dir_from(
+                Some(PathBuf::from("/here/the/flows")),
+                PathBuf::from("/home/sailor")
+            ),
             PathBuf::from("/here/the/flows")
         );
     }

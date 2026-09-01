@@ -254,10 +254,7 @@ impl Action for SubflowAction {
             return Err(ActionError::new(
                 format!("subflow_{status}"),
                 why.unwrap_or_else(|| {
-                    format!(
-                        "run {run_id} of flow {} ended in state {status}",
-                        call.flow
-                    )
+                    format!("run {run_id} of flow {} ended in state {status}", call.flow)
                 }),
             ));
         }
@@ -368,12 +365,7 @@ pub fn known_flows(
 ) -> BTreeMap<String, FlowFile> {
     found
         .iter()
-        .filter_map(|(name, _, entry)| {
-            entry
-                .as_ref()
-                .ok()
-                .map(|flow| (name.clone(), flow.clone()))
-        })
+        .filter_map(|(name, _, entry)| entry.as_ref().ok().map(|flow| (name.clone(), flow.clone())))
         .collect()
 }
 
@@ -548,12 +540,18 @@ mod tests {
     }
 
     fn map(flows: Vec<FlowFile>) -> BTreeMap<String, FlowFile> {
-        flows.into_iter().map(|flow| (flow.id.clone(), flow)).collect()
+        flows
+            .into_iter()
+            .map(|flow| (flow.id.clone(), flow))
+            .collect()
     }
 
     #[test]
     fn two_flows_that_call_each_other_are_a_named_chain() {
-        let known = map(vec![calling("research", &["develop"]), calling("develop", &["research"])]);
+        let known = map(vec![
+            calling("research", &["develop"]),
+            calling("develop", &["research"]),
+        ]);
 
         let cycle = call_cycle("research", &known).expect("the loop is there");
 

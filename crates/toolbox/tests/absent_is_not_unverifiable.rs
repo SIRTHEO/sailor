@@ -22,10 +22,7 @@ struct Sandbox {
 impl Sandbox {
     fn new(name: &str) -> Sandbox {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let root = std::env::temp_dir().join(format!(
-            "toolbox-{name}-{}-{n}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("toolbox-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("the test directory is created");
         Sandbox { root }
@@ -243,8 +240,16 @@ fn a_path_probe_tells_missing_from_blocked() {
     );
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
     // The names looked for are fixture data; the variables holding them are not.
-    let absent = report.findings.iter().find(|f| f.name == "assente").unwrap();
-    let covered = report.findings.iter().find(|f| f.name == "coperto").unwrap();
+    let absent = report
+        .findings
+        .iter()
+        .find(|f| f.name == "assente")
+        .unwrap();
+    let covered = report
+        .findings
+        .iter()
+        .find(|f| f.name == "coperto")
+        .unwrap();
     assert!(
         matches!(absent.presence, Presence::Absent(_)),
         "{:?}",
@@ -267,7 +272,11 @@ fn a_path_probe_tells_missing_from_blocked() {
 fn a_present_tool_whose_version_fails_stays_present() {
     let sandbox = Sandbox::new("badversion");
     let bin_dir = sandbox.dir("bin");
-    fake_binary(&bin_dir, "scontroso", "echo 'permission denied' 1>&2; exit 1");
+    fake_binary(
+        &bin_dir,
+        "scontroso",
+        "echo 'permission denied' 1>&2; exit 1",
+    );
     let descriptors = sandbox.write(
         "tools.json",
         r#"[{"id": "scontroso", "family": "tool", "detect": {"command": "scontroso"},
@@ -500,10 +509,7 @@ fn a_new_cli_is_declared_without_recompiling_anything() {
     let found = &report.findings[0];
     assert_eq!(found.family, "ai_cli");
     assert!(found.presence.is_present(), "{:?}", found.presence);
-    assert_eq!(
-        found.version,
-        VersionReading::Declared("1.0.2".to_string())
-    );
+    assert_eq!(found.version, VersionReading::Declared("1.0.2".to_string()));
 }
 
 /// Whoever arrives later wins on the `id`, and `disabled` deletes. It is the way
@@ -530,10 +536,7 @@ fn a_user_file_overrides_and_switches_off_a_shipped_descriptor() {
     let report = toolbox::detect(&catalog, &machine(vec![bin_dir], &sandbox.root));
     assert_eq!(report.findings.len(), 1, "{:?}", report.findings);
     assert_eq!(report.findings[0].label, "mine");
-    assert_eq!(
-        report.findings[0].descriptor_source,
-        mine.to_string_lossy()
-    );
+    assert_eq!(report.findings[0].descriptor_source, mine.to_string_lossy());
 }
 
 /// The descriptors shipped with the product all load: if one of them were badly
@@ -554,7 +557,10 @@ fn the_shipped_descriptors_all_load() {
         .map(|l| l.descriptor.family.as_str())
         .collect();
     for expected in ["ai_cli", "mcp_server", "tool"] {
-        assert!(families.contains(&expected), "the {expected} family is missing");
+        assert!(
+            families.contains(&expected),
+            "the {expected} family is missing"
+        );
     }
 }
 
@@ -618,7 +624,11 @@ fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
             .presence
             .clone()
     };
-    assert!(matches!(by("vuoto"), Presence::Absent(_)), "{:?}", by("vuoto"));
+    assert!(
+        matches!(by("vuoto"), Presence::Absent(_)),
+        "{:?}",
+        by("vuoto")
+    );
     assert!(
         matches!(by("rotto"), Presence::Undetermined(_)),
         "{:?}",
@@ -690,10 +700,7 @@ fn an_undefined_variable_stays_visible_in_the_path() {
     assert_eq!(m.expand("$MY_HOME/x"), "/a/home/x");
     assert_eq!(m.expand("${MY_HOME}/x"), "/a/home/x");
     assert_eq!(m.expand("$DOES_NOT_EXIST/x"), "$DOES_NOT_EXIST/x");
-    assert_eq!(
-        m.expand("~/y"),
-        sandbox.root.join("y").to_string_lossy()
-    );
+    assert_eq!(m.expand("~/y"), sandbox.root.join("y").to_string_lossy());
 }
 
 // ── the flow action ─────────────────────────────────────────────────────
@@ -721,7 +728,10 @@ fn the_flow_action_answers_with_the_findings() {
     };
     assert_eq!(output["total"], 1);
     assert_eq!(output["present"], 0);
-    assert_eq!(output["findings"][0]["descriptor_id"], "mai-installato-davvero");
+    assert_eq!(
+        output["findings"][0]["descriptor_id"],
+        "mai-installato-davvero"
+    );
     assert_eq!(output["findings"][0]["presence"]["state"], "absent");
 }
 
@@ -732,7 +742,9 @@ fn the_flow_action_rejects_an_input_it_cannot_read() {
     use flow::{Action, SharedState};
     let mut shared = SharedState::new();
     let input = serde_json::json!({"famiglia": "ai_cli"});
-    assert!(toolbox::DetectToolsAction.execute(&input, &mut shared).is_err());
+    assert!(toolbox::DetectToolsAction
+        .execute(&input, &mut shared)
+        .is_err());
 }
 
 #[test]

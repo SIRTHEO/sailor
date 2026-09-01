@@ -74,7 +74,12 @@ fn sources() -> Vec<PathBuf> {
         .and_then(Path::parent)
         .expect("the crate sits two levels under the root");
     let mut found = Vec::new();
-    for place in ["crates", "desktop/src", "desktop/src-tauri/src", "desktop/scripts"] {
+    for place in [
+        "crates",
+        "desktop/src",
+        "desktop/src-tauri/src",
+        "desktop/scripts",
+    ] {
         walk(&root.join(place), &mut found);
     }
     found
@@ -337,7 +342,10 @@ fn the_check_can_still_see_what_it_counts() {
     let mut block = false;
     assert!(is_comment("    // like this", &mut block));
     assert!(is_comment("/// and this", &mut block));
-    assert!(!is_comment("let x = 1; // not this: the line is code", &mut block));
+    assert!(!is_comment(
+        "let x = 1; // not this: the line is code",
+        &mut block
+    ));
     // And a stylesheet banner, which without the state would count one line.
     assert!(is_comment("/* the banner opens", &mut block));
     assert!(block, "and the next line is still inside the comment");
@@ -365,7 +373,14 @@ fn the_check_can_still_see_what_it_counts() {
     );
     // Splitting a block in two does not shorten it: twelve lines stay twelve.
     let split = [
-        "/// one", "/// two", "/// three", "/// four", "", "/// five", "/// six", "/// seven",
+        "/// one",
+        "/// two",
+        "/// three",
+        "/// four",
+        "",
+        "/// five",
+        "/// six",
+        "/// seven",
         "fn something() {}",
     ];
     assert!(
@@ -384,7 +399,16 @@ fn the_check_can_still_see_what_it_counts() {
         splits_one_doc_comment(&module, 2),
         "two //! groups are one banner: the module they document is the same"
     );
-    let jsdoc = ["/**", " * one", " */", "", "/**", " * two", " */", "export const x = 1;"];
+    let jsdoc = [
+        "/**",
+        " * one",
+        " */",
+        "",
+        "/**",
+        " * two",
+        " */",
+        "export const x = 1;",
+    ];
     assert!(
         splits_one_doc_comment(&jsdoc, 3),
         "in JSDoc only the last block documents: splitting orphans, it does not shorten"
@@ -407,7 +431,10 @@ fn the_check_can_still_see_what_it_counts() {
         !splits_one_doc_comment(&banner, 1),
         "a one-line banner ends with */ but is not a split block"
     );
-    assert!(counts.long_blocks > 0, "zero long blocks: the counter is not looking");
+    assert!(
+        counts.long_blocks > 0,
+        "zero long blocks: the counter is not looking"
+    );
     assert!(counts.dated > 0, "zero dates: the counter is not looking");
     assert!(is_not_english("// perché questo non basta"));
     assert!(
@@ -415,5 +442,8 @@ fn the_check_can_still_see_what_it_counts() {
         "an English line must not count as non-English, or the debt could never \
          fall even by translating"
     );
-    assert!(counts.not_english > 0, "zero non-English: the counter is not looking");
+    assert!(
+        counts.not_english > 0,
+        "zero non-English: the counter is not looking"
+    );
 }
