@@ -67,8 +67,9 @@ d'uscita, dove si vede leggendo il grafo.
 
 ## Come si lancia
 
+Dalla radice dei sorgenti di Sailor, qualunque sia sulla tua macchina:
+
 ```bash
-cd ~/personal/sailor
 cargo run -p sailor -- flow run smista-il-lavoro
 ```
 
