@@ -44,7 +44,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
                 .map_err(|error| format!("non so dove mi trovo: {error}"))?;
             init(&here)
         }
-        _ => Err(format!("uso: {}", USAGE[0])),
+        _ => Err(format!("usage: {}", USAGE[0])),
     }
 }
 
