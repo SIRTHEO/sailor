@@ -215,16 +215,30 @@ fn count() -> Counts {
     counts
 }
 
+/// **ALL THREE NUMBERS, WHATEVER FAILED.** Each test names its own, so whoever
+/// repairs re-measures that one alone and leaves the other two above the tree —
+/// by one or two, under the band, invisible to everything. Asked for by
+/// general-ad, who pruned and re-measured only the line the message named.
+fn all_three(counts: &Counts) -> String {
+    format!(
+        "\nMisurati adesso, tutti e tre: {} blocchi sopra {MAX_BLOCK} righe, \
+         {} commenti con una data, {} righe di commento italiane. \
+         Quando ne rimisuri uno, riscrivili tutti.",
+        counts.long_blocks, counts.dated, counts.italian
+    )
+}
+
 #[test]
 fn no_new_comment_block_runs_past_the_cap() {
     let counts = count();
     assert!(
         counts.long_blocks <= LONG_BLOCKS_TODAY,
         "blocchi sopra {MAX_BLOCK} righe: {} (il tetto dichiarato è {LONG_BLOCKS_TODAY}). \
-         Il più lungo è di {} righe in {}. Accorcia, o sposta la cronaca nel commit",
+         Il più lungo è di {} righe in {}. Accorcia, o sposta la cronaca nel commit{}",
         counts.long_blocks,
         counts.worst.0,
-        counts.worst.1
+        counts.worst.1,
+        all_three(&counts)
     );
 }
 
@@ -234,8 +248,9 @@ fn no_new_comment_tells_a_date() {
     assert!(
         counts.dated <= DATED_COMMENTS_TODAY,
         "commenti che citano una data: {} (dichiarati {DATED_COMMENTS_TODAY}). \
-         La data la conserva git, con l'autore vero",
-        counts.dated
+         La data la conserva git, con l'autore vero{}",
+        counts.dated,
+        all_three(&counts)
     );
 }
 
@@ -248,8 +263,9 @@ fn the_italian_left_in_the_comments_only_shrinks() {
         counts.italian <= ITALIAN_COMMENT_LINES_TODAY,
         "righe di commento ancora in italiano: {} (dichiarate {ITALIAN_COMMENT_LINES_TODAY}). \
          Se stai scrivendo un commento nuovo, scrivilo in inglese; se ne stai \
-         traducendo, abbassa il numero",
-        counts.italian
+         traducendo, abbassa il numero{}",
+        counts.italian,
+        all_three(&counts)
     );
 }
 
@@ -272,8 +288,9 @@ fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
             "il seme «{what}» dice {declared}, l'albero ne ha {measured}: \
              {} di scarto. O una fusione ha rialzato il tetto, o qualcuno ha \
              potato senza rimisurare — in tutti e due i casi il numero da \
-             scrivere qui è {measured}",
-            declared - measured
+             scrivere qui è {measured}{}",
+            declared - measured,
+            all_three(&counts)
         );
     }
 }
