@@ -32,6 +32,51 @@ aspetto.
 
 ## Le decisioni prese
 
+### I rinvii si sciolgono in un posto solo, dopo la condizione; e `input` è ciò che il passo ha ricevuto
+
+**01/09/2026**, dal guasto 28.
+
+Come un passo riceve il lavoro del passo prima **non è una scelta della singola
+azione**: è la semantica del grafo, e sta in `flow::step_input` — l'unico punto
+attraversato da ogni passo di ogni corsa. Un'azione non risolve i propri rinvii,
+li riceve già sciolti, come riceve già risolto il `workdir`. Ogni azione
+registrata la eredita, comprese quelle che nessuno ha ancora scritto.
+
+**L'ordine dentro quel punto è la decisione, e non è un dettaglio
+d'implementazione**: comporre le dipendenze col `with`, risolvere il `workdir`,
+valutare il `when`, e sciogliere i rinvii **solo se il passo gira**. *Perché il
+`when` prima*: un passo saltato riceve l'ingresso monco della dipendenza che non
+c'è, quindi i suoi puntatori non trovano niente — e un passo che non gira non
+deve rompersi per un lavoro che non farà. Misurato su
+`flows/chiedi-all-indice.flow.json`, che con l'ordine opposto passava da
+«completato» a «terminato con stato failed». *Il prezzo, dichiarato*: un
+`workdir` scritto come `{"$from": …}` non viene attaccato alla radice. Era già
+così, e vale meno del caso qui sopra.
+
+**Che cosa questo obbliga chi scrive un controllo.** Una prova di comportamento
+resta verde con una copia della risoluzione rimessa dentro un'azione: il
+comportamento non cambia, cambia solo il numero di posti in cui vive la regola —
+che è il guasto. Quindi la guardia **conta i posti**
+(`crates/sailor/tests/references_are_resolved_in_one_place.rs`), e ha a sua
+volta delle prove che interrogano lei: due volte quel lettore è stato cieco in
+silenzio, e un controllo che si può spegnere da solo non è un controllo.
+
+**E che cosa vuol dire `StepRecord::input`, che questa decisione ha cambiato.**
+Una regola sola: *l'ingresso come il passo l'ha ricevuto nel momento in cui ha
+smesso di essere elaborato.* Sciolto se il passo gira; **non** sciolto se è
+saltato o se si è rotto proprio sciogliendo un rinvio — nel secondo caso
+apposta, perché chi legge deve vedere il puntatore da correggere e non il vuoto
+che ne è uscito. **Quale dei tre sia non lo dice quel campo: lo dice `outcome`,
+nello stesso record.** Va scritto qui perché un `{"$from": …}` letto in un
+record non è di per sé un difetto — su `Skipped` è la norma, su `Broke` è la
+diagnosi, su `Went` sarebbe un guasto — e chi legge il deposito senza questa
+riga leggerebbe le tre cose allo stesso modo.
+
+**Il residuo, misurato e non nascosto**: una corsa iniziata prima del 01/09 e
+ripresa dopo confronta un'impronta vecchia grezza con una nuova sciolta, e
+dichiara `DifferentInput` sullo stesso lavoro. È un'etichetta sbagliata su un
+tentativo, non un dato perso, e si esaurisce da sé quando quelle corse finiscono.
+
 ### Un passo si può consegnare all'agente vivo; il giudizio no
 **31/08/2026.** Un passo può dichiarare l'azione `handed_to_agent`: descrive il
 lavoro e **non avvia niente**. A eseguirlo è l'agente già vivo nel terminale, che
