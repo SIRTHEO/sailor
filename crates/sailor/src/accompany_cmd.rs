@@ -1,0 +1,309 @@
+//! `sailor accompany`: runs a command line inside a terminal Sailor owns,
+//! inside whatever emulator the person is already using.
+//!
+//! `session` tracks and never enters, which is right for tracking and wrong
+//! for acting: nothing can be typed into a terminal nobody owns. Here Sailor
+//! owns the descriptor, so the emulator never has to be recognised.
+
+use std::ffi::OsStr;
+use std::fs::File;
+use std::io;
+use std::os::fd::FromRawFd;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use terminal::bridge::{self, Keys, RawMode};
+use terminal::inbox::{self, Inbox};
+use terminal::pty::Pty;
+use terminal::Workspace;
+
+pub const USAGE: &[&str] = &[
+    "sailor accompany run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
+    "sailor accompany press --tty <name> --text <line> [--store <dir>]   types a line into an accompanied terminal",
+    "sailor accompany list [--store <dir>]     which terminals can be typed into",
+];
+
+const FORMS: &[&str] = &["run", "press", "list"];
+
+pub fn run(args: &[String]) -> i32 {
+    match dispatch(args) {
+        Ok(code) => code,
+        Err(complaint) => {
+            eprintln!("sailor accompany: {complaint}");
+            2
+        }
+    }
+}
+
+fn dispatch(args: &[String]) -> Result<i32, String> {
+    let Some(form) = args.first() else {
+        return Err(usage_text());
+    };
+    if form == "--help" || form == "-h" {
+        println!("{}", usage_text());
+        return Ok(0);
+    }
+    if !FORMS.contains(&form.as_str()) {
+        return Err(format!("«{form}» is not a form of this command\n{}", usage_text()));
+    }
+    match form.as_str() {
+        "run" => accompany(&args[1..]),
+        "press" => press(&args[1..]),
+        "list" => list(&args[1..]),
+        other => Err(format!("«{other}» is not a form of this command")),
+    }
+}
+
+fn usage_text() -> String {
+    USAGE.join("\n")
+}
+
+/// Where the letterboxes live: beside the store, unless told otherwise.
+///
+/// The override is not a convenience for tests. Without it every check of this
+/// command would have to write into the store of whoever runs it, and a test
+/// that touches the real machine is the fault this repo has already paid for.
+fn mailroom(options: &[(String, String)]) -> Result<PathBuf, String> {
+    if let Some((_, declared)) = options.iter().find(|(name, _)| name == "store") {
+        return Ok(inbox::mailroom(Path::new(declared)));
+    }
+    let store = ledger::default_directory()
+        .ok_or_else(|| "I cannot tell where the store lives".to_owned())?;
+    Ok(inbox::mailroom(&store))
+}
+
+fn accompany(args: &[String]) -> Result<i32, String> {
+    let (before, line) = split_at_the_dashes(args);
+    let options = options_of(before)?;
+    let Some(program) = line.first() else {
+        return Err("nothing to run: give a command line after `--`".to_owned());
+    };
+    let rest: Vec<&OsStr> = line[1..].iter().map(OsStr::new).collect();
+
+    let here = std::env::current_dir().map_err(|error| error.to_string())?;
+    let workspace = Workspace::open(&here).map_err(|error| error.to_string())?;
+    let size = bridge::size_of(0).unwrap_or_default();
+    let inner = Arc::new(
+        Pty::open(&workspace, OsStr::new(program), &rest, size, &[])
+            .map_err(|error| error.to_string())?,
+    );
+
+    // The letterbox is named after the terminal the program inside sees, not
+    // the one this process was started from. Those are two different ttys, and
+    // the tracking store records the inner one: keying on the outer would
+    // leave whoever reads that store knocking at an address nobody holds.
+    let tty = sessions::tty::short_name(inner.device());
+    let address = mailroom(&options)?.join(format!("{tty}.sock"));
+    let letterbox = Inbox::open(&address).map_err(|error| {
+        let _ = inner.close();
+        error.to_string()
+    })?;
+
+    // The outer terminal goes raw before the first byte moves, and comes back
+    // when this guard drops.
+    let restore = bridge::is_a_terminal(0)
+        .then(|| RawMode::take(0))
+        .transpose()
+        .map_err(|error| error.to_string())?;
+    bridge::notice_resizes().map_err(|error| error.to_string())?;
+
+    typing_reaches(&inner, letterbox);
+    keystrokes_reach(&inner);
+    let showing = show_output(&inner);
+
+    drop(restore);
+    let _ = std::fs::remove_file(&address);
+    showing.map_err(|error| error.to_string())?;
+    Ok(exit_code_of(&inner))
+}
+
+/// The thread that hands whatever a stranger left straight to the terminal.
+fn typing_reaches(inner: &Arc<Pty>, letterbox: Inbox) {
+    let inner = Arc::clone(inner);
+    std::thread::spawn(move || {
+        letterbox.serve(|bytes| {
+            let _ = inner.write(bytes);
+        });
+    });
+}
+
+/// The thread that carries what the person types.
+fn keystrokes_reach(inner: &Arc<Pty>) {
+    let inner = Arc::clone(inner);
+    std::thread::spawn(move || {
+        let from = unsafe { File::from_raw_fd(libc::dup(0)) };
+        let _ = bridge::pump(from, Keys(&inner), || follow_the_window(&inner));
+    });
+}
+
+/// The output, on the thread that stays: when it ends, the program inside has.
+fn show_output(inner: &Arc<Pty>) -> io::Result<()> {
+    let from = inner
+        .reader()
+        .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?;
+    let into = unsafe { File::from_raw_fd(libc::dup(1)) };
+    bridge::pump(from, into, || follow_the_window(inner))
+}
+
+/// A window change is noticed on whichever read the signal happened to
+/// interrupt, so both pumps ask the same question.
+fn follow_the_window(inner: &Pty) {
+    if !bridge::resize_was_noticed() {
+        return;
+    }
+    if let Ok(size) = bridge::size_of(0) {
+        let _ = inner.resize(size);
+    }
+}
+
+/// What the program inside exited with.
+///
+/// A terminal whose output has ended has almost always lost its child too, but
+/// the two are not the same event: reporting a code we never read would be
+/// reporting success we did not see.
+fn exit_code_of(inner: &Pty) -> i32 {
+    for _ in 0..50 {
+        match inner.finished() {
+            Some(terminal::Ending::Exited(code)) => return code,
+            Some(terminal::Ending::Killed) => return 130,
+            _ => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+    0
+}
+
+fn press(args: &[String]) -> Result<i32, String> {
+    let options = options_of(args)?;
+    let tty = options
+        .iter()
+        .find(|(name, _)| name == "tty")
+        .map(|(_, value)| value.clone())
+        .ok_or_else(|| "which terminal? give --tty <name>".to_owned())?;
+    let text = options
+        .iter()
+        .find(|(name, _)| name == "text")
+        .map(|(_, value)| value.clone())
+        .ok_or_else(|| "what should be typed? give --text <line>".to_owned())?;
+
+    let address = mailroom(&options)?.join(format!("{tty}.sock"));
+    // The carriage return is what a terminal receives when someone presses
+    // Enter; a newline would leave the line sitting there unsent.
+    let mut typed = text.into_bytes();
+    typed.push(b'\r');
+    inbox::press(&address, &typed).map_err(|error| {
+        format!("{}: nobody is accompanying this terminal ({error})", address.display())
+    })?;
+    println!("typed into {tty}");
+    Ok(0)
+}
+
+fn list(args: &[String]) -> Result<i32, String> {
+    let room = mailroom(&options_of(args)?)?;
+    let Ok(entries) = std::fs::read_dir(&room) else {
+        println!("no terminal is being accompanied");
+        return Ok(0);
+    };
+    let mut found = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()) else {
+            continue;
+        };
+        // A file left behind by a process that died badly answers nobody: the
+        // knock is what tells a live terminal from its leftovers.
+        let alive = std::os::unix::net::UnixStream::connect(&path).is_ok();
+        if alive {
+            println!("{name}   can be typed into");
+            found += 1;
+        }
+    }
+    if found == 0 {
+        println!("no terminal is being accompanied");
+    }
+    Ok(0)
+}
+
+/// What was written before the dashes, and the command line after them.
+///
+/// The separator is what keeps a command line from being read as options: a
+/// program called `list` is a program, not this command's own form.
+fn split_at_the_dashes(args: &[String]) -> (&[String], &[String]) {
+    match args.iter().position(|word| word == "--") {
+        Some(at) => (&args[..at], &args[at + 1..]),
+        None => (&[], args),
+    }
+}
+
+/// `--name value` pairs, in the order they were written.
+fn options_of(args: &[String]) -> Result<Vec<(String, String)>, String> {
+    let mut found = Vec::new();
+    let mut rest = args.iter();
+    while let Some(word) = rest.next() {
+        let Some(name) = word.strip_prefix("--") else {
+            return Err(format!("«{word}» is not an option"));
+        };
+        let value = rest
+            .next()
+            .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
+        found.push((name.to_owned(), value.clone()));
+    }
+    Ok(found)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(of: &[&str]) -> Vec<String> {
+        of.iter().map(|word| (*word).to_owned()).collect()
+    }
+
+    #[test]
+    fn every_form_the_usage_promises_is_accepted() {
+        for line in USAGE {
+            let promised = line
+                .split_whitespace()
+                .nth(2)
+                .expect("every usage line names its own form");
+            assert!(
+                FORMS.contains(&promised),
+                "«{promised}» is promised by the help and the dispatch does not accept it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_form_nobody_wrote_is_refused_by_name() {
+        let error = dispatch(&words(&["invented"]))
+            .err()
+            .expect("an invented form is refused");
+        assert!(error.contains("invented"), "the refusal must name it: {error}");
+    }
+
+    #[test]
+    fn options_come_out_in_pairs() {
+        let read = options_of(&words(&["--tty", "ttys004"])).expect("two words");
+        assert_eq!(read, vec![("tty".to_owned(), "ttys004".to_owned())]);
+    }
+
+    #[test]
+    fn an_option_without_a_value_is_refused() {
+        assert!(options_of(&words(&["--tty"])).is_err());
+    }
+
+    /// A program called `list` is a program, not this command's own form.
+    #[test]
+    fn what_comes_after_the_dashes_is_never_read_as_an_option() {
+        let written = words(&["--store", "/tmp/x", "--", "list"]);
+        let (before, line) = split_at_the_dashes(&written);
+        assert_eq!(before, words(&["--store", "/tmp/x"]).as_slice());
+        assert_eq!(line, words(&["list"]).as_slice());
+    }
+
+    #[test]
+    fn running_nothing_is_refused_instead_of_opening_an_empty_terminal() {
+        let error = accompany(&words(&["--"]))
+            .err()
+            .expect("an empty command line is refused");
+        assert!(error.contains("nothing to run"), "{error}");
+    }
+}
