@@ -51,7 +51,15 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  prove:
+  # **LE CHIAVI DEI LAVORI SONO IDENTIFICATORI, E VANNO IN INGLESE.** Non è una
+  # sfumatura: `needs:`, `jobs.<id>` nelle API e i filtri di `gh run` leggono
+  # questa parola. È la stessa riga di `AGENTS.md` che elenca «chiavi JSON» —
+  # ciò che una macchina legge sta in inglese, ciò che una persona legge no.
+  # La prima stesura di questo file le aveva in italiano (`prove`, `finestra`)
+  # e il controllo `identifiers_are_in_english` non se n'è accorto **perché
+  # guarda solo i sorgenti Rust**: una regola che nessuno interroga su un certo
+  # tipo di file, lì non diventa rossa mai.
+  tests:
     name: prove del workspace
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -88,7 +96,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  stile:
+  style:
     name: il debito di stile
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -134,7 +142,7 @@ jobs:
             echo "Nessuno dei due ferma la pubblicazione. Servono a vedere se crescono."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  finestra:
+  desktop:
     name: prove della finestra
     runs-on: ubuntu-latest
     timeout-minutes: 20
