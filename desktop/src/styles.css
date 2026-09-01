@@ -1,94 +1,61 @@
 /* ===========================================================================
-   LA DIREZIONE — carta calda, lettering da targa, e il colore riservato allo
-   stato della macchina.
-   ---------------------------------------------------------------------------
-   Sailor non è un documento: è uno strumento con cui si guarda lavorare delle
-   macchine. Quindi «bello» qui vuol dire **leggibile**, ed è il vincolo
-   permanente «chiarezza per chi guarda» applicato all'aspetto.
-
-   La lingua visiva non è nuova: è quella che la plancia
-   (`crates/ui/assets/index.html`) usa già — carta calda, verde profondo,
-   griglia da carta millimetrata. Prima di oggi le due superfici sembravano due
-   prodotti diversi. Adesso sono una.
-
-   COSA QUESTA DIREZIONE VIETA. Senza questo elenco non guida niente, e al primo
-   componente scritto di fretta tornano l'ombra morbida e l'angolo raccordato.
-
-   1. VIETATI Inter, Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat,
-      Space Grotesk — e vietato `system-ui` come prima scelta. Tre famiglie, e
-      solo quelle: targa, prosa, dato.
-   2. VIETATO un raggio che non sia `--radius` (4px), `--radius-lg` (10px) o
-      `--radius-pill`. Prima ce n'erano dodici.
-   3. UNA SOLA OMBRA (`--shadow`), e solo per ciò che galleggia sopra la tela.
-      VIETATA l'ombra su un nodo o su una corsia: un nodo è una targa incisa,
-      non una scheda che levita. Si stacca col bordo e con la barra di stato.
-   4. IL COLORE È RISERVATO ALLO STATO DELLA MACCHINA. Un pulsante non ha tinta,
-      un pannello non ha tinta, un bordo decorativo non esiste. Le uniche tinte
-      sono i sei stati di un passo, le tre gravità (ok/avviso/guasto), la
-      corsia del flusso e l'anello di fuoco.
-   5. VIETATO che il colore sia l'unico portatore di uno stato: accanto alla
-      tinta c'è sempre la parola. È il difetto da cui nasce «lo schermo è il
-      giudice».
-   6. VIETATA qualunque accoppiata testo/sfondo sotto 4,5:1. Misurata, non a
-      occhio: i numeri stanno accanto a ogni ruolo qui sotto.
-   7. DUE LIVELLI DI TESTO, non tre. `--faint` era #94a3b8 su bianco — 2,56:1,
-      cioè un grigio che nessuno legge. Non è stato schiarito: è stato
-      **abolito**. La differenza fra un'etichetta e una frase la fanno il
-      carattere, le maiuscole e la spaziatura, MAI lo sbiadire.
-   8. VIETATO un corpo fuori dalla scala e uno spazio fuori dal reticolo di 4px.
-      Prima c'erano quattordici corpi, di cui `8.5px` e `9.5px`.
-   9. VIETATI sfumature, vetro smerigliato e sfocature. VIETATO il pulsante a
-      pillola: la pillola è dei bollini di stato e di nient'altro.
-  10. I NUMERI CHE SI CONFRONTANO FRA RIGHE stanno in `--font-data` con cifre
-      tabulari. Un costo in carattere proporzionale non si confronta a colpo
-      d'occhio, e confrontarli è tutto il punto.
-
-   COME QUESTI DIVIETI DIVENTANO ROSSI. `desktop/src/stylesheet.test.ts` legge
-   questo foglio e rifiuta un carattere, un raggio, un'ombra o un colore che non
-   passi da un ruolo; `desktop/src/contrast.test.tsx` cammina il DOM disegnato e
-   rifiuta un'accoppiata sotto 4,5:1, anche con un flusso a fuoco. Il divieto 6
-   era rimasto un turno intero senza niente che lo interrogasse: rimettere
-   `--muted: #94a3b8` — due caratteri — lasciava tutta la batteria verde con lo
-   schermo pieno di testo illeggibile. Oggi la stessa modifica rende rosse tutte
-   e tre le scene: 38 accoppiate sotto soglia a riposo, 38 con un flusso a
-   fuoco, 42 sui sei stati di un passo.
-
-   CIÒ CHE QUESTA DIREZIONE NON FA ANCORA. Il tema scuro. La plancia ce l'ha,
-   questa finestra no — e il motivo NON è che restino tinte scritte a mano: fuori
-   da `:root` non c'è più nessun colore letterale, e il controllo qui sopra lo
-   pretende. Manca la seconda serie di ruoli e la misura di ognuna delle sue
-   accoppiate: il divieto 6 vale sul fondo scuro come su questo, e un tema
-   dichiarato senza quelle misure sarebbe la stessa promessa non verificata che
-   questo commit è stato respinto per aver fatto.
+   DIRECTION — warm paper, plate lettering, colour reserved for machine state.
+   Sailor is a tool for watching machines work, so "beautiful" here means
+   "legible". The visual language is the one the board already uses, so the
+   two surfaces read as one product.
    =========================================================================== */
 
+/* WHAT THIS DIRECTION FORBIDS — without the list it guides nothing.
+   1. No Inter, Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat, Space
+      Grotesk, and no `system-ui` as a first choice: three families only.
+   2. No radius outside `--radius`, `--radius-lg`, `--radius-pill`.
+   3. ONE shadow (`--shadow`), only for what really floats above the canvas:
+      a node is an engraved plate, not a card that levitates. */
+
+/* 4. COLOUR IS RESERVED FOR MACHINE STATE. The only tints are the six step
+      states, the three severities, the flow lane and the focus ring.
+   5. Colour is never the sole carrier of a state: the word sits next to the
+      tint, always.
+   6. No text/background pair below 4.5:1. Measured, not eyeballed.
+   7. TWO text levels, not three. Emphasis is family, caps and tracking. */
+
+/*  8. No size outside the scale, no space outside the 4px grid.
+    9. No gradients, frosted glass or blurs, and no pill-shaped button: the
+       pill belongs to status badges and to nothing else.
+   10. Numbers compared across rows live in `--font-data`, tabular figures:
+       comparing them is the whole point.
+   The dark theme is missing: rule 6 needs its own measured pairs first. */
+
+/* HOW THESE PROHIBITIONS TURN RED. `stylesheet.test.ts` reads this sheet and
+   rejects a font, a radius, a shadow or a colour that skips a role;
+   `contrast.test.tsx` walks the painted DOM and rejects any pair below 4.5:1,
+   focused flow included. Rule 6 is the one that needs the walk: putting
+   `--muted: #94a3b8` back is two characters, and without it the whole battery
+   stays green with a screen full of unreadable text. */
+
 :root {
-  /* --- SUPERFICI. Carta calda, non bianco: il bianco puro sotto una tela di
-         nodi affatica, e la plancia aveva già scelto questo. --- */
+  /* --- SURFACES. Warm paper, not white: pure white under a canvas of nodes
+         tires the eye. --- */
   --bg: #f2f0e9;      /* la tela e la colonna: il fondo di tutto */
   --paper: #fbfaf6;   /* nodi, pannelli, schede: ciò che sta sopra il fondo */
   --raised: #ffffff;  /* campi di testo e ciò che si apre sopra un pannello */
   --rail: #f2f0e9;    /* alias storico, = --bg */
   --line: #d8d7ce;    /* filo di 1px, mai portatore di stato da solo */
-  /* Il velo d'inchiostro sotto una corsia: si vede che il riquadro c'è, e non
-     sposta nessuna accoppiata di contrasto. Era l'ultimo colore letterale
-     rimasto fuori da qui. */
+  /* The ink veil under a lane: the panel is visible, and it moves no contrast
+     pair. */
   --band-fill: rgb(34 38 31 / 2.5%);
 
-  /* --- TESTO. Due livelli, tutti e due leggibili ovunque. Misurati:
+  /* --- TEXT. Two levels, both legible everywhere. Measured:
          ink   su --paper 15,08:1 · su --bg 13,81:1
          muted su --paper  5,24:1 · su --bg  4,80:1 · su --raised 5,47:1 --- */
   --ink: #20241f;
   --muted: #656b63;
   --faint: #656b63;   /* VOLUTAMENTE identico a --muted: vedi il divieto 7 */
 
-  /* --- LO STATO DI UN PASSO. Sei finali che non sono intercambiabili.
-         Tutti misurati su --paper (#fbfaf6), tutti sopra 4,5:1:
-         waiting 5,24 · running 6,44 · went 6,83 · broke 6,40 ·
-         capped 5,79 · human 6,56
-         Prima erano #cbd5e1/#3b82f6/#22c55e/#ef4444/#f59e0b/#a855f7: il
-         migliore faceva 3,79:1 e «in attesa» 1,42:1, mentre erano il colore
-         del testo della parola di stato su ogni nodo. --- */
+  /* --- STEP STATE. Six endings, not interchangeable. All measured on
+         --paper (#fbfaf6), all above 4.5:1:
+         waiting 5.24 · running 6.44 · went 6.83 · broke 6.40 ·
+         capped 5.79 · human 6.56 --- */
   --state-waiting: #656b63;
   --state-running: #1a5f96;
   --state-went: #146447;
@@ -96,7 +63,7 @@
   --state-capped: #92531b;
   --state-human: #6b46a8;
 
-  /* --- GRAVITÀ. Le stesse tre della plancia, e i loro fondi tenui. --- */
+  /* --- SEVERITY. The board's three, plus their faint backgrounds. --- */
   --ok: #146447;
   --ok-soft: #dcebe3;
   --warn: #92531b;
@@ -104,21 +71,19 @@
   --danger: #a13930;
   --danger-soft: #f6dedb;
 
-  /* --- FUOCO. L'unica tinta non di stato, e serve solo a dire «qui». --- */
+  /* --- FOCUS. The only tint that is not a state; it says "here". --- */
   --focus: #1a5f96;
 
-  /* --- CARATTERI. Tre ruoli, nessuna scelta per omissione.
-         targa: DIN Alternate, il lettering delle targhe di macchina e dei
-                cartelli stradali. Esiste solo in Bold, e va benissimo: si usa
-                SOLO in maiuscoletto spaziato per le etichette e gli stati.
-         prosa: Avenir Next, per le frasi che una persona legge.
-         dato:  SF Mono, per tutto ciò che si confronta — id, modelli, token,
-                costi, durate. Cifre tabulari, allineate in colonna. --- */
+  /* --- FAMILIES. Three roles, nothing chosen by omission.
+         display: DIN Alternate, Bold only — used ONLY as tracked small caps.
+         prose:   Avenir Next, for sentences a person reads.
+         data:    SF Mono, for everything that gets compared. Tabular
+                  figures, aligned in a column. --- */
   --font-display: "DIN Alternate", "DIN Condensed", "Avenir Next Condensed", "Avenir Next", sans-serif;
   --font-prose: "Avenir Next", Avenir, Optima, "Gill Sans", sans-serif;
   --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 
-  /* --- CORPI. Sei, da 10 a 22, invece di quattordici fra 8,5 e 18. --- */
+  /* --- SIZES. Six, from 10 to 22. Nothing outside the scale. --- */
   --text-micro: 10px;  /* solo targa, maiuscolo, +0.09em */
   --text-small: 12px;
   --text-body: 13px;
@@ -126,7 +91,7 @@
   --text-large: 18px;
   --text-display: 22px;
 
-  /* --- SPAZIO. Reticolo di 4px, sette gradini. Niente fuori da qui. --- */
+  /* --- SPACE. A 4px grid, seven steps. Nothing outside it. --- */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -135,16 +100,16 @@
   --space-6: 32px;
   --space-7: 48px;
 
-  /* --- FORME. Due raggi e una pillola. --- */
+  /* --- SHAPES. Two radii and one pill. --- */
   --radius: 4px;
   --radius-lg: 10px;
   --radius-pill: 999px;
 
-  /* --- L'UNICA OMBRA, e solo per ciò che galleggia sopra la tela. --- */
+  /* --- THE ONLY SHADOW, and only for what floats above the canvas. --- */
   --shadow: 0 10px 30px rgb(34 38 31 / 8%);
 
-  /* --- MOVIMENTO. Due durate e una curva. Il movimento conferma un gesto,
-         non intrattiene: niente entra in scena, niente rimbalza. --- */
+  /* --- MOTION. Two durations and one curve. Motion confirms a gesture, it
+         does not entertain: nothing enters, nothing bounces. --- */
   --motion-fast: 120ms;
   --motion: 200ms;
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -152,11 +117,11 @@
   font-family: var(--font-prose);
   font-size: var(--text-body);
   color: var(--ink);
-  /* Le cifre stanno in colonna dappertutto: confrontarle è il mestiere. */
+  /* Figures line up in a column everywhere: comparing them is the job. */
   font-variant-numeric: tabular-nums;
 }
 
-/* Chi ha chiesto meno movimento non ne riceve. */
+/* Whoever asked for less motion gets none. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-fast: 0ms;
@@ -176,15 +141,15 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* L'anello di fuoco è uno solo, e si vede: chi naviga da tastiera deve sapere
-   dov'è senza indovinarlo. */
+/* One focus ring, and it is visible: keyboard navigation must not be a
+   guess. */
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
   border-radius: var(--radius);
 }
 
-/* La targa: l'unico posto dove si usa DIN, sempre così. */
+/* The plate: the only place DIN is used, and always like this. */
 .label,
 .rail__title,
 .panel__title,
@@ -226,9 +191,8 @@ body {
   font-size: var(--text-mid);
 }
 
-/* La provenienza dei dati: discreta quando è il disco, in evidenza quando è un
-   esempio o un guasto — sono i due casi in cui chi guarda rischia di credere
-   vero quello che non lo è. */
+/* Where the data came from: quiet for disk, loud for a sample or a failure —
+   the two cases where the viewer risks believing something untrue. */
 .bar__source {
   font-size: var(--text-small);
   padding: 3px 8px;
@@ -249,8 +213,8 @@ body {
   background: var(--danger-soft);
 }
 
-/* Il bollino di modifiche non salvate: chi chiude la finestra deve vederlo
-   prima di perdere il lavoro, non scoprirlo dopo. */
+/* The unsaved-changes badge: whoever closes the window must see it before
+   losing the work, not discover it afterwards. */
 .bar__dirty {
   font-size: var(--text-small);
   font-weight: 600;
@@ -265,8 +229,8 @@ body {
   flex-grow: 1;
 }
 
-/* La barra del ramo a fuoco: nome, descrizione, salva ed elimina — non
-   cambia tela, agisce sul flusso che la colonna ha messo in evidenza. */
+/* The focused branch bar: name, description, save and delete. It does not
+   change canvas, it acts on the flow the rail has focused. */
 .focusbar {
   display: flex;
   align-items: center;
@@ -295,8 +259,8 @@ body {
   color: var(--muted);
 }
 
-/* Il nome si scrive solo finché il flusso non ha un file: dopo, rinominarlo
-   lascerebbe due file sul disco. */
+/* The name is editable only until the flow has a file: after that, renaming
+   would leave two files on disk. */
 .focusbar__name-input {
   font-family: var(--font-data);
   font-weight: 600;
@@ -370,17 +334,10 @@ button:hover:not(:disabled) {
 }
 
 /**
- * UN PULSANTE SPENTO SI LEGGE ANCORA.
- *
- * È il difetto da cui nasce «lo schermo è il giudice», e stava ancora qui:
- * `opacity: 0.4` sopra il grigio che il browser mette da sé sui controlli
- * spenti dava testo `rgba(16,16,16,0.12)` su bianco — **1,30:1**. I sette nomi
- * della cassetta dei passi erano, alla lettera, disegnati del colore dello
- * sfondo. Adesso sono `--muted` su `--bg`: 4,80:1.
- *
- * Il divieto che ne discende: SPENTO NON SI DICE COL COLORE. Si dice col bordo
- * tratteggiato e col cursore, e la parola resta leggibile — perché chi guarda
- * deve poter sapere che cosa non può fare, e per saperlo deve leggerlo.
+ * A DISABLED BUTTON IS STILL READABLE. Disabled is said with the dashed
+ * border and the cursor, NEVER with colour: to know what they cannot do,
+ * the viewer has to be able to read it. `opacity` over the browser's own
+ * grey lands at 1.30:1; `--muted` on `--bg` is 4.80:1.
  */
 button:disabled {
   color: var(--muted);
@@ -402,15 +359,14 @@ button.is-primary {
   min-height: 0;
 }
 
-/* LA TELA RESTA MONTATA ANCHE QUANDO NON SI VEDE. Smontarla a ogni cambio di
-   posto rifarebbe la disposizione dei nodi e perderebbe l'inquadratura: chi
-   torna sui flussi si ritroverebbe altrove ogni volta. `hidden` da solo non
-   basta contro un `display: flex`. */
+/* THE CANVAS STAYS MOUNTED EVEN WHEN HIDDEN. Unmounting it on every change of
+   place would redo the layout and lose the viewport. `hidden` alone is not
+   enough against a `display: flex`. */
 .body[hidden] {
   display: none;
 }
 
-/* ── i posti della finestra ─────────────────────────────────────────────── */
+/* ── the places of the window ───────────────────────────────────────────── */
 
 .places {
   display: flex;
@@ -433,10 +389,9 @@ button.is-primary {
   cursor: pointer;
 }
 
-/* Dove si è: il filo sotto, non un fondo colorato. Il divieto 4 riserva la
-   tinta allo stato della macchina, e «sono qui» non è uno stato della
-   macchina — ma la parola cambia peso, quindi il posto non lo porta il solo
-   colore. */
+/* Where you are: the rule underneath, not a coloured background. Rule 4
+   reserves tint for machine state, and "I am here" is not one — the word
+   changes weight instead, so colour is not the sole carrier. */
 .places__item[data-here] {
   color: var(--ink);
   border-bottom-color: var(--focus);
@@ -450,7 +405,7 @@ button.is-primary {
   margin-left: var(--space-1);
 }
 
-/* ── adesso ─────────────────────────────────────────────────────────────── */
+/* ── now ────────────────────────────────────────────────────────────────── */
 
 .now {
   flex-grow: 1;
@@ -528,8 +483,8 @@ button.is-primary {
   color: var(--muted);
 }
 
-/* L'identificativo della corsa sta sotto il nome e non accanto: è il dato che
-   si copia, non quello che si legge. */
+/* The run id sits under the name, not beside it: it is the datum you copy,
+   not the one you read. */
 .now__id {
   display: block;
   font-family: var(--font-data);
@@ -552,7 +507,7 @@ button.is-primary {
   color: var(--state-running);
 }
 
-/* I numeri che si confrontano fra righe: divieto 10. */
+/* Numbers compared across rows: rule 10. */
 .now__num {
   font-family: var(--font-data);
   font-size: var(--text-small);
@@ -582,7 +537,7 @@ button.is-primary {
   color: var(--ink);
 }
 
-/* Il tentativo, quando non e' il primo: e' un avviso, non un dato neutro. */
+/* The attempt, when it is not the first: a warning, not a neutral datum. */
 .now__step b {
   font-family: var(--font-display);
   font-size: var(--text-micro);
@@ -604,13 +559,13 @@ button.is-primary {
   color: var(--muted);
 }
 
-/* Lo spazio che divide guardare da amministrare. Non un separatore disegnato:
-   il vuoto basta, e il divieto 4 non ammette un bordo decorativo. */
+/* The gap that separates watching from administering. Not a drawn divider:
+   emptiness is enough, and rule 4 admits no decorative border. */
 .places__gap {
   flex-grow: 1;
 }
 
-/* ── oggi, in breve ─────────────────────────────────────────────────────── */
+/* ── today, in brief ────────────────────────────────────────────────────── */
 
 .today {
   display: flex;
@@ -648,15 +603,15 @@ button.is-primary {
   color: var(--danger);
 }
 
-/* CIÒ CHE NON È STATO MISURATO STA SULLA STESSA RIGA DEI NUMERI, non in una
-   nota a piè di pagina: separarlo vorrebbe dire che una cifra incompleta si
-   legge come completa, che è il difetto trovato in tre strumenti su tre. */
+/* WHAT WAS NOT MEASURED SITS ON THE SAME LINE AS THE NUMBERS, not in a
+   footnote: separating it would let an incomplete figure read as a
+   complete one. */
 .today__caveat {
   font-size: var(--text-small);
   color: var(--warn);
 }
 
-/* ── la storia, e il censimento ─────────────────────────────────────────── */
+/* ── history, and the census ────────────────────────────────────────────── */
 
 .now__state[data-outcome="broke"],
 .now__state[data-reach="inactive"] {
@@ -682,8 +637,8 @@ button.is-primary {
   color: var(--muted);
 }
 
-/* Il motivo, sotto la cosa che lo porta: un errore o una competenza spenta si
-   correggono solo se il perché si legge senza aprire niente. */
+/* The reason, under the thing that carries it: an error or a disabled skill
+   is only fixed if the why reads without opening anything. */
 .now__why {
   display: block;
   font-size: var(--text-small);
@@ -724,8 +679,8 @@ button.is-primary {
   margin-left: var(--space-1);
 }
 
-/* Il dettaglio di una corsa: sotto la sua riga, senza il filo che le separa —
-   sono la stessa cosa guardata piu' da vicino. */
+/* A run's detail: under its row, with no rule between them — they are the
+   same thing seen closer. */
 .now__detail td {
   border-bottom: 1px solid var(--line);
   padding-top: 0;
@@ -783,7 +738,7 @@ button.is-primary {
   padding: 0 8px 8px;
 }
 
-/* «Tutti i flussi»: toglie il fuoco, torna a vedere l'intero sistema. */
+/* "All flows": drops the focus, back to the whole system. */
 .rail__all {
   display: block;
   width: 100%;
@@ -850,7 +805,7 @@ button.is-primary {
   line-height: 1.4;
 }
 
-/* Un flusso rotto è visibile e riconoscibile, mai assente. */
+/* A broken flow is visible and recognisable, never absent. */
 .rail__item[data-broken] {
   cursor: default;
 }
@@ -864,9 +819,9 @@ button.is-primary {
   margin-left: 0;
 }
 
-/* La casa permanente del gesto, sotto l'elenco: è lì che finisce lo sguardo
-   quando l'elenco non basta. A cartella vuota non c'è — quel momento è della
-   scheda sulla tela, e due inviti allo stesso gesto si annullano. */
+/* The gesture's permanent home, under the list. It is absent on an empty
+   folder: that moment belongs to the card on the canvas, and two invitations
+   to the same gesture cancel each other out. */
 .rail__new {
   display: block;
   width: 100%;
@@ -888,80 +843,37 @@ button.is-primary {
   position: relative;
 }
 
-/* ── la cassetta dei passi, dentro la tela ────────────────────────────────
-   Era una griglia di bottoni in fondo alla colonna: `.rail__palette`,
-   `.palette__grid`, `.palette__item`. Chi componeva usciva dalla tela col
-   puntatore e rientrava, a ogni passo.
+/* ── the step toolbox, inside the canvas ─────────────────────────────────
+   React Flow does the placing (`.react-flow__panel.bottom.left`) and draws it
+   OUTSIDE the transformed frame: inside the canvas, still with respect to it.
+   Only the look and the corridor live here. */
 
-   Adesso è una barra che galleggia sul bordo basso della tela. Le regole di
-   posizione le mette React Flow (`.react-flow__panel.bottom.left`), che la
-   disegna FUORI dal riquadro trasformato: dentro la tela, ferma rispetto ad
-   essa. Qui c'è solo l'aspetto, e il corridoio.
+/* THE CORRIDOR IS NOT SYMMETRIC. React Flow already has two tenants along the
+   bottom edge: the zoom controls on the left (26px of buttons plus the
+   panel's 15px margin — 41 from the side) and the minimap on the right
+   (200 + 15 = 215). A CENTRED bar may only use twice the narrower side, so it
+   throws away the whole difference and then still does not fit. */
 
-   IL CORRIDOIO, E PERCHÉ NON È SIMMETRICO. In basso alla tela ci sono già due
-   inquilini di React Flow: i comandi di zoom a sinistra, 26px di bottoni più i
-   15 di margine del pannello — 41 dal fianco — e la minimappa a destra, 200
-   più 15, cioè 215. Una barra CENTRATA può usare solo il doppio del lato più
-   stretto: a 1440 px di finestra la tela è larga 920 e le restano 490, mentre
-   il corridoio vero — da 41 a 705 — ne offre 664. Centrata butta via 174px e
-   poi non ci sta.
+/* THE RULE IS NOT A NUMBER. The bar's cap is the corridor minus the two
+   reserves, and its left offset clears the controls: the worst-case right
+   edge stays out of the minimap band AT EVERY WIDTH, not at the one somebody
+   happened to look at. `Toolbar.test.tsx` re-reads these two values from here
+   and redoes the arithmetic. The reserves are rounded UP to the 4px grid
+   (41 -> 44, 215 -> 216): clearance can only grow, and rule 8 survives. */
 
-   DA CHE LARGHEZZA COPRIVA. La barra misura 468px (7 attrezzi da 56, due fili
-   di gruppo, il padding). Centrata sulla tela larga C, il suo bordo destro
-   arriva a C/2 + 234 e la minimappa comincia a C - 215: si toccano quando
-   C = 898, e la tela è la finestra meno le due colonne (232 + 288 = 520),
-   cioè **da 1418 px in giù**. Misurato in un browser vero, non dedotto:
-   franco 11px a 1440, 1px a 1420, -9 a 1400, -26 a 1366. Il commento che
-   stava qui diceva «~1240» — 178px di errore, tutti nella direzione che
-   rassicura, e nessun portatile da 1366 rientrava nel numero sbagliato.
-
-   LA REGOLA, che non è un numero. Il tetto della barra è il corridoio meno le
-   due riserve, e lo scarto da sinistra supera i comandi: così il bordo destro
-   peggiore resta fuori dalla fascia della minimappa **a ogni larghezza**, non
-   a quella su cui qualcuno ha guardato. `Toolbar.test.tsx` rilegge questi due
-   valori da qui e rifà il conto. Le riserve sono arrotondate in su al reticolo
-   di 4px (41→44, 215→216): il franco può solo crescere, e il divieto 8 resta
-   in piedi. Una striscia verticale sul fianco, invece, avrebbe riletto come
-   una seconda colonna — cioè come la cosa da cui questa barra se ne va.
-
-   IL FONDO, DICHIARATO INVECE CHE TACIUTO. Da 864px di finestra IN GIÙ la
-   barra sfonda il corridoio; il pareggio esatto è a 865, e sotto si perde un
-   pixel per ogni pixel di finestra: 864 -> -1, 861 -> -4, 800 -> -65.
-
-   LA GRANDEZZA CHE VINCOLA NON È QUELLA DI UN ATTREZZO. Sotto il tetto la
-   scatola dichiarata si stringe e il contenuto esce lo stesso — ed è il
-   contenuto che copre la minimappa, non la scatola. L'ingombro dipinto della
-   barra non scende mai sotto i 78px dal suo bordo sinistro: 1px di bordo più
-   12 di padding, 9 di filo e padding di gruppo, 56 dell'attrezzo. A tenerlo
-   fermo è `.toolbar__group`, il cui minimo è 65px (56 + 9), e sotto i 874px di
-   finestra il bordo destro dipinto resta inchiodato a 130 mentre il tetto
-   continua a scendere. Un attrezzo, da solo, ne dipinge 56: esattamente la sua
-   `width`, senza etichette che sbordano.
-
-   IL 65 CHE STAVA SCRITTO QUI ERA IL TETTO, NON UN ATTREZZO. A 861px di
-   finestra il corridoio misura per l'appunto 65px, e chi scrisse il commento
-   lesse quella coincidenza come la larghezza di «un attrezzo solo». Da lì
-   venivano tutti e due gli errori: il fondo di quattro pixel troppo basso e la
-   grandezza sbagliata a spiegarlo.
-
-   Misurato in un Chromium vero, franco dalla minimappa: -65 a 800, 0 a 865;
-   poi la rampa 865-873 (da 0 a +8), +9 costante da 874 a 1264 — dove il tetto
-   smette di mordere perché la barra non cresce oltre i suoi 468px, e la fila
-   torna su una riga sola — e da lì in su cresce con la finestra: +111 a 1366,
-   +185 a 1440, +345 a 1600, +665 a 1920. La riga di prima diceva «+9 da 900 in
-   su» e saltava la rampa 865-873, l'unico tratto in cui il franco c'è ma è
-   meno di 9: da 874 in su vale già 9 esatti.
-
-   A 865px la tela è larga 345 e un nodo ne occupa 240: la finestra è già
-   inservibile per conto suo, e questo fondo è dichiarato per saperlo, non per
-   difenderlo. */
+/* THE FLOOR IS DECLARED, NOT DEFENDED. Below a 865px window the bar breaks
+   the corridor, losing one pixel per pixel of window. At 865 the canvas is
+   345 wide and a node takes 240: the window is already unusable on its own.
+   What binds down there is the PAINTED extent, not the declared box — under
+   the cap the box shrinks and the content overflows anyway, and
+   `.toolbar__group` holds a 65px minimum (56 + 9). */
 .toolbar {
-  /* Quanto la barra lascia libero ai due inquilini della fascia bassa. */
+  /* What the bar leaves free for the two tenants of the bottom band. */
   --controls-reserve: 44px;
   --minimap-reserve: 216px;
 
-  /* `Panel` porta `margin: 15px`: qui si riscrivono il basso e il fianco, e
-     `--space-2` è il filo d'aria fra la barra e ciò che le sta accanto. */
+  /* `Panel` ships `margin: 15px`: bottom and side are rewritten here, and
+     `--space-2` is the air between the bar and what sits beside it. */
   margin-bottom: var(--space-3);
   margin-left: calc(var(--controls-reserve) + var(--space-2));
   max-width: calc(100% - var(--controls-reserve) - var(--minimap-reserve) - 2 * var(--space-2));
@@ -972,14 +884,13 @@ button.is-primary {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  /* L'unica ombra, e qui è il caso che il divieto 3 ammette: questa barra
-     galleggia davvero sopra la tela, non è una scheda che levita. */
+  /* The only shadow, and this is the case rule 3 admits: the bar really does
+     float above the canvas. */
   box-shadow: var(--shadow);
 }
 
-/* Dove finisce il passo, scritto prima di premere: la tela mostra tutte le
-   corsie insieme, e senza questa riga la corsia giusta è un indovinello che si
-   risolve dopo. */
+/* Where the step will land, written before you press: the canvas shows every
+   lane at once, and without this line the right lane is a guess. */
 .toolbar__target {
   font-family: var(--font-display);
   font-size: var(--text-micro);
@@ -996,13 +907,11 @@ button.is-primary {
   color: var(--ink);
 }
 
-/* GLI ATTREZZI VANNO A CAPO, e questa riga è metà della regola del corridoio.
-   Un tetto di larghezza su un contenitore flex non trattiene i figli: la
-   scatola si stringe al tetto e la fila esce lo stesso, sopra la minimappa,
-   mentre il `getBoundingClientRect` della barra racconta una scatola stretta e
-   ubbidiente. Andando a capo la barra cresce in altezza, dove non c'è nessuno.
-   Succede sotto i 1260 px circa di finestra; sopra, i tre gruppi stanno in
-   fila. */
+/* THE TOOLS WRAP, and this is half the corridor rule. A max-width on a flex
+   container does NOT restrain its children: the box shrinks to the cap and the
+   row overflows anyway, over the minimap, while the bar's
+   `getBoundingClientRect` reports an obedient narrow box. Wrapping grows the
+   bar upwards instead, where nobody lives. */
 .toolbar__row {
   display: flex;
   flex-wrap: wrap;
@@ -1010,15 +919,13 @@ button.is-primary {
   gap: var(--space-2);
 }
 
-/* UN FILO AL POSTO DI TRE CONTENITORI. Sette attrezzi in fila sono un muro;
-   uno, tre e tre si leggono. A separarli basta 1px, che non fa pagare il
-   padding di tre riquadri dentro una barra dove lo spazio costa. */
-/* Anche dentro il gruppo si va a capo: se no il corridoio più stretto di un
-   gruppo da tre attrezzi (185px) lo farebbe uscire lo stesso, e da 980px di
-   finestra IN GIÙ il corridoio è più stretto di così. Il pareggio esatto è a
-   981, dove il corridoio misura per l'appunto 185; misurato: 979 -> 183,
-   980 -> 184, 982 -> 186. Qui stava scritto «sotto i 1000px»: fra 981 e 1000 la
-   frase era falsa, e non portava nessun «circa» a coprirla. */
+/* A HAIRLINE INSTEAD OF THREE CONTAINERS. Seven tools in a row are a wall;
+   one, three and three read. 1px separates them without paying for the
+   padding of three boxes in a bar where space costs. */
+
+/* Wrapping applies inside a group too: below a 981px window the corridor is
+   narrower than a three-tool group (185px), and without this the group would
+   overflow all the same. */
 .toolbar__group {
   display: flex;
   flex-wrap: wrap;
@@ -1030,9 +937,8 @@ button.is-primary {
   padding-left: var(--space-2);
 }
 
-/* Nessun bordo a riposo: la fila di sette riquadri sarebbe stata il muro che
-   il raggruppamento toglie. L'attrezzo si alza quando lo tocchi, e il segno
-   resta comunque disegnato. */
+/* No border at rest: a row of seven boxes would be the wall the grouping
+   removes. The tool lifts on hover, and the mark stays drawn regardless. */
 .toolbar__tool {
   width: 56px;
   display: flex;
@@ -1053,8 +959,8 @@ button.is-primary {
   display: block;
 }
 
-/* Il lettering da targa, come su un nodo: le due cose sono lo stesso oggetto,
-   una nella cassetta e una sulla tela. */
+/* Plate lettering, as on a node: the two are the same object, one in the
+   toolbox and one on the canvas. */
 .toolbar__label {
   font-family: var(--font-display);
   font-size: var(--text-micro);
@@ -1064,10 +970,9 @@ button.is-primary {
   text-align: center;
 }
 
-/* SENZA UN FLUSSO A FUOCO LA BARRA NON SI SPEGNE, SI ACCORCIA. Prima erano
-   sette bottoni `disabled` col motivo dentro un `title`: chi non sa che c'è un
-   `title` non lo cerca, e sette bottoni spenti occupano lo spazio di sette
-   gesti offrendone zero. */
+/* WITH NO FOCUSED FLOW THE BAR SHRINKS, IT DOES NOT GREY OUT. Seven disabled
+   buttons take the space of seven gestures while offering none, and a reason
+   hidden in a `title` is a reason nobody looks for. */
 .toolbar__prompt {
   display: flex;
   flex-wrap: wrap;
@@ -1090,11 +995,10 @@ button.is-primary {
   border-color: var(--ink);
 }
 
-/* ── la tela bianca ──────────────────────────────────────────────────────
-   Sta SOPRA la tela, non al suo posto: i comandi e la minimappa restano dove
-   sono, e il messaggio sparisce da solo appena esiste un flusso. Non intercetta
-   il puntatore — si può continuare a trascinare la tela sotto — tranne il
-   riquadro, che è l'unica cosa da toccare. */
+/* ── the blank canvas ────────────────────────────────────────────────────
+   It sits OVER the canvas, not in its place: the controls and the minimap stay
+   where they are. It does not intercept the pointer — the canvas underneath
+   still drags — except for the card, the only thing meant to be touched. */
 .blank {
   position: absolute;
   inset: 0;
@@ -1112,9 +1016,8 @@ button.is-primary {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  /* L'unica ombra (divieto 3), e questo riquadro galleggia davvero sopra la
-     tela. Prima era una seconda ombra scritta a mano, col nero-ardesia della
-     tavolozza precedente: la sola tinta letterale rimasta fuori dai ruoli. */
+  /* The only shadow (rule 3), and this card really does float above the
+     canvas. */
   box-shadow: var(--shadow);
 }
 
@@ -1137,11 +1040,9 @@ button.is-primary {
   word-break: break-word;
 }
 
-/* I gesti in fila, numerati. Uno stato vuoto che insegna il primo gesto è una
-   schermata che si legge, non una constatazione: i tre gesti sono quelli veri,
-   nell'ordine in cui si fanno. Il numero è una targa, che è il ruolo che questo
-   foglio dà alle etichette — non un pallino colorato, perché qui il colore è
-   riservato allo stato della macchina. */
+/* The gestures in a row, numbered. An empty state that teaches the first
+   gesture is a screen you read, not a statement of fact. The number is a
+   plate, not a coloured bullet: rule 4 reserves colour for machine state. */
 .blank__gestures {
   list-style: none;
   margin: 0 0 var(--space-4);
@@ -1176,16 +1077,12 @@ button.is-primary {
   border-radius: var(--radius);
 }
 
-/* ── la lettura in corso ─────────────────────────────────────────────────
-   Uno scheletro sta dove il contenuto arriverà, quindi non è un riquadro che
-   galleggia al centro: niente ombra, niente carta sollevata, e l'ancoraggio in
-   alto a sinistra come le corsie vere.
-
-   NON SI MUOVE. Questo foglio dichiara due durate e le riserva al movimento che
-   conferma un gesto; qui non c'è nessun gesto da confermare, e un battito
-   continuo sarebbe l'unica cosa animata della finestra. A dire che la lettura è
-   in corso è la parola sotto la forma — divieto 5, applicato alla forma come
-   già al colore. */
+/* ── loading ─────────────────────────────────────────────────────────────
+   A skeleton stands where the content will arrive, so it is not a card
+   floating in the middle: no shadow, no lifted paper, anchored top-left like
+   the real lanes. IT DOES NOT MOVE — the two declared durations are reserved
+   for motion that confirms a gesture, and there is no gesture here. The word
+   under the shape says loading: rule 5, applied to shape as well as colour. */
 .blank[data-state="loading"] {
   flex-direction: column;
   align-items: flex-start;
@@ -1202,9 +1099,8 @@ button.is-primary {
   max-width: 100%;
 }
 
-/* Una corsia si stringe sui suoi passi, come quelle vere: due corsie di
-   lunghezza diversa si leggono come contenuto in arrivo, due uguali come un
-   motivo decorativo. */
+/* A lane hugs its steps, like the real ones: two lanes of different length
+   read as content arriving, two identical ones as a decorative pattern. */
 .blank__lane {
   display: flex;
   flex-direction: column;
@@ -1229,8 +1125,8 @@ button.is-primary {
   gap: var(--space-4);
 }
 
-/* Le targhe non portano parole: un testo finto qui sarebbe una promessa su cosa
-   c'è sul disco, e nessuno lo sa ancora. */
+/* The plates carry no words: fake text here would be a promise about what is
+   on disk, and nobody knows that yet. */
 .blank__plate {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -1323,7 +1219,7 @@ button.is-primary {
   word-break: break-word;
 }
 
-/* ── il pannello di modifica del passo ──────────────────────────────── */
+/* ── the step editor panel ──────────────────────────────────────────── */
 
 .panel__flow {
   font-size: var(--text-small);
@@ -1374,9 +1270,9 @@ button.is-primary {
   resize: vertical;
 }
 
-/* ── chi esegue il nodo ─────────────────────────────────────────────────
-   Un riquadro staccato: lo strumento, il modello e il prompt sono i tre campi
-   che decidono cosa fa il nodo, e vanno letti insieme. */
+/* ── who runs the node ───────────────────────────────────────────────────
+   A separate box: tool, model and prompt are the three fields that decide what
+   the node does, and they are read together. */
 
 .panel__tool {
   margin-top: 18px;
@@ -1404,8 +1300,8 @@ button.is-primary {
   border-radius: var(--radius);
 }
 
-/* La scoperta che non ha (ancora) risposto si dice, non si nasconde dietro un
-   elenco vuoto che sembra «non c'è niente da scegliere». */
+/* A discovery that has not answered yet says so, instead of hiding behind an
+   empty list that reads as "there is nothing to choose". */
 .panel__note {
   font-size: var(--text-small);
   font-weight: 600;
@@ -1452,8 +1348,8 @@ button.is-primary {
   font-weight: 600;
 }
 
-/* Un'avvertenza non è un errore: il campo si scrive comunque, ma chi salva sa
-   cosa succederà al caricamento. */
+/* A warning is not an error: the field still accepts input, but whoever saves
+   knows what will happen at load time. */
 .panel__warn {
   font-size: var(--text-small);
   line-height: 1.5;
@@ -1515,17 +1411,17 @@ button.is-primary {
   font-weight: 600;
 }
 
-/* ── il nodo ─────────────────────────────────────────────────────────── */
+/* ── the node ────────────────────────────────────────────────────────── */
 
-/* IL NODO È UNA TARGA, NON UNA SCHEDA CHE LEVITA: nessuna ombra (divieto 3), un
-   filo di 1px, e sul fianco sinistro la barra dello stato — 3px di tinta che si
-   leggono a qualunque zoom, anche quando le parole non si leggono più. */
-/* 248px, NON 232 — e il numero vive anche in `layout.ts`, che dispone le
-   corsie su questa larghezza. Sotto i 240 un nodo non contiene un nodo: fra un
-   riquadro e il suo vicino restavano 28px, cioè meno dello spazio che il nodo
-   ha dentro di sé, e un oggetto più vicino al vicino che al proprio contenuto
-   si legge come una fila. `ports.test.tsx` rilegge questa riga: se il foglio e
-   la disposizione smettono di dire lo stesso numero, diventa rosso. */
+/* A NODE IS A PLATE, NOT A CARD THAT LEVITATES: no shadow (rule 3), a 1px
+   hairline, and the state bar down the left flank — 3px of tint readable at
+   any zoom, including where the words no longer are. */
+
+/* 248px, and the number also lives in `layout.ts`, which lays the lanes out on
+   this width. Below 240 a node does not contain a node: the gap to its
+   neighbour drops under the node's own padding, and an object closer to its
+   neighbour than to its own content reads as a row. `ports.test.tsx` re-reads
+   this line and turns red if sheet and layout stop agreeing. */
 .step-node {
   position: relative;
   width: 248px;
@@ -1535,7 +1431,7 @@ button.is-primary {
   border-radius: var(--radius);
 }
 
-/* La tinta di stato entra una volta sola e da qui scende su tutto il nodo. */
+/* The state tint enters once and flows down over the whole node. */
 .step-node[data-state="waiting"] { --state: var(--state-waiting); }
 .step-node[data-state="running"] { --state: var(--state-running); }
 .step-node[data-state="went"] { --state: var(--state-went); }
@@ -1549,13 +1445,11 @@ button.is-primary {
   box-shadow: inset 0 0 0 1px var(--focus);
 }
 
-/* UN NODO ISOLATO PER VISTA, E NON UNO PER CORSA VIVA. Prima ogni agente in
-   corso portava un riquadro di pulsanti con dentro un rosso pieno: con più
-   agenti in parallelo tutti deviavano, quindi nessuno deviava. L'isolamento è
-   adesso riservato a ciò che non si sblocca da solo — chi aspetta una persona,
-   chi è fermo al tetto — e lo sceglie `stepThatCallsForAGesture`, uno solo.
-   Devia con la forma, non con una tinta nuova: bordo più spesso nella tinta
-   che il nodo ha già, e il foglio che si alza sopra la carta. */
+/* ONE SINGLED-OUT NODE PER VIEW, NOT ONE PER LIVE RUN. With several agents in
+   parallel every node would deviate, so none would. Singling out is reserved
+   for what cannot unblock itself — waiting on a person, stopped at the cap —
+   and `stepThatCallsForAGesture` picks exactly one. It deviates by SHAPE, not
+   by a new tint: a thicker border in the tint the node already has. */
 .step-node[data-calls] {
   border-width: 2px;
   border-left-width: 3px;
@@ -1563,80 +1457,64 @@ button.is-primary {
   background: var(--raised);
 }
 
-/* Da lontano un nodo non finge di essere leggibile: tiene la testata — genere e
-   stato — e il nome, e lascia cadere il resto. Prima, a zoom 0,5, il titolo di
-   una corsia era alto 6,5px e nessuno poteva leggerlo — ma c'era. */
+/* From far away a node does not pretend to be readable: it keeps the header —
+   genre and state — and the name, and drops the rest. */
 .step-node[data-far] .step-node__body {
   padding: var(--space-3);
 }
 
-/* Ingrandito quanto basta a leggerlo, non tanto da troncarlo: `--text-large` su
-   un nodo di questa larghezza taglia `working-tree-is-clean` a metà, e un nome
-   tagliato è meno leggibile di uno piccolo. Da lontano va a capo invece di
-   sparire. */
+/* Enlarged enough to read, not enough to truncate: `--text-large` on a node
+   this wide cuts `working-tree-is-clean` in half, and a cut name is less
+   legible than a small one. From far away it wraps instead of vanishing. */
 .step-node[data-far] .step-node__id {
   white-space: normal;
   overflow-wrap: anywhere;
   margin-bottom: 0;
 }
 
-/* LA TESTATA È INCISA, non è una riga qualunque: il nodo è una targa (divieto
-   3), e una targa ha una fascia in alto col genere del pezzo. Qui porta le due
-   domande che si fanno per prime — che cosa sei, come stai — e per questo sta
-   sopra il nome e non sotto. */
-/* LA TESTATA VA A CAPO INVECE DI FAR SPARIRE UNO DEI SUOI PEZZI. Con
-   `nowrap` i tre pezzi chiedono 261px e la testata ne ha 220: qualcosa doveva
-   cedere, e a cedere era il genere — fino a zero, senza nemmeno un'ellissi.
-   Andando a capo cede la RIGA, che è l'unica cosa che si può togliere senza
-   togliere un'informazione: la parola di stato scende sotto e ci sono ancora
-   tutt'e due. Succede solo sui nodi `condizionato` in «aspetta una persona»;
-   su tutti gli altri la testata resta una riga sola. */
+/* THE HEADER IS ENGRAVED, not just another line: the node is a plate, and a
+   plate has a band on top carrying the genre. It holds the two questions asked
+   first — what are you, how are you — so it sits above the name. */
+
+/* THE HEADER WRAPS RATHER THAN LOSING ONE OF ITS PIECES. With `nowrap` the
+   three pieces ask for 261px and the header has 220: the genre gave way, down
+   to zero, without even an ellipsis. Wrapping gives up the ROW instead, the
+   only thing removable without removing information. */
 .step-node__head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  /* Fra due righe basta molto meno che fra due pezzi della stessa riga: con
-     lo stesso stacco la testata sembrerebbe due testate. */
+  /* Two rows need far less gap than two pieces of the same row: with the same
+     gap the header would look like two headers. */
   row-gap: var(--space-1);
   padding: var(--space-1) var(--space-3);
   background: var(--band-fill);
   border-bottom: 1px solid var(--line);
-  /* Nessun raggio qui: il divieto 2 ammette tre valori, e nessuno dei tre
-     arrotonda due angoli su quattro. Il velo della testata è il 2,5% di
-     inchiostro — a 4px dall'angolo non lo vede nessuno. */
+  /* No radius here: rule 2 admits three values and none of them rounds two
+     corners out of four. The header veil is 2.5% ink — at 4px from the corner
+     nobody would see it anyway. */
 }
 
 .step-node__body {
   padding: var(--space-2) var(--space-3);
 }
 
-/* IL GENERE HA UN FONDO, E PRIMA VALEVA ZERO. `ASPETTA UNA PERSONA` è lo stato
-   più lungo, e con un genere che non si accorcia spingeva la parola di stato
-   fuori dalla testata. La cura di allora — `min-width: 0` più `overflow:
-   hidden` — ha rotto l'altra metà: su un nodo `condizionato` in «aspetta una
-   persona» il genere non si accorciava, si **azzerava**. Misurato in Chrome
-   sui dieci flussi veri il 01/09/2026: due nodi su 52 con `clientWidth 0`,
-   `GESTO` e `AGENTE` spariti senza lasciare un'ellissi. E un'ellissi non era
-   la cura: `text-overflow` su una scatola larga 0 non disegna niente.
+/* THE GENRE HAS A FLOOR. Without one, `min-width: 0` plus `overflow: hidden`
+   does not shorten the genre, it ZEROES it — and `text-overflow` on a box of
+   width 0 draws nothing, so not even an ellipsis survives. */
 
-   Il fondo è in `ch` e non in px perché `--font-display` è una famiglia
-   locale: dove non c'è cambia il ripiego e cambiano le larghezze, e un fondo
-   in px sarebbe giusto solo su questa macchina. `ch` è la larghezza di uno
-   zero — qui 4,8px — e undici bastano a contenere `DEPOSITO`, il genere di una
-   parola sola più largo dei nove: sotto quel fondo nessuno di loro si
-   accorcia. I due di più parole — `A UNA PERSONA` e `SOTTO-FLUSSO` — tengono
-   la parte iniziale e l'ellissi, che è un troncamento e non una sparizione.
+/* The floor is in `ch`, not px, because `--font-display` is a local family:
+   where it is missing the fallback changes and so do the widths, and a floor
+   in px would only be right on one machine. Eleven `ch` holds `DEPOSITO`, the
+   widest single-word genre; the multi-word ones keep their head plus an
+   ellipsis, which is a truncation and not a disappearance. */
 
-   **QUESTO FONDO NON È IL PEZZO CHE CURA, ED È GIUSTO SAPERLO PRIMA DI
-   TOCCARLO.** Spegnendo un pezzo alla volta, in Chrome sui 52 nodi: il wrap da
-   solo basta (0 generi azzerati, 0 troncati, 0 parole di stato fuori dal
-   nodo); questo fondo da solo no — con `nowrap` il genere sopravvive ma il
-   danno si sposta, e la parola di stato esce di 40,5px dal bordo del nodo su
-   `chiedi` e `leggi`. Il fondo è difesa in avanti: serve dove
-   `--font-display` non è installato e il ripiego è più largo, cioè dove il
-   wrap da solo comincerebbe ad accorciare il genere. `StepNode.test.tsx`
-   interroga tutt'e due, per due ragioni diverse. */
+/* THIS FLOOR IS NOT THE PIECE THAT CURES, and that is worth knowing before
+   touching it: the wrap alone is already enough. The floor is defence in
+   depth, for the machines where `--font-display` is absent and the wider
+   fallback would start shortening the genre. `StepNode.test.tsx` interrogates
+   both, for two different reasons. */
 .step-node__kind {
   min-width: 11ch;
   overflow: hidden;
@@ -1657,10 +1535,9 @@ button.is-primary {
   color: var(--state-human);
 }
 
-/* Il salto di scala esiste: il nome del passo contro il genere della testata fa
-   1,5×. Non 1,8× come vorrebbe la bozza, e il motivo è misurato: a
-   `--text-large` un nome come `working-tree-is-clean` non ci sta in 224px, e un
-   nome tagliato è meno leggibile di uno piccolo. */
+/* The scale jump is real: step name against header genre is 1.5x, not the
+   1.8x the draft wanted. At `--text-large` a name like `working-tree-is-clean`
+   does not fit in 224px, and a cut name is less legible than a small one. */
 .step-node__id {
   font-family: var(--font-data);
   font-size: var(--text-mid);
@@ -1672,9 +1549,9 @@ button.is-primary {
   white-space: nowrap;
 }
 
-/* Lo strumento che esegue il nodo, sulla tela: si legge senza aprire nulla.
-   Il segno, il nome, il modello — e, quando lo strumento su questa macchina non
-   c'è, il motivo: un nodo che non puo' girare lo dice guardandolo. */
+/* The tool that runs the node, on the canvas: mark, name, model — and, when
+   the tool is missing on this machine, the reason. A node that cannot run
+   says so at a glance. */
 .step-node__tool {
   display: flex;
   align-items: flex-start;
@@ -1688,16 +1565,15 @@ button.is-primary {
   margin-bottom: var(--space-2);
 }
 
-/* Spento non è nascosto: resta leggibile, e si vede che è spento. */
+/* Disabled is not hidden: it stays readable, and it looks disabled. */
 .step-node__tool[data-off] {
   background: var(--danger-soft);
   border-color: var(--danger);
 }
 
-/* UN MOTORE NON DICHIARATO È UN FATTO, NON UN VUOTO. Un passo che non nomina
-   con cosa gira lo dice: prima il riquadro semplicemente non compariva, e un
-   nodo senza motore era indistinguibile da un nodo di cui non si era guardato
-   il motore. */
+/* AN UNDECLARED ENGINE IS A FACT, NOT A BLANK. If the box simply vanished, a
+   node with no engine would be indistinguishable from a node whose engine
+   nobody had looked at. */
 .step-node__tool[data-none] {
   border-style: dashed;
   background: transparent;
@@ -1724,15 +1600,11 @@ button.is-primary {
   white-space: nowrap;
 }
 
-/* IL NOME È PROSA, L'IDENTIFICATIVO È UN DATO — e questo slot mostra tutt'e
-   due. `tool?.name ?? id`: finché la scoperta non ha risposto, o quando lo
-   strumento su questa macchina non c'è, qui sta l'identificativo scritto nel
-   file. In prosa, `claude-code` compariva in un carattere sulla prima riga e
-   in monospazio sulla seconda («se manca: agy, codex»), che è la stessa parola
-   in due grafie dentro lo stesso riquadro.
-
-   La regola «nome in prosa, dato in monospazio» resta: cambia che adesso si
-   guarda quale delle due si sta mostrando, invece di indovinarlo. */
+/* THE NAME IS PROSE, THE ID IS DATA — and this slot shows either one.
+   `tool?.name ?? id`: until discovery answers, or when the tool is missing on
+   this machine, what sits here is the id written in the file. The rule "name
+   in prose, datum in monospace" holds; what changed is that the sheet now
+   looks at WHICH of the two is being shown instead of guessing. */
 .step-node__tool-name[data-raw] {
   font-family: var(--font-data);
 }
@@ -1750,12 +1622,10 @@ button.is-primary {
   white-space: nowrap;
 }
 
-/* I RICAMBI DELLA CATENA. `tool` può essere un elenco — «chi eseguire, in
-   ordine di preferenza, il migliore per primo», come lo definisce
-   `crates/actions/src/lib.rs`. Il primo sta sulla riga del nome; questi sono
-   quelli che partono se il primo non c'è, e sono un fatto del flusso che prima
-   non si vedeva da nessuna parte. Nessuna tinta nuova: è testo subordinato, e i
-   livelli di testo sono due (divieto 7). */
+/* THE CHAIN'S SPARES. `tool` may be a list — "who to run, in order of
+   preference, best first", as `crates/actions/src/lib.rs` defines it. The
+   first sits on the name row; these are the ones that start if it is missing.
+   No new tint: this is subordinate text, and there are two levels (rule 7). */
 .step-node__tool-chain {
   font-family: var(--font-data);
   font-size: var(--text-small);
@@ -1765,10 +1635,9 @@ button.is-primary {
   white-space: nowrap;
 }
 
-/* IL MODELLO CHE HA GIRATO DAVVERO, quando è diverso da quello scritto nel
-   passo. È la differenza fra ciò che il flusso chiede e ciò che il fornitore ha
-   concesso, e finora non si vedeva da nessuna parte: `actual_model` arrivava
-   dal deposito a ogni corsa e non lo leggeva nessuno. */
+/* THE MODEL THAT ACTUALLY RAN, when it differs from the one written in the
+   step: the gap between what the flow asks for and what the provider granted.
+   `actual_model` arrives from the store on every run. */
 .step-node__tool-actual {
   font-family: var(--font-data);
   font-size: var(--text-small);
@@ -1778,8 +1647,8 @@ button.is-primary {
   white-space: nowrap;
 }
 
-/* Il motivo sta su due righe al massimo: deve stare dentro un nodo senza
-   allargarlo, e per intero si legge passandoci sopra. */
+/* The reason gets two lines at most: it has to sit inside a node without
+   widening it, and the whole of it reads on hover. */
 .step-node__tool-why {
   font-size: var(--text-small);
   color: var(--danger);
@@ -1789,9 +1658,7 @@ button.is-primary {
   overflow: hidden;
 }
 
-/* LA RIGA DEL CONTO: cosa è entrato, cosa è uscito, quanto è costato — per
-   QUESTO passo. Erano dati già in casa, schiacciati in un unico totale in
-   fondo alla console. */
+/* THE TALLY ROW: what went in, what came out, what it cost — for THIS step. */
 .step-node__meter {
   display: flex;
   align-items: baseline;
@@ -1808,21 +1675,20 @@ button.is-primary {
   font-weight: 600;
 }
 
-/* Un costo che non conta tutte le chiamate lo dichiara: il tetto di spesa si
-   misura su ciò che i motori dichiarano, e Codex non dichiara i due lati. */
+/* A cost that does not count every call says so: the spend cap is measured on
+   what the engines declare, and Codex does not declare both sides. */
 .step-node__partial {
   color: var(--warn);
 }
 
-/* ── le porte ────────────────────────────────────────────────────────
-   IL TIPO STA NELLA FORMA E IL CABLAGGIO NEL PIENO. Cerchio testo, rombo
-   struttura, quadrato valore; vuota se niente la alimenta, piena se qualcosa
-   la alimenta. Sono tutte e due distinzioni che reggono in bianco e nero — è
-   il divieto 5 preso sul serio: un utente su dodici non distingue due delle
-   tinte che servirebbero a dire la stessa cosa col colore.
+/* ── the ports ───────────────────────────────────────────────────────────
+   TYPE IS IN THE SHAPE, WIRING IS IN THE FILL. Circle text, diamond struct,
+   square value; hollow if nothing feeds it, filled if something does. Both
+   distinctions survive in black and white — rule 5 taken seriously: one user
+   in twelve cannot tell apart two of the tints colour would need. */
 
-   `ports.test.tsx` misura la distanza di luminanza fra una porta cablata e una
-   scollegata: se qualcuno le riduce a due tinte, diventa rosso. */
+/* `ports.test.tsx` measures the luminance distance between a wired port and a
+   loose one: reduce them to two tints and it turns red. */
 
 .step-node__ports {
   display: flex;
@@ -1840,7 +1706,7 @@ button.is-primary {
   min-width: 0;
 }
 
-/* L'uscita sta a destra, col segno dalla parte da cui il filo esce davvero. */
+/* The output sits on the right, with the mark on the side the wire leaves. */
 .step-node__ports-column[data-out] {
   margin-left: auto;
   align-items: flex-end;
@@ -1866,8 +1732,8 @@ button.is-primary {
   white-space: nowrap;
 }
 
-/* IL SEGNO. 8px, e il bordo di 1,5px perché sotto quello un cerchio vuoto e un
-   quadrato vuoto diventano due macchie uguali. */
+/* THE MARK. 8px, with a 1.5px border: below that a hollow circle and a hollow
+   square become two identical smudges. */
 .step-node__port-mark {
   flex: 0 0 auto;
   width: 8px;
@@ -1880,13 +1746,13 @@ button.is-primary {
   border-radius: var(--radius-pill);
 }
 
-/* Il rombo è il quadrato girato: la rotazione non sposta niente, dipinge e
-   basta. */
+/* The diamond is the square turned: the rotation only paints, it moves
+   nothing. */
 .step-node__port-mark[data-shape="structure"] {
   transform: rotate(45deg);
 }
 
-/* `value` non dichiara niente: resta il quadrato, che è la forma di partenza. */
+/* `value` declares nothing: the square stays, being the starting shape. */
 
 .step-node__port[data-wired] {
   color: var(--ink);
@@ -1897,9 +1763,9 @@ button.is-primary {
   border-color: var(--ink);
 }
 
-/* Un ingresso obbligatorio che nessuno alimenta: la forma vuota dice già «non
-   collegata», il tratteggio lo rimarca, e LA PAROLA dice «e doveva esserlo».
-   Senza la parola resterebbe il colore a portare il fatto, che è il divieto 5. */
+/* A required input nobody feeds: the hollow shape already says "not wired",
+   the dashes underline it, and THE WORD says "and it had to be". Without the
+   word, colour would carry the fact alone — rule 5. */
 .step-node__port[data-missing] {
   color: var(--danger);
 }
@@ -1909,7 +1775,7 @@ button.is-primary {
   border-style: dashed;
 }
 
-/* ── il fondo del nodo ───────────────────────────────────────────────── */
+/* ── the node's footer ───────────────────────────────────────────────── */
 
 .step-node__foot {
   display: flex;
@@ -1918,29 +1784,16 @@ button.is-primary {
   padding: var(--space-1) var(--space-3) var(--space-2);
 }
 
-/* LA PAROLA DI STATO, MAI IL SOLO COLORE (divieto 5). La tinta è la stessa
-   della barra sul fianco, ma la parola resta leggibile da sola — e accanto c'è
-   il punto, che è il registro quieto di ogni corsa viva.
+/* THE STATE WORD, NEVER COLOUR ALONE (rule 5). Same tint as the flank bar, but
+   the word reads on its own — and beside it the dot, the quiet register of
+   every live run. */
 
-   **`margin-left: auto` È UNA SCELTA, E VALE ANCHE SULLA RIGA ANDATA A CAPO.**
-   Da quando la testata va a capo, questo margine ha un secondo effetto che
-   nessun commento riconosceva: quando lo stato scende da solo sulla seconda
-   riga, resta spinto a destra e a sinistra gli si apre un vuoto. Le due
-   versioni sono state guardate una accanto all'altra, sui nodi che vanno a capo
-   davvero (`chiedi` e `leggi` di `chiedi-all-indice` in «aspetta una persona»),
-   e il vuoto resta.
-
-   Resta perché l'alternativa costa di più. Con `margin-left: 0` la parola di
-   stato cambia posizione a seconda che la testata vada a capo o no: misurato,
-   12px dal bordo sui nodi a due righe e 72,8px su quelli a una riga. Chi scorre
-   una tela di 52 nodi cerca gli stati, e cercarli in due colonne diverse
-   secondo la lunghezza del genere è peggio di un vuoto. Con `auto` la parola è
-   **a 12px dal bordo destro su ogni nodo**, andato a capo o no: una colonna
-   sola, che è ciò che si scorre.
-
-   Il vuoto a sinistra della seconda riga è quindi voluto, e non è un buco: è il
-   rientro di una parola che appartiene al bordo destro e lì è rimasta. Succede
-   su 2 nodi su 52 nella condizione più larga. */
+/* `margin-left: auto` IS A CHOICE, AND THE GAP IT OPENS IS DELIBERATE. When
+   the header wraps, the state word drops to the second row still pushed right,
+   leaving a hole to its left. With `margin-left: 0` the word would instead
+   change column depending on whether the header wrapped — 12px from the edge
+   on two-row nodes, 72.8px on one-row ones. Scanning 52 nodes for states in
+   two different columns is worse than a hole. */
 .step-node__state {
   margin-left: auto;
   flex: 0 0 auto;
@@ -1963,10 +1816,10 @@ button.is-primary {
   background: var(--state, var(--muted));
 }
 
-/* IL REGISTRO QUIETO: lo stesso battito su OGNI corsa viva, uguale per tutte.
-   Dice «vivo», non «guardami» — chi chiede un gesto è l'altro registro, e sta
-   in `[data-calls]`. 2,4 s è lento apposta: un lampeggio più corto diventa un
-   richiamo, e con dieci agenti in parallelo sarebbero dieci richiami. */
+/* THE QUIET REGISTER: the same beat on EVERY live run. It says "alive", not
+   "look at me" — asking for a gesture is the other register, `[data-calls]`.
+   2.4s is slow on purpose: a shorter blink becomes a summons, and ten parallel
+   agents would be ten summonses. */
 .step-node[data-state="running"] .step-node__state-dot {
   animation: step-node-breath 2.4s var(--ease) infinite;
 }
@@ -1982,7 +1835,7 @@ button.is-primary {
   }
 }
 
-/* Chi ha chiesto meno movimento non ne riceve: il punto resta, fermo. */
+/* Whoever asked for less motion gets none: the dot stays, still. */
 @media (prefers-reduced-motion: reduce) {
   .step-node__state-dot {
     animation: none;
@@ -1998,19 +1851,17 @@ button.is-primary {
   padding: 0 var(--space-1);
 }
 
-/* Chi tiene il passo, quando un agente lo tiene. È un fatto, e i fatti stanno
-   in fondo quieti: prima viaggiava dentro il riquadro di pulsanti che ogni
-   corsa viva si portava addosso — tre pulsanti che, per giunta, non erano
-   collegati a niente. Toglierli non ha tolto nessun gesto: non ce n'erano. */
+/* Who holds the step, when an agent holds it. It is a fact, and facts sit
+   quietly at the bottom. */
 .step-node__pid {
   font-family: var(--font-data);
   font-size: var(--text-small);
   color: var(--muted);
 }
 
-/* IL CONTATORE DELLE ALTRE. Quando più di una cosa aspetta una persona,
-   l'isolamento resta uno solo e le altre si contano qui. È il rimedio
-   all'inflazione: la seconda evidenza non è un'evidenza, è un numero. */
+/* THE COUNTER FOR THE OTHERS. When more than one thing waits on a person, only
+   one node is singled out and the rest are counted here: the cure for
+   inflation is that the second highlight is a number, not a highlight. */
 .step-node__elsewhere {
   margin-left: auto;
   font-family: var(--font-data);
@@ -2018,8 +1869,8 @@ button.is-primary {
   color: var(--state, var(--muted));
 }
 
-/* Il bollino di corsia sta in alto, sottile: dice a quale flusso appartiene il
-   passo senza rubare la tinta allo stato, che è la cosa che si guarda. */
+/* The lane badge sits on top, thin: it says which flow the step belongs to
+   without stealing tint from the state, which is what gets looked at. */
 .step-node__flow {
   position: absolute;
   top: 0;
@@ -2028,13 +1879,10 @@ button.is-primary {
   height: 2px;
 }
 
-/* SPENTO NON VUOL DIRE ILLEGGIBILE (divieto 6, e divieto 5 di riflesso).
-   Qui c'era `opacity: 0.3` su tutto il nodo: a un clic di distanza dalla vista
-   d'apertura il nome di un passo faceva 1,86:1 e la sua parola di stato 1,48:1
-   — più aggressivo dello 0,4 che questa direzione ha tolto dalla cassetta dei
-   passi, e con lo stesso meccanismo che condanna. Adesso a ritrarsi sono i
-   SEGNI: il nodo perde il proprio foglio e si confonde col fondo della tela, e
-   il bollino della corsia si spegne. Le parole restano quelle di prima. */
+/* DIMMED DOES NOT MEAN UNREADABLE (rule 6, and rule 5 by reflection). An
+   `opacity` on the whole node puts a step name at 1.86:1. What retreats here
+   are the SIGNS: the node loses its own paper and merges into the canvas
+   ground, and the lane badge goes out. The words stay as they were. */
 .step-node[data-dimmed] {
   background: var(--bg);
 }
@@ -2043,15 +1891,15 @@ button.is-primary {
   opacity: 0.3;
 }
 
-/* L'attribuzione di React Flow resta — è dovuta, e `hideAttribution: false` è
-   una scelta — ma il suo `#999` su questo fondo fa 2,67:1. Il divieto sulle
-   accoppiate sotto soglia non ha un'eccezione per il testo di qualcun altro:
-   se sta sul nostro schermo, si legge. */
+/* React Flow's attribution stays: hiding it is something you buy a licence
+   for, so `hideAttribution: false` is a choice, not an oversight. Its `#999`
+   on this ground is 2.67:1, and rule 6 has no exception for somebody else's
+   text: if it is on our screen, it is readable. */
 .react-flow__attribution a {
   color: var(--muted);
 }
 
-/* ── la corsia di un flusso, sulla tela unica ───────────────────────── */
+/* ── a flow's lane, on the single canvas ─────────────────────────────── */
 
 .flow-band {
   width: 100%;
@@ -2066,8 +1914,8 @@ button.is-primary {
     border-color var(--motion) var(--ease);
 }
 
-/* Come per un nodo: la corsia non a fuoco perde il velo e il suo segno, non le
-   sue parole. Il nome faceva 1,85:1 e la descrizione 1,47:1. */
+/* As for a node: an unfocused lane loses its veil and its mark, not its
+   words. */
 .flow-band[data-dimmed] {
   background: transparent;
   border-color: var(--line);
@@ -2084,8 +1932,8 @@ button.is-primary {
   gap: 8px;
 }
 
-/* Il segno della corsia: quadrato, non pastiglia, per non confonderlo coi
-   bollini di stato — che sono tondi e vogliono dire un'altra cosa. */
+/* The lane's mark: square, not a pill, so it is not confused with the status
+   badges — those are round and mean something else. */
 .flow-band__mark {
   width: 10px;
   height: 10px;
@@ -2094,12 +1942,11 @@ button.is-primary {
   align-self: center;
 }
 
-/* LE TRE INTERLINEE QUI SOTTO SONO DICHIARATE, NON LASCIATE A `normal`, e non
-   è una scelta di gusto: `BAND_PAD_TOP` in `layout.ts` riserva a questa
-   intestazione un'altezza calcolata proprio da questi numeri, e
-   `layout.test.ts` rifà il conto leggendo questo foglio. Con `normal` il conto
-   dipenderebbe dalle metriche del carattere installato sulla macchina, cioè da
-   niente che una prova possa vedere. */
+/* THE THREE LINE-HEIGHTS BELOW ARE DECLARED, NOT LEFT AT `normal`, and it is
+   not a matter of taste: `BAND_PAD_TOP` in `layout.ts` reserves this heading a
+   height computed from exactly these numbers, and `layout.test.tsx` redoes the
+   arithmetic by reading this sheet. With `normal` the sum would depend on the
+   metrics of whatever font is installed — nothing a test can see. */
 .flow-band__name {
   font-family: var(--font-data);
   font-size: var(--text-mid);
@@ -2122,9 +1969,9 @@ button.is-primary {
   color: var(--muted);
 }
 
-/* Il nome del flusso è l'etichetta più grande della tela e deve reggere lo
-   zoom indietro: a 0,5 era alto 6,5px. Da lontano cresce, per la stessa
-   ragione per cui cresce il nome di un passo. */
+/* The flow name is the largest label on the canvas and has to survive zooming
+   out: at 0.5 it was 6.5px tall. It grows from far away, for the same reason a
+   step name does. */
 .flow-band[data-far] .flow-band__name {
   font-size: var(--text-display);
 }
@@ -2134,14 +1981,12 @@ button.is-primary {
   font-size: var(--text-mid);
 }
 
-/* DUE RIGHE AL MASSIMO, e il resto passando sopra: un flusso si descrive per
-   esteso nel suo file, non addosso ai passi di qualcun altro.
-   TAGLIARE A DUE RIGHE NON BASTA, e questa riga di commento diceva il contrario
-   da un giorno intero. L'altezza riservata è `BAND_PAD_TOP`, ed è un numero: se
-   i corpi qui sopra crescono e quel numero resta fermo, la descrizione finisce
-   sotto i primi nodi anche a due righe. È successo qui — 15px al posto di 11px
-   da lontano, `BAND_PAD_TOP` fermo a 54 — e sulla vista d'apertura, che a due
-   flussi apre proprio a zoom 0,5, il testo entrava di 4px nel primo nodo. */
+/* TWO LINES AT MOST, the rest on hover: a flow describes itself at length in
+   its own file, not on top of somebody else's steps. */
+
+/* CLAMPING TO TWO LINES IS NOT ENOUGH. The reserved height is `BAND_PAD_TOP`,
+   and it is a number: if the sizes above grow and that number stays put, the
+   description lands under the first nodes even at two lines. */
 .flow-band__desc {
   font-size: var(--text-body);
   line-height: 1.2;
@@ -2154,10 +1999,10 @@ button.is-primary {
   overflow: hidden;
 }
 
-/* ── il segno di uno strumento ──────────────────────────────────────────
-   Il colore arriva dal componente (`color` in linea) e i tratti lo ereditano
-   con `currentColor`: un segno solo, che vale a 16px sul nodo e a 20px nel
-   pannello senza due fogli di regole. */
+/* ── a tool's mark ───────────────────────────────────────────────────────
+   The colour comes from the component (inline `color`) and the strokes inherit
+   it through `currentColor`: one mark, good at 16px on the node and 20px in
+   the panel without two sets of rules. */
 
 .tool-mark {
   display: inline-flex;
@@ -2170,15 +2015,12 @@ button.is-primary {
   display: block;
 }
 
-/* Il ripiego — il caso normale, su qualunque macchina vera — è una pastiglia
-   con le iniziali: si vede che è un ripiego, invece di sembrare un logo
-   sbagliato. */
-/* LA TINTA ARRIVA DA `--mark-tint`, NON DA `currentColor`, e il motivo è
-   misurato: `background: currentColor` accanto a `color: #fff` sullo stesso
-   elemento risolve `currentColor` al bianco appena dichiarato — pastiglia
-   bianca, lettere bianche, e il ripiego spariva. Sulla tela si vedeva un
-   rettangolo vuoto al posto del segno di ogni strumento senza disegno, cioè
-   della maggioranza. */
+/* The fallback — the normal case on any real machine — is an initials pill:
+   it looks like a fallback instead of looking like a wrong logo. */
+
+/* THE TINT COMES FROM `--mark-tint`, NOT FROM `currentColor`: `background:
+   currentColor` beside a `color: #fff` on the same element resolves against
+   the white just declared, giving a white pill with white letters. */
 .tool-mark__monogram {
   display: flex;
   align-items: center;
@@ -2191,9 +2033,8 @@ button.is-primary {
   font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1;
-  /* Le iniziali di uno strumento sono una targa, non una frase: il carattere è
-     quello delle targhe. Prima era una quarta famiglia scritta a mano — contro
-     il divieto 1, che vieta `system-ui` anche come ripiego. */
+  /* A tool's initials are a plate, not a sentence, so they use the display
+     family: rule 1 forbids `system-ui` even as a fallback. */
   font-family: var(--font-display);
 }
 
@@ -2203,7 +2044,7 @@ button.is-primary {
   border: 1px dashed var(--muted);
 }
 
-/* ── la scelta dello strumento, nel pannello ────────────────────────────── */
+/* ── choosing the tool, in the panel ───────────────────────────────────── */
 
 .panel__tool-pick {
   display: flex;
@@ -2222,8 +2063,8 @@ button.is-primary {
   margin: 2px 0 0;
 }
 
-/* Il motivo del rilevamento: quando c'è dice da dove, quando manca dice
-   perché. Va letto, non solo scoperto passandoci sopra. */
+/* The detection's reason: present, it says from where; absent, it says why.
+   It is read, not merely discovered on hover. */
 .panel__tool-why {
   font-size: var(--text-micro);
   line-height: 1.45;
@@ -2241,7 +2082,7 @@ button.is-primary {
   font-style: italic;
 }
 
-/* ── le opzioni ─────────────────────────────────────────────────────────── */
+/* ── the options ────────────────────────────────────────────────────────── */
 
 .panel__subtitle {
   margin-top: 14px;
@@ -2258,11 +2099,11 @@ button.is-primary {
   border-top: 1px dashed var(--line);
 }
 
-/* Una riga per opzione: il nome sopra, e sotto il valore, l'interruttore
-   «senza valore» e il gesto per toglierla.
-   SU DUE LIVELLI, E MISURATO: in una riga sola il campo del nome resta largo
-   una ottantina di pixel nella colonna del pannello, e `--max-turns` si legge
-   «--max-t». Un nome di opzione troncato è un nome sbagliato, per chi guarda. */
+/* One row per option: the name on top, then the value, the "no value" switch
+   and the gesture that removes it. TWO LEVELS, AND MEASURED: on a single row
+   the name field stays about eighty pixels wide in the panel column, and
+   `--max-turns` reads as `--max-t`. A truncated option name is a wrong option
+   name, to whoever is looking. */
 .panel__option {
   display: flex;
   flex-wrap: wrap;
@@ -2366,8 +2207,8 @@ button.is-primary {
   border-style: solid;
 }
 
-/* Un'anteprima è un'anteprima: si vede cosa si sta componendo, e si vede che
-   non è quello che finisce nel file — sul disco restano le opzioni per nome. */
+/* A preview is a preview: you see what is being composed, and you see that it
+   is not what ends up in the file — on disk the options stay by name. */
 .panel__option-preview {
   margin: 8px 0 0;
   font-size: var(--text-micro);
@@ -2385,10 +2226,10 @@ button.is-primary {
   padding: 1px var(--space-1);
 }
 
-/* ── il nodo di innesco, e la vista dell'esecuzione ─────────────────────── */
+/* ── the trigger node, and the run view ────────────────────────────────── */
 
-/* L'innesco non è un passo, e non deve sembrarlo: bordo continuo ma fondo
-   diverso da quello dei nodi, perché nel file del flusso non esiste. */
+/* The trigger is not a step and must not look like one: solid border but a
+   different ground, because it does not exist in the flow file. */
 .trigger-node {
   width: 240px;
   padding: 10px 12px;
@@ -2433,7 +2274,7 @@ button.is-primary {
   color: var(--muted);
 }
 
-/* Perché una consegna non ha dove andare si legge prima di premere, non dopo. */
+/* Why a delivery has nowhere to go reads before you press, not after. */
 .trigger-node__why {
   font-size: var(--text-small);
   line-height: 1.4;
@@ -2477,8 +2318,8 @@ button.is-primary {
   cursor: pointer;
 }
 
-/* Spento e ancora leggibile: `--muted` su `--line` faceva 3,79:1, sotto la
-   soglia. Il fondo torna quello della pagina, dove `--muted` fa 4,80:1. */
+/* Disabled and still readable: `--muted` on `--line` is 3.79:1, under the
+   threshold. The ground goes back to the page's, where it is 4.80:1. */
 .trigger-node__go:disabled {
   background: var(--bg);
   color: var(--muted);
@@ -2498,8 +2339,8 @@ button.is-primary {
   cursor: pointer;
 }
 
-/* Una corsa viva si vede da lontano: è la sola informazione che chi guarda
-   cerca sulla tela senza aprire niente. */
+/* A live run is visible from far away: it is the one piece of information
+   sought on the canvas without opening anything. */
 .trigger-node__watch[data-status="running"] {
   color: var(--state-running);
   border-color: var(--state-running);
@@ -2526,7 +2367,7 @@ button.is-primary {
   word-break: break-word;
 }
 
-/* La vista dell'esecuzione: in fondo, sopra la tela, alta un terzo. */
+/* The run view: at the bottom, over the canvas, one third tall. */
 .console {
   flex-shrink: 0;
   height: 34vh;
@@ -2606,9 +2447,9 @@ button.is-primary {
   flex-grow: 1;
 }
 
-/* La riga che impedisce di credere a una cosa falsa. Non si nasconde dietro un
-   punto interrogativo: sta in chiaro, sempre, perché è la differenza fra
-   leggere una corsa e fraintenderla. */
+/* The line that stops you believing something false. It does not hide behind a
+   question mark: it is always in the clear, because it is the difference
+   between reading a run and misreading it. */
 .console__truth,
 .console__serial {
   flex-shrink: 0;
@@ -2625,10 +2466,9 @@ button.is-primary {
   border-top: 1px solid var(--warn);
 }
 
-/* LA SPESA DELLA CORSA.
-   Sta sotto l'intestazione e sopra le righe, perché è un fatto della corsa
-   intera e non di un passo. I numeri sono a larghezza fissa: una cifra che
-   balla mentre sale è una cifra che non si riesce a leggere. */
+/* THE RUN'S SPEND. Under the heading and above the rows, because it is a fact
+   about the whole run and not about a step. Fixed-width figures: a digit that
+   dances while it climbs is a digit nobody can read. */
 .console__spend {
   flex-shrink: 0;
   display: flex;
@@ -2649,8 +2489,8 @@ button.is-primary {
   color: var(--ink);
 }
 
-/* Un totale parziale non si mimetizza col resto: chi legge deve accorgersi
-   che la cifra accanto è più bassa del vero. */
+/* A partial total does not blend in: the reader has to notice that the figure
+   beside it is lower than the truth. */
 .console__spend-partial {
   color: var(--warn);
   background: var(--warn-soft);
@@ -2689,8 +2529,8 @@ button.is-primary {
   font-variant-numeric: tabular-nums;
 }
 
-/* Chi ha prodotto la riga: nella vista in linea è l'unica cosa che distingue
-   due passi mescolati, quindi non si abbrevia e non si nasconde. */
+/* Who produced the line: in the inline view it is the only thing telling two
+   interleaved steps apart, so it is neither shortened nor hidden. */
 .console__who {
   flex-shrink: 0;
   min-width: 96px;
@@ -2724,7 +2564,7 @@ button.is-primary {
   font-style: italic;
 }
 
-/* Affiancata: un riquadro per passo, come terminali divisi. */
+/* Side by side: one pane per step, like split terminals. */
 .console__panes {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -2789,8 +2629,8 @@ button.is-primary {
   max-height: 240px;
 }
 
-/* Cosa è entrato nel passo: chiuso, e quando si apre sta in un riquadro suo,
-   perché non si confonda col testo che il passo ha prodotto. */
+/* What went into the step: collapsed, and when opened it sits in a box of its
+   own so it is not confused with what the step produced. */
 .pane__input {
   margin-bottom: var(--space-2);
   border: 1px solid var(--line);
@@ -2839,7 +2679,7 @@ button.is-primary {
   color: var(--state-human);
 }
 
-/* Un riquadro senza righe non è un riquadro rotto: dice perché è vuoto. */
+/* A pane with no rows is not a broken pane: it says why it is empty. */
 .pane__note {
   font-size: var(--text-small);
   color: var(--faint);
@@ -2853,7 +2693,7 @@ button.is-primary {
   color: var(--danger);
 }
 
-/* ── cosa è entrato in un passo, nel tempo ──────────────────────────────── */
+/* ── what went into a step, over time ───────────────────────────────────── */
 
 .history {
   border-top: 1px solid var(--line);
@@ -2927,8 +2767,8 @@ button.is-primary {
   flex-shrink: 0;
 }
 
-/* Da dove è partita la chiamata: è la riga che risponde a «chi l'ha
-   chiamato», e non si abbrevia. */
+/* Where the call started: the line that answers "who called it", and it is
+   not abbreviated. */
 .passage__origin {
   font-size: var(--text-small);
   color: var(--muted);
@@ -2992,18 +2832,16 @@ button.is-primary {
 }
 
 /* ===========================================================================
-   I TERMINALI. Le schede, i pannelli, e la riga che si sta componendo.
-   ---------------------------------------------------------------------------
-   Un terminale è già pieno del colore che ci scrive dentro il programma che ci
-   gira: qui attorno non ce n'è nessuno che non sia uno stato. Il divieto 4 vale
-   soprattutto qui, dove la tentazione è il riquadro nero.
-
-   Lo schermo dell'emulatore prende `--paper` e `--ink` — 15,08:1 — e li prende
-   due volte: da questa regola per ciò che il foglio disegna, e dai ruoli letti
-   in `TerminalPane.tsx` per il tema che xterm si dipinge da sé. Un tema lasciato
-   al suo predefinito sarebbe nero su nero-quasi, cioè un pannello con una tinta
-   sua incollato dentro una finestra di carta calda.
+   TERMINALS. The tabs, the panes, and the line being composed.
+   A terminal is already full of colour written by the program running inside
+   it, so nothing around it carries a tint that is not a state. Rule 4 matters
+   most here, where the temptation is the black box.
    =========================================================================== */
+
+/* The emulator screen takes `--paper` and `--ink` twice: from this rule for
+   what the sheet paints, and from the roles read in `TerminalPane.tsx` for the
+   theme xterm paints itself. Left at its default that theme would be a pane
+   with a tint of its own glued inside a warm-paper window. */
 
 .terminals {
   display: flex;
@@ -3070,9 +2908,9 @@ button.is-primary {
   flex-wrap: wrap;
 }
 
-/* Una scheda porta il nome dello spazio di lavoro, perché è quello che un
-   terminale *è*: due terminali sulla stessa repo si distinguono dall'id, e
-   quello sta nel pannello, dove serve a copiarlo. */
+/* A tab carries the workspace name, because that is what a terminal *is*. Two
+   terminals on the same repo are told apart by the id, and the id lives in the
+   pane, where it is there to be copied. */
 .terminals__tab {
   display: flex;
   align-items: baseline;
@@ -3177,9 +3015,9 @@ button.is-primary {
   overflow: hidden;
 }
 
-/* LA RIGA CHE LA FINESTRA TIENE IN MANO SI VEDE PER INTERO, e si vede che è
-   sua: mentre si compone non è ancora arrivata a nessuno, e questa è l'unica
-   riga della schermata che dice a che punto è. */
+/* THE LINE THE WINDOW IS HOLDING IS SHOWN IN FULL, and shown to be its own:
+   while it is being composed it has reached nobody, and this is the only line
+   on screen that says where it has got to. */
 .pane__draft {
   font-family: var(--font-data);
   font-size: var(--text-small);
@@ -3202,15 +3040,15 @@ button.is-primary {
   color: var(--warn);
 }
 
-/* ── I comandi ───────────────────────────────────────────────────────────────
-   Un manuale è una tabella, non una griglia di schede: la domanda che ci si fa
-   è «quale comando fa questa cosa», e si legge scorrendo una colonna di nomi.
-   Le schede la renderebbero un percorso a zig-zag.
+/* ── the commands ────────────────────────────────────────────────────────
+   A manual is a table, not a grid of cards: the question is "which command
+   does this", answered by scanning one column of names. Cards would turn it
+   into a zig-zag. */
 
-   Il nome sta in `--font-data` per il divieto 10 esteso a ciò che si digita:
-   una riga di comando in carattere proporzionale non si copia con l'occhio. E
-   il buco da riempire — `<nome>`, `[opzioni]` — si distingue dal letterale col
-   corsivo e col peso, MAI sbiadendo: è il divieto 7. */
+/* The name is in `--font-data` — rule 10 extended to what gets typed: a
+   command line in a proportional face cannot be copied by eye. The hole to
+   fill (`<name>`, `[options]`) is set apart by italics and weight, NEVER by
+   fading: rule 7. */
 
 .manual {
   list-style: none;
@@ -3287,7 +3125,7 @@ button.is-primary {
   color: var(--ink);
 }
 
-/* Un buco da riempire: si riconosce dalla forma, non da un grigio più chiaro. */
+/* A hole to fill: recognised by its shape, not by a lighter grey. */
 .manual__hole {
   color: var(--ink);
   font-style: italic;

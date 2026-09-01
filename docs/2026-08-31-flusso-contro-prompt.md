@@ -152,8 +152,8 @@ mandato migliore di quello che gli avevo dato io.
 ## Quello che è andato storto nell'esperimento, e che va detto
 
 **L'isolamento dichiarato non c'è stato.** Il disegno prevedeva due cloni
-separati. `flows/sviluppa-sailor.flow.json` però scrive `"workdir":
-"/home/someone/personal/sailor"` in chiaro su ogni passo: lanciato dal clone
+separati. `flows/sviluppa-sailor.flow.json` però scrive un `"workdir"` assoluto
+— la casa di chi lo scrisse — in chiaro su ogni passo: lanciato dal clone
 `ab-flusso`, il lato B ha comunque lavorato nel repository principale, e ci ha
 anche commesso sopra. Il confronto delle due diff regge — stesso commit di
 partenza, stesso file, nessuna delle due ha visto l'altra — ma **un flusso con

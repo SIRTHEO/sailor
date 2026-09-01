@@ -145,9 +145,31 @@ jobs:
   desktop:
     name: desktop tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+
+      # **`desktop/src-tauri` DECLARES A WORKSPACE OF ITS OWN, SO
+      # `cargo test --workspace` NEVER SEES IT.** Twenty-three tests sat outside
+      # every gate, and one of them was red in silence — it looked for a command
+      # line copied by hand into a manual, and the copy had drifted. A test
+      # nobody runs is a test that stops being true without telling anybody.
+      - name: the system libraries Tauri links against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
+
+      - name: the Rust version the manifest declares
+        run: |
+          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal
+          rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
+
+      - name: the shell's own battery
+        run: |
+          set -o pipefail
+          cargo test --manifest-path desktop/src-tauri/Cargo.toml --no-fail-fast 2>&1 \
+            | tee "$RUNNER_TEMP/shell.txt"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22

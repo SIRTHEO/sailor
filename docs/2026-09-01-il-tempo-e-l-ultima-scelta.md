@@ -8,12 +8,11 @@ I **fatti misurati** stanno separati dalle **decisioni**, che restano a Theo.
 Dove un numero compare senza la parola «misurato» è una lettura del codice, non
 una prova eseguita.
 
-## La regola esiste già, ed è di other-repo
+## La regola esiste già, e non l'abbiamo scritta noi
 
-`a-client/.claude/rules/async-no-cron.md`, scritta mesi fa, apre così:
-
-> «Un cron di pulizia è quasi sempre il sintomo di un ciclo di vita dei dati mal
-> modellato.»
+Una regola scritta mesi fa in un repo privato — che quindi non si cita qui —
+parte da questo: un cron di pulizia è quasi sempre il sintomo di un ciclo di
+vita dei dati mal modellato.
 
 È la stessa cosa che Theo ha detto il 31/08 con un'immagine: *se mi ammalo
 perché sto a −10 in maglietta, non compro i farmaci — compro i vestiti*. La
@@ -34,7 +33,8 @@ per latenza l'intervallo del tick, sempre.
 
 ## Il costo di non avere i primi tre livelli, misurato
 
-Il 31/08/2026 su other-repo c'erano **31 rami orfani**. Per decidere che farne sono
+Il 31/08/2026, in un repo di lavoro che non è questo, c'erano **31 rami
+orfani**. Per decidere che farne sono
 serviti **ventuno agenti e circa mezz'ora**: un esaminatore per gruppo e un
 giudice avversariale per ogni verdetto. Non era zelo — la domanda «questo lavoro
 è già arrivato altrove?» si risponde solo confrontando il contenuto file per
@@ -71,13 +71,13 @@ si dichiarano scaduti lì, senza che nessuno abbia spazzato. È il livello con i
 miglior rapporto fra valore e costo, e **pretende una sola cosa**: la
 dichiarazione di ciclo di vita depositata alla nascita del ramo — cosa lo
 chiude, cosa si perde se sparisce. Il flusso che la deposita è già scritto:
-`~/.config/sailor/flows/other-repo/un-ramo-dichiara-come-finisce.flow.json`.
+`~/.config/sailor/flows/<progetto>/un-ramo-dichiara-come-finisce.flow.json`.
 
 ### Livello 4 — il timer, come rete
 
 Passa ogni tanto e raccoglie ciò che i primi tre hanno perso. **Se i primi tre
-esistono, la precisione del tick conta poco**: nel bot di other-repo la rete gira ogni
-cinque minuti e non è il motore di niente.
+esistono, la precisione del tick conta poco**: in un bot di produzione la rete
+gira ogni cinque minuti e non è il motore di niente.
 
 ## Cosa Sailor ha, e cosa gli manca — misurato il 01/09/2026
 
