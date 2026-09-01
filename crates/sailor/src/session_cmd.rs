@@ -43,6 +43,7 @@ pub const USAGE: &[&str] = &[
     "sailor session detach    [--tty <nome>]   lascia stare questa finestra",
     "sailor session attach    [--tty <nome>]   torna a seguirla",
     "sailor session census    [--json]         cosa c'è adesso sulla macchina",
+    "sailor session install   [--settings <file>]  innesta i ganci, senza toccare quelli altrui",
 ];
 
 /// Le opzioni che valgono per più forme, fuori dall'elenco perché non sono
@@ -61,29 +62,12 @@ fn usage_text() -> String {
 /// altrimenti una forma documentata e non accettata si scopre in mano a chi la
 /// digita.
 const FORMS: &[&str] = &[
-    "open", "event", "close", "list", "detach", "attach", "census",
+    "open", "event", "close", "list", "detach", "attach", "census", "install",
 ];
 
 /// Le forme che parlano di **un** terminale, e quindi devono saperne il nome.
 /// `list` e `census` non ci sono: parlano di tutti.
 const NEEDS_A_TERMINAL: &[&str] = &["open", "event", "close", "detach", "attach"];
-
-/// Le forme che **leggono o scrivono** `sessions.db`. `census` non c'è: guarda
-/// la macchina, non il deposito.
-///
-/// **ESISTE PER LA STESSA RAGIONE DI `NEEDS_A_TERMINAL`, E IL DANNO ERA
-/// PEGGIORE.** `dispatch` apriva il deposito prima di sapere chi lo stesse
-/// chiedendo, quindi `sailor session census` — il comando che esiste per dire
-/// «non lo so» quando non gli è stato permesso guardare la macchina — falliva
-/// con uscita 1 **prima di poterlo dire**, per un motivo che col censimento non
-/// c'entra niente. Visto eseguendolo dentro il perimetro il 01/09/2026. Chi
-/// legge quell'uscita non distingue tre fatti diversi: il deposito non si apre,
-/// non ho potuto guardare la macchina, non c'è nessun terminale.
-///
-/// Sorvegliata da `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
-/// che gira su **ogni** forma non elencata qui: una aggiunta domani e
-/// dimenticata viene provata senza che nessuno se ne ricordi.
-const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
 
 /// Le opzioni che non vogliono un valore dopo di sé.
 const WITHOUT_VALUE: &[&str] = &["json"];
@@ -161,10 +145,9 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     };
 
     // **SOLO CHI LEGGE IL DEPOSITO LO APRE**, per la stessa ragione della riga
-    // qui sopra sul terminale. Aprirlo comunque faceva morire `census` — che il
-    // deposito non lo tocca — con l'errore del file al posto della sua risposta;
-    // e la sua risposta è proprio «non lo so», quindi distruggerla con un altro
-    // «non lo so» che parla d'altro è il modo peggiore di sbagliare.
+    // qui sopra sul terminale — e questa riga quella ragione non l'aveva
+    // ricevuta, perché era scritta come commento accanto all'altra. Un principio
+    // vale dove c'è un elenco che lo applica.
     let store = if NEEDS_THE_STORE.contains(&verb) {
         let path = match options.get("store") {
             Some(declared) => PathBuf::from(declared),
@@ -202,24 +185,23 @@ struct Request<'a> {
     options: &'a BTreeMap<String, String>,
     payload: &'a Payload,
     raw: &'a str,
-    /// Il deposito, **se questa forma lo legge**. `census` non lo apre affatto:
-    /// vedi [`NEEDS_THE_STORE`].
+    /// **`None` QUANDO NESSUNO NE HA BISOGNO**, e non è un dettaglio di
+    /// comodità: `census` deve poter rispondere «non lo so» anche dove il
+    /// deposito non si apre. Finché era obbligatorio, l'unica forma che esiste
+    /// per non mentire moriva prima di poter parlare.
     store: Option<&'a Sessions>,
     census: &'a Census,
     tty: &'a str,
     at: i64,
 }
 
-impl Request<'_> {
+impl<'a> Request<'a> {
     /// Il deposito di questa forma.
     ///
     /// **UN ERRORE QUI È UN DIFETTO DI QUESTO FILE, NON UN GUASTO DI CHI
     /// DIGITA**, e il messaggio lo dice: vuol dire che una forma legge il
-    /// deposito senza essere elencata in [`NEEDS_THE_STORE`]. Non può capitare a
-    /// chi usa il comando, e la prova
-    /// `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`
-    /// gira sull'altra metà dell'elenco.
-    fn store(&self) -> Result<&Sessions, String> {
+    /// deposito senza essere elencata in [`NEEDS_THE_STORE`].
+    fn store(&self) -> Result<&'a Sessions, String> {
         self.store.ok_or_else(|| {
             format!(
                 "«{}» legge il deposito ma non è in NEEDS_THE_STORE: è un difetto \
@@ -228,6 +210,178 @@ impl Request<'_> {
             )
         })
     }
+
+    /// Se chi parla è un gancio d'avvio di Claude Code.
+    ///
+    /// **LA FORMA DELLA RISPOSTA SEGUE CHI DOMANDA**, e chi domanda sta nel
+    /// payload: a un `SessionStart` si risponde con l'involucro che Claude Code
+    /// inietta nel contesto, a una persona con una frase.
+    fn is_a_session_start(&self) -> bool {
+        self.payload.hook_event_name.as_deref() == Some("SessionStart")
+    }
+}
+
+/// Le forme che il deposito lo leggono davvero.
+///
+/// **È UN ELENCO DI CHI NE HA BISOGNO, NON DELLE ECCEZIONI**, e la differenza
+/// si vede sulla forma aggiunta domani: un elenco di eccezioni la lascia
+/// passare in silenzio, questo no. Fino al 01/09/2026 `dispatch` apriva
+/// `sessions.db` prima di sapere quale forma fosse stata chiesta, quindi
+/// `census` — che il deposito non lo tocca — moriva con l'errore del file **al
+/// posto della propria risposta**, e la sua risposta è proprio «non lo so».
+///
+/// Sorvegliata da `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
+/// che gira su **ogni** forma non elencata qui.
+const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
+
+/// I ganci che Sailor innesta, e cosa chiama ciascuno.
+///
+/// **QUATTRO, E NON DI PIÙ.** Un gancio in più è un processo in più a ogni
+/// evento di ogni sessione della macchina: si mette solo dove la risposta serve
+/// davvero. `SessionStart` porta il benvenuto ed è l'unico evento in cui ciò che
+/// scriviamo entra nel contesto dell'agente; gli altri tre dicono che la
+/// sessione è viva, cosa le è stato chiesto e quando il contesto sta per essere
+/// compattato — cioè i tre momenti da cui si capisce se tocca passare il
+/// testimone.
+const HOOKS: &[(&str, &str)] = &[
+    ("SessionStart", "open"),
+    ("Stop", "event"),
+    ("UserPromptSubmit", "event"),
+    ("PreCompact", "event"),
+];
+
+/// Come si riconosce un gancio nostro fra quelli di chiunque altro: dal fatto
+/// che invoca **questo** comando. Non da un nome scritto accanto, che si può
+/// cambiare senza cambiare cosa fa.
+const MARK: &str = " session ";
+
+/// Dove Claude Code tiene le impostazioni dell'utente.
+///
+/// **NON È UN NOME DI PRODOTTO IN UNA CONDIZIONE**, è l'indirizzo di ciò che
+/// stiamo innestando: un innesto deve sapere dove innesta. Nessun ramo di
+/// questo comando cambia comportamento a seconda di cosa trova lì.
+fn default_settings() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME non è definita".to_owned())?;
+    Ok(PathBuf::from(home).join(".claude").join("settings.json"))
+}
+
+fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
+    let settings = match request.options.get("settings") {
+        Some(declared) => PathBuf::from(declared),
+        None => default_settings()?,
+    };
+    let hooks = installed(&settings)?;
+    let commands = settings
+        .parent()
+        .ok_or_else(|| format!("{}: non ha una cartella", settings.display()))?
+        .join("commands");
+    let written = wrote_the_two_commands(&commands)?;
+    Ok(Report::spoken(format!("{hooks}\n{written}")))
+}
+
+/// Le due parole che il benvenuto promette, scritte dove Claude Code le cerca.
+///
+/// **SE MANCANO, IL BENVENUTO MENTE.** Il saluto dice «per staccarlo:
+/// /sailor-off», e una parola promessa che non esiste è peggio di una non
+/// promessa: chi la digita crede di essersi staccato. La prova
+/// `the_welcome_only_promises_words_that_exist` tiene insieme le due cose.
+fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String> {
+    std::fs::create_dir_all(directory).map_err(|error| format!("{}: {error}", directory.display()))?;
+    for (name, verb, what) in [
+        (
+            "sailor-off",
+            "detach",
+            "Stacca questo terminale da Sailor: smette di essere tracciato, e lo \
+             restano anche le sessioni che si apriranno qui dopo.",
+        ),
+        (
+            "sailor-on",
+            "attach",
+            "Ricollega questo terminale a Sailor, se era stato staccato.",
+        ),
+    ] {
+        let body = format!(
+            "---\ndescription: {what}\nallowed-tools: Bash(sailor session {verb}:*)\n---\n\n\
+             Esegui `sailor session {verb}` e riferisci in una riga cosa ha risposto. \
+             Non fare altro.\n"
+        );
+        let path = directory.join(format!("{name}.md"));
+        std::fs::write(&path, body).map_err(|error| format!("{}: {error}", path.display()))?;
+    }
+    Ok(format!(
+        "/sailor-off e /sailor-on scritti in {}",
+        directory.display()
+    ))
+}
+
+/// Innesta i ganci in un file di impostazioni, **aggiungendo**.
+///
+/// Il percorso del binario è quello che sta girando adesso
+/// (`current_exe`): un innesto che scrivesse `sailor` e basta funzionerebbe
+/// solo dove quel nome è già nel `PATH` di chi apre il terminale, che non è
+/// una cosa che si può sapere da qui.
+fn installed(settings: &std::path::Path) -> Result<String, String> {
+    let mut root: serde_json::Value = match std::fs::read_to_string(settings) {
+        Ok(text) if text.trim().is_empty() => serde_json::json!({}),
+        // **UN FILE CHE NON SI CAPISCE NON SI RISCRIVE.** Sostituirlo con la
+        // sola parte nostra cancellerebbe la configurazione di chi lo usa, per
+        // un errore di battitura.
+        Ok(text) => serde_json::from_str(&text)
+            .map_err(|error| format!("{}: non è JSON valido ({error})", settings.display()))?,
+        Err(_) => serde_json::json!({}),
+    };
+
+    let binary = std::env::current_exe()
+        .map_err(|error| format!("non so dove sono: {error}"))?
+        .display()
+        .to_string();
+
+    let hooks = root
+        .as_object_mut()
+        .ok_or_else(|| format!("{}: la radice non è un oggetto", settings.display()))?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| format!("{}: «hooks» non è un oggetto", settings.display()))?;
+
+    let mut added = Vec::new();
+    for (event, verb) in HOOKS {
+        let command = format!("{binary} session {verb}");
+        let list = hooks
+            .entry(*event)
+            .or_insert_with(|| serde_json::json!([]))
+            .as_array_mut()
+            .ok_or_else(|| format!("{}: «{event}» non è un vettore", settings.display()))?;
+
+        // Già innestato: si riconosce dal comando, non dalla posizione.
+        let ours = list.iter().any(|entry| {
+            serde_json::to_string(entry)
+                .map(|text| text.contains(MARK) && text.contains("sailor"))
+                .unwrap_or(false)
+        });
+        if ours {
+            continue;
+        }
+        list.push(serde_json::json!({
+            "hooks": [{"type": "command", "command": command}]
+        }));
+        added.push(*event);
+    }
+
+    if added.is_empty() {
+        return Ok(format!("già innestato in {}", settings.display()));
+    }
+    if let Some(parent) = settings.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    let text = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?;
+    std::fs::write(settings, format!("{text}\n"))
+        .map_err(|error| format!("{}: {error}", settings.display()))?;
+    Ok(format!(
+        "innestato in {}: {}",
+        settings.display(),
+        added.join(", ")
+    ))
 }
 
 fn act(request: &Request<'_>) -> Result<Report, String> {
@@ -239,6 +393,7 @@ fn act(request: &Request<'_>) -> Result<Report, String> {
         "attach" => attach_terminal(request),
         "list" => list_terminals(request),
         "census" => report_census(request),
+        "install" => install_hooks(request),
         other => Err(format!("«{other}» non è una forma di questo comando")),
     }
 }
@@ -279,27 +434,69 @@ fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEvent {
 }
 
 fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
+    let store = request.store()?;
     let arrival = arrival_of(request);
-    request
-        .store()?
+
+    // **STACCATO VUOL DIRE STACCATO**, e vale per i fatti prima che per il
+    // testo: niente riga, niente evento, niente saluto. Uno stacco che
+    // registrasse comunque sarebbe un silenzio di facciata.
+    let detached = store
+        .terminal(&arrival.anchor.tty)
+        .map_err(|error| error.to_string())?
+        .is_some_and(|row| row.is_detached());
+    if detached {
+        return Ok(Report::spoken(String::new()));
+    }
+
+    store
         .open_terminal(&arrival)
         .map_err(|error| error.to_string())?;
-    request
-        .store()?
+    store
         .record_event(&event_named(request, "open"))
         .map_err(|error| error.to_string())?;
+
+    if request.is_a_session_start() {
+        return Ok(Report::spoken(welcome(&arrival)));
+    }
     Ok(Report::spoken(described(&arrival)))
 }
 
+/// Il benvenuto, nell'involucro che Claude Code inietta nel contesto della
+/// sessione.
+///
+/// **PERCHÉ È UN INVOLUCRO E NON UNA RIGA STAMPATA.** `SessionStart` è uno dei
+/// quattro eventi in cui ciò che il gancio scrive diventa contesto che l'agente
+/// legge — verificato sulla documentazione il 01/09/2026. Con una riga normale
+/// il saluto lo leggerebbe la persona davanti allo schermo e non l'agente, e lo
+/// stacco resterebbe una cosa che esiste e che non sa nessuno.
+///
+/// Dice tre cose e basta: dove sei, che sei tracciato, e come smettere.
+fn welcome(arrival: &Arrival) -> String {
+    let text = format!(
+        "Sei collegato a Sailor.\n\
+         terminale {} · albero {}\n\
+         Questo terminale è tracciato: Sailor sa che esisti, in che albero lavori \
+         e quando avrai bisogno di passare il testimone.\n\
+         Per staccarlo: /sailor-off",
+        arrival.anchor.tty, arrival.anchor.worktree,
+    );
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
+            "additionalContext": text,
+        }
+    })
+    .to_string()
+}
+
 fn record_event(request: &Request<'_>) -> Result<Report, String> {
+    let store = request.store()?;
     let arrival = arrival_of(request);
-    request
-        .store()?
+    store
         .remember_terminal(&arrival)
         .map_err(|error| error.to_string())?;
     let happened = event_named(request, "event");
-    request
-        .store()?
+    store
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(format!(
@@ -309,12 +506,11 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
 }
 
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
-    let closed = request
-        .store()?
+    let store = request.store()?;
+    let closed = store
         .close_terminal(request.tty, request.at)
         .map_err(|error| error.to_string())?;
-    request
-        .store()?
+    store
         .record_event(&event_named(request, "close"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(if closed {
@@ -328,12 +524,11 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
 }
 
 fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
-    request
-        .store()?
+    let store = request.store()?;
+    store
         .detach(&anchor_of(request), request.at)
         .map_err(|error| error.to_string())?;
-    request
-        .store()?
+    store
         .record_event(&event_named(request, "detach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(format!(
@@ -343,12 +538,11 @@ fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
 }
 
 fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
-    let was_detached = request
-        .store()?
+    let store = request.store()?;
+    let was_detached = store
         .attach(request.tty)
         .map_err(|error| error.to_string())?;
-    request
-        .store()?
+    store
         .record_event(&event_named(request, "attach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(if was_detached {
@@ -359,8 +553,8 @@ fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
 }
 
 fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
-    let rows = request
-        .store()?
+    let store = request.store()?;
+    let rows = store
         .terminals()
         .map_err(|error| error.to_string())?;
     if request.options.contains_key("json") {
@@ -374,8 +568,7 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     }
     let mut text = String::new();
     for row in &rows {
-        let howmany = request
-            .store()?
+        let howmany = store
             .events_on(&row.tty)
             .map(|found| found.len())
             .unwrap_or_default();
@@ -559,14 +752,311 @@ mod tests {
             options,
             payload: &payload,
             raw,
-            // Le prove che passano da qui parlano tutte di forme che il deposito
-            // lo leggono: glielo si dà. Chi non lo legge si prova da `dispatch`,
-            // che è dove sta la decisione di aprirlo o no.
             store: Some(store),
             census,
             tty: "ttys004",
             at: 1_000,
         })
+    }
+
+    /// **LA PROVA GIRA SU OGNI FORMA CHE NON DICHIARA DI VOLERE IL DEPOSITO**,
+    /// non solo su `census`: una forma aggiunta domani e lasciata fuori
+    /// dall'elenco viene provata qui senza che nessuno se ne ricordi.
+    ///
+    /// **E OGNI FORMA RICEVE ANCHE `--settings` DENTRO LA CARTELLA USA-E-GETTA.**
+    /// Non è una precauzione teorica: `install`, aggiunta il 01/09/2026, senza
+    /// quella riga scriverebbe nel `settings.json` **vero** di chi esegue la
+    /// batteria — cioè una prova che riconfigura la macchina di chi la lancia.
+    /// Una prova generica lo diventa: copre anche ciò che non esisteva quando è
+    /// stata scritta, e questo vale per il bene e per il male.
+    ///
+    /// *Mutante eseguito*: aprire il deposito incondizionatamente in `dispatch`
+    /// fa tornare rossa questa prova nominando la forma e l'errore del file.
+    #[test]
+    fn a_form_that_never_reads_the_store_survives_a_store_that_will_not_open() {
+        let scratch = Scratch::new("senza-deposito");
+        // Una **cartella** dove ci si aspetta un file: SQLite non la apre, e il
+        // fallimento è dello stesso genere di quelli veri — permessi, disco
+        // pieno, un file di una versione più nuova — senza doverli fabbricare.
+        let impossible = scratch.directory.join("non-e-un-file");
+        std::fs::create_dir_all(&impossible).expect("la cartella di prova");
+        let settings = scratch.directory.join("settings-di-prova.json");
+
+        for form in FORMS.iter().filter(|form| !NEEDS_THE_STORE.contains(form)) {
+            let words: Vec<String> = vec![
+                (*form).to_owned(),
+                "--store".to_owned(),
+                impossible.display().to_string(),
+                "--settings".to_owned(),
+                settings.display().to_string(),
+            ];
+            let report = dispatch(&words).unwrap_or_else(|error| {
+                panic!(
+                    "«session {form}» non legge il deposito, eppure è morto perché non \
+                     si apriva: {error}"
+                )
+            });
+            assert!(
+                !report.message.is_empty(),
+                "«session {form}» ha risposto senza dire niente"
+            );
+        }
+    }
+
+    /// I ganci di un altro prodotto, già installati, come stanno davvero in
+    /// `~/.claude/settings.json` su questa macchina.
+    fn settings_of_someone_else() -> &'static str {
+        r#"{
+          "model": "opusplan",
+          "hooks": {
+            "Stop": [
+              {"hooks": [{"type": "command", "command": "/Users/qualcuno/.altro/gancio.sh"}]}
+            ],
+            "PreToolUse": [
+              {"hooks": [{"type": "command", "command": "/Users/qualcuno/.altro/gancio.sh"}]}
+            ]
+          }
+        }"#
+    }
+
+    /// **SI AGGIUNGE, NON SI SOSTITUISCE.** Su `~/.claude/settings.json`
+    /// scrivono in cinque, e un innesto che riscrive il vettore dei ganci
+    /// spegne in silenzio quelli di chi c'era prima — che è il modo in cui uno
+    /// strumento di tracciamento diventa il guasto che doveva prevenire.
+    #[test]
+    fn installing_leaves_the_hooks_that_were_already_there() {
+        let scratch = Scratch::new("innesto");
+        let settings = scratch.directory.join("settings.json");
+        std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
+
+        installed(&settings).expect("l'innesto riesce");
+
+        let after: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).expect("rileggere"))
+                .expect("resta JSON valido");
+
+        assert_eq!(after["model"], "opusplan", "l'innesto non tocca il resto");
+        let stops = after["hooks"]["Stop"].as_array().expect("Stop è un vettore");
+        assert_eq!(stops.len(), 2, "il gancio di prima è ancora lì, e il nostro è in più");
+        assert!(
+            serde_json::to_string(&after).unwrap().contains("gancio.sh"),
+            "il gancio di chi c'era prima non è stato cancellato"
+        );
+        assert!(
+            after["hooks"]["SessionStart"].is_array(),
+            "l'evento che porta il benvenuto dev'esserci"
+        );
+    }
+
+    /// Un innesto ripetuto è un innesto solo: chi lo lancia due volte per
+    /// sicurezza non deve trovarsi due ganci che registrano lo stesso fatto.
+    #[test]
+    fn installing_twice_does_not_double_anything() {
+        let scratch = Scratch::new("innesto-doppio");
+        let settings = scratch.directory.join("settings.json");
+        std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
+
+        installed(&settings).expect("primo innesto");
+        let once = std::fs::read_to_string(&settings).expect("rileggere");
+        installed(&settings).expect("secondo innesto");
+        let twice = std::fs::read_to_string(&settings).expect("rileggere");
+
+        assert_eq!(once, twice, "il secondo innesto non deve cambiare niente");
+    }
+
+    /// **UN FILE CHE NON SI CAPISCE NON SI RISCRIVE.** Sovrascriverlo con la
+    /// sola parte nostra cancellerebbe la configurazione di chi lo usa, e per
+    /// un errore di battitura.
+    #[test]
+    fn a_settings_file_that_does_not_parse_is_left_alone() {
+        let scratch = Scratch::new("innesto-rotto");
+        let settings = scratch.directory.join("settings.json");
+        std::fs::write(&settings, "{ questo non è JSON").expect("scrivere");
+
+        let refused = installed(&settings).expect_err("un file illeggibile ferma l'innesto");
+        assert!(refused.contains("settings.json"), "{refused}");
+        assert_eq!(
+            std::fs::read_to_string(&settings).expect("rileggere"),
+            "{ questo non è JSON",
+            "il file resta esattamente com'era"
+        );
+    }
+
+    /// La regola di ferro vale anche per ciò che l'innesto **scrive**: il
+    /// comando che finisce nei ganci non nomina nessun prodotto.
+    #[test]
+    fn what_the_install_writes_names_no_product() {
+        let scratch = Scratch::new("innesto-neutro");
+        let settings = scratch.directory.join("settings.json");
+        installed(&settings).expect("l'innesto riesce anche su un file che non c'era");
+
+        let written = std::fs::read_to_string(&settings).expect("rileggere");
+        for product in ["orca", "warp", "vscode", "iterm", "tmux"] {
+            assert!(
+                !written.to_lowercase().contains(product),
+                "l'innesto ha scritto «{product}» in settings.json: {written}"
+            );
+        }
+    }
+
+    /// **IL BENVENUTO PROMETTE SOLO PAROLE CHE ESISTONO.** Il saluto dice «per
+    /// staccarlo: /sailor-off»; se l'innesto non scrivesse quel comando, chi lo
+    /// digita si crederebbe staccato e non lo sarebbe. Le due cose stanno in
+    /// due file diversi e nessun compilatore le lega: le lega questa prova.
+    #[test]
+    fn the_welcome_only_promises_words_that_exist() {
+        let scratch = Scratch::new("parola-mantenuta");
+        let settings = scratch.directory.join("settings.json");
+        let request = Request {
+            verb: "install",
+            options: &BTreeMap::from([(
+                "settings".to_owned(),
+                settings.display().to_string(),
+            )]),
+            payload: &Payload::parse("{}").expect("payload vuoto"),
+            raw: "",
+            store: None,
+            census: &one_terminal(),
+            tty: "",
+            at: 1_000,
+        };
+        act(&request).expect("l'innesto riesce");
+
+        let saluto = welcome(&Arrival {
+            anchor: sessions::Anchor {
+                tty: "ttys004".to_owned(),
+                worktree: "/qui".to_owned(),
+                ancestor: None,
+            },
+            session_id: None,
+            transcript_path: None,
+            at: 1_000,
+        });
+
+        for word in ["/sailor-off", "/sailor-on"] {
+            if !saluto.contains(word) {
+                continue;
+            }
+            let file = scratch
+                .directory
+                .join("commands")
+                .join(format!("{}.md", word.trim_start_matches('/')));
+            assert!(
+                file.exists(),
+                "il benvenuto promette «{word}» e l'innesto non lo scrive: {}",
+                file.display()
+            );
+        }
+        assert!(
+            saluto.contains("/sailor-off"),
+            "il saluto deve promettere lo stacco, o lo stacco non lo sa nessuno"
+        );
+    }
+
+    /// Il payload di un `SessionStart` vero, come lo manda Claude Code.
+    fn a_session_start(session: &str) -> String {
+        format!(
+            r#"{{"session_id":"{session}","hook_event_name":"SessionStart",
+                 "startup_reason":"startup","cwd":"/qui/dentro"}}"#
+        )
+    }
+
+    /// **IL BENVENUTO ENTRA NEL CONTESTO DELL'AGENTE, NON NEL TERMINALE.**
+    /// `SessionStart` è uno dei quattro eventi in cui Claude Code aggiunge al
+    /// contesto ciò che il gancio scrive: è il pilastro su cui sta in piedi la
+    /// promessa piena. Se questo smette di valere, il saluto diventa una riga
+    /// che legge la persona e non l'agente — funziona lo stesso, ma è un'altra
+    /// cosa, e chi la legge deve saperlo prima.
+    #[test]
+    fn the_welcome_enters_the_context_of_the_agent() {
+        let scratch = Scratch::new("benvenuto");
+        let store = scratch.store();
+        let report = ask(
+            "open",
+            &a_session_start("s-1"),
+            &store,
+            &one_terminal(),
+            &no_options(),
+        )
+        .expect("l'apertura riesce");
+
+        let spoken: serde_json::Value =
+            serde_json::from_str(&report.message).expect("un gancio SessionStart risponde in JSON");
+        let context = spoken["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .expect("il saluto viaggia in hookSpecificOutput.additionalContext");
+
+        assert!(context.contains("Sailor"), "{context}");
+        assert!(
+            context.contains("/sailor-off"),
+            "il saluto deve dire come staccarsi, o lo stacco esiste e non lo sa nessuno: {context}"
+        );
+        assert!(
+            context.contains("ttys004"),
+            "il saluto nomina il terminale di cui parla: {context}"
+        );
+        assert_eq!(
+            spoken["hookSpecificOutput"]["hookEventName"], "SessionStart",
+            "l'involucro dichiara di quale evento è la risposta"
+        );
+    }
+
+    /// **STACCATO VUOL DIRE STACCATO.** Nessun saluto, e nessuna riga scritta:
+    /// se l'apertura registrasse comunque, «lascia stare questa finestra»
+    /// varrebbe solo per il testo e non per i fatti.
+    #[test]
+    fn a_detached_terminal_is_greeted_by_silence() {
+        let scratch = Scratch::new("staccato");
+        let store = scratch.store();
+        let census = one_terminal();
+
+        ask("detach", "{}", &store, &census, &no_options()).expect("lo stacco riesce");
+        let report = ask(
+            "open",
+            &a_session_start("s-2"),
+            &store,
+            &census,
+            &no_options(),
+        )
+        .expect("l'apertura su un terminale staccato non è un errore");
+
+        assert_eq!(report.message, "", "un terminale staccato non riceve saluti");
+        assert!(
+            store
+                .events_on("ttys004")
+                .expect("leggere gli eventi")
+                .iter()
+                .all(|event| event.name != "SessionStart"),
+            "un terminale staccato non lascia eventi: staccato vale per i fatti, non solo per il testo"
+        );
+    }
+
+    /// **IL CENSIMENTO NON HA BISOGNO DI UN DEPOSITO**, e finché ne aveva
+    /// bisogno poteva morire prima di poter dire «non lo so» — cioè proprio la
+    /// cosa per cui esiste. Visto eseguendo il binario nel perimetro il
+    /// 01/09/2026: apriva `sessions.db` per ogni forma, e con il deposito
+    /// predefinito non scrivibile usciva 1 con un errore di SQLite invece di 3
+    /// con la frase giusta.
+    #[test]
+    fn the_census_answers_even_without_a_store() {
+        let refused = Census::Refused(Refusal {
+            tool: "ps".to_owned(),
+            reason: "Operation not permitted".to_owned(),
+        });
+        let report = act(&Request {
+            verb: "census",
+            options: &no_options(),
+            payload: &Payload::parse("{}").expect("payload vuoto"),
+            raw: "",
+            store: None,
+            census: &refused,
+            tty: "",
+            at: 1_000,
+        })
+        .expect("il censimento risponde");
+
+        assert_eq!(report.code, REFUSED);
+        assert!(report.message.contains("NON LO SO"), "{}", report.message);
     }
 
     /// L'elenco stampato e quello accettato sono lo stesso: una forma
@@ -735,54 +1225,6 @@ mod tests {
         let message = dispatch(&["sweep".to_owned()]).expect_err("una forma ignota è un errore");
         for form in FORMS {
             assert!(message.contains(form), "{message} non nomina «{form}»");
-        }
-    }
-
-    /// **CHI NON TOCCA IL DEPOSITO NON DEVE MORIRE PERCHÉ IL DEPOSITO NON SI
-    /// APRE.**
-    ///
-    /// `census` esiste per rispondere «non lo so» quando non gli è stato
-    /// permesso guardare la macchina — è la cura del `pgrep` che risponde vuoto
-    /// (guasto 12) e del `ps` negato in silenzio. Ma `dispatch` apriva
-    /// `sessions.db` **prima** di sapere chi lo stesse chiedendo: il comando che
-    /// esiste per dire «non lo so» falliva con uscita 1 **prima di poterlo
-    /// dire**, per un motivo che col censimento non c'entra niente. Chi legge
-    /// quell'uscita non distingue «il deposito non si apre» da «non ho potuto
-    /// guardare la macchina» da «non c'è nessun terminale»: tre fatti diversi,
-    /// un solo silenzio.
-    ///
-    /// **LA PROVA GIRA SU OGNI FORMA CHE NON DICHIARA DI VOLERE IL DEPOSITO**,
-    /// non solo su `census`: una forma aggiunta domani e lasciata fuori
-    /// dall'elenco viene provata qui senza che nessuno se ne ricordi.
-    ///
-    /// *Mutante eseguito*: aprire il deposito incondizionatamente in `dispatch`
-    /// — cioè il difetto originale. Questa prova torna rossa nominando la forma
-    /// e l'errore del file.
-    #[test]
-    fn a_form_that_never_reads_the_store_survives_a_store_that_will_not_open() {
-        let scratch = Scratch::new("senza-deposito");
-        // Una **cartella** dove ci si aspetta un file: SQLite non la apre, e il
-        // fallimento è dello stesso genere di quelli veri — permessi, disco
-        // pieno, un file di una versione più nuova — senza doverli fabbricare.
-        let impossible = scratch.directory.join("non-e-un-file");
-        std::fs::create_dir_all(&impossible).expect("la cartella di prova");
-
-        for form in FORMS.iter().filter(|form| !NEEDS_THE_STORE.contains(form)) {
-            let words: Vec<String> = vec![
-                (*form).to_owned(),
-                "--store".to_owned(),
-                impossible.display().to_string(),
-            ];
-            let report = dispatch(&words).unwrap_or_else(|error| {
-                panic!(
-                    "«session {form}» non legge il deposito, eppure è morto perché non \
-                     si apriva: {error}"
-                )
-            });
-            assert!(
-                !report.message.is_empty(),
-                "«session {form}» ha risposto senza dire niente"
-            );
         }
     }
 
