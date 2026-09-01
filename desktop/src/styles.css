@@ -4184,3 +4184,152 @@ button.is-primary {
   border: 1px solid var(--danger);
   border-radius: var(--radius);
 }
+
+/* ── the step, open ─────────────────────────────────────────────────────
+   The run's half of the inspector: what a step was asked, what went
+   through it, and what it is saying while it says it. Above the editor,
+   because what is happening explains what is written. */
+
+.steplive {
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.steplive__bar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The word beside the tint, never the tint alone: prohibition 5. */
+.steplive__state {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--state-waiting);
+}
+
+.steplive__state[data-outcome="open"] { color: var(--state-running) }
+.steplive__state[data-outcome="Went"] { color: var(--state-went) }
+.steplive__state[data-outcome="Broke"] { color: var(--state-broke) }
+.steplive__state[data-outcome="Capped"] { color: var(--state-capped) }
+
+/* Times and counters get compared down a column: tabular figures, per
+   prohibition 10. */
+.steplive__time,
+.steplive__spend {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.steplive__around {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.steplive__side {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.steplive__cards {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.steplive__card {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.steplive__card[data-on] {
+  color: var(--ink);
+  border-bottom-color: var(--focus);
+}
+
+.steplive__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.steplive__head {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.steplive__mandate {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* A step with nothing to show says so in words, rather than leaving an
+   empty box that reads as a value nobody measured. */
+.steplive__none {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.steplive__code {
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.steplive__said {
+  background: var(--ink-surface);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+}
+
+.steplive__line {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--on-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The word beside the tint: an error told apart from ordinary output by
+   colour alone is prohibition 5, and it is the line that matters most. */
+.steplive__line[data-stream="stderr"] { color: var(--on-ink-muted) }
+.steplive__line[data-stream="stderr"]::before {
+  content: "err ";
+  color: var(--on-ink-muted);
+}

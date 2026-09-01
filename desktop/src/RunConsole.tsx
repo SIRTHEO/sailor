@@ -214,6 +214,8 @@ interface StepPane {
    * guarda» mancava, ed era la metà che spiega l'altra.
    */
   input: unknown;
+  /** What came out, kept whole: the lines made from it are not the thing. */
+  output: unknown;
 }
 
 export function panesFromEvents(events: RunEvent[]): StepPane[] {
@@ -235,6 +237,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         // Il record del passo porta l'input, da cui si legge cosa esegue.
         action: readAction(payload),
         input: payload?.input ?? null,
+        output: null,
       });
     } else if (event.kind === "step_closed") {
       const pane = panes.get(event.step_id);
@@ -242,6 +245,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         pane.endedAt = event.at;
         pane.outcome = typeof payload?.outcome === "string" ? payload.outcome : null;
         pane.failure = typeof payload?.failure_class === "string" ? payload.failure_class : null;
+        pane.output = payload?.output ?? null;
       }
     }
   }
