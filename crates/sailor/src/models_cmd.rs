@@ -78,7 +78,7 @@ fn run_list(args: &[String]) -> i32 {
                 }
             }
             other => {
-                eprintln!("opzione sconosciuta: {other}");
+                eprintln!("unknown option: {other}");
                 print_usage();
                 return 2;
             }

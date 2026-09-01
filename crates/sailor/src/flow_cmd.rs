@@ -146,7 +146,7 @@ fn cost_of(flow: &str) -> Result<String, String> {
 fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> String {
     let tokens = &view.tokens;
     let mut report = format!(
-        "corsa {} — flusso {} — {}\npassi: {} ({} andati, {} rotti)\nchiamate: {}",
+        "run {} — flow {} — {}\nsteps: {} ({} went, {} broke)\ncalls: {}",
         view.run_id,
         view.entity,
         view.status,
@@ -172,7 +172,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // viene usato per decidere: questo manderebbe a intervenire nel posto
     // sbagliato con l'aria di una misura.
     if tokens.turns > 0 {
-        let _ = write!(report, " in {} turni", tokens.turns);
+        let _ = write!(report, " in {} turns", tokens.turns);
     }
     let _ = write!(
         report,
@@ -246,7 +246,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // Cosa c'è dentro quella casa non è affare di un rapporto sul consumo.
     let identities = ui::dashboard::identities_of(&view.calls);
     if !identities.is_empty() {
-        report.push_str("\nidentità:");
+        report.push_str("\nidentity:");
         for (identity, how_many) in identities {
             let word = if how_many == 1 {
                 "chiamata"
@@ -493,7 +493,7 @@ fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Opti
 /// `sailor flow cap <nome>`: il tetto che c'è, e cosa il deposito ha visto.
 fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
-    let mut report = format!("flusso: {} ({origin})", flow.id);
+    let mut report = format!("flow: {} ({origin})", flow.id);
     match flow.spend_cap_micros {
         None => report.push_str("\ncap: none — this flow may spend whatever the run needs"),
         Some(cap) => {
@@ -517,7 +517,7 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
 /// in una prova è una variabile d'ambiente globale al processo.
 fn what_the_ledger_saw(seen: &Observed) -> String {
     let mut said = format!(
-        "\nnel deposito: {} corse, di cui {} {} speso qualcosa di noto",
+        "\nin the store: {} runs, of which {} {} spent something known",
         seen.runs,
         seen.costed_runs,
         if seen.costed_runs == 1 { "ha" } else { "hanno" }
@@ -525,8 +525,7 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     if seen.calls_without_cost > 0 {
         let _ = write!(
             said,
-            "\n{} chiamate non hanno dichiarato un costo, e non entrano in nessuna \
-             delle cifre qui sopra",
+            "\n{} calls declared no cost, and enter none of the figures above",
             seen.calls_without_cost
         );
     }
@@ -534,13 +533,13 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     if seen.costed_runs < RUNS_BEFORE_SUGGESTING {
         let _ = write!(
             said,
-            "\nnessun suggerimento: servono almeno {RUNS_BEFORE_SUGGESTING} corse \
-             costate, e {}. Un numero calcolato su meno campioni è un dato \
-             inventato con la faccia di una misura, e chi lo riceve ci appoggia \
-             una decisione",
+            "\nno suggestion: it takes at least {RUNS_BEFORE_SUGGESTING} costed \
+             runs, and {}. A number worked out on fewer samples is a datum \
+             invented with the face of a measurement, and whoever receives it \
+             rests a decision on it",
             match seen.costed_runs {
                 0 => "there is none".to_owned(),
-                1 => "ce n'è una".to_owned(),
+                1 => "there is one".to_owned(),
                 many => format!("there are {many}"),
             }
         );
@@ -557,10 +556,10 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     let suggested = seen.worst_run_micros + seen.dearest_call_micros;
     let _ = write!(
         said,
-        "\nsuggerimento: {suggested} micro ({}) — la corsa più cara osservata \
-         ({}) più la chiamata più cara osservata ({}). Il secondo addendo non è \
-         un margine di sicurezza: è la grana con cui il tetto sa fermarsi, \
-         perché il controllo sta prima di aprire un fronte",
+        "\nsuggestion: {suggested} micro ({}) — the dearest run observed ({}) \
+         plus the dearest call observed ({}). The second term is not a safety \
+         margin: it is the grain at which the cap can stop, because the check \
+         comes before opening a front",
         in_units(suggested),
         in_units(seen.worst_run_micros),
         in_units(seen.dearest_call_micros)
@@ -608,7 +607,7 @@ fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, St
     flow.spend_cap_micros = wanted;
     flow::system::save_in(&source.dir, &flow)?;
     Ok(format!(
-        "flusso {name} ({}): tetto {} → {}; scritto in {}",
+        "flow {name} ({}): cap {} → {}; written in {}",
         source.origin,
         said_cap(before),
         said_cap(wanted),
@@ -813,7 +812,7 @@ fn weight_from(word: &str) -> Result<flow::Weight, String> {
 fn schedule_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
     Ok(format!(
-        "flusso: {} ({origin})\ninnesco: {}",
+        "flow: {} ({origin})\ntrigger: {}",
         flow.id,
         said_schedule(flow.schedule.as_ref())
     ))
@@ -890,7 +889,7 @@ fn set_schedule(
     let after = said_schedule(flow.schedule.as_ref());
     flow::system::save_in(&source.dir, &flow)?;
     Ok(format!(
-        "flusso {name} ({}): innesco\n  da: {before}\n  a:  {after}\nscritto in {}",
+        "flow {name} ({}): trigger\n  from: {before}\n  to:   {after}\nwritten in {}",
         source.origin,
         source.dir.display()
     ))
@@ -980,7 +979,7 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
 /// dice dove ha cercato è indistinguibile da un guasto.
 fn nothing_found(sources: &[FlowSource]) -> String {
     format!(
-        "nessun flusso trovato. Guardato in:\n  {}",
+        "no flow found. Looked in:\n  {}",
         sources
             .iter()
             .map(|source| format!("{}: {}", source.origin, source.dir.display()))
@@ -1137,7 +1136,7 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
         })
         .map_err(|error| format!("cannot reconcile run {run_id}: {error}"))?;
 
-    let mut report = format!("corsa {run_id} — flusso {}", flow.id);
+    let mut report = format!("run {run_id} — flow {}", flow.id);
     if !reconciled.still_running.is_empty() {
         let _ = write!(
             report,
@@ -1200,9 +1199,9 @@ fn waiting_report() -> String {
         .and_then(|ledger| ledger.waiting_runs().ok())
         .unwrap_or_default();
     if waiting.is_empty() {
-        return "nessuna corsa in attesa di qualcuno".to_owned();
+        return "no run is waiting for anybody".to_owned();
     }
-    let mut report = format!("{} corse aspettano qualcuno:", waiting.len());
+    let mut report = format!("{} runs are waiting for somebody:", waiting.len());
     for run in waiting {
         let _ = write!(
             report,
@@ -1259,10 +1258,10 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             due += 1;
             "DOVUTO"
         } else {
-            "non ancora"
+            "not yet"
         };
         let when = match last_run {
-            Some(seconds) => format!("ultima corsa {} minuti fa", (now - seconds) / 60),
+            Some(seconds) => format!("last run {} minutes ago", (now - seconds) / 60),
             None => "mai girato".to_owned(),
         };
         let _ = writeln!(report, "{}\t{verdict}\t{when}", flow.id);
@@ -1289,7 +1288,7 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
             Ok(flow) => {
                 let _ = writeln!(
                     report,
-                    "{}\t{} passi\t{origin}\t{}",
+                    "{}\t{} steps\t{origin}\t{}",
                     flow.id,
                     flow.graph.steps().len(),
                     flow.description
@@ -3740,7 +3739,7 @@ mod tests {
         }])
         .expect("elencare i flussi");
 
-        assert!(report.contains("prova\t1 passi\tdi prova"), "{report}");
+        assert!(report.contains("prova\t1 steps\tdi prova"), "{report}");
         assert!(
             report.contains("rotto\tdi prova\tnon caricabile:"),
             "{report}"
@@ -4384,7 +4383,7 @@ mod tests {
 
         let said = spending_report(&view, &a_small_price_list());
 
-        assert!(said.contains("identità:"), "{said}");
+        assert!(said.contains("identity:"), "{said}");
         assert!(
             said.contains("profile codex/lavoro — home /case/codex/lavoro — 2 chiamate"),
             "{said}"
@@ -4421,10 +4420,10 @@ mod tests {
 
         let said = what_the_ledger_saw(&two);
 
-        assert!(said.contains("nessun suggerimento"), "{said}");
-        // La riga del suggerimento comincia a capo: cercare «suggerimento: »
-        // senza l'a-capo troverebbe anche «nessun suggerimento: ».
-        assert!(!said.contains("\nsuggerimento: "), "{said}");
+        assert!(said.contains("no suggestion"), "{said}");
+        // The suggestion line starts on a new line: looking for «suggestion: »
+        // without the newline would also find «no suggestion: ».
+        assert!(!said.contains("\nsuggestion: "), "{said}");
         assert!(
             said.contains("there are 2"),
             "and it says what is there: {said}"
@@ -4446,8 +4445,8 @@ mod tests {
         let said = what_the_ledger_saw(&three);
 
         // Peggiore corsa 700, chiamata più cara 400: 1100.
-        assert!(said.contains("\nsuggerimento: 1100 micro"), "{said}");
-        assert!(!said.contains("nessun suggerimento"), "{said}");
+        assert!(said.contains("\nsuggestion: 1100 micro"), "{said}");
+        assert!(!said.contains("no suggestion"), "{said}");
     }
 
     /// **UNA CORSA CHE NON HA SPESO NON È UN CAMPIONE.**

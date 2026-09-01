@@ -48,7 +48,7 @@ pub fn run(args: &[String]) -> i32 {
     };
     let Some(selected) = target(&options.target_name) else {
         eprintln!(
-            "sailor release: bersaglio sconosciuto '{}'; bersagli disponibili: {}",
+            "sailor release: unknown target '{}'; the targets available are: {}",
             options.target_name,
             target_names()
         );
@@ -148,7 +148,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     // I crate stanno alla radice dell'albero dal trasloco del 27/08/2026: non
     // c'è più un sottoalbero da cui compilare.
     let cloned_rust = repository.clone();
-    println!("== compilo da quell'albero ==");
+    println!("== building from that tree ==");
     let build = Command::new("cargo")
         .current_dir(&cloned_rust)
         .env("CARGO_TARGET_DIR", &build_target)
@@ -387,11 +387,7 @@ fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
         Ok(output)
     } else {
         let detail = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
-            "git {} è fallito: {}",
-            args.join(" "),
-            detail.trim()
-        ))
+        Err(format!("git {} failed: {}", args.join(" "), detail.trim()))
     }
 }
 
