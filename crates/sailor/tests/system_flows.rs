@@ -208,7 +208,7 @@ fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
     );
     let report = answer["report"].as_str().expect("una risposta da leggere");
     assert!(
-        report.contains("flussi letti"),
+        report.contains("flows read in"),
         "la risposta deve essere leggibile da una persona: {report}"
     );
     // GLI STRUMENTI CHIESTI SONO UN INSIEME SOLO: uno strumento non può essere
@@ -534,7 +534,7 @@ fn a_tool_that_is_absent_is_not_a_tool_that_is_unknown() {
     assert_eq!(answer["missing"][0]["tool"], "docker");
     assert_eq!(answer["missing"][0]["note"], "si prende da docker.com");
     let report = answer["report"].as_str().expect("una risposta");
-    assert!(report.contains("MANCANO QUI"), "{report}");
+    assert!(report.contains("MISSING HERE"), "{report}");
     assert!(report.contains("si prende da docker.com"), "{report}");
 }
 
