@@ -14,7 +14,12 @@ use std::path::{Path, PathBuf};
 /// binary; this directory is for example templates, and none is written yet.
 /// Adding a name here is a decision about what the product hands out, so it is
 /// made once, in a place a reader can find.
-const TEMPLATES_THE_PRODUCT_HANDS_OUT: &[&str] = &[];
+const TEMPLATES_THE_PRODUCT_HANDS_OUT: &[&str] = &[
+    // The relay. It is a feature of the product, not somebody's workshop:
+    // `crates/relay` ships, its document ships, and this flow is what drives
+    // them. A person who downloads Sailor gets the relay or gets nothing.
+    "passa-il-testimone",
+];
 
 /// Where a flow that is not a template belongs: a person's own home, which has
 /// no remote and travels with nobody.
