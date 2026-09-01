@@ -215,11 +215,11 @@ impl Action for HandoffAction {
         let run_id = shared
             .get(flow::CURRENT_RUN)
             .and_then(Value::as_str)
-            .unwrap_or("<corsa ignota>");
+            .unwrap_or("<an unknown run>");
         let step_id = shared
             .get(flow::CURRENT_STEP)
             .and_then(Value::as_str)
-            .unwrap_or("<passo ignoto>");
+            .unwrap_or("<an unknown step>");
 
         // IL MANDATO SI VEDE MENTRE SUCCEDE, non a corsa finita: chi guarda
         // deve poterlo prendere in carico adesso.
@@ -227,7 +227,7 @@ impl Action for HandoffAction {
             live.chunk(
                 Pipe::Stdout,
                 format!(
-                    "\n── mandato consegnato a «{}» ──\n{}\n──\n",
+                    "\n── brief handed to «{}» ──\n{}\n──\n",
                     spec.holder, spec.mandate
                 )
                 .as_bytes(),
