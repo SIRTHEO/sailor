@@ -44,7 +44,13 @@ use std::path::{Path, PathBuf};
 /// contenesse darebbe errori che nessuno può correggere, e il primo che ne
 /// incontra uno lo zittisce insieme a tutti gli altri.
 const ITALIAN_WORDS: &[&str] = &[
-    "assente", "atteso", "attesa", "casa", "cassette", "ciclico", "cio", "conteggio", "coperto",
+    // `batteria`, `stile` e `finestra` sono entrate il 01/09/2026, aggiunte da
+    // chi le ha incontrate — è l'istruzione che questo elenco dà di sé stesso.
+    // Erano le chiavi dei lavori della CI. La quarta, `prove`, **non è entrata
+    // e non può entrare**: è una parola inglese valida, cioè esattamente la
+    // famiglia che il commento qui sopra esclude apposta.
+    "assente", "atteso", "attesa", "batteria", "casa", "cassette", "ciclico", "cio", "conteggio",
+    "coperto", "finestra", "stile",
     "corsa", "costata", "deposito", "elenco", "esempio", "esito", "fabbrica", "facoltativo",
     "famiglie", "flusso", "flussi", "guasto", "ignota", "lati", "letto", "listino", "lungo",
     "mai", "miei", "misurata", "motore", "nome", "nomi", "nuovo", "ondata", "parti", "passo",
@@ -271,6 +277,108 @@ fn every_source_file_is_named_in_english() {
     );
 }
 
+/// **ANCHE LE CHIAVI DEI LAVORI DELLA CI, E SI È VISTO PERCHÉ IL 01/09/2026.**
+///
+/// Le due prove qui sopra guardano `.rs`, `.ts`, `.tsx`, `.html`. Un file
+/// `.yml` non è codice per nessuna di loro, quindi
+/// `.github/workflows/la-batteria.yml` è nato con tre lavori chiamati `prove`,
+/// `stile` e `finestra` e **nessuno ha protestato**. Non è che la regola non
+/// c'era: è che nessuno la interrogava su quel tipo di file, e una regola che
+/// nessuno interroga lì, lì non diventa rossa mai. È la stessa forma per cui
+/// esiste la prova sui nomi dei file, un tipo di file più in là.
+///
+/// **IL LIMITE, DICHIARATO: `prove` NON È CATTURABILE.** La prima stesura di
+/// questa prova affermava che `prove` fosse già nell'elenco delle parole
+/// italiane. Non c'era, e non ci può stare: *prove* è una parola inglese
+/// valida, cioè la famiglia che quell'elenco esclude apposta perché
+/// darebbe accuse che nessuno può correggere. A dirlo è stata
+/// `the_check_can_still_see_a_name_it_should_reject`, cinque minuti dopo che
+/// l'affermazione era stata scritta — che è il motivo per cui quella prova
+/// esiste. Quindi qui si catturano `stile`, `finestra` e `batteria`, non
+/// tutto: un controllo che dichiara dove non arriva vale più di uno che
+/// lascia credere di arrivare dappertutto.
+///
+/// **PERCHÉ LE CHIAVI SÌ E I `name:` NO.** Il confine è quello di `AGENTS.md`:
+/// ciò che una macchina legge sta in inglese, ciò che una persona legge no. Le
+/// chiavi le leggono `needs:`, `jobs.<id>` nelle API e i filtri di `gh run` —
+/// sono identificatori quanto un campo di `struct`. I `name:` sono la frase
+/// che compare a chi guarda una corsa: sono messaggi, e i messaggi stanno in
+/// italiano finché quella riga di `AGENTS.md` dice così.
+#[test]
+fn every_workflow_job_key_is_in_english() {
+    let root = repository_root();
+    let workflows = root.join(".github/workflows");
+    let Ok(entries) = std::fs::read_dir(&workflows) else {
+        panic!("nessun workflow da controllare in {}", workflows.display());
+    };
+
+    let mut found: Vec<String> = Vec::new();
+    let mut looked_at = 0usize;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !matches!(path.extension().and_then(|e| e.to_str()), Some("yml" | "yaml")) {
+            continue;
+        }
+        looked_at += 1;
+        let text = std::fs::read_to_string(&path).expect("leggere il workflow");
+        for key in job_keys_of(&text) {
+            let italian = italian_in(&key.replace('-', "_"));
+            if italian.is_empty() {
+                continue;
+            }
+            found.push(format!(
+                "{}  lavoro «{key}» (in italiano: {})",
+                path.strip_prefix(&root).unwrap_or(&path).display(),
+                italian.join(", ")
+            ));
+        }
+    }
+
+    // Senza questa riga la prova resterebbe verde il giorno in cui la cartella
+    // cambia nome: guarderebbe zero file e non lo direbbe a nessuno.
+    assert!(looked_at > 0, "nessun file .yml letto: la prova non sta guardando niente");
+    assert!(
+        found.is_empty(),
+        "{} lavori con la chiave in italiano:\n{}",
+        found.len(),
+        found.join("\n")
+    );
+}
+
+/// Le chiavi di primo livello sotto `jobs:`, cioè le righe rientrate di due
+/// spazi che finiscono in `:` prima che cominci un'altra sezione a colonna
+/// zero. Non è un lettore di YAML e non vuole esserlo: legge la sola forma che
+/// i nostri workflow hanno, e se un giorno non basterà più il conto dei lavori
+/// scenderà a zero — che è il verso giusto in cui sbagliare, perché la riga
+/// `looked_at > 0` qui sopra si accorge del caso limite.
+fn job_keys_of(text: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    let mut inside = false;
+    for line in text.lines() {
+        if line.starts_with("jobs:") {
+            inside = true;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        // Una riga a colonna zero che non è vuota chiude la sezione.
+        if !line.starts_with(' ') && !line.trim().is_empty() {
+            break;
+        }
+        let Some(rest) = line.strip_prefix("  ") else {
+            continue;
+        };
+        if rest.starts_with(' ') || rest.starts_with('#') {
+            continue;
+        }
+        if let Some(name) = rest.strip_suffix(':') {
+            keys.push(name.trim().to_owned());
+        }
+    }
+    keys
+}
+
 /// La prova che misura questa prova.
 ///
 /// **CHI MISURA VA MISURATO.** Un controllo che cerca parole in un elenco può
@@ -309,6 +417,24 @@ fn the_check_can_still_see_a_name_it_should_reject() {
         code_part("    let x = 1; // qui il listino resta italiano"),
         "    let x = 1; ",
         "il commento si taglia via, o ogni riga di prosa diventerebbe un'accusa"
+    );
+    // E il lettore delle chiavi: deve prendere i lavori e **non** le righe che
+    // stanno dentro un lavoro, o `name`, `steps` e `run` diventerebbero lavori.
+    assert_eq!(
+        job_keys_of("name: x\n\njobs:\n  # un commento\n  stile:\n    name: il debito\n    steps:\n      - run: echo\n  desktop:\n    name: la finestra\n"),
+        vec!["stile", "desktop"],
+        "le chiavi dei lavori, e solo quelle"
+    );
+    assert!(
+        !italian_in("stile").is_empty(),
+        "«stile» è nell'elenco: se non lo fosse, il lavoro chiamato così passerebbe"
+    );
+    assert!(
+        italian_in("prove").is_empty(),
+        "**limite dichiarato, non difetto**: «prove» è una parola inglese valida \
+         e non può stare nell'elenco. Se un giorno ci finisse, questa riga \
+         diventerebbe rossa e chi la legge saprebbe di aver appena reso \
+         impossibile chiamare qualcosa `prove` in inglese"
     );
     assert!(!italian_in("write_listino").is_empty());
     assert!(
