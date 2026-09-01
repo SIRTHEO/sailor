@@ -19,24 +19,25 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 788;
+const LONG_BLOCKS_TODAY: usize = 522;
 
 /// How many comments cite a date. Same rule: downwards only.
-const DATED_COMMENTS_TODAY: usize = 322;
+const DATED_COMMENTS_TODAY: usize = 207;
 
 /// How many comment lines are still not in English.
 ///
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 13_127;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 8_143;
 
-/// How far a seed may drift above what the tree actually holds.
+/// How far a seed may drift above what the tree actually holds. **Zero.**
 ///
-/// **A SEED IS A NUMBER IN A FILE, AND A FILE MERGES.** A merge that takes the
-/// older side raises the ceiling with no conflict and no signal, and from then
-/// on reverted translations fit underneath it.
-const HOW_STALE_A_SEED_MAY_BE: usize = 20;
+/// **A SEED IS A NUMBER IN A FILE, AND A FILE MERGES.** A merge taking the older
+/// side raises the ceiling with no conflict and no signal. It was 20, an
+/// absolute number over three counters of different scale, and 20 does not tell
+/// whoever re-measured from whoever passed by two.
+const HOW_STALE_A_SEED_MAY_BE: usize = 0;
 
 /// Words no English sentence uses, which a sentence in this tree's other
 /// language cannot do without.
