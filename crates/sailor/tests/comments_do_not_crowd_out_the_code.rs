@@ -17,7 +17,7 @@ const MAX_BLOCK: usize = 6;
 
 /// Quanti blocchi sforano oggi. **Può solo scendere**: abbassarlo è la
 /// riparazione, alzarlo va discusso e si vede nel diff.
-const LONG_BLOCKS_TODAY: usize = 776;
+const LONG_BLOCKS_TODAY: usize = 775;
 
 /// Quanti commenti citano una data. Stessa regola: solo verso il basso.
 const DATED_COMMENTS_TODAY: usize = 320;
@@ -131,21 +131,39 @@ fn cites_a_date(line: &str) -> bool {
     })
 }
 
-/// **THE WAY ROUND THE CAP: SPLIT INSTEAD OF SHORTENING.** Two `///` groups
-/// with a blank line between them are one rustdoc — both attach to the same
-/// item — so twelve lines become two blocks of six and the cap is satisfied
-/// with nothing removed. Found by general-01 in `desktop/src`, where the same
-/// move went from 4 to 41 and orphans the first block outright, since in JSDoc
-/// only the last comment before a declaration documents it.
+/// **THE WAY ROUND THE CAP: SPLIT INSTEAD OF SHORTENING.** Two doc groups with
+/// a blank line between them are one doc comment — both attach to the same item
+/// — so twelve lines become two blocks of six and the cap is satisfied with
+/// nothing removed. Found by general-01 in `desktop/src`, where the same move
+/// went from 4 to 41 and orphans the first block outright, since in JSDoc only
+/// the last comment before a declaration documents it.
+///
+/// **THE THREE FAMILIES, AND WHY NOT ONE.** `///` documents the item below,
+/// `//!` the module around it, `/** */` both in TypeScript. Each is closed
+/// against itself and not against the others: a `///` followed by a `//!` is
+/// two comments about two different things, and joining them would count a
+/// block nobody wrote. Measured on this tree: closing `///` alone left the
+/// count at 775 for a split in `desktop/src` and for one in a `//!` header —
+/// the way round stayed open in the very place it was found.
+///
+/// **AND `*/` ALONE ON ITS LINE, NOT `*/` ANYWHERE.** A one-line banner —
+/// `/* ═══ 3. THE INVITATIONS ═══ */` — also ends with `*/`, and joining it to
+/// the doc comment underneath invented two long blocks in
+/// `unhappystates.test.tsx` that nobody had written.
 fn splits_one_doc_comment(lines: &[&str], at: usize) -> bool {
     if !lines[at].trim().is_empty() || at == 0 {
         return false;
     }
-    if !lines[at - 1].trim_start().starts_with("///") {
+    let resumes = next_line_with_something_on_it(lines, at);
+    if resumes >= lines.len() {
         return false;
     }
-    let resumes = next_line_with_something_on_it(lines, at);
-    resumes < lines.len() && lines[resumes].trim_start().starts_with("///")
+    let ends = lines[at - 1].trim();
+    let opens = lines[resumes].trim_start();
+    ["///", "//!"]
+        .iter()
+        .any(|mark| ends.starts_with(mark) && opens.starts_with(mark))
+        || (ends == "*/" && opens.starts_with("/**"))
 }
 
 fn next_line_with_something_on_it(lines: &[&str], from: usize) -> usize {
@@ -317,6 +335,36 @@ fn the_check_can_still_see_what_it_counts() {
     assert!(
         !splits_one_doc_comment(&real_end, 1),
         "una riga vuota seguita da codice chiude il blocco davvero"
+    );
+    // Le altre due famiglie: il cartiglio di modulo e il JSDoc della finestra.
+    // Chiudere solo `///` lasciava la via aperta proprio dove era stata trovata.
+    let module = ["//! una", "//! due", "", "//! tre", "use std::fmt;"];
+    assert!(
+        splits_one_doc_comment(&module, 2),
+        "due gruppi //! sono un cartiglio solo: il modulo che documentano è lo stesso"
+    );
+    let jsdoc = ["/**", " * una", " */", "", "/**", " * due", " */", "export const x = 1;"];
+    assert!(
+        splits_one_doc_comment(&jsdoc, 3),
+        "in JSDoc solo l'ultimo blocco documenta: spezzare non accorcia, orfana"
+    );
+    // E le negative, o la regola conta blocchi che nessuno ha scritto.
+    let mixed = ["/// una", "", "//! due", "fn qualcosa() {}"];
+    assert!(
+        !splits_one_doc_comment(&mixed, 1),
+        "/// documenta ciò che segue, //! il modulo intorno: sono due commenti"
+    );
+    let banner = [
+        "/* ═══ 3. LE SEZIONI ═══ */",
+        "",
+        "/**",
+        " * una",
+        " */",
+        "const y = 2;",
+    ];
+    assert!(
+        !splits_one_doc_comment(&banner, 1),
+        "un cartiglio di una riga finisce con */ ma non è un blocco spezzato"
     );
     assert!(counts.long_blocks > 0, "zero blocchi lunghi: il contatore non sta guardando");
     assert!(counts.dated > 0, "zero date: il contatore non sta guardando");
