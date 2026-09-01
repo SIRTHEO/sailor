@@ -6,8 +6,8 @@ rust-version = "1.89"
 
 [dependencies]
 serde_json.workspace = true
-# `regex` per la forma `text` del consumo dichiarato: un motore che dice i
-# propri token in chiaro invece che in JSON si legge con un'espressione scritta
-# nel descrittore, non con un ramo di codice per quel motore. Non aggiunge
-# niente alla compilazione del workspace — `inventory` la tira gia' dentro.
+# `regex` serves the `text` shape of declared consumption: an engine that
+# states its own tokens in plain text instead of JSON is read with an
+# expression written in the descriptor, not with a code branch for that engine.
+# It adds nothing to the workspace build — `inventory` already pulls it in.
 regex.workspace = true

@@ -493,7 +493,7 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
         Some(cap) => {
             let _ = write!(
                 report,
-                "\ntetto: {cap} micro ({} di costo equivalente)",
+                "\ntetto: {cap} micro ({} of equivalent cost)",
                 in_units(cap)
             );
             report.push_str(WHAT_THE_CAP_DOES_NOT_PROMISE);
@@ -1473,7 +1473,7 @@ fn check_report(
         Some(cap) => {
             let _ = write!(
                 report,
-                "\ntetto di spesa: {cap} micro ({} di costo equivalente){WHAT_THE_CAP_DOES_NOT_PROMISE}",
+                "\ntetto di spesa: {cap} micro ({} of equivalent cost){WHAT_THE_CAP_DOES_NOT_PROMISE}",
                 in_units(cap)
             );
         }
@@ -4351,11 +4351,11 @@ mod tests {
 
         assert!(said.contains("identità:"), "{said}");
         assert!(
-            said.contains("profilo codex/lavoro — casa /case/codex/lavoro — 2 chiamate"),
+            said.contains("profile codex/lavoro — home /case/codex/lavoro — 2 chiamate"),
             "{said}"
         );
         assert!(
-            said.contains("casa scelta dal passo (codex) — casa /una/casa/scritta/nel/passo — 1 chiamata"),
+            said.contains("home chosen by the step (codex) — home /una/casa/scritta/nel/passo — 1 chiamata"),
             "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
         );
     }
@@ -6180,7 +6180,7 @@ mod tests {
     /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
     /// rapporto parziale, chi legge ha in mano un numero che non è il totale.
     fn bare_total(micros: i64) -> String {
-        format!("costo equivalente: {:.4}", micros as f64 / 1_000_000.0)
+        format!("equivalent cost: {:.4}", micros as f64 / 1_000_000.0)
     }
 
     /// **UN TOTALE CHE CONTIENE UN'INCOGNITA NON È UN TOTALE.**
@@ -6205,11 +6205,11 @@ mod tests {
             "la cifra secca non deve comparire: si legge come il totale vero.\n{report}"
         );
         assert!(
-            report.contains("almeno"),
+            report.contains("at least"),
             "il numero va letto come un pavimento, non come una somma.\n{report}"
         );
         assert!(
-            report.contains("3 chiamate su 4"),
+            report.contains("3 calls out of 4"),
             "quanto manca si dice accanto alla cifra, non in fondo.\n{report}"
         );
     }
@@ -6229,7 +6229,7 @@ mod tests {
             "tutto misurato: la somma è la somma.\n{report}"
         );
         assert!(
-            !report.contains("almeno"),
+            !report.contains("at least"),
             "niente pavimenti dove non manca niente.\n{report}"
         );
     }
@@ -6242,7 +6242,7 @@ mod tests {
         let report = report_for(&[a_call_named("consegnata", None)]);
 
         assert!(
-            report.contains("sconosciuto"),
+            report.contains("unknown"),
             "senza nemmeno una misura non c'è un pavimento da dichiarare.\n{report}"
         );
         assert!(

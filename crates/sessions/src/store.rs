@@ -1,43 +1,37 @@
-//! Dove si conserva chi si è presentato.
+//! Where whoever announced themselves is kept.
 //!
-//! **UN FILE SUO, ACCANTO AL DEPOSITO E NON DENTRO.** Le sessioni di terminale
-//! non sono le corse dei flussi: `state.db` ha la sua `user_version`, che sale
-//! quando cambiano le proiezioni delle corse, e infilare qui dentro un'altra
-//! ragione di salire vorrebbe dire che due cantieri paralleli scelgono ognuno
-//! «la prossima» — la stessa. Il deposito di chi arriva secondo si
-//! dichiarerebbe «versione non supportata» su una macchina dove nessuno ha
-//! cambiato niente, e nessun controllo lo vedrebbe. Qui la versione è nostra.
-//!
-//! **DUE TAVOLE, E LA SECONDA NON SI RISCRIVE MAI.** `terminals` è lo stato di
-//! adesso, una riga per tty; `terminal_events` è quello che è successo, in
-//! coda. La prima si può correggere, la seconda no: è da lì che si ricostruisce
-//! quali sessioni si sono succedute sullo stesso terminale.
-//!
-//! **LO STACCO STA SUL TTY.** `detached_at` vive sulla riga del terminale e
-//! **nessuna scrittura di apertura lo tocca**: staccare una finestra la stacca
-//! anche per chi ci aprirà una sessione domani. È quello che una persona
-//! intende quando dice «lascia stare questa finestra» — non «lascia stare
-//! questo processo».
+//! **ITS OWN FILE, BESIDE THE LEDGER AND NOT INSIDE IT.** `state.db` has its
+//! own `user_version`, which rises when the run projections change, and putting
+//! a second reason to rise into it would have two parallel work-streams each
+//! choose "the next one" — the same one.
+
+//! The store of whoever arrives second would then declare itself an unsupported
+//! version on a machine where nobody changed anything, **and no check would see
+//! it**. Here the version is ours.
+
+//! **THE DETACH SITS ON THE TTY.** `detached_at` lives on the terminal's row
+//! and **no opening write touches it**: detaching a window detaches it for
+//! whoever opens a session there tomorrow. That is what a person means by
+//! "leave this window alone" — not "leave this process alone".
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-/// Il file, accanto a quello del deposito.
+/// The file, beside the ledger's own.
 pub const SESSIONS_FILE: &str = "sessions.db";
 
-/// La forma che questo codice si aspetta, **indipendente da quella delle
-/// proiezioni del deposito**. Va alzata insieme alle colonne: il guasto 24 è
-/// nato da una costante rimasta indietro rispetto alla migrazione che la
-/// doveva far scattare.
+/// The shape this code expects, **independent of the ledger's projection
+/// version**. Raise it together with the columns: fault 24 came from a constant
+/// left behind by the migration that should have moved it.
 const SESSIONS_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Debug)]
 pub enum SessionError {
     Sqlite(rusqlite::Error),
-    /// Il file è stato scritto da una versione che non conosciamo. Non si
-    /// ripara e non si aggira: si dichiara.
+    /// The file was written by a version we do not know. It is not repaired and
+    /// not worked around: it is declared.
     UnsupportedSchema(i64),
     NoDirectory(String),
 }
@@ -48,8 +42,8 @@ impl fmt::Display for SessionError {
             Self::Sqlite(error) => write!(formatter, "sqlite: {error}"),
             Self::UnsupportedSchema(version) => write!(
                 formatter,
-                "unsupported sessions schema version {version}: questo file lo ha scritto \
-                 una versione più nuova di sessions.db"
+                "unsupported sessions schema version {version}: this file was written \
+                 by a newer version of sessions.db"
             ),
             Self::NoDirectory(reason) => write!(formatter, "{reason}"),
         }
@@ -64,31 +58,32 @@ impl From<rusqlite::Error> for SessionError {
     }
 }
 
-/// L'ancora del tracciamento, e l'unica cosa che identifica un terminale:
-/// **il tty, l'albero e il capostipite**. Nessun prodotto.
+/// The tracking anchor, and the only thing that identifies a terminal: **the
+/// tty, the worktree and the ancestor**. No product.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Anchor {
-    /// L'oggetto del kernel. È già il nome neutro che il sistema dà a «un
-    /// terminale», ed è la chiave: due finestre diverse non lo condividono.
+    /// The kernel object. It is already the neutral name the system gives a
+    /// terminal, and it is the key: two windows never share it.
     pub tty: String,
-    /// L'albero di lavoro in cui si trova chi si è presentato.
+    /// The worktree whoever announced themselves is working in.
     pub worktree: String,
-    /// Chi ha disegnato la finestra. **Solo etichetta**: si stampa e si
-    /// registra, nessuna decisione la legge. `None` è «non lo sappiamo».
+    /// Who drew the window. **Label only**: printed and recorded, read by no
+    /// decision. `None` means "we do not know".
     pub ancestor: Option<String>,
 }
 
-/// Chi si presenta, con quello che ha.
+/// Whoever announces themselves, with what they have.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Arrival {
     pub anchor: Anchor,
-    /// L'identificativo che l'agente si porta dietro, quando ne ha uno.
+    /// The id the agent carries with it, when it has one.
     pub session_id: Option<String>,
     pub transcript_path: Option<String>,
     pub at: i64,
 }
 
-/// Una riga del terminale, com'è adesso.
+/// A terminal's row, as it stands now. This one can be corrected; the event
+/// queue behind it cannot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalRow {
     pub tty: String,
@@ -97,11 +92,11 @@ pub struct TerminalRow {
     pub session_id: Option<String>,
     pub transcript_path: Option<String>,
     pub opened_at: i64,
-    /// `None` = c'è ancora una sessione aperta su questo terminale. Può restare
-    /// `None` per sempre: un terminale ucciso non chiude niente, e questo è un
-    /// fatto da mostrare, non da nascondere.
+    /// `None` = a session is still open on this terminal. It can stay `None`
+    /// forever: a killed terminal closes nothing, and that is a fact to show,
+    /// not to hide.
     pub closed_at: Option<i64>,
-    /// `None` = attaccato. Sopravvive a ogni apertura successiva.
+    /// `None` = attached. Survives every later opening.
     pub detached_at: Option<i64>,
 }
 
@@ -115,20 +110,21 @@ impl TerminalRow {
     }
 }
 
-/// Un fatto accaduto su un terminale, in coda e mai riscritto.
+/// Something that happened on a terminal, appended and never rewritten. This is
+/// the queue the succession of sessions on one tty is reconstructed from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalEvent {
     pub tty: String,
     pub session_id: Option<String>,
     pub worktree: Option<String>,
     pub ancestor: Option<String>,
-    /// Come si chiama il fatto. Arriva dal payload (`hook_event_name`) quando
-    /// c'è, altrimenti lo mette chi lo registra.
+    /// What the fact is called. Comes from the payload (`hook_event_name`) when
+    /// there is one, otherwise whoever records it supplies it.
     pub name: String,
     pub transcript_path: Option<String>,
     pub occurred_at: i64,
-    /// Il payload come è arrivato, per non perdere quello che oggi non
-    /// leggiamo.
+    /// The payload as it arrived, so that what we do not read today is not
+    /// lost.
     pub payload: Option<String>,
 }
 
@@ -138,26 +134,27 @@ pub struct Sessions {
 }
 
 impl Sessions {
-    /// Dove sta il file su questa macchina: **accanto al deposito**, nella
-    /// cartella che `ledger::default_directory()` restituisce. La regola su
-    /// dov'è la casa non si ricopia — è il guasto 19.
+    /// Where the file lives on this machine: **beside the ledger**, in the
+    /// directory `ledger::default_directory()` returns. That rule is never
+    /// copied out: copying it is fault 19 — the home written down in two
+    /// places, with neither of the two declaring itself the wrong one.
     pub fn default_path() -> Result<PathBuf, SessionError> {
         ledger::default_directory()
             .map(|directory| directory.join(SESSIONS_FILE))
             .ok_or_else(|| {
                 SessionError::NoDirectory(
-                    "non so dove tenere le sessioni: né SAILOR_LEDGER né HOME sono dichiarate"
+                    "nowhere to keep the sessions: neither SAILOR_LEDGER nor HOME is set"
                         .to_owned(),
                 )
             })
     }
 
-    /// Apre il file, creandolo se non c'è.
+    /// Opens the file, creating it if it is not there.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
-                SessionError::NoDirectory(format!("creare {}: {error}", parent.display()))
+                SessionError::NoDirectory(format!("creating {}: {error}", parent.display()))
             })?;
         }
         let connection = Connection::open(&path)?;
@@ -204,20 +201,20 @@ impl Sessions {
         &self.path
     }
 
-    /// La versione che questo file dichiara. Serve alle prove per tenere ferma
-    /// l'indipendenza da quella delle proiezioni del deposito.
+    /// The version this file declares. The tests use it to hold the
+    /// independence from the ledger's projection version.
     pub fn schema_version(&self) -> Result<i64, SessionError> {
         Ok(self
             .connection
             .pragma_query_value(None, "user_version", |row| row.get(0))?)
     }
 
-    /// Qualcuno apre una sessione su un terminale.
+    /// Someone opens a session on a terminal.
     ///
-    /// **`detached_at` NON COMPARE FRA LE COLONNE AGGIORNATE**, ed è il punto:
-    /// una finestra staccata resta staccata anche per l'agente che ci arriva
-    /// dopo. Se questa riga cambiasse, lo stacco durerebbe quanto una sessione,
-    /// che è esattamente ciò che nessuno intende dicendolo.
+    /// **`detached_at` IS NOT AMONG THE UPDATED COLUMNS**, and that is the
+    /// point: a detached window stays detached for the agent that arrives next.
+    /// If this statement touched it a detach would last one session — "leave
+    /// this process alone", where what was asked is "leave this window alone".
     pub fn open_terminal(&self, arrival: &Arrival) -> Result<(), SessionError> {
         self.connection.execute(
             "INSERT INTO terminals
@@ -245,11 +242,11 @@ impl Sessions {
         Ok(())
     }
 
-    /// Un evento arriva da un terminale di cui nessuno ha annunciato
-    /// l'apertura: la riga si crea lo stesso, con quello che si sa.
+    /// An event arrives from a terminal whose opening nobody announced: the row
+    /// is created anyway, with what is known.
     ///
-    /// Non tocca `closed_at`: un evento non riapre niente, e non tocca
-    /// `detached_at` per la ragione di sopra.
+    /// It touches neither `closed_at` — an event reopens nothing — nor
+    /// `detached_at`, for the reason above.
     pub fn remember_terminal(&self, arrival: &Arrival) -> Result<(), SessionError> {
         self.connection.execute(
             "INSERT INTO terminals
@@ -291,8 +288,8 @@ impl Sessions {
         Ok(())
     }
 
-    /// Chiude la riga aperta su un tty. Torna `false` se non ce n'era una: una
-    /// chiusura che non chiude niente si dice, non si finge.
+    /// Closes the open row on a tty. Returns `false` when there was none: a
+    /// close that closed nothing is said out loud, not faked.
     pub fn close_terminal(&self, tty: &str, at: i64) -> Result<bool, SessionError> {
         let changed = self.connection.execute(
             "UPDATE terminals SET closed_at = ?2 WHERE tty = ?1 AND closed_at IS NULL",
@@ -301,9 +298,9 @@ impl Sessions {
         Ok(changed > 0)
     }
 
-    /// Stacca un terminale. Se non lo conoscevamo, lo si registra staccato: uno
-    /// stacco che si perde perché nessuno si era ancora presentato è uno stacco
-    /// che non ha fatto niente.
+    /// Detaches a terminal. If we did not know it, it is recorded detached: a
+    /// detach lost because nobody had announced themselves yet is a detach that
+    /// did nothing.
     pub fn detach(&self, anchor: &Anchor, at: i64) -> Result<(), SessionError> {
         self.connection.execute(
             "INSERT INTO terminals
@@ -318,7 +315,7 @@ impl Sessions {
         Ok(())
     }
 
-    /// Riattacca. Torna `false` se quel tty non era staccato.
+    /// Reattaches. Returns `false` when that tty was not detached.
     pub fn attach(&self, tty: &str) -> Result<bool, SessionError> {
         let changed = self.connection.execute(
             "UPDATE terminals SET detached_at = NULL WHERE tty = ?1 AND detached_at IS NOT NULL",
@@ -352,7 +349,7 @@ impl Sessions {
         Ok(rows)
     }
 
-    /// Gli eventi di un terminale, nell'ordine in cui sono arrivati.
+    /// A terminal's events, in the order they arrived.
     pub fn events_on(&self, tty: &str) -> Result<Vec<TerminalEvent>, SessionError> {
         let mut statement = self.connection.prepare(
             "SELECT tty, session_id, worktree, ancestor, name, transcript_path, occurred_at,
@@ -365,9 +362,9 @@ impl Sessions {
         Ok(rows)
     }
 
-    /// Quali sessioni si sono succedute su un terminale, nell'ordine in cui si
-    /// sono viste. La riga di `terminals` porta solo l'ultima: chi vuole la
-    /// successione la chiede alla coda, che non si riscrive.
+    /// Which sessions followed one another on a terminal, in the order they
+    /// were seen. The `terminals` row carries only the last: the succession is
+    /// asked of the queue, which is never rewritten.
     pub fn sessions_on(&self, tty: &str) -> Result<Vec<String>, SessionError> {
         let mut statement = self.connection.prepare(
             "SELECT session_id FROM terminal_events
