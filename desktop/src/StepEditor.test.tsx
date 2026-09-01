@@ -16,32 +16,21 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { StepEditor } from "./StepEditor";
 import { joinToolParams, splitToolParams } from "./tools";
+import { readRealFlows, shippedFlowsMissingFrom } from "./realflows";
 import type { FlowFile, Step } from "./flow";
 
 afterEach(cleanup);
 
 /**
- * The real flows, read through the bundler as `ports.test.tsx` does, and from
- * **both places they live**: `flows/` in this project, and `smista-il-lavoro`
- * inside the binary (`crates/flow/system/`), because the routing rules shipped
- * with the product name it. The panel rewrites them all alike, so this sees all.
+ * The real flows, read through the one reader `realflows.ts` owns — from both
+ * places they live, `flows/` in this project and the ones shipped inside the
+ * binary. The panel rewrites them all alike, so this sees all of them.
  */
 function realFlows(): Array<{ path: string; flow: FlowFile }> {
-  const files = {
-    ...(import.meta.glob("../../flows/*.flow.json", {
-      eager: true,
-      query: "?raw",
-      import: "default",
-    }) as Record<string, string>),
-    ...(import.meta.glob("../../crates/flow/system/*.flow.json", {
-      eager: true,
-      query: "?raw",
-      import: "default",
-    }) as Record<string, string>),
-  } as Record<string, string>;
-  return Object.keys(files)
-    .sort()
-    .map((path) => ({ path, flow: JSON.parse(files[path]) as FlowFile }));
+  return readRealFlows().map(({ path, source }) => ({
+    path,
+    flow: JSON.parse(source) as FlowFile,
+  }));
 }
 
 /** The steps of the real flows that declare an engine chain, with their file. */
@@ -90,11 +79,16 @@ function throughThePanel(step: Step, newModel: string): Record<string, unknown> 
 describe("the panel rewrites a step without losing what it cannot read", () => {
   const chained = stepsWithAChain();
 
-  test("the real flows with a chain really load, and there are 20", () => {
+  test("the real flows with a chain really load, and the shipped ones are among them", () => {
     // Without this, everything else would run on zero steps — the quietest way
-    // to be green for having looked at nothing. Across `flows/` there are 25
-    // `external_engine` steps: 20 with a chain, 5 with a single string.
-    expect(chained.length).toBe(20);
+    // to be green for having looked at nothing. A count was the wrong guard:
+    // `toBe(20)` described a `flows/` directory that moved out of the repo, so
+    // the day the premise died the test called it a defect. Named instead: the
+    // set that ships inside the binary. Today 4 `external_engine` steps, 2 with
+    // a chain and 2 with a single string.
+    const paths = realFlows().map(({ path }) => path);
+    expect(shippedFlowsMissingFrom(paths), `read: ${paths.join(", ")}`).toEqual([]);
+    expect(chained.length).toBeGreaterThanOrEqual(2);
   });
 
   test("ONE PASS THROUGH THE PANEL DOES NOT ERASE THE CHAIN FROM THE FILE", () => {
