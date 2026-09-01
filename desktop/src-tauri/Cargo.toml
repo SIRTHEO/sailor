@@ -56,6 +56,19 @@ trigger = { path = "../../crates/trigger" }
 # file invece di aspettare una versione nuova del programma.
 toolbox = { path = "../../crates/toolbox" }
 
+# Il motore dei terminali. La finestra non ne contiene nemmeno una riga: apre,
+# scrive, ridimensiona e chiude passando di qui, e riceve l'uscita mentre esce.
+# È il crate che si prova con `cargo test -p terminal`, cioè senza aprire
+# niente — ed è il motivo per cui vive fuori da questa cartella.
+terminal = { path = "../../crates/terminal" }
+
+# Per portare alla finestra i byte che escono da uno pseudo-terminale. Non è una
+# dipendenza nuova per questo albero: `base64 0.22.1` è già in `Cargo.lock`,
+# tirata da Tauri, quindi dichiararla qui non scarica e non compila niente in
+# più. L'alternativa era scriversi un codificatore in casa: cinquanta righe di
+# uno standard, con l'unico guadagno di non nominarlo.
+base64 = "0.22"
+
 # Per dire, dentro la finestra, cosa è installato su questa macchina:
 # competenze, agenti, comandi, regole, ganci. Le radici da guardare stanno nel
 # crate e non nei chiamanti, perché la riga di comando e la finestra dicano lo

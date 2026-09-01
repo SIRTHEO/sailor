@@ -30,6 +30,7 @@ import { Now } from "./Now";
 import { History } from "./History";
 import { Installed } from "./Installed";
 import { Manual } from "./Manual";
+import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
 import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
@@ -92,7 +93,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * stasera per rispondere doveva andarsela a cercare. La tela non sparisce:
  * diventa il posto dove si va per guardare dentro.
  */
-type Place = "now" | "history" | "flows" | "installed" | "manual";
+type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals";
 
 /**
  * Un flusso in modifica: quello che si vede e quello che è già sul disco.
@@ -1048,10 +1049,16 @@ export default function App() {
           l'unico documento della ricognizione che nomina un criterio invece di
           descrivere una disposizione.
 
-          Quelli che mancano — spazi, profili, terminali, server MCP — si
-          aggiungono quando esiste il motore che li risponde, non prima: una
-          voce che apre una schermata vuota è una promessa non mantenuta a ogni
-          clic. */}
+          Quelli che mancano — spazi, profili, server MCP — si aggiungono
+          quando esiste il motore che li risponde, non prima: una voce che apre
+          una schermata vuota è una promessa non mantenuta a ogni clic.
+
+          «Terminali» stava in quell'elenco fino al 01/09/2026 e adesso è una
+          voce, e la differenza non è che il motore risponda — il ponte nasce in
+          un altro cantiere mentre questa riga si scrive. È che quella schermata
+          **non si apre vuota**: senza motore scrive quale domanda non ha potuto
+          fare, ed è la distinzione fra «non c'è niente» e «non posso vedere» che
+          la promessa non mantenuta faceva sparire. */}
       <nav className="places">
         <button
           type="button"
@@ -1060,6 +1067,14 @@ export default function App() {
           onClick={() => setPlace("now")}
         >
           Adesso
+        </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "terminals" || undefined}
+          onClick={() => setPlace("terminals")}
+        >
+          Terminali
         </button>
         <button
           type="button"
@@ -1128,6 +1143,7 @@ export default function App() {
       {place === "history" && <History native={NATIVE} />}
       {place === "installed" && <Installed native={NATIVE} />}
       {place === "manual" && <Manual native={NATIVE} />}
+      {place === "terminals" && <Terminals native={NATIVE} />}
       <div className="body" hidden={place !== "flows"}>
         {/* LA COLONNA HA UN MESTIERE SOLO: SCEGLIERE COSA GUARDARE. La cassetta
             dei passi se n'è andata dentro la tela, dove si compone. Quello che

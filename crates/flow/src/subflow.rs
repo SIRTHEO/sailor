@@ -1,69 +1,8 @@
-//! Il passo che esegue un altro flusso.
-//!
-//! **PERCHÉ ESISTE.** Decisione di Theo del 29/08/2026, «I flussi si compongono,
-//! non si fondono»: ricerca, smistamento, sviluppo e interrogazione del codice
-//! sono le fasi di un ciclo unico, ma restano flussi separati che si chiamano
-//! fra loro — perché un flusso di dieci passi che fa tutto non si può usare a
-//! metà. Da quella decisione discende questo passo, e fino al 31/08/2026 non
-//! esisteva: la finestra offriva il nodo `subflow` da sempre e il motore non
-//! sapeva eseguirlo, cioè la cassetta dei passi prometteva una cosa che nessuno
-//! poteva far girare.
-//!
-//! **LE CINQUE DECISIONI CHE QUESTO FILE PRENDE**, e che vincolano chi verrà.
-//!
-//! 1. **Come si trova il flusso.** Per nome, dalle stesse sorgenti e con la
-//!    stessa precedenza di `sailor flow run` — cioè [`crate::system::sources`],
-//!    dove a parità di nome vince la più specifica: *di sistema* < *tuoi* <
-//!    *del progetto*. Non c'è una seconda regola di ricerca, e non deve
-//!    nascerne una: due macchine che eseguono flussi diversi con lo stesso nome
-//!    senza dirlo sono il difetto che la precedenza esiste per evitare.
-//!    L'origine che ha vinto finisce **nell'uscita del passo**, così chi rilegge
-//!    una corsa sa quale dei tre file ha girato.
-//! 2. **La ricorsione si ferma in due punti.** Prima di eseguire, il passo
-//!    percorre le chiamate dichiarate nei `with` degli altri flussi
-//!    ([`call_cycle`]): un anello — anche fra file diversi, che è il caso che
-//!    il controllo dei cicli del grafo non può vedere — si scopre **prima** di
-//!    aprire la corsa figlia, quindi prima di spendere. Poi, mentre si esegue,
-//!    la catena viaggia nello stato condiviso sotto [`CALL_CHAIN`] e vale da
-//!    rete di sicurezza per ciò che il primo controllo non vede: un nome deciso
-//!    a tempo d'esecuzione, o un file cambiato mentre la corsa girava. In tutti
-//!    e due i casi l'errore **nomina la catena**, non dice soltanto «ciclo».
-//!    C'è anche un tetto di profondità, [`MAX_DEPTH`]: senza, due flussi che si
-//!    chiamano per errore ma con nomi sempre nuovi girerebbero finché la pila
-//!    non finisce.
-//! 3. **Il figlio vede solo ciò che il passo dichiara.** I `root_inputs` del
-//!    flusso interno sono i suoi (quelli scritti nel suo file), sovrascritti
-//!    chiave per chiave da `inputs` del passo. Lo stato condiviso del padre
-//!    **non** viene ereditato: il figlio parte con la sola catena delle
-//!    chiamate. È il vincolo permanente «un'ottimizzazione che rende opaco come
-//!    i passi si passano le informazioni è peggio del costo che risparmia» —
-//!    un figlio che erede in silenzio renderebbe impossibile dire cosa è
-//!    entrato dove. Per la stessa ragione i **gate** non si ereditano: sono
-//!    autorizzazioni, e un'autorizzazione che passa di flusso in flusso senza
-//!    che nessuno la riscriva non è più un'autorizzazione.
-//! 4. **La corsa figlia è una corsa, non un passo.** Ha una riga sua nel
-//!    deposito, con `parent_run_id` che punta alla corsa del padre e
-//!    `started_by` che nomina il passo che l'ha chiamata; il passo del padre,
-//!    dal canto suo, porta nella propria uscita il `run_id` del figlio. Si
-//!    risale nei due versi. Un lavoro che sparisce dentro un altro è
-//!    esattamente l'opacità che questo prodotto esiste per togliere. La
-//!    conseguenza da conoscere: `sailor flow cost` somma **per corsa**, quindi
-//!    il costo del figlio sta sulla riga del figlio e non è contato due volte.
-//! 5. **Il tetto più stretto vince.** Il figlio riceve il minimo fra il proprio
-//!    `spend_cap_micros` e quanto resta al padre sotto il suo. Un tetto che un
-//!    sotto-flusso può scavalcare non è un tetto: basterebbe spostare la spesa
-//!    dentro un flusso senza tetto per annullare quello di chi chiama. Chi non
-//!    dichiara niente eredita il residuo del padre; se nessuno dei due dichiara
-//!    niente, non c'è tetto — come è sempre stato.
-//!
-//! **CIÒ CHE IL TETTO NON PROMETTE ANCORA, E VA DETTO.** La spesa del figlio è
-//! scritta sotto il `run_id` del figlio, e il deposito somma per corsa: il
-//! residuo del padre **non cala** per quello che i suoi figli hanno speso.
-//! Due passi `subflow` in fila ricevono quindi lo stesso residuo. Il caso
-//! peggiore è il tetto del padre moltiplicato per il numero dei suoi passi
-//! `subflow`. Chiuderlo vuol dire far sommare al deposito anche le corse figlie
-//! risalendo `parent_run_id` — una modifica al deposito, che questo lavoro non
-//! ha toccato di proposito.
+//! Il passo che esegue un altro flusso. Decisione «I flussi si compongono, non
+//! si fondono» in `docs/decisioni.md`; gli invarianti stanno accanto a ciò che
+//! li impone — [`system::sources`] per la precedenza, [`call_cycle`] e
+//! [`CALL_CHAIN`] per la ricorsione, [`MAX_DEPTH`] per la profondità,
+//! [`tightest`] e [`remaining_of`] per il tetto e per ciò che non promette.
 
 use crate::system::{self, FlowSource};
 use crate::{
@@ -494,6 +433,11 @@ pub fn tightest(declared: Option<i64>, remaining: Option<i64>) -> Option<i64> {
 }
 
 /// Quanto resta al padre sotto il proprio tetto, se un tetto ce l'ha.
+///
+/// **LIMITE NOTO.** Il deposito somma per corsa e la spesa del figlio sta sotto
+/// il suo `run_id`: questo residuo non cala per ciò che i figli hanno speso, e
+/// il caso peggiore è il tetto del padre per il numero dei suoi passi
+/// `subflow`. Si chiude facendo risalire `parent_run_id` nella somma.
 fn remaining_of(
     shared: &SharedState,
     store: &Arc<dyn RecordStore>,
