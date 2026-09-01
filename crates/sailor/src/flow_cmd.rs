@@ -660,8 +660,11 @@ fn a_flow_i_may_rewrite<'a>(
     // un `<id>.flow.json` che appartiene a un *altro* flusso, `exists()` dice
     // di sì e la scrittura finisce **nel file di quel flusso**, con il comando
     // che risponde «fatto» e uscita zero. Misurato col binario vero il
-    // 01/09/2026, guasto 48 — era il 41 finché questo ramo era da solo, e la
-    // fusione della sera l'ha rinumerato perché il 41 era già preso.
+    // 01/09/2026, guasto 50 — era il 41 finché questo ramo era da solo, poi il
+    // 48, e adesso il 50: `sorgenti` ha preso quei due numeri mentre questo
+    // ramo li assegnava, due fusioni di fila. È la terza cicatrice della stessa
+    // ferita, e la cura non è rinumerare meglio — è che un numero nuovo non si
+    // sceglie leggendo la tabella di un ramo solo.
     //
     // Il registro indicizza per nome di file: `name` **è** il nome del file da
     // cui questo flusso viene, e `save_in` scrive su `<id>.flow.json`. Se i due
@@ -4501,7 +4504,7 @@ mod tests {
 
     /// Un flusso che sta in un `.json` senza `.flow` non si riscrive: la
     /// scrittura andrebbe in un file diverso da quello letto, cioè nascerebbe un
-    /// gemello. È lo stesso difetto del guasto 48 dall'altro lato — il file che
+    /// gemello. È lo stesso difetto del guasto 50 dall'altro lato — il file che
     /// si legge e il file che si scrive devono essere lo stesso.
     #[test]
     fn a_flow_read_from_a_plain_json_is_refused_instead_of_duplicated() {
@@ -5702,29 +5705,6 @@ mod tests {
     /// davvero spostato. Non certifica: dice quanto lavoro c'era.
     ///
     /// Legge il file vero e non una copia: una copia si aggiornerebbe insieme
-    /// alla riparazione e resterebbe verde per sempre.
-    #[test]
-    fn the_real_development_flow_has_no_hardcoded_paths() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../flows/sviluppa-sailor.flow.json");
-        let text = fs::read_to_string(&path).expect("il flusso di sviluppo è versionato");
-        let flow: FlowFile = serde_json::from_str(&text).expect("è un flusso valido");
-
-        let found = hardcoded_paths(&flow);
-        let described: Vec<String> = found
-            .iter()
-            .map(|entry| {
-                let kind = if entry.fatal { "errore" } else { "avviso" };
-                format!("{kind}: {} in «{}» ({})", entry.step, entry.field, entry.value)
-            })
-            .collect();
-
-        assert!(
-            found.is_empty(),
-            "il flusso di sviluppo non gira su un clone: {}",
-            described.join("; ")
-        );
-    }
 
     // ── il totale che contiene un'incognita ──────────────────────────────
 

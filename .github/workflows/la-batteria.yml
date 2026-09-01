@@ -12,6 +12,27 @@
 # ed è la stessa famiglia di difetto che questo file esiste per scoprire.
 # Quando la lentezza darà fastidio si aggiungerà una cache **dichiarando** cosa
 # viene riportato.
+#
+# **LA PRIMA STESURA DI QUESTO FILE NON HA MAI FATTO PARTIRE LA BATTERIA, ED È
+# IL GUASTO DA CUI VIENE LA FORMA DI ADESSO.** Metteva `cargo fmt --check` e
+# `cargo clippy -- -D warnings` **prima** di `cargo test`, come si legge in
+# mezzo mondo. Misurato il 01/09/2026 su questo codice: la forma vuole
+# cambiare **445 punti in 80 file**, i sospetti sono **173**. Nessuno dei due
+# è un difetto — sono il divario fra le abitudini di rustfmt e uno stile
+# scritto a mano — ma tutti e due cadono in dieci secondi, e cadendo per primi
+# **hanno impedito alla batteria di girare in tutte e tre le corse fatte**.
+# Il risultato era un semaforo sempre rosso che non diceva niente su ciò che
+# conta, cioè se il codice passa le prove su una macchina pulita. Un controllo
+# che grida al lupo ogni volta viene spento dopo tre volte, e allora non
+# protegge più niente: è la stessa ragione per cui il flusso `pubblica` cerca
+# la **forma** di un segreto e non l'elenco dei prefissi.
+#
+# Da qui la divisione: **un lavoro che ferma** (le prove) e **un lavoro che
+# conta** (lo stile). I due numeri dello stile finiscono nel riepilogo a ogni
+# corsa, così sono davanti agli occhi e si vede se crescono. Non fermano
+# nessuno finché non c'è una decisione presa: se un giorno si decide che
+# Sailor adotta rustfmt, quel lavoro diventa un cancello; se si decide di no,
+# si toglie la misura invece di lasciarla lì a fare rumore.
 
 name: la batteria
 
@@ -28,11 +49,17 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # Un avviso che nessuno legge è un avviso che non esiste.
-  RUSTFLAGS: -D warnings
 
 jobs:
-  prove:
+  # **LE CHIAVI DEI LAVORI SONO IDENTIFICATORI, E VANNO IN INGLESE.** Non è una
+  # sfumatura: `needs:`, `jobs.<id>` nelle API e i filtri di `gh run` leggono
+  # questa parola. È la stessa riga di `AGENTS.md` che elenca «chiavi JSON» —
+  # ciò che una macchina legge sta in inglese, ciò che una persona legge no.
+  # La prima stesura di questo file le aveva in italiano (`prove`, `finestra`)
+  # e il controllo `identifiers_are_in_english` non se n'è accorto **perché
+  # guarda solo i sorgenti Rust**: una regola che nessuno interroga su un certo
+  # tipo di file, lì non diventa rossa mai.
+  tests:
     name: prove del workspace
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -44,15 +71,9 @@ jobs:
         # più nuova di quella dichiarata vuol dire non accorgersi del giorno in
         # cui il codice smette di stare dentro il minimo promesso.
         run: |
-          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal --component rustfmt,clippy
+          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal
           rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
           rustc --version
-
-      - name: la forma
-        run: cargo fmt --all -- --check
-
-      - name: i sospetti
-        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: la batteria
         # **MAI INCANALATA.** `cargo test | tail` esce 0 con la batteria rossa:
@@ -75,7 +96,53 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-  finestra:
+  style:
+    name: il debito di stile
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # **QUESTO LAVORO NON FERMA NESSUNO, E LO DICE.** Conta due divari e li
+    # scrive nel riepilogo. Il giorno in cui uno dei due arriva a zero — o si
+    # decide una soglia che può solo scendere — questa riga si toglie e il
+    # lavoro diventa un cancello vero.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: la versione di Rust che il manifesto dichiara
+        run: |
+          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal --component rustfmt,clippy
+          rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
+
+      - name: la forma, contata
+        # `|| true` perché qui il non-zero è il dato, non il guasto: rustfmt
+        # esce 1 esattamente quando ha qualcosa da dire.
+        run: cargo fmt --all -- --check > "$RUNNER_TEMP/forma.txt" 2>&1 || true
+
+      - name: i sospetti, contati
+        # Senza `-D warnings`: si vuole il numero, non la caduta. E niente
+        # `RUSTFLAGS` globale — quello arriva **anche alle dipendenze**, e una
+        # dipendenza che avvisa diventerebbe il nostro rosso senza dire niente
+        # sul nostro codice.
+        run: cargo clippy --workspace --all-targets > "$RUNNER_TEMP/sospetti.txt" 2>&1 || true
+
+      - name: i due numeri, dove si vedono senza aprire i registri
+        if: always()
+        run: |
+          forma=$(grep -c '^Diff in' "$RUNNER_TEMP/forma.txt" || true)
+          file=$(grep '^Diff in' "$RUNNER_TEMP/forma.txt" | sed 's/:[0-9]*:$//' | sort -u | wc -l || true)
+          sospetti=$(grep -cE '^warning: ' "$RUNNER_TEMP/sospetti.txt" || true)
+          {
+            echo "### Il debito di stile"
+            echo
+            echo "| divario | quanto |"
+            echo "| --- | --- |"
+            echo "| punti su cui rustfmt non è d'accordo | ${forma:-0} (in ${file:-0} file) |"
+            echo "| sospetti di clippy | ${sospetti:-0} |"
+            echo
+            echo "Nessuno dei due ferma la pubblicazione. Servono a vedere se crescono."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  desktop:
     name: prove della finestra
     runs-on: ubuntu-latest
     timeout-minutes: 20

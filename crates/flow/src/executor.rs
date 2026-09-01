@@ -2131,7 +2131,7 @@ mod tests {
 
     #[test]
     fn later_epoch_fences_a_returning_attempt() {
-        let mut store = InMemoryRecordStore::default();
+        let store = InMemoryRecordStore::default();
         let mut first = StepRecord::started("run", "step", 1, 4, vec![], json!(null), vec![], 1);
         first.outcome = Some(Outcome::Broke);
         first.failure_class = Some("dead".to_owned());
