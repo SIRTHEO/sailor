@@ -87,10 +87,28 @@ Trappole già pagate su questa macchina:
   vale più di questa riga: una regola che nessuno interroga non diventa rossa
   mai. Chi incontra una parola italiana che il controllo non conosce la aggiunge
   al suo elenco.
-- **Commenti e messaggi in italiano.** Un commento dice *perché*, non *cosa*: il
-  cosa lo dice il codice. Vale anche per i **dati di prova**: `f.name ==
-  "assente"` resta così com'è — è un dato, non un identificatore — mentre la
-  variabile che lo tiene si chiama `absent`.
+- **Commenti in italiano.** Un commento dice *perché*, non *cosa*: il cosa lo
+  dice il codice. Vale anche per i **dati di prova**: `f.name == "assente"`
+  resta così com'è — è un dato, non un identificatore — mentre la variabile che
+  lo tiene si chiama `absent`. Vale per i messaggi delle **prove**, che sono
+  scritti per chi lavora qui dentro.
+- **Ciò che legge uno sconosciuto va in inglese.** Il `README`, la CI, e **i
+  messaggi che un utente dello strumento vede**: quello che `sailor` stampa,
+  quello che dice quando rifiuta, quello che scrive un `--help`. Sotto `docs/`
+  si resta in italiano, e i commenti dentro il codice pure.
+
+  **Questa riga diceva il contrario fino al 01/09/2026**, e diceva «commenti e
+  messaggi in italiano» senza distinguere fra i due tipi di messaggio. Il
+  confine di prima — «ciò che il compilatore legge sta in inglese» — divideva
+  bene il codice ma non aveva niente da dire sulla vetrina, perché finché il
+  repo era privato la vetrina non esisteva. Deciso da Theo il 01/09/2026,
+  guardando la CI: tre lavori con la chiave in italiano su una pagina che
+  chiunque può aprire.
+
+  **Il confine è chi legge, non che tipo di file è.** Un `panic!` dentro una
+  prova parla a chi lavora qui: italiano. Lo stesso `panic!` in un percorso che
+  un utente può battere parla a lui: inglese. Quando non è chiaro chi legge,
+  chiedi invece di scegliere la lingua che ti viene comoda.
 - **Gli `id` dei flussi e dei passi restano in italiano**, e i nomi dei file
   `.flow.json` con loro. Il confine è questo: **ciò che il compilatore legge sta
   in inglese, ciò che il deposito conserva è un dato.** Rinominare un passo
