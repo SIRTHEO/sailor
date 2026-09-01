@@ -43,6 +43,7 @@ function mountNode(
   data: Partial<StepNodeData>,
   states: Map<string, StepRun>,
   usage: Map<string, StepUsage> = new Map(),
+  selected = false,
 ) {
   const full: StepNodeData = {
     step: STEP,
@@ -58,7 +59,7 @@ function mountNode(
     id: "n",
     type: "step",
     data: full,
-    selected: false,
+    selected,
     zIndex: 0,
     isConnectable: false,
     positionAbsoluteX: 0,
@@ -406,5 +407,23 @@ describe("the two rows that survive the far zoom", () => {
     const node = mountNode({}, new Map());
     expect(node.querySelector(".step-node__head .step-node__state")).not.toBeNull();
     expect(node.querySelectorAll(".step-node__state").length).toBe(1);
+  });
+});
+
+/**
+ * THE FOUR CORNER MARKS, and why not just the ring. The selected node already
+ * had a blue border, and that blue is the same blue as «running»: a hue on its
+ * own is prohibition 5. Shape survives where a tint does not.
+ */
+describe("which node is the one being looked at", () => {
+  test("a selected node carries four corner marks", () => {
+    const node = mountNode({}, new Map(), new Map(), true);
+    expect(node.querySelectorAll(".step-node__marks").length).toBe(2);
+    expect(node.getAttribute("data-selected")).toBe("true");
+  });
+
+  test("a node nobody picked carries none", () => {
+    const node = mountNode({}, new Map(), new Map(), false);
+    expect(node.querySelectorAll(".step-node__marks").length).toBe(0);
   });
 });

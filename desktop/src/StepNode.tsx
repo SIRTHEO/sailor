@@ -477,6 +477,13 @@ export function StepNode({ data, selected }: NodeProps) {
       {/* Il bollino di corsia: a quale flusso appartiene questo passo, nella
           tela dove tutti i flussi stanno insieme. */}
       <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
+      {/* «This is the part being dimensioned»: two elements, four corners. */}
+      {selected && (
+        <>
+          <span className="step-node__marks" aria-hidden="true" />
+          <span className="step-node__marks" data-second aria-hidden="true" />
+        </>
+      )}
       <Handle type="target" position={Position.Left} />
 
       {/* THE HEAD SAYS WHAT YOU ARE: the glyph of the species, its name, and
