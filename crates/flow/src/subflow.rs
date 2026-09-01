@@ -251,24 +251,12 @@ impl Action for SubflowAction {
                     call.flow
                 )));
             }
-            // **THE CLASS IS WRITTEN OUT, NOT BUILT.** `format!("subflow_{status}")`
-            // gave the same four strings, and no reader could find them: a
-            // search for `subflow_failed` came back empty, and the check that
-            // pairs every class with a sentence could not count them either. A
-            // class is a name a person reads and a catalogue answers for, so it
-            // has to exist as a name somewhere.
-            //
-            // `run_status` is a closed set and `waiting` and `complete` have
-            // already gone. **The last arm is its own class, not a bucket**: a
-            // status added to `run_status` and not here would otherwise arrive
-            // wearing the name of a different one, which reads as a diagnosis
-            // and is a guess.
-            //
-            // The arms build the error rather than pick a name for one, so the
-            // class is a literal where the error is made. That is what lets the
-            // check pair it with a sentence — a name held in a variable is a
-            // name the check cannot see, and one it cannot see is one that can
-            // go mute without saying so.
+            // **THE CLASS IS WRITTEN OUT WHERE THE ERROR IS BUILT.**
+            // `format!("subflow_{status}")` gave these same names and no reader
+            // could find them: searching for `subflow_failed` came back empty,
+            // and a name held in a variable is one the pairing check cannot see.
+            // The last arm is its own class and not a bucket — a status added to
+            // `run_status` would otherwise arrive wearing another one's name.
             let said = why.unwrap_or_else(|| {
                 format!("run {run_id} of flow {} ended in state {status}", call.flow)
             });

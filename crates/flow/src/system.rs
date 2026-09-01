@@ -18,13 +18,23 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// folder, they are inside the binary. Whoever shows the sources shows this
 /// line too, and a plausible folder that does not exist would send someone
 /// hunting for files in it — or creating some, where nobody would read them.
-pub const PLACE: &str = "(spediti col prodotto)";
+pub const PLACE: &str = "(shipped with the product)";
 
-/// What the system source is called for a reader. Still in Italian on purpose:
-/// this is a literal other code compares — `sailor::flow_cmd` asserts
-/// `report.contains("di sistema")` on a report built from it — so it moves when
-/// that assertion moves, in the same edit, and not before.
-pub const BUILTIN_ORIGIN: &str = "di sistema";
+/// What the system source is called for a reader.
+///
+/// **THE ORIGIN FAMILY IS HERE AND IN [`crate::workspace`], AND IT MOVES
+/// TOGETHER.** These are literals other code compares, so a member moves only in
+/// the same edit as every assertion naming it. Two of them had no constant and
+/// were written out where used, which is how a family drifts into four literals.
+pub const BUILTIN_ORIGIN: &str = "built in";
+
+/// Flows from the folder `SAILOR_FLOWS` names. Declaring that variable is a
+/// statement about where *your* flows are, so it replaces home and project both.
+pub const DECLARED_ORIGIN: &str = "declared";
+
+/// Flows from the reader's own home, which is where they land with no variable
+/// set and nothing declared.
+pub const YOUR_ORIGIN: &str = "yours";
 
 /// The flows the product ships with: flow name and file text. Embedded like
 /// `toolbox::descriptor::BUILTIN` and for the same reason — a freshly installed
@@ -88,8 +98,8 @@ pub fn is_place(dir: &Path) -> bool {
 pub type FlowRegistry = BTreeMap<String, Result<FlowFile, String>>;
 
 /// Every place flows are looked for, least specific first. Order is the only
-/// precedence rule: on a name clash the later source wins, so `di sistema` <
-/// `tuoi` < `del progetto`.
+/// precedence rule: on a name clash the later source wins, so [`BUILTIN_ORIGIN`]
+/// < [`YOUR_ORIGIN`] < [`crate::workspace::ORIGIN_DECLARED`].
 pub fn sources(
     home_flows: &Path,
     working: Option<&Path>,
@@ -104,13 +114,13 @@ pub fn sources(
     let mut sources = vec![FlowSource::builtin()];
     if let Some(declared) = declared.filter(|path| !path.as_os_str().is_empty()) {
         sources.push(FlowSource {
-            origin: "dichiarati",
+            origin: DECLARED_ORIGIN,
             dir: declared.to_path_buf(),
         });
         return sources;
     }
     sources.push(FlowSource {
-        origin: "tuoi",
+        origin: YOUR_ORIGIN,
         dir: home_flows.to_path_buf(),
     });
     if let Some((origin, dir)) = working.and_then(|working| project_flows(working, home_flows)) {
@@ -187,7 +197,7 @@ fn holds_a_flow(dir: &Path) -> bool {
 /// The system source has no folder to read: it is recognised by its "where" and
 /// served from the binary. It goes through here rather than a branch in the
 /// caller because whoever shows the sources counts each one's entries, and a
-/// forgotten branch would say "di sistema: 0 flows" while system flows run.
+/// forgotten branch would say "built in: 0 flows" while system flows run.
 pub fn registry_of(source: &FlowSource) -> FlowRegistry {
     if source.is_builtin() {
         builtin_registry()
@@ -447,8 +457,8 @@ mod tests {
     fn the_system_source_is_the_least_specific() {
         let places = sources(Path::new("/home/flows"), None, None);
         assert_eq!(places[0], FlowSource::builtin());
-        assert_eq!(places[0].origin, "di sistema");
-        assert_eq!(places.last().expect("at least one").origin, "tuoi");
+        assert_eq!(places[0].origin, "built in");
+        assert_eq!(places.last().expect("at least one").origin, "yours");
     }
 
     /// `SAILOR_FLOWS` clears home and project out of the way, not the binary's
@@ -461,7 +471,7 @@ mod tests {
             Some(Path::new("/here/the/flows")),
         );
         let origins: Vec<&str> = places.iter().map(|p| p.origin).collect();
-        assert_eq!(origins, vec!["di sistema", "dichiarati"]);
+        assert_eq!(origins, vec!["built in", "declared"]);
     }
 
     /// A system flow is overridden by writing one with the same name, and the
@@ -480,7 +490,7 @@ mod tests {
             .iter()
             .find(|(name, _, _)| name == shipped)
             .expect("the flow is there");
-        assert_eq!(*origin, "tuoi", "the user's own wins");
+        assert_eq!(*origin, "yours", "the user's own wins");
         assert_eq!(
             all.iter().filter(|(name, _, _)| name == shipped).count(),
             1,
@@ -505,7 +515,7 @@ mod tests {
         let nowhere = std::env::temp_dir().join("sailor-home-that-never-exists");
         let all = load_all(&sources(&nowhere.join("flows"), None, None));
         assert_eq!(all.len(), FLOWS.len());
-        assert!(all.iter().all(|(_, origin, _)| *origin == "di sistema"));
+        assert!(all.iter().all(|(_, origin, _)| *origin == "built in"));
     }
 
     /// The measured defect: the window started in `desktop/src-tauri` and did

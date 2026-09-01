@@ -125,7 +125,7 @@ impl Action for EchoTo {
 impl SubflowHost for Bench {
     fn sources(&self) -> Vec<FlowSource> {
         vec![FlowSource {
-            origin: "del progetto",
+            origin: "this project",
             dir: self.dir.clone(),
         }]
     }
@@ -176,7 +176,7 @@ struct BenchAgain(PathBuf, Arc<InMemoryRecordStore>, Arc<RecordsWhatItGot>);
 impl SubflowHost for BenchAgain {
     fn sources(&self) -> Vec<FlowSource> {
         vec![FlowSource {
-            origin: "del progetto",
+            origin: "this project",
             dir: self.0.clone(),
         }]
     }
@@ -311,7 +311,7 @@ fn a_step_runs_another_flow_and_carries_back_its_output() {
     assert_eq!(record.outcome, Some(Outcome::Went));
     let output = record.output.expect("the step has an output");
     assert_eq!(output["flow"], "foglia");
-    assert_eq!(output["origin"], "del progetto");
+    assert_eq!(output["origin"], "this project");
     assert_eq!(output["status"], "complete");
     assert_eq!(
         output["outputs"]["riporta"]["echo"]["scritto-nel-file"],
@@ -472,7 +472,7 @@ fn a_call_to_a_flow_that_does_not_exist_says_where_it_looked() {
     assert_eq!(record.failure_class.as_deref(), Some("unknown_subflow"));
     let said = record.said.unwrap_or_default();
     assert!(said.contains("mai-scritto"), "it says which flow: {said}");
-    assert!(said.contains("del progetto"), "and where it looked: {said}");
+    assert!(said.contains("this project"), "and where it looked: {said}");
 }
 
 /// The parent's cap holds for the child too.
