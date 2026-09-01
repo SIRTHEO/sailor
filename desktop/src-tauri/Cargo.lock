@@ -9,6 +9,7 @@ dependencies = [
  "flow",
  "ledger",
  "models",
+ "profiles",
  "serde",
  "serde_json",
 ]
@@ -2481,6 +2482,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "profiles"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "quick-xml"
 version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2670,6 +2679,7 @@ name = "sailor-desktop"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "base64 0.22.1",
  "flow",
  "inventory",
  "ledger",
@@ -2679,6 +2689,7 @@ dependencies = [
  "supervisor",
  "tauri",
  "tauri-build",
+ "terminal",
  "toolbox",
  "trigger",
  "ui",
@@ -3445,6 +3456,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fed54709c5b3a53d09bb1c113ea4f5ceafd1e772ddcb0030a82e1d56c087b08"
 dependencies = [
  "new_debug_unreachable",
+]
+
+[[package]]
+name = "terminal"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "toolbox",
 ]
 
 [[package]]
