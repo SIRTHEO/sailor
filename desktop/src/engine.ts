@@ -22,7 +22,8 @@ interface TauriGlobal {
   core?: { invoke?: Invoke };
 }
 
-function invoker(): Invoke | null {
+/** How the shell is called. One copy, so nobody grows a second contract. */
+export function invoker(): Invoke | null {
   const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
   return tauri?.core?.invoke ?? null;
 }
