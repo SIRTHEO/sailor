@@ -10,9 +10,9 @@ import { TOOL_GROUPS, TOOLBAR_KINDS, KINDS_WITH_ACTION, Toolbar } from "./Toolba
 import { DEFAULT_ACTION_FOR_KIND, KNOWN_ACTIONS, type StepKind } from "./flow";
 
 /**
- * La tela senza flussi si ottiene togliendo i dati di esempio, che è la stessa
- * cosa che vede chi apre Sailor la prima volta. Nessun gesto della finestra
- * porta a zero flussi in jsdom: cancellarli passa dal motore, che qui non c'è.
+ * A canvas with no flows is obtained by removing the sample data, which is what
+ * somebody opening Sailor for the first time sees. No gesture in the window gets
+ * to zero flows in jsdom: deleting them goes through the engine, absent here.
  */
 const sample = vi.hoisted(() => ({ empty: false }));
 
@@ -29,21 +29,10 @@ vi.mock("./sample", async (importOriginal) => {
 });
 
 /**
- * **LA CASSETTA DEI PASSI, INTERROGATA DOVE SBAGLIEREBBE.**
- *
- * Tre cose non si vedono guardando uno screenshot fermo, e sono le tre che
- * questo lavoro promette:
- *
- * 1. che la barra stia **dentro** la tela e non scorra via con essa — a occhio
- *    una barra dentro il riquadro trasformato e una fuori sono identiche
- *    finché qualcuno non trascina la tela;
- * 2. che ogni famiglia offerta crei un passo con un'**azione che il motore
- *    conosce**, e nei due versi. Il taglio da nove famiglie a sette lo faceva
- *    già la cassetta di prima, leggendo la stessa mappa: quello che manca è
- *    qualcuno che tenga il legame: senza, un elenco scritto a mano si
- *    scollerebbe dalla mappa in silenzio;
- * 3. che senza un flusso a fuoco la barra **dica cosa manca** invece di
- *    limitarsi a spegnersi.
+ * **THE STEP TOOLBOX, INTERROGATED WHERE IT WOULD GO WRONG.** A screenshot
+ * cannot show that the bar sits **inside** the canvas without scrolling away,
+ * that every family offered creates a step with an action the engine knows in
+ * both directions, or that with no flow in focus it says what is missing.
  */
 
 afterEach(() => {
@@ -51,8 +40,8 @@ afterEach(() => {
   sample.empty = false;
 });
 
-// React Flow misura il proprio riquadro all'avvio: fuori da un browser vero non
-// c'è chi lo faccia, e senza questi due la tela non si monta affatto.
+// React Flow measures its own frame on mount: outside a real browser there is
+// nobody to do it, and without these two the canvas does not mount at all.
 class NoResizeObserver {
   observe() {}
   unobserve() {}
@@ -67,7 +56,7 @@ beforeAll(() => {
   };
 });
 
-/** La finestra si apre su «Adesso»: la tela sta dietro un posto da scegliere. */
+/** The window opens on «Adesso»: the canvas sits behind a place you must pick. */
 function goToFlows(): void {
   fireEvent.click(screen.getByRole("button", { name: /^Flussi/ }));
 }
@@ -79,11 +68,11 @@ function focusAFlow(container: HTMLElement): string {
   return name;
 }
 
-/* ── il corridoio, letto dal foglio ─────────────────────────────────────── */
+/* ── the corridor, read from the stylesheet ─────────────────────────────── */
 
 const sheet = parseStylesheet(stylesheetSource);
 
-/** Le dichiarazioni di una regola, l'ultima che vince a parità di selettore. */
+/** The declarations of a rule; on an equal selector the last one wins. */
 function declarationsOf(selector: string): Map<string, string> {
   const found = new Map<string, string>();
   for (const rule of sheet.rules) {
@@ -94,23 +83,10 @@ function declarationsOf(selector: string): Map<string, string> {
 }
 
 /**
- * Le lunghezze dichiarate: il reticolo di `:root` e il corridoio di `.toolbar`.
- * Sono le uniche che il conto qui sotto sa leggere.
- *
- * **QUI C'ERA SCRITTA UNA GARANZIA CHE IL CODICE NON DAVA.** La riga diceva che
- * «un numero scritto a mano dentro un `calc` non finisce qui e la prova diventa
- * rossa, che è il verso giusto in cui sbagliare». Era falsa: `sumOfTerms`
- * contava le occorrenze di `var(`, non i termini, quindi un letterale in `px`
- * accanto a un `var()` passava il controllo di completezza e spariva dal
- * totale. Su `max-width` sparire stringe — verso innocuo. Su `margin-left`
- * ALLENTA: con `calc(var(--controls-reserve) + 40px)` il conto legge 44 dove il
- * browser ne dipinge 84, la batteria resta verde e a schermo la barra entra
- * nella minimappa di 23px a ogni larghezza da 1264 in giù. Un commento che
- * promette il verso giusto in cui sbagliare, mentre il codice sbaglia
- * nell'altro, è peggio di nessun commento.
- *
- * Adesso la garanzia è vera, e a renderla vera è il resto vuoto preteso in
- * fondo a `sumOfTerms`, non questa riga.
+ * The declared lengths: the `:root` grid and the `.toolbar` corridor. They are
+ * the only ones the arithmetic below can read. What makes a hand-written
+ * literal inside a `calc` turn the test red is the empty remainder demanded at
+ * the end of `sumOfTerms`, not this list.
  */
 const LENGTHS = new Map<string, number>();
 for (const selector of [":root", ".toolbar"]) {
@@ -122,34 +98,15 @@ for (const selector of [":root", ".toolbar"]) {
 
 function lengthOf(name: string): number {
   const value = LENGTHS.get(name);
-  expect(value, `«${name}» non è una lunghezza dichiarata nel foglio`).toBeDefined();
+  expect(value, `«${name}» is not a length declared in the stylesheet`).toBeDefined();
   return value as number;
 }
 
 /**
- * La somma con segno dei termini dentro un `calc`, che è la sola forma in cui
- * il corridoio si può scrivere e rileggere. Torna i **pixel fissi**; la
- * larghezza della tela ha un accumulatore suo, e `canvasTimes` dice quante
- * volte ci si aspetta di trovarla.
- *
- * **`100%` NON È RUMORE DA CANCELLARE.** Qui c'era `.replace(/100%/g, "")`, che
- * lo toglieva dal corpo *ovunque, quante volte capitava, con qualunque segno*,
- * e un commento che diceva «si semplifica». Vero per una sola occorrenza in
- * testa, falso per una seconda e falso per una sottratta — e su quella
- * semplificazione poggia tutta la regola del corridoio, che è ciò che la fa
- * valere a **ogni** larghezza invece che a quella su cui qualcuno ha guardato.
- * Due aggiramenti passavano di qui con la batteria tutta verde:
- * `max-width: calc(100% - ... + 100%)` — il browser calcola `200% - 276px`,
- * franco reale -200px a 900 e a 1000 — e
- * `margin-left: calc(var(--controls-reserve) + var(--space-2) - 100%)`, che
- * dipinge il bordo sinistro a -328px a 900 e a -868px a 1440: la barra esce
- * dalla tela sopra i comandi di zoom mentre `left >= controls` resta vera sulla
- * carta. Il mutante che questo file cattura costava 85px; questi ne costavano
- * 200, ed erano invisibili.
- *
- * Adesso il `100%` passa dallo stesso motivo degli altri termini, con segno e
- * coefficiente, e la semplificazione è una cosa che si **verifica** invece di
- * assumerla.
+ * The signed sum of a `calc`'s terms, the only form the corridor can be read
+ * back in. It returns the **fixed pixels**; the canvas width has its own
+ * accumulator, and `canvasTimes` says how often it is due. `100%` is counted
+ * with sign and coefficient, never stripped: the rule rests on it cancelling.
  */
 function sumOfTerms(value: string, canvasTimes: number): number {
   const body = /^calc\((.*)\)$/.exec(value.trim())?.[1] ?? value.trim();
@@ -165,113 +122,89 @@ function sumOfTerms(value: string, canvasTimes: number): number {
     else canvas += (sign * times * Number(match[4])) / 100;
     read += 1;
   }
-  // Un termine che il conto non sa leggere sparirebbe in silenzio e il totale
-  // verrebbe più piccolo del vero, cioè nella direzione che rassicura. È già
-  // successo qui: `--space-2` ha una cifra nel nome e il primo motivo lo
-  // saltava, e la regola passava per un pareggio esatto invece che per otto
-  // pixel di franco.
+  // A term the arithmetic cannot read would vanish silently and the total would
+  // come out smaller than the truth, which is the reassuring direction.
   const written = (body.match(/var\(|%/g) ?? []).length;
-  expect(read, `il conto non sa leggere «${value}»`).toBe(written);
+  expect(read, `the arithmetic cannot read «${value}»`).toBe(written);
 
-  // E CONTARE LE PAROLE NON BASTA: sono occorrenze, non termini. Un letterale
-  // in `px` accanto a un `var()` passava di qui intatto — il numero dei `var(`
-  // tornava — e spariva dal totale. Su `margin-left` l'errore allenta invece di
-  // stringere: `calc(var(--controls-reserve) + 40px)` lasciava tutta la
-  // batteria verde con la barra dentro la minimappa.
-  //
-  // Quindi il verso giusto non si chiede al conto ma al RESTO: consumati i
-  // termini che sappiamo leggere, del corpo devono avanzare solo i separatori.
-  // Qualunque altra cosa avanzi è un pezzo che nessuno ha misurato, e si
-  // rifiuta invece di indovinare.
+  // AND COUNTING WORDS IS NOT ENOUGH: those are occurrences, not terms. A `px`
+  // literal next to a `var()` keeps the count of `var(` right and still drops
+  // out of the total, and on `margin-left` that loosens instead of tightening.
+
+  // So the right direction is asked of the REMAINDER: once the terms we can
+  // read are consumed, only the separators may be left in the body. Anything
+  // else left over is a piece nobody measured, and it is refused, not guessed.
   const rest = body.replace(term, "").replace(/[+\-*\s]/g, "");
   expect(
     rest,
-    `«${value}» porta «${rest}», che nessuno qui sa misurare: il totale lo salterebbe in silenzio`,
+    `«${value}» carries «${rest}», which nobody here can measure: the total would skip it silently`,
   ).toBe("");
 
-  // E LA TELA SI CONTA, non si cancella. Il conto qui sotto non dipende dalla
-  // larghezza della tela solo se il `100%` compare esattamente le volte che ci
-  // si aspetta: una nel tetto, che si semplifica con il `100%` da cui parte la
-  // fascia della minimappa, e nessuna nello scarto, che è una distanza fissa
-  // dal fianco.
+  // AND THE CANVAS IS COUNTED, not stripped. The arithmetic below is free of
+  // the canvas width only if `100%` appears exactly as many times as expected:
+  // once in the ceiling, cancelling against the `100%` the minimap band starts
+  // from, and never in the offset, which is a fixed distance from the side.
   expect(
     canvas,
-    `«${value}» porta ${canvas} volte la larghezza della tela invece di ${canvasTimes}: ` +
-      `il «100%» non si semplifica più, e il conto qui sotto varrebbe a una larghezza sola`,
+    `«${value}» carries the canvas width ${canvas} times instead of ${canvasTimes}: ` +
+      `the «100%» no longer cancels out, and the arithmetic below would hold at one width only`,
   ).toBe(canvasTimes);
   return total;
 }
 
 /**
- * **LA BARRA DICHIARA IL CORRIDOIO CHE NON OCCUPA.**
- *
- * Due volte in questa stessa lavorazione la barra ha coperto la minimappa
- * passando in mezzo a tipi verdi e prove verdi: prima larga 540, poi 468. Tutte
- * e due le volte il rimedio è stato **spostare un numero**, e un numero non
- * diventa rosso. Centrare una barra larga quanto la somma dei suoi attrezzi
- * funziona a una larghezza sola: quella su cui è stata guardata.
- *
- * Qui non si misurano pixel — in jsdom niente ha dimensioni, e a misurare i
- * pixel questa prova sarebbe verde su un browser e muta su un altro. Si legge
- * la **regola**: da che punto la barra parte, e quanto del riquadro il suo
- * tetto le concede. Se il bordo destro peggiore che quei due numeri ammettono
- * finisce dentro la fascia della minimappa, la barra *può* coprirla — a
- * qualche larghezza, che è già abbastanza.
- *
- * E il conto non dipende dalla larghezza della tela, perché il `100%` compare
- * una volta da una parte e una dall'altra e si semplifica. È questo che lo fa
- * valere a **ogni** larghezza invece che a quella su cui qualcuno ha guardato,
- * ed è per questo che `sumOfTerms` lo **conta** invece di cancellarlo: era
- * l'unica cosa che qui si dava per buona senza interrogarla, e ci passavano due
- * aggiramenti da 200px con la batteria tutta verde.
+ * **THE BAR DECLARES THE CORRIDOR IT DOES NOT OCCUPY.** Centring a bar as wide
+ * as its tools works at one width only, and in jsdom nothing has dimensions,
+ * so no pixels are measured here: the **rule** is read instead — where the bar
+ * starts, and how much of the frame its ceiling grants it.
  */
-describe("il corridoio che la barra non occupa", () => {
-  test("LA BARRA SI MISURA SUL CORRIDOIO, NON SULLA SOMMA DEI SUOI ATTREZZI", () => {
+describe("the corridor the bar does not occupy", () => {
+  test("THE BAR IS MEASURED ON THE CORRIDOR, NOT ON THE SUM OF ITS TOOLS", () => {
     const toolbar = declarationsOf(".toolbar");
     const controls = lengthOf("--controls-reserve");
     const minimap = lengthOf("--minimap-reserve");
 
-    // Da dove parte il bordo sinistro, misurato dal fianco della tela: una
-    // distanza fissa, quindi zero volte la larghezza della tela.
+    // Where the left edge starts, measured from the side of the canvas: a fixed
+    // distance, hence zero times the canvas width.
     const offset = toolbar.get("margin-left");
-    expect(offset, "la barra non dichiara nessuno scarto dal fianco della tela").toBeDefined();
+    expect(offset, "the bar declares no offset from the side of the canvas").toBeDefined();
     const left = sumOfTerms(offset as string, 0);
 
-    // Quanto il tetto le concede: la tela **una volta sola**, meno tutto ciò
-    // che il `calc` toglie.
+    // What the ceiling grants it: the canvas **exactly once**, minus everything
+    // the `calc` takes away.
     const ceiling = toolbar.get("max-width");
-    expect(ceiling, "la barra non dichiara nessun tetto di larghezza").toBeDefined();
+    expect(ceiling, "the bar declares no width ceiling").toBeDefined();
     expect(
       (ceiling as string).replace(/\s+/g, " "),
-      "il tetto della barra non parte dalla larghezza della tela",
+      "the bar's ceiling does not start from the canvas width",
     ).toMatch(/^calc\(100% -/);
     const kept = -sumOfTerms(ceiling as string, 1);
 
-    // LA REGOLA. Bordo destro peggiore = 100% - kept + left. La minimappa
-    // comincia a 100% - minimap. Il `100%` sparisce da tutte e due le parti — e
-    // che ce ne sia esattamente uno per parte l'ha appena verificato
-    // `sumOfTerms`, con il coefficiente 1 sul tetto e 0 sullo scarto.
+    // THE RULE. Worst right edge = 100% - kept + left. The minimap starts at
+    // 100% - minimap. The `100%` cancels on both sides — and that there is
+    // exactly one per side has just been checked by `sumOfTerms`, with the
+    // coefficient 1 on the ceiling and 0 on the offset.
     const reach = kept - left;
     const where =
-      reach >= 0 ? `${reach}px dal fianco destro` : `${-reach}px OLTRE il fianco destro`;
+      reach >= 0 ? `${reach}px from the right edge` : `${-reach}px PAST the right edge`;
     expect(
       left + minimap,
-      `la barra può entrare nella fascia della minimappa: parte a ${left}px dal fianco sinistro ` +
-        `e il suo tetto le lascia arrivare fino a ${where} della tela, mentre la minimappa ne occupa ${minimap}px`,
+      `the bar can enter the minimap band: it starts ${left}px from the left edge ` +
+        `and its ceiling lets it reach ${where} of the canvas, while the minimap takes ${minimap}px`,
     ).toBeLessThanOrEqual(kept);
 
-    // E dall'altro fianco, che i comandi di zoom restino scoperti.
+    // And from the other side, that the zoom controls stay uncovered.
     expect(
       left,
-      `la barra parte a ${left}px e i comandi di zoom arrivano a ${controls}px`,
+      `the bar starts at ${left}px and the zoom controls reach ${controls}px`,
     ).toBeGreaterThanOrEqual(controls);
   });
 
-  test("lo scarto conta solo se il pannello è ancorato a un fianco", () => {
-    // `margin-left` su un pannello `bottom-center` non toglie la barra da
-    // nessuna fascia: React Flow lo centra con una `translateX`, e lo scarto
-    // dichiarato si limiterebbe a scentrarla. La regola qui sopra sarebbe vera
-    // sul foglio e falsa a schermo.
+  test("the offset only counts if the panel is anchored to a side", () => {
+    // `margin-left` on a `bottom-center` panel takes the bar out of no band at
+    // all: React Flow centres it with a `translateX`, and the declared offset
+    // would merely push it off centre. The rule above would then be true on the
+    // stylesheet and false on screen.
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
@@ -280,70 +213,68 @@ describe("il corridoio che la barra non occupa", () => {
     expect(toolbar.classList.contains("center")).toBe(false);
   });
 
-  test("LE RISERVE NON SONO NUMERI INVENTATI: le detta React Flow", () => {
-    // Il conto qui sopra userebbe felicemente due riserve troppo piccole —
-    // sono dichiarate nello stesso foglio che le verifica, e due copie che
-    // sbagliano insieme si confermano. L'ancora sta fuori da tutte e due: gli
-    // inquilini veri della fascia bassa, letti dove si leggono senza layout.
+  test("THE RESERVES ARE NOT INVENTED NUMBERS: React Flow dictates them", () => {
+    // The arithmetic above would happily use two reserves that are too small —
+    // they are declared in the same stylesheet that checks them, and two copies
+    // that err together confirm each other. The anchor sits outside both: the
+    // real tenants of the bottom band, read where they can be read without
+    // layout.
     const theirs = parseStylesheet(reactFlowSource);
     const declaration = (selector: string, property: string) => {
       const rule = theirs.rules.find((candidate) => candidate.selector === selector);
-      expect(rule, `React Flow non ha più una regola «${selector}»`).toBeDefined();
+      expect(rule, `React Flow no longer has a «${selector}» rule`).toBeDefined();
       const value = new Map(rule!.declarations).get(property);
-      expect(value, `«${selector}» non dichiara più «${property}»`).toBeDefined();
+      expect(value, `«${selector}» no longer declares «${property}»`).toBeDefined();
       return Number(/^(\d+(?:\.\d+)?)px$/.exec(value as string)?.[1]);
     };
 
-    // Il margine con cui React Flow stacca OGNI pannello dal fianco: è quello
-    // che tiene i comandi e la minimappa lontani dal bordo, ed è anche quello
-    // che la barra si riscrive.
+    // The margin React Flow uses to keep EVERY panel off the side: it is what
+    // holds the controls and the minimap away from the edge, and it is also the
+    // one the bar rewrites for itself.
     const panelMargin = declaration(".react-flow__panel", "margin");
     const buttonWidth = declaration(".react-flow__controls-button", "width");
 
-    // La minimappa non ha una larghezza nel foglio: la porta l'`svg` che
-    // disegna, e un attributo esiste anche senza layout.
+    // The minimap has no width in the stylesheet: it comes from the `svg` that
+    // draws it, and an attribute exists even without layout.
     const { container } = render(<App />);
     goToFlows();
     const minimap = container.querySelector(".react-flow__minimap svg") as SVGElement;
-    expect(minimap, "la minimappa non è disegnata").not.toBeNull();
+    expect(minimap, "the minimap is not drawn").not.toBeNull();
     const minimapWidth = Number(minimap.getAttribute("width"));
     expect(Number.isFinite(minimapWidth) && minimapWidth > 0).toBe(true);
 
     expect(
       lengthOf("--controls-reserve"),
-      `i comandi di zoom occupano ${panelMargin + buttonWidth}px dal fianco`,
+      `the zoom controls take ${panelMargin + buttonWidth}px from the side`,
     ).toBeGreaterThanOrEqual(panelMargin + buttonWidth);
     expect(
       lengthOf("--minimap-reserve"),
-      `la minimappa occupa ${panelMargin + minimapWidth}px dal fianco`,
+      `the minimap takes ${panelMargin + minimapWidth}px from the side`,
     ).toBeGreaterThanOrEqual(panelMargin + minimapWidth);
   });
 
-  test("gli attrezzi vanno a capo invece di sfondare il corridoio", () => {
-    // Un tetto di larghezza su un contenitore flex non trattiene i figli: la
-    // scatola si stringe al tetto e il contenuto esce lo stesso, sopra la
-    // minimappa, mentre il `getBoundingClientRect` della barra racconta una
-    // scatola stretta e ubbidiente. Senza queste righe la regola sarebbe vera
-    // sulla carta e falsa a schermo.
-    //
-    // E SONO DUE, non una. Il `flex-wrap` della fila salva il caso in cui non
-    // ci stanno tre gruppi affiancati; quello del gruppo salva il caso in cui
-    // non ci sta un gruppo intero, e il corridoio scende sotto la larghezza di
-    // un gruppo da tre attrezzi molto prima di sparire. Interrogarne uno solo
-    // lasciava passare l'altro: tolto il `flex-wrap` di `.toolbar__group` la
-    // batteria restava tutta verde mentre a 900px la barra copriva la
-    // minimappa di 85px.
+  test("the tools wrap instead of bursting the corridor", () => {
+    // A width ceiling on a flex container does not hold its children: the box
+    // shrinks to the ceiling and the content spills out anyway, over the
+    // minimap, while the bar's `getBoundingClientRect` reports an obedient
+    // narrow box. Without these lines the rule would be true only on paper.
+
+    // AND THERE ARE TWO, not one. The row's `flex-wrap` saves the case where
+    // three groups do not fit side by side; the group's saves the case where a
+    // whole group does not fit, and the corridor drops below the width of a
+    // three-tool group long before it disappears. Interrogating one selector
+    // only would let the other through.
     for (const selector of [".toolbar__row", ".toolbar__group"]) {
       expect(
         declarationsOf(selector).get("flex-wrap"),
-        `«${selector}» non manda a capo: un corridoio più stretto del suo contenuto lo fa uscire sopra la minimappa`,
+        `«${selector}» does not wrap: a corridor narrower than its content spills over the minimap`,
       ).toBe("wrap");
     }
   });
 });
 
-describe("dove sta la barra", () => {
-  test("STA DENTRO LA TELA, E NON SCORRE VIA CON ESSA", () => {
+describe("where the bar is", () => {
+  test("IT SITS INSIDE THE CANVAS, AND DOES NOT SCROLL AWAY WITH IT", () => {
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
@@ -351,20 +282,20 @@ describe("dove sta la barra", () => {
     const toolbar = container.querySelector(".toolbar") as HTMLElement;
     expect(toolbar).not.toBeNull();
 
-    // Dentro la tela: non è più un pezzo della colonna accanto.
+    // Inside the canvas: it is no longer a piece of the rail next to it.
     expect(toolbar.closest(".react-flow")).not.toBeNull();
     expect(toolbar.closest(".rail")).toBeNull();
 
-    // E non scorre via: `.react-flow__viewport` è l'elemento che porta la
-    // `transform` di pan e zoom. Una barra dentro quello si allontanerebbe alla
-    // prima trascinata, e lo screenshot a tela ferma non lo direbbe mai.
+    // And it does not scroll away: `.react-flow__viewport` is the element that
+    // carries the pan and zoom `transform`. A bar inside that would drift off on
+    // the first drag, and a screenshot of a still canvas would never say so.
     expect(toolbar.closest(".react-flow__viewport")).toBeNull();
   });
 
-  test("premere un attrezzo aggiunge davvero un passo al flusso a fuoco", () => {
-    // Le prove qui sotto guardano la barra da sola, con un finto al posto di
-    // `addStep`: da lì un attrezzo scollegato sembrerebbe funzionare. Questa
-    // attraversa tutta la finestra e legge il conteggio che la colonna mostra.
+  test("pressing a tool really adds a step to the focused flow", () => {
+    // The tests below look at the bar on its own, with a fake in place of
+    // `addStep`: from there a disconnected tool would look like it works. This
+    // one crosses the whole window and reads the count the rail shows.
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
@@ -382,7 +313,7 @@ describe("dove sta la barra", () => {
     expect(Number.parseInt(countOf(), 10)).toBe(before + 1);
   });
 
-  test("la colonna non tiene più nessun attrezzo", () => {
+  test("the rail no longer holds any tool", () => {
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
@@ -392,8 +323,8 @@ describe("dove sta la barra", () => {
   });
 });
 
-describe("cosa offre la barra", () => {
-  test("OGNI FAMIGLIA CREA UN PASSO CHE IL MOTORE RICONOSCE", () => {
+describe("what the bar offers", () => {
+  test("EVERY FAMILY CREATES A STEP THE ENGINE RECOGNISES", () => {
     const seen: StepKind[] = [];
     const { container } = render(
       <Toolbar flowName="prima-corsa" onAdd={(kind) => seen.push(kind)} onNewFlow={() => {}} />,
@@ -406,37 +337,34 @@ describe("cosa offre la barra", () => {
     expect(seen).toEqual(TOOLBAR_KINDS);
     for (const kind of seen) {
       const action = DEFAULT_ACTION_FOR_KIND[kind];
-      // Non basta che l'azione esista: deve essere una di quelle che il
-      // vocabolario del motore registra. È il guasto 41, riparato prima di
-      // questo lavoro dentro `flow.ts` e mai interrogato da nessuno: sei nomi
-      // inventati che creavano nodi che non si salvavano.
-      expect(action, `la famiglia «${kind}» non ha un'azione`).toBeDefined();
-      expect(KNOWN_ACTIONS, `l'azione «${String(action)}» non è nel vocabolario`).toContain(action);
+      // It is not enough that the action exists: it must be one the engine's
+      // vocabulary registers. Invented names create nodes that never save.
+      expect(action, `the family «${kind}» has no action`).toBeDefined();
+      expect(KNOWN_ACTIONS, `the action «${String(action)}» is not in the vocabulary`).toContain(action);
     }
   });
 
-  test("i gruppi coprono ESATTAMENTE le famiglie che hanno un'azione", () => {
-    // Nei due versi: né un attrezzo senza azione (un bottone che non salva), né
-    // una famiglia esistente lasciata fuori dalla cassetta senza che nessuno se
-    // ne accorga. `wait` e `branch` non hanno azione e restano fuori da tutte e
-    // due le liste.
+  test("the groups cover EXACTLY the families that have an action", () => {
+    // In both directions: neither a tool with no action (a button that never
+    // saves), nor an existing family left out of the toolbox with nobody
+    // noticing. `wait` and `branch` have no action and stay out of both lists.
     expect([...TOOLBAR_KINDS].sort()).toEqual([...KINDS_WITH_ACTION].sort());
     expect(TOOLBAR_KINDS).toHaveLength(7);
   });
 
-  test("ogni attrezzo porta un segno E una parola", () => {
+  test("every tool carries a mark AND a word", () => {
     const { container } = render(
       <Toolbar flowName="prima-corsa" onAdd={() => {}} onNewFlow={() => {}} />,
     );
     for (const tool of Array.from(container.querySelectorAll<HTMLElement>(".toolbar__tool"))) {
-      // Il divieto 5 applicato alla forma: un segno da solo non porta niente,
-      // come non lo porta il colore da solo.
+      // Ban 5 applied to shape: a mark on its own carries nothing, just as
+      // colour on its own carries nothing.
       expect(tool.querySelector("svg.toolbar__mark")).not.toBeNull();
       expect(tool.querySelector(".toolbar__label")?.textContent?.trim()).toBeTruthy();
     }
   });
 
-  test("ogni gruppo si nomina per chi legge con la voce", () => {
+  test("every group names itself for whoever reads with a screen reader", () => {
     const { container } = render(
       <Toolbar flowName="prima-corsa" onAdd={() => {}} onNewFlow={() => {}} />,
     );
@@ -447,7 +375,7 @@ describe("cosa offre la barra", () => {
     }
   });
 
-  test("la barra dice in quale flusso finisce il passo", () => {
+  test("the bar says which flow the step lands in", () => {
     const { container } = render(
       <Toolbar flowName="esamina-la-repo" onAdd={() => {}} onNewFlow={() => {}} />,
     );
@@ -455,27 +383,27 @@ describe("cosa offre la barra", () => {
   });
 });
 
-describe("senza un flusso scelto", () => {
-  test("LA BARRA DICE COSA MANCA, NON SI LIMITA A SPEGNERSI", () => {
+describe("with no flow picked", () => {
+  test("THE BAR SAYS WHAT IS MISSING, IT DOES NOT JUST GO DARK", () => {
     const onNewFlow = vi.fn();
     const { container } = render(<Toolbar flowName={null} onAdd={() => {}} onNewFlow={onNewFlow} />);
 
-    // Nessun bottone spento: un pulsante che non si può premere e non dice
-    // perché è un vicolo cieco.
+    // No disabled button: a button that cannot be pressed and does not say why
+    // is a dead end.
     expect(container.querySelectorAll("button:disabled")).toHaveLength(0);
     expect(container.querySelectorAll(".toolbar__tool")).toHaveLength(0);
 
-    // Al loro posto, ciò che manca — a schermo, non dentro un `title`.
+    // In their place, what is missing — on screen, not inside a `title`.
     const prompt = container.querySelector(".toolbar__prompt") as HTMLElement;
     expect(prompt).not.toBeNull();
     expect(prompt.textContent).toContain("Scegli un flusso");
 
-    // E il gesto che lo risolve, che funziona davvero.
+    // And the gesture that resolves it, which really works.
     fireEvent.click(screen.getByRole("button", { name: /Nuovo flusso/ }));
     expect(onNewFlow).toHaveBeenCalledTimes(1);
   });
 
-  test("il motivo non sta in un `title`, dove nessuno lo cerca", () => {
+  test("the reason is not in a `title`, where nobody looks for it", () => {
     const { container } = render(<Toolbar flowName={null} onAdd={() => {}} onNewFlow={() => {}} />);
     const withTitle = Array.from(container.querySelectorAll("[title]"));
     expect(withTitle).toEqual([]);
@@ -483,28 +411,24 @@ describe("senza un flusso scelto", () => {
 });
 
 /**
- * **CON ZERO FLUSSI LA BARRA NON C'È AFFATTO**, e non è la stessa cosa di
- * «nessun flusso a fuoco»: lì la barra resta e cambia mestiere. Quel momento è
- * della tela vuota, che insegna il primo gesto; due inviti nello stesso schermo
- * si annullano.
- *
- * La condizione sta in una riga sola di `App.tsx` (`flows.size > 0`), e finora
- * nessun file la interrogava: toglierla lasciava tutta la batteria verde e
- * metteva due «+ Nuovo flusso» nello stesso schermo.
+ * **WITH ZERO FLOWS THE BAR IS NOT THERE AT ALL**, which is not the same as
+ * «no flow in focus»: there the bar stays and changes job. That moment belongs
+ * to the empty canvas; two invitations on one screen cancel each other out. The
+ * condition is a single line of `App.tsx` (`flows.size > 0`).
  */
-describe("con zero flussi", () => {
-  test("LA BARRA SPARISCE E RESTA LA TELA VUOTA, non tutte e due", () => {
+describe("with zero flows", () => {
+  test("THE BAR GOES AND THE EMPTY CANVAS STAYS, not both", () => {
     sample.empty = true;
     const { container } = render(<App />);
     goToFlows();
 
-    expect(container.querySelector(".blank"), "la tela vuota non c'è").not.toBeNull();
-    expect(container.querySelector(".toolbar"), "la barra invita insieme alla tela vuota").toBeNull();
+    expect(container.querySelector(".blank"), "the empty canvas is missing").not.toBeNull();
+    expect(container.querySelector(".toolbar"), "the bar invites alongside the empty canvas").toBeNull();
   });
 
-  test("con un flusso vale il contrario: la barra c'è e la tela vuota no", () => {
-    // Nei due versi, se no «nessuna barra» sarebbe vero anche per una barra
-    // che non compare mai.
+  test("with one flow the opposite holds: the bar is there and the empty canvas is not", () => {
+    // In both directions, otherwise «no bar» would also be true of a bar that
+    // never appears at all.
     const { container } = render(<App />);
     goToFlows();
     expect(container.querySelector(".toolbar")).not.toBeNull();
