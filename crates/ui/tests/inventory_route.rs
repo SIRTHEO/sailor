@@ -13,7 +13,9 @@
 //! non richiede contarne il contenuto esatto.
 
 fn census() -> serde_json::Value {
-    let found = inventory::collect(&inventory::default_roots());
+    let found = inventory::collect_survey(&inventory::default_roots(
+        ledger::sailor_home().as_deref(),
+    ));
     serde_json::to_value(&found).expect("il censimento si serializza")
 }
 
