@@ -33,7 +33,7 @@ registry = { path = "../registry" }
 # deposito delle sessioni e il censimento stanno lì, dove si provano senza
 # passare dalla riga di comando.
 sessions = { path = "../sessions" }
-# The pseudo-terminal engine. `sailor accompany` owns the descriptor a session
+# The pseudo-terminal engine. `sailor terminal` owns the descriptor a session
 # runs on, which is the only way to type into one without knowing which
 # emulator drew the window.
 terminal = { path = "../terminal" }
