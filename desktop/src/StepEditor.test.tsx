@@ -88,12 +88,9 @@ function throughThePanel(step: Step, newModel: string): Record<string, unknown> 
       onDelete={() => {}}
     />,
   );
-  const field = screen
-    .getAllByText("Modello")
-    .map((label) => label.parentElement?.querySelector("input"))
-    .find((input): input is HTMLInputElement => input != null);
-  expect(field, "il pannello non mostra il campo «Modello»").toBeDefined();
-  fireEvent.change(field as HTMLInputElement, { target: { value: newModel } });
+  const field = screen.getByLabelText("Model") as HTMLInputElement;
+  expect(field, "il pannello non mostra il campo «Model»").toBeDefined();
+  fireEvent.change(field, { target: { value: newModel } });
   expect(written, "il pannello non ha scritto niente").not.toBeUndefined();
   return written as Record<string, unknown> | null;
 }
