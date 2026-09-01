@@ -22,8 +22,7 @@ fn flow_path() -> PathBuf {
 
 fn flow_text() -> String {
     let path = flow_path();
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
 fn parsed() -> Value {
@@ -83,7 +82,9 @@ fn under_the_ceiling_the_whole_chain_is_skipped_by_one_condition() {
 #[test]
 fn the_ceiling_is_written_in_the_step_and_not_hidden_in_a_node() {
     assert!(
-        step("misura")["with"]["ceiling"].as_u64().is_some_and(|n| n > 0),
+        step("misura")["with"]["ceiling"]
+            .as_u64()
+            .is_some_and(|n| n > 0),
         "the measuring step must declare its own ceiling"
     );
 }
