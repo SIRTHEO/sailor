@@ -22,25 +22,16 @@ import {
 import { contrastRatio, parseColor, parseStylesheet, styleTree, type Stylesheet } from "./contrast";
 
 /**
- * **LE PORTE, E LA PROMESSA CHE PORTANO.**
- *
- * La bozza approvata dichiara tre cose sulle porte, e ognuna qui ha una riga
- * che la può far diventare rossa:
- *
- * 1. **il tipo sta nella forma** — cerchio, rombo, quadrato — e non nella
- *    tinta;
- * 2. **vuota se scollegata, piena se cablata**, così «quale ingresso manca» si
- *    legge senza aprire niente;
- * 3. e tutte e due reggono **in scala di grigi**, che è il divieto 5 in testa a
- *    `styles.css`: il colore non porta uno stato da solo.
- *
- * La terza è quella che conta, ed è misurata invece che affermata: si legge il
- * fondo che il browser darebbe al segno di una porta cablata e a quello di una
- * scollegata, e si chiede che restino lontani **in luminanza** — cioè che una
- * fotocopia in bianco e nero li tenga ancora distinti. Un disegno che li
- * distinguesse con due tinte della stessa chiarezza passerebbe l'occhio e
- * fallirebbe qui.
+ * **THE PORTS, AND THE PROMISE THEY CARRY.** The draft declares three things,
+ * each with a line here that can turn red: the type lives in the **shape** —
+ * circle, diamond, square — not in the tint; a port is **empty when unwired,
+ * filled when wired**; and both survive **greyscale**, which is prohibition 5.
  */
+
+// The third is measured, not asserted: the backdrop a browser would give a
+// wired mark and an unwired one must stay far apart **in luminance**. A design
+// telling them apart with two tints of the same lightness would pass the eye
+// and fail here.
 
 afterEach(cleanup);
 
@@ -55,7 +46,7 @@ beforeAll(() => {
   sheet = parseStylesheet(stylesheetSource);
 });
 
-// ── il mondo di prova ───────────────────────────────────────────────────
+// ── the test world ──────────────────────────────────────────────────────
 
 const ANY: ValueSchema = { type: "any" };
 
@@ -84,32 +75,21 @@ function graphOf(steps: Step[], skippable: Graph["skippable_dependencies"] = [])
   return { steps, skippable_dependencies: skippable };
 }
 
-// ── il mondo vero: i flussi che il motore carica davvero ────────────────
+// ── the real world: the flows the engine actually loads ─────────────────
 
 /**
- * I file di `flows/`, letti così come stanno sul disco.
- *
- * Passano dal bundler e non da `node:fs` per la stessa ragione scritta in
- * `vite-env.d.ts`: leggerli con `node:fs` vorrebbe `@types/node`, una decima
- * dipendenza su un progetto che ne tiene nove. Si leggono come **testo** e si
- * decodificano qui, come il foglio di stile: nessuno schema di TypeScript si
- * mette in mezzo fra il file e ciò che il motore caricherebbe.
- *
- * Sono importati solo da questa prova, che non fa parte del grafo di
- * `main.tsx`: nel pacchetto che la finestra spedisce non entrano.
+ * The files in `flows/`, read as raw text and decoded here — no TypeScript
+ * schema between the file and what the engine would load. Through the bundler
+ * and not `node:fs`, which would want `@types/node`, a tenth dependency on a
+ * project that keeps nine. Only this test imports them, so they never ship.
  */
 function realFlows(): FlowFile[] {
-  // **DUE POSTI, NON UNO.** Nove flussi stanno in `flows/`, di questo progetto;
-  // `smista-il-lavoro` è **spedito dentro il binario** — sta in
-  // `crates/flow/system/` e ci entra con `include_str!` — perché le regole di
-  // instradamento che viaggiano col prodotto lo nominano, e su una macchina
-  // appena installata la cartella `flows/` non esiste.
-  //
-  // Guardare un posto solo faceva scendere il censimento da 10 flussi a 9 e da
-  // 20 catene a 18 il giorno in cui quel file si è spostato, senza che nessuno
-  // lo volesse: la finestra disegna quel flusso come tutti gli altri, quindi
-  // chi ne misura le porte deve vederlo. Due `glob` e non un `..`: la radice
-  // intera porterebbe dentro `target/`.
+  // **TWO PLACES, NOT ONE.** Nine flows live in `flows/`; `smista-il-lavoro` is
+  // **shipped inside the binary** — it sits in `crates/flow/system/` and gets in
+  // with `include_str!` — because the routing rules that travel with the product
+  // name it, and on a freshly installed machine `flows/` does not exist. The
+  // window draws it like any other, so whoever measures its ports must see it.
+  // Two globs and not a `..`: the whole root would pull in `target/`.
   const files = {
     ...(import.meta.glob("../../flows/*.flow.json", {
       eager: true,
@@ -136,7 +116,7 @@ interface PortCensus {
   empty: number;
 }
 
-/** Quante porte, di che forma e quante alimentate, su un gruppo di flussi. */
+/** How many ports, of which shape and how many fed, over a set of flows. */
 function portCensus(flows: FlowFile[]): PortCensus {
   const census: PortCensus = { total: 0, text: 0, structure: 0, value: 0, wired: 0, empty: 0 };
   for (const flow of flows) {
@@ -153,10 +133,10 @@ function portCensus(flows: FlowFile[]): PortCensus {
   return census;
 }
 
-// ── 1. le porte si leggono dal file, e non si inventano ─────────────────
+// ── 1. ports are read from the file, never invented ─────────────────────
 
-describe("da dove il nodo prende le proprie porte", () => {
-  test("una proprietà che la dipendenza produce è CABLATA", () => {
+describe("where a node gets its own ports from", () => {
+  test("a property the dependency produces is WIRED", () => {
     const upstream = stepOf({ id: "monte", output_schema: object({ piano: { type: "string" } }) });
     const step = stepOf({
       id: "valle",
@@ -168,9 +148,9 @@ describe("da dove il nodo prende le proprie porte", () => {
     expect(ports.inputs[0]).toMatchObject({ name: "piano", wired: true, feed: "upstream" });
   });
 
-  test("una proprietà OBBLIGATORIA che nessuno alimenta è VUOTA, e lo dichiara", () => {
-    // È la domanda che la bozza dice di voler chiudere: quale ingresso non è
-    // collegato a niente, senza aprire il pannello.
+  test("a REQUIRED property nobody feeds is EMPTY, and says so", () => {
+    // It is the question the draft says it wants to close: which input is
+    // connected to nothing, without opening the panel.
     const upstream = stepOf({ id: "monte", output_schema: object({ altro: { type: "string" } }) });
     const step = stepOf({
       id: "valle",
@@ -181,9 +161,9 @@ describe("da dove il nodo prende le proprie porte", () => {
     expect(ports.inputs[0]).toMatchObject({ name: "repo", wired: false, required: true });
   });
 
-  test("un valore scritto in `with` alimenta la porta: vince su ciò che arriva", () => {
-    // È la regola del motore, non una scelta di questa finestra: `overlay_input`
-    // mette `with` sopra l'ingresso composto.
+  test("a value written in `with` feeds the port: it wins over what arrives", () => {
+    // It is the engine's rule, not a choice of this window: `overlay_input` puts
+    // `with` on top of the composed input.
     const upstream = stepOf({ id: "monte", output_schema: object({}) });
     const step = stepOf({
       id: "valle",
@@ -195,7 +175,7 @@ describe("da dove il nodo prende le proprie porte", () => {
     expect(ports.inputs[0]).toMatchObject({ name: "tool", wired: true, feed: "fixed" });
   });
 
-  test("con PIÙ dipendenze l'ingresso è chiavato per dipendenza, e le porte pure", () => {
+  test("with SEVERAL dependencies the input is keyed per dependency, and so are the ports", () => {
     const a = stepOf({ id: "a" });
     const b = stepOf({ id: "b" });
     const step = stepOf({
@@ -211,20 +191,16 @@ describe("da dove il nodo prende le proprie porte", () => {
     ]);
   });
 
-  test("UNA SOLA DIPENDENZA, MA SALTABILE: l'ingresso è chiavato, non è l'uscita di quella", () => {
-    // **È L'UNICA REGOLA SOTTILE CHE QUESTA FINESTRA RICOPIA DAL MOTORE, ED ERA
-    // SENZA DIFESA.** `step_input` in `crates/flow/src/executor.rs` scrive
-    // `[only] if !graph.dependency_is_skippable(...)`: con una dipendenza sola
-    // **non** saltabile l'ingresso *è* la sua uscita, e le chiavi del passo
-    // sono le proprietà che quella produce. Ma se quella sola dipendenza è
-    // saltabile la guardia non passa, si cade nel ramo `many`, e l'ingresso
-    // diventa un oggetto con **una chiave per dipendenza** — chiave che manca
-    // del tutto quando il passo saltato non ha prodotto niente.
-    //
-    // La prova che c'era sulla saltabile usava DUE dipendenze, dove il ramo è
-    // già quello giusto per un'altra ragione: togliere `!isSkippable` da
-    // `suppliedNames` lasciava tutta la batteria verde. Qui la dipendenza è
-    // una sola, che è l'unico caso in cui quella condizione decide qualcosa.
+  test("A SINGLE DEPENDENCY, BUT SKIPPABLE: the input is keyed, not that dependency's output", () => {
+    // **THE ONE SUBTLE RULE THIS WINDOW COPIES FROM THE ENGINE.** `step_input`
+    // in `crates/flow/src/executor.rs` writes
+    // `[only] if !graph.dependency_is_skippable(...)`: with a single **non**
+    // skippable dependency the input *is* its output. If that lone dependency is
+    // skippable the guard fails, we fall into the `many` branch, and the input
+    // becomes an object with **one key per dependency**.
+
+    // One dependency is the only case where that condition decides anything:
+    // with two, the branch is already the right one for another reason.
     const upstream = stepOf({ id: "monte", output_schema: object({ piano: { type: "string" } }) });
     const step = stepOf({
       id: "valle",
@@ -234,16 +210,16 @@ describe("da dove il nodo prende le proprie porte", () => {
     const graph = graphOf([upstream, step], [{ step: "valle", dependency: "monte" }]);
     const ports = portsOf(graph, step, {});
     expect(ports.inputs.map((port) => [port.name, port.wired, port.feed])).toEqual([
-      // `piano` NON arriva: sta dentro `monte`, non accanto.
+      // `piano` does NOT arrive: it sits inside `monte`, not next to it.
       ["piano", false, "none"],
-      // `monte` sì: è la chiave che il ramo `many` scrive.
+      // `monte` does: it is the key the `many` branch writes.
       ["monte", true, "upstream"],
     ]);
   });
 
-  test("la stessa dipendenza sola, NON saltabile, apre invece le proprie proprietà", () => {
-    // Il gemello della prova qui sopra: senza di lui la coppia non dice che a
-    // decidere è la saltabilità, dice solo com'è fatto un caso.
+  test("the same lone dependency, NOT skippable, opens its own properties instead", () => {
+    // The twin of the test above: without it the pair does not say that
+    // skippability is what decides, only what one case looks like.
     const upstream = stepOf({ id: "monte", output_schema: object({ piano: { type: "string" } }) });
     const step = stepOf({
       id: "valle",
@@ -257,9 +233,9 @@ describe("da dove il nodo prende le proprie porte", () => {
     ]);
   });
 
-  test("quando la dipendenza dichiara `any` NON SI ACCUSA NESSUNO: è «non lo so»", () => {
-    // Tre stati e non due, come già fa il riquadro dello strumento: dire
-    // «manca» su un ingresso che forse arriva sarebbe un'accusa inventata.
+  test("when the dependency declares `any` NOBODY IS BLAMED: it is «non lo so»", () => {
+    // Three states and not two, as the tool's own panel already does: saying
+    // «manca» about an input that may well arrive is an invented accusation.
     const upstream = stepOf({ id: "monte", output_schema: ANY });
     const step = stepOf({
       id: "valle",
@@ -270,7 +246,7 @@ describe("da dove il nodo prende le proprie porte", () => {
     expect(ports.inputs[0]).toMatchObject({ wired: true, feed: "unknown" });
   });
 
-  test("un passo senza dipendenze mostra l'AVVIO, pieno solo se il file lo apre", () => {
+  test("a step with no dependencies shows the START port, filled only if the file opens it", () => {
     const step = stepOf({ id: "radice" });
     const graph = graphOf([step]);
     expect(portsOf(graph, step, {}).inputs[0]).toMatchObject({
@@ -283,10 +259,10 @@ describe("da dove il nodo prende le proprie porte", () => {
     });
   });
 
-  test("L'USCITA È VUOTA QUANDO NESSUNO LA LEGGE, ed è ciò che si vede sui flussi veri", () => {
-    // Sui dieci flussi di questa macchina quasi ogni ingresso è riempito da
-    // `with`: se il pieno/vuoto vivesse solo lì, la promessa sarebbe verde e
-    // muta. Le foglie invece ci sono in ogni flusso, e si vedono subito.
+  test("THE OUTPUT IS EMPTY WHEN NOBODY READS IT, and that is what the real flows show", () => {
+    // On the ten flows of this machine almost every input is filled by `with`:
+    // if filled/empty lived only there, the promise would be green and mute.
+    // Leaves, on the other hand, exist in every flow and show up at once.
     const leaf = stepOf({ id: "foglia", deps: ["monte"] });
     const upstream = stepOf({ id: "monte" });
     const graph = graphOf([upstream, leaf]);
@@ -297,7 +273,7 @@ describe("da dove il nodo prende le proprie porte", () => {
     expect(portsOf(graph, upstream, {}).output).toMatchObject({ wired: true });
   });
 
-  test("senza schema d'ingresso le porte sono le dipendenze, e la saltabile non è obbligatoria", () => {
+  test("with no input schema the ports are the dependencies, and a skippable one is not required", () => {
     const a = stepOf({ id: "a", output_schema: { type: "string" } });
     const b = stepOf({ id: "b" });
     const step = stepOf({ id: "valle", deps: ["a", "b"] });
@@ -309,7 +285,7 @@ describe("da dove il nodo prende le proprie porte", () => {
     ]);
   });
 
-  test("il tipo diventa forma: testo cerchio, struttura rombo, il resto quadrato", () => {
+  test("type becomes shape: text a circle, structure a diamond, the rest a square", () => {
     const step = stepOf({
       id: "forme",
       input_schema: object({
@@ -324,7 +300,7 @@ describe("da dove il nodo prende le proprie porte", () => {
   });
 });
 
-// ── 2. il nodo disegnato ────────────────────────────────────────────────
+// ── 2. the node as drawn ────────────────────────────────────────────────
 
 const WIRED_AND_EMPTY: Step = stepOf({
   id: "implementa",
@@ -372,28 +348,28 @@ function mountNode(over: Partial<StepNodeData> = {}, states: Map<string, StepRun
   return container.querySelector(".step-node") as HTMLElement;
 }
 
-/** Il fondo che il browser darebbe a questo elemento, già opaco. */
+/** The backdrop a browser would give this element, already opaque. */
 function backdropOf(element: Element) {
   const styles = styleTree(document.documentElement, sheet);
   const style = styles.get(element);
-  expect(style, "manca lo stile calcolato del segno di una porta").toBeDefined();
+  expect(style, "the computed style of a port mark is missing").toBeDefined();
   return (style as { backdrop: Parameters<typeof contrastRatio>[0] }).backdrop;
 }
 
-describe("UNA PORTA CABLATA E UNA SCOLLEGATA SI DISTINGUONO SENZA IL COLORE", () => {
-  test("i due segni restano lontani in luminanza: reggono la scala di grigi", () => {
+describe("A WIRED PORT AND AN UNWIRED ONE DIFFER WITHOUT COLOR", () => {
+  test("the two marks stay far apart in luminance: they survive greyscale", () => {
     const node = mountNode();
     const wired = node.querySelector(".step-node__port[data-wired] .step-node__port-mark");
     const empty = node.querySelector(
       ".step-node__port:not([data-wired]) .step-node__port-mark",
     );
-    expect(wired, "manca una porta cablata da misurare").not.toBeNull();
-    expect(empty, "manca una porta scollegata da misurare").not.toBeNull();
+    expect(wired, "no wired port to measure").not.toBeNull();
+    expect(empty, "no unwired port to measure").not.toBeNull();
 
-    // 3:1 è la soglia dei segni non testuali: sotto, in bianco e nero, i due
-    // diventano la stessa macchia. Qui il pieno è inchiostro e il vuoto è la
-    // carta del nodo, quindi il margine è largo — ed è il margine a dover
-    // restare, non il numero.
+    // 3:1 is the threshold for non-text marks: below it, in black and white, the
+    // two become the same blob. Here the filled one is ink and the empty one is
+    // the node's paper, so the margin is wide — and it is the margin that has to
+    // survive, not the number.
     const ratio = contrastRatio(
       backdropOf(wired as Element),
       backdropOf(empty as Element),
@@ -401,9 +377,9 @@ describe("UNA PORTA CABLATA E UNA SCOLLEGATA SI DISTINGUONO SENZA IL COLORE", ()
     expect(ratio).toBeGreaterThanOrEqual(3);
   });
 
-  test("il vuoto è vuoto davvero: il segno scollegato non ha nessun riempimento", () => {
-    // Se qualcuno riempie tutte e due e affida la differenza alla tinta, la
-    // misura sopra crolla — ma questa lo dice prima, e col nome della causa.
+  test("empty is really empty: the unwired mark has no fill at all", () => {
+    // If someone fills both and hands the difference to the tint, the
+    // measurement above collapses — this one says it first, and names the cause.
     const node = mountNode();
     const empty = node.querySelector(
       ".step-node__port:not([data-wired]) .step-node__port-mark",
@@ -413,12 +389,12 @@ describe("UNA PORTA CABLATA E UNA SCOLLEGATA SI DISTINGUONO SENZA IL COLORE", ()
     expect(parseColor(String(declared))?.a).toBe(0);
   });
 
-  test("«manca» è una PAROLA, non una tinta", () => {
+  test("«manca» is a WORD, not a tint", () => {
     mountNode();
     expect(screen.getByText("repo manca")).toBeDefined();
   });
 
-  test("il tipo sta nella forma, e le tre forme sono tre disegni diversi", () => {
+  test("the type lives in the shape, and the three shapes are three different drawings", () => {
     const step = stepOf({
       id: "forme",
       input_schema: object({ parola: { type: "string" }, oggetto: object({}), numero: { type: "number" } }),
@@ -427,16 +403,16 @@ describe("UNA PORTA CABLATA E UNA SCOLLEGATA SI DISTINGUONO SENZA IL COLORE", ()
     const styles = styleTree(document.documentElement, sheet);
     const signature = (shape: string) => {
       const mark = node.querySelector(`.step-node__port-mark[data-shape="${shape}"]`);
-      expect(mark, `manca il segno di forma ${shape}`).not.toBeNull();
+      expect(mark, `no mark for shape ${shape}`).not.toBeNull();
       const declarations = styles.get(mark as Element)?.declarations as Map<string, string>;
       return [declarations.get("border-radius") ?? "", declarations.get("transform") ?? ""].join("|");
     };
     const all = [signature("text"), signature("structure"), signature("value")];
-    expect(new Set(all).size, `due forme si disegnano uguali: ${all.join(" · ")}`).toBe(3);
+    expect(new Set(all).size, `two shapes are drawn the same: ${all.join(" · ")}`).toBe(3);
   });
 });
 
-describe("lo stato: punto PIÙ parola", () => {
+describe("state: dot PLUS word", () => {
   const STATES: StepState[] = [
     "waiting",
     "running",
@@ -446,7 +422,7 @@ describe("lo stato: punto PIÙ parola", () => {
     "handed_to_human",
   ];
 
-  test("ogni stato porta un punto e una parola, e le parole sono tutte diverse", () => {
+  test("every state carries a dot and a word, and the words are all different", () => {
     const words = new Set<string>();
     for (const state of STATES) {
       const node = mountNode(
@@ -454,11 +430,11 @@ describe("lo stato: punto PIÙ parola", () => {
         new Map([["sviluppa-sailor::implementa", { step_id: "implementa", state, attempt: 1 }]]),
       );
       const label = node.querySelector(".step-node__state") as HTMLElement;
-      expect(label.querySelector(".step-node__state-dot"), `${state} è senza punto`).not.toBeNull();
+      expect(label.querySelector(".step-node__state-dot"), `${state} has no dot`).not.toBeNull();
       const word = (label.textContent ?? "").trim();
-      // Il punto da solo sarebbe colore e basta: la parola è ciò che regge in
-      // scala di grigi, ed è il divieto 5 alla lettera.
-      expect(word, `${state} è senza parola`).not.toBe("");
+      // The dot alone would be color and nothing else: the word is what survives
+      // greyscale, and that is prohibition 5 to the letter.
+      expect(word, `${state} has no word`).not.toBe("");
       words.add(word);
       cleanup();
     }
@@ -466,10 +442,10 @@ describe("lo stato: punto PIÙ parola", () => {
   });
 });
 
-describe("i due registri dell'attenzione", () => {
+describe("the two registers of attention", () => {
   const run = (state: StepState): StepRun => ({ step_id: "x", state, attempt: 1 });
 
-  test("fra tre che aspettano una persona, UNO SOLO prende l'isolamento", () => {
+  test("among three waiting for a person, ONLY ONE is singled out", () => {
     const call = stepThatCallsForAGesture(
       new Map([
         ["f::c", run("handed_to_human")],
@@ -481,7 +457,7 @@ describe("i due registri dell'attenzione", () => {
     expect(call.waiting).toBe(3);
   });
 
-  test("chi aspetta una persona viene prima di chi è fermo al tetto", () => {
+  test("waiting for a person comes before stopped at the cap", () => {
     const call = stepThatCallsForAGesture(
       new Map([
         ["f::a", run("capped")],
@@ -491,14 +467,14 @@ describe("i due registri dell'attenzione", () => {
     expect(call.key).toBe("f::z");
   });
 
-  test("una corsa viva NON chiede attenzione: nessun isolato", () => {
-    // È il difetto che la bozza nomina: ogni corsa viva chiedeva attenzione,
-    // cioè nessuna la otteneva.
+  test("a live run does NOT ask for attention: nobody singled out", () => {
+    // It is the flaw the draft names: every live run asked for attention, which
+    // means none of them got it.
     expect(stepThatCallsForAGesture(new Map([["f::a", run("running")]])).key).toBeNull();
     expect(stepThatCallsForAGesture(new Map([["f::a", run("broke")]])).key).toBeNull();
   });
 
-  test("sulla tela l'isolato è marcato, e conta le altre a parole", () => {
+  test("on the canvas the singled-out one is marked, and counts the others in words", () => {
     const node = mountNode(
       {},
       new Map([
@@ -510,7 +486,7 @@ describe("i due registri dell'attenzione", () => {
     expect(screen.getByText("altri 1 in attesa")).toBeDefined();
   });
 
-  test("il secondo che aspetta NON è isolato", () => {
+  test("the second one waiting is NOT singled out", () => {
     const node = mountNode(
       {},
       new Map([
@@ -522,80 +498,65 @@ describe("i due registri dell'attenzione", () => {
   });
 });
 
-// ── 3. il foglio e la disposizione dicono lo stesso numero ──────────────
+// ── 3. the sheet and the layout say the same number ─────────────────────
 
-describe("la larghezza di un nodo, e lo spazio fra due nodi", () => {
-  test("IL FOGLIO E LA DISPOSIZIONE DICONO LO STESSO NUMERO", () => {
-    // Il difetto di classe: `layout.ts` disponeva le corsie su una larghezza
-    // che il nodo non aveva più. Nessun tipo lo vede, e a schermo si vede solo
-    // quando due nodi si toccano.
+describe("a node's width, and the gap between two nodes", () => {
+  test("THE SHEET AND THE LAYOUT SAY THE SAME NUMBER", () => {
+    // The class of flaw: `layout.ts` laid the lanes out on a width the node no
+    // longer had. No type sees it, and on screen it shows only once two nodes
+    // touch each other.
     const rule = sheet.rules.find((candidate) => candidate.selector === ".step-node");
-    expect(rule, "manca la regola `.step-node`").toBeDefined();
+    expect(rule, "the `.step-node` rule is missing").toBeDefined();
     const width = new Map((rule as { declarations: Array<[string, string]> }).declarations).get(
       "width",
     );
     expect(width).toBe(`${STEP_WIDTH}px`);
   });
 
-  test("fra un nodo e il suo vicino resta lo stacco dichiarato", () => {
-    // Sotto questo stacco un nodo smette di leggersi come oggetto e diventa una
-    // fila: prima erano 28px, cioè meno dello spazio dentro il nodo stesso.
+  test("the declared gap survives between a node and its neighbour", () => {
+    // Below this gap a node stops reading as an object and becomes a row: less
+    // breathing room than the padding inside the node itself.
     expect(COLUMN - STEP_WIDTH).toBeGreaterThanOrEqual(MIN_NODE_GAP);
   });
 });
 
-// ── 4. la promessa, misurata sui flussi veri ────────────────────────────
+// ── 4. the promise, measured on the real flows ──────────────────────────
 
 /**
- * **LE TRE FORME SI DEVONO VEDERE SUI DATI VERI, O LA PROMESSA È UNA PAROLA.**
- *
- * Tutte le prove qui sopra costruiscono il proprio grafo: dimostrano che il
- * calcolo è giusto, non che sulla tela si veda qualcosa. E sui dati d'esempio
- * non si vedeva: gli schemi di `sample.ts` erano tutti `any`, quindi ogni porta
- * usciva quadrata e la distinzione fra cerchio, rombo e quadrato era
- * **invisibile per costruzione** — verde e muta.
- *
- * Questa prova legge i **dieci file veri** di `flows/`, quelli che il motore
- * carica, e li fa passare da `portsOf`. Non ricopia numeri: li ricalcola e
- * chiede che la promessa regga. Come li legge sta scritto una volta sola, su
- * `realFlows` qui sopra: `import.meta.glob` col bundler, non `node:fs`.
- *
- * Le soglie sono larghe apposta. Il numero esatto cambia ogni volta che
- * qualcuno tocca un flusso — e quel movimento è lavoro normale, non un difetto:
- * una prova che lo inseguisse diventerebbe rossa per il motivo sbagliato. Ciò
- * che non deve cambiare è che tutte e tre le forme e tutt'e due i pieni
- * esistano davvero, in quantità che non si possano scambiare per un caso.
+ * **THE THREE SHAPES MUST SHOW ON REAL DATA, OR THE PROMISE IS JUST A WORD.**
+ * Every test above builds its own graph, proving the computation right and not
+ * that anything is visible — on the sample it was not, since `sample.ts`
+ * schemas were all `any` and every port came out square. The thresholds stay
+ * loose: the exact count moves whenever somebody touches a flow, which is work
+ * and not a defect. What must not move is that all three shapes and both fills
+ * exist, in numbers no accident would produce.
  */
-describe("le tre forme sui dieci flussi veri, non sull'esempio", () => {
+describe("the three shapes on the ten real flows, not on the sample", () => {
   const flows = realFlows();
 
-  test("i dieci file si leggono davvero, e sono dieci", () => {
-    // Senza questa, tutte le soglie qui sotto potrebbero passare su zero file
-    // letti — che è il modo più silenzioso di essere verdi per non aver
-    // guardato niente.
+  test("the ten files really are read, and there are ten", () => {
+    // Without this, every threshold below could pass on zero files read — the
+    // quietest way of being green for having looked at nothing.
     expect(flows.length).toBeGreaterThanOrEqual(10);
   });
 
-  test("CERCHIO, ROMBO E QUADRATO CI SONO TUTTI, E NESSUNO È UN CASO ISOLATO", () => {
+  test("CIRCLE, DIAMOND AND SQUARE ARE ALL THERE, AND NONE IS A ONE-OFF", () => {
     const census = portCensus(flows);
-    const shapes = `cerchi ${census.text}, rombi ${census.structure}, quadrati ${census.value} su ${census.total}`;
-    // Il 01/09/2026 il conto era: 137 porte — 27 cerchi, 36 rombi, 74
-    // quadrati; 111 cablate e 26 vuote. È scritto qui come riferimento, non
-    // come soglia: la soglia è sotto, larga apposta.
-    expect(census.total, `porte lette: ${shapes}`).toBeGreaterThan(100);
-    // Dieci è molto sotto il conto vero di ognuna e molto sopra il rumore: se
-    // `shapeOf` collassasse su una forma sola, due di questi tre andrebbero a
-    // zero e la riga direbbe quale.
+    const shapes = `circles ${census.text}, diamonds ${census.structure}, squares ${census.value} of ${census.total}`;
+    expect(census.total, `ports read: ${shapes}`).toBeGreaterThan(100);
+    // Ten is far below each real count and far above the noise: if `shapeOf`
+    // collapsed onto a single shape, two of these three would go to zero and the
+    // line would say which.
     expect(census.text, shapes).toBeGreaterThanOrEqual(10);
     expect(census.structure, shapes).toBeGreaterThanOrEqual(10);
     expect(census.value, shapes).toBeGreaterThanOrEqual(10);
   });
 
-  test("VUOTO E PIENO CI SONO TUTT'E DUE: «quale ingresso manca» si vede", () => {
-    // Se ogni porta risultasse cablata, la tela sarebbe leggibile e inutile:
-    // la domanda che le porte esistono per chiudere non avrebbe mai risposta.
+  test("EMPTY AND FILLED BOTH EXIST: \"which input is missing\" is visible", () => {
+    // If every port came out wired, the canvas would be legible and useless: the
+    // question the ports exist to answer would never get an answer.
     const census = portCensus(flows);
-    const fill = `cablate ${census.wired}, vuote ${census.empty} su ${census.total}`;
+    const fill = `wired ${census.wired}, empty ${census.empty} of ${census.total}`;
     expect(census.wired, fill).toBeGreaterThanOrEqual(10);
     expect(census.empty, fill).toBeGreaterThanOrEqual(10);
   });
