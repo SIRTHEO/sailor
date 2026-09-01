@@ -2446,3 +2446,214 @@ button.is-primary {
   color: var(--faint);
   word-break: break-all;
 }
+
+/* ===========================================================================
+   I TERMINALI. Le schede, i pannelli, e la riga che si sta componendo.
+   ---------------------------------------------------------------------------
+   Un terminale è già pieno del colore che ci scrive dentro il programma che ci
+   gira: qui attorno non ce n'è nessuno che non sia uno stato. Il divieto 4 vale
+   soprattutto qui, dove la tentazione è il riquadro nero.
+
+   Lo schermo dell'emulatore prende `--paper` e `--ink` — 15,08:1 — e li prende
+   due volte: da questa regola per ciò che il foglio disegna, e dai ruoli letti
+   in `TerminalPane.tsx` per il tema che xterm si dipinge da sé. Un tema lasciato
+   al suo predefinito sarebbe nero su nero-quasi, cioè un pannello con una tinta
+   sua incollato dentro una finestra di carta calda.
+   =========================================================================== */
+
+.terminals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.terminals__mute,
+.terminals__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-mid);
+}
+
+.terminals__open {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.terminals__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-grow: 1;
+}
+
+.terminals__input {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.terminals__trouble {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--ink);
+  border-left: 2px solid var(--line);
+  padding-left: var(--space-2);
+}
+
+.terminals__trouble[data-gravity="warn"] {
+  border-left-color: var(--warn);
+}
+
+.terminals__trouble[data-gravity="danger"] {
+  border-left-color: var(--danger);
+}
+
+.terminals__tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+/* Una scheda porta il nome dello spazio di lavoro, perché è quello che un
+   terminale *è*: due terminali sulla stessa repo si distinguono dall'id, e
+   quello sta nel pannello, dove serve a copiarlo. */
+.terminals__tab {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+}
+
+.terminals__tab[data-here] {
+  border-color: var(--ink);
+  background: var(--raised);
+}
+
+.terminals__word,
+.pane__state {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--state-waiting);
+}
+
+.terminals__tab[data-state="alive"] .terminals__word,
+.pane__state[data-state="alive"] {
+  color: var(--state-running);
+}
+
+.terminals__tab[data-state="closed"] .terminals__word,
+.pane__state[data-state="closed"] {
+  color: var(--state-broke);
+}
+
+.terminals__tab[data-state="unknown"] .terminals__word,
+.pane__state[data-state="unknown"] {
+  color: var(--state-capped);
+}
+
+.terminals__panes {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.pane__head,
+.pane__foot {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.pane__foot {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+
+.pane__root,
+.pane__id {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.pane__why,
+.pane__keys {
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.pane__keys {
+  margin-left: auto;
+}
+
+.pane__mode {
+  flex-shrink: 0;
+}
+
+.pane__screen {
+  flex-grow: 1;
+  min-height: 220px;
+  padding: var(--space-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  overflow: hidden;
+}
+
+/* LA RIGA CHE LA FINESTRA TIENE IN MANO SI VEDE PER INTERO, e si vede che è
+   sua: mentre si compone non è ancora arrivata a nessuno, e questa è l'unica
+   riga della schermata che dice a che punto è. */
+.pane__draft {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.pane__draft[data-empty] {
+  font-family: var(--font-prose);
+  color: var(--muted);
+}
+
+.pane__routed {
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.pane__refused[data-gravity="warn"] {
+  font-size: var(--text-small);
+  color: var(--warn);
+}
