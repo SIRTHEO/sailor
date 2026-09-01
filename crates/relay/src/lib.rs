@@ -147,7 +147,10 @@ fn typed_into(root: &std::path::Path, tty: &str, line: &str) -> Result<(), Actio
     terminal::inbox::press(&address, &bytes).map_err(|error| {
         ActionError::new(
             "terminal_not_held",
-            format!("{}: Sailor is not holding this terminal ({error})", address.display()),
+            format!(
+                "{}: Sailor is not holding this terminal ({error})",
+                address.display()
+            ),
         )
     })
 }

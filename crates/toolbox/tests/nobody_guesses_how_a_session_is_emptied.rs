@@ -43,9 +43,8 @@ fn a_declaration_with_nothing_in_it_answers_nothing() {
 /// brought is named rather than swallowed.
 #[test]
 fn a_field_this_version_does_not_know_does_not_drop_the_declaration() {
-    let described = read(
-        r#"{"id":"a","family":"ai_cli","reset_context":{"line":"/wipe","confirm":"yes"}}"#,
-    );
+    let described =
+        read(r#"{"id":"a","family":"ai_cli","reset_context":{"line":"/wipe","confirm":"yes"}}"#);
     assert_eq!(described.reset_line(), Some("/wipe"));
     assert!(
         described
@@ -97,5 +96,8 @@ fn the_shipped_catalog_is_the_one_that_ships() {
         builtin_catalog("tools").is_some_and(|text| text.contains("ai_cli")),
         "the builtin catalog must be the shipped file"
     );
-    assert!(shipped().live().len() > 10, "the catalog loaded almost nothing");
+    assert!(
+        shipped().live().len() > 10,
+        "the catalog loaded almost nothing"
+    );
 }
