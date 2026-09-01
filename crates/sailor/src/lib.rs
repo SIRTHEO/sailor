@@ -25,6 +25,7 @@
 //! legge un commento per aggiornarlo. Sta in `COMMANDS`, lo stampa
 //! `print_usage`, e la finestra lo mostra leggendolo da lì.
 
+pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod models_cmd;
@@ -127,6 +128,12 @@ pub const COMMANDS: &[Command] = &[
         description: "declares the project root, so a flow does not have to know it",
         usage: workspace_cmd::USAGE,
         run: workspace_cmd::run,
+    },
+    Command {
+        name: "faults",
+        description: "i guasti incontrati: cosa è successo, e quale controllo lo impedirebbe",
+        usage: faults_cmd::USAGE,
+        run: faults_cmd::run,
     },
     Command {
         name: "session",
