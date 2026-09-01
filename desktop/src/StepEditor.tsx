@@ -8,6 +8,7 @@
 
 import { useRef, useState } from "react";
 import { kindOf, type Condition, type Step, type ValueSchema } from "./flow";
+import { KIND_LABEL } from "./StepNode";
 import {
   chainIn,
   groupByKind,
@@ -41,18 +42,6 @@ export interface StepEditorProps {
   onDelete: () => void;
 }
 
-/** The families a step can belong to, as a word a reader knows. */
-const KIND_LABEL: Record<string, string> = {
-  trigger: "trigger",
-  engine: "engine",
-  check: "check",
-  wait: "wait",
-  branch: "branch",
-  deposit: "store",
-  gesture: "gesture",
-  human: "person",
-  subflow: "subflow",
-};
 
 /**
  * Mounts once per selected step (the key is `selectedNode` in `App`), so the

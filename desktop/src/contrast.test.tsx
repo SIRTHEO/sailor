@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { FlowBandNode, StepNode, type FlowBandData, type StepNodeData } from "./StepNode";
+import { t } from "./i18n";
 import { Now, RunGroup } from "./Now";
 import { History } from "./History";
 import { Installed } from "./Installed";
@@ -458,7 +459,7 @@ describe("the six states of a step, and the lanes", () => {
       </ReactFlowProvider>,
     );
 
-    expect(screen.getAllByText("fermo al tetto").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(t("window.step.state.capped")).length).toBeGreaterThan(0);
     expect(measure(80)).toEqual([]);
   });
 });
