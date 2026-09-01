@@ -365,6 +365,7 @@ dependencies = [
  "release",
  "serde",
  "serde_json",
+ "sessions",
  "toolbox",
  "trigger",
  "ui",
@@ -412,6 +413,17 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "sessions"
+version = "0.1.0"
+dependencies = [
+ "ledger",
+ "libc",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

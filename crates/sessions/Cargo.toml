@@ -1,0 +1,37 @@
+[package]
+name = "sessions"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Il tracciamento dei terminali: chi si è presentato, su quale tty, dentro quale
+# albero, e cosa c'è sulla macchina adesso.
+#
+# **UN CRATE A SÉ, E UN FILE SQLite A SÉ.** Le sessioni di terminale non sono le
+# corse dei flussi: hanno un'altra chiave, un altro ciclo di vita e un'altra
+# ragione di cambiare. Tenerle in `state.db` vorrebbe dire alzare
+# `PROJECTION_SCHEMA_VERSION` — un numero che due cantieri paralleli alzerebbero
+# ognuno al proprio successivo, e la divergenza non darebbe nessun errore: il
+# deposito di chi arriva secondo si dichiarerebbe «versione non supportata» su
+# una macchina dove non è cambiato niente. Qui la versione è nostra e non
+# interferisce con nessuno.
+#
+# `ledger` serve per una funzione sola, `default_directory()`: dove vive il
+# deposito di questa macchina. Ricopiare quel percorso è il guasto 19 — la casa
+# in due posti, e nessuna delle due che si dichiara sbagliata.
+#
+# `libc` per `ttyname`: qual è il terminale di questo processo. È una domanda
+# sul proprio descrittore, non una domanda sulla macchina, quindi non passa da
+# `ps` e non può essere negata in silenzio. Era già nel `Cargo.lock`.
+[dependencies]
+ledger = { path = "../ledger" }
+libc = "0.2"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Solo per la prova che scrive a mano una `user_version` più alta della nostra
+# e guarda che il file venga rifiutato per nome: senza scriverla a mano, quel
+# ramo non lo percorre nessuno finché non è troppo tardi.
+[dev-dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
