@@ -72,7 +72,7 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
         // spostare, quindi non c'è nessuna domanda da farle.
         let access = match find_cli(&profile.cli_id) {
             Ok(cli) => access_state(&tools, &probe, cli, &profile.home_dir),
-            Err(reason) => format!("non si sa ({reason})"),
+            Err(reason) => format!("not known ({reason})"),
         };
         println!(
             "{marker} {} {} -> {} — accesso: {access}",
@@ -98,7 +98,7 @@ fn access_state(
 ) -> String {
     let Some((tool, bin)) = tools.declared_as_executable(cli.executable) else {
         return format!(
-            "non si sa: «{}» non è su questa macchina, o nessun descrittore lo dichiara",
+            "not known: «{}» is not on this machine, or no descriptor declares it",
             cli.executable
         );
     };
@@ -123,17 +123,17 @@ fn access_state(
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
         LoginVerdict::LoggedIn { said } => format!("autenticato («{}»)", one_line(&said)),
         LoginVerdict::LoggedOut { said } => {
-            format!("NON AUTENTICATO («{}»)", one_line(&said))
+            format!("NOT AUTHENTICATED («{}»)", one_line(&said))
         }
         LoginVerdict::NotDeclared => {
-            format!("non si sa: il descrittore «{tool}» dichiara `login_status` a metà")
+            format!("not known: descriptor «{tool}» declares `login_status` by halves")
         }
         LoginVerdict::Unrecognised { said } => format!(
             "non si sa: ha risposto «{}», che non somiglia a nessuna delle due forme \
              dichiarate",
             one_line(&said)
         ),
-        LoginVerdict::NoAnswer { why } => format!("non si sa: nessuna risposta — {why}"),
+        LoginVerdict::NoAnswer { why } => format!("not known: no answer — {why}"),
     }
 }
 
@@ -150,7 +150,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
     };
     let cli = find_cli(cli_id)?;
     let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
-        .map_err(|e| format!("nome di profilo non valido: {e}"))?;
+        .map_err(|e| format!("not a valid profile name: {e}"))?;
     std::fs::create_dir_all(&home).map_err(|e| format!("impossibile creare {}: {e}", home.display()))?;
 
     let mut store = store_io::load_store()?;
@@ -159,7 +159,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
         .iter()
         .any(|p| p.cli_id == cli.id && &p.name == name);
     if already_exists {
-        return Err(format!("il profilo {name} esiste già per {}", cli.id));
+        return Err(format!("profile {name} already exists for {}", cli.id));
     }
     store.profiles.push(Profile {
         name: name.clone(),
@@ -180,7 +180,7 @@ fn cmd_switch(args: &[String]) -> Result<(), String> {
         .iter()
         .find(|p| p.cli_id == cli.id && &p.name == name)
         .cloned()
-        .ok_or_else(|| format!("profilo {name} non trovato per {}", cli.id))?;
+        .ok_or_else(|| format!("profile {name} not found for {}", cli.id))?;
 
     if let HomeMechanism::CredentialSymlink { relative_path } = cli.home {
         store_io::apply_symlink_swap(&store_io::home_dir()?, relative_path, &profile.home_dir)?;
@@ -303,7 +303,7 @@ mod tests {
         std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
         let said = access_state(&tools, &probe, cli, &empty);
         assert!(
-            said.contains("NON AUTENTICATO") && said.contains("Not logged in"),
+            said.contains("NOT AUTHENTICATED") && said.contains("Not logged in"),
             "una casa senza credenziali deve vedersi, con le parole del motore: {said}"
         );
 
