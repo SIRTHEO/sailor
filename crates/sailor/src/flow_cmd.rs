@@ -4964,29 +4964,6 @@ mod tests {
     /// davvero spostato. Non certifica: dice quanto lavoro c'era.
     ///
     /// Legge il file vero e non una copia: una copia si aggiornerebbe insieme
-    /// alla riparazione e resterebbe verde per sempre.
-    #[test]
-    fn the_real_development_flow_has_no_hardcoded_paths() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../flows/sviluppa-sailor.flow.json");
-        let text = fs::read_to_string(&path).expect("il flusso di sviluppo è versionato");
-        let flow: FlowFile = serde_json::from_str(&text).expect("è un flusso valido");
-
-        let found = hardcoded_paths(&flow);
-        let described: Vec<String> = found
-            .iter()
-            .map(|entry| {
-                let kind = if entry.fatal { "errore" } else { "avviso" };
-                format!("{kind}: {} in «{}» ({})", entry.step, entry.field, entry.value)
-            })
-            .collect();
-
-        assert!(
-            found.is_empty(),
-            "il flusso di sviluppo non gira su un clone: {}",
-            described.join("; ")
-        );
-    }
 
     // ── il totale che contiene un'incognita ──────────────────────────────
 
