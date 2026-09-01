@@ -22,10 +22,11 @@ use terminal::Workspace;
 pub const USAGE: &[&str] = &[
     "sailor accompany run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
     "sailor accompany press --tty <name> --text <line> [--store <dir>]   types a line into an accompanied terminal",
+    "sailor accompany reset --tty <name> --cli <id> [--store <dir>]   empties a running session the way its descriptor says",
     "sailor accompany list [--ceiling <tokens>] [--store <dir>]   which terminals can be typed into, and how full",
 ];
 
-const FORMS: &[&str] = &["run", "press", "list"];
+const FORMS: &[&str] = &["run", "press", "reset", "list"];
 
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
@@ -51,6 +52,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
     match form.as_str() {
         "run" => accompany(&args[1..]),
         "press" => press(&args[1..]),
+        "reset" => reset(&args[1..]),
         "list" => list(&args[1..]),
         other => Err(format!("«{other}» is not a form of this command")),
     }
@@ -248,27 +250,79 @@ fn exit_code_of(inner: &Pty) -> i32 {
 
 fn press(args: &[String]) -> Result<i32, String> {
     let options = options_of(args)?;
-    let tty = options
-        .iter()
-        .find(|(name, _)| name == "tty")
-        .map(|(_, value)| value.clone())
-        .ok_or_else(|| "which terminal? give --tty <name>".to_owned())?;
-    let text = options
-        .iter()
-        .find(|(name, _)| name == "text")
-        .map(|(_, value)| value.clone())
-        .ok_or_else(|| "what should be typed? give --text <line>".to_owned())?;
-
-    let address = mailroom(&options)?.join(format!("{tty}.sock"));
-    // The carriage return is what a terminal receives when someone presses
-    // Enter; a newline would leave the line sitting there unsent.
-    let mut typed = text.into_bytes();
-    typed.push(b'\r');
-    inbox::press(&address, &typed).map_err(|error| {
-        format!("{}: nobody is accompanying this terminal ({error})", address.display())
-    })?;
+    let tty = named(&options, "tty", "which terminal? give --tty <name>")?;
+    let text = named(&options, "text", "what should be typed? give --text <line>")?;
+    press_into(&options, &tty, &text)?;
     println!("typed into {tty}");
     Ok(0)
+}
+
+/// One option by name, or the sentence that says what is missing.
+fn named(options: &[(String, String)], name: &str, missing: &str) -> Result<String, String> {
+    options
+        .iter()
+        .find(|(written, _)| written == name)
+        .map(|(_, value)| value.clone())
+        .ok_or_else(|| missing.to_owned())
+}
+
+/// Types a line into an accompanied terminal.
+///
+/// The carriage return is what a terminal receives when someone presses Enter;
+/// a newline would leave the line sitting there unsent.
+fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(), String> {
+    let address = mailroom(options)?.join(format!("{tty}.sock"));
+    let mut typed = line.as_bytes().to_vec();
+    typed.push(b'\r');
+    inbox::press(&address, &typed).map_err(|error| {
+        format!(
+            "{}: nobody is accompanying this terminal ({error})",
+            address.display()
+        )
+    })
+}
+
+/// Empties a running session, by typing the line its own descriptor declares.
+///
+/// The line is never written here. What empties a context is a fact about one
+/// command line, and a fact about one command line put into this file would
+/// make the relay work for that one and quietly misfire on every other.
+fn reset(args: &[String]) -> Result<i32, String> {
+    let options = options_of(args)?;
+    let tty = named(&options, "tty", "which terminal? give --tty <name>")?;
+    let cli = named(&options, "cli", "which command line is running there? give --cli <id>")?;
+
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    let line = reset_line_of(&catalog, &cli)?;
+
+    press_into(&options, &tty, &line)?;
+    println!("typed {line} into {tty}");
+    Ok(0)
+}
+
+/// What empties a session of this command line, or the sentence that refuses.
+///
+/// Split out so the refusal can be checked against the shipped catalog alone.
+/// Asking the machine here would make the answer depend on what the person
+/// running the tests happens to have declared at home.
+fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, String> {
+    let known = catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == cli)
+        .ok_or_else(|| format!("«{cli}»: no descriptor of that name is loaded"))?;
+    known
+        .descriptor
+        .reset_line()
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            format!(
+                "«{cli}» does not declare how a running session of it is emptied. \
+                 Nobody has measured it, which is not the same as it being impossible: \
+                 add `reset_context` to its descriptor rather than guessing a line here"
+            )
+        })
 }
 
 fn list(args: &[String]) -> Result<i32, String> {
@@ -412,6 +466,38 @@ mod tests {
         let (before, line) = split_at_the_dashes(&written);
         assert_eq!(before, words(&["--store", "/tmp/x"]).as_slice());
         assert_eq!(line, words(&["list"]).as_slice());
+    }
+
+    fn shipped() -> toolbox::Catalog {
+        toolbox::Catalog::load(&[toolbox::Source::Builtin])
+    }
+
+    #[test]
+    fn a_command_line_that_declares_how_it_empties_gives_its_line() {
+        let line = reset_line_of(&shipped(), "claude-code").expect("it is declared");
+        assert!(!line.is_empty());
+    }
+
+    /// The whole point. A command line nobody has measured must stop the relay,
+    /// not inherit a line that belongs to a different one.
+    #[test]
+    fn a_command_line_nobody_measured_is_refused_and_told_where_to_say_it() {
+        let refusal = reset_line_of(&shipped(), "codex")
+            .err()
+            .expect("an undeclared command line must refuse");
+        assert!(refusal.contains("does not declare"), "{refusal}");
+        assert!(
+            refusal.contains("reset_context"),
+            "the refusal must say where to write it: {refusal}"
+        );
+    }
+
+    #[test]
+    fn a_command_line_nobody_ever_heard_of_is_refused_by_name() {
+        let refusal = reset_line_of(&shipped(), "rossignol")
+            .err()
+            .expect("an unknown command line must refuse");
+        assert!(refusal.contains("rossignol"), "{refusal}");
     }
 
     #[test]
