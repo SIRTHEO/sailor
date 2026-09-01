@@ -32,6 +32,7 @@ pub mod profiles_cmd;
 pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod run_cmd;
+pub mod session_cmd;
 pub mod step_cmd;
 pub mod version_cmd;
 pub mod workspace_cmd;
@@ -126,6 +127,12 @@ pub const COMMANDS: &[Command] = &[
         description: "dichiara la radice del progetto, così un flusso non deve saperla",
         usage: workspace_cmd::USAGE,
         run: workspace_cmd::run,
+    },
+    Command {
+        name: "session",
+        description: "traccia i terminali: chi si presenta, cosa succede, e cosa c'è sulla macchina",
+        usage: session_cmd::USAGE,
+        run: session_cmd::run,
     },
 ];
 
