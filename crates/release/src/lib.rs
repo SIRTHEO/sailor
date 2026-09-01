@@ -1,125 +1,64 @@
-//! Le decisioni di un rilascio, separate dai gesti che lo eseguono.
+//! Release decisions, separated from the gestures that carry them out.
 //!
-//! IL GUASTO CHE QUESTA STRADA ESISTE PER IMPEDIRE, misurato il 21/08/2026 alle
-//! 20:20: `cargo build --release` costruisce dall'**albero**, non dal commit,
-//! quindi chi ricompila mette in servizio anche ogni riga non committata di
-//! chiunque altro. Quella sera erano circa novecento righe non promosse, di cui
-//! quattrocento **bocciate** da un verdetto un quarto d'ora prima.
-//!
-//! PERCHÉ UN COMANDO E NON UNA REGOLA. Il gesto sembra personale e ha effetto
-//! collettivo. Se la difesa fosse «ricordarsi di compilare altrove», fra due
-//! giorni qualcuno compilerebbe dall'albero e avrebbe ragione lui: è il gesto
-//! che `cargo` suggerisce. Un comando rende corta la strada giusta.
-//!
-//! COSA C'È QUI DENTRO E COSA NO. Come ogni crate di logica di questa casa, qui
-//! stanno le decisioni che si possono sbagliare in
-//! silenzio, senza toccare disco, ambiente o processi: **cosa** si rilascia (la
-//! tabella dei bersagli), **quale commit** ha prodotto il binario in servizio
-//! (il timbro), e **se si può sostituire adesso** senza troncare una
-//! lavorazione. I gesti — clonare, compilare, copiare, riavviare — stanno in
-//! `main.rs`, dove non c'è niente da decidere.
-//!
-//! PERCHÉ UN SERVIZIO RESIDENTE NON BASTA SOSTITUIRLO — storia, e il motivo per
-//! cui il campo `service` resta. Un gancio nasce a ogni chiamata e prende il
-//! binario nuovo da solo; un servizio residente esegue per sempre l'immagine
-//! caricata all'avvio. Il caso che ha insegnato la differenza era `notte`: fino
-//! al 27/08/2026 non esisteva nessuna via per rilasciarlo, il binario cambiava
-//! senza che nessuno lo volesse — qualunque `cargo build` riscriveva
-//! `target/release/notte` — e il comportamento non cambiava quando qualcuno lo
-//! voleva, perché nessuno riavviava. La combinazione peggiore delle due.
-//!
-//! **QUEL BERSAGLIO NON C'È PIÙ, E OGGI NESSUNO È RESIDENTE.** `notte` e
-//! `claude-hooks` sono stati cancellati dal repo il 28-29/08/2026; le loro due
-//! righe in `TARGETS` sono rimaste fino al 01/09/2026 a nominare binari che il
-//! workspace non produceva. La lezione si tiene perché vale per il prossimo
-//! servizio residente; la riga che la incarnava no.
+//! `cargo build --release` builds from the working tree, not from a commit, so
+//! rebuilding puts everybody's uncommitted lines into service. This crate holds
+//! what can be got wrong silently — which targets exist, which commit produced
+//! the binary in service, and whether it can be replaced right now. Cloning,
+//! building, copying and restarting live in `main.rs`.
 
-/// Un servizio residente: c'è chi va riavviato perché la sostituzione abbia
-/// effetto, e chi no.
+/// A resident service: some need a restart for the replacement to take effect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Service {
-    /// L'etichetta launchd predefinita, per `launchctl kickstart -k gui/<uid>/<label>`.
-    ///
-    /// **È un valore predefinito, non un fatto del codice.** Il nome del
-    /// servizio è una proprietà dell'installazione — chi installa `notte` su
-    /// un'altra macchina lo chiama come vuole — e questo crate va in un deposito
-    /// pubblico. `RELEASE_SERVICE_LABEL` lo sostituisce; qui resta il nome che
-    /// ha su questa macchina, perché un predefinito sbagliato è meglio di un
-    /// predefinito assente solo quando è scritto che è un predefinito.
+    /// Default launchd label for `launchctl kickstart -k gui/<uid>/<label>`.
+    /// A property of the installation, not of the code: `RELEASE_SERVICE_LABEL`
+    /// overrides it.
     pub label: &'static str,
-    /// Dove il servizio lascia la ricevuta della lavorazione che ha in mano,
-    /// relativo a `~/.claude`. Un riavvio dato lì in mezzo lascia un compito né
-    /// fatto né in coda.
+    /// Where the service leaves the receipt of the task it is holding, relative
+    /// to `~/.claude`. A restart in the middle leaves a task neither done nor
+    /// queued.
     pub in_progress_rel: &'static str,
 }
 
-/// Cosa si rilascia. I percorsi sono relativi alla radice della configurazione:
-/// una tabella con dentro `/home/someone` non si potrebbe provare da nessun'altra
-/// parte, e le prove girano in una casa isolata.
+/// What gets released. Paths are relative to a root, never absolute: a table
+/// carrying one machine's paths could not be tested anywhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Target {
-    /// Come si nomina sulla riga di comando.
+    /// How it is named on the command line.
     pub name: &'static str,
-    /// Il target `cargo` da costruire.
+    /// The `cargo` target to build.
     pub bin: &'static str,
-    /// La copia dentro l'albero di compilazione, **relativa ai sorgenti**: è
-    /// quella che una `cargo build` locale riscriverebbe.
+    /// The copy inside the build tree, relative to the **sources** — the one a
+    /// local `cargo build` overwrites.
     pub live_rel: &'static str,
-    /// La copia in servizio, **relativa alla casa della configurazione** —
-    /// fuori da `target/`, dove nessuna compilazione la raggiunge. È questa che
-    /// i ganci nominano, quindi compilare non mette più in servizio niente: per
-    /// costruzione, non per sorveglianza.
+    /// The copy in service, relative to the **configuration home**, outside
+    /// `target/` where no build reaches it. Hooks name this one, so building
+    /// puts nothing into service by construction rather than by vigilance.
     ///
-    /// LE DUE RADICI NON SONO LA STESSA, dal 28/08/2026: i sorgenti hanno
-    /// traslocato e l'installazione è rimasta dov'era. Chi legge questi campi
-    /// deve sapere a quale delle due appartengono, perché sbagliarlo scrive il
-    /// binario in un posto che nessuno esegue — ed è successo.
+    /// The two roots are not the same one, and getting them mixed up writes the
+    /// binary where nobody runs it.
     pub safe_rel: &'static str,
-    /// Il file che nomina il commit da cui è stato prodotto il binario in
-    /// servizio, anch'esso relativo alla casa. È **l'unico posto** in cui quel
-    /// dato esiste.
+    /// The file naming the commit the binary in service was built from,
+    /// relative to the home. It is the only place that fact exists.
     pub stamp_rel: &'static str,
-    /// `None` per chi rinasce a ogni chiamata.
+    /// `None` for anything reborn on every call.
     pub service: Option<Service>,
 }
 
-/// I bersagli che esistono.
+/// The targets that exist. `every_release_target_names_a_real_binary` asks
+/// `cargo metadata` whether each `bin` is real, because `bin` is a string and a
+/// table naming a deleted crate still compiles.
 ///
-/// **ERANO TRE FINO AL 01/09/2026, E DUE NOMINAVANO UN MONDO SPARITO.** `notte`
-/// chiedeva il binario `notte`, `hooks` chiedeva `claude-hooks`: tutti e due i
-/// crate erano stati cancellati il 28-29/08/2026 insieme a ciò che non era
-/// Sailor, e da allora gli unici binari del workspace erano `sailor` e
-/// `sailor-live`. Nessuno se n'era accorto perché `bin` è una stringa: la
-/// tabella compilava, e `sailor release notte` scopriva il vuoto solo dopo aver
-/// clonato `HEAD` e avviato una compilazione.
-///
-/// Adesso la voce vuota non può tornare in silenzio: `crates/sailor/tests/`
-/// porta `every_release_target_names_a_real_binary`, che per ogni riga di qui
-/// chiede a `cargo metadata` se quel binario esiste davvero.
-///
-/// **RESTA UNA VOCE SOLA, E IL FATTO È DICHIARATO.** La struttura è nata per
-/// mostrare dove finiscono le differenze fra bersagli — un servizio da
-/// riavviare e uno no — e con un elemento solo non mostra più niente:
-/// `Service`, `service_domain` e l'attesa della prontezza non hanno più nessun
-/// bersaglio che li usi. Se la tabella debba restare una tabella è una
-/// decisione di Theo, non di chi ha tolto i fossili.
+/// Whether a one-row table should stay a table is Theo's call: `Service`,
+/// `service_domain` and the readiness wait currently have no target using them.
 pub const TARGETS: &[Target] = &[
-    // Il bersaglio che mancava, e la sua assenza era il difetto: `sailor`
-    // metteva in servizio gli altri bersagli della tabella — allora ce n'erano
-    // altri due — ma fino al 27/08/2026 veniva installato a mano copiando un
-    // binario, cioè proprio il gesto che questa tabella esiste per togliere di
-    // mezzo. Chi rilascia deve poter rilasciare anche se stesso: dal 01/09/2026
-    // è l'unico che rilascia, e resta il solo che non si potrebbe rilasciare da
-    // sé se questa riga sparisse.
+    // Whoever puts the others into service must be able to do it for itself:
+    // otherwise the only way to install `sailor` is copying a binary by hand,
+    // which is the gesture this table exists to remove.
     //
-    // Nessun servizio da riavviare — ma «nessun servizio» NON vuol dire «si può
-    // sovrascrivere». Il 27/08/2026, installato con un `cp` sopra il file mentre
-    // `sailor ui` lo stava eseguendo, ogni invocazione successiva è morta con
-    // SIGKILL (137), `sailor version` compreso: su macOS riscrivere in posto un
-    // eseguibile mappato in memoria ne invalida la firma per tutti. Con la
-    // rinomina atomica che questo rilascio usa già — si scrive accanto e si
-    // rinomina, il processo vecchio resta sul suo inode — lo stesso gesto
-    // funziona. È il motivo per cui la scorciatoia a mano non va presa.
+    // No service to restart — but "no service" does not mean "safe to
+    // overwrite". Rewriting a memory-mapped executable in place invalidates its
+    // signature for every running process, which is why the release writes
+    // beside the file and renames.
     Target {
         name: "sailor",
         bin: "sailor",
@@ -130,12 +69,12 @@ pub const TARGETS: &[Target] = &[
     },
 ];
 
-/// Il bersaglio che porta questo nome, se esiste.
+/// The target with this name, if it exists.
 pub fn target(name: &str) -> Option<&'static Target> {
     TARGETS.iter().find(|t| t.name == name)
 }
 
-/// I nomi ammessi, per il messaggio di chi ne ha scritto uno che non c'è.
+/// The accepted names, for whoever typed one that does not exist.
 pub fn target_names() -> String {
     TARGETS
         .iter()
@@ -144,12 +83,10 @@ pub fn target_names() -> String {
         .join(", ")
 }
 
-/// La prima parola della prima riga che non è un commento.
+/// The first word of the first line that is not a comment.
 ///
-/// Le righe che cominciano con `#` sono commento: servono a chi deve
-/// **ricostruire** un valore invece di registrarlo — è successo al primo giro
-/// dei ganci, dove il binario era stato compilato dall'albero e nessuno aveva
-/// scritto da quale commit. Un dato ricostruito va usato, ma va detto.
+/// `#` lines are for whoever had to **reconstruct** a value rather than record
+/// it. A reconstructed fact may be used, but it must say that it is one.
 pub fn read_stamp(contents: &str) -> Option<String> {
     contents
         .lines()
@@ -159,23 +96,21 @@ pub fn read_stamp(contents: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Una lavorazione che il servizio ha in mano adesso.
+/// A task the service is holding right now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Busy {
     pub task: String,
     pub pid: u32,
 }
 
-/// Se si può sostituire adesso, e cosa si è visto per dirlo.
+/// Whether it can be replaced now, and what was seen to say so.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Readiness {
-    /// Le lavorazioni in mano a un processo vivo. Finché ce n'è una, il riavvio
-    /// aspetta.
+    /// Tasks held by a live process. While there is one, the restart waits.
     pub busy: Vec<Busy>,
-    /// Ricevute che non dicono di chi sono: nome senza suffisso numerico, cioè
-    /// file arrivati lì per un'altra via. **Non bloccano** — un file estraneo
-    /// che ferma ogni rilascio per sempre è un guasto peggiore di quello che
-    /// eviterebbe — ma si stampano, perché nessuno le scopra dopo.
+    /// Receipts that do not say whose they are. They are reported but **do not
+    /// block**: a stray file stopping every release forever is a worse fault
+    /// than the one it would avoid.
     pub unknown: Vec<String>,
 }
 
@@ -185,34 +120,26 @@ impl Readiness {
     }
 }
 
-/// Legge le ricevute di `in-corso/` e dice se il servizio è a metà di qualcosa.
+/// Reads the receipts in `in-corso/` and says whether the service is mid-task.
 ///
-/// Il nome di una ricevuta lo separa `split_receipt_name`, che è chi lo
-/// scrive: due letture dello stesso formato divergono al primo dubbio.
-///
-/// PERCHÉ IL PID VIVO E NON LA SOLA PRESENZA DEL FILE. Una ricevuta rimasta da
-/// un processo ucciso a metà resta lì fino al recupero del prossimo avvio: se
-/// bastasse la sua presenza, un rilascio non partirebbe mai più proprio nel caso
-/// in cui serve di più, cioè dopo che qualcosa è andato storto.
-/// UN PID RICICLATO PUÒ MENTIRE, e si accetta: se il processo è morto e il
-/// sistema ha dato quel numero a qualcun altro, qui risulta occupato. Non blocca
-/// per sempre — chi aspetta ha un tetto e dopo quello rimanda — e la direzione
-/// dell'errore è quella giusta: un falso «occupato» costa un rilascio rimandato,
-/// un falso «libero» costa una lavorazione troncata.
+/// It asks whether the pid is alive rather than whether the file exists: a
+/// receipt left by a process killed halfway stays until the next startup
+/// recovers it, so presence alone would block releases exactly when one is most
+/// needed. A recycled pid can lie, and that is accepted — a false "busy" costs
+/// a postponed release, a false "free" costs a truncated task.
 pub fn readiness(receipt_names: &[String], alive: &dyn Fn(u32) -> bool) -> Readiness {
     let mut out = Readiness::default();
     for name in receipt_names {
-        // I file nascosti non sono ricevute e non li ha scritti il servizio:
-        // `.DS_Store` nasce da solo in ogni cartella che il Finder guarda, e
-        // dichiararlo «non si sa di chi è» a ogni rilascio insegna a saltare
-        // quella riga — che è dove un giorno comparirà una ricevuta vera.
+        // `.DS_Store` appears by itself in every directory the Finder looks at.
+        // Reporting it as unidentified on every release teaches people to skip
+        // that line, which is where a real receipt will show up one day.
         if name.starts_with('.') {
             continue;
         }
         let (task, pid) = split_receipt_name(name);
         match pid {
             Some(pid) if alive(pid) => out.busy.push(Busy { task, pid }),
-            Some(_) => {} // orfana: il servizio la recupera al prossimo avvio
+            Some(_) => {} // orphaned: the service recovers it at next startup
             None => out.unknown.push(name.clone()),
         }
     }
@@ -225,16 +152,16 @@ mod tests {
 
     #[test]
     fn stamp_skips_comments_and_blank_lines() {
-        let contents = "# ricostruito a mano il 24/08\n\n  abc123 (non fidarsi)\n";
+        let contents = "# reconstructed by hand\n\n  abc123 (do not trust)\n";
         assert_eq!(read_stamp(contents).as_deref(), Some("abc123"));
     }
 
     #[test]
     fn a_stamp_of_only_comments_names_nothing() {
-        assert_eq!(read_stamp("# niente\n#\n\n"), None);
+        assert_eq!(read_stamp("# nothing\n#\n\n"), None);
     }
 
-    /// Il caso che il rilascio esiste per non fare: troncare una lavorazione.
+    /// The case a release exists not to cause: truncating a task.
     #[test]
     fn a_receipt_of_a_live_process_holds_back_the_restart() {
         let names = vec!["triage-voci.task.4242".to_string()];
@@ -249,8 +176,8 @@ mod tests {
         );
     }
 
-    /// E il caso opposto, che è quello in cui il rilascio serve di più: dopo un
-    /// processo morto a metà, la ricevuta resta ma non è più di nessuno.
+    /// The opposite case, and the one where a release is needed most: after a
+    /// process died halfway the receipt stays, but belongs to nobody.
     #[test]
     fn an_orphaned_receipt_holds_back_nothing() {
         let names = vec!["triage-voci.task.4242".to_string()];
@@ -271,74 +198,61 @@ mod tests {
     fn targets_are_found_by_name() {
         assert_eq!(target("sailor").map(|t| t.bin), Some("sailor"));
         assert!(target("nessuno").is_none());
-        // I due nomi ritirati il 01/09/2026 non devono tornare a rispondere:
-        // finché `target("notte")` dava qualcosa, il messaggio d'errore che
-        // elenca i bersagli disponibili prometteva un rilascio impossibile.
+        // While these answered, the error listing available targets promised a
+        // release that could not happen: both binaries are gone.
         assert!(target("notte").is_none());
         assert!(target("hooks").is_none());
     }
 
-    /// Chi mette in servizio gli altri deve saper mettere in servizio se stesso:
-    /// finché quel bersaglio non c'era, l'unico modo di installare `sailor` era
-    /// copiare un binario a mano — cioè il gesto che questa tabella esiste per
-    /// togliere di mezzo, lasciato aperto proprio sullo strumento che lo chiude.
+    /// Whoever puts the others into service must be able to do it for itself.
     #[test]
     fn the_releaser_can_release_itself() {
-        let itself = target("sailor").expect("sailor deve essere un bersaglio");
+        let itself = target("sailor").expect("sailor must be a target");
         assert_eq!(itself.safe_rel, "bin/sailor");
         assert!(
             itself.service.is_none(),
-            "sailor non è un servizio residente: dichiararlo tale chiamerebbe launchctl su un'etichetta inesistente"
+            "sailor is not a resident service: declaring it one would call launchctl on a label that does not exist"
         );
     }
 
-    /// Solo chi resta residente va riavviato: dirlo di chi non lo è farebbe
-    /// chiamare `launchctl` su un'etichetta che non esiste.
-    ///
-    /// **DAL 01/09/2026 NESSUN BERSAGLIO È RESIDENTE**, e questa prova lo
-    /// pretende invece di darlo per scontato: l'unico che lo era, `notte`,
-    /// nominava un binario cancellato. Finché la riga di sopra diceva
-    /// `is_some()` su di lui, il ramo che riavvia un servizio risultava
-    /// provato — e non aveva più niente da riavviare. Il giorno in cui un
-    /// bersaglio residente torna, questa diventa rossa e chi lo aggiunge deve
-    /// dire quale etichetta launchd esiste davvero.
+    /// Only a resident service declares a restart: saying it of one that is not
+    /// would call `launchctl` on a label that does not exist. No target is
+    /// resident today, and this demands it rather than assuming it — the day one
+    /// comes back, whoever adds it has to name a real launchd label.
     #[test]
     fn only_a_resident_service_declares_a_restart() {
         for candidate in TARGETS {
             assert!(
                 candidate.service.is_none(),
-                "{}: dichiara un servizio da riavviare; verifica che l'etichetta launchd esista",
+                "{}: declares a service to restart; check that the launchd label really exists",
                 candidate.name
             );
         }
     }
 
-    /// L'invariante che regge tutta la difesa: la seconda copia sta dove
-    /// `cargo` non scrive. Se un giorno qualcuno la fa puntare dentro
-    /// `target/`, le due strade diventano la stessa e la protezione sparisce
-    /// senza che nulla si rompa — cioè in silenzio.
+    /// The invariant the whole defence rests on: the second copy lives where
+    /// `cargo` does not write. Point it inside `target/` and the two paths
+    /// become one, silently.
     ///
-    /// SI CHIEDE DOVE STA, NON DOVE NON STA. Fino al 27/08/2026 qui c'era
-    /// scritto solo «non contiene `target/`», e un revisore indipendente ha
-    /// fatto notare che una stringa vuota lo soddisfa: la prova sarebbe rimasta
-    /// verde con `safe_rel` che non nomina nessun posto. Un divieto lascia
-    /// passare tutto ciò a cui non aveva pensato; un obbligo no.
+    /// It asks where it lives, not where it does not: "does not contain
+    /// `target/`" is satisfied by the empty string, so the test would stay green
+    /// with a `safe_rel` naming nowhere. A prohibition lets through everything
+    /// it did not think of; an obligation does not.
     #[test]
     fn the_safe_copy_lives_under_bin() {
         for candidate in TARGETS {
             assert!(
                 candidate.safe_rel.starts_with("bin/") && candidate.safe_rel.len() > 4,
-                "{}: la copia sicura è '{}', che non sta in bin/ — sotto target/ cargo la riscrive",
+                "{}: the safe copy is '{}', which is not under bin/ — under target/ cargo overwrites it",
                 candidate.name,
                 candidate.safe_rel
             );
         }
     }
 
-    /// Le tre specie insieme, che è la forma vera di una cartella `in-corso/`
-    /// dopo qualche giorno: una viva, una orfana, un intruso del Finder. Le tre
-    /// prove separate qui sopra passerebbero anche se il codice trattasse la
-    /// prima ricevuta e ignorasse le altre.
+    /// The three kinds together, which is what an `in-corso/` directory really
+    /// looks like after a few days. The three separate tests above would pass
+    /// even if the code handled the first receipt and ignored the rest.
     #[test]
     fn the_three_kinds_of_receipt_are_told_apart_together() {
         let names = vec![
@@ -354,19 +268,17 @@ mod tests {
         assert_eq!(ready.unknown, vec!["arrivato-per-altra-via".to_string()]);
     }
 
-    /// Un timbro ricostruito a mano porta più di un commento, e non sempre in
-    /// testa: quello che conta è che la prima riga *utile* vinca comunque.
+    /// A hand-reconstructed stamp carries more than one comment, and not always
+    /// at the top: the first *useful* line must win anyway.
     #[test]
     fn the_stamp_reads_the_first_useful_line_whatever_surrounds_it() {
-        let contents = "\n   \n# perché è stato ricostruito\n\t abc123 \n# e una nota dopo\ndef456\n";
+        let contents = "\n   \n# why it was reconstructed\n\t abc123 \n# and a note after it\ndef456\n";
         assert_eq!(read_stamp(contents).as_deref(), Some("abc123"));
     }
 }
 
-/// Il nome di una ricevuta separato dal suffisso col numero di processo.
-///
-/// Veniva da `notte`, rimosso dal repo il 29/08/2026: il formato della ricevuta
-/// appartiene a chi le scrive, ed è questo crate.
+/// A receipt name split from its process-number suffix. The format belongs to
+/// whoever writes the receipts, which is this crate.
 pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
     match name.rsplit_once('.') {
         Some((base, suffix)) if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) => {
@@ -376,16 +288,11 @@ pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
     }
 }
 
-/// Se un processo con quel numero esiste ancora.
+/// Whether a process with that number still exists.
 ///
-/// Veniva da `notte`, il ciclo notturno rimosso dal repo il 29/08/2026 perché
-/// instradava fra motori e giudicava esiti — cioè ciò che ora fa un flusso.
-/// Questa funzione non c'entrava con quel ciclo: serve a `release` per sapere
-/// se chi teneva un lucchetto è ancora vivo.
-///
-/// **UN ERRORE CHE NON SIA «NON ESISTE» SI CONTA COME VIVO** (tipicamente il pid
-/// c'è ma non è nostro): un falso «morto» scavalca il lucchetto di qualcun
-/// altro, un falso «vivo» al più fa aspettare un giro in più.
+/// **An error that is not "no such process" counts as alive** — typically the
+/// pid exists but is not ours. A false "dead" steps over somebody else's lock;
+/// a false "alive" costs one more wait.
 pub fn process_exists(pid: u32) -> bool {
     unsafe extern "C" {
         fn kill(pid: i32, sig: i32) -> i32;
