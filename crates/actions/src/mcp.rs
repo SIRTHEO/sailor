@@ -306,6 +306,7 @@ impl Session {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        in_its_own_group(&mut command);
         let mut child = command.spawn().map_err(|error| {
             // Il motivo del sistema operativo, com'è già la regola per
             // `SpawnFailed`: «non si è avviato» da solo manda a cercare un
@@ -391,6 +392,7 @@ impl Session {
     /// l'unico posto dove un server rotto spiega perché.
     fn close(mut self) -> String {
         self.stdin = None;
+        signal_the_whole_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
         match self.errors.take() {
@@ -403,10 +405,35 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stdin = None;
+        signal_the_whole_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
+
+/// A server starts workers, so it is given a group of its own to lead.
+#[cfg(unix)]
+fn in_its_own_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn in_its_own_group(_command: &mut Command) {}
+
+/// The signal goes to the group, which carries the leader's number: the minus
+/// sign is what tells `kill` so. The twins live in `actions::run_with_timeout`
+/// and `supervisor::child`. Known limit: a worker that calls `setsid` on its
+/// own leaves the group and survives.
+#[cfg(unix)]
+fn signal_the_whole_group(pid: u32) {
+    unsafe {
+        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_the_whole_group(_pid: u32) {}
 
 fn initialize_request() -> Value {
     json!({
@@ -1374,5 +1401,76 @@ mod tests {
             .expect_err("«ok» non è un fallimento e non si tollera");
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("accept"), "{}", error.said);
+    }
+
+    /// Asks the operating system, with a call the cure does not use: signal
+    /// zero delivers nothing and only reports whether the pid is there.
+    fn still_alive(pid: i32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    /// Closing a server takes what the server started, and returns at once.
+    ///
+    /// The worker inherits stderr, so while it lives the reader never sees the
+    /// end of the pipe and `close` waits for it: signalling the server alone
+    /// does not just leak a process, it blocks the caller for as long as the
+    /// worker runs. Measured at three hundred seconds instead of a fraction.
+    #[test]
+    fn closing_a_server_takes_what_it_started() {
+        let sandbox = Sandbox::new("orphans");
+        let told = sandbox.root.join("worker.pid");
+        let script = sandbox.root.join("with-a-worker.sh");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nsleep 300 &\necho $! > {}\nwhile IFS= read -r line; do :; done\n",
+                told.display()
+            ),
+        )
+        .expect("the fake server is written");
+        let spec = ServerSpec {
+            command: "sh".to_owned(),
+            args: vec![script.to_string_lossy().into_owned()],
+            env: BTreeMap::new(),
+            cwd: None,
+        };
+
+        let session = Session::open(&spec, Duration::from_secs(10)).expect("the server starts");
+        let mut worker = 0i32;
+        for _ in 0..100 {
+            if let Ok(text) = fs::read_to_string(&told) {
+                if let Ok(found) = text.trim().parse::<i32>() {
+                    worker = found;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(worker > 0, "the fake server never reported its worker");
+        assert!(
+            still_alive(worker),
+            "the worker {worker} was gone before the server closed, so this \
+             test would pass without proving anything"
+        );
+
+        let began = Instant::now();
+        session.close();
+        let took = began.elapsed();
+
+        assert!(
+            took < Duration::from_secs(10),
+            "closing took {took:?}: the worker kept the pipe open and the \
+             reader waited for it, so closing a server costs as long as \
+             whatever it started"
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && still_alive(worker) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            !still_alive(worker),
+            "the server is closed and its worker {worker} is still running: \
+             the signal reached the server alone, not the group it leads"
+        );
     }
 }
