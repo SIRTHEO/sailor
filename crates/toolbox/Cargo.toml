@@ -4,20 +4,19 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# Risponde a «cosa posso usare qui?»: quali righe di comando, quali server MCP e
-# quali altri strumenti esistono su questa macchina. L'elenco di cosa cercare e'
-# un dato — i descrittori — non codice: qui dentro non compare il nome di nessuno
-# strumento in particolare.
+# Answers "what can I use here?": which command lines, which MCP servers and
+# which other tools exist on this machine. The list of what to look for is data
+# — the descriptors — and not code: no particular tool name appears in here.
 #
-# `actions` per la primitiva del tempo massimo (`run_with_timeout`): chiedere la
-# versione a un binario significa eseguirlo, e un binario che non torna non deve
-# fermare un rilevamento. `inventory` per `discovery::glob`, che gia' aggancia gli
-# schemi con `*` senza tirarsi dietro una crate in piu'. `flow` per il tratto
-# `Action`, cosi' un passo di flusso puo' chiedere il rilevamento.
-# `ledger` per `sailor_home()` e nient'altro: dove sta la casa di Sailor lo sa un
-# posto solo, e riscriverne qui la regola farebbe guardare a `tool_needs` una
-# cartella diversa da quella in cui la finestra cerca i flussi. Non aggiunge
-# niente alla compilazione — ci si arrivava gia' passando per `actions`.
+# `actions` for the timeout primitive (`run_with_timeout`): asking a binary its
+# version means running it, and a binary that does not return must not stop a
+# detection. `inventory` for `discovery::glob`, which already matches `*`
+# patterns without pulling in another crate. `flow` for the `Action` trait, so a
+# flow step can ask for the detection. `ledger` for `sailor_home()` and nothing
+# else: only one place knows where Sailor's home is, and rewriting the rule here
+# would have `tool_needs` look in a different directory from the one the window
+# searches for flows. It adds nothing to the build — it already came in through
+# `actions`.
 [dependencies]
 actions = { path = "../actions" }
 flow = { path = "../flow" }
@@ -26,10 +25,10 @@ inventory = { path = "../inventory" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# Solo per le prove, e per una sola di esse: quella che prende il descrittore
-# spedito, gli dà un'uscita vera di un motore e verifica che il costo che ne
-# esce sia quello che il motore stesso ha dichiarato. Senza il listino qui
-# dentro, quella catena si potrebbe provare solo a pezzi — e i pezzi passavano
-# anche quando non si toccavano. Non entra in ciò che si spedisce.
+# For the tests only, and for one of them: the one that takes the shipped
+# descriptor, gives it a real engine output and checks that the cost coming out
+# is the one the engine itself declared. Without the price list in here that
+# chain could only be tested piecewise — and the pieces passed even when they
+# did not touch. It is not part of what ships.
 [dev-dependencies]
 models = { path = "../models" }

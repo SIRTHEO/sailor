@@ -1,10 +1,10 @@
-//! Le definizioni dei flussi: passi, dipendenze, quale azione chiama ciascun
-//! passo. Pura — prende un `FlowFile` o un motivo di rifiuto già in memoria,
-//! non legge dal disco (quello è compito di `gather::load_flow_registry`).
+//! Flow definitions: steps, dependencies, which action each step calls. Pure —
+//! it takes a `FlowFile` or a refusal reason already in memory and never reads
+//! from disk (that is `gather::load_flow_registry`'s job).
 
-// Il formato del file vive nel crate del flusso: qui si importa, non si
-// ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
-// per fortuna e non per costruzione.
+// The file format lives in the flow crate: it is imported here, never
+// redeclared. Writing it twice once made the two agree by luck rather than by
+// construction.
 pub use flow::FlowFile;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -57,8 +57,8 @@ pub fn broken_flow_view(name: &str, reason: &str) -> FlowView {
     }
 }
 
-/// L'ordine è quello delle chiavi: alfabetico, stabile fra una chiamata e l'altra.
-/// Riporta sia i flussi validi sia quelli non caricabili col motivo del rifiuto.
+/// The order is the key order: alphabetical, stable from one call to the next.
+/// Reports both the valid flows and the unloadable ones with their reason.
 pub fn flow_views(registry: &FlowRegistry) -> Vec<FlowView> {
     registry
         .iter()
@@ -89,16 +89,16 @@ mod tests {
     }
 
     fn sample_flow(id: &str, steps: Vec<Step>) -> FlowFile {
-        let graph = Graph::new(steps).expect("grafo valido");
+        let graph = Graph::new(steps).expect("valid graph");
         FlowFile {
             id: id.to_owned(),
-            description: format!("Descrizione per {id}"),
+            description: format!("Description for {id}"),
             graph,
             inputs: BTreeMap::new(),
-            // Un flusso che si lancia a mano: qui si guarda la forma dei passi,
-            // non quando girerebbe da solo.
+            // A flow launched by hand: what is under test here is the shape of
+            // the steps, never when it would run by itself.
             schedule: None,
-            // Nessun tetto: queste prove non spendono niente.
+            // No cap: these tests spend nothing.
             spend_cap_micros: None,
         }
     }
@@ -106,31 +106,31 @@ mod tests {
     #[test]
     fn a_flow_file_becomes_a_view_with_deps_action_description_and_conditional_flag() {
         let flow = sample_flow(
-            "prova",
+            "sample",
             vec![step("root", &[], false), step("child", &["root"], true)],
         );
-        let view = flow_view("prova", &flow);
-        assert_eq!(view.name, "prova");
-        assert_eq!(view.description.as_deref(), Some("Descrizione per prova"));
+        let view = flow_view("sample", &flow);
+        assert_eq!(view.name, "sample");
+        assert_eq!(view.description.as_deref(), Some("Description for sample"));
         assert_eq!(view.error, None);
         assert_eq!(view.steps.len(), 2);
-        let child = view.steps.iter().find(|s| s.id == "child").expect("passo presente");
+        let child = view.steps.iter().find(|s| s.id == "child").expect("step present");
         assert_eq!(child.deps, vec!["root".to_owned()]);
         assert_eq!(child.action, "child_action");
         assert_eq!(child.max_attempts, 2);
         assert!(child.conditional);
-        let root = view.steps.iter().find(|s| s.id == "root").expect("passo presente");
+        let root = view.steps.iter().find(|s| s.id == "root").expect("step present");
         assert!(!root.conditional);
     }
 
     #[test]
     fn a_broken_flow_becomes_a_view_with_error_and_empty_steps() {
-        let view = broken_flow_view("guasto", "dipendenza 'mancante' assente nel grafo");
-        assert_eq!(view.name, "guasto");
+        let view = broken_flow_view("broken", "dependency 'missing' is absent from the graph");
+        assert_eq!(view.name, "broken");
         assert_eq!(view.description, None);
         assert_eq!(
             view.error.as_deref(),
-            Some("dipendenza 'mancante' assente nel grafo")
+            Some("dependency 'missing' is absent from the graph")
         );
         assert!(view.steps.is_empty());
     }
@@ -143,7 +143,7 @@ mod tests {
         registry.insert("zeta".to_owned(), Ok(flow_zeta));
         registry.insert(
             "beta".to_owned(),
-            Err("grafo contiene un ciclo".to_owned()),
+            Err("the graph contains a cycle".to_owned()),
         );
         registry.insert("alfa".to_owned(), Ok(flow_alfa));
 
@@ -156,7 +156,7 @@ mod tests {
         assert_eq!(views[1].name, "beta");
         assert_eq!(
             views[1].error.as_deref(),
-            Some("grafo contiene un ciclo")
+            Some("the graph contains a cycle")
         );
         assert!(views[1].steps.is_empty());
 
@@ -169,7 +169,7 @@ mod tests {
     fn flow_file_deserializes_the_expected_schema_with_id_description_graph_and_inputs() {
         let raw = json!({
             "id": "prima-corsa",
-            "description": "Flusso di prova",
+            "description": "Test flow",
             "graph": {
                 "steps": [{
                     "id": "step-1",
@@ -186,9 +186,9 @@ mod tests {
                 "step-1": { "key": "value" }
             }
         });
-        let flow: FlowFile = serde_json::from_value(raw).expect("deserializzazione riuscita");
+        let flow: FlowFile = serde_json::from_value(raw).expect("deserialization succeeded");
         assert_eq!(flow.id, "prima-corsa");
-        assert_eq!(flow.description, "Flusso di prova");
+        assert_eq!(flow.description, "Test flow");
         assert_eq!(flow.graph.steps().len(), 1);
         assert!(flow.inputs.contains_key("step-1"));
     }
@@ -207,6 +207,6 @@ mod tests {
             }]
         });
         let result: Result<FlowFile, _> = serde_json::from_value(naked_graph);
-        assert!(result.is_err(), "il grafo nudo deve essere rifiutato perché manca il contenitore {{ id, description, graph, inputs }}");
+        assert!(result.is_err(), "a bare graph must be refused: the {{ id, description, graph, inputs }} wrapper is missing");
     }
 }

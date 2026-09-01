@@ -1,20 +1,21 @@
-//! Il censimento dice *non lo so* invece di *niente*.
+//! The census says *I do not know* instead of *nothing*.
 //!
-//! **PERCHÉ QUESTA PROVA ESISTE, E PERCHÉ NON PUÒ INTERROGARE `ps`.** Dentro il
-//! perimetro in cui gira questa batteria `ps` è negato davvero: una prova che
-//! lo invocasse misurerebbe il perimetro, non il codice, e sulla macchina di
-//! chi non ha quel perimetro non proverebbe più niente. Qui la macchina è un
-//! finto, e ce ne sono tre: una che dice di no, una che **dice di sì e non
-//! risponde** — il diniego silenzioso del guasto 12 — e una che risponde
-//! davvero.
-//!
-//! Il guasto originale: `ps -e | wc -l` scrive `0` con **uscita 0**. Chi legge
-//! un vettore vuoto non ha modo di distinguere «nessun terminale» da «non me
-//! l'hanno lasciato chiedere», e le due cose portano a decisioni opposte.
+//! **WHY THIS TEST EXISTS, AND WHY IT CANNOT ASK `ps`.** Inside the sandbox
+//! this suite runs in `ps` is really denied: a test that invoked it would
+//! measure the sandbox and not the code, and on the machine of whoever has no
+//! such sandbox it would prove nothing at all.
+
+//! So the machine here is a fake, and there are three: one that says no, one
+//! that **says yes and answers nothing** — the silent denial — and one that
+//! really answers.
+
+//! The original fault: `ps -e | wc -l` writes `0` with **exit status 0**.
+//! Whoever reads an empty vector has no way to tell "no terminal" apart from
+//! "they did not let me ask", and the two lead to opposite decisions.
 
 use sessions::census::{Census, Machine, Refusal};
 
-/// La macchina che rifiuta e lo dice.
+/// The machine that refuses and says so.
 struct Denied;
 
 impl Machine for Denied {
@@ -32,8 +33,8 @@ impl Machine for Denied {
     }
 }
 
-/// La macchina che rifiuta **senza dirlo**: uscita pulita, risposta vuota. È
-/// la forma esatta che prende il diniego quando l'uscita passa da una pipe.
+/// The machine that refuses **without saying so**: clean exit, empty answer.
+/// That is the exact shape a denial takes once the output goes through a pipe.
 struct SilentlyDenied;
 
 impl Machine for SilentlyDenied {
@@ -48,8 +49,8 @@ impl Machine for SilentlyDenied {
     }
 }
 
-/// La macchina che risponde: una tabella scritta come la scrive `ps -e -o
-/// pid=,ppid=,tty=,etime=,comm=`, copiata da una vera.
+/// The machine that answers: a table written the way `ps -e -o
+/// pid=,ppid=,tty=,etime=,comm=` writes one, copied from a real one.
 struct Answering {
     table: &'static str,
 }
@@ -59,7 +60,8 @@ impl Machine for Answering {
         Ok(self.table.to_owned())
     }
     fn working_directory(&self, pid: u32) -> Option<String> {
-        // Solo di uno si sa: il resto resta `None`, che è «non lo so».
+        // Only one of them is known: the rest stay `None`, which is "I do not
+        // know".
         (pid == 7073).then(|| "/Users/somebody/work/general".to_owned())
     }
     fn own_pid(&self) -> u32 {
@@ -67,8 +69,8 @@ impl Machine for Answering {
     }
 }
 
-/// Una macchina viva, con due terminali, un capostipite comune e chi chiede
-/// dentro la tabella.
+/// A live machine with two terminals, a shared ancestor, and the asker inside
+/// the table.
 const FIVE_LINES: &str = "\
  3354  7157 ttys001        03:32 caffeinate
  7072   886 ttys001  02-01:05:27 /usr/bin/login
@@ -79,8 +81,8 @@ const FIVE_LINES: &str = "\
   675     1 ??         1-00:00:00 /Applications/Whatever.app/Contents/MacOS/Whatever
 ";
 
-/// Una macchina viva dove **nessuno** ha un terminale: la tabella c'è, chi
-/// chiede c'è, e nessuna riga ha un tty.
+/// A live machine where **nobody** has a terminal: the table is there, the
+/// asker is there, and no row has a tty.
 const NO_ONE_ON_A_TERMINAL: &str = "\
     1     0 ??         9-00:00:00 /sbin/launchd
  4242     1 ??            00:01 sailor
@@ -93,25 +95,25 @@ fn a_refusal_is_not_an_empty_machine() {
             assert_eq!(refusal.tool, "ps");
             assert!(
                 refusal.reason.contains("not permitted"),
-                "il diniego deve portare le parole con cui è arrivato: {refusal}"
+                "a denial must carry the words it arrived with: {refusal}"
             );
         }
-        other => panic!("un diniego è stato preso per una macchina vuota: {other:?}"),
+        other => panic!("a denial was taken for an empty machine: {other:?}"),
     }
 }
 
-/// **IL CANARINO.** Un `ps` negato può uscire con codice 0 e uscita vuota, e
-/// allora nessun errore lo tradisce. Ma chi chiede la tabella dei processi *è*
-/// un processo: se non c'è, quella non è la macchina.
+/// **THE CANARY.** A denied `ps` can exit with code 0 and empty output, and
+/// then no error betrays it. But whoever asks for the process table *is* a
+/// process: if it is not there, that is not the machine.
 #[test]
 fn a_silent_refusal_is_caught_by_the_canary() {
     match Census::of(&SilentlyDenied) {
         Census::Refused(refusal) => assert!(
             refusal.reason.contains("4242"),
-            "il diniego silenzioso va spiegato col pid che manca: {refusal}"
+            "a silent denial must be explained by the pid that is missing: {refusal}"
         ),
         other => panic!(
-            "uscita pulita e risposta vuota sono state prese per una macchina deserta: {other:?}"
+            "a clean exit with an empty answer was taken for a deserted machine: {other:?}"
         ),
     }
 }
@@ -130,7 +132,7 @@ fn a_machine_without_terminals_says_so_and_is_not_a_refusal() {
 fn the_terminals_are_grouped_by_tty() {
     let census = Census::of(&Answering { table: FIVE_LINES });
     let Census::Terminals(terminals) = &census else {
-        panic!("una tabella con due terminali non ha dato terminali: {census:?}");
+        panic!("a table with two terminals yielded no terminals: {census:?}");
     };
     let names: Vec<&str> = terminals.iter().map(|found| found.tty.as_str()).collect();
     assert_eq!(names, vec!["ttys001", "ttys002"]);
@@ -138,9 +140,9 @@ fn the_terminals_are_grouped_by_tty() {
     assert_eq!(terminals[1].inhabitants.len(), 1);
 }
 
-/// Il capostipite si ottiene risalendo la catena dei genitori, e i due
-/// terminali arrivano allo stesso. **È un'etichetta**: qui si guarda che ci
-/// sia e che sia leggibile, non che sia un prodotto piuttosto che un altro.
+/// The ancestor is found by walking up the parent chain, and both terminals
+/// reach the same one. **It is a label**: what is checked here is that it is
+/// there and readable, not that it is one product rather than another.
 #[test]
 fn every_terminal_carries_the_label_of_who_drew_it() {
     let census = Census::of(&Answering { table: FIVE_LINES });
@@ -157,7 +159,7 @@ fn each_process_carries_its_pid_its_age_its_command_and_where_it_works() {
         .inhabitants
         .iter()
         .find(|found| found.pid == 7073)
-        .expect("la shell sta nella tabella");
+        .expect("the shell is in the table");
     assert_eq!(shell.parent_pid, 7072);
     assert_eq!(shell.uptime, "02-01:05:27");
     assert_eq!(shell.command, "/bin/zsh");
@@ -169,30 +171,30 @@ fn each_process_carries_its_pid_its_age_its_command_and_where_it_works() {
         .inhabitants
         .iter()
         .find(|found| found.pid == 3354)
-        .expect("caffeinate sta nella tabella");
+        .expect("caffeinate is in the table");
     assert_eq!(
         unknown.working_directory, None,
-        "una cartella che non si è potuta leggere resta «non lo so»"
+        "a directory that could not be read stays \"I do not know\""
     );
 }
 
-/// **`Terminals` NON PUÒ ESSERE VUOTO.** Se lo fosse, il tipo tornerebbe ad
-/// avere due modi di dire «niente» e la distinzione che questo modulo esiste
-/// per fare sparirebbe dall'interno.
+/// **`Terminals` CANNOT BE EMPTY.** If it could, the type would again have two
+/// ways of saying "nothing" and the distinction this module exists to make
+/// would vanish from the inside.
 #[test]
 fn a_census_with_terminals_is_never_an_empty_one() {
     for machine in [NO_ONE_ON_A_TERMINAL, FIVE_LINES] {
         if let Census::Terminals(terminals) = Census::of(&Answering { table: machine }) {
             assert!(
                 !terminals.is_empty(),
-                "Terminals(vec![]) è un secondo modo di dire «niente»"
+                "Terminals(vec![]) is a second way of saying \"nothing\""
             );
         }
     }
 }
 
-/// Un comando con spazi dentro resta intero: `npm exec qualcosa` sono tre
-/// parole e un comando solo.
+/// A command with spaces inside stays whole: `npm exec something` is three
+/// words and one command.
 #[test]
 fn a_command_made_of_several_words_stays_whole() {
     let census = Census::of(&Answering {
