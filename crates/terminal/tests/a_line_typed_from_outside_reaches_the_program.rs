@@ -16,10 +16,7 @@ use terminal::Workspace;
 
 /// A short directory: a socket address has a hard length cap.
 fn scratch(name: &str) -> PathBuf {
-    let directory = PathBuf::from("/tmp").join(format!("sr-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("create the test directory");
-    directory
+    terminal::scratch::directory(name)
 }
 
 /// Everything the terminal has shown so far.
@@ -62,8 +59,14 @@ fn what_is_left_in_the_letterbox_is_typed_into_the_program() {
     let directory = scratch("typed");
     let workspace = Workspace::open("/tmp").expect("open the workspace");
     let inner = Arc::new(
-        Pty::open(&workspace, OsStr::new("/bin/cat"), &[], Size::default(), &[])
-            .expect("open a pseudo-terminal with cat inside"),
+        Pty::open(
+            &workspace,
+            OsStr::new("/bin/cat"),
+            &[],
+            Size::default(),
+            &[],
+        )
+        .expect("open a pseudo-terminal with cat inside"),
     );
     let shown = collect(&inner);
 
@@ -94,8 +97,14 @@ fn what_is_left_in_the_letterbox_is_typed_into_the_program() {
 fn a_program_nobody_typed_into_shows_nothing() {
     let workspace = Workspace::open("/tmp").expect("open the workspace");
     let inner = Arc::new(
-        Pty::open(&workspace, OsStr::new("/bin/cat"), &[], Size::default(), &[])
-            .expect("open a pseudo-terminal with cat inside"),
+        Pty::open(
+            &workspace,
+            OsStr::new("/bin/cat"),
+            &[],
+            Size::default(),
+            &[],
+        )
+        .expect("open a pseudo-terminal with cat inside"),
     );
     let shown = collect(&inner);
 
