@@ -456,9 +456,7 @@
           "tool": "cargo",
           "args": [
             "test",
-            "--workspace",
-            "--exclude",
-            "claude-hooks"
+            "--workspace"
           ],
           "timeout_secs": 1800
         },
