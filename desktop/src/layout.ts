@@ -230,6 +230,8 @@ export interface EdgeLook {
   stroke: string;
   dash?: string;
   live: boolean;
+  /** Full ink behind, a light thread ahead — the colour is not alone. */
+  width: number;
 }
 
 /**
@@ -246,10 +248,13 @@ export function edgeLook(
   to: StepRun | undefined,
 ): EdgeLook {
   const dash = optional ? "5 4" : undefined;
-  if (to?.state === "running") return { stroke: "var(--state-running)", dash: "8 6", live: true };
+  if (to?.state === "running") return { stroke: "var(--state-running)", dash: "8 6", live: true, width: 2.5 };
   const taken = from?.state === "went" && to !== undefined && to.state !== "waiting";
-  if (taken) return { stroke: "var(--state-went)", dash, live: false };
-  return { stroke: optional ? "var(--warn)" : "var(--line)", dash, live: false };
+  // WHERE THE FLOW HAS ALREADY BEEN, in weight and not only in hue: one reader
+  // in twelve does not separate two of these tints, and the first thing anyone
+  // looks for in a graph with a live run is where it came from.
+  if (taken) return { stroke: "var(--state-went)", dash, live: false, width: 2.5 };
+  return { stroke: optional ? "var(--warn)" : "var(--line)", dash, live: false, width: 1.25 };
 }
 
 function edgeFrom(
@@ -268,7 +273,7 @@ function edgeFrom(
     type: "smoothstep",
     animated: look.live,
     markerEnd: { type: MarkerType.ArrowClosed, color: look.stroke, width: 16, height: 16 },
-    style: { stroke: look.stroke, strokeWidth: 1.5, strokeDasharray: look.dash, opacity },
+    style: { stroke: look.stroke, strokeWidth: look.width, strokeDasharray: look.dash, opacity },
   } satisfies Edge;
 }
 
