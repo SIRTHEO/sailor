@@ -148,6 +148,79 @@ fn gather_summarizes_a_seeded_ledger() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **L'ANCORA CONTRO LO SPOSTAMENTO SILENZIOSO DI UNA COLONNA.**
+///
+/// `ui::parse` legge la proiezione **per posizione**: ventotto numeri scritti a
+/// mano. Fino al 01/09/2026 di quella funzione ce n'erano due copie, una qui e
+/// una dentro `actions`, e una colonna spostata le avrebbe fatte sbagliare
+/// insieme: le prove che confrontavano l'una con l'altra sarebbero rimaste
+/// verdi. Il guasto vero è quello — un prezzo che compare al posto di un token,
+/// e nessun rosso da nessuna parte.
+///
+/// Qui non si confronta un lettore con l'altro: si scrive **un valore diverso in
+/// ogni campo**, si passa dal deposito vero, e si rilegge. Un indice fuori posto
+/// fa tornare indietro il campo del vicino, e questa diventa rossa qualunque sia
+/// la colonna che si è mossa.
+///
+/// *Mutante eseguito*: vedi la consegna.
+#[test]
+fn a_record_comes_back_from_the_projection_field_for_field() {
+    let dir = temp_dir("andata-e-ritorno");
+    let written = ModelCallRecord {
+        call_id: "call-unica".into(),
+        run_id: "run-unica".into(),
+        step_id: Some("passo-unico".into()),
+        purpose: "scopo-unico".into(),
+        cli: "cli-unica".into(),
+        requested_model: "modello-chiesto".into(),
+        actual_model: "modello-risposto".into(),
+        // Ogni conteggio diverso dagli altri: due uguali si coprirebbero a
+        // vicenda proprio nel caso che questa prova esiste per prendere.
+        input_tokens: Some(11),
+        output_tokens: Some(22),
+        cached_tokens: Some(33),
+        cache_write_tokens: Some(44),
+        cache_write_long_tokens: Some(55),
+        total_tokens: Some(66),
+        turns: Some(77),
+        cost_micros: Some(101),
+        declared_cost_micros: Some(202),
+        price_currency: Some("EUR".into()),
+        input_price_micros_per_million: Some(303),
+        output_price_micros_per_million: Some(404),
+        cached_price_micros_per_million: Some(505),
+        cache_write_price_micros_per_million: Some(606),
+        cache_write_long_price_micros_per_million: Some(707),
+        engine_identity: ledger::EngineIdentity::ChosenByTheStep {
+            cli_id: "codex".into(),
+            home_dir: "/una/casa/scritta/nel/passo".into(),
+        },
+        retry_chain: vec!["call-prima".into()],
+        error_type: Some("tipo-errore".into()),
+        started_at: 808,
+        ended_at: Some(909),
+        session_id: Some("sessione-unica".into()),
+    };
+
+    {
+        let ledger = Ledger::open(&dir).expect("aprire il deposito");
+        ledger
+            .record_model_call(&written)
+            .expect("registrare la chiamata");
+    }
+
+    let ledger = Ledger::open(&dir).expect("riaprire il deposito");
+    let dump = ledger.projection_dump().expect("leggere la proiezione");
+    let read = ui::parse::parse_model_calls(&dump);
+    assert_eq!(read.len(), 1, "una riga scritta, una riga letta");
+    assert_eq!(
+        read[0], written,
+        "un campo torna indietro diverso da come è entrato: un indice legge la colonna del vicino"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_ledger_directory_that_was_never_written_is_reported_as_absent_not_as_an_error() {
     let dir = temp_dir("missing");
