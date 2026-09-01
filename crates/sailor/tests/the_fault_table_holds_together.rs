@@ -146,32 +146,84 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
     }
 }
 
-/// I numeri scritti in lettere nella prosa, tradotti. Si fermano dove serve:
-/// una tabella più lunga di così vorrà una riga in più qui, e la prova lo dirà
-/// invece di tacere.
-const IN_WORDS: [(&str, usize); 48] = [
-    ("zero", 0), ("uno", 1), ("due", 2), ("tre", 3), ("quattro", 4),
-    ("cinque", 5), ("sei", 6), ("sette", 7), ("otto", 8), ("nove", 9),
-    ("dieci", 10), ("undici", 11), ("dodici", 12), ("tredici", 13),
-    ("quattordici", 14), ("quindici", 15), ("sedici", 16), ("diciassette", 17),
-    ("diciotto", 18), ("diciannove", 19), ("venti", 20), ("ventuno", 21),
-    ("ventidue", 22), ("ventitré", 23), ("ventiquattro", 24),
-    ("venticinque", 25), ("ventisei", 26), ("ventisette", 27),
-    ("ventotto", 28), ("ventinove", 29), ("trenta", 30), ("trentuno", 31),
-    ("trentadue", 32), ("trentatré", 33), ("trentaquattro", 34),
-    ("trentacinque", 35), ("trentasei", 36), ("trentasette", 37),
-    ("trentotto", 38), ("trentanove", 39), ("quaranta", 40),
-    ("quarantuno", 41), ("quarantadue", 42), ("quarantatré", 43),
-    ("quarantaquattro", 44), ("quarantacinque", 45), ("quarantasei", 46),
-    ("quarantasette", 47),
+/// I numeri fino a diciannove, che in italiano non seguono nessuna regola.
+const IRREGULAR: [&str; 20] = [
+    "zero", "uno", "due", "tre", "quattro", "cinque", "sei", "sette", "otto",
+    "nove", "dieci", "undici", "dodici", "tredici", "quattordici", "quindici",
+    "sedici", "diciassette", "diciotto", "diciannove",
 ];
 
-fn spelled(number: usize) -> &'static str {
-    IN_WORDS
-        .iter()
-        .find(|(_, value)| *value == number)
-        .map(|(word, _)| *word)
-        .unwrap_or_else(|| panic!("nessuna parola per {number}: allunga IN_WORDS"))
+/// Le decine.
+const TENS: [&str; 10] = [
+    "", "", "venti", "trenta", "quaranta", "cinquanta", "sessanta", "settanta",
+    "ottanta", "novanta",
+];
+
+/// Il numero scritto in lettere, come lo scrive la prosa sotto la tabella.
+///
+/// **PRIMA QUI C'ERA UN ELENCO DI QUARANTOTTO NUMERI SCRITTI A MANO**, e ogni
+/// guasto nuovo obbligava ad allungarlo: il 01/09/2026 è stato allungato tre
+/// volte in un pomeriggio, e ogni volta la prova falliva con «nessuna parola
+/// per N: allunga IN_WORDS». Un elenco che cresce con i dati non è una
+/// traduzione, è un debito con la rata mensile — e per giunta un elenco scritto
+/// a mano può contenere un refuso che nessuno vede, perché è la sola fonte
+/// contro cui si potrebbe controllarlo.
+///
+/// Le regole invece sono tre, e non cambiano: sotto il venti non c'è regola e
+/// si elencano; da lì in su decina più unità; **la decina perde la vocale
+/// finale davanti a «uno» e «otto»** (ventuno, ventotto) e **«tre» prende
+/// l'accento in coda** (ventitré). Fine.
+fn spelled(number: usize) -> String {
+    if number < 20 {
+        return IRREGULAR[number].to_string();
+    }
+    assert!(
+        number < 100,
+        "la prosa non ha mai scritto un numero a tre cifre in lettere: se serve, \
+         la regola delle centinaia va aggiunta qui invece che aggirata"
+    );
+    let (ten, unit) = (number / 10, number % 10);
+    let tens = TENS[ten];
+    match unit {
+        0 => tens.to_string(),
+        // La decina si tronca davanti alle due vocali che aprono.
+        1 | 8 => format!("{}{}", &tens[..tens.len() - 1], IRREGULAR[unit]),
+        // «tre» in coda porta l'accento: ventitré, non ventitre.
+        3 => format!("{tens}tré"),
+        _ => format!("{tens}{}", IRREGULAR[unit]),
+    }
+}
+
+/// **CHI TRADUCE VA CONTROLLATO.** La versione vecchia era un elenco scritto a
+/// mano: sbagliata o giusta, era comunque la sola fonte, quindi un refuso non
+/// si poteva vedere. Una funzione si può sbagliare in modo diverso — sulle
+/// eccezioni — e sono quelle che questa prova elenca, non tutti i numeri.
+///
+/// I casi scelti sono i tre punti in cui la regola generale non basta: la
+/// troncatura davanti a «uno» e «otto», l'accento su «tré» in coda, e le decine
+/// tonde.
+#[test]
+fn the_numbers_are_spelled_the_way_italian_spells_them() {
+    for (number, word) in [
+        (0, "zero"),
+        (3, "tre"),
+        (16, "sedici"),
+        (19, "diciannove"),
+        (20, "venti"),
+        (21, "ventuno"),
+        (23, "ventitré"),
+        (28, "ventotto"),
+        (30, "trenta"),
+        (33, "trentatré"),
+        (38, "trentotto"),
+        (41, "quarantuno"),
+        (47, "quarantasette"),
+        (68, "sessantotto"),
+        (91, "novantuno"),
+        (93, "novantatré"),
+    ] {
+        assert_eq!(spelled(number), word, "{number} si scrive «{word}»");
+    }
 }
 
 /// **I CONTEGGI IN PROSA DICONO IL VERO.**
