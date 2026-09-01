@@ -64,12 +64,15 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// Le forme di `sailor release`, una per riga. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] =
+    &["sailor release <notte|hooks|sailor> [--dry-run] [--skip-tests] [--wait-secs N]"];
+
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
-    let target_name = args.next().ok_or_else(|| {
-        "manca il bersaglio (uso: sailor release <bersaglio> [--dry-run] [--skip-tests] [--wait-secs N])"
-            .to_string()
-    })?;
+    let target_name = args
+        .next()
+        .ok_or_else(|| format!("manca il bersaglio (uso: {})", USAGE[0]))?;
     if target_name.starts_with('-') {
         return Err(format!("manca il bersaglio prima di '{target_name}'"));
     }

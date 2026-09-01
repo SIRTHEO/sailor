@@ -28,9 +28,12 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// La forma di `sailor remaining`. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &["sailor remaining"];
+
 fn dispatch(args: &[String]) -> Result<String, String> {
     if !args.is_empty() {
-        return Err("uso: sailor remaining".to_owned());
+        return Err(format!("uso: {}", USAGE[0]));
     }
     let home = home_dir()?;
     let now = now_secs()?;

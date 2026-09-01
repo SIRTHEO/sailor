@@ -30,6 +30,7 @@ import { BlankCanvas } from "./BlankCanvas";
 import { Now } from "./Now";
 import { History } from "./History";
 import { Installed } from "./Installed";
+import { Manual } from "./Manual";
 import { StepEditor } from "./StepEditor";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
@@ -92,7 +93,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * stasera per rispondere doveva andarsela a cercare. La tela non sparisce:
  * diventa il posto dove si va per guardare dentro.
  */
-type Place = "now" | "history" | "flows" | "installed";
+type Place = "now" | "history" | "flows" | "installed" | "manual";
 
 /**
  * Un flusso in modifica: quello che si vede e quello che è già sul disco.
@@ -1044,6 +1045,14 @@ export default function App() {
         >
           Installato
         </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "manual" || undefined}
+          onClick={() => setPlace("manual")}
+        >
+          Comandi
+        </button>
       </nav>
 
       {place === "flows" && focusName && focusedWorking && focusedBand && (
@@ -1076,6 +1085,7 @@ export default function App() {
       )}
       {place === "history" && <History native={NATIVE} />}
       {place === "installed" && <Installed native={NATIVE} />}
+      {place === "manual" && <Manual native={NATIVE} />}
       <div className="body" hidden={place !== "flows"}>
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
