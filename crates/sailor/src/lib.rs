@@ -25,6 +25,7 @@
 //! legge un commento per aggiornarlo. Sta in `COMMANDS`, lo stampa
 //! `print_usage`, e la finestra lo mostra leggendolo da lì.
 
+pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod models_cmd;
@@ -37,6 +38,7 @@ pub mod step_cmd;
 pub mod terminal_cmd;
 pub mod version_cmd;
 pub mod workspace_cmd;
+pub mod worktree_cmd;
 
 /// Un sottocomando: il nome sulla riga di comando, una riga di spiegazione, e
 /// **la funzione che lo esegue**.
@@ -107,13 +109,15 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "inventory",
-        description: "lists skills, agents, commands, rules and hooks, and says which are switched off",
+        description:
+            "lists skills, agents, commands, rules and hooks, and says which are switched off",
         usage: inventory_cmd::USAGE,
         run: inventory_cmd::run,
     },
     Command {
         name: "remaining",
-        description: "how much quota the person has already used, read from the engine rather than guessed",
+        description:
+            "how much quota the person has already used, read from the engine rather than guessed",
         usage: remaining_cmd::USAGE,
         run: remaining_cmd::run,
     },
@@ -128,6 +132,18 @@ pub const COMMANDS: &[Command] = &[
         description: "declares the project root, so a flow does not have to know it",
         usage: workspace_cmd::USAGE,
         run: workspace_cmd::run,
+    },
+    Command {
+        name: "worktree",
+        description: "the trees this repository is checked out into",
+        usage: worktree_cmd::USAGE,
+        run: worktree_cmd::run,
+    },
+    Command {
+        name: "faults",
+        description: "i guasti incontrati: cosa è successo, e quale controllo lo impedirebbe",
+        usage: faults_cmd::USAGE,
+        run: faults_cmd::run,
     },
     Command {
         name: "session",
@@ -150,10 +166,7 @@ pub const COMMANDS: &[Command] = &[
 pub fn help_text() -> String {
     let mut text = String::from("sailor <command> [options]\n\navailable commands:\n");
     for command in COMMANDS {
-        text.push_str(&format!(
-            "  {:<10} {}\n",
-            command.name, command.description
-        ));
+        text.push_str(&format!("  {:<10} {}\n", command.name, command.description));
     }
     text
 }
@@ -327,19 +340,34 @@ mod tests {
 
     #[test]
     fn version_reaches_the_version_command() {
-        assert_eq!(route(&args(&["sailor", "version"])).reached(), Some("version"));
+        assert_eq!(
+            route(&args(&["sailor", "version"])).reached(),
+            Some("version")
+        );
     }
 
     #[test]
     fn profiles_models_flow_and_run_reach_their_commands() {
-        assert_eq!(route(&args(&["sailor", "profiles", "list"])).reached(), Some("profiles"));
-        assert_eq!(route(&args(&["sailor", "models", "list"])).reached(), Some("models"));
+        assert_eq!(
+            route(&args(&["sailor", "profiles", "list"])).reached(),
+            Some("profiles")
+        );
+        assert_eq!(
+            route(&args(&["sailor", "models", "list"])).reached(),
+            Some("models")
+        );
         // `ui` NON C'E' PIU', e la riga che lo provava e' diventata questa:
         // dal 31/08/2026 l'unica interfaccia e' la finestra, e un comando che
         // apriva una seconda pagina su una porta da ricordare non esiste.
         assert!(route(&args(&["sailor", "ui"])).reached().is_none());
-        assert_eq!(route(&args(&["sailor", "flow", "list"])).reached(), Some("flow"));
-        assert_eq!(route(&args(&["sailor", "run", "codex"])).reached(), Some("run"));
+        assert_eq!(
+            route(&args(&["sailor", "flow", "list"])).reached(),
+            Some("flow")
+        );
+        assert_eq!(
+            route(&args(&["sailor", "run", "codex"])).reached(),
+            Some("run")
+        );
         assert_eq!(
             route(&args(&["sailor", "inventory", "--json"])).reached(),
             Some("inventory")
@@ -369,7 +397,10 @@ mod tests {
     /// può prendere in carico nessuno.
     #[test]
     fn step_reaches_the_step_command() {
-        assert_eq!(route(&args(&["sailor", "step", "open"])).reached(), Some("step"));
+        assert_eq!(
+            route(&args(&["sailor", "step", "open"])).reached(),
+            Some("step")
+        );
     }
 
     #[test]

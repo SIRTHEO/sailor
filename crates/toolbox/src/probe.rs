@@ -1,13 +1,9 @@
-//! I gesti che toccano il mondo: guardare nelle cartelle del percorso, guardare
-//! se un file c'è, chiedere la versione a un binario, leggere le chiavi di un
-//! file JSON.
+//! The gestures that touch the world: looking on the search path, seeing whether
+//! a file is there, asking a binary its version, reading the keys of a JSON file.
 //!
-//! LA MACCHINA È UN PARAMETRO, NON L'AMBIENTE. Ogni gesto passa da `Machine`:
-//! cartelle del percorso, casa, variabili. Non è un vezzo di collaudo — è
-//! l'unico modo di provare che «assente» e «non ho potuto verificare» sono
-//! davvero due risposte diverse, perché entrambe le situazioni si costruiscono
-//! in una cartella temporanea e nessuna delle due dipende da cosa c'è installato
-//! su chi esegue le prove.
+//! THE MACHINE IS A PARAMETER, NOT THE ENVIRONMENT — path directories, home and
+//! variables all go through `Machine`. No testing affectation: it is the only way
+//! to prove "absent" and "could not check" differ, both built in a temp directory.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -16,23 +12,23 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-/// Il mondo in cui si cerca.
+/// The world being searched.
 #[derive(Debug, Clone)]
 pub struct Machine {
-    /// Le cartelle in cui si cerca un eseguibile, nell'ordine in cui si
-    /// guardano.
+    /// The directories an executable is searched in, in the order they are
+    /// looked at.
     pub path_dirs: Vec<PathBuf>,
     pub home: PathBuf,
-    /// Le variabili che un percorso di descrittore può nominare.
+    /// The variables a descriptor path may name.
     pub env: BTreeMap<String, String>,
-    /// Se si può eseguire un binario per chiedergli la versione. Spento, ogni
-    /// versione diventa «non chiesta»: serve a chi vuole l'elenco senza avviare
-    /// nulla, ed è una scelta di chi chiama, non un ripiego.
+    /// Whether a binary may be run to ask it its version. Switched off, every
+    /// version becomes "not asked": that serves whoever wants the list without
+    /// starting anything, and it is the caller's choice, not a fallback.
     pub version_probes: bool,
 }
 
 impl Machine {
-    /// La macchina su cui gira questo processo.
+    /// The machine this process runs on.
     pub fn current() -> Machine {
         let env: BTreeMap<String, String> = std::env::vars().collect();
         let home = env
@@ -56,9 +52,9 @@ impl Machine {
         }
     }
 
-    /// `~/x`, `$VAR/x` e `${VAR}/x` diventano percorsi veri. Una variabile che
-    /// non esiste resta scritta com'è: sostituirla col vuoto costruirebbe un
-    /// percorso plausibile e sbagliato, e chi legge non saprebbe perché.
+    /// `~/x`, `$VAR/x` and `${VAR}/x` become real paths. A variable that does
+    /// not exist stays written as it is: replacing it with nothing would build a
+    /// plausible, wrong path, and the reader would not know why.
     pub fn expand(&self, raw: &str) -> String {
         let mut text = raw.to_string();
         if text == "~" {
@@ -103,18 +99,18 @@ impl Machine {
         out
     }
 
-    /// I percorsi che uno schema aggancia. Senza `*` è il percorso stesso, che
-    /// esista o no: la differenza fra «non c'è» e «non l'ho potuto guardare» la
-    /// decide chi lo interroga, non chi lo espande.
+    /// The paths a pattern matches. Without a `*` it is the path itself, whether
+    /// or not it exists: telling "not there" from "could not look" is the job of
+    /// whoever interrogates it, not of whoever expands it.
     pub fn resolve(&self, raw: &str) -> Vec<PathBuf> {
         let expanded = self.expand(raw);
         if !expanded.contains('*') {
             return vec![PathBuf::from(expanded)];
         }
-        // La radice è la parte prima del primo componente con l'asterisco; il
-        // resto è lo schema. `inventory::discovery::glob` aggancia esattamente
-        // questa forma — componenti letterali e `*` — e riusarla evita una
-        // seconda implementazione che diverge dalla prima.
+        // The root is the part before the first component holding a star; the
+        // rest is the pattern. `inventory::discovery::glob` matches exactly this
+        // shape — literal components and `*` — and reusing it avoids a second
+        // implementation that drifts from the first.
         let parts: Vec<&str> = expanded.split('/').collect();
         let split = parts.iter().position(|p| p.contains('*')).unwrap_or(0);
         let root = PathBuf::from(parts[..split].join("/"));
@@ -128,13 +124,12 @@ impl Machine {
     }
 }
 
-/// C'è, non c'è, o non si è potuto guardare.
+/// Here, not here, or could not be looked at.
 ///
-/// LA TERZA VOCE È IL PUNTO DI TUTTO IL CRATE. Un inventario che scrive «non
-/// installato» dove in realtà non ha potuto guardare è peggio di nessun
-/// inventario: chi legge installa una seconda copia di una cosa che c'era già,
-/// oppure rinuncia a uno strumento che aveva. Ogni «non so» porta il motivo
-/// misurato, così chi legge sa che cosa andrebbe guardato a mano.
+/// THE THIRD ARM IS THE POINT OF THE WHOLE CRATE. An inventory that writes "not
+/// installed" where it could not actually look is worse than no inventory: the
+/// reader installs a second copy of something they already had, or gives up a
+/// tool they owned. Every "don't know" carries the measured reason.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Look {
     Found(PathBuf),
@@ -142,9 +137,9 @@ pub enum Look {
     Blocked(String),
 }
 
-/// Un percorso c'è? `symlink_metadata` e non `exists()`: `exists()` risponde
-/// `false` anche quando il permesso è negato, ed è esattamente la bugia che
-/// questo crate esiste per togliere.
+/// Is a path there? `symlink_metadata` and not `exists()`: `exists()` answers
+/// `false` when permission is denied too, which is exactly the lie this crate
+/// exists to remove.
 pub fn look_at(path: &Path) -> Look {
     match std::fs::symlink_metadata(path) {
         Ok(_) => Look::Found(path.to_path_buf()),
@@ -153,23 +148,23 @@ pub fn look_at(path: &Path) -> Look {
     }
 }
 
-/// Cerca un eseguibile nelle cartelle del percorso.
+/// Looks for an executable in the search directories.
 ///
-/// «NON C'È» SI DICE SOLO SE SI È GUARDATO OVUNQUE. Se anche una sola cartella
-/// del percorso non si è potuta leggere, la risposta è «non so»: l'eseguibile
-/// poteva stare lì. Con un percorso vuoto la risposta è «non so» a maggior
-/// ragione — non si è guardato da nessuna parte.
+/// "NOT THERE" IS ONLY SAID AFTER LOOKING EVERYWHERE. If even one search
+/// directory could not be read the answer is "don't know": the executable could
+/// have been in it. With an empty search path the answer is "don't know" all the
+/// more — nowhere was looked at.
 pub fn look_up(name: &str, machine: &Machine) -> Look {
     if machine.path_dirs.is_empty() {
-        return Look::Blocked("nessuna cartella in cui cercare: il percorso è vuoto".to_string());
+        return Look::Blocked("no directory to search in: the path is empty".to_string());
     }
     let mut blocked: Vec<String> = Vec::new();
     for dir in &machine.path_dirs {
         let candidate = dir.join(name);
         match std::fs::metadata(&candidate) {
             Ok(meta) if is_runnable(&meta) => return Look::Found(candidate),
-            // Un nome che c'è ma non è eseguibile non è il binario cercato: si
-            // continua, come fa la shell.
+            // A name that is there but is not executable is not the binary being
+            // looked for: carry on, the way a shell does.
             Ok(_) => continue,
             Err(error) if error.kind() == ErrorKind::NotFound => continue,
             Err(error) => blocked.push(format!("{}: {error}", dir.to_string_lossy())),
@@ -179,11 +174,13 @@ pub fn look_up(name: &str, machine: &Machine) -> Look {
         Look::Missing
     } else {
         Look::Blocked(format!(
-            "cercato `{name}`, ma {} cartell{} del percorso non si {} potut{} leggere: {}",
+            "looked for `{name}`, but {} search {} could not be read: {}",
             blocked.len(),
-            if blocked.len() == 1 { "a" } else { "e" },
-            if blocked.len() == 1 { "è" } else { "sono" },
-            if blocked.len() == 1 { "a" } else { "e" },
+            if blocked.len() == 1 {
+                "directory"
+            } else {
+                "directories"
+            },
             blocked.join("; ")
         ))
     }
@@ -200,28 +197,28 @@ fn is_runnable(meta: &std::fs::Metadata) -> bool {
     meta.is_file()
 }
 
-/// Che cosa ha risposto un binario a cui si è chiesta la versione.
+/// What a binary answered when asked its version.
 ///
-/// TRE VOCI PER LO STESSO MOTIVO DELLE TRE DI `Presence`: «non l'ho chiesta» e
-/// «l'ho chiesta e non ha risposto» dicono a chi legge due cose diverse da fare.
+/// THREE ARMS FOR THE SAME REASON AS THE THREE OF `Presence`: "I did not ask"
+/// and "I asked and it did not answer" tell the reader two different things to
+/// do.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", content = "detail", rename_all = "lowercase")]
 pub enum VersionReading {
     Declared(String),
-    /// Il descrittore non dice come chiederla, o chi chiama ha spento le
-    /// esecuzioni. Non è un guasto: è una domanda che non è stata fatta.
+    /// The descriptor does not say how to ask for it, or the caller switched
+    /// executions off. Not a fault: a question that was not asked.
     NotAsked(String),
-    /// La domanda è stata fatta e non ha avuto una risposta utile, col perché.
+    /// The question was asked and got no useful answer, with the reason.
     Unavailable(String),
 }
 
-/// Chiede la versione eseguendo il binario trovato.
+/// Asks for the version by running the executable that was found.
 ///
-/// L'INGRESSO SI CHIUDE SUBITO. Un motore che legge il proprio ingresso resta
-/// appeso a un EOF che non arriva: su questa macchina è già costato un lavoro
-/// rimasto «in corso» per ore. Qui il tetto di tempo lo salverebbe comunque, ma
-/// aspettare dieci secondi per ogni strumento dell'elenco è un rilevamento che
-/// nessuno lancia due volte.
+/// STANDARD INPUT IS CLOSED AT ONCE. An engine that reads its own input hangs on
+/// an EOF that never arrives: on this machine that has already cost a job left
+/// "in progress" for hours. The time limit would save it anyway, but waiting ten
+/// seconds per tool in the list is a detection nobody runs twice.
 pub fn read_version(
     bin: &Path,
     args: &[String],
@@ -241,36 +238,41 @@ pub fn read_version(
             let err = String::from_utf8_lossy(&stderr).into_owned();
             if !status.success() {
                 return VersionReading::Unavailable(format!(
-                    "{printed} è uscito con {}: {}",
-                    status.code().map(|c| c.to_string()).unwrap_or_else(|| "un segnale".to_string()),
-                    pick(&err, must_contain).or_else(|| pick(&out, must_contain)).unwrap_or_else(|| "nessun messaggio".to_string())
+                    "{printed} exited with {}: {}",
+                    status
+                        .code()
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "a signal".to_string()),
+                    pick(&err, must_contain)
+                        .or_else(|| pick(&out, must_contain))
+                        .unwrap_or_else(|| "no message".to_string())
                 ));
             }
-            // UN BINARIO CHE ESCE ZERO SENZA DIRE NIENTE non ha dichiarato una
-            // versione, e scrivere «» al posto suo la farebbe sembrare
-            // dichiarata: la differenza conta quando due macchine si confrontano.
+            // A BINARY THAT EXITS ZERO WITHOUT SAYING ANYTHING has declared no
+            // version, and writing "" in its place would make one look declared:
+            // the difference counts when two machines are compared.
             match pick(&out, must_contain).or_else(|| pick(&err, must_contain)) {
                 Some(line) => VersionReading::Declared(line),
                 None if must_contain.is_empty() => {
-                    VersionReading::Unavailable(format!("{printed} non ha stampato niente"))
+                    VersionReading::Unavailable(format!("{printed} printed nothing"))
                 }
                 None => VersionReading::Unavailable(format!(
-                    "nessuna riga di {printed} contiene «{must_contain}»"
+                    "no line of {printed} contains `{must_contain}`"
                 )),
             }
         }
         actions::RunOutcome::TimedOut => VersionReading::Unavailable(format!(
-            "{printed} non è tornato entro {} secondi",
+            "{printed} did not return within {} seconds",
             limit.as_secs()
         )),
         actions::RunOutcome::SpawnFailed(reason) => {
-            VersionReading::Unavailable(format!("{printed} non è partito: {reason}"))
+            VersionReading::Unavailable(format!("{printed} did not start: {reason}"))
         }
     }
 }
 
-/// La riga da tenere: la prima che contiene il testo chiesto, o la prima non
-/// vuota se il descrittore non chiede niente.
+/// The line to keep: the first one containing the requested text, or the first
+/// line with anything on it when the descriptor asks for nothing.
 fn pick(text: &str, must_contain: &str) -> Option<String> {
     text.lines()
         .map(str::trim)
@@ -278,11 +280,11 @@ fn pick(text: &str, must_contain: &str) -> Option<String> {
         .map(|l| l.to_string())
 }
 
-/// Le chiavi trovate seguendo un cammino dentro un JSON, in ordine.
+/// The keys found by following a path inside a JSON value, in order.
 ///
-/// Un `*` nel cammino sta per «tutte le chiavi di questo livello»: senza,
-/// i server dichiarati progetto per progetto resterebbero invisibili, e
-/// l'elenco direbbe zero dove ce ne sono.
+/// A `*` in the path stands for "every key at this level": without it, servers
+/// declared project by project would stay invisible and the list would say zero
+/// where there are some.
 pub fn json_keys(value: &serde_json::Value, pointer: &[String]) -> Vec<String> {
     let Some((head, tail)) = pointer.split_first() else {
         return match value.as_object() {

@@ -1,19 +1,16 @@
-//! Ciò che serve al passo `subflow` e che il crate del flusso non può avere.
+//! What the `subflow` step needs and the flow crate cannot have.
 //!
-//! Tre cose: **dove** si cercano i flussi, **con che azioni** far girare quello
-//! interno, e **dove** si scrive la corsa figlia. La prima e la terza vogliono
-//! il deposito, che `flow` non conosce di proposito — `ledger` dipende da
-//! `flow`, non il contrario. La seconda è un anello: il passo deve girare con
-//! il registro in cui esso stesso è registrato, e un riferimento diretto non si
-//! può costruire.
+//! Three things: **where** flows are looked for, **which actions** run the
+//! inner one, and **where** the child run is written. The first and third want
+//! the ledger, which `flow` deliberately does not know — `ledger` depends on
+//! `flow`, not the other way round. The second is a cycle: the step must run
+//! with the registry it is itself registered in, and a direct reference cannot
+//! be built.
 //!
-//! **COME SI CHIUDE L'ANELLO, E QUANTO COSTA.** Il registro del figlio si
-//! costruisce **quando serve**, non quando si costruisce quello del padre, e si
-//! tiene: un livello di annidamento, un registro. Non è gratis — ogni registro
-//! rileva di nuovo gli strumenti della macchina — ma succede solo se qualcuno
-//! annida davvero, ed è limitato da `flow::subflow::MAX_DEPTH`. L'alternativa
-//! era rendere `Arc<ActionRegistry>` il tipo che tutti si passano, cioè toccare
-//! la riga di comando e il guscio della finestra per un dettaglio interno.
+//! The cycle closes lazily: the child's registry is built when needed and then
+//! kept — one nesting level, one registry. It is not free, since every registry
+//! detects the machine's tools again, but it only happens if somebody actually
+//! nests, and `flow::subflow::MAX_DEPTH` bounds it.
 
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
@@ -25,22 +22,22 @@ use ledger::Ledger;
 
 use crate::{default_registry, record_child_run, stopped_by_cap, FlowRun};
 
-/// Il «dove» della sorgente *tuoi* quando questa macchina non dichiara una casa.
+/// The "where" of the *yours* source when this machine declares no home.
 ///
-/// **NON È UN PERCORSO VUOTO, ED È IL PUNTO.** Un percorso vuoto diventa il
-/// relativo `flows`, cioè la cartella corrente: i flussi del progetto
-/// comparirebbero anche come «tuoi», e a parità di nome vincerebbe quello
-/// sbagliato. Un percorso assoluto che non esiste legge zero flussi, che è la
-/// risposta vera.
+/// **Not an empty path, and that is the point.** An empty path becomes the
+/// relative `flows`, meaning the current directory: the project's flows would
+/// also show up as "yours", and on a name clash the wrong one would win. An
+/// absolute path that does not exist reads zero flows, which is the true
+/// answer.
 const NO_HOME: &str = "/sailor-non-ha-una-casa-su-questa-macchina";
 
-/// Il ponte fra il passo `subflow` e il resto di Sailor.
+/// The bridge between the `subflow` step and the rest of Sailor.
 pub struct LedgerHost {
-    /// `None` quando chi ha costruito il registro non ha un deposito: allora il
-    /// passo non esegue, e dice perché.
+    /// `None` when whoever built the registry has no ledger: the step then
+    /// refuses to run, and says why.
     ledger: Option<Ledger>,
     watcher: Option<Arc<dyn actions::StepSinks>>,
-    /// Il registro con cui gira il figlio, costruito alla prima chiamata.
+    /// The registry the child runs with, built on first call.
     nested: OnceLock<Arc<ActionRegistry>>,
 }
 
@@ -53,29 +50,27 @@ impl LedgerHost {
         }
     }
 
-    /// Il deposito, o l'errore che dice perché senza non si esegue.
+    /// The ledger, or the error saying why nothing runs without one.
     ///
-    /// **NON SI ESEGUE SENZA DEPOSITO, E NON È UNA LIMITAZIONE TECNICA.** Un
-    /// figlio girerebbe benissimo su un deposito in memoria; quello che non
-    /// potrebbe fare è **essere risalito** dal passo che l'ha chiamato, che è
-    /// la decisione 4. Un lavoro che sparisce dentro un altro è l'opacità che
-    /// questo prodotto esiste per togliere: meglio un errore leggibile che una
-    /// corsa figlia di cui nessuno saprà mai niente.
+    /// Not a technical limitation: a child would run fine on an in-memory
+    /// store. What it could not do is **be traced back** from the step that
+    /// called it, and work that disappears inside other work is the opacity
+    /// this product exists to remove.
     fn deposit(&self) -> Result<&Ledger, ActionError> {
         self.ledger.as_ref().ok_or_else(|| {
             ActionError::new(
                 "no_ledger",
-                "senza deposito la corsa figlia non sarebbe risalibile dal passo che l'ha chiamata",
+                "without a ledger the child run could not be traced back to the step that called it",
             )
         })
     }
 }
 
 impl SubflowHost for LedgerHost {
-    /// **LE STESSE SORGENTI DI `sailor flow run`, NON UNA SECONDA REGOLA.** La
-    /// precedenza — *di sistema* < *tuoi* < *del progetto* — vive in
-    /// `flow::system::sources_from_env`. Se un `subflow` cercasse altrove, due
-    /// macchine eseguirebbero flussi diversi con lo stesso nome senza dirlo.
+    /// The same sources as `sailor flow run`, not a second rule. The precedence
+    /// — *system* < *yours* < *project* — lives in
+    /// `flow::system::sources_from_env`. If a `subflow` looked elsewhere, two
+    /// machines would run different flows under the same name without saying so.
     fn sources(&self) -> Vec<FlowSource> {
         let home = ledger::sailor_home()
             .map(|home| home.join("flows"))
@@ -83,17 +78,11 @@ impl SubflowHost for LedgerHost {
         system::sources_from_env(&home)
     }
 
-    /// Le azioni del figlio sono quelle del padre, costruite alla prima
-    /// chiamata e poi tenute.
+    /// The child's actions are the parent's, built on first call and kept.
     fn actions(&self) -> Result<Arc<ActionRegistry>, ActionError> {
         Ok(self
             .nested
-            .get_or_init(|| {
-                Arc::new(default_registry(
-                    self.ledger.clone(),
-                    self.watcher.clone(),
-                ))
-            })
+            .get_or_init(|| Arc::new(default_registry(self.ledger.clone(), self.watcher.clone())))
             .clone())
     }
 
@@ -102,8 +91,8 @@ impl SubflowHost for LedgerHost {
     }
 
     fn note_run(&self, note: &RunNote<'_>) -> Result<(), ActionError> {
-        // CHI L'HA AVVIATA È UN PASSO, E SI LEGGE. Il deposito distingue così
-        // una corsa figlia da una lanciata a mano che porta lo stesso flusso.
+        // Who started it is a step, and it is readable: this is how the ledger
+        // tells a child run from a hand-launched one carrying the same flow.
         let started_by = format!("subflow {}", note.parent_step_id);
         record_child_run(
             self.deposit()?,

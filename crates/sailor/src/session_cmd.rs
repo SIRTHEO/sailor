@@ -286,7 +286,8 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
 /// promessa: chi la digita crede di essersi staccato. La prova
 /// `the_welcome_only_promises_words_that_exist` tiene insieme le due cose.
 fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String> {
-    std::fs::create_dir_all(directory).map_err(|error| format!("{}: {error}", directory.display()))?;
+    std::fs::create_dir_all(directory)
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
     for (name, verb, what) in [
         (
             "sailor-off",
@@ -372,7 +373,8 @@ fn installed(settings: &std::path::Path) -> Result<String, String> {
         return Ok(format!("già innestato in {}", settings.display()));
     }
     if let Some(parent) = settings.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", parent.display()))?;
     }
     let text = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?;
     std::fs::write(settings, format!("{text}\n"))
@@ -554,9 +556,7 @@ fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
 
 fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
-    let rows = store
-        .terminals()
-        .map_err(|error| error.to_string())?;
+    let rows = store.terminals().map_err(|error| error.to_string())?;
     if request.options.contains_key("json") {
         let text = serde_json::to_string_pretty(&rows).map_err(|error| error.to_string())?;
         return Ok(Report::spoken(text));
@@ -605,9 +605,7 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
             "NON LO SO: non mi è stato permesso guardare la macchina ({refusal}). \
              Questo non è «nessun terminale»"
         ),
-        Census::NoTerminal => {
-            "nessun processo ha un terminale, e l'ho potuto chiedere".to_owned()
-        }
+        Census::NoTerminal => "nessun processo ha un terminale, e l'ho potuto chiedere".to_owned(),
         Census::Terminals(terminals) => {
             let mut text = String::new();
             for terminal in terminals {
@@ -650,8 +648,15 @@ fn described(arrival: &Arrival) -> String {
         "{} in {} ({}), sessione {}",
         arrival.anchor.tty,
         arrival.anchor.worktree,
-        arrival.anchor.ancestor.as_deref().unwrap_or("capostipite ignoto"),
-        arrival.session_id.as_deref().unwrap_or("senza identificativo"),
+        arrival
+            .anchor
+            .ancestor
+            .as_deref()
+            .unwrap_or("capostipite ignoto"),
+        arrival
+            .session_id
+            .as_deref()
+            .unwrap_or("senza identificativo"),
     )
 }
 
@@ -836,8 +841,14 @@ mod tests {
                 .expect("resta JSON valido");
 
         assert_eq!(after["model"], "opusplan", "l'innesto non tocca il resto");
-        let stops = after["hooks"]["Stop"].as_array().expect("Stop è un vettore");
-        assert_eq!(stops.len(), 2, "il gancio di prima è ancora lì, e il nostro è in più");
+        let stops = after["hooks"]["Stop"]
+            .as_array()
+            .expect("Stop è un vettore");
+        assert_eq!(
+            stops.len(),
+            2,
+            "il gancio di prima è ancora lì, e il nostro è in più"
+        );
         assert!(
             serde_json::to_string(&after).unwrap().contains("gancio.sh"),
             "il gancio di chi c'era prima non è stato cancellato"
@@ -909,10 +920,7 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         let request = Request {
             verb: "install",
-            options: &BTreeMap::from([(
-                "settings".to_owned(),
-                settings.display().to_string(),
-            )]),
+            options: &BTreeMap::from([("settings".to_owned(), settings.display().to_string())]),
             payload: &Payload::parse("{}").expect("payload vuoto"),
             raw: "",
             store: None,
@@ -1020,7 +1028,10 @@ mod tests {
         )
         .expect("l'apertura su un terminale staccato non è un errore");
 
-        assert_eq!(report.message, "", "un terminale staccato non riceve saluti");
+        assert_eq!(
+            report.message, "",
+            "un terminale staccato non riceve saluti"
+        );
         assert!(
             store
                 .events_on("ttys004")
@@ -1065,7 +1076,9 @@ mod tests {
     fn the_usage_names_every_form_the_dispatch_accepts() {
         for form in FORMS {
             assert!(
-                USAGE.iter().any(|line| line.contains(&format!("session {form}"))),
+                USAGE
+                    .iter()
+                    .any(|line| line.contains(&format!("session {form}"))),
                 "«{form}» è accettata e non è scritta in USAGE"
             );
         }
@@ -1078,7 +1091,7 @@ mod tests {
         let store = scratch.store();
         let report = ask(
             "open",
-            r#"{"session_id":"abc","cwd":"/home/someone/personal/sailor",
+            r#"{"session_id":"abc","cwd":"/work/sailor",
                 "transcript_path":"/tmp/abc.jsonl","hook_event_name":"SessionStart"}"#,
             &store,
             &one_terminal(),
@@ -1088,12 +1101,15 @@ mod tests {
         assert_eq!(report.code, 0);
 
         let row = store.terminal("ttys004").expect("leggere").expect("c'è");
-        assert_eq!(row.worktree, "/home/someone/personal/sailor");
+        assert_eq!(row.worktree, "/work/sailor");
         assert_eq!(row.ancestor.as_deref(), Some("Whatever"));
         assert_eq!(row.session_id.as_deref(), Some("abc"));
         let events = store.events_on("ttys004").expect("gli eventi");
         assert_eq!(events[0].name, "SessionStart", "il nome viene dal payload");
-        assert!(events[0].payload.is_some(), "il payload si conserva com'è arrivato");
+        assert!(
+            events[0].payload.is_some(),
+            "il payload si conserva com'è arrivato"
+        );
     }
 
     /// **UN CAMPO CHE MANCA NON FA FALLIRE NIENTE**: ci si arrangia con quello
@@ -1105,8 +1121,14 @@ mod tests {
         ask("open", "{}", &store, &one_terminal(), &no_options()).expect("registrare");
         let row = store.terminal("ttys004").expect("leggere").expect("c'è");
         assert_eq!(row.session_id, None);
-        assert!(!row.worktree.is_empty(), "l'albero cade sulla cartella corrente");
-        assert_eq!(store.events_on("ttys004").expect("gli eventi")[0].name, "open");
+        assert!(
+            !row.worktree.is_empty(),
+            "l'albero cade sulla cartella corrente"
+        );
+        assert_eq!(
+            store.events_on("ttys004").expect("gli eventi")[0].name,
+            "open"
+        );
     }
 
     /// **UN CENSIMENTO NEGATO NON ROMPE UN GANCIO.** La riga si scrive lo
@@ -1148,7 +1170,11 @@ mod tests {
         let empty = Census::NoTerminal;
         let other = ask("census", "", &store, &empty, &no_options()).expect("censire");
         assert_eq!(other.code, 0);
-        assert!(other.message.contains("nessun processo"), "{}", other.message);
+        assert!(
+            other.message.contains("nessun processo"),
+            "{}",
+            other.message
+        );
     }
 
     /// Lo stacco vive sul tty: la porta unica lo scrive e lo toglie, e in mezzo
@@ -1235,6 +1261,9 @@ mod tests {
         let pair: Vec<String> = ["--tty".to_owned(), "--json".to_owned()].into();
         assert!(options_of(&pair).is_err());
         let bare: Vec<String> = ["--json".to_owned()].into();
-        assert_eq!(options_of(&bare).expect("--json non vuole valori")["json"], "true");
+        assert_eq!(
+            options_of(&bare).expect("--json non vuole valori")["json"],
+            "true"
+        );
     }
 }

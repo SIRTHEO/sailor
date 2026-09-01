@@ -436,11 +436,11 @@ copiarlo.
 diceva «dieci guasti» mentre il file ne elencava undici, e un verificatore ha
 respinto un'intera ricerca per quell'incoerenza — a ragione.
 
-### L'ordine di sblocco è cambiato: prima usare Sailor, poi staccarsi da Orca
+### L'ordine di sblocco è cambiato: prima usare Sailor, poi non servirsi d'altro
 **31/08/2026 — Theo.** L'ordine scritto il 29/08 — chiamate, orchestrazione,
 ciclo — resta valido come sequenza tecnica, ma **non è più il criterio con cui
 si sceglie cosa fare**. Il criterio nuovo è uno solo: *cosa manca perché Theo
-possa lavorare dentro Sailor invece che dentro Orca.* Tre blocchi, in
+possa passare una giornata di lavoro dentro Sailor.* Tre blocchi, in
 quest'ordine, e il terzo è la conseguenza dei primi due:
 
 1. **Sailor si sviluppa senza morire mentre lo si usa.** Si deve poter
@@ -456,13 +456,13 @@ quest'ordine, e il terzo è la conseguenza dei primi due:
    normale. Oggi non esiste niente: `desktop/src-tauri` ha quattro file e nessuna
    riga di pseudo-terminale, e la sorgente d'innesco `sailor-terminal` è
    dichiarata nel catalogo come «la forma che avrà, non una misura».
-3. **Il distacco da Orca**, che non è un lavoro a sé: è ciò che succede quando i
-   primi due sono fatti.
+3. **Non servirsi più d'altro**, che non è un lavoro a sé: è ciò che succede
+   quando i primi due sono fatti.
 
 **Perché quest'ordine e non quello di prima.** Il vecchio ordine ottimizzava la
 correttezza del motore; questo ottimizza il momento in cui il sistema smette di
 essere un progetto e diventa lo strumento con cui si lavora. Finché Theo sviluppa
-Sailor dentro Orca, ogni difetto di Sailor lo paga qualcun altro — e nessuno dei
+Sailor altrove, ogni difetto di Sailor lo paga qualcun altro — e nessuno dei
 suoi guasti viene trovato usandolo, che è l'unico modo in cui i guasti di questo
 repo sono stati trovati finora.
 

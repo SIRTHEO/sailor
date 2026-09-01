@@ -1,22 +1,9 @@
-//! «Cosa chiedono i flussi che stanno su questa macchina, e che qui non c'è.»
+//! "What do the flows on this machine ask for that is not here?"
 //!
-//! **PERCHÉ NON BASTA IL RILEVAMENTO.** `detect_tools` risponde a «cosa c'è
-//! qui»: è un elenco, e un elenco non dice a nessuno cosa farne. La domanda che
-//! una persona ha davvero è l'altra — *questi flussi, su questa macchina,
-//! girano?* — e per rispondere servono due cose che nessuna azione sola ha:
-//! quello che la macchina offre, e quello che i flussi chiedono. Questa azione
-//! porta il secondo pezzo e li mette insieme.
-//!
-//! **NON GUARDA LA MACCHINA, E NON È UNA MANCANZA.** Riceve il rilevamento dal
-//! passo che la precede e non ne fa uno suo. Così il flusso dichiara la catena
-//! invece di nasconderla, il rilevamento si paga una volta sola, e se un giorno
-//! qualcuno vorrà incrociare i flussi con il rilevamento di *un'altra* macchina
-//! — un elenco arrivato da fuori — questa azione funziona già, perché non ha mai
-//! saputo da dove venisse.
-//!
-//! **CHE POTERE HA.** Uno solo: leggere i file dei flussi nei posti in cui
-//! Sailor li cerca. Il confronto che fa dopo non è un potere, è composizione, e
-//! per questo sta tutto qui dentro e non in un interprete dentro il flusso.
+//! **WHAT POWER IT HAS.** One only: reading the flow files in the places Sailor
+//! looks for them. The comparison it makes afterwards is not a power, it is
+//! composition — and that is why all of it sits here, and not in an interpreter
+//! inside the flow.
 
 use crate::Finding;
 use flow::system::{self, FlowSource};
@@ -27,30 +14,34 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-/// Il nome sotto cui l'azione si registra.
+/// The name the action registers under.
 pub const TOOL_NEEDS_ACTION: &str = "tool_needs";
 
-/// Registra l'azione sotto il suo nome stabile.
+/// Registers the action under its stable name.
 pub fn register_needs(registry: &mut flow::ActionRegistry) {
     registry.register(TOOL_NEEDS_ACTION, ToolNeedsAction);
 }
 
-/// L'ingresso del passo.
+/// The step's input.
 ///
-/// **NIENTE `deny_unknown_fields`, E VA SPIEGATO.** L'ingresso di un passo con
-/// una dipendenza *è* l'uscita di quella dipendenza, col `with` sovrapposto:
-/// arriva quindi tutto quello che il rilevamento ha prodotto — `problems`,
-/// `looked_in`, `present`, `total` — e rifiutare i campi sconosciuti vorrebbe
-/// dire rifiutare l'unico modo in cui questa azione può essere invocata.
+/// **NO `deny_unknown_fields`, DELIBERATELY.** The input of a step with a
+/// dependency *is* the output of that dependency with `with` laid over it, so
+/// everything the detection produced arrives too. Refusing unknown fields would
+/// refuse the only way this action can be invoked.
 #[derive(Debug, Deserialize)]
 struct NeedsSpec {
-    /// Quello che il passo di rilevamento ha trovato su questa macchina.
+    /// What the detection step found on this machine.
+    ///
+    /// **THE ACTION MAKES NO DETECTION OF ITS OWN, AND THAT IS NOT A GAP.** The
+    /// flow declares the chain instead of hiding it, the detection is paid for
+    /// once, and *another* machine's detection — a list arrived from outside —
+    /// works here unchanged, because this action never knew where it came from.
     findings: Vec<Finding>,
-    /// Cartelle di flussi da guardare al posto di quelle abituali.
+    /// Flow directories to look at instead of the usual ones.
     #[serde(default)]
     flows_dirs: Vec<String>,
-    /// Se guardare anche dove Sailor cerca sempre: i flussi spediti, quelli
-    /// della casa, quelli del progetto.
+    /// Whether to look where Sailor always looks too: the shipped flows, home's,
+    /// the project's.
     #[serde(default = "yes")]
     include_default_sources: bool,
 }
@@ -59,27 +50,32 @@ fn yes() -> bool {
     true
 }
 
-/// Uno strumento chiesto da almeno un passo, e come sta messo qui.
+/// A tool at least one step asks for, and how it stands here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Need {
-    /// L'identificativo dello strumento, come lo scrive il passo.
+    /// The tool's identifier, as the step writes it.
     pub tool: String,
-    /// Quali passi lo chiedono, scritti `flusso/passo`: senza questa riga chi
-    /// legge sa che manca qualcosa e non sa cosa smetterà di funzionare.
+    /// Which steps ask for it, written `flow/step`: without this line the reader
+    /// knows something is missing and not what will stop working.
     pub asked_by: Vec<String>,
-    /// Dove sta l'eseguibile, se c'è.
+    /// Where the executable is, when there is one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
-    /// Perché non c'è, quando non c'è.
+    /// Why it is not here, when it is not.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub reason: String,
-    /// La nota del descrittore: è il posto in cui sta scritto da dove si
-    /// installa, ed è tutto quello che chi legge avrà per rimediare.
+    /// The descriptor's note: it is where installing it is written down, and it
+    /// is all the reader will have to put things right.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub note: String,
 }
 
-/// Risponde a «questi flussi girano qui?».
+/// Answers "do these flows run here?".
+///
+/// **WHY DETECTION IS NOT ENOUGH.** `detect_tools` answers "what is here": a
+/// list, and a list tells nobody what to do with it. The question a person
+/// really has is *do these flows, on this machine, run?* — which needs what the
+/// machine offers and what the flows ask for. This one brings the second half.
 pub struct ToolNeedsAction;
 
 impl Action for ToolNeedsAction {
@@ -88,8 +84,8 @@ impl Action for ToolNeedsAction {
             ActionError::new(
                 "invalid_input",
                 format!(
-                    "{error}. Questo passo va dopo un rilevamento: riceve i suoi `findings` \
-                     come ingresso, e da solo non guarda la macchina"
+                    "{error}. This step goes after a detection: it takes that step's \
+                     `findings` as its input, and on its own it does not look at the machine"
                 ),
             )
         })?;
@@ -100,7 +96,7 @@ impl Action for ToolNeedsAction {
         }
         for raw in &spec.flows_dirs {
             sources.push(FlowSource {
-                origin: "dichiarati nel passo",
+                origin: "declared in the step",
                 dir: PathBuf::from(raw),
             });
         }
@@ -114,14 +110,18 @@ impl Action for ToolNeedsAction {
                 Ok(flow) => {
                     flows_seen += 1;
                     for (tool, step) in tools_named_by(&flow) {
-                        asked.entry(tool).or_default().push(format!("{name}/{step}"));
+                        asked
+                            .entry(tool)
+                            .or_default()
+                            .push(format!("{name}/{step}"));
                     }
                     for step in binaries_named_by(&flow) {
                         named_binaries.push(format!("{name}/{step}"));
                     }
                 }
-                // UN FLUSSO ROTTO NON È UN FLUSSO CHE NON CHIEDE NIENTE. Contarlo
-                // come zero direbbe «ti serve solo questo» a chi ha metà elenco.
+                // A BROKEN FLOW IS NOT A FLOW THAT ASKS FOR NOTHING. Counting it
+                // as zero would say "this is all you need" to someone holding
+                // half the list.
                 Err(_) => flows_broken.push(name),
             }
         }
@@ -155,9 +155,9 @@ impl Action for ToolNeedsAction {
                     tool,
                     asked_by,
                     executable: None,
-                    reason: "nessun descrittore lo dichiara: non è che manchi su questa macchina, \
-                             è che Sailor non sa cosa sia. Si aggiunge scrivendo un file JSON in \
-                             ~/.config/sailor/tools.d/, senza ricompilare niente"
+                    reason: "no descriptor declares it: it is not that it is missing from this \
+                             machine, it is that Sailor does not know what it is. Add one by \
+                             writing a JSON file in ~/.config/sailor/tools.d/, no recompile"
                         .to_string(),
                     note: String::new(),
                 }),
@@ -190,17 +190,16 @@ impl Action for ToolNeedsAction {
         })))
     }
 
-    /// Legge dei file e confronta due elenchi: rifarlo non cambia niente.
+    /// It reads files and compares two lists: doing it again changes nothing.
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
 }
 
-/// I posti in cui Sailor cerca i flussi su questa macchina.
+/// The places Sailor looks for flows on this machine.
 ///
-/// **LA CASA LA CHIEDE AL DEPOSITO**, come fa la finestra: due idee di dove sta
-/// la casa non danno un errore, danno un elenco che parla di flussi che nessuno
-/// esegue.
+/// **HOME IS ASKED OF THE LEDGER**, as the window does: two ideas of where home
+/// is do not give an error, they give a list that talks about flows nobody runs.
 fn default_flow_sources() -> Vec<FlowSource> {
     let home = ledger::sailor_home().unwrap_or_else(|| PathBuf::from("."));
     let working = std::env::current_dir().ok();
@@ -212,17 +211,20 @@ fn default_flow_sources() -> Vec<FlowSource> {
     )
 }
 
-/// Gli strumenti che un flusso chiede, passo per passo.
+/// The tools a flow asks for, step by step.
 ///
-/// **SI GUARDA DOVE LI LEGGE CHI ESEGUE**, cioè al primo livello di `with` e dei
-/// valori dichiarati per un passo senza dipendenze: è lì che `external_engine`
-/// cerca `tool`. Cercare più a fondo troverebbe la parola `tool` dentro un
-/// prompt o dentro uno schema di risposta e la conterebbe come una richiesta.
+/// **IT LOOKS WHERE THE EXECUTOR READS THEM**, at the top level of `with` and of
+/// the values declared for a step without dependencies: that is where
+/// `external_engine` looks for `tool`. Searching deeper would find the word
+/// `tool` inside a prompt or a response schema and count it as a request.
 fn tools_named_by(flow: &FlowFile) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for step in flow.graph.steps() {
         for place in [step.with.as_ref(), flow.inputs.get(&step.id)] {
-            if let Some(tool) = place.and_then(|value| value.get("tool")).and_then(Value::as_str) {
+            if let Some(tool) = place
+                .and_then(|value| value.get("tool"))
+                .and_then(Value::as_str)
+            {
                 out.push((tool.to_owned(), step.id.clone()));
             }
         }
@@ -232,12 +234,12 @@ fn tools_named_by(flow: &FlowFile) -> Vec<(String, String)> {
     out
 }
 
-/// I passi che nominano un binario invece di uno strumento.
+/// The steps that name a binary instead of a tool.
 ///
-/// **NON È UN ERRORE, È UNA MISURA CHE SERVE.** Un passo che scrive `bin` gira
-/// solo dove quel nome è nel percorso di chi esegue, e nessun elenco di
-/// strumenti mancanti lo vedrà mai: è il modo silenzioso in cui un flusso smette
-/// di essere portabile. Dirlo qui costa una riga.
+/// **NOT AN ERROR, A MEASUREMENT WORTH HAVING.** A step that writes `bin` runs
+/// only where that name is on the runner's path, and no list of missing tools
+/// will ever see it: it is the silent way a flow stops being portable. Saying so
+/// here costs one line.
 fn binaries_named_by(flow: &FlowFile) -> Vec<String> {
     let mut out = Vec::new();
     for step in flow.graph.steps() {
@@ -260,12 +262,8 @@ fn presence_reason(finding: &Finding) -> String {
     }
 }
 
-/// La risposta scritta perché una persona la legga.
-///
-/// Sta accanto ai dati e non al posto loro: chi guarda la finestra legge questa,
-/// chi compone un altro passo prende gli elenchi.
-/// «1 passi nominano» è una frase che fa sembrare rotto chi la scrive, e chi
-/// legge un rapporto sbagliato nella forma smette di fidarsi anche dei numeri.
+/// "1 steps name" is a phrase that makes whoever writes it look broken, and
+/// whoever reads a report wrong in its form stops trusting its numbers too.
 fn count(quantity: usize, one: &str, many: &str) -> String {
     if quantity == 1 {
         format!("{quantity} {one}")
@@ -274,6 +272,8 @@ fn count(quantity: usize, one: &str, many: &str) -> String {
     }
 }
 
+/// The answer written for a person to read. It sits beside the data and not in
+/// its place: the window shows this, another step takes the lists.
 fn report_of(
     flows_seen: usize,
     flows_broken: &[String],
@@ -286,31 +286,31 @@ fn report_of(
     let mut text = String::new();
     let _ = write!(
         text,
-        "{} letti in {}; chiedono {}.",
-        count(flows_seen, "flusso", "flussi"),
-        count(looked_in.len(), "posto", "posti"),
+        "{} read in {}; they ask for {}.",
+        count(flows_seen, "flow", "flows"),
+        count(looked_in.len(), "place", "places"),
         count(
             present.len() + missing.len() + unknown.len(),
-            "strumento",
-            "strumenti"
+            "tool",
+            "tools"
         )
     );
     if !flows_broken.is_empty() {
         let _ = write!(
             text,
-            "\n\nATTENZIONE: {} non si sono potuti leggere, quindi questo elenco è parziale: {}.",
-            count(flows_broken.len(), "flusso", "flussi"),
+            "\n\nWARNING: {} could not be read, so this list is partial: {}.",
+            count(flows_broken.len(), "flow", "flows"),
             flows_broken.join(", ")
         );
     }
     if !present.is_empty() {
-        let _ = write!(text, "\n\nCi sono, e questi flussi qui girano:");
+        let _ = write!(text, "\n\nHere, and these flows run here:");
         for need in present {
             let _ = write!(
                 text,
-                "\n  {} — {} (chiesto da {})",
+                "\n  {} — {} (asked for by {})",
                 need.tool,
-                need.executable.as_deref().unwrap_or("trovato"),
+                need.executable.as_deref().unwrap_or("found"),
                 need.asked_by.join(", ")
             );
         }
@@ -318,37 +318,34 @@ fn report_of(
     if missing.is_empty() && unknown.is_empty() {
         let _ = write!(
             text,
-            "\n\nNon manca niente: ogni strumento chiesto da un flusso è su questa macchina."
+            "\n\nNothing is missing: every tool a flow asks for is on this machine."
         );
     }
     if !missing.is_empty() {
-        let _ = write!(
-            text,
-            "\n\nMANCANO QUI, e senza di loro questi passi si fermano:"
-        );
+        let _ = write!(text, "\n\nMISSING HERE, and without them these steps stop:");
         for need in missing {
             let _ = write!(
                 text,
-                "\n  {} — {}\n    si ferma: {}",
+                "\n  {} — {}\n    stops: {}",
                 need.tool,
                 need.reason,
                 need.asked_by.join(", ")
             );
             if !need.note.is_empty() {
-                let _ = write!(text, "\n    da dove si prende: {}", need.note);
+                let _ = write!(text, "\n    where to get it: {}", need.note);
             }
         }
     }
     if !unknown.is_empty() {
         let _ = write!(
             text,
-            "\n\nCHIESTI DA UN FLUSSO E SCONOSCIUTI A SAILOR — questi non si riparano installando \
-             qualcosa, si riparano scrivendo un descrittore:"
+            "\n\nASKED FOR BY A FLOW AND UNKNOWN TO SAILOR — these are not fixed by installing \
+             something, they are fixed by writing a descriptor:"
         );
         for need in unknown {
             let _ = write!(
                 text,
-                "\n  {} — chiesto da {}",
+                "\n  {} — asked for by {}",
                 need.tool,
                 need.asked_by.join(", ")
             );
@@ -357,12 +354,12 @@ fn report_of(
     if !named_binaries.is_empty() {
         let _ = write!(
             text,
-            "\n\n{} un binario invece di uno strumento ({}): girano solo dove quel nome è nel \
-             percorso di chi esegue, e nessun elenco come questo può accorgersene.",
-            count(named_binaries.len(), "passo nomina", "passi nominano"),
+            "\n\n{} a binary instead of a tool ({}): they run only where that name is on the \
+             runner's path, and no list like this one can notice.",
+            count(named_binaries.len(), "step names", "steps name"),
             named_binaries.join(", ")
         );
     }
-    let _ = write!(text, "\n\nGuardato in:\n  {}", looked_in.join("\n  "));
+    let _ = write!(text, "\n\nLooked in:\n  {}", looked_in.join("\n  "));
     text
 }

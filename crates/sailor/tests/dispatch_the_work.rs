@@ -147,7 +147,10 @@ fn the_flow_declares_a_trigger_a_dispatch_two_engines_and_a_verdict() {
     );
 
     let deps = |id: &str| flow.graph.step(id).expect("il passo esiste").deps.clone();
-    assert!(deps("trigger").is_empty(), "l'innesco è il nodo di ingresso");
+    assert!(
+        deps("trigger").is_empty(),
+        "l'innesco è il nodo di ingresso"
+    );
     assert_eq!(deps("dispatch"), vec!["trigger".to_owned()]);
     assert_eq!(deps("engine_a"), vec!["dispatch".to_owned()]);
     assert_eq!(deps("engine_b"), vec!["dispatch".to_owned()]);
@@ -267,7 +270,11 @@ fn an_engine_step_declares_what_it_can_return_and_what_it_hands_on() {
             "il passo {} non pretende nessuna risposta",
             step.id
         );
-        assert!(!allow_extra, "il passo {} lascia passare campi non dichiarati", step.id);
+        assert!(
+            !allow_extra,
+            "il passo {} lascia passare campi non dichiarati",
+            step.id
+        );
         assert!(
             properties.get("stdout").is_none(),
             "il passo {} inoltra ancora il testo grezzo del motore",
@@ -280,7 +287,9 @@ fn an_engine_step_declares_what_it_can_return_and_what_it_hands_on() {
             step.with
                 .as_ref()
                 .and_then(|with| with.get("answer_shape"))
-                .unwrap_or_else(|| panic!("il passo {} non dichiara la forma della risposta", step.id))
+                .unwrap_or_else(|| {
+                    panic!("il passo {} non dichiara la forma della risposta", step.id)
+                })
                 .clone(),
         )
         .expect("la forma dichiarata deve essere uno schema valido");
@@ -475,7 +484,10 @@ fn only_what_the_shape_declares_travels_down_the_chain() {
 /// mai partiti — cioè non è stata spesa nessuna chiamata a valle.
 #[test]
 fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
-    let graph = chain_with("APPROVATO", Some(json!(["-c", "echo il-motivo 1>&2; exit 3"])));
+    let graph = chain_with(
+        "APPROVATO",
+        Some(json!(["-c", "echo il-motivo 1>&2; exit 3"])),
+    );
 
     let (execution, store) = run_with(
         &graph,
@@ -506,7 +518,10 @@ fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
     }
     // L'altro motore, che non dipendeva dal primo, ha girato: fermarsi non vuol
     // dire fermare tutto.
-    assert!(store.all().iter().any(|record| record.step_id == "engine_b"));
+    assert!(store
+        .all()
+        .iter()
+        .any(|record| record.step_id == "engine_b"));
 }
 
 /// **IL FLUSSO PORTATO SU UNA MACCHINA CHE NON HA QUELLO STRUMENTO.** Non parte
@@ -547,7 +562,11 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
         record.failure_class
     );
     assert!(
-        record.said.clone().unwrap_or_default().contains("claude-code"),
+        record
+            .said
+            .clone()
+            .unwrap_or_default()
+            .contains("claude-code"),
         "il messaggio deve dire quale strumento mancava: {:?}",
         record.said
     );
@@ -563,13 +582,21 @@ fn a_machine_without_the_tool_stops_the_flow_saying_which_one() {
 #[test]
 fn the_verdict_gate_closes_green_only_on_an_approved_verdict() {
     let flow = flow_file();
-    let mut verdict = flow.graph.step("verdict").expect("il cancello esiste").clone();
+    let mut verdict = flow
+        .graph
+        .step("verdict")
+        .expect("il cancello esiste")
+        .clone();
     verdict.deps.clear();
     let graph = Graph::new(vec![verdict]).expect("un passo solo è un grafo valido");
 
     let outcome = |answer: Value| {
         let input = json!({"status": "ok", "answer": answer});
-        let (execution, _) = run_with(&graph, &[("verdict", input)], &registry_with(EveryToolIsShell));
+        let (execution, _) = run_with(
+            &graph,
+            &[("verdict", input)],
+            &registry_with(EveryToolIsShell),
+        );
         last_decision(&execution)
     };
 
@@ -649,7 +676,11 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
 #[test]
 fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     let flow = flow_file();
-    let mut engine = flow.graph.step("engine_a").expect("il motore esiste").clone();
+    let mut engine = flow
+        .graph
+        .step("engine_a")
+        .expect("il motore esiste")
+        .clone();
     engine.deps.clear();
     let answer = json!({"findings": [], "total": 0}).to_string();
     let with = engine.with.as_mut().expect("il passo porta i suoi valori");

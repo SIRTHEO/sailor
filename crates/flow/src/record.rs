@@ -5,80 +5,73 @@ use std::collections::BTreeMap;
 
 pub const MAX_SAID_BYTES: usize = 16 * 1024;
 
-/// Un passo, come record durevole.
-/// L'intenzione si scrive PRIMA di eseguire; l'esito DOPO.
+/// A step as a durable record.
+/// Intent is written BEFORE running; the outcome AFTER.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepRecord {
     pub run_id: String,
     pub step_id: String,
     pub attempt: u32,
-    /// Monotona. Un tentativo dato per morto che torna non riscrive stato vecchio.
+    /// Monotonic. An attempt given up for dead that comes back cannot overwrite
+    /// state written since.
     pub epoch: u64,
     pub deps: Vec<String>,
-    /// Impronta del solo input tipato; non comprende i freni attivi del passo.
+    /// Digest of the typed input alone; it does not cover the step's gates.
+    ///
+    /// A declared residue that runs itself out: a run begun while references
+    /// were still resolved inside each action, and resumed since, compares an
+    /// old raw digest against a new resolved one and calls the same work
+    /// `DifferentInput`. That is a wrong label on an attempt, not data lost.
     pub input_digest: String,
-    /// **L'ingresso come il passo l'ha ricevuto nel momento in cui ha smesso di
-    /// essere elaborato.** Una regola sola, e i tre casi ne discendono:
-    /// - il passo **gira** → l'ingresso coi rinvii sciolti, cioè quello che
-    ///   l'azione ha davvero letto;
-    /// - il passo è **saltato** (`when` non soddisfatto) → l'ingresso non
-    ///   sciolto: la condizione si valuta prima della risoluzione, e un passo
-    ///   che non gira non paga i rinvii di un lavoro che non farà;
-    /// - il passo **si rompe sciogliendo un rinvio** → l'ingresso non sciolto,
-    ///   apposta: chi legge il record deve vedere il puntatore da correggere,
-    ///   non il vuoto che ne è uscito.
-    ///
-    /// **QUAL È DEI TRE NON LO DICE QUESTO CAMPO, LO DICE `outcome`**, che sta
-    /// nello stesso record. Va detto perché un `{"$from": …}` letto qui dentro
-    /// non è di per sé un difetto: su `Skipped` è la norma, su `Broke` con
-    /// classe `unresolved_reference` è la diagnosi, e su `Went` sarebbe un
-    /// guasto vero.
-    ///
-    /// **PRIMA DEL 01/09/2026 ERA SEMPRE L'INGRESSO GREZZO**, perché i rinvii
-    /// li scioglieva ciascuna azione dopo aver ricevuto questo valore. Il
-    /// residuo è dichiarato e si esaurisce da sé: una corsa **iniziata prima e
-    /// ripresa dopo** confronta un'impronta vecchia grezza con una nuova
-    /// sciolta e dichiara `DifferentInput` sullo stesso lavoro. È un'etichetta
-    /// sbagliata su un tentativo, non un dato perso.
+    /// The input as the step received it when it stopped being processed. One
+    /// rule, three cases from it: **ran** → references resolved, what the
+    /// action really read; **skipped** (`when` unsatisfied) → unresolved, the
+    /// condition being judged first so a step that does not run pays no
+    /// references for work it will not do; **broke resolving one** → unresolved
+    /// on purpose, so the reader sees the pointer, not the hole it left.
     pub input: Value,
-    /// I freni attivi quando il passo è partito.
+    /// The gates active when the step started.
     pub gates: Vec<String>,
-    /// Relazione della ripresa con l'identità già registrata, calcolata dal motore.
+    /// How the resume relates to the identity already recorded, per the engine.
     #[serde(default)]
     pub attempt_relation: Option<AttemptRelation>,
-    /// Il pid del processo che teneva il passo mentre girava, scritto dal
-    /// motore all'apertura. È un campo, non una convenzione dentro `input`:
-    /// chi riprende deve poter chiedere al kernel se quel processo è vivo
-    /// senza sapere come il chiamante ha chiamato la propria chiave.
+    /// The pid of the process holding the step while it ran, written by the
+    /// engine at open. A field, not a convention inside `input`: whoever
+    /// resumes must be able to ask the kernel whether that process is alive
+    /// without knowing what the caller named its own key.
     #[serde(default)]
     pub held_by_pid: Option<u32>,
-    /// La specie del passo, congelata all'apertura: dichiara se rifarlo è
-    /// sicuro. `None` è un record scritto prima che la specie esistesse, e
-    /// vale quanto `HandToHuman` — mai quanto `Repeatable`.
+    /// The step's species, frozen at open: it says whether redoing it is safe.
+    /// `None` is a record written before species existed, and counts as
+    /// `HandToHuman` — never as `Repeatable`.
     #[serde(default)]
     pub species: Option<StepSpecies>,
     pub started_at: i64,
 
-    // Scritti alla chiusura. `deserialize_with` rende obbligatoria anche la
-    // presenza dei campi nulli: un record troncato non può sembrare valido.
+    // Written at close. `deserialize_with` makes even the null fields
+    // mandatory: a truncated record must not be able to look valid.
+    /// Which of `input`'s three cases holds is said here, not by that field —
+    /// worth saying, because a `{"$from": …}` read in there is no defect by
+    /// itself: on `Skipped` it is the norm, on `Broke` with the class
+    /// `unresolved_reference` it is the diagnosis, on `Went` a real fault.
     #[serde(deserialize_with = "required_option")]
     pub outcome: Option<Outcome>,
     #[serde(deserialize_with = "required_option")]
     pub output: Option<Value>,
-    /// Testo grezzo, troncato. Serve a una persona quando qualcosa va storto.
-    /// NON è il canale dati: nessuna condizione si valuta su questo.
+    /// Raw text, truncated. It serves a person when something goes wrong. It is
+    /// NOT the data channel: no condition is ever evaluated on it.
     #[serde(deserialize_with = "required_option")]
     pub said: Option<String>,
-    /// Popolata dal motore, non da un modello. È una classe, non una diagnosi.
+    /// Filled by the engine, not by a model. A class, not a diagnosis.
     #[serde(deserialize_with = "required_option")]
     pub failure_class: Option<String>,
     #[serde(deserialize_with = "required_option")]
     pub ended_at: Option<i64>,
-    /// Conteggio totale dei byte emessi; non fa parte del canale dati tipato.
+    /// Total bytes emitted; not part of the typed data channel.
     #[serde(default)]
     pub bytes_seen: Option<u64>,
-    /// Byte tagliati perché oltre il tetto configurato.
+    /// Bytes cut for running past the configured cap.
     #[serde(default)]
     pub bytes_discarded: Option<u64>,
 }
@@ -92,19 +85,19 @@ pub enum Outcome {
     Skipped,
 }
 
-/// Le tre specie di passo: un'azione o si può rifare tale e quale, o si può
-/// disfare e rifare, o va lasciata a una persona. Non esiste una quarta
-/// strada implicita — la specie sconosciuta vale `HandToHuman`, mai
-/// `Repeatable`, perché l'errore da cui questa distinzione difende è
-/// duplicare un effetto già avvenuto sul mondo.
+/// The three species of step: an action can be redone as it stands, be undone
+/// and redone, or must be left to a person. There is no implicit fourth road —
+/// an unknown species counts as `HandToHuman`, never as `Repeatable`, because
+/// the mistake this distinction guards against is duplicating an effect the
+/// world has already seen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StepSpecies {
-    /// Si può rilanciare tale e quale: nessun effetto residuo da disfare.
+    /// Can be relaunched as it stands: no residual effect to undo.
     Repeatable,
-    /// L'effetto già prodotto si può disfare, poi il passo si rifà.
+    /// The effect already produced can be undone, then the step redone.
     Compensable,
-    /// Né l'uno né l'altro: nessuna azione automatica è sicura.
+    /// Neither: no automatic action is safe.
     HandToHuman,
 }
 
@@ -156,7 +149,7 @@ impl StepRecord {
 pub fn digest_input(value: &Value) -> String {
     let canonical = canonical_value(value);
     let bytes = serde_json::to_vec(&canonical)
-        .expect("serializzare un serde_json::Value in memoria non può fallire");
+        .expect("serializing a serde_json::Value in memory cannot fail");
     let digest = Sha256::digest(bytes);
     format!("{digest:x}")
 }
@@ -209,10 +202,10 @@ mod tests {
     #[test]
     fn incomplete_record_is_rejected() {
         let record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
-        let mut value = serde_json::to_value(record).expect("record serializzabile");
+        let mut value = serde_json::to_value(record).expect("serializable record");
         value
             .as_object_mut()
-            .expect("il record è un oggetto")
+            .expect("the record is an object")
             .remove("gates");
         assert!(serde_json::from_value::<StepRecord>(value).is_err());
     }
@@ -220,10 +213,10 @@ mod tests {
     #[test]
     fn null_closing_field_must_still_be_present() {
         let record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
-        let mut value = serde_json::to_value(record).expect("record serializzabile");
+        let mut value = serde_json::to_value(record).expect("serializable record");
         value
             .as_object_mut()
-            .expect("il record è un oggetto")
+            .expect("the record is an object")
             .remove("ended_at");
         assert!(serde_json::from_value::<StepRecord>(value).is_err());
     }
@@ -253,11 +246,11 @@ mod tests {
             "failure_class": null,
             "ended_at": 2
         }"#;
-        let record: StepRecord = serde_json::from_str(json_str).expect("record vecchio leggibile");
+        let record: StepRecord = serde_json::from_str(json_str).expect("old record still reads");
         assert_eq!(record.bytes_seen, None);
         assert_eq!(record.bytes_discarded, None);
-        // Scritto prima che la specie esistesse: resta leggibile, e non
-        // eredita una specie che nessuno ha dichiarato.
+        // Written before species existed: it stays readable, and does not
+        // inherit a species nobody declared.
         assert_eq!(record.species, None);
         assert_eq!(record.held_by_pid, None);
     }
@@ -267,9 +260,12 @@ mod tests {
         let mut record = StepRecord::started("run", "step", 1, 1, vec![], json!(null), vec![], 1);
         record.species = Some(StepSpecies::Compensable);
         record.held_by_pid = Some(4321);
-        let text = serde_json::to_string(&record).expect("record serializzabile");
-        assert!(text.contains("\"compensable\""), "la specie va scritta in minuscolo: {text}");
-        let back: StepRecord = serde_json::from_str(&text).expect("record rileggibile");
+        let text = serde_json::to_string(&record).expect("serializable record");
+        assert!(
+            text.contains("\"compensable\""),
+            "species is written lowercase: {text}"
+        );
+        let back: StepRecord = serde_json::from_str(&text).expect("record reads back");
         assert_eq!(back.species, Some(StepSpecies::Compensable));
         assert_eq!(back.held_by_pid, Some(4321));
     }
