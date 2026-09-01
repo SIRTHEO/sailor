@@ -246,7 +246,7 @@ describe("cosa è installato", () => {
           { kind: "agent", name: "verificatore", description: "Chi crea non giudica.", origin: "repo sailor", path: "/b", reach: { state: "inactive", reason: "il plugin che la contiene è spento" }, by_model: true },
           { kind: "rule", name: "R05", description: "I permessi.", origin: "repo gyver", path: "/c", reach: { state: "unknown", reason: "dipende da dove si apre la sessione" }, by_model: false },
         ],
-        roots: ["/Users/theo", "/Users/theo/personal/sailor"],
+        roots: ["/work", "/work/sailor"],
         stale_plugin_copies: 2,
       },
     });

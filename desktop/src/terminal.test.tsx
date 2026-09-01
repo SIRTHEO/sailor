@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
-import { Terminals } from "./Terminals";
+import { Terminals, WORKSPACE_HINT } from "./Terminals";
 import { routingNote } from "./TerminalPane";
 import {
   decodeBytes,
@@ -210,7 +210,7 @@ describe("dove è finita la riga, detto a chi guarda", () => {
 function summary(over: Partial<TerminalSummary>): TerminalSummary {
   return {
     id: "t1",
-    workspaceRoot: "/Users/theo/personal/sailor",
+    workspaceRoot: "/work/sailor",
     workspaceName: "sailor",
     alive: true,
     processId: 4242,
@@ -337,8 +337,8 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/Users/theo/personal/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
-  { id: "t2", workspaceRoot: "/Users/theo/gyver/work/packages", workspaceName: "packages", alive: true, processId: 4243 },
+  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
+  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243 },
 ];
 
 /**
@@ -430,8 +430,8 @@ describe("la schermata dei terminali", () => {
       const button = await screen.findByRole("button", { name: "Apri un terminale" });
       expect((button as HTMLButtonElement).disabled).toBe(true);
 
-      const field = screen.getByPlaceholderText("/Users/theo/personal/sailor");
-      fireEvent.change(field, { target: { value: "/Users/theo/personal/sailor" } });
+      const field = screen.getByPlaceholderText(WORKSPACE_HINT);
+      fireEvent.change(field, { target: { value: "/work/sailor" } });
       expect((screen.getByRole("button", { name: "Apri un terminale" }) as HTMLButtonElement).disabled).toBe(false);
 
       await act(async () => {
@@ -454,13 +454,13 @@ describe("la schermata dei terminali", () => {
           <Terminals native />
         </div>,
       );
-      const field = await screen.findByPlaceholderText("/Users/theo/personal/sailor");
-      fireEvent.change(field, { target: { value: "/Users/theo/gyver/work" } });
+      const field = await screen.findByPlaceholderText(WORKSPACE_HINT);
+      fireEvent.change(field, { target: { value: "/work/other-repo" } });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Apri un terminale" }));
       });
       expect(shell.argsOf("terminal_open")).toEqual([
-        { workspaceRoot: "/Users/theo/gyver/work", program: undefined, cols: 80, rows: 24 },
+        { workspaceRoot: "/work/other-repo", program: undefined, cols: 80, rows: 24 },
       ]);
     } finally {
       shell.stop();
