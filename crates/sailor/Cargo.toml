@@ -11,6 +11,7 @@ rust-version.workspace = true
 # `ui` sono arrivati il 27/08/2026 con lo stesso schema: la libreria decide,
 # `sailor` fa i gesti.
 [dependencies]
+workspace = { path = "../workspace" }
 release = { path = "../release" }
 profiles = { path = "../profiles" }
 models = { path = "../models" }
