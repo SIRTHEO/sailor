@@ -72,9 +72,9 @@ interface ToolGroup {
 }
 
 export const TOOL_GROUPS: ToolGroup[] = [
-  { label: "Da dove parte", kinds: ["trigger"] },
-  { label: "Chi fa il lavoro al posto di Sailor", kinds: ["engine", "human", "subflow"] },
-  { label: "Cosa fa Sailor da sé", kinds: ["check", "gesture", "deposit"] },
+  { label: "Where it starts", kinds: ["trigger"] },
+  { label: "Who does the work instead of Sailor", kinds: ["engine", "human", "subflow"] },
+  { label: "What Sailor does itself", kinds: ["check", "gesture", "deposit"] },
 ];
 
 /** Le famiglie che la barra offre, nell'ordine in cui si vedono. */
