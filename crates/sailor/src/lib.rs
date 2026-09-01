@@ -25,7 +25,6 @@
 //! legge un commento per aggiornarlo. Sta in `COMMANDS`, lo stampa
 //! `print_usage`, e la finestra lo mostra leggendolo da lì.
 
-pub mod terminal_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod models_cmd;
@@ -35,6 +34,7 @@ pub mod remaining_cmd;
 pub mod run_cmd;
 pub mod session_cmd;
 pub mod step_cmd;
+pub mod terminal_cmd;
 pub mod version_cmd;
 pub mod workspace_cmd;
 
