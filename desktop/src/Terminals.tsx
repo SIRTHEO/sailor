@@ -39,6 +39,22 @@ interface TerminalsProps {
   native: boolean;
 }
 
+/**
+ * Il suggerimento del campo «spazio di lavoro».
+ *
+ * **NON NOMINA UNA MACCHINA VERA, ED È IL MOTIVO PER CUI ESISTE COME NOME.**
+ * Fino all'01/09/2026 qui c'era il percorso della casa di chi aveva scritto la
+ * riga, e lo leggeva chiunque aprisse un terminale: un dato di una macchina di
+ * sviluppo finito dentro un campo del prodotto. Lo statuto lo vieta dal primo
+ * commit, e adesso c'è un cancello che lo trova.
+ *
+ * È esportato perché **la prova lo legge da qui invece di ricopiarlo**. Un
+ * suggerimento scritto due volte diverge alla prima modifica, e la prova
+ * diventa rossa per il motivo sbagliato — oppure resta verde cercando un testo
+ * che nessuno mostra più.
+ */
+export const WORKSPACE_HINT = "/path/to/your/project";
+
 export function Terminals({ native }: TerminalsProps) {
   const outside = "fuori dal guscio: gli pseudo-terminali li apre il motore";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
@@ -154,7 +170,7 @@ export function Terminals({ native }: TerminalsProps) {
           <input
             className="terminals__input"
             value={root}
-            placeholder="/home/someone/personal/sailor"
+            placeholder={WORKSPACE_HINT}
             onChange={(event) => setRoot(event.target.value)}
           />
         </label>

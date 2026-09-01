@@ -155,6 +155,14 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
         pushText(lines, event.seq, event.at, event.step_id, "said", payload?.said);
         break;
       }
+      // WHAT A STEP SAYS WHILE IT RUNS. It arrives in pieces as the engine
+      // writes them, under the pipe it came from: an error mixed into ordinary
+      // output and indistinguishable from it is no more visible than silence.
+      case "step_text": {
+        const pipe = payload?.pipe === "err" ? "stderr" : "stdout";
+        pushText(lines, event.seq, event.at, event.step_id, pipe, payload?.text);
+        break;
+      }
       case "run_ended": {
         const status = typeof payload?.status === "string" ? payload.status : "?";
         const error = typeof payload?.error === "string" ? payload.error : null;
@@ -206,6 +214,8 @@ interface StepPane {
    * guarda» mancava, ed era la metà che spiega l'altra.
    */
   input: unknown;
+  /** What came out, kept whole: the lines made from it are not the thing. */
+  output: unknown;
 }
 
 export function panesFromEvents(events: RunEvent[]): StepPane[] {
@@ -227,6 +237,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         // Il record del passo porta l'input, da cui si legge cosa esegue.
         action: readAction(payload),
         input: payload?.input ?? null,
+        output: null,
       });
     } else if (event.kind === "step_closed") {
       const pane = panes.get(event.step_id);
@@ -234,6 +245,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         pane.endedAt = event.at;
         pane.outcome = typeof payload?.outcome === "string" ? payload.outcome : null;
         pane.failure = typeof payload?.failure_class === "string" ? payload.failure_class : null;
+        pane.output = payload?.output ?? null;
       }
     }
   }
@@ -489,8 +501,7 @@ export function RunConsole({
             <div className="console__waiting">
               {openPanes
                 .map((pane) => `«${pane.stepId}» gira da ${clock(now, pane.startedAt)}`)
-                .join(" · ")}{" "}
-              — il suo testo comparirà alla chiusura
+                .join(" · ")}
             </div>
           )}
         </div>
@@ -525,8 +536,10 @@ export function RunConsole({
                     partito, ha chiuso — ci sono sempre, e contarle come testo
                     farebbe sparire la nota proprio nei riquadri che ne hanno
                     bisogno, cioè quelli dove il passo non ha detto niente. */}
+                {/* A running step that has said nothing has said nothing yet:
+                    its text arrives as the engine writes it, not at the end. */}
                 {!pane.spoke && pane.endedAt === null && (
-                  <div className="pane__note">gira; il suo testo comparirà alla chiusura</div>
+                  <div className="pane__note">running, and it has not said anything yet</div>
                 )}
                 {!pane.spoke && pane.endedAt !== null && (
                   <div className="pane__note">

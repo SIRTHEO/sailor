@@ -25,6 +25,21 @@ pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(DETECT_TOOLS_ACTION, DetectToolsAction);
 }
 
+/// L'ingresso del passo.
+///
+/// **LO SCHEMA RESTA CHIUSO**, e un campo in più costa una riga qui: `familia`
+/// al posto di `family` deve restare un errore detto a chi ha scritto il passo,
+/// non un filtro che sparisce in silenzio. La prova
+/// `the_flow_action_rejects_an_input_it_cannot_read` tiene ferma quella metà.
+///
+/// **PERÒ CHI COMPONE L'INGRESSO NON È SOLO CHI SCRIVE IL FLUSSO**: l'esecutore
+/// aggiunge il `workdir` a ogni passo il cui schema dichiarato lo accetterebbe,
+/// e `{"type": "any"}` accetta tutto. Guasto misurato il 01/09/2026 sul flusso
+/// spedito `strumenti-di-questa-macchina`, che dichiara proprio quello: dentro
+/// una cartella con `sailor.json` moriva sempre — `unknown field 'workdir'`,
+/// `failure_class: invalid_input` — e fuori da un progetto girava, perché senza
+/// radice non c'è niente da offrire. Un campo non dichiarato qui non è «un
+/// campo che nessuno usa»: può essere l'esecutore stesso.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DetectSpec {
@@ -52,10 +67,38 @@ struct DetectSpec {
     /// chiesta» invece di diventare falsa.
     #[serde(default = "yes")]
     version_probes: bool,
+    /// La cartella da cui contare i `descriptor_paths` scritti relativi.
+    ///
+    /// **NON LA SCRIVE CHI FA IL FLUSSO: LA METTE L'ESECUTORE**, ed è la radice
+    /// del progetto. Dichiararla qui la rende un dato invece che un campo
+    /// tollerato e buttato via: un descrittore scritto `.sailor/tools.d/x.json`
+    /// si legge dalla radice del progetto e non da dove sta il processo, che è
+    /// il guasto 25. Assente — flusso lanciato fuori da un progetto — un
+    /// percorso relativo resta relativo, com'era prima.
+    #[serde(default)]
+    workdir: Option<String>,
 }
 
 fn yes() -> bool {
     true
+}
+
+/// Un percorso di descrittore, contato dalla cartella giusta.
+///
+/// L'espansione di `~` e delle variabili viene prima: un `~/x` è assoluto anche
+/// se non comincia per `/`, e attaccarlo a una radice ne farebbe un percorso
+/// plausibile e sbagliato. Una variabile che non esiste resta scritta com'è
+/// (vedi `Machine::expand`), e resta relativa: meglio un file che non si trova
+/// col suo nome scritto in chiaro che uno trovato per caso altrove.
+fn rooted(machine: &Machine, workdir: Option<&str>, raw: &str) -> PathBuf {
+    let expanded = PathBuf::from(machine.expand(raw));
+    if expanded.is_absolute() {
+        return expanded;
+    }
+    match workdir {
+        Some(root) => PathBuf::from(machine.expand(root)).join(expanded),
+        None => expanded,
+    }
 }
 
 /// Risponde a «cosa posso usare qui?» leggendo i descrittori e guardando la
@@ -87,7 +130,7 @@ impl Action for DetectToolsAction {
             sources.push(Source::BuiltinNamed(name.clone()));
         }
         for raw in &spec.descriptor_paths {
-            let path = PathBuf::from(machine.expand(raw));
+            let path = rooted(&machine, spec.workdir.as_deref(), raw);
             if path.is_dir() {
                 sources.push(Source::Dir(path));
             } else {

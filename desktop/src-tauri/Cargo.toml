@@ -33,6 +33,10 @@ ledger = { path = "../../crates/ledger" }
 # seconda di chi lo lanciava — l'ultima volta il 30/08/2026, in silenzio.
 registry = { path = "../../crates/registry" }
 
+# Gli alberi di lavoro: la stessa conoscenza che legge `sailor worktree`, non
+# una seconda lettura di `git worktree list` scritta qui.
+workspace = { path = "../../crates/workspace" }
+
 # I comandi della riga di comando, per mostrarli nella finestra senza
 # ricopiarli. `crates/sailor` è diventato lib+bin il 01/09/2026 proprio per
 # questo: l'alternativa era una pagina d'aiuto in TypeScript che diverge dal
