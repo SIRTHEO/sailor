@@ -11,20 +11,34 @@ use std::path::{Path, PathBuf};
 /// `#` for a comment. `SAILOR_PRIVATE_NAMES` overrides the location.
 const PRIVATE_NAMES: &str = "personal/.sailor-notes/private-names";
 
+/// The suffixes a reader can open and read words in.
+///
+/// **`.html` WAS MISSING AND `design/` WENT UNREAD.** The directory was walked
+/// and every file in it dropped, so four design pages — three of them naming
+/// the author's own tree — were invisible while the walker reported over a
+/// hundred files scanned. A list of what to read is a list of what to skip.
+const READ_AS_TEXT: &[&str] = &[
+    ".rs", ".ts", ".tsx", ".css", ".mjs", ".md", ".json", ".toml", ".yml", ".html",
+];
+
+/// The places a reader of the published repository looks in.
+const SCANNED_PLACES: &[&str] = &[
+    "crates",
+    "desktop/src",
+    "desktop/src-tauri/src",
+    "desktop/scripts",
+    "docs",
+    "design",
+    "flows",
+    "i18n",
+    ".github",
+];
+
 /// Everything a reader of the published repository can open.
 fn published_files() -> Vec<PathBuf> {
     let root = repo_root();
     let mut found = Vec::new();
-    for place in [
-        "crates",
-        "desktop/src",
-        "desktop/src-tauri/src",
-        "desktop/scripts",
-        "docs",
-        "design",
-        "flows",
-        ".github",
-    ] {
+    for place in SCANNED_PLACES {
         walk(&root.join(place), &mut found);
     }
     for file in ["AGENTS.md", "README.md", "Cargo.toml"] {
@@ -58,7 +72,7 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
         } else if !name.ends_with("-lock.json")
             // Itself excluded, or every needle it names would be its own hit.
             && name != "nothing_from_this_machine_is_published.rs"
-            && [".rs", ".ts", ".tsx", ".css", ".mjs", ".md", ".json", ".toml", ".yml"]
+            && READ_AS_TEXT
                 .iter()
                 .any(|suffix| name.ends_with(suffix))
         {
@@ -110,11 +124,11 @@ fn no_path_from_the_machine_this_runs_on_is_written_down() {
 }
 
 /// **THE SAME PLACE, SPELLED WITH A TILDE.** The check above forbids the home
-/// written in full, and `~/personal/sailor` walked straight past it: it is the
-/// same directory written the way people write it in documents. Four survived,
-/// one of them in a shipped flow document telling every reader to `cd` into a
-/// directory only its author has. Still a shape read off the machine — git says
-/// where the tree is, nobody writes a name down.
+/// written in full, and the tilde form of the very same directory walked past
+/// it — that is how people write a path in a document. Nine survived, one in a
+/// shipped flow document telling every reader to `cd` where only its author
+/// can. Not a leak: an instruction that is false for everybody else. The shape
+/// still comes off the machine — git says where the tree is, no name is typed.
 #[test]
 fn the_repository_does_not_name_its_own_place_on_this_machine() {
     let Ok(home) = std::env::var("HOME") else {
@@ -195,6 +209,62 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
             hits.join(", ")
         );
     }
+}
+
+/// **A COUNT IS NOT A COVERAGE.** «More than a hundred files» stayed true while
+/// every `.html` in `design/` was dropped on the floor. Asked against what git
+/// tracks in the same places, the hole names itself: whatever is not obviously
+/// binary must either be read or be given a reason, and a new text format shows
+/// up as red instead of as silence.
+#[test]
+fn nothing_git_tracks_in_those_places_goes_unread() {
+    let root = repo_root();
+    let seen: std::collections::BTreeSet<PathBuf> = published_files().into_iter().collect();
+    let out = std::process::Command::new("git")
+        .args(["ls-files", "-z"])
+        .current_dir(&root)
+        .output()
+        .expect("git ls-files");
+    assert!(out.status.success(), "git could not list the tracked files");
+
+    // Only what carries no words at all. `.svg` is deliberately absent: it is
+    // text, and a path written into one would be published like any other.
+    let binary = [
+        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".pdf",
+    ];
+    let mut unread = Vec::new();
+    for entry in String::from_utf8_lossy(&out.stdout).split('\0') {
+        // On a directory boundary: plain `starts_with` makes `desktop/src-tauri`
+        // look like a file inside `desktop/src`, and the gap it reports is not
+        // real.
+        let inside = SCANNED_PLACES.iter().any(|place| {
+            entry
+                .strip_prefix(*place)
+                .is_some_and(|r| r.starts_with('/'))
+        });
+        if entry.is_empty() || !inside {
+            continue;
+        }
+        if binary.iter().any(|suffix| entry.ends_with(suffix))
+            // Excluded from the walk on purpose: every needle it names would
+            // otherwise be its own hit.
+            || entry.ends_with("nothing_from_this_machine_is_published.rs")
+        {
+            continue;
+        }
+        if !seen.contains(&root.join(entry)) {
+            unread.push(entry.to_owned());
+        }
+    }
+
+    assert!(
+        unread.is_empty(),
+        "git tracks {} file(s) in the scanned places that the walker never \
+         opens, so nothing in them can ever be found: {:?}. Add the suffix to \
+         READ_AS_TEXT, or say here why it is not read",
+        unread.len(),
+        unread
+    );
 }
 
 /// **WHOEVER MEASURES GETS MEASURED.** If the walker stopped finding files, both
