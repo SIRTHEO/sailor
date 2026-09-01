@@ -544,6 +544,22 @@ impl Enumerate {
     }
 }
 
+/// The line that empties a session that is already open, typed as a person
+/// would type it.
+///
+/// A line and not a flag. A flag is how a command line is launched; this is
+/// what is said to one already running, and no launch flag can reach a session
+/// that is already open.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ResetContext {
+    pub line: String,
+    /// For whoever reads: how it was established, and what was not checked.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// Una riga dell'elenco di cosa cercare.
 ///
 /// **NON RIFIUTA I CAMPI CHE NON CONOSCE, E PRIMA SÌ.** Fino al 31/08/2026
@@ -612,6 +628,14 @@ pub struct Descriptor {
     /// di oggi resta il ripiego.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub capabilities: BTreeMap<String, Capability>,
+    /// How a session of this command line that is already running is told to
+    /// drop what it holds.
+    ///
+    /// Absent means nobody measured it, never «it cannot be done». Anything
+    /// that read absence as a default would type a guess into a working
+    /// session, and a wrong line typed into one cannot be taken back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_context: Option<ResetContext>,
     /// Dove vive la sua configurazione. Ammette `~/`, `$VAR` e `*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,
@@ -649,6 +673,9 @@ impl Descriptor {
         if let Some(login) = &self.login_status {
             found.extend(login.extra.keys().map(|key| format!("login_status.{key}")));
         }
+        if let Some(reset) = &self.reset_context {
+            found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));
+        }
         // Il nome della capacità non è un campo ignoto — nessun nome lo è, per
         // costruzione. Ignoto è quello che sta dentro una delle sue forme.
         for (name, capability) in &self.capabilities {
@@ -661,6 +688,18 @@ impl Descriptor {
             }
         }
         found
+    }
+
+    /// The line that empties a running session, when somebody has measured it.
+    ///
+    /// `None` is the answer that must reach whoever asks: it says the machine
+    /// does not know, and knowing nothing is a reason to refuse, never a reason
+    /// to fall back on a line that belongs to a different command line.
+    pub fn reset_line(&self) -> Option<&str> {
+        self.reset_context
+            .as_ref()
+            .map(|reset| reset.line.as_str())
+            .filter(|line| !line.is_empty())
     }
 
     /// Come sta messo questo strumento rispetto a una capacità chiesta.
