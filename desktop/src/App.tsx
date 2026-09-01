@@ -56,6 +56,7 @@ import {
 import {
   DEFAULT_ACTION_FOR_KIND,
   KNOWN_ACTIONS,
+  stepCountLabel,
   type BrokenFlow,
   type FlowEntry,
   type FlowFile,
@@ -670,6 +671,47 @@ export default function App() {
   }, [source]);
 
   /**
+   * **LA LAVAGNA NASCEVA CON L'INQUADRATURA MISURATA A ZERO.**
+   *
+   * Quattro anelli ragionevoli uno per uno: la finestra si apre su «Adesso»; la
+   * lavagna sta dentro `.body[hidden]`; il foglio dà a quell'attributo un
+   * `display: none`; React Flow monta con `fitView` e misura un riquadro
+   * **0×0**. Gli altri due `fitView` scattano al cambio di `focusName` o di
+   * `source` — nessuno dei due quando si preme «flussi». Chi ci arrivava
+   * trovava mezzo schermo vuoto e i nodi tagliati fuori a sinistra: misurato in
+   * un Chrome vero, `nodesOnScreen: 0` su `nodesTotal: 12`.
+   *
+   * **E il danno non è di inquadratura.** Una tela vuota accanto a una barra
+   * sicura di sé spiega quel vuoto in modo plausibile e falso: lo stato vuoto e
+   * lo stato rotto diventano indistinguibili, che è il difetto peggiore di uno
+   * stato che non è quello felice.
+   *
+   * Si aspetta l'osservatore invece di contare i giri di disegno: la misura
+   * arriva quando c'è, non quando speriamo che ci sia. Si inquadra **una volta
+   * per comparsa** — un ricalcolo a ogni respiro del riquadro riporterebbe la
+   * vista al centro mentre qualcuno ridimensiona la finestra.
+   *
+   * **NON LI PORTA DENTRO TUTTI, e il resto non è colpa di qui**: il `minZoom`
+   * predefinito di React Flow taglia il fit a metà strada. Il limite è misurato
+   * e scritto in `unhappystates.test.tsx`, sopra questa stessa regola.
+   */
+  const canvasRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (place !== "flows") return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const watcher = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (!box || box.width === 0 || box.height === 0) return;
+      watcher.disconnect();
+      void flowInstance.current?.fitView({ padding: 0.15 });
+    });
+    watcher.observe(canvas);
+    return () => watcher.disconnect();
+  }, [place]);
+
+  /**
    * **IL PASSO NUOVO NASCE NELLA SUA CORSIA, E LA VISTA CI VA.**
    *
    * Dove esattamente lo decide `buildUnifiedLayout`, e la risposta è «su una
@@ -1152,8 +1194,18 @@ export default function App() {
             era il nome di un flusso accanto al suo conteggio di passi, e
             stringere la colonna li troncherebbe senza guadagnare niente sulla
             tela, che il pannello a destra delimita comunque. */}
+        {/* A ZERO FLUSSI LA COLONNA SI CHIUDE, come la destra. Un elenco di
+            niente col suo invito accanto metteva DUE INVITI ALLO STESSO GESTO:
+            «+ Nuovo flusso» qui e «Crea il primo flusso» sulla tela, la stessa
+            funzione con due nomi a mezzo metro. E il gesto non perde la sua
+            casa, perché i due non convivono mai: al primo clic la scheda se ne
+            va e la colonna torna, col bottone accanto alla cosa appena creata. */}
+        {(flows.size > 0 || broken.length > 0) && (
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
+          {/* «Tutti i flussi» toglie il fuoco: senza flussi non c'è fuoco da
+              togliere, e il bottone resterebbe un comando che non comanda. */}
+          {flows.size > 0 && (
           <button
             type="button"
             className="rail__all"
@@ -1162,6 +1214,7 @@ export default function App() {
           >
             Tutti i flussi
           </button>
+          )}
           {flowList.map(({ name, flow }) => {
             const working = flows.get(name);
             const dirty = working ? isDirty(working) : false;
@@ -1182,7 +1235,7 @@ export default function App() {
                   {name}
                   {dirty && <span className="rail__dirty-dot" title="non salvato" />}
                 </span>
-                <span className="rail__note">{flow.graph.steps.length} passi</span>
+                <span className="rail__note">{stepCountLabel(flow.graph.steps.length)}</span>
               </button>
             );
           })}
@@ -1194,13 +1247,18 @@ export default function App() {
               <span className="rail__note">{entry.reason}</span>
             </div>
           ))}
+          {/* L'INVITO È DELLA TELA FINCHÉ NON C'È NIENTE. Coi soli flussi rotti
+              la colonna resta aperta — sparire porterebbe via il posto che la
+              scheda nomina — ma tace: il gesto lo offre la scheda, da sola. */}
+          {flows.size > 0 && (
           <button type="button" className="rail__new" onClick={addFlow}>
             + Nuovo flusso
           </button>
-
+          )}
         </aside>
+        )}
 
-        <main className="canvas">
+        <main className="canvas" ref={canvasRef}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -1221,21 +1279,43 @@ export default function App() {
             proOptions={{ hideAttribution: false }}
           >
             <Background gap={20} />
-            <Controls />
+
+            {/* I COMANDI COMANDANO QUALCOSA, o non ci sono. Quattro bottoni che
+                ingrandiscono e inquadrano il nulla sono lo stesso «riquadro che
+                si vede e non dice niente» per cui qui sotto sparisce la
+                minimappa: il criterio è uno, e vale per tutti e due.
+
+                Il fondo a puntini resta: è la tela, non un comando, ed è quello
+                che fa leggere lo spazio sotto il riquadro come una superficie
+                da riempire. Resta anche la firma di React Flow, che è una nota
+                di licenza — `hideAttribution` è un'opzione a pagamento, e
+                toglierla è una cosa che si compra, non una scelta di
+                schermata. */}
+            {flows.size > 0 && <Controls />}
+
             {/* LA MINIMAPPA DICE DOVE GUARDARE, non «c'è della roba». Era un
                 blocco grigio uniforme: adesso ogni passo ci sta con la tinta
                 del proprio stato, così un guasto in fondo a un flusso fuori
-                schermo si vede senza scorrere. */}
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor={(node) => {
-                if (node.type !== "step") return "#d8d7ce";
-                const data = node.data as StepNodeData;
-                const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
-                return STATE_COLOR[state ?? "waiting"];
-              }}
-            />
+                schermo si vede senza scorrere.
+
+                CON ZERO FLUSSI NON C'È, per la stessa ragione della cassetta:
+                una mappa di niente è un riquadro che si vede e non dice
+                niente, e sullo schermo che insegna il primo gesto ogni cosa
+                muta è una distrazione. È anche la mitigazione del limite
+                dichiarato in `unhappystates.test.tsx` — dove non c'è niente da
+                mitigare, non serve. */}
+            {flows.size > 0 && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor={(node) => {
+                  if (node.type !== "step") return "#d8d7ce";
+                  const data = node.data as StepNodeData;
+                  const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
+                  return STATE_COLOR[state ?? "waiting"];
+                }}
+              />
+            )}
 
             {/* LA CASSETTA STA QUI DENTRO, ed è tutto il punto del lavoro: chi
                 compone non esce più dalla tela per prendere un attrezzo.
@@ -1269,53 +1349,80 @@ export default function App() {
           )}
         </main>
 
-        <aside className="panel">
-          <datalist id="known-actions">
-            {KNOWN_ACTIONS.map((action) => (
-              <option key={action} value={action} />
-            ))}
-          </datalist>
+        {/* LA COLONNA DESTRA SI CHIUDE A ZERO FLUSSI, e la tela si prende la sua
+            larghezza. Far tacere il contenuto lasciando in piedi il contenitore
+            lasciava una striscia di 288px muta e divisa da un filo: non si legge
+            come calma, si legge come una parte di schermo che non ha finito di
+            caricare.
 
-          {selectedData && selectedFlow ? (
-            <>
-            <StepEditor
-              key={selectedNode}
-              flowName={selectedData.flowName}
-              color={selectedData.color}
-              step={selectedData.step}
-              siblingIds={selectedFlow.flow.graph.steps.map((step) => step.id).filter((id) => id !== selectedData.step.id)}
-              tools={tools}
-              discovery={discovery}
-              usedModels={usedModels}
-              onRename={(newId) => renameStep(selectedData.flowName, selectedData.step.id, newId)}
-              onField={(patch) => updateStepField(selectedData.flowName, selectedData.step.id, patch)}
-              onToggleDep={(depId, on) =>
-                on
-                  ? connectSteps(selectedData.flowName, depId, selectedData.step.id)
-                  : disconnectSteps(selectedData.flowName, depId, selectedData.step.id)
-              }
-              onDelete={() => deleteStep(selectedData.flowName, selectedData.step.id)}
-            />
-            {/* Cosa è passato di qui, nel tempo. Sta sotto i parametri e non in
-                un pannello a parte: chi clicca un nodo chiede tutte e due le
-                cose — com'è fatto, e cosa ci è entrato. Fuori dal guscio non
-                c'è deposito, e il pannello lo dice da sé. */}
-            {NATIVE && (
-              <StepHistory
-                key={`${selectedData.flowName}::${selectedData.step.id}`}
-                flowName={selectedData.flowName}
-                stepId={selectedData.step.id}
-              />
+            È la regola già applicata tre volte in questo schermo — la barra
+            sparisce, la minimappa sparisce, i comandi spariscono: dove non c'è
+            niente da mostrare non serve un posto dove mostrarlo. */}
+        {flows.size > 0 && (
+          <aside className="panel">
+            <datalist id="known-actions">
+              {KNOWN_ACTIONS.map((action) => (
+                <option key={action} value={action} />
+              ))}
+            </datalist>
+
+            {selectedData && selectedFlow ? (
+              <>
+                <StepEditor
+                  key={selectedNode}
+                  flowName={selectedData.flowName}
+                  color={selectedData.color}
+                  step={selectedData.step}
+                  siblingIds={selectedFlow.flow.graph.steps.map((step) => step.id).filter((id) => id !== selectedData.step.id)}
+                  tools={tools}
+                  discovery={discovery}
+                  usedModels={usedModels}
+                  onRename={(newId) => renameStep(selectedData.flowName, selectedData.step.id, newId)}
+                  onField={(patch) => updateStepField(selectedData.flowName, selectedData.step.id, patch)}
+                  onToggleDep={(depId, on) =>
+                    on
+                      ? connectSteps(selectedData.flowName, depId, selectedData.step.id)
+                      : disconnectSteps(selectedData.flowName, depId, selectedData.step.id)
+                  }
+                  onDelete={() => deleteStep(selectedData.flowName, selectedData.step.id)}
+                />
+                {/* Cosa è passato di qui, nel tempo. Sta sotto i parametri e non
+                    in un pannello a parte: chi clicca un nodo chiede tutte e due
+                    le cose — com'è fatto, e cosa ci è entrato. Fuori dal guscio
+                    non c'è deposito, e il pannello lo dice da sé. */}
+                {NATIVE && (
+                  <StepHistory
+                    key={`${selectedData.flowName}::${selectedData.step.id}`}
+                    flowName={selectedData.flowName}
+                    stepId={selectedData.step.id}
+                  />
+                )}
+              </>
+            ) : (
+              /* IL PANNELLO PARLA DI UN PASSO, che è l'unica cosa che mostra.
+                 Chiedere anche un flusso metteva DUE INVITI NELLO STESSO
+                 SCHERMO: la barra ne fa già uno, e con un altro nome per lo
+                 stesso posto («nella colonna» contro «a sinistra»). È la regola
+                 che la barra invoca per far sparire sé stessa a zero flussi,
+                 violata nello schermo accanto.
+
+                 E con un flusso già a fuoco — col suo nome scritto due righe più
+                 su — invitava a fare ciò che era già fatto.
+
+                 A zero flussi questa riga non si pone: la colonna non c'è
+                 affatto. «I parametri di un passo compaiono qui» sarebbe una
+                 promessa su una cosa che lì non può accadere — non ci sono passi
+                 e non c'è il posto dove comparirebbero — ed è lo stesso motivo
+                 per cui la tela vuota ha smesso di nominare una cassetta che a
+                 zero flussi non esiste. */
+              <div className="panel__empty">
+                {focusName === null
+                  ? "I parametri di un passo compaiono qui."
+                  : "Scegli un passo sulla tela per vederne e modificarne i parametri."}
+              </div>
             )}
-            </>
-          ) : (
-            <div className="panel__empty">
-              {flows.size === 0
-                ? "Nessun flusso da mostrare: creane uno dalla tela o dalla colonna a sinistra."
-                : "Scegli un passo per vederne e modificarne i parametri, o un flusso a sinistra per metterlo a fuoco."}
-            </div>
-          )}
-        </aside>
+          </aside>
+        )}
       </div>
 
       {/* LA VISTA SI CHIUDE, LA CORSA NO. Chiudere questo pannello non ferma
