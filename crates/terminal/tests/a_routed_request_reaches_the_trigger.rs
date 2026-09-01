@@ -90,11 +90,21 @@ fn the_flow_the_shipped_rules_name_starts_with_a_manual_trigger() {
     let catalog = Catalog::load(&[terminal::Source::Builtin]);
     assert!(!catalog.live().is_empty());
     for loaded in catalog.live() {
-        let file = root
-            .join("flows")
-            .join(format!("{}.flow.json", loaded.route.flow));
-        let text = std::fs::read_to_string(&file)
-            .unwrap_or_else(|error| panic!("{} non si legge: {error}", file.display()));
+        // **IL FLUSSO SI CERCA DOVE VIAGGIA LA REGOLA CHE LO NOMINA**, cioè
+        // dentro il binario. Fino all'01/09/2026 lo si leggeva da `flows/` del
+        // repo: qui c'era, perché era un flusso nostro, e la prova era verde
+        // mentre su qualunque altra macchina la regola puntava al nulla.
+        let text = flow::system::FLOWS
+            .iter()
+            .find(|(name, _)| *name == loaded.route.flow)
+            .map(|(_, body)| *body)
+            .unwrap_or_else(|| {
+                panic!(
+                    "la regola «{}» manda al flusso «{}», che il prodotto non spedisce: \
+                     su una macchina che non è la nostra quella regola non porta da nessuna parte",
+                    loaded.route.id, loaded.route.flow
+                )
+            });
         let document: Value = serde_json::from_str(&text).expect("il flusso è JSON");
         let steps = document["graph"]["steps"]
             .as_array()

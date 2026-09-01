@@ -27,18 +27,22 @@ use flow::{
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 const FLOW_ID: &str = "smista-il-lavoro";
 
-fn flow_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../flows/smista-il-lavoro.flow.json")
-}
-
+/// **IL FLUSSO NON STA PIÙ SU DISCO, E QUESTA PROVA NON DEVE CERCARLO LÌ.**
+/// Fino all'01/09/2026 leggeva `flows/smista-il-lavoro.flow.json` dalla radice
+/// del progetto. Poi il flusso è entrato nel binario — le regole di
+/// instradamento spedite lo nominano, e su un'altra macchina la cartella non
+/// c'è — e leggerlo dal disco vorrebbe dire provare un file che il prodotto non
+/// spedisce mentre quello spedito non lo prova nessuno. `system::FLOWS` è la
+/// stessa sorgente da cui lo prende chi lo esegue.
 fn flow_text() -> String {
-    let path = flow_path();
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("non riesco a leggere {}: {error}", path.display()))
+    flow::system::FLOWS
+        .iter()
+        .find(|(name, _)| *name == FLOW_ID)
+        .map(|(_, text)| (*text).to_owned())
+        .unwrap_or_else(|| panic!("«{FLOW_ID}» non è fra i flussi spediti col binario"))
 }
 
 fn flow_file() -> FlowFile {
