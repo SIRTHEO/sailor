@@ -88,7 +88,7 @@ describe("ogni colore passa da un ruolo", () => {
     const root = sheet.rules.find((rule) => rule.selector === ":root");
     expect(root).toBeDefined();
     const tokens = (root as { declarations: Array<[string, string]> }).declarations.filter(
-      ([property]) => /^--(bg|paper|raised|rail|line|band-fill|ink|muted|faint|state-|ok|warn|danger|focus)/.test(property),
+      ([property]) => /^--(bg|paper|raised|rail|line|band-fill|ink|muted|faint|state-|ok|warn|danger|focus|ink-surface|on-ink|optional|lane-)/.test(property),
     );
     expect(tokens.length).toBeGreaterThan(15);
     const broken = tokens.filter(([, value]) => parseColor(value) === null);
@@ -116,5 +116,92 @@ describe("il foglio si legge tutto", () => {
     const root = sheet.rules.find((rule) => rule.selector === ":root");
     const declarations = new Map((root as { declarations: Array<[string, string]> }).declarations);
     expect(declarations.get("--faint")).toBe(declarations.get("--muted"));
+  });
+});
+
+/**
+ * **DIVIETO 11 — NESSUNA COLONNA FISSA SENZA UNA VIA D'USCITA.**
+ *
+ * Un elemento con una `width` in pixel e `flex-shrink: 0` tiene quella
+ * larghezza qualunque sia la finestra: è il suo scopo. Ma due di quegli
+ * elementi ai lati di una tela flessibile si spartiscono la finestra prima
+ * che la tela abbia voce, e sotto una certa larghezza **la tela va a zero**.
+ *
+ * Misurato il 01/09/2026 con un browser vero, appena aperta la vista dei
+ * flussi:
+ *
+ *     375px →  colonna 232 · TELA 0 · pannello 288   (232+288 = 520 > 375)
+ *    1440px →  colonna 232 · tela 920 · pannello 288
+ *
+ * A 375 pixel la superficie principale del prodotto non è stretta, non è
+ * coperta, non è sotto: **non c'è**, e nessuna delle 12.494 righe di questo
+ * albero diventava rossa per dirlo. In 2750 righe di foglio non esisteva una
+ * sola regola-@ di impaginazione — le due che c'erano parlano entrambe di
+ * movimento.
+ *
+ * La misura completa, che una prova sul foglio non può fare, sta in
+ * `npm run check:canvas`: quella guarda la geometria disegnata. Questa guarda
+ * la causa, ed è la più economica delle due — gira in millisecondi, dentro la
+ * batteria, senza browser.
+ */
+describe("divieto 11 — una colonna fissa dichiara come si comporta da stretta", () => {
+  /** La finestra più stretta che questo progetto dichiara di sostenere: è la
+   *  larghezza a cui `scripts/screenshots.ts` cattura, cioè quella a cui
+   *  qualcuno ha già deciso che la finestra va guardata. */
+  const NARROWEST = 375;
+
+  /**
+   * Le COLONNE rigide: larghezza fissa in pixel, `flex-shrink: 0`, **e uno
+   * scorrimento proprio**.
+   *
+   * L'ultima condizione non è un dettaglio, è ciò che separa una colonna da un
+   * pallino. Alla prima scrittura questa prova pescava anche `.focusbar__dot`
+   * (9px), `.flow-band__mark` (10px) e `.trigger-node__mark` (7px): segni
+   * grafici che sono rigidi di proposito e non impaginano niente. Un controllo
+   * che li avesse contati avrebbe fatto scrivere regole-@ sui puntini — cioè
+   * avrebbe fatto cambiare il mondo per un numero sbagliato.
+   *
+   * Un elemento che scorre da sé **contiene** qualcosa: è una colonna. È un
+   * criterio strutturale, non una soglia di pixel scelta a occhio.
+   */
+  const rigid = outsideRoot
+    .map((rule) => {
+      const declarations = new Map(rule.declarations);
+      const width = declarations.get("width")?.trim();
+      const shrink = declarations.get("flex-shrink")?.trim();
+      const scrolls = declarations.get("overflow-y")?.trim();
+      const pixels = width?.match(/^(\d+)px$/);
+      if (!pixels || shrink !== "0") return null;
+      if (scrolls !== "auto" && scrolls !== "scroll") return null;
+      return { selector: rule.selector, width: Number(pixels[1]) };
+    })
+    .filter((found): found is { selector: string; width: number } => found !== null);
+
+  test("la prova guarda le colonne, non i pallini", () => {
+    // Se un giorno questo elenco si svuota, la prova sotto diventa verde per
+    // non aver guardato niente — ed è il modo in cui un controllo muore in
+    // silenzio.
+    expect(rigid.length).toBeGreaterThan(0);
+    expect(rigid.every((column) => column.width >= 100)).toBe(true);
+  });
+
+  test("le colonne rigide non si mangiano da sole la finestra più stretta", () => {
+    const total = rigid.reduce((sum, column) => sum + column.width, 0);
+    if (total < NARROWEST) return; // ci stanno: non serve nessuna via d'uscita
+
+    // Non ci stanno. Allora ognuna deve comparire dentro una regola-@ che ne
+    // cambia la larghezza o la toglie di mezzo: senza, ciò che sta in mezzo
+    // viene schiacciato a zero e nessuno lo vede.
+    const atRules = stylesheetSource.match(/@media[^{]+\{(?:[^{}]|\{[^{}]*\})*\}/g) ?? [];
+    const inside = atRules.join("\n");
+    const unguarded = rigid.filter(({ selector }) => !inside.includes(selector));
+
+    expect({
+      totale: `${total}px di colonne rigide contro una finestra di ${NARROWEST}px`,
+      senzaViaDUscita: unguarded.map((column) => `${column.selector} (${column.width}px)`),
+    }).toEqual({
+      totale: `${total}px di colonne rigide contro una finestra di ${NARROWEST}px`,
+      senzaViaDUscita: [],
+    });
   });
 });

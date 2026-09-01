@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { FlowTrigger, RunSnapshot } from "./engine";
+import { KindIcon } from "./StepNode";
 
 /**
  * Il nodo di innesco: il punto da cui un flusso parte, e il gesto che lo fa
@@ -116,6 +117,9 @@ export function TriggerNode({ data }: NodeProps) {
   return (
     <div className="trigger-node" style={{ borderColor: color }}>
       <div className="trigger-node__head">
+        {/* The same glyph the toolbox and the step nodes use for this species:
+            one shape, wherever a trigger appears. */}
+        <KindIcon kind="trigger" className="trigger-node__icon" />
         <span className="trigger-node__mark" style={{ background: color }} />
         <span className="trigger-node__kind">innesco · manuale</span>
       </div>
