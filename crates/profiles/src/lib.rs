@@ -87,9 +87,9 @@ const KNOWN_CLIS: &[KnownCli] = &[
         display_name: "Antigravity",
         executable: "antigravity",
         native_profiles: NativeProfiles::Unverified,
-        native_profiles_note: "nessun binario `antigravity` in PATH in questo ambiente: non verificato.",
+        native_profiles_note: "nessun binario `antigravity` in PATH — ma il prodotto C'È, installato come `agy` (verificato il 01/09/2026: /Users/theo/.local/bin/agy, `agy --version` dice 1.1.22, e i descrittori lo chiamano `agy`). Questa voce cerca quindi un nome che nessuno usa. I profili nativi restano non verificati: `agy --help` e i suoi sottocomandi non nominano nessun profilo.",
         home: HomeMechanism::Unknown,
-        home_note: "i suoi dati vivono sotto ~/.gemini/antigravity-cli/, ipotesi di condividere GEMINI_CLI_HOME non verificata lanciando il comando vero.",
+        home_note: "i suoi dati vivono sotto ~/.gemini/antigravity-cli/. L'IPOTESI DI CONDIVIDERE `GEMINI_CLI_HOME` È STATA MISURATA IL 01/09/2026, ED È FALSA: quella stringa non compare fra le stringhe del binario, e la casa segue $HOME. Quindi il profilo attivo di Sailor NON sposta la casa di agy come sposta quella di claude e di codex — due profili diversi lo fanno partire nello stesso posto, in silenzio. `Unknown` resta il valore giusto per «non so come spostargli la casa», ma attenzione che la sua documentazione dice «non ancora verificato», che qui non è più vero: è verificato che non c'è modo.",
     },
 ];
 
