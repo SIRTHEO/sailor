@@ -65,10 +65,7 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let directory = PathBuf::from("/tmp").join(format!("sr-tally-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).expect("create the test directory");
-        directory
+        crate::scratch::directory(&format!("tally-{name}"))
     }
 
     #[test]

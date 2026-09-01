@@ -65,11 +65,7 @@ mod tests {
     use super::*;
 
     fn scratch(name: &str) -> PathBuf {
-        let directory =
-            PathBuf::from("/tmp").join(format!("sr-mandate-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).expect("create the test directory");
-        directory
+        crate::scratch::directory(&format!("mandate-{name}"))
     }
 
     #[test]
@@ -132,7 +128,11 @@ mod tests {
         )
         .expect("write it");
         taken(&path).expect("take it");
-        assert_eq!(read(&path), None, "a mandate handed on twice is work done twice");
+        assert_eq!(
+            read(&path),
+            None,
+            "a mandate handed on twice is work done twice"
+        );
     }
 
     /// Taking one that is not there is not a failure: a beat that finds nothing
