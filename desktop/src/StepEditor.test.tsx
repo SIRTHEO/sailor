@@ -21,13 +21,29 @@ import type { FlowFile, Step } from "./flow";
 
 afterEach(cleanup);
 
-/** I dieci file di `flows/`, letti col bundler come fa `ports.test.tsx`. */
+/**
+ * I dieci flussi veri, letti col bundler come fa `ports.test.tsx` — e **dai due
+ * posti in cui vivono**: nove in `flows/`, di questo progetto, e
+ * `smista-il-lavoro` dentro il binario (`crates/flow/system/`), perché le
+ * regole di instradamento spedite col prodotto lo nominano. Il pannello li
+ * riscrive tutti allo stesso modo, quindi la prova che verifica cosa
+ * sopravvive al salvataggio deve vederli tutti: guardando un posto solo, i
+ * passi con una catena scendevano da 20 a 18 — e i due che sparivano,
+ * `dispatch` e `verify`, sono proprio quelli del flusso spedito.
+ */
 function realFlows(): Array<{ path: string; flow: FlowFile }> {
-  const files = import.meta.glob("../../flows/*.flow.json", {
-    eager: true,
-    query: "?raw",
-    import: "default",
-  }) as Record<string, string>;
+  const files = {
+    ...(import.meta.glob("../../flows/*.flow.json", {
+      eager: true,
+      query: "?raw",
+      import: "default",
+    }) as Record<string, string>),
+    ...(import.meta.glob("../../crates/flow/system/*.flow.json", {
+      eager: true,
+      query: "?raw",
+      import: "default",
+    }) as Record<string, string>),
+  } as Record<string, string>;
   return Object.keys(files)
     .sort()
     .map((path) => ({ path, flow: JSON.parse(files[path]) as FlowFile }));

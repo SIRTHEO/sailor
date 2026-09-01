@@ -70,67 +70,67 @@ pub struct Command {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "release",
-        description: "mette in servizio un binario costruito da HEAD, mai dall'albero di lavoro",
+        description: "puts into service a binary built from HEAD, never from the working tree",
         usage: release_cmd::USAGE,
         run: release_cmd::run,
     },
     Command {
         name: "profiles",
-        description: "elenca, crea e scambia i profili di una riga di comando conosciuta",
+        description: "lists, creates and switches the profiles of a known command line",
         usage: profiles_cmd::USAGE,
         run: profiles_cmd::run,
     },
     Command {
         name: "models",
-        description: "elenca il catalogo dei modelli, mostra o cambia quale usare",
+        description: "lists the model catalogue, shows or changes which one is in use",
         usage: models_cmd::USAGE,
         run: models_cmd::run,
     },
     Command {
         name: "flow",
-        description: "elenca, controlla, esegue o riprende i flussi dichiarati in flows/",
+        description: "lists, checks, runs or resumes the flows declared in flows/",
         usage: flow_cmd::USAGE,
         run: flow_cmd::run,
     },
     Command {
         name: "step",
-        description: "prende in carico e chiude un passo che un flusso ha consegnato",
+        description: "takes charge of and closes a step a flow has handed over",
         usage: step_cmd::USAGE,
         run: step_cmd::run,
     },
     Command {
         name: "run",
-        description: "lancia una riga di comando col suo profilo attivo, sostituendo questo processo",
+        description: "starts a command line under its active profile, replacing this process",
         usage: run_cmd::USAGE,
         run: run_cmd::run,
     },
     Command {
         name: "inventory",
-        description: "elenca competenze, agenti, comandi, regole e ganci, e dice quali sono spenti",
+        description: "lists skills, agents, commands, rules and hooks, and says which are switched off",
         usage: inventory_cmd::USAGE,
         run: inventory_cmd::run,
     },
     Command {
         name: "remaining",
-        description: "quanta quota ha già consumato la persona, letta dal motore invece che chiesta",
+        description: "how much quota the person has already used, read from the engine rather than guessed",
         usage: remaining_cmd::USAGE,
         run: remaining_cmd::run,
     },
     Command {
         name: "version",
-        description: "la versione di questo binario",
+        description: "the version of this binary",
         usage: version_cmd::USAGE,
         run: version_cmd::run,
     },
     Command {
         name: "workspace",
-        description: "dichiara la radice del progetto, così un flusso non deve saperla",
+        description: "declares the project root, so a flow does not have to know it",
         usage: workspace_cmd::USAGE,
         run: workspace_cmd::run,
     },
     Command {
         name: "session",
-        description: "traccia i terminali: chi si presenta, cosa succede, e cosa c'è sulla macchina",
+        description: "tracks terminals: who checks in, what happens, and what is on the machine",
         usage: session_cmd::USAGE,
         run: session_cmd::run,
     },
@@ -141,7 +141,7 @@ pub const COMMANDS: &[Command] = &[
 /// catturando lo standard output, e una prova che non guarda le stesse parole
 /// dell'utente sta provando un'altra cosa.
 pub fn help_text() -> String {
-    let mut text = String::from("sailor <comando> [opzioni]\n\ncomandi disponibili:\n");
+    let mut text = String::from("sailor <command> [options]\n\navailable commands:\n");
     for command in COMMANDS {
         text.push_str(&format!(
             "  {:<10} {}\n",
@@ -311,7 +311,9 @@ mod tests {
     #[test]
     fn release_reaches_the_release_command() {
         assert_eq!(
-            route(&args(&["sailor", "release", "notte", "--dry-run"])).reached(),
+            // Nominava `notte` fino al 01/09/2026: l'instradamento non guarda il
+            // bersaglio, quindi la riga restava verde su un binario cancellato.
+            route(&args(&["sailor", "release", "sailor", "--dry-run"])).reached(),
             Some("release")
         );
     }

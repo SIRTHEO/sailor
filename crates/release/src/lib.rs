@@ -11,21 +11,28 @@
 //! giorni qualcuno compilerebbe dall'albero e avrebbe ragione lui: è il gesto
 //! che `cargo` suggerisce. Un comando rende corta la strada giusta.
 //!
-//! COSA C'È QUI DENTRO E COSA NO. Come ogni crate di logica di questa casa —
-//! `guards`, `sweep` — qui stanno le decisioni che si possono sbagliare in
+//! COSA C'È QUI DENTRO E COSA NO. Come ogni crate di logica di questa casa, qui
+//! stanno le decisioni che si possono sbagliare in
 //! silenzio, senza toccare disco, ambiente o processi: **cosa** si rilascia (la
 //! tabella dei bersagli), **quale commit** ha prodotto il binario in servizio
 //! (il timbro), e **se si può sostituire adesso** senza troncare una
 //! lavorazione. I gesti — clonare, compilare, copiare, riavviare — stanno in
 //! `main.rs`, dove non c'è niente da decidere.
 //!
-//! PERCHÉ UN SERVIZIO RESIDENTE NON BASTA SOSTITUIRLO. Un gancio nasce a ogni
-//! chiamata e prende il binario nuovo da solo; `notte` esegue per sempre
-//! l'immagine caricata all'avvio. Fino al 27/08/2026 non esisteva nessuna via
-//! per rilasciarlo: il binario cambiava senza che nessuno lo volesse — qualunque
-//! `cargo build` riscriveva `target/release/notte` — e il comportamento non
-//! cambiava quando qualcuno lo voleva, perché nessuno riavviava. La combinazione
-//! peggiore delle due.
+//! PERCHÉ UN SERVIZIO RESIDENTE NON BASTA SOSTITUIRLO — storia, e il motivo per
+//! cui il campo `service` resta. Un gancio nasce a ogni chiamata e prende il
+//! binario nuovo da solo; un servizio residente esegue per sempre l'immagine
+//! caricata all'avvio. Il caso che ha insegnato la differenza era `notte`: fino
+//! al 27/08/2026 non esisteva nessuna via per rilasciarlo, il binario cambiava
+//! senza che nessuno lo volesse — qualunque `cargo build` riscriveva
+//! `target/release/notte` — e il comportamento non cambiava quando qualcuno lo
+//! voleva, perché nessuno riavviava. La combinazione peggiore delle due.
+//!
+//! **QUEL BERSAGLIO NON C'È PIÙ, E OGGI NESSUNO È RESIDENTE.** `notte` e
+//! `claude-hooks` sono stati cancellati dal repo il 28-29/08/2026; le loro due
+//! righe in `TARGETS` sono rimaste fino al 01/09/2026 a nominare binari che il
+//! workspace non produceva. La lezione si tiene perché vale per il prossimo
+//! servizio residente; la riga che la incarnava no.
 
 /// Un servizio residente: c'è chi va riavviato perché la sostituzione abbia
 /// effetto, e chi no.
@@ -76,36 +83,34 @@ pub struct Target {
     pub service: Option<Service>,
 }
 
-/// I bersagli che esistono. Uno solo per ora ha un servizio dietro; `hooks` c'è
-/// perché il giorno in cui `release-hooks.sh` viene ritirato la tabella lo sa
-/// già fare, e perché una tabella con un elemento solo non mostra dove
-/// finiscono le differenze.
+/// I bersagli che esistono.
+///
+/// **ERANO TRE FINO AL 01/09/2026, E DUE NOMINAVANO UN MONDO SPARITO.** `notte`
+/// chiedeva il binario `notte`, `hooks` chiedeva `claude-hooks`: tutti e due i
+/// crate erano stati cancellati il 28-29/08/2026 insieme a ciò che non era
+/// Sailor, e da allora gli unici binari del workspace erano `sailor` e
+/// `sailor-live`. Nessuno se n'era accorto perché `bin` è una stringa: la
+/// tabella compilava, e `sailor release notte` scopriva il vuoto solo dopo aver
+/// clonato `HEAD` e avviato una compilazione.
+///
+/// Adesso la voce vuota non può tornare in silenzio: `crates/sailor/tests/`
+/// porta `every_release_target_names_a_real_binary`, che per ogni riga di qui
+/// chiede a `cargo metadata` se quel binario esiste davvero.
+///
+/// **RESTA UNA VOCE SOLA, E IL FATTO È DICHIARATO.** La struttura è nata per
+/// mostrare dove finiscono le differenze fra bersagli — un servizio da
+/// riavviare e uno no — e con un elemento solo non mostra più niente:
+/// `Service`, `service_domain` e l'attesa della prontezza non hanno più nessun
+/// bersaglio che li usi. Se la tabella debba restare una tabella è una
+/// decisione di Theo, non di chi ha tolto i fossili.
 pub const TARGETS: &[Target] = &[
-    Target {
-        name: "notte",
-        bin: "notte",
-        live_rel: "target/release/notte",
-        safe_rel: "bin/notte",
-        stamp_rel: "state/notte-binary-commit",
-        service: Some(Service {
-            label: "com.theo.notte",
-            in_progress_rel: "state/plancia/coda-notte/in-corso",
-        }),
-    },
-    Target {
-        name: "hooks",
-        bin: "claude-hooks",
-        live_rel: "target/release/claude-hooks",
-        safe_rel: "bin/claude-hooks",
-        // Lo stesso file che `release-hooks.sh` scrive: due timbri per lo stesso
-        // binario direbbero due verità, e chi legge non saprebbe quale.
-        stamp_rel: "state/hooks-binary-commit",
-        service: None,
-    },
-    // Il bersaglio che mancava, e la sua assenza era il difetto: `sailor` mette
-    // in servizio gli altri due, ma fino al 27/08/2026 veniva installato a mano
-    // copiando un binario — cioè proprio il gesto che questa tabella esiste per
-    // togliere di mezzo. Chi rilascia deve poter rilasciare anche se stesso.
+    // Il bersaglio che mancava, e la sua assenza era il difetto: `sailor`
+    // metteva in servizio gli altri bersagli della tabella — allora ce n'erano
+    // altri due — ma fino al 27/08/2026 veniva installato a mano copiando un
+    // binario, cioè proprio il gesto che questa tabella esiste per togliere di
+    // mezzo. Chi rilascia deve poter rilasciare anche se stesso: dal 01/09/2026
+    // è l'unico che rilascia, e resta il solo che non si potrebbe rilasciare da
+    // sé se questa riga sparisse.
     //
     // Nessun servizio da riavviare — ma «nessun servizio» NON vuol dire «si può
     // sovrascrivere». Il 27/08/2026, installato con un `cp` sopra il file mentre
@@ -264,10 +269,13 @@ mod tests {
 
     #[test]
     fn targets_are_found_by_name() {
-        assert_eq!(target("notte").map(|t| t.bin), Some("notte"));
-        assert_eq!(target("hooks").map(|t| t.bin), Some("claude-hooks"));
         assert_eq!(target("sailor").map(|t| t.bin), Some("sailor"));
         assert!(target("nessuno").is_none());
+        // I due nomi ritirati il 01/09/2026 non devono tornare a rispondere:
+        // finché `target("notte")` dava qualcosa, il messaggio d'errore che
+        // elenca i bersagli disponibili prometteva un rilascio impossibile.
+        assert!(target("notte").is_none());
+        assert!(target("hooks").is_none());
     }
 
     /// Chi mette in servizio gli altri deve saper mettere in servizio se stesso:
@@ -284,12 +292,25 @@ mod tests {
         );
     }
 
-    /// Solo chi resta residente va riavviato: dirlo di un gancio farebbe
+    /// Solo chi resta residente va riavviato: dirlo di chi non lo è farebbe
     /// chiamare `launchctl` su un'etichetta che non esiste.
+    ///
+    /// **DAL 01/09/2026 NESSUN BERSAGLIO È RESIDENTE**, e questa prova lo
+    /// pretende invece di darlo per scontato: l'unico che lo era, `notte`,
+    /// nominava un binario cancellato. Finché la riga di sopra diceva
+    /// `is_some()` su di lui, il ramo che riavvia un servizio risultava
+    /// provato — e non aveva più niente da riavviare. Il giorno in cui un
+    /// bersaglio residente torna, questa diventa rossa e chi lo aggiunge deve
+    /// dire quale etichetta launchd esiste davvero.
     #[test]
     fn only_a_resident_service_declares_a_restart() {
-        assert!(target("notte").and_then(|t| t.service).is_some());
-        assert!(target("hooks").and_then(|t| t.service).is_none());
+        for candidate in TARGETS {
+            assert!(
+                candidate.service.is_none(),
+                "{}: dichiara un servizio da riavviare; verifica che l'etichetta launchd esista",
+                candidate.name
+            );
+        }
     }
 
     /// L'invariante che regge tutta la difesa: la seconda copia sta dove

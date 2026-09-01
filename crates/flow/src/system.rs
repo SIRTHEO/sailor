@@ -55,6 +55,16 @@ pub const FLOWS: &[(&str, &str)] = &[
         "migrazione-a-sailor",
         include_str!("../system/migrazione-a-sailor.flow.json"),
     ),
+    // **È SPEDITO PERCHÉ LE REGOLE SPEDITE LO NOMINANO.** Fino all'01/09/2026
+    // stava fra i flussi di questo progetto, e le regole di instradamento in
+    // `crates/terminal/descriptors/default.json` — che invece viaggiano dentro
+    // il binario — ci mandavano il lavoro. Su questa macchina funzionava: il
+    // flusso c'era, perché era il nostro. Su qualunque altra la regola puntava
+    // al nulla, e nessuna prova lo vedeva perché tutte giravano qui.
+    (
+        "smista-il-lavoro",
+        include_str!("../system/smista-il-lavoro.flow.json"),
+    ),
 ];
 
 /// Un posto dove si cercano i flussi, con il nome che chi guarda ne vede.
