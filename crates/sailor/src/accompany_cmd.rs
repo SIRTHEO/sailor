@@ -10,11 +10,13 @@ use std::fs::File;
 use std::io;
 use std::os::fd::FromRawFd;
 use sessions::fullness::{self, Model};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrder};
 use std::sync::Arc;
 use terminal::bridge::{self, Keys, RawMode};
 use terminal::inbox::{self, Inbox};
+use terminal::mandate;
 use terminal::pty::Pty;
 use terminal::tally::{self, Tally};
 use terminal::Workspace;
@@ -23,10 +25,11 @@ pub const USAGE: &[&str] = &[
     "sailor accompany run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
     "sailor accompany press --tty <name> --text <line> [--store <dir>]   types a line into an accompanied terminal",
     "sailor accompany reset --tty <name> --cli <id> [--store <dir>]   empties a running session the way its descriptor says",
+    "sailor accompany mandate [--tty <name>] [--store <dir>]   < text   leaves the work for whoever comes next",
     "sailor accompany list [--ceiling <tokens>] [--store <dir>]   which terminals can be typed into, and how full",
 ];
 
-const FORMS: &[&str] = &["run", "press", "reset", "list"];
+const FORMS: &[&str] = &["run", "press", "reset", "mandate", "list"];
 
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
@@ -53,6 +56,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         "run" => accompany(&args[1..]),
         "press" => press(&args[1..]),
         "reset" => reset(&args[1..]),
+        "mandate" => leave_mandate(&args[1..], &mut std::io::stdin()),
         "list" => list(&args[1..]),
         other => Err(format!("«{other}» is not a form of this command")),
     }
@@ -67,13 +71,15 @@ fn usage_text() -> String {
 /// The override is not a convenience for tests. Without it every check of this
 /// command would have to write into the store of whoever runs it, and a test
 /// that touches the real machine is the fault this repo has already paid for.
-fn mailroom(options: &[(String, String)]) -> Result<PathBuf, String> {
+fn store_root(options: &[(String, String)]) -> Result<PathBuf, String> {
     if let Some((_, declared)) = options.iter().find(|(name, _)| name == "store") {
-        return Ok(inbox::mailroom(Path::new(declared)));
+        return Ok(PathBuf::from(declared));
     }
-    let store = ledger::default_directory()
-        .ok_or_else(|| "I cannot tell where the store lives".to_owned())?;
-    Ok(inbox::mailroom(&store))
+    ledger::default_directory().ok_or_else(|| "I cannot tell where the store lives".to_owned())
+}
+
+fn mailroom(options: &[(String, String)]) -> Result<PathBuf, String> {
+    Ok(inbox::mailroom(&store_root(options)?))
 }
 
 fn accompany(args: &[String]) -> Result<i32, String> {
@@ -325,6 +331,39 @@ fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, String
         })
 }
 
+/// Leaves the work for whoever comes next, written by the session itself.
+///
+/// Written and not scraped. Looking for a phrase in what the terminal showed
+/// is the way a successor is born crippled: the phrase is missing far more
+/// often than it is there, and nothing says so until the successor is already
+/// running on nothing.
+fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, String> {
+    let options = options_of(args)?;
+    let tty = match options.iter().find(|(name, _)| name == "tty") {
+        Some((_, declared)) => declared.clone(),
+        None => sessions::tty::current()
+            .ok_or_else(|| "this is not running in a terminal: give --tty <name>".to_owned())?,
+    };
+    let mut text = String::new();
+    from.read_to_string(&mut text)
+        .map_err(|error| error.to_string())?;
+    if text.trim().is_empty() {
+        return Err("nothing to hand on: the mandate arrives on standard input".to_owned());
+    }
+
+    let path = mandate::address_in(&store_root(&options)?, &tty);
+    mandate::write(
+        &path,
+        &mandate::Mandate {
+            text,
+            at: sessions::now(),
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    println!("mandate left for {tty}");
+    Ok(0)
+}
+
 fn list(args: &[String]) -> Result<i32, String> {
     let options = options_of(args)?;
     let ceiling = declared_ceiling(&options)?;
@@ -498,6 +537,52 @@ mod tests {
             .err()
             .expect("an unknown command line must refuse");
         assert!(refusal.contains("rossignol"), "{refusal}");
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let directory =
+            PathBuf::from("/tmp").join(format!("sr-cmd-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("create the test directory");
+        directory
+    }
+
+    #[test]
+    fn a_mandate_left_is_a_mandate_the_next_beat_can_read() {
+        let directory = scratch("mandate");
+        let written = words(&[
+            "--tty",
+            "ttys004",
+            "--store",
+            directory.to_str().expect("a path"),
+        ]);
+        let code = leave_mandate(&written, &mut "carry the conduit on".as_bytes())
+            .expect("leaving a mandate works");
+        assert_eq!(code, 0);
+
+        let found = mandate::read(&mandate::address_in(&directory, "ttys004"))
+            .expect("the mandate is there to be read");
+        assert_eq!(found.text, "carry the conduit on");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// Nothing on standard input is a mistake, not an empty mandate. Written
+    /// as one it would start a successor with nothing to do.
+    #[test]
+    fn handing_on_nothing_is_refused() {
+        let directory = scratch("mandate-empty");
+        let written = words(&[
+            "--tty",
+            "ttys004",
+            "--store",
+            directory.to_str().expect("a path"),
+        ]);
+        let refusal = leave_mandate(&written, &mut "   \n".as_bytes())
+            .err()
+            .expect("an empty mandate is refused");
+        assert!(refusal.contains("nothing to hand on"), "{refusal}");
+        assert_eq!(mandate::read(&mandate::address_in(&directory, "ttys004")), None);
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]

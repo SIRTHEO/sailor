@@ -159,6 +159,14 @@ const ACTION_KIND: Record<string, StepKind> = {
   work_claim: "deposit",
   work_release: "deposit",
   work_survey: "deposit",
+  // The relay's four nodes. Measuring produces a verdict a `when` reads, so it
+  // draws as a check; typing and emptying reach a live session, which is a
+  // gesture; taking the mandate waits for whoever is alive in there to write
+  // it, which is the same family as handing work to them.
+  measure_terminal: "check",
+  type_into_terminal: "gesture",
+  empty_terminal: "gesture",
+  take_mandate: "human",
   subflow: "subflow",
 };
 
