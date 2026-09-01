@@ -171,6 +171,10 @@
   /* A skippable dependency is neither a gravity nor a state.
      3.07:1 on --bg, 3.36:1 on --paper (WCAG 1.4.11). */
   --optional: #7c8a9f;
+  /* Graph paper at two pitches, both under 1.5:1 on --bg: a grid that reads
+     competes with the nodes, and the nodes are the figure. 1.09:1 and 1.24:1. */
+  --grid-fine: #eae7de;
+  --grid-coarse: #ddd9cd;
 
   /* One tint per flow lane, generated rather than picked: hues evenly spaced,
      lightness solved so each clears 3:1 on both grounds, closest pair 0.070
@@ -1519,6 +1523,8 @@ button.is-primary {
   padding: var(--space-1) var(--space-3);
   background: var(--band-fill);
   border-bottom: 1px solid var(--line);
+  /* The band is one row: the name lives below it now, so nothing has to wrap. */
+  flex-wrap: nowrap;
   /* Nessun raggio qui: il divieto 2 ammette tre valori, e nessuno dei tre
      arrotonda due angoli su quattro. Il velo della testata è il 2,5% di
      inchiostro — a 4px dall'angolo non lo vede nessuno. */
@@ -1578,12 +1584,15 @@ button.is-primary {
    1,5×. Non 1,8× come vorrebbe la bozza, e il motivo è misurato: a
    `--text-large` un nome come `working-tree-is-clean` non ci sta in 224px, e un
    nome tagliato è meno leggibile di uno piccolo. */
+/* THE JUMP IN SCALE EXISTS. The name against the species is 18 to 10, which
+   is 1.8x; at 15 it was 1.5x, and 1.5x is not a hierarchy, it is a hesitation. */
 .step-node__id {
   font-family: var(--font-data);
-  font-size: var(--text-mid);
+  font-size: var(--text-large);
   font-weight: 600;
   line-height: 1.2;
-  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3) 0;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4460,4 +4469,45 @@ button.is-primary {
   display: flex;
   gap: var(--space-2);
   padding-top: var(--space-1);
+}
+
+
+/* ── the bench row of a node ────────────────────────────────────────────
+   Three cells parted by a rule, not three cards: where space costs, a
+   rule does a container's work without paying its padding twice. */
+
+.step-node__bench {
+  display: flex;
+  border-top: 1px solid var(--line);
+}
+
+.step-node__cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
+  border-left: 1px solid var(--line);
+}
+
+.step-node__cell:first-child { border-left: none }
+
+.step-node__cell-label {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Numbers compared down a column, per prohibition 10. */
+.step-node__cell-value {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

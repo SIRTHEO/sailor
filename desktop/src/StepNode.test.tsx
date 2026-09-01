@@ -201,7 +201,7 @@ describe("il nodo e il motore che lo esegue", () => {
   test("senza nessuna chiamata non mostra un conto, invece di mostrare zeri", () => {
     mountNode({}, new Map());
     expect(screen.queryByText(/token entrati/)).toBeNull();
-    expect(screen.queryByText("costo non dichiarato")).toBeNull();
+    expect(document.querySelector(".step-node__meter")).toBeNull();
   });
 
   test("dopo una chiamata dice cosa è entrato, cosa è uscito e quanto è costato", () => {
@@ -228,7 +228,12 @@ describe("il nodo e il motore che lo esegue", () => {
       new Map(),
       new Map([["sviluppa-sailor::implementa", usageOf({ costMicros: null, callsWithoutCost: 1 })]]),
     );
-    expect(screen.getByText("costo non dichiarato")).toBeDefined();
+    // The cell is a dash, and the reason is reachable on it. Zero would read
+    // as «it ran for free», which is a different fact.
+    const cell = document.querySelector(".step-node__bench .step-node__cell:last-child .step-node__cell-value");
+    expect(cell?.textContent).toBe("—");
+    expect(cell?.getAttribute("title")).toContain("nessuna delle chiamate");
+    expect(screen.queryByText(/0,0000/)).toBeNull();
   });
 });
 
@@ -385,16 +390,21 @@ describe("the species of a node", () => {
  * window opens at, the canvas becomes a grid of nameless plates.
  */
 describe("the two rows that survive the far zoom", () => {
-  test("the head carries the species AND the name", () => {
+  /* The band and the name below it: those two are the plate, and neither is
+     inside the part that drops away at the far zoom. */
+  test("the plate carries the species AND the name", () => {
     const node = mountNode({}, new Map());
-    const head = node.querySelector(".step-node__head") as HTMLElement;
-    expect(head.querySelector(".step-node__kind")).not.toBeNull();
-    expect(head.querySelector(".step-node__id")?.textContent).toBe("implementa");
+    expect(node.querySelector(".step-node__head .step-node__kind")).not.toBeNull();
+    expect(node.querySelector(".step-node__id")?.textContent).toBe("implementa");
+    expect(node.querySelector(".step-node__body .step-node__id")).toBeNull();
   });
 
-  test("the foot carries the outcome, once", () => {
+  /* What you are and how you are are the two questions asked first, so they
+     share the band that survives the far zoom — and the answer is given once:
+     the same word in two places is two places to read it wrong. */
+  test("the head carries the outcome, once", () => {
     const node = mountNode({}, new Map());
-    expect(node.querySelector(".step-node__foot .step-node__state")).not.toBeNull();
+    expect(node.querySelector(".step-node__head .step-node__state")).not.toBeNull();
     expect(node.querySelectorAll(".step-node__state").length).toBe(1);
   });
 });
