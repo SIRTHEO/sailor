@@ -49,7 +49,7 @@ pub mod store;
 /// da questa parte del confine sarebbe una seconda definizione della stessa
 /// cosa: due strutture gemelle divergono al primo campo che qualcuno aggiunge a
 /// una sola delle due.
-pub use models::usage::{read_declared, read_text, Declared, Pointer, Reading, Shape};
+pub use models::usage::{read_declared, read_scalar, read_text, Declared, Pointer, Reading, Shape};
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies, ValueSchema};
 use ledger::{Ledger, ModelCallRecord};
@@ -568,6 +568,18 @@ pub trait ToolResolver: Send + Sync {
     fn session_recipe(&self, _id: &str) -> Option<SessionRecipe> {
         None
     }
+
+    /// Come si chiede a `id` se la casa da cui parte è autenticata.
+    ///
+    /// **`None` VUOL DIRE «NESSUNO HA GUARDATO», MAI «È AUTENTICATO».** Chi non
+    /// la dichiara non fa scattare nessun avviso e non ne fa scattare nemmeno
+    /// uno tranquillizzante: il controllo tace su quel motore, e chi legge sa
+    /// che tace. È la stessa regola di `refuses_without_prompt`, e il verso
+    /// conta — un predefinito che dicesse di sì renderebbe silenziosa proprio la
+    /// condizione che questo canale esiste per rendere visibile.
+    fn login_recipe(&self, _id: &str) -> Option<LoginRecipe> {
+        None
+    }
 }
 
 /// Il segnaposto che, dentro le opzioni di una ricetta di sessione, prende il
@@ -796,12 +808,18 @@ impl DryProbe for RealDryProbe {
         // **QUESTO NON DICE SE LA CASA È AUTENTICATA, ED È UN LIMITE DELLA
         // TECNICA.** Il vaglio toglie la domanda apposta, quindi il motore si
         // ferma sulla domanda mancante e non arriva mai ai controlli che
-        // verrebbero dopo — le credenziali stanno di là. Misurato il
-        // 01/09/2026: `CODEX_HOME=<cartella vuota> codex exec < /dev/null`
-        // risponde «No prompt provided via stdin» ed esce **zero**, identico a
-        // una casa piena. Chi vuole sapere se una casa è autenticata deve
-        // guardare la casa: qui si chiude solo la divergenza fra il mondo
-        // provato e il mondo in cui si lavora.
+        // verrebbero dopo — le credenziali stanno di là. Rimisurato il
+        // 01/09/2026 nelle due case: `codex exec < /dev/null` risponde **la
+        // stessa cosa** — «No prompt provided via stdin.» — e esce 1 tutte e due
+        // le volte. (Fino a quella misura questa riga diceva «esce zero»: il
+        // numero era falso, l'identità delle due risposte no, ed è quella che
+        // porta la conclusione.)
+        //
+        // **LA DOMANDA CHE MANCA SI FA A PARTE, E ADESSO ESISTE**: è
+        // `probe_login_status`, che chiede al motore con le parole che il
+        // descrittore dichiara in `login_status`. Non va infilata qui: questa
+        // sonda prova *la riga*, e mescolare i due verdetti renderebbe
+        // impossibile dire quale dei due ha detto di no.
         let equipment = current_equipment_for(bin, &BTreeMap::new());
         let result = invoke_external_engine(&EngineInvocation {
             bin: bin.to_owned(),
@@ -848,6 +866,222 @@ pub fn probe_dry_run(probe: &dyn DryProbe, bin: &str, recipe: &AskRecipe) -> Pro
     match probe.run(bin, &args, stdin) {
         DryRun::Answered { stdout, stderr } => judge_dry_run(recipe, &stdout, &stderr),
         DryRun::NoAnswer { why } => ProbeVerdict::TimedOut { why },
+    }
+}
+
+// ── la casa è autenticata? lo dice il motore ─────────────────────────────
+
+/// Come si chiede a un motore **se la casa da cui parte è autenticata**, e con
+/// quali parole risponde di sì e di no.
+///
+/// **PERCHÉ NON SI GUARDA IL DISCO.** Cercare `auth.json` sarebbe una seconda
+/// copia della verità, da riscrivere per ogni motore e da tenere allineata a
+/// mano mentre i motori cambiano dove mettono le cose. Chi sa rispondere è il
+/// motore; il descrittore dichiara soltanto **come si chiede** e **come si
+/// riconosce la risposta** — la stessa disciplina di `unusable_when` e
+/// `refuses_without_prompt`, applicata a una terza domanda.
+///
+/// **PERCHÉ SERVE UN CANALE A SÉ, E IL VAGLIO A SECCO NON BASTA.** `flow check`
+/// prova la riga **senza la domanda**: il motore si ferma su «non mi hai dato
+/// niente da fare» e non arriva mai ai controlli che vengono dopo, dove stanno
+/// le credenziali. Misurato il 01/09/2026 nelle due case: `codex exec <
+/// /dev/null` risponde «No prompt provided via stdin.» ed esce 1 **in tutte e
+/// due**, parola per parola la stessa cosa. È un limite della tecnica, non un
+/// difetto da riparare in essa: la domanda sulle credenziali si fa a parte, e
+/// costa zero perché è locale — nessun fornitore viene chiamato.
+#[derive(Clone, Debug)]
+pub struct LoginRecipe {
+    /// Le opzioni, o il sottocomando, con cui si fa la domanda: `["login",
+    /// "status"]`, `["auth", "status"]`.
+    pub args: Vec<String>,
+    /// Dove sta la risposta dentro ciò che il motore ha detto.
+    ///
+    /// **È IL PUNTATORE DI `usage`, NON UN SECONDO MECCANISMO**, e la ragione è
+    /// che il problema è lo stesso: due motori dicono la stessa cosa in due
+    /// forme diverse. `codex` risponde in prosa — «Logged in using ChatGPT» — e
+    /// allora non c'è niente da puntare, il soggetto è tutto ciò che ha detto.
+    /// `claude` risponde con un involucro JSON e mette la risposta in un campo
+    /// booleano, `"loggedIn": true`, e allora il cammino di chiavi la raggiunge.
+    ///
+    /// `None` non è «non guardare»: è «il soggetto è l'uscita intera», che è la
+    /// forma più comune e quella che non richiede di dichiarare niente.
+    pub answer: Option<Pointer>,
+    /// Le parole con cui questo motore dichiara di **essere** autenticato.
+    pub logged_in_when: Vec<String>,
+    /// Le parole con cui dichiara di **non** esserlo.
+    ///
+    /// **VANNO DICHIARATE TUTTE E DUE, E LA MANCANZA DI UNA SPEGNE IL
+    /// CONTROLLO.** Un descrittore che sapesse riconoscere solo il sì
+    /// chiamerebbe «non riconosciuto» ogni no, e chi legge non saprebbe
+    /// distinguere un motore non autenticato da uno che ha risposto qualcosa di
+    /// strano. Meglio tacere: vedi [`LoginVerdict::NotDeclared`].
+    pub logged_out_when: Vec<String>,
+}
+
+/// Che cosa si è potuto sapere sulle credenziali di una casa.
+///
+/// **QUATTRO ESITI E NON DUE, PER LA RAGIONE DI SEMPRE.** «Nessuno ha guardato»,
+/// «ha risposto e non l'ho capito» e «ha detto di no» sono tre fatti diversi, e
+/// **nessuno dei tre è un sì**. Un tipo a due stati costringerebbe a scegliere
+/// da che parte far cadere i primi due, e la direzione comoda è sempre quella
+/// che tranquillizza — cioè quella che rimette il difetto.
+#[derive(Clone, Debug)]
+pub enum LoginVerdict {
+    /// Il motore dichiara di essere autenticato in questa casa.
+    LoggedIn { said: String },
+    /// Il motore dichiara di **non** esserlo: le chiamate partiranno senza
+    /// credenziali.
+    LoggedOut { said: String },
+    /// Il descrittore non dichiara il blocco, o lo dichiara a metà. **Nessuno
+    /// ha guardato**, e non c'è niente da dire su questa casa.
+    NotDeclared,
+    /// Ha risposto, e la risposta non somiglia a nessuna delle due forme
+    /// dichiarate. Le sue parole sono la diagnosi.
+    Unrecognised { said: String },
+    /// Non ha risposto affatto: non è partito, o ha superato il tetto di tempo.
+    NoAnswer { why: String },
+}
+
+impl LoginVerdict {
+    /// Vero **solo** quando il motore ha detto di sì. Ogni altro esito, dubbio
+    /// compreso, risponde di no: è la forma in cui il verso dell'errore si
+    /// scrive una volta sola invece che a ogni luogo di lettura.
+    pub fn is_logged_in(&self) -> bool {
+        matches!(self, LoginVerdict::LoggedIn { .. })
+    }
+}
+
+/// Legge la risposta di un motore alla domanda «sei autenticato?».
+///
+/// **PURA, E SEPARATA DA CHI ESEGUE**, per la stessa ragione di
+/// [`judge_dry_run`]: il giudizio è la parte che si sbaglia, e una prova che
+/// dovesse lanciare `codex` direbbe com'è messa la macchina di chi la esegue
+/// invece che se il riconoscimento funziona.
+///
+/// **IL CODICE D'USCITA NON ENTRA NEMMENO QUI.** Sui due motori misurati il
+/// 01/09/2026 l'esito *distinguerebbe* — `codex login status` esce 1 non
+/// autenticato e 0 autenticato, e `claude auth status` fa lo stesso — ma è un
+/// fatto di quei due e non una regola che si possa scrivere nel codice: un
+/// motore che rispondesse «Not logged in» uscendo zero verrebbe dichiarato
+/// autenticato da chiunque leggesse l'esito, e nessuno se ne accorgerebbe. Il
+/// testo lo dichiara il descrittore, l'esito no.
+///
+/// **L'ORDINE DI LETTURA È VINCOLANTE: PRIMA IL NO.** «Not logged in»
+/// *contiene* «logged in», e in generale il modo di dire di no è il modo di dire
+/// di sì con una negazione davanti. Letto nell'ordine opposto, una casa vuota
+/// risulterebbe autenticata — che è precisamente il silenzio che questo blocco
+/// esiste per rompere. Le parole dichiarate misurate lo eviterebbero già; questo
+/// lo evita anche quando chi scrive il descrittore è stato distratto.
+pub fn judge_login_status(recipe: &LoginRecipe, stdout: &str, stderr: &str) -> LoginVerdict {
+    // **LE DUE PIPE INSIEME, E QUI NON È UN DETTAGLIO**: `codex login status`
+    // non scrive niente su stdout — la risposta è tutta su stderr, misurato il
+    // 01/09/2026. Chi ne leggesse una sola non troverebbe mai nessuna delle due
+    // forme e direbbe sempre «nessuno ha guardato».
+    let said = [stdout.trim(), stderr.trim()]
+        .into_iter()
+        .filter(|piece| !piece.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let declared = |marks: &[String]| marks.iter().any(|mark| !mark.trim().is_empty());
+    if !declared(&recipe.logged_in_when) || !declared(&recipe.logged_out_when) {
+        return LoginVerdict::NotDeclared;
+    }
+
+    // Il puntatore sceglie il soggetto, e basta: le parole si cercano dentro
+    // quello, con la stessa regola di `unusable_when`. Senza puntatore il
+    // soggetto è ciò che il motore ha detto per intero.
+    let subject = match recipe.answer.as_ref() {
+        None => Some(said.clone()),
+        Some(pointer) => read_scalar(&said, pointer),
+    };
+    // Un puntatore che non trova niente non è un sì: l'involucro non era quello
+    // che il descrittore dichiarava, e la risposta resta sconosciuta.
+    let Some(subject) = subject else {
+        return LoginVerdict::Unrecognised { said };
+    };
+
+    if mentions_any(&recipe.logged_out_when, &subject) {
+        return LoginVerdict::LoggedOut { said };
+    }
+    if mentions_any(&recipe.logged_in_when, &subject) {
+        return LoginVerdict::LoggedIn { said };
+    }
+    LoginVerdict::Unrecognised { said }
+}
+
+/// Chi fa la domanda locale «sei autenticato?», **dentro una casa precisa**.
+///
+/// **PERCHÉ UN TRATTO A SÉ E NON [`DryProbe`].** Sono due domande diverse su due
+/// mondi diversi: il vaglio a secco prova la riga nella casa del profilo attivo,
+/// e chi la compone non la sceglie; questa domanda va fatta **in una casa
+/// nominata** — `sailor profiles list` la fa a ogni profilo, non solo a quello
+/// in forza, e con `DryProbe` non avrebbe modo di dirlo. L'ambiente è quindi un
+/// argomento, non una cosa che l'esecutore va a leggersi da solo.
+pub trait LoginProbe: Send + Sync {
+    fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun;
+}
+
+/// Le due domande locali che si possono fare a un motore senza spendere.
+///
+/// Sta insieme perché chi controlla un flusso le fa tutte e due nello stesso
+/// momento e sullo stesso mondo; separate, ogni luogo di chiamata dovrebbe
+/// portarsi due argomenti che valgono sempre la stessa cosa.
+pub trait EngineProbe: DryProbe + LoginProbe {}
+
+impl<T: DryProbe + LoginProbe> EngineProbe for T {}
+
+impl LoginProbe for RealDryProbe {
+    fn ask(&self, bin: &str, args: &[String], env: &BTreeMap<String, String>) -> DryRun {
+        let result = invoke_external_engine(&EngineInvocation {
+            bin: bin.to_owned(),
+            args: args.to_vec(),
+            env: env.clone(),
+            workdir: None,
+            // **L'INGRESSO VUOTO E CHIUSO, CIOÈ `< /dev/null`.** Un motore che
+            // si mettesse ad aspettare qualcosa dall'ingresso appenderebbe il
+            // controllo di tutti gli altri: è la trappola già pagata su `codex
+            // exec`, e costa un carattere evitarla.
+            stdin: Some(Vec::new()),
+            timeout: DRY_PROBE_TIMEOUT,
+        });
+        match result {
+            EngineResult::Ok { stdout, stderr }
+            | EngineResult::ExitError { stdout, stderr, .. } => DryRun::Answered { stdout, stderr },
+            EngineResult::TimedOut => DryRun::NoAnswer {
+                why: format!(
+                    "nessuna risposta entro {} secondi",
+                    DRY_PROBE_TIMEOUT.as_secs()
+                ),
+            },
+            EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
+                why: format!("il processo non è partito: {reason}"),
+            },
+        }
+    }
+}
+
+/// Chiede a `bin`, dentro la casa che `env` dichiara, se è autenticato.
+///
+/// **NON COSTA NIENTE E NON CHIAMA NESSUN FORNITORE.** Misurato il 01/09/2026:
+/// `codex login status` e `claude auth status` leggono un file locale e
+/// rispondono. Sono l'unico modo di sapere la cosa senza andare a guardare il
+/// disco al posto del motore.
+pub fn probe_login_status(
+    probe: &dyn LoginProbe,
+    bin: &str,
+    env: &BTreeMap<String, String>,
+    recipe: &LoginRecipe,
+) -> LoginVerdict {
+    // Un descrittore che non dichiara non fa partire nessun processo: chiedere
+    // per poi non saper leggere la risposta sarebbe tempo speso per niente.
+    let declared = |marks: &[String]| marks.iter().any(|mark| !mark.trim().is_empty());
+    if !declared(&recipe.logged_in_when) || !declared(&recipe.logged_out_when) {
+        return LoginVerdict::NotDeclared;
+    }
+    match probe.ask(bin, &recipe.args, env) {
+        DryRun::Answered { stdout, stderr } => judge_login_status(recipe, &stdout, &stderr),
+        DryRun::NoAnswer { why } => LoginVerdict::NoAnswer { why },
     }
 }
 
