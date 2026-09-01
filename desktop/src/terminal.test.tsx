@@ -207,7 +207,7 @@ describe("where the line ended up, told to whoever is watching", () => {
 function summary(over: Partial<TerminalSummary>): TerminalSummary {
   return {
     id: "t1",
-    workspaceRoot: "/Users/you/code/sailor",
+    workspaceRoot: "/work/sailor",
     workspaceName: "sailor",
     alive: true,
     processId: 4242,
@@ -332,8 +332,8 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/Users/you/code/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
-  { id: "t2", workspaceRoot: "/Users/you/code/packages", workspaceName: "packages", alive: true, processId: 4243 },
+  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
+  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243 },
 ];
 
 /**
@@ -425,7 +425,7 @@ describe("the terminals screen", () => {
       expect((button as HTMLButtonElement).disabled).toBe(true);
 
       const field = screen.getByPlaceholderText(WORKSPACE_HINT);
-      fireEvent.change(field, { target: { value: "/Users/you/code/sailor" } });
+      fireEvent.change(field, { target: { value: "/work/sailor" } });
       expect((screen.getByRole("button", { name: "Apri un terminale" }) as HTMLButtonElement).disabled).toBe(false);
 
       await act(async () => {
@@ -449,12 +449,12 @@ describe("the terminals screen", () => {
         </div>,
       );
       const field = await screen.findByPlaceholderText(WORKSPACE_HINT);
-      fireEvent.change(field, { target: { value: "/Users/you/code/elsewhere" } });
+      fireEvent.change(field, { target: { value: "/work/other-repo" } });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Apri un terminale" }));
       });
       expect(shell.argsOf("terminal_open")).toEqual([
-        { workspaceRoot: "/Users/you/code/elsewhere", program: undefined, cols: 80, rows: 24 },
+        { workspaceRoot: "/work/other-repo", program: undefined, cols: 80, rows: 24 },
       ]);
     } finally {
       shell.stop();

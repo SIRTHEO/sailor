@@ -42,7 +42,7 @@ interface TerminalsProps {
  * finds one. Exported so the test reads it here, not a copy: a text written
  * twice diverges on the first edit — red for a wrong reason, or green over air.
  */
-export const WORKSPACE_HINT = "/Users/you/code/sailor";
+export const WORKSPACE_HINT = "/path/to/your/project";
 
 export function Terminals({ native }: TerminalsProps) {
   const outside = "fuori dal guscio: gli pseudo-terminali li apre il motore";
