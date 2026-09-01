@@ -24,7 +24,7 @@
 //! esattamente che nessun processo nasce: se ne avviasse uno saremmo tornati al
 //! costo che l'azione esiste per togliere.
 
-use crate::{reference, sink_for_step, Pipe, StepSinks};
+use crate::{sink_for_step, Pipe, StepSinks};
 use flow::{
     Action, ActionError, ActionOutcome, EffectStatus, SharedState, StepRecord, StepSpecies,
 };
@@ -203,12 +203,12 @@ impl Action for HandoffAction {
         shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
-        // **I RINVII SI RISOLVONO, E QUI È OBBLIGATORIO PIÙ CHE ALTROVE.** Il
+        // **I RINVII ARRIVANO GIÀ SCIOLTI, E QUI SERVONO PIÙ CHE ALTROVE.** Il
         // mandato di un passo consegnato è quasi sempre il lavoro deciso dal
         // passo prima: senza `$from` resterebbe una costante scritta il giorno
-        // in cui il flusso è nato, e la consegna non servirebbe a niente.
-        let input = reference::resolve_references(input)?;
-        let spec: HandoffSpec = serde_json::from_value(input)
+        // in cui il flusso è nato, e la consegna non servirebbe a niente. A
+        // scioglierli è `step_input`, per ogni azione e una volta sola.
+        let spec: HandoffSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         if spec.mandate.trim().is_empty() {
             return Err(ActionError::new(
@@ -329,23 +329,14 @@ mod tests {
         );
     }
 
-    /// I rinvii si risolvono: il mandato è il lavoro deciso dal passo prima.
-    #[test]
-    fn the_mandate_can_come_from_the_step_before() {
-        let action = HandoffAction::new();
-        let outcome = action
-            .execute(
-                &json!({
-                    "decided": {"work": "ripara il guasto 25"},
-                    "mandate": {"$from": "/decided/work"},
-                    "holder": "claude-vivo",
-                    "handoff_timeout_secs": 60
-                }),
-                &shared_for("run-1", "implementa"),
-            )
-            .expect("i rinvii si risolvono");
-        assert!(matches!(outcome, ActionOutcome::Waiting(_)));
-    }
+    // **LA PROVA CHE IL MANDATO PUÒ VENIRE DAL PASSO PRIMA NON STA PIÙ QUI.**
+    // Chiamava `execute` con `{"$from": …}` dentro, e reggeva perché questa
+    // azione risolveva i rinvii da sé. Dal 01/09/2026 li scioglie
+    // `flow::step_input` per tutte: riscritta qui, dovrebbe sciogliere il rinvio
+    // a mano prima di chiamare — cioè misurare la prova invece del prodotto. La
+    // regola si interroga dove vive, in
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`, e lì vale per
+    // ogni azione registrata invece che per questa sola.
 
     /// Un `with` con un refuso si nomina a controllo, prima di spendere.
     #[test]

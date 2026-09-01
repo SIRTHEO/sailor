@@ -18,7 +18,7 @@
 
 use crate::pty::{Pty, PtyError, Size};
 use crate::routing::{PathLookup, Routed, Router};
-use crate::{Catalog, Output, Workspace};
+use crate::{Catalog, Ending, Output, Workspace};
 use std::ffi::OsString;
 use std::io::Read;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -137,7 +137,17 @@ impl Terminal {
 }
 
 /// Una riga dell'elenco dei terminali aperti.
+///
+/// **QUESTO TIPO È LA RIGA CHE LA FINESTRA RICEVE, E NON SE NE RICOPIA UNA
+/// SECONDA.** `docs/2026-09-01-il-contratto-del-terminale.md` lo dice per
+/// esteso: il ponte risponde con questa struttura tale e quale, invece di
+/// dichiarare i cinque campi una seconda volta in TypeScript e una terza in un
+/// tipo di comodo dentro il guscio. I nomi escono in `camelCase` perché è la
+/// forma in cui il contratto li scrive e in cui la finestra li legge; restano
+/// identificatori inglesi da tutte e due le parti, che è ciò che `AGENTS.md`
+/// chiede.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Summary {
     pub id: String,
     pub workspace_root: String,
@@ -188,17 +198,26 @@ impl Terminals {
         &self.router
     }
 
-    /// Apre un terminale dentro `workspace` e consegna la sua uscita a `output`
-    /// **mentre esce**.
+    /// Apre un terminale dentro `workspace` e consegna la sua uscita **mentre
+    /// esce** al destinatario che `make_output` fabbrica.
     ///
     /// Il filo che legge nasce qui e muore quando il terminale finisce: leggere
     /// a richiesta vorrebbe dire o un buffer che cresce senza che nessuno lo
     /// svuoti, o un figlio che si blocca in scrittura quando nessuno chiede.
+    ///
+    /// **IL DESTINATARIO SI FABBRICA COL NOME DEL TERMINALE IN MANO, E NON LO
+    /// RICEVE DOPO.** Chi consegna l'uscita altrove — a una finestra, a una
+    /// rete — deve dire *di quale* terminale è ogni pezzo, e l'identificativo lo
+    /// assegna questa funzione. Passando un destinatario già fatto restava un
+    /// istante in cui i primi byte esistevano e il nome no: l'invito della shell
+    /// esce lì dentro, cioè proprio il pezzo che chi guarda si aspetta per
+    /// primo. Un `FnOnce(&str)` toglie quell'istante per costruzione, invece di
+    /// coprirlo con una coda d'attesa.
     pub fn open(
         &self,
         workspace: Workspace,
         opening: &Opening,
-        output: Arc<dyn Output>,
+        make_output: impl FnOnce(&str) -> Arc<dyn Output>,
     ) -> Result<Arc<Terminal>, PtyError> {
         let args: Vec<&std::ffi::OsStr> = opening.args.iter().map(AsRef::as_ref).collect();
         let pty = Pty::open(
@@ -214,6 +233,7 @@ impl Terminals {
             workspace.name,
             self.next.fetch_add(1, Ordering::Relaxed)
         );
+        let output = make_output(&id);
         let terminal = Arc::new(Terminal {
             id,
             workspace,
@@ -221,6 +241,7 @@ impl Terminals {
             router: Arc::clone(&self.router),
             closed: Mutex::new(false),
         });
+        let draining = Arc::clone(&terminal);
         std::thread::spawn(move || {
             let mut buffer = [0u8; 8192];
             loop {
@@ -241,6 +262,7 @@ impl Terminals {
                     Err(_) => break,
                 }
             }
+            output.ended(how_it_ended(&draining.pty));
         });
         self.open
             .lock()
@@ -297,5 +319,34 @@ impl Terminals {
 impl Drop for Terminals {
     fn drop(&mut self) {
         self.close_all();
+    }
+}
+
+/// Quanto si insiste a chiedere com'è finito, dopo che l'uscita è finita.
+///
+/// **NON È UN'ATTESA PER SICUREZZA, È IL TEMPO FRA DUE FATTI DIVERSI.** Che
+/// l'ultimo descrittore del terminale si chiuda e che il processo sia stato
+/// raccolto dal sistema sono due cose, e nell'ordine sbagliato per chi legge: il
+/// figlio muore, l'uscita finisce, e solo poco dopo `try_wait` ha un esito da
+/// dare. Due secondi sono lunghi rispetto a quella distanza e corti rispetto a
+/// chi guarda.
+const HOW_LONG_TO_ASK: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Com'è finito il processo dentro, chiesto senza mai bloccare.
+///
+/// **SCADUTA LA PAZIENZA SI DICE «ANCORA VIVO», NON «USCITO CON ZERO».** Un
+/// programma che chiude i propri descrittori e continua a girare esiste, ed è
+/// raro: proprio per questo un esito inventato al posto suo non lo troverebbe
+/// nessuno.
+fn how_it_ended(pty: &Pty) -> Ending {
+    let until = std::time::Instant::now() + HOW_LONG_TO_ASK;
+    loop {
+        if let Some(ending) = pty.finished() {
+            return ending;
+        }
+        if std::time::Instant::now() >= until {
+            return Ending::StillRunning;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
     }
 }
