@@ -22,10 +22,11 @@ use std::path::{Path, PathBuf};
 pub fn skill_sources(h: &Path) -> Vec<(PathBuf, &'static str)> {
     vec![
         (h.join(".claude/skills"), "*/SKILL.md"),
-        (
-            h.join(".claude/skills/mattpocock-skills/skills"),
-            "*/*/SKILL.md",
-        ),
+        // UNA RACCOLTA INSTALLATA COME CARTELLA, QUALUNQUE SIA. Fino al
+        // 01/09/2026 qui c'era il nome di una sola — quella che chi ha scritto
+        // la riga aveva sotto mano — e ogni altra era invisibile. La forma è
+        // sempre la stessa: una cartella che contiene una `skills/` propria.
+        (h.join(".claude/skills"), "*/skills/*/SKILL.md"),
         (h.join(".claude/plugins/cache"), "*/*/skills/*/SKILL.md"),
         (h.join(".claude/plugins/cache"), "*/*/*/skills/*/SKILL.md"),
     ]
@@ -86,23 +87,65 @@ pub fn glob(root: &Path, pattern: &str) -> Vec<PathBuf> {
     current
 }
 
-/// Prefisso con cui la competenza va invocata: `plugin:nome`.
-pub fn prefix(path: &Path) -> String {
+/// Da dove viene una competenza, e quindi **chi ha il diritto di spegnerla**.
+///
+/// **È LA DOMANDA CHE PRIMA SI FACEVA CON UN NOME.** Un plugin sta nella cache
+/// e `enabledPlugins` decide se è acceso; una raccolta installata come cartella
+/// non compare in quell'elenco, e chiedergli se sia accesa è una domanda che non
+/// le si applica — la risposta «no» che ne usciva era falsa, non negativa. Fino
+/// al 01/09/2026 la differenza era coperta da `plugin.contains("mattpocock")`,
+/// cioè dal nome dell'unica raccolta che qualcuno aveva sotto mano.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// Sta direttamente in `.claude/skills/`: la carica sempre.
+    Home,
+    /// Sta nella cache dei plugin: la governa `enabledPlugins`.
+    Plugin(String),
+    /// Una cartella con una `skills/` propria: nessun elenco la governa.
+    Collection(String),
+}
+
+impl Origin {
+    /// Il prefisso con cui la competenza va invocata: `nome:`, o niente.
+    pub fn prefix(&self) -> String {
+        match self {
+            Origin::Home => String::new(),
+            Origin::Plugin(name) | Origin::Collection(name) => format!("{name}:"),
+        }
+    }
+}
+
+pub fn origin(path: &Path) -> Origin {
     let parts: Vec<String> = path
         .components()
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect();
-    if parts.iter().any(|p| p == "mattpocock-skills") {
-        return "mattpocock-skills:".to_string();
-    }
+
     if let Some(i) = parts.iter().position(|p| p == "cache") {
-        // cache/<marketplace>/<plugin>/…
+        // cache/<mercato>/<plugin>/…
         return match parts.get(i + 2) {
-            Some(name) => format!("{name}:"),
-            None => String::new(), // IndexError di Python
+            Some(name) => Origin::Plugin(name.clone()),
+            None => Origin::Home,
         };
     }
-    String::new()
+
+    // `.claude/skills/<raccolta>/skills/…`: la seconda `skills` è ciò che
+    // distingue una raccolta da una competenza sciolta, e non serve saperne il
+    // nome per riconoscerla.
+    if let Some(i) = parts.iter().position(|p| p == "skills") {
+        if parts.get(i + 2).map(String::as_str) == Some("skills") {
+            if let Some(name) = parts.get(i + 1) {
+                return Origin::Collection(name.clone());
+            }
+        }
+    }
+
+    Origin::Home
+}
+
+/// Prefisso con cui la competenza va invocata: `nome:`, o niente.
+pub fn prefix(path: &Path) -> String {
+    origin(path).prefix()
 }
 
 /// Quali plugin sono accesi. Uno spento non offre competenze.
