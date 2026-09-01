@@ -4,25 +4,21 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 
 /**
- * **GLI STATI CHE NON SONO QUELLO FELICE.**
+ * **THE STATES THAT ARE NOT THE HAPPY ONE.** A dashboard that only works
+ * populated is unfinished; here live the rules of the empty canvas, the loading
+ * read and the flow that will not load.
  *
- * Un cruscotto che sta bene solo nello stato popolato è incompiuto. Qui stanno
- * le regole dei tre stati che non lo sono — la tela vuota, la lettura in corso,
- * il flusso che non si carica — e dei due difetti che li rendevano
- * indistinguibili da un guasto.
- *
- * **IN JSDOM NON C'È NIENTE DI MISURABILE**, e una prova che leggesse pixel qui
- * sarebbe verde per non aver guardato niente. Quello che si custodisce qui è la
- * **regola**: chi osserva cosa, chi scatta quando, chi dichiara cosa. I pixel
- * si guardano in un Chrome vero, e il come sta nel commento sotto
- * «l'inquadratura».
+ * **NOTHING IS MEASURABLE IN JSDOM**, and a test reading pixels here would be
+ * green for having looked at nothing. What is guarded is the **rule** — who
+ * observes what, who fires when, who declares what. The pixels are looked at in
+ * a real Chrome, and how is written under "the framing".
  */
 
-/* ── la spia sull'inquadratura ──────────────────────────────────────────────
-   `fitView` non lascia traccia in jsdom: il riquadro di React Flow misura zero
-   e la tela non si muove comunque. L'unico modo di sapere se qualcuno l'ha
-   chiesta è intercettare l'istanza che React Flow consegna con `onInit`. Qui
-   passa la ReactFlow vera: si aggiunge solo un giro di boa sull'istanza. */
+/* ── the spy on the framing ─────────────────────────────────────────────────
+   `fitView` leaves no trace in jsdom: React Flow's box measures zero and the
+   canvas does not move anyway. The only way to know somebody asked for it is to
+   intercept the instance React Flow hands over with `onInit`. The real
+   ReactFlow passes through here: all we add is a marker on the instance. */
 
 const spy = vi.hoisted(() => ({ fits: [] as unknown[], ready: false }));
 
@@ -50,15 +46,15 @@ vi.mock("@xyflow/react", async (importOriginal) => {
   return { ...real, ReactFlow: WatchedReactFlow };
 });
 
-/* ── il disco senza flussi ──────────────────────────────────────────────────
-   La tela vuota non è un componente: è **uno schermo**. Disegnare `BlankCanvas`
-   da solo lascia fuori proprio ciò che le sta accanto — il pannello destro, la
-   minimappa, la barra — e sono quelli che parlavano di flussi su uno schermo
-   che non ne ha.
+/* ── the disk with no flows ─────────────────────────────────────────────────
+   The empty canvas is not a component: it is **a screen**. Rendering
+   `BlankCanvas` alone leaves out exactly what sits beside it — the right panel,
+   the minimap, the toolbar — and those are the ones that talked about flows on
+   a screen that has none. */
 
-   Fuori dal guscio i flussi vengono dall'esempio, e `App` lo legge a ogni
-   montaggio. Qui l'esempio si può togliere per un turno, e lo schermo intero
-   diventa misurabile senza fingere un motore. */
+/* Outside the shell the flows come from the sample, and `App` reads it on every
+   mount. Here the sample can be taken away for one turn, so the whole screen
+   becomes measurable without faking an engine. */
 
 const disk = vi.hoisted(() => ({ empty: false, brokenOnly: false }));
 
@@ -68,9 +64,9 @@ vi.mock("./sample", async (importOriginal) => {
     ...real,
     get SAMPLE() {
       if (disk.empty) return [];
-      // Un disco con dei file che non si caricano e nessuno che si carica: è la
-      // scena in cui la colonna non ha flussi da elencare ma ha da mostrare
-      // perché non ce ne sono, e la scheda vuota la nomina.
+      // A disk with files that will not load and none that will: the scene where
+      // the column has no flows to list but does have to show why there are
+      // none, and the empty card names it.
       if (disk.brokenOnly) return real.SAMPLE.filter((entry) => entry.state === "broken");
       return real.SAMPLE;
     },
@@ -91,11 +87,11 @@ import { stepCountLabel } from "./flow";
 import { SAMPLE } from "./sample";
 import stylesheetSource from "./styles.css?raw";
 
-/* ── l'osservatore del riquadro, guidato dalla prova ────────────────────────
-   Negli altri file `ResizeObserver` è un guscio vuoto: basta perché React Flow
-   si monti. Qui serve di più — è **l'osservatore il soggetto della regola** —
-   quindi si registra chi guarda cosa e la prova decide quando il riquadro
-   diventa misurabile. */
+/* ── the box observer, driven by the test ───────────────────────────────────
+   In the other files `ResizeObserver` is an empty shell: enough for React Flow
+   to mount. Here more is needed — **the observer is the subject of the rule** —
+   so we record who watches what and the test decides when the box becomes
+   measurable. */
 
 interface Watcher {
   element: Element;
@@ -128,9 +124,9 @@ class RecordingResizeObserver {
     }
   }
 
-  // SMETTERE DI GUARDARE DEVE SMETTERE DAVVERO. Con un `disconnect` che non
-  // toglie niente, «si inquadra una volta sola» sarebbe rosso su un codice
-  // giusto: il finto continuerebbe a parlare a chi ha chiuso la linea.
+  // STOPPING WATCHING MUST REALLY STOP. With a `disconnect` that removes
+  // nothing, "it frames only once" would be red on correct code: the fake would
+  // keep talking to whoever hung up.
   disconnect() {
     for (const watcher of [...this.mine]) this.forget(watcher);
   }
@@ -144,12 +140,10 @@ class RecordingResizeObserver {
 }
 
 /**
- * Dice a chi osserva questo elemento che il riquadro misura tanto, e torna
- * **quanti** l'hanno sentito.
- *
- * Il numero non è un di più: senza, «non si è inquadrato niente» sarebbe vero
- * anche quando nessuno sta guardando, cioè proprio nel caso che questa prova
- * deve rifiutare.
+ * Tells whoever observes this element that the box measures so much, and
+ * returns **how many** heard it. The number is not a bonus: without it,
+ * "nothing got framed" would be true even when nobody is watching — precisely
+ * the case this test has to reject.
  */
 function announce(element: Element, width: number, height: number): number {
   const listening = watchers.filter((watcher) => watcher.element === element);
@@ -169,9 +163,9 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  // React Flow consegna l'istanza **un giro dopo** il montaggio, da dentro un
-  // `setTimeout`. Qui si lascia cadere quella del turno precedente prima di
-  // azzerare: se no la prova dopo crederebbe pronta un'istanza che non è la sua.
+  // React Flow hands the instance over **one tick after** mount, from inside a
+  // `setTimeout`. We let the previous turn's instance land before resetting, or
+  // the next test would believe an instance that is not its own is ready.
   await new Promise((resolve) => setTimeout(resolve, 5));
   watchers.length = 0;
   spy.fits.length = 0;
@@ -182,41 +176,39 @@ beforeEach(async () => {
 
 afterEach(cleanup);
 
-/* ── la forma si vede, o non è una forma ────────────────────────────────────
-   **CONTARE ELEMENTI NEL DOM LASCIA PASSARE UNO SCHELETRO NASCOSTO.** Il DOM è
-   una porta sola: l'altra è il foglio. `width: 0` sulle targhe dei passi e le
-   sette targhe spariscono; `display: none` sui gesti e la tela vuota torna la
-   constatazione che questo file accusa. In tutti e due i casi il conteggio
-   resta identico e la batteria resta verde.
+/* ── a shape is seen, or it is not a shape ──────────────────────────────────
+   **COUNTING DOM ELEMENTS LETS A HIDDEN SKELETON THROUGH.** The DOM is one
+   door; the sheet is the other. `width: 0` on the step plates and the seven
+   plates are gone; `display: none` on the gestures and the empty canvas is back
+   to the mute statement this file accuses. Either way the count is identical
+   and the suite stays green. */
 
-   `styleTree` sa già rispondere: calcola `hidden` con l'eredità e tiene le
-   dichiarazioni che vincono. Qui si guardano **le forme con cui una regola
-   toglie di mezzo un elemento senza cancellarlo** — nascosto, trasparente,
-   schiacciato, ridotto a zero — più quella con cui lo cancella. */
+/* `styleTree` already answers: it computes `hidden` with inheritance and keeps
+   the winning declarations. What we look at here are **the forms with which a
+   rule removes an element without deleting it** — hidden, transparent,
+   flattened, reduced to zero — plus the one that deletes it. */
 
-/** `0`, `0px`, `0%`: le forme in cui una misura è nessuna misura. */
+/** `0`, `0px`, `0%`: the forms in which a measure is no measure at all. */
 const NO_SIZE = /^0(\.0+)?[a-z%]*$/i;
 
 /**
- * Le proprietà con cui una regola riduce a niente un elemento. `min-width: 0`
- * non è fra queste: è un modo di dire dei flex e non nasconde nessuno — un
- * `min-*` alza un pavimento, non porta niente a zero.
+ * The properties with which a rule reduces an element to nothing. `min-width: 0`
+ * is not among them: it is a flexbox idiom and hides nobody — a `min-*` raises a
+ * floor, it does not bring anything to zero.
  */
 const SIZES = ["width", "height", "max-width", "max-height"];
 
-/** Un'altezza fissa è un numero con un'unità: `auto`, `100%`, `fit-content` no. */
+/** A fixed height is a number with a unit: `auto`, `100%`, `fit-content` are not. */
 const FIXED_LENGTH = /^-?\d*\.?\d+(px|rem|em|ch|ex|vh|vw|vmin|vmax|pt|pc|cm|mm|in|q)$/i;
 
-/** Le due parole con cui una scatola porta via ciò che non ci sta dentro. */
+/** The two words with which a box takes away what does not fit inside it. */
 const CLIPPING = ["hidden", "clip"];
 
 /**
- * Cosa toglie di mezzo questo elemento **senza scrivergli niente addosso**: il
- * ritaglio, il corpo del testo che si eredita, la scatola che lo contiene.
- *
- * `font-size` si eredita, quindi vince la prima dichiarazione che si incontra
- * risalendo; `overflow` e l'altezza no, e vanno cercati su ogni scatola fino
- * alla radice misurata.
+ * What removes this element **without writing anything on it**: the clipping,
+ * the inherited font size, the box that contains it. `font-size` inherits, so
+ * the first declaration met on the way up wins; `overflow` and height do not,
+ * and must be looked for on every box up to the measured root.
  */
 function whatComesFromTheBox(
   element: Element,
@@ -232,9 +224,9 @@ function whatComesFromTheBox(
       const path = declarations.get("clip-path");
       if (path !== undefined && path !== "none") faults.push(`ritagliato via (clip-path: ${path})`);
 
-      // La gemella d'antan di `clip-path`, la ricetta per soli lettori di
-      // schermo. Morde **solo su una scatola posizionata**: dichiararla altrove
-      // non toglie di mezzo nessuno, e chiamarlo guasto sarebbe un falso.
+      // The old twin of `clip-path`, the screen-reader-only recipe. It bites
+      // **only on a positioned box**: declaring it elsewhere removes nobody, and
+      // calling that a fault would be a false positive.
       const clip = declarations.get("clip");
       const edges = clip?.match(/^rect\((.*)\)$/i)?.[1].split(/[,\s]+/) ?? [];
       const positioned = ["absolute", "fixed"].includes(declarations.get("position") ?? "");
@@ -259,9 +251,9 @@ function whatComesFromTheBox(
 }
 
 /**
- * `scale(0)`, `scaleY(0)`, `scale(1, 0)`: schiacciato è invisibile quanto
- * nascosto. E lo stesso vale per `scale: 0`, che è la stessa cosa **fuori** da
- * `transform`: una proprietà per conto suo, con i fattori separati da spazi.
+ * `scale(0)`, `scaleY(0)`, `scale(1, 0)`: flattened is as invisible as hidden.
+ * The same goes for `scale: 0`, which is the same thing **outside** `transform`:
+ * a property of its own, with the factors separated by spaces.
  */
 function flattened(declarations: Map<string, string>): boolean {
   const factors = declarations.get("scale");
@@ -275,11 +267,10 @@ function flattened(declarations: Map<string, string>): boolean {
 }
 
 /**
- * Cosa impedisce di vedere questi elementi. Vuoto vuol dire che si vedono tutti.
- *
- * Un selettore che non trova abbastanza elementi è il primo guasto elencato:
- * cancellare non è un modo di essere visibili, e senza questa riga il controllo
- * sarebbe verde sullo schermo che ha perso tutto.
+ * What stops these elements from being seen. Empty means they all are. A
+ * selector that finds too few is the first fault listed: deleting is not a way
+ * of being visible, and without it the check would be green on a screen that
+ * lost everything.
  */
 function whatHidesThem(
   root: Element,
@@ -315,7 +306,7 @@ function whatHidesThem(
   return [...faults];
 }
 
-/** I gesti della tela vuota, e le targhe della lettura in corso. */
+/** The gestures of the empty canvas, and the plates of the loading state. */
 const GESTURES: Array<[selector: string, atLeast: number]> = [
   [".blank__gestures", 1],
   [".blank__gestures li", 3],
@@ -327,115 +318,74 @@ const SKELETON: Array<[selector: string, atLeast: number]> = [
   [".blank__plate--step", 7],
 ];
 
-/** La finestra si apre su «Adesso»: la lavagna sta dietro un posto da scegliere. */
+/** The window opens on «Adesso»: the board sits behind a place to be chosen. */
 function goToFlows(): void {
   fireEvent.click(screen.getByRole("button", { name: /^Flussi/ }));
 }
 
-/* ═══ 1. L'INQUADRATURA ═════════════════════════════════════════════════════ */
+/* ═══ 1. THE FRAMING ════════════════════════════════════════════════════════ */
 
 /**
- * **LA LAVAGNA NASCEVA CON L'INQUADRATURA MISURATA A ZERO.**
+ * **THE BOARD WAS BORN WITH ITS FRAMING MEASURED AT ZERO.** The window opens on
+ * «Adesso»; the board lives inside `.body[hidden]`; the sheet gives that a
+ * `display: none`; React Flow mounts with `fitView` on a **0×0** box. The two
+ * remaining `fitView` calls fire on `focusName` or `source`, never on «Flussi».
+ * The numbers behind that were measured in a real Chrome — in jsdom nothing has
+ * a size, so none is reproduced here and none is faked; what is guarded is the
+ * rule that produces them.
  *
- * La catena è di quattro anelli, e ognuno è ragionevole da solo: la finestra si
- * apre su «Adesso»; la lavagna sta dentro `.body[hidden]`; il foglio dà a
- * quell'attributo un `display: none`; React Flow monta con `fitView` e misura
- * un riquadro **0×0**. I due `fitView` che restano scattano al cambio di
- * `focusName` o di `source` — **nessuno dei due scatta quando si preme
- * «flussi»**.
+ * **THE REMAINDER IS A DECLARED LIMIT, NOT UNFINISHED WORK.** React Flow's
+ * default `minZoom` is **0.5** while a framing that held everything would want
+ * **0.338**, the canvas being 920px against a `relay` lane of 1040px: the fit
+ * asks below the minimum, gets the minimum, and the rest leaves the box. Leave
+ * `minZoom` alone — seeing every node costs 25px of window, seeing them whole
+ * 264px, and lowering it would change the zoom gesture on every screen for a
+ * strip under an inch. The mitigation is **the minimap**, in each state's colour.
  *
- * Misurato in un Chrome vero, su una porta privata, con la finestra a 1440×900:
- * `nodesOnScreen: 0` su `nodesTotal: 12`, viewport `translate(-448, -158)
- * scale(0.5)`. Quei numeri qui non si possono rifare — in jsdom niente ha una
- * dimensione — e qui non si finge di rifarli: si custodisce la regola che li
- * produce.
- *
- * **DOPO LA RIPARAZIONE SONO 10 SU 12, E DI QUEI DIECI OTTO INTERI** — alla
- * stessa finestra di 1440×900, che è l'unica larghezza a cui questi numeri
- * valgono. Restano fuori dallo schermo i due inneschi `trigger::relay` e
- * `trigger::prima-corsa`, che stanno a `x = −288`; restano tagliati
- * `band::relay` e `relay::send-the-start`, e di quest'ultimo si vedono **6px
- * su 124**.
- *
- * **IL RESIDUO DIPENDE DALLA LARGHEZZA, E SI CHIUDE PRESTO.** Ogni numero qui
- * sotto è la stessa scena a una finestra diversa, misurata in Chromium:
- *
- *     1440 → tela  920, translate(12px, 251px)   send-the-start   6/124   10 su 12
- *     1464 → tela  944, translate(24px, 251px)   send-the-start  18/124   10 su 12
- *     1465 → tela  945                           send-the-start 18,5/124  12 su 12
- *     1704 → tela 1184, translate(144px, 251px)  send-the-start intero    12 su 12, interi
- *
- * **A 1465px i dodici nodi sono tutti a schermo; a 1704px sono tutti interi.**
- * Un numero solo, staccato dalla sua larghezza, racconterebbe un limite fisso
- * dove c'è una soglia — e 18 al posto di 6 lo racconterebbe anche più mite di
- * com'è a 1440.
- *
- * **IL RESIDUO È UN LIMITE DICHIARATO, NON UN LAVORO NON FINITO.** React Flow
- * ha un `minZoom` predefinito di **0,5**; l'inquadratura che terrebbe dentro
- * tutto vorrebbe **0,338** — 0,385 ignorando i due inneschi — perché la tela è
- * larga **920px** e la sola corsia `relay` è **2080 unità, cioè 1040px**. Il
- * fit chiede meno del minimo consentito, ottiene il minimo, e il resto esce dal
- * riquadro. **Ed è preesistente**: il fit rifatto a mano sul codice di prima dà
- * lo stesso transform, byte per byte. Questa riparazione porta l'inquadratura
- * da «mai» a «una volta per comparsa», non da 0,5 a 0,338.
- *
- * **E le soglie dicono di lasciare `minZoom` dov'è.** Costa 25px di finestra
- * vedere tutti i nodi e 264px vederli interi: abbassare il minimo cambierebbe
- * il gesto dello zoom su ogni schermo per recuperare una striscia larga meno di
- * un pollice. La mitigazione resta **la minimappa**, che sulla lavagna fa
- * esattamente questo mestiere: dice dove sta la roba che non si vede, col
- * colore dello stato di ogni passo.
- *
- * **UNA SFUMATURA SUL SECONDO MUTANTE, che questo commento farebbe credere
- * sbagliata.** Togliere la guardia `width === 0` dall'osservatore rende rossa
- * la prova qui sotto, ma **in Chrome non si vede niente**: lì la prima notifica
- * del `ResizeObserver` arriva già con un riquadro misurato, perché l'effetto
- * gira dopo che React ha tolto `hidden`. La guardia è cintura-e-bretelle, e la
- * sua prova è più severa del mondo. Non è un difetto — un'inquadratura su un
- * riquadro nullo è il guasto da cui si viene, e la guardia la vieta per
- * costruzione invece che per fortuna — ma non deve sembrare altro.
- *
- * **E IL DIFETTO NON È DI INQUADRATURA.** Uno schermo vuoto con una barra
- * sicura di sé accanto spiega quel vuoto in modo plausibile e falso: lo stato
- * rotto e lo stato vuoto diventano indistinguibili, che è il difetto peggiore
- * di questa sezione.
+ * **THE TEST BELOW IS STRICTER THAN THE WORLD.** Removing the `width === 0`
+ * guard turns it red, yet in Chrome nothing would show: there the first
+ * `ResizeObserver` notification already arrives with a measured box. The guard
+ * forbids framing a null box by construction instead of by luck. **And the
+ * fault is not one of framing**: an empty screen with a confident bar beside it
+ * explains that emptiness plausibly and falsely, so the broken state and the
+ * empty state become indistinguishable — the worst fault in this section.
  */
-describe("l'inquadratura, quando la lavagna compare", () => {
-  test("PREMERE «FLUSSI» RIFÀ L'INQUADRATURA, appena il riquadro si può misurare", async () => {
+describe("the framing, when the board appears", () => {
+  test("PRESSING «Flussi» REDOES THE FRAMING, as soon as the box can be measured", async () => {
     const { container } = render(<App />);
     await vi.waitUntil(() => spy.ready);
 
-    // La lavagna esiste già, ma dietro un posto che non è il suo: è qui che il
-    // riquadro nasce nullo, ed è la condizione che la riparazione deve reggere.
+    // The board already exists, but behind a place that is not its own: this is
+    // where the box is born null, and the condition the fix has to survive.
     const body = container.querySelector(".body") as HTMLElement;
-    expect(body.hasAttribute("hidden"), "la lavagna non nasce nascosta").toBe(true);
+    expect(body.hasAttribute("hidden"), "the board is not born hidden").toBe(true);
 
     spy.fits.length = 0;
     goToFlows();
-    expect(body.hasAttribute("hidden"), "premere «Flussi» non mostra la lavagna").toBe(false);
+    expect(body.hasAttribute("hidden"), "pressing «Flussi» does not show the board").toBe(false);
 
     const canvas = container.querySelector(".canvas") as HTMLElement;
 
-    // Primo verso: finché il riquadro misura zero non si inquadra niente.
-    // Inquadrare un riquadro nullo è esattamente il difetto da cui si viene.
+    // First direction: while the box measures zero, nothing gets framed. Framing
+    // a null box is exactly the fault we come from.
     expect(
       announce(canvas, 0, 0),
-      "nessuno sta guardando il riquadro della tela: la reinquadratura non può scattare",
+      "nobody is watching the canvas box: the reframing cannot fire",
     ).toBeGreaterThan(0);
-    expect(spy.fits, "si è inquadrato un riquadro nullo").toHaveLength(0);
+    expect(spy.fits, "a null box got framed").toHaveLength(0);
 
-    // Secondo verso: appena il riquadro ha una misura, la vista si rifà.
+    // Second direction: as soon as the box has a size, the view is redone.
     announce(canvas, 1200, 800);
     expect(
       spy.fits.length,
-      "il riquadro è diventato misurabile e nessuno ha rifatto l'inquadratura",
+      "the box became measurable and nobody redid the framing",
     ).toBeGreaterThan(0);
   });
 
-  test("e non si rifà a ogni respiro del riquadro", async () => {
-    // Una reinquadratura a ogni misura riporterebbe la vista al centro mentre
-    // qualcuno ridimensiona la finestra o apre un pannello: il gesto è
-    // «mostrare la lavagna», non «essere larghi».
+  test("and it is not redone on every breath of the box", async () => {
+    // Reframing on every measurement would snap the view back to center while
+    // somebody resizes the window or opens a panel: the gesture is "show the
+    // board", not "be wide".
     const { container } = render(<App />);
     await vi.waitUntil(() => spy.ready);
     goToFlows();
@@ -443,70 +393,58 @@ describe("l'inquadratura, quando la lavagna compare", () => {
 
     announce(canvas, 1200, 800);
     const first = spy.fits.length;
-    // Senza questa riga «non ne aggiunge» sarebbe vero anche per una vista che
-    // non si inquadra mai: il caso da cui viene tutto il difetto.
-    expect(first, "la prima misura non ha inquadrato niente").toBeGreaterThan(0);
+    // Without this line "it adds none" would be true of a view that never frames
+    // at all: the case the whole fault comes from.
+    expect(first, "the first measurement framed nothing").toBeGreaterThan(0);
 
     announce(canvas, 900, 700);
-    expect(spy.fits.length, "ogni cambio di larghezza ricentra la tela").toBe(first);
+    expect(spy.fits.length, "every width change recenters the canvas").toBe(first);
   });
 });
 
-/* ═══ 2. IL PLURALE ═════════════════════════════════════════════════════════ */
+/* ═══ 2. THE PLURAL ═════════════════════════════════════════════════════════ */
 
 /**
- * **«1 PASSI» LO LEGGE UNA PERSONA.** Il numero e il plurale nascevano in due
- * posti diversi — la colonna e l'intestazione della corsia — e tutti e due
- * scrivevano il plurale fisso. Adesso nascono dalla stessa riga.
+ * **A PERSON READS «1 passi».** The number and the plural must be born on the
+ * same line, or the column and the lane header drift apart again.
  */
-describe("un passo solo non è «1 passi»", () => {
-  test("LA COLONNA E LA CORSIA CONTANO IN ITALIANO", () => {
+describe("a single step is not «1 passi»", () => {
+  test("THE COLUMN AND THE LANE COUNT IN ITALIAN", () => {
     const { container } = render(<App />);
     goToFlows();
 
     const read = (selector: string) =>
       Array.from(container.querySelectorAll(selector)).map((node) => (node.textContent ?? "").trim());
 
-    // `prima-corsa` è il flusso d'esempio da un passo solo: senza di lui questa
-    // prova sarebbe verde per non aver incontrato il caso.
+    // `prima-corsa` is the sample flow with a single step: without it this test
+    // would be green for never having met the case.
     const notes = read(".rail__note");
-    expect(notes, "nessun flusso d'esempio ha un passo solo").toContain(stepCountLabel(1));
+    expect(notes, "no sample flow has a single step").toContain(stepCountLabel(1));
     expect(notes).not.toContain("1 passi");
 
     const counts = read(".flow-band__count");
-    expect(counts, "la corsia non conta i suoi passi").toContain(stepCountLabel(1));
+    expect(counts, "the lane does not count its steps").toContain(stepCountLabel(1));
     expect(counts).not.toContain("1 passi");
 
-    // E il plurale resta plurale: «niente 1 passi» sarebbe vero anche per una
-    // riga che scrive sempre «passo».
+    // And the plural stays plural: "no «1 passi»" would be true of a line that
+    // always writes «passo» too.
     expect(notes).toContain(stepCountLabel(7));
   });
 
-  test("la riga che conta sa contare", () => {
+  test("the line that counts knows how to count", () => {
     expect(stepCountLabel(0)).toBe("0 passi");
     expect(stepCountLabel(1)).toBe("1 passo");
     expect(stepCountLabel(7)).toBe("7 passi");
   });
 });
 
-/* ═══ 3. GLI INVITI ═════════════════════════════════════════════════════════ */
+/* ═══ 3. THE INVITATIONS ════════════════════════════════════════════════════ */
 
 /**
- * **DUE INVITI NELLO STESSO SCHERMO SI ANNULLANO.**
- *
- * È la regola che la barra invoca per far sparire sé stessa quando non ci sono
- * flussi, e che lo schermo accanto violava: il pannello destro chiedeva di
- * scegliere «un flusso a sinistra» mentre la barra chiedeva di sceglierne uno
- * «nella colonna» — lo stesso gesto, due nomi diversi per lo stesso posto. E
- * con un flusso già a fuoco, col suo nome scritto in alto, il pannello
- * continuava a invitare a metterlo a fuoco.
- *
- * Qui non si contano le parole: si conta **chi** invita.
- *
- * **E CHI PUÒ INVITARE NON SI SCEGLIE A MANO.** Questo elenco ne teneva fuori
- * la colonna, che invita da sempre col suo «+ Nuovo flusso»: la regola restava
- * verde su uno schermo che la violava, e il difetto che accusa qui sotto al
- * pannello — la stessa funzione con due nomi — stava a mezzo metro da lì.
+ * **TWO INVITATIONS ON THE SAME SCREEN CANCEL EACH OTHER** — the rule the
+ * toolbar invokes to disappear when there are no flows. So the count is of
+ * **who** invites, not of words, and the list is not by hand: it once left out
+ * the column, which invites with «+ Nuovo flusso», and the rule stayed green.
  */
 const OWNERS: Array<[selector: string, name: string]> = [
   [".rail", "la colonna"],
@@ -516,11 +454,9 @@ const OWNERS: Array<[selector: string, name: string]> = [
 ];
 
 /**
- * Un invito chiede un gesto **su un flusso**: con un verbo, o col segno che al
- * verbo fa le veci.
- *
- * Pretendere il verbo lasciava fuori proprio il bottone più invitante dello
- * schermo, «+ Nuovo flusso», che il gesto lo dice con un `+`.
+ * An invitation asks for a gesture **on a flow**: with a verb, or with the sign
+ * that stands in for one. Demanding the verb left out the most inviting button
+ * on the screen, «+ Nuovo flusso», which states the gesture with a `+`.
  */
 function invites(text: string): boolean {
   return /fluss[oi]/i.test(text) && /\+|\b(scegli|crea|creane|nuovo|nuova)\b/i.test(text);
@@ -535,110 +471,102 @@ function whoInvites(container: HTMLElement): string[] {
   return found;
 }
 
-describe("due inviti nello stesso schermo si annullano", () => {
+describe("two invitations on the same screen cancel each other", () => {
   /**
-   * **SULLA LAVAGNA POPOLATA GLI INVITI SONO ANCORA DUE, ed è aperto.** «+
-   * Nuovo flusso» sta nella colonna e nella barra: stessa funzione, due posti.
-   * Chiuderlo vuol dire decidere di chi è quel gesto quando i flussi ci sono, e
-   * quella decisione non è di questa lavorazione. Sta scritto qui perché la
-   * regola non torni verde su uno schermo che la viola: il giorno che il gesto
-   * trova un padrone solo, questa riga diventa rossa e chiede di essere tolta.
+   * **ON THE POPULATED BOARD THE INVITATIONS ARE STILL TWO, and that is open.**
+   * «+ Nuovo flusso» lives in the column and in the toolbar: same function, two
+   * places. Deciding whose gesture it is once flows exist is not this job. The
+   * day it finds a single owner, this line goes red and asks to be removed.
    */
-  test("A RIPOSO IL PANNELLO TACE, e i due che parlano sono la colonna e la barra", () => {
+  test("AT REST THE PANEL IS SILENT, and the two that speak are the column and the toolbar", () => {
     const { container } = render(<App />);
     goToFlows();
 
-    // La scena è quella giusta: ci sono flussi, nessuno è a fuoco, la barra ha
-    // cambiato mestiere. Senza questa riga il conto sarebbe vero anche su uno
-    // schermo dove non parla nessuno.
-    expect(container.querySelector(".toolbar__prompt"), "la barra non sta invitando").not.toBeNull();
+    // The scene is the right one: there are flows, none is focused, the toolbar
+    // has changed job. Without this line the count would be true even on a
+    // screen where nobody speaks.
+    expect(container.querySelector(".toolbar__prompt"), "the toolbar is not inviting").not.toBeNull();
     expect(whoInvites(container)).toEqual(["la colonna", "la barra"]);
   });
 
-  test("CON UN FLUSSO A FUOCO, IL PANNELLO NON INVITA A METTERLO A FUOCO", () => {
+  test("WITH A FLOW FOCUSED, THE PANEL DOES NOT INVITE FOCUSING IT", () => {
     const { container } = render(<App />);
     goToFlows();
     fireEvent.click(container.querySelector("button.rail__item") as HTMLElement);
 
-    // Il flusso è davvero a fuoco, e il suo nome è scritto in alto: è ciò che
-    // rende l'invito una richiesta di fare quello che è già fatto.
+    // The flow really is focused, and its name is written at the top: that is
+    // what makes the invitation a request to do what is already done.
     const focused = container.querySelector(".focusbar__name, .focusbar__name-input");
-    expect(focused, "nessun flusso è a fuoco").not.toBeNull();
+    expect(focused, "no flow is focused").not.toBeNull();
 
     const panel = container.querySelector(".panel__empty") as HTMLElement;
-    expect(panel, "il pannello non dice niente").not.toBeNull();
+    expect(panel, "the panel says nothing").not.toBeNull();
     expect(
       panel.textContent ?? "",
-      "il pannello invita a mettere a fuoco un flusso che è già a fuoco",
+      "the panel invites focusing a flow that is already focused",
     ).not.toMatch(/fluss[oi]/i);
 
-    // E resta il suo mestiere: il passo, che è la cosa che il pannello mostra.
+    // And its job remains: the step, which is what the panel shows.
     expect(panel.textContent ?? "").toMatch(/passo/i);
   });
 
-  test("SULLA TELA VUOTA INVITA LA TELA, non anche la colonna", () => {
-    // **DENTRO `App`, non il solo componente.** Disegnata da sola, `BlankCanvas`
-    // non ha accanto né la colonna né la barra né il pannello: i tre che
-    // potrebbero invitare con lei mancano, e «uno solo» diventa vero per assenza.
+  test("ON THE EMPTY CANVAS THE CANVAS INVITES, not the column too", () => {
+    // **INSIDE `App`, not the component alone.** Rendered on its own,
+    // `BlankCanvas` has no column, toolbar or panel beside it: the three that
+    // could invite along with it are missing, and "only one" is true by absence.
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
 
-    expect(container.querySelector(".blank[data-state='empty']"), "non è la tela vuota").not.toBeNull();
+    expect(container.querySelector(".blank[data-state='empty']"), "this is not the empty canvas").not.toBeNull();
     expect(whoInvites(container)).toEqual(["la tela vuota"]);
   });
 });
 
-/* ═══ 3 bis. LO SCHERMO SENZA FLUSSI, PER INTERO ════════════════════════════ */
+/* ═══ 3 bis. THE SCREEN WITH NO FLOWS, IN FULL ══════════════════════════════ */
 
 /**
- * **UNA PROMESSA SU UNA COSA CHE LÌ NON PUÒ ACCADERE.**
- *
- * Il pannello destro non aveva niente che lo interrogasse su questo schermo,
- * perché la tela vuota si provava da sola. Con zero flussi diceva «i parametri
- * di un passo compaiono qui»: non ci sono passi, non ci sono flussi, e il posto
- * dove comparirebbero non esiste ancora.
- *
- * La minimappa stava peggio: nessuno se ne accorgeva in **nessuno** dei due
- * versi, cioè era essa stessa un «si vede e non dice niente».
+ * **A PROMISE ABOUT SOMETHING THAT CANNOT HAPPEN THERE.** With zero flows the
+ * right panel said a step's parameters appear here: there are no steps and no
+ * flows. The minimap was worse — nothing interrogated it in **either**
+ * direction, so it was itself a thing that is seen and says nothing.
  */
-describe("lo schermo senza flussi, per intero", () => {
-  test("IL PANNELLO TACE A ZERO FLUSSI, e parla appena ce n'è uno", () => {
+describe("the screen with no flows, in full", () => {
+  test("THE PANEL IS SILENT AT ZERO FLOWS, and speaks as soon as there is one", () => {
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
 
-    expect(container.querySelectorAll("button.rail__item"), "la colonna ha ancora dei flussi").toHaveLength(0);
+    expect(container.querySelectorAll("button.rail__item"), "the column still has flows").toHaveLength(0);
     expect(
       container.querySelector(".panel__empty"),
-      "il pannello promette i parametri di un passo su uno schermo senza passi",
+      "the panel promises a step's parameters on a screen with no steps",
     ).toBeNull();
 
-    // Il verso opposto: senza, «tace» sarebbe vero anche per un pannello che
-    // non parla mai, e il suo mestiere sparirebbe insieme al difetto.
+    // The opposite direction: without it, "silent" would be true of a panel that
+    // never speaks, and its job would vanish along with the fault.
     cleanup();
     disk.empty = false;
     const populated = render(<App />);
     goToFlows();
     const panel = populated.container.querySelector(".panel__empty");
-    expect(panel, "il pannello tace anche dove ha qualcosa da dire").not.toBeNull();
+    expect(panel, "the panel is silent even where it has something to say").not.toBeNull();
     expect(panel?.textContent ?? "").toMatch(/passo/i);
   });
 
   /**
-   * **LA TERZA VIA È NON ESSERCI.** Far tacere il contenuto e lasciare in piedi
-   * il contenitore lasciava una striscia di 288×818px — il 20% della finestra —
-   * muta e divisa da un filo: non legge come calma, legge come una parte di
-   * schermo che non ha finito di caricare. Una riga vera sarebbe peggio: era la
-   * promessa su una cosa che lì non può accadere, ed è quella che è stata tolta.
+   * **THE THIRD WAY IS NOT BEING THERE.** Silencing the content and leaving the
+   * container standing left a 288×818px strip — a fifth of the window — mute and
+   * cut off by a hairline: it does not read as calm, it reads as a part of the
+   * screen that has not finished loading.
    */
-  test("LA COLONNA DESTRA SI CHIUDE A ZERO FLUSSI, e la tela si prende la sua larghezza", () => {
+  test("THE RIGHT COLUMN CLOSES AT ZERO FLOWS, and the canvas takes its width", () => {
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
     expect(
       container.querySelectorAll(".panel"),
-      "una striscia muta accanto allo schermo che insegna il primo gesto",
+      "a mute strip beside the screen that teaches the first gesture",
     ).toHaveLength(0);
 
     cleanup();
@@ -647,25 +575,23 @@ describe("lo schermo senza flussi, per intero", () => {
     goToFlows();
     expect(
       populated.container.querySelectorAll(".panel"),
-      "la colonna è sparita anche dove ha i parametri di un passo da mostrare",
+      "the column is gone even where it has a step's parameters to show",
     ).toHaveLength(1);
   });
 
   /**
-   * **ANCHE LA COLONNA SINISTRA SI CHIUDE A ZERO FLUSSI.** Non per simmetria
-   * con la destra: perché il suo «+ Nuovo flusso» e il «Crea il primo flusso»
-   * della scheda sono **la stessa funzione con due nomi**, a mezzo metro. E il
-   * gesto non perde la sua casa, perché i due non convivono mai: al primo clic
-   * il flusso nasce, la scheda se ne va, e la colonna torna col suo bottone
-   * accanto alla cosa appena creata.
+   * **THE LEFT COLUMN CLOSES AT ZERO FLOWS TOO.** Not for symmetry: its
+   * «+ Nuovo flusso» and the card's «Crea il primo flusso» are one function
+   * under two names, half a metre apart. The gesture keeps its home — the two
+   * never coexist: at the first click the flow is born and the column returns.
    */
-  test("LA COLONNA SINISTRA SI CHIUDE A ZERO FLUSSI, e la tela si prende tutta la larghezza", () => {
+  test("THE LEFT COLUMN CLOSES AT ZERO FLOWS, and the canvas takes the full width", () => {
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
     expect(
       container.querySelectorAll(".rail"),
-      "un elenco di niente col suo invito accanto, mentre la scheda offre lo stesso gesto",
+      "a list of nothing with its invitation beside it, while the card offers the same gesture",
     ).toHaveLength(0);
 
     cleanup();
@@ -674,50 +600,49 @@ describe("lo schermo senza flussi, per intero", () => {
     goToFlows();
     expect(
       populated.container.querySelectorAll(".rail"),
-      "la colonna è sparita anche dove ha i flussi da elencare",
+      "the column is gone even where it has flows to list",
     ).toHaveLength(1);
     expect(
       populated.container.querySelector(".rail__new"),
-      "il gesto ha perso la sua casa permanente",
+      "the gesture has lost its permanent home",
     ).not.toBeNull();
   });
 
   /**
-   * **COI SOLI FLUSSI ROTTI LA COLONNA RESTA, E TACE.** La scheda dice che i
-   * file che non si caricano stanno «in fondo alla colonna»: chiudere la
-   * colonna anche qui renderebbe falsa quella riga, che è esattamente il
-   * difetto — nominare un posto che non c'è — da cui viene tutta la schermata.
-   * L'invito però resta uno solo: la colonna mostra, non chiama.
+   * **WITH ONLY BROKEN FLOWS THE COLUMN STAYS, AND IS SILENT.** The card says
+   * files that will not load sit «in fondo alla colonna»: closing the column
+   * here too would make that line false, and naming a place that is not there is
+   * the very fault this whole screen comes from. It shows, it does not call.
    */
-  test("COI SOLI FLUSSI ROTTI LA COLONNA RESTA, e a invitare è ancora la sola tela", () => {
+  test("WITH ONLY BROKEN FLOWS THE COLUMN STAYS, and only the canvas still invites", () => {
     disk.brokenOnly = true;
     const { container } = render(<App />);
     goToFlows();
 
-    expect(container.querySelector(".blank[data-state='empty']"), "non è la tela vuota").not.toBeNull();
+    expect(container.querySelector(".blank[data-state='empty']"), "this is not the empty canvas").not.toBeNull();
     expect(
       container.querySelectorAll(".rail__item[data-broken]"),
-      "il flusso rotto è sparito insieme alla colonna",
+      "the broken flow vanished along with the column",
     ).toHaveLength(1);
 
-    // La riga della scheda nomina la colonna, e la colonna c'è: senza questa
-    // riga «la colonna resta» sarebbe una scelta senza motivo.
+    // The card's line names the column, and the column is there: without this
+    // line "the column stays" would be a choice with no reason.
     expect(container.querySelector(".blank__card")?.textContent ?? "").toMatch(/in fondo alla colonna/i);
     expect(whoInvites(container)).toEqual(["la tela vuota"]);
   });
 
   /**
-   * **QUATTRO BOTTONI CHE INQUADRANO IL NULLA.** È parola per parola «un
-   * riquadro che si vede e non dice niente» — il motivo per cui la minimappa
-   * qui sotto sparisce — applicato ai comandi di React Flow. Il criterio è uno.
+   * **FOUR BUTTONS THAT FRAME NOTHING.** It is word for word "a panel that is
+   * seen and says nothing" — the reason the minimap below disappears — applied
+   * to React Flow's controls. There is one criterion.
    */
-  test("I COMANDI DELLA TELA SPARISCONO COI FLUSSI, e tornano con loro", () => {
+  test("THE CANVAS CONTROLS VANISH WITH THE FLOWS, and come back with them", () => {
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
     expect(
       container.querySelectorAll(".react-flow__controls"),
-      "comandi che ingrandiscono e inquadrano una tela senza niente dentro",
+      "controls that zoom and frame a canvas with nothing in it",
     ).toHaveLength(0);
 
     cleanup();
@@ -726,17 +651,17 @@ describe("lo schermo senza flussi, per intero", () => {
     goToFlows();
     expect(
       populated.container.querySelectorAll(".react-flow__controls"),
-      "i comandi sono spariti anche dalla lavagna, dove comandano qualcosa",
+      "the controls are gone from the board too, where they control something",
     ).toHaveLength(1);
   });
 
-  test("LA MINIMAPPA SPARISCE COI FLUSSI, e torna con loro", () => {
+  test("THE MINIMAP VANISHES WITH THE FLOWS, and comes back with them", () => {
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
     expect(
       container.querySelectorAll(".react-flow__minimap"),
-      "una mappa di niente sullo schermo che insegna il primo gesto",
+      "a map of nothing on the screen that teaches the first gesture",
     ).toHaveLength(0);
 
     cleanup();
@@ -745,116 +670,102 @@ describe("lo schermo senza flussi, per intero", () => {
     goToFlows();
     expect(
       populated.container.querySelectorAll(".react-flow__minimap"),
-      "la minimappa è sparita anche dalla lavagna, dove è la mitigazione del limite dichiarato",
+      "the minimap is gone from the board too, where it mitigates the declared limit",
     ).toHaveLength(1);
   });
 });
 
-/* ═══ 4. I TRE STATI ════════════════════════════════════════════════════════ */
+/* ═══ 4. THE THREE STATES ═══════════════════════════════════════════════════ */
 
-describe("i tre stati della tela senza flussi", () => {
-  test("LA LETTURA IN CORSO È UNA FORMA, non una rotella e non una frase sola", () => {
+describe("the three states of the canvas with no flows", () => {
+  test("LOADING IS A SHAPE, not a spinner and not a single sentence", () => {
     const { container } = render(<BlankCanvas state="loading" brokenCount={0} onCreate={() => {}} />);
 
-    // Uno scheletro dice **cosa sta arrivando**: le corsie e i loro passi, al
-    // posto dove compariranno. Sotto le sei targhe non è più una forma.
+    // A skeleton says **what is coming**: the lanes and their steps, in the
+    // place where they will appear. Below six plates it is no longer a shape.
     expect(
       container.querySelectorAll(".blank__plate").length,
-      "la lettura in corso non ha una forma",
+      "the loading state has no shape",
     ).toBeGreaterThanOrEqual(6);
 
-    // E la forma si vede. Contare elementi nel DOM è il modo esatto in cui
-    // questa prova resterebbe verde su uno scheletro nascosto — e l'attributo
-    // è una porta sola: il foglio è l'altra, e da lì `width: 0` sulle targhe
-    // dei passi lascia due corsie identiche e vuote.
+    // And the shape is seen. Counting DOM elements is exactly how this test
+    // would stay green on a hidden skeleton — and the attribute is one door: the
+    // sheet is the other, and from there `width: 0` on the step plates leaves
+    // two identical, empty lanes.
     const skeleton = container.querySelector(".blank__skeleton") as HTMLElement;
-    expect(skeleton.hidden, "lo scheletro c'è ma nessuno lo vede").toBe(false);
+    expect(skeleton.hidden, "the skeleton is there but nobody sees it").toBe(false);
     expect(
       whatHidesThem(document.documentElement, sheet, SKELETON),
-      "lo scheletro è nel DOM e il foglio lo toglie di mezzo",
+      "the skeleton is in the DOM and the sheet removes it",
     ).toEqual([]);
 
-    // E la parola resta: il divieto 5 non ammette uno stato che si legga solo
-    // dalla forma, come non ne ammette uno che si legga solo dal colore.
+    // And the word stays: prohibition 5 allows no state readable only from the
+    // shape, just as it allows none readable only from the color.
     expect(container.textContent ?? "").toMatch(/motore/i);
 
-    // Uno scheletro non invita: non c'è ancora niente da decidere.
+    // A skeleton does not invite: there is nothing to decide yet.
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 
-  test("LA TELA VUOTA INSEGNA IL PRIMO GESTO, e nomina un posto che esiste", () => {
+  test("THE EMPTY CANVAS TEACHES THE FIRST GESTURE, and names a place that exists", () => {
     let created = 0;
     const { container } = render(
       <BlankCanvas state="empty" brokenCount={0} onCreate={() => (created += 1)} />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Crea il primo flusso/ }));
-    expect(created, "il gesto offerto non fa niente").toBe(1);
+    expect(created, "the offered gesture does nothing").toBe(1);
 
-    // I gesti sono in fila, e sono quelli veri. «La cassetta a sinistra» non
-    // esiste più: la cassetta è una barra in fondo alla tela, e con zero flussi
-    // non c'è affatto — un'istruzione falsa è peggio di nessuna istruzione.
+    // The gestures are in a row, and they are the real ones. The toolbox is a bar
+    // at the bottom of the canvas, not on the left, and with zero flows it is not
+    // there at all — a false instruction is worse than no instruction.
     expect(container.textContent ?? "").not.toMatch(/cassetta a sinistra|colonna a sinistra/i);
     expect(container.querySelectorAll(".blank__gestures li").length).toBeGreaterThanOrEqual(3);
 
-    // E i gesti si vedono: `display: none` sulla loro fila riporta la tela alla
-    // constatazione muta che questo file accusa, senza toccare il conteggio.
+    // And the gestures are seen: `display: none` on their row takes the canvas
+    // back to the mute statement this file accuses, without touching the count.
     expect(
       whatHidesThem(document.documentElement, sheet, GESTURES),
-      "i gesti sono nel DOM e il foglio li toglie di mezzo",
+      "the gestures are in the DOM and the sheet removes them",
     ).toEqual([]);
 
-    // I numeri li disegna il foglio su un elenco senza pallini: senza il ruolo
-    // dichiarato, chi legge con le orecchie perde «elenco di tre».
+    // The sheet draws the numbers on a list with no bullets: without the declared
+    // role, whoever reads with their ears loses "a list of three".
     expect(
       container.querySelector(".blank__gestures")?.getAttribute("role"),
-      "l'elenco dei gesti non si annuncia come elenco",
+      "the gesture list does not announce itself as a list",
     ).toBe("list");
   });
 
   /**
-   * **CHI MISURA VA MISURATO**, e un controllo che promette più di quanto
-   * dimostra è il difetto che questo file accusa nella schermata. Quindi il
-   * titolo dice quante forme vede, e qui sotto stanno per nome quelle che non
-   * vede.
+   * **WHOEVER MEASURES MUST BE MEASURED**, and a check promising more than it
+   * proves is the very fault this file accuses in the screen. So the title says
+   * how many forms it sees, and the ones it does not see are named here.
    *
-   * **LE DIECI CHE VEDE**: cancellato, `display: none`, `visibility: hidden`,
-   * `opacity: 0`, uno scale a zero, una misura a zero, `clip-path`, `clip:
-   * rect(0,0,0,0)` su una scatola posizionata, il corpo del testo a zero, e la
-   * scatola che ritaglia a un'altezza fissa. Le ultime sono entrate dopo, tutte
-   * trovate in un Chrome vero mentre questa batteria restava verde. Quella con
-   * `overflow` non è nemmeno un trucco da avversario — è la riga che qualcuno
-   * scrive per contenere un riquadro, e si porta via il gesto 3 e il bottone
-   * primario insieme.
+   * **THE TEN IT SEES**: deleted, `display: none`, `visibility: hidden`,
+   * `opacity: 0`, a scale at zero, a size at zero, `clip-path`,
+   * `clip: rect(0,0,0,0)` on a positioned box, a font size of zero, and the box
+   * that clips at a fixed height. A scale counts once and holds twice, because
+   * `transform: scale(0)` and `scale: 0` are the same thing written in two
+   * places — the second a property of its own — and in Chromium the three `li`
+   * collapse to 0×0 either way: looking only inside `transform` was an open
+   * door. The one-pixel height with `overflow: hidden` is not a case of its
+   * own; it falls under the clipping box, and the test below shows it.
    *
-   * **LO SCALE SI CONTA UNA VOLTA E VALE DUE VOLTE.** `transform: scale(0)` e
-   * `scale: 0` sono la stessa cosa scritta in due posti — la seconda è una
-   * proprietà per conto suo — e in Chromium i tre `li` collassano a 0×0 in tutti
-   * e due i casi. Guardare solo dentro `transform` era una porta aperta.
-   *
-   * **OTTO DI QUELLE CHE NON VEDE**: `content-visibility: hidden`; `position:
-   * absolute` con un `left` fuori dallo schermo; uno `z-index: -1` sotto un
-   * fratello opaco; `color: transparent`; `text-indent: -9999px`; `filter:
-   * opacity(0)`; `transform: translateX(-9999px)`; `overflow: hidden` con
-   * un'altezza in percentuale. **Otto, non tutte**: questo elenco è un campione,
-   * e l'unico modo di chiuderlo sarebbe rifare un motore di resa.
-   *
-   * **QUELLO CHE MANCA A TUTTE E OTTO È LO STESSO, e non è una regola in più:
-   * è il calcolo del foglio portato fino in fondo.** Dove un elemento finisce,
-   * quanto diventa grande quando la misura è una percentuale, di che colore
-   * risulta dipinto dopo un filtro, chi copre chi. In jsdom niente ha una
-   * posizione, niente ha una dimensione e niente viene dipinto: il posto dove
-   * si vincerebbe è una misura in un Chrome vero, non una riga qui.
-   *
-   * Il candidato che invece **non** sta lì — l'altezza di un pixel con
-   * `overflow: hidden` — cade nella stessa regola della scatola che ritaglia, e
-   * la prova qui sotto lo mostra.
+   * **EIGHT OF THE ONES IT DOES NOT SEE**: `content-visibility: hidden`;
+   * `position: absolute` with an off-screen `left`; `z-index: -1` under an
+   * opaque sibling; `color: transparent`; `text-indent: -9999px`;
+   * `filter: opacity(0)`; `translateX(-9999px)`; `overflow` with a % height.
+   * Eight and not all, a sample: what they lack is one thing, the sheet's
+   * computation carried to the end — where an element lands, how big a
+   * percentage makes it, who covers whom. In jsdom none of that exists, so the
+   * place to win this is a real Chrome and not one more rule here.
    */
-  test("IL CONTROLLO SULLA FORMA VEDE DIECI MODI DI SPARIRE, e otto di quelli che non vede stanno scritti sopra", () => {
+  test("THE SHAPE CHECK SEES TEN WAYS OF VANISHING, and eight it does not see are written above", () => {
     render(<BlankCanvas state="empty" brokenCount={0} onCreate={() => {}} />);
 
-    // Col foglio vero non si lamenta di niente: un controllo che si lamenta
-    // sempre non controlla, e le due prove qui sopra sarebbero verdi per caso.
+    // With the real sheet it complains about nothing: a check that always
+    // complains checks nothing, and the two tests above would be green by luck.
     expect(whatHidesThem(document.documentElement, sheet, GESTURES)).toEqual([]);
 
     const tricks = [
@@ -877,8 +788,8 @@ describe("i tre stati della tela senza flussi", () => {
       expect(whatHidesThem(document.documentElement, doctored, GESTURES), trick).not.toEqual([]);
     }
 
-    // E le otto che restano fuori restano fuori **davvero**: se una diventasse
-    // rossa, l'elenco qui sopra direbbe il falso nell'altro verso.
+    // And the eight left out really do stay out: if one went red, the list above
+    // would be lying in the other direction.
     const blind = [
       ".blank__gestures { content-visibility: hidden }",
       ".blank__gestures { position: absolute; left: -9999px }",
@@ -894,53 +805,51 @@ describe("i tre stati della tela senza flussi", () => {
       expect(whatHidesThem(document.documentElement, doctored, GESTURES), spot).toEqual([]);
     }
 
-    // E cancellare non è un modo di essere visibili: su uno schermo che i gesti
-    // non li ha affatto il foglio è innocente, e il controllo lo dice lo stesso.
+    // And deleting is not a way of being visible: on a screen that has no
+    // gestures at all the sheet is innocent, and the check says so anyway.
     cleanup();
     render(<BlankCanvas state="loading" brokenCount={0} onCreate={() => {}} />);
     expect(whatHidesThem(document.documentElement, sheet, GESTURES)).not.toEqual([]);
   });
 
-  test("UN FLUSSO CHE NON SI CARICA PORTA IL MOTIVO, parola per parola", () => {
-    // La promessa già mantenuta, che però nessuno interrogava: bastava
-    // riassumere il motivo, o toglierlo, e la batteria restava verde.
+  test("A FLOW THAT WILL NOT LOAD CARRIES THE REASON, word for word", () => {
+    // A promise already kept, but nothing interrogated it: summarising the
+    // reason, or dropping it, left the suite green.
     const broken = SAMPLE.find((entry) => entry.state === "broken");
-    expect(broken, "i dati d'esempio non hanno più un flusso rotto").toBeDefined();
+    expect(broken, "the sample data no longer has a broken flow").toBeDefined();
     const reason = broken?.state === "broken" ? broken.broken.reason : "";
 
     const { container } = render(<App />);
     goToFlows();
 
     const marked = container.querySelector(".rail__item[data-broken]") as HTMLElement;
-    expect(marked, "il flusso rotto è sparito dalla colonna invece di restare marcato").not.toBeNull();
+    expect(marked, "the broken flow vanished from the column instead of staying marked").not.toBeNull();
     expect(marked.textContent ?? "").toContain(reason);
   });
 
   /**
-   * **DUE SCHERMATE NUOVE, DUE SCENE NUOVE DA MISURARE.**
-   *
-   * Il divieto 6 vive in `contrast.test.tsx`, e le sue tre scene sono tutte
-   * popolate: la tela vuota e la lettura in corso non ne attraversavano
-   * nessuna. Disegnarle e non misurarle sarebbe stato riaprire il buco che
-   * quel file è nato per chiudere.
+   * **TWO NEW SCREENS, TWO NEW SCENES TO MEASURE.** Prohibition 6 lives in
+   * `contrast.test.tsx`, and its three scenes are all populated: the empty
+   * canvas and the loading state crossed none of them. Drawing them without
+   * measuring them would reopen the hole that file was born to close.
    */
-  test("LE DUE SCHERMATE NUOVE NON PORTANO NESSUNA ACCOPPIATA SOTTO 4,5:1", () => {
-    // Ogni scena dichiara quante accoppiate si aspetta di aver trovato: chi
-    // misura va misurato, e una scena che non trova niente passerebbe per il
-    // motivo sbagliato. La lettura in corso ne ha poche di proposito — è una
-    // forma, e la sua unica parola sta in fondo.
+  test("THE TWO NEW SCREENS BRING NO PAIR BELOW 4.5:1", () => {
+    // Each scene declares how many pairs it expects to find: whoever measures
+    // must be measured, and a scene that finds nothing would pass for the wrong
+    // reason. The loading state has few on purpose — it is a shape, and its only
+    // word sits at the bottom.
     for (const [state, atLeast] of [["empty", 6], ["loading", 3]] as const) {
       cleanup();
       render(<BlankCanvas state={state} brokenCount={2} onCreate={() => {}} />);
       const pairs = contrastPairs(document.documentElement, sheet);
-      expect(pairs.length, `«${state}» non ha abbastanza testo da misurare`).toBeGreaterThanOrEqual(atLeast);
-      expect(belowThreshold(pairs), `accoppiate sotto soglia in «${state}»`).toEqual([]);
+      expect(pairs.length, `«${state}» has not enough text to measure`).toBeGreaterThanOrEqual(atLeast);
+      expect(belowThreshold(pairs), `pairs below threshold in «${state}»`).toEqual([]);
     }
   });
 
-  test("e il motore muto non offre un gesto che non si potrebbe mantenere", () => {
-    // Un flusso creato mentre il motore tace non si potrebbe salvare: offrirlo
-    // sarebbe una promessa che nessuno può mantenere.
+  test("and a mute engine offers no gesture it could not honour", () => {
+    // A flow created while the engine is silent could not be saved: offering it
+    // would be a promise nobody can keep.
     const { container } = render(
       <BlankCanvas state="failed" failure="il motore non risponde" brokenCount={0} onCreate={() => {}} />,
     );
