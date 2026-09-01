@@ -58,8 +58,8 @@ fn report(found: &[Remaining]) -> String {
         return "no quota window declared: the channel answered with no measurements".to_owned();
     }
     let mut lines = vec![
-        "quota della PERSONA, non di una corsa: conta ogni sessione, anche quelle \
-         fuori da Sailor"
+        "the PERSON's quota, not a run's: it counts every session, including the \
+         ones outside Sailor"
             .to_owned(),
     ];
     for entry in found {
@@ -68,7 +68,7 @@ fn report(found: &[Remaining]) -> String {
             None => String::new(),
         };
         lines.push(format!(
-            "{} · {}: consumato {:.1}%{resets}",
+            "{} · {}: used {:.1}%{resets}",
             entry.engine,
             entry.unit,
             entry.used_fraction * 100.0
@@ -117,8 +117,8 @@ mod tests {
         let said = report(&[a_window("seven_day", 0.32, None)]);
         let first = said.lines().next().expect("almeno una riga");
         assert!(
-            first.contains("PERSONA") && first.contains("non di una corsa"),
-            "l'avvertenza sta in cima, non in fondo: {said}"
+            first.contains("PERSON") && first.contains("not a run"),
+            "the warning goes at the top, not the bottom: {said}"
         );
     }
 
@@ -129,7 +129,7 @@ mod tests {
             a_window("seven_day", 0.32, None),
         ]);
         assert!(
-            said.contains("claude-code · five_hour: consumato 50.0%"),
+            said.contains("claude-code · five_hour: used 50.0%"),
             "{said}"
         );
         assert!(
@@ -137,12 +137,12 @@ mod tests {
             "{said}"
         );
         assert!(
-            said.contains("claude-code · seven_day: consumato 32.0%"),
+            said.contains("claude-code · seven_day: used 32.0%"),
             "{said}"
         );
         assert!(
-            !said.contains("seven_day: consumato 32.0%, si azzera"),
-            "un istante che il fornitore non dice non si inventa: {said}"
+            !said.contains("seven_day: used 32.0%, resets"),
+            "an instant the provider does not give is not invented: {said}"
         );
     }
 

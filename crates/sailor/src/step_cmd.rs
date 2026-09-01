@@ -413,7 +413,7 @@ fn close_step_in(
         .map_err(|error| format!("cannot record who closed {step_id}: {error}"))?;
 
     let mut report = format!(
-        "passo {step_id} chiuso da «{holder}» come {}",
+        "step {step_id} closed by «{holder}» as {}",
         match outcome {
             Outcome::Went => "andato",
             _ => "rotto",
@@ -882,7 +882,7 @@ mod tests {
             ]),
         )
         .expect("l'uscita dichiarata si accetta");
-        assert!(report.contains("chiuso"), "{report}");
+        assert!(report.contains("closed"), "{report}");
 
         let spent = ledger.spent_in_run("run-1").expect("la spesa si chiede");
         assert_eq!(spent.calls, 1, "i turni dichiarati scrivono una chiamata");

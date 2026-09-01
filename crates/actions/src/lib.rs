@@ -354,8 +354,8 @@ fn drain_and_wait_paced(
     sink: Option<&dyn LiveSink>,
     pause: &mut dyn FnMut(Duration),
 ) -> RunOutcome {
-    let mut out_pipe = stdout.expect("stdout è piped");
-    let mut err_pipe = stderr.expect("stderr è piped");
+    let mut out_pipe = stdout.expect("stdout is piped");
+    let mut err_pipe = stderr.expect("stderr is piped");
     // `scope` e non `spawn`: i fili prendono in prestito il destinatario, che
     // vive nello stack di chi ha chiamato. Con fili staccati l'API pretenderebbe
     // un `'static` — cioè un `Arc` — da chiunque voglia guardare, compresa una
@@ -1340,7 +1340,7 @@ fn what_it_said(stdout: &str, stderr: &str) -> String {
 /// confonderli manda a cercare un guasto nel posto sbagliato.
 fn how_it_exited(code: Option<i32>) -> String {
     match code {
-        Some(code) => format!("è uscito con codice {code}"),
+        Some(code) => format!("it exited with code {code}"),
         None => "it was killed by a signal".to_owned(),
     }
 }
@@ -2034,7 +2034,7 @@ fn session_plan(
                 &candidate.session.resume
             };
             let Some(line) = line else {
-                say_it_starts_over(live, named, &format!("non sa {}", asked.word()));
+                say_it_starts_over(live, named, &format!("cannot {}", asked.word()));
                 return SessionPlan::from_scratch();
             };
             // Senza identificativo di strumento non c'è nessun motore a cui
@@ -2547,7 +2547,7 @@ impl ExternalEngineAction {
             if !set_aside.is_empty() {
                 live.chunk(
                     Pipe::Stderr,
-                    format!("[sailor] passo al motore «{id}»\n").as_bytes(),
+                    format!("[sailor] moving on to engine «{id}»\n").as_bytes(),
                 );
             }
         }
@@ -2715,7 +2715,7 @@ impl ExternalEngineAction {
                     let chain = if set_aside.is_empty() {
                         String::new()
                     } else {
-                        format!(" (prima: {})", each_one_why(set_aside))
+                        format!(" (before: {})", each_one_why(set_aside))
                     };
                     return Err(ActionError::new(
                         "engine_exit_error",
@@ -3024,7 +3024,7 @@ impl Action for ShellCheckAction {
                     return Err(ActionError::new(
                         "check_failed",
                         format!(
-                            "la verifica `{command}` {}; {}",
+                            "the check `{command}` {}; {}",
                             how_it_exited(code),
                             what_it_said("", &stderr)
                         ),
@@ -3774,7 +3774,7 @@ mod tests {
             .expect_err("un motore uscito in errore rompe il passo");
 
         assert_eq!(error.class, "engine_exit_error");
-        assert!(error.said.contains("codice 3"), "{}", error.said);
+        assert!(error.said.contains("code 3"), "{}", error.said);
         assert!(error.said.contains("dettaglio-che-serve"), "{}", error.said);
     }
 
@@ -4652,7 +4652,7 @@ mod tests {
             .execute(&strict, &mut SharedState::new())
             .expect_err("una verifica fallita è un passo rotto");
         assert_eq!(error.class, "check_failed");
-        assert!(error.said.contains("codice 2"), "{}", error.said);
+        assert!(error.said.contains("code 2"), "{}", error.said);
         assert!(error.said.contains("perche"), "{}", error.said);
 
         let tolerant = json!({

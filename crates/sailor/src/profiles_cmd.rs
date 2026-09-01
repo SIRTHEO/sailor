@@ -75,7 +75,7 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
             Err(reason) => format!("not known ({reason})"),
         };
         println!(
-            "{marker} {} {} -> {} — accesso: {access}",
+            "{marker} {} {} -> {} — access: {access}",
             profile.cli_id,
             profile.name,
             profile.home_dir.display()
@@ -104,8 +104,8 @@ fn access_state(
     };
     let Some(recipe) = tools.login_recipe(&tool) else {
         return format!(
-            "non si sa: il descrittore «{tool}» non dichiara come chiedergli se è \
-             autenticato (`login_status`) — nessuno ha guardato"
+            "not known: descriptor «{tool}» does not declare how to ask it whether it \
+             is authenticated (`login_status`) — nobody looked"
         );
     };
     // **LA CASA DI QUESTO PROFILO, NON QUELLA IN FORZA.** È tutta la ragione per
@@ -115,13 +115,13 @@ fn access_state(
     let env = profiles::build_environment(cli, home);
     if env.is_empty() {
         return format!(
-            "non si sa: la casa di «{}» non si sposta con una variabile ({}), quindi \
-             qui non si può interrogare una casa diversa da quella in forza",
+            "not known: the home of «{}» does not move with a variable ({}), so no \
+             home other than the one in force can be questioned here",
             cli.id, cli.home_note
         );
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
-        LoginVerdict::LoggedIn { said } => format!("autenticato («{}»)", one_line(&said)),
+        LoginVerdict::LoggedIn { said } => format!("authenticated («{}»)", one_line(&said)),
         LoginVerdict::LoggedOut { said } => {
             format!("NOT AUTHENTICATED («{}»)", one_line(&said))
         }
@@ -129,8 +129,8 @@ fn access_state(
             format!("not known: descriptor «{tool}» declares `login_status` by halves")
         }
         LoginVerdict::Unrecognised { said } => format!(
-            "non si sa: ha risposto «{}», che non somiglia a nessuna delle due forme \
-             dichiarate",
+            "not known: it answered «{}», which resembles neither of the two declared \
+             forms",
             one_line(&said)
         ),
         LoginVerdict::NoAnswer { why } => format!("not known: no answer — {why}"),
@@ -200,7 +200,7 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
     let store = store_io::load_store()?;
     match store.active.get(cli.id) {
         Some(name) => println!("{name}"),
-        None => println!("(nessun profilo attivo)"),
+        None => println!("(no active profile)"),
     }
     Ok(())
 }
@@ -315,8 +315,8 @@ mod tests {
         std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
         let said = access_state(&tools, &probe, cli, &full);
         assert!(
-            said.starts_with("autenticato"),
-            "una casa piena deve risultare piena: {said}"
+            said.starts_with("authenticated"),
+            "a full home has to read as full: {said}"
         );
     }
 
@@ -339,13 +339,13 @@ mod tests {
         // sarebbe un controllo che non può che essere rosso, cioè non un
         // controllo.
         assert!(
-            said.starts_with("non si sa"),
-            "un'assenza si dichiara, e si dichiara per prima: {said}"
+            said.starts_with("not known"),
+            "an absence is declared, and declared first: {said}"
         );
         assert!(
-            said.contains("nessuno ha guardato"),
-            "e dice anche perché, o chi legge non sa se rimediare cambiando \
-             profilo o misurando il motore: {said}"
+            said.contains("nobody looked"),
+            "and it says why, or the reader cannot tell whether to fix it by changing \
+             profile or by measuring the engine: {said}"
         );
     }
 }

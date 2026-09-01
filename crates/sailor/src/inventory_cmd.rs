@@ -31,14 +31,14 @@ pub fn run(args: &[String]) -> i32 {
                 match parse_kind(raw) {
                     Some(k) => only = Some(k),
                     None => {
-                        eprintln!("--kind sconosciuto: {raw}");
+                        eprintln!("unknown --kind: {raw}");
                         print_usage();
                         return 2;
                     }
                 }
             }
             other => {
-                eprintln!("opzione sconosciuta: {other}");
+                eprintln!("unknown option: {other}");
                 print_usage();
                 return 2;
             }
@@ -129,7 +129,7 @@ fn deposit(found: &Inventory) -> Result<String, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
-        .map_err(|error| format!("l'orologio è indietro rispetto all'epoca: {error}"))?;
+        .map_err(|error| format!("the clock is behind the epoch: {error}"))?;
     let items = found
         .entries
         .iter()

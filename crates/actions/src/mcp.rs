@@ -673,7 +673,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         (
             "check_failed",
             format!(
-                "{refused} verifiche preliminari su {} dicono di no",
+                "{refused} preliminary checks out of {} say no",
                 checks.len()
             ),
         )
