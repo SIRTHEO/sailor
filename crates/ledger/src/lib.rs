@@ -18,6 +18,10 @@ use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
+pub mod identity;
+
+pub use identity::EngineIdentity;
+
 const STATE_FILE: &str = "state.db";
 const EVENTS_FILE: &str = "events.db";
 
@@ -122,7 +126,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// prova nasce dal `CREATE TABLE` completo e non passa mai dalla migrazione. Si
 /// vede solo su una macchina che Sailor l'aveva già usato — cioè su quella di
 /// chi lo sviluppa, il giorno dopo.
-const PROJECTION_SCHEMA_VERSION: i64 = 7;
+const PROJECTION_SCHEMA_VERSION: i64 = 8;
 
 #[derive(Debug)]
 pub enum LedgerError {
@@ -320,29 +324,29 @@ pub struct ModelCallRecord {
     pub cache_write_price_micros_per_million: Option<i64>,
     #[serde(default)]
     pub cache_write_long_price_micros_per_million: Option<i64>,
-    /// **LA DOTAZIONE SOTTO CUI QUESTA CHIAMATA È GIRATA**, nella forma
-    /// `<riga di comando>/<profilo>`. Vuoto quando nessun profilo era in forza,
-    /// ed è un'informazione anche quello.
+    /// **CON QUALE IDENTITÀ IL PROCESSO DI QUESTA CHIAMATA È PARTITO**: quale
+    /// casa, e come è stata scelta. Le forme stanno in [`EngineIdentity`].
     ///
-    /// **PERCHÉ SERVE.** Senza, due corse dello stesso flusso non sono la stessa
-    /// misura: la stessa catena di passi, sotto due profili, dà due consumi
-    /// diversi per una ragione che la riga non porta. Fino al 01/09/2026 questa
-    /// colonna la scriveva vuota **ogni** chiamata — è il guasto 18, dove la
-    /// dotazione di Sailor non arrivava ai motori e nessuno poteva accorgersene
-    /// leggendo il deposito.
+    /// **PERCHÉ SERVE.** «Se un processo AI si avvia deve esserci un profilo
+    /// associato»: senza, due corse dello stesso flusso non sono la stessa
+    /// misura, e nessuna diagnostica può dire con quali credenziali un processo
+    /// ha girato. Fino al 01/09/2026 qui c'erano due colonne di testo,
+    /// `mandate_name` e `mandate_version`, nate per una tabella
+    /// `current_mandate` che non esiste più: la prima teneva un profilo sotto un
+    /// nome che parlava d'altro, la seconda era vuota per costruzione.
     ///
-    /// **IL NOME DELLA COLONNA È DEBITO DICHIARATO, NON UNA SCELTA.** `mandate`
-    /// viene da una tabella `current_mandate` che non esiste più; qui dentro sta
-    /// un profilo, quindi il nome dice una cosa e il contenuto un'altra.
-    /// Rinominarla è una migrazione del deposito e un cambio in
-    /// `ui::parse::parse_model_call_row`, che legge per **posizione**: sta al
-    /// proprietario, e sta scritto qui perché non si perda in un commit.
-    pub mandate_name: String,
-    /// **SEMPRE VUOTA, E NON PER DIMENTICANZA.** Un profilo non ha una versione:
-    /// riempirla con la data o con un contatore sarebbe inventare un dato con la
-    /// faccia di una misura. Resta perché il deposito la porta già, e toglierla
-    /// costerebbe una migrazione a nessun beneficio.
-    pub mandate_version: String,
+    /// **E LA PRIMA SAPEVA MENTIRE.** Nominava il profilo attivo anche quando il
+    /// passo aveva scritto da sé la variabile di casa e il motore era partito
+    /// altrove — cioè proprio nel caso in cui l'identità era stata cambiata
+    /// apposta. Adesso quel caso ha una forma sua,
+    /// [`EngineIdentity::ChosenByTheStep`], e porta il percorso vero.
+    ///
+    /// **`#[serde(default)]` NON È PIGRIZIA.** Gli eventi scritti prima di oggi
+    /// questo campo non ce l'hanno, e il registro degli eventi è l'unica cosa da
+    /// cui tutto il resto si ricostruisce: senza il ripiego, aggiornare Sailor
+    /// renderebbe illeggibile ciò che è già scritto.
+    #[serde(default)]
+    pub engine_identity: EngineIdentity,
     pub retry_chain: Vec<String>,
     pub error_type: Option<String>,
     pub started_at: i64,
@@ -1811,8 +1815,7 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              input_price_micros_per_million INTEGER,
              output_price_micros_per_million INTEGER,
              cached_price_micros_per_million INTEGER,
-             mandate_name TEXT NOT NULL,
-             mandate_version TEXT NOT NULL,
+             engine_identity TEXT NOT NULL,
              retry_chain TEXT NOT NULL,
              error_type TEXT,
              started_at INTEGER NOT NULL,
@@ -1960,6 +1963,32 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
     // racconta, ed è costato una mattina il 30/08/2026).
     if !column_exists(transaction, "model_calls", "session_id")? {
         transaction.execute("ALTER TABLE model_calls ADD COLUMN session_id TEXT", [])?;
+    }
+    // versione 8: l'identità con cui il processo è partito, al posto delle due
+    // colonne che venivano da una tabella `current_mandate` che non esiste più.
+    //
+    // **UN RINOMINO E NON UNA COLONNA IN CODA, E IL POSTO È IL PUNTO.** Chi legge
+    // la proiezione la legge **per posizione**: `mandate_name` stava alla
+    // sedicesima, e `engine_identity` deve stare lì. Aggiungerla in fondo e
+    // lasciare la vecchia darebbe due colonne che dicono la stessa cosa in due
+    // modi, cioè la prossima divergenza silenziosa.
+    //
+    // Il testo già scritto resta dov'è: si rilegge come
+    // `EngineIdentity::Unrecorded`, che è la sola cosa vera che si possa dire di
+    // una riga scritta quando quel campo sapeva ancora mentire.
+    if column_exists(transaction, "model_calls", "mandate_name")?
+        && !column_exists(transaction, "model_calls", "engine_identity")?
+    {
+        transaction.execute(
+            "ALTER TABLE model_calls RENAME COLUMN mandate_name TO engine_identity",
+            [],
+        )?;
+    }
+    // E `mandate_version` se ne va: era vuota per costruzione — un profilo non ha
+    // una versione — e una colonna sempre vuota è il vuoto che questo lavoro
+    // esiste per togliere.
+    if column_exists(transaction, "model_calls", "mandate_version")? {
+        transaction.execute("ALTER TABLE model_calls DROP COLUMN mandate_version", [])?;
     }
     Ok(())
 }
@@ -2488,14 +2517,14 @@ fn project_model_call(
              call_id, run_id, step_id, purpose, cli, requested_model, actual_model,
              input_tokens, output_tokens, cached_tokens, cost_micros, price_currency,
              input_price_micros_per_million, output_price_micros_per_million,
-             cached_price_micros_per_million, mandate_name, mandate_version,
+             cached_price_micros_per_million, engine_identity,
              retry_chain, error_type, started_at, ended_at, total_tokens,
              declared_cost_micros, cache_write_tokens, cache_write_long_tokens,
              cache_write_price_micros_per_million,
              cache_write_long_price_micros_per_million, turns, session_id)
          VALUES
          (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29)
+          ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)
          ON CONFLICT(call_id) DO UPDATE SET
           run_id=excluded.run_id, step_id=excluded.step_id,
           purpose=excluded.purpose, cli=excluded.cli,
@@ -2506,7 +2535,7 @@ fn project_model_call(
           input_price_micros_per_million=excluded.input_price_micros_per_million,
           output_price_micros_per_million=excluded.output_price_micros_per_million,
           cached_price_micros_per_million=excluded.cached_price_micros_per_million,
-          mandate_name=excluded.mandate_name, mandate_version=excluded.mandate_version,
+          engine_identity=excluded.engine_identity,
           retry_chain=excluded.retry_chain, error_type=excluded.error_type,
           started_at=excluded.started_at, ended_at=excluded.ended_at,
           total_tokens=excluded.total_tokens,
@@ -2535,8 +2564,7 @@ fn project_model_call(
             record.input_price_micros_per_million,
             record.output_price_micros_per_million,
             record.cached_price_micros_per_million,
-            record.mandate_name,
-            record.mandate_version,
+            record.engine_identity.to_column(),
             serde_json::to_string(&record.retry_chain)?,
             record.error_type,
             record.started_at,
@@ -2839,6 +2867,17 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
     }
 }
 
+/// Le colonne di `model_calls` nell'ordine in cui il dump le mette, e **nomi**
+/// invece di posizioni.
+///
+/// **PERCHÉ È PUBBLICA.** Chi legge il dump lo legge per posizione: `ui::parse`
+/// da una parte, e — finché è esistita — una seconda copia dentro `actions`.
+/// Due copie che sbagliassero insieme si sarebbero confermate a vicenda, e
+/// nessuna prova l'avrebbe visto. Questo elenco è l'ancora fuori da tutte e due:
+/// chi legge per posizione ci si può misurare contro, e una colonna spostata
+/// diventa rossa qui invece di far comparire un prezzo al posto di un token.
+pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id";
+
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
@@ -2847,7 +2886,7 @@ fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError
         // disordine: chi legge questo dump lo fa per posizione, e infilarle in
         // mezzo sposterebbe ogni indice a valle senza che niente se ne accorga
         // finché un token non compare al posto di un prezzo.
-        "model_calls" => "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,mandate_name,mandate_version,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id",
+        "model_calls" => MODEL_CALL_DUMP_COLUMNS,
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),
     };

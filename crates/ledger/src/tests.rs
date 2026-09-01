@@ -102,8 +102,11 @@ fn sample_all(ledger: &Ledger) {
             cached_price_micros_per_million: Some(10),
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: "repair".to_owned(),
-            mandate_version: "v3".to_owned(),
+            engine_identity: EngineIdentity::ProfileInForce {
+                cli_id: "codex".to_owned(),
+                profile_name: "lavoro".to_owned(),
+                home_dir: PathBuf::from("/case/codex/lavoro"),
+            },
             retry_chain: vec!["call-0".to_owned()],
             error_type: Some("rate_limit".to_owned()),
             started_at: 101,
@@ -1527,8 +1530,7 @@ fn call_with(call_id: &str, tokens: Option<u64>, cost: Option<i64>) -> ModelCall
         cached_price_micros_per_million: None,
         cache_write_price_micros_per_million: None,
         cache_write_long_price_micros_per_million: None,
-        mandate_name: String::new(),
-        mandate_version: String::new(),
+        engine_identity: EngineIdentity::default(),
         retry_chain: vec![],
         error_type: None,
         started_at: 100,
@@ -1578,8 +1580,8 @@ fn the_total_and_the_declared_cost_reach_the_projection() {
 
     let dump = ledger.projection_dump().expect("leggere la proiezione");
     let row = &dump["model_calls"][0];
-    assert_eq!(row[21], json!("13910"), "total_tokens");
-    assert_eq!(row[22], json!(4_200), "declared_cost_micros");
+    assert_eq!(row[20], json!("13910"), "total_tokens");
+    assert_eq!(row[21], json!(4_200), "declared_cost_micros");
 }
 
 /// **UN DEPOSITO GIÀ SCRITTO SI ADEGUA SENZA PERDERE UNA RIGA.** La tabella
@@ -1638,7 +1640,13 @@ fn an_older_ledger_is_migrated_in_place_without_losing_its_rows() {
     assert_eq!(rows.len(), 1, "la riga di prima è ancora lì");
     assert_eq!(rows[0][0], json!("vecchia"));
     assert_eq!(rows[0][7], json!("10"), "e coi suoi valori intatti");
-    assert_eq!(rows[0][21], Value::Null, "le colonne nuove nascono ignote");
+    assert_eq!(rows[0][20], Value::Null, "le colonne nuove nascono ignote");
+    // **E IL TESTO DELLA VECCHIA COLONNA NON SI PERDE E NON SI PROMUOVE.** Era
+    // `repair` sotto il nome `mandate_name`; adesso sta sotto
+    // `engine_identity`, e si rilegge come «non registrata, la colonna diceva
+    // così». Riscriverlo come un profilo dichiarato darebbe a un dato che sapeva
+    // già mentire la faccia di una misura.
+    assert_eq!(rows[0][15], json!("repair"));
 
     // E adesso accetta ciò che prima avrebbe rifiutato.
     ledger
@@ -1673,6 +1681,17 @@ fn an_event_written_in_the_old_shape_still_deserialises() {
     assert_eq!(record.price_currency.as_deref(), Some("USD"));
     assert_eq!(record.total_tokens, None, "un campo che non c'era è ignoto");
     assert_eq!(record.declared_cost_micros, None);
+    // **E L'IDENTITÀ NON SI INVENTA DA UN EVENTO CHE NON LA PORTA.** Quell'evento
+    // ha `mandate_name: "repair"`, che era il campo di prima: leggerlo come un
+    // profilo dichiarato darebbe a una riga vecchia un'affermazione che nessuno
+    // ha mai fatto.
+    assert_eq!(
+        record.engine_identity,
+        EngineIdentity::Unrecorded {
+            legacy: String::new()
+        },
+        "un evento scritto prima non porta l'identità, e non se ne deduce una"
+    );
 }
 
 // ── quanto ha speso una corsa ────────────────────────────────────────────
@@ -1885,7 +1904,7 @@ fn a_ledger_that_claims_to_be_current_but_lacks_the_new_columns_is_still_migrate
     assert_eq!(rows.len(), 1, "la riga di ieri è ancora lì");
     assert_eq!(rows[0][0], json!("di-ieri"));
     assert_eq!(rows[0][7], json!("10"), "coi suoi valori intatti");
-    assert_eq!(rows[0][23], Value::Null, "e le colonne nuove nascono ignote");
+    assert_eq!(rows[0][22], Value::Null, "e le colonne nuove nascono ignote");
 
     // E la somma della spesa, che è ciò che il comando `flow cost` chiede,
     // adesso si può fare: prima era la query che falliva.
@@ -1992,7 +2011,42 @@ fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
     {
         let ledger = Ledger::open(&old_dir.0).expect("aprire il deposito");
         let connection = ledger.connection.lock().expect("nessuno panica qui");
-        for column in expected.iter().filter(|name| !AS_OF_VERSION_3.contains(&name.as_str())) {
+        // **LA VERSIONE 3 CHIAMAVA QUELLA COLONNA IN UN ALTRO MODO, E NE AVEVA
+        // UNA IN PIÙ.** Togliere colonne non basta più a ricostruirla: la
+        // versione 8 ha rinominato `mandate_name` in `engine_identity` e ha
+        // buttato `mandate_version`. Se questa prova partisse dalla forma nuova
+        // e si limitasse a togliere, proverebbe una migrazione che non esiste.
+        connection
+            .execute(
+                "ALTER TABLE model_calls RENAME COLUMN engine_identity TO mandate_name",
+                [],
+            )
+            .expect("rimettere il nome che la versione 3 usava");
+        connection
+            .execute(
+                "ALTER TABLE model_calls ADD COLUMN mandate_version TEXT NOT NULL DEFAULT ''",
+                [],
+            )
+            .expect("e la colonna che la versione 3 aveva in più");
+        // Si guardano le colonne **di adesso**, non quelle della forma nuova:
+        // dopo il rinomino le due liste non coincidono più. La domanda passa da
+        // questa connessione, che è già in mano: `columns` ne prenderebbe una
+        // seconda sullo stesso lucchetto, e quel lucchetto non è rientrante.
+        let now: Vec<String> = {
+            let mut statement = connection
+                .prepare("SELECT name FROM pragma_table_info('model_calls') ORDER BY cid")
+                .expect("interrogare la forma di adesso");
+            let names = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("leggere i nomi")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("nomi validi");
+            names
+        };
+        for column in now
+            .iter()
+            .filter(|name| !AS_OF_VERSION_3.contains(&name.as_str()))
+        {
             connection
                 .execute(&format!("ALTER TABLE model_calls DROP COLUMN {column}"), [])
                 .unwrap_or_else(|error| panic!("togliere {column}: {error}"));

@@ -202,6 +202,75 @@ pub struct Ask {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// Come si chiede a un motore **se la casa da cui parte è autenticata**.
+///
+/// **PERCHÉ NON SI GUARDA IL DISCO.** Un controllo che cercasse `auth.json`
+/// sarebbe una seconda copia della verità: da riscrivere per ogni motore, e da
+/// tenere allineata a mano mentre i motori cambiano dove mettono le proprie
+/// cose. Chi sa rispondere è il motore. Qui si dichiara soltanto **come si
+/// chiede** e **con quali parole risponde**, che è la disciplina già seguita da
+/// `unusable_when` e da `refuses_without_prompt`.
+///
+/// **PERCHÉ NON BASTA IL VAGLIO A SECCO, ED È IL GUASTO 39.** `flow check` prova
+/// la riga **senza la domanda**: il motore si ferma su «non mi hai dato niente
+/// da fare» e non arriva mai ai controlli che vengono dopo — le credenziali
+/// stanno di là. Rimisurato il 01/09/2026 su questa macchina, casa vuota contro
+/// casa piena: `codex exec < /dev/null` risponde **la stessa cosa** — «Reading
+/// prompt from stdin...», «No prompt provided via stdin.» — e **esce 1** tutte e
+/// due le volte. È l'identità delle due risposte che conta, non il numero: il
+/// vaglio non ha nessun difetto da riparare, gli manca una domanda, e questa è
+/// quella domanda.
+///
+/// **NON C'È UN CAMPO PER LA FORMA, PERCHÉ LA FORMA LA DICE IL PUNTATORE.**
+/// Stessa scelta di `models::usage::read_text`: un cammino di chiavi vale su un
+/// involucro JSON, un'espressione regolare sul testo. Chiedere anche la forma
+/// permetterebbe di rispondere in modo incoerente, e quell'incoerenza non darebbe
+/// un errore — darebbe una risposta sconosciuta senza motivo visibile.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct LoginStatus {
+    /// Le opzioni, o il sottocomando, con cui si fa la domanda: `["login",
+    /// "status"]` per `codex`, `["auth", "status"]` per `claude`.
+    ///
+    /// **DEVE ESSERE UNA DOMANDA, MAI UN GESTO.** Il controllo la esegue davvero.
+    /// `codex login` e `claude auth login` aprono un browser e cambiano lo stato
+    /// della macchina: scriverli qui vorrebbe dire che un controllo di routine
+    /// riautentica il computer di chi lo lancia.
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Dove sta la risposta dentro ciò che il motore ha detto.
+    ///
+    /// **È IL PUNTATORE DI `usage`, NON UN SECONDO MECCANISMO**, perché il
+    /// problema è lo stesso: due motori dicono la stessa cosa in due forme. In
+    /// prosa — `codex` risponde «Logged in using ChatGPT» — non c'è niente da
+    /// puntare, e il soggetto è tutto ciò che ha detto. In JSON serve il cammino:
+    /// `claude` mette la risposta in un campo booleano, `{"loggedIn": true}`, e
+    /// `["loggedIn"]` ci arriva.
+    ///
+    /// Assente non vuol dire «non guardare»: vuol dire «il soggetto è l'uscita
+    /// intera», che è il caso più comune e non chiede di dichiarare niente.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<Where>,
+    /// Le parole con cui questo motore dichiara di **essere** autenticato.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logged_in_when: Vec<String>,
+    /// Le parole con cui dichiara di **non** esserlo.
+    ///
+    /// **SERVONO TUTTE E DUE, E MEZZA DICHIARAZIONE SPEGNE IL CONTROLLO.** Chi
+    /// sapesse riconoscere solo il sì chiamerebbe «non capito» ogni no, e chi
+    /// legge non distinguerebbe più una casa senza credenziali da un motore che
+    /// ha risposto qualcosa di strano. Meglio tacere che dire la cosa comoda.
+    ///
+    /// **E SI LEGGONO PRIMA DI QUELLE DEL SÌ**, perché «Not logged in» contiene
+    /// «logged in»: il modo di dire di no è quasi sempre il modo di dire di sì
+    /// con una negazione davanti. L'ordine lo impone `judge_login_status`, così
+    /// non dipende da quanto è stato attento chi ha scritto il descrittore.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub logged_out_when: Vec<String>,
+    /// I campi non capiti, per la stessa ragione di `Descriptor::extra`.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// Come si legge **quanto ha consumato** un motore, dichiarato dal descrittore.
 ///
 /// **PERCHÉ STA QUI E NON NEL CODICE.** È la stessa ragione di `Ask`, applicata
@@ -516,6 +585,15 @@ pub struct Descriptor {
     /// gli strumenti dichiarati con la vecchia.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<Usage>,
+    /// Come gli si chiede se la casa da cui parte è autenticata.
+    ///
+    /// **CHI NON LO DICHIARA NON FA SCATTARE NIENTE, E IL VERSO È LA
+    /// DECISIONE.** Assente vuol dire «nessuno ha guardato», mai «è
+    /// autenticato»: la stessa frase scritta per `refuses_without_prompt`, e
+    /// qui vale identica. Un predefinito che dicesse di sì renderebbe silenziosa
+    /// proprio la condizione che questo blocco esiste per rendere visibile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_status: Option<LoginStatus>,
     /// Che cosa questo strumento sa fare oltre a rispondere: riprendere una
     /// sessione, imporre una forma alla risposta, isolarsi dalla configurazione
     /// di chi lo ospita, ricevere una dotazione, tenere un tetto di spesa suo.
@@ -567,6 +645,9 @@ impl Descriptor {
         }
         if let Some(usage) = &self.usage {
             found.extend(usage.extra.keys().map(|key| format!("usage.{key}")));
+        }
+        if let Some(login) = &self.login_status {
+            found.extend(login.extra.keys().map(|key| format!("login_status.{key}")));
         }
         // Il nome della capacità non è un campo ignoto — nessun nome lo è, per
         // costruzione. Ignoto è quello che sta dentro una delle sue forme.
@@ -1268,6 +1349,65 @@ mod the_new_field_is_optional {
             checked >= 3,
             "solo {checked} motori spediti hanno un blocco `ask`: erano tre il \
              31/08/2026, e se sono meno qualcuno l'ha tolto"
+        );
+    }
+
+    /// **CHI DICHIARA COME SI CHIEDE DICHIARA TUTTE E DUE LE RISPOSTE.**
+    ///
+    /// Mezza dichiarazione è peggio di nessuna, e il verso in cui sbaglia è
+    /// sempre quello comodo: un descrittore che sapesse riconoscere solo il sì
+    /// chiamerebbe «non capito» ogni no, e chi legge non distinguerebbe più una
+    /// casa senza credenziali da un motore che ha risposto qualcosa di strano.
+    ///
+    /// **E LE PAROLE DEL SÌ NON DEVONO STARE DENTRO QUELLE DEL NO.** «logged in»
+    /// è contenuto in «not logged in»: con quelle due un motore che dice di no
+    /// verrebbe letto come un sì da chiunque cercasse il sì per primo. Il codice
+    /// legge il no per primo apposta, ma un descrittore che si regge solo su
+    /// quell'ordine è un descrittore che dice il falso a chi lo legge — e
+    /// `sailor profiles list` mostra quelle parole a una persona.
+    #[test]
+    fn every_shipped_engine_that_asks_about_login_declares_both_answers() {
+        let catalog = Catalog::load(&[Source::Builtin]);
+        let mut checked = 0;
+        for loaded in catalog.live() {
+            let Some(login) = loaded.descriptor.login_status.as_ref() else {
+                continue;
+            };
+            let id = &loaded.descriptor.id;
+            checked += 1;
+            assert!(
+                !login.args.is_empty(),
+                "«{id}» dichiara come si riconosce la risposta e non come si fa la \
+                 domanda: non c'è niente da eseguire"
+            );
+            for (which, marks) in [
+                ("logged_in_when", &login.logged_in_when),
+                ("logged_out_when", &login.logged_out_when),
+            ] {
+                assert!(
+                    marks.iter().any(|mark| !mark.trim().is_empty()),
+                    "«{id}» non dichiara `{which}`: mezza dichiarazione non \
+                     distingue niente, e l'errore cadrebbe dalla parte che \
+                     tranquillizza"
+                );
+            }
+            for yes in &login.logged_in_when {
+                for no in &login.logged_out_when {
+                    assert!(
+                        !no.to_lowercase().contains(&yes.to_lowercase()),
+                        "«{id}»: le parole del sì («{yes}») stanno dentro quelle del \
+                         no («{no}»), quindi una casa vuota somiglia a una piena. \
+                         Si dichiarano parole più lunghe, misurate"
+                    );
+                }
+            }
+        }
+        // Senza questa riga la prova resterebbe verde su un catalogo a cui
+        // qualcuno ha tolto il blocco: il modo più silenzioso di smettere.
+        assert!(
+            checked >= 2,
+            "solo {checked} motori spediti dichiarano `login_status`: erano due il \
+             01/09/2026 (claude-code e codex), e se sono meno qualcuno l'ha tolto"
         );
     }
 

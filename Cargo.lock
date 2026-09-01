@@ -12,6 +12,7 @@ dependencies = [
  "profiles",
  "serde",
  "serde_json",
+ "ui",
 ]
 
 [[package]]
