@@ -1945,7 +1945,7 @@ const WORKDIR_KEY: &str = flow::WORKDIR_FIELD;
 ///
 /// Un percorso assoluto qui non è un dettaglio del testo: è la posizione in cui
 /// il passo lavorerà davvero, ed è il guasto 25 parola per parola — sette passi
-/// con `"workdir": "/home/someone/personal/sailor"`, un flusso che lanciato da un
+/// con la casa di chi scriveva scritta in chiaro, e un flusso che lanciato da un
 /// clone commetteva nel repository principale senza dirlo.
 const POSITION_FIELDS: [&str; 2] = ["workdir", "bin"];
 
@@ -5736,7 +5736,7 @@ mod tests {
     /// fallisce — fa danno nel posto sbagliato.
     #[test]
     fn an_absolute_workdir_is_an_error() {
-        let flow = flow_with(r#"{"workdir": "/home/someone/personal/sailor"}"#);
+        let flow = flow_with(r#"{"workdir": "/work/sailor"}"#);
 
         let found = hardcoded_paths(&flow);
 
@@ -5833,7 +5833,7 @@ mod tests {
     #[test]
     fn an_absolute_path_inside_a_prompt_is_a_warning() {
         let flow = flow_with(
-            r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/personal/sailor.\n"]}}"#,
+            r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/sailor.\n"]}}"#,
         );
 
         let found = hardcoded_paths(&flow);
