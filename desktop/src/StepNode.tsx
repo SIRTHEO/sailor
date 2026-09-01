@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
-import type { Step, StepKind, StepRun, StepState } from "./flow";
+import { stepCountLabel, type Step, type StepKind, type StepRun, type StepState } from "./flow";
 import { nodeId, type PortShape, type StepPort, type StepPorts } from "./layout";
 import { MODEL_KEY, TOOL_KEY, useTool, useToolsAreKnown } from "./tools";
 import { ToolMark } from "./ToolMark";
@@ -512,7 +512,7 @@ export function FlowBandNode({ data }: NodeProps) {
             e si legge sempre; la tinta identifica la corsia da qui. */}
         <span className="flow-band__mark" style={{ background: color }} aria-hidden="true" />
         <span className="flow-band__name">{name}</span>
-        <span className="flow-band__count">{stepCount} passi</span>
+        <span className="flow-band__count">{stepCountLabel(stepCount)}</span>
       </div>
       {/* Troncata a due righe dallo stile, ma non persa: per intero si legge
           passandoci sopra. */}
