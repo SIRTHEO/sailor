@@ -115,6 +115,15 @@ dichiarati:
   va con il mondo che serve.
 - **In modalità viva, un errore di compilazione in un crate qualunque uccide la
   finestra** invece di lasciarla all'ultima versione buona.
+- **`desktop/src-tauri/Cargo.lock` è già vecchio a HEAD**, e si sporca da solo:
+  `crates/actions` dipende da `profiles` dal 01/09/2026 e quel lock non lo sa —
+  sotto `actions` elenca `flow`, `ledger`, `models`, `serde`, `serde_json` e
+  basta. `desktop/src-tauri` dichiara un workspace suo, quindi **la batteria non
+  lo compila**: chiunque lo costruisca si ritrova il lock modificato in un
+  albero pulito, senza aver toccato niente. Verificato il 01/09/2026 leggendo i
+  due lock. Non è un guasto capitato: è un difetto che aspetta, e lo si chiude
+  rigenerando quel lock — oppure, meglio, chiedendosi perché un membro del
+  prodotto stia fuori dall'unico oracolo che abbiamo.
 
 ## Risposte già trovate, da mettere in pratica
 
@@ -176,11 +185,11 @@ nove è stato ancora fatto.
    *Riduce*: Riduce l'1, e di riflesso il 3. Vincolo A rispettato: è forma del grafo, nessun motore lo vede. Vincolo B rispettato meglio che in Temporal, perché la corsa resta una sola e non ci sono due tronconi da ricucire: chi guarda vede il nodo di taglio come un passo qualunque con scritto dentro cosa ha lasciato passare. Costo vero, da non addolcire: quello che il taglio butta lo sceglie una persona a mano, e se sbaglia il passo a valle lavora peggio senza saperlo. Non va applicato ai passi che giudicano (`sintesi`, `verifica`), dove il 96,2% non è spreco ma il lavoro.
 
 2. **Inversione del predefinito: le `deps` dichiarano l'ordine di esecuzione, i rinvii dichiarano il contenuto. Un passo il cui `with` contiene rinvii riceve solo quelli, non l'uscita intera delle dipendenze**
-   *Primo passo*: In `step_input` (crates/flow/src/executor.rs:756-782): se il passo dichiara l'inversione, l'ingresso composto serve solo a risolvere i rinvii e non viaggia oltre. La dichiarazione va sul passo, non nel motore, perché l'inversione cambia il significato dei flussi già scritti. Subito dopo, la difesa: validare i puntatori `$from` contro l'`output_schema` del passo di provenienza dentro `Graph::validate`, accanto a `GraphError::IncompatibleInput` — oggi `crates/flow/` non sa nemmeno che i rinvii esistono.
+   *Primo passo*: In `step_input` (crates/flow/src/executor.rs:756-782): se il passo dichiara l'inversione, l'ingresso composto serve solo a risolvere i rinvii e non viaggia oltre. La dichiarazione va sul passo, non nel motore, perché l'inversione cambia il significato dei flussi già scritti. Subito dopo, la difesa: validare i puntatori `$from` contro l'`output_schema` del passo di provenienza dentro `Graph::validate`, accanto a `GraphError::IncompatibleInput`. *Aggiornato il 01/09/2026*: qui c'era scritto «oggi `crates/flow/` non sa nemmeno che i rinvii esistono», e non è più vero — la cura del guasto 28 ha portato `reference` dentro `crates/flow`, e `step_input` li scioglie per ogni azione. Il primo passo di questa voce è quindi più corto di com'era scritto: il posto dove metterla esiste già.
    *Riduce*: Riduce il 3 direttamente, l'1 di conseguenza, e spinge il 6 nel verso giusto: l'`answer_shape` smette di essere solo un contratto del produttore e diventa la superficie su cui il consumatore punta. Vincolo A rispettato in pieno: la selezione avviene nell'orchestratore prima che il prompt esista. Vincolo B è esattamente ciò che questa pratica dà — il rinvio è scritto nel `.flow.json` e leggibile. Guasto documentato da n8n e trasportabile qui: un `$from` che punta a un campo che il motore quel giorno non ha prodotto oggi si scopre a corsa avviata dentro `reference::look_up`, cioè dopo aver speso la chiamata; senza la validazione al caricamento, questa pratica trasforma un costo in un guasto.
 
 3. **Registrare il prompt reso e i byte visti/scartati, non solo la ricetta**
-   *Primo passo*: Far portare a `ActionOutcome`/`Completion` il testo reso e i due contatori — oggi `Completion` li mette a `None` in tutti i rami perché l'azione non ha modo di dichiararli — e riempirli in `ExternalEngineAction` subito dopo `resolve_references`. Il prompt reso va scritto accanto a `input`, non al suo posto: servono entrambi, la ricetta e il testo.
+   *Primo passo*: Far portare a `ActionOutcome`/`Completion` il testo reso e i due contatori — oggi `Completion` li mette a `None` in tutti i rami perché l'azione non ha modo di dichiararli — e riempirli in `ExternalEngineAction` sull'ingresso che riceve — che dal 01/09/2026 arriva già coi rinvii sciolti, perché a scioglierli è `flow::step_input` e non più l'azione. Il prompt reso va scritto accanto a `input`, non al suo posto: servono entrambi, la ricetta e il testo.
    *Riduce*: Da sola non riduce nessuno dei sei: abilita l'1, il 2, il 5 e il 6 rendendoli misurabili. Vincolo A rispettato: si misura ciò che Sailor produce, non si presuppone niente del motore, e vale identica su uno strumento che non si può osservare. Vincolo B: è il vincolo B — oggi la vista della corsa mostra la ricetta e non il testo spedito, e la distanza fra le due è cresciuta esattamente del 96,2%. Limite: il prompt reso è grande, quindi va deciso subito se si conserva per intero o per digest più lunghezza, e la scelta va scritta dove chi guarda la vede.
 
 4. **Il consumo dichiarato dal motore entra nel registro come per ogni altra chiamata, e il contesto di partenza si misura per sottrazione**
