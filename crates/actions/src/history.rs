@@ -344,7 +344,9 @@ impl HistoryAskAction {
             } => {
                 let limit = window(*within_last_runs)?;
                 let flow = flow.as_deref();
-                let classes = ledger.failure_class_tally(flow, limit).map_err(unreadable)?;
+                let classes = ledger
+                    .failure_class_tally(flow, limit)
+                    .map_err(unreadable)?;
                 let considered = ledger.runs_in_window(flow, limit).map_err(unreadable)?;
                 Ok((
                     considered,
@@ -438,11 +440,7 @@ fn unreadable(error: ledger::LedgerError) -> ActionError {
 }
 
 impl Action for HistoryAskAction {
-    fn execute(
-        &self,
-        input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         // La domanda si valida **prima** di guardare il deposito: un campo
         // sbagliato è sbagliato su qualunque macchina, e scoprirlo solo dove il
         // deposito esiste renderebbe il difetto invisibile a chi prova altrove.
@@ -561,7 +559,9 @@ mod tests {
 
     fn went(action: &HistoryAskAction, question: Value) -> Value {
         let mut shared = SharedState::new();
-        let outcome = action.execute(&question, &mut shared).expect("la domanda risponde");
+        let outcome = action
+            .execute(&question, &mut shared)
+            .expect("la domanda risponde");
         let ActionOutcome::Went(value) = outcome else {
             panic!("una lettura locale non aspetta nessuno");
         };
@@ -582,7 +582,11 @@ mod tests {
 
         assert_eq!(value["deposit"], json!("absent"));
         assert_eq!(value["ask"], json!("failure_classes"));
-        assert_eq!(value.get("answer"), None, "senza deposito non c'è nessuna risposta da dare");
+        assert_eq!(
+            value.get("answer"),
+            None,
+            "senza deposito non c'è nessuna risposta da dare"
+        );
     }
 
     /// «Nessuna corsa registrata» e «zero guasti» sono due cose diverse, e si
@@ -597,7 +601,10 @@ mod tests {
         let (ledger, _guard) = store("vuoto");
         let action = HistoryAskAction::new(Some(ledger.clone()));
 
-        let empty = went(&action, json!({"ask": "step_failures", "step_id": "compile"}));
+        let empty = went(
+            &action,
+            json!({"ask": "step_failures", "step_id": "compile"}),
+        );
         assert_eq!(empty["deposit"], json!("empty"));
         assert_eq!(
             empty.get("answer"),
@@ -608,9 +615,16 @@ mod tests {
         a_run(&ledger, "run-1", "alpha", 100, Some(200));
         a_step(&ledger, "run-1", "compile", 100, Outcome::Went, None, 130);
 
-        let quiet = went(&action, json!({"ask": "step_failures", "step_id": "compile"}));
+        let quiet = went(
+            &action,
+            json!({"ask": "step_failures", "step_id": "compile"}),
+        );
         assert_eq!(quiet["deposit"], json!("present"));
-        assert_eq!(quiet["answer"]["failures"], json!(0), "zero guasti è il numero zero");
+        assert_eq!(
+            quiet["answer"]["failures"],
+            json!(0),
+            "zero guasti è il numero zero"
+        );
         assert_eq!(quiet["answer"]["attempts"], json!(1));
         assert_eq!(quiet["runs_considered"], json!(1));
     }
@@ -633,7 +647,11 @@ mod tests {
             .expect_err("un campo ignoto non si ignora");
 
         assert_eq!(error.class, "invalid_input");
-        assert!(error.said.contains("step-id"), "va nominato: {}", error.said);
+        assert!(
+            error.said.contains("step-id"),
+            "va nominato: {}",
+            error.said
+        );
     }
 
     /// Una domanda che nessuno ha previsto si rifiuta dicendo quali esistono.
@@ -660,7 +678,15 @@ mod tests {
     fn a_last_run_answer_never_carries_what_passed_through_the_flow() {
         let (ledger, _guard) = store("senza-detto");
         a_run(&ledger, "run-1", "alpha", 100, Some(400));
-        a_step(&ledger, "run-1", "compile", 100, Outcome::Broke, Some("timeout"), 150);
+        a_step(
+            &ledger,
+            "run-1",
+            "compile",
+            100,
+            Outcome::Broke,
+            Some("timeout"),
+            150,
+        );
         let action = HistoryAskAction::new(Some(ledger));
 
         let value = went(&action, json!({"ask": "last_run", "flow": "alpha"}));
@@ -668,9 +694,15 @@ mod tests {
 
         assert_eq!(value["answer"]["found"], json!(true));
         assert_eq!(value["answer"]["steps"][0]["outcome"], json!("Broke"));
-        assert_eq!(value["answer"]["steps"][0]["failure_class"], json!("timeout"));
+        assert_eq!(
+            value["answer"]["steps"][0]["failure_class"],
+            json!("timeout")
+        );
         assert!(!text.contains(SECRET), "il canale dati non esce: {text}");
-        assert!(!text.contains("\"said\""), "il testo grezzo non esce senza che sia chiesto: {text}");
+        assert!(
+            !text.contains("\"said\""),
+            "il testo grezzo non esce senza che sia chiesto: {text}"
+        );
         assert!(!text.contains("\"input\""), "{text}");
         assert!(!text.contains("\"output\""), "{text}");
     }
@@ -686,14 +718,25 @@ mod tests {
         let (ledger, _guard) = store("con-detto");
         a_run(&ledger, "run-1", "alpha", 100, Some(400));
         a_step(&ledger, "run-1", "riuscito", 100, Outcome::Went, None, 150);
-        a_step(&ledger, "run-1", "rotto", 200, Outcome::Broke, Some("timeout"), 250);
+        a_step(
+            &ledger,
+            "run-1",
+            "rotto",
+            200,
+            Outcome::Broke,
+            Some("timeout"),
+            250,
+        );
         let action = HistoryAskAction::new(Some(ledger));
 
         let value = went(
             &action,
             json!({"ask": "last_run", "flow": "alpha", "include_said": true}),
         );
-        let said = value["answer"]["said"].as_array().expect("l'elenco c'è").clone();
+        let said = value["answer"]["said"]
+            .as_array()
+            .expect("l'elenco c'è")
+            .clone();
 
         assert_eq!(said.len(), 1, "solo il passo rotto: {said:?}");
         assert_eq!(said[0]["step_id"], json!("rotto"));
@@ -725,7 +768,11 @@ mod tests {
         assert_eq!(answer["samples"], json!(1));
         assert_eq!(answer["median"], json!(10));
         assert_eq!(answer["last"], json!(10));
-        assert_eq!(answer["unit"], json!("seconds"), "l'unità si dichiara: l'orologio conta secondi");
+        assert_eq!(
+            answer["unit"],
+            json!("seconds"),
+            "l'unità si dichiara: l'orologio conta secondi"
+        );
     }
 
     /// Su zero campioni non esce nessuna misura inventata.
@@ -734,7 +781,11 @@ mod tests {
         let summary = duration_summary(&StepDurations::default());
 
         assert_eq!(summary["samples"], json!(0));
-        assert_eq!(summary.get("median"), None, "una mediana di niente non si scrive: {summary}");
+        assert_eq!(
+            summary.get("median"),
+            None,
+            "una mediana di niente non si scrive: {summary}"
+        );
         assert_eq!(summary.get("last"), None);
     }
 

@@ -353,7 +353,10 @@ mod tests {
     #[test]
     fn finds_a_model_by_its_id_and_by_every_alias() {
         let prices = PriceList::parse(SAMPLE).unwrap();
-        assert_eq!(prices.find("claude-sonnet-5").unwrap().id, "claude-sonnet-5");
+        assert_eq!(
+            prices.find("claude-sonnet-5").unwrap().id,
+            "claude-sonnet-5"
+        );
         assert_eq!(prices.find("sonnet").unwrap().id, "claude-sonnet-5");
         assert_eq!(
             prices.find("  ANTHROPIC/Claude-Sonnet-5 ").unwrap().id,
@@ -392,7 +395,8 @@ mod tests {
 
     #[test]
     fn a_negative_price_is_refused_not_summed() {
-        let prices = PriceList::parse(r#"{"models":[{"id":"x","input_per_million":-2.0}]}"#).unwrap();
+        let prices =
+            PriceList::parse(r#"{"models":[{"id":"x","input_per_million":-2.0}]}"#).unwrap();
         assert_eq!(prices.find("x").unwrap().input_per_million, None);
     }
 
@@ -431,7 +435,10 @@ mod tests {
         let as_if_input = cost_micros(counts(Some(1_000_000), Some(0), None), prices).unwrap();
         assert_eq!(with_cache, 300_000, "1M of cache at $0.30");
         assert_eq!(as_if_input, 3_000_000, "1M of input at $3");
-        assert!(with_cache * 5 < as_if_input, "the difference is an order of magnitude");
+        assert!(
+            with_cache * 5 < as_if_input,
+            "the difference is an order of magnitude"
+        );
     }
 
     #[test]
@@ -484,8 +491,7 @@ mod tests {
 
     #[test]
     fn a_malformed_entry_is_dropped_without_taking_the_others_with_it() {
-        let prices =
-            PriceList::parse(r#"{"models":[{"no_id":true},{"id":"good"}]}"#).unwrap();
+        let prices = PriceList::parse(r#"{"models":[{"no_id":true},{"id":"good"}]}"#).unwrap();
         assert_eq!(prices.entries.len(), 1);
         assert!(prices.find("good").is_some());
     }
@@ -512,7 +518,13 @@ mod tests {
             "a declared zero is a measure; an invented zero is not"
         );
         assert_eq!(
-            cost_micros(a_million_each_side, PriceList::default().find("free").map(Price::micros).unwrap_or_default()),
+            cost_micros(
+                a_million_each_side,
+                PriceList::default()
+                    .find("free")
+                    .map(Price::micros)
+                    .unwrap_or_default()
+            ),
             None,
             "a model the list does not know does not cost zero: it is unknown"
         );
@@ -784,8 +796,7 @@ mod the_home_list_wins {
     /// tolerance is the one `find` already applies to model names.
     #[test]
     fn the_same_currency_written_differently_still_merges() {
-        let home =
-            PriceList::parse(r#"{"currency":" usd ","models":[{"id":"three"}]}"#).unwrap();
+        let home = PriceList::parse(r#"{"currency":" usd ","models":[{"id":"three"}]}"#).unwrap();
         let merged = shipped_sample().overridden_by(home);
         assert!(merged.find("two").is_some());
     }
@@ -795,7 +806,8 @@ mod the_home_list_wins {
     /// old the prices behind it are.
     #[test]
     fn the_date_comes_from_whoever_wrote_last_and_never_vanishes() {
-        let dated = PriceList::parse(r#"{"currency":"USD","dated":"2026-09-01","models":[]}"#).unwrap();
+        let dated =
+            PriceList::parse(r#"{"currency":"USD","dated":"2026-09-01","models":[]}"#).unwrap();
         assert_eq!(
             shipped_sample().overridden_by(dated).dated.as_deref(),
             Some("2026-09-01")

@@ -386,15 +386,35 @@ mod tests {
         outcome: Option<Outcome>,
         started_at: i64,
     ) -> StepRecord {
-        let mut record =
-            StepRecord::started("run-1", step_id, attempt, epoch, vec![], json!({}), vec![], started_at);
+        let mut record = StepRecord::started(
+            "run-1",
+            step_id,
+            attempt,
+            epoch,
+            vec![],
+            json!({}),
+            vec![],
+            started_at,
+        );
         record.outcome = outcome;
         record.ended_at = outcome.map(|_| started_at + 1);
         record
     }
 
-    fn call(actual_model: &str, input: u64, output: u64, cached: u64, cost: i64) -> ModelCallRecord {
-        measured(actual_model, Some(input), Some(output), Some(cached), Some(cost))
+    fn call(
+        actual_model: &str,
+        input: u64,
+        output: u64,
+        cached: u64,
+        cost: i64,
+    ) -> ModelCallRecord {
+        measured(
+            actual_model,
+            Some(input),
+            Some(output),
+            Some(cached),
+            Some(cost),
+        )
     }
 
     /// A call with whatever counts you want, «unknown» included.
@@ -563,8 +583,14 @@ mod what_is_not_known {
         let with_unknown = summarize_run(&run(), &[], &[known, unknown], 20);
 
         // The summed tokens are the same: the unknown one added no zeros.
-        assert_eq!(with_unknown.tokens.input_tokens, only_known.tokens.input_tokens);
-        assert_eq!(with_unknown.tokens.cost_micros, only_known.tokens.cost_micros);
+        assert_eq!(
+            with_unknown.tokens.input_tokens,
+            only_known.tokens.input_tokens
+        );
+        assert_eq!(
+            with_unknown.tokens.cost_micros,
+            only_known.tokens.cost_micros
+        );
         // But the total knows it is partial, and says by how much.
         assert_eq!(with_unknown.tokens.calls, 2);
         assert_eq!(with_unknown.tokens.calls_without_tokens, 1);
@@ -609,7 +635,12 @@ mod what_is_not_known {
     /// it is, rather than an empty key that vanishes from the per-model list.
     #[test]
     fn calls_without_a_declared_model_are_grouped_under_a_name_that_says_so() {
-        let view = summarize_run(&run(), &[], &[measured("", Some(1), Some(1), None, None)], 20);
+        let view = summarize_run(
+            &run(),
+            &[],
+            &[measured("", Some(1), Some(1), None, None)],
+            20,
+        );
         assert!(view.tokens_by_model.contains_key(MODEL_NOT_DECLARED));
         assert!(!view.tokens_by_model.contains_key(""));
     }

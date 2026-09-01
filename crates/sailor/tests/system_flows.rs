@@ -194,7 +194,9 @@ fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
     );
 
     let detected = output_of(&records, "rileva");
-    let total = detected["total"].as_u64().expect("un conto dei descrittori");
+    let total = detected["total"]
+        .as_u64()
+        .expect("un conto dei descrittori");
     assert!(
         total >= 30,
         "il rilevamento ha guardato solo {total} descrittori: il catalogo spedito ne ha molti di più"
@@ -228,7 +230,11 @@ fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
     let mut unique = all.clone();
     unique.sort();
     unique.dedup();
-    assert_eq!(all.len(), unique.len(), "uno strumento sta in un elenco solo");
+    assert_eq!(
+        all.len(),
+        unique.len(),
+        "uno strumento sta in un elenco solo"
+    );
 }
 
 /// «NON CHIESTA» NON È «NON C'È»: chi spegne i comandi di versione deve vedere
@@ -262,7 +268,12 @@ fn the_migration_flow_runs_and_looks_at_four_families() {
         execution.decisions
     );
 
-    let steps = ["ganci", "pianificate", "script-sparsi", "viste-ma-non-lette"];
+    let steps = [
+        "ganci",
+        "pianificate",
+        "script-sparsi",
+        "viste-ma-non-lette",
+    ];
     let mut families: Vec<String> = Vec::new();
     for step in steps {
         let output = output_of(&records, step);
@@ -299,7 +310,12 @@ fn the_migration_flow_never_runs_anything() {
     let flow = shipped("migrazione-a-sailor");
     let (_, records) = run(&flow);
 
-    for step in ["ganci", "pianificate", "script-sparsi", "viste-ma-non-lette"] {
+    for step in [
+        "ganci",
+        "pianificate",
+        "script-sparsi",
+        "viste-ma-non-lette",
+    ] {
         for finding in output_of(&records, step)["findings"]
             .as_array()
             .expect("un elenco")
@@ -344,9 +360,8 @@ fn the_automations_catalog_does_not_leak_into_the_tools() {
 /// errore di chi ha scritto il passo.
 #[test]
 fn a_misspelled_catalog_is_a_problem_not_an_empty_list() {
-    let catalog = toolbox::Catalog::load(&[toolbox::Source::BuiltinNamed(
-        "automazioni".to_owned(),
-    )]);
+    let catalog =
+        toolbox::Catalog::load(&[toolbox::Source::BuiltinNamed("automazioni".to_owned())]);
     assert!(catalog.live().is_empty());
     assert_eq!(catalog.problems.len(), 1, "{:?}", catalog.problems);
     assert!(
@@ -457,7 +472,10 @@ fn the_crossing_says_who_asked_for_what() {
     assert_eq!(answer["flows_seen"], 1);
     assert_eq!(answer["present"][0]["tool"], "codex");
     assert_eq!(answer["present"][0]["asked_by"][0], "chiede/con-strumento");
-    assert_eq!(answer["present"][0]["executable"], "/da/qualche/parte/codex");
+    assert_eq!(
+        answer["present"][0]["executable"],
+        "/da/qualche/parte/codex"
+    );
     assert_eq!(answer["missing"].as_array().expect("un elenco").len(), 0);
     assert_eq!(answer["unknown"][0]["tool"], "arnese-che-non-esiste");
     assert_eq!(

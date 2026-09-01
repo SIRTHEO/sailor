@@ -718,9 +718,7 @@ impl Ledger {
              WHERE port = ?1 AND ended_at IS NULL
              ORDER BY started_at DESC LIMIT 1"
         ))?;
-        let row = statement
-            .query_row([port], read_process_row)
-            .optional()?;
+        let row = statement.query_row([port], read_process_row).optional()?;
         Ok(row)
     }
 
@@ -730,7 +728,9 @@ impl Ledger {
     /// without an address is found only by whoever already knows where it is.
     pub fn put_record(&self, record: &StoreRecord) -> Result<(), LedgerError> {
         if record.collection.trim().is_empty() {
-            return Err(LedgerError::InvalidRecord("record collection is empty".into()));
+            return Err(LedgerError::InvalidRecord(
+                "record collection is empty".into(),
+            ));
         }
         if record.key.trim().is_empty() {
             return Err(LedgerError::InvalidRecord("record key is empty".into()));
@@ -2136,12 +2136,22 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
             None,
             Some(record.ended_at),
         ),
-        StoredEvent::InventoryScanned(scan) => {
-            ("inventory_scanned", None, None, None, None, Some(scan.taken_at))
-        }
-        StoredEvent::RecordWritten(record) => {
-            ("record_written", None, None, None, None, Some(record.written_at))
-        }
+        StoredEvent::InventoryScanned(scan) => (
+            "inventory_scanned",
+            None,
+            None,
+            None,
+            None,
+            Some(scan.taken_at),
+        ),
+        StoredEvent::RecordWritten(record) => (
+            "record_written",
+            None,
+            None,
+            None,
+            None,
+            Some(record.written_at),
+        ),
         StoredEvent::Trace(record) => ("trace", None, None, None, None, Some(record.occurred_at)),
     }
 }
@@ -2242,10 +2252,7 @@ const PROCESS_COLUMNS: &str = "process_id, pid, command, args, working_directory
 /// every `record_written` keeps its date and its author. This table answers one
 /// question — *right now*, what is this entry worth — and a table answering one
 /// question cannot give two answers that disagree.
-fn project_record(
-    transaction: &Transaction<'_>,
-    record: &StoreRecord,
-) -> Result<(), LedgerError> {
+fn project_record(transaction: &Transaction<'_>, record: &StoreRecord) -> Result<(), LedgerError> {
     transaction.execute(
         "INSERT INTO store (collection, key, value, written_by, written_at)
          VALUES (?1, ?2, ?3, ?4, ?5)

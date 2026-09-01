@@ -135,7 +135,11 @@ fn gather_summarizes_a_seeded_ledger() {
     assert_eq!(execution.tokens.input_tokens, 100);
     assert_eq!(execution.tokens.cost_micros, 500);
     assert_eq!(
-        execution.tokens_by_model.get("claude-sonnet-5").expect("model present").calls,
+        execution
+            .tokens_by_model
+            .get("claude-sonnet-5")
+            .expect("model present")
+            .calls,
         1
     );
 
@@ -215,7 +219,10 @@ fn a_ledger_directory_that_was_never_written_is_reported_as_absent_not_as_an_err
     let dir = temp_dir("missing");
     let data = ui::gather::gather(&dir).expect("no error on a ledger that is absent");
     assert!(data.is_none());
-    assert!(!dir.exists(), "reading the state must never create the ledger");
+    assert!(
+        !dir.exists(),
+        "reading the state must never create the ledger"
+    );
 }
 
 #[test]
@@ -226,7 +233,9 @@ fn the_shape_the_window_reads_survives_serialization() {
     // This test is what turns that change red.
     let dir = temp_dir("shape");
     seed(&dir);
-    let data = ui::gather::gather(&dir).expect("the read succeeded").expect("ledger present");
+    let data = ui::gather::gather(&dir)
+        .expect("the read succeeded")
+        .expect("ledger present");
     let executions =
         ui::dashboard::build_executions(&data.runs, &data.steps_by_run, &data.calls_by_run, 1100);
     let body = serde_json::to_value(&executions).expect("the views serialize");
@@ -276,15 +285,22 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
     );
     flows.insert("broken".into(), Err("error: cycle in the graph".into()));
 
-    let views = serde_json::to_value(ui::registry::flow_views(&flows)).expect("the views serialize");
+    let views =
+        serde_json::to_value(ui::registry::flow_views(&flows)).expect("the views serialize");
     let array = views.as_array().expect("array of flows");
     assert_eq!(array.len(), 2);
 
-    let broken = array.iter().find(|entry| entry["name"] == "broken").expect("broken flow present");
+    let broken = array
+        .iter()
+        .find(|entry| entry["name"] == "broken")
+        .expect("broken flow present");
     assert_eq!(broken["error"], "error: cycle in the graph");
     assert_eq!(broken["steps"].as_array().map(|steps| steps.len()), Some(0));
 
-    let valid = array.iter().find(|entry| entry["name"] == "valid").expect("valid flow present");
+    let valid = array
+        .iter()
+        .find(|entry| entry["name"] == "valid")
+        .expect("valid flow present");
     assert_eq!(valid["error"], serde_json::Value::Null);
     assert_eq!(valid["description"], "A valid test flow");
     assert_eq!(valid["steps"].as_array().map(|steps| steps.len()), Some(1));

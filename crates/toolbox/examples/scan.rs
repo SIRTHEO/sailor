@@ -36,7 +36,10 @@ fn main() {
             VersionReading::NotAsked(_) => String::new(),
         };
         println!("{mark} [{}] {:<24} {}", f.family, f.name, version);
-        println!("           from: {} ({})", f.descriptor_id, f.descriptor_source);
+        println!(
+            "           from: {} ({})",
+            f.descriptor_id, f.descriptor_source
+        );
         if let Some(bin) = &f.executable {
             println!("           executable: {bin}");
         }

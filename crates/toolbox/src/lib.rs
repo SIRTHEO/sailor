@@ -13,11 +13,11 @@ pub mod resolver;
 pub mod session;
 
 pub use action::{register_default, DetectToolsAction, DETECT_TOOLS_ACTION};
-pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
 pub use descriptor::{
     builtin_catalog, Capability, CapabilityForm, CapabilityState, Catalog, Contradiction,
     Descriptor, Loaded, Problem, Source, ASK_WITHOUT_INTERACTION, BUILTIN_CATALOGS,
 };
+pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
 pub use probe::{Look, Machine, VersionReading};
 pub use resolver::Tools;
 pub use session::{SessionAbilities, SessionAbility};
@@ -225,8 +225,10 @@ fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
             for candidate in machine.resolve(raw) {
                 match probe::look_at(&candidate) {
                     Look::Found(path) => {
-                        presence =
-                            Some(Presence::Present(format!("found {}", path.to_string_lossy())));
+                        presence = Some(Presence::Present(format!(
+                            "found {}",
+                            path.to_string_lossy()
+                        )));
                         break;
                     }
                     Look::Missing => {}

@@ -47,7 +47,10 @@ pub enum EngineIdentity {
     /// differs, and this is the only one that asks for action: there is state to
     /// repair. Composing the path from the name would give an empty home with
     /// the air of an applied profile.
-    ProfileVanished { cli_id: String, profile_name: String },
+    ProfileVanished {
+        cli_id: String,
+        profile_name: String,
+    },
     /// A profile exists, but this CLI does not move its home with an
     /// environment variable: the identity depends on where a file on disk points.
     NotMovedByAnEnvVar {

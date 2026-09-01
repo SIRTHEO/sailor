@@ -5,21 +5,21 @@
 // Il formato del file vive nel crate del flusso: qui si importa, non si
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
+use flow::reference;
 use flow::{
     ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
     SystemClock,
 };
-use flow::reference;
 use ledger::Ledger;
 use models::pricing::{Known, PriceList};
 use serde_json::Value;
-use ui::gather::FlowSource;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use ui::gather::FlowSource;
 
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args, &ui::gather::flow_sources()) {
@@ -51,9 +51,7 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name] if command == "cap" => cap_of(sources, name),
         [command, name, value] if command == "cap" => set_cap(sources, name, value),
         [command, name] if command == "schedule" => schedule_of(sources, name),
-        [command, name, value] if command == "schedule" => {
-            set_schedule(sources, name, value, None)
-        }
+        [command, name, value] if command == "schedule" => set_schedule(sources, name, value, None),
         [command, name, value, weight] if command == "schedule" => {
             set_schedule(sources, name, value, Some(weight))
         }
@@ -129,8 +127,12 @@ fn cost_of(flow: &str) -> Result<String, String> {
         .ok_or_else(|| format!("il flusso {flow} non è mai girato su questa macchina"))?;
     let view = ui::dashboard::summarize_run(
         run,
-        data.steps_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
-        data.calls_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
+        data.steps_by_run
+            .get(&run.run_id)
+            .map_or(&[], Vec::as_slice),
+        data.calls_by_run
+            .get(&run.run_id)
+            .map_or(&[], Vec::as_slice),
         now_secs()?,
     );
     Ok(spending_report(&view, &actions::current_price_list()))
@@ -145,7 +147,12 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     let tokens = &view.tokens;
     let mut report = format!(
         "corsa {} — flusso {} — {}\npassi: {} ({} andati, {} rotti)\nchiamate: {}",
-        view.run_id, view.entity, view.status, view.steps_total, view.steps_went, view.steps_broke,
+        view.run_id,
+        view.entity,
+        view.status,
+        view.steps_total,
+        view.steps_went,
+        view.steps_broke,
         tokens.calls
     );
     // **I TURNI ACCANTO ALLE CHIAMATE, E NON È UN DETTAGLIO.** Una chiamata a un
@@ -170,10 +177,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     let _ = write!(
         report,
         "\ntoken: {} in · {} out · {} letti da cache · {} scritti in cache",
-        tokens.input_tokens,
-        tokens.output_tokens,
-        tokens.cached_tokens,
-        tokens.cache_write_tokens
+        tokens.input_tokens, tokens.output_tokens, tokens.cached_tokens, tokens.cache_write_tokens
     );
     if tokens.total_tokens_only > 0 {
         let _ = write!(
@@ -187,7 +191,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // qualcuno tocca uno dei due posti le due versioni divergono in silenzio.
     // Chi decide quanti passi aprire e chi legge il consumo devono leggere la
     // stessa frase.
-    let _ = write!(report, "\n{}", ui::dashboard::how_the_cost_reads(&tokens.cost_reading()));
+    let _ = write!(
+        report,
+        "\n{}",
+        ui::dashboard::how_the_cost_reads(&tokens.cost_reading())
+    );
     // **QUELLO CHE MANCA SI DICE, O IL TOTALE SI LEGGE COME COMPLETO.** È la
     // stessa regola della finestra: una somma che tace su ciò che non ha
     // contato è una rassicurazione, non una misura. Resta anche adesso che il
@@ -240,7 +248,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     if !identities.is_empty() {
         report.push_str("\nidentità:");
         for (identity, how_many) in identities {
-            let word = if how_many == 1 { "chiamata" } else { "chiamate" };
+            let word = if how_many == 1 {
+                "chiamata"
+            } else {
+                "chiamate"
+            };
             let _ = write!(report, "\n  {identity} — {how_many} {word}");
         }
     }
@@ -430,11 +442,7 @@ fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> 
 /// sarebbe inventarlo. L'unica fonte onesta è chi ha già risposto, cioè le corse
 /// passate — per questo un flusso mai girato qui non riceve un elenco vuoto ma
 /// una frase che dice che non si sa, come per il rilevatore assente.
-fn what_is_priced(
-    prices: &PriceList,
-    seen: Option<&BTreeSet<String>>,
-    cap: Option<i64>,
-) -> String {
+fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Option<i64>) -> String {
     let mut said = format!("\nlistino: {} modelli prezzati", prices.entries.len());
     let Some(seen) = seen else {
         said.push_str(
@@ -487,9 +495,8 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
     let mut report = format!("flusso: {} ({origin})", flow.id);
     match flow.spend_cap_micros {
-        None => report.push_str(
-            "\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede",
-        ),
+        None => report
+            .push_str("\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede"),
         Some(cap) => {
             let _ = write!(
                 report,
@@ -756,7 +763,9 @@ fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
 /// motore non sa eseguire.
 fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
     if let Some(digits) = value.strip_suffix('s') {
-        let seconds: u64 = digits.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        let seconds: u64 = digits
+            .parse()
+            .map_err(|_| how_a_schedule_is_written(value))?;
         if seconds == 0 {
             return Err(format!(
                 "«ogni 0 secondi» non vuol dire niente: un flusso dovuto sempre \
@@ -767,7 +776,9 @@ fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
     }
     if let Some((hour, minute)) = value.split_once(':') {
         let hour: u32 = hour.parse().map_err(|_| how_a_schedule_is_written(value))?;
-        let minute: u32 = minute.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        let minute: u32 = minute
+            .parse()
+            .map_err(|_| how_a_schedule_is_written(value))?;
         if hour > 23 || minute > 59 {
             return Err(format!(
                 "«{value}» non è un'ora del giorno: le ore vanno da 00 a 23 e i \
@@ -949,12 +960,18 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
     let known = known_flows(sources);
     match known.iter().find(|(known, _, _)| known == name) {
         Some((_, origin, Ok(flow))) => Ok((flow.clone(), origin)),
-        Some((_, origin, Err(reason))) => Err(format!("il flusso {name} ({origin}) non si carica: {reason}")),
+        Some((_, origin, Err(reason))) => Err(format!(
+            "il flusso {name} ({origin}) non si carica: {reason}"
+        )),
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
             Err(format!(
                 "nessun flusso si chiama {name}; quelli che vedo sono: {}",
-                if names.is_empty() { "nessuno".to_owned() } else { names.join(", ") }
+                if names.is_empty() {
+                    "nessuno".to_owned()
+                } else {
+                    names.join(", ")
+                }
             ))
         }
     }
@@ -1482,7 +1499,11 @@ fn check_report(
     // rapporto nominava solo le azioni mancanti, cioè rispondeva a «questo
     // flusso gira?» e non a «cosa posso mettere nel prossimo passo». L'elenco
     // arriva dal registro, non da una copia scritta qui accanto.
-    let _ = write!(report, "\nazioni disponibili: {}", registry.names().join(", "));
+    let _ = write!(
+        report,
+        "\nazioni disponibili: {}",
+        registry.names().join(", ")
+    );
     if missing.is_empty() {
         report.push_str("\nazioni mancanti: nessuna");
     } else {
@@ -1542,8 +1563,9 @@ fn check_report(
 
     // **IL GUASTO 25, DETTO PRIMA DI PARTIRE.** Un `workdir` assoluto non si
     // vede eseguendo: si vede dopo, guardando quale repository si è sporcato.
-    let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) =
-        hardcoded_paths(flow).into_iter().partition(|path| path.fatal);
+    let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) = hardcoded_paths(flow)
+        .into_iter()
+        .partition(|path| path.fatal);
     if !fatal.is_empty() {
         let _ = write!(
             report,
@@ -1771,11 +1793,7 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
 /// percorso legittimo. Si dichiara come secondo argomento — posizionale come
 /// il mandato di `run`, che è la forma di questa riga di comando — e quello che
 /// non combacia si vede nel rapporto invece di sparire.
-fn relocate_flow(
-    sources: &[FlowSource],
-    name: &str,
-    from: Option<&str>,
-) -> Result<String, String> {
+fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&str>) -> Result<String, String> {
     let root = workspace_root().ok_or_else(|| {
         format!(
             "non c'è nessuna radice di progetto risalendo da qui: manca un {}. \
@@ -1857,10 +1875,7 @@ fn relocate_flow(
 /// — è il guasto 21, che qui si evita non avendo bisogno del processo.
 ///
 /// Torna `None` se il documento non ha nemmeno un elenco di passi.
-fn relocate_workdirs(
-    document: &mut Value,
-    old_root: &Path,
-) -> Option<(Vec<String>, Vec<String>)> {
+fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<String>, Vec<String>)> {
     let mut moved = Vec::new();
     let mut left_alone = Vec::new();
     let steps = document
@@ -2626,9 +2641,7 @@ fn engine_lines_into(
                 ProbeVerdict::Broken { said } => broken.push(format!(
                     "{who}: riga montata «{line}»; il motore ha risposto: «{said}»"
                 )),
-                ProbeVerdict::CannotWork { said } => {
-                    exhausted.push(format!("{who}: «{said}»"))
-                }
+                ProbeVerdict::CannotWork { said } => exhausted.push(format!("{who}: «{said}»")),
                 ProbeVerdict::NotDeclared => untried.push(format!(
                     "{who}: il suo descrittore non dichiara come rifiuta la riga senza \
                      domanda (`refuses_without_prompt`), quindi non c'è modo di dire se \
@@ -2939,13 +2952,7 @@ fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>) -> Result
     record_run(&ledger, &flow, &run_id, "running", started_at, None, None)?;
 
     let mut store = ledger.clone();
-    let result = execute_flow(
-        &flow,
-        &run_id,
-        &mut store,
-        &registry,
-        &mut SystemClock,
-    );
+    let result = execute_flow(&flow, &run_id, &mut store, &registry, &mut SystemClock);
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
@@ -3211,11 +3218,8 @@ mod tests {
         )
         .expect("il flusso di prova è valido");
 
-        let mut store = InMemoryRecordStore::from_records(vec![a_handed_record(
-            1_000,
-            Some(3_600),
-            None,
-        )]);
+        let mut store =
+            InMemoryRecordStore::from_records(vec![a_handed_record(1_000, Some(3_600), None)]);
         let registry = default_registry(None, None);
         let shared = flow::SharedState::new();
         let probe = HandoffLease { now: 1_100 };
@@ -3301,7 +3305,9 @@ mod tests {
             1_100,
         );
         record.species = Some(flow::StepSpecies::Repeatable);
-        ledger.append_step_started(&record).expect("aprire il passo");
+        ledger
+            .append_step_started(&record)
+            .expect("aprire il passo");
         ledger
             .close_step(
                 "run-vecchia",
@@ -3344,10 +3350,8 @@ mod tests {
     impl TestDirectory {
         fn new() -> Self {
             let serial = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "sailor-flow-test-{}-{serial}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("sailor-flow-test-{}-{serial}", std::process::id()));
             fs::create_dir(&path).expect("creare la cartella di prova");
             Self(path)
         }
@@ -3738,7 +3742,10 @@ mod tests {
         .expect("elencare i flussi");
 
         assert!(report.contains("prova\t1 passi\tdi prova"), "{report}");
-        assert!(report.contains("rotto\tdi prova\tnon caricabile:"), "{report}");
+        assert!(
+            report.contains("rotto\tdi prova\tnon caricabile:"),
+            "{report}"
+        );
         assert!(report.contains("rotto.flow.json"), "{report}");
     }
 
@@ -3756,8 +3763,8 @@ mod tests {
             "inputs": {}
         }"#;
 
-        let error = serde_json::from_str::<FlowFile>(json)
-            .expect_err("il ciclo deve essere rifiutato");
+        let error =
+            serde_json::from_str::<FlowFile>(json).expect_err("il ciclo deve essere rifiutato");
 
         assert!(error.to_string().contains("backward dependency"), "{error}");
     }
@@ -3811,11 +3818,14 @@ mod tests {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
         let tools = tools_declaring(&["git"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, unknown) =
+            check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
-            report.contains("strumenti che nessun descrittore dichiara: questo-non-esiste-in-nessun-catalogo"),
+            report.contains(
+                "strumenti che nessun descrittore dichiara: questo-non-esiste-in-nessun-catalogo"
+            ),
             "{report}"
         );
     }
@@ -3829,7 +3839,8 @@ mod tests {
         let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
         let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, unknown) =
+            check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
@@ -3896,12 +3907,19 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": false}"#);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, unknown) =
+            check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
-        assert!(unknown.is_empty(), "resta un avviso, non un errore: {unknown:?}");
+        assert!(
+            unknown.is_empty(),
+            "resta un avviso, non un errore: {unknown:?}"
+        );
         assert!(report.contains("root"), "nomina il passo: {report}");
         assert!(report.contains("un-motore"), "nomina il motore: {report}");
-        assert!(report.contains("response_shape"), "nomina la capacità: {report}");
+        assert!(
+            report.contains("response_shape"),
+            "nomina la capacità: {report}"
+        );
         assert!(
             report.contains("dichiara di non averla"),
             "e dice che qualcuno ha guardato: {report}"
@@ -4098,7 +4116,10 @@ mod tests {
             said_without, said_with,
             "il tetto non compare nel rapporto: {said_with}"
         );
-        assert!(said_without.contains("tetto di spesa: nessuno"), "{said_without}");
+        assert!(
+            said_without.contains("tetto di spesa: nessuno"),
+            "{said_without}"
+        );
         assert!(said_with.contains("2500000 micro"), "{said_with}");
     }
 
@@ -4156,10 +4177,19 @@ mod tests {
             None,
         );
 
-        assert!(!said.contains("prezzato ("), "un modello prezzato non si segnala: {said}");
-        assert!(said.contains("mai-visto (nessuna voce nel listino)"), "{said}");
+        assert!(
+            !said.contains("prezzato ("),
+            "un modello prezzato non si segnala: {said}"
+        );
+        assert!(
+            said.contains("mai-visto (nessuna voce nel listino)"),
+            "{said}"
+        );
         assert!(said.contains("a-meta (voce senza prezzi)"), "{said}");
-        assert!(said.contains("sconosciuto"), "e dice cosa gli succede: {said}");
+        assert!(
+            said.contains("sconosciuto"),
+            "e dice cosa gli succede: {said}"
+        );
     }
 
     /// **QUANDO SONO TUTTI PREZZATI LO DICE LO STESSO.** Un rapporto che tace
@@ -4189,7 +4219,10 @@ mod tests {
         let never_ran = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
 
         assert_ne!(unreadable, never_ran);
-        assert!(unreadable.contains("non si è potuto leggere"), "{unreadable}");
+        assert!(
+            unreadable.contains("non si è potuto leggere"),
+            "{unreadable}"
+        );
         assert!(!unreadable.contains("mai girato"), "{unreadable}");
     }
 
@@ -4304,7 +4337,10 @@ mod tests {
 
         let said = spending_report(&view, &a_small_price_list());
 
-        assert!(said.contains("mai-visto (nessuna voce nel listino)"), "{said}");
+        assert!(
+            said.contains("mai-visto (nessuna voce nel listino)"),
+            "{said}"
+        );
         assert!(
             !said.contains("prezzato ("),
             "un modello prezzato non si segnala: {said}"
@@ -4355,7 +4391,9 @@ mod tests {
             "{said}"
         );
         assert!(
-            said.contains("home chosen by the step (codex) — home /una/casa/scritta/nel/passo — 1 chiamata"),
+            said.contains(
+                "home chosen by the step (codex) — home /una/casa/scritta/nel/passo — 1 chiamata"
+            ),
             "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
         );
     }
@@ -4418,12 +4456,7 @@ mod tests {
     /// tutto — con l'aria di una misura su molti campioni.
     #[test]
     fn runs_that_spent_nothing_are_not_samples() {
-        let seen = observed_from(&[
-            vec![Some(0)],
-            vec![],
-            vec![None, None],
-            vec![Some(900)],
-        ]);
+        let seen = observed_from(&[vec![Some(0)], vec![], vec![None, None], vec![Some(900)]]);
 
         assert_eq!(seen.runs, 4, "le corse ci sono tutte");
         assert_eq!(seen.costed_runs, 1, "ma una sola ha speso");
@@ -4485,7 +4518,10 @@ mod tests {
     #[test]
     fn a_file_named_differently_from_its_id_is_refused_instead_of_duplicated() {
         let home = TestDirectory::new();
-        home.write("altro-nome.flow.json", &flow_json("shell_check", "[]", "{}"));
+        home.write(
+            "altro-nome.flow.json",
+            &flow_json("shell_check", "[]", "{}"),
+        );
         let sources = flow::system::sources(&home.0, None, None);
 
         let error = set_cap(&sources, "altro-nome", "500").expect_err("nome e id divergono");
@@ -4552,8 +4588,8 @@ mod tests {
             "si parte da un flusso senza innesco"
         );
 
-        let said = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
-            .expect("l'innesco si scrive");
+        let said =
+            set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("l'innesco si scrive");
 
         assert!(said.contains("ogni 3600s"), "{said}");
         let after = written_flow(&home.0, "prova");
@@ -4588,7 +4624,10 @@ mod tests {
         assert_eq!(
             written_flow(&home.0, "prova").schedule,
             Some(flow::Schedule {
-                recurrence: flow::Recurrence::DailyAt { hour: 7, minute: 30 },
+                recurrence: flow::Recurrence::DailyAt {
+                    hour: 7,
+                    minute: 30
+                },
                 weight: flow::Weight::Heavy,
                 perimeter: vec![],
             })
@@ -4637,10 +4676,15 @@ mod tests {
 
         set_schedule(&sources, "prova", "05:15", None).expect("solo l'ora cambia");
 
-        let after = written_flow(&home.0, "prova").schedule.expect("l'innesco c'è");
+        let after = written_flow(&home.0, "prova")
+            .schedule
+            .expect("l'innesco c'è");
         assert_eq!(
             after.recurrence,
-            flow::Recurrence::DailyAt { hour: 5, minute: 15 }
+            flow::Recurrence::DailyAt {
+                hour: 5,
+                minute: 15
+            }
         );
         assert_eq!(after.weight, flow::Weight::Heavy, "il peso resta quello");
         assert_eq!(
@@ -4679,8 +4723,8 @@ mod tests {
         let sources = flow::system::sources(&home.0, None, None);
 
         for wrong in ["ogni-tanto", "0s", "25:00", "07:70", "3600"] {
-            let error = set_schedule(&sources, "prova", wrong, Some(LIGHT))
-                .unwrap_or_else(|error| error);
+            let error =
+                set_schedule(&sources, "prova", wrong, Some(LIGHT)).unwrap_or_else(|error| error);
             assert!(
                 error.contains(NO_SCHEDULE) || error.contains("ore vanno"),
                 "«{wrong}» è stato accettato o rifiutato senza dire come si scrive: {error}"
@@ -4732,7 +4776,10 @@ mod tests {
         // Due file, lo stesso `id` dentro: il registro li indicizza per nome di
         // file, la scrittura per `id`.
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        home.write("nome-diverso.flow.json", &flow_json("shell_check", "[]", "{}"));
+        home.write(
+            "nome-diverso.flow.json",
+            &flow_json("shell_check", "[]", "{}"),
+        );
         let sources = flow::system::sources(&home.0, None, None);
 
         let refused = set_schedule(&sources, "nome-diverso", "3600s", Some(LIGHT))
@@ -4746,11 +4793,11 @@ mod tests {
         // **E LA PARTE CHE CONTA: IL FLUSSO ESTRANEO NON È STATO TOCCATO.** Un
         // rifiuto che avesse comunque scritto sarebbe peggio del difetto.
         let bystander = written_flow(&home.0, "prova");
-        assert_eq!(bystander.schedule, None, "l'innesco di «prova» non si tocca");
         assert_eq!(
-            bystander.spend_cap_micros, None,
-            "e nemmeno il suo tetto"
+            bystander.schedule, None,
+            "l'innesco di «prova» non si tocca"
         );
+        assert_eq!(bystander.spend_cap_micros, None, "e nemmeno il suo tetto");
         assert_eq!(written_flow(&home.0, "nome-diverso").schedule, None);
         assert_eq!(
             entries_of(&home.0).len(),
@@ -4793,7 +4840,10 @@ mod tests {
         let after = schedule_of(&sources, "prova").expect("si rilegge");
         assert!(after.contains("ogni 300s"), "{after}");
         assert!(after.contains(HEAVY), "{after}");
-        assert!(after.contains("non dichiarato"), "il perimetro vuoto lo dice: {after}");
+        assert!(
+            after.contains("non dichiarato"),
+            "il perimetro vuoto lo dice: {after}"
+        );
     }
 
     /// **OGNI GESTO CHE `dispatch` SA FARE È SCRITTO NELL'USO.**
@@ -4814,8 +4864,7 @@ mod tests {
     /// nominarlo in `usage()` — cioè il modo in cui un gesto diventa invisibile.
     #[test]
     fn every_arm_of_the_dispatcher_is_written_in_the_usage_line() {
-        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src/flow_cmd.rs");
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/flow_cmd.rs");
         let text = fs::read_to_string(&source).expect("questo file si rilegge");
         let body = text
             .split_once("fn dispatch(")
@@ -4875,7 +4924,10 @@ mod tests {
         assert!(report.contains("cicli: nessuno"), "{report}");
         assert!(report.contains("dipendenze: 0"), "{report}");
         assert!(report.contains("root <- nessuna"), "{report}");
-        assert!(report.contains("azioni mancanti: azione_assente"), "{report}");
+        assert!(
+            report.contains("azioni mancanti: azione_assente"),
+            "{report}"
+        );
     }
 
     #[test]
@@ -4958,7 +5010,9 @@ mod tests {
     #[test]
     fn the_registered_engine_knows_how_to_resolve_a_tool_id() {
         let registry = default_registry(None, None);
-        let engine = registry.get("external_engine").expect("il motore è registrato");
+        let engine = registry
+            .get("external_engine")
+            .expect("il motore è registrato");
         let input = serde_json::json!({
             "tool": "nessuno-strumento-si-chiama-cosi",
             "timeout_secs": 1
@@ -5064,7 +5118,9 @@ mod tests {
         }
         assert_eq!(
             seen.get("workdir").and_then(Value::as_str),
-            workspace_root().as_deref().map(|root| root.to_str().expect("un percorso leggibile")),
+            workspace_root()
+                .as_deref()
+                .map(|root| root.to_str().expect("un percorso leggibile")),
             "la cartella di lavoro è la radice, non dove sta il processo"
         );
     }
@@ -5084,7 +5140,13 @@ mod tests {
             dir: directory.0.clone(),
         }];
 
-        for name in ["../segreto", "cartella/segreto", "", "..", "buono.flow.json"] {
+        for name in [
+            "../segreto",
+            "cartella/segreto",
+            "",
+            "..",
+            "buono.flow.json",
+        ] {
             let refused = one_flow(&sources, name).expect_err(&format!(
                 "«{name}» non è un flusso di questa macchina e non deve aprirsi"
             ));
@@ -5093,7 +5155,10 @@ mod tests {
                 "«{name}»: {refused}"
             );
         }
-        assert!(one_flow(&sources, "buono").is_ok(), "il flusso vero si apre");
+        assert!(
+            one_flow(&sources, "buono").is_ok(),
+            "il flusso vero si apre"
+        );
     }
 
     /// I FLUSSI SPEDITI SI VEDONO ANCHE DALLA RIGA DI COMANDO. Il difetto che
@@ -5126,8 +5191,16 @@ mod tests {
                 .expect("registrare la chiamata");
         }
 
-        record_run(&ledger, &flow, "corsa-costosa", "complete", 100, Some(110), None)
-            .expect("registrare la corsa");
+        record_run(
+            &ledger,
+            &flow,
+            "corsa-costosa",
+            "complete",
+            100,
+            Some(110),
+            None,
+        )
+        .expect("registrare la corsa");
 
         let dump = ledger.projection_dump().expect("leggere la proiezione");
         let run = dump["runs"]
@@ -5371,10 +5444,8 @@ mod tests {
     fn tools_with_engines(entries: &[(&str, &str)]) -> toolbox::Tools {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "prova-motori-{}-{serial}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("prova-motori-{}-{serial}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("la cartella di prova");
         let mut declared = Vec::new();
         for (id, ask) in entries {
@@ -5391,7 +5462,8 @@ mod tests {
             ));
         }
         let file = dir.join("tools.json");
-        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, declared.join(","))).expect("scrivere");
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, declared.join(",")))
+            .expect("scrivere");
         let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
         toolbox::Tools::new(
             catalog,
@@ -5527,11 +5599,8 @@ mod tests {
     #[test]
     fn every_engine_of_the_chain_is_tried_not_only_the_first() {
         let flow = flow_with_chain(r#"["primo", "secondo", "terzo"]"#);
-        let tools = tools_with_engines(&[
-            ("primo", REFUSES),
-            ("secondo", REFUSES),
-            ("terzo", REFUSES),
-        ]);
+        let tools =
+            tools_with_engines(&[("primo", REFUSES), ("secondo", REFUSES), ("terzo", REFUSES)]);
         let probe = ScriptedProbe(vec![
             ("primo", "Input must be provided through stdin"),
             ("secondo", "took --output-format as its prompt"),
@@ -5590,10 +5659,7 @@ mod tests {
             "un motore senza `ask` non è una riga non provata: {untried}"
         );
         assert!(unassemblable.contains("senza-ask"), "{unassemblable}");
-        assert!(
-            !unassemblable.contains("senza-rifiuto"),
-            "{unassemblable}"
-        );
+        assert!(!unassemblable.contains("senza-rifiuto"), "{unassemblable}");
     }
 
     /// **UN MOTORE ESAURITO NON È UNA RIGA ROTTA**, e la sua frase è la quarta.
@@ -5832,9 +5898,8 @@ mod tests {
     /// persona.
     #[test]
     fn an_absolute_path_inside_a_prompt_is_a_warning() {
-        let flow = flow_with(
-            r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/sailor.\n"]}}"#,
-        );
+        let flow =
+            flow_with(r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/sailor.\n"]}}"#);
 
         let found = hardcoded_paths(&flow);
 
@@ -6006,8 +6071,8 @@ mod tests {
     fn a_workdir_equal_to_the_root_is_removed() {
         let mut document = document_with_workdir("/vecchio/albero");
 
-        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
-            .expect("ha dei passi");
+        let (moved, left) =
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
 
         assert_eq!(moved.len(), 1);
         assert!(left.is_empty());
@@ -6058,12 +6123,15 @@ mod tests {
     fn a_workdir_outside_the_prefix_is_left_alone_and_reported() {
         let mut document = document_with_workdir("/altro/posto");
 
-        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
-            .expect("ha dei passi");
+        let (moved, left) =
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
 
         assert!(moved.is_empty());
         assert_eq!(left.len(), 1);
-        assert_eq!(document["graph"]["steps"][0]["with"]["workdir"], "/altro/posto");
+        assert_eq!(
+            document["graph"]["steps"][0]["with"]["workdir"],
+            "/altro/posto"
+        );
     }
 
     /// **UN RINVIO NON SI RISCRIVE.** `{"$from": "/innesco/text"}` è un
@@ -6082,8 +6150,8 @@ mod tests {
             "inputs": {}
         });
 
-        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
-            .expect("ha dei passi");
+        let (moved, left) =
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
 
         assert!(moved.is_empty() && left.is_empty());
         assert_eq!(

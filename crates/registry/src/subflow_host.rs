@@ -82,12 +82,7 @@ impl SubflowHost for LedgerHost {
     fn actions(&self) -> Result<Arc<ActionRegistry>, ActionError> {
         Ok(self
             .nested
-            .get_or_init(|| {
-                Arc::new(default_registry(
-                    self.ledger.clone(),
-                    self.watcher.clone(),
-                ))
-            })
+            .get_or_init(|| Arc::new(default_registry(self.ledger.clone(), self.watcher.clone())))
             .clone())
     }
 

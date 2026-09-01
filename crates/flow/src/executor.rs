@@ -87,11 +87,7 @@ pub enum ActionOutcome {
 }
 
 pub trait Action: Send + Sync {
-    fn execute(
-        &self,
-        input: &Value,
-        shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError>;
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError>;
 
     /// The fields of a hand-written `with` that this action does *not* know.
     ///
@@ -125,11 +121,7 @@ pub trait Action: Send + Sync {
     /// meaningful for an action declaring itself `Compensable`: one that
     /// declares it without writing this method fails compensation and lands on
     /// a person, which is the right way for the mistake to show.
-    fn compensate(
-        &self,
-        _record: &StepRecord,
-        _shared: &SharedState,
-    ) -> Result<(), ActionError> {
+    fn compensate(&self, _record: &StepRecord, _shared: &SharedState) -> Result<(), ActionError> {
         Err(ActionError::new(
             "no_compensation",
             "the action declares itself compensable but cannot undo its own effect",
@@ -816,8 +808,7 @@ impl Executor for InProcessExecutor {
                         );
                         started.attempt_relation = attempt_relation(&records, &started);
                         started.held_by_pid = Some(std::process::id());
-                        started.species =
-                            actions.get(&step.action).map(|action| action.species());
+                        started.species = actions.get(&step.action).map(|action| action.species());
                         store.append_started(started)?;
                         store.close(
                             &request.run_id,
@@ -1077,10 +1068,22 @@ pub enum FlowError {
     Store(String),
     Clock(String),
     InvalidRecord(String),
-    DuplicateAttempt { step: String, attempt: u32 },
-    MissingAttempt { step: String, attempt: u32 },
-    AlreadyClosed { step: String, attempt: u32 },
-    StaleEpoch { step: String, epoch: u64 },
+    DuplicateAttempt {
+        step: String,
+        attempt: u32,
+    },
+    MissingAttempt {
+        step: String,
+        attempt: u32,
+    },
+    AlreadyClosed {
+        step: String,
+        attempt: u32,
+    },
+    StaleEpoch {
+        step: String,
+        epoch: u64,
+    },
     UnknownStep(String),
     UnknownAction(String),
     MissingOutput(String),
@@ -1302,8 +1305,8 @@ mod workdir_tests {
     /// steps changing place.
     #[test]
     fn an_absent_workdir_inherits_the_root() {
-        let out = resolved(serde_json::json!({"command": "true"}), Some("/here"))
-            .expect("it resolves");
+        let out =
+            resolved(serde_json::json!({"command": "true"}), Some("/here")).expect("it resolves");
 
         assert_eq!(out["workdir"], "/here");
     }
@@ -1490,10 +1493,7 @@ fn resolve_workdir(step: &Step, input: Value, root: Option<&Path>) -> Result<Val
         Some(_) => {}
         None => {
             if let Some(root) = root.filter(|_| step.input_schema.accepts_property(WORKDIR_FIELD)) {
-                fields.insert(
-                    WORKDIR_FIELD.to_owned(),
-                    root.display().to_string().into(),
-                );
+                fields.insert(WORKDIR_FIELD.to_owned(), root.display().to_string().into());
             }
         }
     }
@@ -1514,10 +1514,7 @@ fn overlay_input(input: Value, with: Option<&Value>) -> Value {
     Value::Object(input)
 }
 
-pub fn attempt_relation(
-    records: &[StepRecord],
-    started: &StepRecord,
-) -> Option<AttemptRelation> {
+pub fn attempt_relation(records: &[StepRecord], started: &StepRecord) -> Option<AttemptRelation> {
     let previous = records
         .iter()
         .filter(|record| {
@@ -1531,8 +1528,7 @@ pub fn attempt_relation(
         let origin = records
             .iter()
             .filter(|record| {
-                record.step_id == started.step_id
-                    && record.input_digest == started.input_digest
+                record.step_id == started.step_id && record.input_digest == started.input_digest
             })
             .min_by_key(|record| (record.attempt, record.epoch))
             .unwrap_or(previous);
@@ -1769,8 +1765,7 @@ mod tests {
     fn dependent_step_merges_its_values_over_predecessor_output() {
         let mut send = step("send", &["panel"], "echo", 1);
         send.with = Some(json!({"text": "/clear", "mode": "declared"}));
-        let graph = Graph::new(vec![step("panel", &[], "echo", 1), send])
-            .expect("valid graph");
+        let graph = Graph::new(vec![step("panel", &[], "echo", 1), send]).expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         let request = ExecutionRequest {

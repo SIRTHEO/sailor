@@ -237,7 +237,10 @@ mod tests {
     #[test]
     fn validate_profile_name_rejects_dot_and_dotdot() {
         assert_eq!(validate_profile_name("."), Err(ProfileNameError::Traversal));
-        assert_eq!(validate_profile_name(".."), Err(ProfileNameError::Traversal));
+        assert_eq!(
+            validate_profile_name(".."),
+            Err(ProfileNameError::Traversal)
+        );
     }
 
     #[test]

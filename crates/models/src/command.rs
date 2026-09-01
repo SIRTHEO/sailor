@@ -76,7 +76,10 @@ pub fn current(catalog: &Catalog, cfg: &UserConfig, kind: &str) -> String {
     match configured {
         Some(m) => format!("{kind}: {} (configured)", format_model_line(m)),
         None => match config::effective_model(catalog, cfg, kind) {
-            Some(m) => format!("{kind}: {} (free fallback, not configured)", format_model_line(m)),
+            Some(m) => format!(
+                "{kind}: {} (free fallback, not configured)",
+                format_model_line(m)
+            ),
             None => format!("{kind}: no free model available in the catalog"),
         },
     }
@@ -127,15 +130,29 @@ mod tests {
     #[test]
     fn list_free_only_shows_only_free_models() {
         let catalog = sample_catalog();
-        let out = list(&catalog, &Filter { free_only: true, ..Default::default() });
+        let out = list(
+            &catalog,
+            &Filter {
+                free_only: true,
+                ..Default::default()
+            },
+        );
         assert_eq!(out.lines().count(), 17);
-        assert!(out.lines().all(|l| l.contains("  free  context") && !l.contains("  paid  context")));
+        assert!(out
+            .lines()
+            .all(|l| l.contains("  free  context") && !l.contains("  paid  context")));
     }
 
     #[test]
     fn list_with_no_hits_says_so_instead_of_an_empty_string() {
         let catalog = sample_catalog();
-        let out = list(&catalog, &Filter { min_context: Some(999_999_999), ..Default::default() });
+        let out = list(
+            &catalog,
+            &Filter {
+                min_context: Some(999_999_999),
+                ..Default::default()
+            },
+        );
         assert_eq!(out, "no model matches the filter");
     }
 
@@ -191,6 +208,9 @@ mod tests {
         };
         let line = format_model_line(&m);
         assert!(line.contains("? (unknown)"));
-        assert!(!line.contains("0.0000 USD"), "an unknown price must not read as zero");
+        assert!(
+            !line.contains("0.0000 USD"),
+            "an unknown price must not read as zero"
+        );
     }
 }

@@ -266,13 +266,8 @@ fn explicit_projection_rebuild_is_identical_and_skipped_event_control_differs() 
         broken, expected,
         "skipping the close event should have changed the projection"
     );
-    ledger
-        .rebuild_projections()
-        .expect("rebuild explicitly");
-    assert_eq!(
-        ledger.projection_dump().expect("read the result"),
-        expected
-    );
+    ledger.rebuild_projections().expect("rebuild explicitly");
+    assert_eq!(ledger.projection_dump().expect("read the result"), expected);
 }
 
 #[test]
@@ -893,7 +888,9 @@ fn schema_v1_pruned_database_upgrades_in_place_without_event_rebuild() {
     }
 
     let ledger = Ledger::open(&directory.0).expect("open pruned v1 without a rebuild");
-    let steps = ledger.steps("pruned-run").expect("read the preserved steps");
+    let steps = ledger
+        .steps("pruned-run")
+        .expect("read the preserved steps");
     assert_eq!(steps.len(), 1);
     assert_eq!(steps[0].bytes_seen, None);
     assert_eq!(steps[0].bytes_discarded, None);
@@ -971,7 +968,10 @@ fn the_ledger_knows_what_disappeared_and_what_came_back() {
     ledger
         .record_inventory(&InventoryScan {
             taken_at: 100,
-            items: vec![seen("skill", "prima", "active"), seen("hook", "sola", "active")],
+            items: vec![
+                seen("skill", "prima", "active"),
+                seen("hook", "sola", "active"),
+            ],
         })
         .expect("the first scan");
 
@@ -997,20 +997,32 @@ fn the_ledger_knows_what_disappeared_and_what_came_back() {
     let present = ledger.inventory_present().expect("present entries");
     assert_eq!(present.len(), 1, "{present:#?}");
     assert_eq!(present[0].reach, "inactive");
-    assert_eq!(present[0].reason.as_deref(), Some("the plugin is switched off"));
-    assert_eq!(present[0].first_seen, 100, "the hook was there from the first scan");
+    assert_eq!(
+        present[0].reason.as_deref(),
+        Some("the plugin is switched off")
+    );
+    assert_eq!(
+        present[0].first_seen, 100,
+        "the hook was there from the first scan"
+    );
 
     // Third scan: the skill comes back. It is no longer vanished, and it keeps
     // its original date.
     ledger
         .record_inventory(&InventoryScan {
             taken_at: 300,
-            items: vec![seen("skill", "prima", "active"), seen("hook", "sola", "active")],
+            items: vec![
+                seen("skill", "prima", "active"),
+                seen("hook", "sola", "active"),
+            ],
         })
         .expect("the third scan");
 
     assert!(
-        ledger.inventory_gone().expect("vanished entries").is_empty(),
+        ledger
+            .inventory_gone()
+            .expect("vanished entries")
+            .is_empty(),
         "an entry that came back still reads as vanished"
     );
     let back = ledger
@@ -1024,7 +1036,10 @@ fn the_ledger_knows_what_disappeared_and_what_came_back() {
 
     // "What is new since yesterday": nothing, because both already existed.
     assert!(
-        ledger.inventory_new_since(150).expect("new entries").is_empty(),
+        ledger
+            .inventory_new_since(150)
+            .expect("new entries")
+            .is_empty(),
         "an entry that came back is not a new entry"
     );
 }
@@ -1039,7 +1054,10 @@ fn the_inventory_survives_a_rebuild_from_the_events() {
     ledger
         .record_inventory(&InventoryScan {
             taken_at: 10,
-            items: vec![seen("skill", "una", "active"), seen("skill", "due", "active")],
+            items: vec![
+                seen("skill", "una", "active"),
+                seen("skill", "due", "active"),
+            ],
         })
         .expect("the first scan");
     ledger
@@ -1076,7 +1094,12 @@ fn record(collection: &str, key: &str, value: Value, at: i64) -> StoreRecord {
 fn a_record_nobody_wrote_says_it_does_not_know() {
     let directory = TestDirectory::new("record-never-written");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
-    assert_eq!(ledger.read_record("mandate", "current").expect("read the record"), None);
+    assert_eq!(
+        ledger
+            .read_record("mandate", "current")
+            .expect("read the record"),
+        None
+    );
 }
 
 /// The engine knows nothing about collections: it keeps them all regardless.
@@ -1090,17 +1113,31 @@ fn the_engine_keeps_collections_it_knows_nothing_about() {
     let directory = TestDirectory::new("unknown-collections");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     ledger
-        .put_record(&record("mandate", "current", json!({"file": "sailor.md"}), 10))
+        .put_record(&record(
+            "mandate",
+            "current",
+            json!({"file": "sailor.md"}),
+            10,
+        ))
         .expect("the mandate entry");
     ledger
         .put_record(&record("panetteria", "current", json!({"pane": 3}), 20))
         .expect("the bakery entry");
 
-    let mandate = ledger.read_record("mandate", "current").expect("the read").expect("present");
+    let mandate = ledger
+        .read_record("mandate", "current")
+        .expect("the read")
+        .expect("present");
     assert_eq!(mandate.value, json!({"file": "sailor.md"}));
-    let bakery = ledger.read_record("panetteria", "current").expect("the read").expect("present");
+    let bakery = ledger
+        .read_record("panetteria", "current")
+        .expect("the read")
+        .expect("present");
     assert_eq!(bakery.value, json!({"pane": 3}));
-    assert_eq!(ledger.records_in("panetteria").expect("collection").len(), 1);
+    assert_eq!(
+        ledger.records_in("panetteria").expect("collection").len(),
+        1
+    );
 }
 
 /// The last write wins, and the entry stays one.
@@ -1114,13 +1151,26 @@ fn the_last_write_wins_and_the_record_stays_one() {
     let directory = TestDirectory::new("record-replaced");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     ledger
-        .put_record(&record("mandate", "current", json!({"file": "socraticode.md"}), 100))
+        .put_record(&record(
+            "mandate",
+            "current",
+            json!({"file": "socraticode.md"}),
+            100,
+        ))
         .expect("the first write");
     ledger
-        .put_record(&record("mandate", "current", json!({"file": "sailor.md"}), 200))
+        .put_record(&record(
+            "mandate",
+            "current",
+            json!({"file": "sailor.md"}),
+            200,
+        ))
         .expect("the second write");
 
-    let current = ledger.read_record("mandate", "current").expect("the read").expect("present");
+    let current = ledger
+        .read_record("mandate", "current")
+        .expect("the read")
+        .expect("present");
     assert_eq!(current.value, json!({"file": "sailor.md"}));
     assert_eq!(current.written_at, 200);
     assert_eq!(ledger.records_in("mandate").expect("collection").len(), 1);
@@ -1144,7 +1194,12 @@ fn a_record_without_an_address_is_refused() {
     assert!(ledger.put_record(&keyless).is_err());
 
     // And the refusal left nothing behind.
-    assert_eq!(ledger.read_record("mandate", "current").expect("read the record"), None);
+    assert_eq!(
+        ledger
+            .read_record("mandate", "current")
+            .expect("read the record"),
+        None
+    );
 }
 
 /// The source is the log, not the table.
@@ -1158,15 +1213,28 @@ fn a_record_survives_a_rebuild_from_the_events() {
     let directory = TestDirectory::new("record-rebuilt");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     ledger
-        .put_record(&record("mandate", "current", json!({"file": "vecchio.md"}), 100))
+        .put_record(&record(
+            "mandate",
+            "current",
+            json!({"file": "vecchio.md"}),
+            100,
+        ))
         .expect("the first write");
     ledger
-        .put_record(&record("mandate", "current", json!({"file": "corrente.md"}), 200))
+        .put_record(&record(
+            "mandate",
+            "current",
+            json!({"file": "corrente.md"}),
+            200,
+        ))
         .expect("the second write");
 
     ledger.rebuild_projections().expect("rebuild");
 
-    let current = ledger.read_record("mandate", "current").expect("the read").expect("present");
+    let current = ledger
+        .read_record("mandate", "current")
+        .expect("the read")
+        .expect("present");
     assert_eq!(
         current.value,
         json!({"file": "corrente.md"}),
@@ -1185,7 +1253,12 @@ fn a_run(ledger: &Ledger, run_id: &str, entity: &str, started_at: i64, ended_at:
             entity: entity.to_owned(),
             parent_run_id: None,
             started_by: "test".to_owned(),
-            status: if ended_at.is_some() { "done" } else { "running" }.to_owned(),
+            status: if ended_at.is_some() {
+                "done"
+            } else {
+                "running"
+            }
+            .to_owned(),
             total_cost_micros: 0,
             error: None,
             started_at,
@@ -1276,7 +1349,12 @@ fn a_handed_run_is_found_by_the_waiting_question_and_not_by_the_unfinished_one()
         1,
         1,
         110,
-        Some((Outcome::Waiting, None, 150, Some("handed to \"claude-live\""))),
+        Some((
+            Outcome::Waiting,
+            None,
+            150,
+            Some("handed to \"claude-live\""),
+        )),
     );
 
     // Interrupted halfway: an open step and no outcome. This one belongs to
@@ -1300,10 +1378,7 @@ fn a_handed_run_is_found_by_the_waiting_question_and_not_by_the_unfinished_one()
     let unfinished = ledger
         .unfinished_runs()
         .expect("ask for the interrupted runs");
-    let names: Vec<&str> = unfinished
-        .iter()
-        .map(|run| run.run_id.as_str())
-        .collect();
+    let names: Vec<&str> = unfinished.iter().map(|run| run.run_id.as_str()).collect();
     assert_eq!(
         names,
         vec!["run-halfway"],
@@ -1325,16 +1400,29 @@ fn an_empty_ledger_answers_zero_instead_of_breaking() {
 
     assert_eq!(ledger.recorded_runs().expect("tally"), 0);
     assert_eq!(ledger.runs_in_window(None, 50).expect("window"), 0);
-    let tally = ledger.step_failure_tally("compile", None, 50).expect("tally");
+    let tally = ledger
+        .step_failure_tally("compile", None, 50)
+        .expect("tally");
     assert_eq!(tally.attempts, 0);
     assert_eq!(tally.failures, 0);
     assert!(tally.by_class.is_empty());
-    assert!(ledger.failure_class_tally(None, 50).expect("failure classes").is_empty());
-    assert_eq!(ledger.last_finished_run("anything").expect("last run"), None);
-    let durations = ledger.step_durations("compile", None, 50).expect("durations");
+    assert!(ledger
+        .failure_class_tally(None, 50)
+        .expect("failure classes")
+        .is_empty());
+    assert_eq!(
+        ledger.last_finished_run("anything").expect("last run"),
+        None
+    );
+    let durations = ledger
+        .step_durations("compile", None, 50)
+        .expect("durations");
     assert!(durations.seconds_sorted.is_empty());
     assert_eq!(durations.failed_samples, 0);
-    assert!(ledger.said_of_failed_steps("never-existed", 5, 512).expect("said").is_empty());
+    assert!(ledger
+        .said_of_failed_steps("never-existed", 5, 512)
+        .expect("said")
+        .is_empty());
 }
 
 /// The per-flow filter really cuts, and it cuts through `runs`.
@@ -1347,17 +1435,48 @@ fn the_flow_filter_cuts_by_joining_the_run_header() {
     let directory = TestDirectory::new("history-per-flow");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-a1", "alpha", 100, Some(200));
-    a_step(&ledger, "run-a1", "compile", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, None)));
+    a_step(
+        &ledger,
+        "run-a1",
+        "compile",
+        1,
+        1,
+        100,
+        Some((Outcome::Broke, Some("timeout"), 150, None)),
+    );
     a_run(&ledger, "run-a2", "alpha", 300, Some(400));
-    a_step(&ledger, "run-a2", "compile", 1, 1, 300, Some((Outcome::Broke, Some("timeout"), 350, None)));
+    a_step(
+        &ledger,
+        "run-a2",
+        "compile",
+        1,
+        1,
+        300,
+        Some((Outcome::Broke, Some("timeout"), 350, None)),
+    );
     a_run(&ledger, "run-b1", "beta", 500, Some(600));
-    a_step(&ledger, "run-b1", "compile", 1, 1, 500, Some((Outcome::Broke, Some("timeout"), 550, None)));
+    a_step(
+        &ledger,
+        "run-b1",
+        "compile",
+        1,
+        1,
+        500,
+        Some((Outcome::Broke, Some("timeout"), 550, None)),
+    );
 
-    let alpha = ledger.step_failure_tally("compile", Some("alpha"), 50).expect("tally");
-    let everything = ledger.step_failure_tally("compile", None, 50).expect("tally");
+    let alpha = ledger
+        .step_failure_tally("compile", Some("alpha"), 50)
+        .expect("tally");
+    let everything = ledger
+        .step_failure_tally("compile", None, 50)
+        .expect("tally");
 
     assert_eq!(alpha.failures, 2, "only alpha's runs");
-    assert_eq!(everything.failures, 3, "with no flow named, everything counts");
+    assert_eq!(
+        everything.failures, 3,
+        "with no flow named, everything counts"
+    );
     assert_eq!(ledger.runs_in_window(Some("alpha"), 50).expect("window"), 2);
 }
 
@@ -1371,10 +1490,28 @@ fn failures_count_attempts_while_runs_affected_counts_runs() {
     let directory = TestDirectory::new("history-attempts");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-1", "alpha", 100, Some(400));
-    a_step(&ledger, "run-1", "compile", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, None)));
-    a_step(&ledger, "run-1", "compile", 2, 2, 200, Some((Outcome::Broke, Some("timeout"), 250, None)));
+    a_step(
+        &ledger,
+        "run-1",
+        "compile",
+        1,
+        1,
+        100,
+        Some((Outcome::Broke, Some("timeout"), 150, None)),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "compile",
+        2,
+        2,
+        200,
+        Some((Outcome::Broke, Some("timeout"), 250, None)),
+    );
 
-    let tally = ledger.step_failure_tally("compile", Some("alpha"), 50).expect("tally");
+    let tally = ledger
+        .step_failure_tally("compile", Some("alpha"), 50)
+        .expect("tally");
 
     assert_eq!(tally.attempts, 2);
     assert_eq!(tally.failures, 2, "two broken attempts are two failures");
@@ -1391,11 +1528,22 @@ fn the_last_finished_run_is_never_the_one_still_in_flight() {
     let directory = TestDirectory::new("history-last-closed");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-vecchia", "alpha", 100, Some(200));
-    a_step(&ledger, "run-vecchia", "compile", 1, 1, 100, Some((Outcome::Went, None, 130, None)));
+    a_step(
+        &ledger,
+        "run-vecchia",
+        "compile",
+        1,
+        1,
+        100,
+        Some((Outcome::Went, None, 130, None)),
+    );
     a_run(&ledger, "run-in-volo", "alpha", 300, None);
     a_step(&ledger, "run-in-volo", "compile", 1, 1, 300, None);
 
-    let last = ledger.last_finished_run("alpha").expect("the read").expect("a closed run exists");
+    let last = ledger
+        .last_finished_run("alpha")
+        .expect("the read")
+        .expect("a closed run exists");
 
     assert_eq!(last.run_id, "run-vecchia");
     assert_eq!(last.steps.len(), 1);
@@ -1412,16 +1560,39 @@ fn a_window_of_one_run_leaves_the_older_one_out() {
     let directory = TestDirectory::new("history-window");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-vecchia", "alpha", 100, Some(200));
-    a_step(&ledger, "run-vecchia", "compile", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, None)));
+    a_step(
+        &ledger,
+        "run-vecchia",
+        "compile",
+        1,
+        1,
+        100,
+        Some((Outcome::Broke, Some("timeout"), 150, None)),
+    );
     a_run(&ledger, "run-nuova", "alpha", 300, Some(400));
-    a_step(&ledger, "run-nuova", "compile", 1, 1, 300, Some((Outcome::Went, None, 350, None)));
+    a_step(
+        &ledger,
+        "run-nuova",
+        "compile",
+        1,
+        1,
+        300,
+        Some((Outcome::Went, None, 350, None)),
+    );
 
-    let narrow = ledger.step_failure_tally("compile", Some("alpha"), 1).expect("tally");
-    let wide = ledger.step_failure_tally("compile", Some("alpha"), 50).expect("tally");
+    let narrow = ledger
+        .step_failure_tally("compile", Some("alpha"), 1)
+        .expect("tally");
+    let wide = ledger
+        .step_failure_tally("compile", Some("alpha"), 50)
+        .expect("tally");
 
     assert_eq!(narrow.failures, 0, "nothing broke in the last run");
     assert_eq!(narrow.attempts, 1);
-    assert_eq!(wide.failures, 1, "looking further back, the failure is there");
+    assert_eq!(
+        wide.failures, 1,
+        "looking further back, the failure is there"
+    );
 }
 
 /// The most frequent class comes first, and a breakage with no class keeps none.
@@ -1430,12 +1601,46 @@ fn the_most_frequent_failure_class_comes_first() {
     let directory = TestDirectory::new("history-classes");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-1", "alpha", 100, Some(400));
-    a_step(&ledger, "run-1", "uno", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 110, None)));
-    a_step(&ledger, "run-1", "due", 1, 1, 120, Some((Outcome::Broke, Some("timeout"), 130, None)));
-    a_step(&ledger, "run-1", "tre", 1, 1, 140, Some((Outcome::Broke, Some("exit_error"), 150, None)));
-    a_step(&ledger, "run-1", "quattro", 1, 1, 160, Some((Outcome::Broke, None, 170, None)));
+    a_step(
+        &ledger,
+        "run-1",
+        "uno",
+        1,
+        1,
+        100,
+        Some((Outcome::Broke, Some("timeout"), 110, None)),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "due",
+        1,
+        1,
+        120,
+        Some((Outcome::Broke, Some("timeout"), 130, None)),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "tre",
+        1,
+        1,
+        140,
+        Some((Outcome::Broke, Some("exit_error"), 150, None)),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "quattro",
+        1,
+        1,
+        160,
+        Some((Outcome::Broke, None, 170, None)),
+    );
 
-    let classes = ledger.failure_class_tally(None, 50).expect("failure classes");
+    let classes = ledger
+        .failure_class_tally(None, 50)
+        .expect("failure classes");
 
     assert_eq!(classes.len(), 3);
     assert_eq!(classes[0].failure_class.as_deref(), Some("timeout"));
@@ -1456,15 +1661,52 @@ fn a_broken_attempt_is_counted_but_not_measured() {
     let directory = TestDirectory::new("history-durations");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-1", "alpha", 100, Some(900));
-    a_step(&ledger, "run-1", "compile", 1, 1, 100, Some((Outcome::Went, None, 110, None)));
-    a_step(&ledger, "run-1", "compile", 2, 2, 200, Some((Outcome::Went, None, 230, None)));
-    a_step(&ledger, "run-1", "compile", 3, 3, 300, Some((Outcome::Broke, Some("timeout"), 800, None)));
+    a_step(
+        &ledger,
+        "run-1",
+        "compile",
+        1,
+        1,
+        100,
+        Some((Outcome::Went, None, 110, None)),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "compile",
+        2,
+        2,
+        200,
+        Some((Outcome::Went, None, 230, None)),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "compile",
+        3,
+        3,
+        300,
+        Some((Outcome::Broke, Some("timeout"), 800, None)),
+    );
 
-    let durations = ledger.step_durations("compile", Some("alpha"), 50).expect("durations");
+    let durations = ledger
+        .step_durations("compile", Some("alpha"), 50)
+        .expect("durations");
 
-    assert_eq!(durations.seconds_sorted, vec![10, 30], "successful attempts only");
-    assert_eq!(durations.failed_samples, 1, "the broken one is still counted");
-    assert_eq!(durations.last_seconds, Some(30), "the last success, not the last close");
+    assert_eq!(
+        durations.seconds_sorted,
+        vec![10, 30],
+        "successful attempts only"
+    );
+    assert_eq!(
+        durations.failed_samples, 1,
+        "the broken one is still counted"
+    );
+    assert_eq!(
+        durations.last_seconds,
+        Some(30),
+        "the last success, not the last close"
+    );
 }
 
 /// The raw text leaves one run only, from broken steps only, and clipped.
@@ -1479,14 +1721,47 @@ fn said_leaves_one_run_only_from_broken_steps_and_says_when_it_was_clipped() {
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     a_run(&ledger, "run-1", "alpha", 100, Some(400));
     let long_text = "à".repeat(400);
-    a_step(&ledger, "run-1", "broken", 1, 1, 100, Some((Outcome::Broke, Some("timeout"), 150, Some(&long_text))));
-    a_step(&ledger, "run-1", "succeeded", 1, 1, 160, Some((Outcome::Went, None, 170, Some("all fine"))));
+    a_step(
+        &ledger,
+        "run-1",
+        "broken",
+        1,
+        1,
+        100,
+        Some((Outcome::Broke, Some("timeout"), 150, Some(&long_text))),
+    );
+    a_step(
+        &ledger,
+        "run-1",
+        "succeeded",
+        1,
+        1,
+        160,
+        Some((Outcome::Went, None, 170, Some("all fine"))),
+    );
     a_run(&ledger, "run-2", "alpha", 500, Some(600));
-    a_step(&ledger, "run-2", "elsewhere", 1, 1, 500, Some((Outcome::Broke, Some("timeout"), 550, Some("from another run"))));
+    a_step(
+        &ledger,
+        "run-2",
+        "elsewhere",
+        1,
+        1,
+        500,
+        Some((
+            Outcome::Broke,
+            Some("timeout"),
+            550,
+            Some("from another run"),
+        )),
+    );
 
     let excerpts = ledger.said_of_failed_steps("run-1", 5, 101).expect("said");
 
-    assert_eq!(excerpts.len(), 1, "one run only, and broken steps only: {excerpts:?}");
+    assert_eq!(
+        excerpts.len(),
+        1,
+        "one run only, and broken steps only: {excerpts:?}"
+    );
     assert_eq!(excerpts[0].step_id, "broken");
     assert!(excerpts[0].truncated, "the clip is declared");
     assert_eq!(
@@ -1495,7 +1770,6 @@ fn said_leaves_one_run_only_from_broken_steps_and_says_when_it_was_clipped() {
         "the clip respects a character boundary: 101 bytes land mid-'à'"
     );
 }
-
 
 // ── the counts that may be unknown ───────────────────────────────────────
 
@@ -1551,9 +1825,21 @@ fn an_unknown_count_stays_unknown_through_the_projection() {
     let rows = dump["model_calls"].as_array().expect("the list is there");
     assert_eq!(rows.len(), 2);
     let unknown = rows.iter().find(|row| row[0] == "ignota").unwrap();
-    assert_eq!(unknown[7], Value::Null, "an unknown input_tokens stays NULL");
-    assert_eq!(unknown[8], Value::Null, "an unknown output_tokens stays NULL");
-    assert_eq!(unknown[10], Value::Null, "an unknown cost_micros stays NULL");
+    assert_eq!(
+        unknown[7],
+        Value::Null,
+        "an unknown input_tokens stays NULL"
+    );
+    assert_eq!(
+        unknown[8],
+        Value::Null,
+        "an unknown output_tokens stays NULL"
+    );
+    assert_eq!(
+        unknown[10],
+        Value::Null,
+        "an unknown cost_micros stays NULL"
+    );
     assert_ne!(unknown[7], json!("0"), "and never becomes a zero");
 
     let measured = rows.iter().find(|row| row[0] == "misurata").unwrap();
@@ -1672,7 +1958,10 @@ fn an_event_written_in_the_old_shape_still_deserialises() {
         serde_json::from_value(old_shape).expect("an old event still reads");
     assert_eq!(record.input_tokens, Some(10));
     assert_eq!(record.price_currency.as_deref(), Some("USD"));
-    assert_eq!(record.total_tokens, None, "a field that was not there is unknown");
+    assert_eq!(
+        record.total_tokens, None,
+        "a field that was not there is unknown"
+    );
     assert_eq!(record.declared_cost_micros, None);
     // **AND THE IDENTITY IS NOT INVENTED FROM AN EVENT THAT DOES NOT CARRY IT.**
     // That event has `mandate_name: "repair"`, which was the old field: reading
@@ -1714,7 +2003,12 @@ fn a_session_belongs_to_the_engine_that_opened_it() {
     let directory = TestDirectory::new("whose-session");
     let ledger = Ledger::open(&directory.0).expect("open the ledger");
     ledger
-        .record_model_call(&call_with_session("call-1", "scopri", "un-motore", "sessione-1"))
+        .record_model_call(&call_with_session(
+            "call-1",
+            "scopri",
+            "un-motore",
+            "sessione-1",
+        ))
         .expect("record the call");
 
     assert_eq!(
@@ -1818,7 +2112,10 @@ fn a_run_that_called_no_engine_spent_nothing_and_hides_nothing() {
     let spend = ledger.spent_in_run("never-ran").expect("read the spend");
 
     assert_eq!(spend, Spend::default());
-    assert!(spend.is_complete(), "nothing unknown: there is nothing at all");
+    assert!(
+        spend.is_complete(),
+        "nothing unknown: there is nothing at all"
+    );
 }
 
 /// **A STORE THAT CLAIMS TO BE CURRENT WHEN IT IS NOT.**
@@ -1888,7 +2185,11 @@ fn a_ledger_that_claims_to_be_current_but_lacks_the_new_columns_is_still_migrate
     assert_eq!(rows.len(), 1, "yesterday's row is still there");
     assert_eq!(rows[0][0], json!("di-ieri"));
     assert_eq!(rows[0][7], json!("10"), "with its values intact");
-    assert_eq!(rows[0][22], Value::Null, "and the new columns are born unknown");
+    assert_eq!(
+        rows[0][22],
+        Value::Null,
+        "and the new columns are born unknown"
+    );
 
     // And the spend sum, which is what `flow cost` asks for, now works: it was
     // this query that used to fail.
@@ -1947,7 +2248,9 @@ fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
     fn columns(ledger: &Ledger, table: &str) -> Vec<String> {
         let connection = ledger.lock().expect("the connection");
         let mut statement = connection
-            .prepare(&format!("SELECT name FROM pragma_table_info('{table}') ORDER BY cid"))
+            .prepare(&format!(
+                "SELECT name FROM pragma_table_info('{table}') ORDER BY cid"
+            ))
             .expect("query the table shape");
         let names = statement
             .query_map([], |row| row.get::<_, String>(0))
@@ -1968,11 +2271,29 @@ fn a_migrated_ledger_ends_up_shaped_exactly_like_a_fresh_one() {
     // it listed the columns **to drop**, so a column added at version 7 stayed
     // in the "old" store and it went red over its own scaffolding, not the code.
     const AS_OF_VERSION_3: &[&str] = &[
-        "call_id", "run_id", "step_id", "purpose", "cli", "requested_model", "actual_model",
-        "input_tokens", "output_tokens", "cached_tokens", "cost_micros", "price_currency",
-        "input_price_micros_per_million", "output_price_micros_per_million",
-        "cached_price_micros_per_million", "mandate_name", "mandate_version", "retry_chain",
-        "error_type", "started_at", "ended_at", "total_tokens", "declared_cost_micros",
+        "call_id",
+        "run_id",
+        "step_id",
+        "purpose",
+        "cli",
+        "requested_model",
+        "actual_model",
+        "input_tokens",
+        "output_tokens",
+        "cached_tokens",
+        "cost_micros",
+        "price_currency",
+        "input_price_micros_per_million",
+        "output_price_micros_per_million",
+        "cached_price_micros_per_million",
+        "mandate_name",
+        "mandate_version",
+        "retry_chain",
+        "error_type",
+        "started_at",
+        "ended_at",
+        "total_tokens",
+        "declared_cost_micros",
     ];
 
     // A store of the oldest version the migration can still pick up, declared
@@ -2074,7 +2395,9 @@ fn a_started_process_survives_the_window_that_started_it() {
 
     // No in-memory state survives this line: it is a different `Ledger`.
     let later = Ledger::open(&directory.0).expect("reopen the ledger tomorrow");
-    let left = later.processes_left_running().expect("ask what is left running");
+    let left = later
+        .processes_left_running()
+        .expect("ask what is left running");
     assert_eq!(left.len(), 1, "the orphan is not in the store: {left:?}");
     assert_eq!(left[0].process_id, "vite-1");
     assert_eq!(left[0].pid, 4242);
@@ -2108,9 +2431,18 @@ fn a_closed_process_leaves_the_list() {
         })
         .expect("record the close");
 
-    let left = ledger.processes_left_running().expect("ask what is left running");
-    let ids: Vec<&str> = left.iter().map(|record| record.process_id.as_str()).collect();
-    assert_eq!(ids, vec!["vite-2"], "the one that exited stayed in the list");
+    let left = ledger
+        .processes_left_running()
+        .expect("ask what is left running");
+    let ids: Vec<&str> = left
+        .iter()
+        .map(|record| record.process_id.as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["vite-2"],
+        "the one that exited stayed in the list"
+    );
 }
 
 /// **THE QUESTION THAT CAUSED THE FAULT WAS ABOUT THE PORT**, not the process:

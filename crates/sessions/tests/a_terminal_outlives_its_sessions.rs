@@ -79,7 +79,10 @@ fn the_same_session_sends_many_events_and_the_terminal_stays_one() {
     store
         .open_terminal(&arrival("ttys001", "/work/sailor", "aaa", 100))
         .expect("open");
-    for (index, name) in ["SessionStart", "UserPromptSubmit", "Stop"].iter().enumerate() {
+    for (index, name) in ["SessionStart", "UserPromptSubmit", "Stop"]
+        .iter()
+        .enumerate()
+    {
         store
             .record_event(&event("ttys001", "aaa", name, 100 + index as i64))
             .expect("record");
@@ -140,7 +143,10 @@ fn a_terminal_killed_without_saying_leaves_its_row_open() {
     store
         .open_terminal(&arrival("ttys004", "/somewhere", "ccc", 10))
         .expect("open");
-    let row = store.terminal("ttys004").expect("read").expect("it is there");
+    let row = store
+        .terminal("ttys004")
+        .expect("read")
+        .expect("it is there");
     assert!(row.is_open());
     assert_eq!(row.closed_at, None);
     assert!(
@@ -159,7 +165,9 @@ fn detaching_holds_the_terminal_and_not_the_session() {
     store
         .open_terminal(&arrival("ttys002", "/here", "aaa", 100))
         .expect("open");
-    store.detach(&anchor("ttys002", "/here"), 150).expect("detach");
+    store
+        .detach(&anchor("ttys002", "/here"), 150)
+        .expect("detach");
     assert!(store
         .terminal("ttys002")
         .expect("read")
@@ -170,7 +178,10 @@ fn detaching_holds_the_terminal_and_not_the_session() {
     store
         .open_terminal(&arrival("ttys002", "/here", "bbb", 200))
         .expect("open the second");
-    let row = store.terminal("ttys002").expect("read").expect("it is there");
+    let row = store
+        .terminal("ttys002")
+        .expect("read")
+        .expect("it is there");
     assert_eq!(row.session_id.as_deref(), Some("bbb"));
     assert!(
         row.is_detached(),
@@ -199,8 +210,13 @@ fn detaching_holds_the_terminal_and_not_the_session() {
 fn a_terminal_can_be_detached_before_anyone_has_arrived() {
     let scratch = Scratch::new("detach-first");
     let store = scratch.store();
-    store.detach(&anchor("ttys007", "/here"), 50).expect("detach");
-    let row = store.terminal("ttys007").expect("read").expect("it is there");
+    store
+        .detach(&anchor("ttys007", "/here"), 50)
+        .expect("detach");
+    let row = store
+        .terminal("ttys007")
+        .expect("read")
+        .expect("it is there");
     assert!(row.is_detached());
     assert_eq!(row.session_id, None);
 
@@ -226,7 +242,10 @@ fn an_event_from_an_unannounced_terminal_still_lands() {
     store
         .record_event(&event("ttys005", "ddd", "PostToolUse", 11))
         .expect("record");
-    let row = store.terminal("ttys005").expect("read").expect("it is there");
+    let row = store
+        .terminal("ttys005")
+        .expect("read")
+        .expect("it is there");
     assert_eq!(row.worktree, "/elsewhere");
     assert_eq!(store.events_on("ttys005").expect("the events").len(), 1);
 }
