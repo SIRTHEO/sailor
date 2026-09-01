@@ -11,12 +11,9 @@ use std::path::{Path, PathBuf};
 /// in `desktop/src/RunConsole.tsx`; if it ever moves, both move.
 const FAILURE_PREFIX: &str = "run.failure.";
 
-/// How many classes the engine can report with no sentence to show for them.
-///
-/// **It can only go down.** Lowering it is the repair — write the two entries,
-/// English and Italian — and raising it means a class was added without one,
-/// which is the defect this file exists to catch.
-const CLASSES_WITHOUT_A_SENTENCE_TODAY: usize = 38;
+/// **THERE IS NO SEED FOR THIS ONE, BECAUSE THE DEBT IS PAID.** It stood at 38
+/// for as long as it took to write the entries; a class arriving without one now
+/// is a defect and not a backlog, and it should be refused as such.
 
 /// How many places build a failure whose class this scan cannot read, because it
 /// is a variable rather than a literal. **The blind spot is declared, not
@@ -168,17 +165,11 @@ fn every_failure_the_engine_reports_has_a_sentence() {
         .collect();
 
     assert!(
-        mute.len() <= CLASSES_WITHOUT_A_SENTENCE_TODAY,
-        "{} classes reach the window with no sentence, and the seed says {}. \
-         Whoever hit one of these read the bare class name.\n{mute:#?}",
-        mute.len(),
-        CLASSES_WITHOUT_A_SENTENCE_TODAY
-    );
-    assert!(
-        CLASSES_WITHOUT_A_SENTENCE_TODAY.saturating_sub(mute.len()) <= HOW_STALE_A_SEED_MAY_BE,
-        "the seed says {} and the tree holds {}: lower it, or the ceiling stays \
-         up for whoever adds the next class",
-        CLASSES_WITHOUT_A_SENTENCE_TODAY,
+        mute.is_empty(),
+        "{} classes reach the window with no sentence, so whoever hits one reads \
+         the bare class name. Write the entry in both i18n/en.json and \
+         i18n/it.json — english is the source, so english is the one that must \
+         be there:\n{mute:#?}",
         mute.len()
     );
 }
