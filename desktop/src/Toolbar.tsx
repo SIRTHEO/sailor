@@ -1,7 +1,9 @@
-import type { ReactElement } from "react";
 import { Panel } from "@xyflow/react";
 
-import { KIND_LABEL } from "./StepNode";
+/* THE SAME GLYPH AS ON THE CANVAS, AND NOT A SECOND DRAWING OF IT. The bar
+   carried its own set of nine marks in its own visual language: a species read
+   as two pictures, so a mark learned in the toolbox was not on the board. */
+import { KIND_LABEL, KindIcon } from "./StepNode";
 import { DEFAULT_ACTION_FOR_KIND, type StepKind } from "./flow";
 
 /**
@@ -48,105 +50,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
 /** The families the bar offers, in the order they are seen. */
 export const TOOLBAR_KINDS: StepKind[] = TOOL_GROUPS.flatMap((group) => group.kinds);
 
-/**
- * A family's mark: **the shape draws the gesture**, it does not decorate. The
- * label stays underneath — rule 5 applied to shape. There is no colour here,
- * `currentColor` only: tint is reserved for machine state, and a tool sitting
- * in a box has no state. Square caps: a technical-drawing hand.
- */
-function KindMark({ kind }: { kind: StepKind }) {
-  const shape = MARK[kind];
-  return (
-    <svg
-      className="toolbar__mark"
-      viewBox="0 0 16 16"
-      width="16"
-      height="16"
-      aria-hidden="true"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="square"
-      strokeLinejoin="miter"
-    >
-      {shape}
-    </svg>
-  );
-}
 
-/**
- * Seven marks, each of two or three primitives. The outgoing arrow means "the
- * work leaves here", and what it reaches says to whom: another program (the
- * box), a person (head and shoulders), another flow (its stacked steps).
- * Whatever lacks the arrow works on the spot.
- */
-const MARK: Record<StepKind, ReactElement> = {
-  // The bar everything starts from, and the signal leaving it.
-  trigger: (
-    <>
-      <path d="M2.7 2.5v11" />
-      <path d="M5.5 4l8 4-8 4z" fill="currentColor" stroke="none" />
-    </>
-  ),
-  // The work leaves and enters another program.
-  engine: (
-    <>
-      <path d="M1.5 8h4.5" />
-      <path d="M4 5.5L6.5 8 4 10.5" />
-      <rect x="9" y="3.2" width="5.5" height="9.6" />
-    </>
-  ),
-  // The work leaves and a person takes it.
-  human: (
-    <>
-      <path d="M1.5 8h4.5" />
-      <path d="M4 5.5L6.5 8 4 10.5" />
-      <circle cx="11.6" cy="5.4" r="2.1" />
-      <path d="M8.4 13.2c0-2 1.5-3.4 3.2-3.4s3.2 1.4 3.2 3.4" />
-    </>
-  ),
-  // The work leaves and another flow takes it, with its own steps.
-  subflow: (
-    <>
-      <path d="M1.5 8h4.5" />
-      <path d="M4 5.5L6.5 8 4 10.5" />
-      <path d="M9.2 4h5.3M9.2 8h5.3M9.2 12h5.3" />
-    </>
-  ),
-  // The echo of a command line: a shell's prompt sign.
-  check: (
-    <>
-      <path d="M2.2 3.6L6.4 8l-4.2 4.4" />
-      <path d="M7.6 12.4h6.2" />
-    </>
-  ),
-  // Two ends touching: the question put to a connected service.
-  gesture: (
-    <>
-      <circle cx="3.9" cy="8" r="2.1" />
-      <circle cx="12.1" cy="8" r="2.1" />
-      <path d="M6 8h4" />
-    </>
-  ),
-  // The store's drum: what stays written.
-  deposit: (
-    <>
-      <path d="M2.6 4.2v7.6c0 1.1 2.4 2 5.4 2s5.4-.9 5.4-2V4.2" />
-      <ellipse cx="8" cy="4.2" rx="5.4" ry="2" />
-    </>
-  ),
-  // The two families with no action: nothing in the engine resolves to them, so
-  // the bar does not offer them and these marks are never drawn. They are here
-  // to keep the map total, so the compiler notices if an action ever arrives.
-  wait: <path d="M8 2.5v5.5l3.5 2.5" />,
-  branch: (
-    <>
-      <path d="M2.5 8h4" />
-      <path d="M6.5 8L12 3.5M6.5 8L12 12.5" />
-    </>
-  ),
-};
 
 interface ToolbarProps {
   /** The flow that receives the step, or `null` if none has focus. */
@@ -189,7 +93,7 @@ export function Toolbar({ flowName, onAdd }: ToolbarProps) {
                 data-kind={kind}
                 onClick={() => onAdd(kind)}
               >
-                <KindMark kind={kind} />
+                <KindIcon kind={kind} className="toolbar__mark" />
                 <span className="toolbar__label">{KIND_LABEL[kind]}</span>
               </button>
             ))}
