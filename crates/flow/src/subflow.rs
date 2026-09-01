@@ -1,8 +1,8 @@
-//! Il passo che esegue un altro flusso. Decisione «I flussi si compongono, non
-//! si fondono» in `docs/decisioni.md`; gli invarianti stanno accanto a ciò che
-//! li impone — [`system::sources`] per la precedenza, [`call_cycle`] e
-//! [`CALL_CHAIN`] per la ricorsione, [`MAX_DEPTH`] per la profondità,
-//! [`tightest`] e [`remaining_of`] per il tetto e per ciò che non promette.
+//! The step that runs another flow. The decision "flows compose, they do not
+//! merge" is in `docs/decisioni.md`; each invariant sits next to what enforces
+//! it — [`system::sources`] for precedence, [`call_cycle`] and [`CALL_CHAIN`]
+//! for recursion, [`MAX_DEPTH`] for depth, [`tightest`] and [`remaining_of`]
+//! for the cap and for what it does not promise.
 
 use crate::system::{self, FlowSource};
 use crate::{
@@ -16,54 +16,48 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Il nome con cui un passo chiede di eseguire un altro flusso.
+/// The name a step uses to ask for another flow to be run.
 ///
-/// **È QUELLO CHE LA FINESTRA SCRIVE DA SEMPRE.** `desktop/src/flow.ts` mappa
-/// `subflow` sulla famiglia di nodo omonima e lo offre nella cassetta dei passi:
-/// cambiarlo qui farebbe smettere di funzionare i passi già disegnati.
+/// This is what the window has always written: `desktop/src/flow.ts` maps
+/// `subflow` onto the node family of the same name and offers it in the step
+/// palette, so changing it here breaks steps already drawn.
 pub const SUBFLOW_ACTION: &str = "subflow";
 
-/// La chiave sotto cui viaggia la catena dei flussi già in pila.
+/// The key under which the chain of already-stacked flows travels.
 ///
-/// **PORTA I NOMI, NON UN CONTATORE.** Un numero direbbe «troppo profondo» e
-/// niente altro; la catena permette all'errore di **nominare** chi chiama chi,
-/// che è la sola forma in cui una persona può togliere l'anello. Il prefisso
-/// `flow.` è dell'esecutore, come per [`CURRENT_RUN`]: un flusso non ci scrive.
+/// It carries the names, not a counter: a number would say "too deep" and
+/// nothing more, while the chain lets the error *name* who calls whom, which
+/// is the only form in which a person can break the loop. The `flow.` prefix
+/// belongs to the executor, as for [`CURRENT_RUN`]: a flow never writes there.
 pub const CALL_CHAIN: &str = "flow.subflow.chain";
 
-/// Quanti flussi possono stare impilati, contando il primo chiamato.
+/// How many flows may be stacked, counting the first one called.
 ///
-/// **NON È UN LIMITE DELLA MACCHINA.** La pila ne reggerebbe molti di più; a non
-/// reggerne di più è chi guarda. Quattro è la profondità del ciclo che questa
-/// casa compone davvero — ricerca, smistamento, sviluppo, interrogazione — e un
-/// quinto livello, a oggi, è più probabilmente un errore di scrittura che un
-/// disegno. Chi ne ha bisogno alza questa riga e dice perché.
+/// Not a limit of the machine — the stack would hold many more; what will not
+/// hold is the person reading. Four is the depth this house actually composes:
+/// research, dispatch, development, interrogation. A fifth level is, today,
+/// more likely a typo than a design. Whoever needs one raises this and says why.
 pub const MAX_DEPTH: usize = 4;
 
-/// I campi che il passo conosce. Serve a `flow check`, non all'esecuzione.
+/// The fields the step knows. For `flow check`, not for execution.
 const KNOWN_FIELDS: &[&str] = &["flow", "inputs"];
 
-/// Ciò che il passo dichiara: quale flusso, e con quali ingressi.
+/// What the step declares: which flow, and with what inputs.
 ///
-/// **NON HA `deny_unknown_fields`, E NON È UNA DIMENTICANZA.** A tempo di
-/// esecuzione l'ingresso di un passo è l'uscita della sua dipendenza, dove i
-/// campi estranei sono la norma. La severità sta dove serve — su ciò che una
-/// persona scrive a mano — ed è [`SubflowAction::unknown_fields`], che
-/// `flow check` interroga prima che la corsa parta.
-///
-/// **NON C'È UN TETTO DI SPESA QUI DENTRO**, per decisione: «il tetto di spesa è
-/// del flusso» (31/08/2026). Un passo che potesse alzarlo per il flusso che
-/// chiama sposterebbe la dichiarazione lontano da chi la deve leggere.
+/// No `deny_unknown_fields`, and that is not an oversight: at run time a step's
+/// input is its dependency's output, where foreign fields are the norm. The
+/// strictness sits on what a person writes by hand, in
+/// [`SubflowAction::unknown_fields`], which `flow check` asks before the run.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Call {
-    /// Il nome del flusso, come si vedrebbe sul disco senza `.flow.json`.
+    /// The flow's name, as it reads on disk without `.flow.json`.
     pub flow: String,
-    /// I `root_inputs` che il passo impone al figlio, chiave per chiave.
+    /// The `root_inputs` the step imposes on the child, key by key.
     #[serde(default)]
     pub inputs: BTreeMap<String, Value>,
 }
 
-/// Come è finita una corsa figlia, per chi la registra.
+/// How a child run ended, for whoever records it.
 pub struct RunNote<'a> {
     pub flow: &'a FlowFile,
     pub run_id: &'a str,
@@ -72,44 +66,41 @@ pub struct RunNote<'a> {
     /// `running`, `complete`, `failed`, `waiting`, `stopped`, `cap_reached`.
     pub status: &'a str,
     pub started_at: i64,
-    /// `None` finché la corsa figlia è aperta.
+    /// `None` while the child run is still open.
     pub ended_at: Option<i64>,
     pub error: Option<String>,
 }
 
-/// Ciò che il passo `subflow` non può sapere da sé.
-///
-/// **PERCHÉ UN TRATTO E NON TRE CAMPI.** Il passo deve far girare il flusso
-/// figlio **con le stesse azioni del padre**, cioè con il registro in cui esso
-/// stesso è registrato: un riferimento diretto sarebbe un anello che il
-/// compilatore rifiuta di costruire. E deve scrivere nel deposito, che il crate
-/// del flusso non conosce e non deve conoscere — `flow` non dipende da
-/// `ledger`, ed è la direzione che tiene in piedi tutto il resto. Chi costruisce
-/// il registro ha in mano tutte e due le cose: le passa di qui.
+/// What the `subflow` step cannot know on its own. A trait rather than three
+/// fields: the step must run the child with the parent's own actions — the
+/// registry it is itself in, which a direct reference makes a cycle the
+/// compiler refuses — and must write to the store, which this crate must not
+/// know about, `flow` never depending on `ledger`. Whoever builds the registry
+/// holds both of those, and passes them through here.
 pub trait SubflowHost: Send + Sync {
-    /// Dove si cercano i flussi, nell'ordine di [`crate::system::sources`].
+    /// Where flows are looked for, in [`crate::system::sources`] order.
     fn sources(&self) -> Vec<FlowSource>;
 
-    /// Le azioni con cui gira il figlio: le stesse del padre.
+    /// The actions the child runs with: the parent's own.
     fn actions(&self) -> Result<Arc<ActionRegistry>, ActionError>;
 
-    /// Dove si scrivono i passi della corsa figlia.
+    /// Where the child run's steps get written.
     fn store(&self) -> Result<Arc<dyn RecordStore>, ActionError>;
 
-    /// Scrive — o aggiorna — l'intestazione della corsa figlia.
+    /// Writes — or updates — the child run's header.
     fn note_run(&self, note: &RunNote<'_>) -> Result<(), ActionError>;
 
-    /// La riga che spiega a una persona come è finita la corsa figlia.
+    /// The line that explains to a person how the child run ended.
     ///
-    /// La compone chi mostra, non chi esegue: `SpendStop` porta i dati e la
-    /// frase sta altrove, e ricopiarla qui ne farebbe una seconda copia da
-    /// tenere allineata. Chi non ha una frase non ne inventa una.
+    /// Composed by whoever displays, not whoever executes: `SpendStop` carries
+    /// the data and the sentence lives elsewhere, so copying it here would make
+    /// a second copy to keep aligned. Having no sentence, invent none.
     fn why(&self, _execution: &Execution) -> Option<String> {
         None
     }
 }
 
-/// Il passo che esegue un altro flusso.
+/// The step that runs another flow.
 pub struct SubflowAction {
     host: Arc<dyn SubflowHost>,
 }
@@ -125,31 +116,31 @@ impl Action for SubflowAction {
         let call: Call = serde_json::from_value(input.clone()).map_err(|error| {
             ActionError::new(
                 "invalid_subflow_call",
-                format!("il passo non dichiara quale flusso eseguire: {error}"),
+                format!("the step does not declare which flow to run: {error}"),
             )
         })?;
 
-        // Chi chiama: la corsa e il passo li scrive l'esecutore prima di ogni
-        // azione. Senza, la corsa figlia non sarebbe risalibile, e una corsa
-        // figlia che nessuno può ricollegare al passo che l'ha chiesta è il
-        // guasto che la decisione 4 esiste per non avere.
+        // The caller: run and step are written by the executor before every
+        // action. Without them the child run could not be traced back, and a
+        // child run nobody can tie to the step that asked for it is the fault
+        // decision 4 exists to prevent.
         let parent_run = text(shared, CURRENT_RUN).ok_or_else(|| {
             ActionError::new(
                 "no_parent_run",
-                "nessuna corsa in corso: un sotto-flusso esiste solo dentro una corsa",
+                "no run in progress: a subflow exists only inside a run",
             )
         })?;
         let parent_step = text(shared, CURRENT_STEP).ok_or_else(|| {
             ActionError::new(
                 "no_parent_step",
-                "nessun passo in corso: non saprei a chi attribuire la corsa figlia",
+                "no step in progress: there would be nobody to attribute the child run to",
             )
         })?;
 
-        // IL DEPOSITO SI CHIEDE PRIMA DI LEGGERE I FILE. Non averlo è una
-        // condizione del passo, non del flusso che nomina: scoprirlo dopo aver
-        // percorso tutte le sorgenti farebbe dire «non trovo quel flusso» a chi
-        // in realtà non poteva eseguirne nessuno.
+        // Ask for the store before reading any file. Not having one is a
+        // condition of the step, not of the flow it names: discovering it after
+        // walking every source would tell someone "I cannot find that flow"
+        // when in truth they could not have run any flow at all.
         let store = self.host.store()?;
 
         let sources = self.host.sources();
@@ -161,7 +152,7 @@ impl Action for SubflowAction {
                 ActionError::new(
                     "unknown_subflow",
                     format!(
-                        "nessun flusso «{}» fra quelli che vedo: {}",
+                        "no flow named \"{}\" among the ones I can see: {}",
                         call.flow,
                         places(&sources)
                     ),
@@ -171,15 +162,18 @@ impl Action for SubflowAction {
             .clone()
             .map_err(|why| ActionError::new("invalid_subflow", why))?;
 
-        // PRIMA DI APRIRE, NON DOPO AVER SPESO. Le chiamate dichiarate nei
-        // `with` si leggono senza eseguire niente: un anello fra file diversi
-        // si scopre qui, al primo passo `subflow` della corsa più esterna.
+        // Before opening, not after spending. The calls declared in `with` read
+        // without running anything: a loop across separate files is caught
+        // here, at the outermost run's first `subflow` step.
         if let Some(cycle) = call_cycle(&call.flow, &known_flows(&found)) {
             return Err(cyclic(&cycle));
         }
 
         let chain = extend_chain(&chain_of(shared), &call.flow)?;
 
+        // A call declares no cap of its own: the spend cap belongs to the flow.
+        // A step that could raise it for the flow it calls would move the
+        // declaration away from whoever has to read it.
         let cap = tightest(
             child.spend_cap_micros,
             remaining_of(shared, &store, &parent_run)?,
@@ -199,9 +193,9 @@ impl Action for SubflowAction {
         };
         self.host.note_run(&note)?;
 
-        // GLI INGRESSI DEL FIGLIO SONO I SUOI, SOVRASCRITTI DAL PASSO. Non
-        // quelli del padre: quello che il figlio riceve è scritto in un posto
-        // solo, e si legge senza sapere niente di chi lo chiama.
+        // The child's inputs are its own, overridden by the step — never the
+        // parent's: what the child receives is written in one place, and reads
+        // without knowing anything about whoever calls it.
         let mut root_inputs = child.inputs.clone();
         root_inputs.extend(call.inputs.clone());
 
@@ -235,7 +229,7 @@ impl Action for SubflowAction {
                 self.host.note_run(&note)?;
                 return Err(ActionError::new(
                     "subflow_broke",
-                    format!("la corsa {run_id} del flusso {} non è partita: {said}", call.flow),
+                    format!("run {run_id} of flow {} never started: {said}", call.flow),
                 ));
             }
         };
@@ -247,13 +241,13 @@ impl Action for SubflowAction {
         self.host.note_run(&note)?;
 
         if !went_well {
-            // ASPETTARE NON È ROMPERSI. Un figlio fermo su un passo che aspetta
-            // fa aspettare il padre: la corsa del padre resta ripartibile
-            // invece di risultare guasta, che è come si comporta qualunque
-            // altro passo che non sa ancora il proprio esito.
+            // Waiting is not breaking. A child stopped on a waiting step makes
+            // the parent wait: the parent's run stays restartable instead of
+            // reading as broken, which is how any other step behaves while it
+            // does not yet know its own outcome.
             if status == "waiting" {
                 return Ok(ActionOutcome::Waiting(format!(
-                    "la corsa {run_id} del flusso {} sta aspettando",
+                    "run {run_id} of flow {} is waiting",
                     call.flow
                 )));
             }
@@ -261,7 +255,7 @@ impl Action for SubflowAction {
                 format!("subflow_{status}"),
                 why.unwrap_or_else(|| {
                     format!(
-                        "la corsa {run_id} del flusso {} è finita in stato {status}",
+                        "run {run_id} of flow {} ended in state {status}",
                         call.flow
                     )
                 }),
@@ -291,18 +285,17 @@ impl Action for SubflowAction {
             .collect()
     }
 
-    /// **SI CONSEGNA A UNA PERSONA, E NON È PRUDENZA GENERICA.** Rifare questo
-    /// passo vuol dire rifare un flusso intero, con dentro tutto quello che
-    /// quel flusso tocca: motori a pagamento, file scritti, pannelli aperti. La
-    /// specie del figlio non si può dedurre da qui — è la somma delle specie
-    /// dei suoi passi, e basta che uno solo sia da consegnare a una persona
-    /// perché lo sia anche la chiamata.
+    /// Handed to a person, and not out of generic caution: redoing this step
+    /// means redoing a whole flow, with everything that flow touches — paid
+    /// engines, files written, panes opened. The child's species cannot be
+    /// deduced from here; it is the sum of its steps' species, and one step
+    /// needing a person is enough to make the call need one too.
     fn species(&self) -> StepSpecies {
         StepSpecies::HandToHuman
     }
 }
 
-/// La catena dei flussi già in pila, letta dallo stato condiviso.
+/// The chain of already-stacked flows, read from the shared state.
 pub fn chain_of(shared: &SharedState) -> Vec<String> {
     shared
         .get(CALL_CHAIN)
@@ -317,12 +310,12 @@ pub fn chain_of(shared: &SharedState) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// La catena con `next` in fondo, o l'errore che nomina il perché non ci sta.
+/// The chain with `next` at the end, or the error naming why it does not fit.
 ///
-/// **DUE GUASTI DIVERSI, DUE PAROLE DIVERSE.** Un anello è un errore di disegno
-/// e non si toglie alzando un numero; una pila troppo alta può essere legittima
-/// e la si alza. Dirli tutti e due «troppo profondo» manderebbe chi legge a
-/// cercare la cosa sbagliata.
+/// Two different faults, two different words: a loop is a design error and no
+/// raised number removes it, while a stack that is merely too tall can be
+/// legitimate and can be raised. Calling both "too deep" would send the reader
+/// hunting the wrong thing.
 pub fn extend_chain(chain: &[String], next: &str) -> Result<Vec<String>, ActionError> {
     if let Some(from) = chain.iter().position(|seen| seen == next) {
         let mut cycle: Vec<String> = chain[from..].to_vec();
@@ -335,7 +328,7 @@ pub fn extend_chain(chain: &[String], next: &str) -> Result<Vec<String>, ActionE
         return Err(ActionError::new(
             "subflow_too_deep",
             format!(
-                "più di {MAX_DEPTH} flussi impilati uno dentro l'altro: {}",
+                "more than {MAX_DEPTH} flows stacked one inside the other: {}",
                 deep.join(" → ")
             ),
         ));
@@ -345,13 +338,12 @@ pub fn extend_chain(chain: &[String], next: &str) -> Result<Vec<String>, ActionE
     Ok(extended)
 }
 
-/// I flussi nominati dai passi `subflow` di questo flusso.
+/// The flows named by this flow's `subflow` steps.
 ///
-/// **LEGGE IL `with`, CIOÈ CIÒ CHE È DICHIARATO.** Un passo che ricava il nome
-/// del flusso dall'uscita di una dipendenza non compare qui, e non può
-/// comparirci: a tempo di controllo quel nome non esiste ancora. È il limite
-/// dichiarato del controllo statico, e la ragione per cui la catena viaggia
-/// anche a tempo di esecuzione.
+/// It reads `with`, that is, what is declared. A step that derives the flow
+/// name from a dependency's output does not appear here and cannot: at check
+/// time that name does not exist yet. This is the declared limit of the static
+/// check, and the reason the chain also travels at run time.
 pub fn calls_of(flow: &FlowFile) -> Vec<String> {
     flow.graph
         .steps()
@@ -367,10 +359,10 @@ pub fn calls_of(flow: &FlowFile) -> Vec<String> {
         .collect()
 }
 
-/// I flussi validi fra quelli caricati, per nome.
+/// The valid flows among those loaded, by name.
 ///
-/// Quelli rotti restano fuori: un file che non si legge non dichiara chiamate,
-/// e dire che ne ha zero sarebbe un'affermazione che nessuno ha verificato.
+/// Broken ones stay out: a file that will not read declares no calls, and
+/// saying it has zero would be a claim nobody verified.
 pub fn known_flows(
     found: &[(String, &'static str, Result<FlowFile, String>)],
 ) -> BTreeMap<String, FlowFile> {
@@ -385,13 +377,12 @@ pub fn known_flows(
         .collect()
 }
 
-/// La catena di chiamate che torna su se stessa partendo da `entry`, se c'è.
+/// The call chain that loops back on itself from `entry`, if there is one.
 ///
-/// **È IL CONTROLLO CHE IL GRAFO NON PUÒ FARE.** `Graph::validate` rifiuta i
-/// cicli, ma guarda dentro un file solo: con `subflow` un anello attraversa più
-/// file, e nessuno dei due grafi da solo ha niente di storto. Qui si percorrono
-/// le chiamate dichiarate, e la catena restituita si legge come si legge:
-/// `ricerca → sviluppo → ricerca`.
+/// This is the check the graph cannot do: `Graph::validate` refuses cycles but
+/// looks inside a single file, while with `subflow` a loop crosses several
+/// files and neither graph alone has anything wrong with it. The chain comes
+/// back readable as it stands: `research → develop → research`.
 pub fn call_cycle(entry: &str, known: &BTreeMap<String, FlowFile>) -> Option<Vec<String>> {
     let mut chain = Vec::new();
     walk(entry, known, &mut chain)
@@ -418,12 +409,11 @@ fn walk(
     None
 }
 
-/// Il tetto che vale per il figlio: il più stretto fra i due dichiarati.
+/// The cap that holds for the child: the tighter of the two declared.
 ///
-/// **`None` NON È ZERO NEMMENO QUI.** Chi non dichiara niente non impone
-/// niente: il tetto che resta è quello dell'altro. Sono tutti e due assenti solo
-/// quando nessuno ha messo un limite, ed è l'unico caso in cui il figlio gira
-/// senza.
+/// `None` is not zero here either. Declaring nothing imposes nothing, so the
+/// cap that remains is the other one. Both are absent only when nobody set a
+/// limit, and that is the one case where the child runs uncapped.
 pub fn tightest(declared: Option<i64>, remaining: Option<i64>) -> Option<i64> {
     match (declared, remaining) {
         (Some(one), Some(other)) => Some(one.min(other)),
@@ -432,12 +422,12 @@ pub fn tightest(declared: Option<i64>, remaining: Option<i64>) -> Option<i64> {
     }
 }
 
-/// Quanto resta al padre sotto il proprio tetto, se un tetto ce l'ha.
+/// What is left of the parent's own cap, if it has one.
 ///
-/// **LIMITE NOTO.** Il deposito somma per corsa e la spesa del figlio sta sotto
-/// il suo `run_id`: questo residuo non cala per ciò che i figli hanno speso, e
-/// il caso peggiore è il tetto del padre per il numero dei suoi passi
-/// `subflow`. Si chiude facendo risalire `parent_run_id` nella somma.
+/// Known limit: the store sums per run and the child's spend sits under its own
+/// `run_id`, so this remainder does not fall for what children spent. The worst
+/// case is the parent's cap times the number of its `subflow` steps. It closes
+/// by walking `parent_run_id` up into the sum.
 fn remaining_of(
     shared: &SharedState,
     store: &Arc<dyn RecordStore>,
@@ -452,14 +442,12 @@ fn remaining_of(
     Ok(Some((cap - spent.micros).max(0)))
 }
 
-/// L'identificativo della corsa figlia.
-///
-/// **PORTA IL PADRE NEL PROPRIO NOME, E IL PERCHÉ È LA DECISIONE 4.** Il legame
-/// vero sta nella colonna `parent_run_id` del deposito; questo prefisso lo
-/// raddoppia dove non c'è un deposito da interrogare — un elenco di file, una
-/// riga di registro, un rapporto. Le nanosecondi in fondo rendono unico ogni
-/// tentativo: un passo `subflow` ritentato apre una corsa nuova invece di
-/// riaprire quella rotta, che è come si comporta ogni altro tentativo.
+/// The child run's identifier: it carries the parent in its own name, and the
+/// why is decision 4. The real link is the store's `parent_run_id` column, and
+/// this prefix doubles it where there is no store to ask — a file listing, a
+/// log line, a report. The trailing nanoseconds make every attempt unique: a
+/// retried `subflow` step opens a *new* run instead of reopening the broken
+/// one, which is how every other retry in the tree behaves.
 fn child_run_id(parent_run: &str, parent_step: &str) -> Result<String, ActionError> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -467,13 +455,12 @@ fn child_run_id(parent_run: &str, parent_step: &str) -> Result<String, ActionErr
     Ok(format!("{parent_run}::{parent_step}::{}", now.as_nanos()))
 }
 
-/// Le uscite dei passi terminali della corsa figlia.
+/// The outputs of the child run's terminal steps.
 ///
-/// **TERMINALE VUOL DIRE «NESSUNO DIPENDE DA LUI».** Un flusso non dichiara
-/// quale sia la sua uscita, e inventare una convenzione — «l'ultimo passo del
-/// file» — legherebbe il risultato all'ordine in cui qualcuno ha scritto le
-/// righe. I passi da cui non pende nessuno sono ciò che quel flusso ha
-/// prodotto, e sono una risposta che non cambia riordinando il file.
+/// Terminal means "nobody depends on it". A flow does not declare what its
+/// output is, and inventing a convention — "the last step in the file" — would
+/// tie the result to the order someone wrote the lines in. The steps nothing
+/// hangs off are what the flow produced, whatever order the file is in.
 fn last_outputs(graph: &Graph, records: &[StepRecord]) -> Value {
     let depended: BTreeSet<&str> = graph
         .steps()
@@ -500,7 +487,7 @@ fn cyclic(cycle: &[String]) -> ActionError {
     ActionError::new(
         "subflow_cycle",
         format!(
-            "un flusso non può richiamare se stesso, nemmeno passando per altri: {}",
+            "a flow cannot call itself, not even by way of others: {}",
             cycle.join(" → ")
         ),
     )
@@ -540,7 +527,7 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(nth, target)| Step {
-                id: format!("chiama-{nth}"),
+                id: format!("call-{nth}"),
                 deps: Vec::new(),
                 input_schema: ValueSchema::Any,
                 output_schema: ValueSchema::Any,
@@ -552,8 +539,8 @@ mod tests {
             .collect();
         FlowFile {
             id: id.to_owned(),
-            description: "un flusso di prova".to_owned(),
-            graph: Graph::new(steps).expect("grafo valido"),
+            description: "a test flow".to_owned(),
+            graph: Graph::new(steps).expect("valid graph"),
             inputs: BTreeMap::new(),
             schedule: None,
             spend_cap_micros: None,
@@ -566,45 +553,45 @@ mod tests {
 
     #[test]
     fn two_flows_that_call_each_other_are_a_named_chain() {
-        let known = map(vec![calling("ricerca", &["sviluppo"]), calling("sviluppo", &["ricerca"])]);
+        let known = map(vec![calling("research", &["develop"]), calling("develop", &["research"])]);
 
-        let cycle = call_cycle("ricerca", &known).expect("l'anello c'è");
+        let cycle = call_cycle("research", &known).expect("the loop is there");
 
-        assert_eq!(cycle, vec!["ricerca", "sviluppo", "ricerca"]);
+        assert_eq!(cycle, vec!["research", "develop", "research"]);
     }
 
     #[test]
     fn a_flow_that_calls_itself_is_a_chain_of_two() {
-        let known = map(vec![calling("solitario", &["solitario"])]);
+        let known = map(vec![calling("loner", &["loner"])]);
 
         assert_eq!(
-            call_cycle("solitario", &known).expect("l'anello c'è"),
-            vec!["solitario", "solitario"]
+            call_cycle("loner", &known).expect("the loop is there"),
+            vec!["loner", "loner"]
         );
     }
 
-    /// Senza questa, «trova sempre un anello» resterebbe verde su tutte le
-    /// altre: un albero di chiamate che converge sullo stesso flusso da due
-    /// rami non è un ciclo.
+    /// Without this, "always finds a loop" would stay green on all the others:
+    /// a call tree converging on the same flow from two branches is not a
+    /// cycle.
     #[test]
     fn a_diamond_of_calls_is_not_a_cycle() {
         let known = map(vec![
-            calling("cima", &["sinistra", "destra"]),
-            calling("sinistra", &["fondo"]),
-            calling("destra", &["fondo"]),
-            calling("fondo", &[]),
+            calling("top", &["left", "right"]),
+            calling("left", &["bottom"]),
+            calling("right", &["bottom"]),
+            calling("bottom", &[]),
         ]);
 
-        assert_eq!(call_cycle("cima", &known), None);
+        assert_eq!(call_cycle("top", &known), None);
     }
 
-    /// Un nome che nessuna sorgente conosce non è un ciclo: è un flusso che
-    /// manca, e lo dice un altro errore con un'altra parola.
+    /// A name no source knows is not a cycle: it is a missing flow, and another
+    /// error says so with another word.
     #[test]
     fn a_call_to_a_flow_nobody_has_is_not_a_cycle() {
-        let known = map(vec![calling("cima", &["mai-scritto"])]);
+        let known = map(vec![calling("top", &["never-written"])]);
 
-        assert_eq!(call_cycle("cima", &known), None);
+        assert_eq!(call_cycle("top", &known), None);
     }
 
     #[test]
@@ -616,8 +603,8 @@ mod tests {
         assert_eq!(tightest(None, None), None);
     }
 
-    /// Zero è un tetto, non un'assenza: un padre che ha finito i soldi non
-    /// lascia partire un figlio «senza limiti».
+    /// Zero is a cap, not an absence: a parent that has run out of money does
+    /// not let a child start "uncapped".
     #[test]
     fn a_remaining_of_zero_still_caps_the_child() {
         assert_eq!(tightest(Some(1_000_000), Some(0)), Some(0));
@@ -627,30 +614,30 @@ mod tests {
     fn the_chain_grows_until_the_declared_depth() {
         let mut chain = Vec::new();
         for nth in 0..MAX_DEPTH {
-            chain = extend_chain(&chain, &format!("f{nth}")).expect("ci sta");
+            chain = extend_chain(&chain, &format!("f{nth}")).expect("it fits");
         }
         assert_eq!(chain.len(), MAX_DEPTH);
 
-        let error = extend_chain(&chain, "uno-di-troppo").expect_err("il tetto scatta");
+        let error = extend_chain(&chain, "one-too-many").expect_err("the cap trips");
 
         assert_eq!(error.class, "subflow_too_deep");
         assert!(
-            error.said.contains("f0 → f1") && error.said.contains("uno-di-troppo"),
-            "l'errore deve nominare la catena: {}",
+            error.said.contains("f0 → f1") && error.said.contains("one-too-many"),
+            "the error must name the chain: {}",
             error.said
         );
     }
 
     #[test]
     fn a_repeated_flow_in_the_chain_is_named_as_a_cycle() {
-        let chain = vec!["ricerca".to_owned(), "sviluppo".to_owned()];
+        let chain = vec!["research".to_owned(), "develop".to_owned()];
 
-        let error = extend_chain(&chain, "ricerca").expect_err("è un anello");
+        let error = extend_chain(&chain, "research").expect_err("it is a loop");
 
         assert_eq!(error.class, "subflow_cycle");
         assert!(
-            error.said.contains("ricerca → sviluppo → ricerca"),
-            "l'errore deve nominare la catena: {}",
+            error.said.contains("research → develop → research"),
+            "the error must name the chain: {}",
             error.said
         );
     }

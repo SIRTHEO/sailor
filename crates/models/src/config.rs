@@ -1,18 +1,19 @@
-//! La scelta dell'utente: quale modello vuole per ogni genere di lavoro.
-//! È configurazione, non codice — il file su disco vive in `store.rs`, qui
-//! sta solo la forma e la regola che la governa.
+//! The user's choice: which model they want for each kind of work. This is
+//! configuration, not code — the file on disk lives in `store.rs`; here sit
+//! only the shape and the rule that governs it.
 
 use crate::catalog::Catalog;
 use std::collections::BTreeMap;
 
-/// Il modello gratuito di ripiego finché l'utente non ne sceglie un altro:
-/// deve restare in sincronia con `NOTTE_OPENROUTER_MODEL` in
-/// `crates/notte/src/main.rs:151` — stesso valore, letto lì da `notte`.
+/// The free fallback model until the user picks another one. It had to stay in
+/// sync with `NOTTE_OPENROUTER_MODEL` in `crates/notte/src/main.rs:151`, where
+/// `notte` read the same value; `notte` is no longer in the repo, so that path
+/// names a crate that is not there and there is nothing left to keep in sync.
 pub const DEFAULT_FREE_MODEL: &str = "nvidia/nemotron-3-super-120b-a12b:free";
 
-/// Un genere di lavoro (`"default"`, `"notte"`, `"codice"`, ...) mappato al
-/// modello scelto per quel genere. Le chiavi sono libere di proposito:
-/// Sailor ne definisce l'elenco altrove, questo file non lo indovina.
+/// A kind of work (`"default"`, `"notte"`, `"codice"`, ...) mapped to the
+/// model chosen for it. The keys are deliberately open: Sailor defines the
+/// list elsewhere, and this file does not guess it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct UserConfig {
     choices: BTreeMap<String, String>,
@@ -21,7 +22,7 @@ pub struct UserConfig {
 impl UserConfig {
     pub fn parse(json: &str) -> Result<UserConfig, String> {
         let choices: BTreeMap<String, String> =
-            serde_json::from_str(json).map_err(|e| format!("modelli.json non valido: {e}"))?;
+            serde_json::from_str(json).map_err(|e| format!("modelli.json is not valid: {e}"))?;
         Ok(UserConfig { choices })
     }
 
@@ -33,9 +34,9 @@ impl UserConfig {
         self.choices.get(kind).map(|s| s.as_str())
     }
 
-    /// Scrive la scelta senza controllarla: la regola dei soli gratuiti vive
-    /// in `set_choice`, non qui, perché questa funzione serve anche a
-    /// `store::load` per rimettere in memoria ciò che è già su disco.
+    /// Writes the choice without checking it: the free-only rule lives in
+    /// `set_choice`, not here, because this function also serves `store::load`
+    /// when putting back into memory what is already on disk.
     pub fn set_unchecked(&mut self, kind: &str, model_id: &str) {
         self.choices.insert(kind.to_string(), model_id.to_string());
     }
@@ -45,10 +46,9 @@ impl UserConfig {
     }
 }
 
-/// La riga di Theo del 27/08/2026, testuale: *"lasciare che l'utente possa
-/// configurarli per ora solo i free"*. Un tentativo di configurare un
-/// modello a pagamento — o un identificatore assente dal catalogo — si
-/// rifiuta qui, prima di toccare il disco.
+/// The mandate's own line: for now the user may configure only the free ones.
+/// An attempt to configure a paid model — or an id absent from the catalog — is
+/// refused here, before anything touches the disk.
 pub fn set_choice(
     cfg: &mut UserConfig,
     catalog: &Catalog,
@@ -57,21 +57,20 @@ pub fn set_choice(
 ) -> Result<(), String> {
     let model = catalog
         .find(model_id)
-        .ok_or_else(|| format!("\"{model_id}\" non è nel catalogo"))?;
+        .ok_or_else(|| format!("\"{model_id}\" is not in the catalog"))?;
     if !model.free {
         return Err(format!(
-            "\"{model_id}\" è a pagamento: per ora si possono configurare solo i modelli gratuiti"
+            "\"{model_id}\" is paid: for now only free models can be configured"
         ));
     }
     cfg.set_unchecked(kind, model_id);
     Ok(())
 }
 
-/// Il modello davvero in uso per un genere di lavoro. Finché non è
-/// configurato — o se la scelta salvata non punta (più, o ancora) a un
-/// modello gratuito del catalogo — vale solo il gratuito di ripiego: è la
-/// riga di Theo, imposta come regola qui e non scavalcabile da una lettura
-/// distratta della configurazione altrove.
+/// The model actually in use for a kind of work. Until one is configured — or
+/// when the saved choice no longer points at a free model in the catalog —
+/// only the free fallback applies. The rule is enforced here so that a
+/// careless read of the configuration elsewhere cannot get around it.
 pub fn effective_model<'a>(
     catalog: &'a Catalog,
     cfg: &UserConfig,
@@ -101,12 +100,12 @@ mod tests {
         let cfg = UserConfig::parse(r#"{"default":"z-ai/glm-5.2:free","notte":"cohere/north-mini-code:free"}"#).unwrap();
         assert_eq!(cfg.get("default"), Some("z-ai/glm-5.2:free"));
         assert_eq!(cfg.get("notte"), Some("cohere/north-mini-code:free"));
-        assert_eq!(cfg.get("assente"), None);
+        assert_eq!(cfg.get("absent"), None);
     }
 
     #[test]
     fn invalid_json_is_a_readable_error() {
-        let err = UserConfig::parse("non è json").unwrap_err();
+        let err = UserConfig::parse("not json").unwrap_err();
         assert!(err.contains("modelli.json"));
     }
 
@@ -123,23 +122,23 @@ mod tests {
         let catalog = sample_catalog();
         let mut cfg = UserConfig::default();
         let err = set_choice(&mut cfg, &catalog, "default", "qwen/qwen3.8-flash").unwrap_err();
-        assert!(err.contains("a pagamento"));
-        assert_eq!(cfg.get("default"), None, "un rifiuto non deve scrivere niente");
+        assert!(err.contains("is paid"));
+        assert_eq!(cfg.get("default"), None, "a refusal must write nothing");
     }
 
     #[test]
     fn set_choice_refuses_a_model_not_in_the_catalog() {
         let catalog = sample_catalog();
         let mut cfg = UserConfig::default();
-        let err = set_choice(&mut cfg, &catalog, "default", "inventato/non-esiste:free").unwrap_err();
-        assert!(err.contains("catalogo"));
+        let err = set_choice(&mut cfg, &catalog, "default", "made-up/does-not-exist:free").unwrap_err();
+        assert!(err.contains("catalog"));
     }
 
     #[test]
     fn effective_model_falls_back_to_the_free_default_when_unconfigured() {
         let catalog = sample_catalog();
         let cfg = UserConfig::default();
-        let m = effective_model(&catalog, &cfg, "mai-visto").unwrap();
+        let m = effective_model(&catalog, &cfg, "never-seen").unwrap();
         assert_eq!(m.id, DEFAULT_FREE_MODEL);
     }
 
@@ -154,9 +153,8 @@ mod tests {
 
     #[test]
     fn effective_model_ignores_a_paid_choice_written_by_hand_and_falls_back() {
-        // Un file scritto a mano (non passato da `set_choice`) può contenere
-        // un modello a pagamento: la regola vale comunque a lettura, non
-        // solo in scrittura.
+        // A hand-written file (one that never went through `set_choice`) can
+        // hold a paid model: the rule applies on read too, not only on write.
         let catalog = sample_catalog();
         let mut cfg = UserConfig::default();
         cfg.set_unchecked("default", "qwen/qwen3.8-flash");
@@ -169,7 +167,7 @@ mod tests {
     fn effective_model_ignores_a_choice_that_disappeared_from_the_catalog() {
         let catalog = sample_catalog();
         let mut cfg = UserConfig::default();
-        cfg.set_unchecked("default", "non/piu-nel-catalogo:free");
+        cfg.set_unchecked("default", "gone/from-the-catalog:free");
         let m = effective_model(&catalog, &cfg, "default").unwrap();
         assert_eq!(m.id, DEFAULT_FREE_MODEL);
     }

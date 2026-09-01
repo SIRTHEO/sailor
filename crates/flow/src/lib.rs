@@ -1,9 +1,9 @@
-//! Il nucleo sincrono dei flussi di Sailor.
-//!
-//! Il grafo è un dato, le azioni sono sostituibili e ogni effetto è preceduto da
-//! un record d'intenzione. Il deposito durevole vive dietro un tratto: questo
-//! crate definisce la semantica che devono rispettare sia SQLite sia le prove in
-//! processo.
+//! The synchronous core of Sailor's flows. The graph is data, actions are
+//! swappable, and every effect is preceded by a record of intent. The durable
+//! store lives behind a trait: this crate defines the semantics both SQLite and
+//! the in-process test store must honour, and depends on neither. `actions`,
+//! `registry`, `sailor` and `ui` already depend on `flow`, so what lands here
+//! costs nobody a new dependency — and the arrow never points back.
 
 mod executor;
 mod file;

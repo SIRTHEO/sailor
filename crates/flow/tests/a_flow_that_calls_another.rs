@@ -1,17 +1,9 @@
-//! Un flusso che ne esegue un altro, per davvero.
-//!
-//! **PERCHÉ QUI E NON SOLO NELLE PROVE DI MODULO.** Le funzioni del guardiano si
-//! provano da sole — e sono provate — ma «il passo `subflow` esegue un altro
-//! flusso» è un fatto che coinvolge il caricamento dai file, la precedenza fra
-//! sorgenti, l'esecutore, il deposito e il registro delle azioni tutti insieme.
-//! Una prova che ne tocca uno solo resta verde mentre il pezzo intero non
-//! funziona.
-//!
-//! **IL DEPOSITO QUI È IN MEMORIA, E CIÒ CHE NON PROVA È DICHIARATO.** La corsa
-//! figlia con `parent_run_id` scritto nel deposito vero è un fatto di
-//! `crates/registry`; qui si prova che la corsa figlia **esiste con un
-//! identificativo proprio**, che quell'identificativo torna nell'uscita del
-//! passo del padre, e che i suoi passi si leggono sotto di esso.
+//! A flow that runs another one, for real. The guard's own functions are tested
+//! on their own, and are; but "the `subflow` step runs another flow" involves
+//! file loading, source precedence, the executor, the store and the action
+//! registry all at once, and a test touching one of them stays green while the
+//! whole piece is broken. What this does *not* prove is declared: the store
+//! here is in memory, so `parent_run_id` in the real one stays `registry`'s.
 
 use flow::subflow::{SubflowAction, SubflowHost, RunNote, SUBFLOW_ACTION};
 use flow::system::FlowSource;
@@ -24,9 +16,9 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-// ── il mondo di prova ───────────────────────────────────────────────────────
+// ── the test world ──────────────────────────────────────────────────────────
 
-/// Una cartella usa-e-getta dove scrivere i `.flow.json` della prova.
+/// A throwaway directory to write the test's `.flow.json` files into.
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -37,13 +29,13 @@ impl Scratch {
             std::thread::current().id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("cartella di prova");
+        std::fs::create_dir_all(&dir).expect("scratch directory");
         Self(dir)
     }
 
     fn put(&self, text: &str) {
-        let file: FlowFile = serde_json::from_str(text).expect("il flusso di prova è valido");
-        std::fs::write(self.0.join(format!("{}.flow.json", file.id)), text).expect("scritto");
+        let file: FlowFile = serde_json::from_str(text).expect("the test flow is valid");
+        std::fs::write(self.0.join(format!("{}.flow.json", file.id)), text).expect("written");
     }
 
     fn place(&self) -> &Path {
@@ -57,11 +49,10 @@ impl Drop for Scratch {
     }
 }
 
-/// Un'azione che scrive quello che ha ricevuto, e lo restituisce.
+/// An action that records what it received, and returns it.
 ///
-/// Serve a due prove insieme: che il figlio gira, e **con quali ingressi** —
-/// che è il punto della decisione «il figlio vede solo ciò che il passo
-/// dichiara».
+/// It serves two tests at once: that the child runs, and *with what inputs* —
+/// the point of the rule that the child sees only what the step declares.
 #[derive(Default)]
 struct RecordsWhatItGot {
     seen: Mutex<Vec<(Value, SharedState)>>,
@@ -77,13 +68,12 @@ impl Action for RecordsWhatItGot {
     }
 }
 
-/// Il ponte di prova: le sorgenti sono una cartella sola, le azioni sono quelle
-/// che la prova registra, il deposito è in memoria.
+/// The test bench: one directory of sources, the test's actions, memory store.
 ///
-/// **IL REGISTRO SI COSTRUISCE ALLA PRIMA CHIAMATA, COME QUELLO VERO.** È
-/// l'anello che il passo `subflow` deve chiudere: gira con le stesse azioni fra
-/// cui è registrato. Costruirlo prima sarebbe impossibile — conterrebbe se
-/// stesso — e provarlo con un registro diverso proverebbe un'altra cosa.
+/// The registry is built on first call, like the real one. That is the loop the
+/// `subflow` step has to close: it runs with the same actions it is registered
+/// among. Building it earlier is impossible — it would contain itself — and a
+/// different registry would test something else.
 struct Bench {
     dir: PathBuf,
     store: Arc<InMemoryRecordStore>,
@@ -103,7 +93,7 @@ impl Bench {
         })
     }
 
-    /// Il registro che contiene il passo `subflow` e l'azione di prova.
+    /// The registry holding the `subflow` step and the test action.
     fn registry(self: &Arc<Self>) -> ActionRegistry {
         let mut registry = ActionRegistry::default();
         registry.register(SUBFLOW_ACTION, SubflowAction::new(Arc::clone(self) as Arc<dyn SubflowHost>));
@@ -111,7 +101,7 @@ impl Bench {
         registry
     }
 
-    /// Le intestazioni scritte: corsa figlia, padre, passo, stato.
+    /// The headers written: child run, parent, step, status.
     fn notes(&self) -> Vec<(String, String, String, String)> {
         self.notes
             .lock()
@@ -120,7 +110,7 @@ impl Bench {
     }
 }
 
-/// Un guscio che manda all'unica spia della prova, così `echo` resta una riga.
+/// A shell forwarding to the test's single watcher, so `echo` stays one line.
 struct EchoTo(Arc<RecordsWhatItGot>);
 
 impl Action for EchoTo {
@@ -138,7 +128,7 @@ impl SubflowHost for Bench {
     }
 
     fn actions(&self) -> Result<Arc<ActionRegistry>, ActionError> {
-        // L'anello, chiuso come lo chiude `registry::LedgerHost`.
+        // The loop, closed the way `registry::LedgerHost` closes it.
         Ok(self
             .nested
             .get_or_init(|| {
@@ -171,9 +161,9 @@ impl SubflowHost for Bench {
     }
 }
 
-/// Lo stesso ponte per i livelli più profondi: stessa cartella, stesso
-/// deposito, stessa spia. Esiste perché ogni livello costruisce il proprio
-/// registro, esattamente come fa quello vero.
+/// The same bench for deeper levels: same directory, same store, same watcher.
+/// It exists because every level builds its own registry, exactly as the real
+/// one does.
 struct BenchAgain(PathBuf, Arc<InMemoryRecordStore>, Arc<RecordsWhatItGot>);
 
 impl SubflowHost for BenchAgain {
@@ -207,7 +197,7 @@ impl SubflowHost for BenchAgain {
     }
 }
 
-/// Il passo del padre che chiama `flow`, senza dipendenze.
+/// The parent step that calls `flow`, with no dependencies.
 fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
     Step {
         id: id.to_owned(),
@@ -221,22 +211,22 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
     }
 }
 
-/// Una chiave che il padre si porta nello stato condiviso e che il figlio non
-/// deve mai vedere. Senza di lei la prova sull'eredità sarebbe vuota: si
-/// asserirebbe l'assenza di qualcosa che nessuno ha mai messo.
-const PARENT_ONLY: &str = "segreto-del-padre";
+/// A key the parent carries in its shared state that the child must never see.
+/// Without it the inheritance test would be empty: it would assert the absence
+/// of something nobody ever put there.
+const PARENT_ONLY: &str = "parents-secret";
 
-/// Fa girare un grafo di un passo solo che chiama `calls`.
+/// Runs a one-step graph that calls `calls`.
 fn run_calling(
     bench: &Arc<Bench>,
     calls: &str,
     inputs: Value,
     cap: Option<i64>,
 ) -> Execution {
-    let graph = Graph::new(vec![calling_step("chiamata", calls, inputs)]).expect("grafo valido");
+    let graph = Graph::new(vec![calling_step("chiamata", calls, inputs)]).expect("valid graph");
     let registry = bench.registry();
     let mut shared = SharedState::new();
-    shared.insert(PARENT_ONLY.to_owned(), json!("non deve arrivare al figlio"));
+    shared.insert(PARENT_ONLY.to_owned(), json!("must not reach the child"));
     InProcessExecutor
         .execute(
             &graph,
@@ -251,25 +241,25 @@ fn run_calling(
             &registry,
             &SystemClock,
         )
-        .expect("l'esecuzione non è un guasto del motore")
+        .expect("the execution is not an engine fault")
 }
 
-/// Il passo del padre come lo ha chiuso il deposito.
+/// The parent step as the store closed it.
 fn parent_step(bench: &Arc<Bench>) -> flow::StepRecord {
     bench
         .store
         .records("corsa-del-padre")
-        .expect("leggere i passi")
+        .expect("read the steps")
         .into_iter()
         .find(|record| record.step_id == "chiamata")
-        .expect("il passo c'è")
+        .expect("the step is there")
 }
 
-// ── i flussi di prova ───────────────────────────────────────────────────────
+// ── the test flows ──────────────────────────────────────────────────────────
 
 const LEAF: &str = r#"{
   "id": "foglia",
-  "description": "un flusso interno di un passo solo",
+  "description": "an inner flow of a single step",
   "graph": { "steps": [{
     "id": "riporta", "deps": [], "action": "echo", "max_attempts": 1, "when": null,
     "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
@@ -279,7 +269,7 @@ const LEAF: &str = r#"{
 
 const HERE: &str = r#"{
   "id": "andata",
-  "description": "chiama ritorno",
+  "description": "calls ritorno",
   "graph": { "steps": [{
     "id": "vai", "deps": [], "action": "subflow", "max_attempts": 1, "when": null,
     "with": { "flow": "ritorno" },
@@ -290,7 +280,7 @@ const HERE: &str = r#"{
 
 const BACK: &str = r#"{
   "id": "ritorno",
-  "description": "richiama andata: è l'anello",
+  "description": "calls andata back: that is the loop",
   "graph": { "steps": [{
     "id": "torna", "deps": [], "action": "subflow", "max_attempts": 1, "when": null,
     "with": { "flow": "andata" },
@@ -299,16 +289,16 @@ const BACK: &str = r#"{
   "inputs": {}
 }"#;
 
-// ── le prove ────────────────────────────────────────────────────────────────
+// ── the tests ───────────────────────────────────────────────────────────────
 
-/// **IL FATTO CENTRALE: UN PASSO ESEGUE UN ALTRO FLUSSO.**
+/// The central fact: a step runs another flow.
 ///
-/// Il figlio gira, la sua uscita torna nell'uscita del passo, e il passo del
-/// padre porta il `run_id` del figlio — che è la metà risalibile della
-/// decisione 4.
+/// The child runs, its output comes back inside the step's output, and the
+/// parent step carries the child's `run_id` — which is the traceable half of
+/// decision 4.
 #[test]
 fn a_step_runs_another_flow_and_carries_back_its_output() {
-    let scratch = Scratch::new("esegue");
+    let scratch = Scratch::new("runs");
     scratch.put(LEAF);
     let bench = Bench::new(scratch.place());
 
@@ -317,57 +307,57 @@ fn a_step_runs_another_flow_and_carries_back_its_output() {
     assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
     let record = parent_step(&bench);
     assert_eq!(record.outcome, Some(Outcome::Went));
-    let output = record.output.expect("il passo ha un'uscita");
+    let output = record.output.expect("the step has an output");
     assert_eq!(output["flow"], "foglia");
     assert_eq!(output["origin"], "del progetto");
     assert_eq!(output["status"], "complete");
     assert_eq!(
         output["outputs"]["riporta"]["echo"]["scritto-nel-file"],
         json!(true),
-        "l'uscita del passo terminale del figlio è l'uscita del passo: {output}"
+        "the child's terminal step output is the step's output: {output}"
     );
 
-    let child = output["run_id"].as_str().expect("il figlio ha una corsa");
+    let child = output["run_id"].as_str().expect("the child has a run");
     assert!(
         child.starts_with("corsa-del-padre::chiamata::"),
-        "la corsa figlia si risale dal nome: {child}"
+        "the child run is traced from its name: {child}"
     );
     assert_eq!(
-        bench.store.records(child).expect("leggere").len(),
+        bench.store.records(child).expect("read").len(),
         1,
-        "e i suoi passi stanno sotto di lei, non sotto il padre"
+        "and its steps sit under it, not under the parent"
     );
 }
 
-/// **LA CORSA FIGLIA È UNA CORSA, CON IL PADRE SCRITTO ACCANTO.**
+/// The child run is a run, with the parent written beside it.
 ///
-/// Aperta `running` e chiusa `complete`, con il passo che l'ha chiamata. Senza
-/// questa, «risalibile» sarebbe una parola nel commento.
+/// Opened `running` and closed `complete`, with the step that called it.
+/// Without this, "traceable" would be a word in a comment.
 #[test]
 fn the_child_run_names_the_run_and_the_step_that_called_it() {
-    let scratch = Scratch::new("intestazione");
+    let scratch = Scratch::new("header");
     scratch.put(LEAF);
     let bench = Bench::new(scratch.place());
 
     run_calling(&bench, "foglia", json!({}), None);
 
     let notes = bench.notes();
-    assert_eq!(notes.len(), 2, "una all'apertura e una alla chiusura: {notes:?}");
+    assert_eq!(notes.len(), 2, "one at open and one at close: {notes:?}");
     assert_eq!(notes[0].1, "corsa-del-padre");
     assert_eq!(notes[0].2, "chiamata");
     assert_eq!(notes[0].3, "running");
     assert_eq!(notes[1].3, "complete");
-    assert_eq!(notes[0].0, notes[1].0, "è la stessa corsa, aperta e chiusa");
+    assert_eq!(notes[0].0, notes[1].0, "the same run, opened and closed");
 }
 
-/// **IL FIGLIO VEDE CIÒ CHE IL PASSO DICHIARA, E NON LO STATO DEL PADRE.**
+/// The child sees what the step declares, and not the parent's state.
 ///
-/// Gli ingressi del passo vincono su quelli scritti nel file del figlio, e la
-/// mappa condivisa del padre non arriva: se arrivasse, nessuno potrebbe più
-/// dire da dove viene un valore.
+/// The step's inputs win over those written in the child's own file, and the
+/// parent's shared map does not arrive: if it did, nobody could say any more
+/// where a value came from.
 #[test]
 fn the_child_gets_the_declared_inputs_and_not_the_parent_state() {
-    let scratch = Scratch::new("ingressi");
+    let scratch = Scratch::new("inputs");
     scratch.put(LEAF);
     let bench = Bench::new(scratch.place());
 
@@ -379,36 +369,32 @@ fn the_child_gets_the_declared_inputs_and_not_the_parent_state() {
     );
 
     let seen = bench.watcher.seen.lock().unwrap_or_else(|held| held.into_inner());
-    let (input, shared) = seen.first().expect("il figlio ha girato");
-    assert_eq!(input["dal-passo"], "questo", "l'ingresso del passo vince");
+    let (input, shared) = seen.first().expect("the child ran");
+    assert_eq!(input["dal-passo"], "questo", "the step's input wins");
     assert!(
         input.get("scritto-nel-file").is_none(),
-        "e sostituisce quello del file per quella chiave: {input}"
+        "and replaces the file's for that key: {input}"
     );
     assert_eq!(
         shared.get(flow::CURRENT_RUN).and_then(Value::as_str).map(|run| run.contains("corsa-del-padre")),
         Some(true),
-        "la corsa del figlio porta il padre nel nome"
+        "the child's run carries the parent in its name"
     );
     assert!(
         !shared.contains_key(PARENT_ONLY),
-        "niente dello stato condiviso del padre passa al figlio: {shared:?}"
+        "nothing of the parent's shared state reaches the child: {shared:?}"
     );
 }
 
-/// **DUE FLUSSI CHE SI CHIAMANO A VICENDA SI FERMANO, E L'ERRORE NOMINA LA
-/// CATENA.**
+/// Two flows that call each other stop, and the error names the chain.
 ///
-/// È il caso che il controllo dei cicli del grafo **non può** vedere: ciascuno
-/// dei due file, da solo, è un grafo perfettamente aciclico. L'anello esiste
-/// solo fra i due, e senza qualcuno che lo cerchi la corsa girerebbe finché la
-/// pila non finisce.
-///
-/// **E DEVE DIRE CHI CHIAMA CHI.** «Ciclo rilevato» non si può riparare: chi
-/// legge deve poter togliere l'arco, e per toglierlo deve vederlo.
+/// This is the case the graph's own cycle check *cannot* see: each file alone
+/// is a perfectly acyclic graph, and the loop exists only between them. It must
+/// say who calls whom — "cycle detected" cannot be repaired, since the reader
+/// has to remove the edge and to remove it they must see it.
 #[test]
 fn two_flows_that_call_each_other_stop_with_the_chain_written_out() {
-    let scratch = Scratch::new("anello");
+    let scratch = Scratch::new("loop");
     scratch.put(HERE);
     scratch.put(BACK);
     let bench = Bench::new(scratch.place());
@@ -417,7 +403,7 @@ fn two_flows_that_call_each_other_stop_with_the_chain_written_out() {
 
     assert!(
         matches!(execution.decisions.last(), Some(Decision::Failed(_))),
-        "la corsa del padre si ferma: {:?}",
+        "the parent run stops: {:?}",
         execution.decisions.last()
     );
     let record = parent_step(&bench);
@@ -425,18 +411,18 @@ fn two_flows_that_call_each_other_stop_with_the_chain_written_out() {
     let said = record.said.unwrap_or_default();
     assert!(
         said.contains("andata → ritorno → andata"),
-        "l'errore deve nominare la catena, non dire soltanto «ciclo»: {said}"
+        "the error must name the chain, not just say \"cycle\": {said}"
     );
 }
 
-/// **UN FLUSSO CHE CHIAMA SE STESSO È LO STESSO GUASTO, PIÙ CORTO.**
+/// A flow that calls itself is the same fault, shorter.
 #[test]
 fn a_flow_that_calls_itself_names_itself_twice() {
-    let scratch = Scratch::new("solitario");
+    let scratch = Scratch::new("loner");
     scratch.put(
         r#"{
       "id": "solitario",
-      "description": "chiama se stesso",
+      "description": "calls itself",
       "graph": { "steps": [{
         "id": "ancora", "deps": [], "action": "subflow", "max_attempts": 1, "when": null,
         "with": { "flow": "solitario" },
@@ -453,18 +439,18 @@ fn a_flow_that_calls_itself_names_itself_twice() {
     assert_eq!(record.failure_class.as_deref(), Some("subflow_cycle"));
     assert!(
         record.said.unwrap_or_default().contains("solitario → solitario"),
-        "l'anello più corto si nomina come gli altri"
+        "the shortest loop is named like the others"
     );
 }
 
-/// **UN NOME CHE NESSUNA SORGENTE CONOSCE NON È UN ANELLO.**
+/// A name no source knows is not a loop.
 ///
-/// Senza questa prova, un guardiano che dicesse «ciclo» a ogni chiamata
-/// resterebbe verde su quelle sopra. E l'errore deve dire **dove ha guardato**:
-/// un flusso che manca si ripara scrivendolo nel posto giusto.
+/// Without this, a guard that said "cycle" to every call would stay green on
+/// the tests above. And the error must say *where it looked*: a missing flow is
+/// repaired by writing it in the right place.
 #[test]
 fn a_call_to_a_flow_that_does_not_exist_says_where_it_looked() {
-    let scratch = Scratch::new("assente");
+    let scratch = Scratch::new("absent");
     scratch.put(LEAF);
     let bench = Bench::new(scratch.place());
 
@@ -473,52 +459,52 @@ fn a_call_to_a_flow_that_does_not_exist_says_where_it_looked() {
     let record = parent_step(&bench);
     assert_eq!(record.failure_class.as_deref(), Some("unknown_subflow"));
     let said = record.said.unwrap_or_default();
-    assert!(said.contains("mai-scritto"), "dice quale flusso: {said}");
-    assert!(said.contains("del progetto"), "e dove ha guardato: {said}");
+    assert!(said.contains("mai-scritto"), "it says which flow: {said}");
+    assert!(said.contains("del progetto"), "and where it looked: {said}");
 }
 
-/// **IL TETTO DEL PADRE VALE ANCHE PER IL FIGLIO.**
+/// The parent's cap holds for the child too.
 ///
-/// Il figlio non dichiara nessun tetto: se ereditasse «nessun limite»,
-/// spostare la spesa dentro un sotto-flusso annullerebbe il tetto di chiunque.
-/// Qui il padre ha zero da spendere, e il figlio si ferma prima del primo
-/// passo — cioè riceve il residuo, non l'assenza.
+/// The child declares no cap: were it to inherit "no limit", moving the spend
+/// into a subflow would annul anyone's cap. Here the parent has zero to spend
+/// and the child stops before its first step — it receives the remainder, not
+/// the absence.
 #[test]
 fn the_child_inherits_what_is_left_of_the_parent_cap() {
-    let scratch = Scratch::new("tetto");
+    let scratch = Scratch::new("cap");
     scratch.put(LEAF);
     let bench = Bench::new(scratch.place());
 
     run_calling(&bench, "foglia", json!({}), Some(0));
 
-    // Con tetto zero il padre non apre nemmeno il proprio passo: è il tetto che
-    // lavora al livello di sopra. La prova vera è la riga sotto.
+    // With a cap of zero the parent does not open even its own step: the cap
+    // works at the level above. The real proof is the lines below.
     let with_room = Bench::new(scratch.place());
     run_calling(&with_room, "foglia", json!({}), Some(1_000_000));
     let record = parent_step(&with_room);
     assert_eq!(
         record.outcome,
         Some(Outcome::Went),
-        "con margine il figlio gira: {record:?}"
+        "with room to spare the child runs: {record:?}"
     );
 
     let seen = with_room.watcher.seen.lock().unwrap_or_else(|held| held.into_inner());
-    let (_, shared) = seen.first().expect("il figlio ha girato");
+    let (_, shared) = seen.first().expect("the child ran");
     assert_eq!(
         shared.get(flow::CURRENT_CAP).and_then(Value::as_i64),
         Some(1_000_000),
-        "e gira sotto il tetto che gli resta dal padre, non senza tetto: {shared:?}"
+        "and runs under the cap left to it by the parent, not uncapped: {shared:?}"
     );
 }
 
-/// **IL PASSO NOMINA I CAMPI CHE NON CONOSCE**, che è come `flow check` scopre
-/// un refuso prima che costi una chiamata a pagamento.
+/// The step names the fields it does not know, which is how `flow check` finds
+/// a typo before it costs a paid call.
 #[test]
 fn a_field_the_step_does_not_know_is_named() {
-    let scratch = Scratch::new("campi");
+    let scratch = Scratch::new("fields");
     let bench = Bench::new(scratch.place());
     let registry = bench.registry();
-    let step = registry.get(SUBFLOW_ACTION).expect("registrata");
+    let step = registry.get(SUBFLOW_ACTION).expect("registered");
 
     assert_eq!(
         step.unknown_fields(&json!({ "flow": "foglia", "inputs": {}, "flusso": "foglia" })),

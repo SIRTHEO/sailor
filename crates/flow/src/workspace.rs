@@ -1,100 +1,83 @@
-//! Dove sta la radice del progetto, e cosa il progetto dichiara di sé.
-//!
-//! **PERCHÉ ESISTE.** Il guasto 25: `flows/sviluppa-sailor.flow.json` aveva la
-//! casa di chi scriveva come `"workdir"`, in chiaro su sette passi.
-//! Lanciato da un clone lavorava — e commetteva — nel repository principale,
-//! senza dire niente. Un flusso non deve sapere dove sta il repository: la
-//! radice viene da chi lancia, e un percorso assoluto dentro un flusso è un
-//! flusso che si può eseguire in un posto solo.
-//!
-//! **PERCHÉ QUI E NON IN UN CRATE NUOVO.** La risalita gemella — quella che
-//! cerca una cartella `flows/` — sta in `flow::system`, e le due rispondono
-//! alla stessa domanda: «di quale progetto sto parlando». Tenerle a due passi
-//! l'una dall'altra è ciò che impedisce che diventino due risposte diverse,
-//! che è esattamente il guasto 19. `actions`, `registry`, `sailor` e `ui`
-//! dipendono già da `flow`: nessuno deve aggiungere una dipendenza per usarle.
+//! Where the project root is, and what the project declares about itself. A
+//! flow must not know where the repository lives: `sviluppa-sailor.flow.json`
+//! carried its author's home as `"workdir"` on seven steps, and launched from a
+//! clone it worked — and committed — in the main repository, saying nothing.
+//! The root comes from whoever launches; an absolute path inside a flow is a
+//! flow that can be run in one place only. See fault 25.
 
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// Il file che dichiara «qui comincia un progetto Sailor».
+/// The file that declares "a Sailor project starts here".
 ///
-/// **È UN MARCATORE, NON UNA CONFIGURAZIONE OBBLIGATORIA.** Può essere `{}`:
-/// ciò che conta è che esista, perché è la sua posizione a rispondere alla
-/// domanda. Il contenuto serve a chi vuole dichiarare qualcosa in più.
+/// A marker, not a mandatory configuration. It may be `{}`: what counts is
+/// that it exists, because its position is what answers the question. The
+/// contents serve whoever wants to declare something more.
 pub const MARKER: &str = "sailor.json";
 
-/// L'origine dei flussi di un progetto che si è dichiarato con [`MARKER`].
+/// The origin of flows from a project that declared itself with [`MARKER`].
+///
+/// Still in Italian on purpose. The origin family — `di sistema`, `tuoi`,
+/// `dichiarati`, `del progetto` — is compared literally, here by
+/// `tests/a_flow_that_calls_another.rs` and in `system.rs`, so it moves only in
+/// the same edit as the assertions that name it.
 pub const ORIGIN_DECLARED: &str = "del progetto";
 
-/// L'origine dei flussi di un progetto **indovinato** risalendo per una
-/// cartella `flows/`, senza nessun marcatore.
-///
-/// **L'AVVISO STA NELL'ORIGINE, E NON È PIGRIZIA.** L'origine è già stampata su
-/// ogni riga da `sailor flow list` e mostrata accanto a ogni sorgente dalla
-/// finestra: è il solo posto che chi guarda legge davvero, e ce n'è **uno**.
-/// Un avviso scritto altrove sarebbe una seconda verità da tenere allineata a
-/// questa — il guasto 10 — e comparirebbe una volta sola, mentre questo resta
-/// sotto gli occhi finché il progetto non si dichiara.
+/// The origin of flows from a project *guessed* by walking up to a `flows/`
+/// directory, with no marker at all. The warning rides in the origin and that
+/// is not laziness: `sailor flow list` prints the origin on every row and the
+/// window shows it beside every source, so it is the one place a reader really
+/// looks and there is exactly one of it. A warning written elsewhere would be a
+/// second truth to keep aligned — fault 10 — and would show only once.
 pub const ORIGIN_GUESSED: &str = "del progetto (nessun sailor.json: radice indovinata)";
 
-/// Ciò che un progetto dichiara di sé nel proprio [`MARKER`].
-///
-/// **I CAMPI IGNOTI SI TENGONO, NON FANNO SCARTARE IL FILE.** È il guasto 8:
-/// un descrittore con un campo che questa versione non conosce veniva scartato
-/// intero. `deny_unknown_fields` qui vorrebbe dire che un progetto aperto con
-/// un Sailor più vecchio di quello che l'ha scritto smette di funzionare — e
-/// smette in silenzio, perché la radice sparirebbe e i percorsi tornerebbero a
-/// risolversi dove sta il processo. Ciò che non si conosce finisce in `extra`,
-/// e chi vuole avvisare interroga [`Declaration::unknown_fields`].
+/// What a project declares about itself in its [`MARKER`]. Unknown fields are
+/// kept, never a reason to discard the file: it is fault 8, where a descriptor
+/// carrying a field this version did not know was thrown out whole.
+/// `deny_unknown_fields` here would mean a project opened with a Sailor older
+/// than the one that wrote it stops working, and stops silently — the root
+/// vanishes, and paths go back to resolving wherever the process sits.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct Declaration {
-    /// Come si chiama il progetto per chi legge. Vuoto vuol dire «non l'ha
-    /// detto», e chi mostra userà il nome della cartella.
+    /// What the project is called for a reader. Empty means "it did not say",
+    /// and whoever displays it falls back to the folder name.
     #[serde(default)]
     pub name: String,
-    /// I documenti che chi lavora qui deve leggere prima di toccare qualcosa.
+    /// The documents whoever works here must read before touching anything.
     #[serde(default)]
     pub rules: Vec<String>,
-    /// Le verifiche del progetto, per nome. **Resta vuoto finché qualcuno non
-    /// lo riempie a mano**: indovinare `cargo test` per un progetto qualunque
-    /// è la stessa presunzione del percorso assoluto che il guasto 25 racconta.
+    /// The project's checks, by name. Stays empty until someone fills it in by
+    /// hand: guessing `cargo test` for an arbitrary project is the same
+    /// presumption as the absolute path fault 25 is about.
     #[serde(default)]
     pub checks: BTreeMap<String, String>,
-    /// Dove sta la dotazione propria del progetto, se ne ha una.
+    /// Where the project's own equipment lives, if it has any.
     #[serde(default)]
     pub equipment: Option<String>,
-    /// Ciò che questa versione non riconosce, tenuto invece che rifiutato.
+    /// What this version does not recognise, kept rather than refused. Whoever
+    /// wants to warn about it asks [`Declaration::unknown_fields`].
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
 
 impl Declaration {
-    /// I nomi dei campi che questa versione non conosce.
+    /// The names of the fields this version does not know.
     ///
-    /// Chi mostra ne fa un avviso **sul campo**, mai il rifiuto del file: è la
-    /// forma che il guasto 8 ha lasciato scritta.
+    /// Whoever displays them makes a warning *on the field*, never a refusal of
+    /// the whole file: that is the shape fault 8 left written.
     pub fn unknown_fields(&self) -> Vec<String> {
         self.extra.keys().cloned().collect()
     }
 }
 
-/// La radice del progetto: la prima cartella che, risalendo da `from`, contiene
-/// un [`MARKER`].
-///
-/// **SI RISALE PER LA STESSA RAGIONE DI `project_flows_from`.** Un programma non
-/// viene quasi mai avviato dalla radice: la finestra parte da
-/// `desktop/src-tauri`, un terminale da dove si trovava chi lo ha aperto.
-/// Guardare solo la cartella corrente vorrebbe dire non trovare niente quasi
-/// sempre.
-///
-/// **`None` NON È «LA CARTELLA CORRENTE».** Sono due risposte opposte: `None`
-/// vuol dire che nessuno ha dichiarato una radice, e chi ha bisogno di una
-/// radice deve fallire dicendolo. Rispondere con la cartella corrente
-/// rimetterebbe in piedi il guasto 25 da un'altra porta — un flusso che lavora
-/// dove capita, in silenzio.
+/// The project root: the first directory holding a [`MARKER`], walking up from
+/// `from` for the same reason `system::project_flows_from` does — a program is
+/// almost never started at the root; the window starts in `desktop/src-tauri`.
+/// The two live two steps apart so "which project is this" cannot become two
+/// answers — fault 19. `None` is not "the current directory": nobody declared a
+/// root, and whoever needs one fails saying so, not working wherever it lands.
 pub fn find_root(from: &Path) -> Option<PathBuf> {
     let mut here = Some(from);
     while let Some(directory) = here {
@@ -106,18 +89,17 @@ pub fn find_root(from: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Legge la dichiarazione di una radice.
+/// Reads a root's declaration.
 ///
-/// Un marcatore vuoto o illeggibile non è un progetto rotto: `{}` è una
-/// dichiarazione legittima, e il file che non si legge lascia comunque in piedi
-/// la radice — è la sua **posizione** a rispondere alla domanda, non il suo
-/// contenuto.
+/// An empty or unreadable marker is not a broken project: `{}` is a legitimate
+/// declaration, and a file that will not read still leaves the root standing —
+/// its *position* answers the question, not its contents.
 pub fn declaration_at(root: &Path) -> Result<Declaration, String> {
     let path = root.join(MARKER);
     let text = std::fs::read_to_string(&path)
-        .map_err(|error| format!("non riesco a leggere {}: {error}", path.display()))?;
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     serde_json::from_str(&text)
-        .map_err(|error| format!("{} non è una dichiarazione valida: {error}", path.display()))
+        .map_err(|error| format!("{} is not a valid declaration: {error}", path.display()))
 }
 
 #[cfg(test)]
@@ -132,52 +114,53 @@ mod tests {
             NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("cartella di prova");
+        fs::create_dir_all(&dir).expect("scratch directory");
         dir
     }
 
-    /// Un contatore nel nome, non il solo orologio: è il guasto 21 — `cargo
-    /// test` manda le prove sullo stesso processo e si rubavano la cartella.
+    /// A counter in the name, not the clock alone: it is fault 21 — `cargo test`
+    /// sends these tests through one process, and on a clock without nanosecond
+    /// resolution they stole each other's directory.
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
     fn put_marker(dir: &Path, text: &str) {
-        fs::create_dir_all(dir).expect("cartella");
-        fs::write(dir.join(MARKER), text).expect("marcatore");
+        fs::create_dir_all(dir).expect("directory");
+        fs::write(dir.join(MARKER), text).expect("marker");
     }
 
-    /// Il caso di tutti i giorni: si lavora tre cartelle sotto la radice.
+    /// The everyday case: work happens three directories below the root.
     #[test]
     fn the_root_is_the_folder_with_the_marker() {
-        let root = scratch("risalita");
+        let root = scratch("walk-up");
         put_marker(&root, "{}");
         let deep = root.join("crates").join("flow").join("src");
-        fs::create_dir_all(&deep).expect("sottocartella");
+        fs::create_dir_all(&deep).expect("subdirectory");
 
         assert_eq!(find_root(&deep), Some(root.clone()));
 
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// **SENZA MARCATORE LA RISPOSTA È `None`, NON LA CARTELLA CORRENTE.**
-    /// Rispondere con la cartella corrente farebbe lavorare un flusso dove
-    /// capita senza dirlo, che è il guasto 25 rimesso in piedi.
+    /// With no marker the answer is `None`, not the current directory:
+    /// answering with it would let a flow work wherever it lands without saying
+    /// so, which is fault 25 put back on its feet.
     #[test]
     fn without_a_marker_there_is_no_root() {
-        let orphan = scratch("senza-marcatore");
-        let deep = orphan.join("una").join("due");
-        fs::create_dir_all(&deep).expect("sottocartella");
+        let orphan = scratch("no-marker");
+        let deep = orphan.join("one").join("two");
+        fs::create_dir_all(&deep).expect("subdirectory");
 
         assert_eq!(find_root(&deep), None);
 
         let _ = fs::remove_dir_all(&orphan);
     }
 
-    /// Il marcatore più vicino vince: un progetto dentro un progetto è suo.
+    /// The nearest marker wins: a project inside a project is its own.
     #[test]
     fn the_nearest_marker_wins() {
-        let outer = scratch("annidati");
+        let outer = scratch("nested");
         put_marker(&outer, "{}");
-        let inner = outer.join("dentro");
+        let inner = outer.join("inside");
         put_marker(&inner, "{}");
 
         assert_eq!(find_root(&inner), Some(inner.clone()));
@@ -185,35 +168,36 @@ mod tests {
         let _ = fs::remove_dir_all(&outer);
     }
 
-    /// IL GUASTO 8, SU QUESTO FILE. Un campo che questa versione non conosce
-    /// non fa scartare la dichiarazione: resta in `extra` e si può avvisare.
+    /// Fault 8, on this file: a field this version does not know must not make
+    /// the declaration be discarded — it stays in `extra`, and a warning can be
+    /// raised on it.
     #[test]
     fn an_unknown_field_is_kept_not_refused() {
-        let root = scratch("campo-ignoto");
+        let root = scratch("unknown-field");
         put_marker(
             &root,
-            r#"{"name": "sailor", "rules": ["AGENTS.md"], "domani": 3}"#,
+            r#"{"name": "sailor", "rules": ["AGENTS.md"], "tomorrow": 3}"#,
         );
 
-        let declared = declaration_at(&root).expect("si legge lo stesso");
+        let declared = declaration_at(&root).expect("it reads all the same");
 
         assert_eq!(declared.name, "sailor");
         assert_eq!(declared.rules, vec!["AGENTS.md".to_owned()]);
-        assert_eq!(declared.unknown_fields(), vec!["domani".to_owned()]);
+        assert_eq!(declared.unknown_fields(), vec!["tomorrow".to_owned()]);
 
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// Un marcatore vuoto è una dichiarazione legittima: conta la posizione.
+    /// An empty marker is a legitimate declaration: position is what counts.
     #[test]
     fn an_empty_marker_is_a_valid_declaration() {
-        let root = scratch("vuoto");
+        let root = scratch("empty");
         put_marker(&root, "{}");
 
-        let declared = declaration_at(&root).expect("dichiarazione vuota");
+        let declared = declaration_at(&root).expect("empty declaration");
 
         assert_eq!(declared, Declaration::default());
-        assert!(declared.checks.is_empty(), "checks non si indovina");
+        assert!(declared.checks.is_empty(), "checks is never guessed");
 
         let _ = fs::remove_dir_all(&root);
     }
