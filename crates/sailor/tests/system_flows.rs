@@ -151,6 +151,31 @@ fn no_shipped_flow_names_a_binary() {
     }
 }
 
+/// **NESSUN FLUSSO SPEDITO PORTA UN PERCORSO DI UNA MACCHINA SOLA.**
+///
+/// La garanzia c'era e stava nel posto sbagliato: sorvegliava i flussi di
+/// sviluppo di questo progetto, che dall'01/09/2026 non stanno più nel repo —
+/// sono andati dove vanno i flussi di chiunque, nella casa di Sailor. Quelli
+/// erano nostri e potevano permettersi un percorso assoluto; **questi vengono
+/// installati su macchine che non conosciamo**, ed è qui che la regola serve.
+#[test]
+fn no_shipped_flow_carries_a_path_from_one_machine() {
+    for (name, _) in system::FLOWS {
+        let text = system::FLOWS
+            .iter()
+            .find(|(id, _)| id == name)
+            .map(|(_, body)| *body)
+            .expect("il flusso spedito ha un corpo");
+        for home in ["/Users/", "/home/", "C:\\Users\\"] {
+            assert!(
+                !text.contains(home),
+                "il flusso spedito «{name}» porta un percorso di una macchina sola ({home}): \
+                 su qualunque altra non parte"
+            );
+        }
+    }
+}
+
 // ── il primo flusso: cosa c'è qui, e cosa manca ──────────────────────────
 
 /// SI ESEGUE, E LA SECONDA META' È LA RISPOSTA. Il rilevamento da solo è un
