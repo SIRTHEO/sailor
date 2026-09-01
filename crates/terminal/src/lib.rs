@@ -106,8 +106,51 @@ impl Workspace {
 /// terminale, e un filo fermo è un processo bloccato in scrittura. E non riceve
 /// mai un pezzo vuoto: «zero byte» è la fine del terminale, non qualcosa che è
 /// stato detto.
+///
+/// **LA FINE SI DICE, E NON SI DEDUCE DAL SILENZIO.** Un terminale che smette
+/// di parlare è indistinguibile da un terminale fermo: chi guarda continuerebbe
+/// a mostrarlo vivo per sempre, che è la forma in cui il guasto 12 si
+/// ripresenta ogni volta. [`Output::ended`] arriva una volta sola, dopo
+/// l'ultimo pezzo, e porta **come** è finito.
 pub trait Output: Send + Sync {
     fn chunk(&self, bytes: &[u8]);
+
+    /// **HA UN CORPO PREDEFINITO PERCHÉ IL DESTINATARIO PIÙ SEMPLICE È UNA
+    /// CLOSURE**, che riceve byte e non ha dove mettere una fine. Chi la
+    /// implementa dichiara di volerla sapere; chi la lascia stare non è
+    /// costretto a scrivere un tipo per ignorarla.
+    fn ended(&self, _ending: Ending) {}
+}
+
+/// Com'è finito ciò che girava dentro un terminale.
+///
+/// **«ANCORA VIVO» È UN CASO A SÉ, E NON SI FA DIVENTARE ZERO.** L'uscita di
+/// uno pseudo-terminale può finire prima del processo — basta che il figlio
+/// chiuda i propri descrittori e continui — e chiamare quel caso «uscito con
+/// zero» sarebbe inventare un esito riuscito per qualcosa che nessuno ha visto
+/// finire. È la stessa distinzione fra zero e cieco che il resto di Sailor
+/// difende ovunque compaia un numero.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ending {
+    /// Uscito da solo, col proprio codice.
+    Exited(i32),
+    /// Finito senza un codice: l'ha portato via un segnale.
+    Killed,
+    /// L'uscita è finita, il processo no — o non si è potuto chiedere.
+    StillRunning,
+}
+
+impl std::fmt::Display for Ending {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ending::Exited(code) => write!(out, "uscito con {code}"),
+            Ending::Killed => write!(out, "fermato da un segnale"),
+            Ending::StillRunning => write!(
+                out,
+                "l'uscita è finita, ma il processo dentro non è ancora uscito"
+            ),
+        }
+    }
 }
 
 /// Una closure basta: un destinatario semplice non deve costare un tipo.
@@ -128,6 +171,7 @@ where
 #[derive(Debug, Default)]
 pub struct Buffer {
     bytes: Mutex<Vec<u8>>,
+    ending: Mutex<Option<Ending>>,
 }
 
 impl Buffer {
@@ -137,6 +181,27 @@ impl Buffer {
 
     pub fn bytes(&self) -> Vec<u8> {
         self.bytes.lock().expect("il buffer non panica").clone()
+    }
+
+    /// Com'è finito il terminale, se è finito. `None` vuol dire «non ancora»,
+    /// non «bene».
+    pub fn ending(&self) -> Option<Ending> {
+        *self.ending.lock().expect("il buffer non panica")
+    }
+
+    /// Attende la fine, fino a `limit`. Stessa ragione di [`Buffer::wait_for`]:
+    /// un `sleep` fisso è o capriccioso o lento.
+    pub fn wait_for_end(&self, limit: std::time::Duration) -> Option<Ending> {
+        let until = std::time::Instant::now() + limit;
+        loop {
+            if let Some(ending) = self.ending() {
+                return Some(ending);
+            }
+            if std::time::Instant::now() >= until {
+                return None;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
     }
 
     /// Il testo accumulato, con i byte non decodificabili sostituiti: qui la
@@ -170,5 +235,9 @@ impl Output for Buffer {
             .lock()
             .expect("il buffer non panica")
             .extend_from_slice(bytes);
+    }
+
+    fn ended(&self, ending: Ending) {
+        *self.ending.lock().expect("il buffer non panica") = Some(ending);
     }
 }

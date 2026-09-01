@@ -47,11 +47,9 @@ fn main() {
 
     let terminals = Terminals::current();
     let seen = Arc::new(Buffer::new());
-    let terminal = match terminals.open(
-        workspace,
-        &Opening::default(),
-        Arc::clone(&seen) as Arc<dyn Output>,
-    ) {
+    let terminal = match terminals.open(workspace, &Opening::default(), |_| {
+        Arc::clone(&seen) as Arc<dyn Output>
+    }) {
         Ok(terminal) => terminal,
         Err(error) => {
             eprintln!("il terminale non si è aperto: {error}");
