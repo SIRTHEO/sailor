@@ -1,11 +1,11 @@
-# Quanto manca per traslocare da Orca a Sailor
+# Quanto manca per lavorare dentro Sailor
 
 **01/09/2026.** Nato dalla domanda di Theo: *quanto lavoro manca all'MVP per
-poter lavorare dentro Sailor invece che dentro Orca?*
+poter passare una giornata dentro Sailor?*
 
-Il metro non è «Sailor fa cose»: ne fa già molte che Orca non fa. Il metro è
-**una giornata di lavoro di Theo che non tocca Orca**. Questo documento elenca
-cosa quella giornata richiede, cosa c'è già misurato, e cosa manca.
+Il metro non è «Sailor fa cose»: ne fa già molte. Il metro è **una giornata di
+lavoro di Theo che non deve uscire da Sailor**. Questo documento elenca cosa
+quella giornata richiede, cosa c'è già misurato, e cosa manca.
 
 I numeri qui sono letti dal codice e da `git` il 01/09/2026. Dove non ho
 eseguito una prova, lo dico.
@@ -51,11 +51,11 @@ un emulatore nel frontend, i pannelli e le schede, e il riaggancio a un
 terminale già vivo quando la finestra si riapre.
 
 Senza questo, dentro Sailor non si può tenere una sessione di Claude o Codex
-aperta — che è il 90% di quello che Orca fa per Theo.
+aperta — che è il 90% di quello che Theo fa in una giornata.
 
 ### 2. Gli spazi di lavoro: repo, rami, worktree
 
-Orca dà `repo add`, `worktree create/list/rm`, `worktree ps`. Sailor ha
+Servono `repo add`, `worktree create/list/rm` e un `worktree ps`. Sailor ha
 `sailor workspace init`, che scrive un marcatore `sailor.json` e nient'altro; e
 `terminal::Workspace`, che verifica che una cartella esista.
 
@@ -75,8 +75,8 @@ da un flusso parte non autenticata.
 
 ### 4. Vedere il lavoro: diff e file
 
-Orca apre un file, un diff, tutti i file cambiati. Sailor non ha nessuna vista
-sul contenuto di un repository.
+Serve aprire un file, un diff, tutti i file cambiati. Sailor non ha nessuna
+vista sul contenuto di un repository.
 
 Per un MVP basta meno di un editor: **il diff in sola lettura** e «apri
 nell'editor che usi già». Ma zero non basta: il giudizio su un lavoro di un
@@ -86,8 +86,8 @@ agente si dà guardando cosa ha cambiato.
 
 L'azione c'è — `handed_to_agent`, il passo che non avvia niente e consegna il
 lavoro all'agente già vivo nel terminale — e dipende dal punto 1 per avere un
-terminale a cui consegnare. Il ciclo mandato → azzeramento → ripresa che oggi
-Theo usa in Orca non ha ancora una forma in Sailor.
+terminale a cui consegnare. Il ciclo mandato → azzeramento → ripresa che Theo
+usa oggi non ha ancora una forma in Sailor.
 
 ### 6. L'orologio
 
@@ -138,7 +138,7 @@ fusi sette rami di lavoro in una giornata:
 **Somma: cinque giornate e mezza di lavoro netto.** Con le fusioni e la verifica
 — e le fusioni qui costano: il guasto 31 è nato da nove agenti che si sono
 sovrapposti su firme che git non vedeva in conflitto — **una stima onesta è due
-settimane** per una giornata di Theo che non tocca Orca.
+settimane** per una giornata di Theo che non deve uscire da Sailor.
 
 Il cantiere 1 vale da solo più della metà del risultato: senza terminale nella
 finestra gli altri sei non si possono usare, con il terminale Sailor diventa
