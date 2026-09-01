@@ -89,3 +89,41 @@ describe("lo stato della tela intera", () => {
     expect(stepStatesOfCanvas([]).size).toBe(0);
   });
 });
+
+/**
+ * THE ONE NUMBER THE NODE HAD A SLOT FOR AND NEVER A VALUE. `elapsed_secs` was
+ * carried forward and nothing ever assigned it, so the cell read `—` on every
+ * run there has ever been — while both instants sat in the events.
+ */
+describe("how long a step took", () => {
+  function at(seq: number, kind: string, stepId: string, at: number, payload: unknown = {}): RunEvent {
+    return { run_id: "r", seq, kind: kind as RunEvent["kind"], at, step_id: stepId, payload };
+  }
+
+  test("it is the distance between the two instants the events carry", () => {
+    const states = stepStatesOfRun([
+      at(1, "step_started", "read", 1000, { attempt: 1 }),
+      at(2, "step_closed", "read", 1007, { outcome: "Went" }),
+    ]);
+    expect(states.get("read")?.elapsed_secs).toBe(7);
+  });
+
+  /* A step still running has no duration yet, and zero is not «no duration»:
+     it is «it took no time», which is a different fact. */
+  test("a step that has not closed has none", () => {
+    const states = stepStatesOfRun([at(1, "step_started", "read", 1000, { attempt: 1 })]);
+    expect(states.get("read")?.elapsed_secs).toBeUndefined();
+  });
+
+  /* A retry is a second run of the same step, and its duration is its own:
+     measuring from the first attempt would report the wait between them too. */
+  test("a retry is measured from its own start", () => {
+    const states = stepStatesOfRun([
+      at(1, "step_started", "read", 1000, { attempt: 1 }),
+      at(2, "step_closed", "read", 1002, { outcome: "Broke" }),
+      at(3, "step_started", "read", 1060, { attempt: 2 }),
+      at(4, "step_closed", "read", 1063, { outcome: "Went" }),
+    ]);
+    expect(states.get("read")?.elapsed_secs).toBe(3);
+  });
+})
