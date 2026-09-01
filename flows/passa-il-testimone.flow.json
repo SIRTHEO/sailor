@@ -1,0 +1,87 @@
+{
+  "id": "passa-il-testimone",
+  "description": "LA STAFFETTA COME SEQUENZA, NON COME FUNZIONE. Sei passi che compongono quattro poteri già registrati: misurare quanto è pieno un terminale che Sailor tiene, chiedergli il mandato, raccoglierlo, azzerarlo e riconsegnarglielo. COSA GUARDARE QUI DENTRO. (1) NIENTE QUI DENTRO NOMINA UN PRODOTTO tranne il passo 'azzera', dove 'cli' è l'identificativo di un descrittore: quale riga si batta per svuotare un contesto è un fatto di quel motore, e sta nel suo descrittore sotto 'reset_context'. Un motore che non lo dichiara ferma la staffetta dicendolo, invece di ereditare la riga di un altro. (2) IL TERMINALE ENTRA DALL'INNESCO, il resto è deciso qui: si cambia 'inputs', non il grafo. (3) LA SOGLIA STA NEI DATI DEL PASSO e non dentro l'azione: cosa sia «troppo pieno» è una decisione su un budget, e una decisione nascosta nell'aritmetica non si può più discutere. (4) IL CICLO STA NEL TEMPO, NON NEL GRAFO: questo flusso è aciclico e finisce; a ripeterlo è chi lo esegue di nuovo. (5) SOTTO SOGLIA NON SUCCEDE NIENTE, E RESTA SCRITTO: il 'when' del secondo passo salta tutta la catena, e la corsa resta verde con la misura depositata. È la riparazione del difetto più caro della vecchia staffetta — 31 testimoni passati su 2.834 occasioni, e nessuno lo sapeva, perché un rinvio non lasciava traccia. IL LIMITE DA CONOSCERE, MISURATO FACENDOLO GIRARE: 'raccogli-il-mandato' restituisce 'Waiting' finché l'agente non ha scritto il suo mandato con 'sailor terminal mandate' — e UN PASSO IN ATTESA NON TORNA MAI PRONTO. 'decision_from' non lo rimette fra i pronti, quindi nessuna ripresa e nessun battito lo riprovano: la staffetta si ferma lì e la corsa resta 'waiting' per sempre. Il verso in cui sbagliare resta quello giusto — se l'azzeramento non parte non si perde niente, se parte e il mandato non arriva si è distrutto tutto — ma OGGI LA CONSEGNA NON SI COMPLETA. Serve un esito che significhi «non ancora, riprova al battito dopo»: il motore ha 'Waiting', che parcheggia per sempre, e 'Broke', che riprova subito e senza pausa. Non ne ha un terzo.",
+  "graph": {
+    "steps": [
+      {
+        "id": "innesco",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": { "source": "manual" },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "misura",
+        "deps": ["innesco"],
+        "action": "measure_terminal",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tty": { "$from": "/text" },
+          "ceiling": 500000
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "chiedi-il-mandato",
+        "deps": ["misura"],
+        "action": "type_into_terminal",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/past_the_ceiling",
+          "value": true
+        },
+        "with": {
+          "line": "Il tuo contesto è quasi pieno e stai per passare il testimone. Scrivi adesso il mandato per chi ti succede — cosa stavi facendo, dove sei arrivato, cosa resta e cosa NON va rifatto — e consegnalo con: sailor terminal mandate. Poi fermati: all'azzeramento penso io."
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "raccogli-il-mandato",
+        "deps": ["chiedi-il-mandato"],
+        "action": "take_mandate",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "not_before": { "$from": "/at" }
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "azzera",
+        "deps": ["raccogli-il-mandato"],
+        "action": "empty_terminal",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "cli": "claude-code"
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "riconsegna",
+        "deps": ["azzera", "raccogli-il-mandato"],
+        "action": "type_into_terminal",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tty": { "$from": "/azzera/tty" },
+          "line": { "$from": "/raccogli-il-mandato/mandate" }
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "innesco": { "text": "il terminale da sorvegliare, per esempio ttys004" }
+  }
+}

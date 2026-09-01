@@ -35,6 +35,7 @@ pub mod remaining_cmd;
 pub mod run_cmd;
 pub mod session_cmd;
 pub mod step_cmd;
+pub mod terminal_cmd;
 pub mod version_cmd;
 pub mod workspace_cmd;
 pub mod worktree_cmd;
@@ -150,6 +151,12 @@ pub const COMMANDS: &[Command] = &[
         description: "tracks terminals: who checks in, what happens, and what is on the machine",
         usage: session_cmd::USAGE,
         run: session_cmd::run,
+    },
+    Command {
+        name: "terminal",
+        description: "runs a command line in a terminal Sailor owns, and can be typed into",
+        usage: terminal_cmd::USAGE,
+        run: terminal_cmd::run,
     },
 ];
 

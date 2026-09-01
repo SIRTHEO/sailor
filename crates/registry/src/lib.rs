@@ -74,6 +74,10 @@ pub fn default_registry(
     // Where the signal that starts a flow comes from: sources are a list of
     // descriptors too, not a branch of code.
     trigger::register_default(&mut registry);
+    // The four nodes a relay is composed of. They need no ledger and no
+    // watcher: each one is a single power over a live terminal, and the order
+    // they run in is a flow file rather than a function here.
+    relay::register_relay(&mut registry);
     // The engine that resolves tools by id and receives the ledger. The
     // `run_id` does not exist yet here — it is born when the run starts and
     // reaches the action through the shared state.
