@@ -684,13 +684,10 @@ impl Action for McpReadyAction {
     }
 
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        // I rinvii si risolvono **prima** di leggere l'ingresso: è così che la
-        // cartella decisa da un passo precedente arriva qui, e che `proves` può
-        // essere quel percorso invece di una costante scritta a mano. Le azioni
-        // del deposito non lo facevano e non potevano ricevere niente da un
-        // passo prima; è la stessa riparazione, non ripetuta l'errore.
-        let input = crate::reference::resolve_references(input)?;
-        let spec: ReadySpec = serde_json::from_value(input)
+        // I rinvii sono già sciolti da `step_input`: è così che la cartella
+        // decisa da un passo precedente arriva qui, e che `proves` può essere
+        // quel percorso invece di una costante scritta a mano.
+        let spec: ReadySpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         crate::check_tolerance(&spec.accept, READY_FAILURES)?;
         require_preflight(&spec.checks, &spec.checks_waived_because, &spec.project_root)?;
@@ -736,10 +733,7 @@ impl Action for McpAskAction {
     }
 
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        // Stessa ragione del nodo che verifica: argomenti e percorsi vengono da
-        // ciò che un passo prima ha prodotto.
-        let input = crate::reference::resolve_references(input)?;
-        let spec: AskSpec = serde_json::from_value(input)
+        let spec: AskSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         crate::check_tolerance(&spec.accept, ASK_FAILURES)?;
         require_preflight(&spec.checks, &spec.checks_waived_because, &spec.project_root)?;
@@ -1250,13 +1244,14 @@ mod tests {
 
     /// **UN RINVIO ARRIVA AL SERVER RISOLTO.**
     ///
-    /// La cartella e gli argomenti vengono dal passo prima: senza
-    /// `resolve_references` l'oggetto `{"$from": …}` arriverebbe intatto a
-    /// `serde_json` e il passo morirebbe con «invalid type: map, expected a
-    /// string». È il guasto 28, già pagato dalle azioni del deposito.
-    ///
-    /// Il mutante che la fa cadere è togliere `resolve_references` da
-    /// `McpAskAction::execute`.
+    /// La cartella e gli argomenti vengono dal passo prima. A scioglierli è
+    /// `flow::step_input` — un posto solo per tutte le azioni, dal 01/09/2026 —
+    /// e qui la prova lo rifà con la stessa funzione perché chiama `execute`
+    /// senza passare dall'esecutore. Ciò che questa prova afferma è che l'azione
+    /// **usa** ciò che riceve: il `project_root` risolto arriva davvero al
+    /// server. Che ad arrivare sciolto sia l'ingresso di *ogni* azione lo prova
+    /// `crates/flow/tests/a_reference_reaches_every_action.rs`, e questa non lo
+    /// ripete.
     #[test]
     fn a_reference_reaches_the_server_resolved() {
         let sandbox = Sandbox::new("reference");
@@ -1280,7 +1275,10 @@ mod tests {
         });
         let value = went(
             McpAskAction
-                .execute(&input, &SharedState::new())
+                .execute(
+                    &crate::tests::with_references_resolved(input),
+                    &SharedState::new(),
+                )
                 .expect("una cartella presa con un rinvio arriva risolta"),
         );
         assert_eq!(value["status"], "ok", "{}", value["said"]);

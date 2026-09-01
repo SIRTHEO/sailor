@@ -9,7 +9,7 @@ use flow::{
     ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
     SystemClock,
 };
-use actions::reference;
+use flow::reference;
 use ledger::Ledger;
 use models::pricing::{Known, PriceList};
 use serde_json::Value;
@@ -50,6 +50,13 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name, from] if command == "relocate" => relocate_flow(sources, name, Some(from)),
         [command, name] if command == "cap" => cap_of(sources, name),
         [command, name, value] if command == "cap" => set_cap(sources, name, value),
+        [command, name] if command == "schedule" => schedule_of(sources, name),
+        [command, name, value] if command == "schedule" => {
+            set_schedule(sources, name, value, None)
+        }
+        [command, name, value, weight] if command == "schedule" => {
+            set_schedule(sources, name, value, Some(weight))
+        }
         _ => Err(usage()),
     }
 }
@@ -562,40 +569,7 @@ fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, St
         Some(micros)
     };
 
-    let (mut flow, source) = where_it_lives(sources, name)?;
-    // **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON SE NE SCRIVE UNO DI
-    // NASCOSTO.** Sta dentro il binario: non c'è nessun file da modificare. La
-    // strada è un omonimo in casa propria, che vince per la regola di
-    // precedenza — ma quel file lo deve creare chi lo vuole, sapendo di averne
-    // creato uno. Scriverne uno qui vorrebbe dire che da domani gira un flusso
-    // diverso da quello spedito senza che nessuno l'abbia deciso, e la sola
-    // traccia sarebbe l'origine in una colonna di `sailor flow list`.
-    if source.is_builtin() {
-        return Err(format!(
-            "«{name}» è un flusso di sistema, spedito dentro il binario: non c'è \
-             nessun file da riscrivere. Per dargli un tetto scrivi un flusso con lo \
-             stesso nome in casa tua o nel progetto — vince il tuo — e mettilo lì. \
-             Non lo faccio io: un flusso comparso da sé è un flusso che nessuno sa \
-             di avere"
-        ));
-    }
-
-    // **IL FILE SI CHIAMA COME L'`id`, O NE COMPARIREBBE UN SECONDO.** Il
-    // registro indicizza per nome di file, la scrittura per `id`: dove i due
-    // divergono, riscrivere non sostituirebbe niente — creerebbe un flusso
-    // gemello che da domani vince o perde a seconda dell'ordine alfabetico. È lo
-    // stesso rifiuto del flusso di sistema, per la stessa ragione: qui non
-    // compare niente che nessuno abbia chiesto.
-    let target = source.dir.join(format!("{}.flow.json", flow.id));
-    if !target.exists() {
-        return Err(format!(
-            "«{name}» sta in un file che non si chiama «{}.flow.json», che è come si \
-             chiamerebbe scrivendolo: riscriverlo creerebbe un secondo flusso invece \
-             di sostituire questo. Rinomina il file come il suo `id`, o cambia l'`id` \
-             perché coincida col nome del file",
-            flow.id
-        ));
-    }
+    let (mut flow, source) = a_flow_i_may_rewrite(sources, name)?;
 
     let before = flow.spend_cap_micros;
     if before == wanted {
@@ -622,6 +596,270 @@ fn said_cap(cap: Option<i64>) -> String {
         None => NO_CAP.to_owned(),
         Some(micros) => format!("{micros} micro ({})", in_units(micros)),
     }
+}
+
+/// Il flusso che un comando può **riscrivere**, e la sorgente in cui sta.
+///
+/// **STA A PARTE PERCHÉ I DUE RIFIUTI SONO DI CHIUNQUE SCRIVA, NON DEL
+/// TETTO.** Erano scritti dentro `set_cap`, quando `cap` era l'unico gesto che
+/// toccasse un file. Al secondo — `schedule`, il 01/09/2026 — ricopiarli
+/// sarebbe stato il guasto 10: due copie della stessa regola su chi si può
+/// riscrivere, che divergono al primo che qualcuno tocca. Chi aggiunge un terzo
+/// gesto passa di qui e non ha niente da ricopiare.
+///
+/// **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON SE NE SCRIVE UNO DI
+/// NASCOSTO.** Sta dentro il binario: non c'è nessun file da modificare. La
+/// strada è un omonimo in casa propria, che vince per la regola di precedenza —
+/// ma quel file lo deve creare chi lo vuole, sapendo di averne creato uno.
+/// Scriverne uno qui vorrebbe dire che da domani gira un flusso diverso da
+/// quello spedito senza che nessuno l'abbia deciso, e la sola traccia sarebbe
+/// l'origine in una colonna di `sailor flow list`.
+///
+/// **IL FILE SI CHIAMA COME L'`id`, O NE COMPARIREBBE UN SECONDO.** Il registro
+/// indicizza per nome di file, la scrittura per `id`: dove i due divergono,
+/// riscrivere non sostituirebbe niente — creerebbe un flusso gemello che da
+/// domani vince o perde a seconda dell'ordine alfabetico.
+fn a_flow_i_may_rewrite<'a>(
+    sources: &'a [FlowSource],
+    name: &str,
+) -> Result<(FlowFile, &'a FlowSource), String> {
+    let (flow, source) = where_it_lives(sources, name)?;
+    if source.is_builtin() {
+        return Err(format!(
+            "«{name}» è un flusso di sistema, spedito dentro il binario: non c'è \
+             nessun file da riscrivere. Per cambiarlo scrivi un flusso con lo \
+             stesso nome in casa tua o nel progetto — vince il tuo — e cambia \
+             quello. Non lo faccio io: un flusso comparso da sé è un flusso che \
+             nessuno sa di avere"
+        ));
+    }
+    // **SI CONFRONTANO I DUE NOMI, NON SI CHIEDE SE UN FILE ESISTE.** Qui c'era
+    // `target.exists()`, e quel controllo rispondeva alla domanda sbagliata:
+    // «esiste un file che si chiama come l'`id`?» invece di «il file che ho
+    // letto è quello che sto per riscrivere?». Quando in cartella c'è davvero
+    // un `<id>.flow.json` che appartiene a un *altro* flusso, `exists()` dice
+    // di sì e la scrittura finisce **nel file di quel flusso**, con il comando
+    // che risponde «fatto» e uscita zero. Misurato col binario vero il
+    // 01/09/2026, guasto 41.
+    //
+    // Il registro indicizza per nome di file: `name` **è** il nome del file da
+    // cui questo flusso viene, e `save_in` scrive su `<id>.flow.json`. Se i due
+    // nomi coincidono è lo stesso file, altrimenti non lo è — e nessun'altra
+    // domanda lo può stabilire.
+    if name != flow.id {
+        return Err(format!(
+            "«{name}» sta in un file che non si chiama come il proprio `id` («{}»), e \
+             scrivendolo andrebbe in «{}.flow.json»: o si creerebbe un secondo flusso, \
+             o si riscriverebbe quello di qualcun altro. Rinomina il file come il suo \
+             `id`, o cambia l'`id` perché coincida col nome del file",
+            flow.id, flow.id
+        ));
+    }
+    // Restano i due casi in cui il nome coincide e il file **non** è quello che
+    // si riscriverebbe: un `<name>.json` senza `.flow`, che il registro carica
+    // e la scrittura non sostituirebbe; e i due insieme, dove quale dei due
+    // gira lo decide l'ordine in cui il sistema elenca la cartella.
+    let target = source.dir.join(format!("{name}.flow.json"));
+    let plain = source.dir.join(format!("{name}.json"));
+    if !target.exists() {
+        return Err(format!(
+            "«{name}» sta in «{}», e scrivendolo andrebbe in «{name}.flow.json»: \
+             nascerebbe un secondo flusso invece di sostituire questo. Rinomina il \
+             file con il suffisso «.flow.json»",
+            plain.display()
+        ));
+    }
+    if plain.exists() {
+        return Err(format!(
+            "«{name}» sta in due file — «{name}.flow.json» e «{name}.json» — e quale \
+             dei due gira lo decide l'ordine in cui il sistema elenca la cartella. \
+             Non riscrivo niente finché non ne resta uno: cancella quello che non \
+             vuoi"
+        ));
+    }
+    Ok((flow, source))
+}
+
+/// La parola che toglie l'innesco invece di metterne uno.
+///
+/// Stessa ragione di [`NO_CAP`]: senza di lei il comando saprebbe entrare in
+/// uno stato e non uscirne. E un flusso senza innesco non è un flusso rotto —
+/// «gira quando qualcuno lo chiede» è un fatto, non un vuoto da riempire.
+const NO_SCHEDULE: &str = "nessuno";
+
+/// Le due parole con cui un flusso dichiara quanto pesa una sua corsa.
+const LIGHT: &str = "leggero";
+const HEAVY: &str = "pesante";
+
+/// Un innesco come lo legge una persona, compreso quando non c'è.
+///
+/// **UNA SOLA SCRITTURA PER TUTTI E DUE I COMANDI.** La legge chi chiede
+/// `schedule <nome>` e chi lo cambia: due frasi diverse per lo stesso dato
+/// farebbero credere a chi le confronta di aver cambiato più di quanto ha
+/// cambiato.
+fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
+    let Some(schedule) = schedule else {
+        return format!("{NO_SCHEDULE} — parte solo quando qualcuno lo chiede");
+    };
+    let when = match schedule.recurrence {
+        flow::Recurrence::EverySeconds { seconds } => {
+            format!("ogni {seconds}s dall'ultima corsa")
+        }
+        flow::Recurrence::DailyAt { hour, minute } => {
+            format!("una volta al giorno, dalle {hour:02}:{minute:02} locali")
+        }
+    };
+    let weight = match schedule.weight {
+        flow::Weight::Light => LIGHT,
+        flow::Weight::Heavy => HEAVY,
+    };
+    let perimeter = if schedule.perimeter.is_empty() {
+        // Vuoto è «non dichiarato», che non è «nessun limite»: chi legge deve
+        // poter distinguere i due, e la parola lo dice.
+        "non dichiarato".to_owned()
+    } else {
+        schedule.perimeter.join(", ")
+    };
+    format!("{when}; peso {weight}; perimetro: {perimeter}")
+}
+
+/// Da una parola alla ricorrenza che nomina, o al perché non la nomina.
+///
+/// **TRE FORME, RICONOSCIUTE DALLA LORO,** e nessuna bandiera: `nessuno`
+/// toglie, `<numero>s` è un intervallo, `HH:MM` è un'ora del giorno. Sono le
+/// due forme che `flow::Recurrence` conosce più il modo di uscirne — un
+/// vocabolario più largo del tipo che deve riempire inventerebbe casi che il
+/// motore non sa eseguire.
+fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
+    if let Some(digits) = value.strip_suffix('s') {
+        let seconds: u64 = digits.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        if seconds == 0 {
+            return Err(format!(
+                "«ogni 0 secondi» non vuol dire niente: un flusso dovuto sempre \
+                 ripartirebbe appena finito. Per toglierlo del tutto: «{NO_SCHEDULE}»"
+            ));
+        }
+        return Ok(flow::Recurrence::EverySeconds { seconds });
+    }
+    if let Some((hour, minute)) = value.split_once(':') {
+        let hour: u32 = hour.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        let minute: u32 = minute.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        if hour > 23 || minute > 59 {
+            return Err(format!(
+                "«{value}» non è un'ora del giorno: le ore vanno da 00 a 23 e i \
+                 minuti da 00 a 59"
+            ));
+        }
+        return Ok(flow::Recurrence::DailyAt { hour, minute });
+    }
+    Err(how_a_schedule_is_written(value))
+}
+
+/// Le forme ammesse, scritte per intero ogni volta che una non è riconosciuta:
+/// un rifiuto che non dice cosa scrivere costringe a leggere il codice.
+fn how_a_schedule_is_written(value: &str) -> String {
+    format!(
+        "«{value}» non è un innesco. Le forme sono tre: «3600s» (ogni tot secondi \
+         dall'ultima corsa), «07:30» (una volta al giorno, da quell'ora locale), \
+         «{NO_SCHEDULE}» (nessun innesco: parte solo a mano)"
+    )
+}
+
+fn weight_from(word: &str) -> Result<flow::Weight, String> {
+    match word {
+        LIGHT => Ok(flow::Weight::Light),
+        HEAVY => Ok(flow::Weight::Heavy),
+        other => Err(format!(
+            "«{other}» non è un peso: le parole sono «{LIGHT}» e «{HEAVY}»"
+        )),
+    }
+}
+
+/// `sailor flow schedule <nome>`: l'innesco che c'è, e quando è dovuto.
+fn schedule_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
+    let (flow, origin) = one_flow(sources, name)?;
+    Ok(format!(
+        "flusso: {} ({origin})\ninnesco: {}",
+        flow.id,
+        said_schedule(flow.schedule.as_ref())
+    ))
+}
+
+/// `sailor flow schedule <nome> <ogni|ora|nessuno> [peso]`: mette, cambia o
+/// toglie l'innesco.
+///
+/// **PERCHÉ QUESTO COMANDO ESISTE, ED È IL GUASTO 15 ALLA LETTERA.** Il
+/// 29/08/2026 per cambiare l'innesco di un flusso è stato usato uno script
+/// Python che riscriveva il JSON a mano. Uno strumento aggirato non registra
+/// niente di ciò che gli succede intorno: nessun rifiuto sui flussi di sistema,
+/// nessun controllo che il file si chiami come l'`id`, nessuna validazione del
+/// grafo alla riscrittura. Tutte e tre le cose le fa questa strada, e nessuna le
+/// faceva `python3`.
+///
+/// **IL PESO NON SI INVENTA.** Su un flusso che un innesco non ce l'ha ancora,
+/// senza la parola il comando **rifiuta** invece di scegliere «leggero»: un peso
+/// comparso da sé è un dato inventato con la faccia di una dichiarazione, ed è
+/// il guasto 22 in un'altra forma. Su un flusso che ce l'ha già, tacere vuol
+/// dire «lascialo com'è», che è un'altra cosa e si vede dal messaggio.
+fn set_schedule(
+    sources: &[FlowSource],
+    name: &str,
+    value: &str,
+    weight: Option<&str>,
+) -> Result<String, String> {
+    let (mut flow, source) = a_flow_i_may_rewrite(sources, name)?;
+    let before = said_schedule(flow.schedule.as_ref());
+
+    let wanted = if value == NO_SCHEDULE {
+        if let Some(word) = weight {
+            return Err(format!(
+                "«{NO_SCHEDULE}» toglie l'innesco, e un innesco che non c'è non ha \
+                 un peso: «{word}» non ha dove andare"
+            ));
+        }
+        None
+    } else {
+        let recurrence = recurrence_from(value)?;
+        let weight = match (weight, flow.schedule.as_ref()) {
+            (Some(word), _) => weight_from(word)?,
+            (None, Some(existing)) => existing.weight,
+            (None, None) => {
+                return Err(format!(
+                    "«{name}» non ha ancora un innesco, quindi non ha un peso da \
+                     tenere: scrivilo. `sailor flow schedule {name} {value} \
+                     {LIGHT}` oppure `{HEAVY}`. Non lo scelgo io: un peso comparso \
+                     da sé si legge come una misura e non lo è"
+                ))
+            }
+        };
+        Some(flow::Schedule {
+            recurrence,
+            weight,
+            // **IL PERIMETRO SI CONSERVA, NON SI RIDICHIARA.** Dice dove quella
+            // lavorazione può scrivere: perderlo cambiando l'orario sarebbe un
+            // permesso allargato da un comando che parlava d'altro.
+            perimeter: flow
+                .schedule
+                .as_ref()
+                .map(|existing| existing.perimeter.clone())
+                .unwrap_or_default(),
+        })
+    };
+
+    if flow.schedule == wanted {
+        return Ok(format!(
+            "flusso {name} ({}): l'innesco era già {before}, non ho toccato niente",
+            source.origin
+        ));
+    }
+    flow.schedule = wanted;
+    let after = said_schedule(flow.schedule.as_ref());
+    flow::system::save_in(&source.dir, &flow)?;
+    Ok(format!(
+        "flusso {name} ({}): innesco\n  da: {before}\n  a:  {after}\nscritto in {}",
+        source.origin,
+        source.dir.display()
+    ))
 }
 
 /// Il flusso **e la sorgente da cui viene**: per riscriverlo serve la cartella,
@@ -711,9 +949,15 @@ fn nothing_found(sources: &[FlowSource]) -> String {
     )
 }
 
+/// **L'ELENCO DEI GESTI STA QUI, IN UN POSTO SOLO.** Una prova pretende che
+/// ogni sottocomando che `dispatch` accetta compaia in questa riga: un gesto che
+/// il programma sa fare e nessuno sa di poter chiedere è un gesto che non
+/// esiste, ed è per non trovarlo che il guasto 15 è stato aggirato con
+/// `python3`.
 fn usage() -> String {
     "uso: sailor flow <list|due|check <nome> [--no-engines]|run <nome> [mandato]|\
      resume <corsa>|cost <nome>|cap <nome> [micro|nessuno]|\
+     schedule <nome> [3600s|07:30|nessuno] [leggero|pesante]|\
      relocate <nome> [prefisso-da-togliere]>"
         .to_owned()
 }
@@ -3670,6 +3914,328 @@ mod tests {
         set_cap(&sources, "prova", NO_CAP).expect("poi si toglie");
 
         assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
+    }
+
+    // ── l'innesco si cambia da dentro Sailor ─────────────────────────
+    //
+    // **IL GUASTO 15 ALLA LETTERA.** Il 29/08/2026 per cambiare l'innesco di un
+    // flusso è stato usato uno script Python che riscriveva il JSON a mano.
+    // `sailor flow` sapeva elencare, controllare, eseguire — e per il gesto che
+    // serviva davvero si usciva dal sistema. Uno strumento aggirato non
+    // registra niente di ciò che gli succede intorno, e nessun suo controllo
+    // vede l'aggiro: dal punto di vista di Sailor quel giorno non è successo
+    // niente.
+
+    /// **CAMBIARE L'INNESCO È UN COMANDO, E IL FILE SUL DISCO LO DICE.**
+    ///
+    /// Il mutante che la fa cadere è togliere `flow::system::save_in` da
+    /// `set_schedule`: il comando continuerebbe a rispondere «fatto», e il file
+    /// resterebbe com'era — che è il difetto peggiore di tutti, perché somiglia
+    /// in tutto al lavoro fatto.
+    #[test]
+    fn the_trigger_of_a_flow_changes_from_inside_sailor() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+        assert_eq!(
+            written_flow(&home.0, "prova").schedule,
+            None,
+            "si parte da un flusso senza innesco"
+        );
+
+        let said = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
+            .expect("l'innesco si scrive");
+
+        assert!(said.contains("ogni 3600s"), "{said}");
+        let after = written_flow(&home.0, "prova");
+        assert_eq!(
+            after.schedule,
+            Some(flow::Schedule {
+                recurrence: flow::Recurrence::EverySeconds { seconds: 3600 },
+                weight: flow::Weight::Light,
+                perimeter: vec![],
+            })
+        );
+        assert_eq!(after.description, "flusso di prova", "il resto è intatto");
+        assert_eq!(after.graph.steps().len(), 1);
+        assert_eq!(
+            entries_of(&home.0).len(),
+            1,
+            "nessun gemello sul disco: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// L'ora del giorno è l'altra forma che il motore sa eseguire, e va provata
+    /// insieme: una sola delle due lascerebbe metà del comando senza misura.
+    #[test]
+    fn an_hour_of_the_day_is_the_other_form_the_engine_can_run() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        set_schedule(&sources, "prova", "07:30", Some(HEAVY)).expect("l'ora si scrive");
+
+        assert_eq!(
+            written_flow(&home.0, "prova").schedule,
+            Some(flow::Schedule {
+                recurrence: flow::Recurrence::DailyAt { hour: 7, minute: 30 },
+                weight: flow::Weight::Heavy,
+                perimeter: vec![],
+            })
+        );
+    }
+
+    /// **IL PESO NON SI INVENTA SU UN FLUSSO CHE NON NE HA UNO.**
+    ///
+    /// Il ripiego ovvio sarebbe «leggero», e sarebbe un dato inventato con la
+    /// faccia di una dichiarazione: chi legge `docs/da-fare.md` vedrebbe un peso
+    /// che nessuno ha misurato. Il rifiuto scrive la riga da digitare, così
+    /// costa una battuta e non una lettura del codice.
+    #[test]
+    fn a_weight_nobody_declared_is_refused_instead_of_guessed() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let error =
+            set_schedule(&sources, "prova", "3600s", None).expect_err("nessun peso da tenere");
+
+        assert!(error.contains(LIGHT) && error.contains(HEAVY), "{error}");
+        assert_eq!(
+            written_flow(&home.0, "prova").schedule,
+            None,
+            "un rifiuto non scrive niente"
+        );
+    }
+
+    /// Su un flusso che un innesco ce l'ha già, tacere il peso vuol dire
+    /// «lascialo com'è» — e il perimetro dichiarato non si perde cambiando
+    /// l'orario: sarebbe un permesso allargato da un comando che parlava
+    /// d'altro.
+    #[test]
+    fn changing_only_the_hour_keeps_the_weight_and_the_perimeter() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+        let mut with_perimeter = written_flow(&home.0, "prova");
+        with_perimeter.schedule = Some(flow::Schedule {
+            recurrence: flow::Recurrence::DailyAt { hour: 3, minute: 0 },
+            weight: flow::Weight::Heavy,
+            perimeter: vec!["~/personal/sailor".to_owned()],
+        });
+        flow::system::save_in(&home.0, &with_perimeter).expect("il flusso di partenza");
+
+        set_schedule(&sources, "prova", "05:15", None).expect("solo l'ora cambia");
+
+        let after = written_flow(&home.0, "prova").schedule.expect("l'innesco c'è");
+        assert_eq!(
+            after.recurrence,
+            flow::Recurrence::DailyAt { hour: 5, minute: 15 }
+        );
+        assert_eq!(after.weight, flow::Weight::Heavy, "il peso resta quello");
+        assert_eq!(
+            after.perimeter,
+            vec!["~/personal/sailor".to_owned()],
+            "il perimetro non si perde cambiando l'orario"
+        );
+    }
+
+    /// **`nessuno` TOGLIE L'INNESCO**, come `nessuno` toglie il tetto: senza la
+    /// parola il comando saprebbe entrare in uno stato e non uscirne, e un
+    /// flusso che parte solo a mano è un fatto, non un vuoto da riempire.
+    #[test]
+    fn the_word_for_no_trigger_clears_it() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+        set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("prima si mette");
+
+        set_schedule(&sources, "prova", NO_SCHEDULE, None).expect("poi si toglie");
+
+        assert_eq!(written_flow(&home.0, "prova").schedule, None);
+        // E l'assenza si scrive assente, non `null`: chi rilegge il proprio
+        // flusso dopo il comando non deve trovarci righe che nessuno ha scritto.
+        let text = fs::read_to_string(home.0.join("prova.flow.json")).expect("rileggere");
+        assert!(!text.contains("schedule"), "{text}");
+    }
+
+    /// Le forme non riconosciute si rifiutano **elencando quelle giuste**: un
+    /// rifiuto che non dice cosa scrivere manda a leggere il codice, cioè fuori
+    /// dal sistema — che è il guasto 15 daccapo.
+    #[test]
+    fn a_trigger_that_is_not_one_of_the_three_forms_says_what_the_three_are() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        for wrong in ["ogni-tanto", "0s", "25:00", "07:70", "3600"] {
+            let error = set_schedule(&sources, "prova", wrong, Some(LIGHT))
+                .unwrap_or_else(|error| error);
+            assert!(
+                error.contains(NO_SCHEDULE) || error.contains("ore vanno"),
+                "«{wrong}» è stato accettato o rifiutato senza dire come si scrive: {error}"
+            );
+        }
+        assert_eq!(
+            written_flow(&home.0, "prova").schedule,
+            None,
+            "nessuna delle forme sbagliate ha scritto qualcosa"
+        );
+    }
+
+    /// **UN FLUSSO DI SISTEMA NON SI RISCRIVE**, e il rifiuto vale per ogni
+    /// gesto che scrive, non solo per il tetto: è lo stesso controllo, chiamato
+    /// da tutti e due.
+    #[test]
+    fn a_system_flow_refuses_the_trigger_too() {
+        let home = TestDirectory::new();
+        let sources = flow::system::sources(&home.0, None, None);
+        let shipped = flow::system::FLOWS[0].0;
+
+        let error = set_schedule(&sources, shipped, "3600s", Some(LIGHT))
+            .expect_err("un flusso di sistema");
+
+        assert!(error.contains("di sistema"), "{error}");
+        assert!(
+            entries_of(&home.0).is_empty(),
+            "non deve essere comparso nessun file in casa: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// **GUASTO 41: IL COMANDO SCRIVEVA NEL FILE DI UN ALTRO FLUSSO E DICEVA
+    /// «FATTO».**
+    ///
+    /// Il controllo ereditato da `set_cap` chiedeva se `<id>.flow.json`
+    /// **esistesse**, non se fosse *quel* file. Con in cartella un file che si
+    /// chiama come l'`id` di un altro flusso, la risposta era sì e la scrittura
+    /// finiva là dentro, con uscita zero. Vale identico per `cap`, cioè esisteva
+    /// già in produzione: qui si provano tutti e due i gesti, o la riparazione
+    /// coprirebbe metà della superficie.
+    ///
+    /// Il mutante che la fa cadere è rimettere `target.exists()` al posto del
+    /// confronto fra i nomi: entrambe le scritture tornano a riuscire, e il
+    /// flusso estraneo si ritrova un innesco che nessuno gli ha messo.
+    #[test]
+    fn a_flow_whose_file_is_named_after_another_one_is_never_written_through() {
+        let home = TestDirectory::new();
+        // Due file, lo stesso `id` dentro: il registro li indicizza per nome di
+        // file, la scrittura per `id`.
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        home.write("nome-diverso.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let refused = set_schedule(&sources, "nome-diverso", "3600s", Some(LIGHT))
+            .expect_err("il nome del file non è l'id");
+        assert!(refused.contains("secondo flusso"), "{refused}");
+
+        let refused_cap = set_cap(&sources, "nome-diverso", "500000")
+            .expect_err("lo stesso rifiuto vale per il tetto");
+        assert!(refused_cap.contains("secondo flusso"), "{refused_cap}");
+
+        // **E LA PARTE CHE CONTA: IL FLUSSO ESTRANEO NON È STATO TOCCATO.** Un
+        // rifiuto che avesse comunque scritto sarebbe peggio del difetto.
+        let bystander = written_flow(&home.0, "prova");
+        assert_eq!(bystander.schedule, None, "l'innesco di «prova» non si tocca");
+        assert_eq!(
+            bystander.spend_cap_micros, None,
+            "e nemmeno il suo tetto"
+        );
+        assert_eq!(written_flow(&home.0, "nome-diverso").schedule, None);
+        assert_eq!(
+            entries_of(&home.0).len(),
+            2,
+            "e non è comparso nessun terzo file: {:?}",
+            entries_of(&home.0)
+        );
+    }
+
+    /// Un flusso che sta in un `.json` senza `.flow` non si riscrive: la
+    /// scrittura andrebbe in un file diverso da quello letto, cioè nascerebbe un
+    /// gemello. È lo stesso difetto del guasto 41 dall'altro lato — il file che
+    /// si legge e il file che si scrive devono essere lo stesso.
+    #[test]
+    fn a_flow_read_from_a_plain_json_is_refused_instead_of_duplicated() {
+        let home = TestDirectory::new();
+        home.write("prova.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let refused = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
+            .expect_err("il file letto non è quello che si scriverebbe");
+
+        assert!(refused.contains("secondo flusso"), "{refused}");
+        assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
+    }
+
+    /// Leggere l'innesco è un gesto suo: chi non sa cosa c'è non sa cosa sta
+    /// cambiando, e `flow list` non lo mostra.
+    #[test]
+    fn asking_for_the_trigger_says_what_is_there_and_what_is_not() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        let before = schedule_of(&sources, "prova").expect("si legge");
+        assert!(before.contains(NO_SCHEDULE), "{before}");
+
+        set_schedule(&sources, "prova", "300s", Some(HEAVY)).expect("si mette");
+
+        let after = schedule_of(&sources, "prova").expect("si rilegge");
+        assert!(after.contains("ogni 300s"), "{after}");
+        assert!(after.contains(HEAVY), "{after}");
+        assert!(after.contains("non dichiarato"), "il perimetro vuoto lo dice: {after}");
+    }
+
+    /// **OGNI GESTO CHE `dispatch` SA FARE È SCRITTO NELL'USO.**
+    ///
+    /// Un comando che il programma esegue e che nessuno sa di poter chiedere è
+    /// un comando che non esiste: chi non lo trova esce dal sistema, ed è
+    /// esattamente come il guasto 15 è successo — `python3` al posto di un
+    /// gesto che nessuno sapeva di avere. La riga dell'uso è l'unica interfaccia
+    /// di chi sta al terminale.
+    ///
+    /// **SI LEGGE IL SORGENTE INVECE DI ESEGUIRE, E LA RAGIONE È IL GUASTO 5.**
+    /// Chiamare `dispatch` per ogni parola farebbe aprire a `cost` e a `resume`
+    /// il deposito **di questa macchina**: una prova che legge lo stato di chi
+    /// la esegue diventa rossa per una pulizia, a codice invariato. Qui si
+    /// contano i bracci dov'è scritto quali sono.
+    ///
+    /// Il mutante che la fa cadere è aggiungere un braccio a `dispatch` senza
+    /// nominarlo in `usage()` — cioè il modo in cui un gesto diventa invisibile.
+    #[test]
+    fn every_arm_of_the_dispatcher_is_written_in_the_usage_line() {
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src/flow_cmd.rs");
+        let text = fs::read_to_string(&source).expect("questo file si rilegge");
+        let body = text
+            .split_once("fn dispatch(")
+            .and_then(|(_, after)| after.split_once("\nfn "))
+            .map(|(body, _)| body)
+            .expect("il corpo di dispatch");
+
+        let mut arms: BTreeSet<String> = BTreeSet::new();
+        for piece in body.split("command == \"").skip(1) {
+            let word = piece
+                .split_once('"')
+                .map(|(word, _)| word.to_owned())
+                .expect("una parola fra virgolette");
+            arms.insert(word);
+        }
+        assert!(
+            arms.len() >= 8,
+            "i bracci trovati sono troppo pochi, il modo di leggerli si è rotto: {arms:?}"
+        );
+        assert!(arms.contains("schedule"), "il braccio nuovo c'è: {arms:?}");
+
+        let usage = usage();
+        let missing: Vec<&String> = arms.iter().filter(|arm| !usage.contains(*arm)).collect();
+        assert!(
+            missing.is_empty(),
+            "questi gesti esistono e non sono scritti da nessuna parte: {missing:?}\n{usage}\n\
+             Un gesto che nessuno sa di poter chiedere è un gesto che non c'è, e chi \
+             non lo trova esce da Sailor per farlo a mano"
+        );
     }
 
     fn written_flow(dir: &std::path::Path, name: &str) -> FlowFile {
