@@ -105,8 +105,11 @@ fn seed(dir: &Path) {
             cached_price_micros_per_million: Some(300_000),
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: "prova".into(),
-            mandate_version: "1".into(),
+            engine_identity: ledger::EngineIdentity::ProfileInForce {
+                cli_id: "claude".into(),
+                profile_name: "prova".into(),
+                home_dir: "/case/claude/prova".into(),
+            },
             retry_chain: vec![],
             error_type: None,
             started_at: 1001,
