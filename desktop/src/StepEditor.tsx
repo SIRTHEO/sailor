@@ -1,15 +1,15 @@
-// Il pannello di un passo scelto: come si chiama, cosa fa, CHI LO ESEGUE,
-// quante volte ci riprova, da chi dipende, con quali parametri.
+// The inspector for the selected step: what it is called, what it does, who
+// runs it, how many attempts it gets, what it depends on, and with which
+// parameters.
 //
-// IL SELETTORE DELLO STRUMENTO NON CONOSCE NESSUNO STRUMENTO. L'elenco arriva
-// dal motore (`discover_tools`); qui si sa solo disegnarlo. Quando la scoperta
-// non risponde — perché il comando non c'è ancora, o perché la finestra gira
-// fuori dal guscio — il pannello lo dice e lascia scrivere l'identificativo a
-// mano: un nodo si compone comunque, e nessuno resta davanti a un elenco vuoto
-// senza sapere se è la macchina a essere spoglia o il motore a tacere.
+// THE TOOL PICKER KNOWS NO TOOL. The list comes from the engine
+// (`discover_tools`); this file only knows how to draw it. When discovery is
+// mute the panel says so and lets the identifier be typed by hand, so nobody
+// faces an empty list without knowing whether the machine is bare or the
+// engine is silent.
 
 import { useRef, useState } from "react";
-import { kindOf, type Step } from "./flow";
+import { kindOf, type Condition, type Step, type ValueSchema } from "./flow";
 import {
   chainIn,
   groupByKind,
@@ -35,7 +35,7 @@ export interface StepEditorProps {
   siblingIds: string[];
   tools: Tool[];
   discovery: ToolDiscovery;
-  /** I modelli già scritti negli altri passi: suggerimenti presi dal vero. */
+  /** Models already written in the other steps: suggestions taken from the real thing. */
   usedModels: string[];
   onRename: (newId: string) => void;
   onField: (patch: Partial<Step>) => void;
@@ -43,10 +43,23 @@ export interface StepEditorProps {
   onDelete: () => void;
 }
 
+/** The families a step can belong to, as a word a reader knows. */
+const KIND_LABEL: Record<string, string> = {
+  trigger: "trigger",
+  engine: "engine",
+  check: "check",
+  wait: "wait",
+  branch: "branch",
+  deposit: "store",
+  gesture: "gesture",
+  human: "person",
+  subflow: "subflow",
+};
+
 /**
- * Monta una volta per passo selezionato (la chiave è `selectedNode` in `App`),
- * così le bozze locali (id, JSON) ripartono pulite a ogni cambio di selezione
- * senza un effetto dedicato a resettarle.
+ * Mounts once per selected step (the key is `selectedNode` in `App`), so the
+ * local drafts (id, JSON) start clean on every change of selection without a
+ * dedicated effect to reset them.
  */
 export function StepEditor({
   flowName,
@@ -65,18 +78,17 @@ export function StepEditor({
   const idTaken = idDraft !== step.id && siblingIds.includes(idDraft);
 
   const { choice, rest } = splitToolParams(step.with);
-  // La catena che il pannello non sa comporre e non deve cancellare: resta fra
-  // gli altri parametri, e da qui si legge per dirlo a chi guarda.
+  // The chain the panel cannot compose and must not delete: it stays among the
+  // other parameters, and is read from there to be told to whoever is looking.
   const chain = chainIn(rest);
-  // Un passo «agente» usa uno strumento per definizione; e un passo che ne
-  // dichiara già uno lo mostra comunque, qualunque azione porti — l'alternativa
-  // sarebbe nascondere un dato che sta nel file. Una catena conta: un passo che
-  // nomina tre motori ne usa uno.
+  // An `engine` step uses a tool by definition; and a step that already names
+  // one shows it whatever action it carries — hiding it would hide a datum that
+  // is in the file. A chain counts: a step naming three engines uses one.
   const usesTool = kindOf(step.action) === "engine" || choice.tool !== "" || chain.length > 0;
 
-  // Il riquadro JSON mostra solo i parametri che il pannello non gestisce: i
-  // tre campi hanno già i loro, e vederli in due posti che si scrivono a
-  // vicenda è il modo più rapido per perdere quello scritto per ultimo.
+  // The JSON box shows only the parameters the panel does not handle: the
+  // dedicated fields already have theirs, and seeing them in two places that
+  // overwrite each other is the fastest way to lose the one written last.
   const [withDraft, setWithDraft] = useState(() => {
     const shown = usesTool ? rest : (step.with ?? {});
     return Object.keys(shown).length === 0 ? "" : JSON.stringify(shown, null, 2);
@@ -88,6 +100,7 @@ export function StepEditor({
   const models = modelSuggestions(chosen, usedModels);
   const rival = rivalBinary(rest);
   const rejectedBySchema = schemaRejectsToolKeys(step.input_schema, choice);
+  const kind = kindOf(step.action);
 
   function commitId() {
     const trimmed = idDraft.trim();
@@ -119,241 +132,379 @@ export function StepEditor({
   }
 
   return (
-    <>
-      <div className="panel__flow" style={{ color }}>
-        {flowName}
-      </div>
-      <div className="panel__title">Passo</div>
-      <input
-        className="panel__id-input"
-        value={idDraft}
-        onChange={(event) => setIdDraft(event.target.value)}
-        onBlur={commitId}
-      />
-      {idTaken && <p className="panel__error">un altro passo del flusso si chiama già così</p>}
+    <div className="inspector">
+      <header className="inspector__head">
+        <div className="inspector__flow" style={{ color }}>
+          {flowName}
+        </div>
+        <div className="inspector__eyebrow">Selected step</div>
+        {/* A STEP HAS NO NAME. `flow::Step` carries an id and nothing else to
+            read it by, so the heading is that id spelled out — the same datum,
+            not a second one — and the field below is where it is edited. */}
+        <h2 className="inspector__title">{spellOut(step.id)}</h2>
+        <input
+          className="inspector__id"
+          aria-label="Step id"
+          value={idDraft}
+          onChange={(event) => setIdDraft(event.target.value)}
+          onBlur={commitId}
+        />
+        {idTaken && <p className="inspector__error">another step of this flow is already called that</p>}
+      </header>
 
-      <label className="panel__field">
-        <span>Azione</span>
-        <input list="known-actions" value={step.action} onChange={(event) => onField({ action: event.target.value })} />
-      </label>
+      <div className="inspector__body">
+        <section className="inspector__block">
+          <div className="inspector__label">
+            Action
+            <span className="inspector__kind">{KIND_LABEL[kind] ?? kind}</span>
+          </div>
+          <input
+            className="inspector__input inspector__input--data"
+            list="known-actions"
+            aria-label="Action"
+            value={step.action}
+            onChange={(event) => onField({ action: event.target.value })}
+          />
+        </section>
 
-      {usesTool && (
-        <div className="panel__tool">
-          <div className="panel__title">Chi lo esegue</div>
+        <Species action={step.action} />
 
-          {/* UNA CATENA SI DICE ANCHE QUI. Il selettore su «— nessuno —» sopra
-              un passo che nomina tre motori è la stessa bugia che il nodo
-              raccontava, spostata di una finestra: il campo c'è, il pannello
-              non lo sa comporre, e il silenzio farebbe credere che non ci sia.
-              Resta scritto fra i parametri, e ci torna identico. */}
-          {chain.length > 0 && (
-            <p className="panel__note">
-              questo passo dichiara una catena di motori — {chain.join(" › ")} — in ordine di
-              preferenza. Il pannello non la sa ancora comporre: resta com'è, e si legge fra i
-              parametri qui sotto. Scegliere uno strumento qui la sostituisce.
-            </p>
-          )}
+        {usesTool && (
+          <section className="inspector__block">
+            <div className="inspector__label">Engine</div>
 
-          {tools.length > 0 ? (
-            <label className="panel__field">
-              <span>Strumento</span>
-              {/* Il segno sta accanto alla scelta, non dentro: un `<option>` non
-                  ammette disegni, e nessun trucco per infilarceli sopravvive a
-                  un elenco lungo o a chi naviga con la tastiera. */}
-              <div className="panel__tool-pick">
+            {/* A CHAIN IS SAID HERE TOO. A picker reading "— none —" above a
+                step that names three engines is the same lie the node used to
+                tell, moved one window over. */}
+            {chain.length > 0 && (
+              <p className="inspector__note">
+                this step declares a chain of engines — {chain.join(" › ")} — in order of
+                preference. The panel cannot compose it yet: it stays as it is, and can be read
+                among the parameters below. Choosing a tool here replaces it.
+              </p>
+            )}
+
+            {tools.length > 0 ? (
+              // The mark sits beside the choice, not inside: an `<option>`
+              // admits no drawing, and no trick that puts one there survives a
+              // long list or someone navigating by keyboard.
+              <div className="inspector__pick">
                 {choice.tool !== "" && (
                   <ToolMark id={choice.tool} size={20} off={chosen ? !chosen.available : true} />
                 )}
-              <select value={choice.tool} onChange={(event) => setChoice({ tool: event.target.value })}>
-                <option value="">— nessuno —</option>
-                {groupByKind(tools).map((group) => (
-                  <optgroup key={group.kind} label={toolKindLabel(group.kind)}>
-                    {group.tools.map((tool) => (
-                      <option key={tool.id} value={tool.id}>
-                        {tool.name}
-                        {tool.available ? "" : " (non disponibile)"}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-                {/* Uno strumento scelto altrove e assente qui non si cancella di
-                    nascosto: resta scelto, e si vede che qui non c'è. */}
-                {unknownChoice && (
-                  <option value={choice.tool}>{choice.tool} — non rilevato su questa macchina</option>
-                )}
-              </select>
-              </div>
-            </label>
-          ) : (
-            <>
-              <p className="panel__note">
-                {discovery.state === "asking"
-                  ? "chiedo al motore quali strumenti ci sono…"
-                  : "nessuno strumento rilevato"}
-              </p>
-              {discovery.state === "mute" && <p className="panel__note-why">{discovery.why}</p>}
-              {/* Senza elenco si scrive l'identificativo a mano: il nodo resta
-                  componibile, e quando la scoperta risponderà lo ritroverà. */}
-              <label className="panel__field">
-                <span>Strumento (identificativo)</span>
-                <input
+                <select
+                  className="inspector__select"
+                  aria-label="Engine"
                   value={choice.tool}
-                  placeholder="l'identificativo che il motore dichiarerà"
+                  onChange={(event) => setChoice({ tool: event.target.value })}
+                >
+                  <option value="">— none —</option>
+                  {groupByKind(tools).map((group) => (
+                    <optgroup key={group.kind} label={toolKindLabel(group.kind)}>
+                      {group.tools.map((tool) => (
+                        <option key={tool.id} value={tool.id}>
+                          {tool.name}
+                          {tool.available ? "" : " (unavailable)"}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                  {/* A tool chosen elsewhere and missing here is not deleted in
+                      secret: it stays chosen, and one can see it is not here. */}
+                  {unknownChoice && (
+                    <option value={choice.tool}>{choice.tool} — not detected on this machine</option>
+                  )}
+                </select>
+              </div>
+            ) : (
+              <>
+                <p className="inspector__note">
+                  {discovery.state === "asking"
+                    ? "asking the engine which tools are here…"
+                    : "no tool detected"}
+                </p>
+                {discovery.state === "mute" && <p className="inspector__why">{discovery.why}</p>}
+                {/* Without a list the identifier is typed by hand: the node
+                    stays composable, and discovery will find it again. */}
+                <input
+                  className="inspector__input inspector__input--data"
+                  aria-label="Engine identifier"
+                  value={choice.tool}
+                  placeholder="the identifier the engine will declare"
                   onChange={(event) => setChoice({ tool: event.target.value })}
                 />
-              </label>
-            </>
-          )}
+              </>
+            )}
 
-          {chosen && (
-            <div className="panel__tool-detail" data-off={chosen.available ? undefined : true}>
-              <p>
-                <span className="panel__tool-kind">{toolKindLabel(chosen.kind)}</span>
-                {chosen.version !== "" && <span> · {chosen.version}</span>}
-              </p>
-              {chosen.path !== "" && <p className="panel__tool-path">{chosen.path}</p>}
-              {/* IL MOTIVO SI MOSTRA SEMPRE, non solo quando manca: quando c'è
-                  dice da dove — ed è l'unico modo per accorgersi che si sta per
-                  usare il binario sbagliato fra due installazioni. */}
-              {chosen.reason !== "" && (
-                <p className="panel__tool-why">
-                  {chosen.available ? "" : "non disponibile: "}
-                  {chosen.reason}
-                </p>
-              )}
-              {chosen.descriptor !== "" && (
-                <p className="panel__tool-src">riconosciuto dal descrittore «{chosen.descriptor}»</p>
-              )}
-            </div>
-          )}
-          {unknownChoice && tools.length > 0 && (
-            <p className="panel__tool-detail" data-off>
-              questo strumento non è fra quelli rilevati qui: il flusso resta valido, ma su questa
-              macchina non partirebbe.
-            </p>
-          )}
-          {/* Due risposte alla stessa domanda: chi esegue non saprebbe a quale
-              credere, e il pannello non può scegliere al posto di chi scrive. */}
-          {rival !== "" && choice.tool !== "" && (
-            <p className="panel__warn">
-              questo passo dichiara anche un binario suo («bin»: {rival}): due verità su chi lo
-              esegue.
-            </p>
-          )}
-          {rejectedBySchema && (
-            <p className="panel__warn">
-              lo schema d'ingresso di questo passo non ammette campi in più: con questi il motore
-              rifiuterebbe il flusso al caricamento.
-            </p>
-          )}
-
-          <datalist id="known-models">
-            {models.map((model) => (
-              <option key={model} value={model} />
-            ))}
-          </datalist>
-          <label className="panel__field">
-            <span>Modello</span>
-            {/* Un elenco chiuso qui sarebbe una bugia: nessun descrittore
-                dichiara i modelli, e scriverne a memoria una decina darebbe a
-                chi sceglie l'impressione che la macchina li abbia trovati. Il
-                campo resta libero, e i suggerimenti sono soltanto quelli che
-                esistono davvero — i modelli scritti negli altri passi. */}
+            <datalist id="known-models">
+              {models.map((model) => (
+                <option key={model} value={model} />
+              ))}
+            </datalist>
+            {/* A closed list here would be a lie: no descriptor declares its
+                models, and writing ten from memory would look like the machine
+                had found them. The suggestions are only the models that really
+                exist — the ones written in the other steps. */}
             <input
+              className="inspector__input inspector__input--data"
               list="known-models"
+              aria-label="Model"
               value={choice.model}
-              placeholder="il nome del modello, come lo scrive lo strumento"
+              placeholder="the model name, as the tool writes it"
               onChange={(event) => setChoice({ model: event.target.value })}
             />
-          </label>
-          {models.length === 0 && chosen && (
-            <p className="panel__note-why">
-              nessun modello da suggerire: il descrittore di «{chosen.id}» non ne dichiara, e
-              inventarne sarebbe peggio che lasciare il campo libero.
-            </p>
-          )}
+            {models.length === 0 && chosen && (
+              <p className="inspector__why">
+                no model to suggest: the descriptor of «{chosen.id}» declares none, and inventing
+                some would be worse than leaving the field free.
+              </p>
+            )}
 
-          <ToolOptions
-            tool={chosen}
-            options={choice.options}
-            onChange={(options) => setChoice({ options })}
-          />
+            {chosen && (
+              <div className="inspector__detail" data-off={chosen.available ? undefined : true}>
+                <p>
+                  <span className="inspector__detail-kind">{toolKindLabel(chosen.kind)}</span>
+                  {chosen.version !== "" && <span> · {chosen.version}</span>}
+                </p>
+                {chosen.path !== "" && <p className="inspector__detail-path">{chosen.path}</p>}
+                {/* THE REASON IS ALWAYS SHOWN, not only when the tool is
+                    missing: when it is there it says from where — the only way
+                    to notice one is about to use the wrong binary of two. */}
+                {chosen.reason !== "" && (
+                  <p>
+                    {chosen.available ? "" : "unavailable: "}
+                    {chosen.reason}
+                  </p>
+                )}
+                {chosen.descriptor !== "" && (
+                  <p>recognised by the descriptor «{chosen.descriptor}»</p>
+                )}
+              </div>
+            )}
+            {unknownChoice && tools.length > 0 && (
+              <p className="inspector__detail" data-off>
+                this tool is not among the ones detected here: the flow stays valid, but on this
+                machine it would not start.
+              </p>
+            )}
+            {/* Two answers to the same question: whoever runs it would not know
+                which to believe, and the panel cannot choose for the writer. */}
+            {rival !== "" && choice.tool !== "" && (
+              <p className="inspector__warn">
+                this step also declares a binary of its own («bin»: {rival}): two truths about who
+                runs it.
+              </p>
+            )}
+            {rejectedBySchema && (
+              <p className="inspector__warn">
+                the input schema of this step admits no extra fields: with these the engine would
+                refuse the flow at load time.
+              </p>
+            )}
 
-          <label className="panel__field">
-            <span>Prompt</span>
+            <ToolOptions
+              tool={chosen}
+              options={choice.options}
+              onChange={(options) => setChoice({ options })}
+            />
+
+            <div className="inspector__label">Prompt</div>
             <textarea
-              className="panel__prompt"
+              className="inspector__textarea"
               rows={6}
+              aria-label="Prompt"
               value={choice.prompt}
-              placeholder="cosa deve fare, detto per intero"
+              placeholder="what it has to do, said in full"
               onChange={(event) => setChoice({ prompt: event.target.value })}
             />
-          </label>
-        </div>
-      )}
+          </section>
+        )}
 
-      <label className="panel__field">
-        <span>Tetto tentativi</span>
-        <input
-          type="number"
-          min={1}
-          value={step.max_attempts}
-          onChange={(event) => onField({ max_attempts: Math.max(1, Number(event.target.value) || 1) })}
-        />
-      </label>
+        <section className="inspector__pair">
+          <div>
+            <div className="inspector__label">Max attempts</div>
+            <input
+              className="inspector__input inspector__input--data"
+              type="number"
+              min={1}
+              aria-label="Max attempts"
+              value={step.max_attempts}
+              onChange={(event) => onField({ max_attempts: Math.max(1, Number(event.target.value) || 1) })}
+            />
+          </div>
+          <div>
+            {/* Shown and not editable: composing a condition is a control this
+                panel does not have, and leaving `when` out would make a
+                conditional step look unconditional. */}
+            <div className="inspector__label">Runs when</div>
+            <div className="inspector__readonly" title={whenTitle(step.when)}>
+              {whenSummary(step.when)}
+            </div>
+          </div>
+        </section>
 
-      <div className="panel__field">
-        <span>Dipende da</span>
-        {siblingIds.length === 0 ? (
-          <p className="panel__empty">nessun altro passo in questo flusso</p>
-        ) : (
-          <div className="panel__deps">
-            {siblingIds.map((id) => (
-              <label key={id} className="panel__dep">
-                <input
-                  type="checkbox"
-                  checked={step.deps.includes(id)}
-                  onChange={(event) => onToggleDep(id, event.target.checked)}
-                />
-                {id}
-              </label>
+        <section className="inspector__block">
+          <div className="inspector__label">Input and output</div>
+          <div className="inspector__io">
+            {[
+              ...schemaLines(step.input_schema, "in"),
+              ...schemaLines(step.output_schema, "out"),
+            ].map((line, index) => (
+              <div key={index} className="inspector__io-line">
+                <span className="inspector__io-side">{line.side}</span>
+                <span>{line.name === "" ? "" : `${line.name}:`}</span>
+                <span className="inspector__io-type">{line.type}</span>
+              </div>
             ))}
           </div>
-        )}
+        </section>
+
+        <section className="inspector__block">
+          <div className="inspector__label">Depends on</div>
+          {siblingIds.length === 0 ? (
+            <p className="inspector__why">no other step in this flow</p>
+          ) : (
+            <div className="inspector__deps">
+              {siblingIds.map((id) => (
+                <label key={id} className="inspector__dep">
+                  <input
+                    type="checkbox"
+                    checked={step.deps.includes(id)}
+                    onChange={(event) => onToggleDep(id, event.target.checked)}
+                  />
+                  {id}
+                </label>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="inspector__block">
+          <div className="inspector__label">{usesTool ? "Other parameters (JSON)" : "Parameters (JSON)"}</div>
+          <textarea
+            className="inspector__textarea inspector__textarea--data"
+            rows={5}
+            aria-label="Parameters (JSON)"
+            value={withDraft}
+            onChange={(event) => setWithDraft(event.target.value)}
+            onBlur={commitWith}
+            placeholder="none"
+          />
+          {withError && <p className="inspector__error">invalid JSON: {withError}</p>}
+        </section>
       </div>
 
-      <label className="panel__field">
-        <span>{usesTool ? "Altri parametri (JSON)" : "Parametri (JSON)"}</span>
-        <textarea
-          className="panel__with"
-          rows={5}
-          value={withDraft}
-          onChange={(event) => setWithDraft(event.target.value)}
-          onBlur={commitWith}
-          placeholder="nessuno"
-        />
-      </label>
-      {withError && <p className="panel__error">JSON non valido: {withError}</p>}
-
-      <button type="button" className="panel__delete" onClick={onDelete}>
-        Elimina passo
-      </button>
-    </>
+      <footer className="inspector__foot">
+        <button type="button" className="inspector__delete" onClick={onDelete}>
+          Delete step
+        </button>
+      </footer>
+    </div>
   );
 }
 
-// ── le opzioni ───────────────────────────────────────────────────────────
+// ── the species ──────────────────────────────────────────────────────────
+
+/**
+ * What happens when a step falls halfway.
+ *
+ * THE SPECIES IS NOT IN THE FILE. `flow::StepSpecies` exists and the executor
+ * branches on it, but it is declared by the action in Rust (`Action::species`)
+ * and never by the graph: there is no field here to write, and no command that
+ * tells the window which species an action declares. So this says what is true
+ * instead of offering a choice that would go nowhere.
+ */
+function Species({ action }: { action: string }) {
+  return (
+    <section className="inspector__block">
+      <div className="inspector__label">
+        Species
+        <span className="inspector__kind">from the action</span>
+      </div>
+      <p className="inspector__readonly inspector__readonly--wrap">«{action}» declares it in the engine</p>
+      <p className="inspector__why">
+        Tells Sailor what to do if the step falls halfway and its effect stays unknown. The flow
+        file cannot set it, and the window cannot yet ask which one was declared.
+      </p>
+    </section>
+  );
+}
+
+// ── reading a step out loud ──────────────────────────────────────────────
+
+/** The id as a heading: the same datum, spaced and capitalised. */
+function spellOut(id: string): string {
+  const words = id.replace(/[-_.]+/g, " ").trim();
+  return words === "" ? id : words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function typeName(schema: ValueSchema): string {
+  switch (schema.type) {
+    case "array":
+      return `${typeName(schema.items)}[]`;
+    case "one_of":
+      return schema.values.map((value) => JSON.stringify(value)).join(" | ");
+    default:
+      return schema.type;
+  }
+}
+
+interface IoLine {
+  side: string;
+  name: string;
+  type: string;
+}
+
+/**
+ * One line per field of an object schema, one line for anything else. The side
+ * word is written once, so a long list reads as one block and not as a column
+ * of repeated `in`.
+ */
+function schemaLines(schema: ValueSchema, side: string): IoLine[] {
+  if (schema.type !== "object") return [{ side, name: "", type: typeName(schema) }];
+  const names = Object.keys(schema.properties);
+  if (names.length === 0) return [{ side, name: "", type: typeName(schema) }];
+  return names.map((name, index) => ({
+    side: index === 0 ? side : "",
+    name: schema.required.includes(name) ? name : `${name}?`,
+    type: typeName(schema.properties[name]!),
+  }));
+}
+
+function whenSummary(when: Condition | null): string {
+  if (when === null) return "always";
+  switch (when.kind) {
+    case "equals":
+      return `input = ${short(when.value)}`;
+    case "pointer_equals":
+      return `${when.pointer} = ${short(when.value)}`;
+    case "pointer_exists":
+      return `${when.pointer} exists`;
+  }
+}
+
+/** The condition in full, for the pointer that does not fit the box. */
+function whenTitle(when: Condition | null): string {
+  return when === null ? "this step always runs" : JSON.stringify(when);
+}
+
+function short(value: unknown): string {
+  const text = JSON.stringify(value) ?? "null";
+  return text.length > 24 ? `${text.slice(0, 23)}…` : text;
+}
+
+// ── the options ──────────────────────────────────────────────────────────
 
 interface ToolOptionsProps {
-  /** Lo strumento scelto, se è fra quelli rilevati. */
+  /** The chosen tool, if it is among the detected ones. */
   tool: Tool | undefined;
   options: Record<string, OptionValue>;
   onChange: (options: Record<string, OptionValue>) => void;
 }
 
-/** Una riga in composizione. L'`id` non esce da qui: serve a React per non
- *  rimontare la riga mentre se ne scrive il nome — senza, il campo perde il
- *  fuoco a ogni carattere digitato. */
+/** A row being composed. The `id` never leaves this file: it keeps React from
+ *  remounting the row while its name is typed — without it the field loses
+ *  focus at every keystroke. */
 interface OptionRow {
   id: number;
   name: string;
@@ -361,39 +512,26 @@ interface OptionRow {
 }
 
 /**
- * Le opzioni di un passo: una scelta, non una riga di comando da scrivere.
+ * The options of a step: a choice, not a command line to be typed.
  *
- * DUE MODI, E IL SECONDO È QUELLO DI OGGI. Se lo strumento dichiara le proprie
- * opzioni (`options` nel descrittore) ognuna diventa un controllo con la sua
- * forma — un elenco, un interruttore, un numero. Nessun descrittore lo dichiara
- * ancora: `toolbox::Descriptor` conosce `detect`, `enumerate`, `version`,
- * `config` e `note`, e nient'altro. Finché è così si aggiungono coppie
- * nome/valore a mano, e il pannello DICE che è un ripiego invece di far credere
- * che quelle poche righe siano tutto ciò che lo strumento accetta.
- *
- * LE RIGHE VIVONO QUI, non nel passo, e non è un dettaglio: un'opzione senza
- * nome non si scrive nel file — sarebbe una chiave vuota per il motore — e
- * quindi una riga appena aggiunta, se la sua unica esistenza fosse quella
- * salvata, sparirebbe nell'istante in cui la si crea. Si tengono in bozza
- * finché non hanno un nome, e verso il passo scende solo quello che ha senso
- * scrivere.
- *
- * Quello che non si fa, in nessuno dei due modi, è indovinare: un elenco di
- * flag plausibili scritto qui sembrerebbe rilevato dalla macchina, e sarebbe
- * scritto da chi quella macchina non l'ha guardata.
+ * TWO WAYS, AND THE SECOND IS TODAY'S. If the tool declares its own options
+ * (`options` in the descriptor) each becomes a control with its own shape. No
+ * descriptor declares them yet, so pairs are written by hand — and the panel
+ * SAYS it is a fallback instead of implying that those few rows are everything
+ * the tool accepts. What it never does is guess.
  */
 function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
   const declared: OptionSpec[] = tool?.options ?? [];
   const nextId = useRef(0);
-  // Monta una volta per passo selezionato — `StepEditor` ha `key={selectedNode}`
-  // in `App` — e quindi la bozza riparte pulita a ogni cambio di selezione.
+  // Mounts once per selected step — `StepEditor` has `key={selectedNode}` in
+  // `App` — so the draft starts clean on every change of selection.
   const [rows, setRows] = useState<OptionRow[]>(() =>
     Object.entries(options)
       .filter(([name]) => !declared.some((spec) => spec.key === name))
       .map(([name, value]) => ({ id: nextId.current++, name, value })),
   );
 
-  /** Le righe libere più le dichiarate: quello che finisce nel passo. */
+  /** The free rows plus the declared ones: what ends up in the step. */
   function push(freeRows: OptionRow[], declaredValues: Record<string, OptionValue>) {
     const next: Record<string, OptionValue> = { ...declaredValues };
     for (const row of freeRows) {
@@ -422,9 +560,8 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
     push(rows, values);
   }
 
-  // Due righe con lo stesso nome non possono convivere in un oggetto JSON: sul
-  // disco ne sopravvive una sola. Meglio dirlo mentre si scrive che lasciarlo
-  // scoprire riaprendo il file.
+  // Two rows with the same name cannot live in one JSON object: only one
+  // survives on disk. Better said while typing than found on reopening.
   const named = rows.map((row) => row.name.trim()).filter((name) => name !== "");
   const duplicated = named.some((name, index) => named.indexOf(name) !== index);
 
@@ -440,8 +577,8 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
   });
 
   return (
-    <div className="panel__options">
-      <div className="panel__subtitle">Opzioni</div>
+    <div className="inspector__options">
+      <div className="inspector__label">Options</div>
 
       {declared.length > 0 ? (
         declared.map((spec) => (
@@ -454,16 +591,16 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
           />
         ))
       ) : (
-        <p className="panel__note-why">
+        <p className="inspector__why">
           {tool
-            ? `il descrittore di «${tool.id}» non dichiara quali opzioni accetta: qui si scrivono a mano, e appena il descrittore le porterà diventeranno una scelta guidata.`
-            : "scegli uno strumento per sapere quali opzioni accetta."}
+            ? `the descriptor of «${tool.id}» does not declare which options it accepts: they are written by hand here, and become a guided choice as soon as the descriptor carries them.`
+            : "choose a tool to know which options it accepts."}
         </p>
       )}
 
-      {/* Le opzioni scritte a mano restano anche quando il descrittore ne
-          dichiara altre: una che lui non conosce non è per forza sbagliata, ed
-          è chi esegue a scoprirlo, non questo pannello. */}
+      {/* Hand-written options survive even when the descriptor declares others:
+          one it does not know is not necessarily wrong, and it is the runner
+          who finds that out, not this panel. */}
       {rows.map((row) => (
         <FreeOption
           key={row.id}
@@ -480,29 +617,27 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
       ))}
 
       {duplicated && (
-        <p className="panel__warn">
-          due opzioni si chiamano allo stesso modo: nel file ne resterà una sola.
-        </p>
+        <p className="inspector__warn">two options share a name: only one will be left in the file.</p>
       )}
 
       <button
         type="button"
-        className="panel__option-add"
+        className="inspector__quiet"
         onClick={() => editRows((current) => [...current, { id: nextId.current++, name: "", value: "" }])}
       >
-        aggiungi un'opzione
+        add an option
       </button>
 
       {preview !== "" && (
-        <p className="panel__option-preview" title="quello che si sta componendo, non quello che finisce nel file">
-          <span>ne esce:</span> <code>{preview}</code>
+        <p className="inspector__preview" title="what is being composed, not what ends up in the file">
+          <span>gives:</span> <code>{preview}</code>
         </p>
       )}
     </div>
   );
 }
 
-/** Un'opzione che il descrittore dichiara: la sua forma decide il controllo. */
+/** An option the descriptor declares: its shape decides the control. */
 function DeclaredOption({
   spec,
   value,
@@ -515,42 +650,54 @@ function DeclaredOption({
   onClear: () => void;
 }) {
   const chosen = value !== undefined;
+  const label = spec.label ?? spec.key;
   return (
-    <div className="panel__option" data-declared>
-      <label className="panel__field">
-        <span title={spec.help}>{spec.label ?? spec.key}</span>
-        {spec.kind === "flag" ? (
-          <input type="checkbox" checked={value === true} onChange={(event) => (event.target.checked ? onSet(true) : onClear())} />
-        ) : spec.kind === "choice" ? (
-          <select
-            value={chosen ? String(value) : ""}
-            onChange={(event) => (event.target.value === "" ? onClear() : onSet(event.target.value))}
-          >
-            <option value="">— non scelta —</option>
-            {(spec.choices ?? []).map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        ) : (
+    <div className="inspector__option" data-declared>
+      <div className="inspector__label" title={spec.help}>
+        {label}
+      </div>
+      {spec.kind === "flag" ? (
+        <label className="inspector__dep">
           <input
-            type={spec.kind === "number" ? "number" : "text"}
-            value={chosen ? String(value) : ""}
-            onChange={(event) => {
-              const text = event.target.value;
-              if (text === "") onClear();
-              else onSet(spec.kind === "number" ? Number(text) : text);
-            }}
+            type="checkbox"
+            checked={value === true}
+            onChange={(event) => (event.target.checked ? onSet(true) : onClear())}
           />
-        )}
-      </label>
-      {spec.help && <p className="panel__option-help">{spec.help}</p>}
+          {label}
+        </label>
+      ) : spec.kind === "choice" ? (
+        <select
+          className="inspector__select"
+          aria-label={label}
+          value={chosen ? String(value) : ""}
+          onChange={(event) => (event.target.value === "" ? onClear() : onSet(event.target.value))}
+        >
+          <option value="">— not chosen —</option>
+          {(spec.choices ?? []).map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          className="inspector__input inspector__input--data"
+          type={spec.kind === "number" ? "number" : "text"}
+          aria-label={label}
+          value={chosen ? String(value) : ""}
+          onChange={(event) => {
+            const text = event.target.value;
+            if (text === "") onClear();
+            else onSet(spec.kind === "number" ? Number(text) : text);
+          }}
+        />
+      )}
+      {spec.help && <p className="inspector__why">{spec.help}</p>}
     </div>
   );
 }
 
-/** Un'opzione scritta a mano: nome e valore, e la si può togliere. */
+/** An option written by hand: a name, a value, and a way to drop it. */
 function FreeOption({
   name,
   value,
@@ -565,37 +712,41 @@ function FreeOption({
   onDrop: () => void;
 }) {
   return (
-    <div className="panel__option">
+    <div className="inspector__option">
       <input
-        className="panel__option-key"
+        className="inspector__input inspector__input--data"
+        aria-label="Option name"
         value={name}
-        placeholder="--opzione"
+        placeholder="--option"
         onChange={(event) => onRename(event.target.value)}
       />
-      {/* Un interruttore è un'opzione senza valore: si dichiara con `true`, e
-          scriverlo così invece di lasciare il valore vuoto è la differenza fra
-          `--verbose` e `--verbose ""`. */}
+      {/* A switch is an option without a value: it is declared with `true`, and
+          writing it so instead of leaving the value empty is the difference
+          between `--verbose` and `--verbose ""`. */}
       {value === true ? (
-        <span className="panel__option-flag">senza valore</span>
+        <span className="inspector__readonly">no value</span>
       ) : (
         <input
-          className="panel__option-value"
+          className="inspector__input inspector__input--data"
+          aria-label="Option value"
           value={String(value)}
-          placeholder="valore"
+          placeholder="value"
           onChange={(event) => onSet(event.target.value)}
         />
       )}
-      <label className="panel__option-toggle" title="un'opzione che non vuole un valore">
-        <input
-          type="checkbox"
-          checked={value === true}
-          onChange={(event) => onSet(event.target.checked ? true : "")}
-        />
-        <span>sola</span>
-      </label>
-      <button type="button" className="panel__option-drop" onClick={onDrop} title="togli questa opzione">
-        ×
-      </button>
+      <div className="inspector__option-foot">
+        <label className="inspector__dep" title="an option that wants no value">
+          <input
+            type="checkbox"
+            checked={value === true}
+            onChange={(event) => onSet(event.target.checked ? true : "")}
+          />
+          alone
+        </label>
+        <button type="button" className="inspector__quiet" onClick={onDrop} title="drop this option">
+          drop
+        </button>
+      </div>
     </div>
   );
 }
