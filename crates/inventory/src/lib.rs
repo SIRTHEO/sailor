@@ -755,13 +755,12 @@ pub fn default_roots_from(home: &Path, bases: &[PathBuf]) -> Survey {
 /// Le basi di lavoro **dichiarate**: `SAILOR_WORK_ROOTS` se c'è, altrimenti il
 /// file `work-roots` nella casa di Sailor, una riga per base.
 ///
-/// FINO AL 01/09/2026 QUI C'ERANO `~/other-repo/work` E `~/personal`, compilate. Su
-/// questa macchina esistono, quindi il difetto non si vedeva; su qualunque
-/// altra l'inventario avrebbe risposto «zero repo» con uscita 0, che è
-/// indistinguibile da una macchina davvero vuota. Le cartelle di una persona
-/// sola non sono un fatto della macchina: sono configurazione, e adesso
-/// vivono lì. Chi non dichiara niente ottiene `bases_declared` a `false`, così
-/// chi legge può dire *non me l'hai detto* invece di *non c'è niente*.
+/// Qui c'erano due cartelle di lavoro di una persona sola, compilate: su quella
+/// macchina esistevano, quindi il difetto non si vedeva; su qualunque altra
+/// l'inventario rispondeva «zero repo» con uscita 0, indistinguibile da una
+/// macchina davvero vuota. Chi non dichiara niente ottiene `bases_declared` a
+/// `false`, così chi legge può dire *non me l'hai detto* invece di *non c'è
+/// niente*.
 pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
     if let Ok(declared) = std::env::var("SAILOR_WORK_ROOTS") {
         let bases: Vec<PathBuf> = declared
@@ -788,7 +787,7 @@ pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
 
 /// I repo che portano una `.claude/`, cercati sotto le cartelle di lavoro.
 ///
-/// Profondità due e non di più: `~/other-repo/work/suite` è un repo, ma scendere
+/// Profondità due e non di più: `<base>/suite` è un repo, ma scendere
 /// oltre significherebbe entrare nelle copie di lavoro, dove le stesse regole
 /// ricompaiono collegate — e l'inventario direbbe di avere venti volte le cose
 /// che ha.

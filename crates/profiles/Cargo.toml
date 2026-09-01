@@ -4,8 +4,8 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# Profili multipli per riga di comando, con o senza il suo supporto nativo.
-# Dipendenze già in uso nel resto dell'albero: niente da scaricare in più.
+# Several profiles per command line, with or without its own support for them.
+# Dependencies already used elsewhere in the tree: nothing extra to download.
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }

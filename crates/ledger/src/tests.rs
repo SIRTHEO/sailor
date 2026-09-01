@@ -2076,7 +2076,7 @@ fn spawned(process_id: &str, port: Option<u16>) -> ProcessRecord {
         pid: 4242,
         command: "npm".to_owned(),
         args: vec!["run".to_owned(), "dev".to_owned()],
-        working_directory: "/home/someone/personal/sailor/desktop".to_owned(),
+        working_directory: "/work/sailor/desktop".to_owned(),
         port,
         purpose: "live".to_owned(),
         started_by: "supervisor".to_owned(),
