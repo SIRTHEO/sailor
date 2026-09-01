@@ -5,6 +5,7 @@ import { nodeId, type PortShape, type StepPort, type StepPorts } from "./layout"
 import { MODEL_KEY, TOOL_KEY, useTool, useToolsAreKnown } from "./tools";
 import { ToolMark } from "./ToolMark";
 import { formatCost, formatTokens, usageIsPartial, type StepUsage } from "./stepusage";
+import { group } from "./i18n";
 
 /**
  * The real step states, keyed `flow::step`. **THROUGH A CONTEXT AND NOT THE
@@ -57,14 +58,7 @@ export const STATE_COLOR: Record<StepState, string> = {
   handed_to_human: "#6b46a8",
 };
 
-const STATE_LABEL: Record<StepState, string> = {
-  waiting: "in attesa",
-  running: "in corso",
-  went: "andato",
-  broke: "rotto, si ritenta",
-  capped: "fermo al tetto",
-  handed_to_human: "aspetta una persona",
-};
+const STATE_LABEL = group("window.step.state.") as Record<StepState, string>;
 
 /**
  * **TWO REGISTERS OF ATTENTION.** Live runs share one quiet breathing dot that
@@ -248,17 +242,13 @@ export function formatElapsed(seconds: number): string {
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
-export const KIND_LABEL: Record<StepKind, string> = {
-  trigger: "innesco",
-  engine: "agente",
-  check: "verifica",
-  wait: "attesa",
-  branch: "ramo",
-  deposit: "deposito",
-  gesture: "gesto",
-  human: "a una persona",
-  subflow: "sotto-flusso",
-};
+/**
+ * **ONE LIST, NOT TWO.** The inspector kept its own copy of these words, and
+ * the two had drifted: a step was «agente» on the board and «engine» in the
+ * panel, «a una persona» here and «person» there. Same nine keys, two files,
+ * nothing that could tell either of them it was wrong.
+ */
+export const KIND_LABEL = group("window.step.kind.") as Record<StepKind, string>;
 
 /** The model the step chose, if it chose one. */
 function modelOf(step: Step): string {
