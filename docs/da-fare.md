@@ -159,6 +159,36 @@ corsa di quel flusso; qui l'indice:
 | il caso di prova | Temporal: la storia della corsa rotta si scarica e si rigioca |
 | introdurre un controllo senza rompere | OPA Gatekeeper: `warn` prima di `deny`, promozione come configurazione |
 
+### I marcatori di prompt OSC 133, per togliere il compromesso del terminale
+
+**01/09/2026, dal cantiere del terminale nella finestra.** La metà React che è
+stata costruita smista una riga solo in un modo che costa: mentre la finestra
+tiene la riga, la `readline` della shell non ce l'ha, quindi **saltano la
+cronologia, le frecce e il Tab** — che dopo le lettere è il tasto più premuto di
+tutti — e niente accorge la finestra che lì dentro è appena partito un programma
+a schermo intero, cioè `claude` dentro Sailor: **esattamente il caso per cui il
+cantiere esiste.** Per questo un terminale nasce in modalità diretta e comporre
+è una scelta esplicita: il compromesso è stato *scelto*, non risolto.
+
+**Chi l'ha già risolto, e come.** VS Code e Warp usano i **marcatori di prompt
+OSC 133**: la shell emette una sequenza che dice «qui comincia il prompt», «qui
+comincia ciò che l'utente scrive», «qui il comando parte». La finestra allora
+non tiene niente e non disegna nessun eco — cronologia, completamento e frecce
+restano alla `readline`, dove sono sempre state — e all'Invio **legge la riga
+dal buffer dell'emulatore**, che sa esattamente dove comincia. La manda a
+`terminal_submit`: se torna `{kind: "command"}` la esegue la shell come sempre,
+e se torna `{kind: "flow"}` la finestra manda un Ctrl-U e la riga non parte.
+
+**Perché questo toglie il prezzo invece di spostarlo.** Nessuna riga scritta due
+volte — la shell ha sempre avuto i caratteri, quindi non c'è niente da
+riscrivere; nessun modo da scegliere, perché fuori da un prompt i marcatori non
+ci sono e il terminale è diretto **da sé**; e il caso del programma a schermo
+intero si risolve senza doverlo indovinare. Il costo è che la shell va
+configurata per emetterli, ed è un lavoro che Sailor già sa fare: legge e migra
+la configurazione delle righe di comando.
+
+*Non ancora costruito, e da fare prima che qualcuno si abitui al compromesso.*
+
 ## Nato dalla serata del 29/08
 
 - **Unire i quattro flussi.** `smista-il-lavoro`, il flusso di sviluppo, la
