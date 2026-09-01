@@ -131,6 +131,31 @@ fn cites_a_date(line: &str) -> bool {
     })
 }
 
+/// **THE WAY ROUND THE CAP: SPLIT INSTEAD OF SHORTENING.** Two `///` groups
+/// with a blank line between them are one rustdoc — both attach to the same
+/// item — so twelve lines become two blocks of six and the cap is satisfied
+/// with nothing removed. Found by general-01 in `desktop/src`, where the same
+/// move went from 4 to 41 and orphans the first block outright, since in JSDoc
+/// only the last comment before a declaration documents it.
+fn splits_one_doc_comment(lines: &[&str], at: usize) -> bool {
+    if !lines[at].trim().is_empty() || at == 0 {
+        return false;
+    }
+    if !lines[at - 1].trim_start().starts_with("///") {
+        return false;
+    }
+    let resumes = next_line_with_something_on_it(lines, at);
+    resumes < lines.len() && lines[resumes].trim_start().starts_with("///")
+}
+
+fn next_line_with_something_on_it(lines: &[&str], from: usize) -> usize {
+    let mut at = from;
+    while at < lines.len() && lines[at].trim().is_empty() {
+        at += 1;
+    }
+    at
+}
+
 struct Counts {
     long_blocks: usize,
     dated: usize,
@@ -153,9 +178,12 @@ fn count() -> Counts {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
+        let lines: Vec<&str> = text.lines().collect();
         let mut run = 0usize;
         let mut in_block = false;
-        for line in text.lines() {
+        let mut index = 0usize;
+        while index < lines.len() {
+            let line = lines[index];
             if is_comment(line, &mut in_block) {
                 run += 1;
                 if cites_a_date(line) {
@@ -164,6 +192,11 @@ fn count() -> Counts {
                 if looks_italian(line) {
                     counts.italian += 1;
                 }
+                index += 1;
+                continue;
+            }
+            if run > 0 && splits_one_doc_comment(&lines, index) {
+                index = next_line_with_something_on_it(&lines, index);
                 continue;
             }
             if run > MAX_BLOCK {
@@ -173,6 +206,7 @@ fn count() -> Counts {
                 }
             }
             run = 0;
+            index += 1;
         }
         if run > MAX_BLOCK {
             counts.long_blocks += 1;
@@ -271,6 +305,18 @@ fn the_check_can_still_see_what_it_counts() {
         "oggi: {} blocchi sopra {MAX_BLOCK} righe, {} commenti con una data, \
          {} righe di commento italiane",
         counts.long_blocks, counts.dated, counts.italian
+    );
+    // Spezzare un blocco in due non lo accorcia: dodici righe restano dodici.
+    let split = ["/// una", "/// due", "/// tre", "/// quattro", "", "/// cinque", "/// sei",
+                 "/// sette", "fn qualcosa() {}"];
+    assert!(
+        splits_one_doc_comment(&split, 4),
+        "la riga vuota fra due gruppi /// non spezza un rustdoc, e non deve spezzare il conto"
+    );
+    let real_end = ["/// una", "", "fn qualcosa() {}"];
+    assert!(
+        !splits_one_doc_comment(&real_end, 1),
+        "una riga vuota seguita da codice chiude il blocco davvero"
     );
     assert!(counts.long_blocks > 0, "zero blocchi lunghi: il contatore non sta guardando");
     assert!(counts.dated > 0, "zero date: il contatore non sta guardando");
