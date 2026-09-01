@@ -49,6 +49,20 @@ Trappole già pagate su questa macchina:
 - **Mai incanalare `cargo test` in `grep` o `tail`**: il codice d'uscita diventa
   quello dell'ultimo comando, e una batteria rossa passa per verde. Scrivi
   l'uscita su un file e leggila.
+- **Sempre `--no-fail-fast`, e non è un dettaglio di comodità.** Senza,
+  `cargo test` si ferma al **primo binario rosso** e tutto ciò che viene dopo
+  **non viene eseguito** — non fallisce: non parte. Misurato il 01/09/2026
+  dentro il perimetro, dove il sandbox nega `openpty` e `crates/terminal`
+  cade sempre: **36 binari eseguiti su 47**. I dieci che non partono mai sono
+  sempre gli stessi, la coda dell'alfabeto — `toolbox`, `trigger`, `ui` e sette
+  prove d'integrazione. Chi batte `cargo test` lì dentro sta guardando tre
+  quarti dell'albero credendo di guardarlo tutto.
+
+  Quel giorno è costato un lavoro dichiarato finito con una regressione dentro:
+  la prova che cadeva stava in `toolbox`, e il `grep FAILED` di chi la cercava
+  non poteva trovarla perché quella prova non era **mai partita**. È la stessa
+  famiglia della riga qui sopra — un esito verde che non ha guardato niente —
+  e si riconosce solo contando i binari, non le prove.
 - **`cargo fmt -- <file>` non si limita a quel file**: formatta tutto il
   workspace. L'albero non è formattato in blocco e non va formattato in blocco.
 - **`cargo test --tests` non aggiorna il binario** che i ganci eseguono.
