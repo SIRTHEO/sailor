@@ -201,6 +201,56 @@ fn an_answer_neither_form_recognises_is_not_authenticated() {
     }
 }
 
+/// **CIÒ CHE SI MOSTRA È IL SOGGETTO, NON L'INVOLUCRO INTERO, E NON È UN
+/// DETTAGLIO DI STILE.**
+///
+/// La risposta vera di `claude auth status` porta con sé **l'indirizzo di posta
+/// del proprietario, l'identificativo della sua organizzazione, il nome di
+/// quell'organizzazione e il tipo di abbonamento**. Quel testo finisce nella
+/// riga di `sailor profiles list` e nel rapporto di `sailor flow check`, cioè in
+/// due uscite che si incollano in una consegna, si mandano a un collega, si
+/// versano in un registro. Una diagnosi non deve portarsi dietro chi la usa.
+///
+/// Dove un puntatore c'è, il valore che ha isolato **è** la risposta — «false»
+/// non è meno preciso dell'involucro che lo conteneva, è più preciso — quindi si
+/// mostra quello. Dove non c'è, il soggetto è già tutto ciò che il motore ha
+/// detto, e `codex` risponde una riga di prosa che non nomina nessuno.
+#[test]
+fn what_gets_shown_is_the_answer_not_the_envelope_around_it() {
+    let owner = r#"{
+  "loggedIn": true,
+  "authMethod": "claude.ai",
+  "email": "qualcuno@example.invalid",
+  "orgId": "5ae89c2b-0000-0000-0000-000000000000",
+  "orgName": "l'organizzazione di qualcuno",
+  "subscriptionType": "max"
+}"#;
+    let LoginVerdict::LoggedIn { said } = judge_login_status(&claude_recipe(), owner, "") else {
+        panic!("l'involucro dice di sì");
+    };
+    for private in [
+        "qualcuno@example.invalid",
+        "5ae89c2b",
+        "l'organizzazione di qualcuno",
+        "max",
+    ] {
+        assert!(
+            !said.contains(private),
+            "«{private}» è finito in un testo che si stampa e si incolla: {said}"
+        );
+    }
+    assert_eq!(said, "true", "la risposta è il valore che il puntatore isola");
+
+    // Senza puntatore non c'è niente da isolare, e la prosa del motore resta la
+    // diagnosi per intero: è il caso di `codex`, e lì la frase non nomina
+    // nessuno.
+    let LoginVerdict::LoggedOut { said } = judge_login_status(&codex_recipe(), "", CODEX_SAYS_NO)
+    else {
+        panic!("la prosa dice di no");
+    };
+    assert_eq!(said, CODEX_SAYS_NO);
+}
+
 /// Un puntatore che non trova niente — l'involucro non è JSON, o la chiave non
 /// c'è — lascia la risposta sconosciuta. È il modo giusto di sbagliare: un
 /// descrittore impreciso peggiora la diagnosi, e non inventa un sì.
