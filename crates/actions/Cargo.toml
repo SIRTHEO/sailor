@@ -33,6 +33,11 @@ profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# Serve a uccidere un gruppo di processi, non un processo: `libc::kill` con un
+# pid negativo. È già la dipendenza di `ledger`, `sessions` e `terminal`.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # CHI LEGGE LA PROIEZIONE È UNO SOLO, E SOLO NELLE PROVE.
 #
 # Le prove di questo crate rileggevano `model_calls` con una copia privata di
