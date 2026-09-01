@@ -74,7 +74,7 @@ pub fn run(args: &[String]) -> i32 {
 /// `release::TARGETS`, e chi sbaglia nome se lo sente dire da `target_names()`
 /// con la tabella di adesso, non con quella di allora.
 pub const USAGE: &[&str] =
-    &["sailor release <bersaglio> [--dry-run] [--skip-tests] [--wait-secs N]"];
+    &["sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]"];
 
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();

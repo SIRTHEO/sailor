@@ -33,7 +33,7 @@ pub const USAGE: &[&str] = &["sailor remaining"];
 
 fn dispatch(args: &[String]) -> Result<String, String> {
     if !args.is_empty() {
-        return Err(format!("uso: {}", USAGE[0]));
+        return Err(format!("usage: {}", USAGE[0]));
     }
     let home = home_dir()?;
     let now = now_secs()?;
