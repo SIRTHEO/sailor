@@ -711,11 +711,25 @@ fn nothing_found(sources: &[FlowSource]) -> String {
     )
 }
 
+/// Le forme di `sailor flow`, una per riga.
+///
+/// **È QUI E NON DENTRO `usage()` PERCHÉ LA LEGGE ANCHE LA FINESTRA.** Una
+/// stringa stampata da una funzione privata non è interrogabile da un
+/// programma: la pagina d'aiuto della finestra sarebbe stata una seconda copia
+/// che diverge alla prima opzione aggiunta. `Command::usage` punta qui.
+pub const USAGE: &[&str] = &[
+    "sailor flow list",
+    "sailor flow due",
+    "sailor flow check <nome> [--no-engines]",
+    "sailor flow run <nome> [mandato]",
+    "sailor flow resume <corsa>",
+    "sailor flow cost <nome>",
+    "sailor flow cap <nome> [micro|nessuno]",
+    "sailor flow relocate <nome> [prefisso-da-togliere]",
+];
+
 fn usage() -> String {
-    "uso: sailor flow <list|due|check <nome> [--no-engines]|run <nome> [mandato]|\
-     resume <corsa>|cost <nome>|cap <nome> [micro|nessuno]|\
-     relocate <nome> [prefisso-da-togliere]>"
-        .to_owned()
+    format!("uso:\n  {}", USAGE.join("\n  "))
 }
 
 /// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
@@ -1015,6 +1029,25 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
         models_seen_by(&flow.id).as_ref(),
         flow.spend_cap_micros,
     ));
+    // **UN RINVIO DENTRO UN CAMPO CHE VIENE ESEGUITO SI FERMA QUI.** Prima
+    // dell'esecuzione, perché dopo il rinvio è già diventato testo di shell e
+    // non si distingue più da ciò che il flusso aveva scritto.
+    let montati: Vec<String> = outside_text_in_command(&flow)
+        .iter()
+        .map(|found| format!("{} in «{}»", found.step, found.field))
+        .collect();
+    if !montati.is_empty() {
+        println!("{report}");
+        return Err(format!(
+            "il flusso {} monta dentro un campo eseguito un valore che non ha scritto: {}. \
+             Il comando è testo di shell e viene eseguito: ciò che arriva da fuori — da un \
+             motore o da un altro comando — va in «env», dove resta un dato, e il comando \
+             lo legge fra virgolette.",
+            flow.id,
+            montati.join(", ")
+        ));
+    }
+
     // **UN PERCORSO DI POSIZIONE ASSOLUTO È UN ERRORE, NON UN AVVISO.** Il
     // flusso gira in un posto solo: altrove non fallisce, lavora nel posto
     // sbagliato — ed è il modo in cui il guasto 25 è passato inosservato.
@@ -1536,6 +1569,73 @@ struct HardcodedPath {
 /// può scambiare `/answer/verdict` per un percorso, quindi saltarlo non
 /// comprerebbe niente e perderebbe i prompt composti a pezzi — che è dove i due
 /// percorsi di `sviluppa-sailor` stanno davvero.
+/// Un rinvio montato dentro un campo che viene **eseguito**.
+#[derive(Debug)]
+struct OutsideTextInCommand {
+    step: String,
+    field: String,
+}
+
+/// I campi il cui contenuto non viene letto: viene eseguito. Oggi ne esiste
+/// uno solo — `command` di `shell_check` — ed è un elenco perché il giorno che
+/// ne nasce un secondo, la regola deve valere anche per quello senza che
+/// nessuno se ne ricordi.
+const EXECUTED_FIELDS: &[&str] = &["command"];
+
+/// **CIÒ CHE VIENE DA FUORI VA IN `env`, MAI IN `command`.** La regola era
+/// scritta sopra `ShellCheckAction` e non la applicava nessun codice: un
+/// augurio, non una regola.
+///
+/// Il comando è testo di shell e viene eseguito. Un titolo di richiesta di
+/// modifica — che su un remoto condiviso lo scrive chiunque — montato dentro
+/// `command` è un comando scritto da chi ha aperto la richiesta. Dentro una
+/// variabile d'ambiente resta un dato, e il comando la legge fra virgolette.
+///
+/// **VALE PER I COMANDI QUANTO PER I MOTORI, E QUESTO È IL PUNTO.** Finché
+/// l'unico testo che entrava veniva da un modello, chi scriveva flussi stava
+/// attento. L'uscita di un `git` sembra innocua proprio perché non viene da un
+/// modello, ed è esattamente per questo che va trattata uguale.
+///
+/// **UN `$join` DI SOLE LETTERE NON È UNA SEGNALAZIONE.** Comporre un comando
+/// da pezzi scritti a mano è sano; ciò che si guarda è se dentro quel campo
+/// compare un rinvio — `$from` o `$json` — cioè un valore che questo flusso non
+/// ha scritto. Segnalare qualunque composizione renderebbe rosso ogni flusso
+/// sano, e un controllo così viene spento entro un giorno.
+fn outside_text_in_command(flow: &FlowFile) -> Vec<OutsideTextInCommand> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        let Value::Object(fields) = with else {
+            continue;
+        };
+        for name in EXECUTED_FIELDS {
+            if let Some(value) = fields.get(*name) {
+                if holds_a_reference(value) {
+                    found.push(OutsideTextInCommand {
+                        step: step.id.clone(),
+                        field: (*name).to_owned(),
+                    });
+                }
+            }
+        }
+    }
+    found
+}
+
+/// Vero se da qualche parte qui dentro c'è un valore che il flusso non ha
+/// scritto: un rinvio all'uscita di un altro passo.
+fn holds_a_reference(value: &Value) -> bool {
+    match value {
+        Value::Object(fields) => fields.iter().any(|(key, inner)| {
+            key == reference::FROM_KEY || key == reference::JSON_KEY || holds_a_reference(inner)
+        }),
+        Value::Array(items) => items.iter().any(holds_a_reference),
+        _ => false,
+    }
+}
+
 fn hardcoded_paths(flow: &FlowFile) -> Vec<HardcodedPath> {
     let mut found = Vec::new();
     for step in flow.graph.steps() {
@@ -4192,6 +4292,64 @@ mod tests {
         );
 
         assert!(hardcoded_paths(&flow).is_empty());
+    }
+
+    /// Un passo `shell_check`, che `flow_with` non sa costruire perché monta
+    /// sempre un motore.
+    fn shell_flow_with(with: &str) -> FlowFile {
+        let json = format!(
+            r#"{{
+                "id": "prova", "description": "un comando solo",
+                "graph": {{"steps": [{{
+                    "id": "unico", "deps": [], "action": "shell_check",
+                    "max_attempts": 1, "when": null,
+                    "input_schema": {{"type": "any"}},
+                    "output_schema": {{"type": "any"}},
+                    "with": {with}
+                }}]}},
+                "inputs": {{}}
+            }}"#
+        );
+        serde_json::from_str(&json).expect("caricare il flusso")
+    }
+
+    /// **CIÒ CHE VIENE DA FUORI VA IN `env`, MAI IN `command`.** La regola è
+    /// scritta da sempre sopra `ShellCheckAction`, e cercata in tutto
+    /// `crates/` non la applica nessun codice e non la copre nessuna prova: è
+    /// un augurio, non una regola.
+    ///
+    /// Il comando è testo di shell e viene eseguito. Un titolo di richiesta di
+    /// modifica — che su un remoto condiviso lo scrive chiunque — montato
+    /// dentro `command` è un comando scritto da chi ha aperto la richiesta.
+    /// Dentro una variabile d'ambiente resta un dato, e il comando la legge
+    /// fra virgolette.
+    ///
+    /// LA MISURA CHE POTEVA VENIRE DIVERSA: la seconda metà. Un controllo che
+    /// segnalasse qualunque rinvio, ovunque, sarebbe rosso su ogni flusso sano
+    /// e verrebbe spento in un giorno — come sarebbe successo a
+    /// `hardcoded_paths` se avesse scambiato un puntatore per un percorso.
+    #[test]
+    fn outside_text_belongs_in_env_never_in_command() {
+        let montato = shell_flow_with(
+            r#"{"command": {"$join": ["gh pr view --json title ", {"$from": "/answer/titolo"}]}, "timeout_secs": 5}"#,
+        );
+
+        let found = outside_text_in_command(&montato);
+
+        assert_eq!(found.len(), 1, "uno solo: {found:?}");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(found[0].field, "command");
+
+        // La forma giusta dello stesso lavoro: il valore passa come dato, e il
+        // comando lo legge fra virgolette.
+        let passato = shell_flow_with(
+            r#"{"command": "gh pr view --json title \"$TITOLO\"", "env": {"TITOLO": {"$from": "/answer/titolo"}}, "timeout_secs": 5}"#,
+        );
+
+        assert!(
+            outside_text_in_command(&passato).is_empty(),
+            "un rinvio in «env» è la forma corretta, non una segnalazione"
+        );
     }
 
     /// Un percorso dentro il testo di un prompt non impedisce al flusso di
