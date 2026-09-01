@@ -13,7 +13,7 @@ was left uncovered.
 Theo's constraint: we cannot know which terminals a user has, and adaptations
 per emulator are a list forever behind whatever ships next. There is no other
 road on this machine — `TIOCSTI` is disabled, and writing to `/dev/ttysNNN`
-writes output, not input. So `sailor accompany run -- <cli>` opens a
+writes output, not input. So `sailor terminal run -- <cli>` opens a
 pseudo-terminal, runs the command line inside it, and bridges it to whatever
 window the person is using. The price, and it is one price rather than one per
 emulator: the command line has to be started through Sailor.
@@ -30,17 +30,17 @@ done: the relay refuses by name and says which descriptor to write it in.
 
 **The mandate is written by the session, not scraped from the scrollback.**
 Family F of the old relay's faults: the resumption point looked for a phrase
-that was missing in 262 sessions out of 348. `sailor accompany mandate` reads it
+that was missing in 262 sessions out of 348. `sailor terminal mandate` reads it
 from standard input instead.
 
 ## What exists, with the command that shows it
 
 | piece | how to see it |
 |---|---|
-| the conduit | `sailor accompany run -- <cli>`, then `sailor accompany press --tty <name> --text "…"` from anywhere else |
-| how full | `sailor accompany list --ceiling 500000` |
-| emptying | `sailor accompany reset --tty <name> --cli <id>` |
-| the mandate | `sailor accompany mandate` from inside the session |
+| the conduit | `sailor terminal run -- <cli>`, then `sailor terminal press --tty <name> --text "…"` from anywhere else |
+| how full | `sailor terminal list --ceiling 500000` |
+| emptying | `sailor terminal reset --tty <name> --cli <id>` |
+| the mandate | `sailor terminal mandate` from inside the session |
 | the sequence | `sailor flow check passa-il-testimone` — six steps, no cycles, no missing actions |
 | the beat | `sailor flow tick` — runs what is due, names what it held and why |
 
@@ -62,12 +62,12 @@ from memory would put a guess where the code cannot tell a guess from a
 measurement.
 
 **The estimate has never been checked against a real pipe.** The model comes
-from transcripts, and the first honest experiment is to accompany a command
-line that reports its own usage and compare. `Model::between` exists for
+from transcripts, and the first honest experiment is to hold the terminal of a
+command line that reports its own usage and compare. `Model::between` exists for
 exactly that and nothing calls it yet.
 
-**A terminal does not survive the window.** The pipe is held by the accompanying
-process. Closing the window ends it, and `docs/2026-09-01-il-contratto-del-terminale.md`
+**A terminal does not survive the window.** The pipe is held by the process
+that opened it. Closing the window ends it, and `docs/2026-09-01-il-contratto-del-terminale.md`
 already names the separate job that would fix it.
 
 ## The one thing to check first
@@ -75,5 +75,5 @@ already names the separate job that would fix it.
 The conduit. Everything else is composed from it, and if typing into a live
 session turns out to be unreliable in daily use, the sequence above is a
 sequence over something that does not work. The tests type into a real
-pseudo-terminal and into a real `sailor accompany run`, but nobody has yet run
+pseudo-terminal and into a real `sailor terminal run`, but nobody has yet run
 a working day inside one.
