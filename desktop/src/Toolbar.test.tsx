@@ -327,7 +327,7 @@ describe("what the bar offers", () => {
   test("EVERY FAMILY CREATES A STEP THE ENGINE RECOGNISES", () => {
     const seen: StepKind[] = [];
     const { container } = render(
-      <Toolbar flowName="prima-corsa" onAdd={(kind) => seen.push(kind)} onNewFlow={() => {}} />,
+      <Toolbar flowName="prima-corsa" onAdd={(kind) => seen.push(kind)} />,
     );
 
     for (const tool of Array.from(container.querySelectorAll<HTMLElement>(".toolbar__tool"))) {
@@ -354,7 +354,7 @@ describe("what the bar offers", () => {
 
   test("every tool carries a mark AND a word", () => {
     const { container } = render(
-      <Toolbar flowName="prima-corsa" onAdd={() => {}} onNewFlow={() => {}} />,
+      <Toolbar flowName="prima-corsa" onAdd={() => {}} />,
     );
     for (const tool of Array.from(container.querySelectorAll<HTMLElement>(".toolbar__tool"))) {
       // Ban 5 applied to shape: a mark on its own carries nothing, just as
@@ -366,7 +366,7 @@ describe("what the bar offers", () => {
 
   test("every group names itself for whoever reads with a screen reader", () => {
     const { container } = render(
-      <Toolbar flowName="prima-corsa" onAdd={() => {}} onNewFlow={() => {}} />,
+      <Toolbar flowName="prima-corsa" onAdd={() => {}} />,
     );
     const groups = Array.from(container.querySelectorAll<HTMLElement>("[role='group']"));
     expect(groups).toHaveLength(TOOL_GROUPS.length);
@@ -377,7 +377,7 @@ describe("what the bar offers", () => {
 
   test("the bar says which flow the step lands in", () => {
     const { container } = render(
-      <Toolbar flowName="esamina-la-repo" onAdd={() => {}} onNewFlow={() => {}} />,
+      <Toolbar flowName="esamina-la-repo" onAdd={() => {}} />,
     );
     expect(container.querySelector(".toolbar__target")?.textContent).toContain("esamina-la-repo");
   });
@@ -385,8 +385,7 @@ describe("what the bar offers", () => {
 
 describe("with no flow picked", () => {
   test("THE BAR SAYS WHAT IS MISSING, IT DOES NOT JUST GO DARK", () => {
-    const onNewFlow = vi.fn();
-    const { container } = render(<Toolbar flowName={null} onAdd={() => {}} onNewFlow={onNewFlow} />);
+    const { container } = render(<Toolbar flowName={null} onAdd={() => {}} />);
 
     // No disabled button: a button that cannot be pressed and does not say why
     // is a dead end.
@@ -398,13 +397,15 @@ describe("with no flow picked", () => {
     expect(prompt).not.toBeNull();
     expect(prompt.textContent).toContain("Scegli un flusso");
 
-    // And the gesture that resolves it, which really works.
-    fireEvent.click(screen.getByRole("button", { name: /Nuovo flusso/ }));
-    expect(onNewFlow).toHaveBeenCalledTimes(1);
+    // And it says where, because a bar that names a lack without naming its
+    // owner sends people looking. It does not carry the gesture itself: that
+    // one belongs to the column, in every state, and is asserted there.
+    expect(prompt.textContent).toContain("nella colonna");
+    expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 
   test("the reason is not in a `title`, where nobody looks for it", () => {
-    const { container } = render(<Toolbar flowName={null} onAdd={() => {}} onNewFlow={() => {}} />);
+    const { container } = render(<Toolbar flowName={null} onAdd={() => {}} />);
     const withTitle = Array.from(container.querySelectorAll("[title]"));
     expect(withTitle).toEqual([]);
   });

@@ -1018,18 +1018,6 @@ button.is-primary {
   color: var(--muted);
 }
 
-.toolbar__new {
-  flex-shrink: 0;
-  font-weight: 600;
-  color: var(--muted);
-  border-style: dashed;
-}
-
-.toolbar__new:hover {
-  color: var(--ink);
-  border-color: var(--ink);
-}
-
 /* ── the blank canvas ────────────────────────────────────────────────────
    It sits OVER the canvas, not in its place: the controls and the minimap stay
    where they are. It does not intercept the pointer — the canvas underneath

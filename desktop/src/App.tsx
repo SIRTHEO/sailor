@@ -1310,7 +1310,6 @@ export default function App() {
               <Toolbar
                 flowName={focusName}
                 onAdd={(kind) => focusName && addStep(focusName, kind)}
-                onNewFlow={addFlow}
               />
             )}
           </ReactFlow>
