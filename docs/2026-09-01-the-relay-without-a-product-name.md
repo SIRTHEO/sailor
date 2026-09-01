@@ -87,6 +87,54 @@ with `{e}`, shows it correctly. The two surfaces want different things: a person
 reading a failure wants the sentence *and* the structure. A `Debug` that
 delegates to `Display` would throw away the half that `Debug` is for.
 
+## It was run, and the handover cannot complete
+
+The section below said the conduit was the one thing to check first, because
+nobody had run a working day inside one. It has now been run end to end against
+a live pseudo-terminal, and that found two things no test had.
+
+**A step that returns `Waiting` never becomes ready again.** `decision_from`
+sends `Waiting` to its own bucket and only `Broke` can go back to `ready`, so no
+resume and no beat ever re-attempts it. `take_mandate` is built on `Waiting` —
+the pause is the whole point of it — so the relay reaches `raccogli-il-mandato`,
+parks, and stays parked. Measured: the request reaches the terminal, the step
+closes `Waiting` with «the only mandate here is older than this handover», a
+fresh mandate is written, and a resume records **no second attempt**.
+
+This was already known in one place and not in the other. The executor carries a
+comment saying that for an interrupted step «the one safe choice was waiting —
+and a waiting step never becomes ready again, so a resume saw the interrupted
+step and never relaunched it». Crash recovery was moved off `Waiting` for that
+reason. The relay was then built on it.
+
+**The engine has no outcome that means «not yet, try on the next beat».**
+`Waiting` parks forever; `Broke` returns to `ready` in the same loop with no
+backoff anywhere, so attempts burn instantly. A patrol flow needs the third
+thing, and choosing its shape is a decision about the engine that every action
+would inherit — it is not the relay's to make alone.
+
+**And a `with` field must not reference a pointer of its own name.** Every step
+here carried `"tty": {"$from": "/tty"}`. References resolve against the composed
+input, and `with` is merged over the dependency's output first, so the field
+overwrote the value it was about to read and then read itself: `invalid type:
+map, expected a string`. Every node already returns `tty`, so a single-dependency
+step inherits it and the reference was never needed. Removed. Nothing caught
+this because the flow's test checks that its actions exist, not that it runs.
+
+## What did work, measured on a live terminal
+
+A terminal held by `sailor terminal run` with a real program inside; a letterbox
+at `ttys021.sock`; a line typed from a process sharing nothing with it but that
+socket, and echoed back by the program. 755,222 bytes counted through the pipe,
+read as 573,679 tokens, correctly reported as past a 500,000 ceiling. `/clear`
+typed from the `claude-code` descriptor rather than from any line in the code. A
+mandate written, and a stale one refused by name. A command line that declares no
+reset refused by name, and so did typing into a terminal nobody holds.
+
+Under the ceiling the whole chain is skipped and the run stays green with
+`counted`, `why` and the measurement recorded — the decline leaves the trace the
+old relay never left.
+
 ## The one thing to check first
 
 The conduit. Everything else is composed from it, and if typing into a live
