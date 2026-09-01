@@ -32,6 +32,47 @@ aspetto.
 
 ## Le decisioni prese
 
+### English everywhere, restoring the charter the project was founded with
+
+**2026-09-01**, decided by Theo.
+
+Identifiers, comments, documentation, commit messages, and every message a user
+of the tool can see are in **English**. There is no inside language and no
+outside language: the repository is public, and what is committed here is
+world-readable permanently.
+
+**This is not a new rule. It is one that was lost.** It lived in a `CLAUDE.md`
+on an orphan branch with an unrelated history — one commit, never published,
+reachable from nothing. It also said: no absolute paths from a developer
+machine, no employer or client names, no internal repository names, no
+transcripts or logs copied out of private tooling, no framing of this work as a
+reaction to or comparison with somebody else's product — and it named
+`~/personal/.sailor-notes/`, a directory with no git remote, as where notes that
+cannot meet those rules belong. The branch is kept as the tag
+`archivio-primo-abbozzo`.
+
+**Why it matters more than its content.** This project spent days
+rediscovering, one incident at a time, things that were written in its first
+commit. The morning of the same day a partial version of this very rule was
+decided again from scratch — English for what a stranger reads, Italian inside
+— by looking at a CI file. That is the most expensive shape of the defect the
+project keeps chasing: not a rule nobody interrogates, but **a rule nobody
+could read**. A rule on an unreachable branch is worse than a missing one,
+because everybody assumes the ground was covered.
+
+**What does not change.** Flow and step ids, and the `.flow.json` filenames,
+stay as they are — see the 2026-08-31 entry. That is not an exception to the
+language rule: what the compiler reads is language, what the ledger keeps is
+data.
+
+**How it gets done, and the order.** Prune first, translate after. The six-line
+comment cap already requires 636 blocks to shrink or go, and those carry two
+thirds of the comment volume: translating a comment that should be deleted pays
+for the same line twice. The measure is
+`cargo test -p sailor --test comments_do_not_crowd_out_the_code`, whose Italian
+count — 11,854 lines the day of the decision — can only go down. This file, and
+the rest of `docs/`, convert as they are touched.
+
 ### La lingua si sceglie su chi legge: inglese ciò che vede uno sconosciuto, italiano ciò che vede chi lavora qui
 
 **01/09/2026**, decisa da Theo guardando la CI.
