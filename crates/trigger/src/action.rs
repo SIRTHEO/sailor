@@ -1,14 +1,9 @@
 //! The trigger as a flow step.
 //!
-//! It reads which source the step declared, finds it among the descriptors,
-//! and — when that source carries the signal with it — returns the signal in
-//! the shape the steps downstream read. It executes nothing.
-//!
-//! **A TERMINAL SOURCE IS NOT LISTENED TO, AND SAYS SO INSTEAD OF PRETENDING.**
-//! Nothing here could listen: no Sailor process stays up waiting, and no reader
-//! keeps a cursor on a session. Anything this action returned would be made up,
-//! and a green flow would say somebody spoke when nobody did — which costs real
-//! calls downstream.
+//! **WHAT IT REALLY DOES.** It reads which source the step declared, looks it
+//! up in the descriptor list and — if that source carries the signal with it —
+//! returns the signal in the shape the steps downstream read. It executes
+//! nothing and touches nothing in the world.
 
 use crate::{default_sources, Catalog, Kind, Listen, Signal, Source, TriggerDescriptor};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
@@ -114,6 +109,12 @@ impl Action for TriggerAction {
                     serde_json::to_value(signal).expect("a signal of plain texts always serialises"),
                 ))
             }
+            // **WHERE IT STOPS, AND WHY IT STOPS INSTEAD OF PRETENDING.** A
+            // terminal source is not listened to: the step breaks with a
+            // message saying what is missing, because anything returned here
+            // would be invented. A green flow would say somebody spoke when
+            // nobody did — the worst defect possible here, since it costs real
+            // calls downstream.
             Kind::Terminal => Err(ActionError::new(
                 "listening_not_built",
                 not_listening_yet(descriptor),
@@ -131,6 +132,10 @@ impl Action for TriggerAction {
 
 /// The border, written out inside the message: whoever reads it needs to know
 /// what to build, not only that something is missing.
+///
+/// The two missing things are named because neither is in this action: no
+/// Sailor process stays up waiting for a signal, and no reader keeps a cursor
+/// on a session.
 fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
     let where_it_would_look = match &descriptor.listen {
         Some(Listen::AppendedLines { files, .. }) => {
