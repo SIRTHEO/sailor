@@ -12,7 +12,7 @@ const MAX_BLOCK: usize = 6;
 
 /// Quanti blocchi sforano oggi. **Può solo scendere**: abbassarlo è la
 /// riparazione, alzarlo va discusso e si vede nel diff.
-const LONG_BLOCKS_TODAY: usize = 635;
+const LONG_BLOCKS_TODAY: usize = 632;
 
 /// Quanti commenti citano una data. Stessa regola: solo verso il basso.
 const DATED_COMMENTS_TODAY: usize = 310;
@@ -25,7 +25,7 @@ const DATED_COMMENTS_TODAY: usize = 310;
 /// **L'UNICO RIALZO ONESTO** e' una fusione che porta dentro italiano gia'
 /// scritto altrove: li' si rimisura, si alza col numero misurato, e lo si dice
 /// nel commit. Alzarlo perche' e' diventato rosso e' disarmarlo.
-const ITALIAN_COMMENT_LINES_TODAY: usize = 11_854;
+const ITALIAN_COMMENT_LINES_TODAY: usize = 11_695;
 
 /// Parole senza le quali una frase italiana non sta in piedi, e che **non sono
 /// parole inglesi valide**.
