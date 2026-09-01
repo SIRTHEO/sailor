@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { RunEvent, RunSnapshot } from "./engine";
+import { tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
 
 /**
@@ -268,33 +269,15 @@ function readAction(payload: Record<string, unknown> | null): string | null {
 }
 
 /**
- * Le classi di guasto, in una riga che si legge.
+ * A failure class, in one readable line, from `run.failure.*`.
  *
- * **SONO NOMI STABILI DEL MOTORE, non testo libero**: dicono *perché* un passo
- * è caduto senza costringere a leggere il muro di testo che il passo ha
- * prodotto. Una classe che non è in questo elenco si mostra com'è — un nome
- * sconosciuto è un'informazione, una traduzione inventata no.
+ * **THE CLASSES ARE STABLE ENGINE NAMES, not free text**: they say *why* a step
+ * fell without making anyone read the wall of output it produced. A class the
+ * catalogue has never heard of shows as it came — an unknown name is
+ * information, an invented sentence is not, which is why this asks `tryT`.
  */
-const FAILURE_LABEL: Record<string, string> = {
-  engine_exit_error: "il motore è uscito con un errore",
-  engine_exhausted: "il motore ha finito la propria quota — non si è rotto",
-  engine_timed_out: "il motore ha superato il tempo massimo",
-  engine_spawn_failed: "il motore non è partito",
-  tool_unavailable: "lo strumento non c'è su questa macchina",
-  no_tool_resolver: "nessuno sa dove trovare quello strumento",
-  answer_not_json: "la risposta non era JSON",
-  answer_off_shape: "la risposta non ha la forma dichiarata",
-  shape_not_in_prompt: "la forma pretesa non è stata chiesta al motore",
-  check_failed: "la verifica non è passata",
-  check_timed_out: "la verifica ha superato il tempo massimo",
-  listening_not_built: "questa sorgente di innesco non sa ancora ascoltare",
-  unknown_trigger_source: "sorgente di innesco sconosciuta",
-  empty_signal: "il segnale è arrivato senza consegna",
-  invalid_input: "gli ingressi del passo non sono nella forma attesa",
-};
-
 export function whyFailed(failure: string): string {
-  return FAILURE_LABEL[failure] ?? failure;
+  return tryT(`run.failure.${failure}`) ?? failure;
 }
 
 /** Come è finito un passo, detto in italiano. */
