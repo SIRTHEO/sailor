@@ -107,12 +107,12 @@ pub fn run(args: &[String]) -> i32 {
 /// motivo per cui è una costante pubblica invece di righe dentro la stampa.
 pub const USAGE: &[&str] = &[
     "sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]",
-    "sailor inventory --record        deposita questa scansione",
-    "sailor inventory --changes       che cosa è comparso e che cosa è sparito",
+    "sailor inventory --record        stores this scan",
+    "sailor inventory --changes       what has appeared and what has gone",
 ];
 
 fn print_usage() {
-    eprintln!("uso:");
+    eprintln!("usage:");
     for line in USAGE {
         eprintln!("  {line}");
     }

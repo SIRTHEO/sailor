@@ -99,11 +99,29 @@ function graphOf(steps: Step[], skippable: Graph["skippable_dependencies"] = [])
  * `main.tsx`: nel pacchetto che la finestra spedisce non entrano.
  */
 function realFlows(): FlowFile[] {
-  const files = import.meta.glob("../../flows/*.flow.json", {
-    eager: true,
-    query: "?raw",
-    import: "default",
-  }) as Record<string, string>;
+  // **DUE POSTI, NON UNO.** Nove flussi stanno in `flows/`, di questo progetto;
+  // `smista-il-lavoro` è **spedito dentro il binario** — sta in
+  // `crates/flow/system/` e ci entra con `include_str!` — perché le regole di
+  // instradamento che viaggiano col prodotto lo nominano, e su una macchina
+  // appena installata la cartella `flows/` non esiste.
+  //
+  // Guardare un posto solo faceva scendere il censimento da 10 flussi a 9 e da
+  // 20 catene a 18 il giorno in cui quel file si è spostato, senza che nessuno
+  // lo volesse: la finestra disegna quel flusso come tutti gli altri, quindi
+  // chi ne misura le porte deve vederlo. Due `glob` e non un `..`: la radice
+  // intera porterebbe dentro `target/`.
+  const files = {
+    ...(import.meta.glob("../../flows/*.flow.json", {
+      eager: true,
+      query: "?raw",
+      import: "default",
+    }) as Record<string, string>),
+    ...(import.meta.glob("../../crates/flow/system/*.flow.json", {
+      eager: true,
+      query: "?raw",
+      import: "default",
+    }) as Record<string, string>),
+  };
   return Object.keys(files)
     .sort()
     .map((path) => JSON.parse(files[path]) as FlowFile);

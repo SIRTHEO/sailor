@@ -671,6 +671,165 @@ impl Descriptor {
             Some(_) => CapabilityState::Absent,
         }
     }
+
+    /// Dove questo descrittore dice due cose diverse sullo stesso fatto.
+    ///
+    /// **È IL GUASTO 32, E LA CURA NON È RIPARARE I DUE DESCRITTORI DI OGGI.**
+    /// `gemini-cli` dichiarava `capabilities.ask_without_interaction` senza
+    /// avere un blocco `ask`: la riga non si componeva, nessuna catena lo
+    /// nominava, e in ventitré chiamate registrate non era mai stato invocato —
+    /// cioè una capacità vera e inservibile somigliava in tutto a una capacità
+    /// che c'è. Ripararlo a mano avrebbe lasciato il quarto descrittore libero
+    /// di rifare lo stesso, perché **il difetto non è in un file: è nel non
+    /// aver mai confrontato i due blocchi**.
+    ///
+    /// **PERCHÉ IN LIBRERIA E NON DENTRO UNA PROVA.** Una prova guarda solo i
+    /// descrittori spediti. Chi ne scrive uno in `~/.config/sailor/tools.d/` —
+    /// che è il modo previsto di aggiungere un motore, senza ricompilare —
+    /// starebbe fuori da ogni controllo. La regola sta in un posto solo, e la
+    /// interrogano sia la prova sui descrittori spediti sia `sailor flow
+    /// check` sui descrittori di chi lo lancia.
+    ///
+    /// L'elenco vuoto vuol dire che i blocchi si reggono. Non vuol dire che
+    /// siano giusti: dice che non si smentiscono fra loro.
+    pub fn contradictions(&self) -> Vec<String> {
+        let mut found = Vec::new();
+        let can_be_asked = self.ask.is_some();
+        let says_it_can = self.capability(ASK_WITHOUT_INTERACTION) == CapabilityState::Available;
+
+        // **LE DUE DIREZIONI SONO DUE DIFETTI DIVERSI, E SERVONO TUTTE E DUE.**
+        // Chi ha la riga e tace sulla capacità fa credere a chi legge le
+        // capacità che quel motore non si possa interrogare; chi dichiara la
+        // capacità senza la riga fa credere il contrario. Una sola delle due
+        // lascerebbe passare metà dei casi.
+        if can_be_asked && !says_it_can {
+            found.push(format!(
+                "dichiara come gli si fa una domanda (blocco `ask`) e non dichiara di \
+                 saperne ricevere (`capabilities.{ASK_WITHOUT_INTERACTION}`): due blocchi \
+                 dello stesso file che si smentiscono"
+            ));
+        }
+        if says_it_can && !can_be_asked {
+            found.push(format!(
+                "dichiara `capabilities.{ASK_WITHOUT_INTERACTION}` e non ha nessun blocco \
+                 `ask`: nessuna riga si può montare per fargli la domanda, quindi la \
+                 capacità è vera e inservibile"
+            ));
+        }
+
+        if let (Some(ask), Some(capability)) = (
+            self.ask.as_ref(),
+            self.capabilities.get(ASK_WITHOUT_INTERACTION),
+        ) {
+            // La riga che si monta davvero è quella di `ask`: un'opzione
+            // dichiarata solo fra le capacità sta descrivendo un altro motore.
+            let composed: Vec<&str> = ask
+                .args
+                .iter()
+                .chain(ask.args_before_prompt.iter())
+                .map(String::as_str)
+                .collect();
+            for form in capability.forms() {
+                for option in &form.args {
+                    if !composed.contains(&option.as_str()) {
+                        found.push(format!(
+                            "dichiara la capacità con «{option}», che nel suo blocco `ask` non \
+                             compare: la riga che si monta davvero è quella di `ask`"
+                        ));
+                    }
+                }
+            }
+        }
+
+        // **UN FRAMMENTO VUOTO È UNA DICHIARAZIONE CHE COMBACIA CON TUTTO.**
+        // Chi lo scrive non se ne accorgerebbe mai: il descrittore funziona, e
+        // risponde di sì a qualunque uscita. In `unusable_when` farebbe scendere
+        // la catena a ogni fallimento — cioè il difetto che la catena esiste per
+        // non introdurre — e in `refuses_without_prompt` farebbe passare per
+        // sana ogni riga rotta.
+        if let Some(ask) = self.ask.as_ref() {
+            for (field, marks) in [
+                ("unusable_when", &ask.unusable_when),
+                ("refuses_without_prompt", &ask.refuses_without_prompt),
+            ] {
+                if marks.iter().any(|mark| mark.trim().is_empty()) {
+                    found.push(format!(
+                        "dichiara un frammento vuoto in `ask.{field}`, che è contenuto in \
+                         qualunque uscita: combacerebbe sempre"
+                    ));
+                }
+            }
+        }
+
+        found
+    }
+
+    /// Perché questo strumento non può fare da ripiego dentro una catena, se
+    /// non può. `None` quando può.
+    ///
+    /// **È IL GUASTO 31, ED È UNA REGOLA DI POSIZIONE, NON DI DESCRITTORE.** Un
+    /// motore che non dichiara con quali parole dice di non poter lavorare non
+    /// è un descrittore sbagliato: è un descrittore onesto su una misura che
+    /// nessuno ha fatto, e l'elenco vuoto vuol dire «nessuno ha guardato», mai
+    /// «va bene». Diventa un difetto solo dove qualcuno gli mette qualcuno
+    /// dietro: `says_it_cannot_work` su un elenco vuoto è `false`, quindi il suo
+    /// esaurirsi passa per un fallimento qualunque, il passo muore lì, e i
+    /// motori dopo di lui non partono mai. In fondo a una catena la stessa
+    /// assenza non toglie niente a nessuno — non c'è nessuno a cui passare il
+    /// lavoro — e pretendere lì una misura sarebbe pretenderla per niente.
+    pub fn cannot_be_a_fallback(&self) -> Option<String> {
+        let Some(ask) = self.ask.as_ref() else {
+            return Some(
+                "il suo descrittore non dichiara come gli si fa una domanda (`ask`), quindi \
+                 non c'è nessuna riga da montare quando il lavoro gli arriva"
+                    .to_owned(),
+            );
+        };
+        if ask
+            .unusable_when
+            .iter()
+            .any(|mark| !mark.trim().is_empty())
+        {
+            return None;
+        }
+        Some(
+            "non dichiara con quali parole dice di non poter lavorare (`ask.unusable_when`), \
+             quindi il suo esaurirsi passa per un fallimento qualunque: il passo muore su di \
+             lui e i motori dopo non partono mai"
+                .to_owned(),
+        )
+    }
+}
+
+/// Il nome della capacità che parla di domande secche.
+///
+/// **È L'UNICO NOME DI CAPACITÀ CHE IL CODICE PRONUNCIA, E HA UNA RAGIONE.**
+/// Il vocabolario resta un dato — aggiungerne una a uno strumento nuovo è
+/// scrivere un file JSON — ma questa sola capacità risponde alla **stessa
+/// domanda** di un altro blocco dello stesso file: «si può interrogare questo
+/// motore senza aprirci una conversazione?». Il blocco `ask` la risponde
+/// montando una riga, `capabilities` la risponde dichiarandola, e due copie
+/// della stessa verità divergono da sole se nessuno le confronta. Il confronto
+/// ha bisogno del nome; nessun'altra capacità ne ha bisogno, e nessun'altra sta
+/// qui.
+pub const ASK_WITHOUT_INTERACTION: &str = "ask_without_interaction";
+
+/// Un descrittore che dice due cose diverse sullo stesso fatto.
+///
+/// Porta il nome dello strumento perché chi legge un elenco di contraddizioni
+/// deve sapere quale voce aprire: «un descrittore si contraddice» non si può
+/// riparare.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Contradiction {
+    pub tool: String,
+    pub said: String,
+}
+
+impl Contradiction {
+    /// Una riga per chi legge un rapporto.
+    pub fn line(&self) -> String {
+        format!("«{}»: {}", self.tool, self.said)
+    }
 }
 
 /// Un descrittore caricato, con da dove viene: chi legge il risultato deve
@@ -893,6 +1052,24 @@ impl Catalog {
             Some(existing) => *existing = loaded,
             None => self.descriptors.push(loaded),
         }
+    }
+
+    /// Ogni contraddizione di ogni descrittore vivo, in ordine stabile.
+    ///
+    /// Guarda i vivi e non i disabilitati: un descrittore spento non compone
+    /// nessuna riga e non dichiara niente a nessuno — chiamarlo contraddittorio
+    /// manderebbe a riparare un file che non è in servizio.
+    pub fn contradictions(&self) -> Vec<Contradiction> {
+        let mut found = Vec::new();
+        for loaded in self.live() {
+            for said in loaded.descriptor.contradictions() {
+                found.push(Contradiction {
+                    tool: loaded.descriptor.id.clone(),
+                    said,
+                });
+            }
+        }
+        found
     }
 
     /// Quelli da eseguire: senza gli spenti, in ordine stabile per `id`, perché
@@ -1411,107 +1588,186 @@ mod the_new_field_is_optional {
         );
     }
 
-    /// Il nome della capacità che parla di domande secche.
-    const ASKING: &str = "ask_without_interaction";
-
-    /// **CHI HA LA RIGA DICHIARA ANCHE DI AVERLA, E CON LE STESSE OPZIONI.**
+    /// **NESSUN DESCRITTORE SPEDITO SI CONTRADDICE. È LA GUARDIA DEL GUASTO
+    /// 32, E NON HA ECCEZIONI REGISTRATE.**
     ///
-    /// Metà del guasto 32, e la metà che oggi regge: `ask` e `capabilities` sono
-    /// due blocchi dello stesso file che rispondono alla stessa domanda — «si
-    /// può interrogare questo motore senza aprirci una conversazione?» — e
-    /// finché nessuno li confronta possono dire cose diverse senza che niente
-    /// diventi rosso.
+    /// Fino al 01/09/2026 questa regola era spezzata in tre: una metà verde che
+    /// girava, l'altra metà dietro un `#[ignore]` con dentro il nome di
+    /// `gemini-cli`, e accanto una terza prova che sorvegliava l'elenco delle
+    /// eccezioni perché un quarto motore non ci entrasse di soppiatto. Un
+    /// elenco di eccezioni è la forma che prende una regola quando la si scrive
+    /// prima di poterla rispettare: sorvegliarlo era la cosa giusta da fare, e
+    /// non è la stessa cosa che non averne bisogno.
+    ///
+    /// Adesso la regola vive in `Descriptor::contradictions`, in un posto solo,
+    /// e la interroga anche `sailor flow check` sui descrittori di chi lancia —
+    /// che è dove una prova sui soli descrittori spediti non arriva.
     #[test]
-    fn a_shipped_engine_with_an_ask_block_declares_the_capability_with_the_same_options() {
+    fn no_shipped_descriptor_contradicts_itself() {
         let catalog = Catalog::load(&[Source::Builtin]);
-        for loaded in catalog.live() {
-            let Some(ask) = loaded.descriptor.ask.as_ref() else {
-                continue;
-            };
-            let id = &loaded.descriptor.id;
-            assert_eq!(
-                loaded.descriptor.capability(ASKING),
-                CapabilityState::Available,
-                "«{id}» dichiara come gli si fa una domanda e poi non dichiara di \
-                 saperne ricevere: due blocchi dello stesso file che si smentiscono"
-            );
-            let declared: Vec<&str> = ask
-                .args
+        let found = catalog.contradictions();
+        assert!(
+            found.is_empty(),
+            "descrittori che dicono due cose diverse sullo stesso fatto: {}",
+            found
                 .iter()
-                .chain(ask.args_before_prompt.iter())
-                .map(String::as_str)
-                .collect();
-            for form in loaded.descriptor.capabilities[ASKING].forms() {
-                for option in &form.args {
-                    assert!(
-                        declared.contains(&option.as_str()),
-                        "«{id}» dichiara la capacità con «{option}», che nel suo \
-                         blocco `ask` non compare: la riga che si monta davvero è \
-                         quella di `ask`, quindi la capacità sta descrivendo un \
-                         motore che non è questo"
-                    );
-                }
-            }
-        }
-    }
-
-    /// **E CHI DICHIARA DI SAPER RISPONDERE HA UNA RIGA CON CUI GLIELO SI
-    /// CHIEDE.** L'altra metà, e resta rossa: è il guasto 32.
-    ///
-    /// `gemini-cli` dichiara `ask_without_interaction` e non ha nessun blocco
-    /// `ask`. La riga non si compone, nessuna catena lo nomina, e in 23 chiamate
-    /// registrate non è mai stato invocato: una capacità dichiarata che non
-    /// serve a niente somiglia in tutto a una capacità che c'è.
-    ///
-    /// **PERCHÉ `#[ignore]` E NON ROSSA PER SEMPRE.** Perché la cura è scrivere
-    /// quel blocco `ask`, e scriverlo bene oggi non si può: i puntatori del suo
-    /// `usage` non sono misurati, e soprattutto non si sa come `gemini` dichiari
-    /// di essere esaurito — un `ask` senza `unusable_when` lo farebbe entrare
-    /// nelle catene senza ripiego, cioè creerebbe un quarto guasto 31 per
-    /// chiudere il 32. Una batteria rossa per sempre, intanto, spegnerebbe il
-    /// passo `prove` di `sviluppa-sailor` e metterebbe fretta a chi passa: il
-    /// modo più veloce di far tornare il verde sarebbe inventare i due dati che
-    /// mancano.
-    ///
-    /// **IL DEBITO STA DOVE SI LEGGE**: guasto 32 in `docs/guasti-incontrati.md`,
-    /// **aperto**, in una tabella con un controllo suo.
-    #[test]
-    #[ignore = "guasto 32 aperto: gemini-cli dichiara di saper rispondere e non ha blocco `ask`. Non si scrive senza misurare come dichiara di essere esaurito"]
-    fn a_shipped_engine_that_says_it_can_be_asked_has_a_line_to_ask_it_with() {
-        let catalog = Catalog::load(&[Source::Builtin]);
-        for loaded in catalog.live() {
-            if loaded.descriptor.capability(ASKING) != CapabilityState::Available {
-                continue;
-            }
-            assert!(
-                loaded.descriptor.ask.is_some(),
-                "«{}» dichiara di saper rispondere a una domanda secca, ma nessuna \
-                 riga si può montare per fargliela: la capacità è vera e inservibile",
-                loaded.descriptor.id
-            );
-        }
-    }
-
-    /// **E NESSUN ALTRO OLTRE A QUELLO GIÀ REGISTRATO**, o un quarto motore muto
-    /// entrerebbe nel prodotto dietro un `#[ignore]` che parla d'altro. Questa
-    /// gira sempre: è ciò che impedisce al guasto 32 di allargarsi in silenzio.
-    #[test]
-    fn no_engine_beyond_the_registered_one_claims_an_ask_it_cannot_compose() {
-        let catalog = Catalog::load(&[Source::Builtin]);
-        // `gemini-cli` è il guasto 32, aperto in `docs/guasti-incontrati.md`.
-        let registered = ["gemini-cli"];
-        let unexpected: Vec<String> = catalog
+                .map(Contradiction::line)
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
+        // Senza questa riga la prova sarebbe verde su un catalogo svuotato, che
+        // è il modo più silenzioso di smettere di controllare.
+        let engines = catalog
             .live()
             .into_iter()
-            .filter(|loaded| loaded.descriptor.capability(ASKING) == CapabilityState::Available)
-            .filter(|loaded| loaded.descriptor.ask.is_none())
-            .map(|loaded| loaded.descriptor.id.clone())
-            .filter(|id| !registered.contains(&id.as_str()))
-            .collect();
+            .filter(|loaded| loaded.descriptor.ask.is_some())
+            .count();
         assert!(
-            unexpected.is_empty(),
-            "questi dichiarano di saper rispondere senza avere una riga da montare, \
-             e non sono il guasto 32 registrato: {unexpected:?}"
+            engines >= 4,
+            "solo {engines} motori spediti hanno un blocco `ask`: erano quattro il \
+             01/09/2026, e se sono meno qualcuno l'ha tolto invece di ripararlo"
+        );
+    }
+
+    /// **E LA GUARDIA PRENDE TUTTE E QUATTRO LE FORME, SU DESCRITTORI SCRITTI
+    /// APPOSTA.**
+    ///
+    /// Serve perché la prova qui sopra, da sola, resterebbe verde anche se
+    /// `contradictions` restituisse sempre l'elenco vuoto: un controllo che non
+    /// controlla niente si presenta esattamente come un mondo sano. Qui il
+    /// mondo è malato per costruzione, e la guardia deve dirlo.
+    #[test]
+    fn the_guard_names_every_way_two_blocks_can_disagree() {
+        let catalog = loaded(
+            "contraddittori",
+            r#"[
+              {
+                "id": "dice-di-si-e-non-ha-la-riga", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "capabilities": { "ask_without_interaction": { "args": ["-p"] } }
+              },
+              {
+                "id": "ha-la-riga-e-tace", "family": "ai_cli",
+                "detect": { "command": "secondo" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["quota"] }
+              },
+              {
+                "id": "due-opzioni-diverse", "family": "ai_cli",
+                "detect": { "command": "terzo" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["quota"] },
+                "capabilities": { "ask_without_interaction": { "args": ["--print"] } }
+              },
+              {
+                "id": "un-frammento-vuoto", "family": "ai_cli",
+                "detect": { "command": "quarto" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["   "] },
+                "capabilities": { "ask_without_interaction": { "args": ["-p"] } }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+
+        let said: BTreeMap<String, String> = catalog
+            .contradictions()
+            .into_iter()
+            .map(|found| (found.tool, found.said))
+            .collect();
+
+        assert_eq!(said.len(), 4, "una per descrittore, e sono quattro: {said:?}");
+        assert!(
+            said["dice-di-si-e-non-ha-la-riga"].contains("nessun blocco `ask`"),
+            "{said:?}"
+        );
+        assert!(
+            said["ha-la-riga-e-tace"].contains("non dichiara di saperne ricevere"),
+            "{said:?}"
+        );
+        assert!(
+            said["due-opzioni-diverse"].contains("--print"),
+            "l'opzione che non combacia si nomina, o non si sa cosa correggere: {said:?}"
+        );
+        assert!(
+            said["un-frammento-vuoto"].contains("frammento vuoto"),
+            "{said:?}"
+        );
+    }
+
+    /// **UN MOTORE CHE NON DICE COME SI ESAURISCE NON PUÒ FARE DA RIPIEGO, E
+    /// UNO CHE LO DICE SÌ.** È il guasto 31 letto sul descrittore; dove la
+    /// posizione in una catena lo renda un difetto lo decide chi legge i flussi.
+    ///
+    /// Le due metà stanno in una prova sola apposta: con la sola prima, un
+    /// `cannot_be_a_fallback` che rispondesse sempre «no» sarebbe verde; con la
+    /// sola seconda, uno che rispondesse sempre «sì» lo sarebbe.
+    ///
+    /// **PERCHÉ IL MONDO QUI È SCRITTO APPOSTA, DAL 01/09/2026.** Fino a quel
+    /// giorno la metà negativa era `agy`, preso dai descrittori spediti perché
+    /// era il motore che nessuno aveva ancora misurato. È un appoggio che si
+    /// rompe da sé: appena `agy` è stato misurato e ha dichiarato le proprie
+    /// parole, questa prova è morta con `expect("agy non dichiara nessun
+    /// unusable_when")` — cioè **il lavoro di qualcun altro l'ha fatta cadere
+    /// facendo la cosa giusta**. Una prova sulla regola non deve dipendere da
+    /// quale strumento capiti a essere incompleto oggi: quel fatto cambia, e
+    /// cambia proprio quando qualcuno lavora bene. Il mondo malato lo si
+    /// costruisce, come per la guardia sulle contraddizioni qui sopra.
+    ///
+    /// Che i motori **spediti** stiano a posto è un'altra domanda, e ha il suo
+    /// posto: `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted`
+    /// la fa sui flussi veri, dove ha una conseguenza.
+    #[test]
+    fn only_an_engine_that_says_how_it_runs_out_can_be_a_fallback() {
+        let catalog = loaded(
+            "ripieghi",
+            r#"[
+              {
+                "id": "dice-come-finisce", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["weekly limit"] }
+              },
+              {
+                "id": "tace", "family": "ai_cli",
+                "detect": { "command": "secondo" },
+                "ask": { "args": ["-p"], "prompt": "stdin" }
+              },
+              {
+                "id": "dice-solo-frammenti-vuoti", "family": "ai_cli",
+                "detect": { "command": "terzo" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["   "] }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+        let of = |id: &str| {
+            catalog
+                .live()
+                .into_iter()
+                .find(|loaded| loaded.descriptor.id == id)
+                .unwrap_or_else(|| panic!("{id} sta nel catalogo scritto qui"))
+                .descriptor
+                .cannot_be_a_fallback()
+        };
+
+        assert!(
+            of("dice-come-finisce").is_none(),
+            "chi dichiara le proprie parole può stare in mezzo: il lavoro passa oltre"
+        );
+
+        let why = of("tace").expect("chi non dichiara niente non può fare da ripiego");
+        assert!(why.contains("unusable_when"), "{why}");
+        assert!(
+            why.contains("non partono mai"),
+            "il motivo dice cosa si perde, non solo cosa manca: {why}"
+        );
+
+        // **UN ELENCO DI FRAMMENTI VUOTI NON È UN ELENCO.** `mentions_any` li
+        // scarta uno per uno, quindi `says_it_cannot_work` resta `false` e il
+        // motore è un tappo esattamente come chi tace — ma a chi legge il
+        // descrittore sembra che qualcuno abbia guardato.
+        assert!(
+            of("dice-solo-frammenti-vuoti").is_some(),
+            "un `unusable_when` di soli frammenti vuoti si comporta come un elenco \
+             vuoto, e va detto: altrimenti la forma di una dichiarazione passa per \
+             una dichiarazione"
         );
     }
 

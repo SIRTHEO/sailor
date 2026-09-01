@@ -1,0 +1,20 @@
+# Che cosa di Sailor NON finisce nell'indice semantico.
+#
+# Il `.gitignore` copre gia' `target/` e `node_modules/`, e SocratiCode lo
+# rispetta. Qui stanno le cose che git tiene ma che nell'indice fanno solo
+# rumore: roba generata, e gli artefatti della finestra che nessuno cerca
+# leggendo una domanda in italiano.
+#
+# **QUELLO CHE NON C'E' QUI E' UNA SCELTA.** `docs/` resta indicizzato: sono i
+# quaderni dell'officina, ed e' roba che si vuole trovare. Se un giorno la
+# tabella dei guasti diventa dati nel deposito, questa riga andra' rivista —
+# perche' allora il markdown sara' una resa, e indicizzare una resa vuol dire
+# avere la stessa cosa due volte.
+
+target/
+desktop/node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+*.lock
+Cargo.lock
+desktop/package-lock.json
