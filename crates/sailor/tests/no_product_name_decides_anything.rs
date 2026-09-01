@@ -75,11 +75,20 @@ fn code_part(line: &str) -> &str {
     }
 }
 
-/// I sorgenti del tracciamento.
+/// I sorgenti del tracciamento, e quelli del condotto.
+///
+/// **IL CONDOTTO STA QUI PERCHÉ È LA STESSA REGOLA.** Chi accompagna una riga
+/// di comando e ci scrive dentro non deve sapere quale sia: né quale finestra
+/// l'ha disegnata, né quale motore ci gira. Il primo `if` su un nome fa di
+/// Sailor il prodotto di una CLI sola, e da lì non si torna indietro.
 fn tracking_sources() -> Vec<PathBuf> {
     let root = repository_root();
-    let mut found = vec![root.join("crates/sailor/src/session_cmd.rs")];
+    let mut found = vec![
+        root.join("crates/sailor/src/session_cmd.rs"),
+        root.join("crates/sailor/src/accompany_cmd.rs"),
+    ];
     collect_under(&root.join("crates/sessions"), &mut found);
+    collect_under(&root.join("crates/terminal"), &mut found);
     found.retain(|path| path.exists());
     found
 }
