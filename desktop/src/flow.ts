@@ -153,6 +153,8 @@ const ACTION_KIND: Record<string, StepKind> = {
   // `hand_to_human`.
   handed_to_agent: "human",
   history_ask: "deposit",
+  fault_list: "deposit",
+  fault_record: "deposit",
   store_read: "deposit",
   store_write: "deposit",
   store_list: "deposit",
