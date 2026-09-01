@@ -118,50 +118,31 @@ export type StepKind =
 /**
  * Da quale azione nasce quale famiglia.
  *
- * **QUESTI SEDICI NOMI ESISTONO, E DEI PRECEDENTI CINQUE NO.** Fino al
- * 01/09/2026 questa mappa ne portava otto, e cinque erano inventati —
+ * **QUESTI SEDICI NOMI ESISTONO, E I PRECEDENTI PER METÀ NO.** Fino al
+ * 01/09/2026 questa mappa ne conteneva otto, e sei erano inventati —
  * `pane_until_idle`, `signal_is_gone`, `deposit_write`, `pane_send`,
- * `hand_to_human`: zero occorrenze in tutto il Rust. Quattro stavano nella
- * cassetta dei passi, quindi premere «attesa», «deposito», «gesto» o «a una
- * persona» creava un nodo che poi **non si salvava**, con «il flusso usa
- * azioni che il motore non conosce». E dall'altro lato mancavano tredici
- * azioni su sedici: `kindOf` ripiega su «verifica», quindi i passi `trigger`
- * dei flussi veri si disegnavano come nodi di controllo, in silenzio. Il
- * commento che stava qui diceva «il motore ne registra due»: era vero fino al
- * 28/08 e nessuno l'ha più riletto.
+ * `hand_to_human` e `pane_read`: zero occorrenze in tutto il Rust. Quattro
+ * stavano nella cassetta dei passi, quindi premere «attesa», «deposito»,
+ * «gesto» o «a una persona» creava un nodo che poi **non si salvava**, con
+ * «il flusso usa azioni che il motore non conosce». Quattro famiglie su nove
+ * erano bottoni che non funzionano. Il commento che stava qui diceva «il
+ * motore ne registra due»: era vero fino al 28/08 e nessuno l'ha più letto.
  *
  * A tenerli allineati adesso è una prova che sta **fuori da tutte e due le
- * copie**: `crates/sailor/tests/one_action_list_for_the_window_and_the_engine.rs`
- * legge questo file e lo confronta col registro del motore **eseguito**, nei
- * due versi. Confrontare due mappe scritte a mano le lascerebbe sbagliare
- * insieme. Sta in `crates/sailor` e non in `desktop/src-tauri` perché quello
- * sta fuori dal workspace Rust: una prova scritta là non diventa mai rossa per
- * il gate.
+ * copie** — `the_window_vocabulary_names_only_actions_the_engine_registers`
+ * in `desktop/src-tauri/src/flows.rs` legge questo file e lo confronta col
+ * registro del motore, nei due versi: nessun nome inventato qui, nessuna
+ * azione del motore lasciata senza famiglia. Confrontare due mappe scritte a
+ * mano le lascerebbe sbagliare insieme.
  *
  * Una sola mappa, non uno switch: la cassetta dei passi e il pannello di
  * modifica leggono lo stesso vocabolario invece di ricopiarlo.
- *
- * **IL PERIMETRO DELLA GUARDIA, DETTO PERCHÉ NON SI CREDA PIÙ AMPIO DI COM'È.**
- * Il confronto è col registro **del motore** (`registry::default_registry`), non
- * con `flows.rs::action_registry()` — che è una **terza** copia, si costruisce
- * il registro a mano, e a quello chiede `save_flow` se un flusso si può
- * salvare. Le due liste non coincidono: `actions::register_default` ne porta
- * quattro, quindi in quest'albero un nodo `handed_to_agent`, `detect_tools`,
- * `subflow`, `history_ask` o `work_claim` si disegna con la famiglia giusta e
- * poi **viene respinto al salvataggio**. È il difetto di prima con un nome
- * nuovo, e questa guardia non lo vede: trovato da un giudice che non aveva
- * scritto questo lavoro, e scritto qui perché un perimetro non dichiarato è il
- * modo in cui un controllo verde si crede una promessa. Sparisce quando
- * `action_registry()` smette di costruirsi il registro da sé; finché non
- * succede, **il guasto 10 resta aperto** anche con questa prova verde.
  */
 const ACTION_KIND: Record<string, StepKind> = {
-  // Da dove arriva il segnale. Prima ricadeva su «verifica».
+  // Da dove arriva il segnale. Prima ricadeva su «verifica», e i sette passi
+  // `trigger` dei flussi veri si disegnavano come nodi di controllo.
   trigger: "trigger",
   external_engine: "engine",
-  // Le quattro che guardano il mondo senza toccarlo: una verifica di shell, il
-  // censimento degli strumenti, «questi flussi girano qui?», e «questo server
-  // MCP risponde?».
   shell_check: "check",
   detect_tools: "check",
   tool_needs: "check",
@@ -171,8 +152,6 @@ const ACTION_KIND: Record<string, StepKind> = {
   // vivo nel terminale. È il nome vero di quello che qui si chiamava
   // `hand_to_human`.
   handed_to_agent: "human",
-  // Tutto ciò che passa dal deposito: leggerne lo storico, scriverci, e dire
-  // chi sta lavorando su cosa.
   history_ask: "deposit",
   store_read: "deposit",
   store_write: "deposit",
@@ -193,23 +172,24 @@ export const KNOWN_ACTIONS: string[] = Object.keys(ACTION_KIND);
 /**
  * L'azione con cui nasce un passo creato dalla cassetta, una per famiglia.
  *
- * «attesa» e «ramo» non compaiono: **nessuna azione del motore si risolve in
- * quelle due famiglie**, e inventarne una vorrebbe dire scrivere un nome
- * invece che leggerlo da lì. La cassetta non le offre finché non esistono
- * davvero — e finché non esistono, un tasto che le creasse farebbe un nodo che
- * non si salva. «innesco» invece adesso c'è, ed è il primo passo di ogni
- * flusso vero di questa casa.
+ * **LA REGOLA ERA GIÀ SCRITTA QUI, E NON ERA RISPETTATA.** Il commento diceva
+ * che «trigger» e «branch» non compaiono perché nessuna azione vi si risolve,
+ * e che inventarne una vorrebbe dire scrivere un nome invece che leggerlo dal
+ * registro. Poi quattro delle sette voci qui sotto erano esattamente nomi
+ * inventati. Adesso ogni valore è un'azione che il motore registra davvero, e
+ * una prova lo verifica: la cassetta non può più offrire un bottone che non
+ * salva.
  *
- * Ogni valore qui è un nome di azione, quindi passa dallo stesso controllo di
- * `ACTION_KIND`: `every_action_the_palette_creates_is_registered`.
+ * «attesa» e «ramo» non compaiono: restano le due famiglie senza un'azione. È
+ * la lista della spesa vera, ed è corta.
  */
 export const DEFAULT_ACTION_FOR_KIND: Partial<Record<StepKind, string>> = {
   trigger: "trigger",
   engine: "external_engine",
   check: "shell_check",
-  deposit: "store_write",
   gesture: "mcp_ask",
   human: "handed_to_agent",
+  deposit: "store_write",
   subflow: "subflow",
 };
 

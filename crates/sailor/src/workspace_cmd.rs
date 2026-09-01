@@ -44,9 +44,12 @@ fn dispatch(args: &[String]) -> Result<String, String> {
                 .map_err(|error| format!("non so dove mi trovo: {error}"))?;
             init(&here)
         }
-        _ => Err("uso: sailor workspace init".to_owned()),
+        _ => Err(format!("uso: {}", USAGE[0])),
     }
 }
+
+/// La forma di `sailor workspace`. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &["sailor workspace init"];
 
 /// Scrive il marcatore nella cartella data.
 ///

@@ -64,12 +64,23 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// Le forme di `sailor release`, una per riga. Vedi `flow_cmd::USAGE`.
+///
+/// **QUI NON SI RICOPIANO I NOMI DEI BERSAGLI.** Nasceva
+/// `<notte|hooks|sailor>`: due dei tre erano binari cancellati dal repo il
+/// 28/08/2026, e questa riga — scritta il 01/09 su un altro ramo, mentre qui i
+/// fossili venivano tolti — li ha riportati sotto gli occhi di chi digita
+/// `sailor --help`. È il guasto 10 in miniatura: l'elenco vero è
+/// `release::TARGETS`, e chi sbaglia nome se lo sente dire da `target_names()`
+/// con la tabella di adesso, non con quella di allora.
+pub const USAGE: &[&str] =
+    &["sailor release <bersaglio> [--dry-run] [--skip-tests] [--wait-secs N]"];
+
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
-    let target_name = args.next().ok_or_else(|| {
-        "manca il bersaglio (uso: sailor release <bersaglio> [--dry-run] [--skip-tests] [--wait-secs N])"
-            .to_string()
-    })?;
+    let target_name = args
+        .next()
+        .ok_or_else(|| format!("manca il bersaglio (uso: {})", USAGE[0]))?;
     if target_name.starts_with('-') {
         return Err(format!("manca il bersaglio prima di '{target_name}'"));
     }

@@ -10,9 +10,18 @@ import type { FlowEntry, StepRun } from "./flow";
 // descrivendo la versione di prima del 19/08/2026, che apriva 47 sessioni in
 // più in due giorni.
 //
-// Oggi il motore registra due azioni sole (`external_engine`, `shell_check`):
-// le altre nominate qui sono la lista della spesa, e finché non esistono
-// questo flusso non parte.
+// **QUESTO FLUSSO NON SI SALVA, ED È DICHIARATO.** Il motore registra sedici
+// azioni; di quelle nominate qui ne esistono due, `shell_check` e — per la
+// staffetta vera — nessun'altra. `pane_until_idle`, `pane_read`,
+// `deposit_write`, `pane_send` e `signal_is_gone` sono la lista della spesa:
+// descrivono la staffetta come dovrà essere, non come il motore la sa fare
+// oggi. Premere «salva» su questo flusso lo rifiuta, col messaggio giusto.
+//
+// Il commento che stava qui diceva «il motore registra due azioni sole»: era
+// vero fino al 28/08/2026 e nessuno l'ha più letto, mentre la stessa frase
+// copiata in `flow.ts` è diventata sei nomi inventati nella cassetta dei
+// passi (guasto 41). Qui la frase resta perché qui è ancora vera nella
+// sostanza — questi nomi non esistono — ma il numero adesso è misurato.
 
 const anySchema = { type: "any" } as const;
 

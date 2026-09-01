@@ -10,9 +10,14 @@
 //! Quel che resta è ciò che appartiene davvero al guscio: prendere il JSON che
 //! arriva dalla tela, farlo passare per la validazione del motore
 //! (`flow::FlowFile`, e con lui `flow::Graph::validate`) e rifiutare un flusso
-//! che nomina azioni che il motore non conosce — `actions::register_default` /
-//! `register_store`, la stessa lista che usa `sailor flow check`, mai una copia
-//! riscritta qui.
+//! che nomina azioni che il motore non conosce — `registry::default_registry`,
+//! la stessa lista che usa `sailor flow check`, mai una copia riscritta qui.
+//!
+//! **QUESTA FRASE ERA GIÀ SCRITTA, E FINO AL 01/09/2026 ERA FALSA.** Diceva
+//! «`actions::register_default` / `register_store`», che sono due righe delle
+//! sedici del registro: il guscio ne era la quinta copia. Il modo in cui una
+//! regola smette di essere un'affermazione e diventa una difesa è che una
+//! prova la interroghi — qui `the_window_knows_every_action_the_engine_can_run`.
 
 use flow::{ActionRegistry, FlowFile};
 use std::path::Path;
@@ -67,19 +72,36 @@ fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
 /// registro solo se esiste già — una verifica statica non deve crearne uno,
 /// per la stessa ragione di `sailor flow check`.
 fn action_registry() -> ActionRegistry {
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    // Senza questa riga un flusso che comincia con un nodo di innesco non si
-    // salva: il pannello lo rifiuterebbe come «azione sconosciuta» pur essendo
-    // un flusso che il motore esegue.
-    trigger::register_default(&mut registry);
     let ledger_dir = default_ledger_dir();
-    if ledger_present(&ledger_dir) {
-        if let Ok(ledger) = ledger::Ledger::open(&ledger_dir) {
-            actions::store::register_store(&mut registry, ledger);
-        }
-    }
-    registry
+    let ledger = ledger_present(&ledger_dir)
+        .then(|| ledger::Ledger::open(&ledger_dir).ok())
+        .flatten();
+    action_registry_with(ledger)
+}
+
+/// Il registro **senza deposito**: la forma che una prova può costruire senza
+/// leggere la macchina di chi la esegue (guasto 5).
+#[cfg(test)]
+fn action_registry_without_deposit() -> ActionRegistry {
+    action_registry_with(None)
+}
+
+/// **LA LISTA È UNA SOLA, E FINO AL 01/09/2026 QUESTA ERA LA QUINTA COPIA.**
+///
+/// Qui stavano tre righe scelte a mano — `register_default`, `trigger`, e lo
+/// `store` se il deposito esiste — mentre `crates/registry` ne registra
+/// sedici. Il risultato è che la finestra **rifiutava al salvataggio** cinque
+/// azioni che dal terminale girano: `detect_tools`, `tool_needs`,
+/// `history_ask`, `subflow` e — la più grave — `handed_to_agent`, cioè il
+/// passo che consegna il lavoro a chi è già vivo nel terminale. Una funzione
+/// centrale del prodotto non si poteva comporre dalla finestra.
+///
+/// È il guasto 10 alla quinta occorrenza, e stavolta il commento in testa al
+/// file dichiarava già la regola giusta — «la stessa lista che usa `sailor
+/// flow check`, mai una copia riscritta qui» — sopra il codice che la
+/// violava. Una regola scritta e non verificata non è una difesa.
+fn action_registry_with(ledger: Option<ledger::Ledger>) -> ActionRegistry {
+    registry::default_registry(ledger, None)
 }
 
 fn reject_unknown_actions(flow: &FlowFile) -> Result<(), String> {
@@ -105,6 +127,7 @@ fn reject_unknown_actions(flow: &FlowFile) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::collections::BTreeSet;
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -242,6 +265,119 @@ mod tests {
         with_engine["graph"]["steps"][0]["action"] = json!("external_engine");
         with_engine["inputs"]["solo"] = json!({"bin": "true", "timeout_secs": 5});
         assert!(save_flow_in(&dir, with_engine).is_ok());
+    }
+
+    /// **LA FINESTRA DEVE SAPER SALVARE TUTTO CIÒ CHE IL MOTORE SA ESEGUIRE.**
+    ///
+    /// Il commento in testa a questo file dichiara «la stessa lista che usa
+    /// `sailor flow check`, mai una copia riscritta qui». `action_registry`
+    /// era invece la copia: `register_default` più due righe scelte a mano,
+    /// mentre il motore passa da `registry::default_registry`. È il guasto 10
+    /// per la quinta volta, e stavolta rifiutava al salvataggio dei flussi che
+    /// dal terminale partono — il contrario del difetto gemello, che offriva
+    /// nella tavolozza azioni che il motore non conosce.
+    ///
+    /// Il confronto è **senza deposito da tutte e due le parti**, o la prova
+    /// leggerebbe lo stato della macchina di chi la esegue (guasto 5).
+    #[test]
+    fn the_window_knows_every_action_the_engine_can_run() {
+        let engine = registry::default_registry(None, None);
+        let window = action_registry_without_deposit();
+        let known: BTreeSet<&str> = window.names().into_iter().collect();
+        let missing: Vec<&str> = engine
+            .names()
+            .into_iter()
+            .filter(|name| !known.contains(name))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "il motore sa eseguire {} azioni che la finestra rifiuta al salvataggio: {}",
+            missing.len(),
+            missing.join(", ")
+        );
+    }
+
+    /// **LA TAVOLOZZA NON DEVE OFFRIRE NIENTE CHE IL MOTORE RIFIUTI.**
+    ///
+    /// Il difetto gemello del precedente, e quello che si vede a mano: fino al
+    /// 01/09/2026 `ACTION_KIND` nominava sei azioni che non esistono in nessun
+    /// crate — `pane_until_idle`, `signal_is_gone`, `deposit_write`,
+    /// `pane_send`, `hand_to_human`, `pane_read` — e quattro erano nella
+    /// cassetta dei passi: premere «attesa», «deposito», «gesto» o «a una
+    /// persona» creava un nodo che poi non si salvava.
+    ///
+    /// L'ancora sta **fuori da tutte e due le copie**: il vocabolario della
+    /// finestra si legge dal suo file e si confronta col registro del motore.
+    /// Confrontare due mappe scritte a mano le lascerebbe sbagliare insieme.
+    #[test]
+    fn the_window_vocabulary_names_only_actions_the_engine_registers() {
+        let source = fs::read_to_string(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/flow.ts"),
+        )
+        .expect("il vocabolario della finestra si legge da desktop/src/flow.ts");
+        let named = action_names_in(&source, "const ACTION_KIND");
+        assert!(
+            named.len() > 4,
+            "il vocabolario non è stato letto: {} nomi trovati",
+            named.len()
+        );
+        // Col deposito **aperto**, perché sei azioni si registrano solo allora
+        // e la finestra ha ragione a saperle disegnare comunque.
+        let dir = scratch_dir("vocabolario");
+        let ledger = ledger::Ledger::open(&dir).expect("un deposito di prova");
+        let engine = registry::default_registry(Some(ledger), None);
+        let known: BTreeSet<&str> = engine.names().into_iter().collect();
+        let invented: Vec<&String> = named
+            .iter()
+            .filter(|name| !known.contains(name.as_str()))
+            .collect();
+        assert!(
+            invented.is_empty(),
+            "la finestra nomina {} azioni che il motore non registra: {:?}",
+            invented.len(),
+            invented
+        );
+
+        // E l'altro verso, che è come si nascondeva il difetto peggiore:
+        // `kindOf` ripiega su «verifica» per un nome che non conosce, quindi
+        // i sette passi `trigger` dei flussi veri si disegnavano come nodi di
+        // controllo, in silenzio e senza che niente diventasse rosso.
+        let undrawn: Vec<&str> = engine
+            .names()
+            .into_iter()
+            .filter(|name| !named.iter().any(|k| k == name))
+            .collect();
+        assert!(
+            undrawn.is_empty(),
+            "il motore registra {} azioni che la finestra non sa disegnare, e che \
+             ricadrebbero in silenzio su «verifica»: {}",
+            undrawn.len(),
+            undrawn.join(", ")
+        );
+    }
+
+    /// I nomi di azione dentro un blocco `const NOME: … = { chiave: valore }`
+    /// del sorgente della finestra. Sta qui e non in un lettore generico
+    /// perché è una lettura sola e deve restare leggibile: se un giorno il
+    /// blocco cambia forma, la prova sopra fallisce sul conto minimo invece di
+    /// passare su un elenco vuoto.
+    fn action_names_in(source: &str, header: &str) -> Vec<String> {
+        let Some(start) = source.find(header) else {
+            return Vec::new();
+        };
+        let body = &source[start..];
+        let Some(open) = body.find('{') else {
+            return Vec::new();
+        };
+        let Some(close) = body.find("};") else {
+            return Vec::new();
+        };
+        body[open + 1..close]
+            .lines()
+            .filter_map(|line| line.split(':').next())
+            .map(|name| name.trim().trim_matches('"').to_string())
+            .filter(|name| !name.is_empty() && !name.starts_with("//"))
+            .collect()
     }
 
     /// La cancellazione passa dallo stesso posto: se il guscio smettesse di
