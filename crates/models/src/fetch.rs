@@ -1,19 +1,18 @@
-//! Scarica il catalogo vero, via `curl` come processo — la stessa strada di
-//! `notte` verso OpenRouter (`crates/notte/src/main.rs:563`). Nessuna
-//! autenticazione richiesta: niente chiave qui dentro.
+//! Downloads the real catalog by running `curl` as a process — the road `notte`
+//! took to OpenRouter, from `crates/notte/src/main.rs:563`, a crate no longer in
+//! the repo. No authentication needed: no key in here.
 //!
-//! Nessuna prova in questo file: la rete vera in una prova è rossa quando
-//! cade la linea, non quando sbaglia il codice — come per
-//! `notte::fetch_openrouter_body`.
+//! No tests here, the reason `notte::fetch_openrouter_body` had none: a test on
+//! the real network is red when the line drops, not when the code is wrong.
 
 use std::process::Command;
 
 const CATALOG_URL: &str = "https://openrouter.ai/api/v1/models";
 
-/// Scarica il corpo JSON del catalogo. `MODELS_CATALOG_FETCH_OVERRIDE`, se
-/// presente, sostituisce `curl` con un comando qualsiasi: serve a chi vuole
-/// dare in pasto un catalogo fisso senza toccare la rete, come
-/// `NOTTE_OPENROUTER_FETCH` fa già per `notte`.
+/// Downloads the catalog's JSON body. `MODELS_CATALOG_FETCH_OVERRIDE`, when
+/// set, replaces `curl` with any command at all: it lets someone feed in a
+/// fixed catalog without touching the network, the way `NOTTE_OPENROUTER_FETCH`
+/// already does for `notte`.
 pub fn fetch_catalog_body() -> String {
     if let Ok(cmd) = std::env::var("MODELS_CATALOG_FETCH_OVERRIDE") {
         return Command::new(cmd)

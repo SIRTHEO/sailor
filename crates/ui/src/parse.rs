@@ -1,10 +1,9 @@
-//! Interpreta l'uscita di `Ledger::projection_dump`: ogni riga è un array di
-//! colonne, nell'ordine fissato da `ledger::dump_table`. Pura — prende un
-//! `serde_json::Value` già in memoria, mai un file — perché è l'unico modo
-//! pubblico per leggere `runs` e `model_calls` senza conoscerne già i
-//! `run_id`. I token nel deposito sono colonne di tipo testo (per non
-//! perdere precisione oltre 2^53), quindi qui si accetta sia stringa sia
-//! numero.
+//! Reads the output of `Ledger::projection_dump`: every row is an array of
+//! columns in the order `ledger::dump_table` fixes. Pure — it takes a
+//! `serde_json::Value` already in memory, never a file — because that is the
+//! only public way to read `runs` and `model_calls` without already knowing
+//! their `run_id`. Token columns are stored as text so precision survives past
+//! 2^53, so both a string and a number are accepted here.
 
 use ledger::{EngineIdentity, ModelCallRecord, RunRecord};
 use serde_json::Value;
@@ -52,11 +51,11 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         cli: str_at(cols, 4)?,
         requested_model: str_at(cols, 5)?,
         actual_model: str_at(cols, 6)?,
-        // Da qui in giù una colonna NULL è un «non lo so», non un valore
-        // assente da un record malformato: si legge come `None` invece di far
-        // cadere l'intera riga con `?`. La differenza conta — una chiamata non
-        // misurata deve comparire nell'elenco, altrimenti sparisce dai conti
-        // proprio come se fosse costata zero.
+        // From here down a NULL column means «unknown», never a value missing
+        // from a malformed record: it reads as `None` instead of dropping the
+        // whole row with `?`. The difference matters — an unmeasured call must
+        // appear in the list, or it vanishes from the counts exactly as though
+        // it had cost zero.
         input_tokens: u64_at(cols, 7),
         output_tokens: u64_at(cols, 8),
         cached_tokens: u64_at(cols, 9),
@@ -65,9 +64,9 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         input_price_micros_per_million: opt_i64_at(cols, 12),
         output_price_micros_per_million: opt_i64_at(cols, 13),
         cached_price_micros_per_million: opt_i64_at(cols, 14),
-        // Versione 8: con quale identità il processo è partito. Un testo che non
-        // è il nostro JSON — cioè una riga scritta prima — non fa cadere la
-        // riga: diventa `Unrecorded`, che è ciò che quella riga è.
+        // Version 8: which identity the process started under. Text that is not
+        // our JSON — that is, a row written earlier — never drops the row: it
+        // becomes `Unrecorded`, which is what that row is.
         engine_identity: opt_str_at(cols, 15)
             .map(|text| EngineIdentity::from_column(&text))
             .unwrap_or_default(),
@@ -75,22 +74,22 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         error_type: opt_str_at(cols, 17),
         started_at: i64_at(cols, 18)?,
         ended_at: opt_i64_at(cols, 19),
-        // Le colonne nate dopo stanno in coda, nell'ordine in cui sono nate: un
-        // deposito più vecchio non le ha, e la riga si legge lo stesso.
-        // Versione 4:
+        // Columns born later sit at the tail, in birth order: an older ledger
+        // lacks them, and the row still reads.
+        // Version 4:
         total_tokens: u64_at(cols, 20),
         declared_cost_micros: opt_i64_at(cols, 21),
-        // Versione 5, la cache scritta — la voce che mancava e che su una
-        // chiamata misurata valeva il 96% della spesa:
+        // Version 5, the written cache — the entry that was missing, and that
+        // on one measured call was 96% of the spend:
         cache_write_tokens: u64_at(cols, 22),
         cache_write_long_tokens: u64_at(cols, 23),
         cache_write_price_micros_per_million: opt_i64_at(cols, 24),
         cache_write_long_price_micros_per_million: opt_i64_at(cols, 25),
-        // Versione 6, i turni: la quantita' che spiega perche' una catena di
-        // passi costa piu' di una sessione sola.
+        // Version 6, the turns: the quantity that explains why a chain of steps
+        // costs more than a single session.
         turns: u64_at(cols, 26),
-        // Versione 7, la sessione: il dato che permette a un passo di
-        // riprendere invece di riscoprire.
+        // Version 7, the session: what lets a step resume instead of
+        // rediscovering.
         session_id: opt_str_at(cols, 27),
     })
 }
@@ -111,8 +110,8 @@ fn opt_i64_at(cols: &[Value], index: usize) -> Option<i64> {
     cols.get(index).and_then(Value::as_i64)
 }
 
-/// Un conteggio, se c'è. Un NULL, una colonna che non esiste, o un testo che
-/// non è un numero danno `None` — mai `0`.
+/// A count, when there is one. A NULL, a column that does not exist, or text
+/// that is not a number all give `None` — never `0`.
 fn u64_at(cols: &[Value], index: usize) -> Option<u64> {
     let value = cols.get(index)?;
     value
@@ -135,11 +134,11 @@ mod tests {
     fn dump_with_one_run_and_one_call() -> Value {
         json!({
             "runs": [[
-                "run-1", "sweep", "marker-sweep", Value::Null, "prova", "running",
+                "run-1", "sweep", "marker-sweep", Value::Null, "test", "running",
                 1200, Value::Null, 1000, Value::Null
             ]],
             "model_calls": [[
-                "call-1", "run-1", "scan_markers", "classifica", "claude",
+                "call-1", "run-1", "scan_markers", "classify", "claude",
                 "sonnet", "claude-sonnet-5", "100", "50", "10", 500, "USD",
                 3_000_000, 15_000_000, 300_000,
                 "{\"kind\":\"inherited_from_the_terminal\",\"cli_id\":\"claude\"}",
@@ -150,21 +149,17 @@ mod tests {
         })
     }
 
-    /// **L'ANCORA FUORI DA CHI LEGGE PER POSIZIONE.**
-    ///
-    /// Ogni indice qui sotto è un numero scritto a mano in
-    /// `parse_model_call_row`, e un numero scritto a mano si sposta quando una
-    /// colonna nasce o muore. Finché a leggere il dump c'erano **due** copie di
-    /// questa funzione — una qui e una dentro `actions` — una colonna spostata
-    /// poteva restare verde in tutte e due: sbagliavano insieme e si
-    /// confermavano a vicenda. La copia dentro `actions` non c'è più, e questa
-    /// prova misura ciò che resta contro l'elenco che il deposito dichiara,
-    /// `ledger::MODEL_CALL_DUMP_COLUMNS`, che non è né l'una né l'altra.
-    ///
-    /// *Mutante eseguito*: vedi la consegna — spostare un indice qui rende rossa
-    /// questa prova prima che un prezzo compaia al posto di un token.
+    /// **THE ANCHOR OUTSIDE EVERYTHING THAT READS BY POSITION.** Every index
+    /// below is a hand-written number in `parse_model_call_row`, and it shifts
+    /// whenever a column is born or dies. While **two** copies read the dump —
+    /// one here, one inside `actions` — a moved column stayed green in both:
+    /// wrong together, confirming each other. That copy is gone; this measures
+    /// what is left against `ledger::MODEL_CALL_DUMP_COLUMNS`, neither of them.
     #[test]
     fn every_position_this_file_reads_is_the_column_the_ledger_dumps() {
+        // *Mutant run*: moving one index here turns this test red before a
+        // price can appear in place of a token. The anchor was watched firing,
+        // not merely believed to fire.
         let dumped: Vec<&str> = ledger::MODEL_CALL_DUMP_COLUMNS.split(',').collect();
         for (index, name) in [
             (0, "call_id"),
@@ -199,13 +194,13 @@ mod tests {
             assert_eq!(
                 dumped.get(index).copied(),
                 Some(name),
-                "la posizione {index} non è più «{name}»: gli indici di questo file leggono un'altra colonna"
+                "position {index} is no longer «{name}»: this file's indices read another column"
             );
         }
         assert_eq!(
             dumped.len(),
             28,
-            "il deposito versa una colonna che questo file non legge"
+            "the ledger dumps a column this file never reads"
         );
     }
 
@@ -236,7 +231,7 @@ mod tests {
         assert_eq!(call.error_type, None);
     }
 
-    /// La colonna dell'identità torna nella forma che porta, non in un testo.
+    /// The identity column comes back as the shape it carries, never as text.
     #[test]
     fn the_identity_column_comes_back_as_the_shape_it_carries() {
         let calls = parse_model_calls(&dump_with_one_run_and_one_call());
@@ -248,11 +243,11 @@ mod tests {
         );
     }
 
-    /// **UNA RIGA SCRITTA PRIMA NON DIVENTA UN PROFILO DICHIARATO.** In quella
-    /// colonna c'era `<cli>/<profilo>`, e quel testo nominava il profilo attivo
-    /// anche quando il passo l'aveva scavalcato: promuoverlo adesso a
-    /// `ProfileInForce` darebbe a una bugia vecchia la faccia di una misura
-    /// nuova. Il testo si conserva, l'affermazione no.
+    /// **AN OLDER ROW NEVER BECOMES A DECLARED PROFILE.** That column held
+    /// `<cli>/<profile>`, and the text named the active profile even where the
+    /// step had overridden it: promoting it to `ProfileInForce` now would give
+    /// an old lie the face of a fresh measurement. The text is kept, the claim
+    /// is not.
     #[test]
     fn an_old_identity_column_is_kept_as_text_and_not_promoted() {
         let mut dump = dump_with_one_run_and_one_call();
@@ -274,9 +269,9 @@ mod tests {
         assert_eq!(calls[0].input_tokens, Some(100));
     }
 
-    /// IL BRACCIO CHE CONTA per il criterio 4 del mandato: una colonna NULL
-    /// torna `None`, mai `Some(0)`. Uno zero letto qui si sommerebbe nel
-    /// cruscotto e nessuno potrebbe più distinguerlo da una chiamata gratuita.
+    /// A NULL column comes back `None`, never `Some(0)`. A zero read here would
+    /// be summed into the dashboard, and nobody could tell it apart from a call
+    /// that really cost nothing.
     #[test]
     fn a_null_token_column_is_unknown_not_zero() {
         let mut dump = dump_with_one_run_and_one_call();
@@ -284,15 +279,15 @@ mod tests {
             dump["model_calls"][0][column] = Value::Null;
         }
         let calls = parse_model_calls(&dump);
-        assert_eq!(calls.len(), 1, "una riga non misurata resta nell'elenco");
+        assert_eq!(calls.len(), 1, "an unmeasured row stays in the list");
         assert_eq!(calls[0].input_tokens, None);
         assert_eq!(calls[0].output_tokens, None);
         assert_eq!(calls[0].cached_tokens, None);
         assert_eq!(calls[0].cost_micros, None);
     }
 
-    /// Le due colonne nate con la versione 4 della proiezione si leggono, e un
-    /// dump più corto (un deposito che non le ha ancora) non fa cadere la riga.
+    /// The two columns born with projection version 4 are read, and a shorter
+    /// dump (a ledger that lacks them yet) never drops the row.
     #[test]
     fn the_two_newest_columns_are_read_and_their_absence_is_not_fatal() {
         let mut dump = dump_with_one_run_and_one_call();
@@ -305,7 +300,7 @@ mod tests {
         let mut older = dump_with_one_run_and_one_call();
         older["model_calls"][0].as_array_mut().unwrap().truncate(20);
         let calls = parse_model_calls(&older);
-        assert_eq!(calls.len(), 1, "un dump più vecchio si legge lo stesso");
+        assert_eq!(calls.len(), 1, "an older dump still reads");
         assert_eq!(calls[0].total_tokens, None);
         assert_eq!(calls[0].declared_cost_micros, None);
     }

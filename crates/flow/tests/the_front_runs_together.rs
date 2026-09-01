@@ -1,15 +1,9 @@
-//! Il fronte parte insieme, e ogni passo sa di essere se stesso.
-//!
-//! **PERCHÉ QUESTE PROVE NON CRONOMETRANO.** La misura che ha smascherato il
-//! guasto 7 era un cronometro — due passi da sei secondi ne impiegavano dodici —
-//! ma un cronometro dentro una batteria è una prova che diventa rossa quando la
-//! macchina è carica e verde quando qualcuno ha spento tutto. Qui si osserva
-//! invece il fatto che conta e che il tempo misurava solo di riflesso: **i due
-//! passi sono vivi nello stesso istante**. Ogni passo annuncia di essere entrato
-//! e aspetta che sia entrato anche l'altro; se l'esecutore li mette in fila, il
-//! primo aspetta uno che non arriverà mai e la scadenza lo dice.
-//!
-//! Nel caso buono queste prove durano millisecondi; nel caso rotto, la scadenza.
+//! The front starts together, and every step knows it is itself. These tests do
+//! not time anything: the measure that unmasked fault 7 was a stopwatch — two
+//! six-second steps taking twelve — but a stopwatch inside a suite goes red when
+//! the machine is busy and green when someone turned everything off. They watch
+//! the fact the clock measured only by reflection: the two steps alive in the
+//! same instant. Each waits for the other; queued up, the deadline says so.
 
 use flow::{
     Action, ActionError, ActionOutcome, Clock, Decision, Executor, Graph, InMemoryRecordStore,
@@ -20,27 +14,27 @@ use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Quanto si aspetta l'altro prima di dichiarare che non arriverà. Generoso: il
-/// caso buono non ci arriva mai, e il caso rotto può permettersi di essere lento
-/// una volta.
+/// How long to wait for the other before declaring it will not come. Generous:
+/// the good case never reaches it, and the broken case can afford to be slow
+/// once.
 const DEADLINE: Duration = Duration::from_secs(5);
 
-/// Un'azione che entra, dice di essere entrata, e non esce finché non sono
-/// entrati tutti quelli che aspetta.
+/// An action that enters, says it has entered, and does not leave until
+/// everyone it waits for has entered too.
 struct MeetsTheOthers {
     arrived: Arc<AtomicUsize>,
     expected: usize,
-    /// Chi ha visto come proprio identificativo, nell'ordine in cui è arrivato.
+    /// The id each saw as its own, in the order they arrived.
     seen_as: Arc<Mutex<Vec<String>>>,
 }
 
 impl Action for MeetsTheOthers {
     fn execute(&self, _input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        // Di chi è questo passo, secondo lo stato condiviso che ha ricevuto.
+        // Whose step this is, per the shared state it received.
         let mine = shared
             .get(CURRENT_STEP)
             .and_then(Value::as_str)
-            .unwrap_or("(nessuno)")
+            .unwrap_or("(nobody)")
             .to_owned();
         self.seen_as
             .lock()
@@ -52,10 +46,10 @@ impl Action for MeetsTheOthers {
         while self.arrived.load(Ordering::SeqCst) < self.expected {
             if Instant::now() >= until {
                 return Err(ActionError::new(
-                    "da_solo",
+                    "on_its_own",
                     format!(
-                        "«{mine}» ha aspettato {} secondi gli altri {} passi del fronte e non è \
-                         arrivato nessuno: l'esecutore li sta mettendo in fila",
+                        "\"{mine}\" waited {} seconds for the other {} steps of the front and \
+                         nobody came: the executor is queuing them up",
                         DEADLINE.as_secs(),
                         self.expected - 1
                     ),
@@ -63,7 +57,7 @@ impl Action for MeetsTheOthers {
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        Ok(ActionOutcome::Went(json!({ "io": mine })))
+        Ok(ActionOutcome::Went(json!({ "me": mine })))
     }
 
     fn species(&self) -> flow::StepSpecies {
@@ -83,7 +77,7 @@ fn step(id: &str) -> Step {
     Step {
         id: id.to_owned(),
         deps: vec![],
-        action: "incontra".to_owned(),
+        action: "meets".to_owned(),
         max_attempts: 1,
         when: None,
         with: None,
@@ -92,14 +86,14 @@ fn step(id: &str) -> Step {
     }
 }
 
-/// Fa girare `count` passi indipendenti, ognuno dei quali aspetta `expected`
-/// compagni. Torna gli identificativi che i passi hanno visto come propri.
+/// Runs `count` independent steps, each waiting for `expected` companions.
+/// Returns the ids the steps saw as their own.
 fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<Outcome>) {
     let arrived = Arc::new(AtomicUsize::new(0));
     let seen_as = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
     actions.register(
-        "incontra",
+        "meets",
         MeetsTheOthers {
             arrived: Arc::clone(&arrived),
             expected,
@@ -107,11 +101,11 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
         },
     );
 
-    let steps: Vec<Step> = (1..=count).map(|n| step(&format!("passo{n}"))).collect();
-    let graph = Graph::new(steps).expect("grafo valido");
+    let steps: Vec<Step> = (1..=count).map(|n| step(&format!("step{n}"))).collect();
+    let graph = Graph::new(steps).expect("valid graph");
     let store = InMemoryRecordStore::default();
     let request = flow::ExecutionRequest {
-        run_id: "corsa".to_owned(),
+        run_id: "run".to_owned(),
         root_inputs: Default::default(),
         gates: vec![],
         shared: SharedState::new(),
@@ -120,7 +114,7 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
 
     let execution = InProcessExecutor
         .execute(&graph, request, &store, &actions, &Tick(AtomicI64::new(0)))
-        .expect("l'esecuzione arriva in fondo");
+        .expect("the execution reaches the end");
 
     let outcomes = store
         .all()
@@ -131,53 +125,50 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
     (execution.decisions, names, outcomes)
 }
 
-/// **LA PROVA DEL GUASTO 7.** Due passi senza dipendenze devono essere vivi
-/// nello stesso momento. Rimettendo il `for` sequenziale al posto dello
-/// `scope`, questa diventa rossa con scritto «ha aspettato 5 secondi gli altri
-/// passi del fronte e non è arrivato nessuno».
+/// Two steps with no dependencies must be alive at the same moment. Put the
+/// sequential `for` back in place of the `scope` and this goes red saying
+/// "waited 5 seconds for the other steps of the front and nobody came".
 #[test]
 fn two_independent_steps_are_alive_at_the_same_time() {
     let (_, _, outcomes) = run_front(2, 2);
     assert_eq!(outcomes.len(), 2);
     assert!(
         outcomes.iter().all(|outcome| *outcome == Outcome::Went),
-        "nessuno dei due deve essere rimasto ad aspettare l'altro: {outcomes:?}"
+        "neither should have been left waiting for the other: {outcomes:?}"
     );
 }
 
-/// **OGNI PASSO SI VEDE COL PROPRIO NOME, E QUESTO È IL PEZZO CHE SI POTEVA
-/// SBAGLIARE IN SILENZIO.** L'identificativo del passo corrente viaggia in una
-/// chiave sola dello stato condiviso, e le azioni la leggono per attribuire il
-/// testo che producono e **la spesa che fanno**. Con due passi vivi e una mappa
-/// sola, entrambi leggerebbero lo stesso nome: i costi di uno finirebbero
-/// addosso all'altro, e niente diventerebbe rosso. Ogni filo riceve la propria
-/// copia — questa prova è ciò che lo tiene vero.
+/// Every step sees its own name, and this is the piece that could go wrong in
+/// silence. The current step's id travels in one key of the shared state, and
+/// actions read it to attribute the text they produce and *the money they
+/// spend*. With two live steps and one map, both would read the same name: one
+/// step's costs would land on the other, and nothing would turn red. Each
+/// thread gets its own copy — this test is what keeps that true.
 #[test]
 fn each_step_sees_its_own_identity_not_the_neighbour_one() {
     let (_, mut seen, _) = run_front(3, 3);
     seen.sort();
     assert_eq!(
         seen,
-        vec!["passo1".to_owned(), "passo2".to_owned(), "passo3".to_owned()],
-        "tre passi vivi insieme devono vedersi con tre nomi diversi, ciascuno il proprio"
+        vec!["step1".to_owned(), "step2".to_owned(), "step3".to_owned()],
+        "three steps alive together must see three different names, each its own"
     );
 }
 
-/// Il tetto è una decisione dichiarata, e si vede: con cinque passi che
-/// aspettano di essere in cinque, il quinto non entra finché non esce qualcuno
-/// del gruppo prima — e i primi quattro aspettano invano. La corsa arriva in
-/// fondo lo stesso, coi passi rossi: un tetto che blocca deve dirlo, non
-/// appendere il programma.
+/// The ceiling is a declared decision and it shows: with five steps waiting to
+/// be five, the fifth cannot enter until someone from the earlier group leaves,
+/// and the first four wait in vain. The run still reaches the end with those
+/// steps red — a ceiling that blocks must say so, not hang the program.
 #[test]
 fn the_ceiling_holds_and_the_run_still_ends() {
     let (decisions, _, outcomes) = run_front(5, 5);
-    assert_eq!(outcomes.len(), 5, "tutti e cinque i passi sono stati aperti");
+    assert_eq!(outcomes.len(), 5, "all five steps were opened");
     assert!(
         outcomes.iter().any(|outcome| *outcome == Outcome::Broke),
-        "chi ha aspettato oltre il tetto lo dice, invece di restare appeso"
+        "whoever waited past the ceiling says so instead of hanging"
     );
     assert!(
         !decisions.is_empty(),
-        "e la corsa produce comunque le sue decisioni"
+        "and the run produces its decisions all the same"
     );
 }

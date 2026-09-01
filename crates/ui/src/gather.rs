@@ -1,7 +1,7 @@
-//! Il ponte fra il deposito su disco e i conti puri. `Ledger::open` crea la
-//! cartella e i due file `.db` se mancano: aprirla solo per guardarla
-//! lascerebbe una traccia che nessun flusso ha mai prodotto. Per questo si
-//! controlla prima che il deposito esista già, e solo allora si apre.
+//! The bridge between the ledger on disk and the pure counts. `Ledger::open`
+//! creates the directory and the two `.db` files when they are missing, so
+//! opening it merely to look would leave a trace that no flow ever produced.
+//! Hence the check that the ledger already exists before it gets opened.
 
 use crate::parse::{parse_model_calls, parse_runs};
 use crate::registry::FlowRegistry;
@@ -28,8 +28,8 @@ pub struct GatheredData {
     pub calls_by_run: BTreeMap<String, Vec<ModelCallRecord>>,
 }
 
-/// Vero solo se `state.db` ed `events.db` esistono già: è il segno che
-/// qualcosa è davvero girato, non solo che qualcuno ha guardato la pagina.
+/// True only when `state.db` and `events.db` already exist: the sign that
+/// something really ran, rather than that somebody merely looked.
 pub fn ledger_present(dir: &Path) -> bool {
     dir.join("state.db").exists() && dir.join("events.db").exists()
 }
@@ -65,112 +65,86 @@ pub fn gather(dir: &Path) -> Result<Option<GatheredData>, GatherError> {
     }))
 }
 
-/// Legge i flussi di una sorgente.
+/// Reads the flows of one source. A broken flow enters the registry with its
+/// reason rather than vanishing — the reason sits in `flow::system`.
 ///
-/// **PASSA DA QUI ANCHE LA SORGENTE DI SISTEMA, che non è una cartella.** I
-/// flussi spediti col prodotto stanno dentro il binario: chiedere il loro
-/// elenco a `read_dir` darebbe zero, e chi mostra «dove ho guardato e cosa ho
-/// trovato» scriverebbe «di sistema: 0 flussi» accanto a flussi di sistema che
-/// stanno girando. Il riconoscimento sta qui e non in chi chiama perché i
-/// chiamanti sono più di uno — la finestra conta le voci di ogni sorgente — e un
-/// ramo dimenticato là fuori è invisibile.
-///
-/// Il resto è come è sempre stato, e la ragione sta in `flow::system`: un flusso
-/// rotto entra nel registro col suo motivo invece di sparire.
+/// **THE SYSTEM SOURCE PASSES HERE TOO, AND IT IS NOT A DIRECTORY.** Flows
+/// shipped with the product live inside the binary; `read_dir` would give zero,
+/// and a caller would print «system: 0 flows» beside system flows that run.
 pub fn load_flow_registry(dir: &Path) -> FlowRegistry {
+    // The recognition sits here and not in the callers because there is more
+    // than one of them — the window counts the entries of every source — and a
+    // forgotten branch out there is invisible.
     if flow::system::is_place(dir) {
         return flow::system::builtin_registry();
     }
     flow::system::load_registry(dir)
 }
 
-/// La casa di Sailor: dove vivono i flussi, il deposito e la configurazione.
-///
-/// NIENTE PERCORSI DI UNA PERSONA SOLA. Fino al 28/08/2026 le due funzioni qui
-/// sotto nominavano le cartelle di chi sviluppa Sailor — `~/.claude/state`,
-/// `~/personal/sailor` — e ripiegavano sul suo nome utente. Chi avesse
-/// installato il prodotto si sarebbe portato dietro la macchina di un altro:
-/// **un prodotto che conosce una casa sola non è un prodotto**.
-///
-/// La casa si scopre come la scopre qualunque programma su questo sistema, e
-/// questa macchina torna a essere quello che è — **un caso configurato**, che
-/// dichiara `SAILOR_HOME` nel comando che apre la finestra, non un caso scritto
-/// nel codice.
-///
-/// I gradini, dal più esplicito al più generale. L'ultimo è la cartella
-/// corrente e non un percorso inventato: se `HOME` non c'è, il posto meno
-/// sbagliato è dove il programma è stato avviato, e chi guarda se ne accorge
-/// subito — mentre un percorso plausibile ma altrui fa credere che i dati siano
-/// spariti.
-/// **La scoperta vive in `ledger`, non qui**, ed è la correzione di un difetto
-/// che questa funzione stava per introdurre: il deposito lo apre chi esegue i
-/// flussi, e se la finestra si costruisse la propria idea di dove sta la casa,
-/// i due guarderebbero posti diversi senza che nessuno dei due dica di
-/// sbagliare. Qui resta solo il ripiego per quando l'ambiente non dichiara
-/// nemmeno la cartella dell'utente: si resta dove il programma è stato avviato,
-/// che si vede subito, invece di inventare un percorso plausibile.
+/// Sailor's home: flows, ledger, configuration. **A PRODUCT THAT KNOWS ONE
+/// HOME IS NO PRODUCT**: the two functions below once named the folders of
+/// whoever develops Sailor and fell back to his username, so anyone installing
+/// it carried another machine along. **AND THE DISCOVERY LIVES IN `ledger`**:
+/// the ledger is opened by whoever runs the flows, and a second idea of where
+/// home sits has the two look elsewhere with neither of them reporting a fault.
 pub fn sailor_home() -> PathBuf {
+    // Home is discovered the way any program on this system discovers it, and
+    // this machine goes back to being a configured case that declares
+    // `SAILOR_HOME` in the command opening the window. The last rung is the
+    // working directory and not an invented path: with no `HOME` the least
+    // wrong place is where the program was started, and it is noticed at once —
+    // a plausible path belonging to someone else makes the data look lost.
     ledger::sailor_home().unwrap_or_else(|| PathBuf::from("."))
 }
 
-/// Dove vive il deposito: gli eventi e la proiezione delle corse.
+/// Where the ledger lives: the events and the projection of the runs.
 ///
-/// `SAILOR_LEDGER` lo sposta da solo, per chi tiene lo stato altrove — un disco
-/// diverso, una cartella sincronizzata, un deposito condiviso fra due macchine.
+/// `SAILOR_LEDGER` moves it on its own, for anyone keeping state elsewhere — a
+/// different disk, a synced folder, a ledger shared between two machines.
 pub fn default_ledger_dir() -> PathBuf {
     ledger::default_directory().unwrap_or_else(|| sailor_home().join("ledger"))
 }
 
-/// Dove stanno i flussi dichiarati.
+/// Where the declared flows live: Sailor's home, under `flows/`. `SAILOR_FLOWS`
+/// moves them, for developers who keep them in the source tree.
 ///
-/// IL DIFETTO CHE QUESTA FUNZIONE CHIUDE, misurato il 28/08/2026: la pagina
-/// rispondeva `"flows": []` e nessuno sapeva perché. Cercava i flussi **accanto
-/// al deposito** (`<ledger_dir>/flows`, cioè `~/.claude/state/flussi/flows`),
-/// una cartella che non è mai esistita; i quattordici flussi veri stanno nei
-/// sorgenti, in `~/personal/sailor/flows/`. L'elenco vuoto non era un errore da
-/// leggere: era la risposta esatta a una domanda posta nel posto sbagliato.
-///
-/// **Il deposito è stato, i flussi sono sorgenti.** Tenerli sotto la stessa
-/// radice li faceva sembrare la stessa cosa, ed è la ragione dello scambio.
-///
-/// I flussi stanno nella casa di Sailor, in `flows/`. `SAILOR_FLOWS` li sposta
-/// da solo: è il gradino che serve a chi sviluppa Sailor e tiene i flussi
-/// nell'albero dei sorgenti mentre la casa è altrove.
+/// **THE LEDGER IS STATE, THE FLOWS ARE SOURCES.** Keeping them under a single
+/// root made them look like the same thing, which is the reason for the mix-up
+/// the body records: the window answered `"flows": []` and nobody knew why.
 pub fn default_flows_dir() -> PathBuf {
+    // The fault this closes: it looked for the flows **beside the ledger**, at
+    // `<ledger_dir>/flows`, a folder that has never existed, while the fourteen
+    // real ones sat in the source tree. The empty list was no error to read: it
+    // was the exact answer to a question asked in the wrong place.
     flows_dir_from(
         std::env::var_os("SAILOR_FLOWS").map(PathBuf::from),
         sailor_home(),
     )
 }
 
-/// Da dove viene un flusso: il tipo vive nel crate del flusso, perché dal
-/// 29/08/2026 non è più solo la finestra a chiedersi dove stanno i flussi — lo
-/// chiede anche un passo, e due risposte alla stessa domanda sono il difetto che
-/// `crates/flow/src/file.rs` racconta di aver già pagato sul formato del file.
+/// Where a flow comes from: the type lives in the flow crate, because it is
+/// never only the window asking where flows live — a step asks too, and two
+/// answers to one question are the fault `crates/flow/src/file.rs` records
+/// having already paid for on the file format.
 pub use flow::system::FlowSource;
 
-/// Tutti i posti in cui si cercano i flussi, nell'ordine in cui si guardano.
+/// Every place flows are searched for, in the order they are searched.
 ///
-/// **PERCHÉ PIÙ DI UNO, E PERCHÉ È UN DIFETTO CHE FOSSE UNO SOLO.** Il 29/08/2026
-/// la finestra mostrava «nessun flusso» mentre la riga di comando ne eseguiva
-/// quattro: la prima guardava nella casa dell'utente, la seconda in `flows/`
-/// sotto la cartella di lavoro. Nessuna delle due sbagliava da sola — sbagliava
-/// il fatto che ce ne fosse una sola, perché **i due posti servono a due cose
-/// diverse**: nella casa stanno i flussi di chi usa Sailor, che valgono ovunque
-/// si trovi; nel progetto stanno i flussi di quel progetto, che vanno con lui e
-/// non riguardano nessun altro.
-///
-/// **E LA TERZA È QUELLA CHE FA DI SAILOR UN PRODOTTO.** I flussi di sistema
-/// sono spediti dentro il binario: chi installa Sailor su una macchina pulita
-/// trova già dei flussi, senza che nessuno gli abbia copiato una cartella. Sono
-/// i meno specifici — `di sistema` < `tuoi` < `del progetto` — quindi chi ne
-/// vuole uno diverso ne scrive uno con lo stesso nome in casa propria o nel
-/// proprio progetto, e vince il suo.
-///
-/// La regola che governa tutto è l'ordine, e il perché sta in `flow::system`.
+/// **THREE, AND HAVING ONLY ONE WAS THE FAULT.** Home holds the flows of
+/// whoever uses Sailor, valid wherever they go; a project holds the flows of
+/// that project alone, which go with it and concern nobody else; system flows
+/// ship inside the binary, so a clean install already finds some.
 pub fn flow_sources() -> Vec<FlowSource> {
+    // The window showed «no flows» while the command line ran four: one looked
+    // in the user's home, the other in `flows/` under the working directory.
+    // Neither of the two was wrong on its own — what was wrong is that there
+    // was only one, because the two places serve two different purposes.
     let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
     let working = std::env::current_dir().ok();
+    // Least specific first — system < yours < the project's — so whoever wants
+    // a different shipped flow writes one under the same name in their own home
+    // or their own project, and theirs wins. The rule is the order, and the why
+    // of the order lives in `flow::system`.
     flow::system::sources(
         &sailor_home().join("flows"),
         working.as_deref(),
@@ -178,25 +152,23 @@ pub fn flow_sources() -> Vec<FlowSource> {
     )
 }
 
-/// I flussi di tutte le sorgenti, ciascuno con l'origine da cui viene.
+/// The flows of every source, each with the origin it came from.
 ///
-/// A parità di nome vince l'ultima sorgente, cioè la più specifica, e l'origine
-/// resta visibile su ogni riga: una sostituzione silenziosa fa credere di aver
-/// modificato un flusso che non è quello che gira.
+/// On a name clash the last source wins, that is the most specific one, and the
+/// origin stays visible on every row: a silent substitution leaves people
+/// believing they edited a flow that is not the one running.
 pub fn load_all_flows(
     sources: &[FlowSource],
 ) -> Vec<(String, &'static str, Result<flow::FlowFile, String>)> {
     flow::system::load_all(sources)
 }
 
-/// La scelta, senza l'ambiente: si prova questa, non quella sopra.
+/// The choice, without the environment: this is what tests exercise.
 ///
-/// Le variabili d'ambiente sono globali al processo e le prove girano in
-/// parallelo nello stesso: una prova che le scrivesse rovinerebbe le altre a
-/// caso, e chi vede il rosso guarderebbe il modulo sbagliato. Una stringa vuota
-/// vale come «non impostata» — è quello che lascia dietro uno script che
-/// esporta una variabile senza valore, e trattarla come un percorso manderebbe
-/// a cercare i flussi nella radice.
+/// Environment variables are global to the process and tests run in parallel
+/// inside it, so a test that wrote one would wreck the others at random and the
+/// red would point at the wrong module. An empty string counts as «unset» —
+/// what a script exporting a variable with no value leaves behind.
 fn flows_dir_from(explicit: Option<PathBuf>, home: PathBuf) -> PathBuf {
     explicit
         .filter(|path| !path.as_os_str().is_empty())
@@ -207,27 +179,29 @@ fn flows_dir_from(explicit: Option<PathBuf>, home: PathBuf) -> PathBuf {
 mod flow_sources_tests {
     use super::*;
 
-    /// LA SORGENTE CHE FA DI SAILOR UN PRODOTTO, e la prova sta qui perché è
-    /// qui che la finestra la chiede: su una macchina appena installata, senza
-    /// che nessuno abbia copiato niente, dei flussi ci sono. Le regole di
-    /// precedenza e di sovrascrittura si provano in `flow::system`, dove
-    /// vivono.
+    /// THE SOURCE THAT MAKES SAILOR A PRODUCT, and the test sits here because
+    /// this is where the window asks for it: on a freshly installed machine,
+    /// with nobody having copied anything, there are flows. Precedence and
+    /// override rules are tested in `flow::system`, where they live.
     #[test]
     fn the_window_always_sees_the_shipped_flows_first() {
         let sources = flow_sources();
+        // The literal, not the constant: `FlowSource::builtin()` sets `origin`
+        // from `BUILTIN_ORIGIN`, so comparing the two asks the value whether it
+        // equals itself and cannot fail. The constant's own doc asks for the
+        // literal, so the label moves in one edit with every reader of it.
         assert_eq!(sources[0].origin, "di sistema");
         assert!(sources[0].is_builtin());
         assert!(
             !load_flow_registry(&sources[0].dir).is_empty(),
-            "la sorgente di sistema non è una cartella e va letta dal binario"
+            "the system source is not a directory and must be read from the binary"
         );
     }
 
-    /// IL NUMERO CHE LA FINESTRA MOSTRA ACCANTO A OGNI SORGENTE passa da
-    /// `load_flow_registry`. Se la sorgente di sistema rispondesse zero, chi
-    /// guarda leggerebbe «di sistema: 0 flussi» accanto a flussi di sistema che
-    /// stanno girando, e non avrebbe modo di capire che il conto è sbagliato e
-    /// non l'elenco.
+    /// THE NUMBER THE WINDOW SHOWS BESIDE EACH SOURCE comes through
+    /// `load_flow_registry`. Were the system source to answer zero, a reader
+    /// would see «system: 0 flows» beside system flows that are running, with
+    /// no way to tell that the count is wrong rather than the list.
     #[test]
     fn counting_the_system_source_gives_the_shipped_flows() {
         assert_eq!(
@@ -246,7 +220,7 @@ mod tests {
     fn temp_test_dir(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("sailor-ui-gather-test-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("creazione cartella temporanea");
+        fs::create_dir_all(&dir).expect("creating the temporary directory");
         dir
     }
 
@@ -255,7 +229,7 @@ mod tests {
         let dir = temp_test_dir("valid-flow");
         let flow_content = json!({
             "id": "mio-flusso",
-            "description": "Flusso valido di prova",
+            "description": "A valid test flow",
             "graph": {
                 "steps": [{
                     "id": "passo-uno",
@@ -276,14 +250,14 @@ mod tests {
             dir.join("mio-flusso.flow.json"),
             serde_json::to_string(&flow_content).unwrap(),
         )
-        .expect("scrittura file");
+        .expect("writing the flow file");
 
         let registry = load_flow_registry(&dir);
         assert_eq!(registry.len(), 1);
-        let entry = registry.get("mio-flusso").expect("voce presente");
-        let flow = entry.as_ref().expect("flusso valido");
+        let entry = registry.get("mio-flusso").expect("entry present");
+        let flow = entry.as_ref().expect("valid flow");
         assert_eq!(flow.id, "mio-flusso");
-        assert_eq!(flow.description, "Flusso valido di prova");
+        assert_eq!(flow.description, "A valid test flow");
         assert_eq!(flow.graph.steps().len(), 1);
         assert_eq!(flow.graph.steps()[0].id, "passo-uno");
 
@@ -293,17 +267,17 @@ mod tests {
     #[test]
     fn load_flow_registry_records_broken_flow_with_reason_instead_of_silently_skipping() {
         let dir = temp_test_dir("broken-flow");
-        // File JSON non valido (sintassi tronca)
+        // Invalid JSON: the syntax stops halfway.
         fs::write(
             dir.join("flusso-tronco.flow.json"),
             r#"{"id": "flusso-tronco", "description": "#,
         )
-        .expect("scrittura file tronco");
+        .expect("writing the truncated file");
 
-        // File con ciclo nel grafo
+        // A file with a cycle in its graph.
         let cyclic_flow = json!({
             "id": "flusso-ciclico",
-            "description": "Flusso con dipendenza circolare",
+            "description": "A flow with a circular dependency",
             "graph": {
                 "steps": [
                     {
@@ -333,26 +307,29 @@ mod tests {
             dir.join("flusso-ciclico.flow.json"),
             serde_json::to_string(&cyclic_flow).unwrap(),
         )
-        .expect("scrittura file ciclico");
+        .expect("writing the cyclic file");
 
         let registry = load_flow_registry(&dir);
-        // Prima della modifica entrambi venivano ignorati in silenzio e registry.len() era 0
-        assert_eq!(registry.len(), 2, "entrambi i flussi rotti devono essere nel registro");
+        // Both used to be skipped in silence, leaving registry.len() at 0.
+        assert_eq!(registry.len(), 2, "both broken flows must be in the registry");
 
-        let truncated = registry.get("flusso-tronco").expect("flusso tronco presente");
-        assert!(truncated.is_err(), "il file tronco deve essere marcato come errore");
+        let truncated = registry.get("flusso-tronco").expect("truncated flow present");
+        assert!(truncated.is_err(), "the truncated file must be marked as an error");
         let reason_truncated = truncated.as_ref().unwrap_err();
+        // The reason must say **what is wrong**, not merely name a file: a
+        // reason made of nothing but a path would pass a check on the path.
         assert!(
-            reason_truncated.contains("non è un flusso valido"),
-            "motivo: {reason_truncated}"
+            reason_truncated.contains("is not a valid flow"),
+            "reason: {reason_truncated}"
         );
 
-        let cyclic = registry.get("flusso-ciclico").expect("flusso ciclico presente");
-        assert!(cyclic.is_err(), "il flusso con ciclo deve essere marcato come errore");
+        let cyclic = registry.get("flusso-ciclico").expect("cyclic flow present");
+        assert!(cyclic.is_err(), "the flow with a cycle must be marked as an error");
         let reason_cyclic = cyclic.as_ref().unwrap_err();
         assert!(
-            reason_cyclic.contains("backward dependency") || reason_cyclic.contains("non è un flusso valido"),
-            "motivo: {reason_cyclic}"
+            reason_cyclic.contains("backward dependency")
+                || reason_cyclic.contains("is not a valid flow"),
+            "reason: {reason_cyclic}"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -376,14 +353,14 @@ mod tests {
             dir.join("vecchio-grafo.json"),
             serde_json::to_string(&naked).unwrap(),
         )
-        .expect("scrittura file");
+        .expect("writing the flow file");
 
         let registry = load_flow_registry(&dir);
         assert_eq!(registry.len(), 1);
-        let entry = registry.get("vecchio-grafo").expect("voce presente");
+        let entry = registry.get("vecchio-grafo").expect("entry present");
         assert!(
             entry.is_err(),
-            "il vecchio formato grafo nudo senza {{ id, description, graph, inputs }} deve essere rifiutato con motivo"
+            "the old bare-graph format, lacking {{ id, description, graph, inputs }}, must be refused with a reason"
         );
 
         let _ = fs::remove_dir_all(&dir);
@@ -392,62 +369,62 @@ mod tests {
     #[test]
     fn load_flow_registry_ignores_non_json_files() {
         let dir = temp_test_dir("non-json");
-        fs::write(dir.join("README.md"), "Documentazione").expect("scrittura file");
-        fs::write(dir.join(".DS_Store"), "binary data").expect("scrittura file");
+        fs::write(dir.join("README.md"), "Documentation").expect("writing the file");
+        fs::write(dir.join(".DS_Store"), "binary data").expect("writing the file");
 
         let registry = load_flow_registry(&dir);
-        assert!(registry.is_empty(), "i file non JSON non devono entrare nel registro");
+        assert!(registry.is_empty(), "files that are not JSON must stay out of the registry");
 
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// IL GUASTO CHE QUESTA PROVA ESISTE PER PRENDERE, misurato il 28/08/2026:
-    /// la pagina cercava i flussi accanto al deposito e rispondeva `"flows": []`
-    /// senza errore. I flussi stanno nella casa di Sailor, il deposito è un'altra
-    /// cosa e sta accanto a loro, non sopra.
+    /// THE FAULT THIS TEST EXISTS TO CATCH: the window looked for flows beside
+    /// the ledger and answered `"flows": []` with no error. Flows live in
+    /// Sailor's home; the ledger is another thing and sits beside them, never
+    /// above them.
     #[test]
     fn the_flows_live_in_their_own_folder_not_inside_the_ledger() {
-        let chosen = flows_dir_from(None, PathBuf::from("/casa/sailor"));
-        assert_eq!(chosen, PathBuf::from("/casa/sailor/flows"));
+        let chosen = flows_dir_from(None, PathBuf::from("/home/sailor"));
+        assert_eq!(chosen, PathBuf::from("/home/sailor/flows"));
         assert!(
-            !chosen.starts_with("/casa/sailor/ledger"),
-            "la cartella dei flussi non sta dentro il deposito: {}",
+            !chosen.starts_with("/home/sailor/ledger"),
+            "the flows folder must not sit inside the ledger: {}",
             chosen.display()
         );
     }
 
-    /// Il gradino esplicito vince: chi nomina la cartella dei flussi non vuole
-    /// che la si deduca dalla casa. Serve a chi sviluppa Sailor e tiene i flussi
-    /// nell'albero dei sorgenti mentre la casa sta altrove.
+    /// The explicit rung wins: whoever names the flows folder does not want it
+    /// deduced from home. It serves Sailor's own developers, who keep the flows
+    /// in the source tree while home sits elsewhere.
     #[test]
     fn the_explicit_folder_wins_over_the_home() {
         assert_eq!(
-            flows_dir_from(Some(PathBuf::from("/qui/i/flussi")), PathBuf::from("/casa/sailor")),
-            PathBuf::from("/qui/i/flussi")
+            flows_dir_from(Some(PathBuf::from("/here/the/flows")), PathBuf::from("/home/sailor")),
+            PathBuf::from("/here/the/flows")
         );
     }
 
-    /// Una variabile esportata senza valore non è un percorso: presa alla
-    /// lettera manderebbe a cercare i flussi nella radice del disco, e
-    /// `read_dir` su `/flows` fallisce in silenzio dando di nuovo un elenco
-    /// vuoto — lo stesso guasto da cui si è partiti, con un'altra causa.
+    /// A variable exported with no value is no path: taken literally it would
+    /// send the search to the root of the disk, and `read_dir` on `/flows`
+    /// fails in silence, giving an empty list again — the same fault it started
+    /// from, with another cause.
     #[test]
     fn an_empty_variable_counts_as_unset() {
         assert_eq!(
-            flows_dir_from(Some(PathBuf::new()), PathBuf::from("/casa/sailor")),
-            PathBuf::from("/casa/sailor/flows")
+            flows_dir_from(Some(PathBuf::new()), PathBuf::from("/home/sailor")),
+            PathBuf::from("/home/sailor/flows")
         );
     }
 
-    /// CHI GUARDA IL DEPOSITO DEVE GUARDARE DOVE SCRIVE CHI LO RIEMPIE. La
-    /// finestra e chi esegue i flussi devono chiedere la casa alla stessa
-    /// funzione: due idee di dove sta il deposito non danno un errore, danno una
-    /// finestra che dice «nessuna corsa» mentre le corse ci sono.
+    /// WHOEVER READS THE LEDGER MUST LOOK WHERE ITS WRITERS WRITE. The window
+    /// and whoever runs the flows must ask the same function for home: two
+    /// ideas of where the ledger lives give no error, they give a window saying
+    /// «no runs» while the runs are there.
     #[test]
     fn the_window_asks_the_ledger_where_the_ledger_lives() {
         assert_eq!(
             default_ledger_dir(),
-            ledger::default_directory().expect("questa macchina dichiara HOME")
+            ledger::default_directory().expect("this machine declares HOME")
         );
     }
 }

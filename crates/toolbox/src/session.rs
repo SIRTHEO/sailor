@@ -1,92 +1,62 @@
-//! Quali motori sanno riprendere una sessione, e con quali opzioni.
+//! Which engines can resume a session, and with which options.
 //!
-//! **PERCHÉ UN FILE A SÉ E NON UN CAMPO DEI DESCRITTORI.** Il 31/08/2026 un
-//! altro lavoro stava estendendo `descriptors/default.json` e
-//! `src/descriptor.rs` in un albero separato. Due mani sullo stesso file JSON
-//! non danno un conflitto da leggere: danno un file che si carica, non dice
-//! quello che una delle due credeva, e nessun compilatore lo mostra. Un file
-//! separato costa una lettura in più all'avvio e non può collidere con niente.
-//!
-//! **E RESTA UN DATO, NON UN RAMO `if`.** Non compare nessun nome di motore in
-//! questo modulo: chi ne aggiunge uno scrive una voce, e chi non ce l'ha
-//! continua a funzionare ripartendo da zero. È il vincolo permanente
-//! «indipendenza dal modello»: una capacità che vale su un motore solo si
-//! dichiara come capacità di quel motore.
-//!
-//! **PERCHÉ OGNI MODO PORTA LA RIGA INTERA.** Riprendere non è sempre
-//! un'opzione in più. Verificato il 31/08/2026 su questa macchina, con
-//! `--help`:
-//!
-//! | motore | apre con un identificativo nostro | riprende | ramifica |
-//! |---|---|---|---|
-//! | `claude` | `--session-id <uuid>` | `--resume <id>` | `--resume <id> --fork-session` |
-//! | `codex` | no | `exec resume <id>` (sottocomando) | `exec fork <id>` (sottocomando) |
-//! | `gemini` | `--session-id <uuid>` | `--resume` vuole «latest» o un **indice**, non un identificativo | no |
-//! | `agy` | no | `--conversation <id>` | no |
-//!
-//! Due dei quattro cambiano **sottocomando**, non opzione: un modello «aggiungi
-//! queste opzioni» li escluderebbe entrambi.
-//!
-//! **COSA È SPEDITO E COSA NO, E PERCHÉ.** Spedito: `claude-code`, l'unico dei
-//! quattro che chiude il giro con un identificativo che scegliamo noi.
-//! `codex` sa riprendere e ramificare ma conia l'identificativo da sé: per
-//! sapere quale sia bisognerebbe leggerlo dalla sua uscita, e l'unico modo che
-//! `codex exec --help` offre è `--json`, che ne cambia il formato — cioè
-//! romperebbe la lettura del consumo che quel descrittore già dichiara. `agy`
-//! ha lo stesso problema senza nemmeno una via. `gemini` sa nascere con un
-//! identificativo nostro ma non sa riprendere per identificativo. Tutti e tre
-//! ripartono da zero e pagano di più: è il comportamento dichiarato, non un
-//! guasto.
+//! **WHY A FILE OF ITS OWN AND NOT A DESCRIPTOR FIELD.** Two hands on the same
+//! JSON file do not give a conflict you can read: they give a file that loads,
+//! does not say what one of the two believed, and no compiler shows it. A
+//! separate file costs one extra read at startup and can collide with nothing.
 
 use serde::Deserialize;
 use std::path::PathBuf;
 
-/// Le capacità spedite dentro il binario, per la stessa ragione per cui ci
-/// stanno i flussi di sistema: un file accanto al programma può mancare, e
-/// allora il prodotto si comporta diversamente su macchine diverse senza che si
-/// capisca perché.
+/// The abilities shipped inside the binary, for the same reason the system flows
+/// are: a file next to the program can be missing, and then the product behaves
+/// differently on different machines with no visible cause.
 const BUILT_IN: &str = include_str!("../descriptors/sessions.json");
 
-/// Dove chi usa Sailor mette le proprie, senza ricompilare niente.
+/// Where a Sailor user puts their own, without recompiling anything.
 const USER_FILE: &str = "sessions.json";
 
-/// Cosa un motore sa fare con le proprie sessioni, come sta scritto nel file.
+/// What an engine can do with its own sessions, as the file states it.
 ///
-/// Ogni modo è la riga di comando **intera** con cui si interroga quel motore
-/// in quel modo — cioè ciò che prende il posto delle opzioni della domanda —
-/// con `{session}` dove va l'identificativo.
+/// Each mode is the **whole** command line — what takes the place of the
+/// question's options — with `{session}` where the identifier goes. Resuming is
+/// not always one extra flag: two of the four engines measured change
+/// *subcommand* (`exec resume <id>`), which an "add these options" model loses.
 #[derive(Debug, Clone, Deserialize)]
 pub struct SessionAbility {
-    /// L'identificativo dello strumento, lo stesso dei descrittori.
+    /// The tool's identifier, the same one the descriptors use.
     pub tool: String,
-    /// Come si apre una sessione **con un identificativo scelto da noi**. Chi
-    /// non lo lascia scegliere non ha questa voce: non c'è modo di ritrovare
-    /// una sessione di cui non si conosce il nome.
+    /// How a session is opened **with an identifier we choose**. An engine that
+    /// does not let us choose has no entry here: there is no way to find a
+    /// session again when you do not know its name.
     #[serde(default)]
     pub open: Option<Vec<String>>,
     #[serde(default)]
     pub resume: Option<Vec<String>>,
     #[serde(default)]
     pub fork: Option<Vec<String>>,
-    /// Dove il motore dice **di quale sessione** ha appena parlato. Serve a chi
-    /// l'identificativo se lo conia da sé, che è la maggioranza.
+    /// Where the engine says **which session** it has just spoken about. Needed
+    /// by the ones that mint the identifier themselves, which is most of them.
     #[serde(default)]
     pub id_from: Option<IdPlace>,
 }
 
-/// Dove sta scritto l'identificativo dentro ciò che il motore ha detto.
+/// Where the identifier is written inside what the engine said.
 ///
-/// **DUE FORME E BASTA, ED È UNA COPIA DELIBERATA.** `toolbox::descriptor` ha
-/// già un tipo che dice la stessa cosa per i numeri del consumo; usarlo qui
-/// legherebbe questo file a quello, che un altro lavoro sta modificando nello
-/// stesso giorno. Due righe di copia costano meno di un file conteso.
+/// **TWO SHAPES AND NO MORE, AND THE COPY IS DELIBERATE.**
+/// `toolbox::descriptor` already has a type saying the same thing for the usage
+/// numbers; using it here would tie this file to that one. Two lines of copy
+/// cost less than a contended file.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IdPlace {
-    /// Un'espressione regolare col identificativo nel primo gruppo, per i
-    /// motori che parlano in chiaro.
+    /// A regular expression with the identifier in the first group, for engines
+    /// that speak in plain text. `codex` needs it: it mints its own identifier,
+    /// and the only way `codex exec --help` offers to read one back is `--json`,
+    /// which changes the output format — that would break the usage reading its
+    /// own descriptor already declares. Hence a pattern over what it printed.
     Pattern(String),
-    /// Un cammino di chiavi, per quelli che rispondono in JSON.
+    /// A path of keys, for the ones that answer in JSON.
     Path(Vec<String>),
 }
 
@@ -99,20 +69,19 @@ impl IdPlace {
     }
 }
 
-/// Le capacità che questa macchina conosce, spedite più quelle dell'utente.
+/// The abilities this machine knows: the shipped ones plus the user's.
 #[derive(Debug, Clone, Default)]
 pub struct SessionAbilities {
     entries: Vec<SessionAbility>,
 }
 
 impl SessionAbilities {
-    /// Quelle spedite, più il file dell'utente se c'è.
+    /// The shipped ones, plus the user's file when there is one.
     ///
-    /// **UN FILE DELL'UTENTE SCRITTO MALE NON FERMA NIENTE**, e non è
-    /// indulgenza: l'unica conseguenza di ignorarlo è che quei motori
-    /// ripartono da zero, cioè si torna esattamente a come funzionava prima.
-    /// Rompere l'avvio di Sailor per un JSON storto in un file facoltativo
-    /// sarebbe un danno molto più grande di quello che evita.
+    /// **A BADLY WRITTEN USER FILE STOPS NOTHING**, and that is not indulgence:
+    /// the only consequence of ignoring it is that those engines start from
+    /// scratch, which is exactly how things worked before. Breaking Sailor's
+    /// startup over crooked JSON in an optional file would cost far more.
     pub fn current() -> Self {
         let mut abilities = Self::shipped();
         if let Some(path) = user_file() {
@@ -125,24 +94,24 @@ impl SessionAbilities {
         abilities
     }
 
-    /// Solo quelle spedite dentro il binario.
+    /// Only the ones shipped inside the binary.
     pub fn shipped() -> Self {
         Self {
             entries: serde_json::from_str(BUILT_IN)
-                .expect("le capacità spedite sono un dato di questo repository"),
+                .expect("the shipped abilities are data of this repository"),
         }
     }
 
-    /// Un elenco deciso da chi chiama: è così che una prova verifica la
-    /// traduzione senza dipendere da cosa è spedito.
+    /// A list decided by the caller: that is how a test checks the translation
+    /// without depending on what is shipped.
     pub fn of(entries: Vec<SessionAbility>) -> Self {
         Self { entries }
     }
 
-    /// **L'UTENTE VINCE, VOCE PER VOCE.** Stessa regola dei descrittori: chi
-    /// scrive in casa propria una voce per uno strumento che spediamo sta
-    /// dicendo che sul suo motore le opzioni sono altre — magari perché ha una
-    /// versione diversa — e la sua è quella giusta lì.
+    /// **THE USER WINS, ENTRY BY ENTRY.** Same rule as the descriptors: writing
+    /// an entry at home for a tool we ship says that on their engine the options
+    /// are different — maybe they have another version — and theirs is right
+    /// there.
     fn absorb(&mut self, theirs: Vec<SessionAbility>) {
         for ability in theirs {
             self.entries.retain(|mine| mine.tool != ability.tool);
@@ -150,8 +119,12 @@ impl SessionAbilities {
         }
     }
 
-    /// Cosa sa fare lo strumento con questo identificativo. `None` per chi non
-    /// è dichiarato, che è il caso di quasi tutti.
+    /// What the tool with this identifier can do. `None` for one nobody declared,
+    /// nearly all of them. **AND IT STAYS DATA, NOT AN `if` BRANCH:** no engine
+    /// name appears in this module, whoever adds one writes an entry, and whoever
+    /// has none keeps working by starting from scratch. It is the permanent
+    /// constraint "model independence" — a capability that holds on one engine
+    /// only is declared as that engine's capability.
     pub fn for_tool(&self, id: &str) -> Option<actions::SessionRecipe> {
         let ability = self.entries.iter().find(|entry| entry.tool == id)?;
         Some(actions::SessionRecipe {
@@ -171,17 +144,17 @@ fn user_file() -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// **QUELLO CHE SI SPEDISCE DEVE ESSERE VERO SULLA MACCHINA DOVE GIRA.**
-    /// Le tre righe di `claude-code` non sono un'ipotesi: vengono da
-    /// `claude --help` letto il 31/08/2026. Questa prova non può verificare
-    /// l'aiuto di un binario che potrebbe non esserci, ma tiene ferma la forma
-    /// — se qualcuno toglie `--fork-session` dalla voce «fork», la ramificazione
-    /// diventa una ripresa e i tre passi paralleli si scriverebbero addosso.
+    /// **WHAT IS SHIPPED MUST BE TRUE ON THE MACHINE IT RUNS ON.** `claude-code`
+    /// is shipped because it is the only one of the four that closes the loop
+    /// with an identifier we choose. This test cannot check the help of a binary
+    /// that may not be there, but it holds the shape: drop `--fork-session` from
+    /// the "fork" entry and forking becomes a resume, so three parallel steps
+    /// would write over each other.
     #[test]
     fn the_shipped_engine_declares_all_three_moves() {
         let shipped = SessionAbilities::shipped();
 
-        let recipe = shipped.for_tool("claude-code").expect("è spedito");
+        let recipe = shipped.for_tool("claude-code").expect("it is shipped");
 
         assert_eq!(
             recipe.open.as_deref(),
@@ -201,41 +174,49 @@ mod tests {
         );
     }
 
-    /// Un motore che non è dichiarato non diventa capace per indovinamento.
+    /// An engine nobody declared does not become capable by guesswork.
+    ///
+    /// `agy` is absent although it *can* resume — `--conversation <id>` — because
+    /// it mints the identifier itself with no way to read it back, and cannot
+    /// fork. `gemini` is absent for the mirror reason: its `--resume` wants
+    /// "latest" or an **index**. Both start from scratch, and pay more for it.
     #[test]
     fn an_engine_nobody_declared_can_do_nothing() {
         assert!(SessionAbilities::shipped().for_tool("agy").is_none());
     }
 
-    /// **CHI NON LASCIA SCEGLIERE IL NOME DEVE DIRE DOVE LO SCRIVE.** Una voce
-    /// che apre una sessione senza segnaposto e senza `id_from` aprirebbe una
-    /// conversazione che nessuno potrà ritrovare: il passo dopo riprenderebbe
-    /// il nulla, e se ne accorgerebbe dopo aver speso. Verificato il 31/08/2026
-    /// contro `codex exec --help` e contro una corsa vera: `codex` non ha
-    /// nessuna opzione per imporre un identificativo, e lo stampa.
+    /// **AN ENGINE THAT DOES NOT LET US NAME A SESSION MUST SAY WHERE IT WRITES
+    /// THE NAME.** An entry that opens a session with no placeholder and no
+    /// `id_from` opens a conversation nobody can find again: the next step would
+    /// resume nothing, and would only notice after spending. Checked against
+    /// `codex exec --help` and against a real run: `codex` has no option at all
+    /// for imposing an identifier, and it prints the one it minted.
     #[test]
     fn an_engine_that_mints_its_own_name_declares_where_it_writes_it() {
         for ability in SessionAbilities::shipped().entries {
             let Some(open) = &ability.open else { continue };
-            let ours = open.iter().any(|arg| arg.contains(actions::SESSION_PLACEHOLDER));
+            let ours = open
+                .iter()
+                .any(|arg| arg.contains(actions::SESSION_PLACEHOLDER));
             assert!(
                 ours || ability.id_from.is_some(),
-                "«{}» apre una sessione che nessuno potrà ritrovare",
+                "«{}» opens a session nobody will be able to find again",
                 ability.tool
             );
         }
     }
 
-    /// L'espressione di `codex` deve riconoscere la sua uscita vera, non una
-    /// che le somiglia: se fosse scritta male l'identificativo resterebbe
-    /// ignoto per sempre, e nessuno se ne accorgerebbe. Il testo qui sotto è
-    /// copiato da una corsa del 31/08/2026.
+    /// The `codex` pattern must recognise its real output, not one that looks
+    /// like it: written badly, the identifier would stay unknown for ever and
+    /// nobody would notice. The text below is copied from a real run.
     #[test]
     fn the_shipped_pattern_finds_the_identifier_in_the_real_output() {
         let recipe = SessionAbilities::shipped()
             .for_tool("codex")
-            .expect("codex è spedito");
-        let pointer = recipe.id_from.expect("e dichiara dove scrive il proprio nome");
+            .expect("codex is shipped");
+        let pointer = recipe
+            .id_from
+            .expect("and declares where it writes its own name");
         let said = "model: gpt-5.6-sol\nprovider: openai\napproval: never\n\
                     session id: 01a057e8-f849-79c1-84f8-9de1f4f758b8\n--------\nuser\n";
 
@@ -245,23 +226,23 @@ mod tests {
         );
     }
 
-    /// Un modo non dichiarato resta assente **mentre gli altri due funzionano**:
-    /// è il caso di un motore che sa riprendere e non sa ramificare, e senza
-    /// questa asimmetria dovrebbe rinunciare anche a ciò che sa fare.
+    /// A mode that is not declared stays absent **while the other two work**:
+    /// the case of an engine that can resume and cannot fork, which without this
+    /// asymmetry would have to give up what it can do as well.
     #[test]
     fn a_move_that_is_not_declared_stays_absent_without_taking_the_others_with_it() {
         let abilities = SessionAbilities::of(vec![SessionAbility {
-            tool: "solo-resume".to_owned(),
+            tool: "resume-only".to_owned(),
             open: None,
             resume: Some(vec!["--conversation".to_owned(), "{session}".to_owned()]),
             fork: None,
             id_from: None,
         }]);
 
-        let recipe = abilities.for_tool("solo-resume").expect("è dichiarato");
+        let recipe = abilities.for_tool("resume-only").expect("it is declared");
 
         assert!(recipe.open.is_none());
         assert!(recipe.fork.is_none());
-        assert_eq!(recipe.resume.expect("questo sì").len(), 2);
+        assert_eq!(recipe.resume.expect("this one is there").len(), 2);
     }
 }

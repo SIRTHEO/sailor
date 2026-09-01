@@ -1,44 +1,33 @@
-//! Quando un flusso è dovuto, e con che peso.
-//!
-//! PERCHÉ NASCE. Le dodici lavorazioni notturne sono diventate flussi il
-//! 28/08/2026, e nella conversione hanno perso tre cose: **ogni quanto girano,
-//! quanto pesano, e dove possono scrivere**. Non erano andate perdute per
-//! distrazione: il formato del flusso non aveva un posto dove metterle, quindi
-//! sono finite nella prosa della descrizione — dove nessun programma le legge.
-//! Finché restano lì, un cron non si può convertire: si convertirebbe *che cosa*
-//! fa, perdendo *quando* lo fa.
-//!
-//! IL GIUDIZIO QUI È PURO, E NON DEVE CHIEDERE L'ORA A NESSUNO. `is_due` prende
-//! l'istante come argomento perché una decisione che legge l'orologio da sé si
-//! può provare solo aspettando — e una prova che aspetta non si scrive, quindi
-//! non si scrive la prova. Chi chiama l'ora la legge una volta e la passa.
+//! When a flow is due, at what weight, and inside which perimeter. The twelve
+//! nightly jobs lost all three when they became flows: not by carelessness, but
+//! because the flow format had nowhere to put them, so they ended up in the
+//! prose of the description, where no program reads them. Until they stay
+//! there a cron cannot be converted — you would convert *what* it does and
+//! lose *when* it does it.
 
 use serde::{Deserialize, Serialize};
 
-/// Ogni quanto un flusso deve girare.
-///
-/// DUE FORME, PERCHÉ DUE SONO QUELLE CHE ESISTONO su questa macchina: le
-/// lavorazioni notturne, che vogliono un'ora del giorno, e i cron di sistema,
-/// che vogliono un intervallo (la staffetta ogni 60 secondi, il registro dello
-/// swap ogni 300). Una terza forma si aggiunge quando serve davvero: un
-/// linguaggio di pianificazione completo scritto prima di avere il caso è la
-/// cosa che poi nessuno usa e nessuno osa togliere.
+/// How often a flow must run. Two shapes, because two are what exist on this
+/// machine: nightly work, which wants a time of day, and system crons, which
+/// want an interval — the relay every 60 seconds, the swap log every 300. A
+/// third gets added when a real case asks for one: a complete scheduling
+/// language written before the case is the thing nobody uses and nobody dares
+/// remove.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Recurrence {
-    /// Ogni N secondi dall'ultima corsa. Un flusso mai girato è dovuto subito.
+    /// Every N seconds since the last run. A flow that never ran is due at once.
     EverySeconds { seconds: u64 },
-    /// Una volta al giorno, a partire da quell'ora locale.
+    /// Once a day, from that local hour onwards.
     DailyAt { hour: u32, minute: u32 },
 }
 
-/// Quanto costa una corsa, dichiarato da chi scrive il flusso.
-///
-/// NON DECIDE NIENTE, OGGI, e va detto invece di lasciarlo credere: è un dato
-/// che il motore riporta, non un freno che applica. Serve perché la
-/// distinzione esisteva nelle lavorazioni notturne (leggere sotto il minuto,
-/// pesanti fino a dodici) e perderla significa non poter più dire, dopo, perché
-/// una notte è andata storta.
+/// What a run costs, as declared by whoever writes the flow. It decides nothing
+/// today, and saying so beats letting a reader assume otherwise: a figure the
+/// engine reports, not a brake it applies. It exists because the distinction
+/// was there in the nightly jobs — light ones under the minute, heavy ones up
+/// to twelve — and losing it means losing the ability to say, later, why a
+/// night went wrong.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Weight {
@@ -46,31 +35,25 @@ pub enum Weight {
     Heavy,
 }
 
-/// Quando gira, quanto pesa, dove può scrivere.
+/// When it runs, how much it weighs, where it may write.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Schedule {
     pub recurrence: Recurrence,
     pub weight: Weight,
-    /// Le cartelle dentro cui la lavorazione può scrivere, come le dichiarava
-    /// la voce di coda da cui viene. Vuoto significa «non dichiarato», che è
-    /// diverso da «nessun limite»: chi legge deve poter distinguere i due.
+    /// The directories this job may write inside, as the queue entry it came
+    /// from declared them. Empty means "not declared", which is different from
+    /// "no limit": a reader must be able to tell the two apart.
     #[serde(default)]
     pub perimeter: Vec<String>,
 }
 
-/// Il flusso è dovuto adesso?
-///
-/// `last_run` è l'istante dell'ultima corsa in secondi dall'epoca, `None` se non
-/// è mai girato. **Un flusso mai girato è sempre dovuto**: la prima corsa non ha
-/// un ritardo da aspettare, e trattarla come le altre vorrebbe dire che una
-/// lavorazione nuova resta ferma fino al primo giro utile senza che nessuno
-/// capisca perché.
-///
-/// L'ora del giorno si confronta sul **giorno locale**: `DailyAt` chiede «oggi è
-/// già girata dopo quell'ora?», non «sono passate 24 ore». Le due domande
-/// divergono ogni volta che una corsa slitta, ed è la prima quella che chi
-/// scrive la lavorazione ha in mente.
+/// Is the flow due now? `now` is an argument and not a clock read in here: a
+/// decision that reads the clock itself can only be tested by waiting, and a
+/// test that waits never gets written. A flow that never ran (`last_run` is
+/// `None`) is always due — a first run has no delay to wait out. `DailyAt` asks
+/// "did it already run today, after that hour?", judged on the local day, and
+/// not "have 24 hours passed": the two diverge every time a run slips.
 pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64) -> bool {
     let Some(last) = last_run else {
         return true;
@@ -85,13 +68,12 @@ pub fn is_due(schedule: &Schedule, last_run: Option<i64>, now: i64) -> bool {
     }
 }
 
-/// La mezzanotte locale del giorno che contiene `now`.
+/// Local midnight of the day containing `now`.
 ///
-/// LO SCARTO DAL FUSO SI RICAVA, non si chiede a una libreria: il workspace
-/// tiene le dipendenze al minimo, e qui serve una cosa sola. `localtime_r` dà i
-/// campi dell'ora locale; da quelli si torna indietro ai secondi trascorsi dalla
-/// mezzanotte, e si sottraggono. Vale anche nei giorni in cui l'ora cambia,
-/// perché lo scarto viene misurato **in quel giorno**, non assunto costante.
+/// The offset is derived, not asked of a library: the workspace keeps its
+/// dependencies to a minimum. `localtime_r` gives the local fields, from which
+/// we recover seconds since midnight and subtract. It holds on days the clock
+/// shifts: the offset is measured in that day, not assumed constant.
 fn start_of_local_day(now: i64) -> i64 {
     let seconds_today = local_seconds_of_day(now);
     now - seconds_today
@@ -99,8 +81,8 @@ fn start_of_local_day(now: i64) -> i64 {
 
 #[cfg(unix)]
 fn local_seconds_of_day(now: i64) -> i64 {
-    // `libc` non è fra le dipendenze, e per una chiamata sola non vale
-    // aggiungerla: la dichiarazione sta qui, accanto all'uso.
+    // `libc` is not a dependency, and one call does not justify adding it:
+    // the declaration lives here, next to its use.
     extern "C" {
         fn localtime_r(time: *const i64, result: *mut Tm) -> *mut Tm;
     }
@@ -123,11 +105,11 @@ fn local_seconds_of_day(now: i64) -> i64 {
         zone: std::ptr::null(),
         ..Default::default()
     };
-    // SAFETY: `now` è un intero valido e `out` è una struttura che vive per
-    // tutta la chiamata; `localtime_r` scrive solo lì dentro.
+    // SAFETY: `now` is a valid integer and `out` is a struct that lives for the
+    // whole call; `localtime_r` writes only inside it.
     let filled = unsafe { localtime_r(&now, &mut out) };
     if filled.is_null() {
-        // Nessuna ora locale: si ricade sull'UTC, che è sempre calcolabile.
+        // No local time: fall back to UTC, which is always computable.
         return now.rem_euclid(86_400);
     }
     (out.hour as i64) * 3600 + (out.min as i64) * 60 + out.sec as i64
@@ -164,8 +146,9 @@ mod tests {
         assert!(is_due(&daily(3, 0), None, 1_000_000));
     }
 
-    /// I due bracci dell'intervallo: un secondo prima no, al secondo esatto sì.
-    /// La staffetta gira ogni 60 secondi, ed è questa la soglia che deve tenere.
+    /// Both sides of the interval: one second early no, on the second yes. The
+    /// 60 is not an arbitrary number — the relay runs every 60 seconds, and
+    /// this is the threshold that has to hold.
     #[test]
     fn an_interval_is_due_only_once_the_seconds_have_passed() {
         let now = 1_000_000;
@@ -174,20 +157,20 @@ mod tests {
         assert!(is_due(&every(60), Some(now - 6000), now));
     }
 
-    /// L'ora del giorno chiede «oggi è già girata?», non «sono passate 24 ore».
-    /// Il braccio che conta è il terzo: una corsa di ieri sera **dopo** l'ora di
-    /// oggi non deve valere come la corsa di oggi.
+    /// A time of day asks "did it already run today?", not "have 24 hours
+    /// passed". The third case is the one that matters: last night's run, later
+    /// in the clock than today's hour, must not count as today's run.
     #[test]
     fn a_daily_flow_asks_whether_it_already_ran_today() {
         let midnight = start_of_local_day(1_800_000_000);
         let three_in_the_morning = midnight + 3 * 3600;
         let schedule = daily(3, 0);
 
-        // Le due e mezza: l'ora non è ancora arrivata.
+        // Half past two: the hour has not arrived yet.
         assert!(!is_due(&schedule, Some(midnight - 100), midnight + 9000));
-        // Le tre in punto, e l'ultima corsa è di ieri: dovuta.
+        // Three sharp, and the last run was yesterday: due.
         assert!(is_due(&schedule, Some(midnight - 100), three_in_the_morning));
-        // Le quattro, ma è già girata alle tre e un minuto: non si ripete.
+        // Four, but it already ran at one past three: it does not repeat.
         assert!(!is_due(
             &schedule,
             Some(three_in_the_morning + 60),
@@ -195,8 +178,8 @@ mod tests {
         ));
     }
 
-    /// La forma su disco, che è un contratto con la finestra e con chi scrive i
-    /// flussi a mano: se cambia, quei file smettono di caricarsi in silenzio.
+    /// The on-disk shape is a contract with the window and with whoever writes
+    /// flows by hand: change it and those files stop loading, silently.
     #[test]
     fn the_schedule_reads_back_exactly_as_it_is_written() {
         let text = r#"{
@@ -219,10 +202,9 @@ mod tests {
         assert_eq!(again, parsed);
     }
 
-    /// Il perimetro assente non è il perimetro vuoto dichiarato, ma qui i due
-    /// coincidono nella forma: quello che conta è che l'assenza non faccia
-    /// fallire il caricamento di un flusso scritto prima che questo campo
-    /// esistesse.
+    /// An absent perimeter is not a declared empty one, though here the two
+    /// coincide in shape. What matters is that the absence does not fail the
+    /// load of a flow written before the field existed.
     #[test]
     fn an_older_flow_without_a_perimeter_still_loads() {
         let text = r#"{"recurrence": {"kind": "every_seconds", "seconds": 60}, "weight": "light"}"#;

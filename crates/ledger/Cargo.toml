@@ -6,12 +6,11 @@ rust-version.workspace = true
 
 [dependencies]
 flow = { path = "../flow" }
-# Solo per `kill(pid, 0)`: chiedere di **un** pid conosciuto se esiste ancora.
-# Non è una scorciatoia verso `ps` — è l'opposto. Il guasto 12 dice che dentro
-# certi perimetri `pgrep` non vede niente e **risponde vuoto senza errore**,
-# cioè restituisce la stessa cosa quando non c'è nessuno e quando non gli è
-# permesso guardare. Una chiamata di sistema su un pid singolo non ha quella
-# forma: torna un sì, un no, o un errore che si legge.
+# Only for `kill(pid, 0)`: asking whether **one** known pid still exists. Not a
+# shortcut to `ps` — the opposite. Inside some sandboxes `pgrep` sees nothing and
+# **answers empty without an error**, returning the same thing when nobody is
+# there and when it is not allowed to look. A syscall about a single pid has no
+# such shape: it returns a yes, a no, or a readable error.
 libc = "0.2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { workspace = true }
