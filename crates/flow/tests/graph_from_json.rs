@@ -74,8 +74,8 @@ fn missing_dependency_in_json_is_rejected_while_loading() {
         "#,
     );
 
-    let error = serde_json::from_str::<Graph>(&json)
-        .expect_err("the missing dependency must be refused");
+    let error =
+        serde_json::from_str::<Graph>(&json).expect_err("the missing dependency must be refused");
 
     assert!(
         error.to_string().contains("depends on missing step"),
@@ -92,8 +92,7 @@ fn zero_max_attempts_in_json_is_rejected_while_loading() {
         "#,
     );
 
-    let error =
-        serde_json::from_str::<Graph>(&json).expect_err("zero attempts must be refused");
+    let error = serde_json::from_str::<Graph>(&json).expect_err("zero attempts must be refused");
 
     assert!(
         error.to_string().contains("allows zero attempts"),

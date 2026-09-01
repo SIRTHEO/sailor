@@ -25,11 +25,35 @@ fn main() {
             ended_at: Some(1_756_000_042),
         })
         .expect("recording the finished run");
-    close_step(&ledger, "marker-sweep-demo-1", "scan_markers", 1_756_000_000, 1_756_000_010);
-    close_step(&ledger, "marker-sweep-demo-1", "classify_standard", 1_756_000_010, 1_756_000_020);
-    close_step(&ledger, "marker-sweep-demo-1", "plan_removals", 1_756_000_020, 1_756_000_042);
+    close_step(
+        &ledger,
+        "marker-sweep-demo-1",
+        "scan_markers",
+        1_756_000_000,
+        1_756_000_010,
+    );
+    close_step(
+        &ledger,
+        "marker-sweep-demo-1",
+        "classify_standard",
+        1_756_000_010,
+        1_756_000_020,
+    );
+    close_step(
+        &ledger,
+        "marker-sweep-demo-1",
+        "plan_removals",
+        1_756_000_020,
+        1_756_000_042,
+    );
     ledger
-        .record_model_call(&fake_call("marker-sweep-demo-1", "classify_standard", "claude-sonnet-5", 40_000, 900))
+        .record_model_call(&fake_call(
+            "marker-sweep-demo-1",
+            "classify_standard",
+            "claude-sonnet-5",
+            40_000,
+            900,
+        ))
         .expect("recording the call");
 
     ledger
@@ -46,7 +70,13 @@ fn main() {
             ended_at: None,
         })
         .expect("recording the run still going");
-    close_step(&ledger, "marker-sweep-demo-2", "scan_markers", 1_756_000_100, 1_756_000_105);
+    close_step(
+        &ledger,
+        "marker-sweep-demo-2",
+        "scan_markers",
+        1_756_000_100,
+        1_756_000_105,
+    );
     ledger
         .append_step_started(&StepRecord::started(
             "marker-sweep-demo-2",
@@ -60,7 +90,13 @@ fn main() {
         ))
         .expect("step left open on purpose");
     ledger
-        .record_model_call(&fake_call("marker-sweep-demo-2", "classify_standard", "claude-haiku-5", 12_000, 220))
+        .record_model_call(&fake_call(
+            "marker-sweep-demo-2",
+            "classify_standard",
+            "claude-haiku-5",
+            12_000,
+            220,
+        ))
         .expect("recording the call");
 
     println!("fake ledger written to {dir}");
@@ -104,7 +140,13 @@ fn close_step(ledger: &Ledger, run_id: &str, step_id: &str, started_at: i64, end
 /// works, and that is worse than having none — whoever reads it believes they
 /// know what they spent. The real engine fills the ledger; this example stays
 /// for trying the window out without spending, and says so on every row.
-fn fake_call(run_id: &str, step_id: &str, model: &str, input_tokens: u64, cost_micros: i64) -> ModelCallRecord {
+fn fake_call(
+    run_id: &str,
+    step_id: &str,
+    model: &str,
+    input_tokens: u64,
+    cost_micros: i64,
+) -> ModelCallRecord {
     // This example was once the only writer of `model_calls` besides the tests:
     // the dashboard summed a cost per model, and that cost was fiction entire.
     ModelCallRecord {

@@ -239,7 +239,10 @@ fn what_gets_shown_is_the_answer_not_the_envelope_around_it() {
             "«{private}» è finito in un testo che si stampa e si incolla: {said}"
         );
     }
-    assert_eq!(said, "true", "la risposta è il valore che il puntatore isola");
+    assert_eq!(
+        said, "true",
+        "la risposta è il valore che il puntatore isola"
+    );
 
     // Senza puntatore non c'è niente da isolare, e la prosa del motore resta la
     // diagnosi per intero: è il caso di `codex`, e lì la frase non nomina

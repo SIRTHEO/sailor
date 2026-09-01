@@ -32,7 +32,11 @@ fn a_base_that_cannot_be_read_is_reported_not_swallowed() {
         "a base that does not exist carries no repos"
     );
     assert_eq!(
-        survey.unreadable.iter().map(|u| &u.path).collect::<Vec<_>>(),
+        survey
+            .unreadable
+            .iter()
+            .map(|u| &u.path)
+            .collect::<Vec<_>>(),
         vec![&missing],
         "the unreadable base must show up in the survey rather than vanish: \
          it is the difference between \"there are none\" and \"I could not look\""

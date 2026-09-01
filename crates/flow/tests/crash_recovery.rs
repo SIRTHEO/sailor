@@ -68,11 +68,7 @@ struct FileEffect {
 }
 
 impl Action for FileEffect {
-    fn execute(
-        &self,
-        _input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         self.executions.fetch_add(1, Ordering::SeqCst);
         fs::write(&self.path, b"landed")
             .map_err(|error| ActionError::new("write_failed", error.to_string()))?;
@@ -95,11 +91,7 @@ impl Action for FileEffect {
 struct Echo;
 
 impl Action for Echo {
-    fn execute(
-        &self,
-        input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         Ok(ActionOutcome::Went(input.clone()))
     }
 }
@@ -109,11 +101,7 @@ impl Action for Echo {
 struct Opaque(StepSpecies);
 
 impl Action for Opaque {
-    fn execute(
-        &self,
-        _input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         Ok(ActionOutcome::Went(json!({})))
     }
 
@@ -126,11 +114,7 @@ impl Action for Opaque {
 struct UndoesItsEffect(Arc<AtomicUsize>);
 
 impl Action for UndoesItsEffect {
-    fn execute(
-        &self,
-        _input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         Ok(ActionOutcome::Went(json!({})))
     }
 
@@ -245,7 +229,11 @@ fn a_compensable_step_undoes_its_effect_before_being_reopened() {
         interrupted_step("compensable-run", None),
         UndoesItsEffect(Arc::clone(&undone)),
     );
-    assert_eq!(undone.load(Ordering::SeqCst), 1, "l'effetto va disfatto una volta sola");
+    assert_eq!(
+        undone.load(Ordering::SeqCst),
+        1,
+        "l'effetto va disfatto una volta sola"
+    );
     assert_eq!(report.compensated, vec!["opaque"]);
     assert_eq!(report.closed_as_broke, vec!["opaque"]);
     assert_eq!(decision, Decision::Ready(vec!["opaque".to_owned()]));

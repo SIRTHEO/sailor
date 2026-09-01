@@ -121,7 +121,10 @@ fn run_front(count: usize, expected: usize) -> (Vec<Decision>, Vec<String>, Vec<
         .iter()
         .filter_map(|record| record.outcome)
         .collect();
-    let names = seen_as.lock().unwrap_or_else(|held| held.into_inner()).clone();
+    let names = seen_as
+        .lock()
+        .unwrap_or_else(|held| held.into_inner())
+        .clone();
     (execution.decisions, names, outcomes)
 }
 

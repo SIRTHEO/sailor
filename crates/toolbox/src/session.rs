@@ -158,11 +158,19 @@ mod tests {
 
         assert_eq!(
             recipe.open.as_deref(),
-            Some(["-p", "--session-id", "{session}"].map(str::to_owned).as_slice())
+            Some(
+                ["-p", "--session-id", "{session}"]
+                    .map(str::to_owned)
+                    .as_slice()
+            )
         );
         assert_eq!(
             recipe.resume.as_deref(),
-            Some(["-p", "--resume", "{session}"].map(str::to_owned).as_slice())
+            Some(
+                ["-p", "--resume", "{session}"]
+                    .map(str::to_owned)
+                    .as_slice()
+            )
         );
         assert_eq!(
             recipe.fork.as_deref(),

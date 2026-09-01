@@ -85,11 +85,7 @@ impl StoreWriteAction {
 }
 
 impl Action for StoreWriteAction {
-    fn execute(
-        &self,
-        input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         // L'ingresso arriva già coi rinvii risolti: li scioglie `step_input`,
         // dove l'ingresso si compone, per ogni azione e una volta sola. È così
         // che ciò che un passo ha prodotto arriva al deposito senza uscire dal
@@ -138,11 +134,7 @@ impl StoreReadAction {
 }
 
 impl Action for StoreReadAction {
-    fn execute(
-        &self,
-        input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ReadSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let found = self
@@ -201,11 +193,7 @@ impl StoreListAction {
 }
 
 impl Action for StoreListAction {
-    fn execute(
-        &self,
-        input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ListSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let records = self
@@ -258,8 +246,10 @@ mod tests {
 
     fn store() -> (Ledger, TestStore) {
         let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir()
-            .join(format!("sailor-actions-store-{}-{sequence}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "sailor-actions-store-{}-{sequence}",
+            std::process::id()
+        ));
         let ledger = Ledger::open(&path).expect("aprire il deposito");
         (ledger, TestStore(path))
     }
@@ -291,7 +281,10 @@ mod tests {
             .expect("scrittura");
 
         let outcome = read
-            .execute(&json!({"collection": "mandate", "key": "current"}), &mut shared)
+            .execute(
+                &json!({"collection": "mandate", "key": "current"}),
+                &mut shared,
+            )
             .expect("lettura");
         let ActionOutcome::Went(value) = outcome else {
             panic!("un nodo che legge un deposito locale non aspetta nessuno");
@@ -324,13 +317,20 @@ mod tests {
         let read = StoreReadAction::new(ledger);
 
         let outcome = read
-            .execute(&json!({"collection": "mandate", "key": "current"}), &mut shared)
+            .execute(
+                &json!({"collection": "mandate", "key": "current"}),
+                &mut shared,
+            )
             .expect("la lettura di una voce assente non è un errore");
         let ActionOutcome::Went(value) = outcome else {
             panic!("nessuna attesa");
         };
         assert_eq!(value["found"], json!(false));
-        assert_eq!(value.get("value"), None, "non si inventa un valore che nessuno ha scritto");
+        assert_eq!(
+            value.get("value"),
+            None,
+            "non si inventa un valore che nessuno ha scritto"
+        );
     }
 
     /// Una collezione si legge in ordine, e «da qui in poi» salta il già letto.
@@ -364,19 +364,30 @@ mod tests {
                 .expect("scrittura");
         }
 
-        let ActionOutcome::Went(all) =
-            list.execute(&json!({"collection": "posta/theo"}), &mut shared).expect("elenco")
+        let ActionOutcome::Went(all) = list
+            .execute(&json!({"collection": "posta/theo"}), &mut shared)
+            .expect("elenco")
         else {
             panic!("nessuna attesa");
         };
         assert_eq!(all["count"], json!(3));
-        let keys: Vec<&str> =
-            all["entries"].as_array().expect("elenco").iter().map(|e| e["key"].as_str().expect("chiave")).collect();
-        assert_eq!(keys, vec!["2026-08-28T01", "2026-08-28T02", "2026-08-28T03"]);
+        let keys: Vec<&str> = all["entries"]
+            .as_array()
+            .expect("elenco")
+            .iter()
+            .map(|e| e["key"].as_str().expect("chiave"))
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["2026-08-28T01", "2026-08-28T02", "2026-08-28T03"]
+        );
         assert_eq!(all["last_key"], json!("2026-08-28T03"));
 
         let ActionOutcome::Went(fresh) = list
-            .execute(&json!({"collection": "posta/theo", "after": "2026-08-28T02"}), &mut shared)
+            .execute(
+                &json!({"collection": "posta/theo", "after": "2026-08-28T02"}),
+                &mut shared,
+            )
             .expect("elenco")
         else {
             panic!("nessuna attesa");
@@ -396,8 +407,9 @@ mod tests {
         let mut shared = SharedState::new();
         let list = StoreListAction::new(ledger);
 
-        let ActionOutcome::Went(empty) =
-            list.execute(&json!({"collection": "posta/nessuno"}), &mut shared).expect("elenco")
+        let ActionOutcome::Went(empty) = list
+            .execute(&json!({"collection": "posta/nessuno"}), &mut shared)
+            .expect("elenco")
         else {
             panic!("nessuna attesa");
         };

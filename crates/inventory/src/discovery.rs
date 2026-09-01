@@ -382,7 +382,10 @@ pub fn description(matter: &str, hyphen_in_field: bool) -> String {
         }
     }
     // `' '.join(x.split())` and then `.strip('>|- ')`.
-    let collapsed = value[..cut].split_whitespace().collect::<Vec<_>>().join(" ");
+    let collapsed = value[..cut]
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     collapsed
         .trim_matches(|c| c == '>' || c == '|' || c == '-' || c == ' ')
         .to_string()

@@ -169,7 +169,11 @@ mod tests {
         // Half past two: the hour has not arrived yet.
         assert!(!is_due(&schedule, Some(midnight - 100), midnight + 9000));
         // Three sharp, and the last run was yesterday: due.
-        assert!(is_due(&schedule, Some(midnight - 100), three_in_the_morning));
+        assert!(is_due(
+            &schedule,
+            Some(midnight - 100),
+            three_in_the_morning
+        ));
         // Four, but it already ran at one past three: it does not repeat.
         assert!(!is_due(
             &schedule,
@@ -198,7 +202,8 @@ mod tests {
         assert_eq!(parsed.weight, Weight::Heavy);
         assert_eq!(parsed.perimeter.len(), 2);
 
-        let again: Schedule = serde_json::from_str(&serde_json::to_string(&parsed).unwrap()).unwrap();
+        let again: Schedule =
+            serde_json::from_str(&serde_json::to_string(&parsed).unwrap()).unwrap();
         assert_eq!(again, parsed);
     }
 

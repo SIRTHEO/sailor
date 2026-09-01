@@ -106,7 +106,8 @@ impl Action for TriggerAction {
                     kind: "manual".to_owned(),
                 };
                 Ok(ActionOutcome::Went(
-                    serde_json::to_value(signal).expect("a signal of plain texts always serialises"),
+                    serde_json::to_value(signal)
+                        .expect("a signal of plain texts always serialises"),
                 ))
             }
             // **WHERE IT STOPS, AND WHY IT STOPS INSTEAD OF PRETENDING.** A
@@ -222,8 +223,7 @@ mod tests {
 
     #[test]
     fn a_manual_trigger_without_a_text_says_who_should_have_given_it() {
-        let error =
-            fire(json!({"source": "manual"})).expect_err("an empty signal is not a signal");
+        let error = fire(json!({"source": "manual"})).expect_err("an empty signal is not a signal");
         assert_eq!(error.class, "empty_signal");
         assert!(error.said.contains("text"), "{}", error.said);
     }
@@ -255,7 +255,11 @@ mod tests {
             .filter(|loaded| loaded.descriptor.kind == Kind::Terminal)
             .map(|loaded| loaded.descriptor.id.clone())
             .collect();
-        assert_eq!(terminals.len(), 2, "the two entries measured: {terminals:?}");
+        assert_eq!(
+            terminals.len(),
+            2,
+            "the two entries measured: {terminals:?}"
+        );
         for id in terminals {
             let error = fire(json!({"source": id})).expect_err("neither one listens");
             assert_eq!(error.class, "listening_not_built");

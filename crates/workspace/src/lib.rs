@@ -53,7 +53,9 @@ pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
             });
             continue;
         }
-        let Some(tree) = current.as_mut() else { continue };
+        let Some(tree) = current.as_mut() else {
+            continue;
+        };
         if let Some(head) = line.strip_prefix("HEAD ") {
             tree.head = head.to_owned();
         } else if let Some(branch) = line.strip_prefix("branch ") {
@@ -76,7 +78,10 @@ pub fn parse_worktrees(porcelain: &str) -> Vec<Worktree> {
 /// every tool that walks the project would walk all of them. This is the shape
 /// already on this machine, read rather than invented.
 pub fn tree_path(repo: &Path, name: &str) -> PathBuf {
-    let stem = repo.file_name().and_then(|name| name.to_str()).unwrap_or("repo");
+    let stem = repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("repo");
     let parent = repo.parent().map(Path::to_path_buf).unwrap_or_default();
     parent.join(format!("{stem}-worktrees")).join(name)
 }
@@ -100,7 +105,10 @@ fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 pub fn list(repo: &Path) -> Result<Vec<Worktree>, String> {
-    Ok(parse_worktrees(&git(repo, &["worktree", "list", "--porcelain"])?))
+    Ok(parse_worktrees(&git(
+        repo,
+        &["worktree", "list", "--porcelain"],
+    )?))
 }
 
 /// Cuts a tree for `branch`, creating the branch if it does not exist yet.
@@ -110,7 +118,11 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
     if path.exists() {
         return Err(format!("{} already exists", path.display()));
     }
-    let known = git(repo, &["rev-parse", "--verify", &format!("refs/heads/{branch}")]).is_ok();
+    let known = git(
+        repo,
+        &["rev-parse", "--verify", &format!("refs/heads/{branch}")],
+    )
+    .is_ok();
     let target = path.to_string_lossy().into_owned();
     let args: Vec<&str> = if known {
         vec!["worktree", "add", &target, branch]
@@ -148,4 +160,3 @@ pub fn root() -> Result<PathBuf, String> {
     }
     Ok(PathBuf::from(String::from_utf8_lossy(&top.stdout).trim()))
 }
-

@@ -43,7 +43,10 @@ impl TokenUsage {
     /// completion nor declares a cost: those stay `None`.
     pub fn from_codex_output(output: &str) -> TokenUsage {
         let raw = parse_codex_tokens(output);
-        TokenUsage { total_tokens: raw.parse().ok(), ..TokenUsage::default() }
+        TokenUsage {
+            total_tokens: raw.parse().ok(),
+            ..TokenUsage::default()
+        }
     }
 }
 
@@ -74,7 +77,12 @@ impl ContextAccounting {
             _ => None,
         };
         let cost_usd = usage.cost_usd.or_else(|| compute_cost(&usage, model));
-        ContextAccounting { usage, context_length, remaining, cost_usd }
+        ContextAccounting {
+            usage,
+            context_length,
+            remaining,
+            cost_usd,
+        }
     }
 }
 
@@ -138,14 +146,18 @@ mod tests {
     }
 
     fn sample_model(id: &str) -> Model {
-        let catalog = Catalog::parse(include_str!("../tests/fixtures/catalog-sample.json")).unwrap();
+        let catalog =
+            Catalog::parse(include_str!("../tests/fixtures/catalog-sample.json")).unwrap();
         catalog.find(id).unwrap().clone()
     }
 
     #[test]
     fn computes_remaining_context_against_the_model_window() {
         let model = sample_model("nvidia/nemotron-3-super-120b-a12b:free"); // 262144
-        let usage = TokenUsage { total_tokens: Some(47), ..TokenUsage::default() };
+        let usage = TokenUsage {
+            total_tokens: Some(47),
+            ..TokenUsage::default()
+        };
         let acc = ContextAccounting::compute(usage, Some(&model));
         assert_eq!(acc.context_length, Some(262144));
         assert_eq!(acc.remaining, Some(262144 - 47));
@@ -153,10 +165,16 @@ mod tests {
 
     #[test]
     fn remaining_is_none_when_the_model_is_unknown_codex_case() {
-        let usage = TokenUsage { total_tokens: Some(13910), ..TokenUsage::default() };
+        let usage = TokenUsage {
+            total_tokens: Some(13910),
+            ..TokenUsage::default()
+        };
         let acc = ContextAccounting::compute(usage, None);
         assert_eq!(acc.context_length, None);
-        assert_eq!(acc.remaining, None, "a remainder on an unknown window would be an invented number");
+        assert_eq!(
+            acc.remaining, None,
+            "a remainder on an unknown window would be an invented number"
+        );
     }
 
     #[test]
@@ -189,13 +207,19 @@ mod tests {
         };
         let acc = ContextAccounting::compute(usage, Some(&model));
         let cost = acc.cost_usd.unwrap();
-        assert!((cost - 0.62).abs() < 1e-9, "expected 0.15+0.47=0.62, got {cost}");
+        assert!(
+            (cost - 0.62).abs() < 1e-9,
+            "expected 0.15+0.47=0.62, got {cost}"
+        );
     }
 
     #[test]
     fn cost_is_unknown_when_token_counts_are_only_partial() {
         let model = sample_model("qwen/qwen3.8-flash");
-        let usage = TokenUsage { prompt_tokens: Some(10), ..TokenUsage::default() }; // completion missing
+        let usage = TokenUsage {
+            prompt_tokens: Some(10),
+            ..TokenUsage::default()
+        }; // completion missing
         let acc = ContextAccounting::compute(usage, Some(&model));
         assert_eq!(acc.cost_usd, None);
     }
@@ -469,7 +493,10 @@ fn read_from_text(said: &str, declared: &Declared) -> Reading {
 
 /// Walks a key path. An empty path means the whole body: the way of saying
 /// "the answer is everything it said".
-fn walk<'a>(body: &'a serde_json::Value, pointer: Option<&Pointer>) -> Option<&'a serde_json::Value> {
+fn walk<'a>(
+    body: &'a serde_json::Value,
+    pointer: Option<&Pointer>,
+) -> Option<&'a serde_json::Value> {
     let Pointer::Path(keys) = pointer? else {
         // A regular expression declared on a JSON read: wrong shape, unknown
         // value.
@@ -485,9 +512,7 @@ fn walk<'a>(body: &'a serde_json::Value, pointer: Option<&Pointer>) -> Option<&'
 /// A token count. A string is accepted too, because an engine writing numbers
 /// above 2^53 sends them as text so as not to lose them.
 fn as_tokens(value: &serde_json::Value) -> Option<u64> {
-    value
-        .as_u64()
-        .or_else(|| value.as_str().and_then(digits))
+    value.as_u64().or_else(|| value.as_str().and_then(digits))
 }
 
 fn as_money(value: &serde_json::Value) -> Option<f64> {
@@ -536,7 +561,9 @@ mod declared_tests {
     use super::*;
 
     fn path(keys: &[&str]) -> Option<Pointer> {
-        Some(Pointer::Path(keys.iter().map(|k| (*k).to_owned()).collect()))
+        Some(Pointer::Path(
+            keys.iter().map(|k| (*k).to_owned()).collect(),
+        ))
     }
 
     /// An envelope shaped the way a command-line engine produces one when
@@ -653,7 +680,10 @@ mod declared_tests {
         };
         let reading = read_declared(CODEX_LIKE, &declared);
         assert_eq!(reading.total_tokens, Some(13_910));
-        assert_eq!(reading.input_tokens, None, "codex does not separate the two sides");
+        assert_eq!(
+            reading.input_tokens, None,
+            "codex does not separate the two sides"
+        );
         assert_eq!(reading.output_tokens, None);
     }
 
@@ -664,7 +694,10 @@ mod declared_tests {
             total_tokens: Some(Pointer::Pattern(r"tokens used\s*\n\s*([\d.,]+)".to_owned())),
             ..Declared::default()
         };
-        assert_eq!(read_declared("no useful line", &declared).total_tokens, None);
+        assert_eq!(
+            read_declared("no useful line", &declared).total_tokens,
+            None
+        );
     }
 
     /// A descriptor with a badly written regular expression worsens the

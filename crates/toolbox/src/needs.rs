@@ -110,7 +110,10 @@ impl Action for ToolNeedsAction {
                 Ok(flow) => {
                     flows_seen += 1;
                     for (tool, step) in tools_named_by(&flow) {
-                        asked.entry(tool).or_default().push(format!("{name}/{step}"));
+                        asked
+                            .entry(tool)
+                            .or_default()
+                            .push(format!("{name}/{step}"));
                     }
                     for step in binaries_named_by(&flow) {
                         named_binaries.push(format!("{name}/{step}"));
@@ -218,7 +221,10 @@ fn tools_named_by(flow: &FlowFile) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for step in flow.graph.steps() {
         for place in [step.with.as_ref(), flow.inputs.get(&step.id)] {
-            if let Some(tool) = place.and_then(|value| value.get("tool")).and_then(Value::as_str) {
+            if let Some(tool) = place
+                .and_then(|value| value.get("tool"))
+                .and_then(Value::as_str)
+            {
                 out.push((tool.to_owned(), step.id.clone()));
             }
         }

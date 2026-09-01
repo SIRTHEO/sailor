@@ -49,7 +49,10 @@ fn a_collection_installed_as_a_folder_is_reachable_without_being_a_plugin() {
     let home = fake_home("collection-as-folder");
     // No plugin enabled: if reachability depended on `enabledPlugins`, this
     // skill would read as switched off.
-    write(&home.join(".claude/settings.json"), r#"{"enabledPlugins": {}}"#);
+    write(
+        &home.join(".claude/settings.json"),
+        r#"{"enabledPlugins": {}}"#,
+    );
     skill(
         &home,
         ".claude/skills/somebodys-collection/skills/cutting/SKILL.md",

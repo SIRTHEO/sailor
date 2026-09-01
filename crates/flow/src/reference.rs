@@ -83,9 +83,9 @@ fn resolve_object(fields: &Map<String, Value>, root: &Value) -> Result<Value, Ac
         let value = look_up(pointer, root)?;
         // `to_string` and not an indented form: this text ends up inside a
         // prompt, and extra lines are extra tokens on every call.
-        return Ok(Value::String(serde_json::to_string(&value).expect(
-            "a value already in memory always reserialises",
-        )));
+        return Ok(Value::String(
+            serde_json::to_string(&value).expect("a value already in memory always reserialises"),
+        ));
     }
     let mut resolved = Map::new();
     for (name, value) in fields {
@@ -278,7 +278,8 @@ mod tests {
 
     #[test]
     fn join_refuses_to_decide_how_a_number_is_written() {
-        let input = json!({"how_many": 3, "text": {"$join": ["there are ", {"$from": "/how_many"}]}});
+        let input =
+            json!({"how_many": 3, "text": {"$join": ["there are ", {"$from": "/how_many"}]}});
 
         let error = resolve_references(&input).expect_err("a number is not text");
 
@@ -298,13 +299,13 @@ mod tests {
         let resolved = resolve_references(&input).expect("the pointer exists");
 
         assert!(
-            resolved["stdin"]
-                .as_str()
-                .expect("text")
-                .contains("$from"),
+            resolved["stdin"].as_str().expect("text").contains("$from"),
             "the text stays text"
         );
-        assert!(!resolved["stdin"].as_str().expect("text").contains("must not get out"));
+        assert!(!resolved["stdin"]
+            .as_str()
+            .expect("text")
+            .contains("must not get out"));
     }
 
     /// References read the input as it arrived, not as it is becoming: two

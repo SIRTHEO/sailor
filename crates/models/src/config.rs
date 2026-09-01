@@ -97,7 +97,10 @@ mod tests {
 
     #[test]
     fn parses_and_round_trips_through_json() {
-        let cfg = UserConfig::parse(r#"{"default":"z-ai/glm-5.2:free","notte":"cohere/north-mini-code:free"}"#).unwrap();
+        let cfg = UserConfig::parse(
+            r#"{"default":"z-ai/glm-5.2:free","notte":"cohere/north-mini-code:free"}"#,
+        )
+        .unwrap();
         assert_eq!(cfg.get("default"), Some("z-ai/glm-5.2:free"));
         assert_eq!(cfg.get("notte"), Some("cohere/north-mini-code:free"));
         assert_eq!(cfg.get("absent"), None);
@@ -130,7 +133,8 @@ mod tests {
     fn set_choice_refuses_a_model_not_in_the_catalog() {
         let catalog = sample_catalog();
         let mut cfg = UserConfig::default();
-        let err = set_choice(&mut cfg, &catalog, "default", "made-up/does-not-exist:free").unwrap_err();
+        let err =
+            set_choice(&mut cfg, &catalog, "default", "made-up/does-not-exist:free").unwrap_err();
         assert!(err.contains("catalog"));
     }
 

@@ -112,9 +112,9 @@ fn a_silent_refusal_is_caught_by_the_canary() {
             refusal.reason.contains("4242"),
             "a silent denial must be explained by the pid that is missing: {refusal}"
         ),
-        other => panic!(
-            "a clean exit with an empty answer was taken for a deserted machine: {other:?}"
-        ),
+        other => {
+            panic!("a clean exit with an empty answer was taken for a deserted machine: {other:?}")
+        }
     }
 }
 
