@@ -305,10 +305,19 @@ fn install_root() -> Result<PathBuf, String> {
 /// machine that released before the move the stamp is real, only elsewhere:
 /// read there once, written here from then on.
 fn stamp_left_behind(stamp_rel: &str) -> Option<PathBuf> {
-    let previous = PathBuf::from(env::var_os("HOME")?)
-        .join(release::PREVIOUS_INSTALL_BELOW_HOME)
-        .join(stamp_rel);
+    let previous = previous_stamp_path(env::var_os("HOME"), stamp_rel)?;
     previous.is_file().then_some(previous)
+}
+
+/// Where it would be, without asking the disk. Separated so the rule can be
+/// tested on a declared home rather than on the machine running the test,
+/// which is fault 5.
+fn previous_stamp_path(home: Option<OsString>, stamp_rel: &str) -> Option<PathBuf> {
+    Some(
+        PathBuf::from(home.filter(|value| !value.is_empty())?)
+            .join(release::PREVIOUS_INSTALL_BELOW_HOME)
+            .join(stamp_rel),
+    )
 }
 
 /// The sources tree what goes into service is built from.
@@ -756,6 +765,32 @@ mod tests {
             "the release is cloning the configuration home again: {sources:?}"
         );
         assert_ne!(sources, house);
+    }
+
+    /// The stamp of a machine that released before the house moved.
+    ///
+    /// It is looked for under the previous house, with the target's own
+    /// relative path — not a second string saying where stamps go. A stamp read
+    /// from the wrong place is worse than none: the release would name commits
+    /// that never entered service, and say it with a straight face.
+    #[test]
+    fn the_stamp_of_the_previous_house_keeps_the_target_s_own_path() {
+        let home = Some(OsString::from("/casa/di-chiunque"));
+        let target = release::target("sailor").expect("the table names it");
+
+        assert_eq!(
+            previous_stamp_path(home, target.stamp_rel),
+            Some(
+                PathBuf::from("/casa/di-chiunque")
+                    .join(release::PREVIOUS_INSTALL_BELOW_HOME)
+                    .join("state/sailor-binary-commit")
+            )
+        );
+
+        // A home exported empty by a script that could not find it would put the
+        // stamp at the root of the disk. It is not a home.
+        assert_eq!(previous_stamp_path(Some(OsString::new()), "state/x"), None);
+        assert_eq!(previous_stamp_path(None, "state/x"), None);
     }
 
     /// A declared root beats the home, and a declared empty one does not.
