@@ -17,10 +17,10 @@ const MAX_BLOCK: usize = 6;
 
 /// Quanti blocchi sforano oggi. **Può solo scendere**: abbassarlo è la
 /// riparazione, alzarlo va discusso e si vede nel diff.
-const LONG_BLOCKS_TODAY: usize = 870;
+const LONG_BLOCKS_TODAY: usize = 869;
 
 /// Quanti commenti citano una data. Stessa regola: solo verso il basso.
-const DATED_COMMENTS_TODAY: usize = 331;
+const DATED_COMMENTS_TODAY: usize = 330;
 
 /// Quante righe di commento sono ancora in italiano.
 ///
