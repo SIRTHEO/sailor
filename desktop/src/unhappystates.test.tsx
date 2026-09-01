@@ -462,6 +462,27 @@ function invites(text: string): boolean {
   return /fluss[oi]/i.test(text) && /\+|\b(scegli|crea|creane|nuovo|nuova)\b/i.test(text);
 }
 
+/**
+ * **THE RULE IS ABOUT ONE GESTURE, NOT ABOUT MENTIONING A FLOW.** The bar's
+ * prompt and the column's button both name a flow and both carry a verb, so
+ * counting them together said «two invitations» about two different requests.
+ * What cancels itself out is the *same* gesture offered twice.
+ */
+function invitesToCreate(text: string): boolean {
+  return /(\+\s*(un\s+)?(nuovo|nuova)|\bcrea(ne)?\b)[^.]{0,30}fluss[oi]|fluss[oi][^.]{0,20}\bnuov/i.test(
+    text,
+  );
+}
+
+function whoInvitesToCreate(container: HTMLElement): string[] {
+  const found: string[] = [];
+  for (const [selector, name] of OWNERS) {
+    const owner = container.querySelector(selector);
+    if (owner && invitesToCreate(owner.textContent ?? "")) found.push(name);
+  }
+  return found;
+}
+
 function whoInvites(container: HTMLElement): string[] {
   const found: string[] = [];
   for (const [selector, name] of OWNERS) {
@@ -473,20 +494,37 @@ function whoInvites(container: HTMLElement): string[] {
 
 describe("two invitations on the same screen cancel each other", () => {
   /**
-   * **ON THE POPULATED BOARD THE INVITATIONS ARE STILL TWO, and that is open.**
-   * «+ Nuovo flusso» lives in the column and in the toolbar: same function, two
-   * places. Deciding whose gesture it is once flows exist is not this job. The
-   * day it finds a single owner, this line goes red and asks to be removed.
+   * **THE COLUMN OWNS THE GESTURE, IN EVERY STATE WHERE IT EXISTS.** The bar is
+   * scoped to one flow, so a gesture that makes a sibling of it does not belong
+   * there, and with a flow focused the bar does not carry it at all. The tools
+   * moved into the board because a step is a thing **on** it — a flow is not.
    */
-  test("AT REST THE PANEL IS SILENT, and the two that speak are the column and the toolbar", () => {
+  test("AT REST ONLY THE COLUMN OFFERS TO MAKE A FLOW, and the bar points at it", () => {
     const { container } = render(<App />);
     goToFlows();
 
     // The scene is the right one: there are flows, none is focused, the toolbar
     // has changed job. Without this line the count would be true even on a
     // screen where nobody speaks.
-    expect(container.querySelector(".toolbar__prompt"), "the toolbar is not inviting").not.toBeNull();
-    expect(whoInvites(container)).toEqual(["la colonna", "la barra"]);
+    const prompt = container.querySelector(".toolbar__prompt") as HTMLElement;
+    expect(prompt, "the toolbar has not changed job").not.toBeNull();
+    expect(whoInvitesToCreate(container)).toEqual(["la colonna"]);
+
+    // And the bar still speaks: silencing it would satisfy the count above
+    // while leaving the screen with a bar that says nothing at all.
+    expect(prompt.textContent ?? "").toMatch(/nella colonna/i);
+    expect(invites(prompt.textContent ?? ""), "the bar stopped asking for a flow").toBe(true);
+  });
+
+  test("WITH A FLOW FOCUSED, THE COLUMN IS STILL THE ONLY ONE THAT OFFERS IT", () => {
+    const { container } = render(<App />);
+    goToFlows();
+    fireEvent.click(container.querySelector("button.rail__item") as HTMLElement);
+
+    // The bar has its tools back, so this is the other state, not a repeat of
+    // the one above: there the gesture could hide in a bar that had no tools.
+    expect(container.querySelectorAll(".toolbar__tool").length, "the bar has no tools").toBeGreaterThan(0);
+    expect(whoInvitesToCreate(container)).toEqual(["la colonna"]);
   });
 
   test("WITH A FLOW FOCUSED, THE PANEL DOES NOT INVITE FOCUSING IT", () => {
@@ -520,6 +558,9 @@ describe("two invitations on the same screen cancel each other", () => {
 
     expect(container.querySelector(".blank[data-state='empty']"), "this is not the empty canvas").not.toBeNull();
     expect(whoInvites(container)).toEqual(["la tela vuota"]);
+    // The state where the column is closed is the one state where the canvas
+    // owns the gesture instead: still one owner, a different one.
+    expect(whoInvitesToCreate(container)).toEqual(["la tela vuota"]);
   });
 });
 
