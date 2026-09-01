@@ -802,8 +802,15 @@ mod tests {
     /// falliva a casa vuota — confronta percorsi e non tocca il disco — ma
     /// `HOME` assente la faceva morire su un `unwrap`, e un caso che dipende
     /// dall'ambiente per **partire** dipende dall'ambiente.
+    ///
+    /// **GUARDA TUTTI I BERSAGLI, NON UNO SCELTO A MANO.** Fino al 01/09/2026
+    /// questa prova chiedeva `target("hooks")` — un bersaglio che nominava un
+    /// binario cancellato dal repo il 28/08 — e con la sua rimozione sarebbe
+    /// morta su un `expect`. Un caso scritto su un nome è una prova che va
+    /// aggiornata a ogni tabella; scritta sulla tabella, copre anche il
+    /// bersaglio che qualcuno aggiungerà domani.
     #[test]
-    fn the_binary_is_installed_where_the_hooks_look_for_it() {
+    fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
         let sources = root_under(
             None,
@@ -817,22 +824,29 @@ mod tests {
         assert_ne!(sources, home);
         assert!(home.ends_with(".claude"), "{home:?}");
 
-        let hooks = target("hooks").expect("il bersaglio dei ganci esiste");
-        let installed = home.join(hooks.safe_rel);
-        assert!(
-            installed.starts_with(&home),
-            "il binario finirebbe fuori dalla casa: {installed:?}"
-        );
-        assert!(
-            !installed.starts_with(&sources),
-            "il binario finirebbe accanto ai sorgenti, dove nessuno lo esegue: {installed:?}"
-        );
+        for candidate in release::TARGETS {
+            let installed = home.join(candidate.safe_rel);
+            assert!(
+                installed.starts_with(&home),
+                "{}: il binario finirebbe fuori dalla casa: {installed:?}",
+                candidate.name
+            );
+            assert!(
+                !installed.starts_with(&sources),
+                "{}: il binario finirebbe accanto ai sorgenti, dove nessuno lo esegue: {installed:?}",
+                candidate.name
+            );
+        }
     }
 
+    // I tre casi qui sotto nominavano `notte` fino al 01/09/2026. `parse_options`
+    // non giudica il nome — chi non esiste lo scarta `target()` più tardi —
+    // quindi restavano verdi su un bersaglio cancellato: un dato di prova che
+    // racconta un mondo sparito non rompe niente, e per questo invecchia.
     #[test]
     fn dry_run_and_skip_tests_are_read_as_flags() {
-        let options = parse_options(&a(&["notte", "--dry-run", "--skip-tests"])).unwrap();
-        assert_eq!(options.target_name, "notte");
+        let options = parse_options(&a(&["sailor", "--dry-run", "--skip-tests"])).unwrap();
+        assert_eq!(options.target_name, "sailor");
         assert!(options.dry_run);
         assert!(options.skip_tests);
         assert_eq!(options.wait_secs, 600);
@@ -840,12 +854,12 @@ mod tests {
 
     #[test]
     fn wait_secs_reads_its_number() {
-        let options = parse_options(&a(&["notte", "--wait-secs", "30"])).unwrap();
+        let options = parse_options(&a(&["sailor", "--wait-secs", "30"])).unwrap();
         assert_eq!(options.wait_secs, 30);
     }
 
     #[test]
     fn an_unknown_option_is_refused() {
-        assert!(parse_options(&a(&["notte", "--turbo"])).is_err());
+        assert!(parse_options(&a(&["sailor", "--turbo"])).is_err());
     }
 }

@@ -215,7 +215,9 @@ mod tests {
     #[test]
     fn release_reaches_the_release_command() {
         assert_eq!(
-            route(&args(&["sailor", "release", "notte", "--dry-run"])).reached(),
+            // Nominava `notte` fino al 01/09/2026: l'instradamento non guarda il
+            // bersaglio, quindi la riga restava verde su un binario cancellato.
+            route(&args(&["sailor", "release", "sailor", "--dry-run"])).reached(),
             Some("release")
         );
     }

@@ -105,14 +105,29 @@ dichiarati:
   solo l'esito.
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
-- **Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
-  tre delle sue prove leggono la configurazione della macchina di chi le esegue.
-  *29/08: è diventato bloccante e poi è stato aggirato.* Quelle tre prove sono
-  rosse dal 28/08 a codice invariato, e hanno bocciato un lavoro del flusso di
-  sviluppo che ne passava 692 su 695. Il gate ora esclude quel crate — che è un
-  debito, non una cura: **finché resta, una regressione vera lì dentro non
-  ferma nessuno**. O le prove smettono di leggere la macchina, o il crate se ne
-  va con il mondo che serve.
+- ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
+  tre delle sue prove leggono la configurazione della macchina di chi le
+  esegue.~~ **Storia, chiusa il 01/09/2026 — e conta come è finita.** La riga
+  offriva due uscite: «o le prove smettono di leggere la macchina, o il crate se
+  ne va con il mondo che serve». È stata la seconda: `crates/claude-hooks` è
+  stato cancellato il **29/08/2026 alle 22:09** (`afd52fe`, «via dal repo tutto
+  ciò che non è Sailor») insieme a tutto ciò che non era Sailor, e le tre prove
+  sono sparite con lui invece di essere riparate.
+  **Il debito è finito senza essere ripagato, e l'aggiramento è diventato
+  fossile cinque ore dopo essere nato, lo stesso giorno.** `--exclude
+  claude-hooks` entra nel passo `prove` di `flows/sviluppa-sailor.flow.json` il
+  29/08 alle 16:34 (`7a53f4d`, «il gate non è più ostaggio di prove rosse da
+  ieri»): per cinque ore e mezza escludeva un crate **vivo**, ed era un
+  aggiramento vero. Alle 22:09 il crate se n'è andato e la stessa riga è
+  diventata un fossile, che è rimasto lì **due giorni** — fino al 01/09/2026 —
+  con cargo che rispondeva a ogni corsa «warning: excluded package(s)
+  `claude-hooks` not found in workspace».
+  Un'esclusione che non esclude più niente non rompe niente: nessuno la toglie, e
+  nessun controllo la vede. Adesso il flag non c'è più e `cargo test --workspace`
+  è di nuovo tutto il workspace.
+  **Ciò che resta aperto è il guasto 5**, non questa voce: la cura che dichiarava
+  — le prove non leggono lo stato della macchina — non è mai stata scritta, e
+  nessun controllo impedisce che il caso ricompaia in un altro crate.
 - **In modalità viva, un errore di compilazione in un crate qualunque uccide la
   finestra** invece di lasciarla all'ultima versione buona.
 - **Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
