@@ -263,8 +263,8 @@
   "inputs": {
     "innesco": {
       "text": "crates/flow/src/graph.rs",
-      "who": "theo",
-      "where": "/Users/theo/personal/sailor"
+      "who": "someone",
+      "where": "."
     }
   }
 }

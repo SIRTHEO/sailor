@@ -22,7 +22,7 @@ Parole di Theo, 31/08/2026:
 
 E il perché, che allarga il problema oltre lo sviluppo del software:
 
-> «Nei flussi che farei nel workspace Gyver ci sarebbero anche gli MCP e le
+> «Nei flussi che farei nel workspace [di lavoro] ci sarebbero anche gli MCP e le
 > credenziali per accedere all'account Slack, Google, Granola. Idem per Notion. In
 > Slack mi piacerebbe poter avere Claude che legge le conversazioni: "vedi la
 > conversazione in X", "il mio collega mi ha scritto questo, cosa ne pensi". Con

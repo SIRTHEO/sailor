@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "flow",
  "ledger",
+ "libc",
  "models",
  "profiles",
  "serde",
@@ -3135,6 +3136,7 @@ name = "supervisor"
 version = "0.1.0"
 dependencies = [
  "ledger",
+ "libc",
  "serde",
  "serde_json",
 ]

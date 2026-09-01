@@ -426,9 +426,9 @@ diventare flusso **ha già risolto il paradosso che teme.** Si copia.
 
 ## 5. Cosa lascia in eredità la staffetta
 
-Recuperata da
-`/Users/theo/Backups/claude-bundles/pulizia-2026-08-28/claude-config-completo-2026-08-28.tar.gz`
-ed estratta in una cartella temporanea (`~/.claude` non è stato ripopolato).
+Recuperata da un archivio di configurazione del 28/08/2026, tenuto fuori dal
+repo, ed estratta in una cartella temporanea (`~/.claude` non è stato
+ripopolato).
 **12.382 righe di Rust**, 4.160 righe di registro, 33 rapporti di guasto.
 
 ### Riusabile quasi parola per parola

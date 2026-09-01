@@ -210,7 +210,7 @@ describe("dove è finita la riga, detto a chi guarda", () => {
 function summary(over: Partial<TerminalSummary>): TerminalSummary {
   return {
     id: "t1",
-    workspaceRoot: "/Users/theo/personal/sailor",
+    workspaceRoot: "/Users/you/code/sailor",
     workspaceName: "sailor",
     alive: true,
     processId: 4242,
@@ -337,8 +337,8 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/Users/theo/personal/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
-  { id: "t2", workspaceRoot: "/Users/theo/gyver/work/packages", workspaceName: "packages", alive: true, processId: 4243 },
+  { id: "t1", workspaceRoot: "/Users/you/code/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
+  { id: "t2", workspaceRoot: "/Users/you/code/packages", workspaceName: "packages", alive: true, processId: 4243 },
 ];
 
 /**
@@ -430,8 +430,8 @@ describe("la schermata dei terminali", () => {
       const button = await screen.findByRole("button", { name: "Apri un terminale" });
       expect((button as HTMLButtonElement).disabled).toBe(true);
 
-      const field = screen.getByPlaceholderText("/Users/theo/personal/sailor");
-      fireEvent.change(field, { target: { value: "/Users/theo/personal/sailor" } });
+      const field = screen.getByPlaceholderText("/Users/you/code/sailor");
+      fireEvent.change(field, { target: { value: "/Users/you/code/sailor" } });
       expect((screen.getByRole("button", { name: "Apri un terminale" }) as HTMLButtonElement).disabled).toBe(false);
 
       await act(async () => {
@@ -454,13 +454,13 @@ describe("la schermata dei terminali", () => {
           <Terminals native />
         </div>,
       );
-      const field = await screen.findByPlaceholderText("/Users/theo/personal/sailor");
-      fireEvent.change(field, { target: { value: "/Users/theo/gyver/work" } });
+      const field = await screen.findByPlaceholderText("/Users/you/code/sailor");
+      fireEvent.change(field, { target: { value: "/Users/you/code/elsewhere" } });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Apri un terminale" }));
       });
       expect(shell.argsOf("terminal_open")).toEqual([
-        { workspaceRoot: "/Users/theo/gyver/work", program: undefined, cols: 80, rows: 24 },
+        { workspaceRoot: "/Users/you/code/elsewhere", program: undefined, cols: 80, rows: 24 },
       ]);
     } finally {
       shell.stop();
