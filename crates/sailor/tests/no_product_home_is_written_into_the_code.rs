@@ -66,11 +66,6 @@ const STILL_ALLOWED: &[(&str, &str)] = &[
         "where the credentials of one command line are read",
     ),
     (
-        "crates/profiles/src/lib.rs",
-        "prose in a note meant for a person: the detector cannot tell a string \
-         of explanation from a path, and errs by flagging",
-    ),
-    (
         "crates/profiles/src/store_io.rs",
         "moves a product's home when a profile changes",
     ),
