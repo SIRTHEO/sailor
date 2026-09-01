@@ -993,17 +993,26 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 pub const USAGE: &[&str] = &[
     "sailor flow list",
     "sailor flow due",
-    "sailor flow check <nome> [--no-engines]",
-    "sailor flow run <nome> [mandato]",
-    "sailor flow resume <corsa>",
-    "sailor flow cost <nome>",
-    "sailor flow cap <nome> [micro|nessuno]",
-    "sailor flow schedule <nome> [3600s|07:30|nessuno] [leggero|pesante]",
-    "sailor flow relocate <nome> [prefisso-da-togliere]",
+    "sailor flow check <name> [--no-engines]",
+    "sailor flow run <name> [mandate]",
+    "sailor flow resume <run>",
+    "sailor flow cost <name>",
+    // **`micro`, `nessuno`, `leggero` E `pesante` RESTANO COSÌ, E NON È UNA
+    // DIMENTICANZA.** Non sono segnaposto: sono le parole che l'utente batte
+    // davvero e che il codice confronta, e una `schedule` già scritta le
+    // conserva nel deposito. Tradurle qui senza toccare il parser farebbe
+    // mentire l'aiuto; tradurle in tutti e due i posti romperebbe le
+    // pianificazioni già registrate — che è la stessa ragione per cui gli `id`
+    // dei flussi restano in italiano (`AGENTS.md`, la riga sui dati del
+    // deposito). Se un giorno si vogliono in inglese, la strada è accettarle
+    // in tutte e due le lingue e mostrare la nuova, mai sostituirle.
+    "sailor flow cap <name> [micro|nessuno]",
+    "sailor flow schedule <name> [3600s|07:30|nessuno] [leggero|pesante]",
+    "sailor flow relocate <name> [prefix-to-strip]",
 ];
 
 fn usage() -> String {
-    format!("uso:\n  {}", USAGE.join("\n  "))
+    format!("usage:\n  {}", USAGE.join("\n  "))
 }
 
 /// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
