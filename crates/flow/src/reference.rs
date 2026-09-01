@@ -39,8 +39,22 @@
 //! nessun oggetto da riconoscere; lo diventerebbe con un'azione che produce
 //! oggetti liberi — `store_read` restituisce il valore depositato così com'è —
 //! passati poi a un nodo che esegue. Chi lega quei due nodi lo deve sapere.
+//!
+//! **PERCHÉ QUESTO MODULO STA NEL CRATE DEL FLUSSO E NON IN QUELLO DELLE
+//! AZIONI.** Fino al 01/09/2026 stava in `crates/actions`, e ogni azione che
+//! voleva i rinvii apriva il proprio `execute` con la stessa riga. È il guasto
+//! 28: la riga era in due azioni su nove, quindi il deposito riceveva
+//! `{"$from": …}` come oggetto e moriva; poi è stata **ricopiata in dodici
+//! azioni su sedici**, che non è la cura — è il guasto 10 in dodici esemplari,
+//! e le quattro rimaste (`history_ask`, `detect_tools`, `trigger`, `subflow`)
+//! continuavano a non averla. Come un passo riceve il lavoro del passo prima
+//! non è una scelta della singola azione: è la semantica del grafo. Perciò la
+//! risoluzione avviene **una volta sola dove l'ingresso si compone**
+//! ([`crate::step_input`]), come già la radice del progetto e il `workdir`, e
+//! ogni azione registrata la eredita — comprese quelle che nessuno ha ancora
+//! scritto.
 
-use flow::ActionError;
+use crate::ActionError;
 use serde_json::{Map, Value};
 
 /// La chiave che nomina un valore preso dall'ingresso del passo.

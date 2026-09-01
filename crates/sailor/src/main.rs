@@ -9,18 +9,15 @@
 //! sistema, e il piano `docs/plans/2026-08-22-sailor-il-sistema.md` parla
 //! sempre di `sailor <verbo>`. Qui comincia quel binario.
 //!
-//! Uso:
-//!     sailor release <bersaglio> [opzioni]   mette in servizio un binario da HEAD
-//!     sailor profiles <list|create|switch|current>  profili per riga di comando
-//!     sailor models <list|current|set>       il catalogo dei modelli
-//!     sailor ui [opzioni]                    la pagina locale dei flussi
-//!     sailor flow <list|check|run|resume> [nome]  elenca, controlla, esegue o riprende
-//!     sailor step <open|close> [opzioni]     prende in carico e chiude un passo consegnato
-//!     sailor run <cli> [argomenti...]        lancia una CLI col profilo attivo
-//!     sailor inventory [--kind K] [--json]   che cosa è installato, e cosa è spento
-//!     sailor remaining                        quanta quota della persona è già consumata
-//!     sailor version                          la versione di questo binario
-//!     sailor --help                           l'elenco dei comandi
+//! Uso: `sailor <comando> [opzioni]`, e `sailor --help` per l'elenco.
+//!
+//! **QUI NON C'È PIÙ L'ELENCO DEI COMANDI, ED È UNA RIPARAZIONE.** C'era, ed
+//! era falso: nominava `sailor ui`, tolto il 31/08/2026, e dava a `sailor flow`
+//! quattro sottocomandi su nove. Una copia a mano di un elenco che vive
+//! altrove invecchia da sola e nessun compilatore la guarda — è il guasto 10, e
+//! in questo caso mandava a digitare un comando che non esiste. L'elenco vero è
+//! la tabella `COMMANDS` qui sotto, che `--help` stampa e che non si può
+//! disallineare da se stessa; i sottocomandi di ciascuno li dice il comando.
 
 mod flow_cmd;
 mod inventory_cmd;

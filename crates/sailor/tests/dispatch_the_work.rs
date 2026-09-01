@@ -657,6 +657,16 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
         "second_engine": "un altro territorio"
     });
 
+    // **L'INGRESSO SI COMPONE COME LO COMPONE L'ESECUTORE.** Dal 01/09/2026 i
+    // rinvii li scioglie `flow::step_input` — un posto solo per tutte le
+    // azioni, guasto 28 — e questa prova chiama `execute` senza passare di lì.
+    // Chiamare la funzione vera è il modo di provare l'azione nel mondo in cui
+    // gira: senza, la si proverebbe in uno che non esiste. Che i rinvii
+    // arrivino sciolti a **ogni** azione lo prova
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`; qui si prova che
+    // l'incarico sciolto finisce davvero nel prompt di questo motore.
+    let input = flow::reference::resolve_references(&input).expect("i rinvii si sciolgono");
+
     let registry = registry_with(EveryToolIsShell);
     let action = registry.get(&engine.action).expect("azione registrata");
     let outcome = action
