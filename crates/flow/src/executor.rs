@@ -1,4 +1,5 @@
 use crate::record::truncate_said;
+use crate::reference;
 use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -42,11 +43,16 @@ pub const CURRENT_RUN: &str = "flow.run";
 /// La chiave sotto cui **chi lancia** scrive la radice del progetto.
 ///
 /// **PERCHÉ LO STATO CONDIVISO E NON UN RINVIO NEL FLUSSO.** Un `{"$root": …}`
-/// dovrebbe passare da `resolve_references`, che il guasto 28 ha misurato
-/// essere chiamata da due azioni su nove: le altre sette riceverebbero la
-/// radice come un oggetto e morirebbero, o peggio la scriverebbero letterale.
-/// Lo stato condiviso arriva a **ogni** `Action::execute` per costruzione,
-/// comprese le azioni che nessuno ha ancora scritto.
+/// starebbe *dentro* l'ingresso, e un'azione che l'ingresso non lo legge — o
+/// che lo legge con uno schema chiuso — non lo vedrebbe mai. Lo stato condiviso
+/// arriva a **ogni** `Action::execute` per costruzione, comprese le azioni che
+/// nessuno ha ancora scritto, e non dipende da cosa il passo dichiara.
+///
+/// *Fino al 01/09/2026 questa riga diceva un'altra cosa: che un rinvio sarebbe
+/// passato da `resolve_references`, «chiamata da due azioni su nove». Era vero
+/// il 31/08 e non lo è più — la risoluzione sta qui sotto, in `step_input`, ed è
+/// di tutte. La ragione qui sopra invece regge, e non dipendeva da quel
+/// numero.*
 ///
 /// **PERCHÉ IL PREFISSO NON È `flow.`.** Quello è dell'esecutore, che scrive
 /// passo e corsa a ogni giro. Questa non la scrive l'esecutore: la porta chi
@@ -864,13 +870,80 @@ impl Executor for InProcessExecutor {
                 let step = graph
                     .step(&step_id)
                     .ok_or_else(|| FlowError::UnknownStep(step_id.clone()))?;
-                let input =
-                    step_input(graph, step, &request.root_inputs, &records, root.as_deref())?;
+                let previous = latest_for(step, &records);
+                let attempt = previous.map_or(1, |record| record.attempt + 1);
+                // **UN RINVIO CHE NON TROVA NIENTE ROMPE IL PASSO, NON LA
+                // CORSA.** Finché la risoluzione stava dentro le azioni, un
+                // puntatore morto tornava come `ActionError` da `execute`, e
+                // l'esecutore lo scriveva nel deposito come qualunque altro
+                // passo rotto: la corsa arrivava a `Failed([quel passo])`, chi
+                // guardava vedeva quale, e la ripresa sapeva dove ripartire.
+                // Spostando la risoluzione qui, propagare l'errore col `?`
+                // avrebbe interrotto `execute` **senza aprire né chiudere
+                // niente**: nessun record, nessuna decisione, e un passo che
+                // per il deposito non è mai esistito. Un difetto di un passo
+                // resta di quel passo.
+                let input = match step_input(
+                    graph,
+                    step,
+                    &request.root_inputs,
+                    &records,
+                    root.as_deref(),
+                ) {
+                    Ok(input) => input,
+                    Err(FlowError::Action(error)) => {
+                        // L'intenzione si scrive con l'ingresso **come il passo
+                        // l'ha ricevuto**, rinvii compresi: è quello che chi
+                        // legge deve vedere per capire quale puntatore
+                        // correggere.
+                        let mut started = StepRecord::started(
+                            &request.run_id,
+                            &step.id,
+                            attempt,
+                            epoch,
+                            step.deps.clone(),
+                            composed_input(graph, step, &request.root_inputs, &records)
+                                .unwrap_or(Value::Null),
+                            request.gates.clone(),
+                            clock.now()?,
+                        );
+                        started.attempt_relation = attempt_relation(&records, &started);
+                        started.held_by_pid = Some(std::process::id());
+                        started.species =
+                            actions.get(&step.action).map(|action| action.species());
+                        store.append_started(started)?;
+                        store.close(
+                            &request.run_id,
+                            &step.id,
+                            attempt,
+                            epoch,
+                            Completion {
+                                outcome: Outcome::Broke,
+                                output: None,
+                                said: Some(error.said),
+                                failure_class: Some(error.class),
+                                ended_at: clock.now()?,
+                                bytes_seen: None,
+                                bytes_discarded: None,
+                            },
+                        )?;
+                        continue;
+                    }
+                    // Gli altri difetti della composizione — un percorso
+                    // assoluto dentro il flusso, la radice che manca — sono del
+                    // **flusso**, non di un passo: non si ripara riprendendo la
+                    // corsa, e fermarla è la risposta giusta.
+                    Err(other) => return Err(other),
+                };
+                let StepInput {
+                    value: input,
+                    runs: condition_met,
+                } = input;
                 step.input_schema.validate(&input)?;
-                let condition_met = step
-                    .when
-                    .as_ref()
-                    .is_none_or(|condition| condition.matches(&input));
+                // La condizione l'ha già decisa `step_input`, che è anche il
+                // solo posto in cui poteva deciderla: da lei dipende se i
+                // rinvii si sciolgono. Rivalutarla qui vorrebbe dire due
+                // risposte alla stessa domanda su due valori diversi.
                 let action = if condition_met {
                     Some(
                         actions
@@ -880,8 +953,6 @@ impl Executor for InProcessExecutor {
                 } else {
                     None
                 };
-                let previous = latest_for(step, &records);
-                let attempt = previous.map_or(1, |record| record.attempt + 1);
                 let mut started = StepRecord::started(
                     &request.run_id,
                     &step.id,
@@ -1405,19 +1476,108 @@ mod workdir_tests {
 /// Il campo con cui un passo dice **dove** lavora.
 ///
 /// **IL CRATE DEL FLUSSO CONOSCE QUESTA PAROLA, E SI PAGA APPOSTA.** Finché la
-/// risoluzione stava dentro le azioni, ogni azione nuova nasceva senza — è il
-/// guasto 28 sulla stessa dimensione: `resolve_references` è chiamata da due
-/// azioni su nove, e le altre sette non lo sanno. Qui la risoluzione avviene
-/// **una volta sola dove l'ingresso si compone**, quindi ogni azione
-/// registrata la eredita, comprese quelle che nessuno ha ancora scritto.
+/// risoluzione di un percorso fosse stata dentro le azioni, ogni azione nuova
+/// sarebbe nata senza — è quello che è successo ai rinvii, guasto 28: la riga
+/// stava in due azioni su nove, poi in dodici su sedici, e la scelta di averla
+/// restava della singola azione. Qui la risoluzione avviene **una volta sola
+/// dove l'ingresso si compone**, quindi ogni azione registrata la eredita,
+/// comprese quelle che nessuno ha ancora scritto. Dal 01/09/2026 di quel
+/// «dove» ne passa anche `resolve_references`, poche righe sotto: sono la
+/// stessa regola, e adesso stanno nello stesso posto.
 pub const WORKDIR_FIELD: &str = "workdir";
 
+/// L'ingresso di un passo, e **se quel passo gira**.
+///
+/// **PERCHÉ LE DUE COSE TORNANO INSIEME E NON SEPARATE.** La condizione decide
+/// se sciogliere i rinvii, e i rinvii sciolti sono l'ingresso: calcolarle in due
+/// posti vorrebbe dire valutare `when` due volte, su due valori che possono
+/// differire proprio per la risoluzione. Sarebbe la stessa regola scritta due
+/// volte, cioè il guasto 10 dentro la cura del 28.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StepInput {
+    /// Ciò che l'azione riceve. Coi rinvii sciolti se il passo gira; così com'è
+    /// stato composto se il passo è saltato.
+    pub value: Value,
+    /// Falso quando il `when` del passo non è soddisfatto.
+    pub runs: bool,
+}
+
+/// Come si compone l'ingresso di un passo: dipendenze, `with`, posizione,
+/// condizione, rinvii — **in quest'ordine, e l'ordine è tutto**.
+///
+/// **1. LE DIPENDENZE E IL `with`.** L'uscita dei passi da cui dipende, con
+/// sopra i valori che il passo dichiara.
+///
+/// **2. IL `workdir`.** Prima della condizione e prima dei rinvii, perché è
+/// dove lavora il passo e non dipende da nessuno dei due.
+///
+/// **3. LA CONDIZIONE.** Valutata sull'ingresso **non ancora sciolto**, cioè
+/// esattamente come prima del 01/09/2026. È una scelta e non un residuo: un
+/// passo saltato non deve pagare niente di ciò che i rinvii chiedono, e
+/// soprattutto **non deve rompersi per un puntatore che riguarda un lavoro che
+/// non farà**.
+///
+/// **4. I RINVII, E SOLO SE IL PASSO GIRA.** Qui, e in nessun altro posto
+/// dell'albero: è il guasto 28. Finché la risoluzione stava dentro le azioni,
+/// un'azione nuova nasceva senza e nessun controllo lo diceva — prima due
+/// azioni su nove, poi dodici su sedici, che è il guasto 10 in dodici
+/// esemplari. Da qui passa **ogni** ingresso di **ogni** passo che gira, quindi
+/// ogni azione registrata la eredita, comprese quelle che nessuno ha ancora
+/// scritto.
+///
+/// **PERCHÉ IL PUNTO 3 STA PRIMA DEL 4, MISURATO E NON DEDOTTO.** Il primo
+/// tentativo scioglieva i rinvii prima della condizione, e la giustificazione
+/// scritta accanto — «così un `workdir` preso da un rinvio si risolve» — non
+/// valeva il prezzo: `flows/chiedi-all-indice.flow.json` ha il passo `leggi` con
+/// un `when` su `/status` e un `with` pieno di `$from` verso l'uscita di
+/// `chiedi`, che è una dipendenza **saltabile**. Quando l'indice non risponde —
+/// il caso che quel flusso dichiara essere il più frequente — `chiedi` viene
+/// saltato, `leggi` riceve `{}` più il proprio `with`, e coi rinvii sciolti
+/// prima della condizione il passo **si rompe invece di essere saltato**.
+/// Provato col binario vero: base «completato», con quell'ordine «terminato con
+/// stato failed — `unresolved_reference`».
+///
+/// **IL LIMITE CHE QUESTO ORDINE SI TIENE, DICHIARATO.** Un `workdir` scritto
+/// come `{"$from": …}` non viene attaccato alla radice: `resolve_workdir` lo
+/// vede come «dichiarato ma non testo» e lo lascia stare, e la risoluzione
+/// arriva dopo. Era già così prima del 01/09/2026 e non peggiora; nessun flusso
+/// dell'albero lo fa. Chi vorrà quel caso dovrà sciogliere quel campo prima,
+/// non spostare tutta la risoluzione — il prezzo di spostarla è scritto qui
+/// sopra ed è stato pagato una volta.
 pub fn step_input(
     graph: &Graph,
     step: &Step,
     root_inputs: &BTreeMap<String, Value>,
     records: &[StepRecord],
     root: Option<&Path>,
+) -> Result<StepInput, FlowError> {
+    let composed = composed_input(graph, step, root_inputs, records)?;
+    let positioned = resolve_workdir(step, composed, root)?;
+    let runs = step
+        .when
+        .as_ref()
+        .is_none_or(|condition| condition.matches(&positioned));
+    if !runs {
+        return Ok(StepInput {
+            value: positioned,
+            runs,
+        });
+    }
+    let value = reference::resolve_references(&positioned).map_err(FlowError::Action)?;
+    Ok(StepInput { value, runs })
+}
+
+/// L'ingresso **come il passo lo riceve**: l'uscita delle dipendenze con sopra
+/// il `with`, e nient'altro — nessun rinvio sciolto, nessun percorso risolto.
+///
+/// Sta a parte perché serve due volte: a comporre, e a **raccontare** un passo
+/// che si è rotto proprio sciogliendo i rinvii. Chi legge quel record deve
+/// vedere il puntatore che ha scritto, non il vuoto che ne è uscito.
+fn composed_input(
+    graph: &Graph,
+    step: &Step,
+    root_inputs: &BTreeMap<String, Value>,
+    records: &[StepRecord],
 ) -> Result<Value, FlowError> {
     let input = match step.deps.as_slice() {
         [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
@@ -1438,7 +1598,7 @@ pub fn step_input(
             Ok(Value::Object(values))
         }
     }?;
-    resolve_workdir(step, overlay_input(input, step.with.as_ref()), root)
+    Ok(overlay_input(input, step.with.as_ref()))
 }
 
 /// Dove il passo lavorerà, deciso qui e non dentro l'azione.
