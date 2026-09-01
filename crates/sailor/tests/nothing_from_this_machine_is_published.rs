@@ -109,6 +109,55 @@ fn no_path_from_the_machine_this_runs_on_is_written_down() {
     );
 }
 
+/// **THE SAME PLACE, SPELLED WITH A TILDE.** The check above forbids the home
+/// written in full, and `~/personal/sailor` walked straight past it: it is the
+/// same directory written the way people write it in documents. Four survived,
+/// one of them in a shipped flow document telling every reader to `cd` into a
+/// directory only its author has. Still a shape read off the machine — git says
+/// where the tree is, nobody writes a name down.
+#[test]
+fn the_repository_does_not_name_its_own_place_on_this_machine() {
+    let Ok(home) = std::env::var("HOME") else {
+        return;
+    };
+    let Some(tree) = main_worktree() else {
+        return;
+    };
+    let Ok(below) = tree.strip_prefix(&home) else {
+        // The tree is not under this home: nothing to abbreviate, nothing to say.
+        return;
+    };
+    let tilde = format!("~{}", Path::new("/").join(below).display());
+    if tilde.len() < 6 {
+        return;
+    }
+
+    let hits = occurrences_of(&tilde);
+    assert!(
+        hits.is_empty(),
+        "«{tilde}» is where this repository sits on one machine, and it is \
+         written into {} places that ship. A reader who is not its author has \
+         no such directory: {}",
+        hits.len(),
+        hits.join(", ")
+    );
+}
+
+/// Where the repository proper sits, asked of git so that a worktree answers
+/// with the tree it belongs to rather than with itself.
+fn main_worktree() -> Option<PathBuf> {
+    let out = std::process::Command::new("git")
+        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .current_dir(repo_root())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let git_dir = PathBuf::from(String::from_utf8(out.stdout).ok()?.trim());
+    git_dir.parent().map(Path::to_path_buf)
+}
+
 /// The names that cannot be listed in public: read from outside the repository,
 /// so this is armed on the machine that could leak them and quiet elsewhere.
 #[test]
