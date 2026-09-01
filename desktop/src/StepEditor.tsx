@@ -11,6 +11,7 @@
 import { useRef, useState } from "react";
 import { kindOf, type Step } from "./flow";
 import {
+  chainIn,
   groupByKind,
   joinToolParams,
   modelSuggestions,
@@ -19,7 +20,6 @@ import {
   schemaRejectsToolKeys,
   splitToolParams,
   toolKindLabel,
-  toolOf,
   type OptionSpec,
   type OptionValue,
   type Tool,
@@ -64,11 +64,15 @@ export function StepEditor({
   const [idDraft, setIdDraft] = useState(step.id);
   const idTaken = idDraft !== step.id && siblingIds.includes(idDraft);
 
+  const { choice, rest } = splitToolParams(step.with);
+  // La catena che il pannello non sa comporre e non deve cancellare: resta fra
+  // gli altri parametri, e da qui si legge per dirlo a chi guarda.
+  const chain = chainIn(rest);
   // Un passo «agente» usa uno strumento per definizione; e un passo che ne
   // dichiara già uno lo mostra comunque, qualunque azione porti — l'alternativa
-  // sarebbe nascondere un dato che sta nel file.
-  const usesTool = kindOf(step.action) === "engine" || toolOf(step.with) !== "";
-  const { choice, rest } = splitToolParams(step.with);
+  // sarebbe nascondere un dato che sta nel file. Una catena conta: un passo che
+  // nomina tre motori ne usa uno.
+  const usesTool = kindOf(step.action) === "engine" || choice.tool !== "" || chain.length > 0;
 
   // Il riquadro JSON mostra solo i parametri che il pannello non gestisce: i
   // tre campi hanno già i loro, e vederli in due posti che si scrivono a
@@ -136,6 +140,19 @@ export function StepEditor({
       {usesTool && (
         <div className="panel__tool">
           <div className="panel__title">Chi lo esegue</div>
+
+          {/* UNA CATENA SI DICE ANCHE QUI. Il selettore su «— nessuno —» sopra
+              un passo che nomina tre motori è la stessa bugia che il nodo
+              raccontava, spostata di una finestra: il campo c'è, il pannello
+              non lo sa comporre, e il silenzio farebbe credere che non ci sia.
+              Resta scritto fra i parametri, e ci torna identico. */}
+          {chain.length > 0 && (
+            <p className="panel__note">
+              questo passo dichiara una catena di motori — {chain.join(" › ")} — in ordine di
+              preferenza. Il pannello non la sa ancora comporre: resta com'è, e si legge fra i
+              parametri qui sotto. Scegliere uno strumento qui la sostituisce.
+            </p>
+          )}
 
           {tools.length > 0 ? (
             <label className="panel__field">

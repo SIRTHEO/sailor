@@ -270,7 +270,7 @@ export interface ElementStyle {
   vars: Map<string, string>;
   /**
    * Le dichiarazioni che vincono su questo elemento, coi `var()` già sciolti.
-   * Non è solo colore: è da qui che `layout.test.ts` legge i corpi e le
+   * Non è solo colore: è da qui che `layout.test.tsx` legge i corpi e le
    * interlinee dell'intestazione di una corsia, invece di ricopiarli.
    */
   declarations: Map<string, string>;
