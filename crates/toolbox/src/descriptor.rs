@@ -1557,30 +1557,77 @@ mod the_new_field_is_optional {
     /// posizione in una catena lo renda un difetto lo decide chi legge i flussi.
     ///
     /// Le due metà stanno in una prova sola apposta: con la sola prima, un
-    /// `cannot_be_a_fallback` che rispondesse sempre «no» sarebbe verde.
+    /// `cannot_be_a_fallback` che rispondesse sempre «no» sarebbe verde; con la
+    /// sola seconda, uno che rispondesse sempre «sì» lo sarebbe.
+    ///
+    /// **PERCHÉ IL MONDO QUI È SCRITTO APPOSTA, DAL 01/09/2026.** Fino a quel
+    /// giorno la metà negativa era `agy`, preso dai descrittori spediti perché
+    /// era il motore che nessuno aveva ancora misurato. È un appoggio che si
+    /// rompe da sé: appena `agy` è stato misurato e ha dichiarato le proprie
+    /// parole, questa prova è morta con `expect("agy non dichiara nessun
+    /// unusable_when")` — cioè **il lavoro di qualcun altro l'ha fatta cadere
+    /// facendo la cosa giusta**. Una prova sulla regola non deve dipendere da
+    /// quale strumento capiti a essere incompleto oggi: quel fatto cambia, e
+    /// cambia proprio quando qualcuno lavora bene. Il mondo malato lo si
+    /// costruisce, come per la guardia sulle contraddizioni qui sopra.
+    ///
+    /// Che i motori **spediti** stiano a posto è un'altra domanda, e ha il suo
+    /// posto: `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted`
+    /// la fa sui flussi veri, dove ha una conseguenza.
     #[test]
     fn only_an_engine_that_says_how_it_runs_out_can_be_a_fallback() {
-        let catalog = Catalog::load(&[Source::Builtin]);
+        let catalog = loaded(
+            "ripieghi",
+            r#"[
+              {
+                "id": "dice-come-finisce", "family": "ai_cli",
+                "detect": { "command": "primo" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["weekly limit"] }
+              },
+              {
+                "id": "tace", "family": "ai_cli",
+                "detect": { "command": "secondo" },
+                "ask": { "args": ["-p"], "prompt": "stdin" }
+              },
+              {
+                "id": "dice-solo-frammenti-vuoti", "family": "ai_cli",
+                "detect": { "command": "terzo" },
+                "ask": { "args": ["-p"], "prompt": "stdin", "unusable_when": ["   "] }
+              }
+            ]"#,
+        );
+        assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
         let of = |id: &str| {
             catalog
                 .live()
                 .into_iter()
                 .find(|loaded| loaded.descriptor.id == id)
-                .unwrap_or_else(|| panic!("{id} è spedito col prodotto"))
+                .unwrap_or_else(|| panic!("{id} sta nel catalogo scritto qui"))
                 .descriptor
                 .cannot_be_a_fallback()
         };
 
         assert!(
-            of("claude-code").is_none(),
-            "claude-code dichiara «weekly limit»: il lavoro può passare oltre"
+            of("dice-come-finisce").is_none(),
+            "chi dichiara le proprie parole può stare in mezzo: il lavoro passa oltre"
         );
-        assert!(of("codex").is_none(), "e codex dichiara il proprio 401");
-        let why = of("agy").expect("agy non dichiara nessun `unusable_when`");
+
+        let why = of("tace").expect("chi non dichiara niente non può fare da ripiego");
         assert!(why.contains("unusable_when"), "{why}");
         assert!(
             why.contains("non partono mai"),
             "il motivo dice cosa si perde, non solo cosa manca: {why}"
+        );
+
+        // **UN ELENCO DI FRAMMENTI VUOTI NON È UN ELENCO.** `mentions_any` li
+        // scarta uno per uno, quindi `says_it_cannot_work` resta `false` e il
+        // motore è un tappo esattamente come chi tace — ma a chi legge il
+        // descrittore sembra che qualcuno abbia guardato.
+        assert!(
+            of("dice-solo-frammenti-vuoti").is_some(),
+            "un `unusable_when` di soli frammenti vuoti si comporta come un elenco \
+             vuoto, e va detto: altrimenti la forma di una dichiarazione passa per \
+             una dichiarazione"
         );
     }
 

@@ -2114,6 +2114,40 @@ fn each_one_why(reasons: &[String]) -> String {
     reasons.join(" · ")
 }
 
+/// Cosa succede a un passo quando il motore ha detto di **non poter lavorare**.
+///
+/// **STA IN UNA COPIA SOLA, E NON È PIGNOLERIA.** La *regola* — quali parole
+/// contano — era già in un posto solo (`mentions_any`); la **conseguenza** no:
+/// era scritta due volte, una per ramo, e le due copie erano già divergenti
+/// appena nate. È il guasto 10 rientrato dalla porta di servizio, sullo stesso
+/// codice che stava riparando il guasto sul ripiego.
+///
+/// La differenza che questa funzione tiene è quella che conta per chi legge:
+/// **con una catena dietro** il lavoro passa al prossimo, e non c'è ancora
+/// nessun errore da dare; **da solo** non c'è nessun prossimo, ma la diagnosi
+/// resta — chi legge «esaurito» sa che deve aspettare o cambiare profilo, chi
+/// legge «uscito in errore» va a cercare un guasto che non c'è.
+fn engine_cannot_work(
+    named: &str,
+    solo: bool,
+    stdout: &str,
+    stderr: &str,
+) -> Result<Asked, ActionError> {
+    if !solo {
+        return Ok(Asked::CannotWork(format!(
+            "{named} non poteva lavorare: {}",
+            what_it_said(stdout, stderr)
+        )));
+    }
+    Err(ActionError::new(
+        "engine_exhausted",
+        format!(
+            "{named} ha finito la propria quota, non si è rotto: {}",
+            what_it_said(stdout, stderr)
+        ),
+    ))
+}
+
 impl ExternalEngineAction {
     /// Interroga un motore. `set_aside` sono quelli già scartati, e finisce nei
     /// messaggi d'errore: chi legge un passo rosso deve vedere l'intera catena,
@@ -2217,7 +2251,53 @@ impl ExternalEngineAction {
         let outcome = match result {
             EngineResult::Ok { stdout, stderr } => {
                 let reading = read(&stdout);
-                note(reading.clone(), None, &stdout);
+                // **DIRE DI NON POTER LAVORARE E USCIRE ZERO SONO COMPATIBILI, E
+                // FINO AL 01/09/2026 QUI NON SI GUARDAVA.** La domanda «questo
+                // motore ha detto di non poter lavorare?» stava solo nel ramo
+                // `ExitError`: di qua la risposta era presa per buona comunque,
+                // il ripiego non scattava, e la riga del deposito nasceva con
+                // `error_type: None` — cioè il passo si chiudeva **verde** su una
+                // non-risposta, che è peggio del ripiego perso.
+                //
+                // Non è un caso di scuola: `CODEX_HOME=<cartella vuota> codex
+                // exec < /dev/null` risponde «No prompt provided via stdin» ed
+                // esce **zero** (guasto 39, misurato su questa macchina). Con un
+                // `answer_shape` dichiarato il passo moriva poi su un errore di
+                // forma, cioè sul sintomo sbagliato tre gradini più in là.
+                //
+                // **LA SONDA A SECCO LA DISTINZIONE CE L'AVEVA GIÀ**:
+                // `judge_dry_run` interroga `unusable_when` su `Ok` *e* su
+                // `ExitError`. Il controllo statico e la corsa vera divergevano
+                // sullo stesso motore, ed è la forma del guasto 39 su un altro
+                // campo. Qui convergono: **una sola domanda, gli stessi due
+                // rami**.
+                //
+                // **LA RIGA SI SCRIVE PRIMA DELLA TOLLERANZA, COME NELL'ALTRO
+                // RAMO.** Sono due domande diverse e vanno tenute separate: la
+                // specie dice **cos'è successo**, `accept` dice **cosa ne fa la
+                // corsa**. Nel primo tentativo di chiudere questo guasto il
+                // `note(...)` stava dentro il ramo della non-tolleranza, e un
+                // passo con `accept: ["exit_error"]` tornava a scrivere una riga
+                // `NULL` su un motore che aveva appena detto di non poter
+                // lavorare — cioè il difetto sopravviveva dentro il proprio
+                // rimedio, in un angolo. L'ha trovato un giudice che non aveva
+                // scritto il lavoro.
+                let cannot_work = candidate.says_it_cannot_work(&stdout, &stderr);
+                note(
+                    reading.clone(),
+                    // La specie è la stessa dell'altro ramo: `exhausted` è una
+                    // cosa che passa da sé, e distinguerla dal codice d'uscita
+                    // con cui è arrivata non direbbe niente a nessuno.
+                    cannot_work.then_some("exhausted"),
+                    &stdout,
+                );
+                // La tolleranza viene dopo, per la stessa ragione dell'altro
+                // ramo: un passo che con `accept` dichiara di volersi tenere il
+                // fallimento di questo motore lo vuole come dato, e non vuole che
+                // qualcun altro ci riprovi al posto suo.
+                if cannot_work && !tolerates(&spec.accept, "exit_error") {
+                    return engine_cannot_work(&named, solo, &stdout, &stderr);
+                }
                 // **L'USCITA DEL PASSO NON CAMBIA PERCHÉ SI È MISURATO.** Se il
                 // descrittore ha chiesto un involucro per farsi dire i token,
                 // qui la risposta si tira fuori dall'involucro e `stdout` torna
@@ -2274,24 +2354,10 @@ impl ExternalEngineAction {
                     // fallimento lo vuole come dato, non vuole che qualcun altro
                     // ci riprovi al posto suo.
                     if exhausted {
-                        // Con una catena si passa al prossimo; da solo non c'è
-                        // nessun prossimo, ma l'errore dice comunque **quale
-                        // delle due cose** è successa. Chi legge «esaurito» sa
-                        // che deve aspettare o cambiare profilo; chi legge
-                        // «uscito in errore» va a cercare un guasto che non c'è.
-                        if !solo {
-                            return Ok(Asked::CannotWork(format!(
-                                "{named} non poteva lavorare: {}",
-                                what_it_said(&stdout, &stderr)
-                            )));
-                        }
-                        return Err(ActionError::new(
-                            "engine_exhausted",
-                            format!(
-                                "{named} ha finito la propria quota, non si è rotto: {}",
-                                what_it_said(&stdout, &stderr)
-                            ),
-                        ));
+                        // La conseguenza è **la stessa** dell'uscita zero, e sta
+                        // in un posto solo: due copie di questo blocco erano già
+                        // divergenti appena nate.
+                        return engine_cannot_work(&named, solo, &stdout, &stderr);
                     }
                     let chain = if set_aside.is_empty() {
                         String::new()
@@ -3676,6 +3742,106 @@ mod tests {
         assert_eq!(output["stdout"], "ha-risposto-il-secondo\n");
     }
 
+    /// Un eseguibile finto che dice di essere esaurito **ed esce zero**.
+    ///
+    /// **PERCHÉ SERVE UN SECONDO FINTO MOTORE.** Il gemello qui sopra esce 1, e
+    /// tutte le prove ermetiche su questa catena facevano così: il motore
+    /// esaurito usciva **sempre** in errore, quindi nessuna di esse guardava mai
+    /// il ramo riuscito. Un difetto che vive solo di là non poteva diventare
+    /// rosso.
+    fn engine_that_says_it_is_out_and_exits_zero(dir: &std::path::Path) -> String {
+        let path = dir.join("zero-dopo-aver-parlato");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\necho \"You've hit your weekly limit · resets 7am\"\nexit 0\n",
+        )
+        .expect("scrivere il finto motore");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                .expect("renderlo eseguibile");
+        }
+        path.to_string_lossy().into_owned()
+    }
+
+    /// **DIRLO E USCIRE ZERO.**
+    ///
+    /// **IL GUASTO NON HA ANCORA UN NUMERO, E NON GLIENE DO UNO.** Sta in
+    /// `docs/da-fare.md` in attesa della fusione: due rami stanno numerando
+    /// righe nuove nello stesso momento, e il numero che questo lavoro si
+    /// aspettava di prendere è già stato preso mentre era in corso. Un numero
+    /// sbagliato in un commento manda a leggere il guasto di qualcun altro.
+    ///
+    /// Un motore che dichiara con le proprie parole di non poter lavorare, e
+    /// **esce zero**. Fino al 01/09/2026 `says_it_cannot_work` veniva
+    /// interrogato solo dentro il ramo `ExitError`: nel ramo riuscito la
+    /// risposta era presa per buona, il ripiego non scattava, e la riga del
+    /// deposito nasceva con `error_type: None` — cioè il passo risultava
+    /// riuscito, e il motore dopo di lui non partiva mai.
+    ///
+    /// **NON È IPOTETICO SU QUESTA MACCHINA.** È la forma del guasto 39:
+    /// `CODEX_HOME=<cartella vuota> codex exec < /dev/null` risponde «No prompt
+    /// provided via stdin» ed esce **zero**. E la sonda a secco la distinzione
+    /// ce l'aveva già — `judge_dry_run` è applicata a `Ok` *e* a `ExitError` —
+    /// quindi il controllo statico e la corsa vera dicevano cose diverse sullo
+    /// stesso motore.
+    ///
+    /// La coppia con `an_engine_that_says_it_is_out_hands_the_work_to_the_next_one`
+    /// è tutta la dimostrazione: le stesse parole, l'unica differenza è il
+    /// codice d'uscita, e il ripiego deve scattare in tutti e due i casi.
+    #[test]
+    fn an_engine_that_says_it_is_out_while_exiting_zero_still_hands_the_work_over() {
+        let dir = scratch("esaurito-a-uscita-zero");
+        let action = ExternalEngineAction::resolving_with(ChainIn(
+            engine_that_says_it_is_out_and_exits_zero(&dir),
+        ));
+        let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
+
+        let ActionOutcome::Went(output) = action
+            .execute(&input, &mut SharedState::new())
+            .expect("il secondo motore risponde")
+        else {
+            panic!("un motore che risponde è sempre Went")
+        };
+
+        assert_eq!(
+            output["stdout"], "ha-risposto-il-secondo\n",
+            "il primo motore ha detto di non poter lavorare ed è uscito zero: il \
+             lavoro doveva passare al secondo, non fermarsi sulla sua non-risposta"
+        );
+    }
+
+    /// **E DA SOLO LO DICE, INVECE DI FINGERE DI AVER RISPOSTO.**
+    ///
+    /// Senza nessun ripiego dietro non c'è niente da salvare, ma resta la
+    /// diagnosi: chi legge «esaurito» sa che deve aspettare o cambiare profilo,
+    /// chi legge un passo **verde** va a cercare la risposta che non c'è. Era la
+    /// seconda metà del difetto, e la peggiore: il passo si chiudeva riuscito.
+    #[test]
+    fn alone_an_engine_that_says_it_is_out_while_exiting_zero_does_not_pass_for_answered() {
+        let dir = scratch("esaurito-a-uscita-zero-da-solo");
+        let action = ExternalEngineAction::resolving_with(ChainIn(
+            engine_that_says_it_is_out_and_exits_zero(&dir),
+        ));
+        let input = json!({"tool": ["esaurito"], "timeout_secs": 10});
+
+        let error = action
+            .execute(&input, &mut SharedState::new())
+            .expect_err("un motore che dice di non poter lavorare non ha risposto");
+
+        assert_eq!(
+            error.class, "engine_exhausted",
+            "esaurito non è rotto, e a uscita zero non è nemmeno «riuscito»: {}",
+            error.said
+        );
+        assert!(
+            error.said.contains("weekly limit"),
+            "il motivo deve portare le parole con cui il motore l'ha detto: {}",
+            error.said
+        );
+    }
+
     /// **IL GUASTO 31, RESO UN FATTO INVECE DI UNA LETTURA.**
     ///
     /// Lo stesso motore esaurito di qui sopra, con la sola differenza che
@@ -4662,6 +4828,114 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(error.class, "engine_exit_error");
         let calls = calls_in(&dir.join("deposito"));
         assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
+    }
+
+    /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**
+    ///
+    /// La metà che non si vede dal comportamento del passo. Le due
+    /// prove gemelle in `tests` guardano se il ripiego scatta; questa guarda la
+    /// riga che resta scritta, ed è quella che qualcuno leggerà domani. Fino al
+    /// 01/09/2026 nasceva con `error_type: None`, cioè **indistinguibile da una
+    /// chiamata riuscita**: una somma che le mescola dice che quel motore ha
+    /// risposto, e chi la legge non va a cercare niente.
+    ///
+    /// Senza questa prova un mutante che lascia scattare il ripiego ma scrive
+    /// `None` invece di `exhausted` passerebbe sotto alle altre due.
+    #[test]
+    fn a_zero_exit_refusal_is_recorded_as_exhausted_not_as_a_clean_call() {
+        let dir = scratch("esaurito-a-zero-nel-deposito");
+        let bin = fake_engine(
+            &dir,
+            "motore-esaurito-a-zero",
+            "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"\nexit 0",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["weekly limit".to_owned()];
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(recipe),
+        })
+        .recording_to(Some(ledger));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_price_list(None, || {
+            action.execute(&input, &mut shared("corsa-esaurita-a-zero", "passo-1"))
+        })
+        .expect_err("un motore che dice di non poter lavorare non ha risposto");
+        assert_eq!(error.class, "engine_exhausted");
+
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls.len(), 1, "la chiamata è stata fatta, e va registrata");
+        assert_eq!(
+            calls[0].error_type.as_deref(),
+            Some("exhausted"),
+            "un motore esaurito che esce zero non è una chiamata pulita: la riga \
+             che lo dice è l'unica traccia che resta"
+        );
+    }
+
+    /// **E LA SPECIE NON DIPENDE DA `accept`, IN NESSUNO DEI DUE RAMI.**
+    ///
+    /// La tolleranza di un passo riguarda **cosa fa la corsa** — se il
+    /// fallimento è un dato che il passo si tiene, o una ragione per fermarsi —
+    /// e non deve toccare **cosa resta scritto**. Nel ramo `ExitError` questo
+    /// vale da sempre, perché lì il `note(...)` sta prima del controllo di
+    /// tolleranza; nel primo tentativo di chiudere questo guasto, nel ramo `Ok`
+    /// stava **dopo**, e con `accept: ["exit_error"]` dichiarato la riga
+    /// nasceva di nuovo `NULL` — cioè indistinguibile da una risposta vera.
+    /// Il difetto sopravviveva in un angolo del proprio rimedio, e l'ha trovato
+    /// un giudice che non aveva scritto il lavoro.
+    ///
+    /// Le due metà stanno insieme apposta: sono la stessa affermazione — «la
+    /// specie è la stessa e non dipende dalla tolleranza» — su tutti e due i
+    /// codici d'uscita, ed è quella che il commento accanto al codice dichiara.
+    #[test]
+    fn a_tolerated_refusal_is_recorded_as_exhausted_whatever_the_exit_code() {
+        for (name, exit, script) in [
+            ("zero", 0, "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 0"),
+            ("uno", 1, "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 1"),
+        ] {
+            let dir = scratch(&format!("esaurito-tollerato-{name}"));
+            let bin = fake_engine(&dir, "motore-esaurito", script);
+            let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+            let mut recipe = declaring_recipe();
+            recipe.unusable_when = vec!["weekly limit".to_owned()];
+            let action = ExternalEngineAction::resolving_with(Declares {
+                bin,
+                recipe: Some(recipe),
+            })
+            .recording_to(Some(ledger));
+            // Il passo dichiara di volersi tenere il fallimento di questo
+            // motore: la corsa non si ferma, e infatti il passo va avanti.
+            let input = json!({
+                "tool": "motore-di-prova",
+                "stdin": "ciao",
+                "timeout_secs": 10,
+                "accept": ["exit_error"]
+            });
+
+            let outcome = with_price_list(None, || {
+                action.execute(&input, &mut shared(&format!("corsa-{name}"), "passo-1"))
+            })
+            .unwrap_or_else(|error| {
+                panic!("il passo tollera il fallimento, non deve rompersi: {}", error.said)
+            });
+            assert!(
+                matches!(outcome, ActionOutcome::Went(_)),
+                "la tolleranza resta quella di prima: il passo prosegue (uscita {exit})"
+            );
+
+            let calls = calls_in(&dir.join("deposito"));
+            assert_eq!(calls.len(), 1);
+            assert_eq!(
+                calls[0].error_type.as_deref(),
+                Some("exhausted"),
+                "uscita {exit}: il passo ha tollerato il fallimento, ma la riga del \
+                 deposito deve dire lo stesso che quel motore non poteva lavorare. \
+                 La tolleranza decide cosa fa la corsa, non cosa resta scritto"
+            );
+        }
     }
 
     /// Un motore che non parte lascia comunque traccia, con la causa sua: senza
