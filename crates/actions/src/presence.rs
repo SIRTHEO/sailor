@@ -246,8 +246,7 @@ impl WorkClaimAction {
 
 impl Action for WorkClaimAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let input = crate::reference::resolve_references(input)?;
-        let spec: ClaimSpec = serde_json::from_value(input)
+        let spec: ClaimSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let pid = spec.pid.unwrap_or_else(std::process::id);
         let at = spec.at.unwrap_or_else(now);
@@ -366,8 +365,7 @@ impl WorkReleaseAction {
 
 impl Action for WorkReleaseAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let input = crate::reference::resolve_references(input)?;
-        let spec: ReleaseSpec = serde_json::from_value(input)
+        let spec: ReleaseSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let pid = spec.pid.unwrap_or_else(std::process::id);
         let at = spec.at.unwrap_or_else(now);
@@ -404,8 +402,7 @@ impl WorkSurveyAction {
 
 impl Action for WorkSurveyAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let input = crate::reference::resolve_references(input)?;
-        let spec: SurveySpec = serde_json::from_value(input)
+        let spec: SurveySpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let at = spec.at.unwrap_or_else(now);
         let records = self
@@ -783,33 +780,10 @@ mod tests {
         assert_eq!(gone[0]["why"], json!("expired"));
     }
 
-    /// Guasto 28: un rinvio deve arrivare risolto anche a questi nodi.
-    #[test]
-    fn a_reference_reaches_the_claim_resolved() {
-        let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
-        let action = WorkClaimAction::new(ledger.clone());
-        let survey = WorkSurveyAction::new(ledger);
-
-        action
-            .execute(
-                &json!({
-                    "root": "/casa/progetto",
-                    "agent": "prima",
-                    "pid": 101,
-                    "repository": "/casa/progetto/.git",
-                    "workdir": {"$from": "/root"},
-                    "at": NOON,
-                }),
-                &mut shared,
-            )
-            .expect("un albero preso con un rinvio si annuncia");
-
-        let seen = went(
-            survey
-                .execute(&json!({"at": NOON + 1}), &mut shared)
-                .expect("il censimento"),
-        );
-        assert_eq!(seen["working"][0]["workdir"], json!("/casa/progetto"));
-    }
+    // **GUASTO 28: LA PROVA SI È SPOSTATA DOVE STA LA REGOLA.** Questa
+    // chiamava `execute` con `{"$from": "/root"}` dentro, e reggeva perché
+    // queste tre azioni risolvevano i rinvii ciascuna per conto proprio — una
+    // delle dodici copie della stessa riga. Adesso c'è un posto solo,
+    // `flow::step_input`, e la prova che ogni azione riceva l'ingresso sciolto
+    // sta lì: `crates/flow/tests/a_reference_reaches_every_action.rs`.
 }
