@@ -70,6 +70,25 @@ pub fn refusal(directory: &std::path::Path, error: &std::io::Error) -> String {
     said
 }
 
+/// The same refusal for a call a perimeter denied rather than a directory.
+///
+/// Opening a pseudo-terminal or binding a socket is refused as a *call*, which
+/// no short path cures — so the sentence must say so, or whoever declared
+/// [`ROOT_VARIABLE`] counts the reds still there and concludes it does nothing.
+pub fn blamed(error: std::io::Error) -> std::io::Error {
+    if error.kind() != std::io::ErrorKind::PermissionDenied {
+        return error;
+    }
+    std::io::Error::new(
+        error.kind(),
+        format!(
+            "the perimeter refused the call itself, which is not a failure of \
+             what is being tested, and which no short path cures — {ROOT_VARIABLE} \
+             will not help here: {error}"
+        ),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +125,20 @@ mod tests {
         assert!(
             said.contains("not a failure of what is being tested"),
             "it must say the tested thing is not the accused: {said}"
+        );
+
+        let denied_call = blamed(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        let said = denied_call.to_string();
+        assert!(said.contains("refused the call itself"), "{said}");
+        assert!(
+            said.contains("will not help here"),
+            "declaring the variable does not cure a denied call, and the \
+             sentence has to say so or it invites the wrong conclusion: {said}"
+        );
+        let ordinary = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert!(
+            !blamed(ordinary).to_string().contains("perimeter"),
+            "only a denial names one"
         );
 
         let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
