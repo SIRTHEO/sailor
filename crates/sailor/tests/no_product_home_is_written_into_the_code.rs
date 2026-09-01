@@ -27,8 +27,9 @@ const WHERE_THEY_BELONG: &str = "crates/toolbox/descriptors/";
 /// Sources that still name one, each with what it would take to remove it.
 /// The list only shrinks: it is the debt written down, not permission. A file
 /// leaves when the thing it hard-codes becomes a field of the descriptor, and
-/// nothing new joins. Twenty-five lines across seven crates when measured,
-/// which is how far one command line had got inside a product meant for six.
+/// nothing new joins. Twenty-five lines across seven crates when first
+/// measured, which is how far one command line had got inside a product meant
+/// for six; twenty-three after the release stopped installing itself there.
 const STILL_ALLOWED: &[(&str, &str)] = &[
     (
         "crates/inventory/src/discovery.rs",
@@ -47,8 +48,10 @@ const STILL_ALLOWED: &[(&str, &str)] = &[
          works for the ones with no hooks at all",
     ),
     (
-        "crates/sailor/src/release_cmd.rs",
-        "the configuration directory it publishes",
+        "crates/release/src/lib.rs",
+        "the house Sailor installed itself into until 01/09/2026, kept so the \
+         release can still find a stamp left there. It goes when a machine that \
+         released before the move has had its stamp carried over",
     ),
     (
         "crates/ledger/src/lib.rs",

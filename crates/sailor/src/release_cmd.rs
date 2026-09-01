@@ -210,14 +210,20 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         }
     }
 
-    // DUE RADICI, E NON SONO LA STESSA COSA. Da `root` si compila; in `home` si
-    // installa. Fino a stamattina coincidevano, e il 28/08/2026 spostare la
-    // prima ha spostato per sbaglio anche la seconda: il binario è finito
-    // accanto ai sorgenti, mentre i ganci continuavano a eseguire quello vecchio
-    // al suo posto di sempre. Il punto d'installazione non si sposta.
+    // TWO ROOTS, AND THEY ARE NOT THE SAME THING. `root` is what gets built;
+    // `home` is what gets installed into. They coincided once, and moving the
+    // first moved the second by accident: the binary landed beside the sources
+    // while the hooks went on running the old one from where it had always been.
     let home = install_root()?;
     let live = root.join(selected.live_rel);
     let stamp = home.join(selected.stamp_rel);
+    // The house itself has moved since. A machine that released before then has
+    // no stamp here yet and a real one back there.
+    let stamp_to_read = if stamp.is_file() {
+        stamp.clone()
+    } else {
+        stamp_left_behind(selected.stamp_rel).unwrap_or_else(|| stamp.clone())
+    };
     if live.is_file() && files_equal(&fresh, &live)? {
         println!(
             "== niente da fare: il binario in servizio corrisponde già a HEAD ({head_short}) =="
@@ -228,7 +234,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         return Ok(0);
     }
 
-    print_changes(&root, &stamp, &head_rev, &head_short)?;
+    print_changes(&root, &stamp_to_read, &head_rev, &head_short)?;
     if options.dry_run {
         println!("== prova a secco: il binario in servizio NON è stato sostituito ==");
         return Ok(0);
@@ -274,47 +280,49 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     Ok(0)
 }
 
-/// L'albero dei sorgenti da cui si costruisce ciò che va in servizio.
+/// Where the sources sit below the home.
 ///
-/// IL 28/08/2026 QUESTA FUNZIONE HA RIMESSO IN SERVIZIO IL PASSATO. Puntava
-/// alla cartella della configurazione, che è la casa da cui i sorgenti se ne
-/// sono andati il 27/08 — ed è anche un repo git, quindi il clone di HEAD
-/// riportava indietro l'albero cancellato dal disco: un rilascio riuscito, con
-/// uscita 0 e il timbro al suo posto, che ha **disinstallato** il lavoro di
-/// quella stessa mattina. Nessun controllo poteva accorgersene: compilava,
-/// perché il codice vecchio compila benissimo.
-///
-/// Il punto d'installazione resta dov'era; è la sorgente che si è spostata.
-/// La casa dove il binario va installato e dove vive il timbro.
-///
-/// Non si sposta con i sorgenti: i ganci la nominano per percorso assoluto, e
-/// installare altrove significa lasciare in servizio quello vecchio senza che
-/// nessuno se ne accorga — misurato il 28/08/2026, un rilascio con uscita 0 che
-/// ha scritto il binario accanto ai sorgenti mentre `settings.json` continuava a
-/// eseguirlo da qui.
-/// Dove stanno i sorgenti sotto la casa, e dove sta la configurazione.
-///
-/// Sono costanti perché le prove le nominano: una prova che ricopiasse
-/// «personal/sailor» a mano resterebbe verde con la funzione riportata a
-/// clonare `.claude`, che è il guasto del 28/08/2026 rimesso in piedi.
+/// A constant because the tests name it: one that spelled `personal/sailor` out
+/// by hand would stay green with the function returned to cloning the
+/// configuration directory, which is the release fault back on its feet.
 const SOURCES_BELOW_HOME: &str = "personal/sailor";
-const CONFIGURATION_BELOW_HOME: &str = ".claude";
 
+/// The house the binary is installed into, and where the stamp lives.
+///
+/// Sailor's own home now; it used to be another product's, for no reason but
+/// habit. Whoever moves it re-runs `sailor session install`: the hooks name the
+/// binary by absolute path, so installing elsewhere leaves the old one in
+/// service with nobody noticing.
 fn install_root() -> Result<PathBuf, String> {
-    root_under(
-        env::var_os("CLAUDE_HOME"),
-        env::var_os("HOME"),
-        CONFIGURATION_BELOW_HOME,
-        "CLAUDE_HOME",
-    )
+    ledger::sailor_home()
+        .ok_or_else(|| "no house to install into: HOME is not set".to_owned())
 }
 
+/// The stamp left in the previous house, if this house has none yet.
+///
+/// A missing stamp is not a harmless zero: the release stops being able to say
+/// which commits enter service and prints its widest answer instead. On a
+/// machine that released before the move the stamp is real, only elsewhere:
+/// read there once, written here from then on.
+fn stamp_left_behind(stamp_rel: &str) -> Option<PathBuf> {
+    let previous = PathBuf::from(env::var_os("HOME")?)
+        .join(release::PREVIOUS_INSTALL_BELOW_HOME)
+        .join(stamp_rel);
+    previous.is_file().then_some(previous)
+}
+
+/// The sources tree what goes into service is built from.
+///
+/// It once pointed at the configuration directory and put the past back into
+/// service. It no longer reads `SAILOR_HOME` either: everywhere else that
+/// variable means Sailor's *configuration* home, so reading it here as the
+/// sources was the same fault waiting behind a second door.
 fn sources_root() -> Result<PathBuf, String> {
     root_under(
-        env::var_os("SAILOR_HOME"),
+        env::var_os("SAILOR_SOURCES"),
         env::var_os("HOME"),
         SOURCES_BELOW_HOME,
-        "SAILOR_HOME",
+        "SAILOR_SOURCES",
     )
 }
 
@@ -737,26 +745,25 @@ mod tests {
     #[test]
     fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
         let home = Some(OsString::from("/casa/di-chiunque"));
-        let sources = root_under(None, home.clone(), SOURCES_BELOW_HOME, "SAILOR_HOME").unwrap();
-        let configuration =
-            root_under(None, home, CONFIGURATION_BELOW_HOME, "CLAUDE_HOME").unwrap();
+        let sources = root_under(None, home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+        let house = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
 
-        // Il testo è scritto qui apposta: se la costante tornasse a puntare
-        // alla configurazione, questa riga diventerebbe rossa.
+        // Spelled out on purpose: were the constant returned to the
+        // configuration directory, this line would go red.
         assert!(sources.ends_with("personal/sailor"), "{sources:?}");
         assert!(
-            !sources.ends_with(".claude"),
-            "il rilascio è tornato a clonare la configurazione: {sources:?}"
+            !sources.ends_with(".config/sailor"),
+            "the release is cloning the configuration home again: {sources:?}"
         );
-        assert_ne!(sources, configuration);
+        assert_ne!(sources, house);
     }
 
-    /// Una radice dichiarata vince sulla casa, e una dichiarata vuota no.
+    /// A declared root beats the home, and a declared empty one does not.
     ///
-    /// Il secondo braccio è quello che si perde: `SAILOR_HOME=""` esportata da
-    /// uno script che non l'ha trovata darebbe `personal/sailor` **relativa**,
-    /// cioè un clone dove sta il processo — il guasto 25 travestito da
-    /// configurazione.
+    /// The second arm is the one that gets lost: a variable exported empty by a
+    /// script that could not find it would give `personal/sailor` **relative**,
+    /// a clone wherever the process happens to stand — fault 25 dressed up as
+    /// configuration.
     #[test]
     fn a_declared_root_wins_over_the_home_but_an_empty_one_does_not() {
         let home = Some(OsString::from("/casa/di-chiunque"));
@@ -764,7 +771,7 @@ mod tests {
             Some(OsString::from("/altrove/sailor")),
             home.clone(),
             SOURCES_BELOW_HOME,
-            "SAILOR_HOME",
+            "SAILOR_SOURCES",
         )
         .unwrap();
         assert_eq!(declared, PathBuf::from("/altrove/sailor"));
@@ -773,12 +780,12 @@ mod tests {
             Some(OsString::new()),
             home,
             SOURCES_BELOW_HOME,
-            "SAILOR_HOME",
+            "SAILOR_SOURCES",
         )
         .unwrap();
         assert_eq!(empty, PathBuf::from("/casa/di-chiunque/personal/sailor"));
 
-        assert!(root_under(None, None, "personal/sailor", "SAILOR_HOME").is_err());
+        assert!(root_under(None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
     }
 
     /// I sorgenti di Sailor portano il crate che dà il nome al binario.
@@ -825,15 +832,14 @@ mod tests {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
         let sources = root_under(
             None,
-            declared_home.clone(),
+            declared_home,
             SOURCES_BELOW_HOME,
-            "SAILOR_HOME",
+            "SAILOR_SOURCES",
         )
         .unwrap();
-        let home =
-            root_under(None, declared_home, CONFIGURATION_BELOW_HOME, "CLAUDE_HOME").unwrap();
+        let home = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
         assert_ne!(sources, home);
-        assert!(home.ends_with(".claude"), "{home:?}");
+        assert!(home.ends_with(".config/sailor"), "{home:?}");
 
         for candidate in release::TARGETS {
             let installed = home.join(candidate.safe_rel);
