@@ -87,11 +87,43 @@ Trappole già pagate su questa macchina:
   vale più di questa riga: una regola che nessuno interroga non diventa rossa
   mai. Chi incontra una parola italiana che il controllo non conosce la aggiunge
   al suo elenco.
-- **Commenti in italiano.** Un commento dice *perché*, non *cosa*: il cosa lo
-  dice il codice. Vale anche per i **dati di prova**: `f.name == "assente"`
-  resta così com'è — è un dato, non un identificatore — mentre la variabile che
-  lo tiene si chiama `absent`. Vale per i messaggi delle **prove**, che sono
-  scritti per chi lavora qui dentro.
+- **Commenti in italiano, e pochi.** Un commento dice *perché*, non *cosa*: il
+  cosa lo dice il codice. Vale anche per i **dati di prova**: `f.name ==
+  "assente"` resta così com'è — è un dato, non un identificatore — mentre la
+  variabile che lo tiene si chiama `absent`. Vale per i messaggi delle
+  **prove**, che sono scritti per chi lavora qui dentro.
+
+  **Il codice è la fonte; un commento è un indizio datato.** Se quello che
+  vorresti scrivere si può ottenere rinominando una variabile, estraendo una
+  funzione o scrivendo una prova, si fa quello. Un commento si scrive quando
+  resta un *perché* che il codice non può portare: un vincolo esterno, una
+  scelta contro-intuitiva, un limite dichiarato.
+
+  **NIENTE CRONACA NEL CODICE.** Date, «fino al 31/08 faceva X», «ci sono
+  cascati in due lo stesso giorno», il racconto di com'è andata: non stanno
+  qui. Stanno nel registro dei guasti e nel messaggio di commit, che è il
+  posto che li conserva **con l'autore e la data veri** invece di ricopiarli a
+  mano. Nel codice al massimo resta il rimando: `// vedi guasto 39`.
+
+  **Tetto: sei righe per blocco.** Misurato il 01/09/2026: 3.036 blocchi,
+  mediana 3 righe. Il commento normale sta già dentro il tetto e non cambia
+  niente. A sforarlo sono **636 blocchi**, che da soli si portano due terzi
+  delle 14.343 righe di commento — il massimo è di 66 righe di fila. Il tetto
+  colpisce la coda, non l'abitudine. Il primo blocco potato è stato quello da
+  66 righe in `flow/src/subflow.rs`: cinque decisioni che stavano già in
+  `docs/decisioni.md` e un limite che ora sta accanto alla funzione che lo
+  causa. Accorciare non è cancellare — è mettere la cosa dove il codice la
+  porta.
+
+  **E c'è una ragione che non è di gusto.** L'indice semantico non toglie i
+  commenti: `chunkFileContent` di SocratiCode incorpora il testo così com'è, e
+  chiama «preamble» tutto ciò che precede una dichiarazione. Un blocco di 66
+  righe **diventa il pezzo che l'indice confronta con la domanda**, al posto
+  del codice che sta sotto. Un progetto al 25% di commenti narrativi si
+  restituisce da solo il racconto quando gli chiedi il codice.
+
+  **La misura è `cargo test -p sailor --test comments_do_not_crowd_out_the_code`**,
+  e i due numeri possono solo scendere.
 - **Ciò che legge uno sconosciuto va in inglese.** Il `README`, la CI, e **i
   messaggi che un utente dello strumento vede**: quello che `sailor` stampa,
   quello che dice quando rifiuta, quello che scrive un `--help`. Sotto `docs/`
