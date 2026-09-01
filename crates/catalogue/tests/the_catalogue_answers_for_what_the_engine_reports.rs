@@ -1,15 +1,9 @@
 //! Every failure the engine can report has a sentence, and every sentence has a
 //! failure that can reach it.
 //!
-//! **THE ENGINE AND THE CATALOGUE ARE TWO HAND-WRITTEN LISTS OVER ONE CLOSED
-//! SET, AND NOTHING COMPARED THEM.** A class added in Rust with no entry here
-//! reaches `RunConsole.tsx` and falls on `tryT(...) ?? failure`, so the person
-//! who hit it reads `subflow_too_deep` where a sentence should be. Nothing goes
-//! red; the window renders it and looks like it worked.
-//!
-//! The check reads the source rather than a registry because the source is where
-//! the classes actually are. When the classes become a closed type this file
-//! gets shorter, not obsolete: the pairing it guards is the point.
+//! **TWO HAND-WRITTEN LISTS OVER ONE CLOSED SET, AND NOTHING COMPARED THEM.** A
+//! class with no entry falls on `tryT(...) ?? failure` in `RunConsole.tsx`, so
+//! the person who hit it reads `subflow_too_deep` and nothing goes red.
 
 use std::path::{Path, PathBuf};
 
@@ -25,19 +19,11 @@ const FAILURE_PREFIX: &str = "run.failure.";
 const CLASSES_WITHOUT_A_SENTENCE_TODAY: usize = 38;
 
 /// How many places build a failure whose class this scan cannot read, because it
-/// is a variable rather than a literal.
+/// is a variable rather than a literal. **The blind spot is declared, not
+/// hidden**: no number at all would let it grow while the test stayed green.
 ///
-/// **THE BLIND SPOT IS DECLARED, NOT HIDDEN.** A number here says the check
-/// covers everything else; no number at all would let the blind spot grow while
-/// the test stayed green, which is the shape of every silent check in the fault
-/// ledger.
-///
-/// **THE ONE LEFT CANNOT BE CLOSED, AND THAT IS WHY IT IS ONE AND NOT ZERO.**
-/// `mcp.rs` takes the class from the tool server's own status string: it is a
-/// word from outside this repository, so no catalogue can be complete for it and
-/// the window falling back to the raw name is the correct behaviour, not a gap.
-/// The other one was closed by making `subflow.rs` write its five classes out
-/// where the error is built instead of assembling the name from a status.
+/// **THE ONE LEFT CANNOT BE CLOSED**: `mcp.rs` takes the class from the tool
+/// server's own status string, a word from outside this repository.
 const CLASSES_THE_SCAN_CANNOT_READ_TODAY: usize = 1;
 
 /// How far a seed may drift above what the tree actually holds. **Zero**, for
@@ -135,16 +121,11 @@ fn the_scan_finds_the_classes_that_are_known_to_be_there() {
     }
 }
 
-/// **A COVERAGE MEASURE IS CHECKED AGAINST A LIST THAT IS NOT ITS OWN.**
-///
-/// A count of what the walker found says nothing: a walker that quietly stopped
-/// opening a whole kind of file still returns hundreds, and «hundreds» reads as
-/// «it looked everywhere». That is how four files went unread under a check
-/// whose own guard was green, on this tree, on the same day this was written.
-///
-/// So the list comes from git, which does not share the walker's idea of what a
-/// file is, and the demand is not a number but a name: every source file git
-/// tracks under a crate must be one the walker opened.
+/// **A COVERAGE MEASURE IS CHECKED AGAINST A LIST THAT IS NOT ITS OWN.** A count
+/// of what the walker found says nothing: one that quietly stopped opening a
+/// whole kind of file still returns hundreds, and «hundreds» reads as «it looked
+/// everywhere». So the list comes from git, and the demand is a name and not a
+/// number: every source git tracks under a crate is one the walker opened.
 #[test]
 fn every_source_file_git_tracks_is_one_the_scan_opened() {
     let listed = std::process::Command::new("git")
