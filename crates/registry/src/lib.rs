@@ -98,6 +98,10 @@ pub fn default_registry(
     // Da dove arriva il segnale che fa partire un flusso: anche le sorgenti sono
     // un elenco di descrittori, non un ramo di codice.
     trigger::register_default(&mut registry);
+    // The four nodes a relay is composed of. They need no ledger and no
+    // watcher: each one is a single power over a live terminal, and the order
+    // they run in is a flow file rather than a function here.
+    relay::register_relay(&mut registry);
     // Il motore che risolve gli strumenti per identificativo, e che riceve il
     // deposito: il `run_id` non esiste ancora qui — nasce quando la corsa parte,
     // e arriva all'azione dallo stato condiviso — mentre il deposito è già in
