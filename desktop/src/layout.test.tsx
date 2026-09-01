@@ -191,3 +191,29 @@ describe("the canvas holds no literal colour", () => {
   // the whole file rather than one section. This one stays because no other
   // check reads `layout.ts`, where the tints used to hide.
 });
+
+/**
+ * THE CORD SAYS WHERE THE FLOW HAS ALREADY BEEN, and not by colour alone —
+ * prohibition 5. Full ink behind, a light thread ahead: a path taken and a path
+ * not yet taken were the same 1.5px, so the only thing telling them apart was a
+ * hue, and one reader in twelve does not separate two of these.
+ */
+describe("the weight of a cord", () => {
+  const went: StepRun = { step_id: "a", state: "went", attempt: 1 };
+  const waiting: StepRun = { step_id: "b", state: "waiting", attempt: 1 };
+  const running: StepRun = { step_id: "b", state: "running", attempt: 1 };
+
+  test("a path already taken is heavier than one not taken", () => {
+    expect(edgeLook(false, went, went).width).toBeGreaterThan(edgeLook(false, went, waiting).width);
+  });
+
+  test("a live cord is the heaviest, because it is the one thing moving", () => {
+    const live = edgeLook(false, went, running);
+    expect(live.width).toBeGreaterThanOrEqual(edgeLook(false, went, went).width);
+    expect(live.live).toBe(true);
+  });
+
+  test("an untaken cord still has a weight, rather than none", () => {
+    expect(edgeLook(false, went, waiting).width).toBeGreaterThan(0);
+  });
+});

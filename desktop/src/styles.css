@@ -50,8 +50,8 @@
       canvas — the surface this window exists for — was zero pixels wide.
 
    COME QUESTI DIVIETI DIVENTANO ROSSI. `desktop/src/stylesheet.test.ts` legge
-   questo foglio e rifiuta un carattere, un raggio, un'ombra o un colore che non
-   passi da un ruolo; `desktop/src/contrast.test.tsx` cammina il DOM disegnato e
+   questo foglio e rifiuta un carattere, un raggio, un'ombra, una sfumatura o un
+   colore che non passi da un ruolo; `desktop/src/contrast.test.tsx` cammina il DOM disegnato e
    rifiuta un'accoppiata sotto 4,5:1, anche con un flusso a fuoco. Il divieto 6
    era rimasto un turno intero senza niente che lo interrogasse: rimettere
    `--muted: #94a3b8` — due caratteri — lasciava tutta la batteria verde con lo
@@ -1468,6 +1468,58 @@ button.is-primary {
   border-color: var(--focus);
   border-left-color: var(--state, var(--focus));
   box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+/* THE FOUR CORNER MARKS: the registration marks of a technical drawing, «this
+   is the part being dimensioned». They are the ring's second carrier, so the
+   selected node is not told apart by a hue alone. Two elements, four corners:
+   each draws an L at two opposite corners with plain borders — no gradient,
+   which prohibition 9 forbids and `stylesheet.test.ts` now refuses. */
+.step-node__marks {
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+}
+
+.step-node__marks::before,
+.step-node__marks::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--focus);
+}
+
+.step-node__marks::before {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+
+.step-node__marks::after {
+  right: 0;
+  bottom: 0;
+  border-left: none;
+  border-top: none;
+}
+
+.step-node__marks[data-second]::before {
+  top: 0;
+  left: auto;
+  right: 0;
+  border: 1.5px solid var(--focus);
+  border-left: none;
+  border-bottom: none;
+}
+
+.step-node__marks[data-second]::after {
+  bottom: 0;
+  right: auto;
+  left: 0;
+  border: 1.5px solid var(--focus);
+  border-right: none;
+  border-top: none;
 }
 
 /* UN NODO ISOLATO PER VISTA, E NON UNO PER CORSA VIVA. Prima ogni agente in
