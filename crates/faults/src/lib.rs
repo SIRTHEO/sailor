@@ -71,15 +71,59 @@ pub struct Draft {
     pub status: String,
 }
 
+/// Where a fault stands, **with a fourth answer for prose nobody taught this**.
+///
+/// A predicate answering yes or no gives «not open» to a status it does not
+/// recognise, which is the same answer it gives to a closed one — and the total
+/// drops in the direction that reassures. The fourth answer exists so that an
+/// unread status is a refusal instead of a quiet subtraction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    Open,
+    PartlyClosed,
+    Closed,
+    Unrecognised,
+}
+
+/// The words the register writes in that column, in the language the register
+/// is written in. Data and not a match, so translating them is one edit and a
+/// half-translated row comes out `Unrecognised` instead of vanishing.
+const OPEN: &str = "**aperto**";
+const PARTLY_CLOSED: &str = "**chiuso in parte**";
+const CLOSED: &str = "**chiuso**";
+
+/// The reading, given the prose alone: the store asks it of a status before it
+/// belongs to a fault, and the count asks it of one that already does.
+///
+/// `PARTLY_CLOSED` is tried first because it begins with the word `CLOSED`
+/// begins with: asking in the other order would read every half-closed row as
+/// closed, and take seven faults out of the tally in one edit.
+pub fn standing_of(status: &str) -> Standing {
+    let said = status.trim();
+    if said.starts_with(PARTLY_CLOSED) {
+        Standing::PartlyClosed
+    } else if said.starts_with(OPEN) {
+        Standing::Open
+    } else if said.starts_with(CLOSED) {
+        Standing::Closed
+    } else {
+        Standing::Unrecognised
+    }
+}
+
 impl Fault {
-    /// Open until the cure the fault declares is done.
-    ///
-    /// Half-closed still counts as open: a middle state says which half is
-    /// done, it does not take the row out of the count. Matching the start of
-    /// the prose, not the whole of it, keeps a new nuance from silently
-    /// dropping a fault out of the tally.
+    /// Read from the start of the prose: the nuance after it says which half of
+    /// the cure is done, and must not change where the row is counted.
+    pub fn standing(&self) -> Standing {
+        standing_of(&self.status)
+    }
+
+    /// Open until the cure the fault declares is done. Half-closed counts as
+    /// open: a middle state says which half is done, it does not take the row
+    /// out of the count. An unrecognised status is **not** quietly closed —
+    /// it is refused at the door, so it can never reach this question.
     pub fn still_open(&self) -> bool {
-        self.status.starts_with("**aperto**") || self.status.contains("chiuso in parte")
+        matches!(self.standing(), Standing::Open | Standing::PartlyClosed)
     }
 
     fn cells(&self) -> [&str; 6] {
@@ -94,6 +138,24 @@ impl Fault {
             "",
         ]
     }
+}
+
+/// A status the count cannot read is refused, rather than counted as closed.
+///
+/// **«NOT OPEN» AND «NOT UNDERSTOOD» WERE THE SAME ANSWER.** A row whose status
+/// this cannot classify left the open tally with nothing failing, and the total
+/// moved in the direction that reassures. Refused here, a half-translated or
+/// newly-worded status is a red line instead of a quiet subtraction.
+fn a_status_the_count_can_read(status: &str) -> Result<(), FaultError> {
+    if standing_of(status) != Standing::Unrecognised {
+        return Ok(());
+    }
+    Err(FaultError::CannotCrossTheTable(format!(
+        "this status begins with none of «{OPEN}», «{PARTLY_CLOSED}», «{CLOSED}», \
+         so the open count cannot read it and would have counted the fault as \
+         closed without saying so. Begin with one of them, or teach the reading \
+         first and translate afterwards"
+    )))
 }
 
 /// What a markdown row cannot carry, and so neither can a fault.
@@ -185,6 +247,7 @@ impl Faults {
             ("cosa lo impedirebbe", &draft.what_would_prevent),
             ("stato", &draft.status),
         ])?;
+        a_status_the_count_can_read(&draft.status)?;
         self.connection.execute(
             "INSERT INTO faults
                  (number, happened_on, what_happened, how_it_showed, what_would_prevent, status)
@@ -215,6 +278,7 @@ impl Faults {
             ("cosa lo impedirebbe", &fault.what_would_prevent),
             ("stato", &fault.status),
         ])?;
+        a_status_the_count_can_read(&fault.status)?;
         self.connection.execute(
             "INSERT OR REPLACE INTO faults
                  (number, happened_on, what_happened, how_it_showed, what_would_prevent, status)
@@ -267,6 +331,7 @@ impl Faults {
     /// that bit once, and there is nowhere to write that.
     pub fn set_status(&self, number: i64, status: &str) -> Result<Fault, FaultError> {
         nothing_that_breaks_a_row(&[("stato", status)])?;
+        a_status_the_count_can_read(status)?;
         let touched = self.connection.execute(
             "UPDATE faults SET status = ?2 WHERE number = ?1",
             params![number, status],
