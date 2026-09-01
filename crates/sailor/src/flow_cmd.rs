@@ -1357,6 +1357,28 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
             flow.id
         ));
     }
+    // **UN `git commit` CHE NON DICE COSA COMMITTA È UN ERRORE, NON UN
+    // AVVISO.** È il guasto 54: il passo non fallisce, committa il lavoro in
+    // scena di un'altra sessione sotto un messaggio che parla d'altro. Il
+    // rifiuto è in inglese perché è quello che l'utente vede — decisione del
+    // 01/09/2026 — mentre i due rifiuti qui sopra aspettano il cantiere che
+    // converte il crate intero.
+    let sweeping: Vec<String> = undelimited_commits(&flow)
+        .iter()
+        .map(|commit| format!("{} in «{}»", commit.step, commit.field))
+        .collect();
+    if !sweeping.is_empty() {
+        println!("{report}");
+        return Err(format!(
+            "flow {} runs `git commit` without saying what it commits: {}. \
+             With no paths, `git commit` commits everything already staged — and in a work \
+             tree shared with other sessions the index also holds another session's staged \
+             work, which then travels inside a commit that never mentions it. Say what the \
+             step commits: «--» followed by the paths, or «--only»/«--include» with a path.",
+            flow.id,
+            sweeping.join(", ")
+        ));
+    }
     if unknown.is_empty() {
         return Ok(report);
     }
@@ -2100,6 +2122,289 @@ fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<Hardco
         }
         _ => {}
     }
+}
+
+// ── il guasto 54: un `git commit` che non dice cosa committa ──────────────
+
+/// Un passo che esegue `git commit` senza delimitare cosa committa.
+#[derive(Debug)]
+struct UndelimitedCommit {
+    step: String,
+    field: String,
+}
+
+/// Le opzioni di `git` che stanno **prima** del sottocomando e si mangiano il
+/// valore che segue. Servono solo ad arrivare al sottocomando: `git -C repo
+/// commit` è lo stesso gesto di `git commit`, e chi guarda il solo primo
+/// argomento non lo vede.
+///
+/// **È UN ELENCO DICHIARATO, NON UN ANALIZZATORE.** Chi incontra un'opzione
+/// globale che non c'è la aggiunge qui. Finché non c'è, il controllo smette di
+/// cercare il sottocomando invece di sbagliarlo: tace, non accusa.
+const GIT_GLOBAL_OPTIONS_WITH_VALUE: [&str; 7] = [
+    "-C",
+    "-c",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--exec-path",
+    "--config-env",
+];
+
+/// Le opzioni di `git commit` che si mangiano il valore che segue.
+///
+/// Senza questo elenco il valore verrebbe letto come il percorso che delimita —
+/// `git commit -m docs/x.md` non delimita niente — e `-C <commit>`, che dice da
+/// quale commit prendere il messaggio, verrebbe confuso col `-C <dir>` globale
+/// di `git`: sono due opzioni diverse con la stessa lettera, e a distinguerle è
+/// solo la posizione rispetto al sottocomando. `-F`/`--file` e `-C` cambiano da
+/// dove arriva il messaggio, mai cosa finisce nel commit, quindi non delimitano.
+///
+/// Chi incontra un'opzione con valore che non c'è la aggiunge qui. Il prezzo di
+/// una che manca: il suo valore viene contato come un percorso, e con `--only`
+/// davanti farebbe passare per delimitato un commit che non lo è.
+const COMMIT_OPTIONS_WITH_VALUE: [&str; 16] = [
+    "-m",
+    "--message",
+    "-F",
+    "--file",
+    "-C",
+    "--reuse-message",
+    "-c",
+    "--reedit-message",
+    "--author",
+    "--date",
+    "-t",
+    "--template",
+    "--fixup",
+    "--squash",
+    "--trailer",
+    "--cleanup",
+];
+
+/// Le opzioni con cui un `git commit` dichiara di committare solo dei percorsi.
+/// Da sole non bastano: `--only` senza percorsi non delimita niente, e l'unica
+/// eccezione è insieme a `--amend`, che il manuale di `git commit` dichiara
+/// («If this option is specified together with --amend, then no paths need to
+/// be given»).
+const DELIMITING_OPTIONS: [&str; 4] = ["--only", "-o", "--include", "-i"];
+
+/// L'opzione che prende i percorsi da un file invece che dalla riga: delimita
+/// da sola, perché i percorsi ci sono — solo, sono scritti altrove.
+///
+/// **PERCHÉ PASSA SENZA CHE IL FILE VENGA APERTO.** Il pericolo di cui parla
+/// questo controllo è committare *tutto* l'indice; un elenco di percorsi vuoto
+/// committa il contrario, cioè niente. Fermare questa forma renderebbe rosso un
+/// modo corretto di delimitare, e un controllo rosso sulla forma corretta viene
+/// spento entro un giorno.
+const PATHSPEC_FILE_OPTION: &str = "--pathspec-from-file";
+
+/// I caratteri che chiudono un comando dentro il testo di shell.
+///
+/// **È UNO SPEZZETTAMENTO, NON UN ANALIZZATORE DI SHELL, E IL VERSO DELL'ERRORE
+/// È DICHIARATO.** Non onora le virgolette: un `;` scritto dentro una stringa
+/// spezza il comando in due, e un `git commit` che sta dentro una stringa —
+/// `echo "git commit"` — viene contato come se fosse eseguito. Sbaglia
+/// segnalando, mai tacendo, ed è la stessa scelta già pagata da
+/// `ABSOLUTE_PREFIXES`. Chi incontra un separatore che non c'è lo aggiunge qui.
+const SHELL_SEPARATORS: [char; 7] = [';', '&', '|', '\n', '(', ')', '`'];
+
+/// Un argomento che il flusso monta a esecuzione — un `$join`, un `$from` — e
+/// che qui non si può leggere. Non comincia per `-`, quindi si lascia consumare
+/// come valore di un'opzione e conta come percorso dopo `--`: sono le due
+/// letture di cui il controllo ha bisogno, e nessuna delle due pretende di
+/// sapere cosa ci sarà scritto.
+const MOUNTED_ARG: &str = "<mounted>";
+
+/// I passi che eseguono `git commit` senza delimitare cosa committa.
+///
+/// **UN `git commit` SENZA PERCORSI COMMITTA L'INDICE, CIOÈ ANCHE IL LAVORO DI
+/// UN ALTRO.** In un albero di lavoro condiviso con altre sessioni l'indice non
+/// è solo il proprio: il 01/09/2026 le cancellazioni messe in scena da una
+/// sessione sono finite dentro il commit di un'altra, che dichiarava di
+/// rinominare tre chiavi in un `.yml` e ha portato via 3.942 righe. Il passo
+/// aveva ragione su ciò che aveva fatto e torto su ciò che ha committato: è la
+/// distanza fra le due cose che questo controllo misura.
+///
+/// **LE DUE FORME AMBIGUE, DECISE QUI.** `git commit --amend --no-edit` e
+/// `git commit -a` non delimitano, quindi vengono fermati tutti e due.
+/// *Perché*: questo controllo è statico e non può vedere l'indice, quindi non
+/// sa se l'albero è pulito. `--amend` senza percorsi prende ciò che è in scena
+/// in quel momento e lo infila dentro un commit già fatto — è il danno del caso
+/// base, peggiorato dal fatto che finisce sotto un messaggio che descriveva
+/// un'altra cosa, e quindi anche il messaggio diventa falso. `-a` dichiara ad
+/// alta voce di prendere tutto il tracciato modificato: in un albero condiviso
+/// quel «tutto» comprende le modifiche di un'altra sessione ai file tracciati, e
+/// dichiararlo non le rende lavoro proprio. *La conseguenza della scelta
+/// opposta*: esentarli lascerebbe passare il gate a un flusso che riproduce il
+/// guasto 54 parola per parola, e il gate direbbe verde su di esso. *La
+/// conseguenza di questa, che è il suo prezzo*: chi vuole emendare deve dire con
+/// quali percorsi. L'unica eccezione è `--amend` insieme a `--only` senza
+/// percorsi, che è la forma con cui il manuale dichiara di riscrivere il solo
+/// messaggio — senza quella, il controllo sarebbe rosso sull'unica forma
+/// corretta di farlo.
+///
+/// **UN PERCORSO NUDO, SENZA `--`, NON CONTA COME DELIMITAZIONE.** `git commit
+/// -m x docs/x.md` per git delimita, e qui viene fermato lo stesso: il controllo
+/// non sa distinguere un percorso dal valore di un'opzione che
+/// `COMMIT_OPTIONS_WITH_VALUE` non conosce, e leggerlo come percorso farebbe
+/// tacere il controllo proprio dove serve. Sbagliare chiedendo un `--` costa una
+/// riga a chi scrive il flusso; sbagliare al contrario costa un commit.
+///
+/// **COSA QUESTO NON VEDE, ed è dove lo aggiunge chi ci sbatte**: un `git`
+/// dietro una variabile (`$GIT commit`) o un alias, un `xargs git commit`, un
+/// sottocomando montato a esecuzione invece che scritto, e le virgolette che
+/// `SHELL_SEPARATORS` non onora.
+fn undelimited_commits(flow: &FlowFile) -> Vec<UndelimitedCommit> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        let Value::Object(fields) = with else {
+            continue;
+        };
+        // LA PORTA DEL MOTORE. `engines_of` legge sia `"tool": "git"` sia la
+        // catena che lo nomina, e la legge in un posto solo: una seconda copia
+        // qui butterebbe via metà dei passi, che è il guasto 3. `bin` è la
+        // stessa porta col nome che un `with` usa per un comando qualunque.
+        let names_git = engines_of(with).iter().any(|id| is_git(id))
+            || fields
+                .get("bin")
+                .and_then(Value::as_str)
+                .is_some_and(is_git);
+        if names_git {
+            if let Some(Value::Array(args)) = fields.get("args") {
+                let argv: Vec<&str> = args.iter().map(mounted_or_written).collect();
+                if commits_without_paths(&argv) {
+                    found.push(UndelimitedCommit {
+                        step: step.id.clone(),
+                        field: "args".to_owned(),
+                    });
+                }
+            }
+        }
+        // LA PORTA DELLA SHELL. Lo stesso campo che `outside_text_in_command`
+        // guarda, per la stessa ragione: quel testo non viene letto, viene
+        // eseguito.
+        for name in EXECUTED_FIELDS {
+            let Some(value) = fields.get(*name) else {
+                continue;
+            };
+            let mut command = String::new();
+            executed_text(value, &mut command);
+            if shell_commits_without_paths(&command) {
+                found.push(UndelimitedCommit {
+                    step: step.id.clone(),
+                    field: (*name).to_owned(),
+                });
+            }
+        }
+    }
+    found
+}
+
+/// Vero se questo nome è `git`, comunque lo si sia scritto.
+fn is_git(name: &str) -> bool {
+    name == "git" || name.ends_with("/git")
+}
+
+/// Un argomento come il controllo lo vede: il testo che il flusso ha scritto,
+/// oppure il segnaposto di ciò che il flusso monta a esecuzione.
+fn mounted_or_written(arg: &Value) -> &str {
+    arg.as_str().unwrap_or(MOUNTED_ARG)
+}
+
+/// Il testo che finirà davvero nel campo eseguito, ricomposto nell'ordine in
+/// cui è scritto. Un `$join` di sole lettere è un comando composto a pezzi e va
+/// letto tutto intero; un rinvio diventa il segnaposto, perché saltarlo
+/// incollerebbe fra loro i due pezzi che gli stanno intorno.
+fn executed_text(value: &Value, into: &mut String) {
+    match value {
+        Value::String(text) => into.push_str(text),
+        Value::Array(items) => items.iter().for_each(|item| executed_text(item, into)),
+        Value::Object(fields) => {
+            if fields.contains_key(reference::FROM_KEY) || fields.contains_key(reference::JSON_KEY)
+            {
+                into.push_str(MOUNTED_ARG);
+            } else {
+                fields.values().for_each(|inner| executed_text(inner, into));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Vero se dentro questo testo di shell c'è un `git commit` che non dice cosa
+/// committa. La regola è la stessa della porta del motore: qui cambia solo da
+/// dove arrivano gli argomenti.
+fn shell_commits_without_paths(command: &str) -> bool {
+    command
+        .split(|letter| SHELL_SEPARATORS.contains(&letter))
+        .any(|segment| {
+            let tokens: Vec<&str> = segment.split_whitespace().collect();
+            tokens
+                .iter()
+                .position(|token| is_git(token))
+                .is_some_and(|at| commits_without_paths(&tokens[at + 1..]))
+        })
+}
+
+/// Gli argomenti di `git commit`, saltate le opzioni globali che stanno prima
+/// del sottocomando. `None` quando questa riga non è un commit — compreso il
+/// caso in cui il sottocomando non si è potuto trovare.
+fn commit_arguments<'a>(argv: &'a [&'a str]) -> Option<&'a [&'a str]> {
+    let mut rest = argv;
+    while rest.first().is_some_and(|token| token.starts_with('-')) {
+        let eats_the_next = GIT_GLOBAL_OPTIONS_WITH_VALUE.contains(&rest[0]);
+        rest = rest.get(if eats_the_next { 2 } else { 1 }..)?;
+    }
+    match rest.split_first() {
+        Some((&"commit", after)) => Some(after),
+        _ => None,
+    }
+}
+
+/// La regola, in un posto solo: le due porte la interrogano, non la ricopiano.
+fn commits_without_paths(argv: &[&str]) -> bool {
+    let Some(mut rest) = commit_arguments(argv) else {
+        return false;
+    };
+    let mut amends = false;
+    let mut says_only = false;
+    let mut names_a_path = false;
+    while let Some(token) = rest.first() {
+        rest = &rest[1..];
+        if *token == "--" {
+            // Dopo `--` git non legge più opzioni: quel che segue sono
+            // percorsi, e basta che ce ne sia uno.
+            return rest.is_empty();
+        }
+        // `--opzione=valore` è un argomento solo: il valore non va consumato.
+        let (name, attached) = match token.split_once('=') {
+            Some((name, _)) if name.starts_with("--") => (name, true),
+            _ => (*token, false),
+        };
+        if name == PATHSPEC_FILE_OPTION {
+            return false;
+        }
+        if name == "--amend" {
+            amends = true;
+        }
+        if DELIMITING_OPTIONS.contains(&name) {
+            says_only = true;
+        }
+        if COMMIT_OPTIONS_WITH_VALUE.contains(&name) {
+            if !attached {
+                rest = rest.get(1..).unwrap_or_default();
+            }
+            continue;
+        }
+        if !token.starts_with('-') {
+            names_a_path = true;
+        }
+    }
+    !(says_only && (names_a_path || amends))
 }
 
 // ── le case di credenziali, chieste al motore ────────────────────────────
@@ -5592,6 +5897,143 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert!(!found[0].fatal, "dentro un testo è un avviso");
         assert_eq!(found[0].field, "stdin.$join");
+    }
+
+    // ── il guasto 54: un `git commit` che non dice cosa committa ──────
+
+    /// IL CASO DEL GUASTO 54, nella forma spedita. Un passo `external_engine`
+    /// che esegue `git commit -m …` e nient'altro: committa tutto ciò che è
+    /// nell'indice, e in un albero condiviso l'indice non è solo il suo.
+    #[test]
+    fn a_commit_that_names_no_path_is_an_error() {
+        let flow = flow_with(r#"{"tool": "git", "args": ["commit", "-m", "un messaggio"]}"#);
+
+        let found = undelimited_commits(&flow);
+
+        assert_eq!(found.len(), 1, "uno solo: {found:?}");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(
+            found[0].field, "args",
+            "il passo «unico» committa senza nessun percorso a delimitare cosa committa"
+        );
+    }
+
+    /// **`git -C <dir> commit` È LO STESSO GESTO.** Le opzioni globali di `git`
+    /// stanno prima del sottocomando: chi guarda il solo primo argomento vede
+    /// `-C` e chiude in verde su un commit identico a quello qui sopra.
+    #[test]
+    fn a_global_option_does_not_hide_the_commit() {
+        let flow = flow_with(
+            r#"{"tool": "git", "args": ["-C", "sottocartella", "commit", "-m", "un messaggio"]}"#,
+        );
+
+        assert_eq!(undelimited_commits(&flow).len(), 1);
+    }
+
+    /// LA SECONDA PORTA. Il `command` di `shell_check` è testo eseguito, e un
+    /// `git commit` ci sta in mezzo a una riga. Oggi nessun flusso dell'albero
+    /// committa così: senza questa prova la stessa regola varrebbe due cose a
+    /// seconda della porta da cui si entra.
+    #[test]
+    fn a_commit_inside_shell_text_is_an_error() {
+        let flow = shell_flow_with(
+            r#"{"command": "cargo fmt && git commit -m 'un messaggio'", "timeout_secs": 5}"#,
+        );
+
+        let found = undelimited_commits(&flow);
+
+        assert_eq!(found.len(), 1, "uno solo: {found:?}");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(found[0].field, "command");
+    }
+
+    /// **LE FORME DELIMITATE PASSANO.** Un controllo rosso anche sulla forma
+    /// corretta viene spento entro un giorno, quindi le tre forme che dicono
+    /// cosa committa vanno provate insieme a ciò che ferma.
+    #[test]
+    fn a_delimited_commit_is_clean() {
+        for args in [
+            r#"["commit", "-m", "un messaggio", "--", "docs/decisioni.md"]"#,
+            r#"["commit", "--only", "docs/decisioni.md", "-m", "un messaggio"]"#,
+            r#"["commit", "--include", "docs/decisioni.md", "-m", "un messaggio"]"#,
+        ] {
+            let flow = flow_with(&format!(r#"{{"tool": "git", "args": {args}}}"#));
+
+            assert!(
+                undelimited_commits(&flow).is_empty(),
+                "questo commit dice cosa committa: {args}"
+            );
+        }
+
+        let on_one_line = shell_flow_with(
+            r#"{"command": "git commit -m 'un messaggio' -- docs/decisioni.md", "timeout_secs": 5}"#,
+        );
+
+        assert!(undelimited_commits(&on_one_line).is_empty());
+    }
+
+    /// **UN PASSO CHE NON NOMINA `git` NON VIENE SFIORATO.** Vale anche per un
+    /// `git` che non committa: leggere il mondo non è scriverlo.
+    #[test]
+    fn a_step_that_does_not_commit_is_untouched() {
+        for with in [
+            r#"{"tool": "cargo", "args": ["test", "--workspace"]}"#,
+            r#"{"tool": "git", "args": ["add", "-A"]}"#,
+        ] {
+            assert!(
+                undelimited_commits(&flow_with(with)).is_empty(),
+                "niente da dire su: {with}"
+            );
+        }
+
+        let reading = shell_flow_with(r#"{"command": "git status --porcelain", "timeout_secs": 5}"#);
+
+        assert!(undelimited_commits(&reading).is_empty());
+    }
+
+    /// LE DUE FORME AMBIGUE, come sono state decise sopra la funzione:
+    /// `--amend` e `-a` non delimitano niente, quindi vengono fermati. L'unica
+    /// eccezione è `--amend --only` senza percorsi, che il manuale dichiara
+    /// essere il modo di riscrivere il solo messaggio.
+    #[test]
+    fn amend_and_all_do_not_say_what_is_committed() {
+        for args in [
+            r#"["commit", "--amend", "--no-edit"]"#,
+            r#"["commit", "-a", "-m", "un messaggio"]"#,
+            r#"["commit", "--all", "-m", "un messaggio"]"#,
+        ] {
+            let flow = flow_with(&format!(r#"{{"tool": "git", "args": {args}}}"#));
+
+            assert_eq!(
+                undelimited_commits(&flow).len(),
+                1,
+                "questo prende ciò che è in scena senza dirlo: {args}"
+            );
+        }
+
+        let only_the_message =
+            flow_with(r#"{"tool": "git", "args": ["commit", "--amend", "--only", "-m", "x"]}"#);
+
+        assert!(
+            undelimited_commits(&only_the_message).is_empty(),
+            "«--amend --only» senza percorsi è la forma dichiarata dal manuale"
+        );
+    }
+
+    /// **IL VALORE DI UN'OPZIONE NON È IL PERCORSO CHE DELIMITA.** `-m` e `-F`
+    /// si mangiano ciò che segue: contarlo come percorso farebbe passare per
+    /// delimitato il caso base del guasto 54.
+    #[test]
+    fn the_value_of_an_option_is_not_a_path() {
+        let flow = flow_with(
+            r#"{"tool": "git", "args": ["commit", "--only", "-F", "messaggio.txt", "-C", "HEAD"]}"#,
+        );
+
+        assert_eq!(
+            undelimited_commits(&flow).len(),
+            1,
+            "«--only» senza percorsi non delimita niente"
+        );
     }
 
     // ── spostare un flusso da un albero all'altro ─────────────────────
