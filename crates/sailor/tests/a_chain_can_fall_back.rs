@@ -4,8 +4,16 @@
 //! "codex"]` sembra avere due ripieghi. Ne ha quanti sono i motori che
 //! **dichiarano come dicono di non poter lavorare**: `says_it_cannot_work` su
 //! un elenco vuoto è `false`, quindi un motore che tace fa morire il passo sul
-//! proprio fallimento e i motori dopo di lui non partono mai. `agy` tace, e sta
-//! in mezzo a tutte e tre le catene di questo albero.
+//! proprio fallimento e i motori dopo di lui non partono mai. `agy` tace, e
+//! stava **in mezzo** a dodici catene di questo albero: `codex`, che dichiara
+//! il proprio 401, non partiva mai da nessuna di esse.
+//!
+//! **CHIUSO IL 01/09/2026, E NON MISURANDO `agy`.** La regola ha due modi di
+//! essere rispettata — misurare le parole di chi sta in mezzo, oppure non
+//! mettere in mezzo chi non le ha — e il secondo non chiede nessun dato che non
+//! esista. `agy` sta in fondo; la regola la scrive
+//! `toolbox::Descriptor::cannot_be_a_fallback`, in un posto solo, e la legge
+//! anche `sailor flow check` sui flussi di chi lo lancia.
 //!
 //! Il meccanismo è provato in modo ermetico in `crates/actions`
 //! (`an_engine_that_declares_no_exhaustion_words_kills_the_chain`, in coppia
@@ -79,63 +87,57 @@ fn engines_in_chains() -> Vec<InChain> {
     found
 }
 
-/// Le parole di `unusable_when` che un motore spedito dichiara.
-fn exhaustion_words(tool: &str) -> Option<Vec<String>> {
+/// Perché un motore spedito non può fare da ripiego, se non può.
+///
+/// **LA REGOLA NON È SCRITTA QUI**, ed è la differenza che conta: sta in
+/// `toolbox::Descriptor::cannot_be_a_fallback`, in un posto solo, e da lì la
+/// legge anche `sailor flow check` sui flussi e sui descrittori di chi lancia.
+/// Una copia scritta dentro questa prova avrebbe sorvegliato i quattro flussi di
+/// questo albero e nessuno di quelli di nessun altro.
+fn why_it_cannot_be_a_fallback(tool: &str) -> Option<String> {
     let catalog = toolbox::Catalog::load(&[toolbox::descriptor::Source::Builtin]);
     catalog
         .live()
         .into_iter()
         .find(|loaded| loaded.descriptor.id == tool)
-        .map(|loaded| {
-            loaded
-                .descriptor
-                .ask
-                .as_ref()
-                .map(|ask| ask.unusable_when.clone())
-                .unwrap_or_default()
-        })
+        .and_then(|loaded| loaded.descriptor.cannot_be_a_fallback())
 }
 
-/// **LA REGOLA, E RESTA ROSSA FINCHÉ QUALCUNO NON MISURA `agy`.**
+/// **LA REGOLA, E DA OGGI GIRA.**
 ///
 /// Ogni motore che compare in una catena e **non è l'ultimo** deve dichiarare
 /// almeno una parola con cui dice di non poter lavorare. Chi non la dichiara
 /// non è un ripiego: è un tappo.
 ///
-/// **PERCHÉ È `#[ignore]` E NON SEMPLICEMENTE ROSSA.** La cura non si può
-/// scrivere: le parole con cui `agy` dice di aver finito la quota non sono mai
-/// state viste su questa macchina, e inventarle sarebbe peggio del difetto —
-/// una parola sbagliata in `unusable_when` fa scendere un mandato malformato
-/// per tutta la catena finché qualcuno risponde comunque, che è il motivo per
-/// cui quel campo pretende **le parole del fornitore**. Una prova rossa per
-/// sempre, invece, ha due conseguenze concrete e nessuna delle due è la
-/// diagnosi: la batteria intera diventa rossa, e il passo `prove` del flusso
-/// `sviluppa-sailor` — che esegue `cargo test` — fallirebbe a ogni corsa,
-/// bloccando ogni lavoro futuro dietro un difetto che non riguarda quel lavoro.
-/// Peggio: chi la trovasse rossa avrebbe l'incentivo a farla passare, e il modo
-/// più rapido è inventare la parola.
+/// **PERCHÉ ERA `#[ignore]`, E PERCHÉ NON LO È PIÙ.** La ragione scritta qui
+/// fino al 01/09/2026 era buona e resta vera: le parole con cui `agy` dice di
+/// aver finito la quota non sono mai state viste su questa macchina, e
+/// inventarle sarebbe peggio del difetto. Ma quella era la ragione per non
+/// **inventare un dato**, ed era diventata la ragione per non **avere un
+/// controllo**: sono due cose diverse, e la seconda non discende dalla prima. La
+/// regola ha due modi di essere rispettata — misurare le parole di chi sta in
+/// mezzo, oppure non mettere in mezzo chi non le ha — e il secondo non richiede
+/// nessuna misura che non esista. Le catene di questo albero mettevano `agy`
+/// **fra** `claude-code` e `codex`: `codex`, che dichiara il proprio 401, non
+/// partiva mai. Adesso `agy` sta in fondo, dove la sua reticenza non toglie il
+/// lavoro a nessuno.
 ///
-/// **IL DEBITO STA DOVE SI LEGGE, NON QUI.** È il guasto 31 in
-/// `docs/guasti-incontrati.md`, dichiarato **aperto**, in una tabella che ha un
-/// suo controllo — `the_fault_table_holds_together` — il quale pretende che i
-/// conteggi in prosa dicano il vero. Un guasto aperto lì non si può togliere
-/// senza che qualcuno se ne accorga; un `#[ignore]` senza quella riga sarebbe
-/// una dimenticanza travestita da decisione.
-///
-/// Si toglie l'`#[ignore]` il giorno in cui si vede `agy` dire di essere
-/// esaurito, e si scrivono le sue parole nel descrittore.
+/// **QUELLO CHE RESTA APERTO, E VA DETTO QUI PERCHÉ QUI SI LEGGE.** Un `agy`
+/// esaurito **in fondo** a una catena fa ancora morire il passo invece di dire
+/// «sono esaurito»: si vede nel motivo dell'errore, non nel comportamento, e
+/// nessun ripiego si perde perché dietro di lui non c'è nessuno. Il giorno in
+/// cui qualcuno lo vede dire di essere esaurito, si scrivono le sue parole nel
+/// descrittore e torna a poter stare in mezzo.
 #[test]
-#[ignore = "guasto 31 aperto: agy non dichiara `unusable_when`, e le sue parole non sono state misurate. Inventarle sarebbe peggio del difetto"]
 fn every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted() {
     let mut silent: BTreeSet<String> = BTreeSet::new();
     for engine in engines_in_chains() {
         if engine.last {
             continue;
         }
-        let words = exhaustion_words(&engine.tool).unwrap_or_default();
-        if words.iter().all(|word| word.trim().is_empty()) {
+        if let Some(why) = why_it_cannot_be_a_fallback(&engine.tool) {
             silent.insert(format!(
-                "{} · {} · {}",
+                "{} · {} · {}: {why}",
                 engine.flow, engine.step, engine.tool
             ));
         }
@@ -146,6 +148,26 @@ fn every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted() {
          di non poter lavorare: quando si esauriscono uccidono il passo, e i \
          motori dopo di loro non partono. È il guasto 31.\n{}",
         silent.into_iter().collect::<Vec<_>>().join("\n")
+    );
+}
+
+/// **E LA REGOLA NON SI RISPETTA SVUOTANDO LE CATENE.** Ogni motore che dichiara
+/// le proprie parole deve poter continuare a stare in mezzo: se
+/// `cannot_be_a_fallback` cominciasse a rispondere «no» a tutti, la prova qui
+/// sopra resterebbe verde su catene che non ripiegano più.
+#[test]
+fn an_engine_that_declares_its_words_is_still_allowed_in_the_middle() {
+    let engines = engines_in_chains();
+    let in_the_middle: BTreeSet<String> = engines
+        .iter()
+        .filter(|engine| !engine.last)
+        .map(|engine| engine.tool.clone())
+        .collect();
+    assert!(
+        in_the_middle.contains("claude-code") && in_the_middle.contains("codex"),
+        "i due motori che dichiarano come si esauriscono non stanno più in mezzo a \
+         nessuna catena: la regola è stata rispettata togliendo i ripieghi invece \
+         che dichiarandoli. Trovati: {in_the_middle:?}"
     );
 }
 
@@ -168,32 +190,30 @@ fn there_are_chains_whose_fallback_can_actually_be_needed() {
     );
 }
 
-/// E la misura di **quanto** è aperto il guasto 31, oggi, senza giudicarlo.
+/// **UN MOTORE CHE NON RIPIEGA HA ANCORA UN POSTO, E DEVE RESTARE IN FONDO.**
 ///
-/// Non pretende niente da `agy`: dice che ogni motore in mezzo a una catena o
-/// dichiara le sue parole, o è uno dei motori che la tabella dei guasti già
-/// nomina. Serve perché il giorno in cui un **quarto** motore muto entrasse in
-/// una catena, quello non sarebbe più il guasto 31 registrato: sarebbe un
-/// difetto nuovo, e passerebbe inosservato dietro un `#[ignore]` che parla
-/// d'altro.
+/// La misura di quanto la regola stringe, oggi: `agy` è nelle catene di questo
+/// albero, e ci sta come ultimo. Fino al 01/09/2026 questa prova sorvegliava un
+/// **elenco di eccezioni** — «nessun motore muto oltre a quello registrato» —
+/// che è la forma che prende una regola quando la si scrive prima di poterla
+/// rispettare. Adesso la regola non ha eccezioni, e ciò che resta da sorvegliare
+/// è l'opposto: che `agy` non sia stato tolto di mezzo cancellandolo, perché un
+/// ripiego in meno non è la cura di un ripiego che non scatta.
 #[test]
-fn no_engine_other_than_the_ones_already_registered_is_silent_in_a_chain() {
-    // `agy` è il guasto 31, aperto e scritto in `docs/guasti-incontrati.md`.
-    let registered = ["agy"];
-    let mut unexpected: BTreeSet<String> = BTreeSet::new();
-    for engine in engines_in_chains() {
-        if engine.last || registered.contains(&engine.tool.as_str()) {
-            continue;
-        }
-        let words = exhaustion_words(&engine.tool).unwrap_or_default();
-        if words.iter().all(|word| word.trim().is_empty()) {
-            unexpected.insert(engine.tool);
-        }
-    }
+fn the_engine_that_cannot_fall_back_is_still_used_last() {
+    let engines = engines_in_chains();
+    let last: Vec<&InChain> = engines
+        .iter()
+        .filter(|engine| engine.tool == "agy" && engine.last)
+        .collect();
     assert!(
-        unexpected.is_empty(),
-        "un motore muto in mezzo a una catena che la tabella dei guasti non \
-         nomina: {unexpected:?}. Non è il guasto 31, è uno nuovo — registralo, \
-         o misura le sue parole"
+        !last.is_empty(),
+        "«agy» non compare più in fondo a nessuna catena: la regola sul ripiego è \
+         stata rispettata togliendo un motore invece di spostarlo"
+    );
+    assert!(
+        why_it_cannot_be_a_fallback("agy").is_some(),
+        "«agy» dichiara adesso come si esaurisce: se la misura è stata fatta, \
+         questa prova non serve più e le catene possono rimetterlo in mezzo"
     );
 }
