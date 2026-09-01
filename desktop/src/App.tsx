@@ -37,6 +37,7 @@ import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
 import { StepHistory } from "./StepHistory";
+import { StepLive } from "./StepLive";
 import { buildUnifiedLayout, nodeId, splitNodeId, wouldCycle } from "./layout";
 import { SAMPLE, SAMPLE_RUN } from "./sample";
 import {
@@ -1349,6 +1350,18 @@ export default function App() {
 
           {selectedData && selectedFlow ? (
             <>
+            {/* The step as the run has it, above the step as the file declares
+                it: what is happening explains what is written, not the other
+                way round. It mounts only while a run holds this step. */}
+            {watched && (
+              <StepLive
+                key={`${selectedData.flowName}::${selectedData.step.id}::live`}
+                step={selectedData.step}
+                graph={selectedFlow.flow.graph}
+                run={watched}
+                now={now}
+              />
+            )}
             <StepEditor
               key={selectedNode}
               flowName={selectedData.flowName}
