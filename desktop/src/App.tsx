@@ -17,7 +17,6 @@ import "@xyflow/react/dist/style.css";
 
 import {
   FlowBandNode,
-  KIND_LABEL,
   StepNode,
   STATE_COLOR,
   StepRunContext,
@@ -32,6 +31,7 @@ import { History } from "./History";
 import { Installed } from "./Installed";
 import { Manual } from "./Manual";
 import { StepEditor } from "./StepEditor";
+import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
 import { StepHistory } from "./StepHistory";
@@ -66,7 +66,6 @@ import {
 import { MODEL_KEY, type Tool, type ToolDiscovery } from "./tools";
 
 const nodeTypes = { step: StepNode, flowBand: FlowBandNode, trigger: TriggerNode };
-const PALETTE_KINDS = Object.keys(DEFAULT_ACTION_FOR_KIND) as StepKind[];
 
 /** Quanto spazio prende l'innesco a sinistra della sua corsia. */
 const TRIGGER_WIDTH = 240;
@@ -669,6 +668,48 @@ export default function App() {
     flowInstance.current?.fitView({ padding: 0.15 });
   }, [source]);
 
+  /**
+   * **IL PASSO NUOVO NASCE NELLA SUA CORSIA, E LA VISTA CI VA.**
+   *
+   * Dove esattamente lo decide `buildUnifiedLayout`, e la risposta è «su una
+   * riga nuova della corsia, in parallelo all'inizio»: un passo appena creato
+   * non dipende da nessuno, e un passo senza dipendenze parte insieme agli
+   * altri che non ne hanno. Non è in coda alla catena, ed è giusto così —
+   * metterlo in coda vorrebbe dire inventargli una dipendenza che chi lo crea
+   * non ha chiesto.
+   *
+   * Un passo non porta una posizione: il file di un flusso non ne ha una, e a
+   * decidere dove sta ogni nodo è `buildUnifiedLayout` a ogni disegno. Quindi
+   * «nasce sotto il puntatore» qui è **impossibile senza mentire**: si potrebbe
+   * lasciarlo cadere dove si vuole e vederlo saltare altrove al primo ricalcolo.
+   * Per lo stesso motivo la cassetta è una fila di attrezzi da premere e non da
+   * trascinare — un trascinamento prometterebbe un punto d'arrivo che non
+   * esiste.
+   *
+   * Resta il difetto vero, che è l'altra metà: il nodo compariva dove decideva
+   * il programma, e chi guardava restava dov'era. Qui la vista lo raggiunge,
+   * **senza cambiare la scala**: `maxZoom` è lo zoom corrente, quindi
+   * l'inquadratura scorre e non si stringe. Chi stava guardando da lontano
+   * continua a guardare da lontano.
+   */
+  const [addedNode, setAddedNode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (addedNode === null) return;
+    const instance = flowInstance.current;
+    // Il nodo entra nell'elenco un giro dopo che il flusso è cambiato: finché
+    // non c'è non si va da nessuna parte, e l'attesa finisce da sé al disegno
+    // successivo.
+    if (!instance || !nodes.some((node) => node.id === addedNode)) return;
+    void instance.fitView({
+      nodes: [{ id: addedNode }],
+      padding: 0.1,
+      maxZoom: instance.getZoom(),
+      duration: 320,
+    });
+    setAddedNode(null);
+  }, [nodes, addedNode]);
+
   function updateFlow(name: string, updater: (flow: FlowFile) => FlowFile) {
     setFlows((prev) => {
       const current = prev.get(name);
@@ -751,6 +792,7 @@ export default function App() {
       graph: { ...flow.graph, steps: [...flow.graph.steps, step] },
     }));
     setSelectedNode(nodeId(flowName, id));
+    setAddedNode(nodeId(flowName, id));
   }
 
   function deleteStep(flowName: string, stepId: string) {
@@ -1087,6 +1129,13 @@ export default function App() {
       {place === "installed" && <Installed native={NATIVE} />}
       {place === "manual" && <Manual native={NATIVE} />}
       <div className="body" hidden={place !== "flows"}>
+        {/* LA COLONNA HA UN MESTIERE SOLO: SCEGLIERE COSA GUARDARE. La cassetta
+            dei passi se n'è andata dentro la tela, dove si compone. Quello che
+            resta — l'elenco dei flussi, «tutti i flussi», il flusso nuovo —
+            risponde a una domanda sola, e la larghezza resta quella: a fissarla
+            era il nome di un flusso accanto al suo conteggio di passi, e
+            stringere la colonna li troncherebbe senza guadagnare niente sulla
+            tela, che il pannello a destra delimita comunque. */}
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
           <button
@@ -1133,24 +1182,6 @@ export default function App() {
             + Nuovo flusso
           </button>
 
-          <div className="rail__palette">
-            <div className="rail__title">Cassetta dei passi</div>
-            {focusName === null && <p className="rail__hint">scegli un flusso per aggiungere un passo</p>}
-            <div className="palette__grid">
-              {PALETTE_KINDS.map((kind) => (
-                <button
-                  key={kind}
-                  type="button"
-                  className="palette__item"
-                  disabled={focusName === null}
-                  title={focusName ? `aggiungi un passo di tipo «${KIND_LABEL[kind]}»` : "scegli prima un flusso"}
-                  onClick={() => focusName && addStep(focusName, kind)}
-                >
-                  {KIND_LABEL[kind]}
-                </button>
-              ))}
-            </div>
-          </div>
         </aside>
 
         <main className="canvas">
@@ -1189,6 +1220,24 @@ export default function App() {
                 return STATE_COLOR[state ?? "waiting"];
               }}
             />
+
+            {/* LA CASSETTA STA QUI DENTRO, ed è tutto il punto del lavoro: chi
+                compone non esce più dalla tela per prendere un attrezzo.
+                Sta dentro `ReactFlow` e non accanto perché `Panel` la disegna
+                fuori dal riquadro che pan e zoom trasformano — dentro la tela,
+                ferma rispetto ad essa.
+
+                CON ZERO FLUSSI NON C'È: quel momento è della tela vuota, che
+                insegna il primo gesto. Due inviti nello stesso schermo si
+                annullano — è la stessa regola per cui una vista ha un solo
+                elemento isolato. */}
+            {flows.size > 0 && (
+              <Toolbar
+                flowName={focusName}
+                onAdd={(kind) => focusName && addStep(focusName, kind)}
+                onNewFlow={addFlow}
+              />
+            )}
           </ReactFlow>
 
           {/* Una tela senza flussi non resta muta: dice cos'è un flusso e offre
