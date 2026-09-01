@@ -183,13 +183,13 @@ impl Action for HandoffAction {
             // Un record senza scadenza leggibile non si dichiara scaduto: una
             // consegna senza tetto è ambigua, e l'ambiguità si conserva.
             return Ok(EffectStatus::Unknown(
-                "la consegna non dichiara una scadenza leggibile".to_owned(),
+                "the handover declares no readable deadline".to_owned(),
             ));
         };
         let deadline = record.started_at.saturating_add(limit);
         if (self.now)() < deadline {
             Ok(EffectStatus::Unknown(format!(
-                "consegnato, e la scadenza non è ancora passata: mancano {} secondi",
+                "handed over, and the deadline has not passed: {} seconds to go",
                 deadline - (self.now)()
             )))
         } else {
@@ -213,7 +213,7 @@ impl Action for HandoffAction {
         if spec.mandate.trim().is_empty() {
             return Err(ActionError::new(
                 "invalid_input",
-                "un mandato vuoto non è un lavoro: nessuno saprebbe cosa gli è stato chiesto",
+                "an empty brief is not a job: nobody would know what they were asked for",
             ));
         }
         let run_id = shared

@@ -86,7 +86,7 @@ pub fn register_mcp(registry: &mut flow::ActionRegistry) {
 /// scriverà il proprio prompt senza averlo mai aperto. Uscendo da qui, la regola
 /// entra nel prompt del passo successivo con un rinvio — `{"$from": "/caveat"}`
 /// — e non dipende più dalla memoria di nessuno.
-pub const CAVEAT: &str = "Questa risposta viene da un indice esterno: serve a orientarsi, non a decidere. Un perimetro — chi dipende da cosa, cosa si rompe se tocchi questo — lo decide lo strumento che compila, mai il grafo delle dipendenze dell'indice. Misurato il 28/08/2026: interrogato sull'impatto di «crates/flow/src/graph.rs», l'indice ha risposto «nessun chiamante, niente dipende da questo», mentre quel file ha 493 righe, otto «Cargo.toml» dichiarano il crate e 22 file lo usano. Era un falso orfano, sul file che sta al centro del formato dei flussi.";
+pub const CAVEAT: &str = "This answer comes from an external index: it is for finding your bearings, not for deciding. A blast radius — who depends on what, what breaks if you touch this — is decided by the tool that compiles, never by the index's dependency graph. Measured: asked about the impact of «crates/flow/src/graph.rs», the index answered «no callers, nothing depends on this», while that file has 493 lines, eight «Cargo.toml» declare the crate and 22 files use it. It was a false orphan, on the file at the centre of the flow format.";
 
 /// Gli esiti che un passo può dichiarare di tollerare con `accept`.
 ///
@@ -233,7 +233,7 @@ fn require_preflight(
             return Err(ActionError::new(
                 "invalid_input",
                 format!(
-                    "la verifica «{}» non dice cosa deve provare: un «proves» vuoto è contenuto in qualunque risposta, quindi passerebbe sempre",
+                    "check «{}» does not say what it has to prove: an empty «proves» is contained in any answer, so it would always pass",
                     check.name
                 ),
             ));
@@ -247,7 +247,7 @@ fn require_preflight(
     if project_root.is_empty() {
         return Err(ActionError::new(
             "no_preflight",
-            "il passo non dice di quale cartella parla: un «project_root» vuoto è contenuto in qualunque «proves», e il legame che questo controllo impone diventerebbe una formalità",
+            "the step does not say which directory it is about: an empty «project_root» is contained in any «proves», and the tie this check enforces would become a formality",
         ));
     }
     let ties_to_the_root = checks
@@ -259,7 +259,7 @@ fn require_preflight(
     Err(ActionError::new(
         "no_preflight",
         format!(
-            "nessuna verifica preliminare lega la risposta a «{project_root}»: serve almeno un «check» il cui «proves» contenga quel percorso, oppure un «checks_waived_because» scritto che dica perché questo server non sa niente di cartelle"
+            "no preliminary check ties the answer to «{project_root}»: it needs at least one «check» whose «proves» contains that path, or a written «checks_waived_because» saying why this server knows nothing about directories"
         ),
     ))
 }
@@ -311,7 +311,7 @@ impl Session {
             // Il motivo del sistema operativo, com'è già la regola per
             // `SpawnFailed`: «non si è avviato» da solo manda a cercare un
             // binario assente quando il file c'era e non era eseguibile.
-            format!("«{}» non si è avviato: {error}", server.command)
+            format!("«{}» did not start: {error}", server.command)
         })?;
         let stdin = child.stdin.take();
         let out = child.stdout.take();
@@ -350,7 +350,7 @@ impl Session {
 
     fn say(&mut self, request: &Value) -> Result<(), String> {
         let Some(stdin) = self.stdin.as_mut() else {
-            return Err("lo standard input del server è già chiuso".to_owned());
+            return Err("the server's standard input is already closed".to_owned());
         };
         writeln!(stdin, "{request}").map_err(|error| error.to_string())?;
         stdin.flush().map_err(|error| error.to_string())
@@ -481,15 +481,15 @@ enum Answer {
 fn read_answer(response: Option<&Value>) -> Answer {
     let Some(response) = response else {
         return Answer::Unanswered(
-            "il server non ha risposto a questa domanda entro il tempo dato".to_owned(),
+            "the server did not answer this question within the time given".to_owned(),
         );
     };
     if let Some(error) = response.get("error") {
         let said = error
             .get("message")
             .and_then(Value::as_str)
-            .unwrap_or("errore senza messaggio");
-        return Answer::Unanswered(format!("il server ha rifiutato la domanda: {said}"));
+            .unwrap_or("an error with no message");
+        return Answer::Unanswered(format!("the server refused the question: {said}"));
     }
     let result = response.get("result");
     let refused = result
@@ -530,7 +530,7 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
             if *refused {
                 return (
                     "could_not_look",
-                    format!("«{}» ha risposto con un errore: {text}", check.server_tool),
+                    format!("«{}» answered with an error: {text}", check.server_tool),
                 );
             }
             if text.contains(&check.proves) {
@@ -547,7 +547,7 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
                 return (
                     "could_not_look",
                     format!(
-                        "il server non ha potuto guardare — «{}» nella risposta di «{}»: {text}",
+                        "the server could not look — «{}» in the answer of «{}»: {text}",
                         blinded, check.server_tool
                     ),
                 );
@@ -555,7 +555,7 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
             (
                 "failed",
                 format!(
-                    "«{}» ha risposto, ma «{}» non compare: {text}",
+                    "«{}» answered, and «{}» does not appear: {text}",
                     check.server_tool, check.proves
                 ),
             )
@@ -595,7 +595,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         if let Err(why) = session.say(request) {
             return Preflight {
                 status: "unreachable",
-                said: format!("non si è potuto parlare col server: {why}"),
+                said: format!("the server could not be spoken to: {why}"),
                 checks: Vec::new(),
                 offered: None,
                 offered_count: None,
@@ -611,7 +611,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     if answers.get(&INITIALIZE_ID).is_none() {
         return Preflight {
             status: "unreachable",
-            said: "il server non ha risposto alla stretta di mano".to_owned(),
+            said: "the server did not answer the handshake".to_owned(),
             checks: Vec::new(),
             offered: None,
             offered_count: None,
@@ -622,7 +622,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
             // Il server c'è e risponde, ma non ha saputo dire cosa offre: non
             // si può affermare né che offra lo strumento né che non lo offra.
             status: "could_not_look",
-            said: "il server risponde alla stretta di mano ma non ha elencato i propri strumenti: non si può dire se offre quello che serve".to_owned(),
+            said: "the server answers the handshake and did not list its own tools: there is no telling whether it offers the one needed".to_owned(),
             checks: Vec::new(),
             offered: None,
             offered_count: None,
@@ -633,7 +633,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         return Preflight {
             status: "tool_not_offered",
             said: format!(
-                "il server risponde, ma non offre «{tool}» a questa sessione. Rispondere e offrire sono due fatti diversi: un elenco esterno che lo dà per connesso non prova che questa sessione abbia lo strumento. Offre invece: {}",
+                "the server answers, and does not offer «{tool}» to this session. Answering and offering are two different facts: an external listing that calls it connected does not prove this session has the tool. What it does offer: {}",
                 if offered.is_empty() { "niente".to_owned() } else { offered.join(", ") }
             ),
             checks: Vec::new(),
@@ -664,7 +664,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     let (status, said) = if blind > 0 {
         (
             "could_not_look",
-            format!("{blind} verifiche preliminari su {} non hanno potuto guardare: dove non si è potuto guardare la risposta è «non lo so», non «no»", checks.len()),
+            format!("{blind} preliminary checks out of {} could not look: where looking was not possible the answer is «I do not know», not «no»", checks.len()),
         )
     } else if refused > 0 {
         (
@@ -678,7 +678,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         (
             "ready",
             format!(
-                "il server offre «{tool}» e {} verifiche preliminari passano",
+                "the server offers «{tool}» and {} preliminary checks pass",
                 checks.len()
             ),
         )
@@ -819,7 +819,7 @@ impl Action for McpAskAction {
             Answer::Unanswered(why) => ("tool_failed", with_stderr(why, &stderr), String::new()),
             Answer::Said { text, refused: true } => (
                 "tool_failed",
-                format!("«{}» ha risposto con un errore: {text}", spec.server_tool),
+                format!("«{}» answered with an error: {text}", spec.server_tool),
                 text.clone(),
             ),
             Answer::Said {
@@ -883,7 +883,7 @@ fn with_stderr(said: &str, stderr: &str) -> String {
     if stderr.trim().is_empty() {
         said.to_owned()
     } else {
-        format!("{said} — il server ha scritto: {}", stderr.trim())
+        format!("{said} — the server wrote: {}", stderr.trim())
     }
 }
 
@@ -1104,7 +1104,7 @@ mod tests {
             .expect_err("uno strumento che il server non offre rompe il passo");
         assert_eq!(error.class, "tool_not_offered");
         assert!(
-            error.said.contains("due fatti diversi"),
+            error.said.contains("two different facts"),
             "il messaggio deve dire perché rispondere e offrire non sono la stessa cosa: {}",
             error.said
         );
@@ -1235,7 +1235,7 @@ mod tests {
             value["caveat"]
                 .as_str()
                 .expect("la regola viaggia con la risposta")
-                .contains("non a decidere"),
+                .contains("not for deciding"),
             "la regola sul perimetro deve uscire insieme alla risposta"
         );
     }
