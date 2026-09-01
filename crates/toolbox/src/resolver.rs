@@ -294,9 +294,7 @@ fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
 fn pointer(place: &crate::descriptor::Where) -> actions::Pointer {
     match place {
         crate::descriptor::Where::Path(keys) => actions::Pointer::Path(keys.clone()),
-        crate::descriptor::Where::Pattern(pattern) => {
-            actions::Pointer::Pattern(pattern.clone())
-        }
+        crate::descriptor::Where::Pattern(pattern) => actions::Pointer::Pattern(pattern.clone()),
         crate::descriptor::Where::FirstKeyOf { first_key_of } => {
             actions::Pointer::FirstKey(first_key_of.clone())
         }
@@ -323,10 +321,8 @@ mod tests {
     }
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "sailor-resolver-{}-{name}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-resolver-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create the test directory");
         dir
     }
@@ -517,7 +513,9 @@ mod tests {
             sessions: SessionAbilities::default(),
         };
 
-        let recipe = tools.ask_recipe("schizzinoso").expect("the recipe is there");
+        let recipe = tools
+            .ask_recipe("schizzinoso")
+            .expect("the recipe is there");
         assert_eq!(
             recipe.refuses_without_prompt,
             vec!["input must be provided".to_owned()],
@@ -586,9 +584,7 @@ mod tests {
         let tools = Tools::new(catalog, machine(&dir));
 
         let recipe = tools.ask_recipe("codex").expect("codex has a recipe");
-        let usage = recipe
-            .usage
-            .expect("and declares how its usage is read");
+        let usage = recipe.usage.expect("and declares how its usage is read");
         assert!(usage.args.is_empty(), "no options added to codex");
         assert_eq!(usage.declared.read, actions::Shape::Text);
         let Some(actions::Pointer::Pattern(pattern)) = usage.declared.total_tokens else {

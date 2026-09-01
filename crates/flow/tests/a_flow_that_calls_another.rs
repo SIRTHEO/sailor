@@ -5,7 +5,7 @@
 //! whole piece is broken. What this does *not* prove is declared: the store
 //! here is in memory, so `parent_run_id` in the real one stays `registry`'s.
 
-use flow::subflow::{SubflowAction, SubflowHost, RunNote, SUBFLOW_ACTION};
+use flow::subflow::{RunNote, SubflowAction, SubflowHost, SUBFLOW_ACTION};
 use flow::system::FlowSource;
 use flow::{
     Action, ActionError, ActionOutcome, ActionRegistry, Decision, Execution, ExecutionRequest,
@@ -96,7 +96,10 @@ impl Bench {
     /// The registry holding the `subflow` step and the test action.
     fn registry(self: &Arc<Self>) -> ActionRegistry {
         let mut registry = ActionRegistry::default();
-        registry.register(SUBFLOW_ACTION, SubflowAction::new(Arc::clone(self) as Arc<dyn SubflowHost>));
+        registry.register(
+            SUBFLOW_ACTION,
+            SubflowAction::new(Arc::clone(self) as Arc<dyn SubflowHost>),
+        );
         registry.register("echo", EchoTo(Arc::clone(&self.watcher)));
         registry
     }
@@ -135,7 +138,11 @@ impl SubflowHost for Bench {
                 let mut registry = ActionRegistry::default();
                 registry.register(
                     SUBFLOW_ACTION,
-                    SubflowAction::new(Arc::new(BenchAgain(self.dir.clone(), Arc::clone(&self.store), Arc::clone(&self.watcher)))),
+                    SubflowAction::new(Arc::new(BenchAgain(
+                        self.dir.clone(),
+                        Arc::clone(&self.store),
+                        Arc::clone(&self.watcher),
+                    ))),
                 );
                 registry.register("echo", EchoTo(Arc::clone(&self.watcher)));
                 Arc::new(registry)
@@ -217,12 +224,7 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
 const PARENT_ONLY: &str = "parents-secret";
 
 /// Runs a one-step graph that calls `calls`.
-fn run_calling(
-    bench: &Arc<Bench>,
-    calls: &str,
-    inputs: Value,
-    cap: Option<i64>,
-) -> Execution {
+fn run_calling(bench: &Arc<Bench>, calls: &str, inputs: Value, cap: Option<i64>) -> Execution {
     let graph = Graph::new(vec![calling_step("chiamata", calls, inputs)]).expect("valid graph");
     let registry = bench.registry();
     let mut shared = SharedState::new();
@@ -368,7 +370,11 @@ fn the_child_gets_the_declared_inputs_and_not_the_parent_state() {
         None,
     );
 
-    let seen = bench.watcher.seen.lock().unwrap_or_else(|held| held.into_inner());
+    let seen = bench
+        .watcher
+        .seen
+        .lock()
+        .unwrap_or_else(|held| held.into_inner());
     let (input, shared) = seen.first().expect("the child ran");
     assert_eq!(input["dal-passo"], "questo", "the step's input wins");
     assert!(
@@ -376,7 +382,10 @@ fn the_child_gets_the_declared_inputs_and_not_the_parent_state() {
         "and replaces the file's for that key: {input}"
     );
     assert_eq!(
-        shared.get(flow::CURRENT_RUN).and_then(Value::as_str).map(|run| run.contains("corsa-del-padre")),
+        shared
+            .get(flow::CURRENT_RUN)
+            .and_then(Value::as_str)
+            .map(|run| run.contains("corsa-del-padre")),
         Some(true),
         "the child's run carries the parent in its name"
     );
@@ -438,7 +447,10 @@ fn a_flow_that_calls_itself_names_itself_twice() {
     let record = parent_step(&bench);
     assert_eq!(record.failure_class.as_deref(), Some("subflow_cycle"));
     assert!(
-        record.said.unwrap_or_default().contains("solitario → solitario"),
+        record
+            .said
+            .unwrap_or_default()
+            .contains("solitario → solitario"),
         "the shortest loop is named like the others"
     );
 }
@@ -488,7 +500,11 @@ fn the_child_inherits_what_is_left_of_the_parent_cap() {
         "with room to spare the child runs: {record:?}"
     );
 
-    let seen = with_room.watcher.seen.lock().unwrap_or_else(|held| held.into_inner());
+    let seen = with_room
+        .watcher
+        .seen
+        .lock()
+        .unwrap_or_else(|held| held.into_inner());
     let (_, shared) = seen.first().expect("the child ran");
     assert_eq!(
         shared.get(flow::CURRENT_CAP).and_then(Value::as_i64),

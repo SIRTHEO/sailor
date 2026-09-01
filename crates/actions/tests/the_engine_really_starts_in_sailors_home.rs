@@ -56,11 +56,8 @@ impl Drop for TempDir {
 /// sapere, cioè quale casa ha ricevuto.
 fn a_fake_codex_that_prints_its_home(dir: &Path) -> String {
     let path = dir.join("codex");
-    fs::write(
-        &path,
-        "#!/bin/sh\nprintf 'CASA=%s\\n' \"$CODEX_HOME\"\n",
-    )
-    .expect("scrivere il finto motore");
+    fs::write(&path, "#!/bin/sh\nprintf 'CASA=%s\\n' \"$CODEX_HOME\"\n")
+        .expect("scrivere il finto motore");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("renderlo eseguibile");
     path.to_string_lossy().into_owned()
 }

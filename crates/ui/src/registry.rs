@@ -114,12 +114,20 @@ mod tests {
         assert_eq!(view.description.as_deref(), Some("Description for sample"));
         assert_eq!(view.error, None);
         assert_eq!(view.steps.len(), 2);
-        let child = view.steps.iter().find(|s| s.id == "child").expect("step present");
+        let child = view
+            .steps
+            .iter()
+            .find(|s| s.id == "child")
+            .expect("step present");
         assert_eq!(child.deps, vec!["root".to_owned()]);
         assert_eq!(child.action, "child_action");
         assert_eq!(child.max_attempts, 2);
         assert!(child.conditional);
-        let root = view.steps.iter().find(|s| s.id == "root").expect("step present");
+        let root = view
+            .steps
+            .iter()
+            .find(|s| s.id == "root")
+            .expect("step present");
         assert!(!root.conditional);
     }
 

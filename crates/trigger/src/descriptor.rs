@@ -363,8 +363,14 @@ mod tests {
     #[test]
     fn the_last_descriptor_with_an_id_wins() {
         let mut catalog = Catalog::default();
-        catalog.absorb("spedito", r#"[{"id": "x", "kind": "manual", "label": "primo"}]"#);
-        catalog.absorb("mio", r#"[{"id": "x", "kind": "manual", "label": "secondo"}]"#);
+        catalog.absorb(
+            "spedito",
+            r#"[{"id": "x", "kind": "manual", "label": "primo"}]"#,
+        );
+        catalog.absorb(
+            "mio",
+            r#"[{"id": "x", "kind": "manual", "label": "secondo"}]"#,
+        );
         assert_eq!(catalog.live().len(), 1);
         assert_eq!(catalog.live()[0].descriptor.label, "secondo");
         assert_eq!(catalog.live()[0].source, "mio");
@@ -374,7 +380,10 @@ mod tests {
     fn a_disabled_descriptor_disappears_from_the_live_list() {
         let mut catalog = Catalog::default();
         catalog.absorb("spedito", r#"[{"id": "x", "kind": "manual"}]"#);
-        catalog.absorb("mio", r#"[{"id": "x", "kind": "manual", "disabled": true}]"#);
+        catalog.absorb(
+            "mio",
+            r#"[{"id": "x", "kind": "manual", "disabled": true}]"#,
+        );
         assert!(catalog.live().is_empty());
         assert!(catalog.known().is_empty());
     }

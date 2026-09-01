@@ -105,7 +105,11 @@ fn faults() -> Vec<Fault> {
 #[test]
 fn every_fault_has_its_own_number_and_none_is_missing() {
     let faults = faults();
-    assert!(faults.len() >= 25, "la tabella si è svuotata: {}", faults.len());
+    assert!(
+        faults.len() >= 25,
+        "la tabella si è svuotata: {}",
+        faults.len()
+    );
 
     let mut seen: BTreeMap<usize, usize> = BTreeMap::new();
     for fault in &faults {
@@ -123,7 +127,9 @@ fn every_fault_has_its_own_number_and_none_is_missing() {
          sessioni scrivono nel file nello stesso minuto, e nessuno se ne accorge"
     );
 
-    let missing: Vec<usize> = (1..=faults.len()).filter(|n| !seen.contains_key(n)).collect();
+    let missing: Vec<usize> = (1..=faults.len())
+        .filter(|n| !seen.contains_key(n))
+        .collect();
     assert!(
         missing.is_empty(),
         "numeri saltati: {missing:?}. Un buco vuol dire che una riga è stata \
@@ -144,10 +150,17 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
             fault.number,
             fault.cells
         );
-        for (column, name) in ["numero", "data", "cosa è successo", "come si è visto", "cosa lo impedirebbe", "stato"]
-            .iter()
-            .enumerate()
-            .map(|(index, name)| (index, *name))
+        for (column, name) in [
+            "numero",
+            "data",
+            "cosa è successo",
+            "come si è visto",
+            "cosa lo impedirebbe",
+            "stato",
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (index, *name))
         {
             assert!(
                 !fault.cells[column].is_empty(),
@@ -160,15 +173,40 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
 
 /// I numeri fino a diciannove, che in italiano non seguono nessuna regola.
 const IRREGULAR: [&str; 20] = [
-    "zero", "uno", "due", "tre", "quattro", "cinque", "sei", "sette", "otto",
-    "nove", "dieci", "undici", "dodici", "tredici", "quattordici", "quindici",
-    "sedici", "diciassette", "diciotto", "diciannove",
+    "zero",
+    "uno",
+    "due",
+    "tre",
+    "quattro",
+    "cinque",
+    "sei",
+    "sette",
+    "otto",
+    "nove",
+    "dieci",
+    "undici",
+    "dodici",
+    "tredici",
+    "quattordici",
+    "quindici",
+    "sedici",
+    "diciassette",
+    "diciotto",
+    "diciannove",
 ];
 
 /// Le decine.
 const TENS: [&str; 10] = [
-    "", "", "venti", "trenta", "quaranta", "cinquanta", "sessanta", "settanta",
-    "ottanta", "novanta",
+    "",
+    "",
+    "venti",
+    "trenta",
+    "quaranta",
+    "cinquanta",
+    "sessanta",
+    "settanta",
+    "ottanta",
+    "novanta",
 ];
 
 /// Il numero scritto in lettere, come lo scrive la prosa sotto la tabella.

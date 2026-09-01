@@ -329,9 +329,15 @@ fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
         .into_iter()
         .find(|record| record.step_id == "second" && record.outcome == Some(Outcome::Broke))
         .expect("the broken step is in the store, or a resume would not know where to restart");
-    assert_eq!(broken.failure_class.as_deref(), Some("unresolved_reference"));
+    assert_eq!(
+        broken.failure_class.as_deref(),
+        Some("unresolved_reference")
+    );
     assert!(
-        broken.said.as_deref().is_some_and(|said| said.contains("/does/not/exist")),
+        broken
+            .said
+            .as_deref()
+            .is_some_and(|said| said.contains("/does/not/exist")),
         "the message must name the pointer to fix: {:?}",
         broken.said
     );

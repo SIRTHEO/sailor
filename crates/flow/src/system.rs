@@ -137,8 +137,7 @@ fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, Pat
     // until someone writes it a marker. That is a deprecation, and a
     // deprecation is not done alone: it stays, and the origin it carries says
     // out loud that it is a fallback.
-    project_flows_from(working, home_flows)
-        .map(|flows| (crate::workspace::ORIGIN_GUESSED, flows))
+    project_flows_from(working, home_flows).map(|flows| (crate::workspace::ORIGIN_GUESSED, flows))
 }
 
 /// The same sources, read from this process's environment: one copy of the
@@ -325,10 +324,7 @@ pub fn delete_in(flows_dir: &Path, name: &str) -> Result<(), String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             Err(format!("flow \"{name}\" does not exist"))
         }
-        Err(error) => Err(format!(
-            "cannot delete {}: {error}",
-            target.display()
-        )),
+        Err(error) => Err(format!("cannot delete {}: {error}", target.display())),
     }
 }
 
@@ -410,10 +406,8 @@ mod tests {
     use super::*;
 
     fn scratch(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "sailor-sistema-{label}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-sistema-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("scratch directory");
         dir
@@ -778,8 +772,7 @@ mod tests {
     #[test]
     fn a_flow_id_with_a_path_separator_is_refused() {
         let dir = scratch("separator");
-        let error =
-            save_in(&dir, &a_full_flow("under/directory")).expect_err("id with / refused");
+        let error = save_in(&dir, &a_full_flow("under/directory")).expect_err("id with / refused");
         assert!(error.contains("path separators"), "{error}");
         assert!(entries(&dir).is_empty());
         let _ = fs::remove_dir_all(&dir);

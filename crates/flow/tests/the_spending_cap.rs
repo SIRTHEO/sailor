@@ -6,7 +6,7 @@
 //! and an uncapped one behave *differently* on the same graph, same actions.
 
 use flow::{
-    Action, ActionError, ActionOutcome, Clock, Completion, Decision, Executor, ExecutionRequest,
+    Action, ActionError, ActionOutcome, Clock, Completion, Decision, ExecutionRequest, Executor,
     FlowError, Graph, InMemoryRecordStore, InProcessExecutor, Outcome, RecordStore, SharedState,
     Spend, Step, StepRecord, ValueSchema,
 };
@@ -61,7 +61,8 @@ impl RecordStore for StoreThatCounts {
         epoch: u64,
         completion: Completion,
     ) -> Result<(), FlowError> {
-        self.inner.close(run_id, step_id, attempt, epoch, completion)
+        self.inner
+            .close(run_id, step_id, attempt, epoch, completion)
     }
 
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError> {
@@ -178,7 +179,10 @@ fn a_run_stops_before_the_step_that_would_break_the_cap() {
 
     assert_eq!(ran, 1, "the first step runs, the second does not");
     let Some(Decision::CapReached(stop)) = execution.decisions.last() else {
-        panic!("the run should have stopped at the cap, instead: {:?}", execution.decisions.last());
+        panic!(
+            "the run should have stopped at the cap, instead: {:?}",
+            execution.decisions.last()
+        );
     };
     assert_eq!(stop.cap_micros, 100);
     assert_eq!(stop.spent.micros, 150);

@@ -232,8 +232,7 @@ impl Graph {
                 });
             }
         } else if step.deps.iter().any(|dependency| {
-            !self.dependency_is_skippable(&step.id, dependency)
-                && with.get(dependency).is_some()
+            !self.dependency_is_skippable(&step.id, dependency) && with.get(dependency).is_some()
         }) {
             return Err(GraphError::DestructiveInputOverlay {
                 step: step.id.clone(),

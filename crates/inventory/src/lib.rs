@@ -279,7 +279,9 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
             };
             let declared = discovery::manifest(&path);
             let reach = match (&declared, path.parent().and_then(|p| p.file_name())) {
-                (Some(names), Some(own)) if !names.contains(&own.to_string_lossy().into_owned()) => {
+                (Some(names), Some(own))
+                    if !names.contains(&own.to_string_lossy().into_owned()) =>
+                {
                     Reach::Inactive(format!(
                         "on disk, but the manifest of {} does not declare it",
                         prefix.trim_end_matches(':')
@@ -436,8 +438,8 @@ fn commands_of(root: &Root) -> Vec<Entry> {
             // takes the whole file as the prompt; demanding frontmatter made
             // `/work-loop-headless` vanish from the list of what exists — and a
             // list that stays quiet about what is there is worse than no list.
-            let (matter, by_model) = discovery::matter_and_invocability(&path)
-                .unwrap_or_else(|| (String::new(), true));
+            let (matter, by_model) =
+                discovery::matter_and_invocability(&path).unwrap_or_else(|| (String::new(), true));
             let name = path.file_stem()?.to_string_lossy().into_owned();
             let description = match discovery::description(&matter, true) {
                 empty if empty.is_empty() => first_heading(&path),
@@ -568,7 +570,9 @@ fn hook_label(command: &str) -> String {
     // hooks running the same subcommand with different options — `orca-cleanup
     // --close` and `orca-cleanup --names --rename` — are two hooks, and
     // dropping the options collapsed them into one.
-    const SHELL_NOISE: &[&str] = &["cd", "||", "&&", ";", "&", "true", "exec", "nohup", "sh", "-c"];
+    const SHELL_NOISE: &[&str] = &[
+        "cd", "||", "&&", ";", "&", "true", "exec", "nohup", "sh", "-c",
+    ];
     let words: Vec<&str> = command.split_whitespace().collect();
     // The executable is the last word that is a path: before it there is only
     // shell preamble, after it the arguments that matter.

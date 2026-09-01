@@ -274,7 +274,10 @@ mod tests {
     #[test]
     fn filter_free_only_excludes_paid_models() {
         let catalog = Catalog::parse(SAMPLE).unwrap();
-        let f = Filter { free_only: true, ..Default::default() };
+        let f = Filter {
+            free_only: true,
+            ..Default::default()
+        };
         let hits = catalog.filter(&f);
         assert_eq!(hits.len(), 17);
         assert!(hits.iter().all(|m| m.free));
@@ -283,7 +286,10 @@ mod tests {
     #[test]
     fn filter_paid_only_excludes_free_models() {
         let catalog = Catalog::parse(SAMPLE).unwrap();
-        let f = Filter { paid_only: true, ..Default::default() };
+        let f = Filter {
+            paid_only: true,
+            ..Default::default()
+        };
         let hits = catalog.filter(&f);
         assert_eq!(hits.len(), 5);
         assert!(hits.iter().all(|m| !m.free));
@@ -292,7 +298,10 @@ mod tests {
     #[test]
     fn filter_by_modality_keeps_only_models_that_accept_audio() {
         let catalog = Catalog::parse(SAMPLE).unwrap();
-        let f = Filter { modality: Some(Modality::Audio), ..Default::default() };
+        let f = Filter {
+            modality: Some(Modality::Audio),
+            ..Default::default()
+        };
         let hits = catalog.filter(&f);
         // Free with audio: inkling-small, inkling, nemotron-3-nano-omni.
         // Paid with audio: meta/muse-spark.
@@ -303,9 +312,14 @@ mod tests {
     #[test]
     fn filter_by_min_context_excludes_smaller_windows() {
         let catalog = Catalog::parse(SAMPLE).unwrap();
-        let f = Filter { min_context: Some(1_000_000), ..Default::default() };
+        let f = Filter {
+            min_context: Some(1_000_000),
+            ..Default::default()
+        };
         let hits = catalog.filter(&f);
-        assert!(hits.iter().all(|m| m.context_length.unwrap_or(0) >= 1_000_000));
+        assert!(hits
+            .iter()
+            .all(|m| m.context_length.unwrap_or(0) >= 1_000_000));
         assert!(hits.iter().any(|m| m.id == "thinkingmachines/inkling:free"));
         assert!(!hits.iter().any(|m| m.id == "tencent/hy-mt2-1.8b")); // 8192, too small
     }
@@ -321,6 +335,9 @@ mod tests {
         };
         let hits = catalog.filter(&f);
         // Only minimax/minimax-m3:free satisfies all three at once.
-        assert_eq!(hits.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["minimax/minimax-m3:free"]);
+        assert_eq!(
+            hits.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+            vec!["minimax/minimax-m3:free"]
+        );
     }
 }

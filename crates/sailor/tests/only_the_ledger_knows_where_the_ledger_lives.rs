@@ -73,7 +73,10 @@ fn nobody_outside_the_ledger_builds_the_ledger_path_by_hand() {
     let root = repository_root();
     let mut sources = Vec::new();
     sources_under(&root.join("crates"), &mut sources);
-    sources_under(&root.join("desktop").join("src-tauri").join("src"), &mut sources);
+    sources_under(
+        &root.join("desktop").join("src-tauri").join("src"),
+        &mut sources,
+    );
     assert!(
         sources.len() > 50,
         "la scansione non ha trovato quasi niente: {} file, e allora questa prova \

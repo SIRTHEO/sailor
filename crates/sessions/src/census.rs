@@ -278,10 +278,13 @@ impl Machine for LocalMachine {
 /// command. `ps -e | wc -l` answers `0` with exit `0`; `Command::output`
 /// answers with the error that is there.
 fn read_from(tool: &str, args: &[&str]) -> Result<String, Refusal> {
-    let output = Command::new(tool).args(args).output().map_err(|error| Refusal {
-        tool: tool.to_owned(),
-        reason: format!("did not start: {error}"),
-    })?;
+    let output = Command::new(tool)
+        .args(args)
+        .output()
+        .map_err(|error| Refusal {
+            tool: tool.to_owned(),
+            reason: format!("did not start: {error}"),
+        })?;
     let complaint = String::from_utf8_lossy(&output.stderr).trim().to_owned();
     if !output.status.success() {
         return Err(Refusal {

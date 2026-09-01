@@ -26,7 +26,10 @@ pub const BUILTIN: &str = include_str!("../descriptors/default.json");
 /// the same question on other paths; rewriting it would be a diverging copy.
 pub const BUILTIN_CATALOGS: &[(&str, &str)] = &[
     ("tools", BUILTIN),
-    ("automations", include_str!("../descriptors/automations.json")),
+    (
+        "automations",
+        include_str!("../descriptors/automations.json"),
+    ),
 ];
 
 /// How a descriptor's provenance is spelled out for the reader.
@@ -654,11 +657,7 @@ impl Descriptor {
                     .to_owned(),
             );
         };
-        if ask
-            .unusable_when
-            .iter()
-            .any(|mark| !mark.trim().is_empty())
-        {
+        if ask.unusable_when.iter().any(|mark| !mark.trim().is_empty()) {
             return None;
         }
         Some(
@@ -962,10 +961,8 @@ mod the_new_field_is_optional {
     use super::*;
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "sailor-descrittori-{}-{name}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-descrittori-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("working directory");
         dir
@@ -1049,7 +1046,10 @@ mod the_new_field_is_optional {
             "the cache has a pointer of its own, separate from input"
         );
         assert_eq!(usage.answer, Some(Where::Path(vec!["result".into()])));
-        assert_eq!(usage.output_tokens, None, "what is not written is not there");
+        assert_eq!(
+            usage.output_tokens, None,
+            "what is not written is not there"
+        );
     }
 
     /// The text form: the pointers are regular expressions.
@@ -1068,7 +1068,9 @@ mod the_new_field_is_optional {
         assert_eq!(usage.read, ReadAs::Text);
         assert_eq!(
             usage.total_tokens,
-            Some(Where::Pattern("tokens used\\s*\\n\\s*([\\d.,]+)".to_owned()))
+            Some(Where::Pattern(
+                "tokens used\\s*\\n\\s*([\\d.,]+)".to_owned()
+            ))
         );
     }
 
@@ -1501,7 +1503,11 @@ mod the_new_field_is_optional {
             .map(|found| (found.tool, found.said))
             .collect();
 
-        assert_eq!(said.len(), 4, "one per descriptor, and there are four: {said:?}");
+        assert_eq!(
+            said.len(),
+            4,
+            "one per descriptor, and there are four: {said:?}"
+        );
         assert!(
             said["dice-di-si-e-non-ha-la-riga"].contains("no `ask` block"),
             "{said:?}"

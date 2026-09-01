@@ -40,8 +40,15 @@ const THE_LABEL_THAT_MUST_NOT_DECIDE: &str = "ancestor";
 /// first draft's defect, since `ancestor: Some("x".to_owned())` builds a row
 /// rather than questioning one.
 const COMPARED_WITH_A_WRITTEN_VALUE: &[&str] = &[
-    "==\"", "!=\"", "==some(\"", "!=some(\"", "contains(\"", "starts_with(\"", "ends_with(\"",
-    "eq(\"", "eq_ignore_ascii_case(\"",
+    "==\"",
+    "!=\"",
+    "==some(\"",
+    "!=some(\"",
+    "contains(\"",
+    "starts_with(\"",
+    "ends_with(\"",
+    "eq(\"",
+    "eq_ignore_ascii_case(\"",
 ];
 
 /// The names that must decide nothing. **The wide net, not the check**: it
@@ -51,8 +58,23 @@ const COMPARED_WITH_A_WRITTEN_VALUE: &[&str] = &[
 /// a list holding them would raise errors nobody can fix, so the first person
 /// to hit one would silence the test along with everything else.
 const PRODUCT_NAMES: &[&str] = &[
-    "orca", "iterm", "warp", "ghostty", "alacritty", "wezterm", "kitty", "zellij", "tmux",
-    "claude", "codex", "gemini", "cursor", "copilot", "aider", "vscode", "jetbrains",
+    "orca",
+    "iterm",
+    "warp",
+    "ghostty",
+    "alacritty",
+    "wezterm",
+    "kitty",
+    "zellij",
+    "tmux",
+    "claude",
+    "codex",
+    "gemini",
+    "cursor",
+    "copilot",
+    "aider",
+    "vscode",
+    "jetbrains",
 ];
 
 /// I segni che una riga **decide** invece di raccontare.
@@ -62,9 +84,26 @@ const PRODUCT_NAMES: &[&str] = &[
 /// riga di commento. Il costo di non guardarla è un tracciamento che funziona
 /// su una macchina sola.
 const SIGNS_OF_A_DECISION: &[&str] = &[
-    "if ", "else if", "match ", "while ", "==", "!=", "=>", "contains(", "contains_key(",
-    "starts_with(", "ends_with(", "matches!", ".any(", ".all(", ".find(", ".filter(",
-    ".position(", "unwrap_or_else(", "then(", "then_some(",
+    "if ",
+    "else if",
+    "match ",
+    "while ",
+    "==",
+    "!=",
+    "=>",
+    "contains(",
+    "contains_key(",
+    "starts_with(",
+    "ends_with(",
+    "matches!",
+    ".any(",
+    ".all(",
+    ".find(",
+    ".filter(",
+    ".position(",
+    "unwrap_or_else(",
+    "then(",
+    "then_some(",
 ];
 
 fn repository_root() -> PathBuf {
@@ -167,7 +206,10 @@ fn decisions_on_a_product_in(text: &str) -> Vec<String> {
         let Some(product) = PRODUCT_NAMES.iter().find(|name| code.contains(**name)) else {
             continue;
         };
-        let Some(sign) = SIGNS_OF_A_DECISION.iter().find(|sign| code.contains(**sign)) else {
+        let Some(sign) = SIGNS_OF_A_DECISION
+            .iter()
+            .find(|sign| code.contains(**sign))
+        else {
             continue;
         };
         found.push(format!(
