@@ -29,7 +29,7 @@ const WHERE_THEY_BELONG: &str = "crates/toolbox/descriptors/";
 /// leaves when the thing it hard-codes becomes a field of the descriptor, and
 /// nothing new joins. Twenty-five lines across seven crates when first
 /// measured, which is how far one command line had got inside a product meant
-/// for six; twenty-three after the release stopped installing itself there.
+/// for six; the grafting left the list the day its settings file became data.
 const STILL_ALLOWED: &[(&str, &str)] = &[
     (
         "crates/inventory/src/discovery.rs",
@@ -40,12 +40,6 @@ const STILL_ALLOWED: &[(&str, &str)] = &[
     (
         "crates/inventory/src/lib.rs",
         "same inventory, the reading half",
-    ),
-    (
-        "crates/sailor/src/session_cmd.rs",
-        "where the hooks are grafted. How a command line is told a session began \
-         has no field in the descriptor yet, and the conduit is the road that \
-         works for the ones with no hooks at all",
     ),
     (
         "crates/release/src/lib.rs",
