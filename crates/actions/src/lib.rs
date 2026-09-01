@@ -38,7 +38,6 @@ pub mod handoff;
 pub mod history;
 pub mod mcp;
 pub mod presence;
-pub mod reference;
 pub mod store;
 
 /// I tipi puri con cui un descrittore dichiara dove stanno i suoi numeri,
@@ -998,7 +997,7 @@ fn shape_was_asked_for(written: &str, spec: &EngineSpec) -> Result<(), ActionErr
         "shape_not_in_prompt",
         format!(
             "il passo pretende una risposta in una forma dichiarata, ma quella forma non compare in ciò che manda al motore: mettila nel prompt con un rinvio {} a /answer_shape, così è scritta una volta sola. La forma è: {written}",
-            reference::JSON_KEY
+            flow::reference::JSON_KEY
         ),
     ))
 }
@@ -2420,13 +2419,12 @@ impl Action for ExternalEngineAction {
         // non c'è più, ed è `None` — cioè non si annota niente — se manca il
         // deposito o uno dei due identificativi.
         let record = recording_for(&self.ledger, shared);
-        let input = reference::resolve_references(input)?;
         // La forma si tiene anche com'era scritta: è quel testo, non una sua
         // riscrittura, che deve comparire nel prompt.
         let written_shape = input.get("answer_shape").map(|shape| {
             serde_json::to_string(shape).expect("un valore già in memoria si riserializza sempre")
         });
-        let spec: EngineSpec = serde_json::from_value(input)
+        let spec: EngineSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
         if let Some(written) = &written_shape {
@@ -2573,8 +2571,7 @@ impl Action for ShellCheckAction {
         shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
-        let input = reference::resolve_references(input)?;
-        let spec: CheckSpec = serde_json::from_value(input)
+        let spec: CheckSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &CHECK_FAILURES)?;
         let seconds = spec.timeout_secs;
@@ -2631,6 +2628,25 @@ mod tests {
 
     fn secs(n: u64) -> Duration {
         Duration::from_secs(n)
+    }
+
+    /// L'ingresso come lo riceve un'azione **quando gira davvero**: coi rinvii
+    /// già sciolti.
+    ///
+    /// **PERCHÉ UNA PROVA DI QUESTO CRATE NE HA BISOGNO.** Dal 01/09/2026 i
+    /// rinvii li scioglie `flow::step_input`, una volta sola dove l'ingresso si
+    /// compone — è la cura del guasto 28, e la ragione per cui nel codice di
+    /// questo crate non c'è più nessuna chiamata a `resolve_references`. Una
+    /// prova che invochi `execute` direttamente salta quel passaggio: senza
+    /// questa riga proverebbe l'azione in un mondo in cui non gira mai, che è
+    /// il guasto 39.
+    ///
+    /// **NON È UNA SECONDA COPIA DELLA REGOLA**: chiama la funzione vera. E
+    /// non prova niente da sola — ciò che i rinvii arrivino sciolti a **ogni**
+    /// azione lo prova `crates/flow/tests/a_reference_reaches_every_action.rs`,
+    /// che passa dall'esecutore invece di chiamare la risoluzione a mano.
+    pub(crate) fn with_references_resolved(input: Value) -> Value {
+        flow::reference::resolve_references(&input).expect("i rinvii della prova si sciolgono")
     }
 
     // ── run_with_timeout ─────────────────────────────────────────────
@@ -3366,7 +3382,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = ExternalEngineAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&with_references_resolved(input), &mut SharedState::new())
             .expect("la risposta rispetta la forma")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -3409,7 +3425,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&with_references_resolved(input), &mut SharedState::new())
             .expect_err("un motore fuori forma non ha risposto");
 
         assert_eq!(error.class, "answer_off_shape");
@@ -3427,7 +3443,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&with_references_resolved(input), &mut SharedState::new())
             .expect_err("non è JSON");
 
         assert_eq!(error.class, "answer_not_json");
@@ -3454,7 +3470,7 @@ mod tests {
         });
 
         let ActionOutcome::Went(output) = ExternalEngineAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&with_references_resolved(input), &mut SharedState::new())
             .expect("il blocco recintato si legge")
         else {
             panic!("un motore che risponde è sempre Went")
@@ -3501,7 +3517,7 @@ mod tests {
         });
 
         let error = ExternalEngineAction::new()
-            .execute(&input, &mut SharedState::new())
+            .execute(&with_references_resolved(input), &mut SharedState::new())
             .expect_err("le due dichiarazioni non stanno insieme");
 
         assert_eq!(error.class, "invalid_input");
@@ -3948,9 +3964,10 @@ mod tests {
     /// **IL PASSAGGIO DI CONSEGNE, PROVATO SULL'AZIONE E NON SOLO SUL MODULO.**
     /// L'ingresso è quello che il motore compone davvero per un passo con una
     /// dipendenza: l'uscita del passo prima (`status`, `stdout`, `stderr`) più
-    /// i valori fissi del campo `with`. Il mutante che la fa cadere è togliere
-    /// la risoluzione dei rinvii: `stdin` resta un oggetto e l'azione rifiuta
-    /// l'ingresso.
+    /// i valori fissi del campo `with`, coi rinvii già sciolti come li scioglie
+    /// `flow::step_input`. Qui si prova che l'azione **usa** ciò che arriva; che
+    /// ad arrivare sciolto sia l'ingresso di *ogni* azione lo prova
+    /// l'esecutore, dov'è l'unico posto che lo fa.
     #[test]
     fn a_step_sends_the_previous_engines_answer_into_the_next_one() {
         let action = ExternalEngineAction::new();
@@ -3965,7 +3982,10 @@ mod tests {
         });
         let mut shared = SharedState::new();
 
-        let ActionOutcome::Went(output) = action.execute(&input, &mut shared).unwrap() else {
+        let ActionOutcome::Went(output) = action
+            .execute(&with_references_resolved(input), &mut shared)
+            .unwrap()
+        else {
             panic!("un motore che risponde è sempre Went")
         };
 
@@ -3996,7 +4016,7 @@ mod tests {
                 "timeout_secs": 5
             });
             ShellCheckAction::new()
-                .execute(&input, &mut SharedState::new())
+                .execute(&with_references_resolved(input), &mut SharedState::new())
                 .map(|outcome| {
                     let ActionOutcome::Went(output) = outcome else {
                         panic!("una verifica accettata è sempre Went")
@@ -4041,24 +4061,13 @@ mod tests {
         assert_eq!(output["status"], "failed");
     }
 
-    /// Un puntatore che non trova niente è un errore dell'azione, non un
-    /// ingresso vuoto passato al motore: costerebbe una chiamata vera.
-    #[test]
-    fn a_dangling_reference_stops_the_engine_before_it_costs_anything() {
-        let action = ExternalEngineAction::new();
-        let input = json!({
-            "bin": "cat",
-            "stdin": {"$from": "/dispatch/stdout"},
-            "timeout_secs": 5
-        });
-        let mut shared = SharedState::new();
-
-        let error = action
-            .execute(&input, &mut shared)
-            .expect_err("il puntatore non trova niente");
-
-        assert_eq!(error.class, "unresolved_reference");
-    }
+    // **UN PUNTATORE CHE NON TROVA NIENTE FERMA IL PASSO, E NON PIÙ QUI.** La
+    // prova stava in questo modulo perché la risoluzione stava in questa
+    // azione. Dal 01/09/2026 sta in `flow::step_input`, quindi il passo si
+    // ferma **prima che l'azione esista**: si prova dove accade, in
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`. Tenerla anche qui
+    // vorrebbe dire due prove della stessa regola in due punti — e quella qui
+    // sarebbe verde chiamando la risoluzione a mano, cioè misurando la prova.
 
     #[test]
     fn the_registry_finds_both_actions_by_their_stable_names() {
