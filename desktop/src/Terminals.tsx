@@ -154,7 +154,7 @@ export function Terminals({ native }: TerminalsProps) {
           <input
             className="terminals__input"
             value={root}
-            placeholder="/home/someone/personal/sailor"
+            placeholder="/Users/you/code/sailor"
             onChange={(event) => setRoot(event.target.value)}
           />
         </label>
