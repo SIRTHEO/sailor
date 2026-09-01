@@ -74,13 +74,46 @@ mod tests {
 
     /// Ciò che attraversa il ponte è JSON, e un campo che non si serializza si
     /// scopre qui invece che davanti a una pagina vuota.
+    ///
+    /// **LA FORMA D'USO NON SI RICOPIA PIÙ A MANO, e la ragione è un guasto
+    /// vero.** Fino all'01/09/2026 questa riga cercava
+    /// `sailor flow run <nome> [mandato]`, scritto qui a mano. Quando la riga di
+    /// comando è passata all'inglese la stringa è diventata falsa e la prova
+    /// rossa — ma **nessuno l'ha vista**, perché `desktop/src-tauri` dichiara un
+    /// `[workspace]` suo e `cargo test --workspace` non lo compila: le prove di
+    /// questo guscio non stanno nel gate. Un rosso invisibile è peggio di un
+    /// verde: chi ha tradotto ha creduto di aver finito.
+    ///
+    /// Adesso non cerca più nessuna frase: **conta**. Quello che questa prova
+    /// deve difendere è che i campi attraversino il ponte, non quali parole
+    /// contengano — le parole sono già custodite dove nascono, e chiederle a
+    /// `COMMANDS` sarebbe confrontare una fonte con sé stessa, perché è da lì
+    /// che `manual()` le prende. *Mutante*: `#[serde(skip)]` su `usage` — «il
+    /// binario dichiara 34 forme d'uso e ne attraversano il ponte 0».
     #[test]
     fn the_manual_crosses_the_bridge_as_json() {
         let json = serde_json::to_string(&manual()).expect("il manuale si serializza");
         assert!(json.contains("\"flow\""), "manca il comando dei flussi");
+
+        // **SI CONTA, NON SI CERCA UNA FRASE.** `manual()` nasce da `COMMANDS`,
+        // quindi cercare una parola qui vorrebbe dire confrontare una fonte con
+        // sé stessa: resterebbe verde comunque, e sarebbe la copia che si
+        // conferma da sola. Ciò che questa prova può davvero perdere è **un
+        // campo che non attraversa il ponte** — un `skip` di serde, un tipo che
+        // non si serializza — e quello si vede contando: se `usage` non passa,
+        // il conto cade a zero mentre il binario ne dichiara una trentina.
+        let dichiarate: usize = sailor::COMMANDS
+            .iter()
+            .map(|command| command.usage.len())
+            .sum();
+        let arrivate = json.matches("sailor ").count();
+        assert_eq!(
+            arrivate, dichiarate,
+            "il binario dichiara {dichiarate} forme d'uso e ne attraversano il ponte {arrivate}: {json}"
+        );
         assert!(
-            json.contains("sailor flow run <nome> [mandato]"),
-            "manca una forma d'uso: {json}"
+            json.contains("\"description\"") && json.contains("\"usage\""),
+            "un campo non attraversa il ponte: {json}"
         );
     }
 }
