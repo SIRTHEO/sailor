@@ -94,6 +94,12 @@ fn fixture_roots(label: &str) -> Vec<inventory::Root> {
     vec![inventory::Root::home(&home), inventory::Root::repo(&repo)]
 }
 
+/// **RICEVE LE RADICI, E NON LE CERCA.** L'altro ramo aveva scritto qui
+/// `collect_survey(&default_roots(ledger::sailor_home()))`: è la forma giusta
+/// per chi guarda la macchina vera — la riga di comando e la finestra — ma non
+/// per una prova, che tornerebbe a dipendere da `$HOME`. `collect` esiste
+/// apposta accanto a `collect_survey`, e il suo commento lo dice: chi
+/// costruisce le radici a mano non ha nessun rendiconto da passare.
 fn census(roots: &[inventory::Root]) -> serde_json::Value {
     let found = inventory::collect(roots);
     serde_json::to_value(&found).expect("il censimento si serializza")

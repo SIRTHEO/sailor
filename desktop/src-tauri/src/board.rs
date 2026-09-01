@@ -22,7 +22,7 @@
 //! l'inventario — `default_roots` sta nel crate proprio perché la riga di
 //! comando e la pagina dicano lo stesso numero sulla stessa macchina.
 
-use inventory::{collect, default_roots, Inventory};
+use inventory::{collect_survey, default_roots, Inventory};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use ui::dashboard::{build_executions, ExecutionView};
@@ -150,5 +150,5 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
 /// cercato non si può smentire. La finestra le mostra, come la plancia.
 #[tauri::command]
 pub(crate) fn machine_inventory() -> Inventory {
-    collect(&default_roots())
+    collect_survey(&default_roots(ledger::sailor_home().as_deref()))
 }

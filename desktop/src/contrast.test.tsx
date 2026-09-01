@@ -8,6 +8,7 @@ import { FlowBandNode, StepNode, type FlowBandData, type StepNodeData } from "./
 import { Now, RunGroup } from "./Now";
 import { History } from "./History";
 import { Installed } from "./Installed";
+import { Manual } from "./Manual";
 import type { OpenRun } from "./engine";
 import type { Step, StepRun, StepState } from "./flow";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
@@ -262,6 +263,47 @@ describe("cosa è installato", () => {
       // resterebbe una parola che non si può correggere.
       expect(screen.getByText("il plugin che la contiene è spento")).toBeTruthy();
       expect(measure(30)).toEqual([]);
+    } finally {
+      stop();
+    }
+  });
+});
+
+describe("i comandi, dichiarati dal binario", () => {
+  test("il letterale e il buco da riempire si distinguono senza sbiadire", async () => {
+    // **UNA PAGINA CHE NESSUNA SCENA VISITA NON È VERIFICATA.** Lo stile dei
+    // comandi è nato il 01/09/2026 e la batteria è rimasta verde senza averlo
+    // mai disegnato: il divieto 6 vale su ogni parola che qualcuno legge, e
+    // qui la tentazione più forte è proprio quella vietata — distinguere
+    // `<nome>` dal testo letterale sbiadendolo, che è il divieto 7.
+    const stop = pretendShell({
+      manual: [
+        {
+          name: "flow",
+          description: "elenca, controlla, esegue o riprende i flussi dichiarati in flows/",
+          usage: ["sailor flow list", "sailor flow run <nome> [mandato]"],
+        },
+        {
+          name: "version",
+          description: "la versione di questo binario",
+          usage: ["sailor version"],
+        },
+      ],
+    });
+    try {
+      render(
+        <div className="app">
+          <Manual native />
+        </div>,
+      );
+      await screen.findByText("sailor flow");
+      // Aprire un comando è ciò che mostra le forme: a pagina chiusa lo stile
+      // delle righe d'uso non verrebbe mai disegnato, e la misura sarebbe fatta
+      // su ciò che non si vede.
+      fireEvent.click(screen.getByText("sailor flow"));
+      expect(screen.getByText("<nome>")).toBeTruthy();
+      expect(screen.getByText("[mandato]")).toBeTruthy();
+      expect(measure(20)).toEqual([]);
     } finally {
       stop();
     }

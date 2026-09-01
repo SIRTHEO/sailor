@@ -151,6 +151,16 @@ pub struct Inventory {
     /// Non sono voci dell'inventario — nessuno le carica — ma sono spazio, e
     /// finché nessuno le conta nessuno le toglie.
     pub stale_plugin_copies: usize,
+    /// **DOVE NON HA POTUTO GUARDARE**, col motivo. È il completamento di
+    /// `roots`: dire dove si è cercato rende l'elenco smentibile, dire dove non
+    /// si è riusciti a cercare lo rende onesto.
+    #[serde(default)]
+    pub unseen: Vec<String>,
+    /// Se qualcuno ha dichiarato dove cercare. Quando è `false`, un inventario
+    /// magro non dice che la macchina è vuota: dice che nessuno ha detto dove
+    /// guardare.
+    #[serde(default)]
+    pub bases_declared: bool,
 }
 
 impl Inventory {
@@ -164,6 +174,22 @@ impl Inventory {
 }
 
 /// Costruisce l'inventario camminando su ogni radice.
+/// L'inventario di una ricognizione, **con dentro anche ciò che non si è visto**.
+///
+/// Esiste accanto a `collect` e non al suo posto perché chi costruisce le radici
+/// a mano — le prove — non ha nessun rendiconto da passare, e obbligarlo a
+/// fabbricarne uno vuoto sposterebbe la bugia di un gradino invece di toglierla.
+pub fn collect_survey(survey: &Survey) -> Inventory {
+    let mut out = collect(&survey.roots);
+    out.unseen = survey
+        .unreadable
+        .iter()
+        .map(|u| format!("{}: {}", u.path.display(), u.reason))
+        .collect();
+    out.bases_declared = survey.bases_declared;
+    out
+}
+
 pub fn collect(roots: &[Root]) -> Inventory {
     let mut entries = Vec::new();
     let mut stale = 0usize;
@@ -204,6 +230,11 @@ pub fn collect(roots: &[Root]) -> Inventory {
             .map(|r| format!("{}: {}", r.label, r.path.to_string_lossy()))
             .collect(),
         stale_plugin_copies: stale,
+        // VUOTI PERCHÉ CHI CHIAMA `collect` NON HA UN RENDICONTO: ha costruito
+        // le radici da sé e sa cosa gli ha dato. Li riempie `collect_survey`,
+        // che invece parte da una ricognizione e sa anche cosa le è mancato.
+        unseen: Vec::new(),
+        bases_declared: true,
     }
 }
 
@@ -635,6 +666,35 @@ fn reach_of(root: &Root) -> Reach {
     }
 }
 
+/// Il rendiconto di una ricognizione: cosa si è trovato, **e cosa non si è
+/// potuto guardare**.
+///
+/// I DUE ELENCHI ESISTONO PERCHÉ UNO SOLO MENTE. Fino al 01/09/2026
+/// `repos_under` incontrava una base illeggibile, faceva `continue` e
+/// restituiva un elenco più corto: «non ce ne sono» e «non ho potuto guardare»
+/// arrivavano a chi legge nella stessa forma, e portano a decisioni opposte. È
+/// la forma del guasto 12, dove dentro un perimetro `launchctl` risponde vuoto
+/// invece di negare — e la stessa che il 01/09 ha fatto dichiarare «nessuna CLI
+/// in esecuzione» mentre ne giravano cinque, perché `ps` incanalato non dice
+/// che gli è stato negato.
+#[derive(Debug, Default)]
+pub struct Survey {
+    /// Le radici trovate davvero.
+    pub roots: Vec<Root>,
+    /// Le basi che non si sono potute leggere, col motivo.
+    pub unreadable: Vec<Unreadable>,
+    /// Se qualcuno ha dichiarato dove guardare. `false` significa che un elenco
+    /// vuoto non dice niente sul mondo: dice che nessuno ha detto dove cercare.
+    pub bases_declared: bool,
+}
+
+/// Una base che non si è potuta leggere, e perché.
+#[derive(Debug)]
+pub struct Unreadable {
+    pub path: PathBuf,
+    pub reason: String,
+}
+
 /// Le radici da guardare su questa macchina: la casa, e i repo di lavoro.
 ///
 /// STA QUI E NON NEI DUE CHIAMANTI. La riga di comando e la pagina devono dire
@@ -645,31 +705,75 @@ fn reach_of(root: &Root) -> Reach {
 /// Le basi sono dichiarate, non cercate su tutto il disco: camminare da `/`
 /// troverebbe anche le copie di lavoro, dove le stesse regole ricompaiono
 /// collegate.
-pub fn default_roots() -> Vec<Root> {
+pub fn default_roots(config_dir: Option<&Path>) -> Survey {
     let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
-    let mut out = vec![Root::home(&home)];
-    out.extend(repos_under(&[
-        home.join("gyver").join("work"),
-        home.join("personal"),
-    ]));
-    // DUE MAGAZZINI, e sono davvero due: i collegamenti dentro le competenze di
+    default_roots_from(&home, &declared_bases(config_dir))
+}
+
+/// La stessa regola applicata a una casa e a basi dichiarate, invece che a
+/// quelle di questo processo.
+///
+/// **SEPARATA PERCHÉ ALTRIMENTI NON SI PROVA.** Una funzione che legge
+/// l'ambiente si può provare solo cambiando l'ambiente del processo, e le prove
+/// girano in parallelo: la prima che tocca una variabile falsa le altre.
+pub fn default_roots_from(home: &Path, bases: &[PathBuf]) -> Survey {
+    let mut survey = repos_under(bases);
+    survey.roots.insert(0, Root::home(home));
+    // I MAGAZZINI SI CERCANO DOVE SI GUARDA, non dove guardava una persona. Il
+    // primo è quello di casa; gli altri stanno dentro le basi dichiarate, e se
+    // non ne è dichiarata nessuna non ce ne sono — che è la verità, non un
+    // ripiego.
+    let mut warehouses = vec![(".agents".to_string(), home.join(".agents").join("skills"))];
+    for base in bases {
+        let label = base
+            .file_name()
+            .map(|n| format!("{}/.agents", n.to_string_lossy()))
+            .unwrap_or_else(|| ".agents".to_string());
+        warehouses.push((label, base.join(".agents").join("skills")));
+    }
+    // DUE MAGAZZINI SONO DAVVERO DUE: i collegamenti dentro le competenze di
     // casa puntano al primo, mai al secondo. Trattarli come uno solo faceva
     // dire «nessuna è collegata» anche di quelle che lo sono.
-    for (label, path) in [
-        (".agents", home.join(".agents").join("skills")),
-        (
-            "gyver/work/.agents",
-            home.join("gyver")
-                .join("work")
-                .join(".agents")
-                .join("skills"),
-        ),
-    ] {
+    for (label, path) in warehouses {
         if path.is_dir() {
-            out.push(Root::warehouse(label, &path));
+            survey.roots.push(Root::warehouse(&label, &path));
         }
     }
-    out
+    survey
+}
+
+/// Le basi di lavoro **dichiarate**: `SAILOR_WORK_ROOTS` se c'è, altrimenti il
+/// file `work-roots` nella casa di Sailor, una riga per base.
+///
+/// FINO AL 01/09/2026 QUI C'ERANO `~/gyver/work` E `~/personal`, compilate. Su
+/// questa macchina esistono, quindi il difetto non si vedeva; su qualunque
+/// altra l'inventario avrebbe risposto «zero repo» con uscita 0, che è
+/// indistinguibile da una macchina davvero vuota. Le cartelle di una persona
+/// sola non sono un fatto della macchina: sono configurazione, e adesso
+/// vivono lì. Chi non dichiara niente ottiene `bases_declared` a `false`, così
+/// chi legge può dire *non me l'hai detto* invece di *non c'è niente*.
+pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
+    if let Ok(declared) = std::env::var("SAILOR_WORK_ROOTS") {
+        let bases: Vec<PathBuf> = declared
+            .split(':')
+            .filter(|piece| !piece.trim().is_empty())
+            .map(PathBuf::from)
+            .collect();
+        if !bases.is_empty() {
+            return bases;
+        }
+    }
+    let Some(dir) = config_dir else {
+        return Vec::new();
+    };
+    let Ok(text) = fs::read_to_string(dir.join("work-roots")) else {
+        return Vec::new();
+    };
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// I repo che portano una `.claude/`, cercati sotto le cartelle di lavoro.
@@ -678,14 +782,25 @@ pub fn default_roots() -> Vec<Root> {
 /// oltre significherebbe entrare nelle copie di lavoro, dove le stesse regole
 /// ricompaiono collegate — e l'inventario direbbe di avere venti volte le cose
 /// che ha.
-pub fn repos_under(bases: &[PathBuf]) -> Vec<Root> {
+pub fn repos_under(bases: &[PathBuf]) -> Survey {
     let mut found: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut unreadable = Vec::new();
     for base in bases {
         if base.join(".claude").is_dir() {
             found.insert(base.clone());
         }
-        let Ok(entries) = fs::read_dir(base) else {
-            continue;
+        // IL `continue` CHE C'ERA QUI SI MANGIAVA IL MOTIVO. Una base che non si
+        // apre e una base vuota producevano lo stesso elenco più corto, e chi
+        // leggeva concludeva «non ce ne sono» in tutti e due i casi.
+        let entries = match fs::read_dir(base) {
+            Ok(entries) => entries,
+            Err(why) => {
+                unreadable.push(Unreadable {
+                    path: base.clone(),
+                    reason: why.to_string(),
+                });
+                continue;
+            }
         };
         for entry in entries.flatten() {
             let path = entry.path();
@@ -694,5 +809,9 @@ pub fn repos_under(bases: &[PathBuf]) -> Vec<Root> {
             }
         }
     }
-    found.iter().map(|p| Root::repo(p)).collect()
+    Survey {
+        roots: found.iter().map(|p| Root::repo(p)).collect(),
+        unreadable,
+        bases_declared: !bases.is_empty(),
+    }
 }

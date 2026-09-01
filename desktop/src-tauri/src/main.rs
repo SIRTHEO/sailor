@@ -20,6 +20,7 @@ use ui::gather::{flow_sources, load_all_flows};
 mod board;
 mod flows;
 mod live;
+mod manual;
 mod run;
 mod terminal;
 mod tools;
@@ -163,6 +164,7 @@ fn main() {
             board::execution_history,
             board::day_summary,
             board::machine_inventory,
+            manual::manual,
             terminal::terminal_open,
             terminal::terminal_submit,
             terminal::terminal_press,
