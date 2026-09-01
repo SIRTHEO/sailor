@@ -27,6 +27,7 @@ rust-version.workspace = true
 # direzione di `models`: `profiles` dipende solo da serde, quindi non c'e' ciclo.
 [dependencies]
 flow = { path = "../flow" }
+faults = { path = "../faults" }
 ledger = { path = "../ledger" }
 models = { path = "../models" }
 profiles = { path = "../profiles" }
