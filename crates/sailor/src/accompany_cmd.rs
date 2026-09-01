@@ -9,17 +9,20 @@ use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
 use std::os::fd::FromRawFd;
+use sessions::fullness::{self, Model};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrder};
 use std::sync::Arc;
 use terminal::bridge::{self, Keys, RawMode};
 use terminal::inbox::{self, Inbox};
 use terminal::pty::Pty;
+use terminal::tally::{self, Tally};
 use terminal::Workspace;
 
 pub const USAGE: &[&str] = &[
     "sailor accompany run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
     "sailor accompany press --tty <name> --text <line> [--store <dir>]   types a line into an accompanied terminal",
-    "sailor accompany list [--store <dir>]     which terminals can be typed into",
+    "sailor accompany list [--ceiling <tokens>] [--store <dir>]   which terminals can be typed into, and how full",
 ];
 
 const FORMS: &[&str] = &["run", "press", "list"];
@@ -106,41 +109,113 @@ fn accompany(args: &[String]) -> Result<i32, String> {
         .map_err(|error| error.to_string())?;
     bridge::notice_resizes().map_err(|error| error.to_string())?;
 
-    typing_reaches(&inner, letterbox);
-    keystrokes_reach(&inner);
-    let showing = show_output(&inner);
+    let counted = Counters::new();
+    let counting = counted.recorded_into(mailroom(&options)?.join(format!("{tty}.seen")));
 
+    typing_reaches(&inner, letterbox, Arc::clone(&counted.typed));
+    keystrokes_reach(&inner, Arc::clone(&counted.typed));
+    let showing = show_output(&inner, Arc::clone(&counted.shown));
+
+    counting.stop();
     drop(restore);
     let _ = std::fs::remove_file(&address);
+    let _ = std::fs::remove_file(mailroom(&options)?.join(format!("{tty}.seen")));
     showing.map_err(|error| error.to_string())?;
     Ok(exit_code_of(&inner))
 }
 
+/// The bytes each direction has moved, shared with whoever writes them down.
+struct Counters {
+    shown: Arc<AtomicU64>,
+    typed: Arc<AtomicU64>,
+}
+
+impl Counters {
+    fn new() -> Counters {
+        Counters {
+            shown: Arc::new(AtomicU64::new(0)),
+            typed: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    /// Keeps the count on disk while the session runs.
+    ///
+    /// On disk and not in here, because whoever reads it is another process
+    /// that may start after this one and must not have to ask it anything.
+    fn recorded_into(&self, path: PathBuf) -> Recording {
+        let running = Arc::new(AtomicBool::new(true));
+        let shown = Arc::clone(&self.shown);
+        let typed = Arc::clone(&self.typed);
+        let going = Arc::clone(&running);
+        let writing = std::thread::spawn(move || {
+            let mut last = Tally::default();
+            while going.load(AtomicOrder::Relaxed) {
+                last = record(&path, &shown, &typed, last);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            record(&path, &shown, &typed, last);
+        });
+        Recording { running, writing }
+    }
+}
+
+/// Writes the count if it moved, and gives back what is now on disk.
+fn record(path: &Path, shown: &AtomicU64, typed: &AtomicU64, last: Tally) -> Tally {
+    let now = Tally {
+        shown: shown.load(AtomicOrder::Relaxed),
+        typed: typed.load(AtomicOrder::Relaxed),
+        at: sessions::now(),
+    };
+    if now.shown == last.shown && now.typed == last.typed {
+        return last;
+    }
+    let _ = tally::write(path, &now);
+    now
+}
+
+struct Recording {
+    running: Arc<AtomicBool>,
+    writing: std::thread::JoinHandle<()>,
+}
+
+impl Recording {
+    /// Stops and waits, so the last count is on disk before the terminal's row
+    /// disappears: a session that ended full must not read as one that ended
+    /// empty.
+    fn stop(self) {
+        self.running.store(false, AtomicOrder::Relaxed);
+        let _ = self.writing.join();
+    }
+}
+
 /// The thread that hands whatever a stranger left straight to the terminal.
-fn typing_reaches(inner: &Arc<Pty>, letterbox: Inbox) {
+fn typing_reaches(inner: &Arc<Pty>, letterbox: Inbox, typed: Arc<AtomicU64>) {
     let inner = Arc::clone(inner);
     std::thread::spawn(move || {
         letterbox.serve(|bytes| {
-            let _ = inner.write(bytes);
+            if inner.write(bytes).is_ok() {
+                typed.fetch_add(bytes.len() as u64, AtomicOrder::Relaxed);
+            }
         });
     });
 }
 
 /// The thread that carries what the person types.
-fn keystrokes_reach(inner: &Arc<Pty>) {
+fn keystrokes_reach(inner: &Arc<Pty>, typed: Arc<AtomicU64>) {
     let inner = Arc::clone(inner);
     std::thread::spawn(move || {
         let from = unsafe { File::from_raw_fd(libc::dup(0)) };
-        let _ = bridge::pump(from, Keys(&inner), || follow_the_window(&inner));
+        let into = bridge::Counted::new(Keys(&inner), typed);
+        let _ = bridge::pump(from, into, || follow_the_window(&inner));
     });
 }
 
 /// The output, on the thread that stays: when it ends, the program inside has.
-fn show_output(inner: &Arc<Pty>) -> io::Result<()> {
+fn show_output(inner: &Arc<Pty>, shown: Arc<AtomicU64>) -> io::Result<()> {
     let from = inner
         .reader()
         .map_err(|error| io::Error::new(io::ErrorKind::Other, error.to_string()))?;
-    let into = unsafe { File::from_raw_fd(libc::dup(1)) };
+    let into = bridge::Counted::new(unsafe { File::from_raw_fd(libc::dup(1)) }, shown);
     bridge::pump(from, into, || follow_the_window(inner))
 }
 
@@ -197,7 +272,9 @@ fn press(args: &[String]) -> Result<i32, String> {
 }
 
 fn list(args: &[String]) -> Result<i32, String> {
-    let room = mailroom(&options_of(args)?)?;
+    let options = options_of(args)?;
+    let ceiling = declared_ceiling(&options)?;
+    let room = mailroom(&options)?;
     let Ok(entries) = std::fs::read_dir(&room) else {
         println!("no terminal is being accompanied");
         return Ok(0);
@@ -205,21 +282,59 @@ fn list(args: &[String]) -> Result<i32, String> {
     let mut found = 0;
     for entry in entries.flatten() {
         let path = entry.path();
+        if path.extension().and_then(|kind| kind.to_str()) != Some("sock") {
+            continue;
+        }
+        // A file left behind by a process that died badly answers nobody: the
+        // knock is what tells a live terminal from its leftovers.
+        if std::os::unix::net::UnixStream::connect(&path).is_err() {
+            continue;
+        }
         let Some(name) = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()) else {
             continue;
         };
-        // A file left behind by a process that died badly answers nobody: the
-        // knock is what tells a live terminal from its leftovers.
-        let alive = std::os::unix::net::UnixStream::connect(&path).is_ok();
-        if alive {
-            println!("{name}   can be typed into");
-            found += 1;
-        }
+        println!("{}", how_full(&room, &name, ceiling));
+        found += 1;
     }
     if found == 0 {
         println!("no terminal is being accompanied");
     }
     Ok(0)
+}
+
+/// One line about a terminal: what it has moved, and what that is worth.
+///
+/// A count that is missing says so instead of reading as zero. An accompanied
+/// terminal whose count has not landed yet is not an empty one, and the two
+/// must not print the same.
+fn how_full(room: &Path, tty: &str, ceiling: u64) -> String {
+    let Some(counted) = tally::read(&room.join(format!("{tty}.seen"))) else {
+        return format!("{tty}   can be typed into, nothing counted yet");
+    };
+    let reading = fullness::measure(counted.total(), &Model::default(), ceiling);
+    let verdict = match (ceiling, reading.past_the_ceiling) {
+        (0, _) => "no ceiling declared".to_owned(),
+        (_, true) => format!("past the {ceiling} ceiling"),
+        (_, false) => format!("under the {ceiling} ceiling"),
+    };
+    format!(
+        "{tty}   {} bytes, about {} tokens, {verdict}",
+        counted.total(),
+        reading.estimated_tokens
+    )
+}
+
+/// The ceiling somebody declared, or none.
+///
+/// None and not a number chosen here: what counts as too full is a decision
+/// about a budget, and one taken quietly in this file could not be argued with.
+fn declared_ceiling(options: &[(String, String)]) -> Result<u64, String> {
+    match options.iter().find(|(name, _)| name == "ceiling") {
+        Some((_, written)) => written
+            .parse()
+            .map_err(|_| format!("«{written}» is not a number of tokens")),
+        None => Ok(0),
+    }
 }
 
 /// What was written before the dashes, and the command line after them.
