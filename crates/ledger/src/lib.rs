@@ -1,9 +1,9 @@
-//! Il deposito durevole di Sailor.
+//! Sailor's durable store.
 //!
-//! `events.db` contiene la verità append-only; `state.db` contiene quattro
-//! proiezioni interrogabili e un segno dell'ultimo evento incorporato. I due
-//! file sono collegati, ma il nuovo evento e la sua proiezione vengono commessi
-//! in due fasi perché WAL non offre atomicità fra database collegati.
+//! `events.db` holds the append-only truth; `state.db` holds four queryable
+//! projections plus a mark of the last event folded in. The two files are
+//! attached, but a new event and its projection are committed in two phases
+//! because WAL gives no atomicity across attached databases.
 
 use flow::{AttemptRelation, Completion, Outcome, RecordStore, Spend, StepRecord, StepSpecies};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -25,53 +25,44 @@ pub use identity::EngineIdentity;
 const STATE_FILE: &str = "state.db";
 const EVENTS_FILE: &str = "events.db";
 
-/// Dove vive il deposito di questa macchina.
+/// Where this machine's store lives.
 ///
-/// **STA QUI PERCHÉ È UNA SOLA.** Era una funzione privata di `sailor flow`, e
-/// finché a leggere il deposito c'era un comando solo bastava. Adesso lo legge
-/// anche la staffetta, per sapere su che lavoro si è: due copie di questo
-/// percorso divergerebbero al primo che cambia idea, e nessuna delle due
-/// direbbe di essere sbagliata — semplicemente una delle due aprirebbe un
-/// deposito vuoto e risponderebbe «non lo so».
-///
-/// `None` quando `HOME` non è definita: chi chiama ha sempre un ripiego, e
-/// nessuno deve dedurre una casa che l'ambiente non dichiara.
-///
-/// IL 28/08/2026 QUESTA FUNZIONE HA QUASI AVUTO UNA GEMELLA, e il commento qui
-/// sopra aveva previsto cosa sarebbe successo. Una modifica aveva insegnato alla
-/// finestra a cercare il deposito altrove, lasciando qui il percorso vecchio:
-/// chi esegue i flussi avrebbe scritto in una casa e chi li guarda avrebbe letto
-/// nell'altra, **senza che nessuna delle due dicesse di sbagliare**. Adesso la
-/// scoperta della casa vive qui, dove tutti già passano.
+/// **ONE COPY ONLY** — the flow runner and the relay both ask here. It nearly
+/// got a twin: a change taught the window to look elsewhere and left the old
+/// path here, so whoever ran the flows would write in one home and whoever
+/// watched them read the other, **with neither side reporting an error**.
 pub fn default_directory() -> Option<PathBuf> {
+    // It was a private function of `sailor flow`, and while one command was the
+    // only reader of the store that was enough. The relay reads it too now, to
+    // know what work it is on, so finding the home lives here — where everybody
+    // already passes — instead of in each caller.
     if let Some(declared) = env_path("SAILOR_LEDGER") {
         return Some(declared);
     }
-    // LA CASA DI CHI C'ERA PRIMA. Su una macchina dove Sailor ha già girato, il
-    // deposito sta dove lo metteva la versione vecchia, e spostare il
-    // predefinito lo renderebbe invisibile: le corse ci sono, la finestra
-    // direbbe «nessuna». Si riconosce dai due file, non dalla cartella: una
-    // cartella vuota rimasta lì non è un'installazione.
-    //
-    // Questo gradino è una migrazione, non una casa: si toglie quando il
-    // deposito vecchio sarà stato spostato, e chi lo toglie deve prima
-    // spostarlo.
+    // THE HOME OF WHOEVER CAME BEFORE. On a machine where Sailor has already
+    // run, the store sits where the old version put it, and moving the default
+    // would make it invisible: the runs are there, the window would say "none".
+    // Recognised by the two files, not by the directory: an empty directory
+    // left behind is not an installation. This step is a migration, not a home:
+    // remove it once the old store has been moved, and move it first.
     if let Some(home) = env_path("HOME") {
         let previous = home.join(".claude/state/flussi");
         if previous.join(STATE_FILE).exists() && previous.join(EVENTS_FILE).exists() {
             return Some(previous);
         }
     }
+    // `None` when `HOME` is undefined, and the `?` is how it leaves: every
+    // caller already has a fallback, and a home deduced from nothing would send
+    // one of them to write in somebody else's place.
     Some(sailor_home()?.join("ledger"))
 }
 
-/// La casa di Sailor: dove vivono deposito, flussi e configurazione.
+/// Sailor's home: where the store, the flows and the configuration live.
 ///
-/// **Nessun percorso di una persona sola.** Si scopre come la scopre qualunque
-/// programma su questo sistema: `SAILOR_HOME` se dichiarata, altrimenti la
-/// cartella di configurazione standard, altrimenti quella dell'utente che
-/// esegue. `None` se l'ambiente non dichiara nemmeno quella — una casa dedotta
-/// senza fondamento manderebbe a scrivere nel posto di qualcun altro.
+/// **No single person's path.** Discovered the way any program on this system
+/// would: `SAILOR_HOME` if declared, else the standard configuration directory,
+/// else the running user's. `None` if the environment declares neither — a home
+/// guessed without grounds would write into somebody else's place.
 pub fn sailor_home() -> Option<PathBuf> {
     Some(sailor_home_in(
         env_path("SAILOR_HOME"),
@@ -80,17 +71,12 @@ pub fn sailor_home() -> Option<PathBuf> {
     ))
 }
 
-/// La stessa regola, applicata a un ambiente dichiarato invece che a quello di
-/// questo processo.
+/// The same rule applied to a declared environment rather than this process's.
 ///
-/// **Esiste perché la casa era in due posti.** Fino al 30/08/2026 questa regola
-/// stava scritta due volte: qui, e dentro chi cerca i descrittori su una
-/// macchina *descritta* (`toolbox::default_sources`, `trigger::default_sources`).
-/// La seconda copia ignorava `XDG_CONFIG_HOME` e cadeva su `~/.sailor` invece
-/// che su `~/.config/sailor`, così il listino dei prezzi e i descrittori
-/// dell'utente finivano in due case diverse — e la documentazione mandava tutti
-/// nella casa che il codice del listino non guarda. Chi cerca la casa la chiede
-/// qui, chiunque sia.
+/// **Exists because the home used to live in two places**, and the second copy
+/// was the one whoever searches a *described* machine for descriptors went
+/// through. Whoever wants the home asks here now, whoever they are, so there is
+/// no second copy left to disagree with this one.
 pub fn sailor_home_in(
     declared: Option<PathBuf>,
     xdg_config: Option<PathBuf>,
@@ -99,33 +85,32 @@ pub fn sailor_home_in(
     if let Some(declared) = declared {
         return declared;
     }
+    // `toolbox::default_sources` and `trigger::default_sources` used to skip
+    // this branch: they ignored `XDG_CONFIG_HOME` and fell back to `~/.sailor`
+    // instead of `~/.config/sailor`, so the price list and a person's own
+    // descriptors landed in two different homes — and the documentation sent
+    // everybody to the home the price-list code does not read.
     if let Some(config) = xdg_config {
         return config.join("sailor");
     }
     home.join(".config").join("sailor")
 }
 
-/// Una variabile d'ambiente come percorso. La stringa vuota vale come «non
-/// impostata»: è quello che lascia dietro uno script che esporta una variabile
-/// senza valore, e prenderla alla lettera manderebbe a scrivere nella radice.
+/// An environment variable read as a path. The empty string counts as "not
+/// set": that is what a script exporting a valueless variable leaves behind,
+/// and taking it literally would write into the filesystem root.
 fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
 }
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-/// La forma delle proiezioni che questo codice si aspetta.
+/// The shape of the projections this code expects.
 ///
-/// **VA ALZATA INSIEME ALLE COLONNE, E IL 30/08/2026 NON LO È STATA.** Quel
-/// giorno `add_missing_projection_columns` ha imparato le quattro colonne della
-/// cache scritta, e questa costante è rimasta a 4: un deposito già esistente
-/// resta registrato alla 4, `4 < 4` è falso, la migrazione non parte, e ogni
-/// lettura muore con «no such column: cache_write_tokens».
-///
-/// **NESSUNA DELLE 517 PROVE L'HA PRESO**, perché un deposito creato in una
-/// prova nasce dal `CREATE TABLE` completo e non passa mai dalla migrazione. Si
-/// vede solo su una macchina che Sailor l'aveva già usato — cioè su quella di
-/// chi lo sviluppa, il giorno dopo.
+/// **RAISE IT TOGETHER WITH THE COLUMNS, AND ONCE IT WAS NOT**: the migration
+/// learned four cache columns while this stayed at 4, an existing store was
+/// already registered at 4, `4 < 4` is false, the migration never ran, and
+/// every read died with `no such column: cache_write_tokens`.
 const PROJECTION_SCHEMA_VERSION: i64 = 8;
 
 #[derive(Debug)]
@@ -194,38 +179,37 @@ pub struct RunRecord {
     pub ended_at: Option<i64>,
 }
 
-/// Una voce vista da una scansione dell'inventario.
+/// An entry seen by an inventory scan.
 ///
-/// I campi sono testo e basta: il deposito **non** dipende dal crate che li
-/// produce, e non deve. Se un giorno l'inventario impara a riconoscere una
-/// famiglia nuova, qui non cambia niente — mentre un `enum` condiviso
-/// obbligherebbe a migrare il deposito per ogni parola nuova.
+/// The fields are plain text: the store does **not** depend on the crate that
+/// produces them, and must not. If the inventory learns to recognise a new
+/// family, nothing changes here — while a shared `enum` would force a store
+/// migration for every new word.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InventoryItem {
     pub kind: String,
     pub name: String,
     pub origin: String,
     pub path: String,
-    /// `active`, `inactive` o `unknown`.
+    /// `active`, `inactive` or `unknown`.
     pub reach: String,
-    /// Perché non è raggiungibile, quando non lo è.
+    /// Why it is unreachable, when it is.
     pub reason: Option<String>,
 }
 
-/// Una scansione intera, con il suo istante.
+/// A whole scan, with its instant.
 ///
-/// SI DEPOSITA LA SCANSIONE, NON LA SINGOLA VOCE, e la differenza è tutto ciò
-/// che rende utile il deposito: **da un elenco completo si sa anche che cosa
-/// non c'è più**. Registrando voce per voce si saprebbe solo che cosa è stato
-/// visto, e «sparito» resterebbe indistinguibile da «non ancora guardato» —
-/// cioè proprio la domanda per cui questo deposito esiste.
+/// THE SCAN IS STORED, NOT THE SINGLE ENTRY, and that difference is everything
+/// that makes the store worth having: from a complete list you also know **what
+/// is no longer there**. Entry by entry would only say what was seen, and
+/// "gone" would stay indistinguishable from "not yet looked at".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InventoryScan {
     pub taken_at: i64,
     pub items: Vec<InventoryItem>,
 }
 
-/// Che cosa è cambiato per una voce fra due scansioni.
+/// What changed for one entry between two scans.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InventoryChange {
     pub kind: String,
@@ -236,25 +220,16 @@ pub struct InventoryChange {
     pub reason: Option<String>,
     pub first_seen: i64,
     pub last_seen: i64,
-    /// L'istante della scansione in cui è sparita, se è sparita.
+    /// The instant of the scan in which it vanished, if it did.
     pub gone_at: Option<i64>,
 }
 
-/// Una chiamata a un modello, con quanto ha consumato e quanto è costata.
+/// A call to a model, with what it consumed and what it cost.
 ///
-/// **QUI `None` VUOL DIRE «NON LO SO», E NON ESISTE UNO ZERO DI RIPIEGO.** I
-/// conteggi e i prezzi erano numeri secchi finché a scrivere questa riga erano
-/// solo le prove, che il numero se lo inventavano. Da quando lo scrive il
-/// motore che invoca davvero una riga di comando, la differenza fra «zero
-/// token» e «quel motore non dice quanti token ha usato» è la differenza fra
-/// una misura e una bugia: uno zero scritto al posto di «non lo so» si somma, e
-/// nessuna vista a valle può più correggerlo. Chi legge una riga con i
-/// conteggi a `None` sa di avere una chiamata non misurata, e quello è un
-/// fatto su cui si può agire.
-///
-/// I campi `Option` portano `serde(default)` perché il deposito è a eventi: un
-/// evento scritto quando erano numeri secchi continua a leggersi — `10`
-/// diventa `Some(10)` — e uno scritto dopo, senza il campo, diventa `None`.
+/// **`None` MEANS "UNKNOWN", AND THERE IS NO FALLBACK ZERO.** "Zero tokens"
+/// against "that engine does not say how many it used" is a measure against a
+/// lie: a zero written for "unknown" gets summed, and no view downstream can
+/// undo it. `None` says the call is unmeasured, which is a fact to act on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelCallRecord {
     pub call_id: String,
@@ -264,49 +239,49 @@ pub struct ModelCallRecord {
     pub cli: String,
     pub requested_model: String,
     pub actual_model: String,
+    /// Every `serde(default)` below is here for one reason, and it is not
+    /// laziness. The store is event-based: an event written when these were
+    /// plain numbers still reads back — `10` becomes `Some(10)` — one written
+    /// without the field becomes `None`, and without that fallback an upgrade
+    /// would unread the log everything else is rebuilt from.
     #[serde(default)]
     pub input_tokens: Option<u64>,
     #[serde(default)]
     pub output_tokens: Option<u64>,
-    /// I token d'ingresso letti dalla cache, in una colonna loro: hanno un
-    /// prezzo per milione tutto loro, spesso un ordine di grandezza sotto
-    /// quello dell'ingresso fresco.
+    /// Input tokens read from the cache, in a column of their own: they have
+    /// their own price per million, often an order of magnitude below that of
+    /// fresh input.
     #[serde(default)]
     pub cached_tokens: Option<u64>,
-    /// I token d'ingresso **scritti** nella cache, che non sono quelli letti e
-    /// non costano come loro: scrivere costa più dell'ingresso normale.
+    /// Input tokens **written** to the cache: not the ones read, and dearer.
     ///
-    /// **QUESTA COLONNA È NATA DA UNA MISURA, IL 30/08/2026.** Una chiamata con
-    /// due token d'ingresso e quattro d'uscita è costata 0,1285 dollari
-    /// dichiarati dal motore: 12.347 token scritti in cache erano il 96% di
-    /// quella cifra. Senza una colonna dove metterli, ogni riga di questa
-    /// tabella sottostimava la spesa di 24 volte — e sempre verso il basso.
+    /// **BORN FROM A MEASURE**: a call with two input and four output tokens
+    /// cost $0.1285 as the engine declared it, of which the 12,347 tokens
+    /// written to cache were 96%. Without a column for them, every row of this
+    /// table underestimated the spend 24-fold, and always downwards.
     #[serde(default)]
     pub cache_write_tokens: Option<u64>,
-    /// I token scritti in una cache **a lunga durata**, dove il fornitore ne
-    /// offre più d'una e le fa pagare diversamente.
+    /// Tokens written to a **long-lived** cache, where the provider offers more
+    /// than one and prices them differently.
     #[serde(default)]
     pub cache_write_long_tokens: Option<u64>,
-    /// Il totale, per i motori che dicono **solo** quello senza separare i due
-    /// lati. Senza questo campo l'unica misura vera che quei motori danno
-    /// verrebbe buttata via per non saperla spezzare in tre.
+    /// The total, for engines that report **only** that without splitting the
+    /// two sides. Without this field the one real measure those engines give
+    /// would be thrown away for want of a way to split it in three.
     #[serde(default)]
     pub total_tokens: Option<u64>,
-    /// **QUANTI TURNI HA FATTO QUESTA CHIAMATA.** Non e' una curiosita': su una
-    /// misura del 31/08/2026 una catena di quattro passi ha letto per turno
-    /// l'8% in piu' di una sessione sola che faceva lo stesso lavoro, e ha
-    /// consumato il doppio -- perche' ha fatto il doppio dei turni. Il numero
-    /// che spiega il conto di un flusso e' questo, e fino a ora non era in
-    /// nessuna colonna: chi voleva far costare meno una catena stava lavorando
-    /// su una quantita' che nessuno misurava.
+    /// **HOW MANY TURNS THIS CALL TOOK.** Not a curiosity: measured, a chain of
+    /// four steps read 8% more per turn than a single session doing the same
+    /// work, and consumed twice as much — because it took twice the turns. No
+    /// column held them, so whoever set out to make a chain cheaper was working
+    /// on a quantity nobody was measuring.
     #[serde(default)]
     pub turns: Option<u64>,
     pub cost_micros: Option<i64>,
-    /// Il costo che il motore ha dichiarato di suo, tenuto **accanto** a
-    /// quello del listino e mai al posto suo: se un giorno i due divergono
-    /// sistematicamente, quella divergenza è essa stessa l'informazione. Un
-    /// costo che arriva dallo stesso posto da cui arriva la spesa non è una
-    /// verifica di niente.
+    /// The cost the engine declared itself, kept **beside** the price-list one
+    /// and never in its place: if the two diverge systematically, that
+    /// divergence is itself the information. A cost coming from the same place
+    /// as the spend verifies nothing.
     #[serde(default)]
     pub declared_cost_micros: Option<i64>,
     #[serde(default)]
@@ -317,63 +292,31 @@ pub struct ModelCallRecord {
     pub output_price_micros_per_million: Option<i64>,
     #[serde(default)]
     pub cached_price_micros_per_million: Option<i64>,
-    /// Il prezzo applicato ai token **scritti** in cache, e quello della cache a
-    /// lunga durata. Stanno sulla riga come gli altri: un costo si deve poter
-    /// rifare a mano leggendo la riga, senza sapere quale listino c'era.
+    /// The price applied to tokens **written** to cache, and the long-lived
+    /// one. They sit on the row like the others: a cost must be reproducible by
+    /// hand from the row, without knowing which price list was in force.
     #[serde(default)]
     pub cache_write_price_micros_per_million: Option<i64>,
     #[serde(default)]
     pub cache_write_long_price_micros_per_million: Option<i64>,
-    /// **CON QUALE IDENTITÀ IL PROCESSO DI QUESTA CHIAMATA È PARTITO**: quale
-    /// casa, e come è stata scelta. Le forme stanno in [`EngineIdentity`].
-    ///
-    /// **PERCHÉ SERVE.** «Se un processo AI si avvia deve esserci un profilo
-    /// associato»: senza, due corse dello stesso flusso non sono la stessa
-    /// misura, e nessuna diagnostica può dire con quali credenziali un processo
-    /// ha girato. Fino al 01/09/2026 qui c'erano due colonne di testo,
-    /// `mandate_name` e `mandate_version`, nate per una tabella
-    /// `current_mandate` che non esiste più: la prima teneva un profilo sotto un
-    /// nome che parlava d'altro, la seconda era vuota per costruzione.
-    ///
-    /// **E LA PRIMA SAPEVA MENTIRE.** Nominava il profilo attivo anche quando il
-    /// passo aveva scritto da sé la variabile di casa e il motore era partito
-    /// altrove — cioè proprio nel caso in cui l'identità era stata cambiata
-    /// apposta. Adesso quel caso ha una forma sua,
-    /// [`EngineIdentity::ChosenByTheStep`], e porta il percorso vero.
-    ///
-    /// **`#[serde(default)]` NON È PIGRIZIA.** Gli eventi scritti prima di oggi
-    /// questo campo non ce l'hanno, e il registro degli eventi è l'unica cosa da
-    /// cui tutto il resto si ricostruisce: senza il ripiego, aggiornare Sailor
-    /// renderebbe illeggibile ciò che è già scritto.
+    /// **WHAT IDENTITY THIS CALL'S PROCESS STARTED WITH**: which home, and how
+    /// it was chosen; the shapes live in [`EngineIdentity`]. Without it two
+    /// runs of one flow are not the same measure. It replaces `mandate_name`,
+    /// which named the profile in force even when the step had overridden it —
+    /// it lied exactly where the identity had been changed on purpose — and
+    /// `mandate_version`, empty by construction: a profile has no version.
     #[serde(default)]
     pub engine_identity: EngineIdentity,
     pub retry_chain: Vec<String>,
     pub error_type: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
-    /// **LA SESSIONE SOTTO CUI QUESTA CHIAMATA È GIRATA, QUANDO SI SA QUAL È.**
-    ///
-    /// Non è un dato decorativo: è la sola cosa che permette a un passo dopo di
-    /// **riprendere** invece di riscoprire. Il 31/08/2026 una catena di quattro
-    /// passi ha letto 2.545.109 token dalla cache per guardare lo stesso albero
-    /// quattro volte; il rimedio è che il secondo passo continui la sessione del
-    /// primo, e per continuarla bisogna sapere come si chiama.
-    ///
-    /// **PERCHÉ NEL DEPOSITO E NON IN MEMORIA.** Una variabile in memoria muore
-    /// col processo, e una corsa sospesa — il ramo «aspettare» di un motore
-    /// esaurito, che `docs/piano-consumo-e-profili.md` lascia scoperto — deve
-    /// poter riprendere domani mattina da un altro processo. Se lo stato che
-    /// permette la ripresa non è registrato, non c'è nessuna ripresa: c'è un
-    /// rifacimento con un altro nome.
-    ///
-    /// **`None` VUOL DIRE «NON LO SO», COME OVUNQUE QUI DENTRO**, e ne esistono
-    /// tre casi diversi che portano tutti allo stesso valore perché a valle si
-    /// comportano allo stesso modo: il motore non sa aprire sessioni; il passo
-    /// non ne ha chiesta una; oppure il passo ha **ramificato**, e il motore ha
-    /// coniato per il ramo un identificativo che non ci ha detto. L'ultimo è il
-    /// più insidioso, e scrivere lì l'identificativo del padre sarebbe una
-    /// bugia: chi lo riprendesse ripartirebbe dal tronco credendo di essere sul
-    /// ramo, in silenzio.
+    /// **THE SESSION THIS CALL RAN UNDER, WHEN IT IS KNOWN.** What lets a later
+    /// step **resume** instead of rediscover; on disk, not in memory, because
+    /// the "wait for an exhausted engine" branch `docs/piano-consumo-e-profili.md`
+    /// leaves uncovered must resume tomorrow from another process. `None` when
+    /// the engine opens no sessions, the step asked for none, or it **branched**:
+    /// there the parent's id would resume the trunk, silently, as if the branch.
     #[serde(default)]
     pub session_id: Option<String>,
 }
@@ -389,81 +332,73 @@ pub struct SnapshotRecord {
     pub created_at: i64,
 }
 
-/// Un fatto che un flusso vuole ricordare, in una collezione che ha nominato lui.
+/// A fact a flow wants to remember, in a collection it named itself.
 ///
-/// **LO SPAZIO È DEL FLUSSO, NON DEL MOTORE.** La prima stesura di questo pezzo,
-/// il 28/08/2026, era una tabella `current_mandate` con le sue colonne: un
-/// concetto di dominio scolpito in Rust, cioè lo stesso difetto per cui `notte`
-/// è condannata — un flusso di quattro passi diventato un programma di 2.562
-/// righe perché ogni cosa che doveva ricordare si è fatta la sua struttura.
-/// Theo l'ha fermata: *«dovrebbe esistere disegnato, non hardcodato»*.
-///
-/// Qui invece il motore offre **lo spazio**, e chi lo riempie decide cosa
-/// significa: `collection` è un nome che sceglie il flusso, `key` la voce
-/// dentro quel nome, `value` un JSON qualunque. Il motore non sa e non deve
-/// sapere che esiste una cosa chiamata «mandato».
-///
-/// **Perché non tabelle SQL vere, create dal file di flusso.** Sarebbe DDL
-/// arbitrario preso da un file di dati, dentro il processo che tiene i freni —
-/// la stessa porta che la pietra miliare §2 chiude quando vieta un interprete
-/// qui dentro. Una collezione dà la stessa libertà senza aprirla: chi legge
-/// vede le sue voci e nessun'altra, e nessuno può cambiare la forma del
-/// deposito scrivendo un file.
+/// **THE SPACE BELONGS TO THE FLOW, NOT TO THE ENGINE**: the flow picks the
+/// name, the key inside it and an arbitrary JSON value. The engine must not
+/// know that a thing called a "mandate" exists — a domain concept carved into
+/// Rust is what turned a four-step flow into a 2,562-line program.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreRecord {
-    /// Lo spazio dei nomi, scelto da chi scrive il flusso.
+    /// The namespace, chosen by whoever writes the flow.
+    ///
+    /// **Not a real SQL table made from the flow file**: arbitrary DDL from a
+    /// data file inside the brakes, the door that *no interpreter inside
+    /// Sailor* shuts. A collection buys the same freedom: a reader sees its own
+    /// entries and no others, and no file changes the shape of the store.
     pub collection: String,
-    /// La voce dentro quella collezione.
+    /// The entry inside that collection.
     pub key: String,
-    /// Cosa vale, nella forma che il flusso ha deciso.
+    /// What it holds, in the shape the flow decided.
+    ///
+    /// The first draft of this was a `current_mandate` table with columns of
+    /// its own, and it was stopped with *"it should exist drawn, not
+    /// hardcoded"*: here the engine offers **the space**, and whoever fills it
+    /// decides what it means.
     pub value: Value,
-    /// Chi l'ha scritto: il flusso, la corsa, o una persona.
+    /// Who wrote it: the flow, the run, or a person.
     pub written_by: String,
     pub written_at: i64,
 }
 
-/// Un processo che Sailor ha avviato.
+/// A process Sailor started.
 ///
-/// **PERCHÉ STA NEL DEPOSITO E NON IN MEMORIA — guasto 4.** Il 29/08/2026 un
-/// processo di sviluppo orfano teneva una porta e impediva l'avvio, *due volte,
-/// a due persone diverse, nella stessa notte*, e la seconda non sapeva della
-/// prima. Un registro che vivesse dentro la finestra risponderebbe solo a chi
-/// ha la finestra aperta: proprio non a chi arriva il giorno dopo e trova la
-/// porta occupata. Qui l'avvio è un evento come gli altri — sopravvive alla
-/// finestra, alla sessione e al riavvio, perché è su disco.
-///
-/// **PERCHÉ TIENE LA RIGA DI COMANDO PER INTERO.** Chi trova un orfano deve
-/// decidere se spegnerlo, e quella decisione ha bisogno di sapere *cos'è*. Un
-/// pid da solo non la sostiene: si finisce a chiedere al sistema operativo cosa
-/// sia quel numero, che è la strada su cui il guasto 12 aspetta.
+/// **IN THE STORE AND NOT IN MEMORY.** An orphan process held a port and
+/// blocked the start *twice, for two different people, in one night*, and the
+/// second knew nothing of the first: a register living inside the window
+/// answers only to whoever has that window open — not to the day after.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessRecord {
-    /// Il nome con cui chi l'ha avviato lo ritrova. Non è il pid: un pid si
-    /// riusa, e chi riprende dopo un riavvio deve poter nominare la cosa che
-    /// cerca prima di sapere che numero ha oggi.
+    /// The name whoever started it finds it back by. Not the pid: pids get
+    /// reused, and whoever resumes after a reboot must be able to name the
+    /// thing they are looking for before knowing what number it has today.
     pub process_id: String,
     pub pid: u32,
+    /// The **whole** command line, kept because deciding whether to kill an
+    /// orphan needs to know *what it is*, and a pid alone will not say. Without
+    /// it you go and ask the operating system what that number is — the road
+    /// where the empty answer without an error is waiting.
     pub command: String,
     pub args: Vec<String>,
     pub working_directory: String,
-    /// La porta che occupa, se ne occupa una. È la chiave con cui il guasto 4 si
-    /// è presentato: la domanda non era «quali processi ci sono», era «chi tiene
-    /// la 5183».
+    /// The port it holds, if it holds one. This is the key the orphan-process
+    /// fault showed up as: the question was not "which processes exist", it was
+    /// "who is holding 5183".
     pub port: Option<u16>,
-    /// A cosa serve: `live` per la modalità viva, il nome dell'azione per un
-    /// processo di flusso. Chi trova un orfano deve capire se serve ancora.
+    /// What it is for: `live` for live mode, the action's name for a flow
+    /// process. Whoever finds an orphan must tell whether it is still needed.
     pub purpose: String,
-    /// Chi l'ha acceso. Senza questo campo l'orfano resta senza padrone, che è
-    /// esattamente com'è stato trovato.
+    /// Who turned it on. Without this field an orphan has no owner, which is
+    /// exactly how it was found.
     pub started_by: String,
-    /// La corsa a cui appartiene, se appartiene a una.
+    /// The run it belongs to, if it belongs to one.
     pub run_id: Option<String>,
     pub started_at: i64,
 }
 
-/// La chiusura di un processo registrato. Separata dall'avvio perché arriva
-/// dopo e da un altro punto del codice: unirle vorrebbe dire riscrivere l'avvio,
-/// e il registro degli eventi non si riscrive.
+/// The close of a registered process. Separate from the start because it
+/// arrives later and from another point in the code: merging them would mean
+/// rewriting the start, and the event log is not rewritten.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessEndRecord {
     pub process_id: String,
@@ -471,43 +406,33 @@ pub struct ProcessEndRecord {
     pub ended_at: i64,
 }
 
-/// Quel pid esiste ancora?
+/// Does that pid still exist?
 ///
-/// **NON È `pgrep`, E LA DIFFERENZA È LA FORMA DELLA RISPOSTA.** Il guasto 12:
-/// dentro certi perimetri `pgrep` non vede i processi e risponde con un elenco
-/// vuoto *senza errore*, quindi «non c'è nessuno» e «non mi è permesso guardare»
-/// arrivano identici, e una sorveglianza dichiarò «nessun flusso in esecuzione»
-/// mentre due giravano. Qui non si chiede un elenco: si chiede di **un** pid che
-/// il deposito ha già scritto, e `kill(pid, 0)` — che non manda nessun segnale,
-/// controlla solo — distingue i casi. `EPERM` vuol dire *esiste ma è di un
-/// altro utente*: è un sì, e trattarlo da no rifarebbe il guasto 12 con un'altra
-/// chiamata.
-///
-/// **I LIMITI, DICHIARATI — sono due, e il secondo è stato misurato.**
-///
-/// *Uno.* I numeri di processo si riusano. Un pid vivo non dimostra che sia *lo
-/// stesso* processo che il deposito ha scritto; per quello servirebbe
-/// confrontare l'ora d'avvio, che macOS non regala senza `libproc`. Quindi
-/// questa funzione **conferma**, non decide: la fonte di cosa è stato avviato
-/// resta il deposito.
-///
-/// *Due.* **Un figlio morto e non raccolto risulta vivo**, ed è stato visto: la
-/// prima stesura di `the_dead_are_closed_and_the_living_are_left_alone` uccideva
-/// un figlio senza aspettarlo e questa funzione rispondeva «vivo». È corretto —
-/// uno zombie *è* una voce nella tabella dei processi — e riguarda soltanto i
-/// figli di chi chiama. Un orfano vero, quello del guasto 4, ha per padre il
-/// processo iniziale, che lo raccoglie appena muore: lì non c'è zombie. Chi
-/// accende un processo e vuole sapere se è finito usa `Process::exited`, che
-/// aspetta il proprio figlio; questa funzione risponde su pid altrui.
+/// **NOT `pgrep`**, which inside some sandboxes sees no processes and answers
+/// with an empty list *without an error*, so "nobody there" and "not allowed
+/// to look" arrive identical. This asks about **one** pid the store wrote, and
+/// `EPERM` — *alive, but another user's* — is a yes; a no would redo the fault.
 pub fn pid_is_alive(pid: u32) -> bool {
-    // Il pid 0 è il gruppo di processi di chi chiama: mandargli anche il
-    // segnale nullo vorrebbe dire chiedere di sé, e la risposta sarebbe un sì
-    // che non riguarda nessuno.
+    // **LIMIT ONE, AND THERE IS NO BETTER CHECK.** Process numbers get reused,
+    // so a live pid does not prove it is the *same* process the store wrote.
+    // Settling that would mean comparing the start time, which macOS does not
+    // hand over without `libproc`. So this **confirms**, it does not decide:
+    // what was started is still the store's word, never this call's.
+
+    // Pid 0 is the caller's own process group: even the null signal would be
+    // asking about ourselves, and the answer would be a yes about nobody.
     if pid == 0 {
         return false;
     }
-    // SAFETY: `kill` con segnale 0 non consegna niente e non tocca memoria
-    // nostra; legge un intero e torna un intero.
+    // **LIMIT TWO, AND IT WAS MEASURED: an unreaped child reads as alive.** A
+    // first draft of `the_dead_are_closed_and_the_living_are_left_alone` killed
+    // a child without waiting and got "alive" here. That is correct — a zombie
+    // *is* a row in the process table — and it reaches only the caller's own
+    // children: a real orphan's parent is the init process, which reaps it as
+    // soon as it dies. For your own child use `Process::exited`, which waits.
+
+    // SAFETY: `kill` with signal 0 delivers nothing and touches no memory of
+    // ours; it reads an int and returns an int.
     let outcome = unsafe { libc::kill(pid as libc::pid_t, 0) };
     if outcome == 0 {
         return true;
@@ -533,29 +458,29 @@ pub struct GatesChangedStep {
     pub epoch: u64,
 }
 
-/// Una corsa con almeno un passo aperto, come la vede chi riprende.
+/// A run with at least one open step, as whoever resumes sees it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnfinishedRun {
     pub run_id: String,
-    /// Su cosa lavorava la corsa. Vuota se nessuno l'ha mai registrata.
+    /// What the run was working on. Empty if nobody ever recorded it.
     pub entity: String,
     pub open_steps: usize,
     pub oldest_started_at: i64,
 }
 
-/// Una corsa ferma perché aspetta qualcuno.
+/// A run stopped because it is waiting for somebody.
 ///
-/// **NON PORTA `open_steps`, E L'ASSENZA È UN'AFFERMAZIONE.** Una corsa in
-/// attesa non ha passi aperti: quello consegnato è chiuso con esito `Waiting`.
-/// Un campo che dicesse sempre zero farebbe credere a chi legge che la corsa sia
-/// stata abbandonata a metà, che è la storia sbagliata.
+/// **IT CARRIES NO `open_steps`, AND THE ABSENCE IS A STATEMENT.** A waiting
+/// run has no open steps: the handed-over one is closed with outcome `Waiting`.
+/// A field always reading zero would tell the reader the run had been abandoned
+/// halfway, which is the wrong story.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WaitingRun {
     pub run_id: String,
-    /// Su quale flusso. Vuota se nessuno l'ha mai registrata.
+    /// Which flow. Empty if nobody ever recorded it.
     pub entity: String,
-    /// Da quando aspetta: l'istante in cui la corsa si è fermata, o quello in
-    /// cui è partita se non si è ancora fermata.
+    /// Since when it has been waiting: the instant the run stopped, or the
+    /// instant it started if it has not stopped yet.
     pub waiting_since: i64,
 }
 
@@ -569,40 +494,36 @@ pub struct DiscardedOutputStep {
     pub bytes_discarded: u64,
 }
 
-// ── com'è andata: le risposte che un flusso può ricevere sul proprio storico ──
+// ── how it went: the answers a flow can get about its own history ──
 //
-// **NESSUNA DI QUESTE STRUTTURE PORTA `input` O `output`, E NON È UNA
-// DIMENTICANZA.** Da qui passa lo storico verso un'azione che qualunque flusso
-// può nominare, e `input`/`output` sono il canale dati tipato: ci transitano
-// prompt, ambienti e risposte di modelli. Tenerli fuori dai *tipi* invece che
-// da una proiezione fa sì che nessuna distrazione futura in `actions` possa
-// farli uscire: non c'è un campo da dimenticare di togliere. `said` esce da un
-// varco solo, `said_of_failed_steps`, legato a una corsa nominata.
+// **NONE OF THESE STRUCTS CARRIES `input` OR `output`, AND IT IS NOT AN
+// OVERSIGHT.** History leaves here for an action any flow can name, and those
+// two are the typed data channel: prompts, environments, model replies. Held
+// out of the *types*, no field is left for a later slip in `actions` to keep.
 
-/// Quante volte un passo si è rotto, e con quale classe di guasto.
-///
-/// `attempts` è il denominatore: tre guasti su tre tentativi e tre su duecento
-/// sono la stessa cifra e non la stessa cosa.
+/// How many times a step broke, and with what failure class.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StepFailureTally {
+    /// The denominator: three failures out of three attempts and three out of
+    /// two hundred are the same figure and not the same thing.
     pub attempts: i64,
     pub failures: i64,
-    /// Le corse toccate, che non sono i guasti: un passo può rompersi più
-    /// volte nella stessa corsa, un tentativo per volta.
+    /// The runs touched, which are not the failures: a step can break several
+    /// times in the same run, one attempt at a time.
     pub runs_affected: i64,
     pub by_class: Vec<FailureClassCount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FailureClassCount {
-    /// `None` è un passo rotto che il motore non ha saputo classificare, e va
-    /// distinto da una classe che si chiama «sconosciuta»: qui manca il dato.
+    /// `None` is a broken step the engine could not classify, and differs from
+    /// a class literally named "unknown": here the datum is missing.
     pub failure_class: Option<String>,
     pub failures: i64,
     pub runs_affected: i64,
 }
 
-/// Una corsa **chiusa**, passo per passo.
+/// A **closed** run, step by step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FinishedRun {
     pub run_id: String,
@@ -617,7 +538,7 @@ pub struct FinishedRun {
 pub struct StepOutcome {
     pub step_id: String,
     pub attempt: u32,
-    /// `None` è un passo rimasto aperto dentro una corsa già chiusa.
+    /// `None` is a step left open inside an already-closed run.
     pub outcome: Option<String>,
     pub failure_class: Option<String>,
     pub started_at: i64,
@@ -626,19 +547,19 @@ pub struct StepOutcome {
     pub bytes_discarded: Option<i64>,
 }
 
-/// Quanto ci mette un passo, misurato sui soli tentativi riusciti.
+/// How long a step takes, measured on successful attempts only.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct StepDurations {
-    /// Secondi interi, già ordinati: chi riassume non deve riordinare, e chi
-    /// legge la mediana non deve fidarsi che qualcuno l'abbia fatto.
+    /// Whole seconds, already sorted: whoever summarises need not re-sort, and
+    /// whoever reads the median need not trust that somebody did.
     pub seconds_sorted: Vec<i64>,
     pub last_seconds: Option<i64>,
-    /// I tentativi rotti, contati ma **non** misurati: un guasto veloce
-    /// abbasserebbe la mediana e farebbe sembrare rapido un passo lento.
+    /// Broken attempts, counted but **not** measured: a fast failure would pull
+    /// the median down and make a slow step look quick.
     pub failed_samples: i64,
 }
 
-/// Il testo grezzo di un passo rotto, come lo si consegna a chi diagnostica.
+/// The raw text of a broken step, as handed to whoever diagnoses it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SaidExcerpt {
     pub step_id: String,
@@ -705,10 +626,10 @@ impl Ledger {
                     "unsupported projection schema version {projection_schema_version}"
                 )));
             }
-            // La creazione delle tabelle, l'adeguamento delle colonne e la nascita
-            // degli indici sono tre fasi distinte: un deposito nuovo crea tutto subito,
-            // un deposito vecchio deve prima aggiungere le colonne mancanti affinché
-            // gli indici possano agganciarsi, e un deposito aggiornato non tocca nulla.
+            // Creating the tables, adjusting the columns and building the
+            // indexes are three distinct phases: a new store creates everything
+            // at once, an old store must add the missing columns before the
+            // indexes can attach, and an up-to-date store touches nothing.
             create_projection_tables(&transaction)?;
             initialize_projection_watermark(&transaction)?;
             if projection_schema_version < PROJECTION_SCHEMA_VERSION {
@@ -741,18 +662,17 @@ impl Ledger {
         self.write_event(StoredEvent::SnapshotRecorded(record.clone()))
     }
 
-    /// Deposita una scansione dell'inventario.
+    /// Stores an inventory scan.
     pub fn record_inventory(&self, scan: &InventoryScan) -> Result<(), LedgerError> {
         self.write_event(StoredEvent::InventoryScanned(scan.clone()))
     }
 
-    /// Scrive che Sailor ha avviato un processo — guasto 4.
+    /// Records that Sailor started a process.
     ///
-    /// Va chiamata **dopo** che il processo esiste, cioè col pid vero in mano:
-    /// registrare l'intenzione di avviare qualcosa che poi non parte metterebbe
-    /// nell'elenco un orfano che non c'è, e chi lo legge andrebbe a cercare un
-    /// pid inesistente. Meglio perdere il caso in cui l'avvio fallisce: lì non
-    /// resta niente da spegnere.
+    /// Call it **after** the process exists, with the real pid in hand:
+    /// recording an intent to start something that then does not start lists an
+    /// orphan that is not there, and its reader goes hunting a pid that never
+    /// existed. The failed start costs nothing to lose: nothing to shut down.
     pub fn record_process_started(&self, record: &ProcessRecord) -> Result<(), LedgerError> {
         if record.process_id.trim().is_empty() {
             return Err(LedgerError::InvalidRecord("process id is empty".into()));
@@ -760,7 +680,7 @@ impl Ledger {
         self.write_event(StoredEvent::ProcessStarted(record.clone()))
     }
 
-    /// Scrive che un processo registrato è finito.
+    /// Records that a registered process has ended.
     pub fn record_process_ended(&self, record: &ProcessEndRecord) -> Result<(), LedgerError> {
         if record.process_id.trim().is_empty() {
             return Err(LedgerError::InvalidRecord("process id is empty".into()));
@@ -768,15 +688,12 @@ impl Ledger {
         self.write_event(StoredEvent::ProcessEnded(record.clone()))
     }
 
-    /// I processi avviati per cui non è mai arrivata una chiusura.
+    /// The processes started for which no close ever arrived.
     ///
-    /// **QUESTA È LA RISPOSTA ALLA DOMANDA DEL GUASTO 4**, e la dà il dato, non
-    /// il sistema operativo: chi chiede «cosa ho lasciato acceso» riceve ciò che
-    /// è stato scritto quando è stato acceso. Un processo ucciso da fuori non
-    /// scrive la sua chiusura e resta qui: per questo esiste `pid_is_alive`, che
-    /// **conferma** una riga per volta invece di sostituire l'elenco. Le due
-    /// domande sono diverse — «cosa ho avviato» e «cosa respira» — e tenerle
-    /// separate è ciò che impedisce di ricadere nel guasto 12.
+    /// The answer comes from the data, not the operating system. A process
+    /// killed from outside writes no close and stays here, so `pid_is_alive`
+    /// **confirms** one row at a time instead of replacing this list: "what did
+    /// I start" and "what is breathing" are two questions, kept apart on purpose.
     pub fn processes_left_running(&self) -> Result<Vec<ProcessRecord>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(&format!(
@@ -789,11 +706,11 @@ impl Ledger {
         Ok(rows)
     }
 
-    /// Chi tiene una porta, per quanto ne sa il deposito.
+    /// Who holds a port, as far as the store knows.
     ///
-    /// Il più recente vince: se due avvii hanno rivendicato la stessa porta e
-    /// solo uno l'ha ottenuta, è l'ultimo — il primo era già morto quando il
-    /// secondo è partito, altrimenti il secondo non sarebbe partito.
+    /// Most recent wins: if two starts claimed the same port and only one got
+    /// it, it is the last — the first was already dead when the second started,
+    /// or the second would not have started.
     pub fn process_holding_port(&self, port: u16) -> Result<Option<ProcessRecord>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(&format!(
@@ -801,19 +718,19 @@ impl Ledger {
              WHERE port = ?1 AND ended_at IS NULL
              ORDER BY started_at DESC LIMIT 1"
         ))?;
-        let row = statement
-            .query_row([port], read_process_row)
-            .optional()?;
+        let row = statement.query_row([port], read_process_row).optional()?;
         Ok(row)
     }
 
-    /// Scrive una voce nella collezione che il flusso ha nominato.
+    /// Writes an entry into the collection the flow named.
     ///
-    /// Collezione e chiave non possono essere vuote: sono l'indirizzo, e una
-    /// voce senza indirizzo la ritrova solo chi già sa dov'è.
+    /// Collection and key cannot be empty: they are the address, and an entry
+    /// without an address is found only by whoever already knows where it is.
     pub fn put_record(&self, record: &StoreRecord) -> Result<(), LedgerError> {
         if record.collection.trim().is_empty() {
-            return Err(LedgerError::InvalidRecord("record collection is empty".into()));
+            return Err(LedgerError::InvalidRecord(
+                "record collection is empty".into(),
+            ));
         }
         if record.key.trim().is_empty() {
             return Err(LedgerError::InvalidRecord("record key is empty".into()));
@@ -821,11 +738,11 @@ impl Ledger {
         self.write_event(StoredEvent::RecordWritten(record.clone()))
     }
 
-    /// Che cosa vale una voce, se qualcuno l'ha scritta.
+    /// What an entry holds, if anybody wrote it.
     ///
-    /// `None` non è un guasto: è una voce che nessuno ha ancora scritto, e chi
-    /// legge deve avere un ripiego invece di fermarsi. Un deposito che
-    /// inventasse un valore plausibile sarebbe peggio del non sapere.
+    /// `None` is not a fault: it is an entry nobody has written yet, and the
+    /// reader must have a fallback rather than stop. A store that invented a
+    /// plausible value would be worse than not knowing.
     pub fn read_record(
         &self,
         collection: &str,
@@ -843,7 +760,7 @@ impl Ledger {
         Ok(found)
     }
 
-    /// Tutte le voci di una collezione, per chi la vuole mostrare intera.
+    /// Every entry in a collection, for whoever wants to show it whole.
     pub fn records_in(&self, collection: &str) -> Result<Vec<StoreRecord>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
@@ -854,16 +771,18 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Le voci sparite: c'erano, e l'ultima scansione non le ha più viste.
+    /// The entries that vanished: they were there, and the last scan no longer
+    /// saw them.
     ///
-    /// È la domanda che un elenco calcolato ogni volta non sa porsi. Serve
-    /// prima di cancellare qualunque cosa: una voce sparita da ieri è un
-    /// cambiamento da capire, una sparita da un mese è spazzatura già morta.
+    /// A list recomputed every time cannot ask this. It matters before deleting
+    /// anything: an entry gone since yesterday is a change to understand, one
+    /// gone for a month is already-dead rubbish.
     pub fn inventory_gone(&self) -> Result<Vec<InventoryChange>, LedgerError> {
         self.inventory_where("gone_at IS NOT NULL", "gone_at DESC, kind, name")
     }
 
-    /// Le voci apparse dopo un certo istante — «che cosa è cambiato da ieri».
+    /// Entries that appeared after a given instant — "what changed since
+    /// yesterday".
     pub fn inventory_new_since(&self, since: i64) -> Result<Vec<InventoryChange>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
@@ -875,7 +794,7 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Tutto ciò che c'è adesso, come lo ha visto l'ultima scansione.
+    /// Everything present now, as the last scan saw it.
     pub fn inventory_present(&self) -> Result<Vec<InventoryChange>, LedgerError> {
         self.inventory_where("gone_at IS NULL", "kind, name")
     }
@@ -1015,15 +934,12 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Le corse rimaste a metà: hanno un'intenzione scritta e nessun esito.
+    /// Runs left halfway: they have a recorded intent and no outcome.
     ///
-    /// È LA DOMANDA DELLA RIPRESA, e non nomina nessuna lavorazione: chi
-    /// riprende non sa quali corse esistano, sa solo di voler chiudere ciò che
-    /// è rimasto aperto. Prima di questo metodo il nome della corsa andava
-    /// ricostruito da fuori — nel servizio notturno, con la data di oggi — e
-    /// chi si era interrotto prima di mezzanotte non veniva ritrovato mai.
-    ///
-    /// L'ordine è quello di apertura: si riprende ciò che è fermo da più tempo.
+    /// THE RESUME QUESTION, and it names no job: whoever resumes does not know
+    /// which runs exist, only that they want to close whatever is still open.
+    /// Rebuilding the run name from outside — from today's date, say — never
+    /// finds a run interrupted before midnight. Longest stuck resumes first.
     pub fn unfinished_runs(&self) -> Result<Vec<UnfinishedRun>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
@@ -1045,14 +961,12 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// L'intestazione di una corsa, se ne esiste una con quel nome.
+    /// A run's header, if one exists under that name.
     ///
-    /// **SERVE A RITROVARE IL FLUSSO DA CUI UNA CORSA È NATA.** Chi riprende una
-    /// corsa ha in mano il suo identificativo e nient'altro: senza `entity` non
-    /// sa quale grafo caricare, e con il grafo sbagliato validerebbe l'uscita di
-    /// un passo contro lo schema di un altro. `None` non è un guasto — è una
-    /// corsa che nessuno ha registrato, e chi chiede deve poterlo distinguere da
-    /// un deposito rotto.
+    /// **IT IS HOW THE FLOW A RUN CAME FROM IS FOUND AGAIN.** Whoever resumes
+    /// holds the run id and nothing else: without `entity`, the wrong graph
+    /// loads and one step's output is validated against another's schema.
+    /// `None` is a run nobody recorded, and must read apart from a broken store.
     pub fn run_header(&self, run_id: &str) -> Result<Option<RunRecord>, LedgerError> {
         let connection = self.lock()?;
         let found = connection
@@ -1080,23 +994,19 @@ impl Ledger {
         Ok(found)
     }
 
-    /// Le corse ferme in attesa di una persona o di un agente.
+    /// Runs stopped waiting for a person or an agent.
     ///
-    /// **NON È `unfinished_runs` CON UN ALTRO FILTRO, ED È IL PUNTO DI TUTTO.**
-    /// Quella domanda cerca i passi **aperti** — `steps.outcome IS NULL` — cioè
-    /// un'intenzione scritta senza esito. Un passo consegnato non è così: è
-    /// **chiuso**, con esito `Waiting`, perché chi doveva eseguirlo non è un
-    /// processo di cui si aspetta la morte. Fino al 31/08/2026 nessuna
-    /// interrogazione trovava quelle corse: una consegna che nessuno raccoglieva
-    /// spariva, e l'unico modo di ritrovarla era ricordarsene.
-    ///
-    /// Niente migrazione: `runs.status` è testo libero e `waiting` ci viene già
-    /// scritto da `execution_status`.
-    ///
-    /// L'ordine è quello dell'attesa: si guarda per prima quella ferma da più
-    /// tempo.
+    /// **NOT `unfinished_runs` WITH ANOTHER FILTER, AND THAT IS THE POINT.**
+    /// That question looks for **open** steps — an intent with no outcome. A
+    /// handed-over step is **closed**, with outcome `Waiting`, because whoever
+    /// must run it is not a process whose death we await. Longest wait first.
     pub fn waiting_runs(&self) -> Result<Vec<WaitingRun>, LedgerError> {
         let connection = self.lock()?;
+        // Before this query no interrogation found those runs at all: a
+        // hand-over nobody picked up simply vanished, and the only way back to
+        // it was to remember it. No migration was owed to add it either —
+        // `runs.status` is free text, and `waiting` is already written there
+        // by `execution_status`.
         let mut statement = connection.prepare(
             "SELECT run_id, entity, COALESCE(ended_at, started_at)
              FROM runs WHERE status = 'waiting'
@@ -1112,12 +1022,12 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Quando ciascuna entità ha cominciato l'ultima volta.
+    /// When each entity last began.
     ///
-    /// Serve a sapere se un flusso pianificato è dovuto adesso, e la domanda è
-    /// **quando è partito**, non quando è finito: una corsa ancora in volo ha
-    /// già consumato il suo turno, e contarla come «mai girata» la farebbe
-    /// ripartire sopra se stessa.
+    /// Used to tell whether a scheduled flow is due now, and the question is
+    /// **when it started**, not when it finished: a run still in flight has
+    /// already used its turn, and counting it as "never ran" would start it
+    /// again on top of itself.
     pub fn last_started_at(&self) -> Result<BTreeMap<String, i64>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
@@ -1201,15 +1111,12 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Quante corse il deposito conosce, comunque le conosca.
+    /// How many runs the store knows about, however it knows them.
     ///
-    /// **SERVE A DISTINGUERE «NON C'È NIENTE» DA «ZERO GUASTI».** Su una
-    /// macchina appena installata ogni conteggio è zero, e uno zero senza
-    /// questo numero accanto è indistinguibile da una macchina che gira da
-    /// mesi senza rompere niente — cioè da una bugia. Conta l'unione delle due
-    /// tabelle apposta: una corsa i cui passi sono registrati ma la cui
-    /// intestazione non lo è resta una corsa avvenuta, e dire «nessuna» a chi
-    /// ha lo storico sotto gli occhi sarebbe la stessa bugia al contrario.
+    /// **IT SEPARATES "THERE IS NOTHING" FROM "ZERO FAILURES"**: on a fresh
+    /// machine a zero without this beside it reads as months of unbroken
+    /// running. The union of both tables — a run with steps and no header
+    /// happened, and "none" to somebody holding the history is the same lie.
     pub fn recorded_runs(&self) -> Result<i64, LedgerError> {
         let connection = self.lock()?;
         Ok(connection.query_row(
@@ -1219,25 +1126,20 @@ impl Ledger {
         )?)
     }
 
-    /// Quanto una corsa ha speso finora, e su quante chiamate non si sa.
+    /// What a run has spent so far, and on how many calls that is unknown.
     ///
-    /// **IL SECONDO NUMERO NON È UN ORNAMENTO: È CIÒ CHE RENDE IL PRIMO
-    /// LEGGIBILE.** Un motore che non dichiara i propri token lascia la riga
-    /// col costo a `NULL` — codex fa esattamente questo, dichiara un totale e
-    /// non i due lati, e da un totale non si ricava un costo senza inventare la
-    /// proporzione. Sommare solo i costi noti dà quindi una **sottostima
-    /// sistematica**, e un tetto di spesa che si fidasse di quella somma da
-    /// sola lascerebbe passare corse che hanno speso il doppio. Chi legge questa
-    /// struttura ha entrambi i numeri e può decidere; chi ne guardasse uno solo
-    /// starebbe leggendo una rassicurazione.
-    ///
-    /// Una corsa senza nessuna chiamata risponde con tutti zeri, ed è la
-    /// risposta giusta: non ha speso niente **e** non c'è niente che non si sa.
+    /// **THE SECOND NUMBER MAKES THE FIRST READABLE.** codex declares a total
+    /// and not the two sides, and no cost comes from a total without inventing
+    /// the proportion, so its rows keep a `NULL` cost: summing the known ones
+    /// **underestimates**, and a cap trusting it lets a doubled run through.
     pub fn spent_in_run(&self, run_id: &str) -> Result<Spend, LedgerError> {
         let connection = self.lock()?;
-        // `MAX` su una colonna dove ogni riga è `NULL` risponde `NULL`, e
-        // `Option<i64>` lo porta fino a chi decide: «la più cara è sconosciuta»
-        // non è «la più cara è zero».
+        // A run with no calls at all answers every field zero, and that is the
+        // right answer: it has spent nothing **and** there is nothing unknown.
+        //
+        // `MAX` over a column where every row is `NULL` answers `NULL`, and
+        // `Option<i64>` carries that through to whoever decides: "the dearest
+        // is unknown" is not "the dearest is zero".
         let (micros, calls, calls_without_cost, dearest_micros) = connection.query_row(
             "SELECT COALESCE(SUM(cost_micros), 0),
                     COUNT(*),
@@ -1255,28 +1157,21 @@ impl Ledger {
         })
     }
 
-    /// La sessione che un passo di questa corsa ha aperto **su quel motore**.
+    /// The session a step of this run opened **on that engine**.
     ///
-    /// È la domanda che rende possibile «riprendi la sessione del passo prima»:
-    /// il passo dopo nomina il passo, non l'identificativo, perché
-    /// l'identificativo nasce a tempo di esecuzione e chi scrive il flusso non
-    /// lo può conoscere.
-    ///
-    /// **IL MOTORE FA PARTE DELLA DOMANDA, E TOGLIERLO SAREBBE UN GUASTO
-    /// SILENZIOSO.** Un passo con una catena di motori può essere finito su
-    /// `codex` perché `claude-code` aveva esaurito la quota: dare al passo dopo
-    /// una sessione di `claude-code` da riprendere con `codex` gli farebbe
-    /// passare un identificativo che quel motore non conosce, e la chiamata
-    /// morirebbe **dopo** essere partita — cioè dopo aver speso.
-    ///
-    /// L'ultima per inizio, non la prima: un passo rifatto ne ha aperte due, e
-    /// quella buona è la più recente.
+    /// **THE ENGINE IS PART OF THE QUESTION, AND DROPPING IT FAILS SILENTLY**: a
+    /// step chained onto `codex` because `claude-code` ran out of quota, handed
+    /// a `claude-code` session to resume, passes an id `codex` does not know and
+    /// dies **after** starting — after spending. Latest by start: a redo opens two.
     pub fn session_opened_by(
         &self,
         run_id: &str,
         step_id: &str,
         cli: &str,
     ) -> Result<Option<String>, LedgerError> {
+        // The caller names **the step**, not the session id, and that is the
+        // whole reason for this signature: the id is minted at run time, so
+        // whoever writes the flow cannot possibly know it.
         let connection = self.lock()?;
         let mut statement = connection.prepare(
             "SELECT session_id FROM model_calls
@@ -1290,12 +1185,12 @@ impl Ledger {
         }
     }
 
-    /// Quante corse cadono davvero nella finestra chiesta.
+    /// How many runs actually fall inside the window asked for.
     ///
-    /// Chi riceve un conteggio deve sapere su quanto è stato calcolato: una
-    /// finestra di cinquanta corse su un deposito che ne ha tre non è una
-    /// finestra di cinquanta, e senza questo numero «zero guasti nelle ultime
-    /// cinquanta» suonerebbe come una rassicurazione che nessuno ha misurato.
+    /// Whoever gets a count must know what it was computed over: a window of
+    /// fifty runs over a store holding three is not a window of fifty, and
+    /// without this number "zero failures in the last fifty" would sound like a
+    /// reassurance nobody measured.
     pub fn runs_in_window(&self, flow: Option<&str>, limit: usize) -> Result<i64, LedgerError> {
         let connection = self.lock()?;
         Ok(connection.query_row(
@@ -1307,13 +1202,12 @@ impl Ledger {
         )?)
     }
 
-    /// Quante volte un passo si è rotto nella finestra, e come.
+    /// How many times a step broke inside the window, and how.
     ///
-    /// **IL FILTRO PER FLUSSO PASSA DALLA GIUNZIONE CON `runs`**: `steps` non
-    /// sa a quale flusso appartiene, lo sa solo l'intestazione della corsa. Il
-    /// prezzo è dichiarato — i passi di corse mai registrate in `runs` restano
-    /// fuori dalla finestra — e il prezzo opposto sarebbe peggio: rispondere
-    /// sulla somma di tutti i flussi a chi ne ha nominato uno.
+    /// **THE PER-FLOW FILTER GOES THROUGH THE JOIN WITH `runs`**: `steps` does
+    /// not know its flow, only the run header does. The price is declared —
+    /// steps of runs never recorded in `runs` stay outside the window — and the
+    /// opposite price is worse: answering across all flows to one named flow.
     pub fn step_failure_tally(
         &self,
         step_id: &str,
@@ -1359,7 +1253,7 @@ impl Ledger {
         })
     }
 
-    /// Le classi di guasto più frequenti, dalla più frequente in giù.
+    /// The most frequent failure classes, most frequent first.
     pub fn failure_class_tally(
         &self,
         flow: Option<&str>,
@@ -1385,13 +1279,12 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// L'ultima corsa **chiusa** di un flusso, passo per passo.
+    /// A flow's last **closed** run, step by step.
     ///
-    /// **CHIUSA, NON RECENTE**, e la differenza non è di gusto: un flusso che
-    /// interroga il proprio storico mentre gira è lui stesso la corsa più
-    /// recente, e rispondergli con se stesso a metà gli darebbe un esito che
-    /// non è ancora successo. `ended_at IS NOT NULL` esclude chi sta chiedendo
-    /// per costruzione, senza che l'azione debba sapere il proprio nome.
+    /// **CLOSED, NOT RECENT**, and not out of taste: a flow querying its own
+    /// history while running *is* the most recent run, and answering with
+    /// itself half-done hands it an outcome that has not happened. `ended_at IS
+    /// NOT NULL` excludes the asker without the action knowing its own name.
     pub fn last_finished_run(&self, flow: &str) -> Result<Option<FinishedRun>, LedgerError> {
         let connection = self.lock()?;
         let head: Option<(String, String, String, i64, i64)> = connection
@@ -1444,11 +1337,11 @@ impl Ledger {
         }))
     }
 
-    /// Quanto ci ha messo un passo, tentativo riuscito per tentativo riuscito.
+    /// How long a step took, successful attempt by successful attempt.
     ///
-    /// I tentativi rotti si contano a parte invece di entrare nelle durate:
-    /// un guasto immediato è veloce, e mescolarlo alle riuscite risponderebbe
-    /// «va più svelto del solito» a un passo che ha smesso di funzionare.
+    /// Broken attempts are counted apart instead of entering the durations: an
+    /// immediate failure is fast, and mixing it into the successes would answer
+    /// "quicker than usual" about a step that has stopped working.
     pub fn step_durations(
         &self,
         step_id: &str,
@@ -1477,16 +1370,16 @@ impl Ledger {
             let (outcome, seconds) = row?;
             match outcome.as_deref() {
                 Some("Went") => {
-                    // Le righe arrivano dalla più recente: la prima riuscita è
-                    // «l'ultima volta», ed è quella che chi chiede confronta.
+                    // Rows arrive newest first: the first success is "last
+                    // time", and that is what the asker compares against.
                     if durations.last_seconds.is_none() {
                         durations.last_seconds = Some(seconds);
                     }
                     durations.seconds_sorted.push(seconds);
                 }
                 Some("Broke") => durations.failed_samples += 1,
-                // Saltato, fermato o in attesa: né una riuscita da misurare né
-                // un guasto da contare. Tacerne è più onesto che classificarli.
+                // Skipped, stopped or waiting: neither a success to measure nor
+                // a failure to count. Silence is more honest than classifying.
                 _ => {}
             }
         }
@@ -1494,16 +1387,12 @@ impl Ledger {
         Ok(durations)
     }
 
-    /// Il testo grezzo dei passi rotti di **una** corsa nominata.
+    /// The raw text of the broken steps of **one** named run.
     ///
-    /// **È UN VARCO, ED È SCRITTO COME UN VARCO.** `said` è l'unica cosa che
-    /// esce di ciò che è passato dentro un flusso, e potrebbe contenere
-    /// qualunque cosa un modello abbia detto. Accetta una corsa sola, un tetto
-    /// di passi e un tetto di byte proprio perché nessuna sequenza di domande
-    /// possa rastrellare lo storico un pezzo per volta: un metodo che
-    /// accettasse una finestra di corse sarebbe la fuga di dati che
-    /// l'interrogazione dello storico deve evitare, con l'aspetto di una
-    /// comodità.
+    /// **IT IS A GATE, AND IT IS WRITTEN AS ONE.** `said` is all that leaves a
+    /// flow and could hold anything a model said: one run, a cap on steps, a cap
+    /// on bytes, and no run of questions rakes the history piece by piece. A
+    /// method taking a **window of runs** would be the leak, dressed as comfort.
     pub fn said_of_failed_steps(
         &self,
         run_id: &str,
@@ -1574,12 +1463,12 @@ impl Ledger {
     }
 }
 
-/// **PRENDE `&self` PERCHÉ IL DEPOSITO ERA GIÀ PRONTO A RICEVERE PIÙ FILI.** La
-/// connessione sta dietro un `Arc<Mutex<_>>` da sempre, `append_step_started` e
-/// `close_step` lavorano già su `&self`, e ogni scrittura è già una transazione
-/// `BEGIN IMMEDIATE` con cinque secondi di attesa se un altro la sta tenendo. A
-/// bloccare l'esecuzione insieme di due passi non era il deposito: era la firma
-/// del tratto, che chiedeva una mutabilità che nessuno usava.
+/// **TAKES `&self` BECAUSE THE STORE WAS ALREADY READY FOR SEVERAL THREADS.**
+/// The connection has always sat behind an `Arc<Mutex<_>>`, `append_step_started`
+/// and `close_step` already work on `&self`, and every write is already a
+/// `BEGIN IMMEDIATE` transaction with a five-second wait if somebody else holds
+/// it. What kept two steps from running together was not the store: it was the
+/// trait signature, asking for a mutability nobody used.
 impl RecordStore for Ledger {
     fn append_started(&self, record: StepRecord) -> Result<(), flow::FlowError> {
         self.append_step_started(&record)
@@ -1603,7 +1492,7 @@ impl RecordStore for Ledger {
             .map_err(|error| flow::FlowError::Store(error.to_string()))
     }
 
-    /// Il deposito le chiamate le tiene, quindi risponde per davvero.
+    /// The store keeps the calls, so it answers for real.
     fn spent(&self, run_id: &str) -> Result<Spend, flow::FlowError> {
         self.spent_in_run(run_id)
             .map_err(|error| flow::FlowError::Store(error.to_string()))
@@ -1641,8 +1530,8 @@ where
         let mut visitor = JsonVisitor::default();
         event.record(&mut visitor);
         let metadata = event.metadata();
-        // `Layer` non può restituire l'errore al chiamante; un guasto del ponte
-        // resta fuori dal percorso critico e non deve fermare il lavoro tracciato.
+        // `Layer` cannot return the error to the caller; a failure of this
+        // bridge stays off the critical path and must not stop the traced work.
         let _ = self.ledger.append_trace(TraceRecord {
             level: metadata.level().to_string(),
             target: metadata.target().to_owned(),
@@ -1697,7 +1586,7 @@ fn test_pause_after_step_read() {
     let Some(marker) = std::env::var_os("LEDGER_TEST_STEP_READ_MARKER") else {
         return;
     };
-    std::fs::write(marker, b"ready").expect("scrivere il segnale della prova");
+    std::fs::write(marker, b"ready").expect("write the test marker");
     let hold = std::env::var("LEDGER_TEST_STEP_READ_HOLD_MILLIS")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -1711,8 +1600,8 @@ fn test_pause_after_step_read() {}
 #[cfg(test)]
 fn test_crash_after_close_event() {
     if std::env::var_os("LEDGER_TEST_CRASH_AFTER_CLOSE_EVENT").is_some() {
-        // L'evento è durevole, il watermark no: l'apertura deve incorporarlo
-        // prima che il passo possa apparire rilanciabile.
+        // The event is durable, the watermark is not: opening must fold it in
+        // before the step can look re-runnable.
         std::process::exit(86);
     }
 }
@@ -1736,14 +1625,13 @@ fn create_event_schema(connection: &Connection) -> Result<(), LedgerError> {
              ON events(run_id, seq);
          CREATE INDEX IF NOT EXISTS events.events_step_idx
              ON events(run_id, step_id, attempt, seq);
-         -- «Che cosa è successo fra le due e le tre» era l'unica delle domande
-         -- previste che nessun indice serviva: si leggeva il registro intero.
-         -- Misurato il 28/08/2026 su un registro finto da un milione di eventi,
-         -- accendendo e spegnendo questo indice: 81,93 ms di scansione contro
-         -- 0,05 ms, cioè **1.640 volte**, per 2,8% di spazio in più.
-         -- Alle 112 voci di oggi non si sente; si sentirà, e allora l'indice
-         -- c'è già — aggiungerlo dopo vuol dire aggiungerlo quando qualcuno si
-         -- è già chiesto perché il cruscotto ci mette.
+         -- \"What happened between two and three\" was the only expected
+         -- question no index served: it read the whole log. Measured on a
+         -- synthetic million-event log by switching this index on and off:
+         -- 81.93 ms of scan against 0.05 ms — **1,640 times** — for 2.8% more
+         -- space. At today's 112 entries it does not show; it will, and adding
+         -- it then means adding it once somebody has asked why the dashboard
+         -- takes so long.
          CREATE INDEX IF NOT EXISTS events.events_time_idx
              ON events(occurred_at);
          CREATE TRIGGER IF NOT EXISTS events.events_append_only_update
@@ -1858,12 +1746,13 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              written_at INTEGER NOT NULL,
              PRIMARY KEY (collection, key)
          );
-         -- I processi che Sailor ha avviato — guasto 4. Nasce completa, quindi
-         -- un deposito già esistente la riceve da questo `IF NOT EXISTS` e non
-         -- da `add_missing_projection_columns`: non ci sono colonne da
-         -- aggiungere a una tabella che prima non c'era, e per la stessa
-         -- ragione `PROJECTION_SCHEMA_VERSION` non si muove. Il guasto 24 —
-         -- colonne nuove con la versione ferma — riguarda il caso opposto.
+         -- The processes Sailor started. Born complete, so an existing store
+         -- gets it from this `IF NOT EXISTS` and not from
+         -- `add_missing_projection_columns`: there are no columns to add to a
+         -- table that did not exist before, and for the same reason
+         -- `PROJECTION_SCHEMA_VERSION` does not move. The opposite case — new
+         -- columns with the version standing still — is the one that broke
+         -- every read, and it is written above that constant.
          CREATE TABLE IF NOT EXISTS processes (
              process_id TEXT PRIMARY KEY,
              pid INTEGER NOT NULL,
@@ -1903,8 +1792,8 @@ fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError>
              ON snapshots(run_id, step_id, phase);
          CREATE UNIQUE INDEX IF NOT EXISTS snapshots_phase_idx
              ON snapshots(run_id, IFNULL(step_id, ''), phase);
-         -- «Chi tiene questa porta» è la domanda con cui il guasto 4 si è
-         -- presentato, quindi ha il suo indice invece di una scansione.
+         -- \"Who holds this port\" is the question the orphan-process fault
+         -- showed up as, so it gets its own index instead of a scan.
          CREATE INDEX IF NOT EXISTS processes_port_idx
              ON processes(port, ended_at);
          CREATE INDEX IF NOT EXISTS processes_open_idx
@@ -1913,19 +1802,18 @@ fn create_projection_indexes(connection: &Connection) -> Result<(), LedgerError>
     Ok(())
 }
 
-/// Porta la proiezione di un deposito già esistente alla versione corrente
-/// aggiungendo le colonne opzionali nate dopo di lui. Non è una catena di
-/// migrazioni numerate: ogni colonna si aggiunge se manca, quindi la stessa
-/// funzione porta a destinazione un deposito di qualunque versione passata,
-/// e rieseguirla non fa niente. Nessuna invalida le proiezioni esistenti né
-/// obbliga a rileggere il registro degli eventi — i valori dei record già
-/// scritti restano nulli, che è esattamente ciò che erano.
+/// Brings an existing store's projection up to the current version by adding
+/// the optional columns born after it. Not a chain of numbered migrations: each
+/// column is added if missing, so the same function carries a store of any past
+/// version home, and re-running it does nothing. None of this invalidates the
+/// existing projections or forces a re-read of the event log — the values of
+/// already-written records stay null, which is exactly what they were.
 fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
     for (column, kind) in [
-        // versione 2
+        // version 2
         ("bytes_seen", "INTEGER"),
         ("bytes_discarded", "INTEGER"),
-        // versione 3: chi teneva il passo, e se rifarlo è sicuro
+        // version 3: who held the step, and whether redoing it is safe
         ("held_by_pid", "INTEGER"),
         ("species", "TEXT"),
     ] {
@@ -1933,12 +1821,12 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
             transaction.execute(&format!("ALTER TABLE steps ADD COLUMN {column} {kind}"), [])?;
         }
     }
-    // versione 4: i conteggi e i prezzi di una chiamata possono essere ignoti.
+    // version 4: a call's counts and prices may be unknown.
     relax_model_calls(transaction)?;
-    // versione 5: la cache non è una sola voce. Leggerla e scriverla sono due
-    // gesti con due prezzi, e quello che mancava — la scrittura — è il più caro.
-    // Vanno in coda, nello stesso ordine in cui stanno nel `CREATE TABLE`: le
-    // righe si scrivono per posizione.
+    // version 5: the cache is not one entry. Reading it and writing it are two
+    // gestures with two prices, and the missing one — the write — is the dearer.
+    // They go at the end, in the same order as in the `CREATE TABLE`: rows are
+    // written by position.
     for (column, kind) in [
         ("cache_write_tokens", "TEXT"),
         ("cache_write_long_tokens", "TEXT"),
@@ -1952,62 +1840,55 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
             )?;
         }
     }
-    // versione 6: i turni. Si paga per turno, e nessuna colonna li contava.
+    // version 6: turns. You pay per turn, and no column counted them.
     if !column_exists(transaction, "model_calls", "turns")? {
         transaction.execute("ALTER TABLE model_calls ADD COLUMN turns TEXT", [])?;
     }
-    // versione 7: la sessione. Senza una colonna dove posarla, «riprendi la
-    // sessione del passo prima» non si può nemmeno formulare — e la costante
-    // qui sopra va alzata insieme, o su un deposito già esistente questa riga
-    // non gira mai (è il guasto che il commento di `PROJECTION_SCHEMA_VERSION`
-    // racconta, ed è costato una mattina il 30/08/2026).
+    // version 7: the session. A chain of four steps read 2,545,109 tokens from
+    // cache to look at the same tree four times; the cure is the second step
+    // continuing the first one's session, and continuing it means knowing its
+    // name. Without a column to put the name in, "resume the previous step's
+    // session" cannot even be expressed — and the constant above goes up with
+    // it, or on an existing store this line never runs at all.
     if !column_exists(transaction, "model_calls", "session_id")? {
         transaction.execute("ALTER TABLE model_calls ADD COLUMN session_id TEXT", [])?;
     }
-    // versione 8: l'identità con cui il processo è partito, al posto delle due
-    // colonne che venivano da una tabella `current_mandate` che non esiste più.
+    // version 8: the identity the process started with, replacing two columns
+    // left over from a `current_mandate` table that no longer exists.
     //
-    // **UN RINOMINO E NON UNA COLONNA IN CODA, E IL POSTO È IL PUNTO.** Chi legge
-    // la proiezione la legge **per posizione**: `mandate_name` stava alla
-    // sedicesima, e `engine_identity` deve stare lì. Aggiungerla in fondo e
-    // lasciare la vecchia darebbe due colonne che dicono la stessa cosa in due
-    // modi, cioè la prossima divergenza silenziosa.
-    //
-    // Il testo già scritto resta dov'è: si rilegge come
-    // `EngineIdentity::Unrecorded`, che è la sola cosa vera che si possa dire di
-    // una riga scritta quando quel campo sapeva ancora mentire.
+    // **A RENAME, NOT A COLUMN AT THE END.** Readers go **by position**:
+    // `mandate_name` was the sixteenth and `engine_identity` must sit there;
+    // keeping both would say one thing in two ways — the next silent divergence.
     if column_exists(transaction, "model_calls", "mandate_name")?
         && !column_exists(transaction, "model_calls", "engine_identity")?
     {
+        // The text already written stays where it is and reads back as
+        // `EngineIdentity::Unrecorded`, the only true thing to say of a row
+        // written while that field could still lie.
         transaction.execute(
             "ALTER TABLE model_calls RENAME COLUMN mandate_name TO engine_identity",
             [],
         )?;
     }
-    // E `mandate_version` se ne va: era vuota per costruzione — un profilo non ha
-    // una versione — e una colonna sempre vuota è il vuoto che questo lavoro
-    // esiste per togliere.
+    // And `mandate_version` goes: it was empty by construction — a profile has
+    // no version — and an always-empty column is the emptiness this work exists
+    // to remove.
     if column_exists(transaction, "model_calls", "mandate_version")? {
         transaction.execute("ALTER TABLE model_calls DROP COLUMN mandate_version", [])?;
     }
     Ok(())
 }
 
-/// Rifà `model_calls` nella forma in cui i conteggi e i prezzi ammettono NULL,
-/// conservando le righe già scritte.
+/// Rebuilds `model_calls` in the shape where counts and prices admit NULL,
+/// keeping the rows already written.
 ///
-/// **PERCHÉ UN RIFACIMENTO E NON UN `ALTER`.** SQLite non sa togliere un
-/// `NOT NULL` da una colonna esistente: l'unica strada è creare la forma nuova,
-/// copiarci dentro le righe, e sostituire la vecchia. E non si passa dalla
-/// ricostruzione da eventi — che pure esiste — perché `rebuild_projections_in`
-/// rifiuta un registro potato: su un deposito a cui qualcuno ha già tagliato la
-/// coda degli eventi quella strada non arriva in fondo, e si porterebbe via
-/// anche le righe che si stanno cercando di salvare.
-///
-/// Il riconoscimento passa da `total_tokens`, che nasce con questa versione:
-/// se c'è, il rifacimento è già stato fatto, e rieseguire questa funzione non
-/// fa niente.
+/// **A REBUILD AND NOT AN `ALTER`**: SQLite cannot drop a `NOT NULL` from an
+/// existing column. Not the event replay either — `rebuild_projections_in`
+/// refuses a pruned log, so on a pruned store it would carry away these rows.
 fn relax_model_calls(transaction: &Transaction<'_>) -> Result<(), LedgerError> {
+    // Recognition keys off `total_tokens` because that column is born with this
+    // version: if it is there the rebuild has already happened, so running this
+    // function again does nothing at all.
     if column_exists(transaction, "model_calls", "total_tokens")? {
         return Ok(());
     }
@@ -2171,12 +2052,12 @@ fn set_projection_watermark(transaction: &Transaction<'_>, seq: i64) -> Result<(
 }
 
 fn append_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(), LedgerError> {
-    // Da qui l'evento va in `events.db`, mentre la successiva proiezione va in
-    // `state.db`. Con WAL SQLite non rende atomico il commit dei due database
-    // collegati. Il nuovo evento non viene mai proiettato nella transazione che
-    // lo inserisce; il watermark avanza solo nella transazione seguente. Uno
-    // schianto può lasciare la proiezione indietro, mai davanti al registro, e
-    // l'apertura applica soltanto la coda che manca.
+    // From here the event goes into `events.db` while its projection goes into
+    // `state.db`. With WAL, SQLite does not make the commit of the two attached
+    // databases atomic. A new event is never projected in the transaction that
+    // inserts it; the watermark advances only in the following one. A crash can
+    // leave the projection behind the log, never ahead of it, and opening
+    // applies only the missing tail.
     let (kind, run_id, step_id, attempt, epoch, occurred_at) = event_metadata(event);
     let payload = serde_json::to_string(event)?;
     transaction.execute(
@@ -2255,12 +2136,22 @@ fn event_metadata(event: &StoredEvent) -> EventMetadata<'_> {
             None,
             Some(record.ended_at),
         ),
-        StoredEvent::InventoryScanned(scan) => {
-            ("inventory_scanned", None, None, None, None, Some(scan.taken_at))
-        }
-        StoredEvent::RecordWritten(record) => {
-            ("record_written", None, None, None, None, Some(record.written_at))
-        }
+        StoredEvent::InventoryScanned(scan) => (
+            "inventory_scanned",
+            None,
+            None,
+            None,
+            None,
+            Some(scan.taken_at),
+        ),
+        StoredEvent::RecordWritten(record) => (
+            "record_written",
+            None,
+            None,
+            None,
+            None,
+            Some(record.written_at),
+        ),
         StoredEvent::Trace(record) => ("trace", None, None, None, None, Some(record.occurred_at)),
     }
 }
@@ -2280,13 +2171,12 @@ fn project_event(transaction: &Transaction<'_>, event: &StoredEvent) -> Result<(
     }
 }
 
-/// L'avvio di un processo entra nella tabella che risponde a «cosa è acceso».
+/// A process start goes into the table that answers "what is running".
 ///
-/// **Riavviare con lo stesso nome sostituisce la riga.** Chi rilancia la
-/// modalità viva vuole sapere qual è il processo di adesso, non collezionare i
-/// suoi antenati: la storia sta nel registro degli eventi, dove ogni avvio
-/// resta con la sua data. Senza questa sostituzione l'elenco «ancora acceso»
-/// riempirebbe di fantasmi ogni riavvio, e nessuno lo leggerebbe più.
+/// **Restarting under the same name replaces the row.** Whoever relaunches live
+/// mode wants today's process, not a collection of its ancestors: the history
+/// is in the event log, where every start keeps its date. Without this, every
+/// restart fills the "still running" list with ghosts, and nobody reads it.
 fn project_process_started(
     transaction: &Transaction<'_>,
     record: &ProcessRecord,
@@ -2318,12 +2208,11 @@ fn project_process_started(
     Ok(())
 }
 
-/// La chiusura di un processo che nessuno aveva registrato non crea una riga.
+/// Closing a process nobody had registered creates no row.
 ///
-/// **È voluto, e il silenzio è la risposta giusta qui.** Inventare una riga da
-/// una chiusura vorrebbe dire scrivere un processo di cui non si sa né il
-/// comando né la porta né chi l'ha acceso: una voce che sembra una misura e non
-/// lo è. Il registro degli eventi conserva comunque la chiusura.
+/// **Deliberate, and silence is the right answer here.** Inventing a row from a
+/// close would mean writing a process with no known command, port or owner: an
+/// entry that looks like a measure and is not. The event log keeps the close.
 fn project_process_ended(
     transaction: &Transaction<'_>,
     record: &ProcessEndRecord,
@@ -2341,10 +2230,9 @@ fn read_process_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessRecord> 
         process_id: row.get(0)?,
         pid: row.get(1)?,
         command: row.get(2)?,
-        // Una riga scritta a mano nel deposito potrebbe non essere JSON: si
-        // legge come nessun argomento invece di far morire la lettura di tutto
-        // l'elenco. Chi cerca un orfano ha bisogno dell'elenco, non della
-        // perfezione di una riga.
+        // A row hand-written into the store might not be JSON: it reads as no
+        // arguments rather than killing the read of the whole list. Whoever
+        // hunts an orphan needs the list, not one perfect row.
         args: serde_json::from_str(&args).unwrap_or_default(),
         working_directory: row.get(4)?,
         port: row.get(5)?,
@@ -2358,17 +2246,13 @@ fn read_process_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ProcessRecord> 
 const PROCESS_COLUMNS: &str = "process_id, pid, command, args, working_directory, port, \
                                purpose, started_by, run_id, started_at";
 
-/// Una voce, un valore: l'ultima scrittura sostituisce la precedente.
+/// One entry, one value: the latest write replaces the previous one.
 ///
-/// La storia non si perde e non va qui: sta nel registro, dove ogni
-/// `record_written` resta con la sua data e con chi l'ha scritto. Questa
-/// tabella risponde a una domanda sola — *adesso*, quanto vale questa voce — e
-/// una tabella che risponde a una domanda sola non può dare due risposte in
-/// disaccordo.
-fn project_record(
-    transaction: &Transaction<'_>,
-    record: &StoreRecord,
-) -> Result<(), LedgerError> {
+/// The history is not lost and does not belong here: it is in the log, where
+/// every `record_written` keeps its date and its author. This table answers one
+/// question — *right now*, what is this entry worth — and a table answering one
+/// question cannot give two answers that disagree.
+fn project_record(transaction: &Transaction<'_>, record: &StoreRecord) -> Result<(), LedgerError> {
     transaction.execute(
         "INSERT INTO store (collection, key, value, written_by, written_at)
          VALUES (?1, ?2, ?3, ?4, ?5)
@@ -2394,9 +2278,9 @@ fn read_failure_class_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FailureCl
     })
 }
 
-/// Taglia un testo a un tetto di byte senza spezzare un carattere, e dice se
-/// ha tagliato. Il «se» va restituito, non dedotto dalla lunghezza: chi legge
-/// una diagnosi troncata senza saperlo la legge come completa.
+/// Clips a text to a byte cap without splitting a character, and says whether
+/// it clipped. The "whether" is returned, not inferred from the length: whoever
+/// reads a truncated diagnosis unknowingly reads it as complete.
 fn clip_to_bytes(value: String, max_bytes: usize) -> (String, bool) {
     if value.len() <= max_bytes {
         return (value, false);
@@ -2413,11 +2297,11 @@ fn read_store_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoreRecord> {
     Ok(StoreRecord {
         collection: row.get(0)?,
         key: row.get(1)?,
-        // Il valore è entrato come JSON e deve uscire com'è entrato. Se il testo
-        // sul disco non si rilegge — un deposito toccato a mano, un file
-        // troncato — si restituisce la stringa grezza invece di far cadere la
-        // lettura: chi legge vede qualcosa di sbagliato e se ne accorge, mentre
-        // un errore qui spegnerebbe la riga per una voce sola.
+        // The value went in as JSON and must come out as it went in. If the
+        // text on disk no longer parses — a store touched by hand, a truncated
+        // file — the raw string comes back instead of failing the read: the
+        // reader sees something wrong and notices, whereas an error here would
+        // kill the whole row for the sake of one entry.
         value: serde_json::from_str(&raw).unwrap_or(Value::String(raw)),
         written_by: row.get(3)?,
         written_at: row.get(4)?,
@@ -2510,9 +2394,9 @@ fn project_model_call(
     record: &ModelCallRecord,
 ) -> Result<(), LedgerError> {
     transaction.execute(
-        // Le colonne sono nominate una per una di proposito: un `VALUES` nudo si
-        // regge sull'ordine della tabella, e la colonna aggiunta dopo — che
-        // arriva sempre — la sposta senza che niente diventi rosso.
+        // The columns are named one by one on purpose: a bare `VALUES` relies
+        // on the table's order, and the column added later — there is always
+        // one — shifts it without anything turning red.
         "INSERT INTO model_calls (
              call_id, run_id, step_id, purpose, cli, requested_model, actual_model,
              input_tokens, output_tokens, cached_tokens, cost_micros, price_currency,
@@ -2554,8 +2438,8 @@ fn project_model_call(
             record.cli,
             record.requested_model,
             record.actual_model,
-            // I conteggi restano colonne di testo per non perdere precisione
-            // oltre 2^53; un conteggio ignoto è un NULL, non la stringa "0".
+            // Counts stay text columns so precision beyond 2^53 is not lost; an
+            // unknown count is a NULL, not the string "0".
             record.input_tokens.map(|n| n.to_string()),
             record.output_tokens.map(|n| n.to_string()),
             record.cached_tokens.map(|n| n.to_string()),
@@ -2564,6 +2448,9 @@ fn project_model_call(
             record.input_price_micros_per_million,
             record.output_price_micros_per_million,
             record.cached_price_micros_per_million,
+            // "If an AI process starts there must be a profile associated with
+            // it": this column is the requirement, and without it no diagnosis
+            // can say what credentials a process ran under.
             record.engine_identity.to_column(),
             serde_json::to_string(&record.retry_chain)?,
             record.error_type,
@@ -2582,21 +2469,6 @@ fn project_model_call(
     Ok(())
 }
 
-/// Una scansione dell'inventario diventa lo stato di ciò che c'è, ciò che è
-/// tornato e ciò che non c'è più.
-///
-/// TRE GESTI, IN QUEST'ORDINE, e l'ordine è il punto:
-/// 1. ogni voce vista aggiorna `last_seen` e cancella un'eventuale sparizione —
-///    una cosa che ricompare non è più sparita, e tenerne il segno la
-///    mostrerebbe morta per sempre;
-/// 2. le voci **non** viste in questa scansione, e non ancora marcate, prendono
-///    l'istante di questa scansione come momento della sparizione;
-/// 3. `first_seen` non si tocca mai dopo la prima volta: è l'unica data che
-///    risponde a «da quando ce l'abbiamo», e riscriverla la perderebbe.
-///
-/// SI CANCELLA SOLO DOPO AVER SCRITTO, non prima: una proiezione che azzera e
-/// riempie mostra un istante in cui l'inventario è vuoto, e chi legge in quel
-/// momento — la pagina, un flusso — vede una macchina senza niente installato.
 fn read_inventory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InventoryChange> {
     Ok(InventoryChange {
         kind: row.get(0)?,
@@ -2611,11 +2483,23 @@ fn read_inventory_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<InventoryChan
     })
 }
 
+/// An inventory scan becomes the state of what is, what came back, what is gone.
+///
+/// **THREE GESTURES, IN THIS ORDER, AND THE ORDER IS THE POINT.** Nothing is
+/// cleared before it has been written: a projection that wipes and refills
+/// shows an instant with an empty inventory, and whoever reads at that instant
+/// — the page, a flow — sees a machine with nothing installed on it.
 fn project_inventory(
     transaction: &Transaction<'_>,
     scan: &InventoryScan,
 ) -> Result<(), LedgerError> {
+    // One: every entry seen refreshes `last_seen` and clears any vanish mark.
+    // A thing that reappears is no longer gone, and keeping the mark would show
+    // it dead for ever — to whoever prunes from this list, dead means deletable.
     for item in &scan.items {
+        // Three: `first_seen` is missing from the `DO UPDATE SET` on purpose.
+        // It is never rewritten after the first time, being the only date that
+        // answers "since when have we had this".
         transaction.execute(
             "INSERT INTO inventory_items
              (kind, name, path, origin, reach, reason, first_seen, last_seen, gone_at)
@@ -2634,6 +2518,8 @@ fn project_inventory(
             ],
         )?;
     }
+    // Two: the entries this scan did **not** see, and that are not already
+    // marked, take this scan's instant as the moment they vanished.
     transaction.execute(
         "UPDATE inventory_items SET gone_at = ?1
          WHERE last_seen < ?1 AND gone_at IS NULL",
@@ -2822,9 +2708,9 @@ fn species_name(species: StepSpecies) -> &'static str {
     }
 }
 
-/// Una specie che il deposito non riconosce è un errore, non un ripiego
-/// silenzioso: leggerla come `hand_to_human` sarebbe prudente per il singolo
-/// passo e falso per chi legge la storia.
+/// A species the store does not recognise is an error, not a silent fallback:
+/// reading it as `hand_to_human` would be prudent for the single step and false
+/// for whoever reads the history.
 fn parse_species(value: &str) -> rusqlite::Result<StepSpecies> {
     match value {
         "repeatable" => Ok(StepSpecies::Repeatable),
@@ -2867,25 +2753,22 @@ fn parse_attempt_relation(value: &str) -> rusqlite::Result<AttemptRelation> {
     }
 }
 
-/// Le colonne di `model_calls` nell'ordine in cui il dump le mette, e **nomi**
-/// invece di posizioni.
+/// The columns of `model_calls` in the order the dump puts them, by **name**.
 ///
-/// **PERCHÉ È PUBBLICA.** Chi legge il dump lo legge per posizione: `ui::parse`
-/// da una parte, e — finché è esistita — una seconda copia dentro `actions`.
-/// Due copie che sbagliassero insieme si sarebbero confermate a vicenda, e
-/// nessuna prova l'avrebbe visto. Questo elenco è l'ancora fuori da tutte e due:
-/// chi legge per posizione ci si può misurare contro, e una colonna spostata
-/// diventa rossa qui invece di far comparire un prezzo al posto di un token.
+/// **PUBLIC ON PURPOSE.** `ui::parse` reads the dump by position, and so did a
+/// second copy inside `actions` while it existed: two copies getting it wrong
+/// together confirm each other, and no test sees it. This list is the anchor
+/// outside both — a moved column turns red here.
 pub const MODEL_CALL_DUMP_COLUMNS: &str = "call_id,run_id,step_id,purpose,cli,requested_model,actual_model,input_tokens,output_tokens,cached_tokens,cost_micros,price_currency,input_price_micros_per_million,output_price_micros_per_million,cached_price_micros_per_million,engine_identity,retry_chain,error_type,started_at,ended_at,total_tokens,declared_cost_micros,cache_write_tokens,cache_write_long_tokens,cache_write_price_micros_per_million,cache_write_long_price_micros_per_million,turns,session_id";
 
 fn dump_table(connection: &Connection, table: &str) -> Result<Value, LedgerError> {
     let columns = match table {
         "runs" => "run_id,kind,entity,parent_run_id,started_by,status,total_cost_micros,error,started_at,ended_at",
         "steps" => "run_id,step_id,attempt,epoch,deps,input_digest,input,gates,attempt_relation,started_at,outcome,output,said,failure_class,ended_at,bytes_seen,bytes_discarded,held_by_pid,species,checkpointed",
-        // Le due colonne nate con la versione 4 stanno in coda, e non è un
-        // disordine: chi legge questo dump lo fa per posizione, e infilarle in
-        // mezzo sposterebbe ogni indice a valle senza che niente se ne accorga
-        // finché un token non compare al posto di un prezzo.
+        // The two columns born with version 4 sit at the end, and that is not
+        // untidiness: readers of this dump go by position, and slotting them in
+        // the middle would shift every index downstream without anything
+        // noticing until a token appeared where a price should be.
         "model_calls" => MODEL_CALL_DUMP_COLUMNS,
         "snapshots" => "snapshot_id,run_id,step_id,phase,before_state,after_state,created_at",
         _ => return Err(LedgerError::InvalidRecord("unknown projection".to_owned())),

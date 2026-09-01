@@ -4,25 +4,24 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# Il tracciamento dei terminali: chi si è presentato, su quale tty, dentro quale
-# albero, e cosa c'è sulla macchina adesso.
+# Terminal tracking: who announced themselves, on which tty, in which worktree,
+# and what is on the machine right now.
 #
-# **UN CRATE A SÉ, E UN FILE SQLite A SÉ.** Le sessioni di terminale non sono le
-# corse dei flussi: hanno un'altra chiave, un altro ciclo di vita e un'altra
-# ragione di cambiare. Tenerle in `state.db` vorrebbe dire alzare
-# `PROJECTION_SCHEMA_VERSION` — un numero che due cantieri paralleli alzerebbero
-# ognuno al proprio successivo, e la divergenza non darebbe nessun errore: il
-# deposito di chi arriva secondo si dichiarerebbe «versione non supportata» su
-# una macchina dove non è cambiato niente. Qui la versione è nostra e non
-# interferisce con nessuno.
+# **ITS OWN CRATE, AND ITS OWN SQLite FILE.** Terminal sessions are not flow
+# runs: another key, another lifecycle, another reason to change. Keeping them
+# in `state.db` would mean raising `PROJECTION_SCHEMA_VERSION` — a number two
+# parallel work-streams would each raise to their own next value, and the
+# divergence would give no error at all: the store of whoever arrives second
+# would declare itself an unsupported version on a machine where nothing had
+# changed. Here the version is ours and interferes with nobody.
 #
-# `ledger` serve per una funzione sola, `default_directory()`: dove vive il
-# deposito di questa macchina. Ricopiare quel percorso è il guasto 19 — la casa
-# in due posti, e nessuna delle due che si dichiara sbagliata.
+# `ledger` is here for one function, `default_directory()`: where this machine's
+# store lives. Copying that path out is fault 19 — the home in two places, with
+# neither of the two declaring itself the wrong one.
 #
-# `libc` per `ttyname`: qual è il terminale di questo processo. È una domanda
-# sul proprio descrittore, non una domanda sulla macchina, quindi non passa da
-# `ps` e non può essere negata in silenzio. Era già nel `Cargo.lock`.
+# `libc` is here for `ttyname`: a question about this process's own descriptor
+# rather than about the machine, so it never goes through `ps` and cannot be
+# denied silently.
 [dependencies]
 ledger = { path = "../ledger" }
 libc = "0.2"
@@ -30,8 +29,8 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# Solo per la prova che scrive a mano una `user_version` più alta della nostra
-# e guarda che il file venga rifiutato per nome: senza scriverla a mano, quel
-# ramo non lo percorre nessuno finché non è troppo tardi.
+# Only for the test that writes a `user_version` higher than ours by hand and
+# checks the file is refused by name: without writing it by hand, nobody walks
+# that branch until it is too late.
 [dev-dependencies]
 rusqlite = { version = "0.37", features = ["bundled"] }

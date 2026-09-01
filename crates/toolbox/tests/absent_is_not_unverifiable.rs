@@ -1,10 +1,9 @@
-//! Le prove del rilevamento, su una macchina finta costruita qui dentro.
+//! The detection tests, on a made-up machine built in here.
 //!
-//! PERCHÉ NON SI PROVA SULLA MACCHINA VERA. Una prova che dice «claude c'è»
-//! passa da me e cade da chiunque altro, e soprattutto non poteva venire
-//! diversa: non prova il rilevamento, prova la mia installazione. Qui il
-//! percorso, la casa e le variabili sono una cartella temporanea, e ogni caso —
-//! il presente, l'assente, il non verificabile — si costruisce.
+//! WHY NOT ON THE REAL MACHINE. A test asserting "claude is here" passes for its
+//! author and falls for everyone else, and could not have come out otherwise: it
+//! tests an installation, not the detection. Here the search path, home and the
+//! variables are a temporary directory, and every case gets built.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -15,7 +14,7 @@ use toolbox::{descriptor::Source, Catalog, Machine, Presence, VersionReading};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// Una cartella tutta nostra, che si porta via quello che ci abbiamo messo.
+/// A directory of our own, which takes away what we put in it.
 struct Sandbox {
     root: PathBuf,
 }
@@ -23,35 +22,32 @@ struct Sandbox {
 impl Sandbox {
     fn new(name: &str) -> Sandbox {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let root = std::env::temp_dir().join(format!(
-            "toolbox-{name}-{}-{n}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("toolbox-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).expect("la cartella di prova si crea");
+        fs::create_dir_all(&root).expect("the test directory is created");
         Sandbox { root }
     }
 
     fn dir(&self, name: &str) -> PathBuf {
         let path = self.root.join(name);
-        fs::create_dir_all(&path).expect("sottocartella");
+        fs::create_dir_all(&path).expect("subdirectory");
         path
     }
 
     fn write(&self, name: &str, content: &str) -> PathBuf {
         let path = self.root.join(name);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).expect("cartella del file");
+            fs::create_dir_all(parent).expect("the file's directory");
         }
-        fs::write(&path, content).expect("scrittura del file di prova");
+        fs::write(&path, content).expect("writing the test file");
         path
     }
 }
 
 impl Drop for Sandbox {
     fn drop(&mut self) {
-        // Una cartella resa illeggibile di proposito va rimessa a posto, o non
-        // si cancella più e la prossima esecuzione se la ritrova addosso.
+        // A directory made unreadable on purpose has to be put back, or it never
+        // gets deleted and the next run inherits it.
         restore(&self.root);
         let _ = fs::remove_dir_all(&self.root);
     }
@@ -69,11 +65,11 @@ fn restore(dir: &Path) {
     }
 }
 
-/// Un eseguibile finto che stampa quello che gli diciamo di stampare.
+/// A fake executable that prints whatever we tell it to print.
 fn fake_binary(dir: &Path, name: &str, script: &str) -> PathBuf {
     let path = dir.join(name);
-    fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("scrittura dell'eseguibile finto");
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("bit di esecuzione");
+    fs::write(&path, format!("#!/bin/sh\n{script}\n")).expect("writing the fake executable");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("execute bit");
     path
 }
 
@@ -92,7 +88,7 @@ fn catalog_from(path: &Path) -> Catalog {
     Catalog::load(&[Source::File(path.to_path_buf())])
 }
 
-// ── uno strumento presente, riconosciuto col suo descrittore ────────────
+// ── a present tool, recognised by the descriptor that named it ──────────
 
 #[test]
 fn a_present_tool_is_found_with_the_descriptor_that_named_it() {
@@ -110,8 +106,9 @@ fn a_present_tool_is_found_with_the_descriptor_that_named_it() {
 
     let found = &report.findings[0];
     assert_eq!(found.name, "attrezzo");
-    // DA QUALE DESCRITTORE, E DA QUALE FILE: senza queste due righe l'elenco non
-    // si può smentire, e un elenco che non si smentisce non si corregge.
+    // FROM WHICH DESCRIPTOR, AND FROM WHICH FILE: without these two lines the
+    // list cannot be contradicted, and a list nobody can contradict never gets
+    // corrected.
     assert_eq!(found.descriptor_id, "attrezzo");
     assert_eq!(found.descriptor_source, descriptors.to_string_lossy());
     assert!(
@@ -129,14 +126,14 @@ fn a_present_tool_is_found_with_the_descriptor_that_named_it() {
     );
 }
 
-/// Un nome che c'è ma non è eseguibile non è il binario cercato: la shell fa
-/// così, e un rilevamento che dicesse il contrario manderebbe un flusso a
-/// invocare un file di testo.
+/// A name that is there but is not executable is not the binary being looked
+/// for: the shell behaves this way, and a detection saying otherwise would send
+/// a flow off to invoke a text file.
 #[test]
 fn a_file_without_the_execute_bit_is_not_the_tool() {
     let sandbox = Sandbox::new("notexec");
     let bin_dir = sandbox.dir("bin");
-    fs::write(bin_dir.join("attrezzo"), "non sono un programma").unwrap();
+    fs::write(bin_dir.join("attrezzo"), "I am not a program").unwrap();
     fs::set_permissions(bin_dir.join("attrezzo"), fs::Permissions::from_mode(0o644)).unwrap();
     let descriptors = sandbox.write(
         "tools.json",
@@ -151,7 +148,7 @@ fn a_file_without_the_execute_bit_is_not_the_tool() {
     );
 }
 
-// ── uno strumento assente, riconosciuto come assente ────────────────────
+// ── a missing tool, recognised as missing ───────────────────────────────
 
 #[test]
 fn a_missing_tool_is_absent_not_unknown() {
@@ -167,7 +164,7 @@ fn a_missing_tool_is_absent_not_unknown() {
 
     match &report.findings[0].presence {
         Presence::Absent(reason) => assert!(reason.contains("mai-installato"), "{reason}"),
-        other => panic!("una cartella leggibile e vuota è una misura: {other:?}"),
+        other => panic!("a readable, empty directory is a measurement: {other:?}"),
     }
     assert!(report.findings[0].executable.is_none());
     assert!(matches!(
@@ -176,18 +173,18 @@ fn a_missing_tool_is_absent_not_unknown() {
     ));
 }
 
-// ── la distinzione che rende utile l'inventario ─────────────────────────
+// ── the distinction that makes the inventory useful ─────────────────────
 
-/// LA PROVA CHE PORTA IL CRATE. Stesso descrittore, stesso strumento assente,
-/// due mondi diversi: in uno le cartelle si leggono e la risposta è «non c'è»,
-/// nell'altro non si leggono e la risposta è «non lo so». Se il codice
-/// rispondesse `Absent` in tutti e due, questa prova diventerebbe rossa qui —
-/// che è esattamente quello che deve succedere.
+/// THE TEST THIS CRATE STANDS ON. Same descriptor, same missing tool, two
+/// different worlds: in one the directories read and the answer is "not here",
+/// in the other they do not and the answer is "I do not know". If the code
+/// answered `Absent` for both, this test would go red right here — which is
+/// exactly what must happen.
 #[test]
 fn an_unreadable_path_is_undetermined_not_absent() {
     let sandbox = Sandbox::new("blocked");
-    let open = sandbox.dir("aperta");
-    let closed = sandbox.dir("chiusa");
+    let open = sandbox.dir("open");
+    let closed = sandbox.dir("closed");
     fs::set_permissions(&closed, fs::Permissions::from_mode(0o000)).unwrap();
     let descriptors = sandbox.write(
         "tools.json",
@@ -198,18 +195,18 @@ fn an_unreadable_path_is_undetermined_not_absent() {
     let visible = toolbox::detect(&catalog, &machine(vec![open.clone()], &sandbox.root));
     assert!(
         matches!(visible.findings[0].presence, Presence::Absent(_)),
-        "con la sola cartella leggibile la risposta è una misura: {:?}",
+        "with only the readable directory the answer is a measurement: {:?}",
         visible.findings[0].presence
     );
 
     let blind = toolbox::detect(&catalog, &machine(vec![open, closed], &sandbox.root));
     match &blind.findings[0].presence {
-        Presence::Undetermined(reason) => assert!(reason.contains("chiusa"), "{reason}"),
-        other => panic!("una cartella che non si legge non autorizza a dire «non c'è»: {other:?}"),
+        Presence::Undetermined(reason) => assert!(reason.contains("closed"), "{reason}"),
+        other => panic!("a directory that does not read does not license «not here»: {other:?}"),
     }
 }
 
-/// Nessuna cartella in cui cercare non è «non c'è»: è «non ho guardato».
+/// No directory to search in is not "not here": it is "I did not look".
 #[test]
 fn an_empty_search_path_is_undetermined() {
     let sandbox = Sandbox::new("nopath");
@@ -225,12 +222,12 @@ fn an_empty_search_path_is_undetermined() {
     );
 }
 
-/// La stessa distinzione sui percorsi, non solo sugli eseguibili: un file che
-/// non c'è e un file che non si può guardare sono due risposte diverse.
+/// The same distinction on paths, not only on executables: a file that is not
+/// there and a file that cannot be looked at are two different answers.
 #[test]
 fn a_path_probe_tells_missing_from_blocked() {
     let sandbox = Sandbox::new("pathprobe");
-    let closed = sandbox.dir("chiusa");
+    let closed = sandbox.dir("closed");
     fs::set_permissions(&closed, fs::Permissions::from_mode(0o000)).unwrap();
     let descriptors = sandbox.write(
         "tools.json",
@@ -242,10 +239,17 @@ fn a_path_probe_tells_missing_from_blocked() {
         ),
     );
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
-    // I nomi cercati sono dati della fixture e restano in italiano; le
-    // variabili che li tengono no.
-    let absent = report.findings.iter().find(|f| f.name == "assente").unwrap();
-    let covered = report.findings.iter().find(|f| f.name == "coperto").unwrap();
+    // The names looked for are fixture data; the variables holding them are not.
+    let absent = report
+        .findings
+        .iter()
+        .find(|f| f.name == "assente")
+        .unwrap();
+    let covered = report
+        .findings
+        .iter()
+        .find(|f| f.name == "coperto")
+        .unwrap();
     assert!(
         matches!(absent.presence, Presence::Absent(_)),
         "{:?}",
@@ -258,17 +262,21 @@ fn a_path_probe_tells_missing_from_blocked() {
     );
 }
 
-// ── la versione: chiesta, non chiesta, chiesta senza risposta ───────────
+// ── the version: asked, not asked, asked with no answer ─────────────────
 
-/// Uno strumento c'è ma non dice la sua versione: presente, e versione «non
-/// disponibile» col perché. Confonderla con l'assenza cancellerebbe dall'elenco
-/// uno strumento installato — è successo davvero su questa macchina con due
-/// righe di comando che si lamentano dei permessi prima di rispondere.
+/// A tool is there but does not report its version: present, with the version
+/// "unavailable" and the reason. Confusing that with absence would erase an
+/// installed tool from the list — it really happened, with command lines that
+/// complain about permissions before answering.
 #[test]
 fn a_present_tool_whose_version_fails_stays_present() {
     let sandbox = Sandbox::new("badversion");
     let bin_dir = sandbox.dir("bin");
-    fake_binary(&bin_dir, "scontroso", "echo 'permesso negato' 1>&2; exit 1");
+    fake_binary(
+        &bin_dir,
+        "scontroso",
+        "echo 'permission denied' 1>&2; exit 1",
+    );
     let descriptors = sandbox.write(
         "tools.json",
         r#"[{"id": "scontroso", "family": "tool", "detect": {"command": "scontroso"},
@@ -282,14 +290,14 @@ fn a_present_tool_whose_version_fails_stays_present() {
     assert!(found.presence.is_present(), "{:?}", found.presence);
     match &found.version {
         VersionReading::Unavailable(reason) => {
-            assert!(reason.contains("permesso negato"), "{reason}")
+            assert!(reason.contains("permission denied"), "{reason}")
         }
-        other => panic!("una versione che non si è ottenuta non è una versione: {other:?}"),
+        other => panic!("a version that was not obtained is not a version: {other:?}"),
     }
 }
 
-/// Un binario che non torna non ferma il rilevamento: il tetto lo tronca, e la
-/// versione diventa «non disponibile» col motivo.
+/// A binary that does not return does not stop the detection: the timeout cuts
+/// it off, and the version becomes "unavailable" with the reason.
 #[test]
 fn a_hanging_version_probe_does_not_hang_the_detection() {
     let sandbox = Sandbox::new("hang");
@@ -312,16 +320,15 @@ fn a_hanging_version_probe_does_not_hang_the_detection() {
     ));
     assert!(
         start.elapsed() < std::time::Duration::from_secs(20),
-        "il tetto deve troncare davvero: {:?}",
+        "the timeout must really cut it off: {:?}",
         start.elapsed()
     );
 }
 
-/// UN AVVERTIMENTO NON È UNA VERSIONE, e distinguerli è un dato del descrittore,
-/// non un ramo di codice per un binario in particolare. Il caso è vero: qui
-/// `ollama --version`, col servizio non raggiungibile, stampa prima un
-/// avvertimento — e senza questo campo quella riga finiva registrata come
-/// versione.
+/// A WARNING IS NOT A VERSION, and telling them apart is data in the descriptor,
+/// not a code branch for one binary in particular. The case is real: here
+/// `ollama --version`, with its service unreachable, prints a warning first —
+/// and without this field that line was recorded as the version.
 #[test]
 fn a_banner_before_the_version_is_skipped_by_the_descriptor() {
     let sandbox = Sandbox::new("banner");
@@ -329,7 +336,7 @@ fn a_banner_before_the_version_is_skipped_by_the_descriptor() {
     fake_binary(
         &bin_dir,
         "ciarliero",
-        "echo 'Attenzione: nessun servizio'; echo 'ciarliero version 9.9'",
+        "echo 'Warning: no service'; echo 'ciarliero version 9.9'",
     );
     let descriptors = sandbox.write(
         "tools.json",
@@ -355,23 +362,23 @@ fn a_banner_before_the_version_is_skipped_by_the_descriptor() {
     };
     assert_eq!(
         version("grezzo"),
-        VersionReading::Declared("Attenzione: nessun servizio".to_string()),
-        "senza il campo si prende la prima riga: è il comportamento che il campo esiste per correggere"
+        VersionReading::Declared("Warning: no service".to_string()),
+        "without the field the first line is taken: the behaviour the field exists to correct"
     );
     assert_eq!(
         version("preciso"),
         VersionReading::Declared("ciarliero version 9.9".to_string())
     );
-    // Una riga chiesta e mai stampata non è una versione: si dice, non si
-    // ripiega sulla prima che capita.
+    // A line asked for and never printed is not a version: that gets said, and
+    // there is no falling back on whichever line comes first.
     match version("sbagliato") {
         VersionReading::Unavailable(reason) => assert!(reason.contains("mai-scritto"), "{reason}"),
         other => panic!("{other:?}"),
     }
 }
 
-/// Con le esecuzioni spente non si esegue niente, e la versione lo dice invece
-/// di restare vuota.
+/// With executions switched off nothing gets run, and the version says so
+/// instead of staying empty.
 #[test]
 fn with_version_probes_off_nothing_is_executed() {
     let sandbox = Sandbox::new("noprobe");
@@ -395,10 +402,10 @@ fn with_version_probes_off_nothing_is_executed() {
         report.findings[0].version,
         VersionReading::NotAsked(_)
     ));
-    assert!(!probe.exists(), "spente, le esecuzioni non devono avvenire");
+    assert!(!probe.exists(), "switched off, no execution must happen");
 }
 
-// ── un descrittore malformato non fa cadere il rilevamento ──────────────
+// ── a malformed descriptor does not bring the detection down ────────────
 
 #[test]
 fn a_malformed_descriptor_does_not_take_the_others_down() {
@@ -416,56 +423,59 @@ fn a_malformed_descriptor_does_not_take_the_others_down() {
         ]"#,
     );
     let catalog = catalog_from(&descriptors);
-    // **DUE PERSE E UNA TENUTA, E PRIMA ERANO TRE PERSE.** `campo-inventato`
-    // stava in questo elenco: un campo che questa versione non conosce lo faceva
-    // cadere insieme a quelli davvero sbagliati, e con lui spariva lo strumento.
-    // È il guasto 8, e il senso di ripararlo è tutto qui — le due righe che non
-    // dicono chi sono o come si verificano restano perse, perché di loro non c'è
-    // niente da salvare.
+    // **TWO LOST AND ONE KEPT, AND IT USED TO BE THREE LOST.** `campo-inventato`
+    // was in that list: a field this version does not know took it down along
+    // with the genuinely broken ones, and the tool vanished with it. The two
+    // lines that say neither who they are nor how they are checked stay lost,
+    // because there is nothing in them to save.
     assert_eq!(
         catalog.problems.len(),
         2,
-        "due righe irrecuperabili, due segnalazioni: {:?}",
+        "two unrecoverable lines, two problems: {:?}",
         catalog.problems
     );
-    // La segnalazione dice DI CHI PARLA: «un descrittore è sbagliato» non si
-    // corregge, «`senza-famiglia` è sbagliato» sì.
+    // The problem says WHO IT IS ABOUT: "a descriptor is wrong" cannot be fixed,
+    // one naming the offending entry can.
     let about: Vec<&str> = catalog.problems.iter().map(|p| p.about.as_str()).collect();
     assert!(about.contains(&"senza-famiglia"), "{about:?}");
     assert!(about.contains(&"senza-verifica"), "{about:?}");
     assert!(
         !about.contains(&"campo-inventato"),
-        "un campo ignoto non è una voce persa: {about:?}"
+        "an unknown field is not a lost entry: {about:?}"
     );
     let noted: Vec<&str> = catalog.notes.iter().map(|p| p.about.as_str()).collect();
-    assert_eq!(noted, vec!["campo-inventato"], "ma non è nemmeno taciuto");
+    assert_eq!(
+        noted,
+        vec!["campo-inventato"],
+        "but it is not passed over in silence either"
+    );
 
     let report = toolbox::detect(&catalog, &machine(vec![bin_dir], &sandbox.root));
-    // Due adesso: quello buono, e quello che prima si perdeva — che risulta
-    // assente, perché il suo binario `x` non c'è davvero. Assente è una
-    // risposta; sparito non lo era.
+    // Two now: the good one, and the one that used to be lost — which comes back
+    // absent, because its binary `x` really is not there. Absent is an answer;
+    // vanished was not.
     assert_eq!(report.findings.len(), 2, "{:?}", report.findings);
     let good = report
         .findings
         .iter()
         .find(|f| f.name == "buono")
-        .expect("quello buono c'è");
+        .expect("the good one is there");
     assert_eq!(
         good.version,
         VersionReading::Declared("buono 1.0".to_string())
     );
-    // Le segnalazioni viaggiano col rapporto: chi legge deve sapere che l'elenco
-    // è parziale, o crederà che quello che manca non ci sia.
+    // The problems travel with the report: the reader must know the list is
+    // partial, or will believe what is missing does not exist.
     assert_eq!(report.problems.len(), 2);
 }
 
-/// Un file intero illeggibile non porta giù gli altri file di descrittori.
+/// One whole unreadable file does not take the other descriptor files down.
 #[test]
 fn a_broken_file_does_not_take_the_other_files_down() {
     let sandbox = Sandbox::new("brokenfile");
     let bin_dir = sandbox.dir("bin");
     fake_binary(&bin_dir, "buono", "echo ok");
-    let broken = sandbox.write("rotto.json", "{ questo non è json");
+    let broken = sandbox.write("rotto.json", "{ this is not json");
     let sound = sandbox.write(
         "sano.json",
         r#"[{"id": "buono", "family": "tool", "detect": {"command": "buono"}}]"#,
@@ -477,10 +487,10 @@ fn a_broken_file_does_not_take_the_other_files_down() {
     assert!(report.findings[0].presence.is_present());
 }
 
-// ── l'elenco è un dato: si estende, si riscrive, si spegne ──────────────
+// ── the list is data: extended, rewritten, switched off ─────────────────
 
-/// La promessa del progetto, provata: una riga di comando nuova si aggiunge
-/// scrivendo un descrittore, e nessuna riga di questo crate la nomina.
+/// The project's promise, tested: a new command line is added by writing a
+/// descriptor, and no line of this crate names it.
 #[test]
 fn a_new_cli_is_declared_without_recompiling_anything() {
     let sandbox = Sandbox::new("newcli");
@@ -499,14 +509,11 @@ fn a_new_cli_is_declared_without_recompiling_anything() {
     let found = &report.findings[0];
     assert_eq!(found.family, "ai_cli");
     assert!(found.presence.is_present(), "{:?}", found.presence);
-    assert_eq!(
-        found.version,
-        VersionReading::Declared("1.0.2".to_string())
-    );
+    assert_eq!(found.version, VersionReading::Declared("1.0.2".to_string()));
 }
 
-/// Chi arriva dopo vince sull'`id`, e `disabled` cancella. È il modo per
-/// togliere di mezzo un descrittore spedito senza ricompilare.
+/// Whoever arrives later wins on the `id`, and `disabled` deletes. It is the way
+/// to get a shipped descriptor out of the way without recompiling.
 #[test]
 fn a_user_file_overrides_and_switches_off_a_shipped_descriptor() {
     let sandbox = Sandbox::new("override");
@@ -514,13 +521,13 @@ fn a_user_file_overrides_and_switches_off_a_shipped_descriptor() {
     fake_binary(&bin_dir, "attrezzo", "echo 1.0");
     let shipped = sandbox.write(
         "spediti.json",
-        r#"[{"id": "attrezzo", "family": "tool", "label": "quello di serie",
+        r#"[{"id": "attrezzo", "family": "tool", "label": "the stock one",
              "detect": {"command": "attrezzo"}},
             {"id": "da-togliere", "family": "tool", "detect": {"command": "attrezzo"}}]"#,
     );
     let mine = sandbox.write(
         "miei.json",
-        r#"[{"id": "attrezzo", "family": "tool", "label": "il mio",
+        r#"[{"id": "attrezzo", "family": "tool", "label": "mine",
              "detect": {"command": "attrezzo"}},
             {"id": "da-togliere", "family": "tool", "detect": {"command": "attrezzo"},
              "disabled": true}]"#,
@@ -528,22 +535,19 @@ fn a_user_file_overrides_and_switches_off_a_shipped_descriptor() {
     let catalog = Catalog::load(&[Source::File(shipped), Source::File(mine.clone())]);
     let report = toolbox::detect(&catalog, &machine(vec![bin_dir], &sandbox.root));
     assert_eq!(report.findings.len(), 1, "{:?}", report.findings);
-    assert_eq!(report.findings[0].label, "il mio");
-    assert_eq!(
-        report.findings[0].descriptor_source,
-        mine.to_string_lossy()
-    );
+    assert_eq!(report.findings[0].label, "mine");
+    assert_eq!(report.findings[0].descriptor_source, mine.to_string_lossy());
 }
 
-/// I descrittori spediti col prodotto si caricano tutti: se uno di loro fosse
-/// scritto male, questa prova lo direbbe qui invece che sulla macchina di chi
-/// installa.
+/// The descriptors shipped with the product all load: if one of them were badly
+/// written, this test would say so here instead of on the machine of whoever
+/// installs it.
 #[test]
 fn the_shipped_descriptors_all_load() {
     let catalog = Catalog::load(&[Source::Builtin]);
     assert!(
         catalog.problems.is_empty(),
-        "i descrittori spediti non si leggono: {:?}",
+        "the shipped descriptors do not read: {:?}",
         catalog.problems
     );
     assert!(catalog.live().len() > 10, "{}", catalog.live().len());
@@ -553,11 +557,14 @@ fn the_shipped_descriptors_all_load() {
         .map(|l| l.descriptor.family.as_str())
         .collect();
     for expected in ["ai_cli", "mcp_server", "tool"] {
-        assert!(families.contains(&expected), "manca la famiglia {expected}");
+        assert!(
+            families.contains(&expected),
+            "the {expected} family is missing"
+        );
     }
 }
 
-// ── le voci scoperte leggendo una configurazione ────────────────────────
+// ── the entries discovered by reading a configuration ───────────────────
 
 #[test]
 fn servers_declared_in_a_config_file_are_discovered_one_by_one() {
@@ -575,7 +582,8 @@ fn servers_declared_in_a_config_file_are_discovered_one_by_one() {
     let report = toolbox::detect(&catalog_from(&descriptors), &machine(vec![], &sandbox.root));
     let names: Vec<&str> = report.findings.iter().map(|f| f.name.as_str()).collect();
     assert_eq!(names, vec!["context7", "socraticode"], "{names:?}");
-    // Ogni voce sa da dove viene: il descrittore e il file che la dichiara.
+    // Every entry knows where it came from: the descriptor and the file that
+    // declares it.
     assert_eq!(report.findings[0].descriptor_id, "server");
     assert!(
         matches!(&report.findings[0].presence, Presence::Present(why) if why.contains("config.json")),
@@ -584,13 +592,13 @@ fn servers_declared_in_a_config_file_are_discovered_one_by_one() {
     );
 }
 
-/// Un file che c'è e non dichiara niente è una misura; un file che non si legge
-/// non lo è. La stessa distinzione, sull'altra forma di descrittore.
+/// A file that is there and declares nothing is a measurement; a file that does
+/// not read is not. The same distinction, on the other shape of descriptor.
 #[test]
 fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
     let sandbox = Sandbox::new("enumblocked");
     sandbox.write("vuoto.json", r#"{"mcpServers": {}}"#);
-    let broken = sandbox.write("rotto.json", "{ non json");
+    let broken = sandbox.write("rotto.json", "{ not json");
     let descriptors = sandbox.write(
         "tools.json",
         &format!(
@@ -612,11 +620,15 @@ fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
             .findings
             .iter()
             .find(|f| f.name == name)
-            .unwrap_or_else(|| panic!("manca {name}"))
+            .unwrap_or_else(|| panic!("{name} is missing"))
             .presence
             .clone()
     };
-    assert!(matches!(by("vuoto"), Presence::Absent(_)), "{:?}", by("vuoto"));
+    assert!(
+        matches!(by("vuoto"), Presence::Absent(_)),
+        "{:?}",
+        by("vuoto")
+    );
     assert!(
         matches!(by("rotto"), Presence::Undetermined(_)),
         "{:?}",
@@ -629,8 +641,8 @@ fn an_unreadable_config_is_undetermined_while_an_empty_one_is_absent() {
     );
 }
 
-/// Un `*` nel cammino raccoglie le voci dichiarate un livello più sotto: senza,
-/// tutto ciò che sta per progetto resterebbe invisibile e l'elenco direbbe zero.
+/// A `*` in the path collects the entries declared one level down: without it,
+/// everything held per project would stay invisible and the list would say zero.
 #[test]
 fn a_star_in_the_pointer_reaches_the_per_project_declarations() {
     let sandbox = Sandbox::new("star");
@@ -650,7 +662,7 @@ fn a_star_in_the_pointer_reaches_the_per_project_declarations() {
     assert_eq!(names, vec!["due", "uno"], "{names:?}");
 }
 
-// ── dove vive la configurazione ─────────────────────────────────────────
+// ── where the configuration lives ───────────────────────────────────────
 
 #[test]
 fn the_config_paths_say_which_ones_are_really_there() {
@@ -677,24 +689,21 @@ fn the_config_paths_say_which_ones_are_really_there() {
     );
 }
 
-/// Una variabile che non esiste resta scritta com'è: sostituirla col vuoto
-/// costruirebbe un percorso plausibile e sbagliato, e chi legge non capirebbe
-/// perché il rilevamento guarda in un posto che non ha mai nominato.
+/// A variable that does not exist stays written as it is: replacing it with
+/// nothing would build a plausible, wrong path, and the reader would not see why
+/// the detection looked somewhere they never named.
 #[test]
 fn an_undefined_variable_stays_visible_in_the_path() {
     let sandbox = Sandbox::new("var");
     let mut m = machine(vec![], &sandbox.root);
-    m.env.insert("MIA_CASA".to_string(), "/una/casa".to_string());
-    assert_eq!(m.expand("$MIA_CASA/x"), "/una/casa/x");
-    assert_eq!(m.expand("${MIA_CASA}/x"), "/una/casa/x");
-    assert_eq!(m.expand("$NON_ESISTE/x"), "$NON_ESISTE/x");
-    assert_eq!(
-        m.expand("~/y"),
-        sandbox.root.join("y").to_string_lossy()
-    );
+    m.env.insert("MY_HOME".to_string(), "/a/home".to_string());
+    assert_eq!(m.expand("$MY_HOME/x"), "/a/home/x");
+    assert_eq!(m.expand("${MY_HOME}/x"), "/a/home/x");
+    assert_eq!(m.expand("$DOES_NOT_EXIST/x"), "$DOES_NOT_EXIST/x");
+    assert_eq!(m.expand("~/y"), sandbox.root.join("y").to_string_lossy());
 }
 
-// ── l'azione di flusso ──────────────────────────────────────────────────
+// ── the flow action ─────────────────────────────────────────────────────
 
 #[test]
 fn the_flow_action_answers_with_the_findings() {
@@ -713,24 +722,29 @@ fn the_flow_action_answers_with_the_findings() {
     let mut shared = SharedState::new();
     let ActionOutcome::Went(output) = toolbox::DetectToolsAction
         .execute(&input, &mut shared)
-        .expect("un rilevamento non fallisce per come è il mondo")
+        .expect("a detection does not fail over how the world is")
     else {
-        panic!("un rilevamento eseguito è sempre Went")
+        panic!("a detection that ran is always Went")
     };
     assert_eq!(output["total"], 1);
     assert_eq!(output["present"], 0);
-    assert_eq!(output["findings"][0]["descriptor_id"], "mai-installato-davvero");
+    assert_eq!(
+        output["findings"][0]["descriptor_id"],
+        "mai-installato-davvero"
+    );
     assert_eq!(output["findings"][0]["presence"]["state"], "absent");
 }
 
-/// Un ingresso che non si legge è l'unico guasto che appartiene all'azione: lo
-/// ha scritto chi ha scritto il passo, e va detto a lui.
+/// An input that does not read is the only fault belonging to the action: it was
+/// written by whoever wrote the step, and it must be told to them.
 #[test]
 fn the_flow_action_rejects_an_input_it_cannot_read() {
     use flow::{Action, SharedState};
     let mut shared = SharedState::new();
     let input = serde_json::json!({"famiglia": "ai_cli"});
-    assert!(toolbox::DetectToolsAction.execute(&input, &mut shared).is_err());
+    assert!(toolbox::DetectToolsAction
+        .execute(&input, &mut shared)
+        .is_err());
 }
 
 #[test]
@@ -740,31 +754,28 @@ fn the_registry_finds_the_action_by_its_stable_name() {
     assert!(registry.get(toolbox::DETECT_TOOLS_ACTION).is_some());
 }
 
-// ── la scoperta per percorsi: i nomi, non «la cartella non è vuota» ──────
+// ── discovery by path: the names, not "the directory is not empty" ──────
 
-/// UN SERVIZIO PER FILE, E CHI LEGGE VUOLE I NOMI. `detect` risponde «c'è o non
-/// c'è», e su una cartella di servizi del sistema operativo quella risposta non
-/// serve a niente: chi deve decidere cosa migrare ha bisogno di sapere *quali*.
-///
-/// Il nome è il percorso intero, di proposito: due file che si chiamano uguale
-/// in due cartelle diverse sono due automazioni diverse, e la fusione delle voci
-/// omonime — quella che serve a un server MCP dichiarato in due posti — li
-/// conterebbe per uno solo.
+/// ONE SERVICE PER FILE, AND THE READER WANTS THE NAMES. `detect` answers "here
+/// or not here", useless on a directory of operating-system services: whoever
+/// decides what to migrate needs to know *which*. The name is the whole path, on
+/// purpose — two files with the same name in two directories are two different
+/// automations, and the merge of same-named entries would count them as one.
 #[test]
 fn enumerating_paths_names_every_file_that_matches() {
-    let sandbox = Sandbox::new("percorsi");
-    let home = sandbox.dir("casa");
-    let agents = sandbox.dir("casa/agenti");
-    fs::write(agents.join("uno.plist"), "<plist/>").expect("un servizio");
-    fs::write(agents.join("due.plist"), "<plist/>").expect("un altro servizio");
-    fs::write(agents.join("nota.txt"), "non è un servizio").expect("un file estraneo");
+    let sandbox = Sandbox::new("paths");
+    let home = sandbox.dir("home");
+    let agents = sandbox.dir("home/agents");
+    fs::write(agents.join("uno.plist"), "<plist/>").expect("a service");
+    fs::write(agents.join("due.plist"), "<plist/>").expect("another service");
+    fs::write(agents.join("nota.txt"), "not a service").expect("an unrelated file");
     let descriptors = sandbox.write(
         "elenco.json",
         r#"[{
             "id": "servizi",
             "family": "automation_schedule",
-            "label": "i servizi",
-            "enumerate": { "paths": ["~/agenti/*.plist"] }
+            "label": "the services",
+            "enumerate": { "paths": ["~/agents/*.plist"] }
         }]"#,
     );
 
@@ -778,30 +789,30 @@ fn enumerating_paths_names_every_file_that_matches() {
             agents.join("due.plist").to_string_lossy().as_ref(),
             agents.join("uno.plist").to_string_lossy().as_ref(),
         ],
-        "un nome per file, col percorso intero, e il file estraneo fuori"
+        "one name per file, with the whole path, and the unrelated file left out"
     );
     assert!(report.findings.iter().all(|f| f.presence.is_present()));
 }
 
-/// «NON C'È NIENTE DA MIGRARE» DETTO A CHI HA VENTI SERVIZI è la bugia peggiore
-/// che questo elenco possa dire, ed è quella che veniva naturale: `glob` ingoia
-/// l'errore di `read_dir` e restituisce zero percorsi sia per una cartella vuota
-/// sia per una che non si legge. Le due risposte sono diverse e devono restare
-/// diverse — è la ragione per cui esiste questo file di prove.
+/// "NOTHING TO MIGRATE" TOLD TO SOMEONE WITH TWENTY SERVICES is the worst lie
+/// this list can tell, and it is the one that came naturally: `glob` swallows
+/// the `read_dir` error and returns zero paths both for an empty directory and
+/// for one that does not read. The two answers differ and must stay different —
+/// which is why this test file exists.
 #[test]
 fn a_folder_that_cannot_be_read_is_not_a_folder_without_automations() {
-    let sandbox = Sandbox::new("cartella-chiusa");
-    let home = sandbox.dir("casa");
-    let closed = sandbox.dir("casa/agenti");
-    fs::write(closed.join("uno.plist"), "<plist/>").expect("un servizio che c'è davvero");
-    fs::set_permissions(&closed, fs::Permissions::from_mode(0o000)).expect("cartella chiusa");
+    let sandbox = Sandbox::new("closed-folder");
+    let home = sandbox.dir("home");
+    let closed = sandbox.dir("home/agents");
+    fs::write(closed.join("uno.plist"), "<plist/>").expect("a service that really is there");
+    fs::set_permissions(&closed, fs::Permissions::from_mode(0o000)).expect("closed directory");
     let descriptors = sandbox.write(
         "elenco.json",
         r#"[{
             "id": "servizi",
             "family": "automation_schedule",
-            "label": "i servizi",
-            "enumerate": { "paths": ["~/agenti/*.plist"] }
+            "label": "the services",
+            "enumerate": { "paths": ["~/agents/*.plist"] }
         }]"#,
     );
 
@@ -811,24 +822,24 @@ fn a_folder_that_cannot_be_read_is_not_a_folder_without_automations() {
     let presence = &report.findings[0].presence;
     assert!(
         matches!(presence, Presence::Undetermined(_)),
-        "una cartella che non si legge non è una cartella vuota: {presence:?}"
+        "a directory that does not read is not an empty directory: {presence:?}"
     );
 }
 
-/// Una cartella che davvero non esiste è un'assenza misurata, e il motivo lo
-/// dice: senza questa metà la prova sopra si soddisferebbe rispondendo «non ho
-/// potuto guardare» sempre, che è l'altro modo di non dire niente.
+/// A directory that really is not there is a measured absence, and the reason
+/// says so: without this half the test above would satisfy itself by always
+/// answering "I could not look", which is the other way of saying nothing.
 #[test]
 fn a_folder_that_is_not_there_is_a_measured_absence() {
-    let sandbox = Sandbox::new("cartella-assente");
-    let home = sandbox.dir("casa");
+    let sandbox = Sandbox::new("absent-folder");
+    let home = sandbox.dir("home");
     let descriptors = sandbox.write(
         "elenco.json",
         r#"[{
             "id": "servizi",
             "family": "automation_schedule",
-            "label": "i servizi",
-            "enumerate": { "paths": ["~/agenti/*.plist"] }
+            "label": "the services",
+            "enumerate": { "paths": ["~/agents/*.plist"] }
         }]"#,
     );
 
@@ -837,22 +848,22 @@ fn a_folder_that_is_not_there_is_a_measured_absence() {
     assert_eq!(report.findings.len(), 1);
     match &report.findings[0].presence {
         Presence::Absent(reason) => assert!(
-            reason.contains("non esiste"),
-            "il motivo deve dire che la cartella non c'è: {reason}"
+            reason.contains("does not exist"),
+            "the reason must say the directory is not there: {reason}"
         ),
-        other => panic!("una cartella che non esiste è un'assenza: {other:?}"),
+        other => panic!("a directory that does not exist is an absence: {other:?}"),
     }
 }
 
-/// UN `enumerate` CHE NON DICE DOVE GUARDARE non è un elenco vuoto: è un elenco
-/// scritto male, e le due si leggono uguali — «qui non c'è niente» — mentre una
-/// sola delle due si ripara.
+/// AN `enumerate` THAT SAYS NOWHERE TO LOOK is not an empty list: it is a badly
+/// written one, and the two read the same — "there is nothing here" — while only
+/// one of them can be repaired.
 #[test]
 fn an_enumerate_without_anywhere_to_look_is_a_problem() {
-    let sandbox = Sandbox::new("enumerate-vuoto");
+    let sandbox = Sandbox::new("empty-enumerate");
     let descriptors = sandbox.write(
         "elenco.json",
-        r#"[{ "id": "vuoto", "family": "tool", "label": "niente", "enumerate": {} }]"#,
+        r#"[{ "id": "vuoto", "family": "tool", "label": "nothing", "enumerate": {} }]"#,
     );
 
     let catalog = catalog_from(&descriptors);

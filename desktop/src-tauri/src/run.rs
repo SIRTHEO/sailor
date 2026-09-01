@@ -54,6 +54,7 @@ use flow::{
     ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile,
     InProcessExecutor, RecordStore, StepRecord, SystemClock,
 };
+use actions::{LiveSink, Pipe, StepSinks};
 use ledger::Ledger;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -80,7 +81,7 @@ pub const RUN_EVENT: &str = "sailor://run";
 pub struct RunEvent {
     pub run_id: String,
     pub seq: u64,
-    /// `step_started` | `step_closed` | `run_ended` | `note`
+    /// `step_started` | `step_text` | `step_closed` | `run_ended` | `note`
     pub kind: String,
     pub at: i64,
     pub step_id: Option<String>,
@@ -215,6 +216,73 @@ impl Runs {
     }
 }
 
+// ── the text of a running step ──────────────────────────────────────────
+
+/// One step's bytes on their way to the window.
+///
+/// A pipe breaks wherever it happens to break — sometimes halfway through a
+/// character. The tail of an incomplete one is held until the rest arrives, so
+/// an accented letter never reaches the window as a replacement mark; past four
+/// bytes it is not a split character, and goes out as it is.
+struct StepText {
+    step: String,
+    emit: Arc<dyn Fn(&str, Pipe, String) + Send + Sync>,
+    /// One per pipe: stdout and stderr are drained by two threads, and a single
+    /// buffer would splice one's tail onto the other's head.
+    tails: Mutex<(Vec<u8>, Vec<u8>)>,
+}
+
+impl LiveSink for StepText {
+    fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
+        let text = {
+            let mut tails = self.tails.lock().expect("the tails are not poisoned");
+            let buffer = match pipe {
+                Pipe::Stdout => &mut tails.0,
+                Pipe::Stderr => &mut tails.1,
+            };
+            buffer.extend_from_slice(bytes);
+            take_whole_characters(buffer)
+        };
+        if !text.is_empty() {
+            (self.emit)(&self.step, pipe, text);
+        }
+    }
+}
+
+/// The longest prefix of `buffer` that is whole text; the rest stays behind.
+fn take_whole_characters(buffer: &mut Vec<u8>) -> String {
+    let whole = match std::str::from_utf8(buffer) {
+        Ok(_) => buffer.len(),
+        Err(error) => error.valid_up_to(),
+    };
+    // Four bytes is the longest a character can be, so a longer tail is not one
+    // waiting to be completed: holding it would silence the pipe for good.
+    let cut = if buffer.len() - whole > 4 {
+        buffer.len()
+    } else {
+        whole
+    };
+    let rest = buffer.split_off(cut);
+    let text = String::from_utf8_lossy(buffer).into_owned();
+    *buffer = rest;
+    text
+}
+
+/// Hands each step somewhere to put what it says while it runs.
+struct LiveText {
+    emit: Arc<dyn Fn(&str, Pipe, String) + Send + Sync>,
+}
+
+impl StepSinks for LiveText {
+    fn sink_for(&self, step: &str) -> Arc<dyn LiveSink> {
+        Arc::new(StepText {
+            step: step.to_owned(),
+            emit: self.emit.clone(),
+            tails: Mutex::new((Vec::new(), Vec::new())),
+        })
+    }
+}
+
 // ── il deposito, guardato mentre scrive ─────────────────────────────────
 
 /// Il deposito vero, con un testimone accanto.
@@ -325,12 +393,32 @@ pub(crate) fn start_run(
             ledger_dir.display()
         )
     })?;
-    // Il testimone resta `None`: la finestra vede i passi aprirsi e chiudersi
-    // dal deposito (`WatchedStore`), non dal testo che esce dal motore mentre
-    // gira. È il limite già dichiarato a chi guarda nella console — il testo
-    // arriva tutto insieme alla chiusura — e si toglie da qui il giorno che si
-    // toglie di là.
-    let registry = default_registry(&ledger, None);
+    // THE NAME BEFORE THE REGISTRY. The witness carries the run it belongs to,
+    // so the run has to have a name before the registry that holds it is built.
+    // Nothing is written yet: a name spent on a flow that turns out to name a
+    // missing action costs nothing.
+    let started_at = now_secs();
+    let run_id = format!("{}-{}", flow.id, nanos());
+    // What a step says while it runs reaches the window through here. The
+    // ledger tells the window when a step opens and closes; this tells it what
+    // the step is saying in between, which the ledger only learns at the end.
+    let watcher: Arc<dyn StepSinks> = Arc::new(LiveText {
+        emit: Arc::new({
+            let app = app.clone();
+            let runs = runs.inner().clone();
+            let run_id = run_id.clone();
+            move |step: &str, pipe: Pipe, text: String| {
+                runs.publish(
+                    &app,
+                    &run_id,
+                    "step_text",
+                    Some(step.to_owned()),
+                    json!({ "pipe": pipe.name(), "text": text }),
+                );
+            }
+        }),
+    });
+    let registry = default_registry(&ledger, Some(watcher));
     let missing: Vec<&str> = flow
         .graph
         .steps()
@@ -351,8 +439,6 @@ pub(crate) fn start_run(
     // ha premuto il pulsante.
     let inputs = inputs_with_mandate(&flow, mandate.as_deref())?;
 
-    let started_at = now_secs();
-    let run_id = format!("{}-{}", flow.id, nanos());
     // DA DOVE È PARTITA LA CHIAMATA, scritto dal sistema nel momento in cui
     // parte. Non è un racconto di un agente: è il guscio che dichiara la
     // propria provenienza prima che qualunque passo giri, e resta nel deposito
@@ -1147,6 +1233,79 @@ mod tests {
             "input_schema": { "type": "any" },
             "output_schema": { "type": "any" }
         })
+    }
+
+    /// Collects what a step says, the way the window would receive it.
+    fn heard(step: &str) -> (Arc<dyn LiveSink>, Arc<Mutex<Vec<(String, String)>>>) {
+        let said: Arc<Mutex<Vec<(String, String)>>> = Arc::new(Mutex::new(Vec::new()));
+        let sinks = LiveText {
+            emit: Arc::new({
+                let said = said.clone();
+                move |_step: &str, pipe: Pipe, text: String| {
+                    said.lock().expect("not poisoned").push((pipe.name().to_owned(), text));
+                }
+            }),
+        };
+        (sinks.sink_for(step), said)
+    }
+
+    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY. A pipe breaks where it
+    /// breaks, and half of this project's output is accented: decoding each
+    /// chunk on its own turns every letter unlucky enough to straddle a break
+    /// into a replacement mark. Emitting the tail regardless makes this red.
+    #[test]
+    fn a_character_split_across_two_chunks_arrives_whole() {
+        let (sink, said) = heard("engine");
+        let text = "perché".as_bytes();
+        let split = text.len() - 1;
+        sink.chunk(Pipe::Stdout, &text[..split]);
+        sink.chunk(Pipe::Stdout, &text[split..]);
+
+        let said = said.lock().expect("not poisoned");
+        let whole: String = said.iter().map(|(_, text)| text.as_str()).collect();
+        assert_eq!(whole, "perché");
+        assert!(!whole.contains('\u{fffd}'), "a letter reached the window broken");
+    }
+
+    /// Two threads drain the two pipes: one buffer between them would splice
+    /// the tail of one onto the head of the other.
+    #[test]
+    fn the_two_pipes_do_not_splice_into_each_other() {
+        let (sink, said) = heard("engine");
+        let out = "è".as_bytes();
+        sink.chunk(Pipe::Stdout, &out[..1]);
+        sink.chunk(Pipe::Stderr, b"broke\n");
+        sink.chunk(Pipe::Stdout, &out[1..]);
+
+        let said = said.lock().expect("not poisoned");
+        assert_eq!(said.as_slice(), [("err".to_owned(), "broke\n".to_owned()), ("out".to_owned(), "è".to_owned())]);
+    }
+
+    /// A tail that will never be completed must not silence the pipe for good.
+    #[test]
+    fn bytes_that_are_not_a_split_character_stop_being_waited_for() {
+        let (sink, said) = heard("engine");
+        sink.chunk(Pipe::Stdout, &[0xff, 0xfe, 0xfd, 0xfc, 0xfb]);
+
+        let said = said.lock().expect("not poisoned");
+        assert_eq!(said.len(), 1, "five bytes that no character starts were held back");
+    }
+
+    /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY. While the shell hands
+    /// the engine no witness, a running step says nothing until it closes, and
+    /// nothing in the window is red about it: the panel simply stays empty.
+    /// This reads the line that decides it.
+    #[test]
+    fn the_shell_hands_the_engine_somewhere_to_put_a_running_step_s_text() {
+        const SOURCE: &str = include_str!("run.rs");
+        // Spelled in two halves on purpose: written whole, the assertion would
+        // find itself in the file it reads and pass on its own text.
+        let no_witness = format!("default_registry(&ledger, {})", "None");
+        assert!(
+            !SOURCE.contains(&no_witness),
+            "the shell builds the action registry with no witness, so the text \
+             of a running step reaches nobody"
+        );
     }
 
     #[test]

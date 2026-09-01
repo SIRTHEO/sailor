@@ -1,18 +1,15 @@
-// I terminali: le schede, i pannelli, e chi apre il prossimo.
-//
-// **L'ELENCO È DEL MOTORE, NON DI QUESTA SCHERMATA.** `terminal_list` è l'unica
-// risposta alla domanda «quali terminali ci sono», e questo componente non ne
-// tiene una copia. La ragione non è di stile: un terminale sopravvive alla
-// finestra: chi la chiude non uccide la sessione dentro, e al riavvio è
-// l'elenco a ritrovarla. Una lista tenuta qui direbbe «nessuno» a una macchina
-// che ne ha tre — con la stessa faccia con cui lo direbbe a una macchina che
-// non ne ha nessuno.
-//
-// **QUELLO CHE QUESTA SCHERMATA TIENE DAVVERO SUO** sono tre cose che il motore
-// non può sapere: quale scheda guardi, quali terminali hanno mandato
-// `terminal_closed` da quando sei qui, e se il canale degli eventi si è
-// attaccato. Le prime due sono fatti della finestra; la terza è la ragione per
-// cui esiste uno stato «non lo so più».
+// The terminals: the tabs, the panes, and who opens the next one.
+
+// **THE LIST BELONGS TO THE ENGINE, NOT TO THIS SCREEN.** `terminal_list` is
+// the only answer to "which terminals exist", and this component keeps no copy.
+// A terminal outlives the window — closing it does not kill the session inside
+// — so a list kept here would say "none" to a machine that has three, wearing
+// the same face it would wear on a machine that has none.
+
+// **WHAT THIS SCREEN REALLY OWNS** are three things the engine cannot know:
+// which tab you are watching, which terminals have sent `terminal_closed` since
+// you arrived, and whether the event channel attached. The third is why a
+// "no longer known" state exists at all.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAsk } from "./ask";
@@ -31,32 +28,40 @@ import {
   type TerminalSummary,
 } from "./terminal";
 
-/** Ogni quanto si richiede l'elenco. Un terminale nasce e muore a mano: non serve di più. */
+/** How often the list is re-asked. A terminal is born and dies by hand. */
 const REFRESH_MS = 4000;
 
 interface TerminalsProps {
-  /** Vero dentro il guscio nativo: fuori non c'è nessuno pseudo-terminale da aprire. */
+  /** True inside the native shell: outside there is no pty to open. */
   native: boolean;
 }
+
+/**
+ * The placeholder of the "workspace" field. **IT NAMES NO REAL MACHINE**: a
+ * developer's absolute path in a product field breaks the charter, and a gate
+ * finds one. Exported so the test reads it here, not a copy: a text written
+ * twice diverges on the first edit — red for a wrong reason, or green over air.
+ */
+export const WORKSPACE_HINT = "/path/to/your/project";
 
 export function Terminals({ native }: TerminalsProps) {
   const outside = "fuori dal guscio: gli pseudo-terminali li apre il motore";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
 
   const [here, setHere] = useState<string | null>(null);
-  /** Chi ha mandato `terminal_closed`, e con quale esito. */
+  /** Who sent `terminal_closed`, and with what outcome. */
   const [closed, setClosed] = useState<Map<string, string>>(() => new Map());
-  /** Il canale degli eventi: attaccato, o il motivo per cui no. */
+  /** The event channel: attached, or the reason it is not. */
   const [channel, setChannel] = useState<{ on: boolean; why: string | null }>({ on: false, why: null });
   const [opening, setOpening] = useState(false);
   const [root, setRoot] = useState("");
   const [program, setProgram] = useState("");
   const [trouble, setTrouble] = useState<string | null>(null);
-  /** Byte arrivati per un terminale senza pannello: sarebbero uscita persa. */
+  /** Bytes arrived for a terminal with no pane: they would be lost output. */
   const [orphans, setOrphans] = useState(0);
 
   const bus = useMemo(() => new OutputBus(), []);
-  // `again` cambia identità a ogni disegno; l'ascolto si attacca una volta.
+  // `again` changes identity on every render; the listener attaches once.
   const refresh = useRef(again);
   refresh.current = again;
 
@@ -73,8 +78,8 @@ export function Terminals({ native }: TerminalsProps) {
       },
       onClosed: (id, status) => {
         setClosed((before) => new Map(before).set(id, status));
-        // L'elenco porta anche `alive`: si richiede subito, così le due fonti
-        // tornano a dire la stessa cosa invece di divergere fino al prossimo giro.
+        // The list also carries `alive`: it is re-asked at once, so the two
+        // sources agree again instead of diverging until the next poll.
         refresh.current();
       },
     }).then((outcome) => {
@@ -108,9 +113,9 @@ export function Terminals({ native }: TerminalsProps) {
       setHere(born.id);
       again();
     } catch (error) {
-      // L'errore del motore è il testo che `PtyError` produce, e va letto: una
-      // cartella che non c'è e una shell che non parte si riparano in due modi
-      // diversi, e un `console.error` non li distingue per nessuno.
+      // The engine's error is the text `PtyError` produces, and it has to be
+      // read: a missing folder and a shell that will not start are fixed in two
+      // different ways, and a `console.error` tells nobody them apart.
       setTrouble(String(error));
     } finally {
       setOpening(false);
@@ -154,7 +159,7 @@ export function Terminals({ native }: TerminalsProps) {
           <input
             className="terminals__input"
             value={root}
-            placeholder="/home/someone/personal/sailor"
+            placeholder={WORKSPACE_HINT}
             onChange={(event) => setRoot(event.target.value)}
           />
         </label>
