@@ -864,8 +864,9 @@ button.is-primary {
   margin-left: 0;
 }
 
-/* Il gesto che manca a una cartella vuota: creare il primo flusso. Sta sotto
-   l'elenco perché è lì che finisce lo sguardo quando l'elenco non basta. */
+/* La casa permanente del gesto, sotto l'elenco: è lì che finisce lo sguardo
+   quando l'elenco non basta. A cartella vuota non c'è — quel momento è della
+   scheda sulla tela, e due inviti allo stesso gesto si annullano. */
 .rail__new {
   display: block;
   width: 100%;
@@ -1134,6 +1135,127 @@ button.is-primary {
   color: var(--faint);
   font-family: var(--font-data);
   word-break: break-word;
+}
+
+/* I gesti in fila, numerati. Uno stato vuoto che insegna il primo gesto è una
+   schermata che si legge, non una constatazione: i tre gesti sono quelli veri,
+   nell'ordine in cui si fanno. Il numero è una targa, che è il ruolo che questo
+   foglio dà alle etichette — non un pallino colorato, perché qui il colore è
+   riservato allo stato della macchina. */
+.blank__gestures {
+  list-style: none;
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  counter-reset: gesture;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.blank__gestures li {
+  counter-increment: gesture;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.blank__gestures li::before {
+  content: counter(gesture);
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: var(--space-1) 0;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* ── la lettura in corso ─────────────────────────────────────────────────
+   Uno scheletro sta dove il contenuto arriverà, quindi non è un riquadro che
+   galleggia al centro: niente ombra, niente carta sollevata, e l'ancoraggio in
+   alto a sinistra come le corsie vere.
+
+   NON SI MUOVE. Questo foglio dichiara due durate e le riserva al movimento che
+   conferma un gesto; qui non c'è nessun gesto da confermare, e un battito
+   continuo sarebbe l'unica cosa animata della finestra. A dire che la lettura è
+   in corso è la parola sotto la forma — divieto 5, applicato alla forma come
+   già al colore. */
+.blank[data-state="loading"] {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6);
+}
+
+.blank__skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  max-width: 100%;
+}
+
+/* Una corsia si stringe sui suoi passi, come quelle vere: due corsie di
+   lunghezza diversa si leggono come contenuto in arrivo, due uguali come un
+   motivo decorativo. */
+.blank__lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: fit-content;
+  max-width: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--band-fill);
+}
+
+.blank__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.blank__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+/* Le targhe non portano parole: un testo finto qui sarebbe una promessa su cosa
+   c'è sul disco, e nessuno lo sa ancora. */
+.blank__plate {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.blank__plate--name {
+  width: 140px;
+  height: var(--space-3);
+}
+
+.blank__plate--desc {
+  width: 240px;
+  height: var(--space-2);
+}
+
+.blank__plate--step {
+  width: 132px;
+  height: 56px;
+}
+
+.blank__waiting {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--muted);
 }
 
 .broken {

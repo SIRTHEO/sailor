@@ -45,6 +45,17 @@ export interface Graph {
   skippable_dependencies?: DependencyEdge[];
 }
 
+/**
+ * Quanti passi ha un flusso, scritto per chi legge.
+ *
+ * Sta qui e non nei due posti che lo mostrano — la colonna e l'intestazione
+ * della corsia — perché un plurale scritto due volte è un plurale sbagliato in
+ * un posto solo, e nessuno se ne accorge dall'altro.
+ */
+export function stepCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "passo" : "passi"}`;
+}
+
 /** Un file di flusso: il grafo più i valori con cui parte. */
 export interface FlowFile {
   id: string;
