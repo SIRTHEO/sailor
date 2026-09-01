@@ -115,31 +115,168 @@ dichiarati:
   va con il mondo che serve.
 - **In modalità viva, un errore di compilazione in un crate qualunque uccide la
   finestra** invece di lasciarla all'ultima versione buona.
-- **Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
-  nessun ripiego**, e la catena non scala anche con tutti i descrittori a posto.
-  Trovato il 01/09/2026 da un giudice che verificava la chiusura del guasto 31,
-  cioè **dal lato da cui quella chiusura non guardava**.
-  `says_it_cannot_work` è interrogato solo dentro il ramo `ExitError`
-  (`crates/actions/src/lib.rs:2218`): nel ramo `Ok` la risposta è presa per
-  buona, si ritorna `Asked::Answered`, e la riga del deposito nasce con
-  `error_type: None`. Non è ipotetico su questa macchina — è il guasto 39:
-  `CODEX_HOME=<cartella vuota> codex exec < /dev/null` risponde «No prompt
-  provided via stdin» **ed esce zero**. Con un `answer_shape` dichiarato — ce
-  l'hanno tutti i passi di questi flussi — il passo muore poi su un errore di
-  forma, cioè **sul sintomo sbagliato, tre gradini più in là**.
-  La sonda a secco la distinzione ce l'ha già (`judge_dry_run`, `lib.rs:818`,
-  applicato a `Ok` *e* a `ExitError`): il controllo statico e la corsa vera
-  divergono, ed è la forma del guasto 39 su un altro campo. Nessuna prova lo
-  vede: quelle ermetiche fanno uscire il motore esaurito **sempre** in errore.
-  **Va portato nella tabella dei guasti alla prossima fusione** — sta qui e non
-  là solo perché due rami stanno numerando righe nuove nello stesso momento, e
-  un numero preso due volte è un conflitto che nessuno vede.
+- ~~**Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
+  nessun ripiego**~~ — **chiuso il 01/09/2026**, con tre prove e due mutanti.
+  Trovato da un giudice che verificava la chiusura del guasto 31, cioè **dal
+  lato da cui quella chiusura non guardava**: `says_it_cannot_work` era
+  interrogato solo dentro il ramo `ExitError`, e nel ramo `Ok` la risposta era
+  presa per buona — ripiego mai scattato, e riga del deposito con `error_type:
+  None`, cioè un passo **verde** su una non-risposta. Adesso la domanda è la
+  stessa nei due rami, e anche le conseguenze: `Asked::CannotWork` in catena,
+  `engine_exhausted` da solo, specie `exhausted` nel deposito — e la
+  **conseguenza sta in una copia sola** (`engine_cannot_work`), perché scritta
+  due volte era già divergente appena nata. La riga si scrive **prima** del
+  controllo di tolleranza in tutti e due i rami: la specie dice cos'è successo,
+  `accept` dice cosa ne fa la corsa, e non devono toccarsi.
+  Le prove ermetiche nascevano cieche perché facevano uscire il motore esaurito
+  **sempre** in errore: ora ce n'è una che lo fa uscire **zero** dicendo le
+  stesse parole, ed è nata rossa restituendo
+  `{"status":"ok","stdout":"You've hit your weekly limit…"}`.
+  *Mutanti*: `Some("exhausted")` → `None` nel ramo nuovo, e resta rossa solo la
+  prova che guarda la riga del deposito — le altre due non l'avrebbero vista;
+  il `note(...)` rimesso **dentro** il ramo della non-tolleranza, e resta rossa
+  solo quella che guarda la parità fra i due codici d'uscita.
+  **QUESTA RIGA HA DICHIARATO LA PARITÀ PRIMA DI AVERLA.** La prima stesura
+  scriveva «con le stesse conseguenze» mentre il `note(...)` del ramo `Ok` stava
+  **dopo** il controllo di tolleranza: con `accept: ["exit_error"]` dichiarato,
+  un motore che diceva di non poter lavorare ed usciva zero tornava a scrivere
+  una riga `NULL`. Il difetto era sopravvissuto dentro il proprio rimedio, in un
+  angolo, e l'ha trovato un giudice che non aveva scritto il lavoro — misurando
+  la tabella invece di leggere il commento.
+  **Va portato nella tabella dei guasti alla prossima fusione, col numero che
+  sarà libero allora** — sta qui e non là perché due rami stanno numerando righe
+  nuove nello stesso momento, e un numero preso due volte è un conflitto che
+  nessuno vede. Non è un timore: il 40 che questa riga si aspettava di prendere
+  **è già stato preso da un altro ramo** mentre questo lavoro era in corso.
+- **La quota finita di `agy` passa ancora per un fallimento qualunque.** Il
+  01/09/2026 `agy` è stato misurato — `HOME` su una cartella vuota, la riga che
+  Sailor monta davvero — e dice con parole sue di non poter lavorare **quando
+  gli mancano le credenziali**: quelle tre frasi sono nel descrittore. Come dica
+  di aver finito la **quota** non si è trovato: non è nell'aiuto né in nessun
+  sottocomando annidato, e nella tabella delle stringhe del binario
+  l'esaurimento compare solo come motivo di ritentativo interno
+  (`ShouldRetryModelCapacityExhausted`), mai come messaggio stampato. Non si può
+  provocare senza spendere la quota vera. **La regola sul ripiego non lo vede**,
+  e non è un difetto della regola: chiede che il campo non sia vuoto, non che
+  sia completo. Chi vede `agy` dire di essere esaurito scriva la frase lì.
+- **`agy` non riceve la casa del profilo attivo.** Misurato il 01/09/2026: la
+  sua casa è `~/.gemini/antigravity-cli`, guidata da `$HOME`, e la stringa
+  `GEMINI_CLI_HOME` **non compare** nel binario. La sovrapposizione d'ambiente
+  che il guasto 18 ha portato ai motori sposta `CLAUDE_CONFIG_DIR` e
+  `CODEX_HOME` ma non tocca `agy`: due profili diversi lo fanno partire nella
+  stessa casa, e nessuno lo dice. È il guasto 39 sullo stesso campo — un mondo
+  che si crede dichiarato e non lo è. La nota in `crates/profiles/src/lib.rs`
+  che chiamava questa un'«ipotesi non verificata» è stata corretta; **restano
+  due cose che non ho toccato perché cambiano comportamento**, e vanno decise:
+  (1) quella voce dichiara `executable: "antigravity"`, un nome che su questa
+  macchina non esiste — il prodotto è installato come `agy`, ed è così che lo
+  chiamano i descrittori; (2) `HomeMechanism::Unknown` è documentato «non
+  ancora verificato», e non esiste un valore per «verificato: non c'è nessun
+  modo di spostarla». Sono due fatti diversi che oggi si scrivono uguale, ed è
+  la distinzione che il blocco `capabilities` paga per avere altrove.
+- **Senza credenziali `agy` aspetta 60 secondi prima di arrendersi**, dopo aver
+  aperto il browser sull'URL OAuth. Oggi non morde perché `agy` è autenticato;
+  il giorno in cui il suo accesso scade, `agy` in mezzo a una catena costa
+  **60 secondi per passo** contro i ~10 di un `codex` a 401. Un motore che non
+  può lavorare dovrebbe poterlo dire subito: finché aspetta, il ripiego è caro.
 - **Un passo che scrive `"tool": "agy"` come stringa invece che come elenco
   esce da ogni controllo sulle catene**: `engines_in_chains()` legge solo
   `as_array()` e lo salta, `fallbacks_into` gli lascia zero motori da guardare.
-  Succede oggi in `smista-il-lavoro.flow.json`, passo `engine_b`, dove un `agy`
-  esaurito si registra `exit_error` invece di `exhausted` — la distinzione che
-  il guasto 14 ha pagato per avere.
+  Succede oggi in `smista-il-lavoro.flow.json`, passo `engine_b`. La seconda
+  metà di quella riga — «un `agy` esaurito si registra `exit_error` invece di
+  `exhausted`» — **è caduta con la riga qui sopra**: adesso si registra `exhausted` in
+  tutti e due i rami. Resta la prima, che è la peggiore: quel passo non è
+  sorvegliato da nessuna regola sulle catene.
+
+## L'ordine dei motori in catena, misurato il 01/09/2026
+
+Dodici posizioni in quattro flussi dichiarano la stessa catena, e fino a oggi
+**nessun documento diceva perché**. Questi sono i numeri; le proposte che ne
+discendono stanno sotto, separate da ciò che è già stato applicato.
+
+**Quanto costa ciascuno.** Il listino (`~/.config/sailor/pricing.json`, datato
+30/08) contiene **solo modelli Anthropic**. I prezzi di OpenAI e di Google non
+ci sono, e mancano di proposito — «una cifra inventata è peggio di una
+mancante». Quindi: `claude-code` ha un costo calcolabile (opus-5: 5 $/M in
+ingresso, 25 in uscita, 0,5 letti da cache); `codex` e `agy` restano a costo
+**sconosciuto**. **Un ordine per prezzo crescente oggi non è calcolabile**, e
+chi lo proponesse starebbe indovinando due terzi della tabella.
+
+**Quanta quota resta.** `sailor remaining` risponde per un motore solo:
+`claude-code`, consumato 29,0% sulle cinque ore e 41,0% sui sette giorni.
+`codex` e `agy` non dichiarano niente, quindi la loro quota residua è ignota.
+
+**Chi è autenticato davvero.** Misurato oggi, non ricordato:
+
+| motore | esito | come è stato misurato |
+|---|---|---|
+| `claude-code` | **autenticato** | `sailor remaining` legge un consumo che sale: una quota che scorre è una credenziale che c'è |
+| `agy` | **autenticato** | `agy models` esce 0 ed elenca 11 modelli |
+| `codex` | **non autenticato**, su tutti e due i profili | nessun `auth.json` in `.../profiles-homes/codex/lavoro` né in `.../prove` (il profilo attivo); e la corsa vera con `CODEX_HOME` sul profilo attivo esce **1** dopo cinque tentativi di riconnessione, dicendo `401 Unauthorized` |
+
+`~/.codex/auth.json` **esiste**, ma dal 01/09 un passo di flusso non lo legge
+più: la chiusura del guasto 18 lo manda nella casa del profilo, che è vuota.
+Cioè `codex` è passato da funzionante a rotto **come effetto collaterale di una
+riparazione**, e nessun controllo lo dice.
+
+**Quante volte ciascuno è stato invocato, e con che esito.** Dal deposito
+(`model_calls` in `~/.claude/state/flussi/state.db`):
+
+| motore | chiamate | senza errore | fallite | con token | con modello |
+|---|---|---|---|---|---|
+| `claude-code` | 16 | 15 | 1 (`exit_error`) | **15 su 16** | 15 su 16 |
+| `codex` | 4 | 4 | 0 | **1 su 4** | 1 su 4 |
+| `agy` | **1** | 0 | 1 (`exit_error`) | 0 | 0 |
+
+Tre cose che i totali nascondono. **Primo**: l'unica chiamata di `agy` mai
+registrata non è un esaurimento — è il guasto 27, la riga malformata («`--print`
+took "--output-format" as its prompt»), riparata da allora. `agy` non ha mai
+prodotto una risposta dentro Sailor. **Secondo**: delle quattro di `codex`, una
+sola porta una misura di sé — quella del **28/08**, che dichiara
+`actual_model = codex` e 25.066 token in uscita, e non è una corsa di flusso ma
+una riga di lavorazione. Le altre **tre**, tutte del 31/08, risultano riuscite e
+non lasciano né token né modello; sono di quando `codex` ereditava ancora la
+casa del terminale. **Terzo**: `claude-code` lascia una misura su 15 chiamate su
+16 — la sedicesima è proprio quella fallita, e un motore che si rompe prima di
+parlare non ha token da dichiarare.
+
+Un dettaglio da guardare, non da concludere: quella riga di `codex` del 28/08
+porta `cost_micros = 0` con un modello che il listino non conosce. Uno zero al
+posto di «non lo so» è la bugia che il listino stesso dice di non voler
+scrivere. Non l'ho inseguito: è una riga sola, anteriore al listino, e appartiene
+a un'altra domanda.
+
+### Applicato, perché la misura lo impone
+
+**`agy` torna in mezzo, `codex` va in fondo**, nelle dodici posizioni:
+`claude-code → agy → codex`. Non è una preferenza, ed è la somma di due cose
+misurate oggi: la ragione per cui `agy` era stato spostato in fondo — «non
+dichiara come si esaurisce» — **non esiste più**, e mettere davanti a un motore
+autenticato un motore che si è appena misurato **non** autenticato paga un
+processo e i suoi tentativi di riconnessione senza comprare niente. La regola
+sul ripiego adesso morde davvero: con `agy` in mezzo e il suo `unusable_when`
+svuotato, `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted`
+torna rossa nominando tutte e dodici le posizioni.
+
+### Proposte, che aspettano Theo
+
+1. **Autenticare i profili `codex`**, o farli puntare alla casa vera. È la cura
+   del problema; l'ordine della catena è solo il posto dove il sintomo si vede.
+   Finché resta così, `codex` in fondo a una catena è un ripiego che non ripiega.
+2. **Chi non è autenticato non dovrebbe stare in un file di flusso, ma in una
+   decisione a esecuzione.** Le credenziali sono uno stato che cambia; l'ordine
+   scritto nel flusso no. Oggi si sta scrivendo uno stato transitorio dentro un
+   dato permanente, e la prossima volta che qualcuno fa il login nessuno
+   riordinerà i flussi. La forma giusta è che Sailor **misuri** e scavalchi, non
+   che l'ordine lo racconti.
+3. **`esamina-la-repo-ramificando` e `esamina-la-repo-riscoprendo` mettono
+   `codex` PRIMO**, in otto posizioni, davanti a `claude-code`. Sotto la misura
+   di oggi è l'ordine peggiore dell'albero. **Non l'ho cambiato**: sarebbe una
+   decisione nuova su flussi che nessuno mi ha chiesto di toccare, e la cura è
+   la proposta 1. Va deciso, non lasciato lì per abitudine.
+4. **Un ordine per costo non si può proporre** finché il listino conosce un
+   fornitore su tre. Serve prima il prezzo di OpenAI e di Google — misurato,
+   non ricordato.
 
 ## Risposte già trovate, da mettere in pratica
 
