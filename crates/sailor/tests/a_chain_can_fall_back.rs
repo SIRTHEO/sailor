@@ -4,16 +4,25 @@
 //! "codex"]` sembra avere due ripieghi. Ne ha quanti sono i motori che
 //! **dichiarano come dicono di non poter lavorare**: `says_it_cannot_work` su
 //! un elenco vuoto è `false`, quindi un motore che tace fa morire il passo sul
-//! proprio fallimento e i motori dopo di lui non partono mai. `agy` tace, e
+//! proprio fallimento e i motori dopo di lui non partono mai. `agy` taceva, e
 //! stava **in mezzo** a dodici catene di questo albero: `codex`, che dichiara
 //! il proprio 401, non partiva mai da nessuna di esse.
 //!
-//! **CHIUSO IL 01/09/2026, E NON MISURANDO `agy`.** La regola ha due modi di
-//! essere rispettata — misurare le parole di chi sta in mezzo, oppure non
-//! mettere in mezzo chi non le ha — e il secondo non chiede nessun dato che non
-//! esista. `agy` sta in fondo; la regola la scrive
-//! `toolbox::Descriptor::cannot_be_a_fallback`, in un posto solo, e la legge
-//! anche `sailor flow check` sui flussi di chi lo lancia.
+//! **CHIUSO IL 01/09/2026 SPOSTANDO `agy`, E RICHIUSO LO STESSO GIORNO
+//! MISURANDOLO.** La regola ha due modi di essere rispettata — misurare le
+//! parole di chi sta in mezzo, oppure non mettere in mezzo chi non le ha. Il
+//! secondo non chiede nessun dato che non esista, ed era la strada giusta finché
+//! il dato non c'era; ma è una scorciatoia se il dato si può misurare, e si
+//! poteva. Puntando `HOME` a una cartella vuota, `agy` dice con parole sue di
+//! non poter lavorare, e adesso quelle parole stanno nel suo descrittore:
+//! `what_agy_declares_matches_what_agy_really_said` le confronta con l'uscita
+//! vera. La regola la scrive `toolbox::Descriptor::cannot_be_a_fallback`, in un
+//! posto solo, e la legge anche `sailor flow check` sui flussi di chi lo lancia.
+//!
+//! **RESTA NON MISURATO** come `agy` dice di aver finito la **quota**: cercato
+//! nell'aiuto, nei sottocomandi annidati e nella tabella delle stringhe del
+//! binario, e non trovato. È scritto nel descrittore, dove chi legge una parola
+//! deve poter sapere quale metà del campo copre.
 //!
 //! Il meccanismo è provato in modo ermetico in `crates/actions`
 //! (`an_engine_that_declares_no_exhaustion_words_kills_the_chain`, in coppia
@@ -110,24 +119,24 @@ fn why_it_cannot_be_a_fallback(tool: &str) -> Option<String> {
 /// non è un ripiego: è un tappo.
 ///
 /// **PERCHÉ ERA `#[ignore]`, E PERCHÉ NON LO È PIÙ.** La ragione scritta qui
-/// fino al 01/09/2026 era buona e resta vera: le parole con cui `agy` dice di
-/// aver finito la quota non sono mai state viste su questa macchina, e
-/// inventarle sarebbe peggio del difetto. Ma quella era la ragione per non
+/// fino al 01/09/2026 era buona a metà: le parole con cui `agy` dice di non
+/// poter lavorare non erano mai state viste su questa macchina, e inventarle
+/// sarebbe stato peggio del difetto. Ma «non inventarle» non vuol dire «non
+/// cercarle», e per giorni ha significato quello — quella era la ragione per non
 /// **inventare un dato**, ed era diventata la ragione per non **avere un
-/// controllo**: sono due cose diverse, e la seconda non discende dalla prima. La
-/// regola ha due modi di essere rispettata — misurare le parole di chi sta in
-/// mezzo, oppure non mettere in mezzo chi non le ha — e il secondo non richiede
-/// nessuna misura che non esista. Le catene di questo albero mettevano `agy`
-/// **fra** `claude-code` e `codex`: `codex`, che dichiara il proprio 401, non
-/// partiva mai. Adesso `agy` sta in fondo, dove la sua reticenza non toglie il
-/// lavoro a nessuno.
+/// controllo** e poi per non **fare la misura**.
 ///
-/// **QUELLO CHE RESTA APERTO, E VA DETTO QUI PERCHÉ QUI SI LEGGE.** Un `agy`
-/// esaurito **in fondo** a una catena fa ancora morire il passo invece di dire
-/// «sono esaurito»: si vede nel motivo dell'errore, non nel comportamento, e
-/// nessun ripiego si perde perché dietro di lui non c'è nessuno. Il giorno in
-/// cui qualcuno lo vede dire di essere esaurito, si scrivono le sue parole nel
-/// descrittore e torna a poter stare in mezzo.
+/// **ADESSO LA MISURA C'È.** Con `HOME` su una cartella vuota, `agy` dice di non
+/// poter lavorare con parole sue, e quelle parole stanno nel suo descrittore. La
+/// regola perciò non ha più nessuna eccezione: nessun motore spedito è esentato,
+/// e dove ciascuno sta in catena si decide su un'altra misura — quanto costa,
+/// quanto è autenticato, quanto ha risposto — non su chi tace.
+///
+/// **QUELLO CHE RESTA APERTO, E VA DETTO QUI PERCHÉ QUI SI LEGGE.** Ciò che è
+/// misurato di `agy` sono le credenziali mancanti, non la quota finita: un `agy`
+/// che avesse esaurito la quota passerebbe ancora per un fallimento qualunque.
+/// La riga sta nel descrittore, e la regola non può vederla — perché la regola
+/// chiede che il campo non sia vuoto, non che sia completo.
 #[test]
 fn every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted() {
     let mut silent: BTreeSet<String> = BTreeSet::new();
@@ -173,12 +182,20 @@ fn an_engine_that_declares_its_words_is_still_allowed_in_the_middle() {
 
 /// **LA REGOLA QUI SOPRA NON DEVE POTER DIVENTARE VUOTA IN SILENZIO.**
 ///
-/// Questa prova gira sempre, e dice una cosa sola: nei flussi di questo albero
-/// esistono catene con un motore che non è l'ultimo. Il giorno in cui non ce ne
-/// fossero più — perché i flussi cambiano — la prova ignorata qui sopra
-/// passerebbe senza guardare niente, e nessuno lo saprebbe. È il difetto del
-/// guasto 22 applicato a un controllo invece che a un totale: uno zero mai
-/// calcolato si presenta come una misura.
+/// Questa prova dice una cosa sola: nei flussi di questo albero esistono catene
+/// con un motore che non è l'ultimo. Il giorno in cui non ce ne fossero più —
+/// perché i flussi cambiano — la regola qui sopra passerebbe senza guardare
+/// niente, e nessuno lo saprebbe. È il difetto del guasto 22 applicato a un
+/// controllo invece che a un totale: uno zero mai calcolato si presenta come una
+/// misura.
+///
+/// **E NON È IPOTETICA: È SUCCESSA.** Il 01/09/2026 il guasto 31 è stato chiuso
+/// spostando `agy` in fondo a tutte e dodici le posizioni. Da quel momento
+/// nessun motore muto stava più in mezzo, la regola non guardava più niente su
+/// `agy`, e sarebbe rimasta verde qualunque cosa il suo descrittore dicesse —
+/// misurato: con `agy` in fondo e `unusable_when` svuotato, la regola resta
+/// verde. Questa prova non l'ha vista perché `claude-code` e `codex` erano
+/// ancora in mezzo: sorveglia che le catene esistano, non che sorveglino tutti.
 #[test]
 fn there_are_chains_whose_fallback_can_actually_be_needed() {
     let engines = engines_in_chains();
@@ -190,30 +207,109 @@ fn there_are_chains_whose_fallback_can_actually_be_needed() {
     );
 }
 
-/// **UN MOTORE CHE NON RIPIEGA HA ANCORA UN POSTO, E DEVE RESTARE IN FONDO.**
+/// **LE PAROLE SCRITTE NEL DESCRITTORE SONO QUELLE CHE IL MOTORE HA DETTO.**
 ///
-/// La misura di quanto la regola stringe, oggi: `agy` è nelle catene di questo
-/// albero, e ci sta come ultimo. Fino al 01/09/2026 questa prova sorvegliava un
-/// **elenco di eccezioni** — «nessun motore muto oltre a quello registrato» —
-/// che è la forma che prende una regola quando la si scrive prima di poterla
-/// rispettare. Adesso la regola non ha eccezioni, e ciò che resta da sorvegliare
-/// è l'opposto: che `agy` non sia stato tolto di mezzo cancellandolo, perché un
-/// ripiego in meno non è la cura di un ripiego che non scatta.
+/// Questa è la prova che il 31/08 non si poteva scrivere, ed è il motivo per cui
+/// l'eccezione che stava qui non c'è più. Fino al 01/09/2026 questo posto
+/// ospitava una sorveglianza sull'eccezione — «`agy` deve restare in fondo, e
+/// non deve dichiarare niente» — cioè un controllo che pretendeva che la misura
+/// **non** fosse stata fatta. Un controllo così non protegge il prodotto:
+/// protegge la scorciatoia, e diventa rosso il giorno in cui qualcuno lavora.
+///
+/// **LA MISURA, PER CHI VUOLE RIFARLA.** `HOME` puntato a una cartella vuota, e
+/// la riga che Sailor monta davvero: `agy --mode plan --output-format json
+/// --print "<domanda>"`. Senza credenziali non chiama nessun fornitore e non
+/// costa niente. Esce **1**, e dice le parole che stanno qui sotto — due volte
+/// su due, identiche.
+///
+/// **PERCHÉ IL TESTO STA QUI E IL MOTORE NO.** Una prova che avvia `agy` vero
+/// dipende da come sta messa la casa di chi la esegue: verde su una macchina
+/// autenticata, rossa su un'altra, e per la ragione sbagliata in tutti e due i
+/// casi. Qui il testo è quello misurato, copiato una volta e poi fermo, e ciò
+/// che si prova è l'anello che nessuno guardava: **le parole del descrittore
+/// spedito combaciano con l'uscita vera**. Scriverne una sbagliata — un refuso,
+/// una maiuscola di troppo in un confronto che non le ignorasse — passerebbe
+/// sotto a ogni altra prova di questo albero.
+///
+/// **QUELLO CHE NON COPRE, E STA SCRITTO NEL DESCRITTORE.** Questa è la metà
+/// «credenziali mancanti» di `unusable_when`, la stessa metà con cui `codex`
+/// dichiara il proprio 401. Le parole con cui `agy` dice di aver finito la
+/// **quota** restano non misurate: non stanno nell'aiuto, né in quello dei
+/// sottocomandi annidati, e nella tabella delle stringhe del binario
+/// l'esaurimento compare solo come motivo di ritentativo interno, mai come
+/// messaggio stampato.
 #[test]
-fn the_engine_that_cannot_fall_back_is_still_used_last() {
-    let engines = engines_in_chains();
-    let last: Vec<&InChain> = engines
-        .iter()
-        .filter(|engine| engine.tool == "agy" && engine.last)
-        .collect();
-    assert!(
-        !last.is_empty(),
-        "«agy» non compare più in fondo a nessuna catena: la regola sul ripiego è \
-         stata rispettata togliendo un motore invece di spostarlo"
+fn what_agy_declares_matches_what_agy_really_said() {
+    // L'uscita vera del 01/09/2026, presa come è arrivata. Lo stdout è il JSON
+    // che `--output-format json` produce quando la casa non ha credenziali.
+    let stdout = r#"{"conversation_id":"","status":"ERROR","response":"","error":"authentication failed or timed out","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0}}"#;
+    let stderr = "Authentication required. Please visit the URL to log in:\n  \
+                  https://accounts.google.com/o/oauth2/auth?access_type=offline\n\n\
+                  Waiting for authentication (timeout 60s)...\n\
+                  Or, paste the authorization code here and press Enter:\n\
+                  Error: authentication timed out.";
+
+    // La ricetta non si riscrive qui: si chiede a chi la compone per davvero,
+    // altrimenti la prova sorveglierebbe una copia e il descrittore spedito
+    // potrebbe dire altro.
+    let tools = toolbox::Tools::new(
+        toolbox::Catalog::load(&[toolbox::descriptor::Source::Builtin]),
+        toolbox::Machine::current(),
     );
+    let recipe = actions::ToolResolver::ask_recipe(&tools, "agy")
+        .expect("«agy» è spedito e dichiara come lo si interroga");
+
+    match actions::judge_dry_run(&recipe, stdout, stderr) {
+        actions::ProbeVerdict::CannotWork { said } => {
+            assert!(
+                said.contains("authentication"),
+                "il motivo deve portare le parole del motore: {said}"
+            );
+        }
+        other => panic!(
+            "«agy» senza credenziali deve risultare «non può lavorare adesso», \
+             invece è {other:?}. Le parole scritte in `unusable_when` non \
+             combaciano più con quello che agy dice davvero"
+        ),
+    }
+}
+
+/// **E UNA RISPOSTA QUALUNQUE NON DEVE COMBACIARE.**
+///
+/// Il pericolo di `unusable_when` non è che sia vuoto: è che sia **largo**. Una
+/// parola generica manderebbe un mandato sano giù per tutta la catena finché
+/// qualcuno risponde comunque, e nessuno saprebbe perché la risposta è di un
+/// altro motore.
+///
+/// **E IL CASO CHE LO FA SUCCEDERE È BANALE**, per questo la risposta qui sotto
+/// è fatta così: un passo che chiede a `agy` di *parlare* di autenticazione
+/// riceve una risposta che contiene quella parola. Il confronto guarda l'uscita
+/// intera, e l'uscita di un motore contiene la sua risposta: una parola sola
+/// scritta in `unusable_when` farebbe scivolare la catena al motore dopo **su
+/// una chiamata riuscita**, cioè pagandola due volte e attribuendola a chi non
+/// l'ha data. È il difetto che il campo dichiara di voler evitare — «si
+/// dichiarano le parole del fornitore, non una regola generale» — visto dal lato
+/// in cui costa.
+///
+/// Senza questa prova, sostituire le tre frasi misurate con `"authentication"`
+/// resterebbe verde.
+#[test]
+fn a_real_answer_from_agy_is_not_mistaken_for_an_exhausted_engine() {
+    let stdout = r#"{"conversation_id":"c-1","status":"OK","response":"Il difetto sta nel middleware di authentication: il token scade e nessuno lo rinnova.","duration_seconds":2,"num_turns":1,"usage":{"input_tokens":12,"output_tokens":3,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":15}}"#;
+    let tools = toolbox::Tools::new(
+        toolbox::Catalog::load(&[toolbox::descriptor::Source::Builtin]),
+        toolbox::Machine::current(),
+    );
+    let recipe = actions::ToolResolver::ask_recipe(&tools, "agy")
+        .expect("«agy» è spedito e dichiara come lo si interroga");
+
     assert!(
-        why_it_cannot_be_a_fallback("agy").is_some(),
-        "«agy» dichiara adesso come si esaurisce: se la misura è stata fatta, \
-         questa prova non serve più e le catene possono rimetterlo in mezzo"
+        !matches!(
+            actions::judge_dry_run(&recipe, stdout, ""),
+            actions::ProbeVerdict::CannotWork { .. }
+        ),
+        "una risposta buona di «agy» viene letta come un motore che non può \
+         lavorare: le parole di `unusable_when` sono troppo larghe, e la catena \
+         scivolerebbe al motore dopo su ogni chiamata riuscita"
     );
 }
