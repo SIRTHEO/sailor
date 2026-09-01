@@ -1,35 +1,30 @@
-// Gli strumenti che eseguono un nodo — una riga di comando con un'IA dietro, un
-// server MCP, un binario qualunque — e i tre campi con cui un nodo li usa.
-//
-// QUI DENTRO NON C'È NESSUN ELENCO DI STRUMENTI, E NON DEVE ESSERCI. Chi
-// installa il prodotto ha altre cose sul disco rispetto a chi lo scrive: la
-// finestra chiede al motore cosa c'è (`discover_tools`) e disegna quello che
-// riceve. Un tipo chiuso con tre nomi dentro sarebbe una lista della spesa
-// travestita da tipo, e il primo utente con un quarto strumento resterebbe
-// fuori dal prodotto.
-//
-// I quattro campi (strumento, modello, opzioni, prompt) stanno nei parametri
-// del passo. Il motore oggi non li legge: `external_engine` vuole `bin`,
-// `args`, `env`, `stdin`, `timeout_secs`, e il ponte fra un identificativo e un
-// binario è di chi esegue, non di chi disegna. Quello che si può fare da questa
-// parte è non mentire: se un passo dichiara già un binario suo, o se il suo
-// schema d'ingresso rifiuterebbe questi campi, il pannello lo dice.
-//
-// LA SPECIE È APERTA per lo stesso motivo: le tre note oggi hanno un'etichetta
-// in italiano, una quarta che arrivasse domani si mostra col suo nome invece di
-// far scomparire lo strumento o di dire «sconosciuto».
+// The tools that run a node — an AI command line, an MCP server, any binary —
+// and the fields a node uses them with.
+
+// THERE IS NO LIST OF TOOLS IN HERE, AND THERE MUST NOT BE. Whoever installs
+// the product has different things on disk from whoever writes it: the window
+// asks the engine (`discover_tools`) and draws what it gets back. A closed type
+// with three names in it would be a shopping list disguised as a type.
+
+// The four fields (tool, model, options, prompt) live in the step's params.
+// The engine does not read them today: `external_engine` wants `bin`, `args`,
+// `env`, `stdin`, `timeout_secs`, and bridging an id to a binary belongs to
+// whoever executes. What this side can do is not lie: if a step already
+// declares its own binary, the panel says so.
+
+// THE FAMILY TYPE IS OPEN for the same reason: a fourth family arriving
+// tomorrow shows under its own name instead of hiding the tool.
 
 import { useSyncExternalStore } from "react";
 import type { ValueSchema } from "./flow";
 
-/** Le specie note oggi; il motore può dichiararne altre e la finestra le accetta. */
+/** The families known today; the engine may declare others and they are kept. */
 export type ToolKind = "ai_cli" | "mcp" | "tool" | (string & {});
 
 /**
- * Uno strumento come il motore lo descrive. I sei campi sono il contratto
- * minimo di `discover_tools`; tutto il resto che il motore volesse aggiungere
- * arriva qui senza rompere niente — `models` è il primo caso previsto, e se
- * manca il campo del modello resta libero.
+ * A tool as the engine describes it. The six fields are the minimum contract of
+ * `discover_tools`; anything else the engine wants to add arrives without
+ * breaking anything.
  */
 export interface Tool {
   id: string;
@@ -39,63 +34,53 @@ export interface Tool {
   version: string;
   available: boolean;
   /**
-   * Perché è così: da dove è stato trovato, o perché non c'è, o perché non si è
-   * potuto guardare. UNO STRUMENTO ASSENTE NON SI NASCONDE, si mostra spento
-   * con questo accanto — senza, chi guarda un nodo che non parte può solo
-   * aprire un terminale e indovinare.
+   * Why it is the way it is: where it was found, or why it is missing, or why
+   * we could not look. A MISSING TOOL IS NOT HIDDEN — it is shown disabled with
+   * this beside it, or a node that will not start is a guessing game.
    */
   reason: string;
-  /** Da quale descrittore è stato riconosciuto: l'indirizzo di una riga sbagliata. */
+  /** Which descriptor recognised it: the address of a wrong line. */
   descriptor: string;
-  /** Modelli che il motore suggerisce per questo strumento, se li conosce. */
+  /** Models the engine suggests for this tool, if it knows any. */
   models?: string[];
-  /** Le opzioni che questo strumento accetta, se il descrittore le dichiara. */
+  /** The options this tool accepts, if the descriptor declares them. */
   options?: OptionSpec[];
   [extra: string]: unknown;
 }
 
 /**
- * Un'opzione come il descrittore la descriverà.
- *
- * OGGI NESSUN DESCRITTORE LA DICHIARA: `toolbox::Descriptor` ha `detect`,
- * `enumerate`, `version`, `config`, `note` — e basta. Questo tipo esiste perché
- * il pannello sappia già disegnare la scelta guidata il giorno che il campo
- * arriverà, non perché faccia finta che ci sia: finché l'elenco è vuoto il
- * pannello mostra il campo libero, e lo dice.
- *
- * Inventare qui un elenco di modelli o di flag plausibili sarebbe la cosa
- * peggiore possibile — sembrerebbe rilevato dalla macchina, e sarebbe scritto
- * a memoria da chi non ha guardato quella macchina.
+ * An option as a descriptor will describe it. NO DESCRIPTOR DECLARES ONE YET:
+ * the type exists so the panel can already draw the guided choice, and while
+ * the list is empty the panel shows the free field and says so. Inventing
+ * plausible flags here would look machine-detected while written from memory.
  */
 export interface OptionSpec {
-  /** Il nome dell'opzione come la scrive lo strumento, es. `--model`. */
+  /** The option's name as the tool spells it, e.g. `--model`. */
   key: string;
-  /** Come si chiama per chi legge; in mancanza si mostra `key`. */
+  /** What it is called for a reader; falls back to `key`. */
   label?: string;
-  /** Che forma ha il valore. Una forma che non conosco si tratta come testo. */
+  /** The value's shape. An unknown shape is treated as text. */
   kind: "text" | "number" | "flag" | "choice";
-  /** I valori ammessi, quando la forma è `choice`. */
+  /** The allowed values, when the shape is `choice`. */
   choices?: string[];
-  /** Una riga di spiegazione per chi sceglie. */
+  /** One line of explanation for whoever is choosing. */
   help?: string;
 }
 
 /**
- * Cosa sa la finestra degli strumenti installati. «Muto» non è «nessuno
- * strumento»: il primo è un motore che non ha risposto, il secondo una
- * macchina senza niente installato, e chi guarda deve poterli distinguere.
+ * What the window knows about the installed tools. "Silent" is not "no tools":
+ * the first is an engine that did not answer, the second a machine with
+ * nothing installed, and the two must stay distinguishable.
  */
 export type ToolDiscovery =
   | { state: "asking" }
   | { state: "ready"; tools: Tool[] }
   | { state: "mute"; why: string };
 
-// `mcp_server` È LA FAMIGLIA VERA, misurata eseguendo il rilevatore
-// (`cargo run --example scan -p toolbox`): i descrittori spediti scrivono
-// `"family": "mcp_server"`, e la voce `mcp` qui sotto — scritta a memoria — non
-// avrebbe agganciato niente. Restano tutte e due, perché un descrittore altrui
-// può usare l'una o l'altra e nessuna delle due deve far comparire una parola
-// grezza in mezzo all'italiano.
+// `mcp_server` IS THE FAMILY THE SHIPPED DESCRIPTORS ACTUALLY WRITE, measured
+// by running the detector (`cargo run --example scan -p toolbox`). Both spellings
+// stay: somebody else's descriptor may use either, and neither should surface a
+// raw token in the interface.
 const TOOL_KIND_LABEL: Record<string, string> = {
   ai_cli: "riga di comando IA",
   mcp: "server MCP",
@@ -103,19 +88,16 @@ const TOOL_KIND_LABEL: Record<string, string> = {
   tool: "strumento",
 };
 
-/** L'etichetta di una specie; una specie nuova si mostra col nome che ha. */
+/** A family's label; an unknown family is shown under the name it has. */
 export function toolKindLabel(kind: ToolKind): string {
   return TOOL_KIND_LABEL[kind] ?? kind;
 }
 
 /**
- * Legge la risposta del motore senza fidarsi della sua forma.
- *
- * `discover_tools` nasce in un altro cantiere mentre questo pannello si
- * scrive: se un giorno risponde con un campo in meno, la finestra deve
- * scartare quella voce e mostrare le altre, non spegnersi. Una voce scartata
- * qui è invisibile — è il prezzo di non avere una schermata bianca — e chi
- * chiama sa comunque quante ne ha ricevute.
+ * Reads the engine's answer without trusting its shape. If it ever answers with
+ * a field missing, the window drops that entry and shows the others rather than
+ * going dark. A dropped entry is invisible — the price of not having a blank
+ * screen — but the caller still knows how many arrived.
  */
 export function parseTools(payload: unknown): Tool[] {
   if (!Array.isArray(payload)) return [];
@@ -132,7 +114,7 @@ export function parseTools(payload: unknown): Tool[] {
       kind: typeof record.kind === "string" ? record.kind : "tool",
       path: typeof record.path === "string" ? record.path : "",
       version: typeof record.version === "string" ? record.version : "",
-      // Un campo mancante non promette che lo strumento c'è: si assume assente.
+      // A missing field does not promise the tool is there: assume absent.
       available: record.available === true,
       reason: typeof record.reason === "string" ? record.reason : "",
       descriptor: typeof record.descriptor === "string" ? record.descriptor : "",
@@ -143,19 +125,17 @@ export function parseTools(payload: unknown): Tool[] {
   return tools;
 }
 
-/** Le stringhe di un elenco, saltando quello che stringa non è. */
+/** The strings of a list, skipping whatever is not one. */
 function parseStrings(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string" && item !== "");
 }
 
 /**
- * Le opzioni dichiarate, lette senza fidarsi della forma.
- *
- * Il campo non esiste ancora da nessuna parte: quando esisterà lo scriverà chi
- * aggiunge un descrittore — un utente, con un file JSON a mano — e una riga
- * sbagliata deve far sparire quella riga, non il pannello. Una forma che non
- * conosco diventa `text`, che è la sola scelta che non perde il valore scritto.
+ * The declared options, read without trusting the shape. When the field exists
+ * it will be written by whoever adds a descriptor — a user, with a hand-written
+ * JSON file — so a wrong line must lose that line, not the panel. An unknown
+ * shape becomes `text`, the only choice that keeps the value already written.
  */
 export function parseOptionSpecs(value: unknown): OptionSpec[] {
   if (!Array.isArray(value)) return [];
@@ -180,7 +160,7 @@ export function parseOptionSpecs(value: unknown): OptionSpec[] {
   return specs;
 }
 
-/** Gli strumenti in ordine di lettura: prima quelli utilizzabili, poi per nome. */
+/** Tools in reading order: usable ones first, then by name. */
 export function sortTools(tools: Tool[]): Tool[] {
   return [...tools].sort((left, right) => {
     if (left.available !== right.available) return left.available ? -1 : 1;
@@ -188,7 +168,7 @@ export function sortTools(tools: Tool[]): Tool[] {
   });
 }
 
-/** Gli strumenti raggruppati per specie, ciascun gruppo già ordinato. */
+/** Tools grouped by family, each group already sorted. */
 export function groupByKind(tools: Tool[]): Array<{ kind: ToolKind; tools: Tool[] }> {
   const groups = new Map<ToolKind, Tool[]>();
   for (const tool of sortTools(tools)) {
@@ -199,15 +179,12 @@ export function groupByKind(tools: Tool[]): Array<{ kind: ToolKind; tools: Tool[
   return Array.from(groups.entries()).map(([kind, list]) => ({ kind, tools: list }));
 }
 
-// ── i tre campi con cui un nodo usa uno strumento ───────────────────────
+// ── the fields a node uses a tool with ──────────────────────────────────
 //
-// Stanno nei parametri del passo (`with`), non in campi nuovi di `Step`: la
-// forma del passo è ricalcata su `crates/flow` e aggiungerci chiavi dalla sola
-// parte della finestra farebbe divergere le due verità. Nel file del flusso
-// finisce l'IDENTIFICATIVO dello strumento, mai il suo percorso: `claude` è
-// vero su qualunque macchina, `/Users/tizio/.local/bin/claude` solo su una.
-// Chi esegue risolve l'identificativo con la stessa scoperta che riempie
-// questo elenco.
+// They live in the step's params (`with`), not in new `Step` fields: the step
+// shape mirrors `crates/flow`, and adding keys from the window side alone would
+// let the two truths drift. What lands in the flow file is the tool's ID, never
+// its path — an id is true on any machine, an absolute path on exactly one.
 
 export const TOOL_KEY = "tool";
 export const MODEL_KEY = "model";
@@ -217,23 +194,21 @@ export const OPTIONS_KEY = "options";
 const MANAGED_KEYS = [TOOL_KEY, MODEL_KEY, PROMPT_KEY, OPTIONS_KEY];
 
 /**
- * Il valore di un'opzione. `true` è l'interruttore senza valore (`--verbose`);
- * `false` non si scrive affatto — un'opzione spenta si toglie, e lasciarla
- * scritta a `false` farebbe credere a chi legge il file che qualcuno l'abbia
- * disattivata di proposito.
+ * An option's value. `true` is the valueless switch (`--verbose`); `false` is
+ * not written at all — an option turned off is removed, and leaving it written
+ * as `false` would read as somebody having disabled it on purpose.
  */
 export type OptionValue = string | number | boolean;
 
 export interface ToolChoice {
-  /** L'identificativo dello strumento, come lo dichiara il motore. */
+  /** The tool's id, as the engine declares it. */
   tool: string;
-  /** Testo libero: i modelli cambiano più in fretta di qualunque elenco. */
+  /** Free text: models change faster than any list. */
   model: string;
   prompt: string;
   /**
-   * Le opzioni scelte, per nome. L'ordine di scrittura si conserva — in JS le
-   * chiavi non numeriche escono nell'ordine in cui sono entrate — e chi legge
-   * il file ritrova la riga di comando com'è stata composta.
+   * The chosen options, by name. Insertion order is preserved for string keys,
+   * so a reader of the file finds the command line as it was composed.
    */
   options: Record<string, OptionValue>;
 }
@@ -244,9 +219,8 @@ function textAt(params: Record<string, unknown> | null | undefined, key: string)
 }
 
 /**
- * Vero se il campo del pannello sa **tenere** questo valore senza perderne un
- * pezzo. I tre campi di testo tengono una stringa; le opzioni tengono un
- * oggetto di soli valori scalari.
+ * True if the panel's field can **hold** this value without losing part of it.
+ * The text fields hold a string; the options hold an object of scalars only.
  */
 function panelCanHold(key: string, value: unknown): boolean {
   if (key !== OPTIONS_KEY) return typeof value === "string";
@@ -257,27 +231,10 @@ function panelCanHold(key: string, value: unknown): boolean {
 }
 
 /**
- * Separa i campi gestiti dal pannello dagli altri parametri del passo.
- *
- * **CIÒ CHE NON SI SA LEGGERE NON SI PUÒ RISCRIVERE.** Un campo gestito il cui
- * valore il pannello non sa tenere resta fra gli altri parametri: torna sul
- * disco com'era, e chi guarda lo vede nel riquadro JSON invece di non vederlo
- * più da nessuna parte. Chi non sa un campo lo lascia dov'era; ometterlo è
- * anch'essa una scrittura, ed è quella che non si vede.
- *
- * **IL CASO CHE HA PAGATO QUESTA REGOLA — guasto 53.** `tool` è un `ToolChoice`
- * del motore: `One(String)` **oppure** `Chain(Vec<String>)`. Il pannello lo
- * leggeva solo come stringa, e i tre pezzi si incastravano così: `tool` sta fra
- * i campi gestiti, quindi usciva da `rest`; letto come testo su una catena dava
- * `""`; e `joinToolParams` scrive `tool` solo se non è vuoto. Risultato
- * misurato sui flussi veri: `{ tool: ["claude-code","agy","codex"], model:
- * "sonnet" }` tornava sul disco come `{ model: "opus" }`. Bastava toccare
- * modello, prompt o opzioni e premere «Salva» — **20 dei 25 passi
- * `external_engine`** di `flows/`.
- *
- * La causa è la stessa già riparata sul nodo (`enginesOf` in `StepNode.tsx`):
- * leggere `tool` come se fosse solo una stringa. Là si mostrava «nessun
- * motore», qui si cancellava.
+ * Splits the panel-managed fields from the rest. **WHAT CANNOT BE READ MUST NOT
+ * BE REWRITTEN**: a managed field the panel cannot hold stays among the rest,
+ * returns to disk as it was and shows in the JSON box, since omitting a field
+ * is a write too. `tool` paid for it: as a plain string a `Chain` saves as `""`.
  */
 export function splitToolParams(params: Record<string, unknown> | null | undefined): {
   choice: ToolChoice;
@@ -301,9 +258,9 @@ export function splitToolParams(params: Record<string, unknown> | null | undefin
 }
 
 /**
- * Le opzioni scritte nel passo. Un valore che non è né testo, né numero, né
- * interruttore viene scartato invece che convertito: un oggetto trasformato in
- * `"[object Object]"` finirebbe sul disco al posto di quello che c'era.
+ * The options written in the step. A value that is neither text, nor number,
+ * nor switch is dropped rather than converted: an object turned into
+ * `"[object Object]"` would land on disk in place of what was there.
  */
 function readOptions(value: unknown): Record<string, OptionValue> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
@@ -317,10 +274,9 @@ function readOptions(value: unknown): Record<string, OptionValue> {
 }
 
 /**
- * Come si leggerebbe la riga di comando che ne esce. Serve al pannello per
- * mostrare a chi sceglie *cosa sta componendo*, e non è quello che finisce nel
- * file: sul disco restano le opzioni per nome, che si rileggono e si
- * ricompongono. È un'anteprima, e va letta come tale.
+ * How the resulting command line would read. It shows what is being composed
+ * and is NOT what ends up in the file: on disk the options stay by name, to be
+ * re-read and recomposed. A preview, and to be read as one.
  */
 export function optionsPreview(choice: ToolChoice): string {
   const words: string[] = [];
@@ -333,14 +289,10 @@ export function optionsPreview(choice: ToolChoice): string {
 }
 
 /**
- * Rimette insieme i parametri. Un campo lasciato vuoto non finisce nel file
- * come stringa vuota: sul disco resta la differenza fra «non l'ho scelto» e
- * «l'ho scelto vuoto», e la prima è la verità.
- *
- * `rest` viene copiato **per primo** di proposito: un campo che `splitToolParams`
- * ha lasciato lì perché non sapeva tenerlo — una catena in `tool` — sopravvive,
- * e una scelta esplicita del pannello gli passa sopra. L'ordine è la differenza
- * fra «non l'ho toccato» e «l'ho cambiato», e sono due cose diverse.
+ * Puts the params back together. An empty field is not written as an empty
+ * string, so on disk "I did not choose it" stays apart from "I chose nothing".
+ * `rest` is copied **first**: a field `splitToolParams` could not hold — a
+ * chain in `tool` — survives unless the panel made an explicit choice.
  */
 export function joinToolParams(
   rest: Record<string, unknown>,
@@ -350,8 +302,8 @@ export function joinToolParams(
   if (choice.tool !== "") params[TOOL_KEY] = choice.tool;
   if (choice.model !== "") params[MODEL_KEY] = choice.model;
   if (choice.prompt !== "") params[PROMPT_KEY] = choice.prompt;
-  // Un'opzione senza nome non si scrive: è una riga che chi sceglie sta ancora
-  // componendo, e salvarla darebbe al motore una chiave vuota.
+  // An option with no name is not written: it is a row still being composed,
+  // and saving it would give the engine an empty key.
   const options: Record<string, OptionValue> = {};
   for (const [key, value] of Object.entries(choice.options)) {
     if (key.trim() !== "") options[key] = value;
@@ -361,12 +313,10 @@ export function joinToolParams(
 }
 
 /**
- * Vero se lo schema d'ingresso del passo rifiuterebbe i campi del pannello.
- *
- * Un passo può dichiarare un oggetto chiuso (`allow_extra: false`), e i flussi
- * veri sul disco lo fanno: scrivergli dentro una chiave che lo schema non
- * elenca produce un file che il motore rifiuta al caricamento. Il pannello lo
- * dice mentre lo si scrive, invece di lasciarlo scoprire a chi salva.
+ * True if the step's input schema would reject the panel's fields. A step may
+ * declare a closed object (`allow_extra: false`), and real flows do: writing a
+ * key the schema does not list produces a file the engine rejects at load. The
+ * panel says so while it is typed, not at save time.
  */
 export function schemaRejectsToolKeys(schema: ValueSchema, choice: ToolChoice): boolean {
   if (schema.type !== "object" || schema.allow_extra) return false;
@@ -376,27 +326,24 @@ export function schemaRejectsToolKeys(schema: ValueSchema, choice: ToolChoice): 
 }
 
 /**
- * Il binario che il passo dichiara per conto suo, se ce n'è uno. Convive col
- * campo «strumento» solo per sbaglio: sono due risposte alla stessa domanda.
+ * The binary the step declares on its own, if there is one. It coexists with
+ * the tool field only by mistake: they answer the same question.
  */
 export function rivalBinary(rest: Record<string, unknown>): string {
   const bin = rest.bin;
   return typeof bin === "string" ? bin : "";
 }
 
-/** L'identificativo dello strumento scelto da un passo, se ne ha uno. */
+/** The id of the tool a step chose, if it chose one. */
 export function toolOf(params: Record<string, unknown> | null | undefined): string {
   return textAt(params, TOOL_KEY);
 }
 
 /**
- * La catena di motori che `splitToolParams` ha lasciato fra gli altri
- * parametri, se ce n'è una.
- *
- * Serve al pannello per **dirlo**: un passo con una catena e un selettore su
- * «— nessuno —» è la stessa bugia che il nodo raccontava prima, spostata di una
- * finestra. Il pannello non la sa ancora comporre; sa dire che c'è e che resta
- * dov'è.
+ * The engine chain `splitToolParams` left among the other params, if any. The
+ * panel uses it to **say so**: a step with a chain and a selector reading "none"
+ * would be the same lie the node used to tell, moved one window along. The
+ * panel cannot compose one yet; it can say there is one and that it stays.
  */
 export function chainIn(rest: Record<string, unknown>): string[] {
   const declared = rest[TOOL_KEY];
@@ -405,9 +352,9 @@ export function chainIn(rest: Record<string, unknown>): string[] {
 }
 
 /**
- * I modelli da suggerire: quelli che il motore dichiara per lo strumento
- * scelto, più quelli già scritti negli altri passi. Il campo resta libero —
- * questi sono un aiuto a scrivere, non un elenco di ciò che è permesso.
+ * The models to suggest: what the engine declares for the chosen tool, plus
+ * what is already written in the other steps. The field stays free — these help
+ * with typing, they are not a list of what is allowed.
  */
 export function modelSuggestions(tool: Tool | undefined, used: Iterable<string>): string[] {
   const seen = new Set<string>();
@@ -421,36 +368,32 @@ export function modelSuggestions(tool: Tool | undefined, used: Iterable<string>)
   return Array.from(seen);
 }
 
-// ── il registro condiviso: chi ha già chiesto, lo dice a tutti ────────────
+// ── the shared register: whoever asked already tells everyone ────────────
 //
-// PERCHÉ ESISTE. Un nodo sulla tela deve mostrare il segno e il nome dello
-// strumento che esegue, e sapere se su questa macchina c'è: sono dati della
-// scoperta, non del passo. Passarli lungo la catena dei nodi vorrebbe dire
-// riscrivere chi costruisce la disposizione e chi la monta — due file
-// condivisi, uno dei quali in mano a un altro cantiere in questo momento.
-//
-// La scoperta resta una sola: chi la esegue (`engine.discoverTools`) deposita
-// qui l'esito, e chiunque lo voglia lo legge. Nessuna seconda interrogazione
-// del disco, nessun ordine di montaggio da rispettare — un nodo montato prima
-// della risposta mostra quello che il passo dichiara, e si aggiorna da sé
-// quando la risposta arriva.
+// WHY IT EXISTS. A node on the canvas must show the mark and the name of the
+// tool that runs it, and whether that tool is on this machine: those are facts
+// of the discovery, not of the step. Threading them down the node chain would
+// mean rewriting both the layout builder and its mounter.
+
+// There is only one discovery: whoever runs it (`engine.discoverTools`) leaves
+// the outcome here and anyone reads it. No second disk query, no mount order to
+// respect — a node mounted before the answer shows what the step declares, and
+// updates itself when the answer arrives.
 
 let registry: ReadonlyMap<string, Tool> = new Map();
 const listeners = new Set<() => void>();
 
-/** Deposita l'esito di una scoperta e sveglia chi lo stava guardando. */
+/** Leaves a discovery's outcome here and wakes whoever was watching. */
 export function publishTools(tools: Tool[]): void {
   registry = new Map(tools.map((tool) => [tool.id, tool]));
   for (const listener of listeners) listener();
 }
 
 /**
- * Gli strumenti conosciuti, per identificativo.
- *
- * L'IDENTITÀ DELLA MAPPA CAMBIA SOLO CON UNA SCOPERTA NUOVA, e non è un
- * dettaglio: `useSyncExternalStore` confronta i riferimenti, e restituire una
- * mappa nuova a ogni lettura farebbe ridisegnare la tela all'infinito. È già
- * successo su questa tela il 28/08 per un `new Map()` scritto dentro un render.
+ * The known tools, by id. **THE MAP'S IDENTITY CHANGES ONLY ON A NEW
+ * DISCOVERY**, and that is not a detail: `useSyncExternalStore` compares
+ * references, so returning a fresh map on every read would redraw the canvas
+ * forever.
  */
 export function knownTools(): ReadonlyMap<string, Tool> {
   return registry;
@@ -464,11 +407,10 @@ function subscribeTools(listener: () => void): () => void {
 }
 
 /**
- * Lo strumento con questo identificativo, se la scoperta lo ha trovato.
- *
- * `undefined` risponde a due domande diverse — la scoperta non ha ancora
- * risposto, oppure ha risposto e questo strumento qui non c'è — e chi chiama
- * deve distinguerle: `toolsAreKnown()` dice se una risposta è arrivata.
+ * The tool with this id, if discovery found it. `undefined` answers two
+ * different questions — discovery has not answered yet, or it answered and this
+ * tool is absent — and the caller must tell them apart: `toolsAreKnown()` says
+ * whether an answer arrived.
  */
 export function useTool(id: string): Tool | undefined {
   return useSyncExternalStore(
@@ -478,7 +420,7 @@ export function useTool(id: string): Tool | undefined {
   );
 }
 
-/** Vero quando una scoperta ha già risposto qualcosa. */
+/** True once a discovery has answered something. */
 export function useToolsAreKnown(): boolean {
   return useSyncExternalStore(
     subscribeTools,

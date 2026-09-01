@@ -1,12 +1,10 @@
-// The inspector for the selected step: what it is called, what it does, who
-// runs it, how many attempts it gets, what it depends on, and with which
-// parameters.
-//
-// THE TOOL PICKER KNOWS NO TOOL. The list comes from the engine
-// (`discover_tools`); this file only knows how to draw it. When discovery is
-// mute the panel says so and lets the identifier be typed by hand, so nobody
-// faces an empty list without knowing whether the machine is bare or the
-// engine is silent.
+// The inspector for a selected step: its name, what it does, WHO RUNS IT, how
+// many times it retries, what it depends on, with which params.
+
+// THE TOOL SELECTOR KNOWS NO TOOLS. The list comes from the engine
+// (`discover_tools`); this file only knows how to draw it. When discovery does
+// not answer, the panel says so and lets the id be typed by hand — nobody is
+// left before an empty list unable to tell a bare machine from a silent engine.
 
 import { useRef, useState } from "react";
 import { kindOf, type Condition, type Step, type ValueSchema } from "./flow";
@@ -35,7 +33,7 @@ export interface StepEditorProps {
   siblingIds: string[];
   tools: Tool[];
   discovery: ToolDiscovery;
-  /** Models already written in the other steps: suggestions taken from the real thing. */
+  /** Models already written in the other steps: suggestions taken from life. */
   usedModels: string[];
   onRename: (newId: string) => void;
   onField: (patch: Partial<Step>) => void;
@@ -58,8 +56,8 @@ const KIND_LABEL: Record<string, string> = {
 
 /**
  * Mounts once per selected step (the key is `selectedNode` in `App`), so the
- * local drafts (id, JSON) start clean on every change of selection without a
- * dedicated effect to reset them.
+ * local drafts (id, JSON) start clean on every change of selection without an
+ * effect dedicated to resetting them.
  */
 export function StepEditor({
   flowName,
@@ -79,16 +77,17 @@ export function StepEditor({
 
   const { choice, rest } = splitToolParams(step.with);
   // The chain the panel cannot compose and must not delete: it stays among the
-  // other parameters, and is read from there to be told to whoever is looking.
+  // other params, and is read from there to be reported on screen.
   const chain = chainIn(rest);
-  // An `engine` step uses a tool by definition; and a step that already names
-  // one shows it whatever action it carries — hiding it would hide a datum that
-  // is in the file. A chain counts: a step naming three engines uses one.
+  // An `engine` step uses a tool by definition; and a step that already declares
+  // one shows it whatever action it carries — the alternative would hide a
+  // datum that is in the file. A chain counts: a step naming three engines
+  // uses one.
   const usesTool = kindOf(step.action) === "engine" || choice.tool !== "" || chain.length > 0;
 
-  // The JSON box shows only the parameters the panel does not handle: the
-  // dedicated fields already have theirs, and seeing them in two places that
-  // overwrite each other is the fastest way to lose the one written last.
+  // The JSON box shows only the params the panel does not manage: the fields
+  // already have their own, and seeing them in two places that write over each
+  // other is the fastest way to lose whichever was typed last.
   const [withDraft, setWithDraft] = useState(() => {
     const shown = usesTool ? rest : (step.with ?? {});
     return Object.keys(shown).length === 0 ? "" : JSON.stringify(shown, null, 2);
@@ -502,9 +501,9 @@ interface ToolOptionsProps {
   onChange: (options: Record<string, OptionValue>) => void;
 }
 
-/** A row being composed. The `id` never leaves this file: it keeps React from
- *  remounting the row while its name is typed — without it the field loses
- *  focus at every keystroke. */
+/** A row being composed. The `id` never leaves this file: React needs it so the
+ *  row is not remounted while its name is typed — without it the field loses
+ *  focus on every keystroke. */
 interface OptionRow {
   id: number;
   name: string;
@@ -512,13 +511,10 @@ interface OptionRow {
 }
 
 /**
- * The options of a step: a choice, not a command line to be typed.
- *
- * TWO WAYS, AND THE SECOND IS TODAY'S. If the tool declares its own options
- * (`options` in the descriptor) each becomes a control with its own shape. No
- * descriptor declares them yet, so pairs are written by hand — and the panel
- * SAYS it is a fallback instead of implying that those few rows are everything
- * the tool accepts. What it never does is guess.
+ * A step's options are a choice, not a command line. A tool that declared its
+ * own would get a control per shape; none does yet, so pairs are added by hand
+ * and the panel calls itself a fallback rather than guess. THE ROWS LIVE HERE,
+ * not in the step: a nameless option never reaches the file.
  */
 function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
   const declared: OptionSpec[] = tool?.options ?? [];
@@ -560,8 +556,8 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
     push(rows, values);
   }
 
-  // Two rows with the same name cannot live in one JSON object: only one
-  // survives on disk. Better said while typing than found on reopening.
+  // Two rows with the same name cannot coexist in a JSON object: only one
+  // survives on disk. Better said while typing than discovered on reopening.
   const named = rows.map((row) => row.name.trim()).filter((name) => name !== "");
   const duplicated = named.some((name, index) => named.indexOf(name) !== index);
 
@@ -697,7 +693,7 @@ function DeclaredOption({
   );
 }
 
-/** An option written by hand: a name, a value, and a way to drop it. */
+/** A hand-written option: name and value, and it can be removed. */
 function FreeOption({
   name,
   value,
