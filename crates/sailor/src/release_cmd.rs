@@ -48,7 +48,7 @@ pub fn run(args: &[String]) -> i32 {
     };
     let Some(selected) = target(&options.target_name) else {
         eprintln!(
-            "sailor release: bersaglio sconosciuto '{}'; bersagli disponibili: {}",
+            "sailor release: unknown target '{}'; the targets available are: {}",
             options.target_name,
             target_names()
         );
@@ -79,9 +79,9 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
     let target_name = args
         .next()
-        .ok_or_else(|| format!("manca il bersaglio (uso: {})", USAGE[0]))?;
+        .ok_or_else(|| format!("no target given (usage: {})", USAGE[0]))?;
     if target_name.starts_with('-') {
-        return Err(format!("manca il bersaglio prima di '{target_name}'"));
+        return Err(format!("no target before '{target_name}'"));
     }
 
     let mut dry_run = false;
@@ -94,12 +94,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             "--wait-secs" => {
                 let value = args
                     .next()
-                    .ok_or_else(|| "--wait-secs richiede un numero".to_string())?;
+                    .ok_or_else(|| "--wait-secs needs a number".to_string())?;
                 wait_secs = value
                     .parse::<u64>()
-                    .map_err(|_| format!("valore non valido per --wait-secs: '{value}'"))?;
+                    .map_err(|_| format!("not a number for --wait-secs: '{value}'"))?;
             }
-            _ => return Err(format!("opzione sconosciuta '{arg}'")),
+            _ => return Err(format!("unknown option '{arg}'")),
         }
     }
     Ok(Options {
@@ -127,13 +127,13 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let dirty_count = String::from_utf8_lossy(&dirty.stdout).lines().count();
     if dirty_count > 0 {
         println!(
-            "nota: {dirty_count} file non committati sotto crates/ restano fuori dal servizio, per costruzione"
+            "note: {dirty_count} uncommitted file(s) under crates/ stay out of service, by construction"
         );
     }
 
     let temporary = make_temporary_tree()?;
     let repository = temporary.path.join("repo");
-    println!("== clono HEAD ({head_short}) in un albero usa-e-getta ==");
+    println!("== cloning HEAD ({head_short}) into a throwaway tree ==");
     clone_repository(&root, &repository)?;
     command_success(
         Command::new("git")
@@ -141,24 +141,24 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             .arg(&repository)
             .args(["checkout", "--quiet"])
             .arg(&head_rev),
-        "il checkout di HEAD nel clone è fallito",
+        "checking HEAD out in the clone failed",
     )?;
 
     let build_target = root.join("target/from-head");
     // I crate stanno alla radice dell'albero dal trasloco del 27/08/2026: non
     // c'è più un sottoalbero da cui compilare.
     let cloned_rust = repository.clone();
-    println!("== compilo da quell'albero ==");
+    println!("== building from that tree ==");
     let build = Command::new("cargo")
         .current_dir(&cloned_rust)
         .env("CARGO_TARGET_DIR", &build_target)
         .args(["build", "--release", "--bin", selected.bin])
         .output()
-        .map_err(|error| format!("non posso avviare cargo: {error}"))?;
+        .map_err(|error| format!("cannot start cargo: {error}"))?;
     print_tail(&combined_output(&build), 5);
     if !build.status.success() {
         return Err(
-            "HEAD non compila: nulla è stato sostituito e il binario in servizio è intatto"
+            "HEAD does not compile: nothing was replaced and the binary in service is intact"
                 .to_string(),
         );
     }
@@ -166,93 +166,107 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let fresh = build_target.join("release").join(selected.bin);
     if !fresh.is_file() {
         return Err(format!(
-            "la compilazione è riuscita ma non ha prodotto {}",
+            "the build succeeded and produced no {}",
             fresh.display()
         ));
     }
 
     if options.skip_tests {
-        println!("== PROVE SALTATE (--skip-tests): questo rilascio NON è stato provato ==");
+        println!("== TESTS SKIPPED (--skip-tests): this release was NOT tested ==");
     } else {
-        println!("== lancio l'intera batteria su HEAD ==");
+        println!("== running the whole suite on HEAD ==");
         let suite_path = temporary.path.join("suite.txt");
         let suite_file = File::create(&suite_path)
-            .map_err(|error| format!("non posso creare {}: {error}", suite_path.display()))?;
+            .map_err(|error| format!("cannot create {}: {error}", suite_path.display()))?;
         let suite_error = suite_file
             .try_clone()
-            .map_err(|error| format!("non posso duplicare il file della batteria: {error}"))?;
+            .map_err(|error| format!("cannot duplicate the suite file: {error}"))?;
         let suite_status = Command::new("cargo")
             .current_dir(&cloned_rust)
             .env("CARGO_TARGET_DIR", &build_target)
-            .args(["test", "--release", "--", "--nocapture"])
+            // `--no-fail-fast` OR CARGO STOPS AT THE FIRST RED BINARY, and the
+            // ones after it do not fail: they never start. A release that reads
+            // "the suite is red" would name one binary while ten more were
+            // never attempted, and whoever repairs that one releases blind.
+            .args(["test", "--release", "--no-fail-fast", "--", "--nocapture"])
             .stdout(Stdio::from(suite_file))
             .stderr(Stdio::from(suite_error))
             .status()
-            .map_err(|error| format!("non posso avviare la batteria: {error}"))?;
+            .map_err(|error| format!("cannot start the suite: {error}"))?;
         let suite = fs::read(&suite_path)
-            .map_err(|error| format!("non posso rileggere {}: {error}", suite_path.display()))?;
+            .map_err(|error| format!("cannot read {} back: {error}", suite_path.display()))?;
         print_tail(&suite, 25);
         if !suite_status.success() {
-            eprintln!("sailor release: la batteria è rossa su HEAD: nulla è stato sostituito e il binario in servizio è intatto.");
-            eprintln!("   Commit verdi separati non fanno una somma verde: questo è quel caso.");
-            eprintln!("   Se il binario in servizio è rotto e aspettare costa di più, rilancia con --skip-tests.");
+            eprintln!("sailor release: the suite is red on HEAD: nothing was replaced and the binary in service is intact.");
+            eprintln!("   Green commits apart do not add up to a green whole: this is that case.");
+            eprintln!("   If the binary in service is broken and waiting costs more, run again with --skip-tests.");
             return Ok(1);
         }
+        // THE MARKER THIS COUNTS IS WRITTEN BY NOBODY, so the number is always
+        // zero and reads as "everything ran". The tests that printed it were in
+        // the crates deleted with everything that was not Sailor; the counter
+        // stayed. Kept, and named, because the question it asks is the right
+        // one — a test the sandbox denied is not a test that passed — and
+        // whoever restores a marker restores an answer, not a branch.
         let not_run = String::from_utf8_lossy(&suite)
-            .matches("PROVA NON ESEGUITA")
+            .matches(TEST_DID_NOT_RUN)
             .count();
         if not_run > 0 {
-            println!("== {not_run} prove NON ESEGUITE (non fallite) ==");
+            println!("== {not_run} test(s) NOT RUN (not failed) ==");
             println!(
-                "   Verde qui non vuol dire provato là: il perimetro ha negato ciò che chiedevano."
+                "   Green here does not mean tested there: the sandbox denied what they asked for."
             );
         }
     }
 
-    // DUE RADICI, E NON SONO LA STESSA COSA. Da `root` si compila; in `home` si
-    // installa. Fino a stamattina coincidevano, e il 28/08/2026 spostare la
-    // prima ha spostato per sbaglio anche la seconda: il binario è finito
-    // accanto ai sorgenti, mentre i ganci continuavano a eseguire quello vecchio
-    // al suo posto di sempre. Il punto d'installazione non si sposta.
+    // TWO ROOTS, AND THEY ARE NOT THE SAME THING. `root` is what gets built;
+    // `home` is what gets installed into. They coincided once, and moving the
+    // first moved the second by accident: the binary landed beside the sources
+    // while the hooks went on running the old one from where it had always been.
     let home = install_root()?;
     let live = root.join(selected.live_rel);
     let stamp = home.join(selected.stamp_rel);
+    // The house itself has moved since. A machine that released before then has
+    // no stamp here yet and a real one back there.
+    let stamp_to_read = if stamp.is_file() {
+        stamp.clone()
+    } else {
+        stamp_left_behind(selected.stamp_rel).unwrap_or_else(|| stamp.clone())
+    };
     if live.is_file() && files_equal(&fresh, &live)? {
-        println!(
-            "== niente da fare: il binario in servizio corrisponde già a HEAD ({head_short}) =="
-        );
+        println!("== nothing to do: the binary in service already matches HEAD ({head_short}) ==");
         if !options.dry_run {
             write_stamp(&stamp, &source_rev, &head_short);
         }
         return Ok(0);
     }
 
-    print_changes(&root, &stamp, &head_rev, &head_short)?;
+    print_changes(&root, &stamp_to_read, &head_rev, &head_short)?;
     if options.dry_run {
-        println!("== prova a secco: il binario in servizio NON è stato sostituito ==");
+        println!("== dry run: the binary in service was NOT replaced ==");
         return Ok(0);
     }
 
     if let Some(service) = selected.service {
         let ready = wait_until_ready(&root, service, options.wait_secs)?;
         if !ready {
-            println!("sailor release: rilascio rimandato: il servizio sta ancora lavorando; nulla è stato sostituito");
+            println!("sailor release: release postponed: the service is still working; nothing was replaced");
             return Ok(3);
         }
     }
 
-    println!("== sostituisco il binario in servizio ==");
+    println!("== replacing the binary in service ==");
     atomic_copy(&fresh, &live)?;
-    println!("   in servizio: {head_short}");
+    println!("   in service: {head_short}");
 
     let safe = home.join(selected.safe_rel);
     match atomic_copy(&fresh, &safe) {
-        Ok(()) => println!("   anche fuori da target/: {}", safe.display()),
+        Ok(()) => println!("   also outside target/: {}", safe.display()),
         Err(error) => {
-            eprintln!("== AVVISO: la copia di sicurezza NON si è potuta scrivere ==");
+            eprintln!("== WARNING: the safety copy could NOT be written ==");
             eprintln!("   {error}");
             eprintln!(
-                "   Il binario in servizio è quello nuovo, ma la prossima compilazione di chiunque può ancora riscriverlo."
+                "   The binary in service is the new one, but anybody's next build can still overwrite it."
             );
         }
     }
@@ -260,12 +274,14 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     write_stamp(&stamp, &source_rev, &head_short);
 
     if let Some(service) = selected.service {
-        // Il servizio gira ogni 90 secondi: fra la prima verifica e questo
-        // punto può aver preso un altro compito, che il riavvio troncherebbe.
+        // The service runs every 90 seconds: between the first check and this
+        // point it may have taken another job, which the restart would cut off.
         if !wait_until_ready(&root, service, 0)? {
             let domain = service_domain(service);
-            println!("sailor release: rilascio rimandato: il servizio ha iniziato una nuova lavorazione; il binario nuovo e il timbro sono al loro posto, ma il servizio esegue ancora quello vecchio.");
-            println!("   Quando la lavorazione finisce, chiudi il rilascio con: launchctl kickstart -k {domain}");
+            println!("sailor release: release postponed: the service has started another job; the new binary and the stamp are in place, but the service is still running the old one.");
+            println!(
+                "   When that job ends, close the release with: launchctl kickstart -k {domain}"
+            );
             return Ok(3);
         }
         restart_service(service);
@@ -273,47 +289,65 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     Ok(0)
 }
 
-/// L'albero dei sorgenti da cui si costruisce ciò che va in servizio.
+/// Where the sources sit below the home.
 ///
-/// IL 28/08/2026 QUESTA FUNZIONE HA RIMESSO IN SERVIZIO IL PASSATO. Puntava
-/// alla cartella della configurazione, che è la casa da cui i sorgenti se ne
-/// sono andati il 27/08 — ed è anche un repo git, quindi il clone di HEAD
-/// riportava indietro l'albero cancellato dal disco: un rilascio riuscito, con
-/// uscita 0 e il timbro al suo posto, che ha **disinstallato** il lavoro di
-/// quella stessa mattina. Nessun controllo poteva accorgersene: compilava,
-/// perché il codice vecchio compila benissimo.
-///
-/// Il punto d'installazione resta dov'era; è la sorgente che si è spostata.
-/// La casa dove il binario va installato e dove vive il timbro.
-///
-/// Non si sposta con i sorgenti: i ganci la nominano per percorso assoluto, e
-/// installare altrove significa lasciare in servizio quello vecchio senza che
-/// nessuno se ne accorga — misurato il 28/08/2026, un rilascio con uscita 0 che
-/// ha scritto il binario accanto ai sorgenti mentre `settings.json` continuava a
-/// eseguirlo da qui.
-/// Dove stanno i sorgenti sotto la casa, e dove sta la configurazione.
-///
-/// Sono costanti perché le prove le nominano: una prova che ricopiasse
-/// «personal/sailor» a mano resterebbe verde con la funzione riportata a
-/// clonare `.claude`, che è il guasto del 28/08/2026 rimesso in piedi.
+/// A constant because the tests name it: one that spelled `personal/sailor` out
+/// by hand would stay green with the function returned to cloning the
+/// configuration directory, which is the release fault back on its feet.
 const SOURCES_BELOW_HOME: &str = "personal/sailor";
-const CONFIGURATION_BELOW_HOME: &str = ".claude";
 
+/// What a test prints instead of failing when it could not run at all.
+///
+/// A contract with no party on the other side today: the tests that wrote it
+/// were deleted along with everything that was not Sailor. It is a constant so
+/// that whoever writes the next one has a name to write, rather than guessing
+/// the spelling of a string buried in a counter.
+const TEST_DID_NOT_RUN: &str = "TEST DID NOT RUN";
+
+/// The house the binary is installed into, and where the stamp lives.
+///
+/// Sailor's own home now; it used to be another product's, for no reason but
+/// habit. Whoever moves it re-runs `sailor session install`: the hooks name the
+/// binary by absolute path, so installing elsewhere leaves the old one in
+/// service with nobody noticing.
 fn install_root() -> Result<PathBuf, String> {
-    root_under(
-        env::var_os("CLAUDE_HOME"),
-        env::var_os("HOME"),
-        CONFIGURATION_BELOW_HOME,
-        "CLAUDE_HOME",
+    ledger::sailor_home().ok_or_else(|| "no house to install into: HOME is not set".to_owned())
+}
+
+/// The stamp left in the previous house, if this house has none yet.
+///
+/// A missing stamp is not a harmless zero: the release stops being able to say
+/// which commits enter service and prints its widest answer instead. On a
+/// machine that released before the move the stamp is real, only elsewhere:
+/// read there once, written here from then on.
+fn stamp_left_behind(stamp_rel: &str) -> Option<PathBuf> {
+    let previous = previous_stamp_path(env::var_os("HOME"), stamp_rel)?;
+    previous.is_file().then_some(previous)
+}
+
+/// Where it would be, without asking the disk. Separated so the rule can be
+/// tested on a declared home rather than on the machine running the test,
+/// which is fault 5.
+fn previous_stamp_path(home: Option<OsString>, stamp_rel: &str) -> Option<PathBuf> {
+    Some(
+        PathBuf::from(home.filter(|value| !value.is_empty())?)
+            .join(release::PREVIOUS_INSTALL_BELOW_HOME)
+            .join(stamp_rel),
     )
 }
 
+/// The sources tree what goes into service is built from.
+///
+/// It once pointed at the configuration directory and put the past back into
+/// service. It no longer reads `SAILOR_HOME` either: everywhere else that
+/// variable means Sailor's *configuration* home, so reading it here as the
+/// sources was the same fault waiting behind a second door.
 fn sources_root() -> Result<PathBuf, String> {
     root_under(
-        env::var_os("SAILOR_HOME"),
+        env::var_os("SAILOR_SOURCES"),
         env::var_os("HOME"),
         SOURCES_BELOW_HOME,
-        "SAILOR_HOME",
+        "SAILOR_SOURCES",
     )
 }
 
@@ -339,7 +373,7 @@ fn root_under(
         return Ok(PathBuf::from(root));
     }
     home.map(|home| PathBuf::from(home).join(below))
-        .ok_or_else(|| format!("né {declared_name} né HOME sono impostate"))
+        .ok_or_else(|| format!("neither {declared_name} nor HOME is set"))
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
@@ -348,16 +382,12 @@ fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
         .arg(root)
         .args(args)
         .output()
-        .map_err(|error| format!("non posso avviare git: {error}"))?;
+        .map_err(|error| format!("cannot start git: {error}"))?;
     if output.status.success() {
         Ok(output)
     } else {
         let detail = String::from_utf8_lossy(&output.stderr);
-        Err(format!(
-            "git {} è fallito: {}",
-            args.join(" "),
-            detail.trim()
-        ))
+        Err(format!("git {} failed: {}", args.join(" "), detail.trim()))
     }
 }
 
@@ -383,37 +413,37 @@ fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
         .arg(root)
         .arg(repository)
         .output()
-        .map_err(|error| format!("non posso avviare git clone: {error}"))?;
+        .map_err(|error| format!("cannot start git clone: {error}"))?;
     if first.status.success() {
         return Ok(());
     }
 
-    // Il sandbox del 27/08/2026 nega gli hardlink agli oggetti di `.git`: il
-    // clone resta locale e resta un repository vero, ma deve copiare gli
-    // oggetti invece di collegarli. Fuori dal sandbox la strada corta sopra
-    // continua a costare praticamente zero spazio.
+    // The sandbox denies hardlinks to `.git` objects: the clone stays local and
+    // stays a real repository, but has to copy the objects instead of linking
+    // them. Outside the sandbox the short road above still costs practically no
+    // space.
     if repository.exists() {
         fs::remove_dir_all(repository).map_err(|error| {
             format!(
-                "il clone locale è fallito e non posso togliere il clone parziale {}: {error}",
+                "the local clone failed and the partial clone {} cannot be removed: {error}",
                 repository.display()
             )
         })?;
     }
-    println!("nota: gli hardlink del clone locale sono negati; copio gli oggetti git");
+    println!("note: hardlinks for the local clone are denied; copying the git objects");
     let second = Command::new("git")
         .args(["clone", "--local", "--no-hardlinks", "--quiet"])
         .arg(root)
         .arg(repository)
         .output()
-        .map_err(|error| format!("non posso ripetere git clone senza hardlink: {error}"))?;
+        .map_err(|error| format!("cannot retry git clone without hardlinks: {error}"))?;
     if second.status.success() {
         Ok(())
     } else {
         let first_detail = String::from_utf8_lossy(&first.stderr);
         let second_detail = String::from_utf8_lossy(&second.stderr);
         Err(format!(
-            "il clone locale di HEAD è fallito (prima: {}; senza hardlink: {})",
+            "the local clone of HEAD failed (first: {}; without hardlinks: {})",
             first_detail.trim(),
             second_detail.trim()
         ))
@@ -423,8 +453,8 @@ fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
 fn status_description(status: ExitStatus) -> String {
     status
         .code()
-        .map(|code| format!("uscita {code}"))
-        .unwrap_or_else(|| "terminato da un segnale".to_string())
+        .map(|code| format!("exit {code}"))
+        .unwrap_or_else(|| "ended by a signal".to_string())
 }
 
 fn make_temporary_tree() -> Result<TemporaryTree, String> {
@@ -436,16 +466,16 @@ fn make_temporary_tree() -> Result<TemporaryTree, String> {
         .arg("-d")
         .arg(&template)
         .output()
-        .map_err(|error| format!("non posso avviare mktemp: {error}"))?;
+        .map_err(|error| format!("cannot start mktemp: {error}"))?;
     if !output.status.success() {
         return Err(format!(
-            "mktemp non ha creato la cartella temporanea: {}",
+            "mktemp created no temporary directory: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
     let path = PathBuf::from(OsStr::new(String::from_utf8_lossy(&output.stdout).trim()));
     if path.as_os_str().is_empty() {
-        return Err("mktemp ha restituito un percorso vuoto".to_string());
+        return Err("mktemp returned an empty path".to_string());
     }
     Ok(TemporaryTree { path })
 }
@@ -465,17 +495,17 @@ fn print_tail(contents: &[u8], count: usize) {
 }
 
 fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
-    let left_file = File::open(left)
-        .map_err(|error| format!("non posso leggere {}: {error}", left.display()))?;
-    let right_file = File::open(right)
-        .map_err(|error| format!("non posso leggere {}: {error}", right.display()))?;
+    let left_file =
+        File::open(left).map_err(|error| format!("cannot read {}: {error}", left.display()))?;
+    let right_file =
+        File::open(right).map_err(|error| format!("cannot read {}: {error}", right.display()))?;
     let left_len = left_file
         .metadata()
-        .map_err(|error| format!("non posso misurare {}: {error}", left.display()))?
+        .map_err(|error| format!("cannot measure {}: {error}", left.display()))?
         .len();
     let right_len = right_file
         .metadata()
-        .map_err(|error| format!("non posso misurare {}: {error}", right.display()))?
+        .map_err(|error| format!("cannot measure {}: {error}", right.display()))?
         .len();
     if left_len != right_len {
         return Ok(false);
@@ -488,10 +518,10 @@ fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
     loop {
         let left_read = left_reader
             .read(&mut left_buffer)
-            .map_err(|error| format!("non posso confrontare {}: {error}", left.display()))?;
+            .map_err(|error| format!("cannot compare {}: {error}", left.display()))?;
         let right_read = right_reader
             .read(&mut right_buffer)
-            .map_err(|error| format!("non posso confrontare {}: {error}", right.display()))?;
+            .map_err(|error| format!("cannot compare {}: {error}", right.display()))?;
         if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
             return Ok(false);
         }
@@ -518,23 +548,23 @@ fn print_changes(
             .args(["cat-file", "-e"])
             .arg(format!("{previous}^{{commit}}"))
             .status()
-            .map_err(|error| format!("non posso verificare il vecchio timbro con git: {error}"))?;
+            .map_err(|error| format!("cannot check the old stamp with git: {error}"))?;
         if exists.success() {
             let range = format!("{previous}..{head_rev}");
             let log = git_output(root, &["log", "--oneline", &range, "--", "crates"])?;
             print!("{}", String::from_utf8_lossy(&log.stdout));
             let count = git_text(root, &["rev-list", "--count", &range, "--", "crates"])?;
             println!(
-                "   ({count} commit che toccano crates/, da {} a {head_short})",
+                "   ({count} commit(s) touching crates/, from {} to {head_short})",
                 short_revision(&previous)
             );
             return Ok(());
         }
     }
 
-    println!("   non si sa quale commit abbia prodotto il binario in servizio.");
+    println!("   which commit produced the binary in service is not known.");
     println!(
-        "   È previsto soltanto la prima volta; da ora la risposta sarà scritta in {}.",
+        "   That is expected the first time only; from now on the answer is written in {}.",
         stamp.display()
     );
     Ok(())
@@ -552,7 +582,7 @@ fn wait_until_ready(root: &Path, service: Service, wait_secs: u64) -> Result<boo
         let state = readiness(&names, &release::process_exists);
         for name in &state.unknown {
             println!(
-                "avviso: ricevuta senza pid '{}' (non blocca il rilascio)",
+                "warning: receipt with no pid '{}' (does not block the release)",
                 name
             );
         }
@@ -561,7 +591,7 @@ fn wait_until_ready(root: &Path, service: Service, wait_secs: u64) -> Result<boo
         }
         for busy in &state.busy {
             println!(
-                "attendo: il servizio lavora su '{}' con pid {}",
+                "waiting: the service is working on '{}' with pid {}",
                 busy.task, busy.pid
             );
         }
@@ -580,7 +610,7 @@ fn receipt_names(directory: &Path) -> Result<Vec<String>, String> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
             return Err(format!(
-                "non posso leggere le lavorazioni in corso da {}: {error}",
+                "cannot read the jobs in progress from {}: {error}",
                 directory.display()
             ))
         }
@@ -588,10 +618,7 @@ fn receipt_names(directory: &Path) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
-            format!(
-                "non posso leggere una ricevuta in {}: {error}",
-                directory.display()
-            )
+            format!("cannot read a receipt in {}: {error}", directory.display())
         })?;
         names.push(entry.file_name().to_string_lossy().into_owned());
     }
@@ -602,15 +629,15 @@ fn receipt_names(directory: &Path) -> Result<Vec<String>, String> {
 fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
     let parent = destination
         .parent()
-        .ok_or_else(|| format!("{} non ha una cartella padre", destination.display()))?;
+        .ok_or_else(|| format!("{} has no parent directory", destination.display()))?;
     fs::create_dir_all(parent)
-        .map_err(|error| format!("non posso creare {}: {error}", parent.display()))?;
+        .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     let mut staging_name = destination.as_os_str().to_os_string();
     staging_name.push(".new");
     let staging = PathBuf::from(staging_name);
     if let Err(error) = fs::copy(source, &staging) {
         let message = format!(
-            "non posso copiare {} in {}: {error}",
+            "cannot copy {} to {}: {error}",
             source.display(),
             staging.display()
         );
@@ -619,7 +646,7 @@ fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
     }
     if let Err(error) = fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)) {
         let message = format!(
-            "non posso impostare i permessi di {}: {error}",
+            "cannot set the permissions of {}: {error}",
             staging.display()
         );
         let _ = fs::remove_file(&staging);
@@ -627,7 +654,7 @@ fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
     }
     if let Err(error) = fs::rename(&staging, destination) {
         let message = format!(
-            "non posso rinominare {} sopra {}: {error}",
+            "cannot rename {} over {}: {error}",
             staging.display(),
             destination.display()
         );
@@ -640,21 +667,21 @@ fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
 fn write_stamp(path: &Path, revision: &str, head_short: &str) {
     let result = path
         .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "percorso senza padre"))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path with no parent"))
         .and_then(fs::create_dir_all)
         .and_then(|_| fs::write(path, format!("{revision}\n")));
     if let Err(error) = result {
         let old = fs::read_to_string(path)
             .ok()
             .and_then(|contents| read_stamp(&contents))
-            .unwrap_or_else(|| "nulla".to_string());
-        eprintln!("== AVVISO: il timbro NON si è potuto scrivere ==");
+            .unwrap_or_else(|| "nothing".to_string());
+        eprintln!("== WARNING: the stamp could NOT be written ==");
         eprintln!(
-            "   {} nomina {old}; il binario in servizio è {head_short}.",
+            "   {} names {old}; the binary in service is {head_short}.",
             path.display()
         );
-        eprintln!("   Chi lo legge nominerà il commit sbagliato ({error}).");
-        eprintln!("   Scrivi a mano questa riga esatta in {}:", path.display());
+        eprintln!("   Whoever reads it will name the wrong commit ({error}).");
+        eprintln!("   Write this exact line by hand in {}:", path.display());
         eprintln!("     {revision}");
     }
 }
@@ -665,17 +692,17 @@ fn restart_service(service: Service) {
         .args(["kickstart", "-k", &domain])
         .status();
     match result {
-        Ok(status) if status.success() => println!("   servizio riavviato: {domain}"),
+        Ok(status) if status.success() => println!("   service restarted: {domain}"),
         Ok(status) => {
             eprintln!(
-                "sailor release: il binario è a posto, ma il servizio esegue ancora quello vecchio ({}).",
+                "sailor release: the binary is in place, but the service is still running the old one ({}).",
                 status_description(status)
             );
-            eprintln!("   Per chiudere il buco esegui: launchctl kickstart -k {domain}");
+            eprintln!("   To close the gap run: launchctl kickstart -k {domain}");
         }
         Err(error) => {
-            eprintln!("sailor release: il binario è a posto, ma il servizio esegue ancora quello vecchio ({error}).");
-            eprintln!("   Per chiudere il buco esegui: launchctl kickstart -k {domain}");
+            eprintln!("sailor release: the binary is in place, but the service is still running the old one ({error}).");
+            eprintln!("   To close the gap run: launchctl kickstart -k {domain}");
         }
     }
 }
@@ -736,26 +763,51 @@ mod tests {
     #[test]
     fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
         let home = Some(OsString::from("/casa/di-chiunque"));
-        let sources = root_under(None, home.clone(), SOURCES_BELOW_HOME, "SAILOR_HOME").unwrap();
-        let configuration =
-            root_under(None, home, CONFIGURATION_BELOW_HOME, "CLAUDE_HOME").unwrap();
+        let sources = root_under(None, home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+        let house = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
 
-        // Il testo è scritto qui apposta: se la costante tornasse a puntare
-        // alla configurazione, questa riga diventerebbe rossa.
+        // Spelled out on purpose: were the constant returned to the
+        // configuration directory, this line would go red.
         assert!(sources.ends_with("personal/sailor"), "{sources:?}");
         assert!(
-            !sources.ends_with(".claude"),
-            "il rilascio è tornato a clonare la configurazione: {sources:?}"
+            !sources.ends_with(".config/sailor"),
+            "the release is cloning the configuration home again: {sources:?}"
         );
-        assert_ne!(sources, configuration);
+        assert_ne!(sources, house);
     }
 
-    /// Una radice dichiarata vince sulla casa, e una dichiarata vuota no.
+    /// The stamp of a machine that released before the house moved.
     ///
-    /// Il secondo braccio è quello che si perde: `SAILOR_HOME=""` esportata da
-    /// uno script che non l'ha trovata darebbe `personal/sailor` **relativa**,
-    /// cioè un clone dove sta il processo — il guasto 25 travestito da
-    /// configurazione.
+    /// It is looked for under the previous house, with the target's own
+    /// relative path — not a second string saying where stamps go. A stamp read
+    /// from the wrong place is worse than none: the release would name commits
+    /// that never entered service, and say it with a straight face.
+    #[test]
+    fn the_stamp_of_the_previous_house_keeps_the_target_s_own_path() {
+        let home = Some(OsString::from("/casa/di-chiunque"));
+        let target = release::target("sailor").expect("the table names it");
+
+        assert_eq!(
+            previous_stamp_path(home, target.stamp_rel),
+            Some(
+                PathBuf::from("/casa/di-chiunque")
+                    .join(release::PREVIOUS_INSTALL_BELOW_HOME)
+                    .join("state/sailor-binary-commit")
+            )
+        );
+
+        // A home exported empty by a script that could not find it would put the
+        // stamp at the root of the disk. It is not a home.
+        assert_eq!(previous_stamp_path(Some(OsString::new()), "state/x"), None);
+        assert_eq!(previous_stamp_path(None, "state/x"), None);
+    }
+
+    /// A declared root beats the home, and a declared empty one does not.
+    ///
+    /// The second arm is the one that gets lost: a variable exported empty by a
+    /// script that could not find it would give `personal/sailor` **relative**,
+    /// a clone wherever the process happens to stand — fault 25 dressed up as
+    /// configuration.
     #[test]
     fn a_declared_root_wins_over_the_home_but_an_empty_one_does_not() {
         let home = Some(OsString::from("/casa/di-chiunque"));
@@ -763,7 +815,7 @@ mod tests {
             Some(OsString::from("/altrove/sailor")),
             home.clone(),
             SOURCES_BELOW_HOME,
-            "SAILOR_HOME",
+            "SAILOR_SOURCES",
         )
         .unwrap();
         assert_eq!(declared, PathBuf::from("/altrove/sailor"));
@@ -772,12 +824,12 @@ mod tests {
             Some(OsString::new()),
             home,
             SOURCES_BELOW_HOME,
-            "SAILOR_HOME",
+            "SAILOR_SOURCES",
         )
         .unwrap();
         assert_eq!(empty, PathBuf::from("/casa/di-chiunque/personal/sailor"));
 
-        assert!(root_under(None, None, "personal/sailor", "SAILOR_HOME").is_err());
+        assert!(root_under(None, None, "personal/sailor", "SAILOR_SOURCES").is_err());
     }
 
     /// I sorgenti di Sailor portano il crate che dà il nome al binario.
@@ -822,17 +874,11 @@ mod tests {
     #[test]
     fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
-        let sources = root_under(
-            None,
-            declared_home.clone(),
-            SOURCES_BELOW_HOME,
-            "SAILOR_HOME",
-        )
-        .unwrap();
-        let home =
-            root_under(None, declared_home, CONFIGURATION_BELOW_HOME, "CLAUDE_HOME").unwrap();
+        let sources =
+            root_under(None, declared_home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
+        let home = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
         assert_ne!(sources, home);
-        assert!(home.ends_with(".claude"), "{home:?}");
+        assert!(home.ends_with(".config/sailor"), "{home:?}");
 
         for candidate in release::TARGETS {
             let installed = home.join(candidate.safe_rel);

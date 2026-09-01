@@ -41,7 +41,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     match args {
         [command] if command == "init" => {
             let here = std::env::current_dir()
-                .map_err(|error| format!("non so dove mi trovo: {error}"))?;
+                .map_err(|error| format!("there is no telling where I am: {error}"))?;
             init(&here)
         }
         _ => Err(format!("usage: {}", USAGE[0])),
@@ -82,10 +82,10 @@ fn init(root: &Path) -> Result<String, String> {
         "checks": serde_json::Map::new(),
     });
     let mut text = serde_json::to_string_pretty(&declared)
-        .map_err(|error| format!("non riesco a comporre la dichiarazione: {error}"))?;
+        .map_err(|error| format!("cannot compose the declaration: {error}"))?;
     text.push('\n');
     std::fs::write(&marker, text)
-        .map_err(|error| format!("non riesco a scrivere {}: {error}", marker.display()))?;
+        .map_err(|error| format!("cannot write {}: {error}", marker.display()))?;
 
     Ok(format!(
         "scritto {}\n  nome: {name}\n  regole: {}\n  verifiche: nessuna \

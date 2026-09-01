@@ -22,14 +22,14 @@ const MAX_BLOCK: usize = 6;
 const LONG_BLOCKS_TODAY: usize = 522;
 
 /// How many comments cite a date. Same rule: downwards only.
-const DATED_COMMENTS_TODAY: usize = 207;
+const DATED_COMMENTS_TODAY: usize = 202;
 
 /// How many comment lines are still not in English.
 ///
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 8_143;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 8_106;
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**
 ///
