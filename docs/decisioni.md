@@ -32,6 +32,40 @@ aspetto.
 
 ## Le decisioni prese
 
+### La lingua si sceglie su chi legge: inglese ciò che vede uno sconosciuto, italiano ciò che vede chi lavora qui
+
+**01/09/2026**, decisa da Theo guardando la CI.
+
+`README`, file della CI e **i messaggi che un utente dello strumento vede** —
+quello che `sailor` stampa, quello che dice quando rifiuta, i testi di
+`--help` — vanno in **inglese**. Commenti dentro il codice, messaggi delle
+prove e tutto ciò che sta sotto `docs/` restano in **italiano**.
+
+**Cosa cambia rispetto a prima.** `AGENTS.md` diceva «commenti e messaggi in
+italiano», in una riga sola, senza distinguere i due tipi di messaggio. Il
+confine che c'era — «ciò che il compilatore legge sta in inglese, ciò che il
+deposito conserva è un dato» — divideva bene il codice e non aveva niente da
+dire sulla vetrina: finché il repo era privato, la vetrina non esisteva. Il
+giorno in cui `main` è diventato Sailor la domanda è nata da sola.
+
+**L'occasione.** Il file della CI, scritto il 31/08, aveva tre lavori chiamati
+`prove`, `stile` e `finestra`: chiavi che leggono `needs:`, le API di GitHub e
+`gh run`, cioè identificatori, su una pagina che chiunque può aprire. La
+regola sugli identificatori c'era già; a mancare era chi la interrogasse sui
+`.yml`, perché `identifiers_are_in_english` leggeva solo i sorgenti Rust. Ora
+legge anche le chiavi dei lavori.
+
+**Il confine è chi legge, non che tipo di file è.** Un `panic!` dentro una
+prova parla a chi lavora qui: italiano. Lo stesso `panic!` su un percorso che
+un utente può battere parla a lui: inglese. Il caso ambiguo si chiede, non si
+risolve scegliendo la lingua comoda.
+
+**Cosa NON tocca.** Gli `id` dei flussi e dei passi e i nomi dei file
+`.flow.json` **restano in italiano**: sono dati che il deposito conserva, e la
+decisione del 31/08/2026 che li protegge vale ancora — rinominare un passo
+farebbe apparire le corse già registrate come passi sconosciuti. Chi legge
+questa voce e pensa che i flussi debbano seguire la vetrina, chieda prima.
+
 ### I rinvii si sciolgono in un posto solo, dopo la condizione; e `input` è ciò che il passo ha ricevuto
 
 **01/09/2026**, dal guasto 28.
