@@ -1,33 +1,18 @@
-//! Il descrittore **spedito** legge un'uscita **vera** e ne calcola il costo.
+//! The **shipped** descriptor reads a **real** output and prices it.
 //!
-//! **PERCHÉ QUESTA PROVA VALE PIÙ DELLE ALTRE SUL CONSUMO.** Le altre provano un
-//! pezzo per volta con dati costruiti apposta, e passano anche quando i pezzi non
-//! si toccano fra loro. Qui i tre pezzi sono quelli veri: il descrittore che
-//! viene spedito col prodotto, l'uscita che `claude -p --output-format json` ha
-//! davvero scritto su questa macchina il 30/08/2026, e — dal 01/09/2026 — il
-//! **listino spedito**, non più uno scritto qui accanto. Il numero che ne esce si
-//! confronta col costo che il motore ha dichiarato di suo: due strade
-//! indipendenti verso la stessa cifra.
-//!
-//! **IL LISTINO SCRITTO QUI ERA L'ULTIMO PEZZO FINTO, ED È IL GUASTO 35.** Finché
-//! stava in questa prova, la catena era intera solo dentro questo file: il
-//! prodotto spediva il descrittore e non il listino, e su una macchina senza
-//! `~/.config/sailor/pricing.json` la stessa chiamata costava zero. Una prova
-//! verde su un pezzo che non viaggia col prodotto è precisamente il modo in cui
-//! quel guasto è rimasto invisibile.
-//!
-//! Fino a stamattina questa catena non arrivava in fondo: `claude-code` non
-//! dichiarava nessun blocco `usage`, quindi ogni chiamata al motore che si usa
-//! di più finiva nel deposito senza un solo conteggio.
+//! The other usage tests try one piece at a time on built data, and pass even
+//! when the pieces do not touch. All three are real here: the shipped
+//! descriptor, an output a real engine wrote, and the **shipped price list** —
+//! one written beside a test keeps the chain whole only inside that file.
 
 use actions::ToolResolver;
 use toolbox::descriptor::{Catalog, Source};
 use toolbox::probe::Machine;
 use toolbox::resolver::Tools;
 
-/// L'uscita vera, ridotta ai campi che il descrittore nomina. I numeri non sono
-/// inventati: 2 token d'ingresso, 4 d'uscita, 9.922 letti dalla cache, 12.347
-/// scritti in una cache a lunga durata, e 0,128541 dollari dichiarati.
+/// The real output, cut down to the fields the descriptor names. The numbers are
+/// not invented: 2 input tokens, 4 output, 9,922 read from the cache, 12,347
+/// written to a long-lived cache, and 0.128541 dollars declared.
 const REAL_OUTPUT: &str = r#"{
   "stop_reason": "end_turn",
   "num_turns": 3,
@@ -53,12 +38,12 @@ const REAL_OUTPUT: &str = r#"{
   "type": "result"
 }"#;
 
-/// Solo i descrittori spediti col prodotto: quello che ha chiunque lo installi,
-/// senza niente di questa macchina attorno.
+/// Only the descriptors shipped with the product: what anyone installing it
+/// gets, with nothing of this machine around it.
 fn shipped_only() -> Tools {
     let machine = Machine {
         path_dirs: Vec::new(),
-        home: std::path::PathBuf::from("/home/nessuno"),
+        home: std::path::PathBuf::from("/home/nobody"),
         env: Default::default(),
         version_probes: false,
     };
@@ -69,31 +54,34 @@ fn shipped_only() -> Tools {
 fn the_shipped_claude_descriptor_reads_a_real_call_and_prices_it() {
     let recipe = shipped_only()
         .ask_recipe("claude-code")
-        .expect("claude-code dichiara come gli si fa una domanda");
+        .expect("claude-code declares how a question is put to it");
     let usage = recipe
         .usage
-        .expect("e dichiara anche come si legge quanto ha consumato");
+        .expect("and also declares how its usage is read");
 
     let reading = models::usage::read_declared(REAL_OUTPUT, &usage.declared);
 
-    // I conteggi, uno per uno, dall'uscita vera.
+    // The counts, one by one, from the real output.
     assert_eq!(reading.input_tokens, Some(2));
     assert_eq!(reading.output_tokens, Some(4));
     assert_eq!(reading.cached_tokens, Some(9_922));
-    assert_eq!(reading.cache_write_tokens, Some(0), "cache breve: nessuna");
+    assert_eq!(reading.cache_write_tokens, Some(0), "short cache: none");
     assert_eq!(reading.cache_write_long_tokens, Some(12_347));
-    // Il modello è la CHIAVE di `modelUsage`, non un campo.
+    // The model is the KEY of `modelUsage`, not a field.
     assert_eq!(reading.model.as_deref(), Some("claude-opus-5[1m]"));
-    // E l'uscita del passo resta la risposta, non l'involucro.
+    // And the step's output stays the answer, not the envelope.
     assert_eq!(reading.answer.as_deref(), Some("ok"));
 
-    // **IL LISTINO È QUELLO SPEDITO, NON UNO SCRITTO QUI ACCANTO.** Svuota
-    // `models` in `crates/models/pricing.default.json` e questa riga cade: è il
-    // guasto 35 rimesso dov'era.
+    // **THE PRICE LIST IS THE SHIPPED ONE, NOT ONE WRITTEN BESIDE THIS TEST.**
+    // Empty `models` in `crates/models/pricing.default.json` and this line falls.
+    // While it lived here the product shipped the descriptor and not the list,
+    // so on a machine with no `~/.config/sailor/pricing.json` this same call
+    // cost zero: a green test on a piece that does not travel with the product
+    // is exactly how that stayed invisible.
     let prices = models::pricing::shipped();
     let entry = prices
         .find(reading.model.as_deref().unwrap())
-        .expect("l'alias porta alla voce del listino spedito");
+        .expect("the alias leads to an entry of the shipped price list");
     let cost = models::pricing::cost_micros(
         models::pricing::TokenCounts {
             input: reading.input_tokens,
@@ -104,32 +92,35 @@ fn the_shipped_claude_descriptor_reads_a_real_call_and_prices_it() {
         },
         entry.micros(),
     )
-    .expect("il costo si calcola");
+    .expect("the cost computes");
 
-    // Il motore aveva dichiarato 0,128541 $. Il nostro conto, partito dai soli
-    // conteggi e dal listino, arriva alla stessa cifra al micro.
-    // I TURNI SI LEGGONO DALLA STESSA USCITA DEI TOKEN, e fino al 31/08/2026
-    // venivano buttati via. Sono la quantita' che spiega il conto di una
-    // catena di passi: misurato quel giorno, un flusso di quattro passi legge
-    // per turno l'8% in piu' di una sessione sola che fa lo stesso lavoro, e
-    // consuma il doppio -- perche' fa il doppio dei turni.
-    assert_eq!(reading.turns, Some(3), "il descrittore spedito legge `num_turns`");
+    // TURNS ARE READ FROM THE SAME OUTPUT AS THE TOKENS, and used to be thrown
+    // away. They are the quantity that explains the bill of a chain of steps: a
+    // four-step flow reads 8% more per turn than a single session doing the same
+    // work, and costs twice as much, because it takes twice the turns.
+    assert_eq!(
+        reading.turns,
+        Some(3),
+        "the shipped descriptor reads `num_turns`"
+    );
 
+    // The engine declared $0.128541. Our own count, starting from the counts and
+    // the price list alone, reaches the same figure to the micro.
     let declared = (reading.declared_cost.unwrap() * 1_000_000.0).round() as i64;
     assert_eq!(declared, 128_541);
     assert_eq!(
         cost, declared,
-        "il conto sul listino e quello del motore devono coincidere"
+        "the price-list count and the engine's must coincide"
     );
 }
 
-/// La stessa catena su un motore che dichiara **meno**: agy dà i token ma non
-/// il modello. Il costo deve restare sconosciuto — non zero, e non un modello
-/// indovinato.
+/// The same chain on an engine that declares **less**: agy gives the tokens but
+/// not the model. The cost must stay unknown — not zero, and not a guessed
+/// model.
 #[test]
 fn a_engine_that_names_no_model_leaves_the_cost_unknown_not_zero() {
-    let recipe = shipped_only().ask_recipe("agy").expect("agy è spedito");
-    let usage = recipe.usage.expect("e dichiara il proprio consumo");
+    let recipe = shipped_only().ask_recipe("agy").expect("agy is shipped");
+    let usage = recipe.usage.expect("and declares its own usage");
 
     let said = r#"{"status":"SUCCESS","response":"ok\n",
         "usage":{"input_tokens":14514,"output_tokens":195,
@@ -141,7 +132,7 @@ fn a_engine_that_names_no_model_leaves_the_cost_unknown_not_zero() {
     assert_eq!(reading.answer.as_deref(), Some("ok\n"));
     assert_eq!(
         reading.model, None,
-        "agy non nomina nessun modello, e nessuno lo inventa per lui"
+        "agy names no model, and nobody invents one for it"
     );
 
     let prices = models::pricing::shipped();
@@ -151,44 +142,38 @@ fn a_engine_that_names_no_model_leaves_the_cost_unknown_not_zero() {
             .as_deref()
             .and_then(|name| prices.find(name))
             .is_none(),
-        "senza nome non c'è voce di listino, quindi nessun prezzo da applicare"
+        "without a name there is no price-list entry, so no price to apply"
     );
 }
 
-/// La riga di comando che il descrittore **spedito** compone per `agy`, dove il
-/// prompt è un argomento e non l'ingresso standard.
-///
-/// **QUESTA È LA PROVA CHE MANCAVA AL GUASTO 1, E CHE LO HA LASCIATO TORNARE.**
-/// Allora l'ordine sbagliato erano due opzioni di `ask` fra loro, e la cura
-/// scritta accanto — «una prova che esegue davvero ogni riga di comando prima
-/// che finisca in un flusso» — non è mai stata costruita. Il 31/08/2026 il
-/// difetto è ricomparso da un'altra porta: le opzioni di `usage`, accodandosi
-/// dopo quelle di `ask`, si infilavano fra `--print` e la domanda, e `agy`
-/// rispondeva «--print took "--output-format" as its prompt» ignorando il testo
-/// vero. I due blocchi erano giusti separatamente e sbagliati insieme, che è
-/// esattamente ciò che una prova per blocco non può vedere.
-///
-/// Non esegue niente: la sequenza la decide il codice, quindi è identica su una
-/// macchina carica, senza rete e senza `agy` installato. Ciò che resta scoperto
-/// — eseguire davvero ogni riga composta — è ancora la cura del guasto 1.
+/// The command line the **shipped** descriptor composes for `agy`, where the
+/// prompt is an argument and not standard input. **Two blocks right separately
+/// and wrong together**: the `usage` options, appended after `ask`'s, slipped
+/// between `--print` and the question, and `agy` answered `--print took
+/// "--output-format" as its prompt`, ignoring the real text — exactly what a
+/// test written one block at a time cannot see.
 #[test]
 fn the_prompt_flag_stays_glued_to_the_prompt_it_introduces() {
-    let recipe = shipped_only().ask_recipe("agy").expect("agy è spedito");
+    // It executes nothing: the code decides the sequence, so this is identical
+    // on a loaded machine, with no network and with no `agy` installed. What
+    // stays uncovered — actually executing every composed line — is still
+    // fault 1's cure, written down beside it and never built.
+    let recipe = shipped_only().ask_recipe("agy").expect("agy is shipped");
     assert_eq!(
         recipe.prompt,
         actions::PromptVia::LastArg,
-        "questa prova ha senso solo se la domanda è un argomento"
+        "this test only means something if the question is an argument"
     );
 
     let line = actions::command_line(&recipe);
     assert_eq!(
         line,
         vec!["--mode", "plan", "--output-format", "json", "--print"],
-        "le opzioni del consumo vanno prima di quella che introduce la domanda"
+        "the usage options go before the one that introduces the question"
     );
     assert_eq!(
         line.last().map(String::as_str),
         Some("--print"),
-        "fra la bandiera che introduce la domanda e la domanda non entra niente"
+        "nothing gets between the flag introducing the question and the question"
     );
 }

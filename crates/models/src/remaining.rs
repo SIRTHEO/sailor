@@ -1,118 +1,91 @@
-//! Quanto resta della quota di **una persona**, letto invece che chiesto.
+//! How much of **a person's** quota is left, read instead of asked.
 //!
-//! **PERCHÉ ESISTE.** Un passo consegnato a un agente vivo dichiara il proprio
-//! consumo con `sailor step close --turns`, e un agente non sa contare ciò che
-//! il suo harness consuma per lui: nell'A/B del 31/08/2026 ne ha dichiarati 33
-//! su 75 veri, il 44%. La cura non è chiedere meglio — è **leggere**. Questo
-//! modulo è la prima metà di quella lettura: il canale che dice, senza spendere
-//! niente, quanta quota una persona ha già consumato e quando la finestra si
-//! azzera.
-//!
-//! ─────────────────────────────────────────────────────────────────────────
-//! **NON È IL COSTO DI UNA CORSA, E CONFONDERLE SAREBBE PEGGIO CHE NON AVERLA.**
-//!
-//! Quello che si legge qui è la quota **della persona**, su **tutte** le sue
-//! sessioni: la corsa di Sailor, il terminale aperto accanto, l'editor, un
-//! lavoro di ieri che ricade nella stessa finestra di sette giorni. Fra due
-//! istanti si può ricavare *quanta quota è passata*, mai *quanta ne ha
-//! consumata una corsa*, perché non c'è modo di sapere chi altro stava
-//! scrivendo in mezzo.
-//!
-//! Un numero preso da qui e scritto accanto a un passo diventerebbe una misura
-//! con la faccia giusta e il significato sbagliato — cioè il modo in cui il
-//! guasto 37 è nato, non la sua cura. Il posto giusto di questa lettura è
-//! accanto alla domanda «posso lanciarne un'altra?», che è una domanda sulla
-//! persona.
-//! ─────────────────────────────────────────────────────────────────────────
-//!
-//! **DUE METÀ, E UNA SOLA HA PROVE.** La lettura di un corpo è pura e si prova
-//! su un campione scritto a mano (`tests/fixtures/oauth-usage-sample.json`); il
-//! gesto che va sulla rete non ha prove, per la stessa ragione di
-//! [`crate::fetch`]: una prova che chiama la rete è rossa quando cade la linea,
-//! non quando sbaglia il codice.
+//! **WHY IT EXISTS.** A step handed to a live agent declares its own spend with
+//! `sailor step close --turns`, and an agent cannot count what its harness
+//! spends for it: in the A/B it declared 33 turns out of 75 real ones, 44%. The
+//! cure is not to ask better — it is to **read**, spending nothing to do it.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// L'identificativo del motore che questa lettura riguarda: lo stesso `id` con
-/// cui il catalogo dei descrittori lo nomina, così chi legge un `Remaining` può
-/// risalire a chi dichiara di saperlo dire.
+/// The engine this reading is about: the same `id` the descriptor catalog uses
+/// for it, so a `Remaining` can be traced back to whoever claims to know it.
 pub const CLAUDE_CODE: &str = "claude-code";
 
-/// Dove Claude Code tiene le credenziali della persona. Sotto la sua casa, non
-/// sotto quella di Sailor: è roba sua, e questo modulo la legge e basta.
+/// Where Claude Code keeps the person's credentials. Under its own home, not
+/// Sailor's: it belongs to it, and this module only reads it.
 const CLAUDE_CREDENTIALS: &str = ".claude/.credentials.json";
 
-/// L'indirizzo che risponde con le finestre di quota.
+/// The endpoint that answers with the quota windows.
 ///
-/// **È UN CANALE BETA E VERSIONATO** — l'intestazione `anthropic-beta` porta una
-/// data — quindi può smettere di rispondere senza che niente qui cambi. Per
-/// questo l'assenza di una lettura non è mai un errore di chi la chiede: è una
-/// lettura che non c'è, e chi la voleva continua a funzionare senza.
+/// **IT IS A BETA, VERSIONED CHANNEL** — the `anthropic-beta` header carries a
+/// date — so it can stop answering with nothing here changing. A missing
+/// reading is therefore never an error for whoever asked: it is a reading that
+/// is not there, and the caller carries on without it.
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 
-/// La versione del canale, dichiarata come il fornitore la vuole.
+/// The channel version, declared the way the provider wants it.
 const BETA_HEADER: &str = "anthropic-beta: oauth-2025-04-20";
 
-/// Quanto di una finestra di quota è già andato, e quando quella finestra si
-/// azzera.
+/// How much of a quota window is already gone, and when that window resets.
 ///
-/// **`used_fraction` È UNA FRAZIONE, NON UNA PERCENTUALE.** Il fornitore
-/// risponde `50.0` per «metà»; qui diventa `0.5`. Il motivo è che questo numero
-/// finirà accanto ad altri rapporti — quote di altri motori, frazioni di un
-/// tetto di spesa — e due unità che si assomigliano nello stesso posto si
-/// sommano per sbaglio una volta sola, ma quella volta nessuno se ne accorge.
+/// **NOT THE COST OF A RUN, AND CONFUSING THEM IS WORSE THAN NOT HAVING IT.**
+/// It is the person's quota over every session — Sailor's run, the terminal
+/// open beside it, the editor, yesterday's job falling in the same seven-day
+/// window — so no reading can say who else was writing in between.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Remaining {
-    /// Di chi è questa quota: l'`id` del descrittore del motore.
+    /// Whose quota this is: the engine descriptor's `id`.
     pub engine: String,
-    /// Quale finestra: `five_hour`, `seven_day`, o un nome che questa versione
-    /// non conosce. **Non è un insieme chiuso**, e non deve diventarlo: il
-    /// fornitore ne ha aggiunte mentre questo file veniva scritto.
+    /// Which window: `five_hour`, `seven_day`, or a name this version does not
+    /// know. **Not a closed set**, and it must not become one: the provider
+    /// added windows while this file was being written.
     pub unit: String,
-    /// Quanto è già consumato, da `0.0` a `1.0`.
+    /// How much is already spent, from `0.0` to `1.0`. **A FRACTION, NOT A
+    /// PERCENTAGE**: the provider answers `50.0` for "half" and here it becomes
+    /// `0.5`. This number ends up beside other ratios — other engines' quotas,
+    /// fractions of a spend cap — and two lookalike units in the same place get
+    /// summed by mistake exactly once, and nobody notices that once.
     pub used_fraction: f64,
-    /// Quando la finestra riparte, nella forma in cui il fornitore lo dice.
+    /// When the window restarts, in the shape the provider says it.
     ///
-    /// **RESTA UN TESTO, E NON È PIGRIZIA.** È il guasto 14: nessuno legge
-    /// «si azzera alle 7» per riprovare a quell'ora, e non si legge apposta —
-    /// un istante ricavato da una forma vista poche volte è un dato inventato
-    /// con la faccia di una misura. Qui la forma è ISO e sarebbe convertibile,
-    /// ma finché nessuno aspetta quell'ora convertirla è lavoro che si può
-    /// solo sbagliare.
+    /// **IT STAYS TEXT, AND THAT IS NOT LAZINESS** — fault 14: nobody reads
+    /// "it resets at 7" in order to retry then, and an instant derived from a
+    /// rarely seen shape is invented data wearing the face of a measure.
+    /// Convert it when something actually waits for that hour.
     pub resets_at: Option<String>,
-    /// Quando l'abbiamo guardata. Serve perché una quota invecchia: un valore
-    /// senza l'istante in cui è stato letto non si distingue da uno di ieri.
+    /// When we looked. A quota ages: a value without the instant it was read
+    /// at cannot be told apart from yesterday's.
     pub observed_at: i64,
 }
 
-/// Perché una lettura non c'è.
+/// Why a reading is not there.
 ///
-/// **NESSUNA DI QUESTE FORME PORTA IL GETTONE**, ed è il motivo per cui sono
-/// scritte a mano invece di avvolgere l'errore di sotto: un `Display` generico
-/// che riportasse la riga di comando o il corpo di una risposta è il modo in cui
-/// un segreto finisce in un registro, e da un registro non si toglie più.
+/// **NONE OF THESE SHAPES CARRIES THE TOKEN**, which is why they are written
+/// by hand instead of wrapping the underlying error: a generic `Display` that
+/// echoed a command line or a response body is how a secret ends up in a log,
+/// and a log never gives it back.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RemainingError {
-    /// Il file delle credenziali non c'è: quel motore non è autenticato qui.
+    /// The credentials file is not there: that engine is not authenticated
+    /// here.
     NoCredentials(PathBuf),
-    /// Il file c'è e non si legge, o non è JSON.
+    /// The file is there and cannot be read, or is not JSON.
     CredentialsUnreadable(String),
-    /// Il file è JSON e non porta la chiave del gettone. Questa versione di
-    /// quel motore tiene le credenziali da un'altra parte.
+    /// The file is JSON and carries no token key. This version of that engine
+    /// keeps its credentials somewhere else.
     NoToken,
-    /// `curl` non è partito, o non ha risposto.
+    /// `curl` did not start, or did not answer.
     Unreachable(String),
-    /// Ha risposto, e ha detto di no. Porta la parola del fornitore, che dice
-    /// **cosa fare** — «il gettone è stato revocato» si cura autenticandosi di
-    /// nuovo, e nessuna frase scritta qui lo saprebbe dire meglio.
-    ///
-    /// **NON PORTA IL GETTONE**: il corpo di un rifiuto non l'ha mai visto, e
-    /// qui si copia solo il campo `message`, mai la richiesta.
+    /// It answered, and said no. It carries the provider's own words, which
+    /// say **what to do** — "the token has been revoked" is cured by
+    /// authenticating again, and no sentence written here would say it better.
+    /// **It never carries the token**: only the `message` field is copied,
+    /// never the request.
     Refused(String),
-    /// Ha risposto qualcosa che non è il JSON atteso: il canale è beta, e
-    /// questo è il modo in cui si romperà.
+    /// It answered something that is not the expected JSON: the channel is
+    /// beta, and this is how it will break.
     NotUnderstood,
 }
 
@@ -120,51 +93,45 @@ impl fmt::Display for RemainingError {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RemainingError::NoCredentials(path) => {
-                write!(out, "nessuna credenziale in {}", path.display())
+                write!(out, "no credentials in {}", path.display())
             }
             RemainingError::CredentialsUnreadable(why) => {
-                write!(out, "le credenziali non si leggono: {why}")
+                write!(out, "the credentials cannot be read: {why}")
             }
             RemainingError::NoToken => {
-                write!(out, "le credenziali non portano la chiave del gettone")
+                write!(out, "the credentials carry no token key")
             }
-            RemainingError::Unreachable(why) => write!(out, "il canale non risponde: {why}"),
-            RemainingError::Refused(said) => write!(out, "il motore ha rifiutato: {said}"),
+            RemainingError::Unreachable(why) => write!(out, "the channel does not answer: {why}"),
+            RemainingError::Refused(said) => write!(out, "the engine refused: {said}"),
             RemainingError::NotUnderstood => write!(
                 out,
-                "la risposta non ha la forma attesa: il canale è beta e versionato, \
-                 e può cambiare senza avviso"
+                "the answer is not in the expected shape: the channel is beta and \
+                 versioned, and can change without warning"
             ),
         }
     }
 }
 
-/// Il gettone di accesso, in una forma che **non si può stampare per sbaglio**.
-///
-/// **PERCHÉ UN TIPO E NON UNA `String`.** Una stringa finisce in un `{:?}` di
-/// una struttura che la contiene, in un messaggio d'errore scritto di fretta,
-/// in un `dbg!` lasciato indietro — e chi la scrive non se ne accorge, perché
-/// nessuno di quei gesti ha l'aria di stampare un segreto. Qui `Debug` è scritto
-/// a mano, non c'è `Display`, non c'è modo pubblico di tirar fuori il testo, e
-/// l'unico posto che lo tocca è la configurazione che va sull'ingresso di
-/// `curl`. Un difetto del genere non si previene con l'attenzione: si previene
-/// togliendo il gesto.
+/// The access token, in a shape that **cannot be printed by accident**. A
+/// `String` ends up in a `{:?}`, in an error written in a hurry, in a leftover
+/// `dbg!` — none of which looks like printing a secret. So `Debug` is written
+/// by hand, there is no `Display`, no public way to get the text out, and the
+/// only place that touches it is the `curl` stdin configuration. A defect like
+/// this is not prevented with attention: it is prevented by removing the gesture.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Token(String);
 
 impl fmt::Debug for Token {
     fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
-        out.write_str("Token(nascosto)")
+        out.write_str("Token(hidden)")
     }
 }
 
 impl Token {
-    /// Il gettone dentro il file delle credenziali di Claude Code.
-    ///
-    /// La forma è quella misurata su questa macchina il 01/09/2026:
-    /// `{"claudeAiOauth": {"accessToken": "…"}}`. Una chiave che non c'è è
-    /// [`RemainingError::NoToken`] e non un panico: un file di credenziali è di
-    /// qualcun altro e cambia quando quel qualcun altro lo decide.
+    /// The token inside Claude Code's credentials file, shaped
+    /// `{"claudeAiOauth": {"accessToken": "…"}}`. A key that is not there is
+    /// [`RemainingError::NoToken`] and not a panic: a credentials file belongs
+    /// to somebody else and changes when that somebody decides.
     pub fn from_credentials(text: &str) -> Result<Token, RemainingError> {
         let parsed: serde_json::Value = serde_json::from_str(text)
             .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?;
@@ -177,13 +144,12 @@ impl Token {
             .ok_or(RemainingError::NoToken)
     }
 
-    /// La configurazione che `curl` legge **dal proprio ingresso**.
+    /// The configuration `curl` reads **from its own stdin**.
     ///
-    /// **IL GETTONE NON PASSA DAGLI ARGOMENTI, ED È IL PUNTO DI QUESTA
-    /// FUNZIONE.** `curl -H "Authorization: Bearer …"` mette il segreto nella
-    /// riga di comando del processo, e la riga di comando di un processo la
-    /// legge chiunque sulla macchina con un `ps`. Con `-K -` la stessa cosa
-    /// viaggia su una pipe che esiste solo fra questi due processi.
+    /// **THE TOKEN NEVER TRAVELS IN AN ARGUMENT, AND THAT IS THE POINT OF THIS
+    /// FUNCTION.** `curl -H "Authorization: Bearer …"` puts the secret in the
+    /// process's command line, and anyone on the machine reads that with `ps`.
+    /// With `-K -` it travels on a pipe that exists only between these two.
     fn curl_config(&self) -> String {
         format!(
             "url = \"{USAGE_URL}\"\n\
@@ -197,20 +163,12 @@ impl Token {
     }
 }
 
-/// Le finestre di quota dentro una risposta di `/api/oauth/usage`.
+/// The quota windows inside an `/api/oauth/usage` answer.
 ///
-/// **NON CONOSCE NESSUN NOME DI FINESTRA, E NON DEVE.** Prende ogni chiave di
-/// primo livello il cui valore è un oggetto con dentro un `utilization`
-/// numerico. La risposta vera del 01/09/2026 ne portava quattordici, di cui due
-/// piene, una a zero con un nome che non compare in nessuna documentazione, e
-/// undici nulle: un elenco scritto in un `match` avrebbe perso la terza il
-/// giorno che è comparsa, e nessuno se ne sarebbe accorto perché una finestra
-/// che manca non è rossa da nessuna parte.
-///
-/// **CIÒ CHE NON È UNA MISURA NON DIVENTA UNO ZERO.** Una finestra `null`, o un
-/// oggetto con `utilization` a `null`, o senza quel campo, esce dall'elenco
-/// invece di entrarci a zero. Uno zero in mezzo alle quote si legge «hai tutto
-/// libero», che è la direzione rassicurante e sbagliata.
+/// **IT KNOWS NO WINDOW NAME, AND MUST NOT.** It takes every top-level key
+/// whose value is an object holding a numeric `utilization`. One real answer
+/// carried fourteen: two full, one at zero under a name in no documentation,
+/// eleven null. A `match` would have lost the third the day it appeared.
 pub fn from_claude_oauth_usage(
     body: &str,
     observed_at: i64,
@@ -219,19 +177,12 @@ pub fn from_claude_oauth_usage(
         serde_json::from_str(body).map_err(|_| RemainingError::NotUnderstood)?;
     let windows = parsed.as_object().ok_or(RemainingError::NotUnderstood)?;
 
-    // **UN RIFIUTO SI RICONOSCE PRIMA DI CONTARE LE FINESTRE.** Il rifiuto di
-    // questo fornitore è un JSON valido con dentro un oggetto e nessun
-    // `utilization`: scorrerlo cercando quote dà un elenco vuoto, cioè «non
-    // risulta nessun consumo» — la stessa frase che direbbe una persona che non
-    // ha ancora lavorato. Visto per davvero eseguendo `sailor remaining` il
-    // 01/09/2026, col gettone su disco ruotato sotto i piedi del lettore.
-    //
-    // **SI GUARDA `error.message`, NON L'INVOLUCRO.** Le due forme misurate lo
-    // stesso giorno, a venti minuti di distanza, differiscono proprio
-    // sull'involucro: la revoca porta un `"type": "error"` di primo livello, il
-    // limite di frequenza no. Riconoscere l'involucro avrebbe lasciato passare
-    // come «zero consumo» esattamente la risposta che tocca a chi interroga
-    // spesso, cioè a un controllo automatico.
+    // **A REFUSAL IS RECOGNISED BEFORE THE WINDOWS ARE COUNTED**: this
+    // provider's refusal is valid JSON with no `utilization` anywhere, so
+    // scanning it for quotas returns an empty list — "no consumption on record".
+    // **Look at `error.message`, not the envelope.** A revocation carries a
+    // top-level `"type": "error"`, a rate limit does not: matching the envelope
+    // let the rate limit through as that empty list, to an automated poller.
     if let Some(said) = windows
         .get("error")
         .and_then(|error| error.get("message"))
@@ -249,14 +200,17 @@ pub fn from_claude_oauth_usage(
             .get("utilization")
             .and_then(serde_json::Value::as_f64)
         else {
+            // **WHAT IS NOT A MEASURE DOES NOT BECOME A ZERO.** A null window,
+            // one whose `utilization` is null, one without the field at all:
+            // each leaves the list instead of entering it at zero. A zero among
+            // quotas reads "you have everything free" — reassuring, and wrong.
             continue;
         };
         found.push(Remaining {
             engine: CLAUDE_CODE.to_owned(),
             unit: unit.clone(),
-            // Il fornitore dice «50.0» per metà. Vedi il commento su
-            // `used_fraction`: qui l'unità cambia una volta sola, in un posto
-            // solo.
+            // The provider says `50.0` for half. See the note on
+            // `used_fraction`: the unit changes here, once, in one place.
             used_fraction: percent / 100.0,
             resets_at: fields
                 .get("resets_at")
@@ -268,14 +222,12 @@ pub fn from_claude_oauth_usage(
     Ok(found)
 }
 
-/// Legge davvero la quota di Claude Code su questa macchina.
-///
-/// **SOLO LETTURA, E NESSUN COSTO.** Non invoca nessun motore e non consuma
-/// niente: chiede a un indirizzo quanto è già stato consumato. È la ragione per
-/// cui si può chiamare in un controllo che gira spesso.
-///
-/// `home` è la casa della persona — si passa invece di leggerla qui dentro così
-/// chi prova questo modulo non deve avere le credenziali vere di nessuno.
+/// Really reads Claude Code's quota on this machine. **READ-ONLY, AND FREE**:
+/// it invokes no engine and consumes nothing, which is why it can sit in a
+/// check that runs often. `home` is passed in so whoever tests this module
+/// needs nobody's real credentials. A number from here written next to a step
+/// would be a measure with the right face and the wrong meaning — how fault 37
+/// was born, not its cure; its place is next to "can I launch another one?".
 pub fn read_from_claude(home: &Path, observed_at: i64) -> Result<Vec<Remaining>, RemainingError> {
     let path = home.join(CLAUDE_CREDENTIALS);
     if !path.exists() {
@@ -288,10 +240,12 @@ pub fn read_from_claude(home: &Path, observed_at: i64) -> Result<Vec<Remaining>,
     from_claude_oauth_usage(&body, observed_at)
 }
 
-/// `curl` come processo, con la configurazione sull'ingresso.
+/// `curl` as a process, with the configuration on its stdin.
 ///
-/// Stessa strada di [`crate::fetch`] — un processo invece di una libreria HTTP,
-/// per non tirarsi dietro una crate che il resto del workspace non ha.
+/// Same road as [`crate::fetch`] — a process instead of an HTTP library, so as
+/// not to drag in a crate the rest of the workspace does not have. No test
+/// covers this half: a test that goes on the network is red when the line
+/// drops, not when the code is wrong.
 fn ask_curl(config: &str) -> Result<String, RemainingError> {
     use std::io::Write;
 
@@ -306,15 +260,15 @@ fn ask_curl(config: &str) -> Result<String, RemainingError> {
     child
         .stdin
         .as_mut()
-        .ok_or_else(|| RemainingError::Unreachable("curl non ha aperto l'ingresso".to_owned()))?
+        .ok_or_else(|| RemainingError::Unreachable("curl did not open its stdin".to_owned()))?
         .write_all(config.as_bytes())
         .map_err(|error| RemainingError::Unreachable(error.to_string()))?;
     let done = child
         .wait_with_output()
         .map_err(|error| RemainingError::Unreachable(error.to_string()))?;
     if !done.status.success() {
-        // **LO STANDARD ERRORE DI `curl` SI RIPORTA, LA CONFIGURAZIONE NO.**
-        // La prima non ha mai visto il gettone; la seconda lo contiene.
+        // **`curl`'s STDERR IS REPORTED, THE CONFIGURATION IS NOT.** The first
+        // has never seen the token; the second contains it.
         return Err(RemainingError::Unreachable(
             String::from_utf8_lossy(&done.stderr).trim().to_owned(),
         ));
@@ -322,6 +276,8 @@ fn ask_curl(config: &str) -> Result<String, RemainingError> {
     String::from_utf8(done.stdout).map_err(|_| RemainingError::NotUnderstood)
 }
 
+/// The pure half: reading a body, tested on a hand-written sample. The gesture
+/// that goes on the network has no tests, and [`ask_curl`] says why.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,18 +288,18 @@ mod tests {
         found.iter().find(|entry| entry.unit == unit)
     }
 
-    /// **LE DUE FINESTRE PIENE SI LEGGONO, E LA PERCENTUALE DIVENTA FRAZIONE.**
-    /// Il `50.0` del fornitore vale mezza finestra: chi lo riportasse com'è
-    /// darebbe una quota consumata cinquanta volte, cioè un numero che non
-    /// significa niente in nessuna unità.
+    /// **THE TWO FULL WINDOWS ARE READ, AND THE PERCENTAGE BECOMES A
+    /// FRACTION.** The provider's `50.0` is half a window: carried through
+    /// as-is it would claim fifty times the quota spent, a number that means
+    /// nothing in any unit.
     #[test]
     fn the_two_full_windows_are_read_as_fractions() {
-        let found = from_claude_oauth_usage(SAMPLE, 1_000).expect("il campione si legge");
+        let found = from_claude_oauth_usage(SAMPLE, 1_000).expect("the sample parses");
 
-        let five_hour = window(&found, "five_hour").expect("la finestra di cinque ore c'è");
+        let five_hour = window(&found, "five_hour").expect("the five-hour window is there");
         assert_eq!(
             five_hour.used_fraction, 0.5,
-            "50.0 per cento è mezza finestra"
+            "50.0 per cent is half a window"
         );
         assert_eq!(five_hour.engine, CLAUDE_CODE);
         assert_eq!(
@@ -352,88 +308,83 @@ mod tests {
         );
         assert_eq!(
             five_hour.observed_at, 1_000,
-            "una quota senza istante invecchia in silenzio"
+            "a quota with no instant ages in silence"
         );
 
         assert_eq!(
             window(&found, "seven_day")
-                .expect("e quella di sette giorni")
+                .expect("and the seven-day one")
                 .used_fraction,
             0.32
         );
     }
 
-    /// **UNA FINESTRA CHE QUESTA VERSIONE NON CONOSCE ESCE LO STESSO.** La
-    /// risposta vera del 01/09/2026 ne portava una che non compare in nessuna
-    /// documentazione: un elenco di nomi scritto nel codice l'avrebbe persa, e
-    /// una quota persa non è rossa da nessuna parte.
+    /// **A WINDOW THIS VERSION NEVER HEARD OF IS REPORTED ANYWAY.** A list of
+    /// names written into the code would lose it, and a lost quota is red
+    /// nowhere.
     #[test]
     fn a_window_this_version_never_heard_of_is_reported_anyway() {
-        let found = from_claude_oauth_usage(SAMPLE, 0).expect("il campione si legge");
-        let unknown = window(&found, "nimbus_quill").expect("la finestra ignota c'è lo stesso");
+        let found = from_claude_oauth_usage(SAMPLE, 0).expect("the sample parses");
+        let unknown = window(&found, "nimbus_quill").expect("the unknown window is there too");
         assert_eq!(unknown.used_fraction, 0.075);
     }
 
-    /// **CIÒ CHE NON È UNA MISURA NON ENTRA COME ZERO.** Sono quattro forme
-    /// diverse di «qui non c'è un numero», e tutte e quattro devono sparire
-    /// invece di dire «hai tutto libero».
+    /// **WHAT IS NOT A MEASURE NEVER ENTERS AS A ZERO.** Four different shapes
+    /// of "there is no number here", and all four must drop out instead of
+    /// saying "you have everything free".
     #[test]
     fn what_is_not_a_measure_never_becomes_a_zero() {
-        let found = from_claude_oauth_usage(SAMPLE, 0).expect("il campione si legge");
+        let found = from_claude_oauth_usage(SAMPLE, 0).expect("the sample parses");
         let units: Vec<&str> = found.iter().map(|entry| entry.unit.as_str()).collect();
 
         for absent in ["seven_day_opus", "extra_usage", "spend", "limits"] {
             assert!(
                 !units.contains(&absent),
-                "«{absent}» non dichiara un consumo: non deve comparire fra le quote. Trovate: {units:?}"
+                "«{absent}» declares no consumption: it must not appear among the quotas. Found: {units:?}"
             );
         }
         assert_eq!(
             units.len(),
             4,
-            "le sole quattro con un `utilization` numerico: {units:?}"
+            "only the four with a numeric `utilization`: {units:?}"
         );
     }
 
-    /// Una finestra reale e senza istante di azzeramento resta nell'elenco: il
-    /// consumo si conosce anche quando non si sa quando riparte.
+    /// A real window with no reset instant stays in the list: consumption is
+    /// known even when the restart is not.
     #[test]
     fn a_window_without_a_reset_keeps_its_measure() {
-        let found = from_claude_oauth_usage(SAMPLE, 0).expect("il campione si legge");
-        let no_reset = window(&found, "no_reset").expect("c'è");
+        let found = from_claude_oauth_usage(SAMPLE, 0).expect("the sample parses");
+        let no_reset = window(&found, "no_reset").expect("it is there");
         assert_eq!(no_reset.used_fraction, 0.0);
-        assert_eq!(no_reset.resets_at, None, "mai un istante inventato");
+        assert_eq!(no_reset.resets_at, None, "never an invented instant");
     }
 
-    /// **UN RIFIUTO NON È UNA RISPOSTA CON ZERO FINESTRE**, ed è il difetto che
-    /// questo modulo ha avuto per un'ora il 01/09/2026. Il corpo è quello vero,
-    /// arrivato eseguendo `sailor remaining` su questa macchina: il gettone su
-    /// disco era stato ruotato sotto i piedi del lettore, l'indirizzo ha
-    /// risposto 401 con un JSON valido, e il lettore ha riportato «nessuna
-    /// finestra di quota dichiarata». Cioè: interrogato sul consumo, ha detto
-    /// che non ne risulta. Chi legge quella frase prima di lanciare qualcosa
-    /// legge un via libera.
+    /// **A REFUSAL IS NOT AN ANSWER WITH ZERO WINDOWS**, and this module had
+    /// the defect. The body is the real one: the token on disk was rotated
+    /// under the reader's feet, the endpoint answered 401 with valid JSON, and
+    /// the reader reported "no quota window declared". Asked about consumption
+    /// it said none was on record, and whoever reads that before launching
+    /// something reads a green light.
     #[test]
     fn a_refusal_is_a_refusal_and_never_an_empty_measure() {
         let refused = r#"{"type":"error","error":{"type":"authentication_error",
             "message":"OAuth access token has been revoked."},"request_id":null}"#;
 
-        let said = from_claude_oauth_usage(refused, 0).expect_err("è un rifiuto, non una misura");
+        let said = from_claude_oauth_usage(refused, 0).expect_err("it is a refusal, not a measure");
         assert_eq!(
             said,
             RemainingError::Refused("OAuth access token has been revoked.".to_owned()),
-            "la parola del fornitore si riporta: dice cosa fare, cioè autenticarsi di nuovo"
+            "the provider's own words carry through: they say what to do, namely authenticate again"
         );
     }
 
-    /// **IL FORNITORE RIFIUTA IN PIÙ DI UNA FORMA, E LE HO VISTE TUTTE E DUE IN
-    /// VENTI MINUTI.** La prima porta un `type` di primo livello, questa no —
-    /// è solo `{"error": {…}}`. Un controllo scritto sulla prima forma lasciava
-    /// passare la seconda **come elenco vuoto**, cioè come «non risulta nessun
-    /// consumo», e la seconda è quella che arriva a chi interroga spesso: è la
-    /// risposta a chi ha chiesto troppo. Il riconoscimento sta quindi sulla
-    /// parte che le due hanno in comune — un `error` con dentro un `message` —
-    /// e non sull'involucro.
+    /// **THE PROVIDER REFUSES IN MORE THAN ONE SHAPE, AND BOTH WERE SEEN
+    /// TWENTY MINUTES APART.** The first carries a top-level `type`, this one
+    /// does not — only `{"error": {…}}`. A check written on the first let the
+    /// second through **as an empty list**, i.e. "no consumption on record",
+    /// and the second is the answer to whoever asked too often. Recognition
+    /// sits on what the two share — an `error` holding a `message`.
     #[test]
     fn a_refusal_without_the_outer_type_is_still_a_refusal() {
         let limited = r#"{"error":{"type":"rate_limit_error",
@@ -444,20 +395,21 @@ mod tests {
             Err(RemainingError::Refused(
                 "Rate limited. Please try again later.".to_owned()
             )),
-            "chi legge deve sapere che è stato rifiutato, non che non ha consumato niente"
+            "the reader must learn it was refused, not that it consumed nothing"
         );
     }
 
-    /// **E UNA RISPOSTA VERA SENZA FINESTRE RESTA UNA RISPOSTA VERA.** Senza
-    /// questa metà basterebbe dichiarare rifiuto ogni elenco vuoto, e i due casi
-    /// tornerebbero indistinguibili dall'altra parte.
+    /// **AND A REAL ANSWER WITH NO WINDOWS STAYS A REAL ANSWER.** Without this
+    /// half one could just call every empty list a refusal, and the two cases
+    /// would become indistinguishable on the other side.
     #[test]
     fn a_usage_answer_with_every_window_null_is_not_a_refusal() {
         let empty = r#"{"five_hour":null,"seven_day":null,"member_dashboard_available":false}"#;
         assert_eq!(from_claude_oauth_usage(empty, 0), Ok(vec![]));
     }
 
-    /// Il canale è beta: il modo in cui si romperà è rispondendo altro.
+    /// The channel is beta: the way it will break is by answering something
+    /// else.
     #[test]
     fn a_body_that_is_not_the_expected_shape_is_a_declared_failure() {
         assert_eq!(
@@ -470,11 +422,11 @@ mod tests {
         );
     }
 
-    // ── il gettone ───────────────────────────────────────────────────────
+    // ── the token ────────────────────────────────────────────────────────
 
-    /// Un testo che ha la forma del file vero, con dentro un finto segreto
-    /// riconoscibile: se compare da qualche parte, lo si vede subito.
-    const A_SECRET: &str = "questo-non-deve-comparire-da-nessuna-parte";
+    /// Text shaped like the real file, with a recognisable fake secret inside:
+    /// if it shows up anywhere, it is seen at once.
+    const A_SECRET: &str = "this-must-not-show-up-anywhere";
 
     fn credentials_with(token: &str) -> String {
         format!(r#"{{"mcpOAuth": {{}}, "claudeAiOauth": {{"accessToken": "{token}"}}}}"#)
@@ -485,61 +437,61 @@ mod tests {
         assert!(Token::from_credentials(&credentials_with(A_SECRET)).is_ok());
     }
 
-    /// **IL GETTONE NON SI STAMPA, E QUESTA È LA PROVA CHE LO TIENE.** Un
-    /// `#[derive(Debug)]` al posto di quello scritto a mano rimette il difetto,
-    /// e questa riga diventa rossa. È l'unico modo di provare un'assenza: si
-    /// prova il gesto che la violerebbe.
+    /// **THE TOKEN IS NOT PRINTABLE, AND THIS IS THE TEST THAT HOLDS IT.** A
+    /// `#[derive(Debug)]` in place of the hand-written one puts the defect
+    /// back and turns this line red. It is the only way to test an absence:
+    /// test the gesture that would violate it.
     #[test]
     fn no_way_of_printing_a_token_shows_it() {
-        let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("c'è");
+        let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("it is there");
         let printed = format!("{token:?}");
         assert!(
             !printed.contains(A_SECRET),
-            "il gettone è finito in una stampa: {printed}"
+            "the token ended up in a printout: {printed}"
         );
-        assert_eq!(printed, "Token(nascosto)");
+        assert_eq!(printed, "Token(hidden)");
     }
 
-    /// **E NEMMENO UN MESSAGGIO D'ERRORE LO PORTA.** Un errore si scrive di
-    /// fretta e finisce in un registro, dove resta.
+    /// **AND NO ERROR MESSAGE CARRIES IT EITHER.** An error is written in a
+    /// hurry and ends up in a log, where it stays.
     #[test]
     fn no_failure_message_carries_the_token() {
         let broken = format!("{{\"claudeAiOauth\": {{\"accessToken\": \"{A_SECRET}\"}}");
-        let refused = Token::from_credentials(&broken).expect_err("il JSON è troncato");
+        let refused = Token::from_credentials(&broken).expect_err("the JSON is truncated");
         let said = format!("{refused} / {refused:?}");
         assert!(
             !said.contains(A_SECRET),
-            "il gettone è finito nell'errore: {said}"
+            "the token ended up in the error: {said}"
         );
 
-        let no_key = Token::from_credentials(r#"{"claudeAiOauth": {}}"#).expect_err("manca");
+        let no_key = Token::from_credentials(r#"{"claudeAiOauth": {}}"#).expect_err("missing");
         assert_eq!(no_key, RemainingError::NoToken);
     }
 
-    /// La configurazione che va sull'ingresso di `curl` porta il gettone —
-    /// deve — e nessun **argomento** lo porta. È la differenza fra un segreto
-    /// su una pipe e un segreto leggibile con `ps`.
+    /// The configuration going to `curl`'s stdin carries the token — it must —
+    /// and no **argument** does. That is the difference between a secret on a
+    /// pipe and a secret readable with `ps`.
     #[test]
     fn the_secret_travels_on_the_pipe_and_never_in_an_argument() {
-        let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("c'è");
+        let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("it is there");
         let config = token.curl_config();
         assert!(
             config.contains(A_SECRET),
-            "senza il gettone la richiesta non è autenticata"
+            "without the token the request is not authenticated"
         );
         assert!(config.contains(USAGE_URL));
         assert!(
             config.contains(BETA_HEADER),
-            "il canale è versionato: la versione si dichiara"
+            "the channel is versioned: the version is declared"
         );
     }
 
-    /// Un motore non autenticato qui non è un guasto: è una lettura che non
-    /// c'è, e chi la voleva continua senza.
+    /// An engine not authenticated here is not a fault: it is a reading that
+    /// is not there, and whoever wanted it carries on without.
     #[test]
     fn a_machine_without_those_credentials_says_so_instead_of_failing_loudly() {
-        let nowhere = PathBuf::from("/questa/casa/non/esiste");
-        let refused = read_from_claude(&nowhere, 0).expect_err("non c'è niente da leggere");
+        let nowhere = PathBuf::from("/this/home/does/not/exist");
+        let refused = read_from_claude(&nowhere, 0).expect_err("there is nothing to read");
         assert!(matches!(refused, RemainingError::NoCredentials(_)));
     }
 }

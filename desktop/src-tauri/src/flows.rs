@@ -188,7 +188,7 @@ mod tests {
     fn save_flow_rejects_an_empty_id_and_writes_nothing() {
         let dir = scratch_dir("empty-id");
         let error = save_flow_in(&dir, valid_flow("")).expect_err("id vuoto rifiutato");
-        assert!(error.contains("vuoto"), "{error}");
+        assert!(error.contains("empty"), "{error}");
         assert!(entries(&dir).is_empty(), "nessun file deve comparire");
     }
 
@@ -386,6 +386,6 @@ mod tests {
     fn delete_flow_reports_a_flow_that_was_never_written() {
         let dir = scratch_dir("delete-missing");
         let error = delete_flow_in(&dir, "mai-esistito").expect_err("cancellazione di un assente");
-        assert!(error.contains("non esiste"), "{error}");
+        assert!(error.contains("does not exist"), "{error}");
     }
 }

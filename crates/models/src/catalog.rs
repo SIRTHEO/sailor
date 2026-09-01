@@ -1,16 +1,15 @@
-//! Il catalogo dei modelli OpenRouter: dal JSON di
-//! `https://openrouter.ai/api/v1/models` a un elenco filtrabile.
+//! The OpenRouter model catalog: from the JSON of
+//! `https://openrouter.ai/api/v1/models` to a filterable list.
 //!
-//! Tutto qui è puro: prende una stringa JSON già in mano e restituisce
-//! valori. Chi la scarica (`fetch.rs`) sta altrove, apposta — le prove di
-//! questo file girano su un pezzo di catalogo salvato nel crate, mai sulla
-//! rete.
+//! Everything here is pure: it takes a JSON string already in hand and gives
+//! back values. Downloading lives in `fetch.rs`, on purpose — the tests here
+//! run on a slice of catalog saved in the crate, never over the network.
 
 use std::fmt;
 
-/// Un genere di ingresso che un modello sa accettare. Il catalogo elenca
-/// anche altri valori (es. `"file"`): quelli che non riconosciamo si
-/// scartano in silenzio, non fanno fallire il parsing.
+/// An input kind a model accepts. The catalog lists other values too (e.g.
+/// `"file"`): the ones we do not recognise are dropped silently rather than
+/// failing the parse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Modality {
     Text,
@@ -43,18 +42,18 @@ impl fmt::Display for Modality {
     }
 }
 
-/// Un modello del catalogo, con solo i campi che a Sailor servono.
+/// A catalog model, with only the fields Sailor needs.
 ///
-/// `price_per_million_*` è `None` quando il catalogo non riporta un prezzo
-/// leggibile — mai `0.0` per un valore semplicemente mancante: `0.0` resta
-/// riservato ai modelli che dichiarano davvero un prezzo nullo (i gratuiti).
-/// Lo stesso vale per `context_length`.
+/// `price_per_million_*` is `None` when the catalog carries no readable price
+/// — never `0.0` for a merely missing value: `0.0` stays reserved for models
+/// that really declare a zero price (the free ones). Same for
+/// `context_length`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Model {
     pub id: String,
     pub name: String,
-    /// Vero se l'identificatore finisce in `:free`: è il segno che OpenRouter
-    /// usa per i modelli a costo zero, il criterio che il mandato indica.
+    /// True when the id ends in `:free`: the marker OpenRouter uses for
+    /// zero-cost models, and the criterion the mandate names.
     pub free: bool,
     pub context_length: Option<u64>,
     pub input_modalities: Vec<Modality>,
@@ -68,15 +67,15 @@ impl Model {
     }
 }
 
-/// Il catalogo intero, già filtrabile.
+/// The whole catalog, already filterable.
 #[derive(Debug, Clone, Default)]
 pub struct Catalog {
     pub models: Vec<Model>,
 }
 
-/// Un prezzo USD-per-token del catalogo (stringa tipo `"0.00000015"`)
-/// convertito in USD per milione di token. `None` se il campo manca o non è
-/// un numero leggibile.
+/// A USD-per-token price from the catalog (a string such as `"0.00000015"`)
+/// turned into USD per million tokens. `None` when the field is missing or is
+/// not a readable number.
 fn price_per_million(value: Option<&serde_json::Value>) -> Option<f64> {
     let raw = value?.as_str()?;
     let per_token: f64 = raw.parse().ok()?;
@@ -84,15 +83,15 @@ fn price_per_million(value: Option<&serde_json::Value>) -> Option<f64> {
 }
 
 impl Catalog {
-    /// Legge il corpo JSON restituito da `GET /api/v1/models`. Un modello
-    /// singolo malformato non abbatte l'intero catalogo: si scarta lui solo.
+    /// Reads the JSON body returned by `GET /api/v1/models`. One malformed
+    /// model does not take the whole catalog down: only that one is dropped.
     pub fn parse(body: &str) -> Result<Catalog, String> {
         let parsed: serde_json::Value =
-            serde_json::from_str(body).map_err(|e| format!("JSON non valido: {e}"))?;
+            serde_json::from_str(body).map_err(|e| format!("invalid JSON: {e}"))?;
         let entries = parsed
             .get("data")
             .and_then(|d| d.as_array())
-            .ok_or_else(|| "manca il campo \"data\" (elenco dei modelli)".to_string())?;
+            .ok_or_else(|| "the \"data\" field (the list of models) is missing".to_string())?;
 
         let models = entries
             .iter()
@@ -144,9 +143,8 @@ impl Catalog {
     }
 }
 
-/// Il filtro richiesto dal mandato: gratuito/a pagamento, genere di
-/// ingresso, finestra minima. Tutti i campi sono opzionali e si combinano in
-/// AND.
+/// The filter the mandate asks for: free/paid, input kind, minimum window.
+/// Every field is optional and they combine with AND.
 #[derive(Debug, Clone, Default)]
 pub struct Filter {
     pub free_only: bool,
@@ -186,8 +184,9 @@ mod tests {
 
     #[test]
     fn parses_the_whole_sample_catalog() {
-        let catalog = Catalog::parse(SAMPLE).expect("il campione deve leggersi");
-        // 17 gratuiti + 5 a pagamento, misurati dal vivo il 27/08/2026.
+        let catalog = Catalog::parse(SAMPLE).expect("the sample must parse");
+        // 17 free + 5 paid, captured live from OpenRouter and not hand-written:
+        // 22 is a fact about the real catalog, not a sample size someone chose.
         assert_eq!(catalog.models.len(), 22);
     }
 
@@ -228,24 +227,24 @@ mod tests {
 
     #[test]
     fn unknown_modality_strings_are_dropped_not_fatal() {
-        // "meta/muse-spark-1.2-contributor" dichiara anche "file", che non è
-        // uno dei quattro generi che tracciamo: deve solo sparire.
+        // "meta/muse-spark-1.2-contributor" also declares "file", which is not
+        // one of the four kinds we track: it must simply disappear.
         let catalog = Catalog::parse(SAMPLE).unwrap();
         let m = catalog.find("meta/muse-spark-1.2-contributor").unwrap();
         assert!(m.accepts(Modality::Audio));
-        assert_eq!(m.input_modalities.len(), 4); // text, image, video, audio: "file" escluso
+        assert_eq!(m.input_modalities.len(), 4); // text, image, video, audio: "file" excluded
     }
 
     #[test]
     fn converts_price_per_token_to_price_per_million() {
         let catalog = Catalog::parse(SAMPLE).unwrap();
         let qwen = catalog.find("qwen/qwen3.8-flash").unwrap();
-        // 0.00000015 USD/token * 1_000_000 = 0.15 USD/milione, con un margine
-        // per l'arrotondamento in virgola mobile.
+        // 0.00000015 USD/token * 1_000_000 = 0.15 USD/million, with room for
+        // floating-point rounding.
         let input = qwen.price_per_million_input.unwrap();
-        assert!((input - 0.15).abs() < 1e-9, "atteso ~0.15, letto {input}");
+        assert!((input - 0.15).abs() < 1e-9, "expected ~0.15, got {input}");
         let output = qwen.price_per_million_output.unwrap();
-        assert!((output - 0.47).abs() < 1e-9, "atteso ~0.47, letto {output}");
+        assert!((output - 0.47).abs() < 1e-9, "expected ~0.47, got {output}");
     }
 
     #[test]
@@ -264,13 +263,13 @@ mod tests {
 
     #[test]
     fn an_entry_missing_the_id_is_dropped_not_fatal() {
-        let body = r#"{"data":[{"name":"senza id"},{"id":"a:free","context_length":1000,"architecture":{"input_modalities":["text"]},"pricing":{"prompt":"0","completion":"0"}}]}"#;
+        let body = r#"{"data":[{"name":"no id"},{"id":"a:free","context_length":1000,"architecture":{"input_modalities":["text"]},"pricing":{"prompt":"0","completion":"0"}}]}"#;
         let catalog = Catalog::parse(body).unwrap();
         assert_eq!(catalog.models.len(), 1);
         assert_eq!(catalog.models[0].id, "a:free");
     }
 
-    // ── filtro ─────────────────────────────────────────────────────────
+    // ── the filter ─────────────────────────────────────────────────────
 
     #[test]
     fn filter_free_only_excludes_paid_models() {
@@ -295,8 +294,8 @@ mod tests {
         let catalog = Catalog::parse(SAMPLE).unwrap();
         let f = Filter { modality: Some(Modality::Audio), ..Default::default() };
         let hits = catalog.filter(&f);
-        // Gratuiti con audio: inkling-small, inkling, nemotron-3-nano-omni.
-        // A pagamento con audio: meta/muse-spark.
+        // Free with audio: inkling-small, inkling, nemotron-3-nano-omni.
+        // Paid with audio: meta/muse-spark.
         assert_eq!(hits.len(), 4);
         assert!(hits.iter().all(|m| m.accepts(Modality::Audio)));
     }
@@ -308,7 +307,7 @@ mod tests {
         let hits = catalog.filter(&f);
         assert!(hits.iter().all(|m| m.context_length.unwrap_or(0) >= 1_000_000));
         assert!(hits.iter().any(|m| m.id == "thinkingmachines/inkling:free"));
-        assert!(!hits.iter().any(|m| m.id == "tencent/hy-mt2-1.8b")); // 8192, troppo piccolo
+        assert!(!hits.iter().any(|m| m.id == "tencent/hy-mt2-1.8b")); // 8192, too small
     }
 
     #[test]
@@ -321,7 +320,7 @@ mod tests {
             ..Default::default()
         };
         let hits = catalog.filter(&f);
-        // Solo minimax/minimax-m3:free rispetta tutti e tre insieme.
+        // Only minimax/minimax-m3:free satisfies all three at once.
         assert_eq!(hits.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["minimax/minimax-m3:free"]);
     }
 }

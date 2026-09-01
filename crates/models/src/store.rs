@@ -1,14 +1,13 @@
-//! Dove vive `modelli.json` su disco: solo lettura e scrittura di file,
-//! nessun giudizio — la regola dei soli gratuiti sta in `config.rs`, non
-//! qui. Il percorso non si legge dall'ambiente in questo file: lo decide
-//! chi chiama (`main.rs`), così le prove restano su percorsi di comodo e
-//! non sull'ambiente reale del processo.
+//! Where `modelli.json` lives on disk: reading and writing files, no
+//! judgement — the free-only rule is in `config.rs`, not here. The path is not
+//! read from the environment in this file: the caller decides it, so tests
+//! stay on throwaway paths instead of the process's real environment.
 
 use crate::config::UserConfig;
 use std::path::{Path, PathBuf};
 
-/// `MODELS_CONFIG_PATH`, se presente, altrimenti `~/.claude/state/modelli.json`.
-/// Mai cablato altrove nel crate: è la riga del mandato.
+/// `MODELS_CONFIG_PATH` when set, otherwise `~/.claude/state/modelli.json`.
+/// Never hardcoded anywhere else in the crate.
 pub fn config_path() -> PathBuf {
     if let Ok(p) = std::env::var("MODELS_CONFIG_PATH") {
         return PathBuf::from(p);
@@ -17,9 +16,9 @@ pub fn config_path() -> PathBuf {
     PathBuf::from(format!("{home}/.claude/state/modelli.json"))
 }
 
-/// Legge la configurazione da disco. Un file assente o illeggibile non è un
-/// errore: è "non configurato", e su questo si regge la riga di Theo — chi
-/// non ha ancora scelto ottiene solo i gratuiti.
+/// Reads the configuration from disk. A missing or unreadable file is not an
+/// error: it means "not configured", and the free-only rule rests on that —
+/// whoever has not chosen yet gets the free models.
 pub fn load(path: &Path) -> UserConfig {
     std::fs::read_to_string(path)
         .ok()
@@ -39,8 +38,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    // Un percorso di prova sotto la cartella temporanea di sistema, con il
-    // pid nel nome: due prove in parallelo non si pestano i piedi.
+    // A test path under the system temp directory, with the pid in the name:
+    // two tests running in parallel do not step on each other.
     fn tmp_path(name: &str) -> PathBuf {
         let mut p = std::env::temp_dir();
         p.push(format!("models-crate-test-{}-{name}", std::process::id()));
@@ -51,8 +50,8 @@ mod tests {
     fn config_path_honours_the_override_env_var() {
         let key = "MODELS_CONFIG_PATH";
         let previous = std::env::var(key).ok();
-        std::env::set_var(key, "/tmp/modelli-di-prova.json");
-        assert_eq!(config_path(), PathBuf::from("/tmp/modelli-di-prova.json"));
+        std::env::set_var(key, "/tmp/models-under-test.json");
+        assert_eq!(config_path(), PathBuf::from("/tmp/models-under-test.json"));
         match previous {
             Some(v) => std::env::set_var(key, v),
             None => std::env::remove_var(key),
@@ -83,7 +82,7 @@ mod tests {
     #[test]
     fn a_corrupted_file_loads_as_not_configured_not_a_panic() {
         let path = tmp_path("corrupt.json");
-        std::fs::write(&path, "{ questo non è json valido").unwrap();
+        std::fs::write(&path, "{ this is not valid json").unwrap();
         assert_eq!(load(&path), UserConfig::default());
         let _ = std::fs::remove_file(&path);
     }
