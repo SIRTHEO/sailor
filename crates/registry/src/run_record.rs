@@ -1,78 +1,58 @@
-//! L'intestazione di una corsa, scritta da un posto solo.
+//! A run's header, written from one place.
 //!
-//! **PERCHÉ STA QUI E NON NEI DUE CHIAMANTI.** Queste venti righe erano scritte
-//! due volte — in `sailor::flow_cmd` e nel guscio della finestra — e la copia
-//! del guscio portava un commento che dichiarava la duplicazione e spiegava
-//! perché non si poteva chiudere: «rendere pubblico mezzo `flow_cmd` per un
-//! guscio che vive fuori dal workspace sposterebbe il problema». Dal 30/08/2026
-//! quel posto esiste ed è questo crate, quindi la ragione è decaduta.
-//!
-//! Non è un timore astratto: il 31/08/2026 tutte e due scrivevano
-//! `total_cost_micros: 0` a mano, su un campo che la finestra mostra. Riparare
-//! una sola delle due avrebbe dato due numeri diversi per la stessa corsa a
-//! seconda di chi l'aveva lanciata — che è esattamente il guasto per cui questo
-//! crate è nato.
+//! These twenty lines used to be written twice — in `sailor::flow_cmd` and in
+//! the window's shell — and both hard-coded `total_cost_micros: 0` on a field
+//! the window displays. Fixing one of the two would have given two different
+//! numbers for the same run depending on who launched it.
 
 use flow::{Decision, Execution, FlowFile, SpendStop};
 use ledger::{Ledger, RunRecord};
 
-/// Com'è finita una corsa, e se il processo che l'ha lanciata può uscire con
-/// zero.
+/// How a run ended, and whether the process that launched it may exit zero.
 ///
-/// **ERA SCRITTA DUE VOLTE, E LE DUE SONO SEMPRE STATE D'ACCORDO PER FORTUNA.**
-/// Il guscio ne teneva una copia identica meno il booleano, con sopra un
-/// commento che diceva «la stessa traduzione di `flow_cmd::execution_status`».
-/// Un `Decision` nuovo — ed è successo il 31/08/2026, con il tetto di spesa —
-/// obbliga a toccarle tutte e due: il compilatore lo chiede su entrambe, ma
-/// nessuno garantisce che ricevano la **stessa** parola. Due parole diverse per
-/// lo stesso stato sono due storici che non si possono confrontare.
-/// **DAL 31/08/2026 IL CORPO STA IN `flow::run_status`, E PER LA TERZA VOLTA
-/// PER LA STESSA RAGIONE.** Ne serviva una copia anche al passo `subflow`, che
-/// vive nel crate del flusso e in `registry` non può guardare: sarebbe stata la
-/// terza. La traduzione è scesa accanto a `Decision`, cioè accanto al tipo che
-/// traduce, dove la vedono tutti e tre. Questo nome resta perché due chiamanti
-/// lo usano — la riga di comando e il guscio della finestra.
+/// The body lives in `flow::run_status`, next to `Decision` — the type it
+/// translates — because the `subflow` step needs it too and cannot see this
+/// crate. A new `Decision` forces every copy to be touched, but nothing makes
+/// them choose the **same** word, and two words for one state are two histories
+/// that cannot be compared.
 pub fn execution_status(execution: &Execution) -> (&'static str, bool) {
     flow::run_status(execution)
 }
 
-/// La riga che spiega a una persona perché la corsa si è fermata.
+/// The line that tells a person why the run stopped.
 ///
-/// **DICE ANCHE QUELLO CHE NON SA.** Il totale è la somma dei costi noti: se
-/// qualche chiamata non ne aveva uno, la frase lo porta — la spesa vera è più
-/// alta di quella scritta, e chi sta per alzare il tetto e rilanciare deve
-/// saperlo prima, non dopo.
+/// It says what it does not know: the total is the sum of the *known* costs, so
+/// whoever is about to raise the cap and relaunch learns beforehand that the
+/// real spend is higher.
 ///
-/// **E DICE CHE COS'È LA CIFRA.** «spesi 5,00 su un tetto di 5,00» fa credere
-/// che sia stata fermata una fattura, e non lo è: con una riga di comando
-/// locale non si paga a chiamata, si paga un abbonamento, e quello che si
-/// consuma è quota. La cifra in valuta è quanto sarebbe costato via API — un
-/// metro per confrontare. `sailor flow cost` lo scriveva già sulla propria riga
-/// del costo; qui mancava, e lo stesso numero si leggeva in due modi diversi a
-/// seconda di quale comando lo mostrava.
+/// And it says what the figure is. "spent 5.00 of a 5.00 cap" reads like a
+/// bill that was stopped, and it is not: a local command line is paid by
+/// subscription, and what runs out is quota. The figure is what it would have
+/// cost through the API — a yardstick, not a charge.
 pub fn why_it_stopped(stop: &SpendStop) -> String {
     let unknown = if stop.spent.is_complete() {
         String::new()
     } else {
         format!(
-            ", e {} delle {} chiamate non hanno dichiarato un costo — la spesa vera è più alta",
+            ", and {} of the {} calls declared no cost — the real spend is higher",
             stop.spent.calls_without_cost, stop.spent.calls
         )
     };
     format!(
-        "fermata dal tetto di spesa: {} su un tetto di {}, in costo equivalente \
-         (quanto sarebbe costato via API, non una spesa){unknown}. Passi non partiti: {}",
+        "stopped by the spending cap: {} of a {} cap, as equivalent cost \
+         (what it would have cost through the API, not money spent){unknown}. \
+         Steps not started: {}",
         in_units(stop.spent.micros),
         in_units(stop.cap_micros),
         if stop.not_started.is_empty() {
-            "nessuno".to_owned()
+            "none".to_owned()
         } else {
             stop.not_started.join(", ")
         }
     )
 }
 
-/// Perché la corsa si è fermata, se si è fermata per il tetto.
+/// Why the run stopped, if it stopped because of the cap.
 pub fn stopped_by_cap(execution: &Execution) -> Option<String> {
     match execution.decisions.last() {
         Some(Decision::CapReached(stop)) => Some(why_it_stopped(stop)),
@@ -80,67 +60,57 @@ pub fn stopped_by_cap(execution: &Execution) -> Option<String> {
     }
 }
 
-/// Le micro-unità come le legge una persona, con due decimali.
+/// Micro-units as a person reads them, to two decimals.
 fn in_units(micros: i64) -> String {
     format!("{:.2}", micros as f64 / 1_000_000.0)
 }
 
-/// Quel che si sa di una corsa nel momento in cui la si registra.
+/// What is known about a run at the moment it is recorded.
 ///
-/// **PERCHÉ UNA STRUTTURA E NON OTTO ARGOMENTI.** Otto ce n'erano, ed erano
-/// posizionali: `started_at` e `ended_at` adiacenti, entrambi tempi, uno `i64` e
-/// l'altro `Option<i64>`. Scambiarli non è un errore che il compilatore prende
-/// in tutti i casi, e il risultato sarebbe una corsa finita prima di cominciare.
-/// La copia precedente zittiva l'avviso di clippy con un `allow`: qui l'avviso
-/// aveva ragione.
+/// A struct rather than eight positional arguments: `started_at` and `ended_at`
+/// sat next to each other, both times, one `i64` and one `Option<i64>`.
+/// Swapping them is not something the compiler always catches, and the result
+/// is a run that ended before it began.
 pub struct FlowRun<'a> {
     pub run_id: &'a str,
     /// `running`, `complete`, `failed`, `waiting`, `stopped`.
     pub status: &'a str,
     pub started_at: i64,
-    /// `None` finché la corsa è aperta.
+    /// `None` while the run is open.
     pub ended_at: Option<i64>,
     pub error: Option<String>,
-    /// Chi l'ha avviata: il pulsante della finestra, la riga di comando, una
-    /// pianificazione. Si legge nel deposito, e distingue corse altrimenti
-    /// identiche.
+    /// Who started it: the window's button, the command line, a schedule. It
+    /// tells otherwise identical runs apart.
     pub started_by: &'a str,
 }
 
-/// Registra — o aggiorna — l'intestazione di una corsa.
+/// Records — or updates — a run's header.
 ///
-/// **IL TOTALE NON SI DICHIARA, SI CHIEDE.** Prima era la costante `0` in
-/// entrambe le copie, e nessuno la calcolava mai: ogni corsa risultava costata
-/// zero mentre le sue chiamate portavano il costo giusto una per una. Adesso
-/// viene da `spent_in_run`, cioè dalla somma delle righe che quella corsa ha
-/// davvero scritto.
+/// **The total is asked for, not declared.** It used to be a hard-coded `0` in
+/// both copies, so every run looked free while its own calls carried the right
+/// cost one by one. It now comes from `spent_in_run`.
 ///
-/// **CHE COSA QUEL TOTALE NON DICE.** È la somma dei costi **noti**: un motore
-/// che non dichiara i propri token lascia la riga senza costo, e quella riga
-/// non entra. Il totale è quindi un «almeno», non un «esattamente», e chi lo
-/// mostra deve mostrare accanto quante chiamate ne sono fuori — che è ciò che
-/// `Spend::is_complete` serve a sapere. Qui non si può fare di meglio senza
-/// inventare un numero: il campo nel deposito è uno solo ed è un intero.
-///
-/// Si ricalcola a ogni scrittura, compresa quella d'apertura, dove viene zero
-/// perché non è stato ancora speso niente.
+/// That total is the sum of the **known** costs: an engine that does not
+/// declare its tokens leaves a row without one, and that row stays out. It is
+/// an "at least", not an "exactly", and whoever displays it must display how
+/// many calls are missing beside it — which is what `Spend::is_complete` is
+/// for. The ledger field is a single integer, so there is no better answer
+/// here that does not involve inventing a number.
 pub fn record_flow_run(ledger: &Ledger, flow: &FlowFile, run: FlowRun<'_>) -> Result<(), String> {
     write_run(ledger, flow, run, None)
 }
 
-/// La stessa riga, per una corsa **figlia**: in più il legame con la corsa che
-/// l'ha chiamata.
+/// The same row for a **child** run, plus the link to the run that called it.
 ///
-/// **PERCHÉ UNA FUNZIONE E NON UN CAMPO IN PIÙ SU `FlowRun`.** Un campo nuovo su
-/// una struttura costruita a letterale in due crate li avrebbe rotti tutti e
-/// due per un dato che riguarda un solo chiamante. Qui il corpo è uno; la firma
-/// dice chi ha bisogno di cosa.
+/// A function rather than one more field on `FlowRun`: a new field on a struct
+/// built as a literal in two crates would break both for a value only one
+/// caller has.
 ///
-/// **IL LEGAME VA NEL DEPOSITO, NON SOLO NEL NOME.** `parent_run_id` è una
-/// colonna che il deposito aveva già e che nessuno riempiva: una corsa figlia
-/// senza quel valore si può solo indovinare dal prefisso del proprio
-/// identificativo, e indovinare non è risalire. Il verso opposto lo porta il
-/// passo del padre, che si tiene il `run_id` del figlio nella propria uscita.
+/// **The link goes into the ledger, not only into the name.** `parent_run_id`
+/// is a column the ledger already had and nobody filled: without it a child run
+/// can only be guessed from the prefix of its own id, and guessing is not
+/// tracing. The other direction is carried by the parent's step, which keeps
+/// the child's `run_id` in its own output.
 pub fn record_child_run(
     ledger: &Ledger,
     flow: &FlowFile,
@@ -157,10 +127,7 @@ fn write_run(
     parent_run_id: Option<String>,
 ) -> Result<(), String> {
     let spent = ledger.spent_in_run(run.run_id).map_err(|error| {
-        format!(
-            "non riesco a leggere la spesa della corsa {}: {error}",
-            run.run_id
-        )
+        format!("cannot read the spend of run {}: {error}", run.run_id)
     })?;
     ledger
         .record_run(&RunRecord {
@@ -175,12 +142,7 @@ fn write_run(
             started_at: run.started_at,
             ended_at: run.ended_at,
         })
-        .map_err(|error| {
-            format!(
-                "non riesco a registrare la corsa {}: {error}",
-                run.run_id
-            )
-        })
+        .map_err(|error| format!("cannot record run {}: {error}", run.run_id))
 }
 
 #[cfg(test)]
@@ -196,16 +158,9 @@ mod tests {
         }
     }
 
-    /// **LA CIFRA È UN COSTO EQUIVALENTE, NON UNA FATTURA, E LA FRASE LO DICE.**
-    ///
-    /// «spesi 5,00 su un tetto di 5,00» fa credere che sia stata fermata una
-    /// spesa vera. Con una riga di comando locale non si paga a chiamata: si
-    /// paga un abbonamento, e quello che si consuma è **quota**. La cifra in
-    /// valuta è quanto sarebbe costato via API — un metro per confrontare, non
-    /// un addebito. È la stessa regola che `sailor flow cost` applica già alla
-    /// propria riga del costo, e che qui mancava: due posti che mostrano lo
-    /// stesso numero con due significati diversi sono due lettori che decidono
-    /// su cose diverse credendo di guardare la stessa.
+    /// The figure is an equivalent cost, not a bill, and the sentence says so.
+    /// Two places showing the same number with two meanings are two readers
+    /// deciding about different things while believing they see the same one.
     #[test]
     fn the_reason_calls_the_figure_an_equivalent_cost_and_not_a_bill() {
         let said = why_it_stopped(&stopped_at(
@@ -220,19 +175,18 @@ mod tests {
         ));
 
         assert!(
-            said.contains("costo equivalente"),
-            "la frase deve dire che cifra è: {said}"
+            said.contains("equivalent cost"),
+            "the sentence must say what kind of figure it is: {said}"
         );
-        assert!(said.contains("5.00"), "e portare il numero: {said}");
+        assert!(said.contains("5.00"), "and carry the number: {said}");
         assert!(
             said.contains("verifica"),
-            "e dire quale passo non è partito: {said}"
+            "and name the step that did not start: {said}"
         );
     }
 
-    /// **QUELLO CHE NON SI SA STA NELLA STESSA FRASE.** Chi sta per alzare il
-    /// tetto e rilanciare deve sapere che la spesa vera è più alta di quella
-    /// contata, e saperlo prima di rilanciare, non dopo.
+    /// What the count is missing is said in the same sentence: whoever is about
+    /// to raise the cap and relaunch must know beforehand, not after.
     #[test]
     fn what_the_count_is_missing_is_said_in_the_same_sentence() {
         let said = why_it_stopped(&stopped_at(
@@ -246,17 +200,17 @@ mod tests {
             vec![],
         ));
 
-        assert!(said.contains("2 delle 3 chiamate"), "{said}");
-        assert!(said.contains("più alta"), "{said}");
+        assert!(said.contains("2 of the 3 calls"), "{said}");
+        assert!(said.contains("real spend is higher"), "{said}");
         assert!(
-            said.contains("nessuno"),
-            "e un fronte vuoto si dice, invece di lasciare la riga monca: {said}"
+            said.contains("none"),
+            "and an empty front is stated instead of leaving the line cut short: {said}"
         );
     }
 
-    /// La gemella: un conto completo non deve portarsi dietro l'avviso. Senza
-    /// di lei un avviso sempre acceso passerebbe la prova sopra, e un avviso
-    /// sempre acceso non lo legge nessuno.
+    /// The twin: a complete count must carry no warning. Without this, a
+    /// warning that is always on would pass the test above — and a warning
+    /// that is always on is read by nobody.
     #[test]
     fn a_complete_count_carries_no_warning() {
         let said = why_it_stopped(&stopped_at(
@@ -270,6 +224,6 @@ mod tests {
             vec![],
         ));
 
-        assert!(!said.contains("più alta"), "{said}");
+        assert!(!said.contains("real spend is higher"), "{said}");
     }
 }
