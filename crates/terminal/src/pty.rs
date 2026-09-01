@@ -223,6 +223,30 @@ impl Pty {
         matches!(child.try_wait(), Ok(None))
     }
 
+    /// Com'è finito il processo dentro, se è finito.
+    ///
+    /// **NON ASPETTA, E LA DIFFERENZA È UN BLOCCO.** La chiama il filo che
+    /// drena, appena l'uscita finisce; un'attesa vera terrebbe il lucchetto del
+    /// figlio per tutto il tempo, e chi nel frattempo chiude il terminale
+    /// resterebbe fermo sulla porta di un lucchetto che non si apre mai.
+    ///
+    /// Un `try_wait` fallito torna `None` come un processo ancora vivo: in tutti
+    /// e due i casi la risposta onesta è «non lo so», ed è quella che il
+    /// chiamante trasforma in [`crate::Ending::StillRunning`].
+    pub fn finished(&self) -> Option<crate::Ending> {
+        let mut child = self
+            .child
+            .lock()
+            .expect("il lucchetto del figlio non panica");
+        match child.try_wait() {
+            Ok(Some(status)) => Some(match status.code() {
+                Some(code) => crate::Ending::Exited(code),
+                None => crate::Ending::Killed,
+            }),
+            _ => None,
+        }
+    }
+
     /// L'identificativo di processo di ciò che gira dentro.
     pub fn process_id(&self) -> u32 {
         self.child
