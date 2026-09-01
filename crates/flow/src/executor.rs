@@ -9,75 +9,43 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// The map every `Action::execute` receives, keyed by a prefix that says who
+/// owns the datum. `flow.` is the executor's: it rewrites those keys at every
+/// step, so a flow that writes one sees its value overwritten. `workspace.` is
+/// written by whoever launches, before the run starts, and holds for the whole
+/// run. Two prefixes, so a reader can tell the two owners apart.
 pub type SharedState = BTreeMap<String, Value>;
 
-/// La chiave sotto cui l'esecutore scrive l'identificativo del passo che sta
-/// per partire, prima di ogni `Action::execute`.
+/// The step about to start, written before every `Action::execute`.
 ///
-/// **PERCHÉ QUI E NON NELLA FIRMA DEL TRATTO.** Un'azione che produce testo
-/// mentre gira deve poter dire di chi è quel testo, altrimenti in un grafo con
-/// due passi vivi nessuno lo attribuisce. `execute` non riceve il passo, e
-/// aggiungerglielo toccherebbe ogni implementatore in cinque crate per un dato
-/// che serve a pochi. Il prefisso `flow.` è dell'esecutore: un flusso non ci
-/// scrive, e chi lo facesse si vedrebbe il valore sovrascritto a ogni passo.
+/// Here and not in the trait signature: an action producing text as it runs
+/// must say whose text it is, or in a graph with two live steps nobody
+/// attributes it. `execute` never receives the step, and widening the signature
+/// would touch every implementor in five crates for a datum few of them need.
 pub const CURRENT_STEP: &str = "flow.step";
 
-/// La chiave sotto cui l'esecutore scrive l'identificativo della **corsa**,
-/// accanto a quello del passo e nello stesso punto.
+/// The key under which the executor writes the *run* id, beside the step's.
 ///
-/// **PERCHÉ NON ARRIVA PER COSTRUZIONE COME IL DEPOSITO.** Chi registra le
-/// azioni ha in mano il deposito prima di costruire il registro, ma non ancora
-/// la corsa: il `run_id` nasce dopo, quando si sta per partire. Un'azione che
-/// deve attribuire a una corsa ciò che ha speso lo scopre qui, sulla stessa
-/// strada e per la stessa ragione di `CURRENT_STEP` — `execute` non riceve né
-/// l'uno né l'altro, e allargare la firma del tratto toccherebbe ogni
-/// implementatore in cinque crate per un dato che serve a uno solo.
-///
-/// **E NON LO DICHIARA IL FLUSSO.** Farlo scrivere nell'ingresso di un passo
-/// darebbe a un file di dati il potere di attribuire una spesa a una corsa
-/// qualunque, su una misura che esiste proprio per non doversi fidare. Il
-/// prefisso `flow.` è dell'esecutore: chi ci scrive si vede il valore
-/// sovrascritto a ogni passo.
+/// It cannot arrive by construction the way the store does: whoever registers
+/// the actions holds the store before building the registry, but not yet the
+/// run — the `run_id` is born later. Nor may the flow declare it: a data file
+/// able to write here could attribute a spend to any run it liked.
 pub const CURRENT_RUN: &str = "flow.run";
 
-/// La chiave sotto cui **chi lancia** scrive la radice del progetto.
-///
-/// **PERCHÉ LO STATO CONDIVISO E NON UN RINVIO NEL FLUSSO.** Un `{"$root": …}`
-/// starebbe *dentro* l'ingresso, e un'azione che l'ingresso non lo legge — o
-/// che lo legge con uno schema chiuso — non lo vedrebbe mai. Lo stato condiviso
-/// arriva a **ogni** `Action::execute` per costruzione, comprese le azioni che
-/// nessuno ha ancora scritto, e non dipende da cosa il passo dichiara.
-///
-/// *Fino al 01/09/2026 questa riga diceva un'altra cosa: che un rinvio sarebbe
-/// passato da `resolve_references`, «chiamata da due azioni su nove». Era vero
-/// il 31/08 e non lo è più — la risoluzione sta qui sotto, in `step_input`, ed è
-/// di tutte. La ragione qui sopra invece regge, e non dipendeva da quel
-/// numero.*
-///
-/// **PERCHÉ IL PREFISSO NON È `flow.`.** Quello è dell'esecutore, che scrive
-/// passo e corsa a ogni giro. Questa non la scrive l'esecutore: la porta chi
-/// lancia, prima che la corsa cominci, e resta la stessa per tutta la corsa.
-/// Due prefissi diversi dicono a chi legge chi è il proprietario del dato.
-///
-/// **ASSENTE VUOL DIRE ASSENTE.** Nessun ripiego sulla cartella del processo:
-/// è il guasto 25: un flusso che lavora dove capita senza dirlo fa danno
-/// invece di fallire.
+/// The key under which *the launcher* writes the project root: hence
+/// `workspace.` and not `flow.`, per [`SharedState`]. Shared state and not a
+/// `{"$root": …}` in the input, because an action that does not read the input —
+/// or reads it under a closed schema — would never see that one, while shared
+/// state reaches every `Action::execute` by construction. Absent means absent: a
+/// flow working wherever it lands does damage, not failure.
 pub const WORKSPACE_ROOT: &str = "workspace.root";
 
-/// La chiave sotto cui l'esecutore scrive il **tetto di spesa** della corsa,
-/// quando la corsa ne ha uno. Assente vuol dire «nessun tetto», non zero.
-///
-/// **PERCHÉ UN'AZIONE DEVE POTERLO LEGGERE.** Il tetto lo fa rispettare
-/// l'esecutore, e nessuna azione ha motivo di conoscerlo — tranne una: quella
-/// che fa partire **un'altra corsa**. Un sotto-flusso senza tetto lanciato da
-/// una corsa che ne ha uno lo annullerebbe, e basterebbe spostare la spesa
-/// dentro il figlio per spendere quanto si vuole. Perché il figlio possa
-/// ereditare il residuo, il residuo deve essere leggibile da dove si decide, e
-/// si decide dentro l'azione.
-///
-/// **E NON LO DICHIARA IL FLUSSO**, per la stessa ragione di [`CURRENT_RUN`]:
-/// il prefisso `flow.` è dell'esecutore, e un file di dati che potesse scrivere
-/// qui alzerebbe da solo il proprio tetto.
+/// The key under which the executor writes the run's *spend cap*, when it has
+/// one; absent means "no cap", not zero. The executor enforces it and no action
+/// needs to know it, except the one that starts another run: an uncapped
+/// subflow would annul the cap, so the child must read the remainder where the
+/// decision is taken — inside the action. The flow never declares it, or a data
+/// file able to write here would raise its own cap.
 pub const CURRENT_CAP: &str = "flow.cap_micros";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,37 +80,27 @@ pub enum EffectStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActionOutcome {
-    /// L'azione conosce il proprio risultato tipato.
+    /// The action knows its own typed result.
     Went(Value),
-    /// L'azione non può conoscere il risultato; non è un fallimento ritentabile.
+    /// The action cannot know the result; not a retryable failure.
     Waiting(String),
 }
 
 pub trait Action: Send + Sync {
-    fn execute(
-        &self,
-        input: &Value,
-        shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError>;
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError>;
 
-    /// I campi di un `with` scritto a mano che questa azione **non**
-    /// riconosce.
+    /// The fields of a hand-written `with` that this action does *not* know.
     ///
-    /// **SI CHIEDE SOLO A TEMPO DI CONTROLLO, MAI MENTRE SI ESEGUE.** A tempo
-    /// di esecuzione l'ingresso di un passo è l'uscita della sua dipendenza,
-    /// dove i campi estranei sono la norma; nel `with` no — quello lo scrive una
-    /// persona, e un campo che l'azione non conosce lì dentro è un refuso che
-    /// costa una chiamata a pagamento per essere scoperto.
-    ///
-    /// Chi non risponde non fa dire niente a `flow check`: il valore
-    /// predefinito è il silenzio, perché un'azione che non sa elencare i propri
-    /// campi non deve poter accusare chi la usa.
+    /// Asked only at check time: at run time a step's input is its dependency's
+    /// output, where foreign fields are the norm, while a `with` is written by a
+    /// person and an unknown field there is a typo that costs a paid call. The
+    /// default is silence — an action that cannot list its fields accuses none.
     fn unknown_fields(&self, _declared: &Value) -> Vec<String> {
         Vec::new()
     }
 
-    /// Un'azione senza una prova positiva non è rilanciabile automaticamente:
-    /// `Unknown` conserva l'ambiguità invece di duplicare un effetto esterno.
+    /// An action with no positive proof is not automatically relaunchable:
+    /// `Unknown` keeps the ambiguity instead of duplicating an outside effect.
     fn inspect_effect(
         &self,
         _record: &StepRecord,
@@ -151,26 +109,22 @@ pub trait Action: Send + Sync {
         Ok(EffectStatus::Unknown("effect_not_inspectable".to_owned()))
     }
 
-    /// Se rifare questa azione è sicuro. Chi non risponde viene consegnato a
-    /// una persona: il difetto da cui si difende è duplicare un effetto già
-    /// avvenuto sul mondo, e nessun valore predefinito lo può escludere al
-    /// posto di chi ha scritto l'azione.
+    /// Whether redoing this action is safe. Not answering hands it to a person:
+    /// the defect it guards against is duplicating an effect the world has
+    /// already seen, and no default can rule that out on behalf of whoever
+    /// wrote the action.
     fn species(&self) -> StepSpecies {
         StepSpecies::HandToHuman
     }
 
-    /// Disfa l'effetto già prodotto, perché il passo possa essere rifatto.
-    /// Ha senso solo per un'azione che si dichiara `Compensable`: una che lo
-    /// dichiara senza scrivere questo metodo fallisce la compensazione e
-    /// finisce a una persona, che è il modo giusto di far vedere l'errore.
-    fn compensate(
-        &self,
-        _record: &StepRecord,
-        _shared: &SharedState,
-    ) -> Result<(), ActionError> {
+    /// Undoes the effect already produced so the step can be redone. Only
+    /// meaningful for an action declaring itself `Compensable`: one that
+    /// declares it without writing this method fails compensation and lands on
+    /// a person, which is the right way for the mistake to show.
+    fn compensate(&self, _record: &StepRecord, _shared: &SharedState) -> Result<(), ActionError> {
         Err(ActionError::new(
             "no_compensation",
-            "l'azione si dichiara compensabile ma non sa disfare il proprio effetto",
+            "the action declares itself compensable but cannot undo its own effect",
         ))
     }
 }
@@ -193,12 +147,12 @@ impl ActionRegistry {
         self.actions.get(name).map(Box::as_ref)
     }
 
-    /// I nomi registrati, in ordine.
+    /// The registered names, in order.
     ///
-    /// **CHI VUOLE ELENCARE LE AZIONI CHIEDE QUI, E NON TIENE UNA COPIA.** Un
-    /// elenco scritto a mano accanto al registro diverge al primo che aggiunge
-    /// un'azione, e nessun controllo locale lo mostra: il rapporto continua a
-    /// stampare una riga plausibile e vecchia.
+    /// Whoever wants to list the actions asks here and keeps no copy: a list
+    /// written by hand beside the registry diverges the moment someone adds an
+    /// action, and no local check shows it — the report keeps printing a
+    /// plausible, stale line.
     pub fn names(&self) -> Vec<&str> {
         self.actions.keys().map(String::as_str).collect()
     }
@@ -215,55 +169,48 @@ pub struct Completion {
     pub bytes_discarded: Option<u64>,
 }
 
-/// Quanto una corsa ha speso, e quanto di quella spesa resta sconosciuto.
-///
-/// **STA QUI E NON NEL DEPOSITO PERCHÉ SERVE A DECIDERE, NON SOLO A MOSTRARE.**
-/// Chi ferma una corsa al tetto è l'esecutore, che di depositi non sa niente:
-/// chiede al proprio `RecordStore`. Il deposito vero è solo una delle risposte
-/// possibili.
-///
-/// **NON È UN `Option<i64>`, E IL MOTIVO È IL TERZO CASO.** «Il totale, oppure
-/// non lo so» ne copre due; i casi veri sono tre — non ho speso niente, ho speso
-/// questo e lo so tutto, ho speso **almeno** questo. Un `Option` collassa il
-/// terzo su uno degli altri, e in tutti e due i modi la cifra che resta è più
-/// bassa del vero: cioè un tetto che lascia passare.
+/// What a run has spent, and how much of it stays unknown. It lives in the
+/// executor, not the store: it serves to decide, and the executor enforces the
+/// cap knowing no stores — it asks its `RecordStore`, of which the real store is
+/// one answer. Not an `Option<i64>`, because the cases are three — nothing, this
+/// and all of it known, *at least* this — and an `Option` collapses the third
+/// into a figure lower than the truth, which is a cap that lets things through.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Spend {
-    /// La somma dei costi noti, in micro-unità di valuta.
+    /// The sum of the known costs, in currency micro-units.
     pub micros: i64,
-    /// Le chiamate registrate per quella corsa, comunque siano andate.
+    /// The calls recorded for that run, however they went.
     pub calls: i64,
-    /// Quante di quelle non portano un costo. `micros` le esclude.
+    /// How many of those carry no cost, and `micros` excludes them: this is the
+    /// whole of what a cap cannot promise. It is measured only on the costs
+    /// engines declare, and codex reports the total of the tokens rather than
+    /// the two sides, so its rows carry no cost and never enter the sum. The cap
+    /// guarantees over what is known, and the run it stops says how many calls
+    /// were outside the count.
     pub calls_without_cost: i64,
-    /// La più cara osservata, se se ne conosce almeno una.
+    /// The dearest one observed, if at least one is known.
     ///
-    /// Serve a chi deve decidere **quanti passi aprire insieme**: con N in volo
-    /// lo sforamento peggiore è N volte questa. `None` quando nessuna chiamata
-    /// ha dichiarato un costo — e allora quel calcolo non si può fare, e chi lo
-    /// facesse lo starebbe inventando.
+    /// For deciding *how many steps to open at once*: with N in flight the
+    /// worst overshoot is N times this. `None` when no call declared a cost —
+    /// and then that arithmetic cannot be done, only invented.
     pub dearest_micros: Option<i64>,
 }
 
 impl Spend {
-    /// Il totale è completo: ogni chiamata ha detto quanto è costata.
+    /// The total is complete: every call said what it cost.
     ///
-    /// Serve a chi deve **dichiarare** su cosa sta decidendo. Un tetto
-    /// rispettato con questo a `false` è rispettato solo per quanto si sa.
+    /// For whoever must *declare* what they are deciding on. A cap respected
+    /// with this `false` is respected only as far as anyone knows.
     pub fn is_complete(&self) -> bool {
         self.calls_without_cost == 0
     }
 
-    /// I tre casi, nella forma in cui si mostrano a una persona.
-    ///
-    /// **ESISTE PERCHÉ LA DISTINZIONE C'ERA GIÀ E NON ARRIVAVA A CHI LEGGE.**
-    /// `Spend` documenta tre casi da quando è nato, ma il solo modo di
-    /// interrogarli era `is_complete()` — un booleano che chi stampa poteva
-    /// scrivere **accanto** al numero invece che **al posto** del numero. È
-    /// esattamente quello che `sailor flow cost` faceva: la corsa dell'A/B del
-    /// 31/08/2026 stampava «1,6674» ed era costata 7,2080, con la nota
-    /// «parziale: 3 chiamate senza costo noto» una riga più sotto. Chi legge un
-    /// totale legge il numero. Restituire il caso invece del booleano toglie a
-    /// chi mostra la possibilità di sbagliarsi.
+    /// The three cases, in the shape they are shown to a person. The only way
+    /// to ask used to be `is_complete()`, a boolean whoever printed could put
+    /// *beside* the number instead of *instead of* it — which is what `sailor
+    /// flow cost` did: "1.6674" for a run that had cost 7.2080, with the note
+    /// "partial: 3 calls with no known cost" a line below. Returning the case
+    /// takes the mistake away from whoever displays it.
     pub fn reading(&self) -> CostReading {
         if !self.is_complete() {
             return CostReading::AtLeast {
@@ -280,23 +227,21 @@ impl Spend {
     }
 }
 
-/// Come si legge il totale di una spesa.
+/// How a spend total is to be read.
 ///
-/// **TRE CASI, GLI STESSI CHE `Spend` DICHIARA.** «Non ho speso niente», «ho
-/// speso questo e lo so tutto», «ho speso **almeno** questo». Il terzo è il
-/// motivo per cui questo tipo esiste: collassarlo su uno degli altri due — un
-/// `Option<i64>`, o un numero con una nota accanto — lascia in mano a chi legge
-/// una cifra più bassa del vero, e su una corsa con passi consegnati «più bassa»
-/// è stata 4,3 volte.
+/// The same three cases `Spend` declares. The third is why this type exists:
+/// collapsing it onto either of the others — an `Option<i64>`, or a number with
+/// a note beside it — hands the reader a figure lower than the truth, and on a
+/// run with handed-off steps "lower" was 4.3 times.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CostReading {
-    /// Niente da mostrare: nessuna chiamata ha speso, e nessuna tace.
+    /// Nothing to show: no call spent, and none is silent.
     Nothing,
-    /// Il totale, e **è** il totale: ogni chiamata ha dichiarato il suo costo.
+    /// The total, and it *is* the total: every call declared its cost.
     Exact(i64),
-    /// Un pavimento, non una somma. `known_micros` è quanto si sa; le altre due
-    /// cifre dicono su quanto lavoro quel numero non ha visto niente — senza,
-    /// «almeno 1,67» non si distingue da «1,67 e manca un centesimo».
+    /// A floor, not a sum. `known_micros` is what is known; the other two
+    /// figures say how much work that number saw nothing of — without them,
+    /// "at least 1.67" cannot be told from "1.67 and a cent missing".
     AtLeast {
         known_micros: i64,
         calls: i64,
@@ -304,16 +249,14 @@ pub enum CostReading {
     },
 }
 
-/// Dove si scrive che un passo è partito e com'è finito.
-///
-/// **PRENDE `&self`, E NON È UN DETTAGLIO DI STILE.** Con `&mut self` un fronte
-/// di passi indipendenti non si può eseguire insieme: il deposito è uno solo, e
-/// un solo filo per volta potrebbe tenerlo. Chi implementa questo tratto si
-/// procura da sé la mutabilità che gli serve — `Ledger` ha già la sua connessione
-/// dietro un lucchetto, e le sue scritture sono già transazioni. Il tratto chiede
-/// `Sync` per la stessa ragione: senza, il fronte resta una fila indiana.
+/// Where it is written that a step started, and how it ended. It takes `&self`,
+/// and that is no style detail: with `&mut self` a front of independent steps
+/// could not run together, one store being holdable by one thread at a time.
+/// Implementors get the mutability they need themselves — `Ledger` has its
+/// connection behind a lock already, and its writes are already transactions.
+/// `Sync` is asked for the same reason: without it, single file again.
 pub trait RecordStore: Sync {
-    /// Deve rendere durevole l'intenzione prima di restituire al chiamante.
+    /// Must make the intent durable before returning to the caller.
     fn append_started(&self, record: StepRecord) -> Result<(), FlowError>;
     fn close(
         &self,
@@ -325,26 +268,21 @@ pub trait RecordStore: Sync {
     ) -> Result<(), FlowError>;
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError>;
 
-    /// Quanto quella corsa ha speso finora.
-    ///
-    /// **NON HA UNA RISPOSTA PREDEFINITA, ED È VOLUTO.** La tentazione era dare
-    /// al tratto un corpo che risponde `Spend::default()` — zero — così le
-    /// implementazioni esistenti non cambiavano. Ma zero vuol dire «questa
-    /// corsa non ha ancora speso niente», ed è un'affermazione: un tetto che la
-    /// riceve da un deposito che semplicemente non tiene i costi **non scatta
-    /// mai**, e non lo dice a nessuno. Chi implementa questo tratto dichiara
-    /// cosa sa, anche quando la risposta onesta è «niente, perché non registro
-    /// le chiamate».
+    /// What that run has spent so far. No default body, deliberately: a default
+    /// of `Spend::default()` — zero — would spare existing implementations, but
+    /// zero is an assertion, "this run has not spent anything yet", and a cap
+    /// fed that by a store which simply does not keep costs never trips and
+    /// tells nobody. Whoever implements this declares what they know, even when
+    /// the honest answer is "nothing, because I do not record the calls".
     fn spent(&self, run_id: &str) -> Result<Spend, FlowError>;
 }
 
-/// Il deposito che vive in memoria, per le prove e per chi non vuole un file.
-///
-/// **IL LUCCHETTO C'È PERCHÉ IL FRONTE GIRA INSIEME.** Prima qui c'era un `Vec`
-/// nudo e il tratto chiedeva `&mut self`: bastava, perché i passi si eseguivano
-/// in fila. Da quando un fronte parte tutto insieme, due fili scrivono qui
-/// dentro nello stesso istante, e la mutabilità se la procura la struttura
-/// invece di chiederla al chiamante — che non potrebbe darla a entrambi.
+/// The store that lives in memory, for tests and for anyone wanting no file.
+/// The lock is here because the front runs together: a bare `Vec` sufficed
+/// while the trait asked `&mut self` and steps ran in single file, but now that
+/// a front starts all at once two threads write in here in the same instant, so
+/// the struct gets the mutability itself instead of asking the caller — who
+/// could not give it to both.
 #[derive(Debug, Default)]
 pub struct InMemoryRecordStore {
     records: Mutex<Vec<StepRecord>>,
@@ -357,19 +295,19 @@ impl InMemoryRecordStore {
         }
     }
 
-    /// Una copia di ciò che c'è dentro adesso.
+    /// A copy of what is inside right now.
     ///
-    /// **RESTITUISCE UNA COPIA E NON UN RIFERIMENTO**: dietro il lucchetto non
-    /// si può prestare niente che sopravviva alla presa, e prestarlo comunque
-    /// vorrebbe dire lasciar leggere mentre un altro filo scrive.
+    /// A copy and not a reference: nothing behind the lock can be lent out
+    /// beyond the guard, and lending it anyway would mean reading while another
+    /// thread writes.
     pub fn all(&self) -> Vec<StepRecord> {
         self.held().clone()
     }
 
-    /// La presa sul contenuto. Un lucchetto avvelenato è un filo morto mentre
-    /// scriveva: si prende quello che c'è invece di propagare il panico, perché
-    /// qui dentro non ci sono invarianti a metà — ogni scrittura è un `push` o
-    /// un campo assegnato.
+    /// The guard on the contents. A poisoned lock is a thread that died mid
+    /// write: take what is there instead of propagating the panic, because
+    /// there are no half-built invariants in here — every write is a `push` or
+    /// one assigned field.
     fn held(&self) -> std::sync::MutexGuard<'_, Vec<StepRecord>> {
         self.records.lock().unwrap_or_else(|held| held.into_inner())
     }
@@ -476,19 +414,18 @@ impl RecordStore for InMemoryRecordStore {
             .collect())
     }
 
-    /// **QUESTO DEPOSITO NON REGISTRA LE CHIAMATE, QUINDI NON SA NIENTE DELLA
-    /// SPESA.** E qui lo zero è la risposta vera, non un ripiego: nessuna
-    /// chiamata scritta, nessun costo, niente di ignoto. Chi usa questo deposito
-    /// e dichiara un tetto ottiene un tetto che non scatta — ed è corretto, però
-    /// va saputo: le prove che misurano il tetto usano un deposito che i costi
-    /// li tiene, non questo.
+    /// This store records no calls, so it knows nothing about spending, and
+    /// here zero is the true answer rather than a fallback: no call written, no
+    /// cost, nothing unknown. Declaring a cap on top of this store gives a cap
+    /// that never trips — correct, but worth knowing: the tests that measure
+    /// the cap use a store that does keep costs.
     fn spent(&self, _run_id: &str) -> Result<Spend, FlowError> {
         Ok(Spend::default())
     }
 }
 
-/// Che ora è. `&self` e `Sync` per la stessa ragione del deposito: due passi che
-/// girano insieme chiedono l'ora insieme.
+/// What time it is. `&self` and `Sync` for the same reason as the store: two
+/// steps running together ask for the time together.
 pub trait Clock: Sync {
     fn now(&self) -> Result<i64, FlowError>;
 }
@@ -515,32 +452,30 @@ pub enum Decision {
     Waiting(Vec<String>),
     Stopped(Vec<String>),
     Failed(Vec<String>),
-    /// La corsa si è fermata da sé per non superare il tetto di spesa.
-    ///
-    /// **PERCHÉ UNA PAROLA SUA E NON `Stopped` NÉ `Failed`.** `Failed` direbbe
-    /// che qualcosa si è rotto, e un flusso notturno che tocca il proprio tetto
-    /// ogni notte apparirebbe guasto ogni notte: chi guarda smetterebbe di
-    /// guardare. `Stopped` esiste già e vuol dire un'altra cosa — un passo che
-    /// il deposito porta fermo. Qui non si è fermato un passo: si è fermata la
-    /// corsa, e per una ragione che si può leggere in soldi.
+    /// The run stopped itself rather than go over the spend cap: its own word,
+    /// neither `Stopped` nor `Failed`. `Failed` would say something broke, and a
+    /// nightly flow touching its cap every night would look broken every night
+    /// until nobody looked. `Stopped` already means a step the store holds
+    /// still; here it is the run that stopped, and for a reason that can be
+    /// read in money.
     CapReached(SpendStop),
     Complete,
 }
 
-/// Perché la corsa si è fermata, con i numeri per giudicarlo.
+/// Why the run stopped, with the numbers to judge it by.
 ///
-/// **PORTA I DATI, NON LA FRASE.** La frase la compone chi mostra — il
-/// terminale in una riga, la finestra in un riquadro — e in due lingue diverse
-/// se un giorno servirà. Un messaggio già formattato qui dentro obbligherebbe
-/// tutti e due a disfarlo per rifarlo.
+/// It carries the data, not the sentence. The sentence is composed by whoever
+/// displays — the terminal in one line, the window in a panel — and in two
+/// languages if that is ever needed. A message already formatted in here would
+/// force both of them to take it apart to rebuild it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpendStop {
-    /// Il tetto dichiarato per questa corsa, in micro-unità.
+    /// The cap declared for this run, in micro-units.
     pub cap_micros: i64,
-    /// Quanto risulta speso, e quanto di quello resta ignoto.
+    /// What is recorded as spent, and how much of that stays unknown.
     pub spent: Spend,
-    /// I passi che erano pronti e non sono partiti. Non sono guasti: sono da
-    /// fare, e una ripresa con un tetto più alto li trova lì.
+    /// The steps that were ready and did not start. Not faults: they are still
+    /// to do, and a resume under a higher cap finds them there.
     pub not_started: Vec<String>,
 }
 
@@ -550,19 +485,12 @@ pub struct Execution {
     pub shared: SharedState,
 }
 
-/// Com'è finita una corsa, e se chi l'ha lanciata può dirsi soddisfatto.
-///
-/// **STA QUI PERCHÉ `Decision` STA QUI.** Questa traduzione è nata in
-/// `sailor::flow_cmd` e ne esisteva una copia nel guscio della finestra; il
-/// 30/08/2026 le due sono state riunite in `registry::execution_status`.
-/// Adesso ne serve una terza a chi esegue un **sotto-flusso**, che vive nel
-/// crate del flusso e non può guardare in `registry`. La regola vale come le
-/// altre volte: invece di ricopiarla si sposta dove tutti la vedono, cioè
-/// accanto al tipo che traduce. `registry::execution_status` resta il nome
-/// pubblico che i due chiamanti già usano, e chiama questa.
-///
-/// Il booleano è la seconda metà della risposta: `cap_reached` e `waiting` non
-/// sono guasti, ma nemmeno «è andata».
+/// How a run ended, and whether whoever launched it can call it satisfied:
+/// `cap_reached` and `waiting` are not faults, and not "it went" either. A
+/// third caller needed this translation — the subflow step, which lives here
+/// and cannot see into `registry` — so rather than copy it a third time it
+/// moved beside `Decision`, the type it translates. `registry::execution_status`
+/// stays the public name its callers already use, and calls this.
 pub fn run_status(execution: &Execution) -> (&'static str, bool) {
     match execution.decisions.last() {
         Some(Decision::Complete) => ("complete", true),
@@ -580,15 +508,12 @@ pub struct ExecutionRequest {
     pub root_inputs: BTreeMap<String, Value>,
     pub gates: Vec<String>,
     pub shared: SharedState,
-    /// Quanto questa corsa può spendere, in micro-unità di valuta.
+    /// What this run may spend, in currency micro-units.
     ///
-    /// **`None` VUOL DIRE «NESSUN TETTO DICHIARATO», E NON ZERO.** Sono due
-    /// cose opposte: `Some(0)` è un flusso che non deve spendere niente — e si
-    /// ferma prima della prima chiamata a pagamento, il che è un modo legittimo
-    /// di provarlo — mentre `None` è un flusso a cui nessuno ha messo un limite.
-    /// Il valore predefinito è `None`, cioè come si è sempre comportato: un
-    /// tetto che comparisse da sé fermerebbe corse che nessuno ha chiesto di
-    /// fermare.
+    /// `None` means "no cap declared", not zero — the two are opposites.
+    /// `Some(0)` is a flow that must not spend anything and stops before the
+    /// first paid call; `None` is a flow nobody set a limit on. The default is
+    /// `None`: a cap appearing by itself would stop runs nobody asked to stop.
     pub spend_cap_micros: Option<i64>,
 }
 
@@ -598,10 +523,10 @@ pub struct Reconciliation {
     pub closed_as_broke: Vec<String>,
     pub closed_as_waiting: Vec<String>,
     pub still_running: Vec<String>,
-    /// I passi il cui effetto è stato disfatto prima di riaprirli. Non è un
-    /// secchio a sé rispetto agli altri: sono anche in `closed_as_broke`,
-    /// che è dove si legge «torna pronto». Qui si legge un'altra cosa —
-    /// qualcosa è stato annullato sul mondo, e chi guarda deve saperlo.
+    /// The steps whose effect was undone before reopening them. Not a bucket
+    /// apart from the others: they are also in `closed_as_broke`, which is
+    /// where "becomes ready again" reads. Here something else reads — something
+    /// was undone in the world, and the reader must know.
     pub compensated: Vec<String>,
 }
 
@@ -689,10 +614,10 @@ impl InProcessExecutor {
                     closed(Outcome::Broke, None, None, Some("process_disappeared"), now),
                     &mut report.closed_as_broke,
                 ),
-                // L'effetto non si sa: qui, e solo qui, decide la specie del
-                // passo. Senza di lei l'unica scelta sicura era «in attesa» —
-                // e un passo in attesa non torna mai pronto (`decision_from`),
-                // cioè la ripresa vedeva l'interrotto e non lo rilanciava mai.
+                // The effect is unknown: here, and only here, the step's species
+                // decides. Without it the one safe choice was "waiting" — and a
+                // waiting step never becomes ready again (`decision_from`), so
+                // a resume saw the interrupted step and never relaunched it.
                 Ok(EffectStatus::Unknown(reason)) => {
                     match species_for(record, action) {
                         StepSpecies::Repeatable => (
@@ -710,7 +635,7 @@ impl InProcessExecutor {
                                 || {
                                     Err(ActionError::new(
                                         "unknown_action",
-                                        "nessuna azione da cui disfare l'effetto",
+                                        "no action to undo the effect with",
                                     ))
                                 },
                                 |action| action.compensate(record, shared),
@@ -729,9 +654,9 @@ impl InProcessExecutor {
                                         &mut report.closed_as_broke,
                                     )
                                 }
-                                // La compensazione dichiarata che non riesce
-                                // lascia il mondo a metà: è il caso in cui una
-                                // persona serve davvero.
+                                // Declared compensation that fails leaves the
+                                // world half done: this is the case where a
+                                // person is genuinely needed.
                                 Err(error) => (
                                     closed(
                                         Outcome::Waiting,
@@ -790,9 +715,9 @@ impl Executor for InProcessExecutor {
         clock: &dyn Clock,
     ) -> Result<Execution, FlowError> {
         let mut decisions = Vec::new();
-        // La radice si legge una volta sola e si tiene per valore: resta la
-        // stessa per tutta la corsa, e un riferimento dentro `request.shared`
-        // impedirebbe all'esecutore di scriverci la corsa poco più sotto.
+        // The root is read once and held by value: it stays the same for the
+        // whole run, and a reference into `request.shared` would stop the
+        // executor writing the run id there a few lines below.
         let root: Option<PathBuf> = request
             .shared
             .get(WORKSPACE_ROOT)
@@ -809,16 +734,12 @@ impl Executor for InProcessExecutor {
                 });
             };
 
-            // IL TETTO SI GUARDA PRIMA DI APRIRE, NON DOPO AVER SPESO.
-            //
-            // Qui, e non dentro l'azione che chiama il motore: un passo che
-            // scopre a metà di aver sforato ha già pagato. L'unico momento in
-            // cui fermarsi costa zero è prima di aprire il fronte.
-            //
-            // **IL CONFRONTO È `>=`, NON `>`.** Con `>` un tetto di zero
-            // lascerebbe passare la prima chiamata — cioè proprio il caso in
-            // cui qualcuno sta dicendo «questo flusso non deve spendere
-            // niente».
+            // The cap is checked before opening, not after spending: a step
+            // that discovers halfway through that it went over has already
+            // paid. The only moment where stopping costs nothing is before the
+            // front opens. The comparison is `>=`, not `>`, because with `>` a
+            // cap of zero would let the first call through — precisely the case
+            // where someone is saying "this flow must not spend anything".
             let mut at_once = AT_ONCE;
             if let Some(cap) = request.spend_cap_micros {
                 let spent = store.spent(&request.run_id)?;
@@ -836,35 +757,19 @@ impl Executor for InProcessExecutor {
                 at_once = how_many_fit(cap - spent.micros, spent.dearest_micros);
             }
 
-            // IL FRONTE PARTE INSIEME.
-            //
-            // **PERCHÉ PRIMA NO, E QUANTO COSTAVA.** Qui c'era un `for` che
-            // percorreva i passi pronti uno dopo l'altro, con un commento che lo
-            // ammetteva: «il fronte è una decisione unica anche se questo
-            // esecutore lo percorre in ordine». Misurato il 30/08/2026: due
-            // passi indipendenti da sei secondi ne impiegavano dodici, tre ne
-            // impiegavano diciotto — lineare, con la macchina ferma allo 0% di
-            // processore per tutto il tempo. È il guasto 7, documentato da due
-            // giorni e mai riparato, e regge in piedi il terzo blocco di lavoro:
-            // «sfruttare la macchina» non ha dove appoggiarsi su una fila
-            // indiana.
-            //
-            // **L'EPOCA È DEL FRONTE, NON DEL PASSO.** Si calcola una volta qui,
-            // prima di aprire qualunque passo, e vale per tutti quelli
-            // dell'ondata. Prima la calcolava ciascuno dalla stessa fotografia
-            // dei record e usciva comunque uguale per tutti: la differenza è che
-            // adesso è dichiarata invece che coincidente, e chi legge una corsa
-            // vede che quei passi sono partiti insieme perché portano la stessa
-            // epoca.
-            //
-            // **PRIMA SI APRONO TUTTI, POI SI ESEGUONO.** L'apertura è breve e
-            // ordinata; l'esecuzione è lunga e concorrente. Tenerle separate
-            // rende deterministico l'ordine in cui i passi compaiono nel
-            // deposito — che è quello del grafo, non quello in cui i fili
-            // vincono la corsa — e lascia la chiusura di ciascuno nel proprio
-            // filo, appena finisce, così chi guarda la vede arrivare quando
-            // accade.
+            // The epoch belongs to the front, not to the step: computed once
+            // here, before any step opens, and the whole wave carries it. Each
+            // step used to compute it from the same snapshot of the records and
+            // it came out equal anyway; the difference is that it is now
+            // declared instead of coincidental, and whoever reads a run sees
+            // those steps started together because they share one epoch.
             let epoch = records.iter().map(|record| record.epoch).max().unwrap_or(0) + 1;
+            // All are opened first and executed after. Opening is short and
+            // orderly, execution long and concurrent: keeping them apart makes
+            // the order steps appear in the store the graph's, not the order in
+            // which threads win the race, and leaves each step's closing in its
+            // own thread the moment it finishes, so a watcher sees it arrive
+            // when it happens.
             let mut opened: Vec<Opened<'_>> = Vec::with_capacity(front.len());
             for step_id in front {
                 let step = graph
@@ -872,17 +777,12 @@ impl Executor for InProcessExecutor {
                     .ok_or_else(|| FlowError::UnknownStep(step_id.clone()))?;
                 let previous = latest_for(step, &records);
                 let attempt = previous.map_or(1, |record| record.attempt + 1);
-                // **UN RINVIO CHE NON TROVA NIENTE ROMPE IL PASSO, NON LA
-                // CORSA.** Finché la risoluzione stava dentro le azioni, un
-                // puntatore morto tornava come `ActionError` da `execute`, e
-                // l'esecutore lo scriveva nel deposito come qualunque altro
-                // passo rotto: la corsa arrivava a `Failed([quel passo])`, chi
-                // guardava vedeva quale, e la ripresa sapeva dove ripartire.
-                // Spostando la risoluzione qui, propagare l'errore col `?`
-                // avrebbe interrotto `execute` **senza aprire né chiudere
-                // niente**: nessun record, nessuna decisione, e un passo che
-                // per il deposito non è mai esistito. Un difetto di un passo
-                // resta di quel passo.
+                // A reference that finds nothing breaks the step, not the run.
+                // Resolved inside the actions, a dead pointer came back as an
+                // `ActionError` and was stored like any broken step: the run
+                // reached `Failed([it])`, a watcher saw which, a resume knew
+                // where to restart. Resolved here, `?` would abort `execute`
+                // opening and closing nothing — a step that never existed.
                 let input = match step_input(
                     graph,
                     step,
@@ -892,10 +792,9 @@ impl Executor for InProcessExecutor {
                 ) {
                     Ok(input) => input,
                     Err(FlowError::Action(error)) => {
-                        // L'intenzione si scrive con l'ingresso **come il passo
-                        // l'ha ricevuto**, rinvii compresi: è quello che chi
-                        // legge deve vedere per capire quale puntatore
-                        // correggere.
+                        // The intent is written with the input as the step
+                        // received it, references included: that is what a
+                        // reader needs to see to know which pointer to fix.
                         let mut started = StepRecord::started(
                             &request.run_id,
                             &step.id,
@@ -909,8 +808,7 @@ impl Executor for InProcessExecutor {
                         );
                         started.attempt_relation = attempt_relation(&records, &started);
                         started.held_by_pid = Some(std::process::id());
-                        started.species =
-                            actions.get(&step.action).map(|action| action.species());
+                        started.species = actions.get(&step.action).map(|action| action.species());
                         store.append_started(started)?;
                         store.close(
                             &request.run_id,
@@ -929,10 +827,10 @@ impl Executor for InProcessExecutor {
                         )?;
                         continue;
                     }
-                    // Gli altri difetti della composizione — un percorso
-                    // assoluto dentro il flusso, la radice che manca — sono del
-                    // **flusso**, non di un passo: non si ripara riprendendo la
-                    // corsa, e fermarla è la risposta giusta.
+                    // The other composition defects — an absolute path inside
+                    // the flow, a missing root — belong to the *flow*, not to a
+                    // step: resuming the run does not repair them, so stopping
+                    // is the right answer.
                     Err(other) => return Err(other),
                 };
                 let StepInput {
@@ -940,10 +838,10 @@ impl Executor for InProcessExecutor {
                     runs: condition_met,
                 } = input;
                 step.input_schema.validate(&input)?;
-                // La condizione l'ha già decisa `step_input`, che è anche il
-                // solo posto in cui poteva deciderla: da lei dipende se i
-                // rinvii si sciolgono. Rivalutarla qui vorrebbe dire due
-                // risposte alla stessa domanda su due valori diversi.
+                // `step_input` already decided the condition, and it is the only
+                // place that could: whether references resolve depends on it.
+                // Re-evaluating here would mean two answers to one question,
+                // on two different values.
                 let action = if condition_met {
                     Some(
                         actions
@@ -964,9 +862,9 @@ impl Executor for InProcessExecutor {
                     clock.now()?,
                 );
                 started.attempt_relation = attempt_relation(&records, &started);
-                // Chi tiene il passo è questo processo, per definizione di
-                // esecutore in processo: il pid si scrive PRIMA dell'effetto,
-                // insieme all'intenzione, o alla ripresa non serve a nulla.
+                // This process holds the step, by definition of an in-process
+                // executor: the pid is written BEFORE the effect, with the
+                // intent, or it is of no use to a resume.
                 started.held_by_pid = Some(std::process::id());
                 started.species = action.map(|action| action.species());
                 store.append_started(started)?;
@@ -978,35 +876,35 @@ impl Executor for InProcessExecutor {
                 });
             }
 
-            // La corsa entra nello stato condiviso una volta per tutte: è la
-            // stessa per ogni passo. Il passo, invece, è di ciascuno, e ognuno lo
-            // riceve nella propria copia — vedi `run_one`.
+            // The run enters shared state once and for all: it is the same for
+            // every step. The step id belongs to each one, and each gets it in
+            // its own copy — see `run_one`.
             request.shared.insert(
                 CURRENT_RUN.to_owned(),
                 Value::String(request.run_id.clone()),
             );
-            // Il tetto entra accanto alla corsa, e solo se c'è: la chiave
-            // assente è «nessun tetto dichiarato», che non è `Some(0)`. Serve a
-            // un'azione sola — quella che lancia un altro flusso — e senza di
-            // questa riga quel figlio girerebbe senza limite sotto un padre che
-            // ne ha uno.
+            // The cap goes in beside the run, and only if there is one: the
+            // absent key is "no cap declared", which is not `Some(0)`. Without
+            // this line a child flow would run uncapped under a capped parent.
             if let Some(cap) = request.spend_cap_micros {
                 request
                     .shared
                     .insert(CURRENT_CAP.to_owned(), Value::from(cap));
             }
 
-            // A GRUPPI, E LA LARGHEZZA VIENE DAI SOLDI.
-            //
-            // Un fronte largo è raro in un grafo scritto a mano, ma quando
-            // capita i passi non sono conti: sono agenti. Venti insieme
-            // vorrebbero dire venti processi e venti chiamate a pagamento, e
-            // nessuno l'avrebbe chiesto.
-            //
-            // **QUANTI, ADESSO, LO DECIDE IL RESIDUO.** `AT_ONCE` non è più il
-            // numero: è il soffitto. Sotto un tetto di spesa la larghezza si
-            // stringe man mano che il residuo cala, fino a uno — vedi
-            // `how_many_fit`. Senza tetto resta quella di sempre.
+            // The front runs together — see fault 7. A `for` used to walk the
+            // ready steps one after the other: two independent six-second steps
+            // took twelve, three took eighteen, linear, with the machine at 0%
+            // processor for the whole time. A front is one decision even when
+            // an executor walks it in order, and single file left "use the
+            // machine" with nothing to stand on.
+
+            // In groups, and the width comes from the money. A wide front is
+            // rare in a hand-written graph, but when it happens the steps are
+            // agents, not sums: twenty at once would mean twenty processes and
+            // twenty paid calls nobody asked for. `AT_ONCE` is the ceiling, not
+            // the number — under a cap the width narrows as the remainder falls
+            // (see `how_many_fit`); with no cap it stays what it always was.
             let mut failure: Option<FlowError> = None;
             for group in opened.chunks(at_once) {
                 let outcomes: Vec<Result<(), FlowError>> = std::thread::scope(|scope| {
@@ -1022,21 +920,21 @@ impl Executor for InProcessExecutor {
                         .into_iter()
                         .map(|handle| match handle.join() {
                             Ok(result) => result,
-                            // Un filo che va in panico non deve portarsi via la
-                            // corsa in silenzio: diventa un guasto del passo,
-                            // con scritto che è successo qui.
+                            // A thread that panics must not take the run away
+                            // silently: it becomes a fault of the step, saying
+                            // that it happened here.
                             Err(_) => Err(FlowError::Store(
-                                "un passo del fronte è morto mentre girava".to_owned(),
+                                "a step of the front died while running".to_owned(),
                             )),
                         })
                         .collect()
                 });
                 for outcome in outcomes {
                     if let Err(error) = outcome {
-                        // **SI TIENE IL PRIMO E SI VA AVANTI FINO IN FONDO AL
-                        // GRUPPO.** Uscire subito lascerebbe i passi già aperti
-                        // dell'ondata senza chiusura, e alla ripresa
-                        // sembrerebbero tenuti da un processo vivo.
+                        // Keep the first and carry on to the end of the group:
+                        // leaving at once would leave the wave's already-open
+                        // steps unclosed, and on resume they would look held by
+                        // a living process.
                         failure.get_or_insert(error);
                     }
                 }
@@ -1051,53 +949,41 @@ impl Executor for InProcessExecutor {
     }
 }
 
-/// Il **soffitto** di quanti passi girano insieme, non il numero.
-///
-/// **NON È UN LIMITE TECNICO.** La macchina ne reggerebbe di più; a non
-/// reggerne di più sono le quote dei motori e la pazienza di chi guarda.
-/// Quattro: abbastanza da far sparire l'attesa di un fronte normale — che nei
-/// flussi scritti finora è di due o tre passi — e poco abbastanza da non aprire
-/// una decina di conversazioni a pagamento per una corsa che nessuno sorveglia.
-///
-/// Dal 31/08/2026 è un massimo e non più la scelta: sotto un tetto di spesa il
-/// numero vero lo calcola `how_many_fit`, e questa costante dice solo fin dove
-/// può salire.
+/// The *ceiling* on how many steps run together: under a cap the number itself
+/// comes from [`how_many_fit`]. Not a technical limit — the machine would hold
+/// more; engine quotas and the watcher's patience will not. Four is enough to
+/// erase the wait on a normal front, which in the flows written so far is two
+/// or three steps, and few enough not to open a dozen paid conversations for a
+/// run nobody is supervising.
 const AT_ONCE: usize = 4;
 
-/// Quanti passi si possono aprire insieme con questo residuo.
+/// How many steps can be opened at once with this remainder.
 ///
-/// **IL PROBLEMA CHE RISOLVE, DETTO IN UNA RIGA:** un tetto non si può
-/// rispettare con un fronte largo. Quattro chiamate partono nello stesso
-/// istante, nessuna delle quattro sa delle altre, e quando la prima registra il
-/// proprio costo le altre tre hanno già speso. Lo sforamento peggiore non è di
-/// una chiamata: è di quante ne sono in volo. Quindi la larghezza del fronte è
-/// una **conseguenza aritmetica** del residuo, non una preferenza.
-///
-/// **CON CHE MISURA.** La chiamata più cara vista *in questa corsa*: è il caso
-/// peggiore osservato, non una media — una media lascerebbe sforare ogni volta
-/// che la prossima è sopra la media, cioè in metà dei casi. Non si guarda alla
-/// storia di altre corse apposta: un flusso che chiama un modello piccolo non
-/// deve stringersi perché ieri un altro flusso ne ha chiamato uno grande.
-///
-/// **QUANDO NON SI SA, NON SI STRINGE.** Senza nessuna chiamata dichiarata —
-/// primo fronte di una corsa, oppure motori che il costo non lo dicono — questa
-/// divisione non si può fare. Restituire 1 «per prudenza» sembrerebbe la scelta
-/// sicura ed è invece una scelta arbitraria travestita: renderebbe seriale ogni
-/// corsa con un tetto, per sempre, sulla base di un numero che non esiste. Si
-/// resta al soffitto, e la corsa si ferma al controllo del fronte dopo — che è
-/// dove il tetto lavora davvero.
+/// A cap cannot be respected with a wide front: four calls start in the same
+/// instant, none of them aware of the others, and by the time the first records
+/// its cost the other three have already spent. The worst overshoot is however
+/// many are in flight, so the width is arithmetic on the remainder.
 fn how_many_fit(remaining_micros: i64, dearest_micros: Option<i64>) -> usize {
+    // The measure is the dearest call seen *in this run*: the worst case
+    // observed, never an average — an average would let it overshoot every time
+    // the next call came in above it, which is half of them. Other runs are left
+    // out on purpose: a flow calling a small model must not narrow because
+    // yesterday a different flow called a big one.
     let Some(dearest) = dearest_micros.filter(|dearest| *dearest > 0) else {
+        // Nothing known narrows nothing. Returning 1 "to be careful" is an
+        // arbitrary choice in disguise: it would serialise every capped run
+        // forever on the strength of a number that does not exist. Stay at the
+        // ceiling — the run stops at the next front's check, where the cap works.
         return AT_ONCE;
     };
-    // Il residuo è positivo per costruzione: chi chiama ha già verificato che la
-    // spesa non abbia raggiunto il tetto. La divisione intera tronca verso il
-    // basso, che è il verso giusto — tre chiamate e mezzo di margine sono tre.
+    // The remainder is positive by construction: the caller has already checked
+    // the spend has not reached the cap. Integer division truncates downwards,
+    // which is the right way — three and a half calls of margin are three.
     let fit = (remaining_micros / dearest).clamp(1, AT_ONCE as i64);
     fit as usize
 }
 
-/// Un passo già aperto nel deposito, in attesa di essere eseguito.
+/// A step already opened in the store, waiting to be executed.
 struct Opened<'a> {
     step: &'a Step,
     input: Value,
@@ -1105,16 +991,12 @@ struct Opened<'a> {
     action: Option<&'a dyn Action>,
 }
 
-/// Esegue un passo e lo chiude. Gira nel proprio filo.
-///
-/// **LO STATO CONDIVISO È UNA COPIA, E QUI STA IL PUNTO DELICATO DI TUTTO IL
-/// LAVORO.** Un'azione che produce testo, o che registra una spesa, chiede allo
-/// stato condiviso di chi è il passo corrente (`CURRENT_STEP`). Finché i passi
-/// giravano in fila, una chiave sola bastava: c'era un solo passo vivo. Con due
-/// passi vivi quella chiave avrebbe un valore solo, e il testo e i **costi** di
-/// uno finirebbero attribuiti all'altro — in silenzio, senza che niente diventi
-/// rosso. Per questo ogni filo riceve la propria copia con dentro il proprio
-/// passo: la chiave resta una, ma la mappa è di ciascuno.
+/// Runs a step and closes it, in its own thread. The shared state is a copy,
+/// and that is the delicate point of the whole thing: an action that produces
+/// text, or records a spend, asks it which step is current (`CURRENT_STEP`).
+/// One key sufficed while only one step was ever live. With two, that key holds
+/// one value and one step's text and *costs* land on the other — silently, with
+/// nothing going red. So the key stays one and the map is each thread's own.
 fn run_one(
     work: &Opened<'_>,
     run_id: &str,
@@ -1186,22 +1068,34 @@ pub enum FlowError {
     Store(String),
     Clock(String),
     InvalidRecord(String),
-    DuplicateAttempt { step: String, attempt: u32 },
-    MissingAttempt { step: String, attempt: u32 },
-    AlreadyClosed { step: String, attempt: u32 },
-    StaleEpoch { step: String, epoch: u64 },
+    DuplicateAttempt {
+        step: String,
+        attempt: u32,
+    },
+    MissingAttempt {
+        step: String,
+        attempt: u32,
+    },
+    AlreadyClosed {
+        step: String,
+        attempt: u32,
+    },
+    StaleEpoch {
+        step: String,
+        epoch: u64,
+    },
     UnknownStep(String),
     UnknownAction(String),
     MissingOutput(String),
     Schema(SchemaError),
     Action(ActionError),
-    /// Un campo di posizione con un percorso assoluto scritto dentro il flusso.
+    /// A location field with an absolute path written inside the flow.
     AbsolutePath {
         step: String,
         field: String,
         value: String,
     },
-    /// Un passo ha bisogno della radice del progetto e nessuno l'ha portata.
+    /// A step needs the project root and nobody carried one in.
     NoWorkspaceRoot {
         step: String,
         field: String,
@@ -1244,22 +1138,17 @@ impl Display for FlowError {
             FlowError::MissingOutput(step) => write!(formatter, "step {step} has no typed output"),
             FlowError::Schema(error) => Display::fmt(error, formatter),
             FlowError::Action(error) => Display::fmt(error, formatter),
-            // In italiano, come dice `AGENTS.md`. Le righe qui sopra sono in
-            // inglese: sono più vecchie della regola, e tradurle tutte è un
-            // lavoro a sé che cambierebbe messaggi già visti da chi usa il
-            // programma. Non si scrive un messaggio nuovo sbagliato per
-            // assomigliare a quelli vecchi.
             FlowError::AbsolutePath { step, field, value } => write!(
                 formatter,
-                "il passo {step} dichiara «{field}» con un percorso assoluto ({value}): \
-                 un flusso non deve sapere dove sta il progetto, o gira in un posto solo. \
-                 Si toglie con «sailor flow relocate»"
+                "step {step} declares \"{field}\" with an absolute path ({value}): \
+                 a flow must not know where the project is, or it runs in one place only. \
+                 Remove it with \"sailor flow relocate\""
             ),
             FlowError::NoWorkspaceRoot { step, field, value } => write!(
                 formatter,
-                "il passo {step} dichiara «{field}» relativo ({value}) ma non c'è nessuna \
-                 radice di progetto: manca un {} risalendo da dove hai lanciato. \
-                 Si crea con «sailor workspace init»",
+                "step {step} declares \"{field}\" as relative ({value}) but there is no \
+                 project root: no {} walking up from where you launched. \
+                 Create one with \"sailor workspace init\"",
                 crate::workspace::MARKER
             ),
         }
@@ -1286,11 +1175,11 @@ fn closed(
     }
 }
 
-/// La specie di un passo aperto. **Il record vince sull'azione**: è ciò che
-/// valeva quando il passo è partito, e un'azione riscritta nel frattempo non
-/// può cambiare il giudizio su un effetto prodotto dalla versione di prima.
-/// L'azione risponde solo per i record scritti prima che la specie esistesse;
-/// se non c'è nemmeno quella, si consegna a una persona.
+/// The species of an opened step. The record beats the action: it is what held
+/// when the step started, and an action rewritten since cannot change the
+/// judgement on an effect produced by the earlier version. The action answers
+/// only for records written before species existed; failing that, hand it to a
+/// person.
 fn species_for(record: &StepRecord, action: Option<&dyn Action>) -> StepSpecies {
     record
         .species
@@ -1359,70 +1248,72 @@ mod workdir_tests {
 
     fn step_named(id: &str, with: Value, schema: ValueSchema) -> Step {
         let json = serde_json::json!({
-            "id": id, "deps": [], "action": "qualunque", "max_attempts": 1,
+            "id": id, "deps": [], "action": "whatever", "max_attempts": 1,
             "when": null,
             "input_schema": schema,
             "output_schema": {"type": "any"},
             "with": with
         });
-        serde_json::from_value(json).expect("un passo valido")
+        serde_json::from_value(json).expect("a valid step")
     }
 
     fn open_object() -> ValueSchema {
         serde_json::from_value(serde_json::json!({
             "type": "object", "properties": {}, "required": [], "allow_extra": true
         }))
-        .expect("schema aperto")
+        .expect("open schema")
     }
 
     fn resolved(with: Value, root: Option<&str>) -> Result<Value, FlowError> {
-        let step = step_named("passo", with, open_object());
-        let input = step.with.clone().expect("il with c'è");
+        let step = step_named("step", with, open_object());
+        let input = step.with.clone().expect("the with is there");
         resolve_workdir(&step, input, root.map(Path::new))
     }
 
-    /// **UN PERCORSO RELATIVO SI ATTACCA ALLA RADICE**, ed è tutto il punto:
-    /// lo stesso flusso lavora in due cloni diversi senza cambiare una riga.
+    /// A relative path hangs off the root, and that is the whole point: the
+    /// same flow works in two different clones without changing a line.
     #[test]
     fn a_relative_workdir_hangs_off_the_root() {
-        let out = resolved(serde_json::json!({"workdir": "crates/flow"}), Some("/qui"))
-            .expect("si risolve");
+        let out = resolved(serde_json::json!({"workdir": "crates/flow"}), Some("/here"))
+            .expect("it resolves");
 
-        assert_eq!(out["workdir"], "/qui/crates/flow");
+        assert_eq!(out["workdir"], "/here/crates/flow");
     }
 
-    /// Assoluto: errore che nomina passo e valore. Non «gira altrove»: gira nel
-    /// posto sbagliato, ed è il modo in cui il guasto 25 è passato inosservato.
+    /// Absolute: an error naming the step and the value. Not "it runs
+    /// elsewhere" — it runs in the *wrong* place, and that is how fault 25 went
+    /// unnoticed: nothing failed, so nothing said anything.
     #[test]
     fn an_absolute_workdir_is_refused_by_name() {
         let refused = resolved(
             serde_json::json!({"workdir": "/work/sailor"}),
-            Some("/qui"),
+            Some("/here"),
         )
-        .expect_err("non deve risolversi");
+        .expect_err("it must not resolve");
 
         match refused {
             FlowError::AbsolutePath { step, value, .. } => {
-                assert_eq!(step, "passo");
+                assert_eq!(step, "step");
                 assert_eq!(value, "/work/sailor");
             }
-            altro => panic!("errore sbagliato: {altro}"),
+            other => panic!("wrong error: {other}"),
         }
     }
 
-    /// Assente: eredita la radice. È ciò che rende possibile togliere i sette
-    /// `workdir` dal flusso di sviluppo senza che i passi cambino posto.
+    /// Absent: it inherits the root. That is what made it possible to take the
+    /// seven `workdir` fields out of the development flow without any of its
+    /// steps changing place.
     #[test]
     fn an_absent_workdir_inherits_the_root() {
-        let out = resolved(serde_json::json!({"command": "true"}), Some("/qui"))
-            .expect("si risolve");
+        let out =
+            resolved(serde_json::json!({"command": "true"}), Some("/here")).expect("it resolves");
 
-        assert_eq!(out["workdir"], "/qui");
+        assert_eq!(out["workdir"], "/here");
     }
 
-    /// **MA SOLO A CHI PUÒ RICEVERLA.** Il passo d'innesco di `sviluppa-sailor`
-    /// ha uno schema chiuso e niente a che fare con una cartella: offrirgliela
-    /// lo farebbe morire su un campo che non ha chiesto.
+    /// But only to a step that can receive it. The trigger step of
+    /// `sviluppa-sailor` has a closed schema and nothing whatever to do with a
+    /// directory: offering it one would kill it on a field it never asked for.
     #[test]
     fn a_closed_schema_is_not_given_a_workdir_it_never_asked_for() {
         let closed: ValueSchema = serde_json::from_value(serde_json::json!({
@@ -1431,37 +1322,37 @@ mod workdir_tests {
             "required": [],
             "allow_extra": false
         }))
-        .expect("schema chiuso");
-        let step = step_named("innesco", serde_json::json!({"source": "manual"}), closed);
-        let input = step.with.clone().expect("il with c'è");
+        .expect("closed schema");
+        let step = step_named("trigger", serde_json::json!({"source": "manual"}), closed);
+        let input = step.with.clone().expect("the with is there");
 
-        let out = resolve_workdir(&step, input, Some(Path::new("/qui"))).expect("si risolve");
+        let out = resolve_workdir(&step, input, Some(Path::new("/here"))).expect("it resolves");
 
-        assert!(out.get("workdir").is_none(), "niente campi non richiesti");
-        step.input_schema.validate(&out).expect("lo schema regge");
+        assert!(out.get("workdir").is_none(), "no unrequested fields");
+        step.input_schema.validate(&out).expect("the schema holds");
     }
 
-    /// **SENZA RADICE SI FALLISCE DICENDOLO, MAI SUL `cwd`.** Un ripiego
-    /// silenzioso sulla cartella del processo è esattamente il guasto 25:
-    /// lavorare dove capita senza che nessuno lo veda scritto.
+    /// With no root it fails out loud, and never onto the `cwd`: a silent
+    /// fallback to the process's own directory is exactly fault 25 — working
+    /// wherever it lands, with nobody seeing it written anywhere.
     #[test]
     fn a_relative_workdir_without_a_root_fails_out_loud() {
         let refused = resolved(serde_json::json!({"workdir": "crates/flow"}), None)
-            .expect_err("non deve ripiegare sul cwd");
+            .expect_err("it must not fall back to the cwd");
 
         match refused {
             FlowError::NoWorkspaceRoot { step, value, .. } => {
-                assert_eq!(step, "passo");
+                assert_eq!(step, "step");
                 assert_eq!(value, "crates/flow");
             }
-            altro => panic!("errore sbagliato: {altro}"),
+            other => panic!("wrong error: {other}"),
         }
         assert!(
             refused_says_how_to_fix(&resolved(
                 serde_json::json!({"workdir": "crates/flow"}),
                 None
             )),
-            "il messaggio deve dire cosa fare"
+            "the message must say what to do"
         );
     }
 
@@ -1473,77 +1364,35 @@ mod workdir_tests {
     }
 }
 
-/// Il campo con cui un passo dice **dove** lavora.
-///
-/// **IL CRATE DEL FLUSSO CONOSCE QUESTA PAROLA, E SI PAGA APPOSTA.** Finché la
-/// risoluzione di un percorso fosse stata dentro le azioni, ogni azione nuova
-/// sarebbe nata senza — è quello che è successo ai rinvii, guasto 28: la riga
-/// stava in due azioni su nove, poi in dodici su sedici, e la scelta di averla
-/// restava della singola azione. Qui la risoluzione avviene **una volta sola
-/// dove l'ingresso si compone**, quindi ogni azione registrata la eredita,
-/// comprese quelle che nessuno ha ancora scritto. Dal 01/09/2026 di quel
-/// «dove» ne passa anche `resolve_references`, poche righe sotto: sono la
-/// stessa regola, e adesso stanno nello stesso posto.
+/// The field a step uses to say *where* it works. The flow crate knowing this
+/// word is a price paid on purpose: had path resolution lived inside the
+/// actions, every new one would be born without it — fault 28, where the line
+/// sat in two actions of nine, then in twelve of sixteen, which is fault 10 in
+/// twelve copies. Here it happens once where the input is composed, so every
+/// registered action inherits it, unwritten ones included.
 pub const WORKDIR_FIELD: &str = "workdir";
 
-/// L'ingresso di un passo, e **se quel passo gira**.
+/// A step's input, and *whether that step runs*.
 ///
-/// **PERCHÉ LE DUE COSE TORNANO INSIEME E NON SEPARATE.** La condizione decide
-/// se sciogliere i rinvii, e i rinvii sciolti sono l'ingresso: calcolarle in due
-/// posti vorrebbe dire valutare `when` due volte, su due valori che possono
-/// differire proprio per la risoluzione. Sarebbe la stessa regola scritta due
-/// volte, cioè il guasto 10 dentro la cura del 28.
+/// The two come back together because the condition decides whether references
+/// resolve, and the resolved references are the input. Computing them in two
+/// places would mean evaluating `when` twice, on two values that can differ by
+/// exactly that resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StepInput {
-    /// Ciò che l'azione riceve. Coi rinvii sciolti se il passo gira; così com'è
-    /// stato composto se il passo è saltato.
+    /// What the action receives: references resolved if the step runs, exactly
+    /// as composed if the step is skipped.
     pub value: Value,
-    /// Falso quando il `when` del passo non è soddisfatto.
+    /// False when the step's `when` is not satisfied.
     pub runs: bool,
 }
 
-/// Come si compone l'ingresso di un passo: dipendenze, `with`, posizione,
-/// condizione, rinvii — **in quest'ordine, e l'ordine è tutto**.
-///
-/// **1. LE DIPENDENZE E IL `with`.** L'uscita dei passi da cui dipende, con
-/// sopra i valori che il passo dichiara.
-///
-/// **2. IL `workdir`.** Prima della condizione e prima dei rinvii, perché è
-/// dove lavora il passo e non dipende da nessuno dei due.
-///
-/// **3. LA CONDIZIONE.** Valutata sull'ingresso **non ancora sciolto**, cioè
-/// esattamente come prima del 01/09/2026. È una scelta e non un residuo: un
-/// passo saltato non deve pagare niente di ciò che i rinvii chiedono, e
-/// soprattutto **non deve rompersi per un puntatore che riguarda un lavoro che
-/// non farà**.
-///
-/// **4. I RINVII, E SOLO SE IL PASSO GIRA.** Qui, e in nessun altro posto
-/// dell'albero: è il guasto 28. Finché la risoluzione stava dentro le azioni,
-/// un'azione nuova nasceva senza e nessun controllo lo diceva — prima due
-/// azioni su nove, poi dodici su sedici, che è il guasto 10 in dodici
-/// esemplari. Da qui passa **ogni** ingresso di **ogni** passo che gira, quindi
-/// ogni azione registrata la eredita, comprese quelle che nessuno ha ancora
-/// scritto.
-///
-/// **PERCHÉ IL PUNTO 3 STA PRIMA DEL 4, MISURATO E NON DEDOTTO.** Il primo
-/// tentativo scioglieva i rinvii prima della condizione, e la giustificazione
-/// scritta accanto — «così un `workdir` preso da un rinvio si risolve» — non
-/// valeva il prezzo: `flows/chiedi-all-indice.flow.json` ha il passo `leggi` con
-/// un `when` su `/status` e un `with` pieno di `$from` verso l'uscita di
-/// `chiedi`, che è una dipendenza **saltabile**. Quando l'indice non risponde —
-/// il caso che quel flusso dichiara essere il più frequente — `chiedi` viene
-/// saltato, `leggi` riceve `{}` più il proprio `with`, e coi rinvii sciolti
-/// prima della condizione il passo **si rompe invece di essere saltato**.
-/// Provato col binario vero: base «completato», con quell'ordine «terminato con
-/// stato failed — `unresolved_reference`».
-///
-/// **IL LIMITE CHE QUESTO ORDINE SI TIENE, DICHIARATO.** Un `workdir` scritto
-/// come `{"$from": …}` non viene attaccato alla radice: `resolve_workdir` lo
-/// vede come «dichiarato ma non testo» e lo lascia stare, e la risoluzione
-/// arriva dopo. Era già così prima del 01/09/2026 e non peggiora; nessun flusso
-/// dell'albero lo fa. Chi vorrà quel caso dovrà sciogliere quel campo prima,
-/// non spostare tutta la risoluzione — il prezzo di spostarla è scritto qui
-/// sopra ed è stato pagato una volta.
+/// How a step's input is composed, and the order is everything: dependency
+/// output with `with` over it, then the `workdir` — which depends on neither of
+/// the two below it — then the condition, and last the references, only if the
+/// step runs. Composing them in two places would evaluate `when` twice on two
+/// values that differ by exactly that resolution: the same rule written twice,
+/// which is fault 10 inside the cure for fault 28.
 pub fn step_input(
     graph: &Graph,
     step: &Step,
@@ -1553,6 +1402,12 @@ pub fn step_input(
 ) -> Result<StepInput, FlowError> {
     let composed = composed_input(graph, step, root_inputs, records)?;
     let positioned = resolve_workdir(step, composed, root)?;
+    // The condition is judged on the input not yet resolved, and this was
+    // measured: `flows/chiedi-all-indice.flow.json` has step `leggi` with a
+    // `when` on `/status` and a `with` full of `$from` into the output of
+    // `chiedi`, a skippable dependency. Resolving first took that flow, on the
+    // real binary, from "complete" to "failed — `unresolved_reference`". A step
+    // that will not run must not pay for references to work it will not do.
     let runs = step
         .when
         .as_ref()
@@ -1567,12 +1422,12 @@ pub fn step_input(
     Ok(StepInput { value, runs })
 }
 
-/// L'ingresso **come il passo lo riceve**: l'uscita delle dipendenze con sopra
-/// il `with`, e nient'altro — nessun rinvio sciolto, nessun percorso risolto.
+/// The input *as the step receives it*: the dependencies' output with `with`
+/// laid over, and nothing else — no reference resolved, no path resolved.
 ///
-/// Sta a parte perché serve due volte: a comporre, e a **raccontare** un passo
-/// che si è rotto proprio sciogliendo i rinvii. Chi legge quel record deve
-/// vedere il puntatore che ha scritto, non il vuoto che ne è uscito.
+/// It stands apart because it is needed twice: to compose, and to *report* a
+/// step that broke while resolving references. Whoever reads that record must
+/// see the pointer they wrote, not the hole it left.
 fn composed_input(
     graph: &Graph,
     step: &Step,
@@ -1601,17 +1456,12 @@ fn composed_input(
     Ok(overlay_input(input, step.with.as_ref()))
 }
 
-/// Dove il passo lavorerà, deciso qui e non dentro l'azione.
-///
-/// Quattro casi, e nessuno di essi è un ripiego silenzioso:
-/// - **assoluto** → errore che nomina passo e valore: il flusso girerebbe in un
-///   posto solo, e altrove non fallirebbe, lavorerebbe nel posto sbagliato;
-/// - **relativo** → si attacca alla radice;
-/// - **assente** → la radice, ma **solo a chi può riceverla** (vedi
-///   `accepts_property`): offrirla a uno schema chiuso lo farebbe morire su un
-///   campo che non ha chiesto;
-/// - **radice assente e passo che ne ha bisogno** → errore leggibile. **Mai il
-///   `cwd`**: lavorare dove sta il processo senza dirlo è il guasto 25.
+/// Where the step will work, decided here and not inside the action. Four
+/// cases, not one a silent fallback: absolute → an error naming step and value,
+/// since such a flow runs in one place and elsewhere would not fail but work in
+/// the wrong one; relative → hung off the root; absent → the root, but only to
+/// a step that can receive it (`accepts_property`); no root where one is needed
+/// → a readable error, never the `cwd`, which would be fault 25.
 fn resolve_workdir(step: &Step, input: Value, root: Option<&Path>) -> Result<Value, FlowError> {
     let Value::Object(mut fields) = input else {
         return Ok(input);
@@ -1637,15 +1487,13 @@ fn resolve_workdir(step: &Step, input: Value, root: Option<&Path>) -> Result<Val
                 root.join(declared).display().to_string().into(),
             );
         }
-        // Dichiarato ma non come testo: non è un percorso, e inventarne uno
-        // sarebbe peggio che lasciarlo passare a chi sa cosa farne.
+        // Declared but not as text: it is not a path, and inventing one would
+        // be worse than passing it on to whoever knows what to do with it. So a
+        // `{"$from": …}` workdir is never hung off the root — it resolves after.
         Some(_) => {}
         None => {
             if let Some(root) = root.filter(|_| step.input_schema.accepts_property(WORKDIR_FIELD)) {
-                fields.insert(
-                    WORKDIR_FIELD.to_owned(),
-                    root.display().to_string().into(),
-                );
+                fields.insert(WORKDIR_FIELD.to_owned(), root.display().to_string().into());
             }
         }
     }
@@ -1666,10 +1514,7 @@ fn overlay_input(input: Value, with: Option<&Value>) -> Value {
     Value::Object(input)
 }
 
-pub fn attempt_relation(
-    records: &[StepRecord],
-    started: &StepRecord,
-) -> Option<AttemptRelation> {
+pub fn attempt_relation(records: &[StepRecord], started: &StepRecord) -> Option<AttemptRelation> {
     let previous = records
         .iter()
         .filter(|record| {
@@ -1683,8 +1528,7 @@ pub fn attempt_relation(
         let origin = records
             .iter()
             .filter(|record| {
-                record.step_id == started.step_id
-                    && record.input_digest == started.input_digest
+                record.step_id == started.step_id && record.input_digest == started.input_digest
             })
             .min_by_key(|record| (record.attempt, record.epoch))
             .unwrap_or(previous);
@@ -1745,8 +1589,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    /// Un orologio finto che avanza di uno a ogni domanda, con un contatore
-    /// atomico: ora l'orologio lo condividono i fili di un fronte.
+    /// A fake clock advancing by one per question, on an atomic counter: the
+    /// threads of a front now share the clock.
     struct Tick(std::sync::atomic::AtomicI64);
 
     impl Tick {
@@ -1826,10 +1670,10 @@ mod tests {
         }
     }
 
-    /// L'ESECUTORE DICE ALL'AZIONE DI QUALE PASSO È IL LAVORO CHE STA
-    /// FACENDO, e lo dice a ogni passo: senza, un'azione che produce testo
-    /// mentre gira non saprebbe attribuirlo, e in un grafo con due passi vivi
-    /// chi guarda leggerebbe due voci mescolate senza nome.
+    /// The executor tells the action which step's work it is doing, and tells
+    /// it at every step: without that, an action producing text as it runs
+    /// could not attribute it, and in a graph with two live steps a reader
+    /// would see two nameless entries mixed together.
     #[test]
     fn each_action_sees_the_id_of_the_step_it_is_running() {
         struct WhoAmI(Arc<std::sync::Mutex<Vec<String>>>);
@@ -1843,21 +1687,21 @@ mod tests {
                 let seen = shared
                     .get(CURRENT_STEP)
                     .and_then(Value::as_str)
-                    .unwrap_or("nessuno")
+                    .unwrap_or("nobody")
                     .to_owned();
-                self.0.lock().expect("nessuno panica qui").push(seen);
+                self.0.lock().expect("nobody panics here").push(seen);
                 Ok(ActionOutcome::Went(json!({})))
             }
         }
 
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let graph = Graph::new(vec![
-            step("primo", &[], "chi-sono", 1),
-            step("secondo", &["primo"], "chi-sono", 1),
+            step("first", &[], "who-am-i", 1),
+            step("second", &["first"], "who-am-i", 1),
         ])
-        .expect("grafo valido");
+        .expect("valid graph");
         let mut actions = ActionRegistry::default();
-        actions.register("chi-sono", WhoAmI(seen.clone()));
+        actions.register("who-am-i", WhoAmI(seen.clone()));
         let request = ExecutionRequest {
             run_id: "run".to_owned(),
             root_inputs: BTreeMap::new(),
@@ -1870,8 +1714,8 @@ mod tests {
             .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
             .expect("esecuzione riuscita");
         assert_eq!(
-            *seen.lock().expect("nessuno panica qui"),
-            vec!["primo".to_owned(), "secondo".to_owned()]
+            *seen.lock().expect("nobody panics here"),
+            vec!["first".to_owned(), "second".to_owned()]
         );
     }
 
@@ -1883,7 +1727,7 @@ mod tests {
             step("right", &["root"], "echo", 1),
             step("join", &["left", "right"], "echo", 1),
         ])
-        .expect("grafo valido");
+        .expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         let request = ExecutionRequest {
@@ -1912,7 +1756,7 @@ mod tests {
         let join = records
             .iter()
             .find(|record| record.step_id == "join")
-            .expect("record della giunzione");
+            .expect("the join's record");
         assert_eq!(join.input["left"]["value"], "said is not data");
         assert_eq!(join.input["right"]["value"], "said is not data");
     }
@@ -1921,8 +1765,7 @@ mod tests {
     fn dependent_step_merges_its_values_over_predecessor_output() {
         let mut send = step("send", &["panel"], "echo", 1);
         send.with = Some(json!({"text": "/clear", "mode": "declared"}));
-        let graph = Graph::new(vec![step("panel", &[], "echo", 1), send])
-            .expect("grafo valido");
+        let graph = Graph::new(vec![step("panel", &[], "echo", 1), send]).expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         let request = ExecutionRequest {
@@ -1960,7 +1803,7 @@ mod tests {
             step("uncertain", &[], "wait", 3),
             step("later", &["uncertain"], "echo", 1),
         ])
-        .expect("grafo valido");
+        .expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("wait", Wait);
         actions.register("echo", Echo);
@@ -1979,7 +1822,7 @@ mod tests {
                 &actions,
                 &mut Tick::new(0),
             )
-            .expect("l'attesa è un esito legittimo");
+            .expect("waiting is a legitimate outcome");
 
         assert_eq!(
             execution.decisions,
@@ -2009,7 +1852,7 @@ mod tests {
             ],
             [crate::DependencyEdge::new("join", "skipped")],
         )
-        .expect("grafo valido");
+        .expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
         actions.register("empty", Empty);
@@ -2036,8 +1879,8 @@ mod tests {
         let join = records
             .iter()
             .find(|record| record.step_id == "join")
-            .expect("record della giunzione");
-        let input = join.input.as_object().expect("ingresso composto");
+            .expect("the join's record");
+        let input = join.input.as_object().expect("composed input");
         assert!(!input.contains_key("skipped"));
         assert_eq!(input.get("present_empty"), Some(&json!([])));
         assert_eq!(join.outcome, Some(Outcome::Went));
@@ -2049,7 +1892,7 @@ mod tests {
             step("first", &[], "echo", 1),
             step("retry", &["first"], "flaky", 2),
         ])
-        .expect("grafo valido");
+        .expect("valid graph");
         let count = Arc::new(AtomicUsize::new(0));
         let mut actions = ActionRegistry::default();
         actions.register("echo", Echo);
@@ -2064,7 +1907,7 @@ mod tests {
         let mut store = InMemoryRecordStore::default();
         InProcessExecutor
             .execute(&graph, request, &mut store, &actions, &mut Tick::new(0))
-            .expect("il secondo tentativo riesce");
+            .expect("the second attempt succeeds");
         assert_eq!(
             store
                 .all()
@@ -2085,7 +1928,7 @@ mod tests {
 
     #[test]
     fn retry_with_same_input_and_changed_gates_is_explicit() {
-        let graph = Graph::new(vec![step("work", &[], "echo", 2)]).expect("grafo valido");
+        let graph = Graph::new(vec![step("work", &[], "echo", 2)]).expect("valid graph");
         let input = json!({"payload": 7});
         let mut first = StepRecord::started(
             "run",
@@ -2181,7 +2024,7 @@ mod tests {
             pointer: "/approved".to_owned(),
             value: json!(true),
         });
-        let graph = Graph::new(vec![conditional]).expect("grafo valido");
+        let graph = Graph::new(vec![conditional]).expect("valid graph");
         let mut actions = ActionRegistry::default();
         actions.register("action", FailOnce(Arc::clone(&count)));
         let request = ExecutionRequest {

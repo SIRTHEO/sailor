@@ -55,8 +55,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 /// comando dice la domanda, la riga dice la misura.
 fn report(found: &[Remaining]) -> String {
     if found.is_empty() {
-        return "no quota window declared: the channel answered with no measurements"
-            .to_owned();
+        return "no quota window declared: the channel answered with no measurements".to_owned();
     }
     let mut lines = vec![
         "quota della PERSONA, non di una corsa: conta ogni sessione, anche quelle \

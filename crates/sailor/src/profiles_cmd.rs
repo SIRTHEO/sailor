@@ -151,7 +151,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
     let cli = find_cli(cli_id)?;
     let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
         .map_err(|e| format!("not a valid profile name: {e}"))?;
-    std::fs::create_dir_all(&home).map_err(|e| format!("impossibile creare {}: {e}", home.display()))?;
+    std::fs::create_dir_all(&home).map_err(|e| format!("cannot create {}: {e}", home.display()))?;
 
     let mut store = store_io::load_store()?;
     let already_exists = store
@@ -219,7 +219,10 @@ mod tests {
         let cli = find_cli("codex").unwrap();
         let home = PathBuf::from("/home/profiles/codex/lavoro");
         let env = build_environment(cli, &home);
-        assert_eq!(env.get("CODEX_HOME"), Some(&"/home/profiles/codex/lavoro".to_owned()));
+        assert_eq!(
+            env.get("CODEX_HOME"),
+            Some(&"/home/profiles/codex/lavoro".to_owned())
+        );
     }
 
     #[test]

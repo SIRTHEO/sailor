@@ -1,26 +1,9 @@
-//! Da dove vengono i flussi, e quali il prodotto si porta dietro.
-//!
-//! **PERCHÉ STA NEL CRATE DEL FLUSSO E NON IN QUELLO DELLA FINESTRA.** Fino al
-//! 29/08/2026 la risposta a «dove sono i flussi» viveva in `ui::gather`, cioè
-//! dentro chi disegna la finestra. Finché a chiederlo era solo la finestra la
-//! cosa reggeva; non regge più adesso che un *passo di flusso* deve poter
-//! chiedere «quali flussi vede questa macchina» per dire quali strumenti
-//! servono. La stessa domanda posta da due posti diversi con due risposte
-//! diverse è il difetto che `crates/flow/src/file.rs` racconta di aver già
-//! pagato una volta sul formato del file. Qui c'è una risposta sola; chi la
-//! vuole la importa.
-//!
-//! **I FLUSSI DI SISTEMA SONO INCORPORATI NEL BINARIO, NON CERCATI SU DISCO.**
-//! È lo stesso schema di `toolbox::descriptor::BUILTIN`, e per la stessa
-//! ragione: un binario appena installato — o copiato su un'altra macchina —
-//! deve rispondere senza che nessuno abbia copiato una cartella. Non c'è un
-//! percorso di installazione da indovinare, quindi non c'è un percorso di
-//! installazione che possa essere sbagliato.
-//!
-//! **E SI SOVRASCRIVONO PER NOME, non si spengono.** Chi vuole un flusso di
-//! sistema diverso ne scrive uno con lo stesso nome in casa propria o nel
-//! proprio progetto, e quello vince. Il modo di cambiare un flusso spedito è
-//! scrivere un flusso, che è il modo di fare qualunque cosa in Sailor.
+//! Where flows come from, and which ones the product ships with. One answer
+//! lives here and whoever wants it imports it: the answer used to live in
+//! `ui::gather`, which held while only the window asked and stopped holding
+//! once a flow step had to ask too. Shipped flows are embedded in the binary,
+//! so there is no install path to guess wrong, and they are not switched off
+//! but overridden by name — the way to change a shipped flow is to write one.
 
 use crate::FlowFile;
 use std::collections::BTreeMap;
@@ -29,23 +12,26 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Che cosa si scrive alla voce «dove» per la sorgente di sistema.
+/// What gets written under "where" for the system source.
 ///
-/// NON È UN PERCORSO, E NON DEVE SEMBRARLO. I flussi spediti non stanno in una
-/// cartella: stanno dentro il binario. Chi mostra le sorgenti mostra anche
-/// questa riga, e una cartella plausibile ma inesistente manderebbe qualcuno a
-/// cercare dei file lì dentro — o a crearceli, dove nessuno li leggerebbe.
+/// Not a path, and it must not look like one. Shipped flows are not in a
+/// folder, they are inside the binary. Whoever shows the sources shows this
+/// line too, and a plausible folder that does not exist would send someone
+/// hunting for files in it — or creating some, where nobody would read them.
 pub const PLACE: &str = "(spediti col prodotto)";
 
-/// Come si chiama la sorgente di sistema per chi legge.
+/// What the system source is called for a reader. Still in Italian on purpose:
+/// this is a literal other code compares — `sailor::flow_cmd` asserts
+/// `report.contains("di sistema")` on a report built from it — so it moves when
+/// that assertion moves, in the same edit, and not before.
 pub const BUILTIN_ORIGIN: &str = "di sistema";
 
-/// I flussi che il prodotto si porta dietro: nome del flusso e testo del file.
-///
-/// Il nome è quello che si vedrebbe sul disco senza `.flow.json`, e una prova
-/// controlla che coincida con l'`id` dichiarato dentro: due nomi per la stessa
-/// cosa vorrebbero dire che «esegui questo» e «sovrascrivi questo» parlano di
-/// due flussi diversi.
+/// The flows the product ships with: flow name and file text. Embedded like
+/// `toolbox::descriptor::BUILTIN` and for the same reason — a freshly installed
+/// binary, or one copied to another machine, has to answer without anyone
+/// having copied a folder. The name is what would read on disk without
+/// `.flow.json`, and a test checks it matches the `id` declared inside: two
+/// names for one thing would make "run this" and "override this" differ.
 pub const FLOWS: &[(&str, &str)] = &[
     (
         "strumenti-di-questa-macchina",
@@ -55,23 +41,21 @@ pub const FLOWS: &[(&str, &str)] = &[
         "migrazione-a-sailor",
         include_str!("../system/migrazione-a-sailor.flow.json"),
     ),
-    // **È SPEDITO PERCHÉ LE REGOLE SPEDITE LO NOMINANO.** Fino all'01/09/2026
-    // stava fra i flussi di questo progetto, e le regole di instradamento in
-    // `crates/terminal/descriptors/default.json` — che invece viaggiano dentro
-    // il binario — ci mandavano il lavoro. Su questa macchina funzionava: il
-    // flusso c'era, perché era il nostro. Su qualunque altra la regola puntava
-    // al nulla, e nessuna prova lo vedeva perché tutte giravano qui.
+    // Shipped because the shipped rules name it: the routing rules in
+    // `crates/terminal/descriptors/default.json` travel inside the binary and
+    // send work here, so as a project flow the rule pointed at nothing on every
+    // machine but this one — and no test saw it, since all of them ran here.
     (
         "smista-il-lavoro",
         include_str!("../system/smista-il-lavoro.flow.json"),
     ),
 ];
 
-/// Un posto dove si cercano i flussi, con il nome che chi guarda ne vede.
+/// A place where flows are looked for, with the name a reader sees.
 ///
-/// `dir` per la sorgente di sistema vale [`PLACE`]: non è una cartella, ed è
-/// l'unico modo di tenere un tipo solo per tutte le sorgenti senza far credere
-/// che i flussi spediti si possano modificare aprendo un file.
+/// `dir` for the system source is [`PLACE`]: not a folder, and the only way to
+/// keep one type for every source without suggesting shipped flows can be
+/// changed by opening a file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlowSource {
     pub origin: &'static str,
@@ -79,7 +63,7 @@ pub struct FlowSource {
 }
 
 impl FlowSource {
-    /// La sorgente dei flussi spediti col prodotto.
+    /// The source of the flows shipped with the product.
     pub fn builtin() -> FlowSource {
         FlowSource {
             origin: BUILTIN_ORIGIN,
@@ -87,41 +71,36 @@ impl FlowSource {
         }
     }
 
-    /// Vero se questa sorgente è quella incorporata nel binario.
+    /// True if this source is the one embedded in the binary.
     pub fn is_builtin(&self) -> bool {
         is_place(&self.dir)
     }
 }
 
-/// Vero se questo «dove» nomina i flussi incorporati invece di una cartella.
+/// True if this "where" names the embedded flows instead of a folder.
 pub fn is_place(dir: &Path) -> bool {
     dir == Path::new(PLACE)
 }
 
-/// I flussi caricati da un registro: quelli validi e quelli rifiutati col
-/// motivo. È la stessa forma per il disco e per l'incorporato, perché chi legge
-/// non deve trattarli in modo diverso.
+/// The flows loaded from a registry: the valid ones, and the refused ones with
+/// their reason. The same shape for disk and for embedded, because a reader
+/// must not have to treat them differently.
 pub type FlowRegistry = BTreeMap<String, Result<FlowFile, String>>;
 
-/// Tutti i posti in cui si cercano i flussi, nell'ordine in cui si guardano —
-/// dal meno specifico al più specifico.
-///
-/// **PERCHÉ LA SORGENTE DI SISTEMA C'È SEMPRE, ANCHE CON `SAILOR_FLOWS`.** Chi
-/// dichiara quella variabile sta dicendo dove stanno *i suoi* flussi, e questa
-/// funzione lo rispetta: la casa e il progetto spariscono. I flussi spediti no,
-/// perché non sono in nessuna cartella e non c'è niente da sostituire — sono la
-/// dotazione del binario, come i descrittori degli strumenti, dove
-/// `SAILOR_TOOL_DESCRIPTORS` aggiunge e non toglie mai `Source::Builtin`. Chi ne
-/// vuole uno diverso ne scrive uno con lo stesso nome nella cartella che ha
-/// dichiarato: vince quello, e l'origine dice che è successo.
-///
-/// **L'ORDINE È L'UNICA REGOLA DI PRECEDENZA**: a parità di nome vince chi viene
-/// dopo, quindi `di sistema` < `tuoi` < `del progetto`.
+/// Every place flows are looked for, least specific first. Order is the only
+/// precedence rule: on a name clash the later source wins, so `di sistema` <
+/// `tuoi` < `del progetto`.
 pub fn sources(
     home_flows: &Path,
     working: Option<&Path>,
     declared: Option<&Path>,
 ) -> Vec<FlowSource> {
+    // The system source is here even under `SAILOR_FLOWS`, which says where
+    // *your* flows are and duly makes home and project vanish. Shipped flows
+    // sit in no folder, so there is no folder to replace: they are the binary's
+    // own equipment, like the tool descriptors, where `SAILOR_TOOL_DESCRIPTORS`
+    // adds and never removes `Source::Builtin`. A same-named flow in the
+    // declared folder wins over one of them, and the origin says it happened.
     let mut sources = vec![FlowSource::builtin()];
     if let Some(declared) = declared.filter(|path| !path.as_os_str().is_empty()) {
         sources.push(FlowSource {
@@ -140,68 +119,45 @@ pub fn sources(
     sources
 }
 
-/// La cartella dei flussi del progetto e l'origine da mostrare, decise in
-/// quest'ordine: **prima il marcatore, poi la vecchia risalita per `flows/`**.
-///
-/// **PERCHÉ IL MARCATORE VINCE, E VINCE DA SOLO.** Il marcatore dice dov'è la
-/// radice; la cartella `flows/` la fa indovinare. Consultare la seconda quando
-/// la prima ha già risposto vorrebbe dire che un `flows/` più in alto può
-/// scavalcare il progetto che si è dichiarato — cioè che la dichiarazione non
-/// dichiara niente. Quando il marcatore c'è, `root.join("flows")` è la
-/// risposta anche se quella cartella non esiste: un progetto senza flussi è uno
-/// stato onesto, e mostrarlo vuoto è più utile che mostrargli quelli di
-/// qualcun altro.
-///
-/// **PERCHÉ IL RIPIEGO RESTA.** Toglierlo farebbe sparire di colpo i flussi di
-/// ogni progetto che non si è ancora dichiarato — compreso questo repository
-/// finché non gli si scrive il marcatore. È una deprecazione, e una
-/// deprecazione non si fa da soli: resta, e si vede che è un ripiego
-/// dall'origine che porta scritta addosso.
+/// The project's flows directory and the origin to show: marker first, the old
+/// `flows/` walk-up second, and the marker wins alone — consulting the walk-up
+/// after it would let a `flows/` higher up override a project that declared
+/// itself, which is to say the declaration would declare nothing. With a marker
+/// `root.join("flows")` is the answer even when that folder does not exist: a
+/// project with no flows is honest, and empty beats somebody else's.
 fn project_flows(working: &Path, home_flows: &Path) -> Option<(&'static str, PathBuf)> {
     if let Some(root) = crate::workspace::find_root(working) {
         let flows = root.join("flows");
-        // La casa non è mai anche il progetto: contarla due volte mostrerebbe
-        // ogni flusso in doppia copia.
+        // Home is never also the project: counting it twice would show every
+        // flow in duplicate.
         return (flows != home_flows).then_some((crate::workspace::ORIGIN_DECLARED, flows));
     }
-    project_flows_from(working, home_flows)
-        .map(|flows| (crate::workspace::ORIGIN_GUESSED, flows))
+    // The fallback stays: removing it would make the flows of every project
+    // that has not declared itself vanish at once — this repository included,
+    // until someone writes it a marker. That is a deprecation, and a
+    // deprecation is not done alone: it stays, and the origin it carries says
+    // out loud that it is a fallback.
+    project_flows_from(working, home_flows).map(|flows| (crate::workspace::ORIGIN_GUESSED, flows))
 }
 
-/// Le stesse sorgenti, lette dall'ambiente di questo processo.
-///
-/// **ESISTE PERCHÉ QUESTE SEI RIGHE STAVANO PER NASCERE UNA SECONDA VOLTA.**
-/// La prima copia è `ui::gather::flow_sources`; la seconda serviva a chi
-/// costruisce il registro delle azioni, perché il passo `subflow` deve cercare
-/// il flusso che chiama esattamente dove lo cerca `sailor flow run` — o due
-/// macchine eseguono flussi diversi con lo stesso nome senza dirlo. Due copie
-/// di una regola di precedenza è il difetto che `file.rs` e `registry` hanno
-/// già pagato ciascuno una volta: la regola sta qui, e chi la vuole la importa.
-///
-/// La casa resta un argomento: chi la conosce è `ledger::sailor_home`, e questo
-/// crate non dipende da `ledger` — è la direzione che tiene in piedi tutto il
-/// resto.
+/// The same sources, read from this process's environment: one copy of the
+/// precedence rule, never two. The first copy is `ui::gather::flow_sources`;
+/// the second was about to be born for whoever builds the action registry,
+/// because the `subflow` step must look for the flow it calls exactly where
+/// `sailor flow run` looks, or two machines run different flows under one name
+/// without saying so. Home stays an argument: `flow` must not need `ledger`.
 pub fn sources_from_env(home_flows: &Path) -> Vec<FlowSource> {
     let declared = std::env::var_os("SAILOR_FLOWS").map(PathBuf::from);
     let working = std::env::current_dir().ok();
     sources(home_flows, working.as_deref(), declared.as_deref())
 }
 
-/// La cartella dei flussi del progetto, cercata risalendo.
-///
-/// **SI RISALE, E NON È UN LUSSO.** Un programma non viene quasi mai avviato
-/// dalla radice del progetto: la finestra di Sailor parte da `desktop/src-tauri`,
-/// un editor parte da dove ha l'ultimo file aperto, un terminale da dove
-/// l'utente si trovava. Guardare solo la cartella corrente vuol dire non
-/// trovare niente quasi sempre — misurato il 29/08/2026: la finestra avviata
-/// per lavorare su Sailor non vedeva i quattro flussi di Sailor.
-///
-/// **DEVE CONTENERE UN FLUSSO, non solo chiamarsi `flows`**: una cartella vuota
-/// con quel nome fermerebbe la salita prima di arrivare a quella vera, e chi
-/// guarda vedrebbe un elenco vuoto invece dei propri flussi.
-///
-/// La casa dell'utente non conta come progetto: è già una sorgente, e contarla
-/// due volte mostrerebbe ogni flusso in doppia copia.
+/// The project's flows directory, found by walking up — not a luxury: a program
+/// is almost never started at the project root. The window starts in
+/// `desktop/src-tauri`, an editor where its last file was, a terminal where the
+/// user stood; measured, the window opened to work on Sailor saw none of
+/// Sailor's four flows. The directory must hold a flow, not merely be named
+/// `flows`, or an empty one stops the climb short of the real one.
 pub fn project_flows_from(working: &Path, home_flows: &Path) -> Option<PathBuf> {
     let mut here = Some(working);
     while let Some(directory) = here {
@@ -226,13 +182,12 @@ fn holds_a_flow(dir: &Path) -> bool {
     })
 }
 
-/// Il registro di una sorgente, qualunque essa sia.
+/// The registry of one source, whatever it is.
 ///
-/// La sorgente di sistema non ha una cartella da leggere: si riconosce dal suo
-/// «dove» e si serve dal binario. Passa da qui e non da un ramo di chi chiama
-/// perché **chi mostra le sorgenti conta le voci di ciascuna** — la finestra lo
-/// fa — e un ramo dimenticato là fuori direbbe «di sistema: 0 flussi» accanto a
-/// flussi di sistema che stanno girando.
+/// The system source has no folder to read: it is recognised by its "where" and
+/// served from the binary. It goes through here rather than a branch in the
+/// caller because whoever shows the sources counts each one's entries, and a
+/// forgotten branch would say "di sistema: 0 flows" while system flows run.
 pub fn registry_of(source: &FlowSource) -> FlowRegistry {
     if source.is_builtin() {
         builtin_registry()
@@ -241,36 +196,28 @@ pub fn registry_of(source: &FlowSource) -> FlowRegistry {
     }
 }
 
-/// I flussi spediti col prodotto, letti dal binario.
+/// The flows shipped with the product, read from the binary.
 ///
-/// Un flusso spedito che non si legge resta nel registro col suo motivo, come
-/// uno rotto sul disco: farlo sparire in silenzio significherebbe che una
-/// versione del prodotto perde un flusso senza che nessuno se ne accorga. La
-/// prova qui sotto fa in modo che non possa succedere a chi installa — cade
-/// prima, da noi.
+/// A shipped flow that will not read stays in the registry with its reason,
+/// like a broken one on disk: making it vanish silently would mean a release
+/// loses a flow with nobody noticing. The test below keeps that from reaching
+/// whoever installs — it falls here first.
 pub fn builtin_registry() -> FlowRegistry {
     let mut registry = FlowRegistry::new();
     for (name, text) in FLOWS {
         let entry = serde_json::from_str::<FlowFile>(text)
-            .map_err(|error| format!("il flusso spedito «{name}» non è valido: {error}"));
+            .map_err(|error| format!("shipped flow \"{name}\" is not valid: {error}"));
         registry.insert((*name).to_owned(), entry);
     }
     registry
 }
 
-/// Legge i flussi dichiarativi in una cartella (formato `{ id, description,
-/// graph, inputs }`).
-///
-/// In precedenza i file non leggibili venivano saltati in silenzio con la
-/// motivazione che "la pagina non deve rompersi perché un file è a metà
-/// scritto". Quella scelta era sbagliata: un file a metà scritto è uno stato
-/// transitorio di pochi millisecondi, mentre un file rotto è permanente, e
-/// trattarli allo stesso modo fa sparire il secondo per sempre. Chi guarda la
-/// finestra vede un elenco corto senza sapere che è corto.
-///
-/// Ora ogni file `*.flow.json` o `*.json` viene incluso nel registro: se è
-/// valido viene caricato, se è illeggibile o malformato viene registrato con il
-/// motivo del rifiuto, così la finestra può mostrarlo marcato.
+/// Reads the declarative flows in a directory. Every `*.flow.json` or `*.json`
+/// enters the registry: valid ones loaded, unreadable or malformed ones kept
+/// with the reason of refusal, so the window can show them marked. Skipping
+/// them silently was defended as "the page must not break over a half-written
+/// file" — but half written lasts milliseconds and broken is permanent, and
+/// alike treatment leaves a short list nobody can tell is short.
 pub fn load_registry(dir: &Path) -> FlowRegistry {
     let mut registry = FlowRegistry::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -300,7 +247,7 @@ pub fn load_registry(dir: &Path) -> FlowRegistry {
             Err(error) => {
                 registry.insert(
                     name,
-                    Err(format!("non riesco a leggere {}: {error}", path.display())),
+                    Err(format!("cannot read {}: {error}", path.display())),
                 );
                 continue;
             }
@@ -312,7 +259,7 @@ pub fn load_registry(dir: &Path) -> FlowRegistry {
             Err(error) => {
                 registry.insert(
                     name,
-                    Err(format!("{} non è un flusso valido: {error}", path.display())),
+                    Err(format!("{} is not a valid flow: {error}", path.display())),
                 );
             }
         }
@@ -320,14 +267,12 @@ pub fn load_registry(dir: &Path) -> FlowRegistry {
     registry
 }
 
-/// I flussi di tutte le sorgenti, ciascuno con l'origine da cui viene.
+/// The flows of every source, each with the origin it came from.
 ///
-/// **A PARITÀ DI NOME VINCE L'ULTIMA SORGENTE**, cioè la più specifica: è la
-/// stessa regola dei descrittori degli strumenti, e la ragione è la stessa —
-/// chi lavora su un progetto si aspetta che il flusso del progetto sia quello
-/// che gira. La sostituzione non è silenziosa: l'origine resta visibile su ogni
-/// riga, quindi chi vede un flusso comportarsi diversamente dal previsto può
-/// capire da dove è venuto senza cercare.
+/// On a name clash the last source wins — the most specific — the same rule as
+/// tool descriptors, for the same reason: whoever works on a project expects
+/// the project's flow to be the one that runs. The replacement is not silent:
+/// the origin stays visible on every line.
 pub fn load_all(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<FlowFile, String>)> {
     let mut found: Vec<(String, &'static str, Result<FlowFile, String>)> = Vec::new();
     for source in sources {
@@ -342,93 +287,74 @@ pub fn load_all(sources: &[FlowSource]) -> Vec<(String, &'static str, Result<Flo
     found
 }
 
-// ── scrivere un flusso, e cancellarlo ────────────────────────────────────
+// ── writing a flow, and deleting one ─────────────────────────────────────
 //
-// **PERCHÉ QUESTE FUNZIONI SONO ARRIVATE QUI IL 31/08/2026.** Stavano in
-// `desktop/src-tauri/src/flows.rs`, cioè nel guscio della finestra, che è
-// **fuori dal workspace Rust**: la riga di comando non le poteva chiamare, e
-// `sailor flow cap` — che deve riscrivere un `.flow.json` — avrebbe dovuto
-// riscriverle. Sarebbero diventate due autori dello stesso file, con due idee
-// diverse su cosa sia un nome sicuro e su come si sostituisce un file senza
-// farlo vedere a metà. È il guasto 10, e questo modulo è già il posto che sa
-// dove stanno i flussi e con quale precedenza: chi sa dove stanno è chi li
-// scrive. Stesso trasloco già fatto per `registry::record_flow_run`.
-//
-// **COSA È RIMASTO AL GUSCIO, E NON PER DIMENTICANZA.** Il controllo che le
-// azioni nominate esistano: la lista delle azioni la conoscono `actions`,
-// `trigger` e `registry`, che dipendono tutti da questo crate. Farla entrare qui
-// sarebbe un ciclo — e sarebbe anche sbagliato: quali azioni esistano dipende da
-// chi compone il programma, non dal formato del flusso.
+// What stayed in the desktop shell, and not by oversight: the check that the
+// actions a flow names exist. `actions`, `trigger` and `registry` all depend on
+// this crate, so pulling that in would be a cycle — and would be wrong anyway:
+// which actions exist depends on who assembles the program, not on the format.
 
-/// Scrive un flusso nella cartella dei flussi.
-///
-/// **PRENDE UN `FlowFile` GIÀ COSTRUITO, NON DEL JSON.** Chi arriva da un
-/// `serde_json::Value` — la tela della finestra — lo deserializza da sé, e così
-/// l'errore che vede è quello della validazione del grafo, con le parole di
-/// `Graph::validate`. Chi invece ha già il flusso in mano — `sailor flow cap`,
-/// che l'ha appena letto per cambiargli un campo — non deve rifare il giro da
-/// JSON per riottenere ciò che ha già.
+/// Writes a flow into the flows directory: whoever knows where flows live is
+/// who writes them. In the desktop shell, outside the Rust workspace, the
+/// command line could not call this and `sailor flow cap` would have had to
+/// rewrite it — fault 10, two authors of one file with two ideas of what a safe
+/// name is and of how to replace a file without showing it half-written. It
+/// takes a built `FlowFile`, not JSON, so a bad graph fails in `Graph::validate`.
 pub fn save_in(flows_dir: &Path, flow: &FlowFile) -> Result<(), String> {
     let id = safe_flow_id(&flow.id)?;
     fs::create_dir_all(flows_dir)
-        .map_err(|error| format!("non riesco a preparare la cartella dei flussi: {error}"))?;
+        .map_err(|error| format!("cannot prepare the flows directory: {error}"))?;
     let file_name = format!("{id}.flow.json");
     reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
     let target = flows_dir.join(&file_name);
     let mut text = serde_json::to_string_pretty(flow)
-        .map_err(|error| format!("non riesco a comporre il flusso in JSON: {error}"))?;
-    // Un file di testo finisce con un a-capo: senza, `git diff` lo dichiara su
-    // ogni flusso riscritto, e la riga che qualcuno aggiungerà a mano comparirà
-    // attaccata all'ultima.
+        .map_err(|error| format!("cannot compose the flow as JSON: {error}"))?;
+    // A text file ends with a newline: without one, `git diff` says so on every
+    // rewritten flow, and the next hand-added line lands stuck to the last.
     text.push('\n');
     write_atomically(&target, text.as_bytes())
 }
 
-/// Cancella un flusso dalla cartella dei flussi.
+/// Deletes a flow from the flows directory.
 pub fn delete_in(flows_dir: &Path, name: &str) -> Result<(), String> {
     let id = safe_flow_id(name)?;
     let target = flows_dir.join(format!("{id}.flow.json"));
     match fs::remove_file(&target) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            Err(format!("il flusso \"{name}\" non esiste"))
+            Err(format!("flow \"{name}\" does not exist"))
         }
-        Err(error) => Err(format!(
-            "non riesco a cancellare {}: {error}",
-            target.display()
-        )),
+        Err(error) => Err(format!("cannot delete {}: {error}", target.display())),
     }
 }
 
-/// Un id che uscirebbe dalla cartella dei flussi (vuoto, con `/` o `\`, o con
-/// `..`) è un percorso di attraversamento: si nega, non si ripulisce in
-/// silenzio — chi guarda deve vedere che il nome è stato rifiutato.
+/// An id that would climb out of the flows directory (empty, or holding `/`,
+/// `\` or `..`) is a traversal path: refuse it rather than quietly cleaning it
+/// up — the person must see that the name was refused.
 pub fn safe_flow_id(id: &str) -> Result<&str, String> {
     if id.is_empty() {
-        return Err("il nome del flusso non può essere vuoto".to_owned());
+        return Err("a flow name cannot be empty".to_owned());
     }
     if id.contains('/') || id.contains('\\') || id.contains("..") {
         return Err(format!(
-            "\"{id}\" non è un nome di flusso sicuro: niente separatori di percorso"
+            "\"{id}\" is not a safe flow name: no path separators"
         ));
     }
     Ok(id)
 }
 
-/// DUE NOMI CHE DIFFERISCONO SOLO PER LE MAIUSCOLE SONO LO STESSO FILE, e il
-/// disco non lo dice. Su APFS come lo installa macOS — e su Windows — salvare
-/// «mioflusso» sopra un «MioFlusso» esistente non dà nessun errore: sostituisce
-/// il contenuto e lascia il nome vecchio. Chi salva crede di aver creato un
-/// flusso nuovo, e ne ha cancellato un altro.
-///
-/// Il controllo non sta in `safe_flow_id`, che giudica il nome da solo: qui
-/// serve guardare cosa c'è già nella cartella. E si nega invece di scegliere
-/// per conto di chi salva — «volevi sovrascrivere quello?» è una domanda che
-/// deve fare chi ha una persona davanti, non un file system.
+/// Two names differing only in case are the same file, and the disk does not
+/// say so. On APFS as macOS installs it — and on Windows — saving "myflow" over
+/// an existing "MyFlow" raises no error: it replaces the content and keeps the
+/// old name, so the saver believes they made a new flow and deleted another.
+/// It refuses rather than choosing for them: "did you mean to overwrite that?"
+/// is a question for someone with a person in front of them.
 fn reject_a_name_that_collides_only_by_case(
     flows_dir: &Path,
     file_name: &str,
 ) -> Result<(), String> {
+    // Not in `safe_flow_id`, which judges a name on its own: answering this one
+    // means looking at what the directory already holds.
     let Ok(entries) = fs::read_dir(flows_dir) else {
         return Ok(());
     };
@@ -437,9 +363,9 @@ fn reject_a_name_that_collides_only_by_case(
         let existing = existing.to_string_lossy();
         if existing.as_ref() != file_name && existing.eq_ignore_ascii_case(file_name) {
             return Err(format!(
-                "esiste già «{existing}», che su questo disco è lo stesso file di \
-                 «{file_name}»: scrivendolo lo sostituiresti senza accorgertene. \
-                 Scegli un altro nome, o modifica quello che c'è."
+                "\"{existing}\" already exists, and on this disk it is the same file as \
+                 \"{file_name}\": writing it would replace that one without you noticing. \
+                 Pick another name, or edit the one that is there."
             ));
         }
     }
@@ -448,21 +374,21 @@ fn reject_a_name_that_collides_only_by_case(
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-/// Scrittura atomica: file temporaneo accanto al bersaglio, poi `rename`. Chi
-/// rilegge la cartella (la finestra, o una corsa) non deve poter vedere un
-/// file a metà scritto — `rename` sullo stesso filesystem è indivisibile,
-/// una `write` diretta sul bersaglio no.
+/// Atomic write: a temporary file beside the target, then `rename`. Whoever
+/// re-reads the directory (the window, or a run) must not be able to see a
+/// half-written file — `rename` on the same filesystem is indivisible, a direct
+/// `write` on the target is not.
 fn write_atomically(target: &Path, contents: &[u8]) -> Result<(), String> {
     let temp_path = temp_path_for(target);
     fs::write(&temp_path, contents).map_err(|error| {
         format!(
-            "non riesco a scrivere il file temporaneo {}: {error}",
+            "cannot write the temporary file {}: {error}",
             temp_path.display()
         )
     })?;
     fs::rename(&temp_path, target).map_err(|error| {
         let _ = fs::remove_file(&temp_path);
-        format!("non riesco a sostituire {}: {error}", target.display())
+        format!("cannot replace {}: {error}", target.display())
     })
 }
 
@@ -480,76 +406,71 @@ mod tests {
     use super::*;
 
     fn scratch(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "sailor-sistema-{label}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-sistema-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("cartella di prova");
+        fs::create_dir_all(&dir).expect("scratch directory");
         dir
     }
 
     fn put_flow(dir: &Path, name: &str) {
-        fs::create_dir_all(dir).expect("cartella");
-        fs::write(dir.join(format!("{name}.flow.json")), "{}").expect("flusso");
+        fs::create_dir_all(dir).expect("directory");
+        fs::write(dir.join(format!("{name}.flow.json")), "{}").expect("flow");
     }
 
-    /// LA PROVA CHE DEVE CADERE DA NOI E NON DA CHI INSTALLA. Un flusso spedito
-    /// è dentro il binario: se è malformato, nessun utente può ripararlo — può
-    /// solo scriverne uno suo con lo stesso nome, senza sapere perché serva.
+    /// This must fall on us, never on whoever installs. A shipped flow lives
+    /// inside the binary: if it is malformed no user can repair it — they can
+    /// only write their own under the same name, without knowing why.
     #[test]
     fn every_shipped_flow_loads() {
         let registry = builtin_registry();
-        assert_eq!(registry.len(), FLOWS.len(), "nessun nome ripetuto");
+        assert_eq!(registry.len(), FLOWS.len(), "no repeated name");
         for (name, entry) in &registry {
-            assert!(entry.is_ok(), "il flusso spedito «{name}»: {entry:?}");
+            assert!(entry.is_ok(), "shipped flow \"{name}\": {entry:?}");
         }
     }
 
-    /// IL NOME DEL FILE È IL NOME DEL FLUSSO. Chi sovrascrive un flusso di
-    /// sistema scrive un file con quel nome; chi lo esegue lo chiama per `id`.
-    /// Se i due divergessero, «l'ho sovrascritto» e «l'ho eseguito» parlerebbero
-    /// di due flussi diversi senza che nessuno lo veda.
+    /// The file name is the flow name. Overriding a system flow means writing a
+    /// file with that name, while running it calls it by `id`. Were the two to
+    /// diverge, "I overrode it" and "I ran it" would name different flows.
     #[test]
     fn the_shipped_name_is_the_declared_id() {
         for (name, entry) in builtin_registry() {
-            let flow = entry.expect("flusso valido");
-            assert_eq!(flow.id, name, "nome del file e id dichiarato");
+            let flow = entry.expect("valid flow");
+            assert_eq!(flow.id, name, "file name and declared id");
         }
     }
 
-    /// La sorgente di sistema è la meno specifica: chi scrive un flusso in casa
-    /// propria con lo stesso nome deve vincere, o «personalizzabile» è una
-    /// parola senza meccanismo dietro.
+    /// The system source is the least specific: a same-named flow written at
+    /// home must win, or "customisable" is a word with no mechanism behind it.
     #[test]
     fn the_system_source_is_the_least_specific() {
-        let places = sources(Path::new("/casa/flows"), None, None);
+        let places = sources(Path::new("/home/flows"), None, None);
         assert_eq!(places[0], FlowSource::builtin());
         assert_eq!(places[0].origin, "di sistema");
-        assert_eq!(places.last().expect("almeno una").origin, "tuoi");
+        assert_eq!(places.last().expect("at least one").origin, "tuoi");
     }
 
-    /// `SAILOR_FLOWS` toglie di mezzo la casa e il progetto, non la dotazione
-    /// del binario: quella non sta in nessuna cartella, quindi non c'è nessuna
-    /// cartella da sostituire.
+    /// `SAILOR_FLOWS` clears home and project out of the way, not the binary's
+    /// own equipment: that is in no folder, so there is no folder to replace.
     #[test]
     fn a_declared_folder_replaces_the_disk_but_not_the_binary() {
         let places = sources(
-            Path::new("/casa/flows"),
+            Path::new("/home/flows"),
             None,
-            Some(Path::new("/qui/i/flussi")),
+            Some(Path::new("/here/the/flows")),
         );
         let origins: Vec<&str> = places.iter().map(|p| p.origin).collect();
         assert_eq!(origins, vec!["di sistema", "dichiarati"]);
     }
 
-    /// Un flusso di sistema si sostituisce scrivendone uno con lo stesso nome,
-    /// e l'origine lo dice: senza quella riga chi ha modificato il proprio non
-    /// saprebbe se sta guardando il suo o quello spedito.
+    /// A system flow is overridden by writing one with the same name, and the
+    /// origin says so: without that line, whoever edited their own would not
+    /// know whether they are looking at theirs or the shipped one.
     #[test]
     fn a_home_flow_overrides_a_system_flow_of_the_same_name() {
-        let base = scratch("sovrascrittura");
-        let home_flows = base.join("casa").join("flows");
+        let base = scratch("override");
+        let home_flows = base.join("home").join("flows");
         let shipped = FLOWS[0].0;
         put_flow(&home_flows, shipped);
 
@@ -558,154 +479,150 @@ mod tests {
         let (_, origin, _) = all
             .iter()
             .find(|(name, _, _)| name == shipped)
-            .expect("il flusso c'è");
-        assert_eq!(*origin, "tuoi", "vince quello dell'utente");
+            .expect("the flow is there");
+        assert_eq!(*origin, "tuoi", "the user's own wins");
         assert_eq!(
             all.iter().filter(|(name, _, _)| name == shipped).count(),
             1,
-            "una riga sola, non due copie"
+            "one line, not two copies"
         );
-        // **SOSTITUISCE, NON SI AGGIUNGE.** Senza questa riga la prova resta
-        // verde anche se la sorgente di sistema sparisce del tutto — misurato
-        // il 29/08/2026 togliendola apposta — perché un flusso solo che vince
-        // su niente si legge uguale a un flusso che ne sovrascrive un altro.
+        // It replaces, it does not add. Without this line the test stays green
+        // even if the system source vanishes entirely, because one flow winning
+        // over nothing reads the same as one flow overriding another.
         assert_eq!(
             all.len(),
             FLOWS.len(),
-            "gli altri flussi spediti restano: {all:?}"
+            "the other shipped flows remain: {all:?}"
         );
 
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// Su una macchina appena installata — nessuna cartella, niente copiato —
-    /// i flussi di sistema ci sono lo stesso.
+    /// On a freshly installed machine — no folder, nothing copied — the system
+    /// flows are there all the same.
     #[test]
     fn a_fresh_machine_still_has_the_system_flows() {
-        let nowhere = std::env::temp_dir().join("sailor-casa-che-non-esiste-mai");
+        let nowhere = std::env::temp_dir().join("sailor-home-that-never-exists");
         let all = load_all(&sources(&nowhere.join("flows"), None, None));
         assert_eq!(all.len(), FLOWS.len());
         assert!(all.iter().all(|(_, origin, _)| *origin == "di sistema"));
     }
 
-    /// Il difetto misurato il 29/08/2026: la finestra partiva da
-    /// `desktop/src-tauri` e non vedeva i flussi del progetto, due cartelle più
-    /// in su.
+    /// The measured defect: the window started in `desktop/src-tauri` and did
+    /// not see the project's flows, two directories further up.
     #[test]
     fn the_project_flows_are_found_from_a_subfolder() {
-        let root = scratch("risalita");
-        put_flow(&root.join("flows"), "uno");
+        let root = scratch("walk-up");
+        put_flow(&root.join("flows"), "one");
         let deep = root.join("desktop").join("src-tauri");
-        fs::create_dir_all(&deep).expect("sottocartella");
+        fs::create_dir_all(&deep).expect("subdirectory");
 
-        let found = project_flows_from(&deep, Path::new("/casa/altrove/flows"));
+        let found = project_flows_from(&deep, Path::new("/home/elsewhere/flows"));
 
         assert_eq!(found, Some(root.join("flows")));
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// Una cartella che si chiama `flows` ma è vuota non deve fermare la
-    /// salita: chi guarda vedrebbe un elenco vuoto al posto dei propri flussi.
+    /// A directory named `flows` but empty must not stop the climb: the reader
+    /// would see an empty list where their own flows should be.
     #[test]
     fn an_empty_flows_folder_does_not_stop_the_climb() {
-        let root = scratch("vuota");
-        put_flow(&root.join("flows"), "vero");
-        let middle = root.join("dentro");
-        fs::create_dir_all(middle.join("flows")).expect("cartella vuota che si chiama flows");
+        let root = scratch("empty");
+        put_flow(&root.join("flows"), "real");
+        let middle = root.join("inside");
+        fs::create_dir_all(middle.join("flows")).expect("empty directory named flows");
 
-        let found = project_flows_from(&middle, Path::new("/casa/altrove/flows"));
+        let found = project_flows_from(&middle, Path::new("/home/elsewhere/flows"));
 
         assert_eq!(found, Some(root.join("flows")));
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// La casa non è un progetto: contarla due volte mostrerebbe ogni flusso in
-    /// doppia copia, e chi guarda non saprebbe quale delle due gira.
+    /// Home is not a project: counting it twice would show every flow in
+    /// duplicate, and the reader would not know which of the two runs.
     #[test]
     fn the_home_is_never_also_the_project() {
-        let home = scratch("casa");
+        let home = scratch("home");
         let home_flows = home.join("flows");
-        put_flow(&home_flows, "mio");
+        put_flow(&home_flows, "mine");
 
         assert_eq!(project_flows_from(&home, &home_flows), None);
         let _ = fs::remove_dir_all(&home);
     }
 
-    /// Contare le voci della sorgente di sistema deve dare il numero dei flussi
-    /// spediti, non zero: chi mostra «dove ho guardato e cosa ho trovato» passa
-    /// da qui, e uno zero lì dentro è indistinguibile da un guasto.
+    /// Counting the system source's entries must give the number of shipped
+    /// flows, not zero: whoever shows "where I looked and what I found" comes
+    /// through here, and a zero there is indistinguishable from a fault.
     #[test]
     fn counting_the_builtin_source_does_not_count_a_folder() {
         assert_eq!(registry_of(&FlowSource::builtin()).len(), FLOWS.len());
     }
 
-    /// **UNA `flows/` PIÙ IN ALTO NON SCAVALCA IL MARCATORE.** È la prova della
-    /// precedenza, non della risalita: se il ripiego venisse consultato per
-    /// primo, il progetto dichiarato perderebbe i propri flussi a favore di
-    /// quelli del progetto che lo contiene — e chi ha scritto `sailor.json`
-    /// non avrebbe dichiarato niente.
+    /// A `flows/` higher up does not beat the marker. This tests precedence,
+    /// not the walk-up: were the fallback consulted first, the declared project
+    /// would lose its own flows to those of the project containing it — and
+    /// whoever wrote `sailor.json` would have declared nothing.
     #[test]
     fn a_flows_folder_above_the_marker_does_not_win() {
-        let outer = scratch("marcatore-contro-flows");
-        put_flow(&outer.join("flows"), "di-chi-sta-sopra");
-        let project = outer.join("progetto");
-        fs::create_dir_all(&project).expect("cartella del progetto");
-        fs::write(project.join(crate::workspace::MARKER), "{}").expect("marcatore");
-        let deep = project.join("crates").join("dentro");
-        fs::create_dir_all(&deep).expect("sottocartella");
+        let outer = scratch("marker-vs-flows");
+        put_flow(&outer.join("flows"), "belongs-to-the-one-above");
+        let project = outer.join("project");
+        fs::create_dir_all(&project).expect("project directory");
+        fs::write(project.join(crate::workspace::MARKER), "{}").expect("marker");
+        let deep = project.join("crates").join("inside");
+        fs::create_dir_all(&deep).expect("subdirectory");
 
-        let places = sources(Path::new("/casa/flows"), Some(&deep), None);
+        let places = sources(Path::new("/home/flows"), Some(&deep), None);
 
-        let last = places.last().expect("almeno una");
-        assert_eq!(last.dir, project.join("flows"), "vince la radice dichiarata");
+        let last = places.last().expect("at least one");
+        assert_eq!(last.dir, project.join("flows"), "the declared root wins");
         assert_eq!(last.origin, crate::workspace::ORIGIN_DECLARED);
 
         let _ = fs::remove_dir_all(&outer);
     }
 
-    /// Senza marcatore il ripiego resta, e **si dichiara**: l'origine dice che
-    /// la radice è stata indovinata, così chi guarda sa perché i flussi sono
-    /// quelli e non altri.
+    /// With no marker the fallback stays, and declares itself: the origin says
+    /// the root was guessed, so a reader knows why the flows are those ones.
     #[test]
     fn without_a_marker_the_climb_still_works_and_says_so() {
-        let root = scratch("ripiego");
-        put_flow(&root.join("flows"), "uno");
+        let root = scratch("fallback");
+        put_flow(&root.join("flows"), "one");
         let deep = root.join("desktop").join("src-tauri");
-        fs::create_dir_all(&deep).expect("sottocartella");
+        fs::create_dir_all(&deep).expect("subdirectory");
 
-        let places = sources(Path::new("/casa/flows"), Some(&deep), None);
+        let places = sources(Path::new("/home/flows"), Some(&deep), None);
 
-        let last = places.last().expect("almeno una");
+        let last = places.last().expect("at least one");
         assert_eq!(last.dir, root.join("flows"));
         assert_eq!(last.origin, crate::workspace::ORIGIN_GUESSED);
 
         let _ = fs::remove_dir_all(&root);
     }
 
-    // ── scrivere un flusso ──────────────────────────────────────────────
+    // ── writing a flow ──────────────────────────────────────────────────
     //
-    // Queste prove erano nel guscio della finestra, che sta **fuori dal
-    // workspace**: `cargo test --workspace` non le eseguiva. Sono arrivate qui
-    // col codice che provano, e da oggi girano insieme a tutte le altre.
+    // These tests were in the desktop shell, which is outside the workspace, so
+    // `cargo test --workspace` never ran them. They came here with the code
+    // they test.
 
-    /// Un flusso completo: due passi, una dipendenza, una pianificazione, degli
-    /// ingressi. Serve alla prova d'identità — un flusso povero non potrebbe
-    /// perdere niente nel giro.
+    /// A complete flow: two steps, a dependency, a schedule, some inputs. The
+    /// identity test needs it — a threadbare flow could lose nothing in a round
+    /// trip.
     fn a_full_flow(id: &str) -> FlowFile {
         let text = format!(
             r#"{{
                 "id": "{id}",
-                "description": "due passi, una ricorrenza e degli ingressi",
+                "description": "two steps, a recurrence and some inputs",
                 "graph": {{
                     "steps": [
                         {{
-                            "id": "primo", "deps": [], "action": "shell_check",
+                            "id": "first", "deps": [], "action": "shell_check",
                             "max_attempts": 1, "when": null,
                             "input_schema": {{"type": "any"}},
                             "output_schema": {{"type": "any"}}
                         }},
                         {{
-                            "id": "secondo", "deps": ["primo"], "action": "shell_check",
+                            "id": "second", "deps": ["first"], "action": "shell_check",
                             "max_attempts": 3, "when": null,
                             "with": {{"command": "true"}},
                             "input_schema": {{"type": "any"}},
@@ -713,219 +630,209 @@ mod tests {
                         }}
                     ]
                 }},
-                "inputs": {{ "primo": {{ "command": "true", "timeout_secs": 5 }} }},
+                "inputs": {{ "first": {{ "command": "true", "timeout_secs": 5 }} }},
                 "schedule": {{
                     "recurrence": {{ "kind": "daily_at", "hour": 3, "minute": 30 }},
                     "weight": "heavy",
-                    "perimeter": ["/una/cartella"]
+                    "perimeter": ["/some/directory"]
                 }}
             }}"#
         );
-        serde_json::from_str(&text).expect("il flusso di prova è valido")
+        serde_json::from_str(&text).expect("the test flow is valid")
     }
 
     fn read_back(dir: &Path, id: &str) -> FlowFile {
         let text = fs::read_to_string(dir.join(format!("{id}.flow.json")))
-            .expect("il file scritto si rilegge");
-        serde_json::from_str(&text).expect("e si deserializza")
+            .expect("the written file reads back");
+        serde_json::from_str(&text).expect("and deserialises")
     }
 
     fn entries(dir: &Path) -> Vec<String> {
         fs::read_dir(dir)
-            .expect("cartella leggibile")
+            .expect("readable directory")
             .flatten()
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect()
     }
 
-    /// **METTERE UN TETTO NON DEVE PERDERE NIENT'ALTRO.**
-    ///
-    /// È il rischio vero di `sailor flow cap`: si legge un flusso, gli si cambia
-    /// un campo, lo si riscrive — e nel giro sparisce la pianificazione, o un
-    /// `with` di un passo, e nessuno se ne accorge finché quel flusso non manca
-    /// all'appuntamento notturno.
-    ///
-    /// **IL CONFRONTO È SUL `FlowFile`, NON SUL TESTO.** Confrontare il testo
-    /// direbbe rosso a un `serde_json::to_string_pretty` che cambia
-    /// l'indentazione, cioè a una differenza che non è una perdita.
-    ///
-    /// **IL MUTANTE CHE CONTA**: un campo che il giro perde. Marcando
-    /// `FlowFile::schedule` con `#[serde(skip_serializing)]` — che è ciò che
-    /// succede a chi aggiunge un campo e non aggiorna la scrittura — il flusso
-    /// riletto torna senza pianificazione e questa prova diventa rossa.
+    /// Setting a cap must lose nothing else. That is the real risk of `sailor
+    /// flow cap`: read a flow, change one field, write it back — and the round
+    /// trip drops the schedule, or a step's `with`, with nobody noticing until
+    /// that flow misses its nightly appointment. The comparison is on the
+    /// `FlowFile`, not the text: comparing text would go red on an indentation
+    /// change, which is not a loss.
     #[test]
     fn setting_the_cap_leaves_the_rest_of_the_flow_identical() {
-        let dir = scratch("tetto-e-identita");
-        let before = a_full_flow("con-tetto");
-        save_in(&dir, &before).expect("prima scrittura");
+        let dir = scratch("cap-and-identity");
+        let before = a_full_flow("with-cap");
+        save_in(&dir, &before).expect("first write");
 
-        let mut with_cap = read_back(&dir, "con-tetto");
+        let mut with_cap = read_back(&dir, "with-cap");
         with_cap.spend_cap_micros = Some(250_000);
-        save_in(&dir, &with_cap).expect("riscrittura col tetto");
-        let after = read_back(&dir, "con-tetto");
+        save_in(&dir, &with_cap).expect("rewrite with the cap");
+        let after = read_back(&dir, "with-cap");
 
         assert_eq!(
             after.spend_cap_micros,
             Some(250_000),
-            "il tetto è quello che si è messo"
+            "the cap is the one that was set"
         );
-        // E tutto il resto è quello di prima, campo per campo: se un giorno
-        // `FlowFile` cresce, questo confronto cresce con lui senza che nessuno
-        // debba ricordarsene.
+        // And all the rest is as before, field by field: if `FlowFile` grows one
+        // day, this comparison grows with it without anyone remembering to. The
+        // mutant that counts is a field the round trip loses — mark
+        // `FlowFile::schedule` `#[serde(skip_serializing)]`, which is what
+        // happens to whoever adds a field and forgets the writing side, and the
+        // flow comes back with no schedule and this line goes red.
         let mut without_the_cap = after.clone();
         without_the_cap.spend_cap_micros = None;
         assert_eq!(
             without_the_cap, before,
-            "il giro ha cambiato qualcosa oltre al tetto"
+            "the round trip changed something besides the cap"
         );
 
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// Togliere il tetto lo riporta a `None`, che non è `Some(0)`: il primo è
-    /// «nessuno ha messo un limite», il secondo è «non deve spendere niente».
+    /// Clearing the cap returns it to `None`, which is not `Some(0)`: the first
+    /// is "nobody set a limit", the second is "must not spend anything".
     #[test]
     fn clearing_the_cap_writes_no_cap_instead_of_a_zero() {
-        let dir = scratch("tetto-tolto");
-        let mut flow = a_full_flow("senza-tetto");
+        let dir = scratch("cap-cleared");
+        let mut flow = a_full_flow("without-cap");
         flow.spend_cap_micros = Some(500);
-        save_in(&dir, &flow).expect("scrittura col tetto");
+        save_in(&dir, &flow).expect("write with the cap");
 
         flow.spend_cap_micros = None;
-        save_in(&dir, &flow).expect("riscrittura senza");
+        save_in(&dir, &flow).expect("rewrite without it");
 
-        assert_eq!(read_back(&dir, "senza-tetto").spend_cap_micros, None);
+        assert_eq!(read_back(&dir, "without-cap").spend_cap_micros, None);
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// **UN FILE DI TESTO FINISCE CON UN A-CAPO.**
-    ///
-    /// Senza, `git diff` scrive «\ No newline at end of file» su ogni flusso che
-    /// passa di qui, e la riga successiva che qualcuno aggiungerà a mano
-    /// comparirà attaccata all'ultima. Costa un carattere e si vede subito su
-    /// ogni flusso riscritto da `sailor flow cap`.
+    /// A text file ends with a newline. Without one, `git diff` writes "\ No
+    /// newline at end of file" on every flow that passes through here, and the
+    /// next hand-added line lands stuck to the last. It costs one character,
+    /// and it shows at once on every flow `sailor flow cap` rewrites.
     #[test]
     fn a_written_flow_ends_with_a_newline() {
-        let dir = scratch("a-capo");
-        save_in(&dir, &a_full_flow("finito-bene")).expect("scrittura");
+        let dir = scratch("newline");
+        save_in(&dir, &a_full_flow("ended-well")).expect("write");
 
-        let text = fs::read_to_string(dir.join("finito-bene.flow.json")).expect("rileggere");
+        let text = fs::read_to_string(dir.join("ended-well.flow.json")).expect("read back");
 
-        assert!(text.ends_with('\n'), "il file non finisce con un a-capo");
+        assert!(text.ends_with('\n'), "the file does not end with a newline");
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// **UN CAMPO CHE NON C'ERA NON DEVE COMPARIRE COME `null`.**
-    ///
-    /// Riscrivere un flusso per cambiargli il tetto non deve aggiungergli righe
-    /// che nessuno ha scritto: `"schedule": null` e `"spend_cap_micros": null`
-    /// non dicono niente che l'assenza non dica già, e riempiono di rumore il
-    /// diff di chi rilegge il proprio flusso dopo il comando. Assente e `null`
-    /// si rileggono uguali — lo prova `clearing_the_cap_writes_no_cap`.
+    /// A field that was absent must not come back as `null`. Whoever rewrites a
+    /// flow — `sailor flow cap`, or the canvas — must add it no line nobody
+    /// wrote: `"schedule": null` and `"spend_cap_micros": null` say nothing the
+    /// absence does not already say, and fill the diff with noise for someone
+    /// re-reading their own flow after the command. Absent and `null` read back
+    /// the same, which `clearing_the_cap_writes_no_cap_instead_of_a_zero` holds.
     #[test]
     fn a_field_that_was_absent_does_not_come_back_as_null() {
-        let dir = scratch("niente-null");
-        let mut bare = a_full_flow("nudo");
+        let dir = scratch("no-nulls");
+        let mut bare = a_full_flow("bare");
         bare.schedule = None;
         bare.spend_cap_micros = None;
-        save_in(&dir, &bare).expect("scrittura");
+        save_in(&dir, &bare).expect("write");
 
-        let text = fs::read_to_string(dir.join("nudo.flow.json")).expect("rileggere");
+        let text = fs::read_to_string(dir.join("bare.flow.json")).expect("read back");
 
         assert!(!text.contains("schedule"), "{text}");
         assert!(!text.contains("spend_cap_micros"), "{text}");
-        assert_eq!(read_back(&dir, "nudo"), bare, "e si rilegge identico");
+        assert_eq!(read_back(&dir, "bare"), bare, "and reads back identical");
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: senza il controllo su `..` questo
-    /// id scriverebbe fuori dalla cartella dei flussi, nel suo genitore.
+    /// The measure that could have come out differently: without the `..` check
+    /// this id would write outside the flows directory, into its parent.
     #[test]
     fn a_flow_id_that_climbs_out_of_the_directory_is_refused() {
-        let dir = scratch("evasione");
-        // Il bersaglio dell'evasione sta fuori dalla cartella usa-e-getta: va
-        // ripulito prima e dopo, o un mutante che la lascia passare sporca
-        // `$TMPDIR` per i giri successivi invece di farsi vedere qui.
+        let dir = scratch("escape");
+        // The escape target sits outside the throwaway directory: it must be
+        // cleaned before and after, or a mutant that lets it through dirties
+        // `$TMPDIR` for later runs instead of showing itself here.
         let escaped = dir
             .parent()
-            .expect("la prova ha un genitore")
-            .join("evaso.flow.json");
+            .expect("the test directory has a parent")
+            .join("escaped.flow.json");
         let _ = fs::remove_file(&escaped);
 
-        let error = save_in(&dir, &a_full_flow("../evaso")).expect_err("id con .. rifiutato");
+        let error = save_in(&dir, &a_full_flow("../escaped")).expect_err("id with .. refused");
 
-        assert!(error.contains("percorso"), "{error}");
-        assert!(entries(&dir).is_empty(), "la cartella resta vuota");
-        assert!(!escaped.exists(), "e niente è uscito dalla cartella");
+        assert!(error.contains("path separators"), "{error}");
+        assert!(entries(&dir).is_empty(), "the directory stays empty");
+        assert!(!escaped.exists(), "and nothing left the directory");
         let _ = fs::remove_file(&escaped);
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_flow_id_with_a_path_separator_is_refused() {
-        let dir = scratch("separatore");
-        let error =
-            save_in(&dir, &a_full_flow("sotto/cartella")).expect_err("id con / rifiutato");
-        assert!(error.contains("percorso"), "{error}");
+        let dir = scratch("separator");
+        let error = save_in(&dir, &a_full_flow("under/directory")).expect_err("id with / refused");
+        assert!(error.contains("path separators"), "{error}");
         assert!(entries(&dir).is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn an_empty_flow_id_is_refused_and_writes_nothing() {
-        let dir = scratch("id-vuoto");
-        let error = save_in(&dir, &a_full_flow("")).expect_err("id vuoto rifiutato");
-        assert!(error.contains("vuoto"), "{error}");
+        let dir = scratch("empty-id");
+        let error = save_in(&dir, &a_full_flow("")).expect_err("empty id refused");
+        assert!(error.contains("empty"), "{error}");
         assert!(entries(&dir).is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// IL FILE SYSTEM NON DICE CHE SONO LO STESSO FILE. Su APFS come lo
-    /// installa macOS, salvare «mioflusso» sopra un «MioFlusso» esistente
-    /// sostituisce il contenuto senza un errore e lascia il nome vecchio.
+    /// The file system does not say the two are the same file. On APFS as macOS
+    /// installs it, saving "myflow" over an existing "MyFlow" replaces the
+    /// content with no error and keeps the old name.
     #[test]
     fn a_name_that_differs_only_by_case_is_refused() {
-        let dir = scratch("maiuscole");
-        save_in(&dir, &a_full_flow("MioFlusso")).expect("il primo si scrive");
+        let dir = scratch("case");
+        save_in(&dir, &a_full_flow("MyFlow")).expect("the first one writes");
 
-        let error = save_in(&dir, &a_full_flow("mioflusso")).expect_err("il secondo è rifiutato");
+        let error = save_in(&dir, &a_full_flow("myflow")).expect_err("the second is refused");
 
-        assert!(error.contains("MioFlusso"), "{error}");
-        // E quello che c'era resta intero: il rifiuto non deve aver toccato
-        // niente, che è il motivo per cui esiste.
-        assert_eq!(read_back(&dir, "MioFlusso").id, "MioFlusso");
+        assert!(error.contains("MyFlow"), "{error}");
+        // And what was there stays whole: the refusal must have touched
+        // nothing, which is the reason it exists.
+        assert_eq!(read_back(&dir, "MyFlow").id, "MyFlow");
         assert_eq!(entries(&dir).len(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// LA MISURA CHE POTEVA VENIRE DIVERSA: la seconda scrittura porta una
-    /// descrizione diversa. Un mutante che salti `fs::rename` lascerebbe la
-    /// prima sul disco.
+    /// The measure that could have come out differently: the second write
+    /// carries a different description, so a mutant that skipped `fs::rename`
+    /// would leave the first one on disk.
     #[test]
     fn a_second_write_replaces_the_content_instead_of_leaving_it() {
-        let dir = scratch("sostituzione");
-        save_in(&dir, &a_full_flow("stesso-id")).expect("prima scrittura");
-        let mut second = a_full_flow("stesso-id");
-        second.description = "seconda versione, diversa dalla prima".to_owned();
-        save_in(&dir, &second).expect("seconda scrittura");
+        let dir = scratch("replacement");
+        save_in(&dir, &a_full_flow("same-id")).expect("first write");
+        let mut second = a_full_flow("same-id");
+        second.description = "second version, different from the first".to_owned();
+        save_in(&dir, &second).expect("second write");
 
         assert_eq!(
-            read_back(&dir, "stesso-id").description,
-            "seconda versione, diversa dalla prima"
+            read_back(&dir, "same-id").description,
+            "second version, different from the first"
         );
-        assert_eq!(entries(&dir).len(), 1, "e nessun file temporaneo rimasto");
+        assert_eq!(entries(&dir).len(), 1, "and no temporary file left behind");
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn deleting_removes_the_flow_and_says_so_when_there_is_nothing_to_remove() {
-        let dir = scratch("cancellazione");
-        save_in(&dir, &a_full_flow("da-cancellare")).expect("scrittura");
-        delete_in(&dir, "da-cancellare").expect("cancellazione");
+        let dir = scratch("deletion");
+        save_in(&dir, &a_full_flow("to-delete")).expect("write");
+        delete_in(&dir, "to-delete").expect("delete");
         assert!(entries(&dir).is_empty());
 
-        let error = delete_in(&dir, "mai-esistito").expect_err("un assente non si cancella");
-        assert!(error.contains("non esiste"), "{error}");
+        let error = delete_in(&dir, "never-existed").expect_err("an absent flow is not deleted");
+        assert!(error.contains("does not exist"), "{error}");
         let _ = fs::remove_dir_all(&dir);
     }
 }
