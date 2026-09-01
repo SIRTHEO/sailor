@@ -16,6 +16,7 @@ profiles = { path = "../profiles" }
 models = { path = "../models" }
 ui = { path = "../ui" }
 actions = { path = "../actions" }
+faults = { path = "../faults" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 inventory = { path = "../inventory" }
