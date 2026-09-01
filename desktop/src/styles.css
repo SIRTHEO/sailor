@@ -990,8 +990,20 @@ button.is-primary {
   border-color: var(--ink);
 }
 
+/* The same glyph as on the canvas, smaller: `KindIcon` draws it, and the size
+   is the only thing this changes. A second drawing of the same species would
+   be a second visual language nobody asked for. */
 .toolbar__mark {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.toolbar__mark svg {
   display: block;
+  width: 100%;
+  height: 100%;
 }
 
 /* Plate lettering, as on a node: the two are the same object, one in the

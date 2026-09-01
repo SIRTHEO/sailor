@@ -8,6 +8,7 @@ import reactFlowSource from "@xyflow/react/dist/style.css?raw";
 import { parseStylesheet } from "./contrast";
 import { TOOL_GROUPS, TOOLBAR_KINDS, KINDS_WITH_ACTION, Toolbar } from "./Toolbar";
 import { DEFAULT_ACTION_FOR_KIND, KNOWN_ACTIONS, type StepKind } from "./flow";
+import { KIND_LABEL, KindIcon } from "./StepNode";
 
 /**
  * A canvas with no flows is obtained by removing the sample data, which is what
@@ -359,8 +360,20 @@ describe("what the bar offers", () => {
     for (const tool of Array.from(container.querySelectorAll<HTMLElement>(".toolbar__tool"))) {
       // Ban 5 applied to shape: a mark on its own carries nothing, just as
       // colour on its own carries nothing.
-      expect(tool.querySelector("svg.toolbar__mark")).not.toBeNull();
+      expect(tool.querySelector(".toolbar__mark svg")).not.toBeNull();
       expect(tool.querySelector(".toolbar__label")?.textContent?.trim()).toBeTruthy();
+    }
+  });
+
+  test("AND THE MARK IS THE ONE ON THE CANVAS, not a second drawing of it", () => {
+    const { container } = render(<Toolbar flowName="prima-corsa" onAdd={() => {}} />);
+    for (const kind of TOOLBAR_KINDS) {
+      const inBar = container.querySelector(`[data-kind="${kind}"] .toolbar__mark svg`);
+      const onBoard = render(<KindIcon kind={kind} />).container.querySelector("svg");
+      // The same drawing, compared as it lands in the document: two components,
+      // two mount paths, one glyph. The day the bar grows its own again, the
+      // markup stops matching here before anyone has to notice by eye.
+      expect(inBar?.innerHTML, `«${KIND_LABEL[kind]}» is drawn twice`).toBe(onBoard?.innerHTML);
     }
   });
 
