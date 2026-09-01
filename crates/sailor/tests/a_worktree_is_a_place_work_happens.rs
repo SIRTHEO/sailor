@@ -5,8 +5,8 @@
 //! the wrong name — and a wrong name is what `remove` acts on.
 
 use sailor::worktree_cmd::render;
-use workspace::{name_for, parse_worktrees, tree_path};
 use std::path::Path;
+use workspace::{name_for, parse_worktrees, tree_path};
 
 const PORCELAIN: &str = "\
 worktree /somewhere/project
@@ -39,7 +39,10 @@ fn a_detached_tree_carries_no_branch_instead_of_the_last_one_seen() {
     let trees = parse_worktrees(PORCELAIN);
     assert_eq!(trees[2].branch, None);
     let shown = render(&trees);
-    let line = shown.lines().find(|line| line.starts_with("staccato")).expect("the tree is listed");
+    let line = shown
+        .lines()
+        .find(|line| line.starts_with("staccato"))
+        .expect("the tree is listed");
     assert!(line.ends_with("detached"), "{line}");
 }
 
@@ -47,7 +50,8 @@ fn a_detached_tree_carries_no_branch_instead_of_the_last_one_seen() {
 /// listing aligns its columns with spaces.
 #[test]
 fn a_path_with_a_space_stays_one_path() {
-    let trees = parse_worktrees("worktree /somewhere/my trees/one\nHEAD abc\nbranch refs/heads/main\n");
+    let trees =
+        parse_worktrees("worktree /somewhere/my trees/one\nHEAD abc\nbranch refs/heads/main\n");
     assert_eq!(trees[0].path, "/somewhere/my trees/one");
     assert_eq!(trees[0].name(), "one");
 }
@@ -78,7 +82,11 @@ fn a_branch_with_a_slash_does_not_become_two_directories() {
 fn a_new_tree_is_cut_beside_the_repository_not_within_it() {
     let repo = Path::new("/somewhere/project");
     let cut = tree_path(repo, "thing");
-    assert!(!cut.starts_with(repo), "{} is inside the repository", cut.display());
+    assert!(
+        !cut.starts_with(repo),
+        "{} is inside the repository",
+        cut.display()
+    );
 }
 
 #[test]

@@ -1,31 +1,9 @@
-//! Un rinvio arriva **a ogni azione** già sciolto, comprese quelle che nessuno
-//! ha ancora scritto.
-//!
-//! **PERCHÉ ESISTE — IL GUASTO 28, E LA CURA CHE NON ERA UNA CURA.** Il
-//! 31/08/2026 `resolve_references` era chiamata da **due azioni su nove**: un
-//! passo che scriveva nel deposito un valore preso dal passo prima riceveva
-//! `{"$from": …}` come oggetto e moriva su «invalid type: map, expected a
-//! string», perché `key` vuole un testo. Il deposito non poteva fare il
-//! testimone fra due passi.
-//!
-//! Poi la riga è stata **ricopiata**. Misurato in questo albero il 01/09/2026,
-//! prima di toccare niente: **sedici azioni registrate, dodici con quella riga,
-//! quattro senza** — `history_ask`, `detect_tools`, `trigger`, `subflow`. Il
-//! sintomo era ridotto, il guasto no: dodici copie della stessa riga sono il
-//! guasto 10 in dodici esemplari, e ogni azione nuova continuava a nascere
-//! senza. Nessun controllo diceva quali fossero le quattro.
-//!
-//! **COSA PROVA QUESTO FILE, E PERCHÉ QUI.** Che l'ingresso arrivi sciolto non
-//! è un merito della singola azione: è come i passi si passano le informazioni,
-//! e succede in `flow::step_input` — l'unico punto attraversato da ogni passo
-//! di ogni corsa. L'azione di queste prove **non risolve niente e non sa cosa
-//! sia un rinvio**: è il modello di ogni azione futura. Se la regola tornasse
-//! dentro le azioni, un'azione così tornerebbe a non averla, e questo file
-//! diventerebbe rosso.
-//!
-//! **IL MUTANTE.** Togliere la chiamata a `resolve_references` da `step_input`,
-//! cioè rimettere il difetto originale, rende rosse tutte e tre le prove qui
-//! dentro; l'esito di ciascuna è scritto accanto.
+//! A reference reaches *every* action already resolved, unwritten ones included
+//! — fault 28, where the call sat in two actions of nine and a step storing a
+//! value from the step before got `{"$from": …}` as an object and died; then in
+//! twelve of sixteen, which shrank the symptom and not the fault, being fault
+//! 10 in twelve copies with four actions still without. The mutant is removing
+//! the call in `step_input`; each test says below what that does to it.
 
 use flow::{
     Action, ActionError, ActionOutcome, Clock, Decision, Executor, FlowError, Graph,
@@ -36,13 +14,12 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Un'azione che **non sa cosa sia un rinvio**: registra l'ingresso che riceve
-/// e lo restituisce così com'è. È il modello di ogni azione registrata domani.
-///
-/// Restituire l'ingresso invece di una costante non è pigrizia: l'ingresso di
-/// un passo *è* l'uscita della sua dipendenza, quindi così il valore che il
-/// primo passo dichiara arriva al secondo, che è la strada su cui il guasto 28
-/// è stato pagato.
+/// An action that does *not* know what a reference is: it records the input it
+/// receives and returns it unchanged. It is the model of every action registered
+/// tomorrow, and that is what this file proves — an input arriving resolved is
+/// no merit of a single action but how steps hand each other information, in
+/// `flow::step_input`, the one point every step of every run crosses. Were the
+/// rule to move back inside the actions, this one would go without, and go red.
 struct KeepsWhatItGets(Arc<Mutex<Vec<Value>>>);
 
 impl Action for KeepsWhatItGets {
@@ -51,6 +28,9 @@ impl Action for KeepsWhatItGets {
             .lock()
             .unwrap_or_else(|held| held.into_inner())
             .push(input.clone());
+        // Returning the input rather than a constant is not laziness: a step's
+        // input *is* its dependency's output, so the value the first step
+        // declares reaches the second — the road the fault was paid on.
         Ok(ActionOutcome::Went(input.clone()))
     }
 
@@ -71,7 +51,7 @@ fn step(id: &str, deps: &[&str], with: Option<Value>) -> Step {
     Step {
         id: id.to_owned(),
         deps: deps.iter().map(|dep| (*dep).to_owned()).collect(),
-        action: "tiene-quel-che-riceve".to_owned(),
+        action: "keeps-what-it-gets".to_owned(),
         max_attempts: 1,
         when: None,
         with,
@@ -80,8 +60,8 @@ fn step(id: &str, deps: &[&str], with: Option<Value>) -> Step {
     }
 }
 
-/// Lo stesso passo, con la condizione che `flows/chiedi-all-indice.flow.json`
-/// mette sui passi `chiedi` e `leggi`: gira solo se ciò che ha ricevuto dice
+/// The same step, with the condition `flows/chiedi-all-indice.flow.json` puts
+/// on its `chiedi` and `leggi` steps: it runs only if what it received says
 /// `ok`.
 fn step_only_when_ok(id: &str, deps: &[&str], with: Option<Value>, pointer: &str) -> Step {
     let mut step = step(id, deps, with);
@@ -89,23 +69,22 @@ fn step_only_when_ok(id: &str, deps: &[&str], with: Option<Value>, pointer: &str
         serde_json::from_value(json!({
             "kind": "pointer_equals", "pointer": pointer, "value": "ok"
         }))
-        .expect("condizione valida"),
+        .expect("valid condition"),
     );
     step
 }
 
-/// Fa girare il grafo e restituisce gli ingressi che l'azione ha visto, in
-/// ordine.
+/// Runs the graph and returns the inputs the action saw, in order.
 fn what_the_action_saw(graph: &Graph, root_inputs: BTreeMap<String, Value>) -> Vec<Value> {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
-    actions.register("tiene-quel-che-riceve", KeepsWhatItGets(seen.clone()));
+    actions.register("keeps-what-it-gets", KeepsWhatItGets(seen.clone()));
     let mut store = InMemoryRecordStore::default();
     InProcessExecutor
         .execute(
             graph,
             flow::ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs,
                 gates: vec![],
                 shared: SharedState::new(),
@@ -115,169 +94,158 @@ fn what_the_action_saw(graph: &Graph, root_inputs: BTreeMap<String, Value>) -> V
             &actions,
             &Tick(AtomicI64::new(0)),
         )
-        .expect("la corsa arriva in fondo");
+        .expect("the run reaches the end");
     let saw = seen.lock().unwrap_or_else(|held| held.into_inner()).clone();
     saw
 }
 
-/// **IL CASO DEL GUASTO 28, SU UN'AZIONE CHE NON RISOLVE NIENTE.** Il secondo
-/// passo prende dal primo la chiave con cui depositare: se il rinvio non fosse
-/// sciolto, l'azione riceverebbe `{"$from": "/stdout"}` come oggetto.
-///
-/// Col mutante: `key` arriva come oggetto e l'asserzione cade dicendo
-/// `{"$from":"/stdout"}` invece di `il-lavoro-di-ieri`.
+/// The original fault, against an action that resolves nothing: the second step
+/// takes from the first the key it stores under, so an unresolved reference
+/// hands the action `{"$from": "/stdout"}` as an object and it dies on "invalid
+/// type: map, expected a string", `key` wanting text. The store could not carry
+/// the baton between two steps. With the mutant: `key` arrives as an object and
+/// the assertion falls, saying `{"$from":"/stdout"}` not `yesterdays-work`.
 #[test]
 fn an_action_that_resolves_nothing_still_gets_its_references_resolved() {
     let graph = Graph::new(vec![
-        step("primo", &[], None),
+        step("first", &[], None),
         step(
-            "secondo",
-            &["primo"],
-            Some(json!({"collection": "mandato", "key": {"$from": "/stdout"}})),
+            "second",
+            &["first"],
+            Some(json!({"collection": "briefs", "key": {"$from": "/stdout"}})),
         ),
     ])
-    .expect("grafo valido");
+    .expect("valid graph");
     let mut root_inputs = BTreeMap::new();
-    root_inputs.insert("primo".to_owned(), json!({"stdout": "il-lavoro-di-ieri"}));
+    root_inputs.insert("first".to_owned(), json!({"stdout": "yesterdays-work"}));
 
     let saw = what_the_action_saw(&graph, root_inputs);
 
-    assert_eq!(saw.len(), 2, "sono girati due passi: {saw:?}");
+    assert_eq!(saw.len(), 2, "two steps ran: {saw:?}");
     assert_eq!(
         saw[1]["key"],
-        json!("il-lavoro-di-ieri"),
-        "l'azione ha ricevuto il rinvio invece del valore: {}",
+        json!("yesterdays-work"),
+        "the action received the reference instead of the value: {}",
         saw[1]
     );
-    assert_eq!(saw[1]["collection"], json!("mandato"));
+    assert_eq!(saw[1]["collection"], json!("briefs"));
 }
 
-/// `$join` e `$json` passano dalla stessa strada: la prova non sta sul solo
-/// `$from`, o la metà della sintassi resterebbe scoperta.
+/// `$join` and `$json` travel the same road: the test does not sit on `$from`
+/// alone, or half the syntax would stay uncovered.
 ///
-/// Col mutante: `stdin` resta un oggetto e il confronto col testo cade.
+/// With the mutant: `stdin` stays an object and the text comparison falls.
 #[test]
 fn the_other_two_forms_of_reference_arrive_resolved_too() {
     let graph = Graph::new(vec![
-        step("primo", &[], None),
+        step("first", &[], None),
         step(
-            "secondo",
-            &["primo"],
+            "second",
+            &["first"],
             Some(json!({
-                "stdin": {"$join": ["Esegui solo la tua sezione.\n", {"$from": "/stdout"}]},
+                "stdin": {"$join": ["Do only your own section.\n", {"$from": "/stdout"}]},
                 "shape_as_text": {"$json": "/answer_shape"},
             })),
         ),
     ])
-    .expect("grafo valido");
+    .expect("valid graph");
     let mut root_inputs = BTreeMap::new();
     root_inputs.insert(
-        "primo".to_owned(),
-        json!({"stdout": "conta i ganci morti", "answer_shape": {"type": "number"}}),
+        "first".to_owned(),
+        json!({"stdout": "count the dead hooks", "answer_shape": {"type": "number"}}),
     );
 
     let saw = what_the_action_saw(&graph, root_inputs);
 
     assert_eq!(
         saw[1]["stdin"],
-        json!("Esegui solo la tua sezione.\nconta i ganci morti")
+        json!("Do only your own section.\ncount the dead hooks")
     );
     assert_eq!(saw[1]["shape_as_text"], json!("{\"type\":\"number\"}"));
 }
 
-/// **UN PASSO SALTATO NON SCIOGLIE NIENTE, E QUINDI NON SI ROMPE.**
-///
-/// **QUESTA È LA FORMA CHE STA NELL'ALBERO OGGI, NON UN CASO DI SCUOLA.**
-/// `flows/chiedi-all-indice.flow.json`, passo `leggi`: `when` su `/status`, un
-/// `with` pieno di `$from` verso l'uscita di `chiedi`, e `chiedi` fra le
-/// `skippable_dependencies`. Quando l'indice non risponde — il caso che quel
-/// flusso dichiara essere il più frequente — `chiedi` viene saltato e `leggi`
-/// riceve `{}` più il proprio `with`: i suoi puntatori non trovano niente.
-///
-/// Sciogliendo i rinvii **prima** della condizione, quel flusso passava da
-/// «completato» a «terminato con stato failed — `unresolved_reference`»,
-/// misurato col binario vero. Per questo la condizione si valuta sull'ingresso
-/// non ancora sciolto: **un passo che non gira non deve pagare i rinvii di un
-/// lavoro che non farà.**
-///
-/// Non si vedeva su quel flusso solo perché `verdetto`, nello stesso fronte, si
-/// rompe per primo e la corsa muore lì — cioè per un incidente, non per una
-/// proprietà. Qui la proprietà si interroga da sola.
-///
-/// **E LE DUE DIREZIONI, PERCHÉ UNA SOLA NON PROVEREBBE NIENTE**: con la
-/// condizione soddisfatta lo stesso passo gira **e** riceve i rinvii sciolti.
-/// Il mutante che scioglie prima della condizione fa cadere la prima metà; il
-/// mutante che non scioglie affatto fa cadere la seconda.
+/// A skipped step resolves nothing, and so does not break. Not a schoolbook
+/// case: `flows/chiedi-all-indice.flow.json` has step `leggi` with a `when` on
+/// `/status`, a `with` full of `$from` into the output of `chiedi`, and `chiedi`
+/// among its `skippable_dependencies`. Resolving before the condition took that
+/// flow, on the real binary, from "complete" to "failed —
+/// `unresolved_reference`".
 #[test]
 fn a_step_that_does_not_run_never_pays_for_its_references() {
     let graph = Graph::with_skippable_dependencies(
         vec![
-            step("guardia", &[], None),
-            step_only_when_ok("chiedi", &["guardia"], None, "/status"),
-            // Una dipendenza saltabile arriva **nominata**: l'ingresso è
-            // `{"chiedi": …}` quando c'è, e `{}` quando è stata saltata. Per
-            // questo il puntatore porta il nome del passo.
+            step("guard", &[], None),
+            step_only_when_ok("ask", &["guard"], None, "/status"),
+            // A skippable dependency arrives *named*: the input is
+            // `{"ask": …}` when it is there and `{}` when it was skipped, which
+            // is why the pointer carries the step's name.
             step_only_when_ok(
-                "leggi",
-                &["chiedi"],
-                Some(json!({"stdin": {"$from": "/chiedi/said"}})),
-                "/chiedi/status",
+                "read",
+                &["ask"],
+                Some(json!({"stdin": {"$from": "/ask/said"}})),
+                "/ask/status",
             ),
         ],
-        [flow::DependencyEdge::new("leggi", "chiedi")],
+        [flow::DependencyEdge::new("read", "ask")],
     )
-    .expect("grafo valido");
+    .expect("valid graph");
 
-    // L'indice non risponde: `chiedi` è saltato, `leggi` riceve `{}` più il
-    // proprio `with`, e il suo `$from` non trova niente. Deve essere saltato.
-    let (decisions, records) = run_and_read(&graph, "non-pronto");
+    // The index does not answer — the case that flow calls its most frequent.
+    // `ask` is skipped, `read` receives `{}` plus its own `with`, and its
+    // `$from` finds nothing: it must be skipped. The property needs a test of
+    // its own because on that flow the bug was masked — `verdetto`, in the same
+    // front, broke first and the run died there, so it was hidden by an
+    // accident rather than by a property.
+    let (decisions, records) = run_and_read(&graph, "not-ready");
     assert_eq!(
         decisions.last(),
         Some(&Decision::Complete),
-        "un passo saltato non è un rosso: {decisions:?}"
+        "a skipped step is not a red: {decisions:?}"
     );
-    for step_id in ["chiedi", "leggi"] {
+    for step_id in ["ask", "read"] {
         let outcome = closed_outcome(&records, step_id);
         assert_eq!(
             outcome,
             Some(Outcome::Skipped),
-            "«{step_id}» doveva essere saltato, non {outcome:?}"
+            "\"{step_id}\" should have been skipped, not {outcome:?}"
         );
     }
 
-    // E la direzione opposta: quando l'indice risponde, lo stesso passo gira e
-    // il rinvio gli arriva sciolto.
+    // And the opposite direction, because one alone would prove nothing: when
+    // the index answers, the same step runs *and* the reference arrives
+    // resolved. The mutant that resolves before the condition fails the half
+    // above; the mutant that never resolves at all fails this one.
     let (decisions, records) = run_and_read(&graph, "ok");
     assert_eq!(decisions.last(), Some(&Decision::Complete));
     let read = records
         .iter()
-        .find(|record| record.step_id == "leggi" && record.outcome == Some(Outcome::Went))
-        .expect("con l'indice pronto il passo gira");
+        .find(|record| record.step_id == "read" && record.outcome == Some(Outcome::Went))
+        .expect("with the index ready the step runs");
     assert_eq!(
         read.input["stdin"],
-        json!("la risposta dell'indice"),
-        "il rinvio doveva arrivare sciolto: {}",
+        json!("the index's answer"),
+        "the reference should have arrived resolved: {}",
         read.input
     );
 }
 
-/// Fa girare il grafo con quello che la guardia dichiara, e restituisce le
-/// decisioni e i record.
+/// Runs the graph with whatever the guard declares, and returns the decisions
+/// and the records.
 fn run_and_read(graph: &Graph, guard_says: &str) -> (Vec<Decision>, Vec<flow::StepRecord>) {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
-    actions.register("tiene-quel-che-riceve", KeepsWhatItGets(seen));
+    actions.register("keeps-what-it-gets", KeepsWhatItGets(seen));
     let mut store = InMemoryRecordStore::default();
     let mut root_inputs = BTreeMap::new();
     root_inputs.insert(
-        "guardia".to_owned(),
-        json!({"status": guard_says, "said": "la risposta dell'indice"}),
+        "guard".to_owned(),
+        json!({"status": guard_says, "said": "the index's answer"}),
     );
     let execution = InProcessExecutor
         .execute(
             graph,
             flow::ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs,
                 gates: vec![],
                 shared: SharedState::new(),
@@ -287,8 +255,8 @@ fn run_and_read(graph: &Graph, guard_says: &str) -> (Vec<Decision>, Vec<flow::St
             &actions,
             &Tick(AtomicI64::new(0)),
         )
-        .expect("la corsa non deve rompersi");
-    let records = store.records("corsa").expect("i record della corsa");
+        .expect("the run must not break");
+    let records = store.records("run").expect("the run's records");
     (execution.decisions, records)
 }
 
@@ -299,48 +267,35 @@ fn closed_outcome(records: &[flow::StepRecord], step_id: &str) -> Option<Outcome
         .find_map(|record| record.outcome.clone())
 }
 
-/// **UN PUNTATORE CHE NON TROVA NIENTE ROMPE QUEL PASSO — E SOLO QUELLO.**
-///
-/// È più forte di com'era su un lato e identico sull'altro, e tutti e due
-/// contano. Più forte: l'azione **non viene invocata**, mentre prima la
-/// risoluzione stava dentro `external_engine` e quindi il passo entrava
-/// nell'azione per morirci; le azioni che non risolvevano, invece, passavano
-/// l'oggetto al `serde` di turno e sbagliavano campo. Identico: il difetto resta
-/// **del passo**, si scrive nel deposito come un passo rotto, e la corsa arriva
-/// a `Failed` nominandolo.
-///
-/// **QUESTA SECONDA METÀ È UNA RIPARAZIONE, NON UN'OSSERVAZIONE.** Il primo
-/// tentativo di spostare la risoluzione qui propagava l'errore con un `?` da
-/// `execute`: la corsa moriva **senza aprire né chiudere niente**, nessun
-/// record, nessuna decisione, e un passo che per il deposito non era mai
-/// esistito. L'ha visto `dispatch_the_work`, che pretendeva
-/// `Failed(["verdict"])`.
-///
-/// Col mutante che toglie la risoluzione: nessun passo rotto, l'azione viene
-/// invocata e riceve l'oggetto — cade tutto.
+/// A pointer that finds nothing breaks that step, and only that one. Stronger
+/// than before on one side — the action is not invoked at all, where resolution
+/// inside `external_engine` had the step enter the action to die there — and
+/// identical on the other: the defect stays the step's. With the mutant that
+/// drops resolution: no broken step, the action is invoked and receives the
+/// object, and all of it falls.
 #[test]
 fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
     let graph = Graph::new(vec![
-        step("primo", &[], None),
+        step("first", &[], None),
         step(
-            "secondo",
-            &["primo"],
-            Some(json!({"stdin": {"$from": "/non/esiste"}})),
+            "second",
+            &["first"],
+            Some(json!({"stdin": {"$from": "/does/not/exist"}})),
         ),
     ])
-    .expect("grafo valido");
+    .expect("valid graph");
     let mut root_inputs = BTreeMap::new();
-    root_inputs.insert("primo".to_owned(), json!({"stdout": "qualcosa"}));
+    root_inputs.insert("first".to_owned(), json!({"stdout": "something"}));
 
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
-    actions.register("tiene-quel-che-riceve", KeepsWhatItGets(seen.clone()));
+    actions.register("keeps-what-it-gets", KeepsWhatItGets(seen.clone()));
     let mut store = InMemoryRecordStore::default();
     let execution = InProcessExecutor
         .execute(
             &graph,
             flow::ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs,
                 gates: vec![],
                 shared: SharedState::new(),
@@ -350,33 +305,43 @@ fn a_pointer_that_finds_nothing_breaks_that_step_and_only_that_one() {
             &actions,
             &Tick(AtomicI64::new(0)),
         )
-        .expect("un passo rotto non è un guasto della corsa");
+        .expect("a broken step is not a fault of the run");
 
+    // This half is a repair, not an observation. The first attempt propagated
+    // the error with a `?` out of `execute`: the run died opening and closing
+    // nothing — no record, no decision, and a step that for the store had never
+    // existed. `dispatch_the_work` caught it, demanding `Failed(["verdict"])`.
     assert_eq!(
         execution.decisions.last(),
-        Some(&Decision::Failed(vec!["secondo".to_owned()])),
-        "la corsa deve dire quale passo si è rotto: {:?}",
+        Some(&Decision::Failed(vec!["second".to_owned()])),
+        "the run must say which step broke: {:?}",
         execution.decisions
     );
     assert_eq!(
         seen.lock().unwrap_or_else(|held| held.into_inner()).len(),
         1,
-        "solo il primo passo doveva girare: il secondo non deve nemmeno essere invocato"
+        "only the first step should have run: the second must not even be invoked"
     );
 
     let broken = store
-        .records("corsa")
-        .expect("i record della corsa")
+        .records("run")
+        .expect("the run's records")
         .into_iter()
-        .find(|record| record.step_id == "secondo" && record.outcome == Some(Outcome::Broke))
-        .expect("il passo rotto sta nel deposito, o la ripresa non saprebbe dove ripartire");
-    assert_eq!(broken.failure_class.as_deref(), Some("unresolved_reference"));
+        .find(|record| record.step_id == "second" && record.outcome == Some(Outcome::Broke))
+        .expect("the broken step is in the store, or a resume would not know where to restart");
+    assert_eq!(
+        broken.failure_class.as_deref(),
+        Some("unresolved_reference")
+    );
     assert!(
-        broken.said.as_deref().is_some_and(|said| said.contains("/non/esiste")),
-        "il messaggio deve nominare il puntatore da correggere: {:?}",
+        broken
+            .said
+            .as_deref()
+            .is_some_and(|said| said.contains("/does/not/exist")),
+        "the message must name the pointer to fix: {:?}",
         broken.said
     );
-    // L'intenzione conserva il puntatore com'era scritto: chi legge il record
-    // deve vedere cosa correggere, non il vuoto che ne è uscito.
-    assert_eq!(broken.input["stdin"], json!({"$from": "/non/esiste"}));
+    // The intent keeps the pointer as it was written: whoever reads the record
+    // must see what to fix, not the hole it left.
+    assert_eq!(broken.input["stdin"], json!({"$from": "/does/not/exist"}));
 }

@@ -143,7 +143,10 @@ fn a_real_child_is_still_breathing_after_a_broken_build() {
     }
 
     let mut running = Some(Child(child));
-    assert!(ledger::pid_is_alive(pid), "il processo non è nemmeno partito");
+    assert!(
+        ledger::pid_is_alive(pid),
+        "il processo non è nemmeno partito"
+    );
 
     let outcome = rebuild_then_swap(
         &mut running,
@@ -153,15 +156,25 @@ fn a_real_child_is_still_breathing_after_a_broken_build() {
         || panic!("non si riavvia niente"),
     );
 
-    assert!(matches!(outcome, Rebuild::KeptRunning { .. }), "esito: {outcome:?}");
+    assert!(
+        matches!(outcome, Rebuild::KeptRunning { .. }),
+        "esito: {outcome:?}"
+    );
     assert!(
         ledger::pid_is_alive(pid),
         "il processo acceso è morto per una compilazione fallita: pid {pid}"
     );
 
     // E ora si spegne davvero, o questa prova lascerebbe l'orfano del guasto 4.
-    running.as_mut().expect("è ancora acceso").stop().expect("spegnerlo");
-    assert!(!ledger::pid_is_alive(pid), "resta acceso dopo lo stop: pid {pid}");
+    running
+        .as_mut()
+        .expect("è ancora acceso")
+        .stop()
+        .expect("spegnerlo");
+    assert!(
+        !ledger::pid_is_alive(pid),
+        "resta acceso dopo lo stop: pid {pid}"
+    );
 }
 
 static NEXT: AtomicU64 = AtomicU64::new(0);

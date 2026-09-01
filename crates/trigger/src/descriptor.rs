@@ -1,87 +1,83 @@
-//! Il formato del descrittore di un innesco e il suo caricamento.
+//! The shape of a trigger descriptor, and how it is loaded.
 //!
-//! **PERCHÉ NON RIUSA IL CARICATORE DEGLI STRUMENTI.** `toolbox::Catalog` fa
-//! gli stessi gesti — leggi in ordine, l'ultimo `id` vince, una riga sbagliata
-//! diventa una segnalazione invece di far sparire le altre — ma su un altro
-//! corpo. Renderlo generico sull'elemento è la cosa giusta da fare **quando ci
-//! sarà un terzo elenco**: farlo con due, oggi, costerebbe un parametro di tipo
-//! in ogni firma di quel crate per risparmiare cinquanta righe qui. Le regole
-//! sono scritte due volte, e questa riga è il legame fra le due copie: chi ne
-//! cambia una guardi l'altra.
+//! **WHY IT DOES NOT REUSE THE TOOL LOADER.** `toolbox::Catalog` makes the same
+//! gestures on another body. Making it generic over the item is the right move
+//! **when there is a third list**; doing it with two, today, would cost a type
+//! parameter in every signature of that crate to save fifty lines here.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Gli inneschi che il prodotto si porta dietro, incorporati nel binario: non
-/// c'è nessun percorso di installazione da indovinare, e restano dati — si
-/// riscrivono per `id`, si spengono con `disabled`.
+/// The triggers the product carries, compiled into the binary: no install path
+/// to guess, and they stay data — rewritten by `id`, switched off with
+/// `disabled`.
 pub const BUILTIN: &str = include_str!("../descriptors/default.json");
 
-pub const BUILTIN_SOURCE: &str = "incorporato";
+pub const BUILTIN_SOURCE: &str = "built-in";
 
-/// Da dove si prendono i descrittori.
+/// Where descriptors are taken from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     Builtin,
     File(PathBuf),
-    /// Ogni `*.json` dentro una cartella, in ordine di nome.
+    /// Every `*.json` inside a directory, in name order.
     Dir(PathBuf),
 }
 
-/// La forma di una sorgente di segnale. **Due, e il codice non ne conosce
-/// altre**: quale terminale, quale finestra, quale prodotto lo dicono i
-/// descrittori.
+/// The shape of a signal source. **Two, and the code knows no others**: which
+/// terminal, which window, which product is what the descriptors say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
-    /// Qualcuno preme e parte, portando un testo. Il segnale è già arrivato:
-    /// non c'è niente da attendere, e per questo è l'unica forma che oggi
-    /// funziona per davvero.
+    /// Somebody presses and it starts, carrying a text. The signal has already
+    /// arrived: there is nothing to wait for, which is why this is the only
+    /// shape that really works today.
     Manual,
-    /// Il segnale comparirebbe in una sessione di terminale. Oggi si dichiara
-    /// e non si ascolta: vedi `action`.
+    /// The signal would appear in a terminal session. Declared today, not
+    /// listened to: see `action`.
     Terminal,
 }
 
-/// Dove si vedrebbe comparire un segnale in una sessione di terminale.
+/// Where a signal would be seen appearing in a terminal session.
 ///
-/// **LE DUE FORME SONO MISURATE, NON IMMAGINATE** (28/08/2026, su questa
-/// macchina): o esiste un file che cresce e non viene mai riscritto, con una
-/// riga per messaggio, e allora si legge tenendo il punto raggiunto; oppure
-/// esiste un comando che, dato un cursore, stampa ciò che è comparso dopo, e
-/// allora si chiama quello. Ciò che *non* è una sorgente onesta è un registro
-/// di byte di terminale: sono ridisegni di schermo, non messaggi, e ricostruirne
-/// il testo vuol dire riscrivere un emulatore di terminale.
+/// **THE TWO SHAPES ARE MEASURED ON THIS MACHINE, NOT IMAGINED**: either a file
+/// grows and is never rewritten, one line per message, and then it is read
+/// keeping the point reached; or a command, given a cursor, prints what appeared
+/// after it, and then that command is what gets called.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Listen {
-    /// Un file in sola aggiunta: una riga JSON per messaggio.
+    /// An append-only file: one JSON line per message.
     AppendedLines {
-        /// I file da seguire. Ammettono `~/`, `$VAR` e `*`.
+        /// The files to follow. `~/`, `$VAR` and `*` are allowed.
         files: Vec<String>,
-        /// Dove sta il testo del messaggio dentro una riga.
+        /// Where the message text sits inside a line.
         text_pointer: Vec<String>,
-        /// Dove sta chi l'ha scritto. Vuoto: la sorgente non lo sa.
+        /// Where the writer sits. Empty: the source does not know.
         #[serde(default)]
         who_pointer: Vec<String>,
-        /// Dove sta la sessione o il pannello di provenienza.
+        /// Where the originating session or pane sits.
         #[serde(default)]
         where_pointer: Vec<String>,
     },
-    /// Un comando che stampa ciò che è comparso dopo un cursore.
+    /// A command that prints what appeared after a cursor.
+    ///
+    /// **A LOG OF TERMINAL BYTES IS NOT AN HONEST SOURCE**: those are screen
+    /// redraws, not messages, and rebuilding the text out of them means writing
+    /// a terminal emulator. Where only such a log exists, this is the road.
     CursorCommand {
-        /// L'identificativo dello strumento da invocare, non un binario: lo
-        /// stesso elenco che risolve i motori dei passi.
+        /// The tool's id, not a binary: the same list that resolves the engines
+        /// of the steps.
         tool: String,
         args: Vec<String>,
-        /// L'argomento in cui va scritto il cursore raggiunto.
+        /// The argument the reached cursor is written into.
         cursor_argument: String,
     },
 }
 
-/// Una riga dell'elenco delle sorgenti di segnale.
+/// One line of the signal-source list.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TriggerDescriptor {
@@ -89,13 +85,13 @@ pub struct TriggerDescriptor {
     pub kind: Kind,
     #[serde(default)]
     pub label: String,
-    /// Come si vedrebbe arrivare il segnale. Obbligatorio per un terminale,
-    /// vietato per un innesco manuale: un manuale che dichiara dove ascoltare
-    /// sta descrivendo due sorgenti diverse col nome di una.
+    /// How the signal would be seen arriving. Required for a terminal,
+    /// forbidden for a manual one: a manual that declares where to listen is
+    /// describing two different sources under one name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listen: Option<Listen>,
-    /// Per chi legge l'elenco: cosa si è misurato, cosa manca. Non entra in
-    /// nessuna decisione.
+    /// For whoever reads the list: what was measured, what is missing. It
+    /// enters no decision.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     #[serde(default)]
@@ -108,7 +104,7 @@ pub struct Loaded {
     pub source: String,
 }
 
-/// Qualcosa che non si è potuto caricare, col perché e col dove.
+/// Something that could not be loaded, with the why and the where.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Problem {
     pub source: String,
@@ -116,6 +112,10 @@ pub struct Problem {
     pub reason: String,
 }
 
+/// **THE RULES ARE WRITTEN TWICE, AND THIS IS THE TIE BETWEEN THE TWO COPIES.**
+/// The same three gestures as `toolbox::Catalog`: read in order, the last `id`
+/// wins, a wrong line becomes a report instead of making the others disappear.
+/// Whoever changes one of them should look at the other.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Catalog {
     pub descriptors: Vec<Loaded>,
@@ -131,14 +131,15 @@ impl Catalog {
                 Source::File(path) => catalog.absorb_file(path),
                 Source::Dir(dir) => {
                     let Ok(entries) = fs::read_dir(dir) else {
-                        // Una cartella che non c'è è il caso normale di chi non
-                        // ha mai aggiunto un innesco suo; una che c'è e non si
-                        // legge è un guasto, e si distinguono guardando il disco.
+                        // A directory that is not there is the ordinary case of
+                        // somebody who never added a trigger; one that is there
+                        // and will not open is a fault, and the disk tells them
+                        // apart.
                         if dir.exists() {
                             catalog.problems.push(Problem {
                                 source: dir.to_string_lossy().into_owned(),
-                                about: "la cartella".to_string(),
-                                reason: "non si è potuta leggere".to_string(),
+                                about: "the directory".to_string(),
+                                reason: "could not be read".to_string(),
                             });
                         }
                         continue;
@@ -164,22 +165,22 @@ impl Catalog {
             Ok(text) => self.absorb(&label, &text),
             Err(error) => self.problems.push(Problem {
                 source: label,
-                about: "il file".to_string(),
-                reason: format!("non si è potuto leggere: {error}"),
+                about: "the file".to_string(),
+                reason: format!("could not be read: {error}"),
             }),
         }
     }
 
-    /// Il testo si legge due volte di proposito: elemento per elemento, così
-    /// una virgola sbagliata in fondo non cancella gli inneschi buoni sopra.
+    /// The text is read twice on purpose: item by item, so a stray comma at the
+    /// end does not wipe out the good triggers above it.
     fn absorb(&mut self, source: &str, text: &str) {
         let value: Value = match serde_json::from_str(text) {
             Ok(value) => value,
             Err(error) => {
                 self.problems.push(Problem {
                     source: source.to_string(),
-                    about: "il file".to_string(),
-                    reason: format!("non è JSON valido: {error}"),
+                    about: "the file".to_string(),
+                    reason: format!("is not valid JSON: {error}"),
                 });
                 return;
             }
@@ -203,7 +204,7 @@ impl Catalog {
                 .get("id")
                 .and_then(Value::as_str)
                 .map(str::to_string)
-                .unwrap_or_else(|| format!("la voce numero {}", index + 1));
+                .unwrap_or_else(|| format!("entry number {}", index + 1));
             let descriptor: TriggerDescriptor = match serde_json::from_value(item.clone()) {
                 Ok(descriptor) => descriptor,
                 Err(error) => {
@@ -233,8 +234,8 @@ impl Catalog {
     fn malformed(&mut self, source: &str) {
         self.problems.push(Problem {
             source: source.to_string(),
-            about: "il file".to_string(),
-            reason: "non contiene né un array né un campo `triggers`".to_string(),
+            about: "the file".to_string(),
+            reason: "holds neither an array nor a `triggers` field".to_string(),
         });
     }
 
@@ -249,8 +250,8 @@ impl Catalog {
         }
     }
 
-    /// Quelli accesi, in ordine stabile per `id`: due letture di seguito devono
-    /// dare la stessa sequenza, o l'elenco mostrato non si può confrontare.
+    /// The live ones, in stable `id` order: two reads in a row must give the
+    /// same sequence, or the list shown cannot be compared with anything.
     pub fn live(&self) -> Vec<&Loaded> {
         let mut out: Vec<&Loaded> = self
             .descriptors
@@ -267,8 +268,9 @@ impl Catalog {
             .find(|loaded| loaded.descriptor.id == id)
     }
 
-    /// Gli `id` accesi, per il messaggio di chi ne ha chiesto uno che non c'è:
-    /// un errore che non dice quali esistono costringe a cercare il file.
+    /// The live `id`s, for the message given to whoever asked for one that is
+    /// not there: an error that does not say which exist forces a hunt through
+    /// the file.
     pub fn known(&self) -> Vec<String> {
         self.live()
             .into_iter()
@@ -277,17 +279,16 @@ impl Catalog {
     }
 }
 
-/// Un descrittore che dichiara una forma e ne descrive un'altra non si carica:
-/// il giorno in cui qualcuno lo scrive è l'unico giorno in cui è facile
-/// accorgersene.
+/// A descriptor that declares one shape and describes another does not load:
+/// the day somebody writes it is the only day it is easy to notice.
 fn coherent(descriptor: &TriggerDescriptor) -> Result<(), String> {
     match (descriptor.kind, descriptor.listen.is_some()) {
         (Kind::Manual, true) => Err(
-            "un innesco manuale porta il segnale con sé: non può dichiarare anche dove ascoltare"
+            "a manual trigger carries the signal with it: it cannot also declare where to listen"
                 .to_string(),
         ),
         (Kind::Terminal, false) => Err(
-            "un innesco da terminale deve dire dove si vedrebbe comparire il segnale: manca `listen`"
+            "a terminal trigger must say where the signal would be seen appearing: `listen` is missing"
                 .to_string(),
         ),
         _ => Ok(()),
@@ -303,20 +304,20 @@ mod tests {
         let catalog = Catalog::load(&[Source::Builtin]);
         assert!(
             catalog.problems.is_empty(),
-            "i descrittori spediti non si leggono: {:?}",
+            "the shipped descriptors do not read: {:?}",
             catalog.problems
         );
         assert!(!catalog.live().is_empty());
     }
 
-    /// L'innesco manuale è quello su cui si regge la finestra: se sparisce dai
-    /// descrittori spediti, il pulsante di lancio non ha più una sorgente.
+    /// The manual trigger is what the window rests on: if it disappeared from
+    /// the shipped descriptors, the launch button would have no source left.
     #[test]
     fn a_manual_source_is_shipped_with_the_product() {
         let catalog = Catalog::load(&[Source::Builtin]);
         let manual = catalog
             .find("manual")
-            .expect("l'innesco manuale è spedito col prodotto");
+            .expect("the manual trigger ships with the product");
         assert_eq!(manual.descriptor.kind, Kind::Manual);
     }
 
@@ -342,8 +343,8 @@ mod tests {
         assert_eq!(catalog.problems.len(), 1);
     }
 
-    /// Una riga sbagliata non cancella quelle buone: senza questa regola un
-    /// elenco parziale sembrerebbe vuoto, che è peggio.
+    /// One broken line does not delete the good ones: without this rule a
+    /// partial list would look empty, which is worse.
     #[test]
     fn a_broken_entry_does_not_take_the_good_ones_with_it() {
         let mut catalog = Catalog::default();
@@ -357,13 +358,19 @@ mod tests {
         assert_eq!(catalog.problems[0].about, "rotto");
     }
 
-    /// Lo stesso `id` scritto due volte: vince l'ultimo caricato, ed è così che
-    /// un utente riscrive un innesco spedito senza cancellarlo.
+    /// The same `id` written twice: the last loaded wins, and that is how
+    /// somebody rewrites a shipped trigger without deleting it.
     #[test]
     fn the_last_descriptor_with_an_id_wins() {
         let mut catalog = Catalog::default();
-        catalog.absorb("spedito", r#"[{"id": "x", "kind": "manual", "label": "primo"}]"#);
-        catalog.absorb("mio", r#"[{"id": "x", "kind": "manual", "label": "secondo"}]"#);
+        catalog.absorb(
+            "spedito",
+            r#"[{"id": "x", "kind": "manual", "label": "primo"}]"#,
+        );
+        catalog.absorb(
+            "mio",
+            r#"[{"id": "x", "kind": "manual", "label": "secondo"}]"#,
+        );
         assert_eq!(catalog.live().len(), 1);
         assert_eq!(catalog.live()[0].descriptor.label, "secondo");
         assert_eq!(catalog.live()[0].source, "mio");
@@ -373,7 +380,10 @@ mod tests {
     fn a_disabled_descriptor_disappears_from_the_live_list() {
         let mut catalog = Catalog::default();
         catalog.absorb("spedito", r#"[{"id": "x", "kind": "manual"}]"#);
-        catalog.absorb("mio", r#"[{"id": "x", "kind": "manual", "disabled": true}]"#);
+        catalog.absorb(
+            "mio",
+            r#"[{"id": "x", "kind": "manual", "disabled": true}]"#,
+        );
         assert!(catalog.live().is_empty());
         assert!(catalog.known().is_empty());
     }

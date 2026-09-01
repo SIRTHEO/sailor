@@ -73,8 +73,7 @@ pub fn run(args: &[String]) -> i32 {
 /// `sailor --help`. È il guasto 10 in miniatura: l'elenco vero è
 /// `release::TARGETS`, e chi sbaglia nome se lo sente dire da `target_names()`
 /// con la tabella di adesso, non con quella di allora.
-pub const USAGE: &[&str] =
-    &["sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]"];
+pub const USAGE: &[&str] = &["sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]"];
 
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
@@ -235,9 +234,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         stamp_left_behind(selected.stamp_rel).unwrap_or_else(|| stamp.clone())
     };
     if live.is_file() && files_equal(&fresh, &live)? {
-        println!(
-            "== nothing to do: the binary in service already matches HEAD ({head_short}) =="
-        );
+        println!("== nothing to do: the binary in service already matches HEAD ({head_short}) ==");
         if !options.dry_run {
             write_stamp(&stamp, &source_rev, &head_short);
         }
@@ -282,7 +279,9 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         if !wait_until_ready(&root, service, 0)? {
             let domain = service_domain(service);
             println!("sailor release: release postponed: the service has started another job; the new binary and the stamp are in place, but the service is still running the old one.");
-            println!("   When that job ends, close the release with: launchctl kickstart -k {domain}");
+            println!(
+                "   When that job ends, close the release with: launchctl kickstart -k {domain}"
+            );
             return Ok(3);
         }
         restart_service(service);
@@ -312,8 +311,7 @@ const TEST_DID_NOT_RUN: &str = "TEST DID NOT RUN";
 /// binary by absolute path, so installing elsewhere leaves the old one in
 /// service with nobody noticing.
 fn install_root() -> Result<PathBuf, String> {
-    ledger::sailor_home()
-        .ok_or_else(|| "no house to install into: HOME is not set".to_owned())
+    ledger::sailor_home().ok_or_else(|| "no house to install into: HOME is not set".to_owned())
 }
 
 /// The stamp left in the previous house, if this house has none yet.
@@ -501,10 +499,10 @@ fn print_tail(contents: &[u8], count: usize) {
 }
 
 fn files_equal(left: &Path, right: &Path) -> Result<bool, String> {
-    let left_file = File::open(left)
-        .map_err(|error| format!("cannot read {}: {error}", left.display()))?;
-    let right_file = File::open(right)
-        .map_err(|error| format!("cannot read {}: {error}", right.display()))?;
+    let left_file =
+        File::open(left).map_err(|error| format!("cannot read {}: {error}", left.display()))?;
+    let right_file =
+        File::open(right).map_err(|error| format!("cannot read {}: {error}", right.display()))?;
     let left_len = left_file
         .metadata()
         .map_err(|error| format!("cannot measure {}: {error}", left.display()))?
@@ -624,10 +622,7 @@ fn receipt_names(directory: &Path) -> Result<Vec<String>, String> {
     let mut names = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
-            format!(
-                "cannot read a receipt in {}: {error}",
-                directory.display()
-            )
+            format!("cannot read a receipt in {}: {error}", directory.display())
         })?;
         names.push(entry.file_name().to_string_lossy().into_owned());
     }
@@ -883,13 +878,8 @@ mod tests {
     #[test]
     fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
         let declared_home = Some(OsString::from("/casa/di-chiunque"));
-        let sources = root_under(
-            None,
-            declared_home,
-            SOURCES_BELOW_HOME,
-            "SAILOR_SOURCES",
-        )
-        .unwrap();
+        let sources =
+            root_under(None, declared_home, SOURCES_BELOW_HOME, "SAILOR_SOURCES").unwrap();
         let home = ledger::sailor_home_in(None, None, PathBuf::from("/casa/di-chiunque"));
         assert_ne!(sources, home);
         assert!(home.ends_with(".config/sailor"), "{home:?}");
