@@ -23,11 +23,18 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// Le forme di `sailor models`, una per riga. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &[
+    "sailor models list [--free-only] [--paid-only] [--modality text|image|audio|video] [--min-context N]",
+    "sailor models current <genere>",
+    "sailor models set <genere> <model-id>",
+];
+
 fn print_usage() {
     eprintln!("uso:");
-    eprintln!("  sailor models list [--free-only] [--paid-only] [--modality text|image|audio|video] [--min-context N]");
-    eprintln!("  sailor models current <genere>");
-    eprintln!("  sailor models set <genere> <model-id>");
+    for line in USAGE {
+        eprintln!("  {line}");
+    }
 }
 
 fn load_catalog() -> Result<Catalog, String> {

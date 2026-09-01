@@ -6,7 +6,7 @@
 //! perdere precisione oltre 2^53), quindi qui si accetta sia stringa sia
 //! numero.
 
-use ledger::{ModelCallRecord, RunRecord};
+use ledger::{EngineIdentity, ModelCallRecord, RunRecord};
 use serde_json::Value;
 
 pub fn parse_runs(dump: &Value) -> Vec<RunRecord> {
@@ -65,29 +65,33 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         input_price_micros_per_million: opt_i64_at(cols, 12),
         output_price_micros_per_million: opt_i64_at(cols, 13),
         cached_price_micros_per_million: opt_i64_at(cols, 14),
-        mandate_name: str_at(cols, 15)?,
-        mandate_version: str_at(cols, 16)?,
-        retry_chain: retry_chain_at(cols, 17),
-        error_type: opt_str_at(cols, 18),
-        started_at: i64_at(cols, 19)?,
-        ended_at: opt_i64_at(cols, 20),
+        // Versione 8: con quale identità il processo è partito. Un testo che non
+        // è il nostro JSON — cioè una riga scritta prima — non fa cadere la
+        // riga: diventa `Unrecorded`, che è ciò che quella riga è.
+        engine_identity: opt_str_at(cols, 15)
+            .map(|text| EngineIdentity::from_column(&text))
+            .unwrap_or_default(),
+        retry_chain: retry_chain_at(cols, 16),
+        error_type: opt_str_at(cols, 17),
+        started_at: i64_at(cols, 18)?,
+        ended_at: opt_i64_at(cols, 19),
         // Le colonne nate dopo stanno in coda, nell'ordine in cui sono nate: un
         // deposito più vecchio non le ha, e la riga si legge lo stesso.
         // Versione 4:
-        total_tokens: u64_at(cols, 21),
-        declared_cost_micros: opt_i64_at(cols, 22),
+        total_tokens: u64_at(cols, 20),
+        declared_cost_micros: opt_i64_at(cols, 21),
         // Versione 5, la cache scritta — la voce che mancava e che su una
         // chiamata misurata valeva il 96% della spesa:
-        cache_write_tokens: u64_at(cols, 23),
-        cache_write_long_tokens: u64_at(cols, 24),
-        cache_write_price_micros_per_million: opt_i64_at(cols, 25),
-        cache_write_long_price_micros_per_million: opt_i64_at(cols, 26),
+        cache_write_tokens: u64_at(cols, 22),
+        cache_write_long_tokens: u64_at(cols, 23),
+        cache_write_price_micros_per_million: opt_i64_at(cols, 24),
+        cache_write_long_price_micros_per_million: opt_i64_at(cols, 25),
         // Versione 6, i turni: la quantita' che spiega perche' una catena di
         // passi costa piu' di una sessione sola.
-        turns: u64_at(cols, 27),
+        turns: u64_at(cols, 26),
         // Versione 7, la sessione: il dato che permette a un passo di
         // riprendere invece di riscoprire.
-        session_id: opt_str_at(cols, 28),
+        session_id: opt_str_at(cols, 27),
     })
 }
 
@@ -137,12 +141,72 @@ mod tests {
             "model_calls": [[
                 "call-1", "run-1", "scan_markers", "classifica", "claude",
                 "sonnet", "claude-sonnet-5", "100", "50", "10", 500, "USD",
-                3_000_000, 15_000_000, 300_000, "prova", "1",
+                3_000_000, 15_000_000, 300_000,
+                "{\"kind\":\"inherited_from_the_terminal\",\"cli_id\":\"claude\"}",
                 "[\"call-0\"]", Value::Null, 1001, 1009, Value::Null, Value::Null
             ]],
             "steps": [],
             "snapshots": []
         })
+    }
+
+    /// **L'ANCORA FUORI DA CHI LEGGE PER POSIZIONE.**
+    ///
+    /// Ogni indice qui sotto è un numero scritto a mano in
+    /// `parse_model_call_row`, e un numero scritto a mano si sposta quando una
+    /// colonna nasce o muore. Finché a leggere il dump c'erano **due** copie di
+    /// questa funzione — una qui e una dentro `actions` — una colonna spostata
+    /// poteva restare verde in tutte e due: sbagliavano insieme e si
+    /// confermavano a vicenda. La copia dentro `actions` non c'è più, e questa
+    /// prova misura ciò che resta contro l'elenco che il deposito dichiara,
+    /// `ledger::MODEL_CALL_DUMP_COLUMNS`, che non è né l'una né l'altra.
+    ///
+    /// *Mutante eseguito*: vedi la consegna — spostare un indice qui rende rossa
+    /// questa prova prima che un prezzo compaia al posto di un token.
+    #[test]
+    fn every_position_this_file_reads_is_the_column_the_ledger_dumps() {
+        let dumped: Vec<&str> = ledger::MODEL_CALL_DUMP_COLUMNS.split(',').collect();
+        for (index, name) in [
+            (0, "call_id"),
+            (1, "run_id"),
+            (2, "step_id"),
+            (3, "purpose"),
+            (4, "cli"),
+            (5, "requested_model"),
+            (6, "actual_model"),
+            (7, "input_tokens"),
+            (8, "output_tokens"),
+            (9, "cached_tokens"),
+            (10, "cost_micros"),
+            (11, "price_currency"),
+            (12, "input_price_micros_per_million"),
+            (13, "output_price_micros_per_million"),
+            (14, "cached_price_micros_per_million"),
+            (15, "engine_identity"),
+            (16, "retry_chain"),
+            (17, "error_type"),
+            (18, "started_at"),
+            (19, "ended_at"),
+            (20, "total_tokens"),
+            (21, "declared_cost_micros"),
+            (22, "cache_write_tokens"),
+            (23, "cache_write_long_tokens"),
+            (24, "cache_write_price_micros_per_million"),
+            (25, "cache_write_long_price_micros_per_million"),
+            (26, "turns"),
+            (27, "session_id"),
+        ] {
+            assert_eq!(
+                dumped.get(index).copied(),
+                Some(name),
+                "la posizione {index} non è più «{name}»: gli indici di questo file leggono un'altra colonna"
+            );
+        }
+        assert_eq!(
+            dumped.len(),
+            28,
+            "il deposito versa una colonna che questo file non legge"
+        );
     }
 
     #[test]
@@ -170,6 +234,36 @@ mod tests {
         assert_eq!(call.retry_chain, vec!["call-0".to_owned()]);
         assert_eq!(call.step_id, Some("scan_markers".to_owned()));
         assert_eq!(call.error_type, None);
+    }
+
+    /// La colonna dell'identità torna nella forma che porta, non in un testo.
+    #[test]
+    fn the_identity_column_comes_back_as_the_shape_it_carries() {
+        let calls = parse_model_calls(&dump_with_one_run_and_one_call());
+        assert_eq!(
+            calls[0].engine_identity,
+            EngineIdentity::InheritedFromTheTerminal {
+                cli_id: "claude".to_owned()
+            }
+        );
+    }
+
+    /// **UNA RIGA SCRITTA PRIMA NON DIVENTA UN PROFILO DICHIARATO.** In quella
+    /// colonna c'era `<cli>/<profilo>`, e quel testo nominava il profilo attivo
+    /// anche quando il passo l'aveva scavalcato: promuoverlo adesso a
+    /// `ProfileInForce` darebbe a una bugia vecchia la faccia di una misura
+    /// nuova. Il testo si conserva, l'affermazione no.
+    #[test]
+    fn an_old_identity_column_is_kept_as_text_and_not_promoted() {
+        let mut dump = dump_with_one_run_and_one_call();
+        dump["model_calls"][0][15] = json!("codex/lavoro");
+        let calls = parse_model_calls(&dump);
+        assert_eq!(
+            calls[0].engine_identity,
+            EngineIdentity::Unrecorded {
+                legacy: "codex/lavoro".to_owned()
+            }
+        );
     }
 
     #[test]
@@ -202,14 +296,14 @@ mod tests {
     #[test]
     fn the_two_newest_columns_are_read_and_their_absence_is_not_fatal() {
         let mut dump = dump_with_one_run_and_one_call();
-        dump["model_calls"][0][21] = json!("13910");
-        dump["model_calls"][0][22] = json!(42_000);
+        dump["model_calls"][0][20] = json!("13910");
+        dump["model_calls"][0][21] = json!(42_000);
         let calls = parse_model_calls(&dump);
         assert_eq!(calls[0].total_tokens, Some(13_910));
         assert_eq!(calls[0].declared_cost_micros, Some(42_000));
 
         let mut older = dump_with_one_run_and_one_call();
-        older["model_calls"][0].as_array_mut().unwrap().truncate(21);
+        older["model_calls"][0].as_array_mut().unwrap().truncate(20);
         let calls = parse_model_calls(&older);
         assert_eq!(calls.len(), 1, "un dump più vecchio si legge lo stesso");
         assert_eq!(calls[0].total_tokens, None);
