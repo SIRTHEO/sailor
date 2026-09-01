@@ -3,8 +3,15 @@ import stylesheetSource from "./styles.css?raw";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
-import type { Step, StepRun } from "./flow";
-import { StepNode, StepRunContext, StepUsageContext, type StepNodeData } from "./StepNode";
+import type { Step, StepKind, StepRun } from "./flow";
+import {
+  formatElapsed,
+  KIND_LABEL,
+  StepNode,
+  StepRunContext,
+  StepUsageContext,
+  type StepNodeData,
+} from "./StepNode";
 import { STEP_WIDTH } from "./layout";
 import { parseStylesheet, styleTree, type Stylesheet } from "./contrast";
 import type { StepUsage } from "./stepusage";
@@ -226,53 +233,25 @@ describe("il nodo e il motore che lo esegue", () => {
 });
 
 /**
- * **LA TESTATA NON PUÒ CANCELLARE IL GENERE DEL NODO.**
+ * **NO ROW OF A NODE MAY DROP ONE OF ITS PIECES.**
  *
- * La testata porta due cose, e il commento che la introduce lo dichiara: *che
- * cosa sei* e *come stai*. La riparazione del traboccamento ha salvato la
- * seconda e ha cancellato la prima. `min-width: 0` più `overflow: hidden` su un
- * elemento flessibile non lo accorcia: lo **azzera**. Misurato in Chrome vero
- * sui dieci flussi di `flows/`, il 01/09/2026, con `chiedi` e `leggi` di
- * `chiedi-all-indice` in «aspetta una persona»: due nodi su 52 con
- * `clientWidth 0`, cioè `GESTO` e `AGENTE` spariti senza lasciare nemmeno
- * un'ellissi.
- *
- * I tre numeri qui sotto vengono da quella misura, presi col carattere vero:
- * si rifanno mettendo `flows/` al posto di `sample.ts`, aprendo la tela e
- * leggendo `scrollWidth` dei tre pezzi della testata.
- *
- * **PERCHÉ NON BASTA `text-overflow`.** Un'ellissi ha bisogno di una scatola
- * larga almeno un carattere; su una scatola che vale 0 non disegna niente.
- *
- * **QUALE DEI DUE PEZZI PORTA LA CURA, MISURATO SPEGNENDONE UNO ALLA VOLTA** —
- * in Chrome, sui 52 nodi, il 01/09/2026:
- *
- *  - **il wrap da solo basta**: con `min-width: 0` e la testata che va a capo,
- *    zero generi azzerati, zero troncati, zero parole di stato fuori dal nodo;
- *  - **il fondo da solo non basta**: con `nowrap` il genere sopravvive, ma il
- *    danno si sposta — la parola di stato esce di **40,5px** dal bordo del
- *    nodo (52,5px dal bordo interno della testata) su `chiedi` e `leggi`;
- *  - **senza nessuno dei due** si torna al difetto d'origine: 2 generi
- *    azzerati, 2 troncati.
- *
- * Il pezzo che porta la cura è quindi il **wrap**. Il fondo in `ch` è difesa in
- * avanti, e legittima: tiene il genere leggibile su una macchina dove
- * `--font-display` non c'è e il ripiego è più largo, dove il wrap da solo
- * comincerebbe ad accorciare. Questa prova interroga tutt'e due, e il perché è
- * diverso per ciascuno.
+ * A flexible box that runs out of room does not shorten a label, it flattens it
+ * to zero width — and an ellipsis needs a box at least one character wide, so
+ * nothing is left behind to show that something went. It happened once to the
+ * species in the head; the row that can overflow now is the foot.
  */
-describe("la testata dice sempre CHE COSA SEI, non solo come stai", () => {
+describe("a row gives up a line, never a fact", () => {
   let sheet: Stylesheet;
 
   beforeAll(() => {
     sheet = parseStylesheet(stylesheetSource);
   });
 
-  /** Le dichiarazioni che il browser darebbe a un pezzo della testata. */
+  /** Le dichiarazioni che il browser darebbe a un pezzo del nodo. */
   function declarationsOf(selector: string): Map<string, string> {
     const node = mountNode({}, new Map());
     const element = node.matches(selector) ? node : node.querySelector(selector);
-    expect(element, `manca ${selector} nella testata`).not.toBeNull();
+    expect(element, `manca ${selector}`).not.toBeNull();
     const style = styleTree(document.documentElement, sheet).get(element as Element);
     expect(style, `manca lo stile calcolato di ${selector}`).toBeDefined();
     return (style as { declarations: Map<string, string> }).declarations;
@@ -288,37 +267,134 @@ describe("la testata dice sempre CHE COSA SEI, non solo come stai", () => {
     expect(Number.parseFloat(String(floor))).toBeGreaterThan(0);
   });
 
-  test("QUANDO LE TRE PAROLE NON CI STANNO SU UNA RIGA, LA TESTATA VA A CAPO", () => {
-    // Le tre larghezze misurate in Chrome, col carattere della testata.
-    const GENDER = 40; // «AGENTE», il genere del nodo che è sparito per primo
-    const WHEN = 72; // «CONDIZIONATO»
-    const STATE = 133; // «ASPETTA UNA PERSONA», la parola di stato più lunga
+  test("THE FOOT WRAPS, because its four pieces ask for more than it has", () => {
+    // Measured in Chrome on 2026-09-01, with the real faces, on a node forced
+    // into its widest foot: «aspetta una persona», a pid, a third attempt and a
+    // duration. Redo them by widening one node's foot in the inspector.
+    const STATE = 133; // «aspetta una persona», the longest outcome word
+    const PID = 65; // «pid 41822»
+    const ATTEMPT = 59; // «3ª di 3»
+    const ELAPSED = 72; // «2 min 14 s»
 
     const node = declarationsOf(".step-node");
-    const head = declarationsOf(".step-node__head");
+    const foot = declarationsOf(".step-node__foot");
     const number = (value: string | undefined, what: string) => {
       const parsed = Number.parseFloat(String(value));
       expect(`${what}=${String(value)}`).toMatch(/=\d/);
       return parsed;
     };
 
-    // La larghezza utile dentro la testata: il nodo meno i suoi due fili e meno
-    // il proprio respiro. Tutto letto dal foglio, niente ricopiato.
     const borders =
       number(node.get("border"), "il filo del nodo") +
       number(node.get("border-left"), "il filo di stato del nodo");
-    const padding = number(String(head.get("padding")).split(/\s+/)[1], "il respiro della testata");
-    const gap = number(head.get("gap"), "lo stacco fra i pezzi della testata");
+    const padding = number(String(foot.get("padding")).split(/\s+/)[1], "il respiro del fondo");
+    const gap = number(foot.get("gap"), "lo stacco fra i pezzi del fondo");
     const room = STEP_WIDTH - borders - padding * 2;
-    const wanted = GENDER + WHEN + STATE + gap * 2;
+    const wanted = STATE + PID + ATTEMPT + ELAPSED + gap * 3;
 
-    // Se ci stessero, non ci sarebbe niente da chiedere. Non ci stanno — 261
-    // contro 220 — ed è per questo che qualcosa deve cedere: o va a capo, o
-    // sparisce, e sparire è il difetto.
+    // If they fitted there would be nothing to ask for. They do not — 353
+    // against 220 — so a row has to give: either it wraps, or a fact vanishes.
     expect(wanted).toBeGreaterThan(room);
     expect(
-      head.get("flex-wrap"),
-      `genere, «condizionato» e stato chiedono ${wanted}px e la testata ne ha ${room}: senza andare a capo, il genere si azzera`,
+      foot.get("flex-wrap"),
+      `stato, pid, tentativo e durata chiedono ${wanted}px e il fondo ne ha ${room}: senza andare a capo, uno sparisce`,
     ).toBe("wrap");
+  });
+});
+
+/**
+ * **THE OUTCOME AND HOW LONG IT TOOK, SIDE BY SIDE.**
+ *
+ * The duration is the one number that says whether a step is the slow one, and
+ * the node had no room for it at all. What it must never do is print one it was
+ * not given: on a canvas a plausible zero is read as a measurement.
+ */
+describe("how long the step took", () => {
+  test("under ten seconds a tenth is the difference that matters", () => {
+    expect(formatElapsed(0.2)).toBe("0,2 s");
+    expect(formatElapsed(6)).toBe("6,0 s");
+  });
+
+  test("over ten seconds nobody compares tenths", () => {
+    expect(formatElapsed(47)).toBe("47 s");
+    expect(formatElapsed(134)).toBe("2 min 14 s");
+    expect(formatElapsed(3900)).toBe("1 h 5 min");
+  });
+
+  test("the node prints the duration the run carries", () => {
+    mountNode(
+      {},
+      new Map([
+        [
+          "sviluppa-sailor::implementa",
+          { step_id: "implementa", state: "went", attempt: 1, elapsed_secs: 0.2 },
+        ],
+      ]),
+    );
+    expect(screen.getByText("0,2 s")).toBeDefined();
+  });
+
+  test("A DURATION NOBODY MEASURED LEAVES NO SLOT, and never becomes zero", () => {
+    // `elapsed_secs` is optional and, on a real run, always absent: nothing
+    // turns the two event instants into it yet. A `0,0 s` here would be a
+    // measurement invented on the face of the node.
+    const node = mountNode({}, new Map([["sviluppa-sailor::implementa", runIn("went")]]));
+    expect(node.querySelector(".step-node__elapsed")).toBeNull();
+  });
+});
+
+/**
+ * **THE SPECIES IS A SHAPE BEFORE IT IS A WORD, AND NEVER INSTEAD OF IT.**
+ *
+ * Nine kinds all wearing the same head is the state the canvas was in: every
+ * node said VERIFICA. The glyph tells them apart at a glance — but on its own a
+ * glyph is colour by another name (prohibition 5), so the word stays.
+ */
+describe("the species of a node", () => {
+  test("every kind carries its own glyph", () => {
+    const drawn = new Set<string>();
+    for (const kind of Object.keys(KIND_LABEL) as StepKind[]) {
+      const node = mountNode({ kind }, new Map());
+      const glyph = node.querySelector(".step-node__icon svg");
+      expect(glyph, `«${KIND_LABEL[kind]}» has no glyph`).not.toBeNull();
+      drawn.add((glyph as SVGElement).innerHTML);
+      cleanup();
+    }
+    expect(drawn.size, "two kinds share a glyph").toBe(Object.keys(KIND_LABEL).length);
+  });
+
+  test("the glyph never travels alone: the word is beside it", () => {
+    const node = mountNode({ kind: "deposit" }, new Map());
+    const head = node.querySelector(".step-node__head") as HTMLElement;
+    expect(head.querySelector(".step-node__icon")).not.toBeNull();
+    expect(head.querySelector(".step-node__kind")?.textContent).toBe(KIND_LABEL.deposit);
+  });
+
+  test("the glyph is hidden from anyone reading the tree, because the word is not", () => {
+    const node = mountNode({ kind: "deposit" }, new Map());
+    expect(node.querySelector(".step-node__icon")?.getAttribute("aria-hidden")).toBe("true");
+  });
+});
+
+/**
+ * **WHAT SITS WHERE, AND WHY IT IS NOT DECORATION.**
+ *
+ * From far the node draws only its head and its foot. So the head has to carry
+ * both halves of «which step is this» — the species and the name — and the foot
+ * has to carry the outcome. Move the name into the body and, at the zoom the
+ * window opens at, the canvas becomes a grid of nameless plates.
+ */
+describe("the two rows that survive the far zoom", () => {
+  test("the head carries the species AND the name", () => {
+    const node = mountNode({}, new Map());
+    const head = node.querySelector(".step-node__head") as HTMLElement;
+    expect(head.querySelector(".step-node__kind")).not.toBeNull();
+    expect(head.querySelector(".step-node__id")?.textContent).toBe("implementa");
+  });
+
+  test("the foot carries the outcome, once", () => {
+    const node = mountNode({}, new Map());
+    expect(node.querySelector(".step-node__foot .step-node__state")).not.toBeNull();
+    expect(node.querySelectorAll(".step-node__state").length).toBe(1);
   });
 });
