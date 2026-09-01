@@ -1,7 +1,7 @@
 //! Dove sta la radice del progetto, e cosa il progetto dichiara di sé.
 //!
-//! **PERCHÉ ESISTE.** Il guasto 25: `flows/sviluppa-sailor.flow.json` aveva
-//! `"workdir": "/home/someone/personal/sailor"` scritto in chiaro su sette passi.
+//! **PERCHÉ ESISTE.** Il guasto 25: `flows/sviluppa-sailor.flow.json` aveva la
+//! casa di chi scriveva come `"workdir"`, in chiaro su sette passi.
 //! Lanciato da un clone lavorava — e commetteva — nel repository principale,
 //! senza dire niente. Un flusso non deve sapere dove sta il repository: la
 //! radice viene da chi lancia, e un percorso assoluto dentro un flusso è un

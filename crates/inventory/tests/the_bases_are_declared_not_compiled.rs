@@ -7,9 +7,9 @@
 //! sapere quale. `repos_under` incontrava una cartella illeggibile, faceva
 //! `continue`, e restituiva un elenco più corto con uscita 0.
 //!
-//! Su questa macchina non si vedeva, perché le due basi erano
-//! `~/other-repo/work` e `~/personal` **compilate dentro il binario** e su questa
-//! macchina esistono. Su qualunque altra, l'inventario avrebbe risposto «zero
+//! Su questa macchina non si vedeva, perché le due basi erano le cartelle di
+//! lavoro di una persona sola, **compilate dentro il binario** e qui esistenti.
+//! Su qualunque altra, l'inventario avrebbe risposto «zero
 //! repo» — indistinguibile da una macchina davvero vuota. È la stessa forma del
 //! guasto 12: *vuoto* al posto di *non lo so*.
 //!
@@ -108,6 +108,12 @@ fn with_nothing_declared_the_survey_says_so_instead_of_saying_zero() {
 ///
 /// Legge il sorgente dal disco perché non esiste un modo di chiedere al
 /// compilatore «non nominare la cartella di nessuno».
+///
+/// **GUARDA LA FORMA, NON UN ELENCO DI NOMI.** La versione precedente cercava
+/// tre nomi di cartella scritti qui dentro: un elenco che si aggira scegliendo
+/// una quarta cartella, e che per esistere doveva **pubblicare** proprio i nomi
+/// che teneva fuori. Quello che non deve esserci è la casa: `declared_bases`
+/// legge una dichiarazione, e da `$HOME` non ricava niente.
 #[test]
 fn no_ones_personal_folders_are_compiled_into_the_binary() {
     let source = fs::read_to_string(
@@ -117,19 +123,24 @@ fn no_ones_personal_folders_are_compiled_into_the_binary() {
     )
     .expect("il sorgente del crate");
 
-    let code: String = source
+    let body: String = source
         .lines()
+        .skip_while(|line| !line.starts_with("pub fn declared_bases"))
+        .take_while(|line| !line.starts_with('}'))
         .filter(|line| !line.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
         .join("\n");
 
-    for folder in ["\"other-repo\"", "\"personal\"", "\"work\""] {
+    assert!(
+        body.contains("SAILOR_WORK_ROOTS"),
+        "il corpo di `declared_bases` non è stato trovato: la prova non guarda più niente"
+    );
+    for from_the_home in ["home", "HOME"] {
         assert!(
-            !code.contains(&format!("join({folder})")),
-            "`crates/inventory/src/lib.rs` costruisce di nuovo {folder} a mano. \
-             Le basi di lavoro sono dichiarate — `SAILOR_WORK_ROOTS`, o il file \
-             `work-roots` nella casa di Sailor — perché le cartelle di una \
-             persona sola non sono un fatto della macchina."
+            !body.contains(from_the_home),
+            "`declared_bases` ricava una base da «{from_the_home}»: le cartelle di \
+             una persona sola non sono un fatto della macchina. Si dichiarano con \
+             `SAILOR_WORK_ROOTS`, o col file `work-roots` nella casa di Sailor."
         );
     }
 }

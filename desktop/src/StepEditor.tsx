@@ -1,12 +1,10 @@
-// Il pannello di un passo scelto: come si chiama, cosa fa, CHI LO ESEGUE,
-// quante volte ci riprova, da chi dipende, con quali parametri.
-//
-// IL SELETTORE DELLO STRUMENTO NON CONOSCE NESSUNO STRUMENTO. L'elenco arriva
-// dal motore (`discover_tools`); qui si sa solo disegnarlo. Quando la scoperta
-// non risponde — perché il comando non c'è ancora, o perché la finestra gira
-// fuori dal guscio — il pannello lo dice e lascia scrivere l'identificativo a
-// mano: un nodo si compone comunque, e nessuno resta davanti a un elenco vuoto
-// senza sapere se è la macchina a essere spoglia o il motore a tacere.
+// The panel for a selected step: its name, what it does, WHO RUNS IT, how many
+// times it retries, what it depends on, with which params.
+
+// THE TOOL SELECTOR KNOWS NO TOOLS. The list comes from the engine
+// (`discover_tools`); this file only knows how to draw it. When discovery does
+// not answer, the panel says so and lets the id be typed by hand — nobody is
+// left before an empty list unable to tell a bare machine from a silent engine.
 
 import { useRef, useState } from "react";
 import { kindOf, type Step } from "./flow";
@@ -35,7 +33,7 @@ export interface StepEditorProps {
   siblingIds: string[];
   tools: Tool[];
   discovery: ToolDiscovery;
-  /** I modelli già scritti negli altri passi: suggerimenti presi dal vero. */
+  /** Models already written in the other steps: suggestions taken from life. */
   usedModels: string[];
   onRename: (newId: string) => void;
   onField: (patch: Partial<Step>) => void;
@@ -44,9 +42,9 @@ export interface StepEditorProps {
 }
 
 /**
- * Monta una volta per passo selezionato (la chiave è `selectedNode` in `App`),
- * così le bozze locali (id, JSON) ripartono pulite a ogni cambio di selezione
- * senza un effetto dedicato a resettarle.
+ * Mounts once per selected step (the key is `selectedNode` in `App`), so the
+ * local drafts start clean on every change of selection without an effect
+ * dedicated to resetting them.
  */
 export function StepEditor({
   flowName,
@@ -65,18 +63,18 @@ export function StepEditor({
   const idTaken = idDraft !== step.id && siblingIds.includes(idDraft);
 
   const { choice, rest } = splitToolParams(step.with);
-  // La catena che il pannello non sa comporre e non deve cancellare: resta fra
-  // gli altri parametri, e da qui si legge per dirlo a chi guarda.
+  // The chain the panel cannot compose and must not delete: it stays among the
+  // other params, and is read from there to be reported on screen.
   const chain = chainIn(rest);
-  // Un passo «agente» usa uno strumento per definizione; e un passo che ne
-  // dichiara già uno lo mostra comunque, qualunque azione porti — l'alternativa
-  // sarebbe nascondere un dato che sta nel file. Una catena conta: un passo che
-  // nomina tre motori ne usa uno.
+  // An agent step uses a tool by definition; and a step that already declares
+  // one shows it whatever action it carries — the alternative would hide a
+  // datum that is in the file. A chain counts: a step naming three engines
+  // uses one.
   const usesTool = kindOf(step.action) === "engine" || choice.tool !== "" || chain.length > 0;
 
-  // Il riquadro JSON mostra solo i parametri che il pannello non gestisce: i
-  // tre campi hanno già i loro, e vederli in due posti che si scrivono a
-  // vicenda è il modo più rapido per perdere quello scritto per ultimo.
+  // The JSON box shows only the params the panel does not manage: the fields
+  // already have their own, and seeing them in two places that write over each
+  // other is the fastest way to lose whichever was typed last.
   const [withDraft, setWithDraft] = useState(() => {
     const shown = usesTool ? rest : (step.with ?? {});
     return Object.keys(shown).length === 0 ? "" : JSON.stringify(shown, null, 2);
@@ -342,18 +340,18 @@ export function StepEditor({
   );
 }
 
-// ── le opzioni ───────────────────────────────────────────────────────────
+// ── the options ──────────────────────────────────────────────────────────
 
 interface ToolOptionsProps {
-  /** Lo strumento scelto, se è fra quelli rilevati. */
+  /** The chosen tool, if it is among the detected ones. */
   tool: Tool | undefined;
   options: Record<string, OptionValue>;
   onChange: (options: Record<string, OptionValue>) => void;
 }
 
-/** Una riga in composizione. L'`id` non esce da qui: serve a React per non
- *  rimontare la riga mentre se ne scrive il nome — senza, il campo perde il
- *  fuoco a ogni carattere digitato. */
+/** A row being composed. The `id` never leaves this file: React needs it so the
+ *  row is not remounted while its name is typed — without it the field loses
+ *  focus on every keystroke. */
 interface OptionRow {
   id: number;
   name: string;
@@ -361,39 +359,23 @@ interface OptionRow {
 }
 
 /**
- * Le opzioni di un passo: una scelta, non una riga di comando da scrivere.
- *
- * DUE MODI, E IL SECONDO È QUELLO DI OGGI. Se lo strumento dichiara le proprie
- * opzioni (`options` nel descrittore) ognuna diventa un controllo con la sua
- * forma — un elenco, un interruttore, un numero. Nessun descrittore lo dichiara
- * ancora: `toolbox::Descriptor` conosce `detect`, `enumerate`, `version`,
- * `config` e `note`, e nient'altro. Finché è così si aggiungono coppie
- * nome/valore a mano, e il pannello DICE che è un ripiego invece di far credere
- * che quelle poche righe siano tutto ciò che lo strumento accetta.
- *
- * LE RIGHE VIVONO QUI, non nel passo, e non è un dettaglio: un'opzione senza
- * nome non si scrive nel file — sarebbe una chiave vuota per il motore — e
- * quindi una riga appena aggiunta, se la sua unica esistenza fosse quella
- * salvata, sparirebbe nell'istante in cui la si crea. Si tengono in bozza
- * finché non hanno un nome, e verso il passo scende solo quello che ha senso
- * scrivere.
- *
- * Quello che non si fa, in nessuno dei due modi, è indovinare: un elenco di
- * flag plausibili scritto qui sembrerebbe rilevato dalla macchina, e sarebbe
- * scritto da chi quella macchina non l'ha guardata.
+ * A step's options are a choice, not a command line. No descriptor declares any
+ * yet, so pairs are added by hand and the panel calls itself a fallback: a
+ * guessed list of flags would look machine-detected. THE ROWS LIVE HERE, not in
+ * the step — a nameless option never reaches the file, so a row dies at birth.
  */
 function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
   const declared: OptionSpec[] = tool?.options ?? [];
   const nextId = useRef(0);
-  // Monta una volta per passo selezionato — `StepEditor` ha `key={selectedNode}`
-  // in `App` — e quindi la bozza riparte pulita a ogni cambio di selezione.
+  // Mounts once per selected step — `StepEditor` has `key={selectedNode}` in
+  // `App` — so the draft starts clean on every change of selection.
   const [rows, setRows] = useState<OptionRow[]>(() =>
     Object.entries(options)
       .filter(([name]) => !declared.some((spec) => spec.key === name))
       .map(([name, value]) => ({ id: nextId.current++, name, value })),
   );
 
-  /** Le righe libere più le dichiarate: quello che finisce nel passo. */
+  /** The free rows plus the declared ones: what ends up in the step. */
   function push(freeRows: OptionRow[], declaredValues: Record<string, OptionValue>) {
     const next: Record<string, OptionValue> = { ...declaredValues };
     for (const row of freeRows) {
@@ -422,9 +404,8 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
     push(rows, values);
   }
 
-  // Due righe con lo stesso nome non possono convivere in un oggetto JSON: sul
-  // disco ne sopravvive una sola. Meglio dirlo mentre si scrive che lasciarlo
-  // scoprire riaprendo il file.
+  // Two rows with the same name cannot coexist in a JSON object: only one
+  // survives on disk. Better said while typing than discovered on reopening.
   const named = rows.map((row) => row.name.trim()).filter((name) => name !== "");
   const duplicated = named.some((name, index) => named.indexOf(name) !== index);
 
@@ -502,7 +483,7 @@ function ToolOptions({ tool, options, onChange }: ToolOptionsProps) {
   );
 }
 
-/** Un'opzione che il descrittore dichiara: la sua forma decide il controllo. */
+/** An option the descriptor declares: its shape decides the control. */
 function DeclaredOption({
   spec,
   value,
@@ -550,7 +531,7 @@ function DeclaredOption({
   );
 }
 
-/** Un'opzione scritta a mano: nome e valore, e la si può togliere. */
+/** A hand-written option: name and value, and it can be removed. */
 function FreeOption({
   name,
   value,
