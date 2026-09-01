@@ -1286,7 +1286,11 @@ fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
             // A beat that stopped at the first broken flow would let one
             // failure hold back every other schedule on the machine.
             Err(complaint) => {
-                let _ = writeln!(report, "{name}\tbroke\t{}", complaint.lines().next().unwrap_or(""));
+                let _ = writeln!(
+                    report,
+                    "{name}\tbroke\t{}",
+                    complaint.lines().next().unwrap_or("")
+                );
             }
         }
     }
