@@ -1,18 +1,14 @@
-//! L'innesco come passo di flusso.
+//! The trigger as a flow step.
 //!
-//! **COSA FA DAVVERO.** Legge quale sorgente il passo ha dichiarato, la cerca
-//! nell'elenco dei descrittori, e — se quella sorgente porta il segnale con sé —
-//! restituisce il segnale nella forma che i passi a valle sanno leggere. Non
-//! esegue niente e non tocca il mondo.
+//! It reads which source the step declared, finds it among the descriptors,
+//! and — when that source carries the signal with it — returns the signal in
+//! the shape the steps downstream read. It executes nothing.
 //!
-//! **DOVE SI FERMA, E PERCHÉ SI FERMA INVECE DI FINGERE.** Una sorgente da
-//! terminale non viene ascoltata: il passo si rompe con un messaggio che dice
-//! cosa manca. Le due cose che mancano non stanno in questa azione — non c'è
-//! nessun processo di Sailor che resti in piedi ad aspettare un segnale, e non
-//! c'è nessun lettore che tenga un cursore su una sessione — quindi qualunque
-//! cosa questa azione restituisse sarebbe inventata. Un flusso verde direbbe
-//! che qualcuno ha parlato quando non ha parlato nessuno, ed è il difetto
-//! peggiore fra quelli possibili qui: costa chiamate vere a valle.
+//! **A TERMINAL SOURCE IS NOT LISTENED TO, AND SAYS SO INSTEAD OF PRETENDING.**
+//! Nothing here could listen: no Sailor process stays up waiting, and no reader
+//! keeps a cursor on a session. Anything this action returned would be made up,
+//! and a green flow would say somebody spoke when nobody did — which costs real
+//! calls downstream.
 
 use crate::{default_sources, Catalog, Kind, Listen, Signal, Source, TriggerDescriptor};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
@@ -21,7 +17,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 use toolbox::Machine;
 
-/// Il nome sotto cui l'azione si registra.
+/// The name the action registers under.
 pub const TRIGGER_ACTION: &str = "trigger";
 
 pub fn register_default(registry: &mut flow::ActionRegistry) {
@@ -30,20 +26,20 @@ pub fn register_default(registry: &mut flow::ActionRegistry) {
 
 #[derive(Debug, Deserialize)]
 struct TriggerSpec {
-    /// L'`id` del descrittore della sorgente. Obbligatorio: «da dove arriva il
-    /// lavoro» non ha un valore predefinito ragionevole.
+    /// The source descriptor's `id`. Required: "where the work comes from" has
+    /// no reasonable default.
     source: String,
-    /// Il testo della consegna, per una sorgente che lo porta con sé.
+    /// The delivery text, for a source that carries it.
     #[serde(default)]
     text: Option<String>,
     #[serde(default)]
     who: Option<String>,
     #[serde(default, rename = "where")]
     where_from: Option<String>,
-    /// I file o le cartelle di descrittori da usare oltre a quelli abituali.
+    /// Descriptor files or directories to use beyond the usual ones.
     #[serde(default)]
     descriptor_paths: Vec<String>,
-    /// Se aggiungersi a quelli abituali o sostituirli.
+    /// Whether to add to the usual ones or replace them.
     #[serde(default = "yes")]
     include_defaults: bool,
 }
@@ -52,16 +48,11 @@ fn yes() -> bool {
     true
 }
 
-/// Il nodo di ingresso di un flusso: attende un segnale e lo mette a
-/// disposizione dei passi a valle.
+/// A flow's entry node: it waits for a signal and offers it downstream.
 pub struct TriggerAction;
 
 impl Action for TriggerAction {
-    fn execute(
-        &self,
-        input: &Value,
-        _shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: TriggerSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let machine = Machine::current();
@@ -80,21 +71,21 @@ impl Action for TriggerAction {
         }
         let catalog = Catalog::load(&sources);
         let Some(loaded) = catalog.find(&spec.source) else {
-            // Un elenco che non dice cosa contiene costringe a cercare il file
-            // per sapere come si scrive la riga giusta.
+            // A list that does not say what it holds forces a hunt through the
+            // files to find out how the right line is written.
             let known = catalog.known();
             let known = if known.is_empty() {
-                "nessuna sorgente è accesa".to_owned()
+                "no source is switched on".to_owned()
             } else {
-                format!("le sorgenti accese sono: {}", known.join(", "))
+                format!("the sources switched on are: {}", known.join(", "))
             };
             let mut said = format!(
-                "il passo chiede la sorgente di segnale «{}», che non è dichiarata da nessun descrittore; {known}",
+                "the step asks for the signal source «{}», which no descriptor declares; {known}",
                 spec.source
             );
             for problem in &catalog.problems {
                 said.push_str(&format!(
-                    "\n(un descrittore non si è caricato: {} in {} — {})",
+                    "\n(a descriptor did not load: {} in {} — {})",
                     problem.about, problem.source, problem.reason
                 ));
             }
@@ -107,7 +98,7 @@ impl Action for TriggerAction {
                     ActionError::new(
                         "empty_signal",
                         format!(
-                            "l'innesco «{}» porta il segnale con sé, ma il passo non gli ha dato nessun `text`: chi lancia deve mettere lì la consegna",
+                            "the trigger «{}» carries the signal with it, but the step gave it no `text`: whoever launches has to put the delivery there",
                             descriptor.id
                         ),
                     )
@@ -119,9 +110,9 @@ impl Action for TriggerAction {
                     source: descriptor.id.clone(),
                     kind: "manual".to_owned(),
                 };
-                Ok(ActionOutcome::Went(serde_json::to_value(signal).expect(
-                    "un segnale di soli testi si serializza sempre",
-                )))
+                Ok(ActionOutcome::Went(
+                    serde_json::to_value(signal).expect("a signal of plain texts always serialises"),
+                ))
             }
             Kind::Terminal => Err(ActionError::new(
                 "listening_not_built",
@@ -130,54 +121,53 @@ impl Action for TriggerAction {
         }
     }
 
-    /// Rifare un innesco manuale è sicuro: rimette in forma ciò che gli è stato
-    /// dato, e non tocca niente. Il giorno in cui un innesco *consumerà* un
-    /// segnale — togliendolo da una coda — quel giorno la specie cambia, perché
-    /// rifarlo salterebbe una consegna.
+    /// Redoing a manual trigger is safe: it reshapes what it was given and
+    /// touches nothing. The day a trigger *consumes* a signal — taking it off a
+    /// queue — the species changes, because redoing it would skip a delivery.
     fn species(&self) -> StepSpecies {
         StepSpecies::Repeatable
     }
 }
 
-/// Il confine, scritto per intero dentro il messaggio: chi lo legge deve sapere
-/// cosa costruire, non solo che manca qualcosa.
+/// The border, written out inside the message: whoever reads it needs to know
+/// what to build, not only that something is missing.
 fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
     let where_it_would_look = match &descriptor.listen {
         Some(Listen::AppendedLines { files, .. }) => {
-            format!("guarderebbe le righe nuove di {}", files.join(", "))
+            format!("it would watch the new lines of {}", files.join(", "))
         }
         Some(Listen::CursorCommand {
             tool,
             args,
             cursor_argument,
         }) => format!(
-            "chiamerebbe lo strumento «{tool}» con {} e il cursore in {cursor_argument}",
+            "it would call the tool «{tool}» with {} and the cursor in {cursor_argument}",
             args.join(" ")
         ),
-        // Il caricamento lo impedisce; se ci si arriva, il guasto è lì.
-        None => "non dichiara dove guardare".to_owned(),
+        // Loading prevents this; reaching it means the fault is there.
+        None => "it does not declare where to look".to_owned(),
     };
     let missing_reader = match &descriptor.listen {
         Some(Listen::AppendedLines { files, .. }) => format!(
-            "un lettore che tenga un cursore su {} e riconosca una riga nuova senza perdere ciò che è comparso mentre nessuno guardava",
+            "a reader that keeps a cursor on {} and recognises a new line without losing what appeared while nobody was watching",
             files.join(", ")
         ),
         Some(Listen::CursorCommand { tool, .. }) => format!(
-            "un lettore che invochi «{tool}» e conservi fra una corsa e l'altra il punto già letto",
+            "a reader that invokes «{tool}» and keeps the point already read between one run and the next",
         ),
-        None => "un lettore".to_owned(),
+        None => "a reader".to_owned(),
     };
     let mut said = format!(
-        "l'innesco «{}» ascolta un terminale, e Sailor non sa ancora ascoltare: {where_it_would_look}. \
-         Perché diventi vero mancano due cose, e nessuna delle due sta in questo passo: \
-         (1) un processo che resti in piedi — `sailor flow run` esegue il grafo una volta e finisce, \
-         quindi non c'è nessuno che aspetti un segnale e faccia partire una corsa quando arriva; \
+        "the trigger «{}» listens to a terminal, and Sailor cannot listen yet: {where_it_would_look}. \
+         Two things are missing before it becomes real, and neither belongs in this step: \
+         (1) a process that stays up — `sailor flow run` walks the graph once and ends, \
+         so nobody waits for a signal and starts a run when it arrives; \
          (2) {missing_reader}. \
-         Fino ad allora l'unica sorgente che funziona è quella manuale, che porta il segnale con sé.",
+         Until then the only source that works is the manual one, which carries the signal with it.",
         descriptor.id
     );
     if !descriptor.note.is_empty() {
-        said.push_str(&format!(" Nota del descrittore: {}", descriptor.note));
+        said.push_str(&format!(" Descriptor note: {}", descriptor.note));
     }
     said
 }
@@ -190,35 +180,35 @@ mod tests {
     fn fire(input: Value) -> Result<Value, ActionError> {
         match TriggerAction.execute(&input, &mut SharedState::new())? {
             ActionOutcome::Went(output) => Ok(output),
-            ActionOutcome::Waiting(reason) => panic!("nessun innesco resta in attesa: {reason}"),
+            ActionOutcome::Waiting(reason) => panic!("no trigger stays waiting: {reason}"),
         }
     }
 
-    /// **IL NODO DI INGRESSO È VERO.** Il testo che il segnale portava esce nel
-    /// campo che i passi a valle leggono, insieme a chi l'ha mandato e da dove.
+    /// **THE ENTRY NODE IS REAL.** The text the signal carried comes out in the
+    /// field the steps downstream read, with who sent it and from where.
     #[test]
     fn a_manual_signal_hands_down_what_it_carried() {
         let output = fire(json!({
             "source": "manual",
             "text": "trova i residui di configurazione",
-            "who": "theo",
+            "who": "someone",
             "where": "la finestra"
         }))
-        .expect("l'innesco manuale è spedito col prodotto");
+        .expect("the manual trigger ships with the product");
 
         assert_eq!(output["text"], "trova i residui di configurazione");
-        assert_eq!(output["who"], "theo");
+        assert_eq!(output["who"], "someone");
         assert_eq!(output["where"], "la finestra");
         assert_eq!(output["source"], "manual");
         assert_eq!(output["kind"], "manual");
     }
 
-    /// I campi che la sorgente non sa restano testi vuoti, mai assenti: il
-    /// passo dopo unisce testo con `$join`, e un valore assente romperebbe lui
-    /// invece dell'innesco.
+    /// Fields the source does not know stay empty texts, never absent: the next
+    /// step joins text with `$join`, and an absent value would break it instead
+    /// of the trigger.
     #[test]
     fn a_signal_that_does_not_know_who_sent_it_still_answers_with_texts() {
-        let output = fire(json!({"source": "manual", "text": "vai"})).expect("basta il testo");
+        let output = fire(json!({"source": "manual", "text": "vai"})).expect("the text is enough");
 
         assert_eq!(output["who"], "");
         assert_eq!(output["where"], "");
@@ -227,29 +217,30 @@ mod tests {
 
     #[test]
     fn a_manual_trigger_without_a_text_says_who_should_have_given_it() {
-        let error = fire(json!({"source": "manual"})).expect_err("un segnale vuoto non è un segnale");
+        let error =
+            fire(json!({"source": "manual"})).expect_err("an empty signal is not a signal");
         assert_eq!(error.class, "empty_signal");
         assert!(error.said.contains("text"), "{}", error.said);
     }
 
-    /// **IL CONFINE, PROVATO.** Una sorgente da terminale non risponde con un
-    /// segnale finto: rompe il passo e dice cosa manca. Il mutante che fa
-    /// cadere questa prova è far tornare un segnale vuoto invece dell'errore —
-    /// ed è esattamente il difetto da cui la prova difende, perché un segnale
-    /// vuoto fa partire i motori a valle e costa chiamate vere.
+    /// **THE BORDER, TESTED.** A terminal source does not answer with a fake
+    /// signal: it breaks the step and says what is missing. The mutant that
+    /// fells this test is returning an empty signal instead of the error — the
+    /// exact defect it guards, since an empty signal starts the engines
+    /// downstream and costs real calls.
     #[test]
     fn a_terminal_source_refuses_to_pretend_it_listened() {
-        let error = fire(json!({"source": "sailor-terminal"}))
-            .expect_err("nessuno ascolta un terminale, oggi");
+        let error =
+            fire(json!({"source": "sailor-terminal"})).expect_err("nobody listens to a terminal");
 
         assert_eq!(error.class, "listening_not_built");
-        assert!(error.said.contains("resti in piedi"), "{}", error.said);
-        assert!(error.said.contains("cursore"), "{}", error.said);
+        assert!(error.said.contains("stays up"), "{}", error.said);
+        assert!(error.said.contains("cursor"), "{}", error.said);
     }
 
-    /// Le due voci di terminale di questa macchina sono un elenco, non un ramo
-    /// di codice: si comportano tutte e due allo stesso modo, e ognuna porta il
-    /// proprio posto dentro il messaggio.
+    /// The two terminal entries on this machine are a list, not a branch of
+    /// code: both behave the same way, and each carries its own place inside
+    /// the message.
     #[test]
     fn every_shipped_terminal_source_stops_at_the_same_border() {
         let catalog = Catalog::load(&[Source::Builtin]);
@@ -259,9 +250,9 @@ mod tests {
             .filter(|loaded| loaded.descriptor.kind == Kind::Terminal)
             .map(|loaded| loaded.descriptor.id.clone())
             .collect();
-        assert_eq!(terminals.len(), 2, "le due voci misurate: {terminals:?}");
+        assert_eq!(terminals.len(), 2, "the two entries measured: {terminals:?}");
         for id in terminals {
-            let error = fire(json!({"source": id})).expect_err("nessuna delle due ascolta");
+            let error = fire(json!({"source": id})).expect_err("neither one listens");
             assert_eq!(error.class, "listening_not_built");
             assert!(error.said.contains(&id), "{}", error.said);
         }
@@ -270,25 +261,25 @@ mod tests {
     #[test]
     fn an_unknown_source_lists_the_ones_that_exist() {
         let error = fire(json!({"source": "il-citofono", "text": "x"}))
-            .expect_err("nessun descrittore la dichiara");
+            .expect_err("no descriptor declares it");
 
         assert_eq!(error.class, "unknown_trigger_source");
         assert!(error.said.contains("il-citofono"), "{}", error.said);
         assert!(error.said.contains("manual"), "{}", error.said);
     }
 
-    /// **CHI USA SAILOR RIEMPIE L'ELENCO DIVERSAMENTE**, e non deve ricompilare
-    /// niente: un file di descrittori suo, e la sua sorgente esiste.
+    /// **WHOEVER USES SAILOR FILLS THE LIST DIFFERENTLY**, and recompiles
+    /// nothing: a descriptor file of their own, and their source exists.
     #[test]
     fn a_source_declared_by_the_user_works_without_recompiling() {
         let dir = std::env::temp_dir().join(format!("sailor-trigger-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("creare la cartella di prova");
+        std::fs::create_dir_all(&dir).expect("creating the test directory");
         let file = dir.join("miei.json");
         std::fs::write(
             &file,
             r#"[{"id": "il-citofono", "kind": "manual", "label": "Il citofono"}]"#,
         )
-        .expect("scrivere i descrittori di prova");
+        .expect("writing the test descriptors");
 
         let output = fire(json!({
             "source": "il-citofono",
@@ -296,7 +287,7 @@ mod tests {
             "descriptor_paths": [file.to_string_lossy()],
             "include_defaults": false
         }))
-        .expect("la sorgente dichiarata dall'utente esiste");
+        .expect("the user-declared source exists");
 
         assert_eq!(output["source"], "il-citofono");
         assert_eq!(output["text"], "aprimi");
