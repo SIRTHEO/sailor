@@ -1,113 +1,109 @@
-//! Le basi di lavoro sono **dichiarate**, non compilate — e una base che non si
-//! è potuta leggere non si confonde con una base vuota.
-//!
-//! LA DOMANDA CHE QUESTE PROVE DIFENDONO è la sola che l'inventario non sapeva
-//! rispondere: *«zero repo» vuol dire che non ce ne sono, o che non ho potuto
-//! guardare?* Fino al 01/09/2026 voleva dire tutte e due, e non c'era modo di
-//! sapere quale. `repos_under` incontrava una cartella illeggibile, faceva
-//! `continue`, e restituiva un elenco più corto con uscita 0.
-//!
-//! Su questa macchina non si vedeva, perché le due basi erano
-//! `~/other-repo/work` e `~/personal` **compilate dentro il binario** e su questa
-//! macchina esistono. Su qualunque altra, l'inventario avrebbe risposto «zero
-//! repo» — indistinguibile da una macchina davvero vuota. È la stessa forma del
-//! guasto 12: *vuoto* al posto di *non lo so*.
-//!
-//! Le due cure viaggiano insieme perché da sole non bastano: togliere le
-//! cartelle di una persona senza saper dire «nessuna base dichiarata» spegne
-//! l'inventario in silenzio, e saper dire «non ho potuto guardare» tenendo le
-//! cartelle compilate lascia il difetto dov'è.
+//! Working bases are **declared**, not compiled in — and a base that could not
+//! be read is not confused with an empty one. THE QUESTION THESE TESTS DEFEND:
+//! does "zero repos" mean there are none, or that I could not look? It meant
+//! both, with no way to tell — `repos_under` met an unreadable directory, did
+//! `continue`, and returned a shorter list with exit 0. Fault 12's shape:
+//! *empty* standing in for *I do not know*.
 
 use inventory::{default_roots_from, repos_under};
 use std::fs;
 use std::path::PathBuf;
 
-/// Una cartella usa-e-getta, cancellata e rifatta a ogni giro.
+/// A throwaway directory, deleted and rebuilt every run.
 fn temp(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("prova-basi-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("bases-test-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     dir
 }
 
-/// Un repo si riconosce dalla `.claude/` che porta, come nel resto del crate.
+/// A repo is recognised by the `.claude/` it carries, as elsewhere in the crate.
 fn repo(base: &PathBuf, name: &str) {
     fs::create_dir_all(base.join(name).join(".claude")).unwrap();
 }
 
 #[test]
 fn a_base_that_cannot_be_read_is_reported_not_swallowed() {
-    let missing = temp("illeggibile").join("questa-non-esiste");
+    let missing = temp("unreadable").join("this-does-not-exist");
     let survey = repos_under(&[missing.clone()]);
 
     assert!(
         survey.roots.is_empty(),
-        "una base che non esiste non porta repo"
+        "a base that does not exist carries no repos"
     );
     assert_eq!(
-        survey.unreadable.iter().map(|u| &u.path).collect::<Vec<_>>(),
+        survey
+            .unreadable
+            .iter()
+            .map(|u| &u.path)
+            .collect::<Vec<_>>(),
         vec![&missing],
-        "la base illeggibile deve comparire nel rendiconto, non sparire: \
-         è la differenza fra «non ce ne sono» e «non ho potuto guardare»"
+        "the unreadable base must show up in the survey rather than vanish: \
+         it is the difference between \"there are none\" and \"I could not look\""
     );
     assert!(
         !survey.unreadable[0].reason.is_empty(),
-        "chi legge deve sapere perché, non solo che"
+        "the reader has to know why, not only that"
     );
 }
 
 #[test]
 fn an_empty_base_is_not_the_same_as_an_unreadable_one() {
-    let base = temp("vuota");
+    let base = temp("empty");
     let survey = repos_under(&[base]);
 
-    assert!(survey.roots.is_empty(), "una cartella vuota non porta repo");
+    assert!(
+        survey.roots.is_empty(),
+        "an empty directory carries no repos"
+    );
     assert!(
         survey.unreadable.is_empty(),
-        "una cartella vuota si è letta benissimo: dichiararla illeggibile \
-         sarebbe l'errore opposto, e altrettanto grave"
+        "an empty directory was read perfectly well: calling it unreadable \
+         would be the opposite error, and just as serious"
     );
 }
 
 #[test]
 fn the_bases_that_are_declared_are_the_ones_searched() {
-    let base = temp("dichiarata");
-    repo(&base, "primo");
-    repo(&base, "secondo");
+    let base = temp("declared");
+    repo(&base, "first");
+    repo(&base, "second");
 
     let survey = repos_under(&[base]);
     let mut names: Vec<&str> = survey.roots.iter().map(|r| r.label.as_str()).collect();
     names.sort_unstable();
 
-    assert_eq!(names, vec!["primo", "secondo"]);
+    assert_eq!(names, vec!["first", "second"]);
     assert!(survey.unreadable.is_empty());
 }
 
+/// THE FIRST OF TWO CURES, AND ALONE IT IS NOT ENOUGH: taking one person's
+/// directories out without being able to say "no bases declared" switches the
+/// inventory off in silence.
 #[test]
 fn with_nothing_declared_the_survey_says_so_instead_of_saying_zero() {
-    let home = temp("casa-senza-dichiarazione");
+    let home = temp("home-with-no-declaration");
     let survey = default_roots_from(&home, &[]);
 
     assert!(
         !survey.bases_declared,
-        "senza dichiarazione l'inventario deve saperlo dire: un «zero repo» \
-         che nasce dal non aver guardato è una risposta falsa"
+        "with nothing declared the inventory has to be able to say so: a \
+         \"zero repos\" born of never having looked is a false answer"
     );
     assert_eq!(
         survey.roots.len(),
         1,
-        "resta la casa, che non è una base di lavoro ma c'è sempre"
+        "the home remains: it is not a working base, but it is always there"
     );
     assert!(survey.roots[0].is_home);
 }
 
-/// LA PROVA CHE IMPEDISCE IL RITORNO. Le altre dicono che il comportamento è
-/// giusto oggi; questa dice che non si può tornare indietro domani, ed è quella
-/// che serve davvero: la violazione non era un difetto di logica ma di
-/// abitudine, e le abitudini rientrano dalla porta.
-///
-/// Legge il sorgente dal disco perché non esiste un modo di chiedere al
-/// compilatore «non nominare la cartella di nessuno».
+/// THE SECOND CURE, AND ALONE IT IS NOT ENOUGH EITHER: being able to say "I
+/// could not look" while the directories stay compiled in leaves the defect
+/// exactly where it is. It also blocks the return, because the violation was
+/// not a fault of logic but of habit, and habits come back in by the door.
+/// It reads the source off disk because there is no way to ask the compiler
+/// "name nobody's directory".
 #[test]
 fn no_ones_personal_folders_are_compiled_into_the_binary() {
     let source = fs::read_to_string(
@@ -115,21 +111,30 @@ fn no_ones_personal_folders_are_compiled_into_the_binary() {
             .join("src")
             .join("lib.rs"),
     )
-    .expect("il sorgente del crate");
+    .expect("the crate source");
 
-    let code: String = source
+    let body: String = source
         .lines()
+        .skip_while(|line| !line.starts_with("pub fn declared_bases"))
+        .take_while(|line| !line.starts_with('}'))
         .filter(|line| !line.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
         .join("\n");
 
-    for folder in ["\"other-repo\"", "\"personal\"", "\"work\""] {
+    assert!(
+        body.contains("SAILOR_WORK_ROOTS"),
+        "the body of `declared_bases` was not found: this test is watching nothing"
+    );
+    // **IT WATCHES THE SHAPE, NOT A LIST OF NAMES.** A list is got around by
+    // picking a fourth directory, and to exist it has to publish the very names
+    // it keeps out. What must not be here is the home: `declared_bases` reads a
+    // declaration, and derives nothing from `$HOME`.
+    for from_the_home in ["home", "HOME"] {
         assert!(
-            !code.contains(&format!("join({folder})")),
-            "`crates/inventory/src/lib.rs` costruisce di nuovo {folder} a mano. \
-             Le basi di lavoro sono dichiarate — `SAILOR_WORK_ROOTS`, o il file \
-             `work-roots` nella casa di Sailor — perché le cartelle di una \
-             persona sola non sono un fatto della macchina."
+            !body.contains(from_the_home),
+            "`declared_bases` derives a base from \"{from_the_home}\": one person's \
+             directories are not a fact about the machine. They are declared with \
+             `SAILOR_WORK_ROOTS`, or with the `work-roots` file in Sailor's config."
         );
     }
 }

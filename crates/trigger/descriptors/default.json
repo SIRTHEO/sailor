@@ -1,36 +1,35 @@
 {
-  "_leggimi": [
-    "Le sorgenti di segnale, spedite col prodotto. È un dato: si riscrive, si",
-    "estende e si spegne senza ricompilare niente.",
+  "_readme": [
+    "The signal sources shipped with the product. This is data: rewrite it,",
+    "extend it and switch entries off without recompiling anything.",
     "",
-    "Per aggiungerne una: metti un file `.json` in `~/.config/sailor/triggers.d/` (o",
-    "dove punta SAILOR_TRIGGER_DESCRIPTORS) con dentro un array di descrittori,",
-    "o un oggetto con un campo `triggers`. Un `id` già presente qui dentro viene",
-    "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
-    "`\"disabled\": true`.",
+    "To add one: put a `.json` file in `~/.config/sailor/triggers.d/` (or wherever",
+    "SAILOR_TRIGGER_DESCRIPTORS points) holding an array of descriptors, or an",
+    "object with a `triggers` field. An `id` already present here is replaced by",
+    "yours; to remove one, rewrite its `id` with `\"disabled\": true`.",
     "",
-    "`kind` è `manual` (qualcuno preme e parte, portando un testo) oppure",
-    "`terminal` (il segnale comparirebbe in una sessione di terminale). Un",
-    "terminale deve dire in `listen` dove si vedrebbe comparire: `appended_lines`",
-    "per un file che cresce e non viene mai riscritto, una riga JSON per",
-    "messaggio; `cursor_command` per un comando che, dato un cursore, stampa ciò",
-    "che è comparso dopo.",
+    "`kind` is `manual` (somebody presses and it starts, carrying a text) or",
+    "`terminal` (the signal would appear in a terminal session). A terminal must",
+    "say in `listen` where it would be seen appearing: `appended_lines` for a file",
+    "that grows and is never rewritten, one JSON line per message;",
+    "`cursor_command` for a command that, given a cursor, prints what appeared",
+    "after it.",
     "",
-    "ATTENZIONE, E VALE PER TUTTE LE VOCI `terminal`: oggi Sailor non ascolta",
-    "nessun terminale. Queste voci dichiarano la forma, e un passo che le usa si",
-    "ferma dicendo cosa manca. Solo `manual` funziona per davvero."
+    "CAREFUL, AND IT HOLDS FOR EVERY `terminal` ENTRY: Sailor listens to no",
+    "terminal today. These entries declare the shape, and a step using one stops",
+    "and says what is missing. Only `manual` really works."
   ],
   "triggers": [
     {
       "id": "manual",
       "kind": "manual",
-      "label": "A mano",
-      "note": "Qualcuno preme e parte, portando un testo. È la sorgente del pulsante di lancio: il segnale arriva insieme alla corsa, quindi non c'è niente da attendere."
+      "label": "By hand",
+      "note": "Somebody presses and it starts, carrying a text. This is the launch button's source: the signal arrives together with the run, so there is nothing to wait for."
     },
     {
       "id": "sailor-terminal",
       "kind": "terminal",
-      "label": "Il terminale di Sailor",
+      "label": "Sailor's own terminal",
       "listen": {
         "kind": "appended_lines",
         "files": ["~/.sailor/terminals/*/messages.jsonl"],
@@ -38,19 +37,19 @@
         "who_pointer": ["who"],
         "where_pointer": ["session"]
       },
-      "note": "Il motore dei terminali adesso esiste — `crates/terminal`, dal 31/08/2026 — ma QUESTO FILE CONTINUA A NON ESSERE SCRITTO DA NESSUNO, e il percorso qui sopra resta la forma che avrà, non una misura. Il motivo è una scelta, non una dimenticanza: un terminale che gira nello stesso processo consegna la richiesta smistata direttamente all'innesco `manual`, che porta il segnale con sé — passare da un file sarebbe scrivere per rileggersi. Questa voce serve al caso che ancora non c'è: un terminale in un ALTRO processo, che deve far arrivare la propria richiesta a un Sailor che sta altrove. Per quello mancano ancora le due cose scritte in `trigger::action`: un processo che resti in piedi ad aspettare, e un lettore che tenga il punto raggiunto."
+      "note": "The terminal engine exists now — `crates/terminal` — but NOBODY WRITES THIS FILE, and the path above is still the shape it will have rather than a measurement. That is a choice, not an oversight: a terminal running in the same process hands its routed request straight to the `manual` trigger, which carries the signal with it, and going through a file would be writing in order to read yourself back. This entry serves the case that does not exist yet: a terminal in ANOTHER process, which has to get its request to a Sailor living elsewhere. For that, the two things written in `trigger::action` are still missing — a process that stays up waiting, and a reader that keeps the point it reached."
     },
     {
       "id": "orca-terminal",
       "kind": "terminal",
-      "label": "I pannelli di Orca",
+      "label": "Orca's panes",
       "listen": {
         "kind": "cursor_command",
         "tool": "orca",
         "args": ["terminal", "read", "--json"],
         "cursor_argument": "--cursor"
       },
-      "note": "Misurato il 28/08/2026. Orca registra l'uscita dei pannelli in `terminal-history/*/output.log`, che NON è una sorgente onesta: è un formato binario di frame (magic OCKL) con dentro byte di terminale ANSI — ridisegni di schermo, non messaggi — svuotato sul posto oltre i 5 MB e scritto a lotti ogni ~5 secondi, quindi un lettore in coda perde contenuto senza accorgersene. L'unica via supportata è questo comando a cursore, che restituisce testo. Richiede un descrittore di strumento con id `orca`, che non è spedito: si aggiunge in ~/.config/sailor/tools.d/."
+      "note": "Measured, not assumed. That product records pane output in `terminal-history/*/output.log`, which is NOT an honest source: it is a binary frame format (magic OCKL) holding ANSI terminal bytes — screen redraws, not messages — truncated in place past 5 MB and written in batches every ~5 seconds, so a reader tailing it loses content without noticing. The only supported road is this cursor command, which returns text. It needs a tool descriptor with id `orca`, which is not shipped: add it in ~/.config/sailor/tools.d/."
     }
   ]
 }

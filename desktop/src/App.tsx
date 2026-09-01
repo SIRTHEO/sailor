@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
@@ -24,14 +25,17 @@ import {
   type StepNodeData,
 } from "./StepNode";
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
-import { stepStatesOfCanvas } from "./runstate";
+import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas } from "./BlankCanvas";
 import { Now } from "./Now";
-import { History } from "./History";
+import { History, lastedOf, outcomeOf, whenOf } from "./History";
+import { useAsk, useClock } from "./ask";
 import { Installed } from "./Installed";
 import { Manual } from "./Manual";
 import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
+import { StepLive } from "./StepLive";
+import { Worktrees } from "./Worktrees";
 import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
@@ -41,6 +45,7 @@ import { SAMPLE, SAMPLE_RUN } from "./sample";
 import {
   deleteFlow,
   discoverTools,
+  executionHistory,
   flowTrigger,
   insideTheWindow,
   knownRuns,
@@ -50,12 +55,14 @@ import {
   runUsage,
   saveFlow,
   startRun,
+  type Execution,
   type RunEvent,
   type RunSnapshot,
 } from "./engine";
 import {
   DEFAULT_ACTION_FOR_KIND,
   KNOWN_ACTIONS,
+  stepCountLabel,
   type BrokenFlow,
   type FlowEntry,
   type FlowFile,
@@ -68,38 +75,39 @@ import { MODEL_KEY, type Tool, type ToolDiscovery } from "./tools";
 
 const nodeTypes = { step: StepNode, flowBand: FlowBandNode, trigger: TriggerNode };
 
-/** Quanto spazio prende l'innesco a sinistra della sua corsia. */
+/** How much room the trigger takes to the left of its lane. */
 const TRIGGER_WIDTH = 240;
 const TRIGGER_GAP = 48;
 const TRIGGER_TOP = 54;
 
 /**
- * Dentro il guscio o in un browser: si decide una volta sola, all'avvio.
- * Cambia cosa la tela mostra prima ancora del primo giro di caricamento, e
- * chiederlo a ogni render darebbe la stessa risposta.
+ * Inside the shell or in a browser: decided once, at startup. It changes what
+ * the canvas shows before the first load even runs.
  */
 const NATIVE = insideTheWindow();
 
-/** Da dove vengono i flussi che si stanno guardando. */
+/** Where the flows on screen came from. */
 type Source = "loading" | "sample" | "engine" | "failed";
 
 /**
- * I posti della finestra.
- *
- * **LA FINESTRA SI APRE SU «ADESSO», NON SULLA TELA**, ed è un cambio di
- * scuola, non di disposizione. Aprire sull'inventario dei flussi — come fanno
- * n8n, Zapier e Dify — risponde alla domanda «cosa potrei far girare»; chi
- * riapre la finestra ne ha un'altra in testa, «cosa sta succedendo», e fino a
- * stasera per rispondere doveva andarsela a cercare. La tela non sparisce:
- * diventa il posto dove si va per guardare dentro.
+ * The places of the window. **IT OPENS ON "NOW", NOT ON THE CANVAS**: opening
+ * on the inventory answers "what could I run", while whoever reopens the window
+ * is asking "what is happening". The canvas is where you go to look inside.
  */
-type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals";
+type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals" | "worktrees";
 
 /**
- * Un flusso in modifica: quello che si vede e quello che è già sul disco.
- * `saved: null` è un flusso appena creato qui e mai scritto — non è «uguale al
- * disco», è «il disco non lo conosce», e le due cose portano a gesti diversi
- * (si salva sempre, si cancella senza chiedere niente al motore).
+ * Only the graph: "Code" was a data file dressed as source, and "Runs" is
+ * already the «Adesso» and «Cronologia» places. `FlowCode` and `FlowRuns` stay
+ * below, unmounted, with what they measured about the engine.
+ */
+type FlowView = "graph";
+
+/**
+ * A flow being edited: what is on screen and what is already on disk.
+ * `saved: null` means "the disk does not know it", not "identical to the
+ * disk" — the two lead to different gestures (it always saves; it deletes
+ * without asking the engine anything).
  */
 interface WorkingFlow {
   flow: FlowFile;
@@ -111,7 +119,7 @@ function isDirty(working: WorkingFlow): boolean {
   return JSON.stringify(working.flow) !== JSON.stringify(working.saved);
 }
 
-/** Divide gli ingressi in flussi modificabili (mappa per nome) e flussi rotti (lista). */
+/** Splits the input into editable flows (map by name) and broken flows (list). */
 function splitEntries(entries: FlowEntry[]): { flows: Map<string, WorkingFlow>; broken: BrokenFlow[] } {
   const flows = new Map<string, WorkingFlow>();
   const broken: BrokenFlow[] = [];
@@ -126,14 +134,10 @@ function splitEntries(entries: FlowEntry[]): { flows: Map<string, WorkingFlow>; 
 }
 
 /**
- * Unisce i fatti di una corsa per numero d'ordine.
- *
- * Un fatto può arrivare due volte — una dall'elenco di quello che è già
- * successo, una dall'ascolto — e i due canali si sovrappongono proprio nel
- * momento in cui la vista si apre. Unire per `seq` è l'unico modo di non
- * mostrare due volte lo stesso passo senza dipendere da quale dei due canali
- * arriva prima. Se non c'è niente di nuovo torna l'array di partenza, così chi
- * confronta le identità non ridisegna per un fatto già noto.
+ * Merges a run's facts by sequence number. A fact can arrive twice — from the
+ * backlog and from the live feed — and the two channels overlap exactly when
+ * the view opens, so `seq` is the only way not to depend on which wins. With
+ * nothing new it returns the original array and the redraw is skipped.
  */
 function mergeEvents(existing: RunEvent[], incoming: RunEvent[]): RunEvent[] {
   const fresh = incoming.filter(
@@ -143,7 +147,7 @@ function mergeEvents(existing: RunEvent[], incoming: RunEvent[]): RunEvent[] {
   return [...existing, ...fresh].sort((a, b) => a.seq - b.seq);
 }
 
-/** Un nome libero per un flusso nuovo: numerato, mai in collisione. */
+/** A free name for a new flow: numbered, never colliding. */
 function freeFlowName(taken: Map<string, WorkingFlow>): string {
   let n = 1;
   while (taken.has(`flusso-${n}`)) n += 1;
@@ -151,12 +155,10 @@ function freeFlowName(taken: Map<string, WorkingFlow>): string {
 }
 
 export default function App() {
-  // LA TELA NASCE COME IL DISCO, NON COME UN ESEMPIO. Dentro il guscio si parte
-  // vuoti e si aspetta la risposta del motore: mostrare l'esempio per un
-  // istante e poi toglierlo fa vedere flussi che sul disco non ci sono. Fuori
-  // dal guscio (`npm run dev` in un browser) il motore non esiste e l'esempio è
-  // l'unica cosa da mostrare — la barra dichiara sempre quale dei due si sta
-  // guardando.
+  // THE CANVAS STARTS AS THE DISK, NOT AS A SAMPLE. Inside the shell it starts
+  // empty and waits for the engine: flashing the sample first shows flows that
+  // are not on disk. Outside the shell there is no engine and the sample is
+  // all there is — the bar always declares which of the two you are looking at.
   const [flows, setFlows] = useState<Map<string, WorkingFlow>>(() =>
     NATIVE ? new Map<string, WorkingFlow>() : splitEntries(SAMPLE).flows,
   );
@@ -165,9 +167,10 @@ export default function App() {
   const [failure, setFailure] = useState<string | null>(null);
 
   const [place, setPlace] = useState<Place>("now");
+  const [flowView] = useState<FlowView>("graph");
 
-  // Il fuoco è del ramo, non della tela: la colonna indica un percorso dentro
-  // il grafo unico, non sceglie più quale grafo mostrare.
+  // Focus belongs to the branch, not the canvas: the rail points at a path
+  // inside the single graph, it does not choose which graph to show.
   const [focusName, setFocusName] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
@@ -193,8 +196,8 @@ export default function App() {
       })
       .catch((error: unknown) => {
         if (dropped) return;
-        // Un motore muto non si maschera con l'esempio: chi guarda vedrebbe
-        // flussi che sul disco non ci sono.
+        // A silent engine is not papered over with the sample: that would show
+        // flows that are not on disk.
         setSource("failed");
         setFailure(String(error));
       });
@@ -203,10 +206,9 @@ export default function App() {
     };
   }, []);
 
-  // GLI STRUMENTI SI CHIEDONO, NON SI SANNO. `discover_tools` nasce in un altro
-  // cantiere: se non risponde ancora, il pannello lo dice e lascia scrivere
-  // l'identificativo a mano — nessuna schermata bianca, e nessun elenco finto
-  // per far sembrare che funzioni.
+  // TOOLS ARE ASKED FOR, NOT KNOWN. If `discover_tools` does not answer, the
+  // panel says so and lets the id be typed by hand — no blank screen, and no
+  // fake list to make it look as though it works.
   useEffect(() => {
     if (!NATIVE) return;
     let dropped = false;
@@ -229,12 +231,10 @@ export default function App() {
 
   const anyDirty = useMemo(() => Array.from(flows.values()).some(isDirty), [flows]);
 
-  // Chi chiude la finestra non deve scoprire dopo di aver perso il lavoro.
-  // `beforeunload` è un ripiego onesto: nel guscio nativo la chiusura è un
-  // evento della finestra, non una navigazione di pagina, e non è detto che
-  // questo listener venga interpellato — non l'ho potuto provare su una
-  // chiusura vera. La difesa che regge comunque è il bollino «non salvato»,
-  // sempre visibile, nella barra e accanto a ogni flusso.
+  // `beforeunload` IS AN HONEST FALLBACK, NOT THE DEFENCE. In the native shell
+  // closing is a window event, not a page navigation, so this listener may
+  // never be consulted. What holds regardless is the "unsaved" badge, always
+  // visible in the bar and beside every flow.
   useEffect(() => {
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       if (!anyDirty) return;
@@ -250,8 +250,8 @@ export default function App() {
     [flows],
   );
 
-  // I modelli già scritti negli altri passi: il suggerimento più onesto che
-  // esista, perché viene dai flussi veri invece che da un elenco inventato.
+  // The models already written in the other steps: the most honest suggestion
+  // there is, because it comes from real flows instead of an invented list.
   const usedModels = useMemo(() => {
     const seen = new Set<string>();
     for (const { flow } of flowList) {
@@ -263,16 +263,12 @@ export default function App() {
     return Array.from(seen);
   }, [flowList]);
 
-  // ── le corse: farne partire una, e guardarla ──────────────────────────
+  // ── runs: starting one, and watching it ───────────────────────────────
   //
-  // LE CORSE NON VIVONO QUI. Vivono nel guscio, che le esegue su un thread
-  // proprio; questa mappa è la copia che la finestra tiene per disegnarle. È la
-  // ragione per cui chiudere la vista o ricaricare la pagina non ferma niente —
-  // e per cui, al montaggio, la prima cosa da fare è chiedere al guscio cosa
-  // sta già girando invece di ripartire da un elenco vuoto.
-  //
-  // Si chiamano «esecuzioni» e non «corse» per non confondersi con `runs` qui
-  // sotto, che è un'altra cosa: lo stato dei passi con cui la tela li colora.
+  // RUNS DO NOT LIVE HERE. They live in the shell, on a thread of their own;
+  // this map is the copy the window keeps in order to draw them. Hence closing
+  // the view or reloading the page stops nothing, and hence the first thing to
+  // do on mount is ask the shell what is already running.
   const [executions, setExecutions] = useState<Map<string, RunSnapshot>>(new Map());
   const [triggers, setTriggers] = useState<Map<string, TriggerState>>(new Map());
   const [mandates, setMandates] = useState<Record<string, string>>({});
@@ -293,9 +289,9 @@ export default function App() {
     });
   }
 
-  // Cosa sta già girando: si chiede una volta, all'apertura. Una corsa avviata
-  // prima di un ricaricamento della pagina è viva nel guscio, e senza questa
-  // domanda diventerebbe invisibile pur continuando a lavorare.
+  // What is already running: asked once, at open. A run started before a page
+  // reload is alive in the shell, and without this question it would keep
+  // working while being invisible.
   useEffect(() => {
     if (!NATIVE) return;
     let dropped = false;
@@ -304,21 +300,21 @@ export default function App() {
         if (dropped) return;
         for (const snapshot of found) absorb(snapshot);
       })
-      // Nessuna corsa da mostrare non è un guasto da sbattere in faccia: il
-      // pulsante di partenza funziona lo stesso, e un errore qui parlerebbe di
-      // una vista che nessuno ha ancora chiesto.
+      // No runs to show is not a failure worth shouting about: the start
+      // button still works, and an error here would be about a view nobody
+      // has asked for yet.
       .catch(() => {});
     return () => {
       dropped = true;
     };
   }, []);
 
-  // Perché la vista non si aggiorna da sola, quando non lo fa. Vuoto significa
-  // che l'ascolto è attaccato.
+  // Why the view is not updating itself, when it is not. Empty means the live
+  // feed is attached.
   const [listenFailure, setListenFailure] = useState<string | null>(null);
 
-  // L'ascolto di quello che succede. Si attacca una volta e resta: staccarlo e
-  // riattaccarlo a ogni fatto perderebbe proprio i fatti che arrivano nel mezzo.
+  // The live feed. Attached once and left there: detaching and reattaching on
+  // every fact would lose precisely the facts arriving in between.
   useEffect(() => {
     if (!NATIVE) return;
     let unlisten: (() => void) | null = null;
@@ -353,8 +349,8 @@ export default function App() {
   }, []);
 
 
-  // Come si innesca ciascun flusso lo dice il guscio, non questa pagina: la
-  // regola su dove va a finire una consegna è una sola, e sta di là.
+  // How each flow is triggered is the shell's answer, not this page's: there
+  // is one rule about where a delivery lands, and it lives over there.
   const known = useMemo(() => flowList.map(({ name }) => name).join("\u0000"), [flowList]);
   useEffect(() => {
     if (!NATIVE) return;
@@ -382,9 +378,9 @@ export default function App() {
     [executions],
   );
 
-  // L'orologio dei contatori. BATTE SOLO MENTRE QUALCOSA GIRA: un secondo fisso
-  // che ridisegna la tela per sempre è un costo che nessuno guarda, e su questa
-  // tela un ridisegno di troppo è già bastato una volta a mandarla in ciclo.
+  // The counters' clock. IT ONLY TICKS WHILE SOMETHING RUNS: a fixed one-second
+  // redraw of the canvas forever is a cost nobody is watching, and on this
+  // canvas one redraw too many is enough to send it into a loop.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     if (!anyRunning) return;
@@ -392,14 +388,11 @@ export default function App() {
     return () => window.clearInterval(tick);
   }, [anyRunning]);
 
-  // LA RETE DI SICUREZZA. Un canale di eventi può non attaccarsi, o perdere un
-  // fatto: in tutti e due i casi la finestra continuerebbe a disegnare l'ultimo
-  // stato ricevuto — «in corso da 00:30» su una corsa finita — che è
-  // esattamente la bugia che questa vista non deve raccontare. Finché qualcosa
-  // gira si richiede lo stato al guscio, e i fatti si uniscono per numero
-  // d'ordine: quelli già arrivati dall'ascolto non si contano due volte.
-  //
-  // Interroga **solo mentre una corsa è viva**, e non a tela ferma.
+  // THE SAFETY NET. An event channel can fail to attach, or drop a fact; either
+  // way the window would keep drawing the last state it received — "running for
+  // 00:30" on a finished run — which is exactly the lie this view must not
+  // tell. While something runs, the state is re-asked and the facts merge by
+  // sequence number. It polls **only while a run is alive**, never at rest.
   useEffect(() => {
     if (!NATIVE || !anyRunning) return;
     const live = Array.from(executions.values())
@@ -412,19 +405,16 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anyRunning, executions.size]);
 
-  // QUANTO STA COSTANDO LA CORSA CHE SI GUARDA.
-  //
-  // **SI CHIEDE AL MOTORE, NON SI SOMMA QUI.** I totali li calcola
-  // `ui::dashboard`, lo stesso codice che serve la pagina di `sailor ui`: una
-  // seconda somma scritta in TypeScript darebbe due cifre per la stessa spesa, e
-  // il 28/08 abbiamo già pagato il prezzo di una verità tenuta in due posti.
-  //
-  // **OGNI TRE SECONDI MENTRE GIRA, E UNA VOLTA QUANDO FINISCE.** Leggere la
-  // spesa vuol dire aprire il deposito e scorrere le corse: è troppo per il
-  // battito di un secondo con cui si aggiornano i passi, ed è poco per una cifra
-  // che cambia solo quando un passo chiama un motore. `null` finché il deposito
-  // non ha ancora proiettato la corsa — e allora non si mostra niente, invece di
-  // mostrare uno zero che sembrerebbe una misura.
+  // WHAT THE WATCHED RUN IS COSTING, **ASKED OF THE ENGINE AND NOT SUMMED
+  // HERE**: `ui::dashboard` computes the totals, the same code that serves
+  // `sailor ui`, and a second sum in TypeScript would give two figures for one
+  // spend.
+
+  // **EVERY THREE SECONDS WHILE RUNNING, ONCE WHEN IT ENDS.** Reading the spend
+  // opens the store and walks the runs: too much for the one-second step tick,
+  // too little for a figure that moves only when a step calls an engine. `null`
+  // until the store has projected the run, and then nothing is shown rather
+  // than a zero that would look like a measurement.
   const [usage, setUsage] = useState<RunUsage | null>(null);
   useEffect(() => {
     if (!NATIVE || !watching) {
@@ -453,11 +443,9 @@ export default function App() {
   }, [watching, executions.get(watching ?? "")?.status, executions.size]);
 
   /**
-   * La spesa per passo della corsa guardata, pronta per i nodi.
-   *
-   * Le chiamate portano lo `step_id` ma non il flusso: lo mette qui chi sa
-   * quale corsa si sta guardando, perché la chiave dei nodi è `flusso::passo` e
-   * `verifica` esiste in più flussi.
+   * The watched run's per-step spend, ready for the nodes. Calls carry
+   * `step_id` but not the flow: it is added here, by whoever knows which run is
+   * watched, because a node's key is `flow::step` and one step id can repeat.
    */
   const stepUsage = useMemo(() => {
     const watchedRun = watching ? executions.get(watching) : undefined;
@@ -465,7 +453,7 @@ export default function App() {
     return stepUsageOfRun(usage, watchedRun.flow);
   }, [usage, watching, executions]);
 
-  /** La corsa più recente di un flusso: è quella che chi guarda intende. */
+  /** A flow's most recent run: the one the viewer means. */
   const latestByFlow = useMemo(() => {
     const latest = new Map<string, RunSnapshot>();
     for (const run of executions.values()) {
@@ -483,10 +471,9 @@ export default function App() {
   async function handleRun(flowName: string) {
     const working = flows.get(flowName);
     if (!working) return;
-    // UN FLUSSO SI ESEGUE DAL DISCO, NON DALLO SCHERMO. Il motore legge il
-    // file: se ci sono modifiche non salvate, quello che parte non è quello che
-    // si sta guardando — e chi preme lo deve decidere prima, non scoprirlo dai
-    // risultati.
+    // A FLOW RUNS FROM DISK, NOT FROM THE SCREEN. The engine reads the file:
+    // with unsaved changes, what starts is not what is on screen — and whoever
+    // presses must decide that up front, not learn it from the results.
     if (isDirty(working)) {
       const question =
         working.saved === null
@@ -515,8 +502,8 @@ export default function App() {
         events: [],
       });
       setWatching(started.run_id);
-      // I fatti nati fra la partenza e l'inizio dell'ascolto stanno solo nel
-      // guscio: si chiedono subito, e si uniscono per numero d'ordine.
+      // Facts born between the start and the feed attaching live only in the
+      // shell: they are asked for at once, and merged by sequence number.
       void runSnapshot(started.run_id)
         .then(absorb)
         .catch((error: unknown) => setRunErrors((prev) => ({ ...prev, [flowName]: String(error) })));
@@ -556,27 +543,24 @@ export default function App() {
 
   const watched = watching ? executions.get(watching) : undefined;
 
-  // GLI STATI D'ESEMPIO RESTANO ALL'ESEMPIO. Sui flussi veri la corsa non è
-  // ancora letta dal deposito: passare qui `SAMPLE_RUN` colorerebbe di
-  // «andato» e «rotto» dei passi che nessuno ha mai eseguito, ed è la specie
-  // di bugia che una tela racconta senza che nessuno la smentisca.
-  // `new Map()` scritto qui dentro sarebbe un oggetto nuovo a ogni render, e
-  // basta quello: il disegno dipende da `runs`, il disegno cambia identità, un
-  // effetto riscrive i nodi, che fa ripartire il render. La tela non si ferma
-  // mai abbastanza per misurare i propri nodi, e chi guarda vede una tela vuota
-  // con la minimappa piena — che è esattamente come si è presentata.
+  // SAMPLE STATES STAY WITH THE SAMPLE. Passing `SAMPLE_RUN` here would paint
+  // "went" and "broke" on steps nobody ever ran.
+
+  // The empty map is hoisted: a `new Map()` written inline is a fresh object
+  // every render, the drawing depends on `runs`, an effect rewrites the nodes,
+  // and the render restarts. The canvas never holds still long enough to
+  // measure its own nodes — an empty canvas with a full minimap.
   const runs = useMemo(
     () => (source === "sample" ? SAMPLE_RUN : new Map<string, StepRun>()),
     [source],
   );
 
-  // LO STATO VERO DEI NODI, e non passa di qui sopra apposta.
+  // THE REAL NODE STATES, deliberately not routed through the drawing above.
   //
-  // `runs` entra nel disegno, quindi ogni suo cambiamento ricostruisce l'elenco
-  // dei nodi — che è la cosa che questa tela non sopporta. Gli stati veri vanno
-  // invece nel valore di un contesto: i nodi restano gli stessi oggetti, e a
-  // ridisegnarsi è solo chi legge il contesto. Chiave `flusso::passo`, perché
-  // fra i flussi veri tre identificativi sono già ripetuti.
+  // `runs` in the drawing means every change rebuilds the node list, which is
+  // what this canvas cannot take. The real states go into a context value
+  // instead: the nodes stay the same objects and only the readers redraw. Key
+  // `flow::step`, because three step ids already repeat across real flows.
   const stepStates = useMemo(
     () => stepStatesOfCanvas(executions.values()),
     [executions],
@@ -585,17 +569,10 @@ export default function App() {
   const layout = useMemo(() => buildUnifiedLayout(flowList, runs, focusName), [flowList, runs, focusName]);
 
   /**
-   * I nodi di innesco, uno per corsia, a sinistra di dove comincia il grafo.
-   *
-   * Si aggiungono qui e non in `buildUnifiedLayout` per una ragione precisa:
-   * quella funzione disegna quello che sta nel file del flusso, e l'innesco nel
-   * file non c'è. Tenerlo fuori lascia visibile il confine fra ciò che il
-   * motore conosce e ciò che questa finestra aggiunge.
-   *
-   * I `data` portano due stringhe stabili e nient'altro: lo stato della corsa
-   * passa dal contesto. Se passasse di qui, ogni fatto in arrivo ricostruirebbe
-   * l'intero elenco dei nodi — e su questa tela un elenco di nodi ricostruito
-   * dentro un effetto è già bastato una volta a mandarla in ciclo infinito.
+   * The triggers are added here and not in `buildUnifiedLayout`, which draws
+   * only what the flow file holds: the boundary between engine and window stays
+   * visible. Their `data` is two stable strings — run state comes through the
+   * context, or each incoming fact would rebuild the list into an endless loop.
    */
   const canvas = useMemo(() => {
     const nodes: Node[] = [...layout.nodes];
@@ -612,9 +589,9 @@ export default function App() {
         data: { flowName: name, color: band.color },
       });
 
-      // L'innesco punta ai passi da cui il grafo comincia. Tratteggiato,
-      // perché non è una dipendenza dichiarata nel file: è il gesto che mette
-      // in moto quelli che non aspettano nessun altro.
+      // The trigger points at the steps the graph starts from. Dashed, because
+      // it is not a dependency declared in the file: it is the gesture that
+      // sets off the ones waiting on nobody.
       const flow = byName.get(name);
       for (const step of flow?.graph.steps ?? []) {
         if (step.deps.length > 0) continue;
@@ -643,9 +620,9 @@ export default function App() {
     setEdges(canvas.edges);
   }, [canvas]);
 
-  // Il fuoco muove la vista, non ricrea la disposizione: leggo l'ultimo
-  // riquadro noto da un ref, così un'ingresso non ri-centra la tela mentre si
-  // sta modificando un campo altrove.
+  // Focus moves the viewport, it does not rebuild the layout: the last known
+  // box is read from a ref, so a keystroke does not re-centre the canvas while
+  // a field is being edited elsewhere.
   const bandsRef = useRef(layout.bands);
   bandsRef.current = layout.bands;
   const flowInstance = useRef<ReactFlowInstance | null>(null);
@@ -670,37 +647,57 @@ export default function App() {
   }, [source]);
 
   /**
-   * **IL PASSO NUOVO NASCE NELLA SUA CORSIA, E LA VISTA CI VA.**
-   *
-   * Dove esattamente lo decide `buildUnifiedLayout`, e la risposta è «su una
-   * riga nuova della corsia, in parallelo all'inizio»: un passo appena creato
-   * non dipende da nessuno, e un passo senza dipendenze parte insieme agli
-   * altri che non ne hanno. Non è in coda alla catena, ed è giusto così —
-   * metterlo in coda vorrebbe dire inventargli una dipendenza che chi lo crea
-   * non ha chiesto.
-   *
-   * Un passo non porta una posizione: il file di un flusso non ne ha una, e a
-   * decidere dove sta ogni nodo è `buildUnifiedLayout` a ogni disegno. Quindi
-   * «nasce sotto il puntatore» qui è **impossibile senza mentire**: si potrebbe
-   * lasciarlo cadere dove si vuole e vederlo saltare altrove al primo ricalcolo.
-   * Per lo stesso motivo la cassetta è una fila di attrezzi da premere e non da
-   * trascinare — un trascinamento prometterebbe un punto d'arrivo che non
-   * esiste.
-   *
-   * Resta il difetto vero, che è l'altra metà: il nodo compariva dove decideva
-   * il programma, e chi guardava restava dov'era. Qui la vista lo raggiunge,
-   * **senza cambiare la scala**: `maxZoom` è lo zoom corrente, quindi
-   * l'inquadratura scorre e non si stringe. Chi stava guardando da lontano
-   * continua a guardare da lontano.
+   * Mounted hidden it measures 0x0, and no other `fitView` fires on first show:
+   * hence the observer, once per appearance — refitting on each resize would
+   * drag the viewport from under somebody's hands. `minZoom` floors at 0.5
+   * against a fit wanting 0.338: a lane stays out, per `unhappystates.test.tsx`.
+   */
+  const canvasRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (place !== "flows") return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const watcher = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (!box || box.width === 0 || box.height === 0) return;
+      watcher.disconnect();
+      void flowInstance.current?.fitView({ padding: 0.15 });
+    });
+    watcher.observe(canvas);
+    return () => watcher.disconnect();
+  }, [place]);
+
+  /**
+   * The other half: a measurable box is not yet a populated one. Nodes arrive a
+   * pass later, so a framing that fired earlier framed nothing and never came
+   * back — eight nodes, zero in view, from 375 to 1440px. Once only, and the
+   * geometry jsdom cannot see is watched by `npm run check:canvas`.
+   */
+  const framedOnce = useRef(false);
+  useEffect(() => {
+    if (framedOnce.current || focusName !== null) return;
+    const instance = flowInstance.current;
+    // Without an instance or a node there is nowhere to go, and the wait ends
+    // by itself on the next paint.
+    if (!instance || nodes.length === 0) return;
+    framedOnce.current = true;
+    instance.fitView({ padding: 0.15 });
+  }, [nodes, focusName]);
+
+  /**
+   * A new step is born parallel to its lane's start — it depends on nobody, and
+   * appending it to the chain would invent a dependency nobody asked for. It
+   * cannot be born under the pointer: the flow file carries no position, so it
+   * would jump on the first recompute. `maxZoom` is pinned, so the view pans.
    */
   const [addedNode, setAddedNode] = useState<string | null>(null);
 
   useEffect(() => {
     if (addedNode === null) return;
     const instance = flowInstance.current;
-    // Il nodo entra nell'elenco un giro dopo che il flusso è cambiato: finché
-    // non c'è non si va da nessuna parte, e l'attesa finisce da sé al disegno
-    // successivo.
+    // The node joins the list one pass after the flow changed: until it exists
+    // we go nowhere, and the wait ends by itself on the next draw.
     if (!instance || !nodes.some((node) => node.id === addedNode)) return;
     void instance.fitView({
       nodes: [{ id: addedNode }],
@@ -722,9 +719,9 @@ export default function App() {
   }
 
   /**
-   * Un flusso nuovo nasce qui, vuoto, e resta nella finestra finché non lo si
-   * salva: senza questo gesto una cartella vuota è un vicolo cieco, perché la
-   * cassetta dei passi chiede un flusso a cui appartenere.
+   * A new flow is born here, empty, and stays in the window until saved:
+   * without this gesture an empty folder is a dead end, because the step
+   * toolbox needs a flow to belong to.
    */
   function addFlow() {
     const name = freeFlowName(flows);
@@ -740,10 +737,9 @@ export default function App() {
   }
 
   /**
-   * Rinominare un flusso significa rinominare il suo file: finché non è mai
-   * stato scritto è un gesto senza conseguenze, e dopo non lo è più — sul disco
-   * resterebbe il vecchio file accanto al nuovo. Il pannello lo permette solo
-   * prima del primo salvataggio, e lo dice.
+   * Renaming a flow means renaming its file. Before the first write it is
+   * harmless; after, the old file would stay on disk beside the new one. The
+   * panel allows it only before the first save, and says so.
    */
   function renameFlow(oldName: string, raw: string) {
     const name = raw.trim();
@@ -845,8 +841,8 @@ export default function App() {
     }));
   }
 
-  // Collegare e scollegare due passi: lo stesso gesto nasca da un trascino
-  // sulla tela o da una casella nel pannello, passa sempre di qui.
+  // Wiring and unwiring two steps: the same gesture, whether it starts as a
+  // drag on the canvas or a checkbox in the panel, always comes through here.
   function connectSteps(flowName: string, from: string, to: string) {
     if (from === to) return;
     const working = flows.get(flowName);
@@ -908,8 +904,9 @@ export default function App() {
   async function handleDeleteFlow(name: string) {
     const working = flows.get(name);
     if (!working) return;
-    // Un flusso mai scritto si scarta qui: chiedere al motore di cancellare un
-    // file che non ha mai visto darebbe un errore al posto di un gesto riuscito.
+    // A flow never written is discarded here: asking the engine to delete a
+    // file it has never seen would give an error instead of a completed
+    // gesture.
     const neverSaved = working.saved === null;
     const question = neverSaved
       ? `Scartare il flusso "${name}"? Non è mai stato scritto sul disco.`
@@ -1001,42 +998,66 @@ export default function App() {
   const focusedWorking = focusName ? flows.get(focusName) : undefined;
   const focusedDirty = focusedWorking ? isDirty(focusedWorking) : false;
 
+  /**
+   * WHAT THE RIGHT-HAND SIDE OF THE BAR IS ALLOWED TO SAY.
+   *
+   * The mockup writes «one run in progress · step 7 of 9» on the graph, and the
+   * verdict of a check on the code. Only the first of the two exists: the count
+   * is folded here from the run's own events and the number of steps the flow
+   * declares. The second is `sailor flow check`, which lives in the command line
+   * and has no door into this window — so the code tab says what the engine
+   * really did (it refuses a graph it cannot load, on load and on save) instead
+   * of borrowing a verdict nobody gave.
+   */
+  const focusedRun = focusName ? latestByFlow.get(focusName) : undefined;
+  const barStatus = useMemo<BarStatus | null>(() => {
+    if (focusName === null || focusedWorking === undefined) return null;
+    const total = focusedWorking.flow.graph.steps.length;
+
+
+    if (focusedRun === undefined) return { live: false, word: "no run of this flow yet" };
+    const { done, running } = runProgress(focusedRun);
+    if (focusedRun.status === "running") {
+      const at = Math.min(total, done + (running > 0 ? 1 : 0));
+      return { live: true, word: `a run in progress · step ${at} of ${total}` };
+    }
+    return { live: false, word: `last run ${focusedRun.status} · ${done} of ${total} steps closed` };
+  }, [focusName, focusedWorking, focusedDirty, focusedRun, flowView]);
+
   return (
     <div className="app">
-      <header className="bar">
-        <span className="bar__name">Sailor</span>
-        <span className="bar__sep" />
-        <span className="bar__flow">
-          {flows.size === 0 ? "nessun flusso, ancora" : `${flows.size} flussi, un sistema solo`}
-        </span>
-        {/* Chi guarda deve sapere se sta vedendo il disco o un esempio, senza
-            chiedere e senza aprire il codice. */}
-        <span className="bar__source" data-source={source}>
-          {source === "engine"
-            ? `${flows.size + broken.length} flussi dal disco`
+      {/* THE BAR NAMES THE FLOW IT IS ABOUT.
+          Until now it said «6 flows, one system» — true, and about nothing you
+          could act on: neither which flow was on screen, nor whether it was
+          saved, nor whether it was running, nor a way to run it. Save and Run
+          need a subject, and the subject is the flow the rail has in focus. */}
+      <TopBar
+        view={flowView}
+        onView={() => setPlace("flows")}
+        flowName={focusName}
+        steps={focusedWorking ? focusedWorking.flow.graph.steps.length : 0}
+        dirty={focusedDirty}
+        busy={focusName !== null && saving.has(focusName)}
+        starting={focusName !== null && starting.has(focusName)}
+        source={source}
+        sourceWord={
+          source === "engine"
+            ? `${flows.size + broken.length} flows from the disk`
             : source === "failed"
-              ? `il motore non risponde: ${failure}`
+              ? `the engine is not answering: ${failure}`
               : source === "loading"
-                ? "chiedo i flussi al motore…"
-                : "dati di esempio"}
-        </span>
-        {anyDirty && <span className="bar__dirty">modifiche non salvate</span>}
-        <div className="bar__spacer" />
-        {/* IL GESTO DI PARTENZA STA SUL NODO DI INNESCO, non qui: su una tela
-            dove tutti i flussi stanno insieme, un pulsante «Esegui» in cima non
-            dice quale flusso farebbe partire. Questo apre la vista di quello
-            che sta girando, che è la domanda che si fa dalla barra. */}
-        {executionList.length > 0 && (
-          <button
-            type="button"
-            className="is-primary"
-            onClick={() => setWatching(watched?.run_id ?? executionList[0].run_id)}
-            disabled={watched !== undefined}
-          >
-            {anyRunning ? "Guarda l'esecuzione ●" : "Vedi l'ultima esecuzione"}
-          </button>
-        )}
-      </header>
+                ? "asking the engine for the flows…"
+                : "sample data"
+        }
+        status={barStatus}
+        onWatch={focusedRun ? () => setWatching(focusedRun.run_id) : undefined}
+        onSave={() => {
+          if (focusName) void handleSave(focusName);
+        }}
+        onRun={() => {
+          if (focusName) void handleRun(focusName);
+        }}
+      />
 
       {/* I POSTI, NOMINATI E DIVISI IN DUE INTENZIONI. Una finestra che cambia
           contenuto senza dire dove si è costringe a ricostruirlo dall'aspetto
@@ -1075,6 +1096,14 @@ export default function App() {
           onClick={() => setPlace("terminals")}
         >
           Terminali
+        </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "worktrees" || undefined}
+          onClick={() => setPlace("worktrees")}
+        >
+          Worktrees
         </button>
         <button
           type="button"
@@ -1119,12 +1148,10 @@ export default function App() {
           color={focusedBand.color}
           flow={focusedWorking.flow}
           neverSaved={focusedWorking.saved === null}
-          dirty={focusedDirty}
           busy={saving.has(focusName)}
           error={saveErrors[focusName]}
           onRename={(next) => renameFlow(focusName, next)}
           onDescription={(text) => updateFlow(focusName, (flow) => ({ ...flow, description: text }))}
-          onSave={() => void handleSave(focusName)}
           onDelete={() => void handleDeleteFlow(focusName)}
         />
       )}
@@ -1144,7 +1171,12 @@ export default function App() {
       {place === "installed" && <Installed native={NATIVE} />}
       {place === "manual" && <Manual native={NATIVE} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
-      <div className="body" hidden={place !== "flows"}>
+      {place === "worktrees" && <Worktrees native={NATIVE} />}
+      {/* THE CANVAS STAYS MOUNTED BEHIND THE OTHER TWO TABS. React Flow measures
+          its own frame once: unmounting it to change tab would give back a
+          canvas that has to find its nodes again every time. */}
+      <div className="body" hidden={place !== "flows" || flowView !== "graph"}>
+
         {/* LA COLONNA HA UN MESTIERE SOLO: SCEGLIERE COSA GUARDARE. La cassetta
             dei passi se n'è andata dentro la tela, dove si compone. Quello che
             resta — l'elenco dei flussi, «tutti i flussi», il flusso nuovo —
@@ -1152,8 +1184,18 @@ export default function App() {
             era il nome di un flusso accanto al suo conteggio di passi, e
             stringere la colonna li troncherebbe senza guadagnare niente sulla
             tela, che il pannello a destra delimita comunque. */}
+        {/* A ZERO FLUSSI LA COLONNA SI CHIUDE, come la destra. Un elenco di
+            niente col suo invito accanto metteva DUE INVITI ALLO STESSO GESTO:
+            «+ Nuovo flusso» qui e «Crea il primo flusso» sulla tela, la stessa
+            funzione con due nomi a mezzo metro. E il gesto non perde la sua
+            casa, perché i due non convivono mai: al primo clic la scheda se ne
+            va e la colonna torna, col bottone accanto alla cosa appena creata. */}
+        {(flows.size > 0 || broken.length > 0) && (
         <aside className="rail">
           <div className="rail__title">Flussi registrati</div>
+          {/* «Tutti i flussi» toglie il fuoco: senza flussi non c'è fuoco da
+              togliere, e il bottone resterebbe un comando che non comanda. */}
+          {flows.size > 0 && (
           <button
             type="button"
             className="rail__all"
@@ -1162,6 +1204,7 @@ export default function App() {
           >
             Tutti i flussi
           </button>
+          )}
           {flowList.map(({ name, flow }) => {
             const working = flows.get(name);
             const dirty = working ? isDirty(working) : false;
@@ -1182,25 +1225,31 @@ export default function App() {
                   {name}
                   {dirty && <span className="rail__dirty-dot" title="non salvato" />}
                 </span>
-                <span className="rail__note">{flow.graph.steps.length} passi</span>
+                <span className="rail__note">{stepCountLabel(flow.graph.steps.length)}</span>
               </button>
             );
           })}
           {broken.map((entry) => (
-            // Un flusso rotto non sparisce dall'elenco: si vede, marcato, col
-            // motivo. Non entra nella tela perché non ha un grafo da disegnare.
+            // A broken flow does not vanish from the list: it is shown, marked,
+            // with the reason. It stays off the canvas because it has no graph
+            // to draw.
             <div className="rail__item" key={entry.name} data-broken>
               <span className="rail__label">{entry.name}</span>
               <span className="rail__note">{entry.reason}</span>
             </div>
           ))}
+          {/* L'INVITO È DELLA TELA FINCHÉ NON C'È NIENTE. Coi soli flussi rotti
+              la colonna resta aperta — sparire porterebbe via il posto che la
+              scheda nomina — ma tace: il gesto lo offre la scheda, da sola. */}
+          {flows.size > 0 && (
           <button type="button" className="rail__new" onClick={addFlow}>
             + Nuovo flusso
           </button>
-
+          )}
         </aside>
+        )}
 
-        <main className="canvas">
+        <main className="canvas" ref={canvasRef}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -1220,22 +1269,49 @@ export default function App() {
             fitView
             proOptions={{ hideAttribution: false }}
           >
-            <Background gap={20} />
-            <Controls />
+            {/* GRAPH PAPER AT TWO PITCHES, not generic dots: the fine one
+                gives the eye a measure, the coarse one gives it a place. Both
+                are declared under 1.5:1, because a grid that reads competes
+                with the nodes and the nodes are the figure. */}
+            <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
+            <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
+
+            {/* I COMANDI COMANDANO QUALCOSA, o non ci sono. Quattro bottoni che
+                ingrandiscono e inquadrano il nulla sono lo stesso «riquadro che
+                si vede e non dice niente» per cui qui sotto sparisce la
+                minimappa: il criterio è uno, e vale per tutti e due.
+
+                La carta a quadretti resta: è la tela, non un comando, ed è
+                quello che fa leggere lo spazio sotto il riquadro come una
+                superficie da riempire. Resta anche la firma di React Flow, che
+                è una nota di licenza — `hideAttribution` è un'opzione a
+                pagamento, e toglierla è una cosa che si compra, non una scelta
+                di schermata. */}
+            {flows.size > 0 && <Controls />}
+
             {/* LA MINIMAPPA DICE DOVE GUARDARE, non «c'è della roba». Era un
                 blocco grigio uniforme: adesso ogni passo ci sta con la tinta
                 del proprio stato, così un guasto in fondo a un flusso fuori
-                schermo si vede senza scorrere. */}
-            <MiniMap
-              pannable
-              zoomable
-              nodeColor={(node) => {
-                if (node.type !== "step") return "#d8d7ce";
-                const data = node.data as StepNodeData;
-                const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
-                return STATE_COLOR[state ?? "waiting"];
-              }}
-            />
+                schermo si vede senza scorrere.
+
+                CON ZERO FLUSSI NON C'È, per la stessa ragione della cassetta:
+                una mappa di niente è un riquadro che si vede e non dice
+                niente, e sullo schermo che insegna il primo gesto ogni cosa
+                muta è una distrazione. È anche la mitigazione del limite
+                dichiarato in `unhappystates.test.tsx` — dove non c'è niente da
+                mitigare, non serve. */}
+            {flows.size > 0 && (
+              <MiniMap
+                pannable
+                zoomable
+                nodeColor={(node) => {
+                  if (node.type !== "step") return "#d8d7ce";
+                  const data = node.data as StepNodeData;
+                  const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
+                  return STATE_COLOR[state ?? "waiting"];
+                }}
+              />
+            )}
 
             {/* LA CASSETTA STA QUI DENTRO, ed è tutto il punto del lavoro: chi
                 compone non esce più dalla tela per prendere un attrezzo.
@@ -1251,7 +1327,6 @@ export default function App() {
               <Toolbar
                 flowName={focusName}
                 onAdd={(kind) => focusName && addStep(focusName, kind)}
-                onNewFlow={addFlow}
               />
             )}
           </ReactFlow>
@@ -1269,53 +1344,82 @@ export default function App() {
           )}
         </main>
 
-        <aside className="panel">
-          <datalist id="known-actions">
-            {KNOWN_ACTIONS.map((action) => (
-              <option key={action} value={action} />
-            ))}
-          </datalist>
+        {/* LA COLONNA DESTRA SI CHIUDE A ZERO FLUSSI, e la tela si prende la sua
+            larghezza. Far tacere il contenuto lasciando in piedi il contenitore
+            lasciava una striscia di 288px muta e divisa da un filo: non si legge
+            come calma, si legge come una parte di schermo che non ha finito di
+            caricare.
 
-          {selectedData && selectedFlow ? (
-            <>
-            <StepEditor
-              key={selectedNode}
-              flowName={selectedData.flowName}
-              color={selectedData.color}
-              step={selectedData.step}
-              siblingIds={selectedFlow.flow.graph.steps.map((step) => step.id).filter((id) => id !== selectedData.step.id)}
-              tools={tools}
-              discovery={discovery}
-              usedModels={usedModels}
-              onRename={(newId) => renameStep(selectedData.flowName, selectedData.step.id, newId)}
-              onField={(patch) => updateStepField(selectedData.flowName, selectedData.step.id, patch)}
-              onToggleDep={(depId, on) =>
-                on
-                  ? connectSteps(selectedData.flowName, depId, selectedData.step.id)
-                  : disconnectSteps(selectedData.flowName, depId, selectedData.step.id)
-              }
-              onDelete={() => deleteStep(selectedData.flowName, selectedData.step.id)}
-            />
-            {/* Cosa è passato di qui, nel tempo. Sta sotto i parametri e non in
-                un pannello a parte: chi clicca un nodo chiede tutte e due le
-                cose — com'è fatto, e cosa ci è entrato. Fuori dal guscio non
-                c'è deposito, e il pannello lo dice da sé. */}
-            {NATIVE && (
-              <StepHistory
-                key={`${selectedData.flowName}::${selectedData.step.id}`}
-                flowName={selectedData.flowName}
-                stepId={selectedData.step.id}
-              />
+            È la regola già applicata tre volte in questo schermo — la barra
+            sparisce, la minimappa sparisce, i comandi spariscono: dove non c'è
+            niente da mostrare non serve un posto dove mostrarlo. */}
+        {flows.size > 0 && (
+          <aside className="panel">
+            <datalist id="known-actions">
+              {KNOWN_ACTIONS.map((action) => (
+                <option key={action} value={action} />
+              ))}
+            </datalist>
+
+            {selectedData && selectedFlow ? (
+              <>
+                {/* The step as the run has it, above the step as the file
+                    declares it: what is happening explains what is written,
+                    not the other way round. It mounts only while a run holds
+                    this step. */}
+                {watched && (
+                  <StepLive
+                    key={`${selectedData.flowName}::${selectedData.step.id}::live`}
+                    step={selectedData.step}
+                    graph={selectedFlow.flow.graph}
+                    run={watched}
+                    now={now}
+                  />
+                )}
+                <StepEditor
+                  key={selectedNode}
+                  flowName={selectedData.flowName}
+                  color={selectedData.color}
+                  step={selectedData.step}
+                  siblingIds={selectedFlow.flow.graph.steps.map((step) => step.id).filter((id) => id !== selectedData.step.id)}
+                  tools={tools}
+                  discovery={discovery}
+                  usedModels={usedModels}
+                  onRename={(newId) => renameStep(selectedData.flowName, selectedData.step.id, newId)}
+                  onField={(patch) => updateStepField(selectedData.flowName, selectedData.step.id, patch)}
+                  onToggleDep={(depId, on) =>
+                    on
+                      ? connectSteps(selectedData.flowName, depId, selectedData.step.id)
+                      : disconnectSteps(selectedData.flowName, depId, selectedData.step.id)
+                  }
+                  onDelete={() => deleteStep(selectedData.flowName, selectedData.step.id)}
+                />
+                {/* Cosa è passato di qui, nel tempo. Sta sotto i parametri e non
+                    in un pannello a parte: chi clicca un nodo chiede tutte e due
+                    le cose — com'è fatto, e cosa ci è entrato. Fuori dal guscio
+                    non c'è deposito, e il pannello lo dice da sé. */}
+                {NATIVE && (
+                  <StepHistory
+                    key={`${selectedData.flowName}::${selectedData.step.id}`}
+                    flowName={selectedData.flowName}
+                    stepId={selectedData.step.id}
+                  />
+                )}
+              </>
+            ) : (
+              /* THE PANEL TALKS ABOUT A STEP, the only thing it shows. Asking
+                 for a flow too puts TWO INVITATIONS ON ONE SCREEN, and with a
+                 flow already focused it invites what is already done. At zero
+                 flows there is no rail at all, so promising that step
+                 parameters appear here would promise the impossible. */
+              <div className="panel__empty">
+                {focusName === null
+                  ? "I parametri di un passo compaiono qui."
+                  : "Scegli un passo sulla tela per vederne e modificarne i parametri."}
+              </div>
             )}
-            </>
-          ) : (
-            <div className="panel__empty">
-              {flows.size === 0
-                ? "Nessun flusso da mostrare: creane uno dalla tela o dalla colonna a sinistra."
-                : "Scegli un passo per vederne e modificarne i parametri, o un flusso a sinistra per metterlo a fuoco."}
-            </div>
-          )}
-        </aside>
+          </aside>
+        )}
       </div>
 
       {/* LA VISTA SI CHIUDE, LA CORSA NO. Chiudere questo pannello non ferma
@@ -1341,7 +1445,7 @@ export default function App() {
   );
 }
 
-/** Un elenco vuoto stabile: un `[]` nuovo a ogni render rifarebbe i calcoli a valle. */
+/** A stable empty list: a fresh `[]` each render would redo the work downstream. */
 const EMPTY_TOOLS: Tool[] = [];
 
 interface FocusBarProps {
@@ -1349,36 +1453,28 @@ interface FocusBarProps {
   color: string;
   flow: FlowFile;
   neverSaved: boolean;
-  dirty: boolean;
   busy: boolean;
   error?: string;
   onRename: (next: string) => void;
   onDescription: (text: string) => void;
-  onSave: () => void;
   onDelete: () => void;
 }
 
 /**
- * La barra del flusso a fuoco: nome, descrizione, salva ed elimina. Il nome si
- * scrive solo prima del primo salvataggio (è il nome del file); la descrizione
- * si scrive sempre, perché un flusso senza descrizione è un nome e basta per
- * chiunque lo apra dopo.
- *
- * Le bozze restano qui dentro e si depositano al `blur`: rinominare a ogni
- * tasto premuto significherebbe rinominare il flusso sette volte mentre lo si
- * chiama «notte».
+ * The focused flow's bar: name, description and delete. Save left it when the
+ * top bar took it — two Save buttons a hand apart ask which one saves what. The
+ * name is editable only before the first save, since it is the filename; drafts
+ * settle on `blur`, or a rename would fire once per letter typed.
  */
 function FocusBar({
   name,
   color,
   flow,
   neverSaved,
-  dirty,
   busy,
   error,
   onRename,
   onDescription,
-  onSave,
   onDelete,
 }: FocusBarProps) {
   const [nameDraft, setNameDraft] = useState(name);
@@ -1414,12 +1510,8 @@ function FocusBar({
           if (event.key === "Enter") event.currentTarget.blur();
         }}
       />
-      {dirty && <span className="focusbar__dirty">{neverSaved ? "mai salvato" : "non salvato"}</span>}
       <div className="focusbar__spacer" />
       {error && <span className="focusbar__error">{error}</span>}
-      <button type="button" onClick={onSave} disabled={!dirty || busy}>
-        {busy ? "salvo…" : "Salva flusso"}
-      </button>
       <button type="button" className="is-danger" onClick={onDelete} disabled={busy}>
         {neverSaved ? "Scarta flusso" : "Elimina flusso"}
       </button>
@@ -1427,3 +1519,313 @@ function FocusBar({
   );
 }
 
+
+// ── the top bar, and the three views of one flow ─────────────────────────
+
+/** What the right-hand side of the bar says, and whether something is alive. */
+interface BarStatus {
+  live: boolean;
+  word: string;
+}
+
+/**
+ * How far a run has got, folded from its own facts.
+ *
+ * THE SNAPSHOT CARRIES NO COUNTERS. `RunSnapshot` has `status` and a list of
+ * events and nothing else; the ledger has `steps_went`/`steps_total`, but it
+ * only counts steps it has already recorded, so mid-run it undercounts, and it
+ * is read on demand rather than at every beat. The denominator therefore comes
+ * from the flow on screen, and the numerator from the events — the same fold
+ * the canvas already uses to colour its nodes.
+ */
+function runProgress(run: RunSnapshot): { done: number; running: number } {
+  let done = 0;
+  let running = 0;
+  for (const step of stepStatesOfRun(run.events).values()) {
+    if (step.state === "running") running += 1;
+    else if (step.state !== "waiting") done += 1;
+  }
+  return { done, running };
+}
+
+const VIEW_WORD: Record<FlowView, string> = { graph: "Graph" };
+
+interface TopBarProps {
+  view: FlowView;
+  onView: (view: FlowView) => void;
+  flowName: string | null;
+  steps: number;
+  dirty: boolean;
+  busy: boolean;
+  starting: boolean;
+  source: Source;
+  sourceWord: string;
+  status: BarStatus | null;
+  onWatch?: () => void;
+  onSave: () => void;
+  onRun: () => void;
+}
+
+/**
+ * The bar of the program: the mark, the flow in focus, the three views of it,
+ * and the two gestures that act on it.
+ *
+ * NO VERSION SITS NEXT TO THE NAME. The mockup draws a `v7` chip there; a flow
+ * has no version — not in `flow::FlowFile`, not in the `.flow.json` on disk,
+ * not in this window — and the Rust type refuses unknown fields, so one cannot
+ * be added without changing the engine. The chip counts steps instead, which is
+ * a number the flow really carries.
+ */
+function TopBar({
+  view,
+  onView,
+  flowName,
+  steps,
+  dirty,
+  busy,
+  starting,
+  source,
+  sourceWord,
+  status,
+  onWatch,
+  onSave,
+  onRun,
+}: TopBarProps) {
+  const statusBody = status && (
+    <>
+      <span className="topbar__live" data-idle={status.live ? undefined : true} />
+      <span className="topbar__status-word">{status.word}</span>
+    </>
+  );
+
+  return (
+    <header className="topbar">
+      <span className="topbar__brand">
+        <svg
+          className="topbar__mark"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 17l9-13 9 13" />
+          <path d="M3 17c2.5 2 5 2 7.5 0S16 15 18.5 17" />
+        </svg>
+        Sailor
+      </span>
+      <span className="topbar__rule" />
+
+      {flowName === null ? (
+        <span className="topbar__none">no flow in focus — pick one in the rail</span>
+      ) : (
+        <span className="topbar__flow">
+          <span className="topbar__flow-name">{flowName}</span>
+          <span className="topbar__steps">{steps} steps</span>
+          {dirty && (
+            <span className="topbar__dirty">
+              <span className="topbar__dot" />
+              unsaved changes
+            </span>
+          )}
+        </span>
+      )}
+
+      {/* THREE VIEWS OF THE SAME FLOW, not three places of the window. */}
+      <nav className="topbar__tabs" aria-label="views of the flow in focus">
+        {(["graph"] as FlowView[]).map((name) => (
+          <button
+            key={name}
+            type="button"
+            className="topbar__tab"
+            data-here={view === name || undefined}
+            aria-pressed={view === name}
+            onClick={() => onView(name)}
+          >
+            {VIEW_WORD[name]}
+          </button>
+        ))}
+      </nav>
+
+      <span className="topbar__spacer" />
+
+      {/* Whoever is looking must know whether these flows come from the disk or
+          from a sample, without asking and without opening the code. */}
+      <span className="topbar__source" data-source={source}>
+        {sourceWord}
+      </span>
+
+      {status !== null &&
+        (onWatch ? (
+          <button type="button" className="topbar__status" onClick={onWatch}>
+            {statusBody}
+          </button>
+        ) : (
+          <span className="topbar__status">{statusBody}</span>
+        ))}
+
+      <button
+        type="button"
+        className="topbar__save"
+        onClick={onSave}
+        disabled={flowName === null || !dirty || busy}
+      >
+        {busy ? "Saving…" : "Save"}
+      </button>
+      {/* A FILLED BUTTON HAS NO TINT. Prohibition 4 reserves colour for the
+          state of the machine, so «Run» is a plate — ink on ground — and not a
+          green. `.is-primary` already carried that answer. */}
+      <button
+        type="button"
+        className="topbar__run is-primary"
+        onClick={onRun}
+        disabled={flowName === null || starting}
+      >
+        <span className="topbar__glyph" aria-hidden="true">
+          ▶
+        </span>
+        {starting ? "Starting…" : "Run"}
+      </button>
+    </header>
+  );
+}
+
+/**
+ * THE CODE TAB SHOWS WHAT IS ACTUALLY WRITTEN, which is JSON.
+ *
+ * The mockup draws TypeScript — `createStep`, `createFlow`, imports from
+ * `@sailor/core`. Nothing of the sort exists: there is no package, no generator,
+ * no engine command that emits source, and the project decided the opposite on
+ * purpose — a flow is a data file and a step is an action registered in Rust,
+ * with no interpreter inside Sailor. So this tab does not draw an imaginary
+ * language: it shows the file the engine reads, and says why it is that file.
+ */
+/* Kept, unmounted: what it measured is worth more than the view — there is no
+   Tauri command for `sailor flow check`, so the window only knows the graph
+   loaded. See the top bar's status line. */
+function FlowCode({ name, flow }: { name: string | null; flow: FlowFile | undefined }) {
+  if (name === null || flow === undefined) {
+    return (
+      <div className="codeview">
+        <p className="codeview__empty">Pick a flow in the rail to read what is written for it.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="codeview">
+      <div className="label">{name}.flow.json</div>
+      <p className="codeview__note">
+        This is the flow as it is stored, and it is the whole of it: a flow is a data file, and every
+        step names an action the engine has registered — never code that runs from here. The mockup
+        for this tab drew generated TypeScript; no such generator exists, and none is planned, so
+        what you read below is the file and not a rendering of it.
+      </p>
+      <pre className="codeview__source">{JSON.stringify(flow, null, 2)}</pre>
+    </div>
+  );
+}
+
+/**
+ * THE RUNS TAB IS THE LEDGER, NARROWED BY HAND.
+ *
+ * The engine keeps every run in a ledger and hands the window the lot: there is
+ * no per-flow query behind `execution_history`, though the SQL for one already
+ * exists unexposed in `crates/ledger`. Filtering here is what the command line
+ * does too — but it means the window carries the whole history to show a slice
+ * of it, and that is worth knowing before this list gets long.
+ */
+/* Kept, unmounted: the ledger has flow-scoped queries (`runs_in_window`,
+   `last_finished_run`) that no Tauri command exposes, so this filtered in the
+   window. The places «Adesso» and «Cronologia» serve the need. */
+function FlowRuns({ name }: { name: string | null }) {
+  const now = useClock();
+  const { asked } = useAsk<Execution[]>(
+    NATIVE,
+    executionHistory,
+    15000,
+    "outside the shell: the ledger is the engine's to read",
+  );
+
+  if (name === null) {
+    return (
+      <div className="now">
+        <p className="now__empty">Pick a flow in the rail to see the runs it has had.</p>
+      </div>
+    );
+  }
+  if (asked.state === "mute") {
+    return (
+      <div className="now">
+        <p className="now__mute">I cannot read the runs of «{name}»: {asked.why}</p>
+      </div>
+    );
+  }
+  if (asked.state === "asking") {
+    return (
+      <div className="now">
+        <p className="now__mute">Reading the ledger…</p>
+      </div>
+    );
+  }
+
+  const mine = asked.value.filter((run) => run.entity === name);
+  if (mine.length === 0) {
+    return (
+      <div className="now">
+        <p className="now__empty">
+          The ledger remembers no run of «{name}». It remembers {asked.value.length} of other flows.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="now">
+      <header className="now__head">
+        <h2 className="now__title">Runs of {name}</h2>
+        <span className="now__count">{mine.length}</span>
+        <span className="now__note">out of {asked.value.length} the ledger remembers</span>
+      </header>
+      <table className="now__table">
+        <thead>
+          <tr>
+            <th>run</th>
+            <th>how it ended</th>
+            <th>when</th>
+            <th className="now__num">lasted</th>
+            <th className="now__num">steps</th>
+            <th className="now__num">retried</th>
+          </tr>
+        </thead>
+        <tbody>
+          {mine.map((run) => (
+            <tr key={run.run_id}>
+              <td className="now__entity">
+                {run.run_id}
+                {run.error !== null && <span className="now__why">{run.error}</span>}
+              </td>
+              <td className="now__state" data-outcome={outcomeOf(run)}>
+                {outcomeOf(run)}
+              </td>
+              <td className="now__when">{whenOf(run.started_at, now)}</td>
+              <td className="now__num">{lastedOf(run.duration_secs)}</td>
+              <td className="now__num">
+                {run.steps_went}/{run.steps_total}
+              </td>
+              <td className="now__num">{run.steps_retried === 0 ? "—" : run.steps_retried}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* Not mounted today, and not dead: see the notes above each one. */
+void FlowCode;
+void FlowRuns;

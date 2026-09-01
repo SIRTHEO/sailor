@@ -162,7 +162,9 @@ fn tomorrow_someone_can_ask_who_holds_the_port() {
 
     // E adesso si può spegnere, che era la seconda metà: «non può né spegnerli
     // né riprenderli».
-    process.stop().expect("spegnere quello che il deposito ha trovato");
+    process
+        .stop()
+        .expect("spegnere quello che il deposito ha trovato");
     assert!(!ledger::pid_is_alive(pid), "l'orfano non si è spento");
     assert!(
         store
@@ -219,8 +221,8 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
         "la conferma pid per pid non distingue il vivo dal morto"
     );
 
-    let closed = close_the_ones_that_stopped_breathing(&store, 1_700_000_000)
-        .expect("chiudere i morti");
+    let closed =
+        close_the_ones_that_stopped_breathing(&store, 1_700_000_000).expect("chiudere i morti");
     assert_eq!(closed, 1, "chiusi {closed} invece di uno solo");
 
     let after = left_running(&store).expect("leggere dopo");

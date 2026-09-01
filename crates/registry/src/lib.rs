@@ -1,22 +1,9 @@
-//! Ciò che la riga di comando e la finestra devono fare allo stesso modo.
+//! What the command line and the desktop window must do the same way.
 //!
-//! Due cose, oggi: **quali azioni** Sailor sa eseguire, e **come si registra
-//! l'intestazione di una corsa**. Sono entrambe arrivate qui per la stessa
-//! strada — erano scritte due volte e si sono disallineate — e chi ne trova una
-//! terza la porti qui invece di ricopiarla.
-//!
-//! **PERCHÉ QUESTO CRATE ESISTE.** Questa lista viveva in due copie: una nel
-//! comando `sailor flow run`, una nel guscio della finestra. Le due si sono
-//! disallineate almeno tre volte, e l'ultima è del 30/08/2026 alle 09:05, quando
-//! il motore ha imparato a registrare quanto spende — da una parte sola. Il
-//! risultato non era un errore di compilazione né una prova rossa: era una
-//! finestra che, lanciando **lo stesso flusso** del terminale, non sapeva
-//! risolvere gli strumenti per identificativo, non scriveva nessun costo nel
-//! deposito, e rifiutava come «azione sconosciuta» due nodi che dal terminale
-//! funzionavano. Tre comportamenti diversi per lo stesso file di flusso, e
-//! nessun modo di accorgersene se non provandoli tutti e due.
-//!
-//! Chi aggiunge un'azione la aggiunge qui, e la trovano tutti.
+//! Two things today: **which actions** Sailor can run, and **how a run's header
+//! is recorded**. Both arrived here the same way — they were written twice and
+//! drifted apart — so whoever finds a third brings it here instead of copying
+//! it. Adding an action here means everybody gets it.
 
 mod run_record;
 mod subflow_host;
@@ -32,25 +19,17 @@ use std::sync::Arc;
 use flow::{ActionRegistry, ExecutionRequest, FlowFile, SharedState};
 use ledger::Ledger;
 
-/// La richiesta con cui una corsa parte, costruita **una volta sola**.
+/// The request a run starts from, built in one place.
 ///
-/// **PERCHÉ STA QUI E NON NEI DUE CHIAMANTI.** Era scritta due volte — nel
-/// comando `sailor flow run` e nel guscio della finestra — ed è esattamente la
-/// forma del guasto 10: le due copie si sono già disallineate almeno tre volte,
-/// l'ultima con `total_cost_micros: 0` scritto a mano da una parte sola. La
-/// radice del progetto è il dato nuovo che le avrebbe fatte divergere di nuovo,
-/// e nel modo peggiore: una corsa lanciata dalla finestra che lavora dove sta il
-/// processo mentre la stessa corsa dal terminale lavora nella radice giusta.
-///
-/// **LA RADICE PUÒ MANCARE, E ALLORA NON C'È.** `None` non diventa la cartella
-/// corrente: chi ha bisogno di una radice fallisce dicendolo, al momento di
-/// comporre l'ingresso del passo. Un ripiego silenzioso qui rimetterebbe in
-/// piedi il guasto 25 nel punto esatto che deve chiuderlo.
+/// **A missing root stays missing.** `None` does not become the current
+/// directory: whoever needs a root fails saying so, when the step's input is
+/// composed. A silent fallback here would put a run launched from the window in
+/// a different place from the same run launched from the terminal.
 pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> ExecutionRequest {
     let mut shared = SharedState::new();
     if let Some(root) = root {
-        // Il tipo del valore lo dà `SharedState`: così questo crate resta senza
-        // dipendenze esterne proprie, che è la ragione per cui esiste.
+        // The value's type comes from `SharedState`, which keeps this crate
+        // free of dependencies of its own — the reason it exists.
         shared.insert(
             flow::WORKSPACE_ROOT.to_owned(),
             root.display().to_string().into(),
@@ -61,91 +40,82 @@ pub fn execution_request(flow: &FlowFile, run_id: &str, root: Option<&Path>) -> 
         root_inputs: flow.inputs.clone(),
         gates: Vec::new(),
         shared,
-        // Il tetto è del flusso e viaggia con la corsa: chi lancia non lo
-        // inventa, lo porta.
+        // The cap belongs to the flow and travels with the run: the launcher
+        // carries it rather than inventing one.
         spend_cap_micros: flow.spend_cap_micros,
     }
 }
 
-/// Il registro delle azioni: tutto ciò che un passo può chiedere di fare.
+/// The action registry: everything a step can ask to be done.
 ///
-/// **L'ORDINE DELLE RIGHE CONTA, E NON È CASUALE.** `actions::register_default`
-/// registra un motore esterno che non sa risolvere uno strumento per
-/// identificativo; la riga più sotto lo *sostituisce* con uno che lo sa. Chi
-/// inverte le due righe ottiene un registro che compila, gira, e fallisce ogni
-/// passo che nomina uno strumento invece di un binario.
+/// **Line order matters.** `actions::register_default` registers an external
+/// engine that cannot resolve a tool by id; a line below *replaces* it with one
+/// that can. Swap them and you get a registry that compiles, runs, and fails
+/// every step naming a tool instead of a binary.
 ///
-/// **IL DEPOSITO È FACOLTATIVO E LA DIFFERENZA È DICHIARATA.** Chi esegue lo
-/// passa e ottiene le righe di consumo; chi fa un controllo statico non ce l'ha
-/// e non deve averlo — aprire un deposito per controllare un grafo creerebbe
-/// file sul disco per una domanda che non tocca niente. I nodi che *scrivono*
-/// nel deposito restano fuori quando manca, e `flow check` lo dice; quello che
-/// *legge* lo storico si registra comunque, perché «non c'è nessuna corsa
-/// registrata» è una risposta buona e non un guasto.
+/// **The ledger is optional, and the difference is declared.** Running passes
+/// one and gets the spend rows; a static check has none and must not — opening
+/// a store to check a graph would create files for a question that touches
+/// nothing. Nodes that *write* stay out when it is missing; the one that
+/// *reads* history is registered anyway, because "no run recorded" is a good
+/// answer rather than a failure.
 pub fn default_registry(
     ledger: Option<Ledger>,
     watcher: Option<Arc<dyn actions::StepSinks>>,
 ) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
-    // Il rilevamento di cosa c'è sulla macchina è un'azione come le altre: un
-    // passo può chiedere «che strumenti ho qui» invece di dare per scontato che
-    // ci siano.
+    // Detecting what is on this machine is an action like any other: a step can
+    // ask "which tools do I have here" instead of assuming.
     toolbox::register_default(&mut registry);
-    // «Questi flussi girano qui?»: la metà mancante del rilevamento, perché un
-    // elenco di cosa c'è non dice a nessuno cosa smetterà di funzionare.
+    // "Do these flows run here?" — the missing half, because a list of what
+    // exists does not tell anyone what will stop working.
     toolbox::register_needs(&mut registry);
-    // Da dove arriva il segnale che fa partire un flusso: anche le sorgenti sono
-    // un elenco di descrittori, non un ramo di codice.
+    // Where the signal that starts a flow comes from: sources are a list of
+    // descriptors too, not a branch of code.
     trigger::register_default(&mut registry);
     // The four nodes a relay is composed of. They need no ledger and no
     // watcher: each one is a single power over a live terminal, and the order
     // they run in is a flow file rather than a function here.
     relay::register_relay(&mut registry);
-    // Il motore che risolve gli strumenti per identificativo, e che riceve il
-    // deposito: il `run_id` non esiste ancora qui — nasce quando la corsa parte,
-    // e arriva all'azione dallo stato condiviso — mentre il deposito è già in
-    // mano a chi costruisce il registro.
+    // The engine that resolves tools by id and receives the ledger. The
+    // `run_id` does not exist yet here — it is born when the run starts and
+    // reaches the action through the shared state.
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
         actions::ExternalEngineAction::resolving_with(toolbox::Tools::current())
             .watched_by(watcher.clone())
             .recording_to(ledger.clone()),
     );
-    // Il guardiano si attacca all'istanza che resta registrata, non a quella
-    // sostituita: perciò anche questa va dopo `register_default`.
+    // The watcher attaches to the instance that stays registered, not to the
+    // replaced one, so this goes after `register_default` as well.
     registry.register(
         actions::SHELL_CHECK_ACTION,
         actions::ShellCheckAction::new().watched_by(watcher.clone()),
     );
-    // Il passo che **non** avvia niente: descrive il lavoro e lo lascia
-    // all'agente già vivo nel terminale. Va dopo `register_default` come le
-    // altre due, e per la stessa ragione — il guardiano si attacca all'istanza
-    // che resta registrata. Senza guardiano il mandato si vedrebbe solo a corsa
-    // finita, cioè quando non serve più a nessuno.
+    // The step that starts nothing: it describes the work and leaves it to the
+    // agent already alive in the terminal. Same ordering, same reason —
+    // without the watcher the mandate would only be visible once the run had
+    // finished, which is when it is no use to anybody.
     registry.register(
         actions::handoff::HANDED_TO_AGENT_ACTION,
         actions::handoff::HandoffAction::new().watched_by(watcher.clone()),
     );
     actions::history::register_history(&mut registry, ledger.clone());
-    // UN FLUSSO CHE NE ESEGUE UN ALTRO. Si registra **anche senza deposito**,
-    // e la differenza è la stessa dichiarata sopra: `flow check` deve poter
-    // dire che un passo `subflow` nomina un'azione che esiste, senza aprire
-    // niente. A eseguire, invece, senza deposito si rifiuta dicendolo — una
-    // corsa figlia che nessuno può ricollegare al passo che l'ha chiesta è
-    // proprio l'opacità per cui questo passo è stato costruito.
+    // A flow that runs another one. Registered **even without a ledger**, for
+    // the reason declared above: `flow check` must be able to say a `subflow`
+    // step names a real action without opening anything. Running without one
+    // refuses instead, because a child run nobody can trace back to the step
+    // that asked for it is the opacity this step was built against.
     registry.register(
         flow::subflow::SUBFLOW_ACTION,
-        flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(
-            ledger.clone(),
-            watcher,
-        ))),
+        flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(ledger.clone(), watcher))),
     );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger.clone());
-        // Chi sta lavorando su cosa. Sta qui e non solo nella finestra perché
-        // la domanda deve poterla fare **un agente**: registrata nel registro,
-        // è un passo che qualunque flusso può scrivere.
+        // Who is working on what. Here and not only in the window because an
+        // **agent** must be able to ask: registered, it is a step any flow can
+        // write.
         actions::presence::register_presence(&mut registry, ledger);
     }
     registry
@@ -155,14 +125,9 @@ pub fn default_registry(
 mod tests {
     use super::*;
 
-    /// **LE AZIONI CHE LA FINESTRA NON AVEVA.** Questa prova elenca per nome ciò
-    /// che la copia del guscio si era persa per strada: senza il risolutore
-    /// degli strumenti ogni passo che nomina `claude-code` invece di un percorso
-    /// cadeva con `no_tool_resolver`, e senza `tool_needs` due flussi di questa
-    /// casa venivano rifiutati come «azioni che il motore non conosce».
-    ///
-    /// Toglierne una da `default_registry` rende questa prova rossa: è l'unico
-    /// modo che ho di far notare a chi verrà una riga cancellata per sbaglio.
+    /// The actions the window's copy had lost along the way, named one by one.
+    /// Removing any of them from `default_registry` turns this red, which is
+    /// the only way to tell whoever comes next that a line went missing.
     #[test]
     fn the_registry_carries_every_action_a_shipped_flow_can_name() {
         let registry = default_registry(None, None);
@@ -172,34 +137,31 @@ mod tests {
             actions::handoff::HANDED_TO_AGENT_ACTION,
             "detect_tools",
             "tool_needs",
-            // I due nodi che parlano con un server MCP. Prima del 31/08/2026 non
-            // c'erano: Sailor *riconosceva* i server MCP — il rilevatore ha la
-            // famiglia `mcp_server` — e nessuna azione ci parlava.
+            // The two nodes that talk to an MCP server. Sailor *recognised* MCP
+            // servers — the detector has an `mcp_server` family — while no
+            // action spoke to one.
             actions::mcp::MCP_READY_ACTION,
             actions::mcp::MCP_ASK_ACTION,
-            // La finestra offre il nodo `subflow` da sempre; fino al
-            // 31/08/2026 il motore non lo conosceva, e un flusso disegnato con
-            // quel nodo veniva rifiutato come «azione che non conosco».
+            // The window has always offered the `subflow` node; the engine did
+            // not know it, so a flow drawn with it was refused as unknown.
             flow::subflow::SUBFLOW_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),
-                "«{wanted}» deve stare nel registro: senza, un flusso che lo nomina non parte"
+                "«{wanted}» must be in the registry: without it, a flow naming it will not start"
             );
         }
     }
 
-    /// **LA RADICE ARRIVA A OGNI AZIONE, NON A QUELLE CHE SE LA VANNO A
-    /// PRENDERE.** Un'azione finta registra lo `shared` che riceve: è l'unico
-    /// modo di provare che il dato viaggia per costruzione e non per
-    /// cortesia di chi lo legge — il guasto 28 dice cosa succede quando è il
-    /// secondo caso.
+    /// The root reaches every action, not only the ones that go looking for it.
+    /// A fake action records the `shared` it receives: the only way to show the
+    /// value travels by construction rather than by the reader's courtesy.
     #[test]
     fn the_root_reaches_the_action_through_the_shared_state() {
         use flow::{Action, ActionError, ActionOutcome, Executor, SharedState as Shared};
         use std::sync::Mutex;
 
-        /// Non fa niente e ricorda cosa le è arrivato.
+        /// Does nothing, remembers what it was given.
         struct Spy(Arc<Mutex<Option<Shared>>>);
         impl Action for Spy {
             fn execute(
@@ -207,7 +169,7 @@ mod tests {
                 _input: &serde_json::Value,
                 shared: &Shared,
             ) -> Result<ActionOutcome, ActionError> {
-                *self.0.lock().expect("il registratore") = Some(shared.clone());
+                *self.0.lock().expect("the recorder") = Some(shared.clone());
                 Ok(ActionOutcome::Went(serde_json::Value::Null))
             }
         }
@@ -225,7 +187,7 @@ mod tests {
             }]},
             "inputs": {}
         }"#;
-        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(json).expect("loading the flow");
         let request = execution_request(&flow, "corsa-1", Some(Path::new("/una/radice")));
 
         let mut store = flow::InMemoryRecordStore::default();
@@ -237,92 +199,94 @@ mod tests {
                 &registry,
                 &mut flow::SystemClock,
             )
-            .expect("la corsa gira");
+            .expect("the run goes");
 
-        let shared = seen.lock().expect("il registratore").clone().expect("il passo è girato");
+        let shared = seen
+            .lock()
+            .expect("the recorder")
+            .clone()
+            .expect("the step ran");
         assert_eq!(
-            shared.get(flow::WORKSPACE_ROOT).and_then(|root| root.as_str()),
+            shared
+                .get(flow::WORKSPACE_ROOT)
+                .and_then(|root| root.as_str()),
             Some("/una/radice"),
-            "la radice deve arrivare all'azione senza che l'azione la chieda"
+            "the root must reach the action without the action asking for it"
         );
     }
 
-    /// Senza radice non si scrive niente: **assente non è la cartella
-    /// corrente**. Uno zero al posto di «non lo so» è la bugia da cui il
-    /// guasto 25 è nato.
+    /// Without a root nothing is written: **absent is not the current
+    /// directory**. A zero standing in for "I do not know" is the lie.
     #[test]
     fn without_a_root_nothing_is_written_into_the_shared_state() {
         let json = r#"{"id": "p", "description": "d",
             "graph": {"steps": []}, "inputs": {}}"#;
-        let flow: FlowFile = serde_json::from_str(json).expect("caricare il flusso");
+        let flow: FlowFile = serde_json::from_str(json).expect("loading the flow");
 
         let request = execution_request(&flow, "corsa-1", None);
 
         assert!(
             !request.shared.contains_key(flow::WORKSPACE_ROOT),
-            "nessun ripiego silenzioso sulla cartella del processo"
+            "no silent fallback to the process's own directory"
         );
     }
 
-    /// Senza deposito i nodi che scrivono restano fuori, quello che legge no.
-    /// È la regola dichiarata sopra, e vale la pena provarla: è la differenza
-    /// fra un controllo statico che crea file e uno che non tocca niente.
+    /// Without a ledger the writing nodes stay out and the reading one stays
+    /// in: the difference between a static check that creates files and one
+    /// that touches nothing.
     #[test]
     fn without_a_ledger_the_writing_nodes_stay_out_and_the_reading_one_stays_in() {
         let registry = default_registry(None, None);
         assert!(
             registry.get("history_ask").is_some(),
-            "leggere lo storico funziona anche senza deposito: la risposta è «non c'è niente»"
+            "reading history works without a ledger: the answer is «there is nothing»"
         );
         assert!(
             registry.get("store_put").is_none(),
-            "scrivere no: senza deposito non ha dove mettere niente"
+            "writing does not: without a ledger it has nowhere to put anything"
         );
     }
 
-    /// **`subflow` C'È ANCHE SENZA DEPOSITO, MA NON ESEGUE.**
+    /// `subflow` is there without a ledger, and refuses to run.
     ///
-    /// Le due metà stanno insieme apposta. Deve **esserci**, o `flow check` —
-    /// che un deposito non lo apre — direbbe che un passo `subflow` nomina
-    /// un'azione sconosciuta, cioè rifiuterebbe un flusso valido. E deve
-    /// **rifiutarsi di eseguire**, perché una corsa figlia che non finisce nel
-    /// deposito non è risalibile dal passo che l'ha chiamata: sarebbe
-    /// esattamente il lavoro-che-sparisce-dentro-un-altro per cui questo passo
-    /// è stato costruito.
+    /// The two halves belong together. It must **be there**, or `flow check` —
+    /// which opens no ledger — would call a valid flow unknown. And it must
+    /// **refuse to run**, because a child run that never reaches the ledger
+    /// cannot be traced back to the step that called it.
     #[test]
     fn without_a_ledger_the_subflow_step_is_registered_but_refuses_to_run() {
         let registry = default_registry(None, None);
         let step = registry
             .get(flow::subflow::SUBFLOW_ACTION)
-            .expect("registrata anche senza deposito");
+            .expect("registered even without a ledger");
 
         let mut shared = flow::SharedState::new();
         shared.insert(flow::CURRENT_RUN.to_owned(), "una-corsa".into());
         shared.insert(flow::CURRENT_STEP.to_owned(), "un-passo".into());
         let refused = step
             .execute(&serde_json::json!({ "flow": "qualunque" }), &shared)
-            .expect_err("senza deposito non deve eseguire");
+            .expect_err("without a ledger it must not run");
 
         assert_eq!(refused.class, "no_ledger");
         assert!(
-            refused.said.contains("risalibile"),
-            "e dice perché, non solo che non può: {}",
+            refused.said.contains("traced back"),
+            "and it says why, not only that it cannot: {}",
             refused.said
         );
     }
 
-    /// La corsa figlia porta il padre nel deposito, non solo nel proprio nome.
-    /// Senza `parent_run_id` scritto, «risalire» vorrebbe dire indovinare da una
-    /// stringa — e chi ha lanciato il figlio si legge in `started_by`.
+    /// A child run carries its parent in the ledger, not only in its own name.
+    /// Without `parent_run_id` written down, tracing back would mean guessing
+    /// from a string.
     #[test]
     fn a_child_run_carries_the_parent_and_the_step_that_started_it() {
         let dir = std::env::temp_dir().join(format!("sailor-registry-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let ledger = Ledger::open(&dir).expect("deposito di prova");
+        let ledger = Ledger::open(&dir).expect("test ledger");
         let flow: flow::FlowFile = serde_json::from_str(
             r#"{"id":"figlio","description":"x","graph":{"steps":[]},"inputs":{}}"#,
         )
-        .expect("flusso valido");
+        .expect("valid flow");
 
         record_child_run(
             &ledger,
@@ -337,24 +301,23 @@ mod tests {
             },
             "corsa-del-padre",
         )
-        .expect("registrata");
+        .expect("recorded");
 
-        // **SI LEGGE DALLA PROIEZIONE, PERCHÉ IL DEPOSITO NON HA UN LETTORE PER
-        // QUESTA COLONNA.** `FinishedRun` non porta `parent_run_id`: la colonna
-        // esisteva e nessuno la riempiva, quindi nessuno l'ha mai riletta. Il
-        // dump la espone per posizione — `run_id, kind, entity, parent_run_id,
-        // started_by, …` — ed è l'unica strada che non chiede di modificare il
-        // deposito.
-        let dump = ledger.projection_dump().expect("proiezione");
+        // Read from the projection because the ledger has no reader for this
+        // column: `FinishedRun` does not carry `parent_run_id`. The dump
+        // exposes it by position — `run_id, kind, entity, parent_run_id,
+        // started_by, …` — and it is the only road that does not require
+        // changing the ledger.
+        let dump = ledger.projection_dump().expect("projection");
         let child = dump["runs"]
             .as_array()
-            .expect("le corse")
+            .expect("the runs")
             .iter()
             .find(|row| row[0] == "corsa-figlia")
-            .expect("la corsa figlia c'è");
-        assert_eq!(child[2], "figlio", "il flusso eseguito");
-        assert_eq!(child[3], "corsa-del-padre", "la corsa che l'ha chiamata");
-        assert_eq!(child[4], "subflow chiamata", "e il passo che l'ha aperta");
+            .expect("the child run is there");
+        assert_eq!(child[2], "figlio", "the flow that ran");
+        assert_eq!(child[3], "corsa-del-padre", "the run that called it");
+        assert_eq!(child[4], "subflow chiamata", "and the step that opened it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

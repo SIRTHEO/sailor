@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RunEvent } from "./engine";
-import { panesFromEvents } from "./RunConsole";
+import { linesFromEvents, panesFromEvents } from "./RunConsole";
 
 /**
  * **COSA È ENTRATO IN UN PASSO ARRIVA FINO ALLA VISTA.**
@@ -18,8 +18,8 @@ function started(seq: number, stepId: string, input: unknown): RunEvent {
   return { run_id: "r", seq, kind: "step_started", at: seq * 1000, step_id: stepId, payload: { attempt: 1, input } };
 }
 
-function closed(seq: number, stepId: string, outcome: string): RunEvent {
-  return { run_id: "r", seq, kind: "step_closed", at: seq * 1000, step_id: stepId, payload: { outcome } };
+function closed(seq: number, stepId: string, outcome: string, output?: unknown): RunEvent {
+  return { run_id: "r", seq, kind: "step_closed", at: seq * 1000, step_id: stepId, payload: { outcome, output } };
 }
 
 describe("i riquadri di una corsa", () => {
@@ -48,5 +48,56 @@ describe("i riquadri di una corsa", () => {
     const byId = new Map(panes.map((p) => [p.stepId, p]));
     expect(byId.get("uno")?.input).toEqual({ command: "cargo test" });
     expect(byId.get("due")?.input).toEqual({ command: "cargo fmt" });
+  });
+});
+
+function text(seq: number, stepId: string, pipe: string, said: string): RunEvent {
+  return { run_id: "r", seq, kind: "step_text", at: seq * 1000, step_id: stepId, payload: { pipe, text: said } };
+}
+
+/**
+ * THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY. An unknown kind falls to
+ * the default arm, which reads `text` and calls every line a system line: the
+ * text of a running step would arrive looking like something the shell said,
+ * with an error indistinguishable from ordinary output.
+ */
+describe("what a step says while it runs", () => {
+  test("it reaches the console under the pipe it came from", () => {
+    const lines = linesFromEvents([
+      started(1, "engine", { bin: "claude" }),
+      text(2, "engine", "out", "reading the file\n"),
+      text(3, "engine", "err", "cannot open it\n"),
+    ]);
+    const said = lines.filter((line) => line.stream !== "system");
+    expect(said.map((line) => [line.stream, line.text])).toEqual([
+      ["stdout", "reading the file"],
+      ["stderr", "cannot open it"],
+    ]);
+  });
+
+  test("a step that is still running has already spoken", () => {
+    const panes = panesFromEvents([started(1, "engine", { bin: "claude" }), text(2, "engine", "out", "working\n")]);
+    expect(panes[0]?.spoke).toBe(true);
+    expect(panes[0]?.endedAt).toBe(null);
+  });
+});
+
+/**
+ * What came out was read once, turned into lines, and dropped. A panel that
+ * shows what went in and not what came out shows half of a step, and it is the
+ * half that answers nothing.
+ */
+describe("what came out of a step", () => {
+  test("a pane keeps the output, not only the lines made from it", () => {
+    const panes = panesFromEvents([
+      started(1, "read", { bin: "cat" }),
+      closed(2, "read", "Went", { stdout: "four lines", status: 0 }),
+    ]);
+    expect(panes[0]?.output).toEqual({ stdout: "four lines", status: 0 });
+  });
+
+  test("a step still running has no output, which is not an empty one", () => {
+    const panes = panesFromEvents([started(1, "read", { bin: "cat" })]);
+    expect(panes[0]?.output).toBe(null);
   });
 });

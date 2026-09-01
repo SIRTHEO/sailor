@@ -1,92 +1,43 @@
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type { FlowFile, Graph, Step, StepRun, ValueSchema } from "./flow";
 import { kindOf } from "./flow";
 
 /**
- * Quanto è largo un nodo, e quanto spazio resta fra due nodi vicini.
- *
- * **NON SONO NUMERI DI GUSTO, E IL PRECEDENTE ERA SBAGLIATO.** I nodi erano
- * larghi 232px e le colonne distavano 260: fra un nodo e il suo vicino
- * restavano **28px**, cioè meno dello spazio che il nodo ha dentro di sé. Un
- * riquadro che sta più vicino al vicino che al proprio contenuto non si legge
- * come oggetto: si legge come una fila. Il rapporto fra lo spazio dentro
- * (8-12) e quello fra i nodi (≥48) è ciò che fa leggere un nodo come un nodo.
- *
- * `ports.test.tsx` rilegge la larghezza da `styles.css`: se il foglio e questo
- * file smettono di dire lo stesso numero, o se lo stacco scende sotto
- * `MIN_NODE_GAP`, diventa rosso. Era il difetto per cui la disposizione
- * calcolava le corsie su una larghezza che il nodo non aveva più.
- *
- * (`layout.test.tsx` non nomina mai `STEP_WIDTH`: misura l'intestazione di una
- * corsia. L'indirizzo qui era sbagliato, e un indirizzo sbagliato manda chi
- * ripara a cercare la difesa dove non c'è.)
+ * How wide a node is, and the room left between neighbours. A box that sits
+ * closer to its neighbour than to its own content reads as a row, not an
+ * object. `ports.test.tsx` re-reads the width from `styles.css` and turns red
+ * if the two stop agreeing, or if the gap drops under `MIN_NODE_GAP`.
  */
 export const STEP_WIDTH = 248;
 
-/** Lo stacco minimo fra due nodi affiancati. Sotto questo tornano una fila. */
+/** The minimum gap between two side-by-side nodes. Below it they read as a row. */
 export const MIN_NODE_GAP = 48;
 
 export const COLUMN = STEP_WIDTH + MIN_NODE_GAP;
 
 /**
- * Lo stacco fra due nodi impilati. Uguale a quello orizzontale: due nodi
- * vicini si staccano allo stesso modo in tutte e due le direzioni, o la
- * griglia si legge come una tabella con le colonne strette.
+ * The gap between two stacked nodes. Equal to the horizontal one: neighbours
+ * separate the same way in both directions, or the grid reads as a table with
+ * narrow columns.
  */
 export const ROW_GAP = MIN_NODE_GAP;
 
 /**
- * Il passo verticale: quanto un nodo occupa, più il suo stacco.
- *
- * Cresciuto con le porte — un nodo che dichiara i propri ingressi è più alto
- * di uno che li taceva — e misurato a schermo, non stimato. `ROW - ROW_GAP`,
- * cioè **160px**, è lo spazio che un nodo ha prima di toccare quello sotto.
- *
- * **QUESTO NUMERO NON È UNA GARANZIA, ED È BENE SAPERLO PRIMA.** Un nodo non ha
- * altezza fissa: cresce con le proprie porte, col riquadro del motore, col
- * contatore dei token e — da oggi — con la testata che va a capo.
- *
- * **LE MISURE SONO DUE, E VANNO TENUTE SEPARATE**: un nodo cresce quando una
- * corsa lo tocca, perché compare il fondo (tentativo, pid, «altri N in attesa»)
- * e la testata va a capo sugli stati dal nome lungo. Confondere le due
- * condizioni fa un terzo numero che non si riproduce in nessuna delle due — ed
- * è quello che c'era scritto qui: «sette nodi su 52 oltre i 160» non è né
- * l'una né l'altra.
- *
- * Misurato in Chrome sui dieci flussi di `flows/` il 01/09/2026, da vicino
- * (zoom 1), sui 52 nodi:
- *
- *  - **a riposo**, nessuna corsa: il più alto è `pubblica`, **227px** (sette
- *    porte); **5** nodi passano i 160px, **1** passa i 208. Il più alto fra
- *    quelli che hanno davvero un vicino una riga sotto è `chiedi`, **155px**:
- *    restano **52,6px** di margine.
- *  - **con lo stato lungo**, tutti in «aspetta una persona» — la parola di
- *    stato più larga: `pubblica` sale a **239px**, `chiedi` a **198px**,
- *    `leggi` a **182px**; **19** nodi passano i 160px, sempre **1** passa i
- *    208. Il margine più stretto scende a **9,6px**, fra `chiedi` e
- *    `verdetto`.
- *
- * Nessuno si sovrappone in nessuna delle due, ma nella seconda ci mancano nove
- * pixel, e solo per la forma di questi dieci grafi: `pubblica`, il nodo da
- * 227px, sotto non ha nessuno.
- *
- * Niente lo impedisce. Il giorno in cui un nodo da 227px si trova qualcuno
- * sotto, i due si toccano, e non c'è nessun controllo che lo dica: la
- * disposizione mette le righe a passo fisso senza mai chiedere quanto sono alti
- * i nodi. La cura vera è misurare l'altezza vera e impilare su quella, non
- * gonfiare questa costante — che sprecherebbe spazio su tutti i nodi bassi per
- * il caso di uno alto.
+ * The vertical pitch: what a node takes, plus its gap. `ROW - ROW_GAP` is the
+ * room before touching the one below, and it is **not a guarantee** — a node
+ * has no fixed height, growing with its ports, engine box, token counter and a
+ * wrapping header, the tallest measuring 227px. The day one of those has
+ * somebody underneath the two touch and no check says so. The cure is stacking
+ * on the measured height, not inflating this constant, which would waste space
+ * on every short node for the sake of one tall one.
  */
 export const ROW = 208;
 
 /**
- * Dispone i passi per livelli: un passo sta a destra di tutti quelli da cui
- * dipende. Non è un algoritmo di bellezza — è la sola disposizione in cui la
- * freccia non torna mai indietro, e chi guarda legge l'ordine senza fidarsi.
- *
- * Un ciclo qui non può esistere: `flow::Graph` lo rifiuta al caricamento. Se
- * ne arrivasse uno lo stesso, i passi irrisolti finiscono in fondo invece di
- * far girare a vuoto il calcolo.
+ * Lays the steps out in levels: a step sits to the right of everything it
+ * depends on — the only arrangement in which an arrow never goes backwards.
+ * A cycle cannot exist here (`flow::Graph` rejects it at load); if one arrived
+ * anyway, unresolved steps land at the end instead of spinning the loop.
  */
 export function depths(graph: Graph): Map<string, number> {
   const known = new Map<string, number>();
@@ -108,7 +59,7 @@ export function depths(graph: Graph): Map<string, number> {
     }
   }
 
-  // Ciò che non si è risolto: in fondo, visibile, mai nascosto.
+  // Whatever did not resolve: at the end, visible, never hidden.
   const last = Math.max(0, ...known.values()) + 1;
   for (const step of graph.steps) {
     if (!known.has(step.id)) known.set(step.id, last);
@@ -140,7 +91,7 @@ export function toNodes(graph: Graph, runs: Map<string, StepRun>): Node[] {
   });
 }
 
-export function toEdges(graph: Graph): Edge[] {
+export function toEdges(graph: Graph, runs: Map<string, StepRun> = new Map()): Edge[] {
   const skippable = new Set(
     (graph.skippable_dependencies ?? []).map(
       (edge) => `${edge.step}<-${edge.dependency}`,
@@ -149,150 +100,164 @@ export function toEdges(graph: Graph): Edge[] {
 
   return graph.steps.flatMap((step) =>
     step.deps.map((dependency) => {
-      // Una dipendenza saltabile si disegna tratteggiata: promette che il suo
-      // dato può mancare, e chi guarda deve saperlo senza aprire il file.
       const optional = skippable.has(`${step.id}<-${dependency}`);
-      return {
-        id: `${dependency}->${step.id}`,
-        source: dependency,
-        target: step.id,
-        animated: false,
-        style: optional
-          ? { strokeDasharray: "5 4", stroke: "#c084fc" }
-          : { stroke: "#94a3b8" },
-      } satisfies Edge;
+      const look = edgeLook(optional, runs.get(dependency), runs.get(step.id));
+      return edgeFrom(`${dependency}->${step.id}`, dependency, step.id, look, 1);
     }),
   );
 }
 
-// ── la tela unica: tutti i flussi, rami dello stesso sistema ────────────
+// ── the single canvas: every flow, branches of one system ───────────────
 //
-// Theo, 28/08: «dovrebbe essere un unico sistema con tutti i rami connessi».
-// Oggi nessun flusso dichiara una dipendenza verso un passo di un altro
-// flusso (nessuna azione `subflow` è mai usata sui quattordici file reali):
-// disegnare un arco fra due flussi sarebbe un arco inventato. Quello che si
-// può fare onestamente è mostrarli come rami dello stesso albero — una tela
-// sola, ciascun flusso nella propria corsia colorata — senza cucire ponti
-// che nel disco non esistono.
+// No flow declares a dependency on a step of another flow, so an arc between
+// two flows would be an invented arc. What can honestly be done is showing them
+// as branches of one tree: one canvas, each flow in its own coloured lane, and
+// no bridges that do not exist on disk.
 
 const BAND_GAP = 56;
 const BAND_PAD_X = 28;
 
 /**
- * L'altezza riservata all'intestazione di una corsia, prima del primo nodo.
- *
- * **È UN NUMERO CHE DIPENDE DAL FOGLIO DI STILE, E NIENTE LO SA.** Sotto
- * `FAR_ZOOM` le etichette di una corsia crescono, e lo zoom che la tela sceglie
- * da sola con due flussi è 0,5: la modalità «da lontano» **è la vista
- * d'apertura**. Quando i corpi sono passati da 13/11px a 15/15px questo numero
- * è rimasto 54, e la descrizione della corsia è finita 4px dentro il primo
- * nodo — sulla prima schermata, dove si vede per forza.
- *
- * `layout.test.tsx` rifà il conto leggendo `styles.css`: se un corpo o
- * un'interlinea di `.flow-band__*` cambia e questo numero resta fermo, diventa
- * rosso. Il conto è: padding in alto + la riga più alta dell'intestazione +
- * lo stacco della descrizione + due righe di descrizione + `BAND_HEAD_GAP`.
+ * The height reserved for a lane's heading, before the first node. **IT DEPENDS
+ * ON THE STYLESHEET, AND NOTHING IN TYPESCRIPT KNOWS THAT**: below `FAR_ZOOM`
+ * the labels grow, and 0.5 is the zoom the canvas picks on opening.
+ * `layout.test.tsx` redoes the sum by reading `styles.css`.
  */
 export const BAND_PAD_TOP = 88;
 
-/** Quanto respiro deve restare fra la descrizione e il primo nodo. */
+/** How much air must be left between the description and the first node. */
 export const BAND_HEAD_GAP = 8;
 
-/** La descrizione di una corsia è tagliata a due righe da `styles.css`. */
+/** A lane's description is clamped to two lines by `styles.css`. */
 export const BAND_DESC_LINES = 2;
 
 /**
- * Il respiro in fondo a una corsia — e la tolleranza di chi sfora.
- *
- * L'ultima riga di nodi non si porta dietro il proprio stacco: senza questa
- * sottrazione una corsia con una riga sola restava alta come se ne avesse due,
- * e sotto l'unica fila di nodi c'era una fascia vuota che si vedeva a occhio.
- * Il conto qui sotto la toglie e la rimette come padding, che è quello che
- * serviva: respiro per la corsia, e spazio per un nodo più alto della norma —
- * uno che dichiara quattro ingressi cresce oltre `ROW - ROW_GAP`.
+ * The air at the bottom of a lane, and the tolerance for whoever overflows. The
+ * last row of nodes does not carry its own gap: without this subtraction a
+ * one-row lane would stand as tall as a two-row one. Put back as padding, it
+ * also leaves room for a node taller than `ROW - ROW_GAP`.
  */
 const BAND_PAD_BOTTOM = 40;
 
-/** Una tavolozza fissa: ogni flusso prende un colore per indice, ciclico. */
-const FLOW_COLORS = [
-  "#2563eb",
-  "#16a34a",
-  "#d97706",
-  "#dc2626",
-  "#7c3aed",
-  "#0891b2",
-  "#db2777",
-  "#65a30d",
-  "#4f46e5",
-  "#ea580c",
-  "#0d9488",
-  "#9333ea",
-  "#ca8a04",
-  "#e11d48",
+/**
+ * The tint of a lane, taken by index and cycling.
+ *
+ * A LANE HAS NO ROLES OF ITS OWN YET, so these borrow the roles that exist and
+ * are already measured. Six tints for ten flows on this machine means four
+ * collisions — which is why the lane carries its name next to the tint, and why
+ * the tint never decides anything by itself.
+ */
+const LANE_TINTS = [
+  "var(--state-running)",
+  "var(--state-went)",
+  "var(--state-capped)",
+  "var(--state-broke)",
+  "var(--state-human)",
+  "var(--muted)",
 ];
 
 export function colorForFlow(index: number): string {
-  return FLOW_COLORS[index % FLOW_COLORS.length];
+  return LANE_TINTS[index % LANE_TINTS.length];
 }
 
-// ── le porte di un passo ────────────────────────────────────────────────
-//
-// **IL TIPO STA NELLA FORMA, E IL CABLAGGIO NEL PIENO.** Tre forme — cerchio
-// testo, rombo struttura, quadrato valore — e una porta è vuota quando niente
-// la alimenta, piena quando qualcosa la alimenta. Così «quale ingresso manca»
-// si legge dalla tela, senza aprire il pannello e senza un bollino d'errore.
-//
-// LE TRE FORME SONO TRE FAMIGLIE DI `ValueSchema`, NON TRE INVENZIONI. La
-// bozza approvata diceva «cerchio testo, rombo struttura, quadrato file»: il
-// linguaggio di schemi di `flow::ValueSchema` **non ha un tipo file**, e
-// disegnarne uno vorrebbe dire promettere una distinzione che il motore non
-// fa. Il terzo quadrato porta quindi gli scalari — numero, booleano, nullo, e
-// ciò che il file lascia indeterminato.
-//
-// DA DOVE VIENE «CABLATA», parola per parola come la compone `step_input` in
-// `crates/flow/src/executor.rs`:
-//  - `step.with[nome]`   → il valore è scritto lì dentro, e vince su tutto;
-//  - nessuna dipendenza  → arriva da `inputs[id-del-passo]` del file di flusso;
-//  - una dipendenza sola non saltabile → l'ingresso **è** l'uscita di quella;
-//  - più dipendenze      → un oggetto con una chiave per dipendenza.
-// Chi non ricade in nessuno dei quattro casi non è alimentato da niente.
-//
-// **C'È UN QUINTO ALIMENTATORE, E `portsOf` NON LO SA: `workdir`.** Dopo
-// `overlay_input`, `resolve_workdir` (stesso file del motore) infila la radice
-// dello spazio di lavoro nell'ingresso di **ogni** passo il cui schema la
-// accetta — `accepts_property` in `crates/flow/src/schema.rs`: uno schema
-// `any`, uno con `allow_extra: true`, o uno che dichiara `workdir` fra le
-// proprie proprietà. Un passo che dichiarasse `workdir` nel proprio
-// `input_schema` senza scriverlo in `with` lo vedrebbe quindi arrivare dal
-// motore, mentre qui la porta risulterebbe vuota e — se fosse obbligatoria —
-// direbbe «workdir manca». Sarebbe un'accusa falsa.
-//
-// Oggi è un debito e non un guasto, ed è misurato: nessuno dei dieci flussi di
-// `flows/` dichiara `workdir` in uno schema d'ingresso. I quattro `workdir` che
-// si trovano — in `esamina-la-repo-ramificando` e `esamina-la-repo-riscoprendo`
-// — stanno tutti in `with`, che è il primo dei quattro casi qui sopra. Chi
-// scriverà il primo schema che dichiara `workdir` deve aggiungere qui il caso,
-// prima che la tela accusi il motore di non aver fatto il proprio lavoro.
+/** How a cord is drawn: the tint, whether it is broken, whether it is alive. */
+export interface EdgeLook {
+  stroke: string;
+  dash?: string;
+  live: boolean;
+  /** Full ink behind, a light thread ahead — the colour is not alone. */
+  width: number;
+}
 
-/** Le tre forme di una porta. La tinta è solo ridondanza. */
+/**
+ * What a cord says, read from the two steps it joins.
+ *
+ * The path a run actually took is a full green line; the one it has not reached
+ * is a quiet thin one; a dependency the graph declares skippable is broken,
+ * because its data may never arrive. The dash carries that on its own, so
+ * greyscale loses nothing (prohibition 5).
+ */
+export function edgeLook(
+  optional: boolean,
+  from: StepRun | undefined,
+  to: StepRun | undefined,
+): EdgeLook {
+  const dash = optional ? "5 4" : undefined;
+  if (to?.state === "running") return { stroke: "var(--state-running)", dash: "8 6", live: true, width: 2.5 };
+  const taken = from?.state === "went" && to !== undefined && to.state !== "waiting";
+  // WHERE THE FLOW HAS ALREADY BEEN, in weight and not only in hue: one reader
+  // in twelve does not separate two of these tints, and the first thing anyone
+  // looks for in a graph with a live run is where it came from.
+  if (taken) return { stroke: "var(--state-went)", dash, live: false, width: 2.5 };
+  return { stroke: optional ? "var(--warn)" : "var(--line)", dash, live: false, width: 1.25 };
+}
+
+function edgeFrom(
+  id: string,
+  source: string,
+  target: string,
+  look: EdgeLook,
+  opacity: number,
+): Edge {
+  return {
+    id,
+    source,
+    target,
+    // Rounded orthogonal: on a graph laid out in columns a cord that changes row
+    // has to be followed with the eye, and a bezier crossing three nodes cannot.
+    type: "smoothstep",
+    animated: look.live,
+    markerEnd: { type: MarkerType.ArrowClosed, color: look.stroke, width: 16, height: 16 },
+    style: { stroke: look.stroke, strokeWidth: look.width, strokeDasharray: look.dash, opacity },
+  } satisfies Edge;
+}
+
+// ── a step's ports ──────────────────────────────────────────────────────
+//
+// **TYPE IS IN THE SHAPE, WIRING IS IN THE FILL.** Three shapes — circle text,
+// diamond struct, square value — and a port is hollow when nothing feeds it.
+// So "which input is missing" reads off the canvas, with no error badge.
+
+// THE THREE SHAPES ARE THREE `ValueSchema` FAMILIES, NOT THREE INVENTIONS. The
+// schema language has NO file type, so drawing one would promise a distinction
+// the engine does not make. The third square therefore carries the scalars.
+
+// WHERE "WIRED" COMES FROM, as `step_input` composes it in `executor.rs`.
+// Anything matching none of the four is fed by nothing:
+//  - `step.with[name]`  -> written in there, and it beats everything;
+//  - no dependency      -> from `inputs[step-id]` of the flow file;
+//  - one required dependency -> the input IS that dependency's output;
+//  - several            -> an object with one key per dependency.
+
+// **THERE IS A FIFTH FEEDER AND `portsOf` DOES NOT KNOW IT: `workdir`.** After
+// `overlay_input`, `resolve_workdir` puts the workspace root into the input of
+// EVERY step whose schema accepts it (`accepts_property` in
+// `crates/flow/src/schema.rs`). A step declaring `workdir` in its own
+// `input_schema` without writing it in `with` would get it from the engine
+// while this port showed hollow — a false accusation.
+
+// It is a debt and not yet a defect, and that is measured: no real flow
+// declares `workdir` in an input schema. Whoever writes the first one must add
+// the case here, before the canvas accuses the engine of not doing its job.
+
+/** The three shapes of a port. The tint is only redundancy. */
 export type PortShape = "text" | "structure" | "value";
 
 /**
- * Da dove arriva il valore di una porta.
- *
- * `unknown` non è `none`, ed è la stessa disciplina che il nodo usa già per lo
- * strumento: quando la dipendenza dichiara `any`, quali chiavi produrrà **non
- * si sa**, e dichiarare «manca» sarebbe un'accusa inventata.
+ * Where a port's value comes from. `unknown` is not `none`, the same discipline
+ * the node already uses for the tool: when the dependency declares `any`, which
+ * keys it will produce is NOT KNOWN, and saying "missing" would be an invented
+ * accusation.
  */
 export type PortFeed = "fixed" | "upstream" | "flow" | "unknown" | "none";
 
 export interface StepPort {
-  /** Il nome scritto nel file: è un dato, e resta come sta. */
+  /** The name written in the file: it is data, and it stays as it is. */
   name: string;
   shape: PortShape;
-  /** Vero quando qualcosa alimenta davvero questa porta. */
+  /** True when something really feeds this port. */
   wired: boolean;
-  /** Vero quando lo schema la dichiara obbligatoria. */
+  /** True when the schema declares it required. */
   required: boolean;
   feed: PortFeed;
 }
@@ -302,10 +267,10 @@ export interface StepPorts {
   output: StepPort;
 }
 
-/** L'ingresso di un passo che non dipende da nessuno: lo apre il file di flusso. */
+/** The input of a step that depends on nobody: the flow file opens it. */
 export const ROOT_PORT_NAME = "avvio";
 
-/** L'unica uscita di un passo. Vuota quando nessuno la legge. */
+/** A step's single output. Hollow when nobody reads it. */
 export const OUTPUT_PORT_NAME = "uscita";
 
 export function shapeOf(schema: ValueSchema | undefined): PortShape {
@@ -316,7 +281,7 @@ export function shapeOf(schema: ValueSchema | undefined): PortShape {
     case "object":
     case "array":
       return "structure";
-    // Una scelta fra testi resta testo: è la forma che chi guarda riconosce.
+    // A choice between texts is still text: the shape a viewer recognises.
     case "one_of":
       return schema.values.every((value) => typeof value === "string") ? "text" : "value";
     default:
@@ -324,7 +289,7 @@ export function shapeOf(schema: ValueSchema | undefined): PortShape {
   }
 }
 
-/** Le proprietà che uno schema dichiara, o niente se non è un oggetto. */
+/** The properties a schema declares, or nothing if it is not an object. */
 function objectSchema(
   schema: ValueSchema | undefined,
 ): { properties: Record<string, ValueSchema>; required: string[] } | null {
@@ -339,8 +304,8 @@ function isSkippable(graph: Graph, step: string, dependency: string): boolean {
 }
 
 /**
- * I nomi che il motore metterà davvero nell'ingresso di questo passo, oppure
- * `null` quando la dipendenza non dichiara le proprie chiavi.
+ * The names the engine will really put in this step's input, or `null` when the
+ * dependency does not declare its own keys.
  */
 function suppliedNames(
   graph: Graph,
@@ -364,13 +329,10 @@ function suppliedNames(
 }
 
 /**
- * Le porte di un passo, lette dal grafo e dal file — mai inventate.
- *
- * Quando lo schema d'ingresso non dichiara niente (`any`, che è il caso di
- * più della metà dei passi veri) il nodo non resta muto: mostra una porta per
- * dipendenza, o la porta d'avvio se dipendenze non ne ha. Un passo senza
- * dipendenze e senza una voce in `inputs` riceve `null`, e la porta vuota lo
- * dice — è vero, ed è la cosa che non si vedeva da nessuna parte.
+ * A step's ports, read from the graph and the file — never invented. When the
+ * input schema declares nothing (`any`, over half the real steps) the node does
+ * not go silent: one port per dependency, or the start port if it has none. A
+ * step with neither gets `null`, and the hollow port says so.
  */
 export function portsOf(
   graph: Graph,
@@ -408,7 +370,7 @@ export function portsOf(
         name: dependency,
         shape: shapeOf(byId.get(dependency)?.output_schema),
         wired: true,
-        // Una dipendenza saltabile promette già che il suo dato può mancare.
+        // A skippable dependency already promises its datum may be missing.
         required: !isSkippable(graph, step.id, dependency),
         feed: "upstream",
       });
@@ -438,9 +400,8 @@ export function portsOf(
 }
 
 /**
- * Un nodo appartiene a un flusso: l'identificatore porta il nome del flusso
- * davanti, perché due passi di flussi diversi possono chiamarsi allo stesso
- * modo (`chain-brake` esiste più di una volta) e la tela è una sola.
+ * A node belongs to a flow: the id carries the flow name in front, because two
+ * steps of different flows can share a name and the canvas is a single one.
  */
 export function nodeId(flowName: string, stepId: string): string {
   return `${flowName}::${stepId}`;
@@ -452,8 +413,8 @@ export function splitNodeId(id: string): { flowName: string; stepId: string } {
 }
 
 /**
- * Vero se collegare `from -> to` (cioè far dipendere `to` da `from`) chiude
- * un ciclo — cioè se `from` dipende, anche indirettamente, già da `to`.
+ * True if wiring `from -> to` (making `to` depend on `from`) closes a cycle —
+ * that is, if `from` already depends, even indirectly, on `to`.
  */
 export function wouldCycle(graph: Graph, from: string, to: string): boolean {
   const byId = new Map(graph.steps.map((step) => [step.id, step]));
@@ -481,15 +442,14 @@ export interface FlowBand {
 export interface UnifiedLayout {
   nodes: Node[];
   edges: Edge[];
-  /** Il riquadro di ciascun flusso, in coordinate della tela: serve a mettere a fuoco un ramo. */
+  /** Each flow's box, in canvas coordinates: used to focus a branch. */
   bands: Map<string, FlowBand>;
 }
 
 /**
- * Dispone tutti i flussi su una tela sola, una corsia orizzontale per
- * flusso, impilate dall'alto in basso. Dentro una corsia vale lo stesso
- * ordine per livelli di `toNodes`/`toEdges`; fra corsie non passa nessun
- * arco, per il motivo scritto sopra.
+ * Lays every flow out on one canvas, one horizontal lane per flow, stacked top
+ * to bottom. Inside a lane the level order of `toNodes`/`toEdges` applies; no
+ * arc crosses between lanes, for the reason written above.
  */
 export function buildUnifiedLayout(
   flows: Array<{ name: string; flow: FlowFile }>,
@@ -552,11 +512,10 @@ export function buildUnifiedLayout(
           flowName: name,
           color,
           dimmed,
-          // Le porte stanno nei `data` e non in un contesto perché dipendono
-          // solo dal file — non da una corsa. Ciò che questa tela non sopporta
-          // è ricostruire l'elenco dei nodi a ogni **fatto in arrivo**; il file
-          // cambia solo quando qualcuno lo modifica, ed è proprio allora che le
-          // porte devono cambiare.
+          // Ports live in `data` and not in a context because they depend only
+          // on the file, not on a run. What this canvas cannot take is
+          // rebuilding the node list on every incoming FACT; the file changes
+          // only when somebody edits it, which is exactly when the ports must.
           ports: portsOf(graph, step, flow.inputs ?? {}),
         },
       });
@@ -568,17 +527,19 @@ export function buildUnifiedLayout(
     for (const step of graph.steps) {
       for (const dependency of step.deps) {
         const optional = skippable.has(`${step.id}<-${dependency}`);
-        edges.push({
-          id: `${nodeId(name, dependency)}->${nodeId(name, step.id)}`,
-          source: nodeId(name, dependency),
-          target: nodeId(name, step.id),
-          animated: false,
-          style: {
-            stroke: optional ? "#c084fc" : color,
-            strokeDasharray: optional ? "5 4" : undefined,
-            opacity: dimmed ? 0.25 : 1,
-          },
-        });
+        // THE CORD IS COLOURED BY THE OUTCOME, NOT BY THE LANE. Which flow a
+        // cord belongs to is already said by the band it lies in; what was said
+        // nowhere is whether the run came through here.
+        const look = edgeLook(optional, runs.get(dependency), runs.get(step.id));
+        edges.push(
+          edgeFrom(
+            `${nodeId(name, dependency)}->${nodeId(name, step.id)}`,
+            nodeId(name, dependency),
+            nodeId(name, step.id),
+            look,
+            dimmed ? 0.25 : 1,
+          ),
+        );
       }
     }
 

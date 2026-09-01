@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
-import { Terminals } from "./Terminals";
+import { Terminals, WORKSPACE_HINT } from "./Terminals";
 import { routingNote } from "./TerminalPane";
 import {
   decodeBytes,
@@ -19,18 +19,13 @@ import {
 } from "./terminal";
 
 /**
- * **LE QUATTRO COSE CHE LA METÀ REACT DEL TERMINALE PUÒ SBAGLIARE IN SILENZIO.**
- *
- * Un accento perso in mezzo a un'uscita lunga, un tasto mandato allo
- * smistamento invece che al programma, un terminale morto disegnato vivo, e
- * un'accoppiata di contrasto sotto soglia. Nessuna delle quattro fa rumore: la
- * finestra si disegna lo stesso, e chi guarda crede a quello che legge.
- *
- * **SI PROVA CONTRO IL CONTRATTO, NON CONTRO IL PONTE.** Il ponte Rust nasce in
- * un altro cantiere mentre questo file si scrive. Il guscio è finto — le
- * risposte e i due eventi sono scritti a mano secondo
- * `docs/2026-09-01-il-contratto-del-terminale.md` — e i componenti sono quelli
- * veri, emulatore compreso.
+ * **THE FOUR THINGS THE REACT HALF OF THE TERMINAL CAN GET WRONG IN SILENCE.**
+ * An accent lost inside a long output, a key sent to routing instead of to the
+ * program, a dead terminal drawn alive, a contrast pair below threshold: none
+ * makes a noise, the window draws the same, and whoever looks believes it. The
+ * judge is the contract, not the bridge — the shell is faked from
+ * `docs/2026-09-01-il-contratto-del-terminale.md` by hand, while the components
+ * are the real ones, emulator included.
  */
 
 afterEach(cleanup);
@@ -39,8 +34,9 @@ let sheet: Stylesheet;
 
 beforeAll(() => {
   sheet = parseStylesheet(stylesheetSource);
-  // xterm chiede al browser due cose che jsdom non ha. Sono impalcature, non
-  // finzioni sul codice provato: in una finestra vera le fornisce il browser.
+  // xterm asks the browser for two things jsdom does not have. They are
+  // scaffolding, not fakes over the code under test: a real window supplies
+  // them.
   (window as unknown as { matchMedia: unknown }).matchMedia = () => ({
     matches: false,
     media: "",
@@ -57,34 +53,34 @@ beforeAll(() => {
   };
 });
 
-// ── i byte non sono testo ────────────────────────────────────────────────
+// ── bytes are not text ───────────────────────────────────────────────────
 
-describe("i byte che vanno alla shell", () => {
-  test("UN ACCENTO PARTE IN UTF-8, non nel latin-1 di `btoa`", () => {
-    // `btoa("à")` non fallisce e non avverte: risponde il byte 0xE0, che nella
-    // shell è un'altra lettera. Il difetto si vede solo sulle parole accentate,
-    // cioè su quelle che in questo repo si scrivono tutto il giorno.
+describe("the bytes going to the shell", () => {
+  test("AN ACCENT LEAVES AS UTF-8, not in the latin-1 of `btoa`", () => {
+    // `btoa("à")` neither fails nor warns: it answers the byte 0xE0, which in
+    // the shell is a different letter. The defect only shows on accented words,
+    // that is, on the ones written here all day long.
     const mine = encodeBytes(keyBytes("à"));
     expect(mine).toBe("w6A=");
     expect(mine).not.toBe(btoa("à"));
     expect(Array.from(decodeBytes(mine))).toEqual([0xc3, 0xa0]);
   });
 
-  test("ogni byte fra 0 e 255 torna indietro identico", () => {
-    // Il ritorno a capo, l'escape, il Ctrl-C e i byte alti di un carattere
-    // multibyte passano tutti di qui.
+  test("every byte from 0 to 255 comes back identical", () => {
+    // The newline, the escape, the Ctrl-C and the high bytes of a multibyte
+    // character all pass through here.
     const every = new Uint8Array(256);
     for (let value = 0; value < 256; value += 1) every[value] = value;
     expect(Array.from(decodeBytes(encodeBytes(every)))).toEqual(Array.from(every));
   });
 });
 
-describe("i byte che escono dal processo", () => {
-  test("UNA LETTERA SPEZZATA FRA DUE EVENTI SI RIMETTE INSIEME SULLO SCHERMO", async () => {
-    // È la ragione per cui il contratto dice base64 e non stringa. I due eventi
-    // sono quelli che il ponte manderà — `è` vale 0xC3 0xA8, e uno pseudo-
-    // terminale può consegnarli in due letture — e il giudice è il buffer
-    // dell'emulatore vero, cioè ciò che una persona leggerebbe.
+describe("the bytes coming out of the process", () => {
+  test("A LETTER SPLIT ACROSS TWO EVENTS IS PUT BACK TOGETHER ON SCREEN", async () => {
+    // This is why the contract says base64 and not string. The two events are
+    // the ones the bridge will send — `è` is 0xC3 0xA8, and a pseudo-terminal
+    // may deliver them in two reads — and the judge is the real emulator's
+    // buffer, that is, what a person would read.
     const term = new Emulator({ cols: 20, rows: 4 });
     await write(term, decodeBytes(encodeBytes(new Uint8Array([0xc3]))));
     await write(term, decodeBytes(encodeBytes(new Uint8Array([0xa8, 0x21]))));
@@ -97,7 +93,7 @@ function write(term: Emulator, bytes: Uint8Array): Promise<void> {
   return new Promise((done) => term.write(bytes, () => done()));
 }
 
-// ── invio e tasti sono due strade diverse ────────────────────────────────
+// ── submitting and pressing are two different roads ──────────────────────
 
 function kinds(actions: KeyAction[]): string[] {
   return actions.map((action) => action.kind);
@@ -107,32 +103,32 @@ function submittedLines(actions: KeyAction[]): string[] {
   return actions.flatMap((action) => (action.kind === "submit" ? [action.line] : []));
 }
 
-describe("dove va un tasto", () => {
-  test("NESSUN TASTO CHE NON SIA INVIO FINISCE NELLO SMISTAMENTO", () => {
-    // Il difetto da cui difende: mandare tutto a `submit` farebbe esaminare
-    // ogni freccia e ogni Ctrl-C da un elenco di regole che non li riguarda, e
-    // un editor dentro il terminale diventerebbe inservibile.
+describe("where a key goes", () => {
+  test("NO KEY OTHER THAN ENTER ENDS UP IN ROUTING", () => {
+    // The defect it guards against: sending everything to `submit` would have
+    // every arrow and every Ctrl-C examined by a set of rules that has nothing
+    // to do with them, and an editor inside the terminal would be unusable.
     const keys = ["l", "s", " ", "-", "à", "\x7f", "\x03", "\x1b[A", "\x1b[B", "\t", "\x04", "\x15"];
     for (const key of keys) {
       for (const draft of ["", "cargo test"]) {
         for (const mode of ["compose", "raw"] as const) {
           const stroke = keyStroke(mode, draft, key);
-          expect(submittedLines(stroke.actions), `«${key}» in ${mode} con «${draft}»`).toEqual([]);
+          expect(submittedLines(stroke.actions), `«${key}» in ${mode} with «${draft}»`).toEqual([]);
         }
       }
     }
   });
 
-  test("Invio consegna la riga intera, e non ne manda un byte alla shell", () => {
-    // Se anche un solo carattere fosse già partito, `terminal_submit` — che la
-    // riga la scrive lui — la farebbe finire scritta due volte: «lsls».
+  test("Enter delivers the whole line, and sends not one byte of it to the shell", () => {
+    // If even a single character had already left, `terminal_submit` — which
+    // writes the line itself — would have it run twice: «lsls».
     const stroke = keyStroke("compose", "cargo test -p terminal", "\r");
     expect(submittedLines(stroke.actions)).toEqual(["cargo test -p terminal"]);
     expect(kinds(stroke.actions)).not.toContain("press");
     expect(stroke.draft).toBe("");
   });
 
-  test("comporre una riga non manda niente alla shell, un carattere alla volta", () => {
+  test("composing a line sends nothing to the shell, one character at a time", () => {
     let draft = "";
     const sent: string[] = [];
     for (const key of "ls -la") {
@@ -145,17 +141,17 @@ describe("dove va un tasto", () => {
     expect(sent).not.toContain("submit");
   });
 
-  test("IN UN EDITOR INVIO È UN TASTO, non una riga da smistare", () => {
-    // È il caso che il contratto nomina per esteso, ed è tutto il motivo per
-    // cui `submit` e `press` sono due comandi e non uno.
+  test("INSIDE AN EDITOR ENTER IS A KEY, not a line to route", () => {
+    // This is the case the contract names in full, and it is the whole reason
+    // `submit` and `press` are two commands and not one.
     const stroke = keyStroke("raw", "", "\r");
     expect(kinds(stroke.actions)).toEqual(["press"]);
     expect(submittedLines(stroke.actions)).toEqual([]);
   });
 
-  test("Ctrl-C arriva sempre a chi sta girando, anche a riga piena", () => {
-    // Un modo di fermare quello che gira non si toglie a nessuno, in nessun
-    // modo: è l'unica eccezione al «mentre componi non parte niente».
+  test("Ctrl-C always reaches whatever is running, even on a full line", () => {
+    // A way to stop what is running is taken from nobody, in no way: it is the
+    // one exception to «while composing, nothing leaves».
     for (const mode of ["compose", "raw"] as const) {
       const stroke = keyStroke(mode, "un comando lunghissimo", "\x03");
       expect(kinds(stroke.actions)).toContain("press");
@@ -163,32 +159,33 @@ describe("dove va un tasto", () => {
     }
   });
 
-  test("un Invio a vuoto è un a capo, non una riga da smistare", () => {
+  test("an empty Enter is a newline, not a line to route", () => {
     const stroke = keyStroke("compose", "", "\r");
     expect(kinds(stroke.actions)).toEqual(["press"]);
   });
 
-  test("a riga vuota il terminale è un passaggio diretto; a riga piena dice di no", () => {
-    // La freccia in su a riga vuota riprende il comando di prima dalla shell.
+  test("on an empty line the terminal is a passthrough; on a full line it refuses", () => {
+    // Arrow up on an empty line brings back the previous command from the shell.
     expect(kinds(keyStroke("compose", "", "\x1b[A").actions)).toEqual(["press"]);
-    // A riga piena non parte e dice perché: partire sfaserebbe lo schermo,
-    // perché quella riga la tiene la finestra e non la `readline` della shell.
+    // On a full line it does not leave, and says why: leaving would desync the
+    // screen, because that line is held by the window and not by the shell's
+    // `readline`.
     const refused = keyStroke("compose", "ls", "\x1b[A");
     expect(kinds(refused.actions)).toEqual(["ignored"]);
     expect(refused.draft).toBe("ls");
   });
 
-  test("la cancellazione toglie un carattere alla riga e uno allo schermo", () => {
+  test("backspace takes one character off the line and one off the screen", () => {
     const stroke = keyStroke("compose", "lsx", "\x7f");
     expect(stroke.draft).toBe("ls");
     expect(stroke.actions).toEqual([{ kind: "echo", text: "\b \b" }]);
   });
 });
 
-describe("dove è finita la riga, detto a chi guarda", () => {
-  test("una riga dirottata nomina la regola e il flusso, non solo il flusso", () => {
-    // Senza il nome della regola, chi guarda sa che la riga non è stata
-    // eseguita e non ha modo di risalire alla riga di JSON che l'ha deciso.
+describe("where the line ended up, told to whoever is watching", () => {
+  test("a rerouted line names the rule and the flow, not just the flow", () => {
+    // Without the name of the rule, whoever is watching knows the line was not
+    // run and has no way back to the line of JSON that decided it.
     const said = routingNote("? trova i residui", {
       kind: "flow",
       flow: "smista-il-lavoro",
@@ -200,17 +197,17 @@ describe("dove è finita la riga, detto a chi guarda", () => {
     expect(said).toContain("non è stata eseguita");
   });
 
-  test("un comando dice che è andato alla shell", () => {
+  test("a command says it went to the shell", () => {
     expect(routingNote("ls", { kind: "command" })).toContain("shell");
   });
 });
 
-// ── vivo, morto, o non lo so più ─────────────────────────────────────────
+// ── alive, closed, or no longer known ────────────────────────────────────
 
 function summary(over: Partial<TerminalSummary>): TerminalSummary {
   return {
     id: "t1",
-    workspaceRoot: "/home/someone/personal/sailor",
+    workspaceRoot: "/work/sailor",
     workspaceName: "sailor",
     alive: true,
     processId: 4242,
@@ -218,8 +215,8 @@ function summary(over: Partial<TerminalSummary>): TerminalSummary {
   };
 }
 
-describe("com'è messo un terminale", () => {
-  test("l'evento vince sull'elenco, che è vecchio di un giro di domande", () => {
+describe("how a terminal is doing", () => {
+  test("the event wins over the list, which is one round of polling old", () => {
     const closed = new Map([["t1", "uscita 0"]]);
     expect(livenessOf(summary({ alive: true }), closed, true)).toEqual({
       state: "closed",
@@ -227,27 +224,26 @@ describe("com'è messo un terminale", () => {
     });
   });
 
-  test("l'elenco che lo dà per chiuso non inventa un esito", () => {
+  test("a list that calls it closed does not invent an exit status", () => {
     expect(livenessOf(summary({ alive: false }), new Map(), true)).toEqual({
       state: "closed",
       status: null,
     });
   });
 
-  test("SENZA IL CANALE DEGLI EVENTI NON SI DICE «VIVO»: si dice «non lo so più»", () => {
-    // È il guasto 12 rifatto nella finestra. Se `terminal_closed` non può
-    // arrivare, «vivo» è un'affermazione che questa schermata non può fare, e
-    // un pannello che la fa lo fa per sempre — la morte non arriverà mai.
+  test("WITHOUT THE EVENT CHANNEL WE DO NOT SAY «vivo»: we say «non lo so più»", () => {
+    // If `terminal_closed` cannot arrive, «vivo» is a claim this screen cannot
+    // make, and a pane that makes it makes it forever — death will never come.
     const mine = livenessOf(summary({ alive: true }), new Map(), false);
     expect(mine.state).toBe("unknown");
     expect(mine.state === "unknown" && mine.why).toContain("non lo saprebbe");
   });
 
-  test("col canale attaccato e l'elenco che lo dà vivo, è vivo", () => {
+  test("with the channel attached and the list calling it alive, it is alive", () => {
     expect(livenessOf(summary({}), new Map(), true)).toEqual({ state: "alive" });
   });
 
-  test("i tre stati hanno tre parole diverse: il colore non porta lo stato da solo", () => {
+  test("the three states have three different words: colour alone does not carry state", () => {
     const words = [
       livenessWord({ state: "alive" }),
       livenessWord({ state: "closed", status: null }),
@@ -257,20 +253,20 @@ describe("com'è messo un terminale", () => {
   });
 });
 
-describe("l'uscita arriva al pannello giusto", () => {
-  test("i byte vanno a chi si è iscritto per quell'id, e a nessun altro", () => {
+describe("output reaches the right pane", () => {
+  test("bytes go to whoever subscribed for that id, and to nobody else", () => {
     const bus = new OutputBus();
     const mine: number[] = [];
     bus.subscribe("t1", (bytes) => mine.push(...bytes));
     expect(bus.deliver("t1", new Uint8Array([1, 2]))).toBe(true);
-    // BYTE PER UN TERMINALE SENZA PANNELLO SONO BYTE PERSI, e chi li perde in
-    // silenzio mostra uno schermo vuoto dove c'era un'uscita.
+    // BYTES FOR A TERMINAL WITH NO PANE ARE LOST BYTES, and whoever loses them
+    // in silence shows an empty screen where there was output.
     expect(bus.deliver("t2", new Uint8Array([9]))).toBe(false);
     expect(mine).toEqual([1, 2]);
   });
 });
 
-// ── sullo schermo ────────────────────────────────────────────────────────
+// ── on screen ────────────────────────────────────────────────────────────
 
 interface Call {
   command: string;
@@ -278,23 +274,22 @@ interface Call {
 }
 
 interface FakeShell {
-  /** Fa arrivare un evento come lo manderebbe il ponte. */
+  /** Delivers an event the way the bridge would send it. */
   emit: (event: string, payload: unknown) => void;
-  /** Quali comandi sono stati chiesti, in ordine, con cosa. */
+  /** Which commands were asked, in order, with what. */
   calls: Call[];
-  /** Solo i nomi, per le asserzioni che non guardano gli argomenti. */
+  /** Just the names, for assertions that do not look at the arguments. */
   asked: string[];
-  /** Gli argomenti dei soli `command` chiesti, in ordine. */
+  /** The arguments of the given `command` alone, in order. */
   argsOf: (command: string) => Array<Record<string, unknown> | undefined>;
   stop: () => void;
 }
 
 /**
- * Finge il guscio: i sei comandi e i due eventi del contratto.
- *
- * **`listen` C'È O NON C'È, ED È UN PARAMETRO.** Senza il canale la schermata
- * deve dire «non lo so più» invece di «vivo», e senza poterlo togliere quella
- * riga non si potrebbe provare.
+ * Fakes the shell: the six commands and the two events of the contract.
+ * **`listen` IS EITHER THERE OR NOT, AND IT IS A PARAMETER**: without the
+ * channel the screen must say «non lo so più» instead of «vivo», and unless it
+ * can be removed that rule cannot be tested.
  */
 function pretendShell(answers: Record<string, unknown>, withEvents = true): FakeShell {
   const before = (window as unknown as { __TAURI__?: unknown }).__TAURI__;
@@ -337,16 +332,15 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/home/someone/personal/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
-  { id: "t2", workspaceRoot: "/home/someone/other-repo/work/packages", workspaceName: "packages", alive: true, processId: 4243 },
+  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
+  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243 },
 ];
 
 /**
- * Il DOM disegnato, misurato tutto: `:root` porta i ruoli.
- *
- * **CHI MISURA VA MISURATO.** La scena dichiara quante accoppiate si aspetta di
- * aver trovato: una prova che non guarda niente passa, ed è il modo esatto in
- * cui questo controllo tornerebbe a essere una decorazione.
+ * The drawn DOM, measured whole: `:root` carries the roles.
+ * **WHOEVER MEASURES MUST BE MEASURED**: the scene declares how many pairs it
+ * expects to have found, because a check that looks at nothing passes, and that
+ * is exactly how this one would go back to being decoration.
  */
 function measure(atLeast: number): string[] {
   const pairs = contrastPairs(document.documentElement, sheet);
@@ -354,8 +348,8 @@ function measure(atLeast: number): string[] {
   return belowThreshold(pairs);
 }
 
-describe("la schermata dei terminali", () => {
-  test("l'elenco viene da `terminal_list`, e ogni scheda porta la sua parola", async () => {
+describe("the terminals screen", () => {
+  test("the list comes from `terminal_list`, and every card carries its word", async () => {
     const shell = pretendShell({ terminal_list: TWO });
     try {
       render(
@@ -372,10 +366,10 @@ describe("la schermata dei terminali", () => {
     }
   });
 
-  test("UN TERMINALE MORTO SI VEDE MORTO: `terminal_closed` cambia lo stato mostrato", async () => {
-    // È il guasto 12 rifatto nella finestra: un pannello che resta uguale
-    // quando il processo dentro è finito. Prima dell'evento la scheda dice
-    // «vivo»; dopo l'evento dice «finito», e l'elenco non è ancora cambiato.
+  test("A DEAD TERMINAL LOOKS DEAD: `terminal_closed` changes the state shown", async () => {
+    // A pane that stays the same when the process inside it has ended. Before
+    // the event the card says «vivo»; after the event it says «finito», and the
+    // list has not changed yet.
     const shell = pretendShell({ terminal_list: TWO });
     try {
       render(
@@ -391,8 +385,8 @@ describe("la schermata dei terminali", () => {
       });
 
       expect(screen.getAllByText("finito").length).toBeGreaterThan(0);
-      // L'esito si legge, non solo la parola: «finito» senza sapere come non
-      // dice se il processo è andato o è stato ucciso.
+      // The outcome is readable, not just the word: «finito» without knowing how
+      // does not say whether the process finished or was killed.
       expect(screen.getByText("uscita 130")).toBeTruthy();
       expect(measure(20)).toEqual([]);
     } finally {
@@ -400,7 +394,7 @@ describe("la schermata dei terminali", () => {
     }
   });
 
-  test("SENZA CANALE DEGLI EVENTI la schermata non dichiara vivo nessuno", async () => {
+  test("WITHOUT THE EVENT CHANNEL the screen declares nobody alive", async () => {
     const shell = pretendShell({ terminal_list: TWO }, false);
     try {
       render(
@@ -417,9 +411,9 @@ describe("la schermata dei terminali", () => {
     }
   });
 
-  test("APRIRE DICHIARA LA CARTELLA: senza spazio di lavoro non si apre niente", async () => {
-    // Non esiste un terminale generico a cui poi si dice dove andare: la
-    // cartella è parte di cosa il terminale è, e va nella chiamata che lo apre.
+  test("OPENING DECLARES THE DIRECTORY: with no workspace nothing opens", async () => {
+    // There is no generic terminal you then tell where to go: the directory is
+    // part of what the terminal is, and it belongs in the call that opens it.
     const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0] });
     try {
       render(
@@ -430,8 +424,8 @@ describe("la schermata dei terminali", () => {
       const button = await screen.findByRole("button", { name: "Apri un terminale" });
       expect((button as HTMLButtonElement).disabled).toBe(true);
 
-      const field = screen.getByPlaceholderText("/home/someone/personal/sailor");
-      fireEvent.change(field, { target: { value: "/home/someone/personal/sailor" } });
+      const field = screen.getByPlaceholderText(WORKSPACE_HINT);
+      fireEvent.change(field, { target: { value: "/work/sailor" } });
       expect((screen.getByRole("button", { name: "Apri un terminale" }) as HTMLButtonElement).disabled).toBe(false);
 
       await act(async () => {
@@ -443,10 +437,10 @@ describe("la schermata dei terminali", () => {
     }
   });
 
-  test("APRIRE PORTA LA CARTELLA FINO AL COMANDO, non solo fino al componente", async () => {
-    // Il campo si compila e si guarda cosa è arrivato al ponte: senza questa
-    // riga, `terminal_open` potrebbe essere chiamato senza `workspaceRoot` e
-    // la prova sopra resterebbe verde.
+  test("OPENING CARRIES THE DIRECTORY TO THE COMMAND, not just to the component", async () => {
+    // The field is filled in and what reached the bridge is inspected: without
+    // this test, `terminal_open` could be called with no `workspaceRoot` and the
+    // test above would stay green.
     const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0] });
     try {
       render(
@@ -454,22 +448,22 @@ describe("la schermata dei terminali", () => {
           <Terminals native />
         </div>,
       );
-      const field = await screen.findByPlaceholderText("/home/someone/personal/sailor");
-      fireEvent.change(field, { target: { value: "/home/someone/other-repo/work" } });
+      const field = await screen.findByPlaceholderText(WORKSPACE_HINT);
+      fireEvent.change(field, { target: { value: "/work/other-repo" } });
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "Apri un terminale" }));
       });
       expect(shell.argsOf("terminal_open")).toEqual([
-        { workspaceRoot: "/home/someone/other-repo/work", program: undefined, cols: 80, rows: 24 },
+        { workspaceRoot: "/work/other-repo", program: undefined, cols: 80, rows: 24 },
       ]);
     } finally {
       shell.stop();
     }
   });
 
-  test("un elenco vuoto non si confonde con un motore che non risponde", async () => {
-    // «Zero» e «non posso vedere» non sono la stessa cosa, e sono le due frasi
-    // fra cui questa schermata deve saper scegliere.
+  test("an empty list is not confused with an engine that does not answer", async () => {
+    // «Zero» and «I cannot see» are not the same thing, and they are the two
+    // sentences this screen has to be able to choose between.
     const shell = pretendShell({ terminal_list: [] });
     try {
       render(
@@ -491,41 +485,31 @@ describe("la schermata dei terminali", () => {
   });
 });
 
-// ── il filo, non i pezzi ─────────────────────────────────────────────────
+// ── the wiring, not the pieces ───────────────────────────────────────────
 
-/**
- * **LE DUE PROVE PER CUI QUESTO CANTIERE ESISTE, E CHE MANCAVANO.**
- *
- * `keyStroke`, `decodeBytes` e `OutputBus` erano provate come funzioni pure e
- * mai attraverso il filo che le collega. Un giudice l'ha misurato rimettendo
- * due difetti — ogni tasto anche a `onSubmit`, e i byte del bus che non
- * arrivano all'emulatore — e la batteria è rimasta verde tutte e due le volte:
- * l'intero `onData` di `TerminalPane` non veniva mai eseguito, e nessuna prova
- * emetteva `terminal_output`.
- *
- * Qui i tasti sono eventi veri di tastiera sulla textarea che xterm ascolta,
- * l'uscita è l'evento del contratto, e ciò che si guarda è **quale comando è
- * arrivato al ponte** e **cosa c'è nel buffer dell'emulatore disegnato**.
- */
+/* **THE TWO TESTS THIS SECTION EXISTS FOR.** `keyStroke`, `decodeBytes` and
+   `OutputBus` are covered as pure functions, never through the wiring that
+   joins them. Here the keys are real events on xterm's textarea, the output is
+   the contract's event, and the judge is the bridge call and the emulator. */
 
-/** La tastiera del pannello a schermo: xterm ascolta su una textarea nascosta. */
+/** The on-screen pane's keyboard: xterm listens on a hidden textarea. */
 function keyboardOf(): HTMLTextAreaElement {
   const area = document.querySelector(".pane:not([hidden]) .xterm-helper-textarea");
-  expect(area, "il pannello a schermo non ha una textarea: l'emulatore non si è montato").toBeTruthy();
+  expect(area, "the on-screen pane has no textarea: the emulator did not mount").toBeTruthy();
   return area as HTMLTextAreaElement;
 }
 
-/** Ciò che si legge sullo schermo del pannello a schermo. */
+/** What can be read on the on-screen pane's screen. */
 function paneScreenText(): string {
   return document.querySelector(".pane:not([hidden]) .xterm-rows")?.textContent ?? "";
 }
 
-/** Un tasto che non è una lettera: xterm lo ricava da `keydown`. */
+/** A key that is not a letter: xterm derives it from `keydown`. */
 function tapKey(area: HTMLElement, init: KeyboardEventInit): void {
   area.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
 }
 
-/** Una lettera: xterm la ricava da `keypress`. */
+/** A letter: xterm derives it from `keypress`. */
 function typeLetter(area: HTMLElement, letter: string): void {
   const code = letter.charCodeAt(0);
   area.dispatchEvent(
@@ -539,11 +523,11 @@ function typeLetter(area: HTMLElement, letter: string): void {
   );
 }
 
-describe("il filo fra il ponte e lo schermo", () => {
-  test("L'USCITA ARRIVA ALL'EMULATORE DEL PANNELLO, e una lettera spezzata si ricompone lì", async () => {
-    // Il mutante che questa prova deve uccidere: i byte del bus che non
-    // arrivano mai all'emulatore. Lo schermo resterebbe vuoto su un'uscita
-    // viva, e nessuna delle prove sulle funzioni pure se ne accorgerebbe.
+describe("the wiring between the bridge and the screen", () => {
+  test("OUTPUT REACHES THE PANE'S EMULATOR, and a split letter is put back together there", async () => {
+    // Guards against bus bytes never reaching the emulator: the screen would
+    // stay empty on live output, and none of the pure-function tests would
+    // notice.
     const shell = pretendShell({ terminal_list: [TWO[0]] });
     try {
       render(
@@ -554,8 +538,8 @@ describe("il filo fra il ponte e lo schermo", () => {
       await screen.findByRole("button", { name: /sailor/ });
 
       await act(async () => {
-        // I due eventi che il ponte manderebbe: `è` vale 0xC3 0xA8, e uno
-        // pseudo-terminale può consegnarli in due letture.
+        // The two events the bridge would send: `è` is 0xC3 0xA8, and a
+        // pseudo-terminal may deliver them in two reads.
         shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(new Uint8Array([0xc3])) });
         shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(new Uint8Array([0xa8, 0x21])) });
       });
@@ -568,7 +552,7 @@ describe("il filo fra il ponte e lo schermo", () => {
     }
   });
 
-  test("l'uscita di un terminale non finisce nel pannello di un altro", async () => {
+  test("one terminal's output does not land in another one's pane", async () => {
     const shell = pretendShell({ terminal_list: TWO });
     try {
       render(
@@ -580,7 +564,7 @@ describe("il filo fra il ponte e lo schermo", () => {
       await act(async () => {
         shell.emit("terminal_output", { id: "t2", bytes: encodeBytes(keyBytes("nel secondo")) });
       });
-      // Il primo è quello a schermo, e non deve aver ricevuto niente.
+      // The first one is the pane on screen, and it must have received nothing.
       await waitFor(() => {
         expect(paneScreenText()).not.toContain("nel secondo");
       });
@@ -589,10 +573,9 @@ describe("il filo fra il ponte e lo schermo", () => {
     }
   });
 
-  test("UN TASTO VA A `terminal_press`, INVIO A `terminal_submit`, E MAI TUTTI E DUE", async () => {
-    // Il mutante che questa prova deve uccidere: ogni tasto mandato **anche** a
-    // `onSubmit`. È il bivio del contratto, e senza questa prova saltarlo non
-    // faceva rumore.
+  test("A KEY GOES TO `terminal_press`, ENTER TO `terminal_submit`, AND NEVER BOTH", async () => {
+    // Guards against every key being sent **also** to `onSubmit`. This is the
+    // fork in the contract, and skipping it made no noise.
     const shell = pretendShell({
       terminal_list: [TWO[0]],
       terminal_press: null,
@@ -607,10 +590,10 @@ describe("il filo fra il ponte e lo schermo", () => {
       await screen.findByRole("button", { name: /sailor/ });
       const keys = keyboardOf();
 
-      // COME NASCE: UN TERMINALE NASCE TERMINALE, e la lettera è ciò che lo
-      // dimostra. Una freccia, un Ctrl-C e un Invio andrebbero a `press` anche
-      // componendo, a riga vuota: solo la `x` distingue i due modi, ed è la
-      // riga che tiene ferma la decisione «predefinito `raw`».
+      // HOW IT IS BORN: A TERMINAL IS BORN A TERMINAL, and the letter is what
+      // proves it. An arrow, a Ctrl-C and an Enter would go to `press` while
+      // composing too, on an empty line: only the `x` tells the two modes
+      // apart, and it is the line that pins the «`raw` by default» decision.
       expect(screen.getByText("i tasti vanno diritti al processo")).toBeTruthy();
       await act(async () => {
         typeLetter(keys, "x");
@@ -626,14 +609,14 @@ describe("il filo fra il ponte e lo schermo", () => {
       ]);
       expect(shell.asked).not.toContain("terminal_submit");
 
-      // Lo smistamento su questa riga lo chiede chi lo vuole.
+      // Routing on this line is asked for by whoever wants it.
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "componi una riga da smistare" }));
       });
 
-      // Comporre non manda niente a nessuno: se anche un carattere partisse,
-      // `terminal_submit` — che la riga la scrive lui — la farebbe eseguire due
-      // volte.
+      // Composing sends nothing to anybody: if even one character left,
+      // `terminal_submit` — which writes the line itself — would have it run
+      // twice.
       await act(async () => {
         typeLetter(keys, "l");
         typeLetter(keys, "s");
@@ -641,14 +624,14 @@ describe("il filo fra il ponte e lo schermo", () => {
       expect(shell.argsOf("terminal_press").length).toBe(4);
       expect(shell.asked).not.toContain("terminal_submit");
 
-      // Invio: una chiamata sola, con la riga intera, e nessun tasto in più.
+      // Enter: a single call, with the whole line, and not one extra key.
       await act(async () => {
         tapKey(keys, { key: "Enter", keyCode: 13 });
       });
       expect(shell.argsOf("terminal_submit")).toEqual([{ id: "t1", line: "ls" }]);
       expect(shell.argsOf("terminal_press").length).toBe(4);
 
-      // E dove è finita si legge sullo schermo.
+      // And where it ended up can be read on the screen.
       await waitFor(() => {
         expect(screen.getByText(/è andata alla shell/)).toBeTruthy();
       });
@@ -657,7 +640,7 @@ describe("il filo fra il ponte e lo schermo", () => {
     }
   });
 
-  test("una riga dirottata non arriva alla shell, e lo dice con la regola", async () => {
+  test("a rerouted line never reaches the shell, and says so with the rule", async () => {
     const shell = pretendShell({
       terminal_list: [TWO[0]],
       terminal_press: null,
@@ -684,7 +667,7 @@ describe("il filo fra il ponte e lo schermo", () => {
         tapKey(keys, { key: "Enter", keyCode: 13 });
       });
       expect(shell.argsOf("terminal_submit")).toEqual([{ id: "t1", line: "?" }]);
-      // NIENTE È ARRIVATO ALLA SHELL: una riga dirottata non si esegue.
+      // NOTHING REACHED THE SHELL: a rerouted line is not executed.
       expect(shell.asked).not.toContain("terminal_press");
       await waitFor(() => {
         expect(screen.getByText(/marked-request/)).toBeTruthy();
@@ -694,15 +677,13 @@ describe("il filo fra il ponte e lo schermo", () => {
     }
   });
 
-  // `terminal_resize` RESTA SENZA PROVA, E SI DICE PERCHÉ. Il filo parte da un
-  // `ResizeObserver` e da `fit()`, che misurano riquadri veri: in jsdom ogni
-  // riquadro è alto e largo zero, `fit()` non produce nessuna taglia nuova e
-  // `refit` esce senza chiamare niente. Una prova qui potrebbe solo asserire
-  // «zero chiamate o più», che è vera comunque — e una riga così è il modo in
-  // cui questo controllo tornerebbe a essere una decorazione. Si verifica
-  // aprendo la finestra.
+  // `terminal_resize` HAS NO TEST, AND HERE IS WHY. The wiring starts from a
+  // `ResizeObserver` and from `fit()`, which measure real frames: in jsdom every
+  // frame is zero by zero, `fit()` produces no new size and `refit` returns
+  // without calling anything. A test here could only assert «zero calls or
+  // more», which is true regardless. It is verified by opening the window.
 
-  test("chiudere un terminale lo chiede al motore, con il suo id", async () => {
+  test("closing a terminal asks the engine, with its id", async () => {
     const shell = pretendShell({ terminal_list: [TWO[0]], terminal_close: null });
     try {
       render(

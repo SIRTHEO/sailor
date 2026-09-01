@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { RunEvent, RunSnapshot } from "./engine";
+import { tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
 
 /**
@@ -155,6 +156,14 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
         pushText(lines, event.seq, event.at, event.step_id, "said", payload?.said);
         break;
       }
+      // WHAT A STEP SAYS WHILE IT RUNS. It arrives in pieces as the engine
+      // writes them, under the pipe it came from: an error mixed into ordinary
+      // output and indistinguishable from it is no more visible than silence.
+      case "step_text": {
+        const pipe = payload?.pipe === "err" ? "stderr" : "stdout";
+        pushText(lines, event.seq, event.at, event.step_id, pipe, payload?.text);
+        break;
+      }
       case "run_ended": {
         const status = typeof payload?.status === "string" ? payload.status : "?";
         const error = typeof payload?.error === "string" ? payload.error : null;
@@ -206,6 +215,8 @@ interface StepPane {
    * guarda» mancava, ed era la metà che spiega l'altra.
    */
   input: unknown;
+  /** What came out, kept whole: the lines made from it are not the thing. */
+  output: unknown;
 }
 
 export function panesFromEvents(events: RunEvent[]): StepPane[] {
@@ -227,6 +238,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         // Il record del passo porta l'input, da cui si legge cosa esegue.
         action: readAction(payload),
         input: payload?.input ?? null,
+        output: null,
       });
     } else if (event.kind === "step_closed") {
       const pane = panes.get(event.step_id);
@@ -234,6 +246,7 @@ export function panesFromEvents(events: RunEvent[]): StepPane[] {
         pane.endedAt = event.at;
         pane.outcome = typeof payload?.outcome === "string" ? payload.outcome : null;
         pane.failure = typeof payload?.failure_class === "string" ? payload.failure_class : null;
+        pane.output = payload?.output ?? null;
       }
     }
   }
@@ -268,33 +281,15 @@ function readAction(payload: Record<string, unknown> | null): string | null {
 }
 
 /**
- * Le classi di guasto, in una riga che si legge.
+ * A failure class, in one readable line, from `run.failure.*`.
  *
- * **SONO NOMI STABILI DEL MOTORE, non testo libero**: dicono *perché* un passo
- * è caduto senza costringere a leggere il muro di testo che il passo ha
- * prodotto. Una classe che non è in questo elenco si mostra com'è — un nome
- * sconosciuto è un'informazione, una traduzione inventata no.
+ * **THE CLASSES ARE STABLE ENGINE NAMES, not free text**: they say *why* a step
+ * fell without making anyone read the wall of output it produced. A class the
+ * catalogue has never heard of shows as it came — an unknown name is
+ * information, an invented sentence is not, which is why this asks `tryT`.
  */
-const FAILURE_LABEL: Record<string, string> = {
-  engine_exit_error: "il motore è uscito con un errore",
-  engine_exhausted: "il motore ha finito la propria quota — non si è rotto",
-  engine_timed_out: "il motore ha superato il tempo massimo",
-  engine_spawn_failed: "il motore non è partito",
-  tool_unavailable: "lo strumento non c'è su questa macchina",
-  no_tool_resolver: "nessuno sa dove trovare quello strumento",
-  answer_not_json: "la risposta non era JSON",
-  answer_off_shape: "la risposta non ha la forma dichiarata",
-  shape_not_in_prompt: "la forma pretesa non è stata chiesta al motore",
-  check_failed: "la verifica non è passata",
-  check_timed_out: "la verifica ha superato il tempo massimo",
-  listening_not_built: "questa sorgente di innesco non sa ancora ascoltare",
-  unknown_trigger_source: "sorgente di innesco sconosciuta",
-  empty_signal: "il segnale è arrivato senza consegna",
-  invalid_input: "gli ingressi del passo non sono nella forma attesa",
-};
-
 export function whyFailed(failure: string): string {
-  return FAILURE_LABEL[failure] ?? failure;
+  return tryT(`run.failure.${failure}`) ?? failure;
 }
 
 /** Come è finito un passo, detto in italiano. */
@@ -489,8 +484,7 @@ export function RunConsole({
             <div className="console__waiting">
               {openPanes
                 .map((pane) => `«${pane.stepId}» gira da ${clock(now, pane.startedAt)}`)
-                .join(" · ")}{" "}
-              — il suo testo comparirà alla chiusura
+                .join(" · ")}
             </div>
           )}
         </div>
@@ -525,8 +519,10 @@ export function RunConsole({
                     partito, ha chiuso — ci sono sempre, e contarle come testo
                     farebbe sparire la nota proprio nei riquadri che ne hanno
                     bisogno, cioè quelli dove il passo non ha detto niente. */}
+                {/* A running step that has said nothing has said nothing yet:
+                    its text arrives as the engine writes it, not at the end. */}
                 {!pane.spoke && pane.endedAt === null && (
-                  <div className="pane__note">gira; il suo testo comparirà alla chiusura</div>
+                  <div className="pane__note">running, and it has not said anything yet</div>
                 )}
                 {!pane.spoke && pane.endedAt !== null && (
                   <div className="pane__note">

@@ -1,24 +1,16 @@
-//! Il tracciamento dei terminali.
-//!
-//! **IL PRINCIPIO: SAILOR NON ENTRA NEL TERMINALE.** È l'agente — o la shell —
-//! che si presenta a Sailor. Non c'è nessun codice specifico di prodotto qui
-//! dentro, e non ce ne può entrare: la prova
-//! `no_product_name_decides_anything` lo tiene fermo.
-//!
-//! **L'ANCORA È `(tty, albero, capostipite)`.** `ttys004` è un oggetto del
-//! kernel: è già il nome neutro che il sistema dà a «un terminale», e non
-//! bisogna inventarne un altro. L'albero è la cartella in cui si lavora. Il
-//! capostipite — chi ha disegnato la finestra — si ottiene risalendo la catena
-//! dei genitori e **serve solo da etichetta**: si stampa, si registra, e
-//! nessuna condizione lo legge.
-//!
-//! **LA REGOLA DI FERRO.** Il nome di un prodotto può comparire in
-//! un'etichetta, mai in una condizione. Stampare «gira in Orca» va bene;
-//! `if host == "orca"` è vietato, e c'è una prova che lo impedisce.
-//!
-//! **IL CENSIMENTO È INNESCATO, NON A OROLOGIO.** Non c'è nessun timer, nessun
-//! ciclo, nessuna attesa: [`census::Census::of`] si chiama quando arriva un
-//! evento, e in nessun altro momento.
+//! Terminal tracking. Sailor never enters the terminal: it is the agent — or
+//! the shell — that announces itself to Sailor, and no product-specific code is
+//! in here or can get in. The anchor is `(tty, worktree, ancestor)`: a kernel
+//! object, the directory being worked in, and the label of whoever drew the
+//! window, which is printed and recorded and read by no condition.
+
+//! **THE IRON RULE.** A product name may appear in a label, never in a
+//! condition. Printing "running in Orca" is fine; `if host == "orca"` is
+//! forbidden, and the test `no_product_name_decides_anything` holds it still.
+
+//! **THE CENSUS IS TRIGGERED, NOT ON A CLOCK.** No timer, no loop, no waiting:
+//! [`census::Census::of`] is called when an event arrives, and at no other
+//! moment.
 
 pub mod census;
 pub mod fullness;
@@ -32,16 +24,12 @@ pub use store::{
 
 use serde::Deserialize;
 
-/// Il payload che arriva su standard input.
-///
-/// **QUATTRO CAMPI, E TUTTI FACOLTATIVI.** È la forma dei ganci di Claude Code,
-/// ma nessuno di questi nomi appartiene a un prodotto: sono l'identificativo di
-/// una sessione, dove sta la sua trascrizione, in che cartella gira e come si
-/// chiama il fatto. Chiunque scriva quel JSON viene tracciato allo stesso modo,
-/// e chi ne manda uno vuoto viene tracciato lo stesso — con meno informazione.
-///
-/// I campi che non conosciamo si ignorano: **un payload con un campo in più non
-/// è un payload rotto**, e rifiutarlo è il guasto 8.
+/// The payload that arrives on standard input: four fields, all optional, and
+/// no name here belongs to a product — a session id, where its transcript
+/// lives, which directory it runs in, what the event is called. Whoever writes
+/// that JSON is tracked the same way, and whoever sends an empty one is tracked
+/// all the same, with less information. Fields we do not know are ignored: one
+/// field too many is not a broken payload, and refusing it is fault 8.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 pub struct Payload {
     #[serde(default)]
@@ -55,21 +43,21 @@ pub struct Payload {
 }
 
 impl Payload {
-    /// Legge il testo. Un testo vuoto è un payload vuoto, non un errore: chi
-    /// invoca `sailor session` a mano da un terminale non ha niente da mandare,
-    /// e ha comunque un tty e una cartella.
+    /// Reads the text. Empty text is an empty payload, not an error: whoever
+    /// runs `sailor session` by hand from a terminal has nothing to send, and
+    /// still has a tty and a directory.
     pub fn parse(text: &str) -> Result<Payload, String> {
         if text.trim().is_empty() {
             return Ok(Payload::default());
         }
-        serde_json::from_str(text).map_err(|error| format!("il payload non è JSON: {error}"))
+        serde_json::from_str(text).map_err(|error| format!("the payload is not JSON: {error}"))
     }
 }
 
-/// L'ancora costruita con quello che si ha in mano.
+/// The anchor, built from whatever is at hand.
 ///
-/// Il capostipite si chiede al censimento, che può non saperlo — e allora resta
-/// `None`, che è diverso da una stringa vuota: `None` è «non lo sappiamo».
+/// The ancestor is asked of the census, which may not know it — and then it
+/// stays `None`, which is not an empty string: `None` means "we do not know".
 pub fn anchor_from(payload: &Payload, tty: String, census: &Census) -> Anchor {
     let ancestor = census.ancestor_of(&tty).map(str::to_owned);
     let worktree = payload
@@ -84,14 +72,14 @@ pub fn anchor_from(payload: &Payload, tty: String, census: &Census) -> Anchor {
     }
 }
 
-/// La cartella di lavoro di questo processo, o `.` se il sistema non la dice.
+/// This process's working directory, or `.` when the system will not say.
 pub fn working_directory() -> String {
     std::env::current_dir()
         .map(|found| found.display().to_string())
         .unwrap_or_else(|_| ".".to_owned())
 }
 
-/// Adesso, in secondi. Lo stesso orologio del deposito.
+/// Now, in seconds. The same clock the store uses.
 pub fn now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -49,14 +49,66 @@ const ITALIAN_WORDS: &[&str] = &[
     // Erano le chiavi dei lavori della CI. La quarta, `prove`, **non è entrata
     // e non può entrare**: è una parola inglese valida, cioè esattamente la
     // famiglia che il commento qui sopra esclude apposta.
-    "assente", "atteso", "attesa", "batteria", "casa", "cassette", "ciclico", "cio", "conteggio",
-    "coperto", "finestra", "stile",
-    "corsa", "costata", "deposito", "elenco", "esempio", "esito", "fabbrica", "facoltativo",
-    "famiglie", "flusso", "flussi", "guasto", "ignota", "lati", "letto", "listino", "lungo",
-    "mai", "miei", "misurata", "motore", "nome", "nomi", "nuovo", "ondata", "parti", "passo",
-    "piano", "prova", "ramo", "registro", "rotto", "sano", "senza", "smista", "spedito",
-    "spediti", "spesa", "spia", "tetto", "tronco", "valido", "vecchio", "voce", "voci", "verdetto",
-    "verifica", "quanto",
+    "assente",
+    "atteso",
+    "attesa",
+    "batteria",
+    "casa",
+    "cassette",
+    "ciclico",
+    "cio",
+    "conteggio",
+    "coperto",
+    "finestra",
+    "stile",
+    "corsa",
+    "costata",
+    "deposito",
+    "elenco",
+    "esempio",
+    "esito",
+    "fabbrica",
+    "facoltativo",
+    "famiglie",
+    "flusso",
+    "flussi",
+    "guasto",
+    "ignota",
+    "lati",
+    "letto",
+    "listino",
+    "lungo",
+    "mai",
+    "miei",
+    "misurata",
+    "motore",
+    "nome",
+    "nomi",
+    "nuovo",
+    "ondata",
+    "parti",
+    "passo",
+    "piano",
+    "prova",
+    "ramo",
+    "registro",
+    "rotto",
+    "sano",
+    "senza",
+    "smista",
+    "spedito",
+    "spediti",
+    "spesa",
+    "spia",
+    "tetto",
+    "tronco",
+    "valido",
+    "vecchio",
+    "voce",
+    "voci",
+    "verdetto",
+    "verifica",
+    "quanto",
 ];
 
 /// Dove un identificatore può essere dichiarato. Il testo che segue una di
@@ -66,7 +118,13 @@ const RUST_DECLARATIONS: &[&str] = &[
 ];
 
 const WEB_DECLARATIONS: &[&str] = &[
-    "let ", "const ", "var ", "function ", "interface ", "class ", "type ",
+    "let ",
+    "const ",
+    "var ",
+    "function ",
+    "interface ",
+    "class ",
+    "type ",
 ];
 
 /// La radice del repo, da cui questa prova gira.
@@ -209,7 +267,11 @@ fn every_declared_identifier_is_in_english() {
             continue;
         };
         let web = path.extension().is_some_and(|e| e != "rs");
-        let keywords = if web { WEB_DECLARATIONS } else { RUST_DECLARATIONS };
+        let keywords = if web {
+            WEB_DECLARATIONS
+        } else {
+            RUST_DECLARATIONS
+        };
         for (number, line) in text.lines().enumerate() {
             let code = code_part(line);
             for keyword in keywords {
@@ -317,7 +379,10 @@ fn every_workflow_job_key_is_in_english() {
     let mut looked_at = 0usize;
     for entry in entries.flatten() {
         let path = entry.path();
-        if !matches!(path.extension().and_then(|e| e.to_str()), Some("yml" | "yaml")) {
+        if !matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("yml" | "yaml")
+        ) {
             continue;
         }
         looked_at += 1;
@@ -337,7 +402,10 @@ fn every_workflow_job_key_is_in_english() {
 
     // Senza questa riga la prova resterebbe verde il giorno in cui la cartella
     // cambia nome: guarderebbe zero file e non lo direbbe a nessuno.
-    assert!(looked_at > 0, "nessun file .yml letto: la prova non sta guardando niente");
+    assert!(
+        looked_at > 0,
+        "nessun file .yml letto: la prova non sta guardando niente"
+    );
     assert!(
         found.is_empty(),
         "{} lavori con la chiave in italiano:\n{}",

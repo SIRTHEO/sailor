@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import stylesheetSource from "./styles.css?raw";
+import layoutSource from "./layout.ts?raw";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { FlowBandNode, type FlowBandData } from "./StepNode";
 import { parseStylesheet, styleTree, type Stylesheet } from "./contrast";
-import { BAND_DESC_LINES, BAND_HEAD_GAP, BAND_PAD_TOP } from "./layout";
+import { BAND_DESC_LINES, BAND_HEAD_GAP, BAND_PAD_TOP, edgeLook } from "./layout";
+import type { StepRun } from "./flow";
 
 /**
  * **L'INTESTAZIONE DI UNA CORSIA DEVE STARE NELLO SPAZIO CHE LE È RISERVATO.**
@@ -127,5 +129,91 @@ describe("lo spazio riservato all'intestazione di una corsia", () => {
     // Senza questa, le due prove sopra resterebbero verdi anche se le regole
     // `[data-far]` sparissero: misurerebbero due volte la stessa scena.
     expect(headerHeight(true)).toBeGreaterThan(headerHeight(false));
+  });
+});
+
+/**
+ * **THE CORD SAYS WHETHER THE RUN CAME THROUGH IT.**
+ *
+ * Before this, every cord on the canvas was the same grey, or the tint of its
+ * lane — which the band underneath already said. Which path a run actually took
+ * was drawn nowhere, on a surface whose whole job is showing that.
+ */
+describe("what a cord says", () => {
+  const went: StepRun = { step_id: "a", state: "went", attempt: 1 };
+  const running: StepRun = { step_id: "b", state: "running", attempt: 1 };
+  const waiting: StepRun = { step_id: "b", state: "waiting", attempt: 1 };
+
+  test("the path taken is a full green line", () => {
+    const look = edgeLook(false, went, went);
+    expect(look.stroke).toBe("var(--state-went)");
+    expect(look.dash).toBeUndefined();
+    expect(look.live).toBe(false);
+  });
+
+  test("the cord into a live step is alive, and says so by moving", () => {
+    const look = edgeLook(false, went, running);
+    expect(look.stroke).toBe("var(--state-running)");
+    expect(look.live).toBe(true);
+  });
+
+  test("A CORD NOBODY WALKED IS NOT GREEN: it stays the quiet line", () => {
+    // The defect this guards is the tempting one — colouring by the source
+    // alone. The source went; the target has not started; nothing came through.
+    expect(edgeLook(false, went, waiting).stroke).toBe("var(--line)");
+    expect(edgeLook(false, went, undefined).stroke).toBe("var(--line)");
+  });
+
+  test("a skippable dependency is broken, whether or not it was walked", () => {
+    // The dash is what carries "this data may never arrive", so the meaning
+    // survives in greyscale (prohibition 5).
+    expect(edgeLook(true, went, went).dash).toBe("5 4");
+    expect(edgeLook(true, undefined, undefined).dash).toBe("5 4");
+  });
+});
+
+/**
+ * **NO COLOUR WRITTEN BY HAND, AND THIS FILE HAD TWELVE.**
+ *
+ * `stylesheet.test.ts` reads `styles.css` and nothing else, so the palette that
+ * lived in `layout.ts` — a Tailwind ramp taken whole, plus a `#94a3b8` the
+ * direction had abolished for making 2,56:1 — was invisible to every check in
+ * the tree. The canvas sheet has the same hole, and the same guard closes it.
+ */
+describe("the canvas holds no literal colour", () => {
+  const LITERAL = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/g;
+
+  test("layout.ts names roles, never tints", () => {
+    expect(layoutSource.match(LITERAL) ?? []).toEqual([]);
+  });
+
+  // The sheet half of this rule now lives in `stylesheet.test.ts`, which reads
+  // the whole file rather than one section. This one stays because no other
+  // check reads `layout.ts`, where the tints used to hide.
+});
+
+/**
+ * THE CORD SAYS WHERE THE FLOW HAS ALREADY BEEN, and not by colour alone —
+ * prohibition 5. Full ink behind, a light thread ahead: a path taken and a path
+ * not yet taken were the same 1.5px, so the only thing telling them apart was a
+ * hue, and one reader in twelve does not separate two of these.
+ */
+describe("the weight of a cord", () => {
+  const went: StepRun = { step_id: "a", state: "went", attempt: 1 };
+  const waiting: StepRun = { step_id: "b", state: "waiting", attempt: 1 };
+  const running: StepRun = { step_id: "b", state: "running", attempt: 1 };
+
+  test("a path already taken is heavier than one not taken", () => {
+    expect(edgeLook(false, went, went).width).toBeGreaterThan(edgeLook(false, went, waiting).width);
+  });
+
+  test("a live cord is the heaviest, because it is the one thing moving", () => {
+    const live = edgeLook(false, went, running);
+    expect(live.width).toBeGreaterThanOrEqual(edgeLook(false, went, went).width);
+    expect(live.live).toBe(true);
+  });
+
+  test("an untaken cord still has a weight, rather than none", () => {
+    expect(edgeLook(false, went, waiting).width).toBeGreaterThan(0);
   });
 });
