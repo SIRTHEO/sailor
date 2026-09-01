@@ -18,6 +18,29 @@ pub struct StepRecord {
     pub deps: Vec<String>,
     /// Impronta del solo input tipato; non comprende i freni attivi del passo.
     pub input_digest: String,
+    /// **L'ingresso come il passo l'ha ricevuto nel momento in cui ha smesso di
+    /// essere elaborato.** Una regola sola, e i tre casi ne discendono:
+    /// - il passo **gira** → l'ingresso coi rinvii sciolti, cioè quello che
+    ///   l'azione ha davvero letto;
+    /// - il passo è **saltato** (`when` non soddisfatto) → l'ingresso non
+    ///   sciolto: la condizione si valuta prima della risoluzione, e un passo
+    ///   che non gira non paga i rinvii di un lavoro che non farà;
+    /// - il passo **si rompe sciogliendo un rinvio** → l'ingresso non sciolto,
+    ///   apposta: chi legge il record deve vedere il puntatore da correggere,
+    ///   non il vuoto che ne è uscito.
+    ///
+    /// **QUAL È DEI TRE NON LO DICE QUESTO CAMPO, LO DICE `outcome`**, che sta
+    /// nello stesso record. Va detto perché un `{"$from": …}` letto qui dentro
+    /// non è di per sé un difetto: su `Skipped` è la norma, su `Broke` con
+    /// classe `unresolved_reference` è la diagnosi, e su `Went` sarebbe un
+    /// guasto vero.
+    ///
+    /// **PRIMA DEL 01/09/2026 ERA SEMPRE L'INGRESSO GREZZO**, perché i rinvii
+    /// li scioglieva ciascuna azione dopo aver ricevuto questo valore. Il
+    /// residuo è dichiarato e si esaurisce da sé: una corsa **iniziata prima e
+    /// ripresa dopo** confronta un'impronta vecchia grezza con una nuova
+    /// sciolta e dichiara `DifferentInput` sullo stesso lavoro. È un'etichetta
+    /// sbagliata su un tentativo, non un dato perso.
     pub input: Value,
     /// I freni attivi quando il passo è partito.
     pub gates: Vec<String>,

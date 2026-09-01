@@ -299,18 +299,19 @@ fn the_shipped_rules_all_load_and_name_a_flow_that_exists() {
     );
     assert!(!catalog.live().is_empty(), "l'elenco spedito è vuoto");
 
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("il crate sta due livelli sotto la radice")
-        .to_path_buf();
+    // **UNA REGOLA SPEDITA PUÒ NOMINARE SOLO UN FLUSSO SPEDITO.** Le due cose
+    // viaggiano insieme dentro il binario, quindi devono combaciare lì: fino
+    // all'01/09/2026 questa prova cercava il flusso in `flows/` del repo, dove
+    // stava perché era **nostro**. Era verde qui e falsa ovunque — la stessa
+    // forma del guasto 41, due elenchi che devono combaciare e nessuno che li
+    // confronti.
     for loaded in catalog.live() {
-        let file = root
-            .join("flows")
-            .join(format!("{}.flow.json", loaded.route.flow));
         assert!(
-            file.exists(),
-            "la regola «{}» manda al flusso «{}», che non esiste in flows/",
+            flow::system::FLOWS
+                .iter()
+                .any(|(name, _)| *name == loaded.route.flow),
+            "la regola «{}» manda al flusso «{}», che il prodotto non spedisce: \
+             su una macchina che non è la nostra non porta da nessuna parte",
             loaded.route.id,
             loaded.route.flow
         );

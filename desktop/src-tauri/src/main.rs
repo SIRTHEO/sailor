@@ -22,6 +22,7 @@ mod flows;
 mod live;
 mod manual;
 mod run;
+mod terminal;
 mod tools;
 
 /// Un flusso come lo riceve la tela. Ricalca `FlowEntry` di
@@ -163,7 +164,13 @@ fn main() {
             board::execution_history,
             board::day_summary,
             board::machine_inventory,
-            manual::manual
+            manual::manual,
+            terminal::terminal_open,
+            terminal::terminal_submit,
+            terminal::terminal_press,
+            terminal::terminal_resize,
+            terminal::terminal_close,
+            terminal::terminal_list
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");

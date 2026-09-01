@@ -65,8 +65,16 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 /// Le forme di `sailor release`, una per riga. Vedi `flow_cmd::USAGE`.
+///
+/// **QUI NON SI RICOPIANO I NOMI DEI BERSAGLI.** Nasceva
+/// `<notte|hooks|sailor>`: due dei tre erano binari cancellati dal repo il
+/// 28/08/2026, e questa riga — scritta il 01/09 su un altro ramo, mentre qui i
+/// fossili venivano tolti — li ha riportati sotto gli occhi di chi digita
+/// `sailor --help`. È il guasto 10 in miniatura: l'elenco vero è
+/// `release::TARGETS`, e chi sbaglia nome se lo sente dire da `target_names()`
+/// con la tabella di adesso, non con quella di allora.
 pub const USAGE: &[&str] =
-    &["sailor release <notte|hooks|sailor> [--dry-run] [--skip-tests] [--wait-secs N]"];
+    &["sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]"];
 
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
@@ -284,22 +292,55 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
 /// nessuno se ne accorga — misurato il 28/08/2026, un rilascio con uscita 0 che
 /// ha scritto il binario accanto ai sorgenti mentre `settings.json` continuava a
 /// eseguirlo da qui.
+/// Dove stanno i sorgenti sotto la casa, e dove sta la configurazione.
+///
+/// Sono costanti perché le prove le nominano: una prova che ricopiasse
+/// «personal/sailor» a mano resterebbe verde con la funzione riportata a
+/// clonare `.claude`, che è il guasto del 28/08/2026 rimesso in piedi.
+const SOURCES_BELOW_HOME: &str = "personal/sailor";
+const CONFIGURATION_BELOW_HOME: &str = ".claude";
+
 fn install_root() -> Result<PathBuf, String> {
-    if let Some(root) = env::var_os("CLAUDE_HOME").filter(|value| !value.is_empty()) {
-        return Ok(PathBuf::from(root));
-    }
-    env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join(".claude"))
-        .ok_or_else(|| "né CLAUDE_HOME né HOME sono impostate".to_string())
+    root_under(
+        env::var_os("CLAUDE_HOME"),
+        env::var_os("HOME"),
+        CONFIGURATION_BELOW_HOME,
+        "CLAUDE_HOME",
+    )
 }
 
 fn sources_root() -> Result<PathBuf, String> {
-    if let Some(root) = env::var_os("SAILOR_HOME").filter(|value| !value.is_empty()) {
+    root_under(
+        env::var_os("SAILOR_HOME"),
+        env::var_os("HOME"),
+        SOURCES_BELOW_HOME,
+        "SAILOR_HOME",
+    )
+}
+
+/// La radice dichiarata, o quella dedotta dalla casa: la regola, senza l'ambiente.
+///
+/// **RICEVE I DUE VALORI INVECE DI LEGGERLI, ED È IL GUASTO 5.** `HOME` è
+/// globale al processo: una prova che lo scrivesse per provare questa regola
+/// rovinerebbe le altre a caso, e una che lo *legge* diventa rossa su una
+/// macchina diversa a codice invariato — misurato il 01/09/2026, casa vuota e
+/// `the_release_builds_from_the_sources_and_not_from_the_configuration` rossa
+/// senza che nessuno avesse toccato una riga. I due chiamanti qui sopra restano
+/// gli unici a guardare l'ambiente, e non decidono niente.
+///
+/// Una variabile dichiarata **vuota** non vale come dichiarazione: sarebbe una
+/// radice alla cartella corrente, cioè il guasto 25 travestito.
+fn root_under(
+    declared: Option<OsString>,
+    home: Option<OsString>,
+    below: &str,
+    declared_name: &str,
+) -> Result<PathBuf, String> {
+    if let Some(root) = declared.filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(root));
     }
-    env::var_os("HOME")
-        .map(|home| PathBuf::from(home).join("personal").join("sailor"))
-        .ok_or_else(|| "né SAILOR_HOME né HOME sono impostate".to_string())
+    home.map(|home| PathBuf::from(home).join(below))
+        .ok_or_else(|| format!("né {declared_name} né HOME sono impostate"))
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
@@ -685,22 +726,79 @@ mod tests {
     /// anche un repo git, e finché il rilascio clonava quella rimetteva in
     /// servizio l'albero da cui i sorgenti se n'erano andati — un rilascio
     /// verde che disinstallava il lavoro della mattina.
+    ///
+    /// **NON LEGGE PIÙ LA MACCHINA DI CHI LA ESEGUE, ED È IL GUASTO 5.** Fino
+    /// al 01/09/2026 chiedeva `sources_root()`, cioè `$HOME`, e poi guardava
+    /// sul disco se quella cartella conteneva `crates/sailor`. Misurato quel
+    /// giorno con una casa vuota: rossa, a codice invariato — che è
+    /// letteralmente la riga del guasto 5. Adesso la regola si prova con valori
+    /// dichiarati; la forma dell'albero la prova il caso qui sotto, sull'albero
+    /// da cui questa prova è compilata.
     #[test]
     fn the_release_builds_from_the_sources_and_not_from_the_configuration() {
-        let root = sources_root().unwrap();
-        assert!(root.ends_with("personal/sailor"), "{root:?}");
+        let home = Some(OsString::from("/casa/di-chiunque"));
+        let sources = root_under(None, home.clone(), SOURCES_BELOW_HOME, "SAILOR_HOME").unwrap();
+        let configuration =
+            root_under(None, home, CONFIGURATION_BELOW_HOME, "CLAUDE_HOME").unwrap();
+
+        // Il testo è scritto qui apposta: se la costante tornasse a puntare
+        // alla configurazione, questa riga diventerebbe rossa.
+        assert!(sources.ends_with("personal/sailor"), "{sources:?}");
         assert!(
-            !root.ends_with(".claude"),
-            "il rilascio è tornato a clonare la configurazione: {root:?}"
+            !sources.ends_with(".claude"),
+            "il rilascio è tornato a clonare la configurazione: {sources:?}"
         );
-        // Il crate del binario sta lì, e non sotto un sottoalbero `rust/`.
-        //
-        // IL PUNTO DI RIFERIMENTO È CAMBIATO IL 29/08/2026, e vale la pena dire
-        // perché: qui c'era `crates/claude-hooks`, cancellato insieme a tutto
-        // ciò che non era Sailor. Il rilascio non è cambiato di una riga — è
-        // cambiato il segnale con cui questa prova lo riconosceva. Adesso guarda
-        // il crate che dà il nome al binario: se quello non c'è, non siamo nei
-        // sorgenti di Sailor comunque sia fatto il resto.
+        assert_ne!(sources, configuration);
+    }
+
+    /// Una radice dichiarata vince sulla casa, e una dichiarata vuota no.
+    ///
+    /// Il secondo braccio è quello che si perde: `SAILOR_HOME=""` esportata da
+    /// uno script che non l'ha trovata darebbe `personal/sailor` **relativa**,
+    /// cioè un clone dove sta il processo — il guasto 25 travestito da
+    /// configurazione.
+    #[test]
+    fn a_declared_root_wins_over_the_home_but_an_empty_one_does_not() {
+        let home = Some(OsString::from("/casa/di-chiunque"));
+        let declared = root_under(
+            Some(OsString::from("/altrove/sailor")),
+            home.clone(),
+            SOURCES_BELOW_HOME,
+            "SAILOR_HOME",
+        )
+        .unwrap();
+        assert_eq!(declared, PathBuf::from("/altrove/sailor"));
+
+        let empty = root_under(
+            Some(OsString::new()),
+            home,
+            SOURCES_BELOW_HOME,
+            "SAILOR_HOME",
+        )
+        .unwrap();
+        assert_eq!(empty, PathBuf::from("/casa/di-chiunque/personal/sailor"));
+
+        assert!(root_under(None, None, "personal/sailor", "SAILOR_HOME").is_err());
+    }
+
+    /// I sorgenti di Sailor portano il crate che dà il nome al binario.
+    ///
+    /// IL PUNTO DI RIFERIMENTO È CAMBIATO IL 29/08/2026, e vale la pena dire
+    /// perché: qui c'era `crates/claude-hooks`, cancellato insieme a tutto ciò
+    /// che non era Sailor. Il rilascio non è cambiato di una riga — è cambiato
+    /// il segnale con cui questa prova lo riconosceva.
+    ///
+    /// **L'ALBERO GUARDATO È QUELLO DA CUI QUESTA PROVA È COMPILATA**, non
+    /// quello che vive nella casa di chi la esegue: `CARGO_MANIFEST_DIR` è
+    /// versionato e c'è sempre, `$HOME/personal/sailor` è una scommessa sulla
+    /// macchina.
+    #[test]
+    fn the_sources_of_this_checkout_carry_the_crate_that_names_the_binary() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|crates| crates.parent())
+            .expect("il crate sta in <radice>/crates/sailor")
+            .to_path_buf();
         assert!(root.join("crates").join("sailor").is_dir(), "{root:?}");
         assert!(!root.join("rust").exists(), "{root:?}");
     }
@@ -711,29 +809,55 @@ mod tests {
     /// spostata portandosi dietro l'installazione, il rilascio ha scritto il
     /// binario accanto ai sorgenti e i ganci hanno continuato a eseguire quello
     /// vecchio — con uscita 0 e nessun avviso.
+    /// **ANCHE QUESTA RICEVE LA CASA INVECE DI LEGGERLA** (guasto 5): non
+    /// falliva a casa vuota — confronta percorsi e non tocca il disco — ma
+    /// `HOME` assente la faceva morire su un `unwrap`, e un caso che dipende
+    /// dall'ambiente per **partire** dipende dall'ambiente.
+    ///
+    /// **GUARDA TUTTI I BERSAGLI, NON UNO SCELTO A MANO.** Fino al 01/09/2026
+    /// questa prova chiedeva `target("hooks")` — un bersaglio che nominava un
+    /// binario cancellato dal repo il 28/08 — e con la sua rimozione sarebbe
+    /// morta su un `expect`. Un caso scritto su un nome è una prova che va
+    /// aggiornata a ogni tabella; scritta sulla tabella, copre anche il
+    /// bersaglio che qualcuno aggiungerà domani.
     #[test]
-    fn the_binary_is_installed_where_the_hooks_look_for_it() {
-        let sources = sources_root().unwrap();
-        let home = install_root().unwrap();
+    fn the_binary_is_installed_in_the_home_and_not_next_to_the_sources() {
+        let declared_home = Some(OsString::from("/casa/di-chiunque"));
+        let sources = root_under(
+            None,
+            declared_home.clone(),
+            SOURCES_BELOW_HOME,
+            "SAILOR_HOME",
+        )
+        .unwrap();
+        let home =
+            root_under(None, declared_home, CONFIGURATION_BELOW_HOME, "CLAUDE_HOME").unwrap();
         assert_ne!(sources, home);
         assert!(home.ends_with(".claude"), "{home:?}");
 
-        let hooks = target("hooks").expect("il bersaglio dei ganci esiste");
-        let installed = home.join(hooks.safe_rel);
-        assert!(
-            installed.starts_with(&home),
-            "il binario finirebbe fuori dalla casa: {installed:?}"
-        );
-        assert!(
-            !installed.starts_with(&sources),
-            "il binario finirebbe accanto ai sorgenti, dove nessuno lo esegue: {installed:?}"
-        );
+        for candidate in release::TARGETS {
+            let installed = home.join(candidate.safe_rel);
+            assert!(
+                installed.starts_with(&home),
+                "{}: il binario finirebbe fuori dalla casa: {installed:?}",
+                candidate.name
+            );
+            assert!(
+                !installed.starts_with(&sources),
+                "{}: il binario finirebbe accanto ai sorgenti, dove nessuno lo esegue: {installed:?}",
+                candidate.name
+            );
+        }
     }
 
+    // I tre casi qui sotto nominavano `notte` fino al 01/09/2026. `parse_options`
+    // non giudica il nome — chi non esiste lo scarta `target()` più tardi —
+    // quindi restavano verdi su un bersaglio cancellato: un dato di prova che
+    // racconta un mondo sparito non rompe niente, e per questo invecchia.
     #[test]
     fn dry_run_and_skip_tests_are_read_as_flags() {
-        let options = parse_options(&a(&["notte", "--dry-run", "--skip-tests"])).unwrap();
-        assert_eq!(options.target_name, "notte");
+        let options = parse_options(&a(&["sailor", "--dry-run", "--skip-tests"])).unwrap();
+        assert_eq!(options.target_name, "sailor");
         assert!(options.dry_run);
         assert!(options.skip_tests);
         assert_eq!(options.wait_secs, 600);
@@ -741,12 +865,12 @@ mod tests {
 
     #[test]
     fn wait_secs_reads_its_number() {
-        let options = parse_options(&a(&["notte", "--wait-secs", "30"])).unwrap();
+        let options = parse_options(&a(&["sailor", "--wait-secs", "30"])).unwrap();
         assert_eq!(options.wait_secs, 30);
     }
 
     #[test]
     fn an_unknown_option_is_refused() {
-        assert!(parse_options(&a(&["notte", "--turbo"])).is_err());
+        assert!(parse_options(&a(&["sailor", "--turbo"])).is_err());
     }
 }

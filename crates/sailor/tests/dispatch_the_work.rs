@@ -27,18 +27,22 @@ use flow::{
 };
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 const FLOW_ID: &str = "smista-il-lavoro";
 
-fn flow_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../flows/smista-il-lavoro.flow.json")
-}
-
+/// **IL FLUSSO NON STA PIÙ SU DISCO, E QUESTA PROVA NON DEVE CERCARLO LÌ.**
+/// Fino all'01/09/2026 leggeva `flows/smista-il-lavoro.flow.json` dalla radice
+/// del progetto. Poi il flusso è entrato nel binario — le regole di
+/// instradamento spedite lo nominano, e su un'altra macchina la cartella non
+/// c'è — e leggerlo dal disco vorrebbe dire provare un file che il prodotto non
+/// spedisce mentre quello spedito non lo prova nessuno. `system::FLOWS` è la
+/// stessa sorgente da cui lo prende chi lo esegue.
 fn flow_text() -> String {
-    let path = flow_path();
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("non riesco a leggere {}: {error}", path.display()))
+    flow::system::FLOWS
+        .iter()
+        .find(|(name, _)| *name == FLOW_ID)
+        .map(|(_, text)| (*text).to_owned())
+        .unwrap_or_else(|| panic!("«{FLOW_ID}» non è fra i flussi spediti col binario"))
 }
 
 fn flow_file() -> FlowFile {
@@ -656,6 +660,16 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
         "first_engine": format!("conta i ganci morti, {MARK}"),
         "second_engine": "un altro territorio"
     });
+
+    // **L'INGRESSO SI COMPONE COME LO COMPONE L'ESECUTORE.** Dal 01/09/2026 i
+    // rinvii li scioglie `flow::step_input` — un posto solo per tutte le
+    // azioni, guasto 28 — e questa prova chiama `execute` senza passare di lì.
+    // Chiamare la funzione vera è il modo di provare l'azione nel mondo in cui
+    // gira: senza, la si proverebbe in uno che non esiste. Che i rinvii
+    // arrivino sciolti a **ogni** azione lo prova
+    // `crates/flow/tests/a_reference_reaches_every_action.rs`; qui si prova che
+    // l'incarico sciolto finisce davvero nel prompt di questo motore.
+    let input = flow::reference::resolve_references(&input).expect("i rinvii si sciolgono");
 
     let registry = registry_with(EveryToolIsShell);
     let action = registry.get(&engine.action).expect("azione registrata");

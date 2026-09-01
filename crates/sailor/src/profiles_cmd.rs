@@ -32,13 +32,13 @@ fn dispatch(args: &[String]) -> Result<(), String> {
 /// Le forme di `sailor profiles`, una per riga. Vedi `flow_cmd::USAGE`.
 pub const USAGE: &[&str] = &[
     "sailor profiles list [cli]",
-    "sailor profiles create <cli> <nome>",
-    "sailor profiles switch <cli> <nome>",
+    "sailor profiles create <cli> <name>",
+    "sailor profiles switch <cli> <name>",
     "sailor profiles current <cli>",
 ];
 
 fn usage() -> String {
-    format!("uso:\n  {}", USAGE.join("\n  "))
+    format!("usage:\n  {}", USAGE.join("\n  "))
 }
 
 /// **UN ELENCO DI PROFILI CHE NON DICE SE SONO USABILI È UN ELENCO CHE
@@ -146,7 +146,7 @@ fn one_line(said: &str) -> String {
 
 fn cmd_create(args: &[String]) -> Result<(), String> {
     let [cli_id, name] = args else {
-        return Err("uso: sailor profiles create <cli> <nome>".to_owned());
+        return Err("usage: sailor profiles create <cli> <name>".to_owned());
     };
     let cli = find_cli(cli_id)?;
     let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
@@ -171,7 +171,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
 
 fn cmd_switch(args: &[String]) -> Result<(), String> {
     let [cli_id, name] = args else {
-        return Err("uso: sailor profiles switch <cli> <nome>".to_owned());
+        return Err("usage: sailor profiles switch <cli> <name>".to_owned());
     };
     let cli = find_cli(cli_id)?;
     let mut store = store_io::load_store()?;
@@ -194,7 +194,7 @@ fn cmd_switch(args: &[String]) -> Result<(), String> {
 
 fn cmd_current(args: &[String]) -> Result<(), String> {
     let [cli_id] = args else {
-        return Err("uso: sailor profiles current <cli>".to_owned());
+        return Err("usage: sailor profiles current <cli>".to_owned());
     };
     let cli = find_cli(cli_id)?;
     let store = store_io::load_store()?;
