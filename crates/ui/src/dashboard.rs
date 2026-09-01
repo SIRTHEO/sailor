@@ -3,7 +3,7 @@
 //! così le prove rompono i conti senza toccare un `Ledger` vero.
 
 use flow::{Outcome, StepRecord};
-use ledger::{ModelCallRecord, RunRecord};
+use ledger::{EngineIdentity, ModelCallRecord, RunRecord};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -177,6 +177,13 @@ pub struct CallView {
     pub error_type: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
+    /// Con quale identità il processo di questa chiamata è partito.
+    ///
+    /// **VIAGGIA FINO A QUI PERCHÉ QUALCUNO LA GUARDI.** Il 01/09/2026 il dato
+    /// era scritto nel deposito, riletto dentro una struttura, e non arrivava a
+    /// nessuna schermata né a nessun comando: un dato raccolto e mai guardato è
+    /// a un passo dal diventare un dato sbagliato che nessuno nota.
+    pub engine_identity: EngineIdentity,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -286,6 +293,7 @@ pub fn summarize_run(
                 error_type: call.error_type.clone(),
                 started_at: call.started_at,
                 ended_at: call.ended_at,
+                engine_identity: call.engine_identity.clone(),
             }
         })
         .collect();
@@ -310,6 +318,32 @@ pub fn summarize_run(
         tokens_by_model,
         calls: calls_view,
     }
+}
+
+/// Sotto quali identità le chiamate di una corsa sono partite, e quante per
+/// ciascuna, **nell'ordine in cui sono comparse**.
+///
+/// **PERCHÉ UN ELENCO E NON UNA SOLA.** Una corsa può cambiare identità a metà:
+/// un passo che scrive da sé la casa, un motore di ripiego che non è quello
+/// conosciuto, un passo consegnato a un agente. Mostrare la prima e tacere le
+/// altre farebbe sembrare uniforme proprio la corsa su cui c'è da guardare.
+///
+/// L'ordine è quello di comparsa e non quello del conteggio: chi legge un
+/// rapporto sta ricostruendo cosa è successo, e la cronologia è il filo che
+/// segue. `EngineIdentity` non è ordinabile — e non deve diventarlo per far
+/// stare un dato dentro una mappa.
+pub fn identities_of(calls: &[CallView]) -> Vec<(EngineIdentity, usize)> {
+    let mut seen: Vec<(EngineIdentity, usize)> = Vec::new();
+    for call in calls {
+        match seen
+            .iter_mut()
+            .find(|(identity, _)| identity == &call.engine_identity)
+        {
+            Some((_, how_many)) => *how_many += 1,
+            None => seen.push((call.engine_identity.clone(), 1)),
+        }
+    }
+    seen
 }
 
 /// Costruisce la storia completa, più recenti in cima.
@@ -402,8 +436,7 @@ mod tests {
             cached_price_micros_per_million: Some(0),
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: "prova".to_owned(),
-            mandate_version: "1".to_owned(),
+            engine_identity: EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 0,
