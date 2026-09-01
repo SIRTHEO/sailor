@@ -91,6 +91,35 @@ impl Tools {
             .map(|loaded| loaded.descriptor.capability(name))
     }
 
+    /// Dove i descrittori di questa macchina dicono due cose diverse sullo
+    /// stesso fatto.
+    ///
+    /// **GUARDA ANCHE I DESCRITTORI DI CHI LANCIA, E QUESTO È IL PUNTO.** Una
+    /// prova può pretendere che i descrittori **spediti** si reggano; chi ne
+    /// scrive uno in `~/.config/sailor/tools.d/` — il modo previsto di
+    /// aggiungere un motore senza ricompilare — starebbe fuori da ogni
+    /// controllo, e il guasto 32 rinascerebbe là dentro identico.
+    pub fn contradictions(&self) -> Vec<crate::descriptor::Contradiction> {
+        self.catalog.contradictions()
+    }
+
+    /// Perché questo strumento non può fare da ripiego, se non può.
+    ///
+    /// **`None` DICE DUE COSE DIVERSE, E CHI CHIAMA LE DISTINGUE GIÀ.** Che
+    /// possa fare da ripiego, o che nessun descrittore lo dichiari: la seconda
+    /// la dice `declares`, e chi controlla un flusso la scrive con parole sue
+    /// prima di arrivare qui. Rispondere con un motivo a un nome inesistente
+    /// manderebbe a cercare un difetto nel descrittore sbagliato — quello che
+    /// non c'è.
+    pub fn cannot_be_a_fallback(&self, id: &str) -> Option<String> {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)?
+            .descriptor
+            .cannot_be_a_fallback()
+    }
+
     /// Gli identificativi dichiarati, in ordine: è ciò che si mostra a chi ne ha
     /// scritto uno che non esiste.
     pub fn declared_ids(&self) -> Vec<String> {

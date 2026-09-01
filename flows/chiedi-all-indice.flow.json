@@ -169,7 +169,7 @@
           "value": "ok"
         },
         "with": {
-          "tool": ["claude-code", "agy", "codex"],
+          "tool": ["claude-code", "codex", "agy"],
           "answer_shape": {
             "type": "object",
             "properties": {

@@ -74,8 +74,8 @@
         "with": {
           "tool": [
             "claude-code",
-            "agy",
-            "codex"
+            "codex",
+            "agy"
           ],
           "timeout_secs": 900,
           "answer_shape": {
@@ -182,8 +182,8 @@
         "with": {
           "tool": [
             "claude-code",
-            "agy",
-            "codex"
+            "codex",
+            "agy"
           ],
           "timeout_secs": 2700,
           "answer_shape": {
@@ -323,8 +323,8 @@
         "with": {
           "tool": [
             "claude-code",
-            "agy",
-            "codex"
+            "codex",
+            "agy"
           ],
           "timeout_secs": 2700,
           "answer_shape": {
@@ -491,8 +491,8 @@
         "with": {
           "tool": [
             "claude-code",
-            "agy",
-            "codex"
+            "codex",
+            "agy"
           ],
           "timeout_secs": 2700,
           "answer_shape": {
