@@ -152,25 +152,19 @@ interface ToolbarProps {
   /** The flow that receives the step, or `null` if none has focus. */
   flowName: string | null;
   onAdd: (kind: StepKind) => void;
-  onNewFlow: () => void;
 }
 
 /**
  * **WITH NO FOCUSED FLOW THE BAR CHANGES JOB, IT DOES NOT GREY OUT.** Seven
- * disabled buttons take the space of seven gestures while offering none, and a
- * `title` only appears after a second of hovering. Instead the bar shrinks to
- * one row that says what is missing and carries the gesture that fixes it.
+ * disabled buttons offer nothing and a `title` needs a second of hovering, so
+ * it shrinks to a row that names what is missing and points at its owner — and
+ * does not carry the make-a-flow gesture, which is the column's in every state.
  */
-export function Toolbar({ flowName, onAdd, onNewFlow }: ToolbarProps) {
+export function Toolbar({ flowName, onAdd }: ToolbarProps) {
   if (flowName === null) {
     return (
       <Panel position="bottom-left" className="toolbar">
-        <p className="toolbar__prompt">
-          Scegli un flusso nella colonna per aggiungere passi.
-          <button type="button" className="toolbar__new" onClick={onNewFlow}>
-            + Nuovo flusso
-          </button>
-        </p>
+        <p className="toolbar__prompt">Scegli un flusso nella colonna per aggiungere passi.</p>
       </Panel>
     );
   }
