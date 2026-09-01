@@ -290,7 +290,12 @@ impl Pty {
 fn open_leader() -> Result<OwnedFd, PtyError> {
     let raw = unsafe { libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY) };
     if raw < 0 {
-        return Err(PtyError::NotOpened(io::Error::last_os_error()));
+        // Blamed where the error is born, not where it is printed: a perimeter
+        // denies this call, and the four words it answers with read as a defect
+        // of whatever crate the failing test happens to sit in.
+        return Err(PtyError::NotOpened(crate::scratch::blamed(
+            io::Error::last_os_error(),
+        )));
     }
     let leader = unsafe { OwnedFd::from_raw_fd(raw) };
     if unsafe { libc::grantpt(leader.as_raw_fd()) } != 0 {
