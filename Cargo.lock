@@ -329,9 +329,23 @@ dependencies = [
  "actions",
  "flow",
  "ledger",
+ "relay",
  "serde_json",
  "toolbox",
  "trigger",
+]
+
+[[package]]
+name = "relay"
+version = "0.1.0"
+dependencies = [
+ "flow",
+ "ledger",
+ "serde",
+ "serde_json",
+ "sessions",
+ "terminal",
+ "toolbox",
 ]
 
 [[package]]
