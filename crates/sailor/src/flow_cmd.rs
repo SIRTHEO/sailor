@@ -1140,6 +1140,7 @@ fn check_report(
                 );
             }
             capabilities_into(&mut report, &flow.graph, tools);
+            fallbacks_into(&mut report, &flow.graph, tools);
             // Senza sonda il rapporto **tace** su questo, invece di dichiarare
             // sane righe che non ha guardato: è la stessa regola del rilevatore
             // assente qui sopra.
@@ -1292,6 +1293,81 @@ fn capabilities_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools)
             "\ncapacità che il motore non dichiara (il passo funziona lo stesso, \
              pagando di più): {}",
             gaps.join("; ")
+        );
+    }
+}
+
+/// Scrive nel rapporto **chi non può fare il ripiego che la catena gli
+/// assegna**, e **quali descrittori si contraddicono**.
+///
+/// **SONO LO STESSO DIFETTO VISTO DA DUE LATI, ED È PER QUESTO CHE STANNO
+/// INSIEME.** Un descrittore che dichiara una capacità senza la riga per usarla
+/// (guasto 32) e uno che non dichiara come si esaurisce mentre qualcuno lo mette
+/// in mezzo a una catena (guasto 31) sbagliano allo stesso modo: **niente si
+/// rompe**. Il primo fa credere che un motore si possa interrogare, il secondo
+/// fa credere che un passo abbia due ripieghi quando ne ha zero, e in tutti e
+/// due i casi ciò che manca non è un pezzo di codice — è qualcuno che confronti
+/// due dichiarazioni. Qui quel confronto arriva **prima di spendere**, invece
+/// che alla prima corsa in cui il primo motore muore.
+///
+/// **LE REGOLE NON SONO SCRITTE QUI.** Vivono in `toolbox::Descriptor`, e le
+/// stesse due funzioni le interrogano le prove sui descrittori spediti. Una
+/// copia scritta dentro `flow check` sarebbe la seconda regola che diverge dalla
+/// prima — il guasto 10 — e a divergere sarebbe quella che una persona legge.
+///
+/// **È UN AVVISO E NON UN ERRORE**, per la stessa ragione delle capacità qui
+/// sopra: un flusso con un ripiego che non scatta gira, e fa il suo lavoro
+/// finché il primo motore risponde. Non è rotto: è un flusso che ha meno
+/// ripieghi di quanti sembra averne, e chi lancia deve saperlo prima.
+fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
+    let mut plugs = Vec::new();
+    for step in graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        // L'ultimo della catena non ha nessuno a cui passare il lavoro:
+        // pretendere da lui una dichiarazione di esaurimento sarebbe pretendere
+        // una misura che non serve a niente.
+        let chain = engines_of(with);
+        let Some((_, before_the_last)) = chain.split_last() else {
+            continue;
+        };
+        for tool in before_the_last {
+            // Uno strumento che nessun descrittore dichiara è già nominato
+            // sopra: ripeterlo qui manderebbe a cercare due difetti dove ce
+            // n'è uno.
+            if !tools.declares(tool) {
+                continue;
+            }
+            if let Some(why) = tools.cannot_be_a_fallback(tool) {
+                plugs.push(format!("{} → {tool}: {why}", step.id));
+            }
+        }
+    }
+    if !plugs.is_empty() {
+        let _ = write!(
+            report,
+            "\nmotori messi in posizione di ripiego che non possono farlo (il passo \
+             muore su di loro, e i motori dopo non partono): {}",
+            plugs.join("; ")
+        );
+    }
+
+    // Solo i descrittori che questo flusso nomina: un catalogo intero
+    // contraddittorio non è un difetto di **questo** flusso, e mostrarlo qui
+    // manderebbe a correggere file che questa corsa non tocca.
+    let named = tools_wanted(graph);
+    let disagreeing: Vec<String> = tools
+        .contradictions()
+        .into_iter()
+        .filter(|found| named.contains(&found.tool))
+        .map(|found| found.line())
+        .collect();
+    if !disagreeing.is_empty() {
+        let _ = write!(
+            report,
+            "\ndescrittori che dicono due cose diverse sullo stesso fatto: {}",
+            disagreeing.join("; ")
         );
     }
 }
@@ -3084,6 +3160,95 @@ mod tests {
         assert!(
             !report.contains("campi che l'azione non conosce"),
             "{report}"
+        );
+    }
+
+    // ── chi non può fare il ripiego che la catena gli dà ───────────────
+
+    /// Un catalogo di due motori, il primo dei quali dichiara — o tace su —
+    /// come dice di non poter lavorare.
+    fn tools_where_the_first_says(exhaustion: &str) -> toolbox::Tools {
+        static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let file = std::env::temp_dir().join(format!(
+            "prova-ripiego-{}-{}.json",
+            std::process::id(),
+            SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        std::fs::write(
+            &file,
+            format!(
+                r#"{{"tools":[
+                  {{"id":"primo","family":"ai_cli","label":"primo",
+                    "detect":{{"command":"primo"}},
+                    "ask":{{"args":["-p"],"prompt":"stdin"{exhaustion}}},
+                    "capabilities":{{"ask_without_interaction":{{"args":["-p"]}}}}}},
+                  {{"id":"secondo","family":"ai_cli","label":"secondo",
+                    "detect":{{"command":"secondo"}},
+                    "ask":{{"args":["-p"],"prompt":"stdin","unusable_when":["quota"]}},
+                    "capabilities":{{"ask_without_interaction":{{"args":["-p"]}}}}}}
+                ]}}"#
+            ),
+        )
+        .expect("scrivere");
+        let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
+        toolbox::Tools::new(catalog, toolbox::Machine::current())
+    }
+
+    /// Un passo con una catena di due motori.
+    fn flow_with_a_chain() -> FlowFile {
+        let json = r#"{
+            "id": "catena",
+            "description": "un passo con un ripiego",
+            "graph": {
+                "steps": [{
+                    "id": "root", "deps": [], "action": "external_engine",
+                    "max_attempts": 1, "when": null,
+                    "with": {"tool": ["primo", "secondo"], "timeout_secs": 10},
+                    "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
+                }],
+                "skippable_dependencies": []
+            },
+            "inputs": {}
+        }"#;
+        serde_json::from_str(json).expect("caricare il flusso")
+    }
+
+    /// **IL GUASTO 31, DETTO PRIMA DI SPENDERE E SUI FLUSSI DI CHI LANCIA.**
+    ///
+    /// Una prova sui flussi di questo albero sorveglia questo albero. Chi scrive
+    /// un flusso suo, con un descrittore suo in `~/.config/sailor/tools.d/`,
+    /// rifarebbe lo stesso difetto senza che nulla diventi rosso da nessuna
+    /// parte: la catena avrebbe l'aria di un ripiego e non ne avrebbe nessuno.
+    ///
+    /// **I DUE CASI SONO NELLA STESSA PROVA APPOSTA.** L'unica differenza fra i
+    /// due ingressi è che il primo motore dichiari o no le proprie parole: due
+    /// rapporti uguali direbbero che il controllo non le sta guardando, e una
+    /// prova che cercasse solo la frase resterebbe verde davanti a un mutante
+    /// che la stampa sempre.
+    #[test]
+    fn a_chain_whose_first_engine_cannot_fall_back_is_named_by_the_check() {
+        let flow = flow_with_a_chain();
+        let registry = default_registry(None, None);
+
+        let silent = tools_where_the_first_says("");
+        let (about_the_silent, _) = check_report(&flow, &registry, Some(&silent), None);
+        let speaking = tools_where_the_first_says(r#","unusable_when":["weekly limit"]"#);
+        let (about_the_speaking, _) = check_report(&flow, &registry, Some(&speaking), None);
+
+        assert!(
+            about_the_silent.contains("motori messi in posizione di ripiego che non possono farlo")
+                && about_the_silent.contains("root → primo"),
+            "{about_the_silent}"
+        );
+        assert!(
+            !about_the_speaking.contains("posizione di ripiego"),
+            "chi dichiara le proprie parole non va segnalato: {about_the_speaking}"
+        );
+        // E il difetto è del **primo**: l'ultimo non ha nessuno a cui passare il
+        // lavoro, e pretendere da lui una misura sarebbe pretenderla per niente.
+        assert!(
+            !about_the_silent.contains("root → secondo"),
+            "{about_the_silent}"
         );
     }
 
