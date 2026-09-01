@@ -3211,7 +3211,7 @@ mod tests {
         let nowhere: Vec<FlowSource> = Vec::new();
         let said = dispatch(&["tick".to_owned()], &nowhere)
             .expect("«tick» must reach its own arm, not the usage error");
-        assert!(said.contains("nessun flusso trovato"), "{said}");
+        assert!(said.contains("no flow found"), "{said}");
     }
 
     /// A beat with nothing due must still say so. The relay this replaces
