@@ -221,14 +221,18 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         ));
     }
 
+    // **THE STORE IS ONE PER MACHINE, THE TABLE IS ONE PER BRANCH.** So a
+    // difference has two readings and the command must not pick for you: work
+    // not yet published, or a checkout older than the store. Saying only the
+    // first sends whoever reads it to import an older register over a newer one.
     let mut said = format!(
-        "the store and {file} have drifted apart. The table is the register, \
-         so the store is what has to move:\n"
+        "the store and {file} say different things. Two readings, and this \
+         command cannot tell them apart - check which before moving anything:\n"
     );
     if !only_in_store.is_empty() {
         said.push_str(&format!(
-            "  {:?} are in the store and not in the table - unpublished, and \
-             invisible to anyone without this machine\n",
+            "  {:?} are in the store and not in the table - either unpublished \
+             work, or this checkout is older than the store\n",
             only_in_store
         ));
     }
@@ -241,8 +245,10 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
     }
     if !differing.is_empty() {
         said.push_str(&format!(
-            "  {:?} have the same number and different text; the table's is \
-             the one that counts\n",
+            "  {:?} have the same number and different text. The table is the \
+             register, so importing makes the store agree - but importing an \
+             older checkout overwrites newer text with older, and nothing says \
+             so afterwards\n",
             differing
         ));
     }
@@ -262,13 +268,115 @@ fn import(store: &Faults, loose: &[String]) -> Result<String, String> {
              import nothing and call it done"
         ));
     }
+    // **WHAT IT OVERWROTE, BY NUMBER.** A count of what came in reads the same
+    // whether every row was new or half of them replaced text written later
+    // somewhere else - and importing an older checkout is exactly how that
+    // happens. The numbers are collected before the write, because afterwards
+    // the old text is gone and nobody can tell what changed.
+    let before: std::collections::BTreeMap<i64, Fault> = store
+        .all()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .map(|fault| (fault.number, fault))
+        .collect();
+    let replaced: Vec<i64> = read
+        .iter()
+        .filter(|fault| before.get(&fault.number).is_some_and(|held| held != *fault))
+        .map(|fault| fault.number)
+        .collect();
+
     for fault in &read {
         store.restore(fault).map_err(|error| error.to_string())?;
     }
     let now = store.all().map_err(|error| error.to_string())?;
-    Ok(format!(
+    let mut said = format!(
         "brought in {} faults from {file}; the store now holds {}",
         read.len(),
         now.len()
-    ))
+    );
+    if !replaced.is_empty() {
+        said.push_str(&format!(
+            "\n{:?} already existed and their text was replaced by this file's. \
+             If this checkout is older than the store, that was a step back",
+            replaced
+        ));
+    }
+    Ok(said)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use faults::Draft;
+
+    fn scratch(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "faults-cmd-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("the scratch directory");
+        dir
+    }
+
+    /// **A COUNT OF WHAT CAME IN HIDES WHAT WENT OUT.** «Brought in 62» reads
+    /// the same whether every row was new or half of them replaced text written
+    /// later on another branch — and the store is one per machine while the
+    /// table is one per checkout, so importing an older tree is not an exotic
+    /// mistake, it is Tuesday.
+    #[test]
+    fn importing_says_which_rows_it_overwrote() {
+        let dir = scratch("overwrote");
+        let store = Faults::open(dir.join("faults.db")).expect("opening");
+        store
+            .record(&Draft {
+                happened_on: "01/09".to_owned(),
+                what_happened: "what the store holds now".to_owned(),
+                how_it_showed: "by running it".to_owned(),
+                what_would_prevent: "this test".to_owned(),
+                status: "**aperto**".to_owned(),
+            })
+            .expect("recording");
+
+        let older = dir.join("older.md");
+        std::fs::write(
+            &older,
+            "| 1 | 01/09 | what an older checkout says | by running it | \
+             this test | **aperto** |\n",
+        )
+        .expect("writing the older table");
+
+        let said = import(&store, &[older.display().to_string()]).expect("importing");
+
+        assert!(
+            said.contains("[1]") && said.contains("replaced"),
+            "the import must name the row whose text it overwrote, or a step \
+             back reads exactly like a step forward: {said}"
+        );
+    }
+
+    /// The same import, when nothing was there before, says nothing about
+    /// replacements — or the warning becomes noise and stops being read.
+    #[test]
+    fn importing_into_an_empty_store_reports_no_overwrite() {
+        let dir = scratch("fresh");
+        let store = Faults::open(dir.join("faults.db")).expect("opening");
+        let table = dir.join("table.md");
+        std::fs::write(
+            &table,
+            "| 1 | 01/09 | a first fault | by running it | this test | \
+             **aperto** |\n",
+        )
+        .expect("writing the table");
+
+        let said = import(&store, &[table.display().to_string()]).expect("importing");
+
+        assert!(
+            !said.contains("replaced"),
+            "nothing was overwritten and the import said it was: {said}"
+        );
+    }
 }
