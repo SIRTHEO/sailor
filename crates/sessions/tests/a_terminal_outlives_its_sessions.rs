@@ -1,24 +1,18 @@
-//! Un terminale dura più delle sessioni che ci passano dentro.
-//!
-//! Le tre cose che questo stato deve reggere, scritte una per prova:
-//! la stessa sessione che manda molti eventi; due sessioni sullo stesso tty in
-//! momenti diversi; una riga rimasta aperta perché il terminale è stato ucciso
-//! senza dirlo.
-//!
-//! E la quarta, che è quella che decide se il disegno è giusto: **lo stacco
-//! vive sul tty, non sulla sessione**. Staccare un terminale lo stacca anche
-//! per gli agenti che ci apriranno dopo — è quello che una persona intende
-//! quando dice «lascia stare questa finestra».
-//!
-//! **NESSUNA PROVA QUI APRE IL DEPOSITO PREDEFINITO.** Ogni prova ha il suo
-//! file usa-e-getta: il deposito di questa macchina è alla versione 8 mentre
-//! questo codice ne conosce un'altra, e una prova che lo aprisse misurerebbe la
-//! macchina di chi la esegue — è il guasto 5.
+//! A terminal outlives the sessions that pass through it: one session sending
+//! many events, two sessions on one tty at different times, a row left open
+//! because the terminal was killed without saying so — and the one that decides
+//! the design, **a detach lives on the tty, not on the session**.
+
+//! Detaching a terminal detaches it for the agents that will open one there
+//! later too: that is what a person means by "leave this window alone", and not
+//! "leave this process alone". **No test here opens the default store**: each
+//! has a throwaway file, because opening the real one would measure the machine
+//! running the test, which is fault 5.
 
 use sessions::{Anchor, Arrival, SessionError, Sessions, TerminalEvent, SESSIONS_FILE};
 use std::path::PathBuf;
 
-/// Una cartella usa-e-getta per una prova sola.
+/// A throwaway directory for one test only.
 struct Scratch {
     directory: PathBuf,
 }
@@ -33,12 +27,12 @@ impl Scratch {
                 .map(|elapsed| elapsed.as_nanos())
                 .unwrap_or_default()
         ));
-        std::fs::create_dir_all(&directory).expect("creare la cartella della prova");
+        std::fs::create_dir_all(&directory).expect("create the test directory");
         Scratch { directory }
     }
 
     fn store(&self) -> Sessions {
-        Sessions::open(self.directory.join(SESSIONS_FILE)).expect("aprire le sessioni")
+        Sessions::open(self.directory.join(SESSIONS_FILE)).expect("open the sessions")
     }
 }
 
@@ -84,18 +78,21 @@ fn the_same_session_sends_many_events_and_the_terminal_stays_one() {
     let store = scratch.store();
     store
         .open_terminal(&arrival("ttys001", "/work/sailor", "aaa", 100))
-        .expect("aprire");
+        .expect("open");
     for (index, name) in ["SessionStart", "UserPromptSubmit", "Stop"].iter().enumerate() {
         store
             .record_event(&event("ttys001", "aaa", name, 100 + index as i64))
-            .expect("registrare");
+            .expect("record");
     }
-    assert_eq!(store.terminals().expect("leggere").len(), 1);
-    let recorded = store.events_on("ttys001").expect("leggere gli eventi");
+    assert_eq!(store.terminals().expect("read").len(), 1);
+    let recorded = store.events_on("ttys001").expect("read the events");
     assert_eq!(recorded.len(), 3);
     assert_eq!(recorded[0].name, "SessionStart");
     assert_eq!(recorded[2].name, "Stop");
-    assert_eq!(store.sessions_on("ttys001").expect("le sessioni"), vec!["aaa"]);
+    assert_eq!(
+        store.sessions_on("ttys001").expect("the sessions"),
+        vec!["aaa"]
+    );
 }
 
 #[test]
@@ -105,55 +102,55 @@ fn two_sessions_can_share_one_terminal_at_different_times() {
 
     store
         .open_terminal(&arrival("ttys001", "/first", "aaa", 100))
-        .expect("aprire la prima");
+        .expect("open the first");
     store
         .record_event(&event("ttys001", "aaa", "SessionStart", 100))
-        .expect("registrare");
-    assert!(store.close_terminal("ttys001", 200).expect("chiudere"));
+        .expect("record");
+    assert!(store.close_terminal("ttys001", 200).expect("close"));
 
     store
         .open_terminal(&arrival("ttys001", "/second", "bbb", 300))
-        .expect("aprire la seconda");
+        .expect("open the second");
     store
         .record_event(&event("ttys001", "bbb", "SessionStart", 300))
-        .expect("registrare");
+        .expect("record");
 
-    let terminals = store.terminals().expect("leggere");
-    assert_eq!(terminals.len(), 1, "il tty è uno: {terminals:?}");
+    let terminals = store.terminals().expect("read");
+    assert_eq!(terminals.len(), 1, "the tty is one: {terminals:?}");
     let row = &terminals[0];
     assert_eq!(row.session_id.as_deref(), Some("bbb"));
     assert_eq!(row.worktree, "/second");
-    assert_eq!(row.opened_at, 300, "la seconda apertura riparte da capo");
-    assert!(row.is_open(), "riaprire toglie la chiusura di prima");
+    assert_eq!(row.opened_at, 300, "the second opening starts over");
+    assert!(row.is_open(), "reopening lifts the earlier close");
 
     assert_eq!(
-        store.sessions_on("ttys001").expect("le sessioni"),
+        store.sessions_on("ttys001").expect("the sessions"),
         vec!["aaa", "bbb"],
-        "la successione delle sessioni si legge dalla coda, che non si riscrive"
+        "the succession of sessions is read from the queue, which is never rewritten"
     );
 }
 
-/// Un terminale ucciso non chiude niente. La riga resta aperta, e resta aperta
-/// **visibilmente**: chi legge lo stato deve poter dire «questa non è viva, è
-/// rimasta lì», invece di credere a una sessione che non c'è più.
+/// A killed terminal closes nothing. The row stays open, and stays open
+/// **visibly**: whoever reads the state must be able to say "this one is not
+/// alive, it was left there" instead of believing in a session that is gone.
 #[test]
 fn a_terminal_killed_without_saying_leaves_its_row_open() {
     let scratch = Scratch::new("killed");
     let store = scratch.store();
     store
         .open_terminal(&arrival("ttys004", "/somewhere", "ccc", 10))
-        .expect("aprire");
-    let row = store.terminal("ttys004").expect("leggere").expect("c'è");
+        .expect("open");
+    let row = store.terminal("ttys004").expect("read").expect("it is there");
     assert!(row.is_open());
     assert_eq!(row.closed_at, None);
     assert!(
-        !store.close_terminal("ttys009", 20).expect("chiudere"),
-        "chiudere un tty che non si è mai aperto non deve fingere di aver chiuso"
+        !store.close_terminal("ttys009", 20).expect("close"),
+        "closing a tty that was never opened must not pretend to have closed anything"
     );
 }
 
-/// **LA PROVA CHE DECIDE IL DISEGNO.** Lo stacco è sul tty: sopravvive alla
-/// sessione che c'era, e vale per quella che arriva.
+/// **THE TEST THAT DECIDES THE DESIGN.** The detach is on the tty: it survives
+/// the session that was there, and holds for the one that arrives.
 #[test]
 fn detaching_holds_the_terminal_and_not_the_session() {
     let scratch = Scratch::new("detach");
@@ -161,101 +158,114 @@ fn detaching_holds_the_terminal_and_not_the_session() {
 
     store
         .open_terminal(&arrival("ttys002", "/here", "aaa", 100))
-        .expect("aprire");
-    store.detach(&anchor("ttys002", "/here"), 150).expect("staccare");
-    assert!(store.terminal("ttys002").expect("leggere").expect("c'è").is_detached());
+        .expect("open");
+    store.detach(&anchor("ttys002", "/here"), 150).expect("detach");
+    assert!(store
+        .terminal("ttys002")
+        .expect("read")
+        .expect("it is there")
+        .is_detached());
 
-    // Arriva un altro agente, sullo stesso terminale, dopo.
+    // Another agent arrives on the same terminal, later.
     store
         .open_terminal(&arrival("ttys002", "/here", "bbb", 200))
-        .expect("aprire la seconda");
-    let row = store.terminal("ttys002").expect("leggere").expect("c'è");
+        .expect("open the second");
+    let row = store.terminal("ttys002").expect("read").expect("it is there");
     assert_eq!(row.session_id.as_deref(), Some("bbb"));
     assert!(
         row.is_detached(),
-        "una finestra staccata è staccata anche per chi ci arriva dopo: \
-         se lo stacco cade a ogni apertura dura quanto una sessione, che non è \
-         quello che chiede chi lo dice"
+        "a detached window is detached for whoever arrives after it too: if the \
+         detach fell at every opening it would last one session, which is \
+         'leave this process alone' and not the 'leave this window alone' that \
+         whoever asks for it means"
     );
 
-    assert!(store.attach("ttys002").expect("riattaccare"));
-    assert!(!store.terminal("ttys002").expect("leggere").expect("c'è").is_detached());
+    assert!(store.attach("ttys002").expect("reattach"));
+    assert!(!store
+        .terminal("ttys002")
+        .expect("read")
+        .expect("it is there")
+        .is_detached());
     assert!(
-        !store.attach("ttys002").expect("riattaccare due volte"),
-        "riattaccare ciò che è già attaccato non ha cambiato niente, e lo dice"
+        !store.attach("ttys002").expect("reattach twice"),
+        "reattaching what is already attached changed nothing, and says so"
     );
 }
 
-/// Staccare un terminale di cui nessuno si è ancora presentato deve restare
-/// scritto: altrimenti `/sailor-off` su una finestra appena aperta non fa
-/// niente, e non lo dice.
+/// Detaching a terminal nobody has announced yet must stay written down:
+/// otherwise `/sailor-off` on a freshly opened window does nothing, and does not
+/// say so.
 #[test]
 fn a_terminal_can_be_detached_before_anyone_has_arrived() {
     let scratch = Scratch::new("detach-first");
     let store = scratch.store();
-    store.detach(&anchor("ttys007", "/here"), 50).expect("staccare");
-    let row = store.terminal("ttys007").expect("leggere").expect("c'è");
+    store.detach(&anchor("ttys007", "/here"), 50).expect("detach");
+    let row = store.terminal("ttys007").expect("read").expect("it is there");
     assert!(row.is_detached());
     assert_eq!(row.session_id, None);
 
     store
         .open_terminal(&arrival("ttys007", "/here", "zzz", 60))
-        .expect("aprire dopo lo stacco");
-    assert!(store.terminal("ttys007").expect("leggere").expect("c'è").is_detached());
+        .expect("open after the detach");
+    assert!(store
+        .terminal("ttys007")
+        .expect("read")
+        .expect("it is there")
+        .is_detached());
 }
 
-/// Un evento che arriva da un terminale mai annunciato apre lo stesso la riga:
-/// i ganci non arrivano in ordine, e un evento perso è informazione persa.
+/// An event from a terminal that was never announced still opens the row: hooks
+/// do not arrive in order, and a lost event is lost information.
 #[test]
 fn an_event_from_an_unannounced_terminal_still_lands() {
     let scratch = Scratch::new("unannounced");
     let store = scratch.store();
     store
         .remember_terminal(&arrival("ttys005", "/elsewhere", "ddd", 10))
-        .expect("ricordare");
+        .expect("remember");
     store
         .record_event(&event("ttys005", "ddd", "PostToolUse", 11))
-        .expect("registrare");
-    let row = store.terminal("ttys005").expect("leggere").expect("c'è");
+        .expect("record");
+    let row = store.terminal("ttys005").expect("read").expect("it is there");
     assert_eq!(row.worktree, "/elsewhere");
-    assert_eq!(store.events_on("ttys005").expect("gli eventi").len(), 1);
+    assert_eq!(store.events_on("ttys005").expect("the events").len(), 1);
 }
 
-/// **LA VERSIONE È NOSTRA, E IL FILE ANCHE.** Il deposito delle corse ha la sua
-/// `user_version` e la alza quando cambiano le sue proiezioni; questa non
-/// c'entra e non deve muoversi con quella. La prova guarda le due cose che lo
-/// rendono vero: il numero, e il fatto che aprire le sessioni **non crea**
+/// **THE VERSION IS OURS, AND SO IS THE FILE.** The run ledger has its own
+/// `user_version` and raises it when its projections change; this one is
+/// unrelated and must not move with it. The test watches the two things that
+/// make that true: the number, and that opening the sessions **does not create**
 /// `state.db`.
 #[test]
 fn the_sessions_have_their_own_file_and_their_own_version() {
     let scratch = Scratch::new("version");
     let store = scratch.store();
-    assert_eq!(store.schema_version().expect("la versione"), 1);
+    assert_eq!(store.schema_version().expect("the version"), 1);
     assert!(store.path().ends_with(SESSIONS_FILE));
     assert!(
         !scratch.directory.join("state.db").exists(),
-        "le sessioni hanno toccato il deposito delle corse"
+        "the sessions touched the run ledger"
     );
     assert!(
         !scratch.directory.join("events.db").exists(),
-        "le sessioni hanno toccato il registro degli eventi delle corse"
+        "the sessions touched the run event log"
     );
 }
 
-/// Un file scritto da una versione più nuova si dichiara, non si ripara.
+/// A file written by a newer version is declared, not repaired.
 #[test]
 fn a_file_from_a_newer_version_is_refused_by_name() {
     let scratch = Scratch::new("newer");
     let path = scratch.directory.join(SESSIONS_FILE);
     {
-        let connection = rusqlite::Connection::open(&path).expect("creare il file");
+        let connection = rusqlite::Connection::open(&path).expect("create the file");
         connection
             .pragma_update(None, "user_version", 99_i64)
-            .expect("scrivere la versione");
+            .expect("write the version");
     }
     match Sessions::open(&path) {
         Err(SessionError::UnsupportedSchema(found)) => assert_eq!(found, 99),
-        Err(other) => panic!("una versione ignota va detta per quello che è, non «{other}»"),
-        Ok(_) => panic!("una versione ignota è passata come se fosse la nostra"),
+        Err(other) => panic!("an unknown version must be named for what it is, not \"{other}\""),
+        Ok(_) => panic!("an unknown version went through as if it were ours"),
     }
 }

@@ -1,9 +1,9 @@
 //! The shape of a trigger descriptor, and how it is loaded.
 //!
-//! **IT DOES NOT REUSE THE TOOL LOADER, AND THIS LINE IS THE TIE BETWEEN THE
-//! TWO COPIES.** `toolbox::Catalog` makes the same gestures on a different
-//! body; making it generic is the right move **when there is a third list**.
-//! Whoever changes one set of rules should look at the other.
+//! **WHY IT DOES NOT REUSE THE TOOL LOADER.** `toolbox::Catalog` makes the same
+//! gestures on another body. Making it generic over the item is the right move
+//! **when there is a third list**; doing it with two, today, would cost a type
+//! parameter in every signature of that crate to save fifty lines here.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -42,11 +42,10 @@ pub enum Kind {
 
 /// Where a signal would be seen appearing in a terminal session.
 ///
-/// **THE TWO SHAPES ARE MEASURED, NOT IMAGINED.** Either a file grows and is
-/// never rewritten, one line per message, and it is read keeping the point
-/// reached; or a command prints what appeared after a cursor. What is *not* an
-/// honest source is a log of terminal bytes: those are screen redraws, not
-/// messages, and rebuilding the text means writing a terminal emulator.
+/// **THE TWO SHAPES ARE MEASURED ON THIS MACHINE, NOT IMAGINED**: either a file
+/// grows and is never rewritten, one line per message, and then it is read
+/// keeping the point reached; or a command, given a cursor, prints what appeared
+/// after it, and then that command is what gets called.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Listen {
@@ -64,6 +63,10 @@ pub enum Listen {
         where_pointer: Vec<String>,
     },
     /// A command that prints what appeared after a cursor.
+    ///
+    /// **A LOG OF TERMINAL BYTES IS NOT AN HONEST SOURCE**: those are screen
+    /// redraws, not messages, and rebuilding the text out of them means writing
+    /// a terminal emulator. Where only such a log exists, this is the road.
     CursorCommand {
         /// The tool's id, not a binary: the same list that resolves the engines
         /// of the steps.
@@ -109,6 +112,10 @@ pub struct Problem {
     pub reason: String,
 }
 
+/// **THE RULES ARE WRITTEN TWICE, AND THIS IS THE TIE BETWEEN THE TWO COPIES.**
+/// The same three gestures as `toolbox::Catalog`: read in order, the last `id`
+/// wins, a wrong line becomes a report instead of making the others disappear.
+/// Whoever changes one of them should look at the other.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Catalog {
     pub descriptors: Vec<Loaded>,
@@ -262,7 +269,8 @@ impl Catalog {
     }
 
     /// The live `id`s, for the message given to whoever asked for one that is
-    /// not there: an error that does not say which exist forces a hunt.
+    /// not there: an error that does not say which exist forces a hunt through
+    /// the file.
     pub fn known(&self) -> Vec<String> {
         self.live()
             .into_iter()
