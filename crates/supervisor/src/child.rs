@@ -37,6 +37,34 @@ pub struct Process {
 }
 
 impl Process {
+    /// Nasce in un **gruppo di processi suo**, perché spegnerlo spenga anche
+    /// chi ha acceso lui.
+    ///
+    /// `sailor-live` avvia `cargo` e il server della finestra, che di figli ne
+    /// fanno: senza il gruppo, `kill` arriva al capostipite e il nipote resta
+    /// vivo con la porta in mano. Il gemello sta in `actions::run_with_timeout`.
+    fn in_its_own_group(command: &mut Command) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        #[cfg(not(unix))]
+        let _ = command;
+    }
+
+    /// Manda il segnale al **gruppo**, che porta il numero del capogruppo: il
+    /// segno meno lo dice a `kill`. Limite noto: un nipote che si stacca da
+    /// solo con `setsid` esce dal gruppo e sopravvive.
+    fn signal_the_whole_group(pid: u32) {
+        #[cfg(unix)]
+        unsafe {
+            libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+        }
+        #[cfg(not(unix))]
+        let _ = pid;
+    }
+
     /// Accende, poi scrive.
     ///
     /// **L'ORDINE È VOLUTO.** Si registra col pid vero in mano: scrivere
@@ -46,10 +74,13 @@ impl Process {
     /// già e non lo si abbandona in silenzio: si spegne e si dichiara. Un
     /// processo acceso e non registrato è precisamente il guasto 4.
     pub fn start(spec: Spec, store: Option<&Ledger>) -> Result<Self, String> {
-        let child = Command::new(&spec.command)
+        let mut command = Command::new(&spec.command);
+        command
             .args(&spec.args)
             .current_dir(&spec.working_directory)
-            .stdin(Stdio::null())
+            .stdin(Stdio::null());
+        Self::in_its_own_group(&mut command);
+        let child = command
             .spawn()
             .map_err(|error| format!("avviare {}: {error}", spec.command))?;
 
@@ -74,6 +105,7 @@ impl Process {
                 started_at: now(),
             };
             if let Err(error) = store.record_process_started(&record) {
+                Self::signal_the_whole_group(process.child.id());
                 let _ = process.child.kill();
                 let _ = process.child.wait();
                 return Err(format!(
@@ -119,6 +151,7 @@ impl Process {
 
 impl Running for Process {
     fn stop(&mut self) -> Result<(), String> {
+        Process::signal_the_whole_group(self.child.id());
         let outcome = self.child.kill();
         let code = self.child.wait().ok().and_then(|status| status.code());
         self.record_end(code);
