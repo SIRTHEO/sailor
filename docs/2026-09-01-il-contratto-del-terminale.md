@@ -89,21 +89,45 @@ Perché due cantieri paralleli non si tocchino:
 
 Chi ha bisogno di toccare un file dell'altro si ferma e lo dice a chi coordina.
 
-## Cosa manca nel crate, e chi lo aggiunge
+## Cosa mancava nel crate — corretto dopo la misura
 
-`Terminal` non espone il proprio lettore: `Pty::reader()` esiste ma è
-raggiungibile solo da dentro. **Il ponte aggiunge il modo di leggere l'uscita**
-— nel crate, non nella finestra, perché un motore che si può provare solo
-aprendo la finestra è un motore che nessuno prova (`crates/terminal/src/lib.rs`
-lo dice come vincolo del crate).
+**Questo paragrafo diceva il falso, e va letto come storia.** Chiedeva al ponte
+«il modo di leggere l'uscita», perché `Terminal` non espone `Pty::reader()`. Ma
+la cosa per cui serviva **c'era già**: `Terminals::open` prendeva un
+`Arc<dyn Output>` e apriva già il filo che drena, e la prova che il primo pezzo
+arriva prima che il secondo esista era nel repo da prima di questo cantiere.
+
+Quello che mancava davvero è **la fine**: nessuno diceva che il processo dentro
+era finito, e senza quello l'evento `terminal_closed` che questo documento
+pretende non sarebbe potuto esistere. È ciò che il ponte ha costruito —
+`Ending` coi suoi tre casi, `Output::ended`, `Pty::finished()` che non blocca
+mai.
+
+La correzione sta qui e non in un commento del codice perché il documento lo
+chiede a chiare lettere: *chi lo scopre diverso dal codice apre un guasto invece
+di adeguare in silenzio la propria metà*. Vale anche per chi il documento
+l'ha scritto.
 
 ## Le due proprietà che il cantiere deve avere, e come si vedono rosse
 
 1. **Un terminale sopravvive alla finestra.** Chi chiude la finestra non uccide
    la sessione dentro: al riavvio, `terminal_list` la ritrova e la finestra si
-   riaggancia. Il registro dei processi esiste già ed è dove va scritta
-   (`supervisor::child::Process::start` è l'unica strada che registra: il guasto
-   4 è chiuso proprio perché nessuno la aggira).
+   riaggancia.
+
+   **Non si fa passando da `supervisor::child::Process::start`, e questo
+   documento diceva il contrario.** Misurato il 01/09, e confermato da un
+   giudice che non aveva scritto il ponte: quella strada fa `Command::spawn()`
+   con `Stdio::null()` — nessuno pseudo-terminale, nessun `setsid`, nessun
+   `TIOCSCTTY` — e in tutto `crates/supervisor` non c'è una riga che apra un
+   pty. Resta vero che è **l'unica strada che registra**, e che aggirarla è
+   vietato (è il guasto 4). Quindi la proprietà non sta in questo cantiere: è
+   un cantiere a sé, e comincia dall'unica strada lecita — **insegnare a
+   `Process::start` ad avviare dentro uno pseudo-terminale**, con una voce in
+   più nella sua `Spec`.
+
+   Ci vuole anche un processo residente che tenga i capi dei pty: oggi vivono
+   nel processo della finestra, e chiusa quella il `follower` va in EOF e la
+   shell esce. Nessuna registrazione nel deposito cambia questo.
 2. **Ciò che esce arriva mentre esce, non alla fine.** La prova che lo dice
    rossa: un comando che stampa, aspetta, stampa ancora — e l'asserzione che il
    primo pezzo è arrivato **prima** che il secondo esista.
