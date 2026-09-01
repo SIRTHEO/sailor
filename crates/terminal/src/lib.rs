@@ -30,6 +30,7 @@ pub mod inbox;
 pub mod pty;
 pub mod routing;
 pub mod session;
+pub mod tally;
 
 pub use pty::{Pty, PtyError, Size};
 pub use routing::{
