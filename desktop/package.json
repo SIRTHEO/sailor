@@ -11,7 +11,9 @@
     "desktop": "cargo tauri dev",
     "live": "cargo run --manifest-path ../Cargo.toml -p supervisor --bin sailor-live -- --root ..",
     "desktop:build": "cargo tauri build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "screenshots": "tsx scripts/screenshots.ts",
+    "check:canvas": "tsx scripts/check-canvas.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

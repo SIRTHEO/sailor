@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type { FlowFile, Graph, Step, StepRun, ValueSchema } from "./flow";
 import { kindOf } from "./flow";
 
@@ -91,7 +91,7 @@ export function toNodes(graph: Graph, runs: Map<string, StepRun>): Node[] {
   });
 }
 
-export function toEdges(graph: Graph): Edge[] {
+export function toEdges(graph: Graph, runs: Map<string, StepRun> = new Map()): Edge[] {
   const skippable = new Set(
     (graph.skippable_dependencies ?? []).map(
       (edge) => `${edge.step}<-${edge.dependency}`,
@@ -100,18 +100,9 @@ export function toEdges(graph: Graph): Edge[] {
 
   return graph.steps.flatMap((step) =>
     step.deps.map((dependency) => {
-      // A skippable dependency is drawn dashed: it promises its datum may be
-      // missing, and that must read without opening the file.
       const optional = skippable.has(`${step.id}<-${dependency}`);
-      return {
-        id: `${dependency}->${step.id}`,
-        source: dependency,
-        target: step.id,
-        animated: false,
-        style: optional
-          ? { strokeDasharray: "5 4", stroke: "#c084fc" }
-          : { stroke: "#94a3b8" },
-      } satisfies Edge;
+      const look = edgeLook(optional, runs.get(dependency), runs.get(step.id));
+      return edgeFrom(`${dependency}->${step.id}`, dependency, step.id, look, 1);
     }),
   );
 }
@@ -148,26 +139,72 @@ export const BAND_DESC_LINES = 2;
  */
 const BAND_PAD_BOTTOM = 40;
 
-/** A fixed palette: each flow takes a colour by index, cyclically. */
-const FLOW_COLORS = [
-  "#2563eb",
-  "#16a34a",
-  "#d97706",
-  "#dc2626",
-  "#7c3aed",
-  "#0891b2",
-  "#db2777",
-  "#65a30d",
-  "#4f46e5",
-  "#ea580c",
-  "#0d9488",
-  "#9333ea",
-  "#ca8a04",
-  "#e11d48",
+/**
+ * The tint of a lane, taken by index and cycling.
+ *
+ * A LANE HAS NO ROLES OF ITS OWN YET, so these borrow the roles that exist and
+ * are already measured. Six tints for ten flows on this machine means four
+ * collisions — which is why the lane carries its name next to the tint, and why
+ * the tint never decides anything by itself.
+ */
+const LANE_TINTS = [
+  "var(--state-running)",
+  "var(--state-went)",
+  "var(--state-capped)",
+  "var(--state-broke)",
+  "var(--state-human)",
+  "var(--muted)",
 ];
 
 export function colorForFlow(index: number): string {
-  return FLOW_COLORS[index % FLOW_COLORS.length];
+  return LANE_TINTS[index % LANE_TINTS.length];
+}
+
+/** How a cord is drawn: the tint, whether it is broken, whether it is alive. */
+export interface EdgeLook {
+  stroke: string;
+  dash?: string;
+  live: boolean;
+}
+
+/**
+ * What a cord says, read from the two steps it joins.
+ *
+ * The path a run actually took is a full green line; the one it has not reached
+ * is a quiet thin one; a dependency the graph declares skippable is broken,
+ * because its data may never arrive. The dash carries that on its own, so
+ * greyscale loses nothing (prohibition 5).
+ */
+export function edgeLook(
+  optional: boolean,
+  from: StepRun | undefined,
+  to: StepRun | undefined,
+): EdgeLook {
+  const dash = optional ? "5 4" : undefined;
+  if (to?.state === "running") return { stroke: "var(--state-running)", dash: "8 6", live: true };
+  const taken = from?.state === "went" && to !== undefined && to.state !== "waiting";
+  if (taken) return { stroke: "var(--state-went)", dash, live: false };
+  return { stroke: optional ? "var(--warn)" : "var(--line)", dash, live: false };
+}
+
+function edgeFrom(
+  id: string,
+  source: string,
+  target: string,
+  look: EdgeLook,
+  opacity: number,
+): Edge {
+  return {
+    id,
+    source,
+    target,
+    // Rounded orthogonal: on a graph laid out in columns a cord that changes row
+    // has to be followed with the eye, and a bezier crossing three nodes cannot.
+    type: "smoothstep",
+    animated: look.live,
+    markerEnd: { type: MarkerType.ArrowClosed, color: look.stroke, width: 16, height: 16 },
+    style: { stroke: look.stroke, strokeWidth: 1.5, strokeDasharray: look.dash, opacity },
+  } satisfies Edge;
 }
 
 // ── a step's ports ──────────────────────────────────────────────────────
@@ -485,17 +522,19 @@ export function buildUnifiedLayout(
     for (const step of graph.steps) {
       for (const dependency of step.deps) {
         const optional = skippable.has(`${step.id}<-${dependency}`);
-        edges.push({
-          id: `${nodeId(name, dependency)}->${nodeId(name, step.id)}`,
-          source: nodeId(name, dependency),
-          target: nodeId(name, step.id),
-          animated: false,
-          style: {
-            stroke: optional ? "#c084fc" : color,
-            strokeDasharray: optional ? "5 4" : undefined,
-            opacity: dimmed ? 0.25 : 1,
-          },
-        });
+        // THE CORD IS COLOURED BY THE OUTCOME, NOT BY THE LANE. Which flow a
+        // cord belongs to is already said by the band it lies in; what was said
+        // nowhere is whether the run came through here.
+        const look = edgeLook(optional, runs.get(dependency), runs.get(step.id));
+        edges.push(
+          edgeFrom(
+            `${nodeId(name, dependency)}->${nodeId(name, step.id)}`,
+            nodeId(name, dependency),
+            nodeId(name, step.id),
+            look,
+            dimmed ? 0.25 : 1,
+          ),
+        );
       }
     }
 
