@@ -6,7 +6,7 @@
 //! per la pagina — la stessa fonte, così l'elenco che si legge da terminale e
 //! quello che si vede nella finestra non possono divergere.
 
-use inventory::{collect, default_roots, Entry, Inventory, Kind, Reach};
+use inventory::{collect_survey, default_roots, Entry, Inventory, Kind, Reach};
 use ledger::{InventoryItem, InventoryScan, Ledger};
 
 pub fn run(args: &[String]) -> i32 {
@@ -46,7 +46,25 @@ pub fn run(args: &[String]) -> i32 {
         i += 1;
     }
 
-    let found = collect(&default_roots());
+    // LA CASA LA CHIEDE A CHI LA POSSIEDE. Le basi di lavoro sono dichiarate —
+    // `SAILOR_WORK_ROOTS`, o il file `work-roots` — e la casa dove sta quel file
+    // la sa `ledger::sailor_home()`, che è l'unico posto dove quella regola vive.
+    let survey = default_roots(ledger::sailor_home().as_deref());
+    if !survey.bases_declared {
+        eprintln!(
+            "nessuna base di lavoro dichiarata: guardo solo la casa. \
+             Dichiarale in `work-roots` dentro la casa di Sailor, una per riga, \
+             oppure in `SAILOR_WORK_ROOTS` separate da due punti."
+        );
+    }
+    for missing in &survey.unreadable {
+        eprintln!(
+            "non ho potuto guardare in {}: {}",
+            missing.path.display(),
+            missing.reason
+        );
+    }
+    let found = collect_survey(&survey);
 
     if record {
         match deposit(&found) {
@@ -214,6 +232,18 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     println!("radici guardate:");
     for root in &found.roots {
         println!("  {root}");
+    }
+    // DOVE NON SI È POTUTO GUARDARE STA ACCANTO A DOVE SI È GUARDATO, non in
+    // fondo: chi legge un conteggio deve avere sott'occhio quanto di macchina è
+    // rimasto fuori, o legge un numero credendolo il totale.
+    if !found.unseen.is_empty() {
+        println!("non guardate:");
+        for missing in &found.unseen {
+            println!("  {missing}");
+        }
+    }
+    if !found.bases_declared {
+        println!("nessuna base di lavoro dichiarata: questo conto è della sola casa");
     }
     println!();
 
