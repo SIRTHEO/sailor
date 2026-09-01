@@ -37,6 +37,7 @@ pub mod session_cmd;
 pub mod step_cmd;
 pub mod version_cmd;
 pub mod workspace_cmd;
+pub mod worktree_cmd;
 
 /// Un sottocomando: il nome sulla riga di comando, una riga di spiegazione, e
 /// **la funzione che lo esegue**.
@@ -128,6 +129,12 @@ pub const COMMANDS: &[Command] = &[
         description: "declares the project root, so a flow does not have to know it",
         usage: workspace_cmd::USAGE,
         run: workspace_cmd::run,
+    },
+    Command {
+        name: "worktree",
+        description: "the trees this repository is checked out into",
+        usage: worktree_cmd::USAGE,
+        run: worktree_cmd::run,
     },
     Command {
         name: "faults",
