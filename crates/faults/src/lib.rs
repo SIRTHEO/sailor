@@ -1,29 +1,19 @@
-//! I guasti incontrati costruendo Sailor, come **dati**.
+//! Faults met while building Sailor, as data.
 //!
-//! **LA COSA CHE CAMBIA È CHI ASSEGNA IL NUMERO.** Finché la tabella era un file
-//! markdown, il numero lo sceglieva chi scriveva guardando l'ultima riga — e due
-//! rami non si vedono. L'01/09/2026 il 43, il 47 e il 48 sono stati contesi in
-//! un pomeriggio, ogni volta scoperti alla fusione. È il guasto 42, e la sua
-//! colonna «cosa lo impedirebbe» diceva che nessuna prova può bastare, perché
-//! una prova guarda un ramo alla volta. Qui il numero lo assegna il deposito,
-//! che è uno solo: la collisione non è più improbabile, è impossibile.
+//! The store assigns the number, so two branches cannot pick the same one.
 //!
-//! **LE SEI COLONNE SI CONSERVANO COM'ERANO SCRITTE.** Lo stato non è un enum
-//! ma il testo intero della cella — `**aperto**`, `**chiuso** il 01/09 — con
-//! mutante`, `**chiuso in parte** il 01/09, riaperto il 02/09` — perché la
-//! sfumatura *è* l'informazione, e ridurla a tre casi butterebbe via proprio la
-//! metà che racconta quale metà della cura è fatta. Se «aperto» conta si decide
-//! leggendo il testo, in [`Fault::still_open`], che è dove la regola stava già.
+//! Status stays prose, not an enum: the nuance says which half of the cure is
+//! done. [`Fault::still_open`] reads it.
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Il file, accanto al deposito.
+/// The file, next to the ledger.
 pub const FAULTS_FILE: &str = "faults.db";
 
-/// La forma che questo codice si aspetta. Indipendente dalle proiezioni del
-/// deposito, per la ragione scritta nel `Cargo.toml`.
+/// The shape this code expects. Independent of the ledger's projections, for
+/// the reason written in `Cargo.toml`.
 const FAULTS_SCHEMA_VERSION: i64 = 1;
 
 #[derive(Debug)]
@@ -41,10 +31,10 @@ impl std::fmt::Display for FaultError {
             FaultError::NoDirectory(what) => write!(f, "{what}"),
             FaultError::UnsupportedSchema(found) => write!(
                 f,
-                "questo deposito dei guasti è alla versione {found} e questo binario \
-                 conosce la {FAULTS_SCHEMA_VERSION}: non è rotto, è più nuovo"
+                "this fault store is at version {found} and this binary knows \
+                 {FAULTS_SCHEMA_VERSION}: it is not broken, it is newer"
             ),
-            FaultError::Unknown(number) => write!(f, "il guasto {number} non esiste"),
+            FaultError::Unknown(number) => write!(f, "fault {number} does not exist"),
         }
     }
 }
@@ -57,9 +47,8 @@ impl From<rusqlite::Error> for FaultError {
     }
 }
 
-/// Un guasto vero, con la data. Le sei colonne sono quelle che la tabella aveva
-/// dal 28/08/2026, e **una voce senza «cosa lo impedirebbe» non è finita**: è la
-/// riga che separa questo da un diario.
+/// A real fault. An entry without `what_would_prevent` is not finished: that
+/// column is what separates this from a diary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fault {
     pub number: i64,
@@ -70,7 +59,7 @@ pub struct Fault {
     pub status: String,
 }
 
-/// Un guasto da registrare: tutto tranne il numero, **che non si sceglie**.
+/// A fault to record: everything except the number, which is not chosen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Draft {
     pub happened_on: String,
@@ -81,23 +70,19 @@ pub struct Draft {
 }
 
 impl Fault {
-    /// Un guasto conta come aperto finché la cura che dichiara non è fatta.
+    /// Open until the cure the fault declares is done.
     ///
-    /// **«CHIUSO IN PARTE» È APERTO.** Uno stato di mezzo racconta quale metà è
-    /// fatta, non toglie la riga dal conto: chi legge «undici aperti» crede che
-    /// ne restino undici, e invece ne restano dodici. È il guasto 40.
-    ///
-    /// E basta che *cominci* con «aperto»: un confronto esatto su un campo di
-    /// prosa si rompe alla prima sfumatura, e si rompe **verso il basso** — cioè
-    /// nella direzione che tranquillizza. È il guasto 42, scoperto scrivendo la
-    /// riga che descriveva sé stessa.
+    /// Half-closed still counts as open: a middle state says which half is
+    /// done, it does not take the row out of the count. Matching the start of
+    /// the prose, not the whole of it, keeps a new nuance from silently
+    /// dropping a fault out of the tally.
     pub fn still_open(&self) -> bool {
         self.status.starts_with("**aperto**") || self.status.contains("chiuso in parte")
     }
 
     fn cells(&self) -> [&str; 6] {
-        // Il numero manca apposta: si formatta a parte, ed è l'unico campo che
-        // non viene da chi scrive.
+        // The number is missing on purpose: it is formatted separately, and it
+        // is the only field that does not come from whoever writes.
         [
             &self.happened_on,
             &self.what_happened,
@@ -115,14 +100,14 @@ pub struct Faults {
 }
 
 impl Faults {
-    /// Dove tenerli su questa macchina: accanto al deposito, che è l'unico posto
-    /// che sa dov'è la casa — ricopiare quel percorso è il guasto 19.
+    /// Next to the ledger, which is the only place that knows where home is.
+    /// Copying that path elsewhere is how it drifts.
     pub fn default_path() -> Result<PathBuf, FaultError> {
         ledger::default_directory()
             .map(|directory| directory.join(FAULTS_FILE))
             .ok_or_else(|| {
                 FaultError::NoDirectory(
-                    "non so dove tenere i guasti: né SAILOR_LEDGER né HOME sono dichiarate"
+                    "nowhere to keep the faults: neither SAILOR_LEDGER nor HOME is declared"
                         .to_owned(),
                 )
             })
@@ -132,7 +117,7 @@ impl Faults {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|error| {
-                FaultError::NoDirectory(format!("creare {}: {error}", parent.display()))
+                FaultError::NoDirectory(format!("creating {}: {error}", parent.display()))
             })?;
         }
         let connection = Connection::open(&path)?;
@@ -160,13 +145,12 @@ impl Faults {
         &self.path
     }
 
-    /// Registra un guasto e **gli assegna il numero**.
+    /// Records a fault and assigns it the number.
     ///
-    /// Il numero è `MAX(number) + 1` calcolato dentro la stessa istruzione che
-    /// inserisce: due sessioni che registrano nello stesso momento ne prendono
-    /// due diversi, perché a decidere è il deposito e non chi scrive. È l'unico
-    /// modo di chiudere il guasto 42 — una prova non può, perché guarda un ramo
-    /// alla volta e i rami non si vedono.
+    /// `MAX(number) + 1` is computed inside the insert, so two sessions
+    /// recording at once get two different numbers. A test cannot give this
+    /// guarantee: a test looks at one branch, and branches do not see
+    /// each other.
     pub fn record(&self, draft: &Draft) -> Result<Fault, FaultError> {
         self.connection.execute(
             "INSERT INTO faults
@@ -187,9 +171,9 @@ impl Faults {
         self.get(number)
     }
 
-    /// Rimette un guasto **col suo numero**: serve solo alla migrazione dal
-    /// markdown, dove i numeri esistevano già e cambiarli spezzerebbe i rinvii
-    /// che altri documenti e altri commenti fanno a quelli.
+    /// Puts a fault back with its own number. Only the migration needs this:
+    /// the numbers already existed, and changing them would break every
+    /// reference other files make to them.
     pub fn restore(&self, fault: &Fault) -> Result<(), FaultError> {
         self.connection.execute(
             "INSERT OR REPLACE INTO faults
@@ -236,7 +220,11 @@ impl Faults {
         Ok(out)
     }
 
-    /// Cambia lo stato di un guasto, che è l'unica cosa che cambia dopo.
+    /// Changes a fault's status.
+    ///
+    /// This is the only thing that can change after recording, which is
+    /// already too narrow: a fault that bites a third time is worse than one
+    /// that bit once, and there is nowhere to write that.
     pub fn set_status(&self, number: i64, status: &str) -> Result<Fault, FaultError> {
         let touched = self.connection.execute(
             "UPDATE faults SET status = ?2 WHERE number = ?1",
@@ -248,24 +236,20 @@ impl Faults {
         self.get(number)
     }
 
-    /// Quanti restano aperti, **contati** e non ricopiati. Erano sbagliati in
-    /// quattro documenti su quattro il 31/08/2026, ed è il difetto per cui la
-    /// prova sui conti in prosa era stata scritta: qui non serve più, perché non
-    /// esiste più un secondo posto dove scriverlo.
+    /// How many stay open, counted rather than copied. There is no second
+    /// place to write the number, so there is no second place to get it wrong.
     pub fn still_open(&self) -> Result<usize, FaultError> {
         Ok(self.all()?.iter().filter(|f| f.still_open()).count())
     }
 }
 
-// ── Il markdown: una resa, e una porta d'ingresso una volta sola ──────────
+// ── Markdown: one rendering, and one door in ─────────────────────────────
 
-/// Legge la tabella di `docs/guasti-incontrati.md`.
+/// Reads a hand-written fault table.
 ///
-/// **ESISTE PER LA MIGRAZIONE, E POI PER SMENTIRLA.** Serve a portare dentro le
-/// righe che c'erano; e serve alla prova che le riscrive e le confronta con
-/// l'originale, che è l'unico modo di sapere che non se ne è persa nessuna. Una
-/// migrazione che perde una riga e non lo dice è esattamente il genere di cosa
-/// che questa tabella esiste per registrare.
+/// It exists for the migration, and then to disprove it: the round-trip test
+/// writes the rows back and compares them to the source, which is the only
+/// way to know none was lost on the way in.
 pub fn parse(markdown: &str) -> Vec<Fault> {
     markdown
         .lines()
@@ -291,7 +275,7 @@ pub fn parse(markdown: &str) -> Vec<Fault> {
         .collect()
 }
 
-/// Riscrive le righe come le scriveva la tabella, per chi vuole leggerle così.
+/// Writes the rows back the way the table wrote them, for whoever reads that way.
 pub fn render(faults: &[Fault]) -> String {
     let mut out = String::new();
     for fault in faults {
