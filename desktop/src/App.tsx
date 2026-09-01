@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
@@ -33,6 +34,8 @@ import { Installed } from "./Installed";
 import { Manual } from "./Manual";
 import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
+import { StepLive } from "./StepLive";
+import { Worktrees } from "./Worktrees";
 import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
@@ -91,7 +94,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * on the inventory answers "what could I run", while whoever reopens the window
  * is asking "what is happening". The canvas is where you go to look inside.
  */
-type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals";
+type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals" | "worktrees";
 
 /**
  * Only the graph: "Code" was a data file dressed as source, and "Runs" is
@@ -1097,6 +1100,14 @@ export default function App() {
         <button
           type="button"
           className="places__item"
+          data-here={place === "worktrees" || undefined}
+          onClick={() => setPlace("worktrees")}
+        >
+          Worktrees
+        </button>
+        <button
+          type="button"
+          className="places__item"
           data-here={place === "history" || undefined}
           onClick={() => setPlace("history")}
         >
@@ -1160,6 +1171,7 @@ export default function App() {
       {place === "installed" && <Installed native={NATIVE} />}
       {place === "manual" && <Manual native={NATIVE} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
+      {place === "worktrees" && <Worktrees native={NATIVE} />}
       {/* THE CANVAS STAYS MOUNTED BEHIND THE OTHER TWO TABS. React Flow measures
           its own frame once: unmounting it to change tab would give back a
           canvas that has to find its nodes again every time. */}
@@ -1257,19 +1269,24 @@ export default function App() {
             fitView
             proOptions={{ hideAttribution: false }}
           >
-            <Background gap={20} />
+            {/* GRAPH PAPER AT TWO PITCHES, not generic dots: the fine one
+                gives the eye a measure, the coarse one gives it a place. Both
+                are declared under 1.5:1, because a grid that reads competes
+                with the nodes and the nodes are the figure. */}
+            <Background id="fine" gap={12} variant={BackgroundVariant.Lines} color="var(--grid-fine)" />
+            <Background id="coarse" gap={96} variant={BackgroundVariant.Lines} color="var(--grid-coarse)" />
 
             {/* I COMANDI COMANDANO QUALCOSA, o non ci sono. Quattro bottoni che
                 ingrandiscono e inquadrano il nulla sono lo stesso «riquadro che
                 si vede e non dice niente» per cui qui sotto sparisce la
                 minimappa: il criterio è uno, e vale per tutti e due.
 
-                Il fondo a puntini resta: è la tela, non un comando, ed è quello
-                che fa leggere lo spazio sotto il riquadro come una superficie
-                da riempire. Resta anche la firma di React Flow, che è una nota
-                di licenza — `hideAttribution` è un'opzione a pagamento, e
-                toglierla è una cosa che si compra, non una scelta di
-                schermata. */}
+                La carta a quadretti resta: è la tela, non un comando, ed è
+                quello che fa leggere lo spazio sotto il riquadro come una
+                superficie da riempire. Resta anche la firma di React Flow, che
+                è una nota di licenza — `hideAttribution` è un'opzione a
+                pagamento, e toglierla è una cosa che si compra, non una scelta
+                di schermata. */}
             {flows.size > 0 && <Controls />}
 
             {/* LA MINIMAPPA DICE DOVE GUARDARE, non «c'è della roba». Era un
@@ -1346,6 +1363,19 @@ export default function App() {
 
             {selectedData && selectedFlow ? (
               <>
+                {/* The step as the run has it, above the step as the file
+                    declares it: what is happening explains what is written,
+                    not the other way round. It mounts only while a run holds
+                    this step. */}
+                {watched && (
+                  <StepLive
+                    key={`${selectedData.flowName}::${selectedData.step.id}::live`}
+                    step={selectedData.step}
+                    graph={selectedFlow.flow.graph}
+                    run={watched}
+                    now={now}
+                  />
+                )}
                 <StepEditor
                   key={selectedNode}
                   flowName={selectedData.flowName}
