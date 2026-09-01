@@ -6,8 +6,10 @@ version = 4
 name = "actions"
 version = "0.1.0"
 dependencies = [
+ "faults",
  "flow",
  "ledger",
+ "libc",
  "models",
  "profiles",
  "serde",
@@ -778,6 +780,16 @@ name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
+
+[[package]]
+name = "faults"
+version = "0.1.0"
+dependencies = [
+ "ledger",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "fdeflate"
@@ -2599,6 +2611,7 @@ name = "registry"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "faults",
  "flow",
  "ledger",
  "toolbox",
@@ -2683,6 +2696,7 @@ name = "sailor"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "faults",
  "flow",
  "inventory",
  "ledger",
@@ -3135,6 +3149,7 @@ name = "supervisor"
 version = "0.1.0"
 dependencies = [
  "ledger",
+ "libc",
  "serde",
  "serde_json",
 ]
