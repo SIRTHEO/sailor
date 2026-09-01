@@ -102,7 +102,7 @@ export async function deleteFlow(name: string): Promise<void> {
 export interface RunEvent {
   run_id: string;
   seq: number;
-  kind: "step_started" | "step_closed" | "run_ended" | "note";
+  kind: "step_started" | "step_text" | "step_closed" | "run_ended" | "note";
   at: number;
   step_id: string | null;
   payload: unknown;
