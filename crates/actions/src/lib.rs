@@ -478,7 +478,13 @@ pub struct CheckInvocation {
 /// sì — e senza queste due righe un passo rosso non lascia in mano a nessuno il
 /// motivo, perché l'uscita tipata di un passo rotto non si scrive.
 pub enum CheckResult {
-    Passed,
+    /// **L'USCITA VIAGGIA CON L'ESITO.** Prima qui non c'era: `run_with_timeout`
+    /// la catturava e questa conversione la scartava con un `..`, quindi un
+    /// comando poteva dire qualcosa e nessuno poteva riceverlo. La porta solo
+    /// il ramo riuscito: un comando fallito non ha prodotto la lettura che gli
+    /// è stata chiesta, e offrirla lì vorrebbe dire leggere da uno strumento
+    /// rotto.
+    Passed { stdout: String },
     Failed { code: Option<i32>, stderr: String },
     TimedOut,
 }
@@ -504,9 +510,15 @@ pub fn run_shell_check_watched(
         cmd.current_dir(workdir);
     }
     match run_with_timeout_watched(cmd, invocation.timeout, sink) {
-        RunOutcome::Finished { status, stderr, .. } => {
+        RunOutcome::Finished {
+            status,
+            stdout,
+            stderr,
+        } => {
             if status.success() {
-                CheckResult::Passed
+                CheckResult::Passed {
+                    stdout: String::from_utf8_lossy(&stdout).into_owned(),
+                }
             } else {
                 CheckResult::Failed {
                     code: status.code(),
@@ -2524,10 +2536,33 @@ struct CheckSpec {
     /// qui — `step_input` lo rifiuta prima.
     #[serde(default)]
     workdir: Option<String>,
+    /// La forma della lettura, quando questo passo non verifica soltanto ma
+    /// **legge**. Assente vuol dire come prima: a valle va solo l'esito.
+    ///
+    /// Il controllo gemello del motore — `shape_was_asked_for`, che si rifiuta
+    /// di spendere se la forma non compare nel prompt — qui non ha analogo, e
+    /// fingerlo sarebbe peggio che non averlo: `git` non riceve la tua forma e
+    /// non può conformarsi. Perciò il patto è l'altro: **il comando deve già
+    /// emettere JSON**. Se non lo fa il passo va rosso dicendo esattamente
+    /// cosa aggiungere — `--json`, `--format=json`, `| jq` — invece di
+    /// indovinare come si legge un testo che un giorno cambierà formato.
+    #[serde(default)]
+    answer_shape: Option<ValueSchema>,
     /// Ciò che non è riconosciuto, per la stessa ragione di `EngineSpec::extra`.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
 }
+
+/// **IL PRIMO TETTO SUL VOLUME CHE QUESTO PROGETTO ABBIA.** L'unico tetto che
+/// c'era è sul tempo: un comando lento viene ucciso, un comando logorroico no.
+/// Un motore ha un freno naturale perché paga a token; un comando stampa
+/// gratis, e senza un limite ciò che stampa finirebbe nel deposito.
+///
+/// Un milione di caratteri — un libro di seicento pagine — è largo per un uso
+/// vero e stretto abbastanza da prendere gli incidenti. Sopra il tetto si va in
+/// rosso e **non si tronca**: un valore mozzato sembra intero, e chi lo legge a
+/// valle non ha modo di sapere che manca un pezzo.
+const MAX_ANSWER_BYTES: usize = 1_000_000;
 
 /// Esegue una verifica di shell con un tempo massimo, leggendo comando,
 /// ambiente e tetto dall'ingresso tipato del passo. Stessa regola dell'azione
@@ -2585,8 +2620,8 @@ impl Action for ShellCheckAction {
             timeout: Duration::from_secs(seconds),
             workdir: spec.workdir,
         };
-        let status = match run_shell_check_watched(&invocation, live.as_deref()) {
-            CheckResult::Passed => "passed",
+        let (status, said) = match run_shell_check_watched(&invocation, live.as_deref()) {
+            CheckResult::Passed { stdout } => ("passed", Some(stdout)),
             CheckResult::Failed { code, stderr } => {
                 if !tolerates(&spec.accept, "failed") {
                     return Err(ActionError::new(
@@ -2598,7 +2633,7 @@ impl Action for ShellCheckAction {
                         ),
                     ));
                 }
-                "failed"
+                ("failed", None)
             }
             CheckResult::TimedOut => {
                 if !tolerates(&spec.accept, "timed_out") {
@@ -2609,10 +2644,33 @@ impl Action for ShellCheckAction {
                         ),
                     ));
                 }
-                "timed_out"
+                ("timed_out", None)
             }
         };
-        Ok(ActionOutcome::Went(json!({ "status": status })))
+        // **LA FORMA SI APPLICA SOLO A UN COMANDO RIUSCITO**, e qui il comando
+        // si separa dal motore di proposito. Il motore pretende la forma anche
+        // in `exit_error`, perché un motore che fallisce ha comunque parlato;
+        // un comando fallito non ha prodotto la lettura richiesta. Chi ha
+        // scritto `accept` ramifica già sullo stato, altrimenti non l'avrebbe
+        // scritto.
+        let Some((shape, said)) = spec.answer_shape.as_ref().zip(said) else {
+            return Ok(ActionOutcome::Went(json!({ "status": status })));
+        };
+        if said.len() > MAX_ANSWER_BYTES {
+            return Err(ActionError::new(
+                "answer_too_large",
+                format!(
+                    "la lettura di `{command}` pesa {} caratteri, oltre il tetto di {MAX_ANSWER_BYTES}.                      Il tetto non tronca: un valore mozzato sembra intero. Restringi ciò che il                      comando stampa — con un filtro, o chiedendogli meno campi.",
+                    said.len()
+                ),
+            ));
+        }
+        // **IL TESTO GREZZO NON ESCE DAL PASSO**: consegna `answer`, o niente.
+        // È la stessa scelta che `an_engine_step_declares_what_it_can_return_and_what_it_hands_on`
+        // pretende già dal motore, e lasciarlo passare accanto al valore
+        // renderebbe la forma un ornamento.
+        let answer = shaped_answer(shape, &said)?;
+        Ok(ActionOutcome::Went(json!({ "status": status, "answer": answer })))
     }
 
     /// Una verifica interrotta si rifà: il suo mestiere è rileggere il mondo
@@ -3152,7 +3210,7 @@ mod tests {
             timeout: secs(5),
             workdir: None,
         };
-        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed { .. }));
     }
 
     #[test]
@@ -3193,7 +3251,7 @@ mod tests {
             timeout: secs(5),
             workdir: None,
         };
-        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed { .. }));
     }
 
     /// **UNA VERIFICA GIRA DOVE LE SI DICE**, e prima del 31/08/2026 non c'era
@@ -3215,7 +3273,7 @@ mod tests {
             workdir: Some(elsewhere.display().to_string()),
         };
 
-        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed));
+        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed { .. }));
 
         let _ = std::fs::remove_dir_all(&elsewhere);
     }
@@ -4039,6 +4097,153 @@ mod tests {
             panic!("un esito tollerato resta un dato")
         };
         assert_eq!(output["status"], "failed");
+    }
+
+    /// **UNA VERIFICA CHE LEGGE, NON SOLO CHE GIUDICA.** Oggi `shell_check`
+    /// consegna a valle una cosa sola — se è andata bene — e ciò che il comando
+    /// ha detto muore dentro il passo. Il macchinario per non buttarlo esiste
+    /// già novanta righe più su: `shaped_answer` valida contro la forma
+    /// dichiarata e `pruned` taglia ciò che la forma non ha promesso.
+    ///
+    /// LA MISURA CHE POTEVA VENIRE DIVERSA: `spurio` esce dal comando ma **non**
+    /// dalla forma. Se la potatura non venisse applicata, l'asserzione su
+    /// `answer.spurio` lo troverebbe e questa prova diventerebbe rossa. E se il
+    /// testo grezzo venisse inoltrato accanto al valore, `stdout` comparirebbe
+    /// nell'uscita: è la scorciatoia che renderebbe inutile la forma, e
+    /// `an_engine_step_declares_what_it_can_return_and_what_it_hands_on` la
+    /// vieta già per il motore.
+    #[test]
+    fn a_check_that_declares_a_shape_hands_on_a_value_not_only_a_verdict() {
+        let input = json!({
+            "command": r#"echo '{"conta": 3, "spurio": "non promesso"}'"#,
+            // **`allow_extra` VERO È IL PUNTO DELLA PROVA, NON UNA SVISTA.** Con
+            // `false` un campo in più è un rifiuto e la potatura non entra mai
+            // in gioco; con `true` il campo è tollerato dalla validazione, e
+            // ciò che lo toglie è `pruned`. Metterlo a `false` qui renderebbe
+            // questa prova verde per il motivo sbagliato.
+            "answer_shape": {
+                "type": "object",
+                "properties": {"conta": {"type": "number"}},
+                "required": ["conta"],
+                "allow_extra": true
+            },
+            "timeout_secs": 5
+        });
+
+        let ActionOutcome::Went(output) = ShellCheckAction::new()
+            .execute(&input, &mut SharedState::new())
+            .expect("il comando riesce e risponde nella forma dichiarata")
+        else {
+            panic!("una verifica eseguita è sempre Went")
+        };
+
+        assert_eq!(output["status"], "passed");
+        assert_eq!(output["answer"]["conta"], 3);
+        assert!(
+            output["answer"].get("spurio").is_none(),
+            "a valle passa solo ciò che la forma ha promesso: {}",
+            output["answer"]
+        );
+        assert!(
+            output.get("stdout").is_none(),
+            "il testo grezzo non esce dal passo: consegna «answer», o niente — {output}"
+        );
+    }
+
+    /// I due modi di sbagliare, con lo stesso nome che usa già il motore.
+    /// Scartata l'interpretazione del testo a righe: un pavimento che cede in
+    /// silenzio il giorno che il comando cambia formato. Chi scrive il flusso
+    /// aggiunge `--json` o `| jq`, e il rosso glielo dice.
+    #[test]
+    fn a_reading_that_is_not_json_or_not_in_shape_breaks_the_step() {
+        let forma = json!({
+            "type": "object",
+            "properties": {"conta": {"type": "number"}},
+            "required": ["conta"],
+            "allow_extra": false
+        });
+
+        let non_json = json!({
+            "command": "echo non sono json",
+            "answer_shape": forma.clone(),
+            "timeout_secs": 5
+        });
+        let error = ShellCheckAction::new()
+            .execute(&non_json, &mut SharedState::new())
+            .expect_err("un comando che non emette JSON non ha prodotto una lettura");
+        assert_eq!(error.class, "answer_not_json");
+
+        let fuori_forma = json!({
+            "command": r#"echo '{"conta": "tre"}'"#,
+            "answer_shape": forma,
+            "timeout_secs": 5
+        });
+        let error = ShellCheckAction::new()
+            .execute(&fuori_forma, &mut SharedState::new())
+            .expect_err("JSON valido ma fuori dalla forma dichiarata");
+        assert_eq!(error.class, "answer_off_shape");
+    }
+
+    /// **QUI IL COMANDO SI SEPARA DAL MOTORE, E NON PER SVISTA.** Il motore
+    /// pretende la forma anche in `exit_error`, perché un motore che fallisce ha
+    /// comunque parlato. Un comando fallito non ha prodotto la lettura che gli
+    /// è stata chiesta: lasciar passare un valore lì dentro vorrebbe dire
+    /// leggere da uno strumento rotto. Chi ha scritto `accept` ramifica già
+    /// sullo stato, altrimenti non l'avrebbe scritto.
+    #[test]
+    fn a_tolerated_failure_hands_on_no_value_at_all() {
+        let input = json!({
+            "command": r#"echo '{"conta": 3}'; exit 2"#,
+            "accept": ["failed"],
+            "answer_shape": {
+                "type": "object",
+                "properties": {"conta": {"type": "number"}},
+                "required": ["conta"],
+                "allow_extra": false
+            },
+            "timeout_secs": 5
+        });
+
+        let ActionOutcome::Went(output) = ShellCheckAction::new()
+            .execute(&input, &mut SharedState::new())
+            .expect("l'esito è dichiarato accettabile")
+        else {
+            panic!("un esito tollerato resta un dato")
+        };
+
+        assert_eq!(output["status"], "failed");
+        assert!(
+            output.get("answer").is_none(),
+            "un comando fallito non ha prodotto la lettura richiesta: {output}"
+        );
+    }
+
+    /// **IL PRIMO TETTO SUL VOLUME CHE SAILOR ABBIA.** Cercato in tutto
+    /// `crates/`: non ce n'è nessuno, né nelle azioni né nel deposito né nel
+    /// registro. L'unico tetto esistente è sul *tempo* — un comando lento viene
+    /// ucciso, un comando logorroico no. Un motore ha un freno naturale perché
+    /// paga a token; un comando stampa gratis.
+    ///
+    /// Rosso e non troncamento: un valore mozzato sembra intero, e chi lo legge
+    /// a valle non ha modo di sapere che manca un pezzo.
+    #[test]
+    fn a_reading_above_the_ceiling_is_refused_instead_of_being_cut() {
+        let input = json!({
+            // Due milioni di caratteri: il doppio della soglia.
+            "command": "printf '\"a\": \"'; head -c 2000000 /dev/zero | tr '\\0' 'a'",
+            "answer_shape": {
+                "type": "object",
+                "properties": {"a": {"type": "string"}},
+                "required": ["a"],
+                "allow_extra": false
+            },
+            "timeout_secs": 30
+        });
+
+        let error = ShellCheckAction::new()
+            .execute(&input, &mut SharedState::new())
+            .expect_err("sopra il tetto il passo si ferma invece di tagliare");
+        assert_eq!(error.class, "answer_too_large");
     }
 
     /// Un puntatore che non trova niente è un errore dell'azione, non un
