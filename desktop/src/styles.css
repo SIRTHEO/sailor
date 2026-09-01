@@ -136,6 +136,10 @@
   /* A skippable dependency is neither a gravity nor a state.
      3.07:1 on --bg, 3.36:1 on --paper (WCAG 1.4.11). */
   --optional: #7c8a9f;
+  /* Graph paper at two pitches, both under 1.5:1 on --bg: a grid that reads
+     competes with the nodes, and the nodes are the figure. 1.09:1 and 1.24:1. */
+  --grid-fine: #eae7de;
+  --grid-coarse: #ddd9cd;
 
   /* One tint per flow lane, generated rather than picked: hues evenly spaced,
      lightness solved so each clears 3:1 on both grounds, closest pair 0.070
@@ -1484,11 +1488,64 @@ button.is-primary {
   box-shadow: inset 0 0 0 1px var(--focus);
 }
 
+/* THE FOUR CORNER MARKS: the registration marks of a technical drawing, «this
+   is the part being dimensioned». They are the ring's second carrier, so the
+   selected node is not told apart by a hue alone. Two elements, four corners:
+   each draws an L at two opposite corners with plain borders — no gradient,
+   which prohibition 9 forbids and `stylesheet.test.ts` now refuses. */
+.step-node__marks {
+  position: absolute;
+  inset: -5px;
+  pointer-events: none;
+}
+
+.step-node__marks::before,
+.step-node__marks::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--focus);
+}
+
+.step-node__marks::before {
+  top: 0;
+  left: 0;
+  border-right: none;
+  border-bottom: none;
+}
+
+.step-node__marks::after {
+  right: 0;
+  bottom: 0;
+  border-left: none;
+  border-top: none;
+}
+
+.step-node__marks[data-second]::before {
+  top: 0;
+  left: auto;
+  right: 0;
+  border: 1.5px solid var(--focus);
+  border-left: none;
+  border-bottom: none;
+}
+
+.step-node__marks[data-second]::after {
+  bottom: 0;
+  right: auto;
+  left: 0;
+  border: 1.5px solid var(--focus);
+  border-right: none;
+  border-top: none;
+}
+
 /* ONE SINGLED-OUT NODE PER VIEW, NOT ONE PER LIVE RUN. With several agents in
    parallel every node would deviate, so none would. Singling out is reserved
    for what cannot unblock itself — waiting on a person, stopped at the cap —
    and `stepThatCallsForAGesture` picks exactly one. It deviates by SHAPE, not
-   by a new tint: a thicker border in the tint the node already has. */
+   by a new tint: a thicker border in the tint the node already has, and the
+   sheet lifting off the paper. */
 .step-node[data-calls] {
   border-width: 2px;
   border-left-width: 3px;
@@ -1530,6 +1587,8 @@ button.is-primary {
   padding: var(--space-1) var(--space-3);
   background: var(--band-fill);
   border-bottom: 1px solid var(--line);
+  /* The band is one row: the name lives below it now, so nothing has to wrap. */
+  flex-wrap: nowrap;
   /* No radius here: rule 2 admits three values and none of them rounds two
      corners out of four. The header veil is 2.5% ink — at 4px from the corner
      nobody would see it anyway. */
@@ -1574,15 +1633,19 @@ button.is-primary {
   color: var(--state-human);
 }
 
-/* The scale jump is real: step name against header genre is 1.5x, not the
-   1.8x the draft wanted. At `--text-large` a name like `working-tree-is-clean`
-   does not fit in 224px, and a cut name is less legible than a small one. */
+/* THE JUMP IN SCALE EXISTS. The name against the species is 18 to 10, which is
+   1.8x; at 15 it was 1.5x, and 1.5x is not a hierarchy, it is a hesitation.
+   The 1.5x was not a preference either: at `--text-large` a name like
+   `working-tree-is-clean` did not fit in 224px, and a cut name is less legible
+   than a small one. The plate moved the name below the band, so the width is
+   not the one that was measured — and nobody has measured the new one. */
 .step-node__id {
   font-family: var(--font-data);
-  font-size: var(--text-mid);
+  font-size: var(--text-large);
   font-weight: 600;
   line-height: 1.2;
-  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3) 0;
+  margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4143,4 +4206,322 @@ button.is-primary {
   background: var(--danger-soft);
   border: 1px solid var(--danger);
   border-radius: var(--radius);
+}
+
+/* ── the step, open ─────────────────────────────────────────────────────
+   The run's half of the inspector: what a step was asked, what went
+   through it, and what it is saying while it says it. Above the editor,
+   because what is happening explains what is written. */
+
+.steplive {
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.steplive__bar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* The word beside the tint, never the tint alone: prohibition 5. */
+.steplive__state {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--state-waiting);
+}
+
+.steplive__state[data-outcome="open"] { color: var(--state-running) }
+.steplive__state[data-outcome="Went"] { color: var(--state-went) }
+.steplive__state[data-outcome="Broke"] { color: var(--state-broke) }
+.steplive__state[data-outcome="Capped"] { color: var(--state-capped) }
+
+/* Times and counters get compared down a column: tabular figures, per
+   prohibition 10. */
+.steplive__time,
+.steplive__spend {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.steplive__around {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.steplive__side {
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.steplive__cards {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--line);
+}
+
+.steplive__card {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.steplive__card[data-on] {
+  color: var(--ink);
+  border-bottom-color: var(--focus);
+}
+
+.steplive__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.steplive__head {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.steplive__mandate {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+/* A step with nothing to show says so in words, rather than leaving an
+   empty box that reads as a value nobody measured. */
+.steplive__none {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.steplive__code {
+  margin: 0;
+  padding: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.steplive__said {
+  background: var(--ink-surface);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+}
+
+.steplive__line {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--on-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* The word beside the tint: an error told apart from ordinary output by
+   colour alone is prohibition 5, and it is the line that matters most. */
+.steplive__line[data-stream="stderr"] { color: var(--on-ink-muted) }
+.steplive__line[data-stream="stderr"]::before {
+  content: "err ";
+  color: var(--on-ink-muted);
+}
+
+/* ── the trees work happens in ──────────────────────────────────────────
+   One tree per branch, and a terminal opened on it: the gesture every
+   piece of work here starts from. */
+
+.trees {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.trees__note,
+.trees__trouble {
+  padding: var(--space-4);
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.trees__trouble {
+  padding: var(--space-2) var(--space-3);
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--radius);
+}
+
+.trees__cut {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.trees__branch {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.trees__do,
+.tree__button {
+  appearance: none;
+  padding: var(--space-2) var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.trees__do:disabled,
+.tree__button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.trees__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* The tree this window runs in: the ring, and the words beside it. */
+.tree[data-current] {
+  border-color: var(--focus);
+}
+
+.tree__who {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tree__name {
+  font-family: var(--font-display);
+  font-size: var(--text-mid);
+  color: var(--ink);
+}
+
+.tree__branch {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.tree__here,
+.tree__flag {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--focus);
+}
+
+.tree__flag { color: var(--warn) }
+
+.tree__path {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  overflow-x: auto;
+}
+
+.tree__do {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+
+
+/* ── the bench row of a node ────────────────────────────────────────────
+   Three cells parted by a rule, not three cards: where space costs, a
+   rule does a container's work without paying its padding twice. */
+
+.step-node__bench {
+  display: flex;
+  border-top: 1px solid var(--line);
+}
+
+.step-node__cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1) var(--space-2);
+  border-left: 1px solid var(--line);
+}
+
+.step-node__cell:first-child { border-left: none }
+
+.step-node__cell-label {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Numbers compared down a column, per prohibition 10. */
+.step-node__cell-value {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

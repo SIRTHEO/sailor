@@ -363,40 +363,16 @@ function NoTool({ action }: { action: string }) {
 }
 
 /**
- * What went in, what came out and what it cost — for this step.
- *
- * It appears only after the step has called somebody: before that there is
- * nothing to say, and a row of zeros would look like a measurement.
+ * The tokens in and out of this step, and only once it has called somebody:
+ * before that a row of zeros would read as a measurement. What it cost is not
+ * here — it sits in the bench row below, once, because two places for one
+ * number are two places to read it wrong.
  */
 function StepMeter({ usage }: { usage: StepUsage }) {
-  const partial = usageIsPartial(usage);
   return (
     <div className="step-node__meter">
       <span title={`${usage.inputTokens} token entrati`}>↑ {formatTokens(usage.inputTokens)}</span>
       <span title={`${usage.outputTokens} token usciti`}>↓ {formatTokens(usage.outputTokens)}</span>
-      {usage.costMicros !== null && (
-        <span
-          className={partial ? "step-node__cost step-node__partial" : "step-node__cost"}
-          title={
-            partial
-              ? `${usage.callsWithoutCost} chiamate su ${usage.calls} non dichiarano un costo: il conto è più basso del vero`
-              : `${usage.calls} chiamate`
-          }
-        >
-          {formatCost(usage.costMicros)}
-          {partial && " +"}
-        </span>
-      )}
-      {/* Nessuna chiamata ha dichiarato un costo: si dice, invece di mostrare
-          uno zero che passerebbe per una misura. */}
-      {usage.costMicros === null && (
-        <span
-          className="step-node__cost step-node__partial"
-          title="nessuna delle chiamate di questo passo dichiara un costo"
-        >
-          costo non dichiarato
-        </span>
-      )}
     </div>
   );
 }
@@ -437,25 +413,36 @@ export function StepNode({ data, selected }: NodeProps) {
       {/* Il bollino di corsia: a quale flusso appartiene questo passo, nella
           tela dove tutti i flussi stanno insieme. */}
       <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
+      {/* «This is the part being dimensioned»: two elements, four corners. */}
+      {selected && (
+        <>
+          <span className="step-node__marks" aria-hidden="true" />
+          <span className="step-node__marks" data-second aria-hidden="true" />
+        </>
+      )}
       <Handle type="target" position={Position.Left} />
 
       {/* THE HEAD SAYS WHAT YOU ARE: the glyph of the species, its name, and
           the identifier of the step. It survives the far zoom, where it is the
           only thing still legible. */}
+      {/* WHAT YOU ARE AND HOW YOU ARE, on one band — the two questions asked
+          first, answered side by side. Dot plus word, never the colour alone.
+          The name gets the full width below: crowded onto this row it pushes
+          the state to a second line and the band stops being a band. */}
       <div className="step-node__head">
         <KindIcon kind={kind} />
-        <div className="step-node__ident">
-          {/* The species and «condizionato» share a row, and the identifier gets
-              the full width below them: squeezed onto one row with the glyph,
-              a name like `working-tree-is-clean` loses its second half. */}
-          <span className="step-node__kindline">
-            <span className="step-node__kind">{KIND_LABEL[kind]}</span>
-            {step.when && <span className="step-node__when">condizionato</span>}
-          </span>
-          <div className="step-node__id" title={step.id}>
-            {step.id}
-          </div>
-        </div>
+        <span className="step-node__kind">{KIND_LABEL[kind]}</span>
+        {step.when && <span className="step-node__when">condizionato</span>}
+        <span className="step-node__state">
+          <span className="step-node__state-dot" aria-hidden="true" />
+          {STATE_LABEL[state]}
+        </span>
+      </div>
+
+      {/* The name, at the size that makes it the figure. It outlives the far
+          zoom with the band above it: those two are the plate. */}
+      <div className="step-node__id" title={step.id}>
+        {step.id}
       </div>
 
       {!far && (
@@ -484,14 +471,6 @@ export function StepNode({ data, selected }: NodeProps) {
           not a row apart: they are one answer. The foot is drawn at every zoom
           — from far, a node that says only what it is says half of it. */}
       <div className="step-node__foot">
-        {/* PUNTO PIÙ PAROLA, MAI IL SOLO COLORE (divieto 5). Il punto è il
-            registro quieto — respira, uguale su ogni corsa viva — e la parola
-            è ciò che regge in scala di grigi. */}
-        <span className="step-node__state">
-          <span className="step-node__state-dot" aria-hidden="true" />
-          {STATE_LABEL[state]}
-        </span>
-
         {/* Chi tiene il passo è un fatto, e sta bene in fondo: non chiede
             niente a nessuno. */}
         {!far && isAgent && state === "running" && (
@@ -508,13 +487,49 @@ export function StepNode({ data, selected }: NodeProps) {
           <span className="step-node__elsewhere">altri {call.waiting - 1} in attesa</span>
         )}
 
-        {/* A DURATION NOBODY MEASURED IS NOT ZERO, so no slot is drawn for it.
-            The engine's events carry the two instants, but nothing turns them
-            into `elapsed_secs` yet: on a real run this stays empty. */}
-        {!far && run?.elapsed_secs !== undefined && (
-          <span className="step-node__elapsed">{formatElapsed(run.elapsed_secs)}</span>
-        )}
       </div>
+
+      {/* THE BENCH ROW: three cells parted by a rule, not three cards. Where
+          space costs, a rule does a container's work without paying its
+          padding twice. A cell nobody measured says so with a dash — never a
+          zero, which reads as a measurement. */}
+      {!far && (
+        <div className="step-node__bench">
+          <span className="step-node__cell">
+            <span className="step-node__cell-label">tentativo</span>
+            <span className="step-node__cell-value">
+              {run ? `${run.attempt}ª di ${step.max_attempts}` : `1ª di ${step.max_attempts}`}
+            </span>
+          </span>
+          <span className="step-node__cell">
+            <span className="step-node__cell-label">durata</span>
+            <span className="step-node__cell-value">
+              {run?.elapsed_secs !== undefined ? formatElapsed(run.elapsed_secs) : "—"}
+            </span>
+          </span>
+          <span className="step-node__cell">
+            <span className="step-node__cell-label">costo</span>
+            {/* A cost nobody declared is a dash, never a zero: zero would read
+                as «it ran for free». A partial one says so with a plus. */}
+            <span
+              className="step-node__cell-value"
+              title={
+                usage == null
+                  ? undefined
+                  : usage.costMicros === null
+                    ? "nessuna delle chiamate di questo passo dichiara un costo"
+                    : usageIsPartial(usage)
+                      ? `${usage.callsWithoutCost} chiamate su ${usage.calls} non dichiarano un costo: il conto è più basso del vero`
+                      : `${usage.calls} chiamate`
+              }
+            >
+              {usage?.costMicros != null
+                ? `${formatCost(usage.costMicros)}${usageIsPartial(usage) ? " +" : ""}`
+                : "—"}
+            </span>
+          </span>
+        </div>
+      )}
 
       <Handle type="source" position={Position.Right} />
     </div>
