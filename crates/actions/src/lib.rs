@@ -178,6 +178,37 @@ pub fn run_with_timeout(cmd: Command, limit: Duration) -> RunOutcome {
     run_with_timeout_watched(cmd, limit, None)
 }
 
+/// Accende il figlio in un **gruppo di processi suo**, per uccidere alla
+/// scadenza lui e la sua discendenza in un colpo solo.
+///
+/// Prezzo dichiarato: fuori dal nostro gruppo non riceve il Ctrl-C del
+/// terminale. A rimetterlo in riga sono il tetto, che ora tronca davvero, e il
+/// sorvegliante che raccoglie i rimasti in piedi.
+#[cfg(unix)]
+fn spawn_in_its_own_group(cmd: &mut Command) -> std::io::Result<std::process::Child> {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0).spawn()
+}
+
+#[cfg(not(unix))]
+fn spawn_in_its_own_group(cmd: &mut Command) -> std::io::Result<std::process::Child> {
+    cmd.spawn()
+}
+
+/// Uccide il figlio **e chi ha acceso lui**, poi lo raccoglie.
+///
+/// Il gruppo porta il numero del capogruppo: il segno meno lo dice a `kill`.
+/// Limite noto: un nipote che si è staccato da solo con `setsid` esce dal
+/// gruppo e sopravvive — lì non arriva nessun segnale nostro.
+fn kill_the_whole_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// Come `run_with_timeout`, ma consegna a `sink` ogni pezzo di stdout e di
 /// stderr **appena arriva**, senza aspettare che il figlio muoia. Con `None` il
 /// comportamento è quello di sempre, byte per byte.
@@ -192,7 +223,7 @@ pub fn run_with_timeout_watched(
     sink: Option<&dyn LiveSink>,
 ) -> RunOutcome {
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
+    let mut child = match spawn_in_its_own_group(&mut cmd) {
         Ok(c) => c,
         Err(error) => return RunOutcome::SpawnFailed(error.to_string()),
     };
@@ -223,7 +254,7 @@ pub fn run_with_timeout_and_stdin_watched(
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
+    let mut child = match spawn_in_its_own_group(&mut cmd) {
         Ok(c) => c,
         Err(error) => return RunOutcome::SpawnFailed(error.to_string()),
     };
@@ -338,8 +369,7 @@ fn drain_and_wait_paced(
                 Ok(Some(status)) => break Some(status),
                 Ok(None) => {
                     if start.elapsed() >= limit {
-                        let _ = child.kill();
-                        let _ = child.wait();
+                        kill_the_whole_group(child);
                         break None;
                     }
                     pause(poll_pause);
@@ -3102,6 +3132,26 @@ mod tests {
         assert!(
             start.elapsed() < secs(10),
             "il tetto deve troncare, non solo essere misurato: {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// E il nipote, che è il caso vero: un motore che accende un figlio suo.
+    ///
+    /// `sleep & wait` costringe la shell a forkare, così il nipote esiste su
+    /// qualunque shell. Uccidere il figlio lo lascia vivo col capo scrivente
+    /// della pipe in mano, e chi la svuota resta fermo fino alla sua morte
+    /// naturale. L'orologio qui può dare un rosso falso, mai un verde falso.
+    #[test]
+    fn a_grandchild_does_not_keep_the_cap_waiting() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("sleep 20 & wait");
+        let start = Instant::now();
+        let outcome = run_with_timeout(cmd, secs(1));
+        assert!(matches!(outcome, RunOutcome::TimedOut));
+        assert!(
+            start.elapsed() < secs(10),
+            "il nipote ha tenuto aperta la pipe fino alla fine: {:?}",
             start.elapsed()
         );
     }

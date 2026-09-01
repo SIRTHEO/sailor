@@ -7,31 +7,25 @@ import { ToolMark } from "./ToolMark";
 import { formatCost, formatTokens, usageIsPartial, type StepUsage } from "./stepusage";
 
 /**
- * Lo stato vero dei passi, chiavato `flusso::passo`.
- *
- * **PASSA DA UN CONTESTO E NON DAI `data` DEL NODO**, per la stessa ragione già
- * scritta accanto all'innesco: i `data` fanno parte dell'elenco dei nodi, e un
- * elenco ricostruito a ogni fatto in arrivo è bastato una volta a mandare la
- * tela in ciclo infinito. Qui i fatti cambiano il valore del contesto, non
- * l'identità dei nodi: si ridisegna quello che è cambiato, e basta.
+ * The real step states, keyed `flow::step`. **THROUGH A CONTEXT AND NOT THE
+ * NODE'S `data`**: `data` is part of the node list, and a list rebuilt on every
+ * incoming fact loops this canvas. Facts change the context value, not the
+ * nodes' identity, so only what changed redraws.
  */
 export const StepRunContext = createContext<Map<string, StepRun>>(new Map());
 
 /**
- * Quanto ha speso ogni passo, e su quale modello, chiavato `flusso::passo`.
- *
- * Passa da un contesto per la stessa ragione dello stato: la spesa si aggiorna
- * ogni tre secondi mentre la corsa gira, e rifare l'elenco dei nodi a ogni
- * aggiornamento è ciò che una volta ha mandato la tela in ciclo infinito.
+ * What each step spent, and on which model, keyed `flow::step`. Through a
+ * context for the same reason as the state: the spend refreshes every three
+ * seconds while the run goes, and rebuilding the node list each time loops it.
  */
 export const StepUsageContext = createContext<Map<string, StepUsage>>(new Map());
 
 /**
- * Sotto questo zoom un nodo smette di fingersi leggibile.
- *
- * Non è un numero di gusto: a 0,5 — lo zoom che la tela sceglie da sola con due
- * flussi aperti — il nome di una corsia veniva alto 6,5px e la descrizione
- * 5,5px. Restavano disegnati, e nessuno poteva leggerli.
+ * Below this zoom a node stops pretending to be readable. Not a number of
+ * taste: at 0.5 — the zoom the canvas picks by itself with two flows open — a
+ * lane's name renders 6.5px tall and its description 5.5px. They stay drawn,
+ * and nobody can read them.
  */
 const FAR_ZOOM = 0.62;
 
@@ -39,30 +33,20 @@ export interface StepNodeData extends Record<string, unknown> {
   step: Step;
   kind: StepKind;
   run?: StepRun;
-  /** Il flusso a cui il passo appartiene, e il colore della sua corsia sulla tela unica. */
+  /** The flow the step belongs to, and its lane colour on the single canvas. */
   flowName: string;
   color: string;
-  /** Vero quando un altro flusso è a fuoco: questo passo si ritrae, non sparisce. */
+  /** True when another flow has focus: this step retreats, it does not vanish. */
   dimmed: boolean;
-  /** Cosa entra e cosa esce, letto dal grafo. Assente solo nei dati di prova. */
+  /** What goes in and out, read from the graph. Absent only in test data. */
   ports?: StepPorts;
 }
 
 /**
- * Il colore dice come è finito il passo, e i finali non sono intercambiabili:
- * «fermo al tetto» non è «rotto» — nessuno lo ritenterà — e «aspetta una
- * persona» non è un guasto. Dare loro lo stesso colore è dire una bugia.
- *
- * **QUESTI VALORI SONO MISURATI, E I PRECEDENTI NON LO ERANO.** Fino al
- * 31/08/2026 erano `#cbd5e1 #3b82f6 #22c55e #ef4444 #f59e0b #a855f7`, ed erano
- * il colore del testo della parola di stato su ogni nodo: sul fondo delle
- * schede il migliore faceva 3,79:1 e «in attesa» faceva **1,42:1**, cioè la
- * parola più frequente della tela era illeggibile. Adesso il minimo è 5,24:1.
- *
- * Restano in TypeScript perché la minimappa di React Flow vuole una stringa e
- * non legge le variabili CSS. Sulla tela il colore arriva invece dal foglio di
- * stile via `data-state`: la coppia va tenuta allineata a `--state-*` in
- * `styles.css`.
+ * Colour says how a step ended, and the endings are not interchangeable: capped
+ * is not broken, waiting on a person is not a failure, one colour for all lies.
+ * They are TypeScript, not CSS, because React Flow's minimap wants a string;
+ * the canvas reads the sheet, so this map tracks `--state-*`. Lowest: 5.24:1.
  */
 export const STATE_COLOR: Record<StepState, string> = {
   waiting: "#656b63",
@@ -83,24 +67,10 @@ const STATE_LABEL: Record<StepState, string> = {
 };
 
 /**
- * **I DUE REGISTRI DELL'ATTENZIONE, E PRIMA CE N'ERA UNO SOLO.**
- *
- * Fino a oggi ogni passo `running` di un agente si portava addosso un riquadro
- * con tre pulsanti, uno dei quali rosso pieno. Con più agenti in parallelo —
- * che è il caso normale — ogni corsa viva chiedeva attenzione, cioè nessuna la
- * otteneva. Von Restorff funziona solo se **pochissimi** elementi deviano, e
- * il nome dell'errore è *isolation inflation*.
- *
- * Adesso i registri sono due. Le corse vive condividono **lo stesso**
- * indicatore quieto — il punto che respira, in `styles.css` — che dice «vivo»
- * e non «guardami». L'isolamento è riservato a **una cosa sola per vista**:
- * ciò che non si sbloccherà da solo. Se ne aspettano più d'una, si ordinano
- * per gravità e le altre diventano un contatore sul nodo isolato.
- *
- * I due stati qui sotto sono quelli che una persona deve toccare: «aspetta una
- * persona» lo dice da sé, e «fermo al tetto» è il passo che nessuno ritenterà.
- * «rotto, si ritenta» NON è fra questi: si ritenta da solo, e isolarlo sarebbe
- * chiedere un gesto che non serve.
+ * **TWO REGISTERS OF ATTENTION.** Live runs share one quiet breathing dot that
+ * says "alive", not "look at me". Singling out is kept for the one thing a view
+ * holds that will not unblock itself, since Von Restorff works only while very
+ * few elements deviate: hence the two below. "Broken, retrying" retries alone.
  */
 const GESTURE_GRAVITY: Partial<Record<StepState, number>> = {
   handed_to_human: 0,
@@ -108,26 +78,25 @@ const GESTURE_GRAVITY: Partial<Record<StepState, number>> = {
 };
 
 export interface GestureCall {
-  /** La chiave `flusso::passo` del solo nodo isolato, o `null` se nessuno chiama. */
+  /** The `flow::step` key of the single singled-out node, or `null`. */
   key: string | null;
-  /** Quante cose aspettano una persona in tutto, compresa quella isolata. */
+  /** How many things wait on a person in all, including the singled-out one. */
   waiting: number;
 }
 
 /**
- * Chi, fra tutte le corse che la finestra conosce, si prende l'isolamento.
- *
- * Sta qui e non nella disposizione perché legge lo **stato vero** delle corse,
- * che passa da un contesto: calcolarlo dove si costruisce l'elenco dei nodi lo
- * renderebbe vecchio di un fatto.
+ * Which of all the runs the window knows about gets singled out. It lives here
+ * and not in the layout because it reads the REAL run state, which comes
+ * through a context: computing it where the node list is built would make it
+ * one fact out of date.
  */
 export function stepThatCallsForAGesture(runs: Map<string, StepRun>): GestureCall {
   const calling = Array.from(runs.entries()).filter(
     ([, run]) => GESTURE_GRAVITY[run.state] !== undefined,
   );
   if (calling.length === 0) return { key: null, waiting: 0 };
-  // A parità di gravità decide il nome, che non cambia da un fatto all'altro:
-  // un isolamento che salta di nodo a ogni aggiornamento non è un isolamento.
+  // Ties are broken by name, which does not change from one fact to the next:
+  // a highlight that hops between nodes on every update is not a highlight.
   calling.sort(([leftKey, left], [rightKey, right]) => {
     const gravity =
       (GESTURE_GRAVITY[left.state] as number) - (GESTURE_GRAVITY[right.state] as number);
@@ -136,7 +105,7 @@ export function stepThatCallsForAGesture(runs: Map<string, StepRun>): GestureCal
   return { key: calling[0][0], waiting: calling.length };
 }
 
-/** Come si chiama, a parole, il tipo che una forma porta. */
+/** What the type carried by a shape is called, in words. */
 const SHAPE_LABEL: Record<PortShape, string> = {
   text: "testo",
   structure: "struttura",
@@ -144,12 +113,10 @@ const SHAPE_LABEL: Record<PortShape, string> = {
 };
 
 /**
- * Una porta: la forma dice il tipo, il pieno dice se è cablata.
- *
- * **IL COLORE NON PORTA NIENTE DA SOLO** (divieto 5). Cerchio, rombo e
- * quadrato si distinguono in bianco e nero; vuoto e pieno pure; e un ingresso
- * obbligatorio che nessuno alimenta aggiunge **la parola**, perché una forma
- * vuota dice «non collegata» ma non dice «e doveva esserlo».
+ * A port: the shape says the type, the fill says whether it is wired. **COLOUR
+ * CARRIES NOTHING ON ITS OWN** (rule 5) — circle, diamond and square survive in
+ * black and white, and a required input nobody feeds adds THE WORD, since a
+ * hollow shape says "not wired" but not "and it had to be".
  */
 function Port({ port }: { port: StepPort }) {
   const missing = port.required && !port.wired;
@@ -167,8 +134,8 @@ function Port({ port }: { port: StepPort }) {
 }
 
 /**
- * Le porte del nodo: gli ingressi a sinistra, l'uscita a destra, dalla parte
- * da cui i fili entrano ed escono davvero.
+ * The node's ports: inputs on the left, output on the right, on the side the
+ * wires really enter and leave from.
  */
 function StepPortsRow({ ports }: { ports: StepPorts }) {
   return (
@@ -197,27 +164,17 @@ export const KIND_LABEL: Record<StepKind, string> = {
   subflow: "sotto-flusso",
 };
 
-/** Il modello scelto dal passo, se ne ha scelto uno. */
+/** The model the step chose, if it chose one. */
 function modelOf(step: Step): string {
   const model = step.with?.[MODEL_KEY];
   return typeof model === "string" ? model : "";
 }
 
 /**
- * I motori che il passo nomina, **nell'ordine in cui li nomina**.
- *
- * **`tool` NON È SOLO UNA STRINGA, E LEGGERLO COSÌ FACEVA DIRE UNA BUGIA AL
- * NODO.** In `crates/actions/src/lib.rs` il campo è un `ToolChoice`, cioè
- * `One(String)` **oppure** `Chain(Vec<String>)`: una catena è «chi eseguire, in
- * ordine di preferenza, il migliore per primo». `toolOf` restituisce il testo o
- * niente, quindi su una catena rispondeva niente, e il nodo disegnava il
- * riquadro «*nessun motore*» sopra la parola `external_engine`. Sui dieci
- * flussi di `flows/` sono **20 passi su 25**: 25 passi `external_engine` in
- * tutto, 20 con una catena e 5 con una stringa sola (`codex`, `agy`, `cargo`,
- * `git`, `git`). La tela diceva «nessun motore» a chi ne aveva dichiarati tre.
- *
- * Il primo della catena è quello che si mostra, perché è quello che il motore
- * proverà per primo; gli altri sono ricambi e si dicono come tali.
+ * The engines the step names, **in the order it names them**. `tool` IS NOT
+ * JUST A STRING: in `crates/actions/src/lib.rs` it is a `ToolChoice`, `One` or
+ * `Chain`, "who to run, best first". Read as a plain string it answers nothing
+ * on a chain. The first is shown as the one tried, the rest as its spares.
  */
 export function enginesOf(params: Record<string, unknown> | null | undefined): string[] {
   const declared = params?.[TOOL_KEY];
@@ -227,14 +184,10 @@ export function enginesOf(params: Record<string, unknown> | null | undefined): s
 }
 
 /**
- * Cosa esegue questo passo, sulla tela: il segno dello strumento, come si
- * chiama, e il modello se ne è stato scelto uno.
- *
- * UNO STRUMENTO ASSENTE NON SPARISCE, si spegne. Un nodo che su questa macchina
- * non può girare deve dirlo guardandolo — col motivo che il rilevamento ha
- * già in mano — invece di sembrare a posto e fallire alla partenza. E finché
- * la scoperta non ha risposto non si accusa nessuno: si mostra
- * l'identificativo scritto nel passo, che è quello che il file dice.
+ * What runs this step, on the canvas: the tool's mark, its name, and the model.
+ * A MISSING TOOL DOES NOT VANISH, it greys out with the reason detection holds
+ * — otherwise a node that cannot run here looks fine and fails at start. Until
+ * discovery answers, nobody is accused: the id written in the step is shown.
  */
 function StepTool({
   id,
@@ -245,18 +198,18 @@ function StepTool({
   id: string;
   model: string;
   actual: string[];
-  /** I ricambi dichiarati dopo il primo, nell'ordine scritto nel passo. */
+  /** The spares declared after the first, in the order written in the step. */
   fallbacks: string[];
 }) {
   const tool = useTool(id);
   const known = useToolsAreKnown();
-  // Tre stati, non due: trovato e c'è, trovato e non c'è, e «non lo so
-  // ancora». Il terzo non è il secondo, e colorarlo di spento sarebbe una
-  // bugia che dura quanto il rilevamento.
+  // Three states, not two: found and present, found and absent, and "not known
+  // yet". The third is not the second, and greying it out would be a lie that
+  // lasts as long as detection does.
   const off = known && !tool?.available;
   const why = tool?.reason ?? (known ? "non è fra gli strumenti rilevati su questa macchina" : "");
-  // Il modello vero si mostra solo quando dice qualcosa di diverso da quello
-  // scritto nel passo: ripetere due volte la stessa parola non informa.
+  // The real model shows only when it says something different from the one
+  // written in the step: repeating the same word twice informs nobody.
   const surprising = actual.filter((name) => name !== model);
 
   return (
@@ -305,19 +258,10 @@ function StepTool({
 }
 
 /**
- * Il riquadro che dice **motore non dichiarato**, quando il passo non nomina
- * nessuno strumento in `with`.
- *
- * Prima, senza strumento, il riquadro semplicemente non compariva: un passo che
- * gira qui sulla macchina era indistinguibile da un passo di cui non si era
- * ancora guardato il motore. L'assenza è un fatto e va disegnata — è il vincolo
- * «chiarezza per chi guarda» nella sua forma più letterale.
- *
- * **LA PAROLA ERA «NESSUN MOTORE», E SI CONTRADDICEVA CON LA RIGA SOTTO.** Il
- * riquadro scrive sotto il nome dell'azione, e su un `external_engine` si
- * leggeva «*nessun motore*» sopra «motore esterno». Non era nemmeno quello che
- * il dato diceva: l'assenza qui è quella del **campo**, non quella del motore.
- * «motore non dichiarato» dice la stessa cosa e non litiga con la riga sotto.
+ * The box that says the engine is undeclared. Absence is a fact and has to be
+ * drawn: with no box, a step that runs fine here is indistinguishable from one
+ * whose engine nobody looked at. The wording says the FIELD is missing, not the
+ * engine, so it does not contradict the action name written under it.
  */
 function NoTool({ action }: { action: string }) {
   return (
@@ -333,10 +277,10 @@ function NoTool({ action }: { action: string }) {
 }
 
 /**
- * Cosa è entrato, cosa è uscito e quanto è costato — per questo passo.
+ * What went in, what came out and what it cost — for this step.
  *
- * Compare solo dopo che il passo ha chiamato qualcuno: prima non c'è niente da
- * dire, e una riga di zeri sembrerebbe una misura.
+ * It appears only after the step has called somebody: before that there is
+ * nothing to say, and a row of zeros would look like a measurement.
  */
 function StepMeter({ usage }: { usage: StepUsage }) {
   const partial = usageIsPartial(usage);
@@ -374,23 +318,23 @@ function StepMeter({ usage }: { usage: StepUsage }) {
 export function StepNode({ data, selected }: NodeProps) {
   const { step, kind, run: fromData, flowName, color: flowColor, dimmed, ports } =
     data as StepNodeData;
-  // I FATTI VERI VINCONO SULL'ESEMPIO. `run` nei `data` esiste ancora perché è
-  // così che i dati d'esempio colorano la tela fuori dal guscio nativo; quando
-  // una corsa vera esiste, è la sua a contare.
+  // REAL FACTS BEAT THE SAMPLE. `run` in `data` still exists because that is
+  // how the sample data colours the canvas outside the native shell; when a
+  // real run exists, its state is the one that counts.
   const key = nodeId(flowName, step.id);
   const runs = useContext(StepRunContext);
   const run = runs.get(key) ?? fromData;
   const usage = useContext(StepUsageContext).get(key);
   const state: StepState = run?.state ?? "waiting";
   const isAgent = kind === "engine";
-  // Quale strumento esegue questo nodo si legge sulla tela, non solo aprendo il
-  // pannello: è la prima domanda di chi guarda un flusso fatto da altri.
+  // Which tool runs this node reads off the canvas, not only from the panel:
+  // it is the first question asked of a flow somebody else wrote.
   const engines = enginesOf(step.with);
-  // Quanto è lontano l'occhio. Sotto la soglia il nodo lascia cadere il
-  // dettaglio invece di disegnarlo alto sei pixel.
+  // How far away the eye is. Below the threshold the node drops the detail
+  // instead of drawing it six pixels tall.
   const zoom = useStore((s) => s.transform[2]);
   const far = zoom < FAR_ZOOM;
-  // L'unico isolato della vista, e il conto di chi aspetta altrove.
+  // The view's single singled-out node, and the count waiting elsewhere.
   const call = stepThatCallsForAGesture(runs);
   const isolated = call.key === key;
 
@@ -482,19 +426,19 @@ export interface FlowBandData extends Record<string, unknown> {
 }
 
 /**
- * La corsia di un flusso: solo lo sfondo e l'etichetta, dietro ai suoi passi.
- * Non ha maniglie e non si seleziona — è la cornice che rende leggibile «un
- * sistema solo, i rami connessi» invece di quaranta nodi sparsi.
+ * A flow's lane: only the ground and the label, behind its steps. No handles
+ * and no selection — it is the frame that makes "one system, branches
+ * connected" readable instead of forty scattered nodes.
  */
 export function FlowBandNode({ data }: NodeProps) {
   const { name, description, stepCount, color, dimmed } = data as FlowBandData;
-  // Come per un passo: da lontano l'etichetta cresce invece di restare
-  // disegnata alta sei pixel.
+  // As for a step: from far away the label grows instead of staying drawn six
+  // pixels tall.
   const far = useStore((s) => s.transform[2]) < FAR_ZOOM;
-  // LA TINTA DELLA CORSIA ESCE QUANDO LA CORSIA NON È A FUOCO, e il bordo torna
-  // al filo neutro. Prima a ritrarsi era `opacity: 0.3` su tutta la corsia, cioè
-  // anche sulle sue parole: la descrizione faceva 1,47:1. Quale ramo si sta
-  // guardando si vede dai segni — il velo, il bordo, il bollino — mai dal testo.
+  // THE LANE'S TINT LEAVES WHEN THE LANE IS NOT FOCUSED, and the border falls
+  // back to the neutral hairline. Which branch is being watched shows through
+  // the SIGNS — veil, border, badge — never through the text, which would drop
+  // the description to 1.47:1.
   const borderColor = dimmed ? undefined : color;
   return (
     <div
