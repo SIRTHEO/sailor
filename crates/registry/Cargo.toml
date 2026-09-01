@@ -18,6 +18,7 @@ rust-version.workspace = true
 [dependencies]
 actions = { path = "../actions" }
 flow = { path = "../flow" }
+faults = { path = "../faults" }
 ledger = { path = "../ledger" }
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }

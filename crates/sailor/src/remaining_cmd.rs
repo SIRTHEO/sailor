@@ -55,21 +55,20 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 /// comando dice la domanda, la riga dice la misura.
 fn report(found: &[Remaining]) -> String {
     if found.is_empty() {
-        return "nessuna finestra di quota dichiarata: il canale ha risposto senza misure"
-            .to_owned();
+        return "no quota window declared: the channel answered with no measurements".to_owned();
     }
     let mut lines = vec![
-        "quota della PERSONA, non di una corsa: conta ogni sessione, anche quelle \
-         fuori da Sailor"
+        "the PERSON's quota, not a run's: it counts every session, including the \
+         ones outside Sailor"
             .to_owned(),
     ];
     for entry in found {
         let resets = match &entry.resets_at {
-            Some(when) => format!(", si azzera il {when}"),
+            Some(when) => format!(", resets on {when}"),
             None => String::new(),
         };
         lines.push(format!(
-            "{} · {}: consumato {:.1}%{resets}",
+            "{} · {}: used {:.1}%{resets}",
             entry.engine,
             entry.unit,
             entry.used_fraction * 100.0
@@ -83,14 +82,14 @@ fn report(found: &[Remaining]) -> String {
 fn home_dir() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or_else(|| "HOME non è impostata: non so dove sta la casa di chi lavora".to_owned())
+        .ok_or_else(|| "HOME is not set: there is no telling where the person's home is".to_owned())
 }
 
 fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs() as i64)
-        .map_err(|_| "l'orologio della macchina è prima del 1970".to_owned())
+        .map_err(|_| "the machine's clock is before 1970".to_owned())
 }
 
 #[cfg(test)]
@@ -118,8 +117,8 @@ mod tests {
         let said = report(&[a_window("seven_day", 0.32, None)]);
         let first = said.lines().next().expect("almeno una riga");
         assert!(
-            first.contains("PERSONA") && first.contains("non di una corsa"),
-            "l'avvertenza sta in cima, non in fondo: {said}"
+            first.contains("PERSON") && first.contains("not a run"),
+            "the warning goes at the top, not the bottom: {said}"
         );
     }
 
@@ -130,20 +129,20 @@ mod tests {
             a_window("seven_day", 0.32, None),
         ]);
         assert!(
-            said.contains("claude-code · five_hour: consumato 50.0%"),
+            said.contains("claude-code · five_hour: used 50.0%"),
             "{said}"
         );
         assert!(
-            said.contains("si azzera il 2026-09-01T03:29:59+00:00"),
+            said.contains("resets on 2026-09-01T03:29:59+00:00"),
             "{said}"
         );
         assert!(
-            said.contains("claude-code · seven_day: consumato 32.0%"),
+            said.contains("claude-code · seven_day: used 32.0%"),
             "{said}"
         );
         assert!(
-            !said.contains("seven_day: consumato 32.0%, si azzera"),
-            "un istante che il fornitore non dice non si inventa: {said}"
+            !said.contains("seven_day: used 32.0%, resets"),
+            "an instant the provider does not give is not invented: {said}"
         );
     }
 
@@ -153,7 +152,7 @@ mod tests {
     #[test]
     fn no_window_at_all_is_said_and_never_shown_as_zero() {
         let said = report(&[]);
-        assert!(said.contains("nessuna finestra"), "{said}");
+        assert!(said.contains("no quota window"), "{said}");
         assert!(!said.contains("0.0%"), "{said}");
     }
 

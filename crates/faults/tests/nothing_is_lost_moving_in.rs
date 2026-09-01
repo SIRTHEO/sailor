@@ -96,6 +96,132 @@ fn every_row_survives_the_move_word_for_word() {
     assert_eq!(seen, read.len(), "not every row was compared");
 }
 
+/// A cell the table cannot hold must be refused, not written and lost.
+///
+/// **BORN RED, WITH A ROW ALREADY GONE.** Fault 60 in the store carried newlines
+/// inside a cell: rendered, that row breaks into pieces with the wrong number of
+/// columns and `parse` drops every one. The round trip above could not see it —
+/// it fills the store from the table, which holds only what a table can hold.
+#[test]
+fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
+    let store = Faults::open(scratch("newline")).expect("opening");
+    let refused = store.record(&Draft {
+        happened_on: "01/09".to_owned(),
+        what_happened: "a fault whose story\nruns over two lines".to_owned(),
+        how_it_showed: "by rendering it".to_owned(),
+        what_would_prevent: "this test".to_owned(),
+        status: "**aperto**".to_owned(),
+    });
+
+    let Err(said) = refused else {
+        panic!(
+            "the store took a cell with a newline in it. Rendered, that row \
+             breaks into pieces with the wrong number of columns, and parse \
+             drops every one of them: the fault disappears from the register \
+             and nothing fails"
+        );
+    };
+    let said = said.to_string();
+    assert!(
+        said.contains("newline"),
+        "whoever writes must be told which character cannot cross: {said}"
+    );
+}
+
+/// Every door into the store, not the two that were easy to find.
+///
+/// There are three ways a cell gets written — `record`, `restore`, `set_status`
+/// — and a guard on two of them reads exactly like a guard. `set_status` is the
+/// one nobody thinks of, because it looks like a state change rather than a
+/// write of prose, and status *is* prose here.
+#[test]
+fn no_door_into_the_store_takes_a_cell_the_table_cannot_hold() {
+    let store = Faults::open(scratch("doors")).expect("opening");
+    let sound = Draft {
+        happened_on: "01/09".to_owned(),
+        what_happened: "something on one line".to_owned(),
+        how_it_showed: "by running it".to_owned(),
+        what_would_prevent: "this test".to_owned(),
+        status: "**aperto**".to_owned(),
+    };
+    let written = store.record(&sound).expect("a sound row goes in");
+
+    let broken = "closed\nover two lines";
+    assert!(
+        store.set_status(written.number, broken).is_err(),
+        "«set_status» is a door too: status is prose, and prose with a newline \
+         in it takes the whole row out of the register"
+    );
+    assert!(
+        store
+            .record(&Draft {
+                status: broken.to_owned(),
+                ..sound.clone()
+            })
+            .is_err(),
+        "«record» let a broken status through"
+    );
+    assert!(
+        store
+            .restore(&Fault {
+                number: 99,
+                status: broken.to_owned(),
+                happened_on: sound.happened_on.clone(),
+                what_happened: sound.what_happened.clone(),
+                how_it_showed: sound.how_it_showed.clone(),
+                what_would_prevent: sound.what_would_prevent.clone(),
+            })
+            .is_err(),
+        "«restore» let a broken status through"
+    );
+
+    // The separator is the other way a row comes apart, and it is the one a
+    // person writes by accident: a cell holding « | » renders a row with seven
+    // columns, which parse drops exactly like the broken one.
+    assert!(
+        store
+            .record(&Draft {
+                what_happened: "the flag reads on | off".to_owned(),
+                ..sound.clone()
+            })
+            .is_err(),
+        "a cell holding the column separator adds a column, and the row is \
+         dropped on the way back just the same"
+    );
+
+    assert_eq!(
+        store.all().expect("reading back").len(),
+        1,
+        "nothing that was refused may have landed anyway"
+    );
+}
+
+/// And the refusal is not cosmetic: this is what it prevents.
+///
+/// Kept separate from the check above so that removing the guard shows the
+/// consequence, not just a missing error. Rendering a row with a newline in it
+/// and reading it back loses the row entirely.
+#[test]
+fn a_newline_in_a_cell_makes_the_row_vanish_on_the_way_back() {
+    let broken = Fault {
+        number: 60,
+        happened_on: "01/09".to_owned(),
+        what_happened: "a story\nover two lines".to_owned(),
+        how_it_showed: "by rendering it".to_owned(),
+        what_would_prevent: "refusing it at the door".to_owned(),
+        status: "**aperto**".to_owned(),
+    };
+
+    let back = faults::parse(&faults::render(&[broken]));
+
+    assert!(
+        back.is_empty(),
+        "this test records why the door is shut. If the row now survives the \
+         round trip, the rendering learned to escape newlines, and the guard \
+         in the store can be reconsidered - deliberately, not by accident"
+    );
+}
+
 /// The store hands out the number, and two calls take two.
 ///
 /// While whoever wrote picked it by looking at the last row of a file, two

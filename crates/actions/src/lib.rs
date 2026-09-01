@@ -34,6 +34,7 @@
 //! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
 //! ferma con un messaggio utile dove non lo trova.
 
+pub mod faults;
 pub mod handoff;
 pub mod history;
 pub mod mcp;
@@ -353,8 +354,8 @@ fn drain_and_wait_paced(
     sink: Option<&dyn LiveSink>,
     pause: &mut dyn FnMut(Duration),
 ) -> RunOutcome {
-    let mut out_pipe = stdout.expect("stdout è piped");
-    let mut err_pipe = stderr.expect("stderr è piped");
+    let mut out_pipe = stdout.expect("stdout is piped");
+    let mut err_pipe = stderr.expect("stderr is piped");
     // `scope` e non `spawn`: i fili prendono in prestito il destinatario, che
     // vive nello stack di chi ha chiamato. Con fili staccati l'API pretenderebbe
     // un `'static` — cioè un `Arc` — da chiunque voglia guardare, compresa una
@@ -889,7 +890,7 @@ impl DryProbe for RealDryProbe {
                 ),
             },
             EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
-                why: format!("il processo non è partito: {reason}"),
+                why: format!("the process did not start: {reason}"),
             },
         }
     }
@@ -1120,7 +1121,7 @@ impl LoginProbe for RealDryProbe {
                 ),
             },
             EngineResult::SpawnFailed { reason } => DryRun::NoAnswer {
-                why: format!("il processo non è partito: {reason}"),
+                why: format!("the process did not start: {reason}"),
             },
         }
     }
@@ -1250,7 +1251,7 @@ fn check_tolerance(accept: &[String], known: &[&str]) -> Result<(), ActionError>
             return Err(ActionError::new(
                 "invalid_input",
                 format!(
-                    "`accept` nomina «{name}», che questo passo non può produrre; i valori possibili sono: {}",
+                    "`accept` names «{name}», which this step cannot produce; the possible values are: {}",
                     known.join(", ")
                 ),
             ));
@@ -1281,7 +1282,7 @@ fn shape_was_asked_for(written: &str, spec: &EngineSpec) -> Result<(), ActionErr
         return Err(ActionError::new(
             "invalid_input",
             format!(
-                "il passo dichiara una forma per la risposta e insieme tollera «{silent}», che non lascia nessuna risposta: le due cose non stanno insieme"
+                "the step declares a shape for the answer and at the same time tolerates «{silent}», which leaves no answer at all: the two do not go together"
             ),
         ));
     }
@@ -1296,7 +1297,7 @@ fn shape_was_asked_for(written: &str, spec: &EngineSpec) -> Result<(), ActionErr
     Err(ActionError::new(
         "shape_not_in_prompt",
         format!(
-            "il passo pretende una risposta in una forma dichiarata, ma quella forma non compare in ciò che manda al motore: mettila nel prompt con un rinvio {} a /answer_shape, così è scritta una volta sola. La forma è: {written}",
+            "the step demands an answer in a declared shape, and that shape does not appear in what it sends the engine: put it in the prompt with a {} reference to /answer_shape, so it is written once. The shape is: {written}",
             flow::reference::JSON_KEY
         ),
     ))
@@ -1330,7 +1331,7 @@ fn what_it_said(stdout: &str, stderr: &str) -> String {
         parts.push(format!("stdout: {}", tail(stdout)));
     }
     if parts.is_empty() {
-        return "non ha detto niente, né su stdout né su stderr".to_owned();
+        return "it said nothing, on stdout or on stderr".to_owned();
     }
     parts.join("\n")
 }
@@ -1339,8 +1340,8 @@ fn what_it_said(stdout: &str, stderr: &str) -> String {
 /// confonderli manda a cercare un guasto nel posto sbagliato.
 fn how_it_exited(code: Option<i32>) -> String {
     match code {
-        Some(code) => format!("è uscito con codice {code}"),
-        None => "è stato ucciso da un segnale".to_owned(),
+        Some(code) => format!("it exited with code {code}"),
+        None => "it was killed by a signal".to_owned(),
     }
 }
 
@@ -1378,9 +1379,9 @@ impl SessionUse {
     /// Il modo, detto a parole per chi guarda.
     fn word(&self) -> &'static str {
         match self {
-            SessionUse::Open => "aprire una sessione",
-            SessionUse::Resume(_) => "riprendere una sessione",
-            SessionUse::Fork(_) => "ramificare una sessione",
+            SessionUse::Open => "open a session",
+            SessionUse::Resume(_) => "resume a session",
+            SessionUse::Fork(_) => "fork a session",
         }
     }
 }
@@ -1568,7 +1569,7 @@ fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> 
         ActionError::new(
             "answer_not_json",
             format!(
-                "il passo pretende una risposta in una forma dichiarata, e ciò che è arrivato non è JSON: {error}; ha detto: {}",
+                "the step demands an answer in a declared shape, and what arrived is not JSON: {error}; it said: {}",
                 tail(said)
             ),
         )
@@ -1577,7 +1578,7 @@ fn shaped_answer(shape: &ValueSchema, said: &str) -> Result<Value, ActionError> 
         ActionError::new(
             "answer_off_shape",
             format!(
-                "la risposta non rispetta la forma dichiarata dal passo ({error}); ha detto: {}",
+                "the answer does not respect the shape the step declared ({error}); it said: {}",
                 tail(said)
             ),
         )
@@ -1788,7 +1789,7 @@ impl ExternalEngineAction {
             }
             (Some(_), Some(_)) => Err(ActionError::new(
                 "invalid_input",
-                "il passo dichiara sia `bin` sia `tool`: uno solo dei due dice chi eseguire",
+                "the step declares both `bin` and `tool`: only one of the two says what to run",
             )),
             (None, None) => Err(ActionError::new(
                 "invalid_input",
@@ -1995,7 +1996,7 @@ fn session_plan(
             live,
             named,
             &format!(
-                "il passo chiede di {}, ma questa corsa non ha un deposito dove posarla",
+                "the step asks to {}, and this run has no store to put it in",
                 asked.word()
             ),
         );
@@ -2004,7 +2005,7 @@ fn session_plan(
     match asked {
         SessionUse::Open => {
             let Some(line) = &candidate.session.open else {
-                say_it_starts_over(live, named, "non sa aprire una sessione ritrovabile");
+                say_it_starts_over(live, named, "cannot open a session that can be found again");
                 return SessionPlan::from_scratch();
             };
             // **SI CONIA UN IDENTIFICATIVO SOLO SE SI HA DOVE METTERLO.** Una
@@ -2033,7 +2034,7 @@ fn session_plan(
                 &candidate.session.resume
             };
             let Some(line) = line else {
-                say_it_starts_over(live, named, &format!("non sa {}", asked.word()));
+                say_it_starts_over(live, named, &format!("cannot {}", asked.word()));
                 return SessionPlan::from_scratch();
             };
             // Senza identificativo di strumento non c'è nessun motore a cui
@@ -2050,7 +2051,7 @@ fn session_plan(
                 say_it_starts_over(
                     live,
                     named,
-                    &format!("il passo «{step}» non ha lasciato nessuna sessione di «{cli}» da continuare"),
+                    &format!("step «{step}» left no session of «{cli}» to continue"),
                 );
                 return SessionPlan::from_scratch();
             };
@@ -2202,15 +2203,15 @@ fn identity_of(
 fn why_it_stays_where_it_is(mechanism: profiles::HomeMechanism) -> &'static str {
     match mechanism {
         profiles::HomeMechanism::CredentialSymlink { .. } => {
-            "questa riga di comando non ha una variabile che sposti la casa: il profilo scambia un collegamento simbolico, e l'identità dipende da dove punta quel file sul disco"
+            "this command line has no variable that moves the home: the profile swaps a symlink, and the identity depends on where that file points on the disk"
         }
         profiles::HomeMechanism::Unknown => {
-            "non si sa come questa riga di comando sposti la propria casa, quindi non è stato sovrapposto niente"
+            "how this command line moves its own home is not known, so nothing was overlaid"
         }
         // Un meccanismo a variabile qui non ci arriva: chi chiama lo ha già
         // trattato sopra. Se un giorno ci arrivasse, la frase dice il vero.
         profiles::HomeMechanism::EnvVar(_) => {
-            "il meccanismo passa da una variabile, ma non è stata sovrapposta"
+            "the mechanism goes through a variable, and it was not overlaid"
         }
     }
 }
@@ -2487,14 +2488,14 @@ fn engine_cannot_work(
 ) -> Result<Asked, ActionError> {
     if !solo {
         return Ok(Asked::CannotWork(format!(
-            "{named} non poteva lavorare: {}",
+            "{named} could not work: {}",
             what_it_said(stdout, stderr)
         )));
     }
     Err(ActionError::new(
         "engine_exhausted",
         format!(
-            "{named} ha finito la propria quota, non si è rotto: {}",
+            "{named} ran out of its quota, it did not break: {}",
             what_it_said(stdout, stderr)
         ),
     ))
@@ -2546,7 +2547,7 @@ impl ExternalEngineAction {
             if !set_aside.is_empty() {
                 live.chunk(
                     Pipe::Stderr,
-                    format!("[sailor] passo al motore «{id}»\n").as_bytes(),
+                    format!("[sailor] moving on to engine «{id}»\n").as_bytes(),
                 );
             }
         }
@@ -2714,7 +2715,7 @@ impl ExternalEngineAction {
                     let chain = if set_aside.is_empty() {
                         String::new()
                     } else {
-                        format!(" (prima: {})", each_one_why(set_aside))
+                        format!(" (before: {})", each_one_why(set_aside))
                     };
                     return Err(ActionError::new(
                         "engine_exit_error",
@@ -2761,9 +2762,7 @@ impl ExternalEngineAction {
                 if !tolerates(&spec.accept, "timed_out") {
                     return Err(ActionError::new(
                         "engine_timed_out",
-                        format!(
-                            "{named} non ha risposto entro {seconds} secondi ed è stato ucciso"
-                        ),
+                        format!("{named} did not answer within {seconds} seconds and was killed"),
                     ));
                 }
                 EngineOutcomeJson {
@@ -2784,12 +2783,12 @@ impl ExternalEngineAction {
                     // descrittore lo dichiari.
                     if !solo {
                         return Ok(Asked::CannotWork(format!(
-                            "{named} non si è potuto avviare: {reason}"
+                            "{named} could not be started: {reason}"
                         )));
                     }
                     return Err(ActionError::new(
                         "engine_spawn_failed",
-                        format!("{named} non si è potuto avviare: {reason}"),
+                        format!("{named} could not be started: {reason}"),
                     ));
                 }
                 EngineOutcomeJson {
@@ -2839,7 +2838,7 @@ impl Action for ExternalEngineAction {
         // La forma si tiene anche com'era scritta: è quel testo, non una sua
         // riscrittura, che deve comparire nel prompt.
         let written_shape = input.get("answer_shape").map(|shape| {
-            serde_json::to_string(shape).expect("un valore già in memoria si riserializza sempre")
+            serde_json::to_string(shape).expect("a value already in memory always reserialises")
         });
         let spec: EngineSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
@@ -2862,7 +2861,7 @@ impl Action for ExternalEngineAction {
             return Err(ActionError::new(
                 "no_usable_engine",
                 format!(
-                    "nessuno dei motori che il passo chiede si può usare qui. {}",
+                    "none of the engines the step asks for can be used here. {}",
                     each_one_why(&refused.iter().map(Refused::line).collect::<Vec<_>>())
                 ),
             ));
@@ -2900,7 +2899,7 @@ impl Action for ExternalEngineAction {
         Err(ActionError::new(
             "no_usable_engine",
             format!(
-                "nessuno dei motori che il passo chiede ha potuto lavorare. {}",
+                "none of the engines the step asks for could work. {}",
                 each_one_why(&set_aside)
             ),
         ))
@@ -3025,7 +3024,7 @@ impl Action for ShellCheckAction {
                     return Err(ActionError::new(
                         "check_failed",
                         format!(
-                            "la verifica `{command}` {}; {}",
+                            "the check `{command}` {}; {}",
                             how_it_exited(code),
                             what_it_said("", &stderr)
                         ),
@@ -3038,7 +3037,7 @@ impl Action for ShellCheckAction {
                     return Err(ActionError::new(
                         "check_timed_out",
                         format!(
-                            "la verifica `{command}` non è finita entro {seconds} secondi ed è stata uccisa"
+                            "the check `{command}` did not finish within {seconds} seconds and was killed"
                         ),
                     ));
                 }
@@ -3058,7 +3057,7 @@ impl Action for ShellCheckAction {
             return Err(ActionError::new(
                 "answer_too_large",
                 format!(
-                    "la lettura di `{command}` pesa {} caratteri, oltre il tetto di {MAX_ANSWER_BYTES}.                      Il tetto non tronca: un valore mozzato sembra intero. Restringi ciò che il                      comando stampa — con un filtro, o chiedendogli meno campi.",
+                    "the reading of `{command}` weighs {} characters, past the cap of {MAX_ANSWER_BYTES}.                      The cap does not truncate: a cut value looks whole. Narrow what the                      command prints — with a filter, or by asking it for fewer fields.",
                     said.len()
                 ),
             ));
@@ -3775,7 +3774,7 @@ mod tests {
             .expect_err("un motore uscito in errore rompe il passo");
 
         assert_eq!(error.class, "engine_exit_error");
-        assert!(error.said.contains("codice 3"), "{}", error.said);
+        assert!(error.said.contains("code 3"), "{}", error.said);
         assert!(error.said.contains("dettaglio-che-serve"), "{}", error.said);
     }
 
@@ -3851,7 +3850,7 @@ mod tests {
             .expect_err("il tempo scaduto rompe il passo");
 
         assert_eq!(error.class, "engine_timed_out");
-        assert!(error.said.contains("1 secondi"), "{}", error.said);
+        assert!(error.said.contains("within 1 seconds"), "{}", error.said);
     }
 
     // ── la forma dichiarata della risposta ────────────────────────────
@@ -4653,7 +4652,7 @@ mod tests {
             .execute(&strict, &mut SharedState::new())
             .expect_err("una verifica fallita è un passo rotto");
         assert_eq!(error.class, "check_failed");
-        assert!(error.said.contains("codice 2"), "{}", error.said);
+        assert!(error.said.contains("code 2"), "{}", error.said);
         assert!(error.said.contains("perche"), "{}", error.said);
 
         let tolerant = json!({
