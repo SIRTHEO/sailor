@@ -10,6 +10,11 @@ ledger = { path = "../ledger" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# Per uccidere un gruppo di processi invece di un processo solo: un figlio che
+# ha acceso qualcuno lo lasciava vivo, ed è la porta che resta occupata.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # Il programma che sostituisce `cargo tauri dev` in modalità viva.
 [[bin]]
 name = "sailor-live"
