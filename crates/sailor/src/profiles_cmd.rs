@@ -27,8 +27,16 @@ fn dispatch(args: &[String]) -> Result<(), String> {
     }
 }
 
+/// Le forme di `sailor profiles`, una per riga. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &[
+    "sailor profiles list [cli]",
+    "sailor profiles create <cli> <nome>",
+    "sailor profiles switch <cli> <nome>",
+    "sailor profiles current <cli>",
+];
+
 fn usage() -> String {
-    "uso: sailor profiles <list [cli]|create <cli> <nome>|switch <cli> <nome>|current <cli>>".to_owned()
+    format!("uso:\n  {}", USAGE.join("\n  "))
 }
 
 fn cmd_list(args: &[String]) -> Result<(), String> {

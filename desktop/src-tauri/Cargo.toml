@@ -33,6 +33,12 @@ ledger = { path = "../../crates/ledger" }
 # seconda di chi lo lanciava — l'ultima volta il 30/08/2026, in silenzio.
 registry = { path = "../../crates/registry" }
 
+# I comandi della riga di comando, per mostrarli nella finestra senza
+# ricopiarli. `crates/sailor` è diventato lib+bin il 01/09/2026 proprio per
+# questo: l'alternativa era una pagina d'aiuto in TypeScript che diverge dal
+# binario alla prima opzione aggiunta — il guasto 10, alla sesta occorrenza.
+sailor = { path = "../../crates/sailor" }
+
 # Per dire, dentro la finestra, che la ricostruzione è fallita — guasto 11. È
 # lo stesso crate che tiene acceso questo programma da fuori: il formato dello
 # stato è dichiarato una volta sola, o supervisore e finestra si scriverebbero
