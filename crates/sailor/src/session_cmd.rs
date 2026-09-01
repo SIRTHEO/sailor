@@ -48,8 +48,8 @@ pub const USAGE: &[&str] = &[
 
 /// Le opzioni che valgono per più forme, fuori dall'elenco perché non sono
 /// forme: metterle lì le farebbe contare come tali da chi conta le righe.
-const COMMON_OPTIONS: &str = "opzioni comuni: --tty <nome> per dire il terminale invece di dedurlo,\n\
-                              \x20               --store <file> per scrivere altrove che accanto al deposito";
+const COMMON_OPTIONS: &str = "common options: --tty <name> to say the terminal instead of deducing it,\n\
+                              \x20               --store <file> to write somewhere other than beside the ledger";
 
 /// L'aiuto come lo legge chi digita, costruito dall'elenco invece che
 /// ricopiato accanto.
@@ -137,8 +137,8 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     let tty = match options.get("tty") {
         Some(declared) => declared.clone(),
         None if NEEDS_A_TERMINAL.contains(&verb) => sessions::tty::current().ok_or_else(|| {
-            "non so su quale terminale gira questo processo: nessuno dei suoi tre \
-             descrittori è un tty. Dillo con --tty <nome>"
+            "there is no telling which terminal this process runs on: none of its \
+             three descriptors is a tty. Say it with --tty <name>"
                 .to_owned()
         })?,
         None => String::new(),
@@ -548,7 +548,7 @@ fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
         .record_event(&event_named(request, "attach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(if was_detached {
-        format!("{} è di nuovo seguito", request.tty)
+        format!("{} is followed again", request.tty)
     } else {
         format!("{} was not detached", request.tty)
     }))
@@ -611,7 +611,10 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
                     text,
                     "{} ({}), {} processi",
                     terminal.tty,
-                    terminal.ancestor.as_deref().unwrap_or("capostipite ignoto"),
+                    terminal
+                        .ancestor
+                        .as_deref()
+                        .unwrap_or("an unknown ancestor"),
                     terminal.inhabitants.len()
                 );
                 for inhabitant in &terminal.inhabitants {
@@ -643,7 +646,7 @@ fn refusal_code(census: &Census) -> i32 {
 
 fn described(arrival: &Arrival) -> String {
     format!(
-        "{} in {} ({}), sessione {}",
+        "{} in {} ({}), session {}",
         arrival.anchor.tty,
         arrival.anchor.worktree,
         arrival
