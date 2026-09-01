@@ -1,6 +1,29 @@
 [workspace]
 resolver = "2"
-members = ["crates/flow", "crates/ledger", "crates/release", "crates/profiles", "crates/models", "crates/ui", "crates/sailor", "crates/actions", "crates/inventory", "crates/toolbox", "crates/trigger", "crates/registry", "crates/terminal", "crates/supervisor", "crates/sessions", "crates/faults", "crates/workspace"]
+# One per line, alphabetical, and both halves matter. On one line every new
+# crate touches the same line, so two branches adding two different crates
+# conflict by construction. Appending at the end only moves the collision to
+# the last line. Alphabetical puts two additions on two different lines, and
+# git merges them without asking.
+members = [
+    "crates/actions",
+    "crates/faults",
+    "crates/flow",
+    "crates/inventory",
+    "crates/ledger",
+    "crates/models",
+    "crates/profiles",
+    "crates/registry",
+    "crates/release",
+    "crates/sailor",
+    "crates/sessions",
+    "crates/supervisor",
+    "crates/terminal",
+    "crates/toolbox",
+    "crates/trigger",
+    "crates/ui",
+    "crates/workspace",
+]
 
 [workspace.package]
 edition = "2021"
