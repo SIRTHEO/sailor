@@ -1,0 +1,539 @@
+{
+  "id": "smista-il-lavoro",
+  "description": "Un innesco riceve la consegna e la mette a disposizione del grafo: oggi è quello manuale — qualcuno preme e parte, portando un testo — ed è la sorgente che il pulsante di lancio userà. Un nodo la divide in due incarichi per due motori che girano subito dopo, senza vedersi — e dal 30/08/2026 partono davvero insieme: due passi indipendenti da sei secondi ne impiegano 6,07, non 12,07. Prima questa riga diceva il contrario, ed era vera quando è stata scritta. Un terzo passo, su un modello più basso, legge gli incarichi e le due risposte e dà un verdetto; l'ultimo lo trasforma in un rosso o in un verde. NEL FLUSSO STA COME SI SMISTA, NON COSA: nessun passo porta un incarico scritto dentro, il lavoro entra tutto dall'innesco, e per darne un altro si cambia quel testo, non il grafo. NESSUN PASSO NOMINA UN BINARIO: ognuno dichiara quale strumento vuole per identificativo («tool»), e chi esegue lo risolve sulla macchina di chi lancia — dove uno strumento manca il flusso si ferma dicendo quale. NESSUN PASSO È SPECIALE: il verificatore è un passo come gli altri, che riceve un lavoro da verificare, e chi lo esegue si sceglie cambiando una riga. OGNI PASSO DICHIARA LA FORMA DELLA PROPRIA RISPOSTA («answer_shape»): quella forma finisce nel prompt del motore — scritta una volta sola, con un rinvio, così le due copie non divergono — e viene fatta rispettare sulla risposta. Al passo dopo passa solo ciò che la forma dichiara: i preamboli e i ragionamenti non attraversano la catena, e non si pagano a ogni chiamata a valle. Un motore che esce in errore, che non risponde in tempo, che non parte o che risponde fuori forma ROMPE IL PROPRIO PASSO: i passi che dipendono da lui non partono. Prima del 28/08/2026 l'unica rete era l'ultimo nodo, e chi la toglieva chiudeva verde una catena di motori tutti falliti. Nessun passo ha permesso di scrittura, e ognuno lo dichiara nei propri argomenti. Nessun passo porta un «when»: un passo saltato lascerebbe il fronte vuoto e la corsa si chiuderebbe verde, che è il verde falso da cui questo flusso deve difendersi.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string"
+            },
+            "where": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "who",
+            "where",
+            "source",
+            "kind"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "dispatch",
+        "deps": [
+          "trigger"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
+          ],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "first_engine": {
+                "type": "string"
+              },
+              "second_engine": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "first_engine",
+              "second_engine"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Ricevi una consegna e non la esegui: la dividi in due incarichi che si reggono da soli, per due motori che gireranno subito dopo, insieme e senza vedersi. Nessuno dei due vedrà questa consegna né la risposta dell'altro: riceverà soltanto il proprio incarico.\n\nCOME SI DIVIDE\n- ogni incarico dice cosa cercare, dove cercarlo e in che forma rispondere;\n- si divide per territorio, mai per fase: due motori che girano insieme non possono aspettarsi a vicenda;\n- nessuno dei due può scrivere, spostare o cancellare niente: si chiedono solo letture, ricerche e conteggi;\n- a tutti e due si chiede di rispondere con un elenco di voci e con il loro totale.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              },
+              "\n\nLA CONSEGNA DA DIVIDERE\n\n",
+              {
+                "$from": "/text"
+              }
+            ]
+          },
+          "timeout_secs": 900
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "first_engine": {
+                  "type": "string"
+                },
+                "second_engine": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "first_engine",
+                "second_engine"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "engine_a",
+        "deps": [
+          "dispatch"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "codex",
+          "args": [
+            "exec",
+            "--sandbox",
+            "read-only"
+          ],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "findings",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Sei uno dei due motori di un flusso Sailor. L'incarico qui sotto è tuo: un altro motore sta girando adesso in parallelo su un altro territorio, e non vi vedete. Non scrivere, non spostare e non cancellare niente: solo letture, ricerche e conteggi.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              },
+              "\n\nOgni voce che trovi è una riga di «findings», e «total» è quante ne hai trovate.\n\nIL TUO INCARICO\n\n",
+              {
+                "$from": "/answer/first_engine"
+              }
+            ]
+          },
+          "timeout_secs": 1800
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "findings",
+                "total"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "engine_b",
+        "deps": [
+          "dispatch"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "agy",
+          "args": [
+            "--mode",
+            "plan",
+            "--print",
+            {
+              "$join": [
+                "Sei uno dei due motori di un flusso Sailor. L'incarico qui sotto è tuo: un altro motore sta girando adesso in parallelo su un altro territorio, e non vi vedete. Non scrivere, non spostare e non cancellare niente: solo letture, ricerche e conteggi.",
+                "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+                {
+                  "$json": "/answer_shape"
+                },
+                "\n\nOgni voce che trovi è una riga di «findings», e «total» è quante ne hai trovate.\n\nIL TUO INCARICO\n\n",
+                {
+                  "$from": "/answer/second_engine"
+                }
+              ]
+            }
+          ],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "total": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "findings",
+              "total"
+            ],
+            "allow_extra": false
+          },
+          "timeout_secs": 1800
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "findings": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "total": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "findings",
+                "total"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verify",
+        "deps": [
+          "dispatch",
+          "engine_a",
+          "engine_b"
+        ],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": [
+            "claude-code",
+            "agy",
+            "codex"
+          ],
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "verdict": {
+                "type": "one_of",
+                "values": [
+                  "APPROVATO",
+                  "RESPINTO"
+                ]
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "verdict",
+              "why"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "Ricevi un lavoro già fatto e devi dire se è stato fatto. Non rifarlo, e non fidarti del racconto di chi l'ha fatto.\n\n=== L'INCARICO, COME È STATO DIVISO ===\n",
+              {
+                "$json": "/dispatch/answer"
+              },
+              "\n\n=== HA RISPOSTO IL PRIMO MOTORE ===\n",
+              {
+                "$json": "/engine_a/answer"
+              },
+              "\n\n=== HA RISPOSTO IL SECONDO MOTORE ===\n",
+              {
+                "$json": "/engine_b/answer"
+              },
+              "\n\n=== COSA DEVI CONTROLLARE ===\nTre cose, e almeno una verificala andando a guardare tu i file citati:\n1. ogni incarico ha la sua risposta, e nessuna delle due è vuota o troncata a metà;\n2. le voci elencate esistono davvero, dove è indicato, e sono davvero ciò che si dice: prendine almeno tre e guardale;\n3. nessuno dei due motori ha scritto, spostato o cancellato qualcosa.\nSe non riesci a guardare i file, questo è un motivo per respingere, non per approvare.\nIn «why» scrivi in poche righe perché.",
+              "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
+              {
+                "$json": "/answer_shape"
+              }
+            ]
+          },
+          "timeout_secs": 900
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "tool",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "ok"
+              ]
+            },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "verdict": {
+                  "type": "one_of",
+                  "values": [
+                    "APPROVATO",
+                    "RESPINTO"
+                  ]
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "verdict",
+                "why"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": [
+            "status",
+            "answer"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "verdict",
+        "deps": [
+          "verify"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "[ \"$VERDICT\" = APPROVATO ]",
+          "env": {
+            "VERDICT": {
+              "$from": "/answer/verdict"
+            }
+          },
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_secs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "command",
+            "timeout_secs"
+          ],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "allow_extra": false
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "text": "Trova i residui di configurazione rimasti sparsi per la macchina dopo la pulizia che ha appena tolto ganci, regole, competenze e documenti dalla cartella di configurazione di Claude Code, «~/.claude» nella casa dell'utente.\n\nUn residuo è un riferimento vivo a qualcosa che non c'è più: un gancio dichiarato in un file di impostazioni il cui comando non esiste; una competenza o un documento nominato da un altro documento e non più invocabile; un percorso citato che non risolve; una voce di configurazione che punta a un file cancellato. Vale anche il contrario: un file rimasto lì che nessuno nomina più.\n\nPer ogni residuo si vuole una riga sola: percorso del file, numero di riga, cosa cita, e perché quel riferimento è morto. Non si vuole nessuna riparazione: solo l'elenco.\n",
+      "who": "",
+      "where": ""
+    }
+  }
+}
