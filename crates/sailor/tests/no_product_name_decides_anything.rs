@@ -129,11 +129,20 @@ fn code_part(line: &str) -> &str {
     }
 }
 
-/// I sorgenti del tracciamento.
+/// The sources of the tracking, and those of the conduit.
+///
+/// The conduit belongs here because the rule is the same. Whoever holds a
+/// command line's terminal and writes into it must not know which one it is: not which
+/// window drew it, not which engine runs in it. The first `if` on a name makes
+/// Sailor the product of a single command line, and there is no way back.
 fn tracking_sources() -> Vec<PathBuf> {
     let root = repository_root();
-    let mut found = vec![root.join("crates/sailor/src/session_cmd.rs")];
+    let mut found = vec![
+        root.join("crates/sailor/src/session_cmd.rs"),
+        root.join("crates/sailor/src/terminal_cmd.rs"),
+    ];
     collect_under(&root.join("crates/sessions"), &mut found);
+    collect_under(&root.join("crates/terminal"), &mut found);
     found.retain(|path| path.exists());
     found
 }

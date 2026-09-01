@@ -22,6 +22,9 @@ faults = { path = "../faults" }
 ledger = { path = "../ledger" }
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
+# The relay's nodes. A crate of their own because they reach a live terminal,
+# and `terminal` sits downstream of `actions` in the graph.
+relay = { path = "../relay" }
 
 # SOLO PER LE PROVE, e la riga sopra resta vera: il crate spedito non porta
 # nessuna dipendenza esterna propria. Qui serve a scrivere un flusso a mano nel

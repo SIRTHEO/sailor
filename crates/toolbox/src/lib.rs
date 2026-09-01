@@ -15,7 +15,7 @@ pub mod session;
 pub use action::{register_default, DetectToolsAction, DETECT_TOOLS_ACTION};
 pub use descriptor::{
     builtin_catalog, Capability, CapabilityForm, CapabilityState, Catalog, Contradiction,
-    Descriptor, Loaded, Problem, Source, ASK_WITHOUT_INTERACTION, BUILTIN_CATALOGS,
+    Descriptor, Loaded, Problem, ResetContext, Source, ASK_WITHOUT_INTERACTION, BUILTIN_CATALOGS,
 };
 pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
 pub use probe::{Look, Machine, VersionReading};

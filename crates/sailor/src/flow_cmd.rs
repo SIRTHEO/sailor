@@ -38,6 +38,7 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
     match args {
         [command] if command == "list" => list_flows(sources),
         [command] if command == "due" => due_flows(sources),
+        [command] if command == "tick" => tick_flows(sources),
         [command, name] if command == "check" => check_flow(sources, name, true),
         [command, name, flag] if command == "check" && flag == "--no-engines" => {
             check_flow(sources, name, false)
@@ -1008,6 +1009,7 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 pub const USAGE: &[&str] = &[
     "sailor flow list",
     "sailor flow due",
+    "sailor flow tick",
     "sailor flow check <name> [--no-engines]",
     "sailor flow run <name> [mandate]",
     "sailor flow resume <run>",
@@ -1223,6 +1225,75 @@ fn waiting_report() -> String {
 /// L'ora si legge **una volta sola** e si passa a tutti: due flussi giudicati su
 /// due istanti diversi non sono confrontabili, e la differenza si vede solo nei
 /// casi rari, cioè quando fa più danno.
+/// One beat: what is due right now, and nothing remembered between beats.
+///
+/// The decision is a function of the schedule, the last run and the clock, all
+/// three read fresh. Killed at any instant and restarted, the next beat decides
+/// exactly what it would have decided without the interruption — which is the
+/// one property a thing that runs forever has to have on a machine that sleeps.
+fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
+    let known = known_flows(sources);
+    if known.is_empty() {
+        return Ok(nothing_found(sources));
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let last = default_ledger_dir()
+        .ok()
+        .filter(|dir| dir.join("state.db").exists())
+        .and_then(|dir| Ledger::open(&dir).ok())
+        .and_then(|ledger| ledger.last_started_at().ok())
+        .unwrap_or_default();
+
+    let mut report = String::new();
+    let mut ran = 0usize;
+    let mut held = 0usize;
+    for (name, _, entry) in known {
+        // **A BEAT SAYS WHAT IT DID NOT DO, AND WHY.** The relay this replaces
+        // declined 2,803 times out of 2,834 and left no trace of any of them,
+        // so nobody could tell a working guard from a broken one.
+        let reason = match &entry {
+            Err(_) => Some("will not load".to_owned()),
+            Ok(flow) => match flow.schedule.as_ref() {
+                None => Some("no schedule: it starts by hand only".to_owned()),
+                Some(schedule) => {
+                    let last_run = last.get(&flow.id).copied();
+                    if flow::is_due(schedule, last_run, now) {
+                        None
+                    } else {
+                        Some(match last_run {
+                            Some(seconds) => {
+                                format!("not due: last ran {} minutes ago", (now - seconds) / 60)
+                            }
+                            None => "not due".to_owned(),
+                        })
+                    }
+                }
+            },
+        };
+        if let Some(why) = reason {
+            held += 1;
+            let _ = writeln!(report, "{name}\thold\t{why}");
+            continue;
+        }
+        ran += 1;
+        match run_flow(sources, &name, None) {
+            Ok(said) => {
+                let _ = writeln!(report, "{name}\tran\t{}", said.lines().next().unwrap_or(""));
+            }
+            // A beat that stopped at the first broken flow would let one
+            // failure hold back every other schedule on the machine.
+            Err(complaint) => {
+                let _ = writeln!(report, "{name}\tbroke\t{}", complaint.lines().next().unwrap_or(""));
+            }
+        }
+    }
+    let _ = write!(report, "{ran} run, {held} held");
+    Ok(report)
+}
+
 fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
     let known = known_flows(sources);
     if known.is_empty() {
@@ -3126,6 +3197,53 @@ fn new_run_id(flow_id: &str) -> Result<String, String> {
 mod tests {
     use super::*;
     use flow::{Clock, Decision, InMemoryRecordStore, ProcessProbe, StepRecord};
+
+    // ── the beat ─────────────────────────────────────────────────────────
+
+    /// A form the help promises and the dispatch refuses is a form discovered
+    /// by whoever types it.
+    #[test]
+    fn the_beat_is_promised_and_accepted() {
+        assert!(
+            USAGE.iter().any(|line| line.contains("flow tick")),
+            "the help must promise the beat"
+        );
+        let nowhere: Vec<FlowSource> = Vec::new();
+        let said = dispatch(&["tick".to_owned()], &nowhere)
+            .expect("«tick» must reach its own arm, not the usage error");
+        assert!(said.contains("nessun flusso trovato"), "{said}");
+    }
+
+    /// A beat with nothing due must still say so. The relay this replaces
+    /// declined 2,803 times out of 2,834 without leaving a trace, and that is
+    /// what made a working guard indistinguishable from a broken one.
+    #[test]
+    fn a_beat_that_does_nothing_still_says_what_it_held_and_why() {
+        let scratch = std::env::temp_dir().join(format!("sailor-battito-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        let flow = scratch.join("senza-orario.flow.json");
+        fs::write(
+            &flow,
+            r#"{"id":"senza-orario","description":"un flusso senza pianificazione",
+                "graph":{"steps":[{"id":"innesco","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a flow with no schedule");
+
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+        let said = tick_flows(&sources).expect("a beat over one flow works");
+        assert!(
+            said.contains("senza-orario\thold\tno schedule"),
+            "a held flow must name itself and say why: {said}"
+        );
+        assert!(said.contains("0 run, 1 held"), "{said}");
+        let _ = fs::remove_dir_all(&scratch);
+    }
     use std::fs;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{Duration, Instant};
