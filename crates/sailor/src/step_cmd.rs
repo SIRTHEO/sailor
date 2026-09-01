@@ -53,11 +53,15 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     }
 }
 
+/// Le forme di `sailor step`, una per riga. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &[
+    "sailor step open --run <corsa> --step <passo> --as <chi>",
+    "sailor step close --run <corsa> --step <passo> --as <chi> --outcome <went|broke> \
+     [--output-file <file>] [--turns <n>] [--said <testo>]",
+];
+
 fn usage() -> String {
-    "uso: sailor step open --run <corsa> --step <passo> --as <chi>\n     \
-     sailor step close --run <corsa> --step <passo> --as <chi> \
-     --outcome <went|broke> [--output-file <file>] [--turns <n>] [--said <testo>]"
-        .to_owned()
+    format!("uso:\n  {}", USAGE.join("\n  "))
 }
 
 /// Le opzioni scritte sulla riga, in coppie `--nome valore`.

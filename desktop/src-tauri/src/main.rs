@@ -20,6 +20,7 @@ use ui::gather::{flow_sources, load_all_flows};
 mod board;
 mod flows;
 mod live;
+mod manual;
 mod run;
 mod tools;
 
@@ -161,7 +162,8 @@ fn main() {
             run::run_usage,
             board::execution_history,
             board::day_summary,
-            board::machine_inventory
+            board::machine_inventory,
+            manual::manual
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");

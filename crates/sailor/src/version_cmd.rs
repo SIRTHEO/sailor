@@ -2,6 +2,9 @@
 //! un rilascio (`sailor release <bersaglio> --dry-run` legge lo stesso
 //! timbro) senza dover aprire un debugger.
 
+/// La forma di `sailor version`. Vedi `flow_cmd::USAGE`.
+pub const USAGE: &[&str] = &["sailor version"];
+
 pub fn run(_args: &[String]) -> i32 {
     println!("sailor {}", env!("CARGO_PKG_VERSION"));
     0

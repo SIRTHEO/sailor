@@ -85,11 +85,19 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// Le forme di `sailor inventory`, una per riga. Vedi `flow_cmd::USAGE` per il
+/// motivo per cui è una costante pubblica invece di righe dentro la stampa.
+pub const USAGE: &[&str] = &[
+    "sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]",
+    "sailor inventory --record        deposita questa scansione",
+    "sailor inventory --changes       che cosa è comparso e che cosa è sparito",
+];
+
 fn print_usage() {
     eprintln!("uso:");
-    eprintln!("  sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]");
-    eprintln!("  sailor inventory --record        deposita questa scansione");
-    eprintln!("  sailor inventory --changes       che cosa è comparso e che cosa è sparito");
+    for line in USAGE {
+        eprintln!("  {line}");
+    }
 }
 
 /// Deposita la scansione, così la prossima potrà dire che cosa è cambiato.
