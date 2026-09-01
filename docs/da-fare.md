@@ -105,16 +105,202 @@ dichiarati:
   solo l'esito.
 - **`sample.ts` contiene dati finti** scritti «finché la finestra non legge dal
   motore», che ormai legge.
-- **Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
-  tre delle sue prove leggono la configurazione della macchina di chi le esegue.
-  *29/08: è diventato bloccante e poi è stato aggirato.* Quelle tre prove sono
-  rosse dal 28/08 a codice invariato, e hanno bocciato un lavoro del flusso di
-  sviluppo che ne passava 692 su 695. Il gate ora esclude quel crate — che è un
-  debito, non una cura: **finché resta, una regressione vera lì dentro non
-  ferma nessuno**. O le prove smettono di leggere la macchina, o il crate se ne
-  va con il mondo che serve.
+- ~~**Il crate dei ganci di Claude Code serve un mondo che stiamo smontando**, e
+  tre delle sue prove leggono la configurazione della macchina di chi le
+  esegue.~~ **Storia, chiusa il 01/09/2026 — e conta come è finita.** La riga
+  offriva due uscite: «o le prove smettono di leggere la macchina, o il crate se
+  ne va con il mondo che serve». È stata la seconda: `crates/claude-hooks` è
+  stato cancellato il **29/08/2026 alle 22:09** (`afd52fe`, «via dal repo tutto
+  ciò che non è Sailor») insieme a tutto ciò che non era Sailor, e le tre prove
+  sono sparite con lui invece di essere riparate.
+  **Il debito è finito senza essere ripagato, e l'aggiramento è diventato
+  fossile cinque ore dopo essere nato, lo stesso giorno.** `--exclude
+  claude-hooks` entra nel passo `prove` di `flows/sviluppa-sailor.flow.json` il
+  29/08 alle 16:34 (`7a53f4d`, «il gate non è più ostaggio di prove rosse da
+  ieri»): per cinque ore e mezza escludeva un crate **vivo**, ed era un
+  aggiramento vero. Alle 22:09 il crate se n'è andato e la stessa riga è
+  diventata un fossile, che è rimasto lì **due giorni** — fino al 01/09/2026 —
+  con cargo che rispondeva a ogni corsa «warning: excluded package(s)
+  `claude-hooks` not found in workspace».
+  Un'esclusione che non esclude più niente non rompe niente: nessuno la toglie, e
+  nessun controllo la vede. Adesso il flag non c'è più e `cargo test --workspace`
+  è di nuovo tutto il workspace.
+  **Ciò che resta aperto è il guasto 5**, non questa voce: la cura che dichiarava
+  — le prove non leggono lo stato della macchina — non è mai stata scritta, e
+  nessun controllo impedisce che il caso ricompaia in un altro crate.
 - **In modalità viva, un errore di compilazione in un crate qualunque uccide la
   finestra** invece di lasciarla all'ultima versione buona.
+- ~~**Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
+  nessun ripiego**~~ — **chiuso il 01/09/2026**, con tre prove e due mutanti.
+  Trovato da un giudice che verificava la chiusura del guasto 31, cioè **dal
+  lato da cui quella chiusura non guardava**: `says_it_cannot_work` era
+  interrogato solo dentro il ramo `ExitError`, e nel ramo `Ok` la risposta era
+  presa per buona — ripiego mai scattato, e riga del deposito con `error_type:
+  None`, cioè un passo **verde** su una non-risposta. Adesso la domanda è la
+  stessa nei due rami, e anche le conseguenze: `Asked::CannotWork` in catena,
+  `engine_exhausted` da solo, specie `exhausted` nel deposito — e la
+  **conseguenza sta in una copia sola** (`engine_cannot_work`), perché scritta
+  due volte era già divergente appena nata. La riga si scrive **prima** del
+  controllo di tolleranza in tutti e due i rami: la specie dice cos'è successo,
+  `accept` dice cosa ne fa la corsa, e non devono toccarsi.
+  Le prove ermetiche nascevano cieche perché facevano uscire il motore esaurito
+  **sempre** in errore: ora ce n'è una che lo fa uscire **zero** dicendo le
+  stesse parole, ed è nata rossa restituendo
+  `{"status":"ok","stdout":"You've hit your weekly limit…"}`.
+  *Mutanti*: `Some("exhausted")` → `None` nel ramo nuovo, e resta rossa solo la
+  prova che guarda la riga del deposito — le altre due non l'avrebbero vista;
+  il `note(...)` rimesso **dentro** il ramo della non-tolleranza, e resta rossa
+  solo quella che guarda la parità fra i due codici d'uscita.
+  **QUESTA RIGA HA DICHIARATO LA PARITÀ PRIMA DI AVERLA.** La prima stesura
+  scriveva «con le stesse conseguenze» mentre il `note(...)` del ramo `Ok` stava
+  **dopo** il controllo di tolleranza: con `accept: ["exit_error"]` dichiarato,
+  un motore che diceva di non poter lavorare ed usciva zero tornava a scrivere
+  una riga `NULL`. Il difetto era sopravvissuto dentro il proprio rimedio, in un
+  angolo, e l'ha trovato un giudice che non aveva scritto il lavoro — misurando
+  la tabella invece di leggere il commento.
+  **Va portato nella tabella dei guasti alla prossima fusione, col numero che
+  sarà libero allora** — sta qui e non là perché due rami stanno numerando righe
+  nuove nello stesso momento, e un numero preso due volte è un conflitto che
+  nessuno vede. Non è un timore: il 40 che questa riga si aspettava di prendere
+  **è già stato preso da un altro ramo** mentre questo lavoro era in corso.
+- **La quota finita di `agy` passa ancora per un fallimento qualunque.** Il
+  01/09/2026 `agy` è stato misurato — `HOME` su una cartella vuota, la riga che
+  Sailor monta davvero — e dice con parole sue di non poter lavorare **quando
+  gli mancano le credenziali**: quelle tre frasi sono nel descrittore. Come dica
+  di aver finito la **quota** non si è trovato: non è nell'aiuto né in nessun
+  sottocomando annidato, e nella tabella delle stringhe del binario
+  l'esaurimento compare solo come motivo di ritentativo interno
+  (`ShouldRetryModelCapacityExhausted`), mai come messaggio stampato. Non si può
+  provocare senza spendere la quota vera. **La regola sul ripiego non lo vede**,
+  e non è un difetto della regola: chiede che il campo non sia vuoto, non che
+  sia completo. Chi vede `agy` dire di essere esaurito scriva la frase lì.
+- **`agy` non riceve la casa del profilo attivo.** Misurato il 01/09/2026: la
+  sua casa è `~/.gemini/antigravity-cli`, guidata da `$HOME`, e la stringa
+  `GEMINI_CLI_HOME` **non compare** nel binario. La sovrapposizione d'ambiente
+  che il guasto 18 ha portato ai motori sposta `CLAUDE_CONFIG_DIR` e
+  `CODEX_HOME` ma non tocca `agy`: due profili diversi lo fanno partire nella
+  stessa casa, e nessuno lo dice. È il guasto 39 sullo stesso campo — un mondo
+  che si crede dichiarato e non lo è. La nota in `crates/profiles/src/lib.rs`
+  che chiamava questa un'«ipotesi non verificata» è stata corretta; **restano
+  due cose che non ho toccato perché cambiano comportamento**, e vanno decise:
+  (1) quella voce dichiara `executable: "antigravity"`, un nome che su questa
+  macchina non esiste — il prodotto è installato come `agy`, ed è così che lo
+  chiamano i descrittori; (2) `HomeMechanism::Unknown` è documentato «non
+  ancora verificato», e non esiste un valore per «verificato: non c'è nessun
+  modo di spostarla». Sono due fatti diversi che oggi si scrivono uguale, ed è
+  la distinzione che il blocco `capabilities` paga per avere altrove.
+- **Senza credenziali `agy` aspetta 60 secondi prima di arrendersi**, dopo aver
+  aperto il browser sull'URL OAuth. Oggi non morde perché `agy` è autenticato;
+  il giorno in cui il suo accesso scade, `agy` in mezzo a una catena costa
+  **60 secondi per passo** contro i ~10 di un `codex` a 401. Un motore che non
+  può lavorare dovrebbe poterlo dire subito: finché aspetta, il ripiego è caro.
+- **Un passo che scrive `"tool": "agy"` come stringa invece che come elenco
+  esce da ogni controllo sulle catene**: `engines_in_chains()` legge solo
+  `as_array()` e lo salta, `fallbacks_into` gli lascia zero motori da guardare.
+  Succede oggi in `smista-il-lavoro.flow.json`, passo `engine_b`. La seconda
+  metà di quella riga — «un `agy` esaurito si registra `exit_error` invece di
+  `exhausted`» — **è caduta con la riga qui sopra**: adesso si registra `exhausted` in
+  tutti e due i rami. Resta la prima, che è la peggiore: quel passo non è
+  sorvegliato da nessuna regola sulle catene.
+- **`desktop/src-tauri/Cargo.lock` è già vecchio a HEAD**, e si sporca da solo:
+  `crates/actions` dipende da `profiles` dal 01/09/2026 e quel lock non lo sa —
+  sotto `actions` elenca `flow`, `ledger`, `models`, `serde`, `serde_json` e
+  basta. `desktop/src-tauri` dichiara un workspace suo, quindi **la batteria non
+  lo compila**: chiunque lo costruisca si ritrova il lock modificato in un
+  albero pulito, senza aver toccato niente. Verificato il 01/09/2026 leggendo i
+  due lock. Non è un guasto capitato: è un difetto che aspetta, e lo si chiude
+  rigenerando quel lock — oppure, meglio, chiedendosi perché un membro del
+  prodotto stia fuori dall'unico oracolo che abbiamo.
+
+## L'ordine dei motori in catena, misurato il 01/09/2026
+
+Dodici posizioni in quattro flussi dichiarano la stessa catena, e fino a oggi
+**nessun documento diceva perché**. Questi sono i numeri; le proposte che ne
+discendono stanno sotto, separate da ciò che è già stato applicato.
+
+**Quanto costa ciascuno.** Il listino (`~/.config/sailor/pricing.json`, datato
+30/08) contiene **solo modelli Anthropic**. I prezzi di OpenAI e di Google non
+ci sono, e mancano di proposito — «una cifra inventata è peggio di una
+mancante». Quindi: `claude-code` ha un costo calcolabile (opus-5: 5 $/M in
+ingresso, 25 in uscita, 0,5 letti da cache); `codex` e `agy` restano a costo
+**sconosciuto**. **Un ordine per prezzo crescente oggi non è calcolabile**, e
+chi lo proponesse starebbe indovinando due terzi della tabella.
+
+**Quanta quota resta.** `sailor remaining` risponde per un motore solo:
+`claude-code`, consumato 29,0% sulle cinque ore e 41,0% sui sette giorni.
+`codex` e `agy` non dichiarano niente, quindi la loro quota residua è ignota.
+
+**Chi è autenticato davvero.** Misurato oggi, non ricordato:
+
+| motore | esito | come è stato misurato |
+|---|---|---|
+| `claude-code` | **autenticato** | `sailor remaining` legge un consumo che sale: una quota che scorre è una credenziale che c'è |
+| `agy` | **autenticato** | `agy models` esce 0 ed elenca 11 modelli |
+| `codex` | **non autenticato**, su tutti e due i profili | nessun `auth.json` in `.../profiles-homes/codex/lavoro` né in `.../prove` (il profilo attivo); e la corsa vera con `CODEX_HOME` sul profilo attivo esce **1** dopo cinque tentativi di riconnessione, dicendo `401 Unauthorized` |
+
+`~/.codex/auth.json` **esiste**, ma dal 01/09 un passo di flusso non lo legge
+più: la chiusura del guasto 18 lo manda nella casa del profilo, che è vuota.
+Cioè `codex` è passato da funzionante a rotto **come effetto collaterale di una
+riparazione**, e nessun controllo lo dice.
+
+**Quante volte ciascuno è stato invocato, e con che esito.** Dal deposito
+(`model_calls` in `~/.claude/state/flussi/state.db`):
+
+| motore | chiamate | senza errore | fallite | con token | con modello |
+|---|---|---|---|---|---|
+| `claude-code` | 16 | 15 | 1 (`exit_error`) | **15 su 16** | 15 su 16 |
+| `codex` | 4 | 4 | 0 | **1 su 4** | 1 su 4 |
+| `agy` | **1** | 0 | 1 (`exit_error`) | 0 | 0 |
+
+Tre cose che i totali nascondono. **Primo**: l'unica chiamata di `agy` mai
+registrata non è un esaurimento — è il guasto 27, la riga malformata («`--print`
+took "--output-format" as its prompt»), riparata da allora. `agy` non ha mai
+prodotto una risposta dentro Sailor. **Secondo**: delle quattro di `codex`, una
+sola porta una misura di sé — quella del **28/08**, che dichiara
+`actual_model = codex` e 25.066 token in uscita, e non è una corsa di flusso ma
+una riga di lavorazione. Le altre **tre**, tutte del 31/08, risultano riuscite e
+non lasciano né token né modello; sono di quando `codex` ereditava ancora la
+casa del terminale. **Terzo**: `claude-code` lascia una misura su 15 chiamate su
+16 — la sedicesima è proprio quella fallita, e un motore che si rompe prima di
+parlare non ha token da dichiarare.
+
+Un dettaglio da guardare, non da concludere: quella riga di `codex` del 28/08
+porta `cost_micros = 0` con un modello che il listino non conosce. Uno zero al
+posto di «non lo so» è la bugia che il listino stesso dice di non voler
+scrivere. Non l'ho inseguito: è una riga sola, anteriore al listino, e appartiene
+a un'altra domanda.
+
+### Applicato, perché la misura lo impone
+
+**`agy` torna in mezzo, `codex` va in fondo**, nelle dodici posizioni:
+`claude-code → agy → codex`. Non è una preferenza, ed è la somma di due cose
+misurate oggi: la ragione per cui `agy` era stato spostato in fondo — «non
+dichiara come si esaurisce» — **non esiste più**, e mettere davanti a un motore
+autenticato un motore che si è appena misurato **non** autenticato paga un
+processo e i suoi tentativi di riconnessione senza comprare niente. La regola
+sul ripiego adesso morde davvero: con `agy` in mezzo e il suo `unusable_when`
+svuotato, `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted`
+torna rossa nominando tutte e dodici le posizioni.
+
+### Proposte, che aspettano Theo
+
+1. **Autenticare i profili `codex`**, o farli puntare alla casa vera. È la cura
+   del problema; l'ordine della catena è solo il posto dove il sintomo si vede.
+   Finché resta così, `codex` in fondo a una catena è un ripiego che non ripiega.
+2. **Chi non è autenticato non dovrebbe stare in un file di flusso, ma in una
+   decisione a esecuzione.** Le credenziali sono uno stato che cambia; l'ordine
+   scritto nel flusso no. Oggi si sta scrivendo uno stato transitorio dentro un
+   dato permanente, e la prossima volta che qualcuno fa il login nessuno
+   riordinerà i flussi. La forma giusta è che Sailor **misuri** e scavalchi, non
+   che l'ordine lo racconti.
+3. **`esamina-la-repo-ramificando` e `esamina-la-repo-riscoprendo` mettono
+   `codex` PRIMO**, in otto posizioni, davanti a `claude-code`. Sotto la misura
+   di oggi è l'ordine peggiore dell'albero. **Non l'ho cambiato**: sarebbe una
+   decisione nuova su flussi che nessuno mi ha chiesto di toccare, e la cura è
+   la proposta 1. Va deciso, non lasciato lì per abitudine.
+4. **Un ordine per costo non si può proporre** finché il listino conosce un
+   fornitore su tre. Serve prima il prezzo di OpenAI e di Google — misurato,
+   non ricordato.
 
 ## Risposte già trovate, da mettere in pratica
 
@@ -133,6 +319,36 @@ corsa di quel flusso; qui l'indice:
 | 9 — l'elemento invisibile | Playwright: lo schermo di riferimento nasce dal primo giro rosso |
 | il caso di prova | Temporal: la storia della corsa rotta si scarica e si rigioca |
 | introdurre un controllo senza rompere | OPA Gatekeeper: `warn` prima di `deny`, promozione come configurazione |
+
+### I marcatori di prompt OSC 133, per togliere il compromesso del terminale
+
+**01/09/2026, dal cantiere del terminale nella finestra.** La metà React che è
+stata costruita smista una riga solo in un modo che costa: mentre la finestra
+tiene la riga, la `readline` della shell non ce l'ha, quindi **saltano la
+cronologia, le frecce e il Tab** — che dopo le lettere è il tasto più premuto di
+tutti — e niente accorge la finestra che lì dentro è appena partito un programma
+a schermo intero, cioè `claude` dentro Sailor: **esattamente il caso per cui il
+cantiere esiste.** Per questo un terminale nasce in modalità diretta e comporre
+è una scelta esplicita: il compromesso è stato *scelto*, non risolto.
+
+**Chi l'ha già risolto, e come.** VS Code e Warp usano i **marcatori di prompt
+OSC 133**: la shell emette una sequenza che dice «qui comincia il prompt», «qui
+comincia ciò che l'utente scrive», «qui il comando parte». La finestra allora
+non tiene niente e non disegna nessun eco — cronologia, completamento e frecce
+restano alla `readline`, dove sono sempre state — e all'Invio **legge la riga
+dal buffer dell'emulatore**, che sa esattamente dove comincia. La manda a
+`terminal_submit`: se torna `{kind: "command"}` la esegue la shell come sempre,
+e se torna `{kind: "flow"}` la finestra manda un Ctrl-U e la riga non parte.
+
+**Perché questo toglie il prezzo invece di spostarlo.** Nessuna riga scritta due
+volte — la shell ha sempre avuto i caratteri, quindi non c'è niente da
+riscrivere; nessun modo da scegliere, perché fuori da un prompt i marcatori non
+ci sono e il terminale è diretto **da sé**; e il caso del programma a schermo
+intero si risolve senza doverlo indovinare. Il costo è che la shell va
+configurata per emetterli, ed è un lavoro che Sailor già sa fare: legge e migra
+la configurazione delle righe di comando.
+
+*Non ancora costruito, e da fare prima che qualcuno si abitui al compromesso.*
 
 ## Nato dalla serata del 29/08
 
@@ -176,11 +392,11 @@ nove è stato ancora fatto.
    *Riduce*: Riduce l'1, e di riflesso il 3. Vincolo A rispettato: è forma del grafo, nessun motore lo vede. Vincolo B rispettato meglio che in Temporal, perché la corsa resta una sola e non ci sono due tronconi da ricucire: chi guarda vede il nodo di taglio come un passo qualunque con scritto dentro cosa ha lasciato passare. Costo vero, da non addolcire: quello che il taglio butta lo sceglie una persona a mano, e se sbaglia il passo a valle lavora peggio senza saperlo. Non va applicato ai passi che giudicano (`sintesi`, `verifica`), dove il 96,2% non è spreco ma il lavoro.
 
 2. **Inversione del predefinito: le `deps` dichiarano l'ordine di esecuzione, i rinvii dichiarano il contenuto. Un passo il cui `with` contiene rinvii riceve solo quelli, non l'uscita intera delle dipendenze**
-   *Primo passo*: In `step_input` (crates/flow/src/executor.rs:756-782): se il passo dichiara l'inversione, l'ingresso composto serve solo a risolvere i rinvii e non viaggia oltre. La dichiarazione va sul passo, non nel motore, perché l'inversione cambia il significato dei flussi già scritti. Subito dopo, la difesa: validare i puntatori `$from` contro l'`output_schema` del passo di provenienza dentro `Graph::validate`, accanto a `GraphError::IncompatibleInput` — oggi `crates/flow/` non sa nemmeno che i rinvii esistono.
+   *Primo passo*: In `step_input` (crates/flow/src/executor.rs:756-782): se il passo dichiara l'inversione, l'ingresso composto serve solo a risolvere i rinvii e non viaggia oltre. La dichiarazione va sul passo, non nel motore, perché l'inversione cambia il significato dei flussi già scritti. Subito dopo, la difesa: validare i puntatori `$from` contro l'`output_schema` del passo di provenienza dentro `Graph::validate`, accanto a `GraphError::IncompatibleInput`. *Aggiornato il 01/09/2026*: qui c'era scritto «oggi `crates/flow/` non sa nemmeno che i rinvii esistono», e non è più vero — la cura del guasto 28 ha portato `reference` dentro `crates/flow`, e `step_input` li scioglie per ogni azione. Il primo passo di questa voce è quindi più corto di com'era scritto: il posto dove metterla esiste già.
    *Riduce*: Riduce il 3 direttamente, l'1 di conseguenza, e spinge il 6 nel verso giusto: l'`answer_shape` smette di essere solo un contratto del produttore e diventa la superficie su cui il consumatore punta. Vincolo A rispettato in pieno: la selezione avviene nell'orchestratore prima che il prompt esista. Vincolo B è esattamente ciò che questa pratica dà — il rinvio è scritto nel `.flow.json` e leggibile. Guasto documentato da n8n e trasportabile qui: un `$from` che punta a un campo che il motore quel giorno non ha prodotto oggi si scopre a corsa avviata dentro `reference::look_up`, cioè dopo aver speso la chiamata; senza la validazione al caricamento, questa pratica trasforma un costo in un guasto.
 
 3. **Registrare il prompt reso e i byte visti/scartati, non solo la ricetta**
-   *Primo passo*: Far portare a `ActionOutcome`/`Completion` il testo reso e i due contatori — oggi `Completion` li mette a `None` in tutti i rami perché l'azione non ha modo di dichiararli — e riempirli in `ExternalEngineAction` subito dopo `resolve_references`. Il prompt reso va scritto accanto a `input`, non al suo posto: servono entrambi, la ricetta e il testo.
+   *Primo passo*: Far portare a `ActionOutcome`/`Completion` il testo reso e i due contatori — oggi `Completion` li mette a `None` in tutti i rami perché l'azione non ha modo di dichiararli — e riempirli in `ExternalEngineAction` sull'ingresso che riceve — che dal 01/09/2026 arriva già coi rinvii sciolti, perché a scioglierli è `flow::step_input` e non più l'azione. Il prompt reso va scritto accanto a `input`, non al suo posto: servono entrambi, la ricetta e il testo.
    *Riduce*: Da sola non riduce nessuno dei sei: abilita l'1, il 2, il 5 e il 6 rendendoli misurabili. Vincolo A rispettato: si misura ciò che Sailor produce, non si presuppone niente del motore, e vale identica su uno strumento che non si può osservare. Vincolo B: è il vincolo B — oggi la vista della corsa mostra la ricetta e non il testo spedito, e la distanza fra le due è cresciuta esattamente del 96,2%. Limite: il prompt reso è grande, quindi va deciso subito se si conserva per intero o per digest più lunghezza, e la scelta va scritta dove chi guarda la vede.
 
 4. **Il consumo dichiarato dal motore entra nel registro come per ogni altra chiamata, e il contesto di partenza si misura per sottrazione**
