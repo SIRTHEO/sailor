@@ -36,7 +36,9 @@ pub enum BuildOutcome {
     /// guarda**: una modalità viva che dice «costruzione fallita» e basta
     /// obbliga a cercare l'errore in un terminale, che è il posto da cui questa
     /// finestra dovrebbe liberare.
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 /// Cosa è successo a un giro di ricostruzione.
@@ -214,7 +216,10 @@ pub fn close_the_ones_that_stopped_breathing(
     now: i64,
 ) -> Result<usize, ledger::LedgerError> {
     let mut closed = 0;
-    for gone in left_running(store)?.into_iter().filter(|item| !item.still_alive) {
+    for gone in left_running(store)?
+        .into_iter()
+        .filter(|item| !item.still_alive)
+    {
         store.record_process_ended(&ledger::ProcessEndRecord {
             process_id: gone.record.process_id,
             // Non si inventa un codice d'uscita: nessuno l'ha visto uscire.

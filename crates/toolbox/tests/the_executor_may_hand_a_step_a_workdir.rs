@@ -21,15 +21,15 @@ use serde_json::json;
 use std::fs;
 use toolbox::DetectToolsAction;
 
-fn una_cartella(nome: &str) -> std::path::PathBuf {
-    let root = std::env::temp_dir().join(format!("toolbox-workdir-{nome}-{}", std::process::id()));
+fn a_folder(name: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("toolbox-workdir-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("la cartella di prova si crea");
     root
 }
 
-fn descrittore(dove: &std::path::Path, nome: &str) -> std::path::PathBuf {
-    let file = dove.join(nome);
+fn descriptor(inside: &std::path::Path, name: &str) -> std::path::PathBuf {
+    let file = inside.join(name);
     fs::write(
         &file,
         json!({
@@ -46,19 +46,19 @@ fn descrittore(dove: &std::path::Path, nome: &str) -> std::path::PathBuf {
     file
 }
 
-fn uscita(esito: ActionOutcome) -> serde_json::Value {
-    match esito {
+fn output(outcome: ActionOutcome) -> serde_json::Value {
+    match outcome {
         ActionOutcome::Went(value) => value,
-        altro => panic!("il passo doveva andare, invece: {altro:?}"),
+        other => panic!("il passo doveva andare, invece: {other:?}"),
     }
 }
 
 #[test]
 fn il_workdir_non_fa_cadere_il_rilevamento() {
-    let root = una_cartella("cade");
-    let file = descrittore(&root, "prova.json");
+    let root = a_folder("cade");
+    let file = descriptor(&root, "prova.json");
 
-    let esito = DetectToolsAction
+    let outcome = DetectToolsAction
         .execute(
             &json!({
                 "descriptor_paths": [file.display().to_string()],
@@ -70,7 +70,7 @@ fn il_workdir_non_fa_cadere_il_rilevamento() {
         )
         .expect("l'esecutore può aggiungere il workdir: non è un ingresso sbagliato");
 
-    assert_eq!(uscita(esito)["total"], 1, "il descrittore è stato letto");
+    assert_eq!(output(outcome)["total"], 1, "il descrittore è stato letto");
 }
 
 /// **E IL CAMPO NON È UN POZZO.** Un percorso relativo si conta dalla radice
@@ -78,11 +78,11 @@ fn il_workdir_non_fa_cadere_il_rilevamento() {
 /// e un descrittore relativo si cercherebbe dove sta il processo — guasto 25.
 #[test]
 fn un_descrittore_relativo_si_conta_dal_workdir() {
-    let root = una_cartella("relativo");
+    let root = a_folder("relativo");
     fs::create_dir_all(root.join("tools.d")).expect("sottocartella");
-    descrittore(&root.join("tools.d"), "prova.json");
+    descriptor(&root.join("tools.d"), "prova.json");
 
-    let esito = DetectToolsAction
+    let outcome = DetectToolsAction
         .execute(
             &json!({
                 "descriptor_paths": ["tools.d/prova.json"],
@@ -94,10 +94,10 @@ fn un_descrittore_relativo_si_conta_dal_workdir() {
         )
         .expect("il passo va");
 
-    let uscita = uscita(esito);
+    let output = output(outcome);
     assert_eq!(
-        uscita["total"], 1,
+        output["total"], 1,
         "letto dalla radice, non dal cwd: {}",
-        uscita["problems"]
+        output["problems"]
     );
 }

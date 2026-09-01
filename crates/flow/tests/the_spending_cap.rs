@@ -1,18 +1,12 @@
-//! Il tetto di spesa: quando la corsa si ferma da sé, e quanto larga apre.
-//!
-//! **PERCHÉ IL DEPOSITO DI PROVA TIENE I COSTI.** `InMemoryRecordStore` risponde
-//! sempre «zero speso», perché le chiamate ai motori non le registra — ed è la
-//! risposta onesta per lui. Ma una prova del tetto costruita su quel deposito
-//! sarebbe verde comunque, con o senza tetto: misurerebbe che nessuno spende
-//! niente. Qui il deposito è un guscio che i costi li tiene, e le azioni li
-//! scrivono mentre girano.
-//!
-//! **COSA SI PROVA DAVVERO.** Non che esista un `if`: che una corsa con un tetto
-//! e una senza si comportino in modo **diverso** sullo stesso grafo e con le
-//! stesse azioni. È la sola forma in cui un limite si può misurare.
+//! The spend cap: when a run stops itself, and how wide it opens. The test
+//! store keeps costs because `InMemoryRecordStore` always answers "spent zero",
+//! never recording engine calls — the honest answer for it, but a cap test
+//! built on it would be green with or without a cap, measuring that nobody
+//! spends. What is proved is not that an `if` exists: it is that a capped run
+//! and an uncapped one behave *differently* on the same graph, same actions.
 
 use flow::{
-    Action, ActionError, ActionOutcome, Clock, Completion, Decision, Executor, ExecutionRequest,
+    Action, ActionError, ActionOutcome, Clock, Completion, Decision, ExecutionRequest, Executor,
     FlowError, Graph, InMemoryRecordStore, InProcessExecutor, Outcome, RecordStore, SharedState,
     Spend, Step, StepRecord, ValueSchema,
 };
@@ -20,11 +14,11 @@ use serde_json::{json, Value};
 use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// Un deposito che, oltre ai passi, tiene il conto di quanto si è speso.
+/// A store that, besides the steps, keeps count of what has been spent.
 ///
-/// Fa da guscio a quello in memoria invece di riscriverlo: le regole su epoche,
-/// tentativi doppi e chiusure restano quelle vere, e qui si aggiunge la sola
-/// cosa che manca.
+/// It wraps the in-memory one instead of rewriting it: the real rules on
+/// epochs, duplicate attempts and closes stay in force, and only the missing
+/// piece is added here.
 struct StoreThatCounts {
     inner: InMemoryRecordStore,
     spent: Mutex<Spend>,
@@ -38,7 +32,7 @@ impl StoreThatCounts {
         }
     }
 
-    /// Registra una chiamata costata `micros`, come farebbe un motore vero.
+    /// Records a call that cost `micros`, as a real engine would.
     fn charge(&self, micros: i64) {
         let mut spent = self.spent.lock().unwrap_or_else(|held| held.into_inner());
         spent.micros += micros;
@@ -46,7 +40,7 @@ impl StoreThatCounts {
         spent.dearest_micros = Some(spent.dearest_micros.unwrap_or(0).max(micros));
     }
 
-    /// Registra una chiamata di cui **non si sa** quanto è costata.
+    /// Records a call whose cost is *not known*.
     fn charge_unknown(&self) {
         let mut spent = self.spent.lock().unwrap_or_else(|held| held.into_inner());
         spent.calls += 1;
@@ -67,7 +61,8 @@ impl RecordStore for StoreThatCounts {
         epoch: u64,
         completion: Completion,
     ) -> Result<(), FlowError> {
-        self.inner.close(run_id, step_id, attempt, epoch, completion)
+        self.inner
+            .close(run_id, step_id, attempt, epoch, completion)
     }
 
     fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError> {
@@ -79,12 +74,12 @@ impl RecordStore for StoreThatCounts {
     }
 }
 
-/// Un'azione che costa. Ogni volta che gira, scrive la propria spesa nel
-/// deposito — è quello che fa un motore vero, e il tetto la vede solo di lì.
+/// An action that costs. Every time it runs it writes its own spend into the
+/// store — what a real engine does, and the only way the cap sees it.
 struct CostsMoney {
     store: Arc<StoreThatCounts>,
     micros: i64,
-    /// Quante volte è stata eseguita: il numero su cui poggia mezza batteria.
+    /// How many times it ran: the number half these tests rest on.
     times: Arc<AtomicUsize>,
 }
 
@@ -92,12 +87,12 @@ impl Action for CostsMoney {
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         self.times.fetch_add(1, Ordering::SeqCst);
         self.store.charge(self.micros);
-        Ok(ActionOutcome::Went(json!("fatto")))
+        Ok(ActionOutcome::Went(json!("done")))
     }
 }
 
-/// Un'azione che spende senza sapere quanto: il caso di codex, che dichiara i
-/// token e non il costo.
+/// An action that spends without knowing how much: the case of codex, which
+/// declares the tokens and not the cost.
 struct CostsSomethingUnknown {
     store: Arc<StoreThatCounts>,
 }
@@ -105,11 +100,11 @@ struct CostsSomethingUnknown {
 impl Action for CostsSomethingUnknown {
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         self.store.charge_unknown();
-        Ok(ActionOutcome::Went(json!("fatto")))
+        Ok(ActionOutcome::Went(json!("done")))
     }
 }
 
-/// Un orologio che avanza di uno a ogni domanda.
+/// A clock advancing by one per question.
 struct Ticking(AtomicI64);
 
 impl Clock for Ticking {
@@ -118,7 +113,7 @@ impl Clock for Ticking {
     }
 }
 
-/// Un passo senza dipendenze che chiama `action`.
+/// A step with no dependencies calling `action`.
 fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
     Step {
         id: id.to_owned(),
@@ -132,16 +127,16 @@ fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
     }
 }
 
-/// Una catena di due passi: il secondo aspetta il primo.
+/// A chain of two steps: the second waits for the first.
 fn two_in_a_row() -> Graph {
     Graph::new(vec![
         step("first", "costs", vec![]),
         step("second", "costs", vec!["first".to_owned()]),
     ])
-    .expect("grafo valido")
+    .expect("valid graph")
 }
 
-/// Esegue la catena con il tetto dato, e dice quanti passi hanno girato.
+/// Runs the chain under the given cap and says how many steps ran.
 fn run_with_cap(cap: Option<i64>, price_micros: i64) -> (flow::Execution, usize) {
     let store = Arc::new(StoreThatCounts::new());
     let times = Arc::new(AtomicUsize::new(0));
@@ -159,7 +154,7 @@ fn run_with_cap(cap: Option<i64>, price_micros: i64) -> (flow::Execution, usize)
         .execute(
             &two_in_a_row(),
             ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
                 shared: SharedState::new(),
@@ -169,64 +164,65 @@ fn run_with_cap(cap: Option<i64>, price_micros: i64) -> (flow::Execution, usize)
             &actions,
             &Ticking(AtomicI64::new(0)),
         )
-        .expect("l'esecuzione non è un guasto");
+        .expect("the execution is not a fault");
 
     (execution, times.load(Ordering::SeqCst))
 }
 
-/// **IL PRIMO PASSO SPENDE PIÙ DEL TETTO, IL SECONDO NON PARTE.**
+/// The first step spends more than the cap and the second never starts.
 ///
-/// È il fatto centrale: chi si ferma non ha speso invano — ha fatto un passo e
-/// si è fermato prima del successivo, che è l'unico momento in cui fermarsi
-/// costa zero.
+/// The central fact: whoever stops has not spent in vain — one step done, then
+/// a stop before the next, which is the only moment stopping costs nothing.
 #[test]
 fn a_run_stops_before_the_step_that_would_break_the_cap() {
     let (execution, ran) = run_with_cap(Some(100), 150);
 
-    assert_eq!(ran, 1, "il primo passo gira, il secondo no");
+    assert_eq!(ran, 1, "the first step runs, the second does not");
     let Some(Decision::CapReached(stop)) = execution.decisions.last() else {
-        panic!("la corsa doveva fermarsi al tetto, invece: {:?}", execution.decisions.last());
+        panic!(
+            "the run should have stopped at the cap, instead: {:?}",
+            execution.decisions.last()
+        );
     };
     assert_eq!(stop.cap_micros, 100);
     assert_eq!(stop.spent.micros, 150);
     assert_eq!(
         stop.not_started,
         vec!["second".to_owned()],
-        "e dice quale passo è rimasto da fare"
+        "and it says which step is left to do"
     );
 }
 
-/// **LO STESSO GRAFO SENZA TETTO ARRIVA IN FONDO.**
+/// The same graph with no cap reaches the end.
 ///
-/// È la metà che rende leggibile la prova sopra: senza di questa, «un passo su
-/// due» potrebbe essere un difetto dell'esecutore invece dell'effetto del tetto.
+/// The half that makes the test above readable: without it, "one step out of
+/// two" could be an executor defect rather than the cap doing its work.
 #[test]
 fn the_same_flow_without_a_cap_runs_to_the_end() {
     let (execution, ran) = run_with_cap(None, 150);
 
-    assert_eq!(ran, 2, "senza tetto girano tutti e due");
+    assert_eq!(ran, 2, "with no cap both run");
     assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
 }
 
-/// **UN TETTO DI ZERO FERMA PRIMA DELLA PRIMA CHIAMATA.**
+/// A cap of zero stops before the first call.
 ///
-/// `Some(0)` non è `None`: è qualcuno che ha scritto «questo flusso non deve
-/// spendere niente». Il confronto è `>=` apposta — con `>` la prima chiamata
-/// passerebbe, e sarebbe l'unica che contava.
+/// `Some(0)` is not `None`: it is someone writing "this flow must not spend
+/// anything". The comparison is `>=` on purpose — with `>` the first call would
+/// get through, and it was the only one that mattered.
 #[test]
 fn a_cap_of_zero_stops_before_spending_anything() {
     let (execution, ran) = run_with_cap(Some(0), 150);
 
-    assert_eq!(ran, 0, "nessun passo è partito");
+    assert_eq!(ran, 0, "no step started");
     assert!(matches!(
         execution.decisions.last(),
         Some(Decision::CapReached(_))
     ));
 }
 
-/// **UN TETTO LARGO NON FERMA NIENTE.** Il tetto c'è, e la corsa arriva in
-/// fondo: senza questa prova, un tetto che fermasse *sempre* sarebbe verde su
-/// tutte le altre.
+/// A wide cap stops nothing: the cap is there and the run reaches the end.
+/// Without this, a cap that stopped *always* would be green on all the others.
 #[test]
 fn a_cap_that_is_never_reached_changes_nothing() {
     let (execution, ran) = run_with_cap(Some(1_000_000), 150);
@@ -235,12 +231,12 @@ fn a_cap_that_is_never_reached_changes_nothing() {
     assert_eq!(execution.decisions.last(), Some(&Decision::Complete));
 }
 
-/// **LA CORSA FERMATA DICE ANCHE QUELLO CHE NON SA.**
+/// A stopped run also says what it does not know.
 ///
-/// Un motore che non dichiara il costo lascia una riga senza cifra: la spesa
-/// vera è più alta di quella contata, e chi legge deve vederlo scritto invece di
-/// dedurlo. Qui il primo passo spende ignoto, il secondo spende oltre il tetto,
-/// e il terzo trova la corsa chiusa.
+/// An engine that declares no cost leaves a row with no figure: the real spend
+/// is higher than the counted one, and a reader must see that written rather
+/// than deduce it. Here the first step spends an unknown amount, the second
+/// spends past the cap, and the third finds the run closed.
 #[test]
 fn what_the_cap_does_not_know_is_declared() {
     let store = Arc::new(StoreThatCounts::new());
@@ -265,13 +261,13 @@ fn what_the_cap_does_not_know_is_declared() {
         step("second", "costs", vec!["first".to_owned()]),
         step("third", "costs", vec!["second".to_owned()]),
     ])
-    .expect("grafo valido");
+    .expect("valid graph");
 
     let execution = InProcessExecutor
         .execute(
             &graph,
             ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
                 shared: SharedState::new(),
@@ -281,32 +277,32 @@ fn what_the_cap_does_not_know_is_declared() {
             &actions,
             &Ticking(AtomicI64::new(0)),
         )
-        .expect("l'esecuzione non è un guasto");
+        .expect("the execution is not a fault");
 
     let Some(Decision::CapReached(stop)) = execution.decisions.last() else {
-        panic!("doveva fermarsi al tetto");
+        panic!("it should have stopped at the cap");
     };
-    assert_eq!(stop.spent.calls, 2, "due chiamate in tutto");
+    assert_eq!(stop.spent.calls, 2, "two calls in all");
     assert_eq!(
         stop.spent.calls_without_cost, 1,
-        "una delle due non ha detto quanto è costata"
+        "one of the two never said what it cost"
     );
     assert!(
         !stop.spent.is_complete(),
-        "e il totale si dichiara incompleto, invece di passare per esatto"
+        "and the total declares itself incomplete instead of passing for exact"
     );
 }
 
-/// **IL FRONTE SI STRINGE QUANDO IL RESIDUO SI STRINGE.**
+/// The front narrows when the remainder narrows.
 ///
-/// Quattro passi indipendenti, tetto e prezzi scelti perché nel residuo ne
-/// stiano due: partono a due per volta invece che a quattro. Il numero non è
-/// una preferenza — con quattro chiamate in volo lo sforamento peggiore è
-/// quattro volte la più cara, e nessuna delle quattro sa delle altre.
+/// Four independent steps, with cap and prices chosen so two fit in the
+/// remainder: they start two at a time instead of four. The number is not a
+/// preference — with four calls in flight the worst overshoot is four times the
+/// dearest, and none of the four knows about the others.
 #[test]
 fn the_front_narrows_as_the_money_runs_out() {
     let store = Arc::new(StoreThatCounts::new());
-    // Una chiamata già fatta, da 100: da lì viene la stima del caso peggiore.
+    // One call already made, at 100: the worst-case estimate comes from it.
     store.charge(100);
     let together = Arc::new(Mutex::new(Vec::new()));
     let mut actions = flow::ActionRegistry::default();
@@ -322,36 +318,35 @@ fn the_front_narrows_as_the_money_runs_out() {
             .map(|n| step(&format!("s{n}"), "counts", vec![]))
             .collect(),
     )
-    .expect("grafo valido");
+    .expect("valid graph");
 
     InProcessExecutor
         .execute(
             &graph,
             ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
                 shared: SharedState::new(),
-                // Speso 100, tetto 350: ne restano 250, e nella più cara vista
-                // (100) ce ne stanno due.
+                // Spent 100, cap 350: 250 remain, and two of the dearest seen
+                // (100) fit inside that.
                 spend_cap_micros: Some(350),
             },
             store.as_ref(),
             &actions,
             &Ticking(AtomicI64::new(0)),
         )
-        .expect("l'esecuzione non è un guasto");
+        .expect("the execution is not a fault");
 
     let seen = together.lock().unwrap_or_else(|held| held.into_inner());
     let most_at_once = seen.iter().copied().max().unwrap_or(0);
     assert_eq!(
         most_at_once, 2,
-        "il residuo ne consentiva due per volta, non quattro: {seen:?}"
+        "the remainder allowed two at a time, not four: {seen:?}"
     );
 }
 
-/// Un'azione che dice quanti erano vivi insieme a lei nel momento in cui è
-/// entrata.
+/// An action that reports how many were alive alongside it when it entered.
 struct CountsCompany {
     live: Arc<AtomicUsize>,
     most: Arc<Mutex<Vec<usize>>>,
@@ -360,20 +355,20 @@ struct CountsCompany {
 impl Action for CountsCompany {
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let now_live = self.live.fetch_add(1, Ordering::SeqCst) + 1;
-        // Abbastanza da lasciare che i compagni di ondata entrino: senza questa
-        // pausa un gruppo di due potrebbe sfilare uno alla volta e sembrare uno.
+        // Long enough to let the wave's companions enter: without this pause a
+        // group of two could file past one at a time and look like one.
         std::thread::sleep(std::time::Duration::from_millis(50));
         self.most
             .lock()
             .unwrap_or_else(|held| held.into_inner())
             .push(now_live.max(self.live.load(Ordering::SeqCst)));
         self.live.fetch_sub(1, Ordering::SeqCst);
-        Ok(ActionOutcome::Went(json!("fatto")))
+        Ok(ActionOutcome::Went(json!("done")))
     }
 }
 
-/// Il fatto che tiene insieme le prove sopra: un passo che gira è un passo
-/// chiuso come `Went` nel deposito, non solo un contatore che sale.
+/// The fact holding the tests above together: a step that runs is a step closed
+/// as `Went` in the store, not just a counter going up.
 #[test]
 fn the_step_that_ran_is_closed_in_the_store() {
     let store = Arc::new(StoreThatCounts::new());
@@ -392,7 +387,7 @@ fn the_step_that_ran_is_closed_in_the_store() {
         .execute(
             &two_in_a_row(),
             ExecutionRequest {
-                run_id: "corsa".to_owned(),
+                run_id: "run".to_owned(),
                 root_inputs: Default::default(),
                 gates: vec![],
                 shared: SharedState::new(),
@@ -402,10 +397,10 @@ fn the_step_that_ran_is_closed_in_the_store() {
             &actions,
             &Ticking(AtomicI64::new(0)),
         )
-        .expect("l'esecuzione non è un guasto");
+        .expect("the execution is not a fault");
 
-    let records = store.records("corsa").expect("leggere i passi");
-    assert_eq!(records.len(), 1, "il secondo non è mai stato aperto");
+    let records = store.records("run").expect("read the steps");
+    assert_eq!(records.len(), 1, "the second was never opened");
     assert_eq!(records[0].step_id, "first");
     assert_eq!(records[0].outcome, Some(Outcome::Went));
 }

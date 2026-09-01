@@ -110,10 +110,7 @@ pub fn default_registry(
     // that asked for it is the opacity this step was built against.
     registry.register(
         flow::subflow::SUBFLOW_ACTION,
-        flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(
-            ledger.clone(),
-            watcher,
-        ))),
+        flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(ledger.clone(), watcher))),
     );
     if let Some(ledger) = ledger {
         actions::store::register_store(&mut registry, ledger.clone());
@@ -205,9 +202,15 @@ mod tests {
             )
             .expect("the run goes");
 
-        let shared = seen.lock().expect("the recorder").clone().expect("the step ran");
+        let shared = seen
+            .lock()
+            .expect("the recorder")
+            .clone()
+            .expect("the step ran");
         assert_eq!(
-            shared.get(flow::WORKSPACE_ROOT).and_then(|root| root.as_str()),
+            shared
+                .get(flow::WORKSPACE_ROOT)
+                .and_then(|root| root.as_str()),
             Some("/una/radice"),
             "the root must reach the action without the action asking for it"
         );

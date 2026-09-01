@@ -515,8 +515,13 @@ pub enum CheckResult {
     /// il ramo riuscito: un comando fallito non ha prodotto la lettura che gli
     /// è stata chiesta, e offrirla lì vorrebbe dire leggere da uno strumento
     /// rotto.
-    Passed { stdout: String },
-    Failed { code: Option<i32>, stderr: String },
+    Passed {
+        stdout: String,
+    },
+    Failed {
+        code: Option<i32>,
+        stderr: String,
+    },
     TimedOut,
 }
 
@@ -876,9 +881,8 @@ impl DryProbe for RealDryProbe {
             // Un rifiuto è un'uscita non-zero, quindi il caso normale sta qui;
             // ma un motore che esce **zero** senza domanda è a maggior ragione
             // qualcosa da guardare, e buttarlo via lo nasconderebbe.
-            EngineResult::Ok { stdout, stderr } | EngineResult::ExitError { stdout, stderr, .. } => {
-                DryRun::Answered { stdout, stderr }
-            }
+            EngineResult::Ok { stdout, stderr }
+            | EngineResult::ExitError { stdout, stderr, .. } => DryRun::Answered { stdout, stderr },
             EngineResult::TimedOut => DryRun::NoAnswer {
                 why: format!(
                     "nessuna risposta entro {} secondi",
@@ -2344,7 +2348,12 @@ struct Spent {
 /// Un fallimento del deposito non rompe il passo: la misura è al servizio del
 /// lavoro, non il contrario, e far fallire una chiamata già riuscita perché non
 /// si è potuto annotarla sarebbe il contrario di ciò che si sta costruendo.
-fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: &[String], spent: Spent) {
+fn record_the_call(
+    record: &Recording<'_>,
+    candidate: &Candidate,
+    tried_before: &[String],
+    spent: Spent,
+) {
     let Some(cli) = candidate.id.as_deref() else {
         // Un `bin` scritto a mano nel passo non è una chiamata a un modello:
         // `sh -c echo` non consuma nessuna quota, e riempirne il deposito
@@ -2373,7 +2382,9 @@ fn record_the_call(record: &Recording<'_>, candidate: &Candidate, tried_before: 
         .model
         .as_deref()
         .and_then(|name| price_list.find(name));
-    let prices = entry.map(models::pricing::Price::micros).unwrap_or_default();
+    let prices = entry
+        .map(models::pricing::Price::micros)
+        .unwrap_or_default();
     let cost_micros = models::pricing::cost_micros(
         models::pricing::TokenCounts {
             input: reading.input_tokens,
@@ -2818,11 +2829,7 @@ impl Action for ExternalEngineAction {
         }
     }
 
-    fn execute(
-        &self,
-        input: &Value,
-        shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         // Dove annotare la spesa. Si costruisce qui perché `shared` più avanti
         // non c'è più, ed è `None` — cioè non si annota niente — se manca il
@@ -2997,11 +3004,7 @@ impl Action for ShellCheckAction {
         }
     }
 
-    fn execute(
-        &self,
-        input: &Value,
-        shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         let spec: CheckSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
@@ -3064,7 +3067,9 @@ impl Action for ShellCheckAction {
         // pretende già dal motore, e lasciarlo passare accanto al valore
         // renderebbe la forma un ornamento.
         let answer = shaped_answer(shape, &said)?;
-        Ok(ActionOutcome::Went(json!({ "status": status, "answer": answer })))
+        Ok(ActionOutcome::Went(
+            json!({ "status": status, "answer": answer }),
+        ))
     }
 
     /// Una verifica interrotta si rifà: il suo mestiere è rileggere il mondo
@@ -3211,10 +3216,11 @@ mod tests {
 
     impl LiveSink for Recorder {
         fn chunk(&self, pipe: Pipe, bytes: &[u8]) {
-            self.chunks
-                .lock()
-                .expect("nessuno panica qui")
-                .push((self.start.elapsed(), pipe, bytes.to_vec()));
+            self.chunks.lock().expect("nessuno panica qui").push((
+                self.start.elapsed(),
+                pipe,
+                bytes.to_vec(),
+            ));
         }
     }
 
@@ -3282,8 +3288,14 @@ mod tests {
         let err = String::from_utf8_lossy(&recorder.joined(Pipe::Stderr)).into_owned();
         assert!(out.contains("di-fuori"), "stdout consegnato: {out:?}");
         assert!(err.contains("di-errore"), "stderr consegnato: {err:?}");
-        assert!(!out.contains("di-errore"), "stderr finito su stdout: {out:?}");
-        assert!(!err.contains("di-fuori"), "stdout finito su stderr: {err:?}");
+        assert!(
+            !out.contains("di-errore"),
+            "stderr finito su stdout: {out:?}"
+        );
+        assert!(
+            !err.contains("di-fuori"),
+            "stdout finito su stderr: {err:?}"
+        );
     }
 
     /// NIENTE PERSO E NIENTE DOPPIO: la somma dei pezzi consegnati è, byte per
@@ -3389,10 +3401,8 @@ mod tests {
         cmd.arg("-c").arg("echo per-la-closure");
         let _ = run_with_timeout_watched(cmd, secs(10), Some(&sink));
         let seen = seen.into_inner().expect("nessuno panica qui");
-        assert!(seen
-            .iter()
-            .any(|(pipe, bytes)| *pipe == Pipe::Stdout
-                && String::from_utf8_lossy(bytes).contains("per-la-closure")));
+        assert!(seen.iter().any(|(pipe, bytes)| *pipe == Pipe::Stdout
+            && String::from_utf8_lossy(bytes).contains("per-la-closure")));
     }
 
     /// DI QUALE PASSO È IL TESTO: l'azione chiede il destinatario alla fabbrica
@@ -3434,8 +3444,9 @@ mod tests {
         }
 
         let factory = Arc::new(Factory::default());
-        let action = ExternalEngineAction::new()
-            .watched_by(Some(Arc::new(FactoryArc(factory.clone())) as Arc<dyn StepSinks>));
+        let action = ExternalEngineAction::new().watched_by(Some(Arc::new(FactoryArc(
+            factory.clone(),
+        )) as Arc<dyn StepSinks>));
         let mut shared = SharedState::new();
         shared.insert(flow::CURRENT_STEP.to_owned(), json!("il-passo-che-parla"));
         let outcome = action
@@ -3449,8 +3460,8 @@ mod tests {
             *factory.asked.lock().expect("nessuno panica qui"),
             vec!["il-passo-che-parla".to_owned()]
         );
-        let said = String::from_utf8_lossy(&factory.said.lock().expect("nessuno panica qui"))
-            .into_owned();
+        let said =
+            String::from_utf8_lossy(&factory.said.lock().expect("nessuno panica qui")).into_owned();
         assert!(said.contains("detto-dal-motore"), "consegnato: {said:?}");
     }
 
@@ -3627,7 +3638,9 @@ mod tests {
         assert_eq!(stray, vec!["prompt".to_owned()]);
         assert!(
             action
-                .unknown_fields(&json!({"tool": "claude-code", "stdin": "ciao", "timeout_secs": 10}))
+                .unknown_fields(
+                    &json!({"tool": "claude-code", "stdin": "ciao", "timeout_secs": 10})
+                )
                 .is_empty(),
             "e su un ingresso scritto bene non nomina niente"
         );
@@ -3643,7 +3656,10 @@ mod tests {
             timeout: secs(5),
             workdir: None,
         };
-        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed { .. }));
+        assert!(matches!(
+            run_shell_check(&invocation),
+            CheckResult::Passed { .. }
+        ));
     }
 
     #[test]
@@ -3684,7 +3700,10 @@ mod tests {
             timeout: secs(5),
             workdir: None,
         };
-        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed { .. }));
+        assert!(matches!(
+            run_shell_check(&invocation),
+            CheckResult::Passed { .. }
+        ));
     }
 
     /// **UNA VERIFICA GIRA DOVE LE SI DICE**, e prima del 31/08/2026 non c'era
@@ -3693,10 +3712,8 @@ mod tests {
     /// ed è il difetto peggiore che una verifica possa avere.
     #[test]
     fn a_check_runs_where_it_is_told() {
-        let elsewhere = std::env::temp_dir().join(format!(
-            "sailor-verifica-altrove-{}",
-            std::process::id()
-        ));
+        let elsewhere =
+            std::env::temp_dir().join(format!("sailor-verifica-altrove-{}", std::process::id()));
         std::fs::create_dir_all(&elsewhere).expect("cartella di prova");
         std::fs::write(elsewhere.join("il-testimone"), "x").expect("testimone");
         let invocation = CheckInvocation {
@@ -3706,7 +3723,10 @@ mod tests {
             workdir: Some(elsewhere.display().to_string()),
         };
 
-        assert!(matches!(run_shell_check(&invocation), CheckResult::Passed { .. }));
+        assert!(matches!(
+            run_shell_check(&invocation),
+            CheckResult::Passed { .. }
+        ));
 
         let _ = std::fs::remove_dir_all(&elsewhere);
     }
@@ -3722,7 +3742,9 @@ mod tests {
             "timeout_secs": 5
         });
         let mut shared = SharedState::new();
-        let outcome = action.execute(&input, &mut shared).expect("l'azione non fallisce");
+        let outcome = action
+            .execute(&input, &mut shared)
+            .expect("l'azione non fallisce");
         let ActionOutcome::Went(output) = outcome else {
             panic!("un'azione motore riuscita è sempre Went")
         };
@@ -3811,7 +3833,11 @@ mod tests {
             .expect_err("un motore che non parte rompe il passo");
 
         assert_eq!(error.class, "engine_spawn_failed");
-        assert!(error.said.contains("/nessun/binario/qui-di-sicuro"), "{}", error.said);
+        assert!(
+            error.said.contains("/nessun/binario/qui-di-sicuro"),
+            "{}",
+            error.said
+        );
     }
 
     #[test]
@@ -4311,7 +4337,8 @@ mod tests {
         }
 
         let dir = scratch("catena-senza-parole");
-        let action = ExternalEngineAction::resolving_with(NoMarks(engine_that_says_it_is_out(&dir)));
+        let action =
+            ExternalEngineAction::resolving_with(NoMarks(engine_that_says_it_is_out(&dir)));
         let input = json!({"tool": ["esaurito", "vivo"], "timeout_secs": 10});
 
         let error = action
@@ -4566,8 +4593,7 @@ mod tests {
 
         assert_eq!(output["status"], "ok");
         assert_eq!(
-            output["stdout"],
-            "Esegui solo la tua sezione.\n=== PER CODEX ===\nconta i ganci morti",
+            output["stdout"], "Esegui solo la tua sezione.\n=== PER CODEX ===\nconta i ganci morti",
             "il motore ha ricevuto sull'ingresso ciò che il passo prima ha scritto"
         );
     }
@@ -4601,12 +4627,19 @@ mod tests {
                 .map_err(|error| error.class)
         };
 
-        assert_eq!(verdict("ho guardato i file\nVERDETTO: APPROVATO\n"), Ok("passed".to_owned()));
+        assert_eq!(
+            verdict("ho guardato i file\nVERDETTO: APPROVATO\n"),
+            Ok("passed".to_owned())
+        );
         assert_eq!(
             verdict("mancano due sezioni\nVERDETTO: RESPINTO\n"),
             Err("check_failed".to_owned())
         );
-        assert_eq!(verdict(""), Err("check_failed".to_owned()), "un motore muto non approva");
+        assert_eq!(
+            verdict(""),
+            Err("check_failed".to_owned()),
+            "un motore muto non approva"
+        );
     }
 
     /// Una verifica fallita rompe il passo, e chi vuole ramificarci sopra lo
@@ -4902,7 +4935,9 @@ mod tests {
         let reached = asked
             .iter()
             .position(|&one| one == MAX_POLL_PAUSE)
-            .unwrap_or_else(|| panic!("mezzo secondo deve bastare per arrivare al tetto: {asked:?}"));
+            .unwrap_or_else(|| {
+                panic!("mezzo secondo deve bastare per arrivare al tetto: {asked:?}")
+            });
         let (climbing, at_cap) = asked.split_at(reached);
         assert!(
             !climbing.is_empty(),
@@ -4934,10 +4969,8 @@ mod what_it_cost {
     use std::os::unix::fs::PermissionsExt;
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "sailor-consumo-{}-{name}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-consumo-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("cartella di lavoro");
         dir
@@ -4999,7 +5032,9 @@ mod what_it_cost {
     }
 
     fn path(keys: &[&str]) -> Option<Pointer> {
-        Some(Pointer::Path(keys.iter().map(|k| (*k).to_owned()).collect()))
+        Some(Pointer::Path(
+            keys.iter().map(|k| (*k).to_owned()).collect(),
+        ))
     }
 
     /// La ricetta di un motore che sa dire quanto ha consumato: chiede
@@ -5091,7 +5126,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     fn with_price_list<T>(price_list: Option<&std::path::Path>, body: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match price_list {
             Some(path) => std::env::set_var(PRICING_ENV, path),
             None => std::env::set_var(PRICING_ENV, "/nessun/listino/qui"),
@@ -5244,7 +5281,11 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn a_failed_call_still_writes_its_row_with_the_cause() {
         let dir = scratch("fallita");
-        let bin = fake_engine(&dir, "motore", "cat > /dev/null\necho 'è andata male' >&2\nexit 3");
+        let bin = fake_engine(
+            &dir,
+            "motore",
+            "cat > /dev/null\necho 'è andata male' >&2\nexit 3",
+        );
         let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
         let action = ExternalEngineAction::resolving_with(Declares {
             bin,
@@ -5416,8 +5457,16 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     #[test]
     fn a_tolerated_refusal_is_recorded_as_exhausted_whatever_the_exit_code() {
         for (name, exit, script) in [
-            ("zero", 0, "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 0"),
-            ("uno", 1, "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 1"),
+            (
+                "zero",
+                0,
+                "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 0",
+            ),
+            (
+                "uno",
+                1,
+                "cat > /dev/null\necho \"You've hit your weekly limit\"\nexit 1",
+            ),
         ] {
             let dir = scratch(&format!("esaurito-tollerato-{name}"));
             let bin = fake_engine(&dir, "motore-esaurito", script);
@@ -5442,7 +5491,10 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 action.execute(&input, &mut shared(&format!("corsa-{name}"), "passo-1"))
             })
             .unwrap_or_else(|error| {
-                panic!("il passo tollera il fallimento, non deve rompersi: {}", error.said)
+                panic!(
+                    "il passo tollera il fallimento, non deve rompersi: {}",
+                    error.said
+                )
             });
             assert!(
                 matches!(outcome, ActionOutcome::Went(_)),
@@ -5758,7 +5810,9 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
     /// costo, e dipendere dal file di casa di chi esegue le prove sarebbe un
     /// modo di venire diversi senza che niente sia cambiato.
     fn with_profiles_state<T>(state: &std::path::Path, body: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::env::set_var("PROFILES_STATE_PATH", state);
         std::env::set_var(PRICING_ENV, "/nessun/listino/qui");
         let out = body();
@@ -6015,8 +6069,8 @@ mod resuming_instead_of_rediscovering {
     use std::os::unix::fs::PermissionsExt;
 
     fn scratch(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("sailor-sessione-{}-{name}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("sailor-sessione-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("cartella di lavoro");
         dir
@@ -6209,7 +6263,12 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
 
         ran(&action, &step_that(json!("open")), "corsa-2", "scopri");
         for step in ["struttura", "rischi", "attrito"] {
-            ran(&action, &step_that(json!({ "fork": "scopri" })), "corsa-2", step);
+            ran(
+                &action,
+                &step_that(json!({ "fork": "scopri" })),
+                "corsa-2",
+                step,
+            );
         }
 
         let trunk = ledger
@@ -6250,15 +6309,27 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         .recording_to(Some(ledger.clone()));
 
         ran(&action, &step_that(json!("open")), "corsa-3", "scopri");
-        ran(&action, &step_that(json!({ "resume": "scopri" })), "corsa-3", "piano");
-        ran(&action, &step_that(json!({ "resume": "piano" })), "corsa-3", "implementa");
+        ran(
+            &action,
+            &step_that(json!({ "resume": "scopri" })),
+            "corsa-3",
+            "piano",
+        );
+        ran(
+            &action,
+            &step_that(json!({ "resume": "piano" })),
+            "corsa-3",
+            "implementa",
+        );
 
         let trunk = ledger
             .session_opened_by("corsa-3", "scopri", TOOL)
             .expect("il deposito risponde")
             .expect("il tronco è registrato");
         assert_eq!(
-            ledger.session_opened_by("corsa-3", "piano", TOOL).expect("risponde"),
+            ledger
+                .session_opened_by("corsa-3", "piano", TOOL)
+                .expect("risponde"),
             Some(trunk.clone()),
             "chi riprende non cambia sessione, e per questo la può passare avanti"
         );
@@ -6292,7 +6363,12 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         .recording_to(Some(ledger.clone()));
 
         ran(&action, &step_that(json!("open")), "corsa-4", "scopri");
-        ran(&action, &step_that(json!({ "fork": "scopri" })), "corsa-4", "rischi");
+        ran(
+            &action,
+            &step_that(json!({ "fork": "scopri" })),
+            "corsa-4",
+            "rischi",
+        );
 
         let lines = invocations(&dir);
         assert_eq!(
@@ -6310,14 +6386,19 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         let dir = scratch("muto");
         let bin = fake_engine(&dir);
         let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
-        let action = ExternalEngineAction::resolving_with(Declares { bin, sessions: None })
-            .recording_to(Some(ledger.clone()));
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            sessions: None,
+        })
+        .recording_to(Some(ledger.clone()));
 
         ran(&action, &step_that(json!("open")), "corsa-5", "scopri");
 
         assert_eq!(invocations(&dir), vec!["--ask".to_owned()]);
         assert_eq!(
-            ledger.session_opened_by("corsa-5", "scopri", TOOL).expect("risponde"),
+            ledger
+                .session_opened_by("corsa-5", "scopri", TOOL)
+                .expect("risponde"),
             None,
             "non c'è nessuna sessione da registrare, e non se ne inventa una"
         );
@@ -6370,22 +6451,42 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
         .recording_to(Some(ledger.clone()));
 
         ran(&action, &step_that(json!("open")), "corsa-7", "scopri");
-        ran(&action, &step_that(json!({ "fork": "scopri" })), "corsa-7", "rischi");
-        ran(&action, &step_that(json!({ "fork": "rischi" })), "corsa-7", "dettaglio");
+        ran(
+            &action,
+            &step_that(json!({ "fork": "scopri" })),
+            "corsa-7",
+            "rischi",
+        );
+        ran(
+            &action,
+            &step_that(json!({ "fork": "rischi" })),
+            "corsa-7",
+            "dettaglio",
+        );
 
         assert_eq!(
-            ledger.session_opened_by("corsa-7", "scopri", TOOL).expect("risponde"),
+            ledger
+                .session_opened_by("corsa-7", "scopri", TOOL)
+                .expect("risponde"),
             Some("sessione-1".to_owned()),
             "l'identificativo lo dice il motore, non lo decidiamo noi"
         );
         assert_eq!(
-            ledger.session_opened_by("corsa-7", "rischi", TOOL).expect("risponde"),
+            ledger
+                .session_opened_by("corsa-7", "rischi", TOOL)
+                .expect("risponde"),
             Some("sessione-2".to_owned()),
             "e il ramo ha il proprio, non quello del tronco"
         );
         let lines = invocations(&dir);
-        assert_eq!(lines[1], "--ask fork sessione-1", "il ramo parte dal tronco");
-        assert_eq!(lines[2], "--ask fork sessione-2", "e il ramo dopo parte dal ramo");
+        assert_eq!(
+            lines[1], "--ask fork sessione-1",
+            "il ramo parte dal tronco"
+        );
+        assert_eq!(
+            lines[2], "--ask fork sessione-2",
+            "e il ramo dopo parte dal ramo"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -6413,7 +6514,9 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
 
         assert_eq!(invocations(&dir), vec!["--ask".to_owned()]);
         assert_eq!(
-            ledger.session_opened_by("corsa-8", "scopri", TOOL).expect("risponde"),
+            ledger
+                .session_opened_by("corsa-8", "scopri", TOOL)
+                .expect("risponde"),
             None,
             "una sessione che non si sa nominare resta senza nome nel deposito"
         );
@@ -6427,7 +6530,10 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
     fn two_sessions_never_get_the_same_identifier() {
         let mut seen = std::collections::BTreeSet::new();
         for _ in 0..1000 {
-            assert!(seen.insert(fresh_session_id()), "un identificativo ripetuto");
+            assert!(
+                seen.insert(fresh_session_id()),
+                "un identificativo ripetuto"
+            );
         }
         // E la forma è quella che le righe di comando chiedono: cinque gruppi
         // separati da trattini, la versione al posto giusto.

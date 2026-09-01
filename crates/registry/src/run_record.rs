@@ -126,9 +126,9 @@ fn write_run(
     run: FlowRun<'_>,
     parent_run_id: Option<String>,
 ) -> Result<(), String> {
-    let spent = ledger.spent_in_run(run.run_id).map_err(|error| {
-        format!("cannot read the spend of run {}: {error}", run.run_id)
-    })?;
+    let spent = ledger
+        .spent_in_run(run.run_id)
+        .map_err(|error| format!("cannot read the spend of run {}: {error}", run.run_id))?;
     ledger
         .record_run(&RunRecord {
             run_id: run.run_id.to_owned(),

@@ -36,14 +36,12 @@ impl ValueSchema {
         self.validate_at(value, "$".to_owned())
     }
 
-    /// Vero se questo schema accetterebbe un campo con questo nome.
-    ///
-    /// **SERVE A OFFRIRE UN VALORE SOLO A CHI PUÒ RICEVERLO.** La radice del
-    /// progetto si aggiunge all'ingresso dei passi che non dichiarano un
-    /// `workdir`; aggiungerla a un passo il cui schema è chiuso lo farebbe
-    /// morire su «declared property» — misurato sul passo d'innesco di
-    /// `sviluppa-sailor`, che è chiuso e non ha niente a che fare con una
-    /// cartella di lavoro.
+    /// True if this schema would accept a property under this name, so a value
+    /// is offered only to what can receive it: the project root is added to the
+    /// input of steps that declare no `workdir`, and adding it to a step with a
+    /// closed schema kills it on "declared property". Measured on the trigger
+    /// step of `sviluppa-sailor`, which is closed and has nothing whatever to
+    /// do with a working directory.
     pub fn accepts_property(&self, name: &str) -> bool {
         match self {
             ValueSchema::Any => true,
@@ -56,7 +54,7 @@ impl ValueSchema {
         }
     }
 
-    /// Dice se ogni valore prodotto dal secondo schema è accettato dal primo.
+    /// Whether every value the second schema produces is accepted by the first.
     pub fn accepts(&self, produced: &ValueSchema) -> bool {
         match (self, produced) {
             (ValueSchema::Any, _) => true,
@@ -81,16 +79,12 @@ impl ValueSchema {
             (ValueSchema::Array { items: wanted }, ValueSchema::Array { items: actual }) => {
                 wanted.accepts(actual)
             }
-            // Un elenco scritto dentro un passo arriva qui come «questo valore
-            // preciso», non come «un elenco»: senza questo arco, un campo che
-            // vuole un elenco rifiuta l'unico modo che c'è di scriverne uno.
-            //
-            // **SI È VISTO IL 29/08/2026**, il giorno in cui i passi hanno
-            // smesso di nominare un motore solo per dichiarare una catena: tre
-            // flussi sono diventati «non validi» tutti insieme, e la causa non
-            // era nei flussi. Gli stessi archi per stringhe, numeri e booleani
-            // c'erano già: questo mancava perché fino a quel giorno nessun campo
-            // aveva mai voluto un elenco.
+            // A list written inside a step arrives here as "this exact value",
+            // not as "a list": without this arm, a field that wants a list
+            // refuses the only way there is to write one. Three flows became
+            // "invalid" together the day steps stopped naming a single engine
+            // and declared a chain instead — the cause was not in the flows.
+            // The arms for strings, numbers and booleans were already here.
             (ValueSchema::Array { items }, ValueSchema::OneOf { values }) => {
                 values.iter().all(|value| {
                     value
@@ -220,21 +214,17 @@ mod tests {
 
         let error = schema
             .validate(&json!("remvoe"))
-            .expect_err("valore ignoto");
+            .expect_err("unknown value");
         let message = error.to_string();
         assert!(message.contains("remvoe"), "{message}");
         assert!(message.contains("keep"), "{message}");
         assert!(message.contains("remove"), "{message}");
     }
 
-    /// Un campo che vuole un elenco di stringhe accetta l'elenco scritto dentro
-    /// un passo, che arriva qui come «questo valore preciso».
-    ///
-    /// **SENZA QUESTO, UNA CATENA DI MOTORI NON SI PUÒ SCRIVERE.** Il
-    /// 29/08/2026 tre flussi sono diventati «non validi» tutti insieme appena i
-    /// passi hanno dichiarato `"tool": ["claude-code", "agy"]`, e la causa non
-    /// era nei flussi: mancava questo arco, mentre quelli per stringhe e numeri
-    /// c'erano da sempre.
+    /// A field that wants a list of strings accepts the list written inside a
+    /// step, which arrives here as "this exact value". Without it, a step
+    /// cannot declare an engine chain such as `"tool": ["claude-code", "agy"]`
+    /// at all — the arms for strings and numbers have always been there.
     #[test]
     fn a_field_that_wants_a_list_accepts_the_list_written_in_a_step() {
         let wanted = ValueSchema::Array {
@@ -248,9 +238,9 @@ mod tests {
         assert!(wanted.accepts(&written));
     }
 
-    /// E rifiuta ciò che elenco non è, o che contiene qualcosa che non è una
-    /// stringa: un ripiego dichiarato con un numero dentro non deve passare per
-    /// buono e rompersi al momento di eseguire.
+    /// And refuses what is not a list, or holds something that is not a string:
+    /// a fallback declared with a number inside must not pass here and break at
+    /// execution time.
     #[test]
     fn a_field_that_wants_a_list_of_strings_refuses_anything_else() {
         let wanted = ValueSchema::Array {

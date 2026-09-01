@@ -15,7 +15,16 @@ const PRIVATE_NAMES: &str = "personal/.sailor-notes/private-names";
 fn published_files() -> Vec<PathBuf> {
     let root = repo_root();
     let mut found = Vec::new();
-    for place in ["crates", "desktop/src", "desktop/src-tauri/src", "desktop/scripts", "docs", "design", "flows", ".github"] {
+    for place in [
+        "crates",
+        "desktop/src",
+        "desktop/src-tauri/src",
+        "desktop/scripts",
+        "docs",
+        "design",
+        "flows",
+        ".github",
+    ] {
         walk(&root.join(place), &mut found);
     }
     for file in ["AGENTS.md", "README.md", "Cargo.toml"] {
@@ -120,7 +129,11 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .collect();
-    println!("armed with {} private names from {}", names.len(), list.display());
+    println!(
+        "armed with {} private names from {}",
+        names.len(),
+        list.display()
+    );
     for name in names {
         let hits = occurrences_of(name);
         // The name itself is never echoed: this message is read on a terminal
@@ -141,7 +154,11 @@ fn the_names_this_machine_declares_private_appear_nowhere() {
 fn the_check_can_still_see_the_files_it_reads() {
     let files = published_files();
     println!("{} published files scanned", files.len());
-    assert!(files.len() > 100, "only {} files found: the walker is blind", files.len());
+    assert!(
+        files.len() > 100,
+        "only {} files found: the walker is blind",
+        files.len()
+    );
     assert!(
         !occurrences_of("spend_cap_micros").is_empty(),
         "a string known to be in the sources was not found: the reader is blind"

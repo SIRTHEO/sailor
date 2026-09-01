@@ -1,55 +1,50 @@
-//! I conti che la pagina mostra: dai record del deposito alle strutture
-//! serializzate per la API. Pura — nessuna lettura di disco o di rete —
-//! così le prove rompono i conti senza toccare un `Ledger` vero.
+//! The counts the window shows: from ledger records to the structures the API
+//! serializes. Pure — it reads neither disk nor network — so tests can break
+//! the arithmetic without touching a real `Ledger`.
 
 use flow::{Outcome, StepRecord};
 use ledger::{EngineIdentity, ModelCallRecord, RunRecord};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// Sotto quale nome si raggruppano le chiamate a un motore che non ha detto
-/// quale modello ha usato. Non è un modello: è la dichiarazione che manca.
-pub const MODEL_NOT_DECLARED: &str = "(modello non dichiarato)";
+/// The bucket for calls to an engine that never said which model it used. It
+/// is not a model: it is the missing declaration.
+pub const MODEL_NOT_DECLARED: &str = "(model not declared)";
 
-/// I conti di un insieme di chiamate.
+/// The counts of a set of calls.
 ///
-/// **SI SOMMA SOLO CIÒ CHE SI SA, E SI DICE QUANTO NON SI SA.** Un conteggio
-/// sconosciuto non entra nella somma come zero: uno zero sommato sparisce, e il
-/// totale si presenta come completo mentre è parziale — che è esattamente la
-/// bugia da cui questo lavoro nasce. Accanto ai totali stanno quindi le due
-/// cifre che li qualificano: quante chiamate non hanno detto i propri token, e
-/// quante non hanno un costo. Un totale parziale che dichiara di essere parziale
-/// è una misura; un totale parziale che tace è peggio del non averlo.
+/// **ONLY WHAT IS KNOWN GETS SUMMED, AND HOW MUCH IS UNKNOWN GETS SAID.** An
+/// unknown count added as zero disappears and the total presents itself as
+/// complete while it is partial — exactly the lie this work was born from. So
+/// two figures qualify the totals: calls with no tokens, and calls with no cost.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct TokenTotals {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cached_tokens: u64,
-    /// I token **scritti** in cache, le due durate sommate.
+    /// Tokens **written** to cache, both durations summed.
     ///
-    /// **STANNO A PARTE DA `cached_tokens` PERCHÉ SONO L'OPPOSTO.** Leggere
-    /// dalla cache costa una frazione dell'ingresso; scriverci costa più
-    /// dell'ingresso. Su una chiamata misurata il 30/08/2026 questa voce da sola
-    /// era il 96% della spesa: metterla nella stessa casella di ciò che si legge
-    /// farebbe sembrare economico esattamente ciò che è caro.
+    /// **KEPT APART FROM `cached_tokens` BECAUSE THEY ARE OPPOSITES.** Reading
+    /// from cache costs a fraction of input; writing to it costs more than
+    /// input. On one measured call this entry alone was 96% of the spend, so
+    /// putting it in the same box as reads makes the dear part look cheap.
     pub cache_write_tokens: u64,
-    /// Il totale dichiarato da chi non separa i due lati (Codex e simili).
-    /// Sta a parte perché sommarlo a ingresso e uscita conterebbe due volte i
-    /// motori che dicono tutti e tre i numeri.
+    /// The total declared by engines that never split the two sides (Codex and
+    /// similar). Kept apart because adding it to input and output would count
+    /// twice over the engines that report all three numbers.
     pub total_tokens_only: u64,
     pub cost_micros: i64,
     pub calls: usize,
-    /// Quante di queste chiamate non hanno detto nessun conteggio.
-    /// **QUANTI TURNI IN TUTTO.** Un turno e' un giro del modello dentro una
-    /// sola chiamata, e su una misura del 31/08/2026 e' la quantita' che spiega
-    /// perche' una catena di passi costa piu' di una sessione sola: per turno
-    /// legge l'8% in piu', ma di turni ne fa il doppio. Chi guarda un totale di
-    /// token senza sapere in quanti turni e' stato speso non sa dove
-    /// intervenire.
+    /// **HOW MANY TURNS IN ALL.** A turn is one lap of the model inside a
+    /// single call, and it is the quantity that explains why a chain of steps
+    /// costs more than a single session: per turn it reads 8% more, but it
+    /// takes twice as many turns. Whoever reads a token total without knowing
+    /// across how many turns it was spent cannot tell where to act.
     pub turns: u64,
+    /// How many of these calls reported no counts at all.
     pub calls_without_tokens: usize,
-    /// Quante non hanno un costo: il modello non era nel listino, o il listino
-    /// non aveva il suo prezzo.
+    /// How many have no cost: the model was missing from the price list, or the
+    /// list carried no price for it.
     pub calls_without_cost: usize,
 }
 
@@ -61,7 +56,7 @@ impl TokenTotals {
         self.cache_write_tokens +=
             call.cache_write_tokens.unwrap_or(0) + call.cache_write_long_tokens.unwrap_or(0);
         self.turns += call.turns.unwrap_or(0);
-        // Solo per chi non ha detto i lati: chi li ha detti è già contato sopra.
+        // Only for engines that never reported the sides: the rest are counted above.
         if call.input_tokens.is_none() && call.output_tokens.is_none() {
             self.total_tokens_only += call.total_tokens.unwrap_or(0);
         }
@@ -79,80 +74,79 @@ impl TokenTotals {
         }
     }
 
-    /// Vero se questi totali nascondono qualcosa: chi li mostra deve dirlo.
+    /// True when these totals hide something: whoever shows them must say so.
+    /// A partial total that declares itself partial is a measurement; a partial
+    /// total that stays silent is worse than not having one at all.
     pub fn is_partial(&self) -> bool {
         self.calls_without_tokens > 0 || self.calls_without_cost > 0
     }
 
-    /// Come si legge `cost_micros`: il totale, un pavimento, o niente.
+    /// How `cost_micros` reads: the total, a floor, or nothing.
     ///
-    /// **PASSA DA `Spend` INVECE DI RIFARE LA REGOLA.** La distinzione fra un
-    /// totale e un pavimento la decide l'esecutore, che su di essa ferma una
-    /// corsa al tetto; riscriverla qui darebbe due regole che si confermano a
-    /// vicenda finché non divergono — e a divergere sarebbe quella che una
-    /// persona legge, cioè la sola che nessun tipo controlla.
+    /// **GOES THROUGH `Spend` RATHER THAN RESTATING THE RULE.** The executor
+    /// draws the line between a total and a floor, and stops a run at the cap
+    /// on it; a second copy here would agree until it drifted, and the one that
+    /// drifts is the one a person reads, which no type checks.
     pub fn cost_reading(&self) -> flow::CostReading {
         flow::Spend {
             micros: self.cost_micros,
             calls: self.calls as i64,
             calls_without_cost: self.calls_without_cost as i64,
-            // Non serve a leggere un totale: dice quanto può sforare chi apre
-            // più passi insieme, ed è una domanda di chi decide, non di chi
-            // guarda.
+            // Useless for reading a total: it says how far whoever opens
+            // several steps at once may overshoot, which is a question for
+            // whoever decides, never for whoever looks.
             dearest_micros: None,
         }
         .reading()
     }
 }
 
-/// La cifra del costo come va scritta a una persona, in una riga.
-///
-/// **IL QUALIFICATORE STA DENTRO LA RIGA DEL NUMERO, E QUESTO È TUTTO IL
-/// LAVORO.** Prima esisteva già una nota che diceva «parziale: 3 chiamate senza
-/// costo noto», ed era vera: stava due righe più in basso, e la corsa dell'A/B
-/// del 31/08/2026 è stata letta come 1,6674 dollari mentre ne era costati
-/// 7,2080. Una nota sotto un numero non corregge il numero — lo accompagna, e
-/// chi legge tiene il numero.
-///
-/// **PERCHÉ IL PAVIMENTO E NON L'ELENCO DELLE VOCI.** Le due strade dicevano il
-/// vero tutte e due. Un elenco per chiamata però non risponde alla domanda per
-/// cui si guarda questo comando — «posso lanciarne un'altra?» — e la lascia fare
-/// a mente a chi legge, che sommerà le voci che vede e tornerà al totale
-/// sbagliato. Un pavimento risponde: *tanto è già andato, e non è tutto*.
+/// The cost figure as it must be written to a person, on one line. **THE
+/// QUALIFIER BELONGS INSIDE THE LINE OF THE NUMBER, AND THAT IS THE WHOLE
+/// WORK.** A note «partial: 3 calls with no known cost» already existed and was
+/// true: it sat two lines lower, and the A/B run was read as 1.6674 dollars
+/// when it had cost 7.2080. A note below a number does not correct the number —
+/// it accompanies it, and the reader keeps the number.
 pub fn how_the_cost_reads(reading: &flow::CostReading) -> String {
+    // **WHY THE FLOOR AND NOT THE LIST OF ENTRIES.** Both roads told the truth.
+    // A per-call list, though, does not answer the question this command is
+    // read for — «can I launch another?» — and leaves the reader to do it in
+    // their head, adding up the entries they can see and landing back on the
+    // wrong total. A floor answers: *this much has already gone, and it is not
+    // all of it*.
     match reading {
-        flow::CostReading::Nothing => "costo equivalente: 0 (nessuna chiamata ha speso)".to_owned(),
+        flow::CostReading::Nothing => "equivalent cost: 0 (no call spent anything)".to_owned(),
         flow::CostReading::Exact(micros) => format!(
-            "costo equivalente: {:.4} (quanto sarebbe costato via API, non una spesa)",
+            "equivalent cost: {:.4} (what it would have cost through the API, not an outlay)",
             *micros as f64 / 1_000_000.0
         ),
-        // Senza nemmeno una misura non c'è nessun pavimento da dichiarare:
-        // «almeno 0,0000» è vero, non dice niente, e si legge come una spesa
-        // piccola. È il terzo caso di `Spend` portato fino in fondo.
+        // Without even one measurement there is no floor to declare: «at least
+        // 0.0000» is true, says nothing, and reads as a small outlay. It is the
+        // third case of `Spend`, carried all the way through.
         flow::CostReading::AtLeast {
             known_micros: 0,
             calls,
             ..
         } => format!(
-            "costo equivalente: sconosciuto — nessuna delle {calls} chiamate ha dichiarato \
-             un costo, e il consumo di un passo consegnato è autodichiarato"
+            "equivalent cost: unknown — none of the {calls} calls declared a cost, \
+             and what a delegated step consumes is self-declared"
         ),
         flow::CostReading::AtLeast {
             known_micros,
             calls,
             calls_without_cost,
         } => format!(
-            "costo equivalente: almeno {:.4}, e il vero è più alto — {calls_without_cost} \
-             chiamate su {calls} non sono misurate",
+            "equivalent cost: at least {:.4}, and the true one is higher — \
+             {calls_without_cost} calls out of {calls} are not measured",
             *known_micros as f64 / 1_000_000.0
         ),
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-/// Una singola chiamata come la vede la pagina. I campi facoltativi escono
-/// `null` nel JSON, e la pagina ci scrive un trattino: mai uno `0`, che chi
-/// legge scambierebbe per una misura.
+/// A single call as the window sees it. Optional fields leave as `null` in the
+/// JSON and the window draws a dash there: never a `0`, which a reader would
+/// mistake for a measurement.
 pub struct CallView {
     pub call_id: String,
     pub step_id: Option<String>,
@@ -163,26 +157,26 @@ pub struct CallView {
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub cached_tokens: Option<u64>,
-    /// Scritti in cache: la voce che costa più di tutte, tenuta visibile.
+    /// Written to cache: the dearest entry of all, kept visible.
     pub cache_write_tokens: Option<u64>,
     pub cache_write_long_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
-    /// I turni di questa chiamata: quante volte il modello e' tornato a parlare
-    /// dentro una sola invocazione.
+    /// The turns of this call: how many times the model came back to speak
+    /// inside a single invocation.
     pub turns: Option<u64>,
     pub cost_micros: Option<i64>,
-    /// Quanto il motore ha dichiarato di suo, accanto al conto del listino:
-    /// se i due divergono, la divergenza si vede.
+    /// What the engine declared on its own, beside the price-list figure: when
+    /// the two diverge, the divergence shows.
     pub declared_cost_micros: Option<i64>,
     pub error_type: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
-    /// Con quale identità il processo di questa chiamata è partito.
+    /// Which identity the process behind this call started under.
     ///
-    /// **VIAGGIA FINO A QUI PERCHÉ QUALCUNO LA GUARDI.** Il 01/09/2026 il dato
-    /// era scritto nel deposito, riletto dentro una struttura, e non arrivava a
-    /// nessuna schermata né a nessun comando: un dato raccolto e mai guardato è
-    /// a un passo dal diventare un dato sbagliato che nessuno nota.
+    /// **IT TRAVELS THIS FAR SO THAT SOMEBODY LOOKS AT IT.** The value used to
+    /// be written to the ledger, read back into a struct, and reach no screen
+    /// and no command: data gathered and never looked at is one step away from
+    /// becoming wrong data that nobody notices.
     pub engine_identity: EngineIdentity,
 }
 
@@ -215,9 +209,9 @@ pub struct ExecutionView {
     pub calls: Vec<CallView>,
 }
 
-/// Riduce la storia di un'esecuzione — passi e chiamate — a un'unica vista.
-/// Un passo conta per il suo ultimo tentativo soltanto: un fallimento seguito
-/// da un successo non deve contare come due passi.
+/// Reduces the history of a run — steps and calls — to a single view. A step
+/// counts for its latest attempt alone: a failure followed by a success must
+/// never count as two steps.
 pub fn summarize_run(
     run: &RunRecord,
     steps: &[StepRecord],
@@ -264,10 +258,10 @@ pub fn summarize_run(
         .iter()
         .map(|call| {
             tokens.add(call);
-            // Un motore a riga di comando non nomina sempre il modello che ha
-            // servito la chiamata. Raggruppare quelle righe sotto una chiave
-            // vuota le renderebbe invisibili nell'elenco per modello: qui hanno
-            // un nome che dice cosa sono.
+            // A command-line engine does not always name the model that served
+            // the call. Grouping those rows under an empty key would make them
+            // invisible in the per-model list; here they carry a name that says
+            // what they are.
             let by_model = if call.actual_model.trim().is_empty() {
                 MODEL_NOT_DECLARED.to_owned()
             } else {
@@ -320,19 +314,17 @@ pub fn summarize_run(
     }
 }
 
-/// Sotto quali identità le chiamate di una corsa sono partite, e quante per
-/// ciascuna, **nell'ordine in cui sono comparse**.
+/// Which identities a run's calls started under, and how many each, **in the
+/// order they appeared**.
 ///
-/// **PERCHÉ UN ELENCO E NON UNA SOLA.** Una corsa può cambiare identità a metà:
-/// un passo che scrive da sé la casa, un motore di ripiego che non è quello
-/// conosciuto, un passo consegnato a un agente. Mostrare la prima e tacere le
-/// altre farebbe sembrare uniforme proprio la corsa su cui c'è da guardare.
-///
-/// L'ordine è quello di comparsa e non quello del conteggio: chi legge un
-/// rapporto sta ricostruendo cosa è successo, e la cronologia è il filo che
-/// segue. `EngineIdentity` non è ordinabile — e non deve diventarlo per far
-/// stare un dato dentro una mappa.
+/// **WHY A LIST AND NOT ONE.** A run can change identity halfway: a step that
+/// writes its own home, a fallback engine that is not the known one, a step
+/// delegated to an agent. Showing the first makes a mixed run look uniform.
 pub fn identities_of(calls: &[CallView]) -> Vec<(EngineIdentity, usize)> {
+    // Order of appearance and not of count: whoever reads a report is
+    // reconstructing what happened, and the chronology is the thread they
+    // follow. `EngineIdentity` is not orderable — and must not become so just
+    // to fit a datum inside a map.
     let mut seen: Vec<(EngineIdentity, usize)> = Vec::new();
     for call in calls {
         match seen
@@ -346,7 +338,7 @@ pub fn identities_of(calls: &[CallView]) -> Vec<(EngineIdentity, usize)> {
     seen
 }
 
-/// Costruisce la storia completa, più recenti in cima.
+/// Builds the full history, most recent at the top.
 pub fn build_executions(
     runs: &[RunRecord],
     steps_by_run: &BTreeMap<String, Vec<StepRecord>>,
@@ -378,7 +370,7 @@ mod tests {
             kind: "sweep".to_owned(),
             entity: "marker-sweep".to_owned(),
             parent_run_id: None,
-            started_by: "prova".to_owned(),
+            started_by: "test".to_owned(),
             status: "running".to_owned(),
             total_cost_micros: 0,
             error: None,
@@ -394,18 +386,38 @@ mod tests {
         outcome: Option<Outcome>,
         started_at: i64,
     ) -> StepRecord {
-        let mut record =
-            StepRecord::started("run-1", step_id, attempt, epoch, vec![], json!({}), vec![], started_at);
+        let mut record = StepRecord::started(
+            "run-1",
+            step_id,
+            attempt,
+            epoch,
+            vec![],
+            json!({}),
+            vec![],
+            started_at,
+        );
         record.outcome = outcome;
         record.ended_at = outcome.map(|_| started_at + 1);
         record
     }
 
-    fn call(actual_model: &str, input: u64, output: u64, cached: u64, cost: i64) -> ModelCallRecord {
-        measured(actual_model, Some(input), Some(output), Some(cached), Some(cost))
+    fn call(
+        actual_model: &str,
+        input: u64,
+        output: u64,
+        cached: u64,
+        cost: i64,
+    ) -> ModelCallRecord {
+        measured(
+            actual_model,
+            Some(input),
+            Some(output),
+            Some(cached),
+            Some(cost),
+        )
     }
 
-    /// Una chiamata con i conteggi come li si vuole, compreso «non li so».
+    /// A call with whatever counts you want, «unknown» included.
     pub(super) fn measured(
         actual_model: &str,
         input: Option<u64>,
@@ -417,7 +429,7 @@ mod tests {
             call_id: format!("call-{actual_model}-{input:?}-{cost:?}"),
             run_id: "run-1".to_owned(),
             step_id: None,
-            purpose: "prova".to_owned(),
+            purpose: "test".to_owned(),
             cli: "claude".to_owned(),
             requested_model: actual_model.to_owned(),
             actual_model: actual_model.to_owned(),
@@ -491,29 +503,30 @@ mod tests {
         assert_eq!(view.tokens_by_model["model-b"].input_tokens, 200);
     }
 
-    /// **LA VOCE PIÙ CARA NON DEVE SPARIRE DAI TOTALI.**
-    ///
-    /// I numeri sono quelli di una corsa vera del 30/08/2026: 2 token
-    /// d'ingresso, 4 d'uscita, 13.180 letti dalla cache e 8.961 scritti. Se la
-    /// scrittura non entrasse nei totali, la vista mostrerebbe una corsa da
-    /// quindicimila token e novantasei millesimi di dollaro come se il denaro
-    /// fosse venuto da qualche altra parte — un totale che non si riesce a
-    /// rifare a mano è un totale che nessuno può contestare.
+    /// **THE DEAREST ENTRY MUST NOT VANISH FROM THE TOTALS.** The numbers come
+    /// from a real run: 2 input tokens, 4 output, 13,180 read from cache and
+    /// 8,961 written. Were the writes left out of the totals, the view would
+    /// show a fifteen-thousand-token run costing ninety-six thousandths of a
+    /// dollar as though the money came from somewhere else — and a total nobody
+    /// can redo by hand is a total nobody can dispute.
     #[test]
     fn the_cache_that_was_written_is_counted_and_kept_apart_from_the_one_read() {
         let mut written = call("claude-opus-5[1m]", 2, 4, 13_180, 96_310);
         written.cache_write_long_tokens = Some(8_961);
         let view = summarize_run(&run("run-1", 0, None), &[], &[written], 0);
 
-        assert_eq!(view.tokens.cache_write_tokens, 8_961, "la scrittura si conta");
+        assert_eq!(
+            view.tokens.cache_write_tokens, 8_961,
+            "what was written to cache counts"
+        );
         assert_eq!(
             view.tokens.cached_tokens, 13_180,
-            "e resta separata da ciò che si è letto: sono l'opposto l'uno dell'altro"
+            "and stays apart from what was read: they are opposites"
         );
         assert_eq!(view.tokens.cost_micros, 96_310);
         assert!(
             !view.tokens.is_partial(),
-            "questa chiamata ha dichiarato tutto: il totale non è parziale"
+            "this call declared everything: the total is complete"
         );
     }
 
@@ -536,7 +549,7 @@ mod tests {
 
 #[cfg(test)]
 mod what_is_not_known {
-    //! I conti quando una chiamata non ha detto quanto ha consumato.
+    //! The counts when a call never said how much it consumed.
 
     use super::tests::measured;
     use super::*;
@@ -545,10 +558,10 @@ mod what_is_not_known {
     fn run() -> RunRecord {
         RunRecord {
             run_id: "run-1".to_owned(),
-            kind: "prova".to_owned(),
-            entity: "prova".to_owned(),
+            kind: "test".to_owned(),
+            entity: "test".to_owned(),
             parent_run_id: None,
-            started_by: "prova".to_owned(),
+            started_by: "test".to_owned(),
             status: "succeeded".to_owned(),
             total_cost_micros: 0,
             error: None,
@@ -557,10 +570,10 @@ mod what_is_not_known {
         }
     }
 
-    /// **IL VINCOLO SULLA CHIAREZZA PER CHI GUARDA, IN UN NUMERO.** Una
-    /// chiamata non misurata non entra nella somma come zero. Se lo facesse,
-    /// questi due totali sarebbero identici e chi guarda crederebbe di avere
-    /// una misura completa dove ne ha metà.
+    /// **THE HONESTY CONSTRAINT, IN ONE NUMBER.** An unmeasured call never
+    /// enters the sum as zero. Were it to, these two totals would be identical
+    /// and whoever looked would believe they held a complete measurement where
+    /// they hold half of one.
     #[test]
     fn an_unmeasured_call_is_not_summed_as_zero_and_is_counted_apart() {
         let known = measured("m", Some(100), Some(50), Some(10), Some(500));
@@ -569,23 +582,29 @@ mod what_is_not_known {
         let only_known = summarize_run(&run(), &[], std::slice::from_ref(&known), 20);
         let with_unknown = summarize_run(&run(), &[], &[known, unknown], 20);
 
-        // I token sommati sono gli stessi: quella ignota non ha aggiunto zeri.
-        assert_eq!(with_unknown.tokens.input_tokens, only_known.tokens.input_tokens);
-        assert_eq!(with_unknown.tokens.cost_micros, only_known.tokens.cost_micros);
-        // Ma il totale sa di essere parziale, e dice di quanto.
+        // The summed tokens are the same: the unknown one added no zeros.
+        assert_eq!(
+            with_unknown.tokens.input_tokens,
+            only_known.tokens.input_tokens
+        );
+        assert_eq!(
+            with_unknown.tokens.cost_micros,
+            only_known.tokens.cost_micros
+        );
+        // But the total knows it is partial, and says by how much.
         assert_eq!(with_unknown.tokens.calls, 2);
         assert_eq!(with_unknown.tokens.calls_without_tokens, 1);
         assert_eq!(with_unknown.tokens.calls_without_cost, 1);
         assert!(with_unknown.tokens.is_partial());
         assert!(
             !only_known.tokens.is_partial(),
-            "un totale completo non deve dichiararsi parziale, o l'avviso perde valore"
+            "a complete total must never call itself partial, or the warning stops meaning anything"
         );
     }
 
-    /// Nel JSON che la pagina riceve, uno sconosciuto è `null`. Un `0` sarebbe
-    /// indistinguibile da una misura, e la pagina non avrebbe più modo di
-    /// scriverci un trattino.
+    /// In the JSON the window receives, an unknown is `null`. A `0` would be
+    /// indistinguishable from a measurement, and the window would lose any way
+    /// to draw a dash there.
     #[test]
     fn an_unknown_count_leaves_the_api_as_null_never_as_zero() {
         let view = summarize_run(&run(), &[], &[measured("m", None, None, None, None)], 20);
@@ -597,26 +616,31 @@ mod what_is_not_known {
         assert_eq!(call["cost_micros"], json!(null));
     }
 
-    /// Un motore che dichiara solo il totale — codex e simili — non perde la
-    /// sua unica misura vera, e non la vede sommata a lati che non esistono.
+    /// An engine that declares the total alone — codex and similar — keeps its
+    /// one true measurement, and never sees it added to sides that do not exist.
     #[test]
     fn a_total_only_engine_keeps_its_one_true_measure_apart() {
         let mut total_only = measured("m", None, None, None, None);
         total_only.total_tokens = Some(13_910);
         let view = summarize_run(&run(), &[], &[total_only], 20);
-        assert_eq!(view.tokens.input_tokens, 0, "non ha lati da sommare");
+        assert_eq!(view.tokens.input_tokens, 0, "it has no sides to sum");
         assert_eq!(view.tokens.total_tokens_only, 13_910);
         assert_eq!(
             view.tokens.calls_without_tokens, 0,
-            "un totale dichiarato è una misura: questa chiamata non è fra le mute"
+            "a declared total is a measurement: this call is never among the silent ones"
         );
     }
 
-    /// Un motore che non nomina il modello finisce sotto un nome che dice cosa
-    /// è, non sotto una chiave vuota che nell'elenco per modello sparirebbe.
+    /// An engine that never names the model lands under a name that says what
+    /// it is, rather than an empty key that vanishes from the per-model list.
     #[test]
     fn calls_without_a_declared_model_are_grouped_under_a_name_that_says_so() {
-        let view = summarize_run(&run(), &[], &[measured("", Some(1), Some(1), None, None)], 20);
+        let view = summarize_run(
+            &run(),
+            &[],
+            &[measured("", Some(1), Some(1), None, None)],
+            20,
+        );
         assert!(view.tokens_by_model.contains_key(MODEL_NOT_DECLARED));
         assert!(!view.tokens_by_model.contains_key(""));
     }

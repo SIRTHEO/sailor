@@ -184,7 +184,9 @@ mod tests {
             Some(&"/prova/codex/primo".to_owned())
         );
 
-        store.active.insert("codex".to_owned(), "secondo".to_owned());
+        store
+            .active
+            .insert("codex".to_owned(), "secondo".to_owned());
         let launch = resolve("codex", &store, &[], Path::new("/casa")).unwrap();
         assert_eq!(
             launch.env.get("CODEX_HOME"),
@@ -202,7 +204,9 @@ mod tests {
     #[test]
     fn a_stale_active_name_that_matches_no_profile_is_refused() {
         let mut store = two_profile_store();
-        store.active.insert("codex".to_owned(), "sparito".to_owned());
+        store
+            .active
+            .insert("codex".to_owned(), "sparito".to_owned());
         let error = resolve("codex", &store, &[], Path::new("/casa")).unwrap_err();
         assert!(error.contains("no longer in the state"), "{error}");
     }
@@ -215,7 +219,9 @@ mod tests {
             cli_id: "antigravity".to_owned(),
             home_dir: PathBuf::from("/prova/antigravity/prova"),
         });
-        store.active.insert("antigravity".to_owned(), "prova".to_owned());
+        store
+            .active
+            .insert("antigravity".to_owned(), "prova".to_owned());
         let error = resolve("antigravity", &store, &[], Path::new("/casa")).unwrap_err();
         assert!(error.contains("is not known yet"), "{error}");
     }

@@ -197,11 +197,7 @@ impl Action for HandoffAction {
         }
     }
 
-    fn execute(
-        &self,
-        input: &Value,
-        shared: &SharedState,
-    ) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let live = sink_for_step(&self.watcher, shared);
         // **I RINVII ARRIVANO GIÀ SCIOLTI, E QUI SERVONO PIÙ CHE ALTROVE.** Il
         // mandato di un passo consegnato è quasi sempre il lavoro deciso dal
@@ -358,10 +354,18 @@ mod tests {
     fn before_the_deadline_the_effect_is_unknown() {
         let clock = Arc::new(Mutex::new(1_000i64));
         let reading = Arc::clone(&clock);
-        let action = HandoffAction::new()
-            .at_time(Arc::new(move || *reading.lock().expect("orologio sano")));
-        let mut record =
-            StepRecord::started("run-1", "implementa", 1, 1, vec![], json!(null), vec![], 1_000);
+        let action =
+            HandoffAction::new().at_time(Arc::new(move || *reading.lock().expect("orologio sano")));
+        let mut record = StepRecord::started(
+            "run-1",
+            "implementa",
+            1,
+            1,
+            vec![],
+            json!(null),
+            vec![],
+            1_000,
+        );
         record.input = json!({"handoff_timeout_secs": 600});
         record.started_at = 1_000;
 

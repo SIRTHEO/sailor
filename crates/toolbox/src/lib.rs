@@ -1,24 +1,9 @@
-//! Che cosa si può usare su questa macchina: righe di comando di intelligenza
-//! artificiale, server MCP, e qualunque altro strumento che un flusso potrebbe
-//! voler invocare.
+//! What can be used on this machine: AI command lines, MCP servers, and any
+//! other tool a flow might invoke.
 //!
-//! IL VINCOLO CHE DECIDE TUTTO IL PROGETTO: l'elenco di cosa cercare è un dato,
-//! non codice. In questo crate non compare il nome di nessuno strumento — nessun
-//! `if id == "docker"`, nessun percorso di questa macchina. Il codice sa
-//! eseguire tre forme di verifica: cercare un eseguibile fra le cartelle del
-//! percorso, guardare se un file c'è, e leggere le chiavi di un file di
-//! configurazione. Quali eseguibili, quali file e quali chiavi lo dicono i
-//! descrittori, che si aggiungono scrivendo una riga di JSON.
-//!
-//! I DESCRITTORI SPEDITI COL PRODOTTO SONO DATI COME GLI ALTRI. Stanno in
-//! `descriptors/default.json`, incorporati nel binario perché non ci sia un
-//! percorso di installazione da indovinare, e si riscrivono o si spengono per
-//! `id` da un file dell'utente. Sostituirli non richiede di ricompilare.
-//!
-//! LE DUE RISPOSTE CHE NON VANNO CONFUSE. «Non installato» e «non ho potuto
-//! verificare» sono cose diverse, e un inventario che le mescola è inutile: chi
-//! legge installa una seconda copia di ciò che aveva, o rinuncia a uno strumento
-//! che c'era. Ogni «non so» qui porta il motivo misurato.
+//! THE CONSTRAINT THAT DECIDES THE WHOLE PROJECT: the list of what to look for
+//! is data, not code. No tool name appears in this crate — no `if id ==
+//! "docker"`, no path belonging to this machine.
 
 pub mod action;
 pub mod descriptor;
@@ -28,25 +13,30 @@ pub mod resolver;
 pub mod session;
 
 pub use action::{register_default, DetectToolsAction, DETECT_TOOLS_ACTION};
-pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
 pub use descriptor::{
     builtin_catalog, Capability, CapabilityForm, CapabilityState, Catalog, Contradiction,
     Descriptor, Loaded, Problem, Source, ASK_WITHOUT_INTERACTION, BUILTIN_CATALOGS,
 };
+pub use needs::{register_needs, Need, ToolNeedsAction, TOOL_NEEDS_ACTION};
 pub use probe::{Look, Machine, VersionReading};
 pub use resolver::Tools;
 pub use session::{SessionAbilities, SessionAbility};
 
-// I TIPI DELL'ESITO SI LEGGONO ANCHE IN INGRESSO, dal 29/08/2026: un passo che
-// riceve il rilevamento fatto dal passo prima lo deserializza come qualunque
-// altro dato. Senza `Deserialize` quel passo dovrebbe rovistare in un
-// `serde_json::Value` a puntatori, e il legame fra i due passi diventerebbe una
-// convenzione fra stringhe invece di un tipo.
+// THE OUTCOME TYPES ARE ALSO READ AS INPUT: a step that receives the detection
+// done by the step before it deserializes it like any other data. Without
+// `Deserialize` that step would have to rummage through a `serde_json::Value`
+// with pointers, and the link between the two steps would become a convention
+// between strings instead of a type.
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
-/// C'è, non c'è, o non si è potuto guardare — con il motivo, sempre.
+/// Here, not here, or could not be looked at — always with the reason.
+///
+/// **THE TWO ANSWERS THAT MUST NOT BE MIXED.** "Not installed" and "I could not
+/// check" are different things, and an inventory that mixes them is useless: the
+/// reader installs a second copy of what they already had, or gives up a tool
+/// that was there. Every "don't know" here carries the measured reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", content = "reason", rename_all = "lowercase")]
 pub enum Presence {
@@ -61,48 +51,47 @@ impl Presence {
     }
 }
 
-/// Un posto dove vive la configurazione di uno strumento, e se c'è.
+/// A place where a tool's configuration lives, and whether it is there.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigPath {
     pub path: String,
     pub presence: Presence,
 }
 
-/// Una cosa trovata (o non trovata), con tutto quello che serve per risalire al
-/// perché.
+/// Something found (or not found), with everything needed to trace the why.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Finding {
-    /// Come si chiama la cosa: l'`id` del descrittore, o — per un descrittore
-    /// che scopre più voci da un file — il nome della voce scoperta.
+    /// What the thing is called: the descriptor's `id`, or — for a descriptor
+    /// that discovers several entries from a file — the name of the entry found.
     pub name: String,
     pub family: String,
     pub label: String,
-    /// Da quale descrittore è stata riconosciuta, e da dove viene quel
-    /// descrittore: senza queste due righe «perché è nell'elenco?» non ha
-    /// risposta, e un elenco a cui non si può chiedere conto non si corregge.
+    /// Which descriptor recognised it, and where that descriptor came from:
+    /// without these two lines "why is this in the list?" has no answer, and a
+    /// list that cannot be held to account does not get corrected.
     pub descriptor_id: String,
     pub descriptor_source: String,
     pub presence: Presence,
-    /// Dove sta il suo eseguibile, quando ne ha uno.
+    /// Where its executable is, when it has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub executable: Option<String>,
     pub version: VersionReading,
     pub config: Vec<ConfigPath>,
-    /// La nota del descrittore, per chi legge.
+    /// The descriptor's note, for the reader.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
 }
 
-/// L'esito di un rilevamento.
+/// The outcome of a detection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Report {
     pub findings: Vec<Finding>,
-    /// I descrittori che non si sono potuti leggere. Stanno qui e non fra le
-    /// voci: una riga sbagliata nell'elenco di cosa cercare non è uno strumento
-    /// assente, ed è un guasto di chi ha scritto l'elenco.
+    /// The descriptors that could not be read. They live here and not among the
+    /// entries: a bad line in the list of what to look for is not a missing
+    /// tool, it is a fault of whoever wrote the list.
     pub problems: Vec<Problem>,
-    /// Le cartelle in cui si è cercato un eseguibile, in chiaro: un elenco che
-    /// non dice dove ha guardato non si può smentire.
+    /// The directories an executable was looked for in, spelled out: a list that
+    /// does not say where it looked cannot be contradicted.
     pub looked_in: Vec<String>,
 }
 
@@ -121,8 +110,8 @@ impl Report {
             .collect()
     }
 
-    /// Le famiglie viste, in ordine: chi mostra l'elenco non deve conoscerle in
-    /// anticipo, o una famiglia nuova richiederebbe di ricompilare chi la mostra.
+    /// The families seen, in order: whoever shows the list must not have to know
+    /// them in advance, or a new family would need a recompile of the display.
     pub fn families(&self) -> Vec<String> {
         let mut out: Vec<String> = self.findings.iter().map(|f| f.family.clone()).collect();
         out.sort();
@@ -131,14 +120,12 @@ impl Report {
     }
 }
 
-/// La casa di Sailor per una macchina descritta.
+/// Sailor's home for a described machine.
 ///
-/// **Una riga sola, e chiama il deposito.** Fino al 30/08/2026 questa regola era
-/// riscritta qui e in `trigger`, e la copia sbagliava: ignorava
-/// `XDG_CONFIG_HOME` e cadeva su `~/.sailor`, mentre `ledger::sailor_home` — che
-/// decide dove stanno deposito e listino dei prezzi — cade su `~/.config/sailor`.
-/// Risultato: i descrittori dell'utente in una casa, i prezzi nell'altra, e
-/// nessuno dei due si accorgeva dell'altro.
+/// **ONE RULE, AND IT LIVES IN THE LEDGER.** The hand-written copy that sat here
+/// ignored `XDG_CONFIG_HOME` and fell back to `~/.sailor`; `ledger::sailor_home`,
+/// which decides where store and price list live, falls back to
+/// `~/.config/sailor`. Descriptors in one home, prices in the other, unnoticed.
 pub fn sailor_home_for(machine: &Machine) -> PathBuf {
     ledger::sailor_home_in(
         machine.env.get("SAILOR_HOME").map(PathBuf::from),
@@ -147,11 +134,12 @@ pub fn sailor_home_for(machine: &Machine) -> PathBuf {
     )
 }
 
-/// Le sorgenti da cui si prendono i descrittori su questa macchina.
+/// The sources descriptors are taken from on this machine.
 ///
-/// Nell'ordine in cui vincono: prima quelli spediti, poi quelli dell'utente. Con
-/// `SAILOR_TOOL_DESCRIPTORS` (percorsi separati da `:`, file o cartelle) si
-/// aggiunge dove si vuole senza toccare la casa.
+/// In the order they win: the shipped ones first — embedded in the binary so
+/// there is no installation path to guess, rewritten or switched off **by `id`**
+/// from a user file with no recompile — then the user's. And
+/// `SAILOR_TOOL_DESCRIPTORS` (paths split by `:`, files or dirs) adds more.
 pub fn default_sources(machine: &Machine) -> Vec<Source> {
     let mut out = vec![Source::Builtin];
     out.push(Source::Dir(sailor_home_for(machine).join("tools.d")));
@@ -168,7 +156,12 @@ pub fn default_sources(machine: &Machine) -> Vec<Source> {
     out
 }
 
-/// Il rilevamento: esegue ogni descrittore vivo e raccoglie cosa ha risposto.
+/// The detection: runs every live descriptor and collects what it answered.
+///
+/// The code knows three forms of check and no more: find an executable among the
+/// path directories, see whether a file is there, read the keys of a config
+/// file. Which executables, which files and which keys is said by the
+/// descriptors, and one more is added by writing a line of JSON.
 pub fn detect(catalog: &Catalog, machine: &Machine) -> Report {
     let mut findings = Vec::new();
     for loaded in catalog.live() {
@@ -189,21 +182,17 @@ pub fn detect(catalog: &Catalog, machine: &Machine) -> Report {
     }
 }
 
-/// Cerca **un solo** strumento, per identificativo.
+/// Looks for **one** tool, by identifier.
 ///
-/// Non è `detect` filtrata dopo, ed è una differenza che si paga: eseguire ogni
-/// descrittore per sapere dove sta un binario vuol dire chiedere la versione a
-/// ogni programma installato — decine di processi — ogni volta che un passo di
-/// flusso parte. Qui si esegue una sola riga dell'elenco.
-///
-/// Vale solo per un descrittore con `detect`: uno che *scopre* voci leggendo un
-/// file di configurazione non ha un eseguibile, e chi chiama distingue i due
-/// casi guardando `detect`.
+/// Not `detect` filtered afterwards: that would ask the version of every
+/// installed program — dozens of processes — each time a flow step starts; here
+/// one line of the list runs. Only for a descriptor with `detect`: one that
+/// *discovers* entries has no executable, told apart by looking at `detect`.
 pub fn probe_one(loaded: &Loaded, machine: &Machine) -> Finding {
     probed(loaded, machine)
 }
 
-/// Un descrittore che dice «questa cosa o c'è o non c'è».
+/// A descriptor that says "this thing is either here or not".
 fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
     let descriptor = &loaded.descriptor;
     let probes = descriptor
@@ -217,11 +206,11 @@ fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
     let mut searched: Vec<String> = Vec::new();
     for single in probes {
         if let Some(command) = &single.command {
-            searched.push(format!("l'eseguibile `{command}`"));
+            searched.push(format!("the executable `{command}`"));
             match probe::look_up(command, machine) {
                 Look::Found(path) => {
                     presence = Some(Presence::Present(format!(
-                        "trovato `{command}` in {}",
+                        "found `{command}` in {}",
                         path.to_string_lossy()
                     )));
                     executable = Some(path);
@@ -232,12 +221,12 @@ fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
             }
         }
         if let Some(raw) = &single.path {
-            searched.push(format!("il percorso `{raw}`"));
+            searched.push(format!("the path `{raw}`"));
             for candidate in machine.resolve(raw) {
                 match probe::look_at(&candidate) {
                     Look::Found(path) => {
                         presence = Some(Presence::Present(format!(
-                            "trovato {}",
+                            "found {}",
                             path.to_string_lossy()
                         )));
                         break;
@@ -253,10 +242,10 @@ fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
     }
     let presence = presence.unwrap_or_else(|| {
         if blocked.is_empty() {
-            Presence::Absent(format!("cercato {}: niente", searched.join(", ")))
+            Presence::Absent(format!("looked for {}: nothing", searched.join(", ")))
         } else {
-            // NON SI DICE «ASSENTE» DOVE NON SI È POTUTO GUARDARE, ed è il
-            // motivo per cui questo ramo esiste separato dall'altro.
+            // "ABSENT" IS NOT SAID WHERE NOTHING COULD BE LOOKED AT, which is
+            // why this arm exists separately from the other.
             Presence::Undetermined(blocked.join("; "))
         }
     });
@@ -270,15 +259,15 @@ fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
             )
         }
         (Presence::Present(_), Some(_), Some(_)) => {
-            VersionReading::NotAsked("le esecuzioni sono spente".to_string())
+            VersionReading::NotAsked("executions are switched off".to_string())
         }
         (Presence::Present(_), _, None) => {
-            VersionReading::NotAsked("il descrittore non dice come chiederla".to_string())
+            VersionReading::NotAsked("the descriptor does not say how to ask for it".to_string())
         }
         (Presence::Present(_), None, Some(_)) => {
-            VersionReading::NotAsked("non c'è un eseguibile a cui chiederla".to_string())
+            VersionReading::NotAsked("there is no executable to ask".to_string())
         }
-        _ => VersionReading::NotAsked("non è qui".to_string()),
+        _ => VersionReading::NotAsked("it is not here".to_string()),
     };
     Finding {
         name: descriptor.id.clone(),
@@ -294,7 +283,7 @@ fn probed(loaded: &Loaded, machine: &Machine) -> Finding {
     }
 }
 
-/// Un descrittore che scopre le voci leggendo un file di configurazione.
+/// A descriptor that discovers its entries by reading a configuration file.
 fn discovered(
     loaded: &Loaded,
     enumerate: &descriptor::Enumerate,
@@ -303,17 +292,17 @@ fn discovered(
     let descriptor = &loaded.descriptor;
     let mut out: Vec<Finding> = Vec::new();
     let mut blocked: Vec<String> = Vec::new();
-    // Dove si è guardato, in chiaro: è quello che finisce nel motivo di un
-    // «non c'è», e un elenco vuoto che non dice dove ha cercato non si può
-    // smentire.
+    // Where it looked, spelled out: this is what ends up in the reason for a
+    // "not here", and an empty list that does not say where it searched cannot
+    // be contradicted.
     let mut looked: Vec<String> = Vec::new();
-    // Vero se almeno un posto è stato davvero letto. Senza questa distinzione
-    // «nessuna voce» e «non ho guardato niente» si scrivono uguale.
+    // True once at least one place has really been read. Without this
+    // distinction "no entries" and "I looked at nothing" are written the same.
     let mut read_any = false;
 
     if let Some(json_keys) = &enumerate.json_keys {
         looked.push(format!(
-            "le chiavi sotto {} in {}",
+            "the keys under {} in {}",
             json_keys.pointer.join("/"),
             json_keys.files.join(", ")
         ));
@@ -330,11 +319,11 @@ fn discovered(
                 let value: serde_json::Value = match serde_json::from_str(&text) {
                     Ok(value) => value,
                     Err(error) => {
-                        // UN FILE ILLEGGIBILE NON È UN FILE SENZA VOCI. Contarlo
-                        // come zero farebbe sparire in silenzio tutto ciò che
-                        // dichiara.
+                        // AN UNREADABLE FILE IS NOT A FILE WITHOUT ENTRIES.
+                        // Counting it as zero would silently erase everything it
+                        // declares.
                         blocked.push(format!(
-                            "{} non è JSON valido: {error}",
+                            "{} is not valid JSON: {error}",
                             path.to_string_lossy()
                         ));
                         continue;
@@ -343,7 +332,7 @@ fn discovered(
                 read_any = true;
                 for name in probe::json_keys(&value, &json_keys.pointer) {
                     let evidence = format!(
-                        "dichiarato in {} sotto {}",
+                        "declared in {} under {}",
                         path.to_string_lossy(),
                         json_keys.pointer.join("/")
                     );
@@ -356,11 +345,11 @@ fn discovered(
                         presence: Presence::Present(evidence),
                         executable: None,
                         version: VersionReading::NotAsked(
-                            "è una voce di configurazione, non un binario".to_string(),
+                            "a configuration entry, not a binary".to_string(),
                         ),
                         config: vec![ConfigPath {
                             path: path.to_string_lossy().into_owned(),
-                            presence: Presence::Present("letto".to_string()),
+                            presence: Presence::Present("read".to_string()),
                         }],
                         note: descriptor.note.clone(),
                     });
@@ -370,20 +359,20 @@ fn discovered(
     }
 
     if let Some(patterns) = &enumerate.paths {
-        looked.push(format!("i file che agganciano {}", patterns.join(", ")));
+        looked.push(format!("the files matching {}", patterns.join(", ")));
         for raw in patterns {
             let found = machine.resolve(raw);
             if raw.contains('*') {
-                // UNA CARTELLA CHE NON SI LEGGE NON È UNA CARTELLA VUOTA, e
-                // `glob` non distingue le due: ingoia l'errore di `read_dir` e
-                // restituisce zero percorsi in entrambi i casi. Qui si chiede
-                // direttamente alla radice dello schema, perché «non hai niente
-                // da migrare» detto a chi ha venti servizi è la bugia peggiore
-                // che questo elenco possa dire.
+                // A DIRECTORY THAT CANNOT BE READ IS NOT AN EMPTY DIRECTORY, and
+                // `glob` does not tell the two apart: it swallows the `read_dir`
+                // error and returns zero paths either way. Here the root of the
+                // pattern is asked directly, because "you have nothing to
+                // migrate" told to someone with twenty services is the worst lie
+                // this list can tell.
                 match read_dir_state(&machine.expand(raw)) {
                     DirState::Readable => read_any = true,
                     DirState::Missing(where_) => {
-                        looked.push(format!("{where_} non esiste"));
+                        looked.push(format!("{where_} does not exist"));
                     }
                     DirState::Blocked(reason) => blocked.push(reason),
                 }
@@ -394,23 +383,23 @@ fn discovered(
                         read_any = true;
                         let shown = path.to_string_lossy().into_owned();
                         out.push(Finding {
-                            // IL NOME È IL PERCORSO INTERO. Due file con lo
-                            // stesso nome in due cartelle diverse sono due
-                            // automazioni diverse, e la fusione qui sotto li
-                            // conterebbe per una sola.
+                            // THE NAME IS THE WHOLE PATH. Two files with the same
+                            // name in two directories are two different
+                            // automations, and the merge below would count them
+                            // as one.
                             name: shown.clone(),
                             family: descriptor.family.clone(),
                             label: label_of(descriptor),
                             descriptor_id: descriptor.id.clone(),
                             descriptor_source: loaded.source.clone(),
-                            presence: Presence::Present(format!("il file c'è: {shown}")),
+                            presence: Presence::Present(format!("the file is there: {shown}")),
                             executable: None,
                             version: VersionReading::NotAsked(
-                                "è un file, non un binario da interrogare".to_string(),
+                                "a file, not a binary to interrogate".to_string(),
                             ),
                             config: vec![ConfigPath {
                                 path: shown,
-                                presence: Presence::Present("c'è".to_string()),
+                                presence: Presence::Present("here".to_string()),
                             }],
                             note: descriptor.note.clone(),
                         });
@@ -424,9 +413,9 @@ fn discovered(
         }
     }
 
-    // LO STESSO SERVER DICHIARATO IN DUE POSTI È UNO SOLO, ma i due posti vanno
-    // detti entrambi: chi deve cambiarne la configurazione deve sapere quale
-    // file toccare.
+    // THE SAME SERVER DECLARED IN TWO PLACES IS ONE SERVER, but both places must
+    // be named: whoever has to change its configuration needs to know which file
+    // to touch.
     out.sort_by(|a, b| a.name.cmp(&b.name));
     let mut merged: Vec<Finding> = Vec::new();
     for finding in out {
@@ -436,15 +425,18 @@ fn discovered(
         }
     }
     if merged.is_empty() {
-        // Nessuna voce: e ora la differenza che conta. Se almeno un posto si è
-        // letto, «non ce ne sono» è una misura; se non se n'è letto nessuno, non
-        // si è guardato niente e dirlo sarebbe inventare.
+        // No entries: and now the difference that counts. If at least one place
+        // was read, "there are none" is a measurement; if none was, nothing was
+        // looked at and saying so would be inventing.
         let presence = if !blocked.is_empty() {
             Presence::Undetermined(blocked.join("; "))
         } else if read_any {
-            Presence::Absent(format!("nessuna voce in: {}", looked.join("; ")))
+            Presence::Absent(format!("no entries in: {}", looked.join("; ")))
         } else {
-            Presence::Absent(format!("non c'era niente da leggere in: {}", looked.join("; ")))
+            Presence::Absent(format!(
+                "there was nothing to read in: {}",
+                looked.join("; ")
+            ))
         };
         merged.push(Finding {
             name: descriptor.id.clone(),
@@ -454,22 +446,22 @@ fn discovered(
             descriptor_source: loaded.source.clone(),
             presence,
             executable: None,
-            version: VersionReading::NotAsked("non è qui".to_string()),
+            version: VersionReading::NotAsked("it is not here".to_string()),
             config: config_of(&descriptor.config, machine),
             note: descriptor.note.clone(),
         });
     } else if !blocked.is_empty() {
-        // Qualcosa si è trovato e qualcosa non si è potuto guardare: l'elenco è
-        // parziale, e va detto invece di lasciarlo credere completo.
+        // Something was found and something could not be looked at: the list is
+        // partial, and that must be said instead of letting it pass for whole.
         merged.push(Finding {
-            name: format!("{} (parziale)", descriptor.id),
+            name: format!("{} (partial)", descriptor.id),
             family: descriptor.family.clone(),
             label: label_of(descriptor),
             descriptor_id: descriptor.id.clone(),
             descriptor_source: loaded.source.clone(),
             presence: Presence::Undetermined(blocked.join("; ")),
             executable: None,
-            version: VersionReading::NotAsked("non è un binario".to_string()),
+            version: VersionReading::NotAsked("not a binary".to_string()),
             config: Vec::new(),
             note: descriptor.note.clone(),
         });
@@ -477,16 +469,16 @@ fn discovered(
     merged
 }
 
-/// Che cosa risponde la cartella da cui parte uno schema con `*`.
+/// What the directory a `*` pattern starts from answered.
 enum DirState {
     Readable,
     Missing(String),
     Blocked(String),
 }
 
-/// La radice di uno schema è la parte prima del primo componente con l'`*`; è
-/// la stessa divisione che fa [`Machine::resolve`], e serve qui per poter
-/// chiedere alla cartella cosa ha risposto invece di dedurlo da zero risultati.
+/// The root of a pattern is the part before the first component holding a `*`;
+/// it is the same split [`Machine::resolve`] makes, and it serves here to ask
+/// the directory what it answered instead of inferring it from zero results.
 fn read_dir_state(expanded: &str) -> DirState {
     let root: String = expanded
         .split('/')
@@ -518,14 +510,14 @@ fn config_of(raw: &[String], machine: &Machine) -> Vec<ConfigPath> {
         if resolved.is_empty() {
             out.push(ConfigPath {
                 path: machine.expand(pattern),
-                presence: Presence::Absent("nessun percorso agganciato".to_string()),
+                presence: Presence::Absent("no path matched".to_string()),
             });
             continue;
         }
         for path in resolved {
             let presence = match probe::look_at(&path) {
-                Look::Found(_) => Presence::Present("c'è".to_string()),
-                Look::Missing => Presence::Absent("non c'è".to_string()),
+                Look::Found(_) => Presence::Present("here".to_string()),
+                Look::Missing => Presence::Absent("not here".to_string()),
                 Look::Blocked(reason) => Presence::Undetermined(reason),
             };
             out.push(ConfigPath {

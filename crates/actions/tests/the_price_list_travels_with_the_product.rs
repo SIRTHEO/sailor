@@ -68,8 +68,14 @@ fn what_the_user_writes_at_home_still_beats_what_is_shipped() {
          "cached_per_million":1.0,"cache_write_long_per_million":1.0}
     ]}"#;
     let prices = actions::price_list_from(Some(home));
-    let entry = prices.find(AS_THE_ENGINE_NAMED_IT).expect("la voce di casa");
-    assert_eq!(entry.input_per_million, Some(1.0), "ha vinto quella spedita");
+    let entry = prices
+        .find(AS_THE_ENGINE_NAMED_IT)
+        .expect("la voce di casa");
+    assert_eq!(
+        entry.input_per_million,
+        Some(1.0),
+        "ha vinto quella spedita"
+    );
     // E ciò che il file di casa non nomina arriva ancora da quello spedito.
     assert_eq!(prices.knows("claude-haiku-4-5"), Known::Priced);
 }
@@ -98,7 +104,10 @@ fn a_model_nobody_priced_is_reported_as_absent_not_as_free() {
                 output: Some(1_000_000),
                 ..TokenCounts::default()
             },
-            prices.find("gpt-5-codex").map(Price::micros).unwrap_or_default()
+            prices
+                .find("gpt-5-codex")
+                .map(Price::micros)
+                .unwrap_or_default()
         ),
         None,
         "un modello senza prezzo non costa zero: non si sa"
