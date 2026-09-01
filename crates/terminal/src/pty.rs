@@ -97,6 +97,9 @@ pub struct Pty {
     /// ridimensiona possono essere due fili diversi.
     leader: Mutex<File>,
     child: Mutex<Child>,
+    /// The device the program inside is attached to, kept because it is the
+    /// name that program reports as its own terminal.
+    device: String,
 }
 
 /// Il numero non trattabile che `ptsname` restituisce da un buffer statico
@@ -179,7 +182,17 @@ impl Pty {
         Ok(Pty {
             leader: Mutex::new(File::from(leader)),
             child: Mutex::new(child),
+            device: follower_name.to_string_lossy().into_owned(),
         })
+    }
+
+    /// The terminal device the program inside is attached to.
+    ///
+    /// Whoever wants to reach that program keys on this and not on the caller's
+    /// own terminal: the two are different, and only this one is what the
+    /// program reports about itself.
+    pub fn device(&self) -> &str {
+        &self.device
     }
 
     /// Un secondo capo aperto sullo stesso terminale, per il filo che legge.
