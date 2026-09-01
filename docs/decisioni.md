@@ -483,6 +483,51 @@ offrire otto tipi di passo mentre il motore ne esegue tre.
 *Per esteso, con le tre proprietà di un sistema aperto e i numeri del
 censimento*: `docs/2026-08-31-le-quattro-superfici.md`.
 
+### Chi non dichiara come si esaurisce non sta in mezzo a una catena
+
+**01/09/2026**, dai guasti 16, 31 e 32 — che erano lo stesso difetto visto da
+tre lati.
+
+Un motore che non dichiara `ask.unusable_when` **non può occupare una posizione
+di ripiego**: va in fondo alla catena, o non ci va. Non perché il suo descrittore
+sia sbagliato — l'elenco vuoto dice «nessuno ha guardato», ed è la verità — ma
+perché `says_it_cannot_work` su un elenco vuoto è `false`: il suo esaurirsi passa
+per un fallimento qualunque, il passo muore su di lui, e chi sta dietro non parte
+mai. Una catena `claude-code → agy → codex` aveva l'aria di due ripieghi e ne
+aveva zero: `codex`, che dichiara il proprio 401, **non è mai partito**.
+
+**Cosa la rende rossa**, senza cui non sarebbe vincolante: la regola sta in
+`toolbox::Descriptor::cannot_be_a_fallback`, in un posto solo, e la interrogano
+`every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` sui flussi
+dell'albero e `sailor flow check` sui flussi di chi lo lancia. È nata rossa su
+dodici posizioni in quattro flussi.
+
+**La cosa da ricordare, che vale oltre questo caso.** La regola era scritta da un
+giorno, e la prova che la conteneva era `#[ignore]` con una ragione buona:
+misurare come `agy` dice di aver finito la quota è impossibile finché non lo si
+vede farlo, e inventare quella parola manderebbe un mandato malformato giù per
+tutta la catena. Ma *quella era la ragione per non inventare un dato, ed era
+diventata la ragione per non avere un controllo* — e una regola ha quasi sempre
+**due modi di essere rispettata**. Misurare le parole di chi sta in mezzo, o non
+mettere in mezzo chi non le ha. Il secondo non chiede nessun dato che non esista.
+
+**E il controllo non serve solo a trovare il difetto: serve a rendere sicura la
+riparazione.** `gemini-cli` dichiarava di saper rispondere a una domanda secca e
+non aveva nessuna riga con cui fargliela (guasto 32). Scriverla era considerato
+pericoloso, perché un `ask` senza `unusable_when` avrebbe fatto entrare gemini
+nelle catene senza ripiego — un quarto guasto 31 creato per chiudere il 32.
+Appena la regola sulla posizione esiste, quel pericolo non esiste più, e la riga
+si è potuta scrivere **misurata**: `gemini --prompt` senza la domanda esce 1 e
+dice «Not enough arguments following: prompt», gratis e senza chiamare nessun
+fornitore. Il suo `usage` e le sue parole di esaurimento restano non misurati, e
+quindi non scritti.
+
+**Cosa questo non concede.** Che un `agy` esaurito **in fondo** a una catena
+dica di essere esaurito: non lo dice, muore col proprio messaggio d'errore. Non
+si perde nessun ripiego — dietro di lui non c'è nessuno — e la differenza si
+legge nel motivo del guasto, non nel comportamento. La misura mancante resta
+scritta nel descrittore di `agy`, dove la troverà chi la farà.
+
 ### Un totale con dentro un'incognita si mostra come pavimento, mai come cifra
 
 **01/09/2026**, dal guasto 37.
