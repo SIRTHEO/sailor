@@ -1225,14 +1225,19 @@ button.is-primary {
 /* IL NODO È UNA TARGA, NON UNA SCHEDA CHE LEVITA: nessuna ombra (divieto 3), un
    filo di 1px, e sul fianco sinistro la barra dello stato — 3px di tinta che si
    leggono a qualunque zoom, anche quando le parole non si leggono più. */
+/* 248px, NON 232 — e il numero vive anche in `layout.ts`, che dispone le
+   corsie su questa larghezza. Sotto i 240 un nodo non contiene un nodo: fra un
+   riquadro e il suo vicino restavano 28px, cioè meno dello spazio che il nodo
+   ha dentro di sé, e un oggetto più vicino al vicino che al proprio contenuto
+   si legge come una fila. `ports.test.tsx` rilegge questa riga: se il foglio e
+   la disposizione smettono di dire lo stesso numero, diventa rosso. */
 .step-node {
   position: relative;
-  width: 232px;
+  width: 248px;
   background: var(--paper);
   border: 1px solid var(--line);
   border-left: 3px solid var(--state, var(--line));
   border-radius: var(--radius);
-  padding: var(--space-2) var(--space-3);
 }
 
 /* La tinta di stato entra una volta sola e da qui scende su tutto il nodo. */
@@ -1249,35 +1254,99 @@ button.is-primary {
   box-shadow: inset 0 0 0 1px var(--focus);
 }
 
-.step-node[data-agent] {
-  width: 264px;
+/* UN NODO ISOLATO PER VISTA, E NON UNO PER CORSA VIVA. Prima ogni agente in
+   corso portava un riquadro di pulsanti con dentro un rosso pieno: con più
+   agenti in parallelo tutti deviavano, quindi nessuno deviava. L'isolamento è
+   adesso riservato a ciò che non si sblocca da solo — chi aspetta una persona,
+   chi è fermo al tetto — e lo sceglie `stepThatCallsForAGesture`, uno solo.
+   Devia con la forma, non con una tinta nuova: bordo più spesso nella tinta
+   che il nodo ha già, e il foglio che si alza sopra la carta. */
+.step-node[data-calls] {
+  border-width: 2px;
+  border-left-width: 3px;
+  border-color: var(--state, var(--focus));
+  background: var(--raised);
 }
 
-/* Da lontano un nodo non finge di essere leggibile: tiene il nome e la barra
-   di stato, e lascia cadere il resto. Prima, a zoom 0,5, il titolo di una
-   corsia era alto 6,5px e nessuno poteva leggerlo — ma c'era. */
-.step-node[data-far] {
+/* Da lontano un nodo non finge di essere leggibile: tiene la testata — genere e
+   stato — e il nome, e lascia cadere il resto. Prima, a zoom 0,5, il titolo di
+   una corsia era alto 6,5px e nessuno poteva leggerlo — ma c'era. */
+.step-node[data-far] .step-node__body {
   padding: var(--space-3);
 }
 
 /* Ingrandito quanto basta a leggerlo, non tanto da troncarlo: `--text-large` su
-   232px tagliava `working-tree-is-clean` a metà, e un nome tagliato è meno
-   leggibile di uno piccolo. Da lontano va a capo invece di sparire. */
+   un nodo di questa larghezza taglia `working-tree-is-clean` a metà, e un nome
+   tagliato è meno leggibile di uno piccolo. Da lontano va a capo invece di
+   sparire. */
 .step-node[data-far] .step-node__id {
-  font-size: var(--text-mid);
   white-space: normal;
   overflow-wrap: anywhere;
-  margin-bottom: var(--space-1);
+  margin-bottom: 0;
 }
 
+/* LA TESTATA È INCISA, non è una riga qualunque: il nodo è una targa (divieto
+   3), e una targa ha una fascia in alto col genere del pezzo. Qui porta le due
+   domande che si fanno per prime — che cosa sei, come stai — e per questo sta
+   sopra il nome e non sotto. */
+/* LA TESTATA VA A CAPO INVECE DI FAR SPARIRE UNO DEI SUOI PEZZI. Con
+   `nowrap` i tre pezzi chiedono 261px e la testata ne ha 220: qualcosa doveva
+   cedere, e a cedere era il genere — fino a zero, senza nemmeno un'ellissi.
+   Andando a capo cede la RIGA, che è l'unica cosa che si può togliere senza
+   togliere un'informazione: la parola di stato scende sotto e ci sono ancora
+   tutt'e due. Succede solo sui nodi `condizionato` in «aspetta una persona»;
+   su tutti gli altri la testata resta una riga sola. */
 .step-node__head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  /* Fra due righe basta molto meno che fra due pezzi della stessa riga: con
+     lo stesso stacco la testata sembrerebbe due testate. */
+  row-gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  background: var(--band-fill);
+  border-bottom: 1px solid var(--line);
+  /* Nessun raggio qui: il divieto 2 ammette tre valori, e nessuno dei tre
+     arrotonda due angoli su quattro. Il velo della testata è il 2,5% di
+     inchiostro — a 4px dall'angolo non lo vede nessuno. */
 }
 
+.step-node__body {
+  padding: var(--space-2) var(--space-3);
+}
+
+/* IL GENERE HA UN FONDO, E PRIMA VALEVA ZERO. `ASPETTA UNA PERSONA` è lo stato
+   più lungo, e con un genere che non si accorcia spingeva la parola di stato
+   fuori dalla testata. La cura di allora — `min-width: 0` più `overflow:
+   hidden` — ha rotto l'altra metà: su un nodo `condizionato` in «aspetta una
+   persona» il genere non si accorciava, si **azzerava**. Misurato in Chrome
+   sui dieci flussi veri il 01/09/2026: due nodi su 52 con `clientWidth 0`,
+   `GESTO` e `AGENTE` spariti senza lasciare un'ellissi. E un'ellissi non era
+   la cura: `text-overflow` su una scatola larga 0 non disegna niente.
+
+   Il fondo è in `ch` e non in px perché `--font-display` è una famiglia
+   locale: dove non c'è cambia il ripiego e cambiano le larghezze, e un fondo
+   in px sarebbe giusto solo su questa macchina. `ch` è la larghezza di uno
+   zero — qui 4,8px — e undici bastano a contenere `DEPOSITO`, il genere di una
+   parola sola più largo dei nove: sotto quel fondo nessuno di loro si
+   accorcia. I due di più parole — `A UNA PERSONA` e `SOTTO-FLUSSO` — tengono
+   la parte iniziale e l'ellissi, che è un troncamento e non una sparizione.
+
+   **QUESTO FONDO NON È IL PEZZO CHE CURA, ED È GIUSTO SAPERLO PRIMA DI
+   TOCCARLO.** Spegnendo un pezzo alla volta, in Chrome sui 52 nodi: il wrap da
+   solo basta (0 generi azzerati, 0 troncati, 0 parole di stato fuori dal
+   nodo); questo fondo da solo no — con `nowrap` il genere sopravvive ma il
+   danno si sposta, e la parola di stato esce di 40,5px dal bordo del nodo su
+   `chiedi` e `leggi`. Il fondo è difesa in avanti: serve dove
+   `--font-display` non è installato e il ripiego è più largo, cioè dove il
+   wrap da solo comincerebbe ad accorciare il genere. `StepNode.test.tsx`
+   interroga tutt'e due, per due ragioni diverse. */
 .step-node__kind {
+  min-width: 11ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-size: var(--text-micro);
   letter-spacing: 0.09em;
@@ -1293,11 +1362,16 @@ button.is-primary {
   color: var(--state-human);
 }
 
+/* Il salto di scala esiste: il nome del passo contro il genere della testata fa
+   1,5×. Non 1,8× come vorrebbe la bozza, e il motivo è misurato: a
+   `--text-large` un nome come `working-tree-is-clean` non ci sta in 224px, e un
+   nome tagliato è meno leggibile di uno piccolo. */
 .step-node__id {
   font-family: var(--font-data);
-  font-size: var(--text-body);
+  font-size: var(--text-mid);
   font-weight: 600;
-  margin: var(--space-1) 0 var(--space-2);
+  line-height: 1.2;
+  margin: 0 0 var(--space-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1325,9 +1399,10 @@ button.is-primary {
   border-color: var(--danger);
 }
 
-/* NESSUN MOTORE È UN FATTO, NON UN VUOTO. Un passo che non dichiara con cosa
-   gira lo dice: prima il riquadro semplicemente non compariva, e un nodo senza
-   motore era indistinguibile da un nodo di cui non si era guardato il motore. */
+/* UN MOTORE NON DICHIARATO È UN FATTO, NON UN VUOTO. Un passo che non nomina
+   con cosa gira lo dice: prima il riquadro semplicemente non compariva, e un
+   nodo senza motore era indistinguibile da un nodo di cui non si era guardato
+   il motore. */
 .step-node__tool[data-none] {
   border-style: dashed;
   background: transparent;
@@ -1354,11 +1429,39 @@ button.is-primary {
   white-space: nowrap;
 }
 
+/* IL NOME È PROSA, L'IDENTIFICATIVO È UN DATO — e questo slot mostra tutt'e
+   due. `tool?.name ?? id`: finché la scoperta non ha risposto, o quando lo
+   strumento su questa macchina non c'è, qui sta l'identificativo scritto nel
+   file. In prosa, `claude-code` compariva in un carattere sulla prima riga e
+   in monospazio sulla seconda («se manca: agy, codex»), che è la stessa parola
+   in due grafie dentro lo stesso riquadro.
+
+   La regola «nome in prosa, dato in monospazio» resta: cambia che adesso si
+   guarda quale delle due si sta mostrando, invece di indovinarlo. */
+.step-node__tool-name[data-raw] {
+  font-family: var(--font-data);
+}
+
 .step-node__tool[data-off] .step-node__tool-name {
   color: var(--danger);
 }
 
 .step-node__tool-model {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* I RICAMBI DELLA CATENA. `tool` può essere un elenco — «chi eseguire, in
+   ordine di preferenza, il migliore per primo», come lo definisce
+   `crates/actions/src/lib.rs`. Il primo sta sulla riga del nome; questi sono
+   quelli che partono se il primo non c'è, e sono un fatto del flusso che prima
+   non si vedeva da nessuna parte. Nessuna tinta nuova: è testo subordinato, e i
+   livelli di testo sono due (divieto 7). */
+.step-node__tool-chain {
   font-family: var(--font-data);
   font-size: var(--text-small);
   color: var(--muted);
@@ -1416,21 +1519,179 @@ button.is-primary {
   color: var(--warn);
 }
 
+/* ── le porte ────────────────────────────────────────────────────────
+   IL TIPO STA NELLA FORMA E IL CABLAGGIO NEL PIENO. Cerchio testo, rombo
+   struttura, quadrato valore; vuota se niente la alimenta, piena se qualcosa
+   la alimenta. Sono tutte e due distinzioni che reggono in bianco e nero — è
+   il divieto 5 preso sul serio: un utente su dodici non distingue due delle
+   tinte che servirebbero a dire la stessa cosa col colore.
+
+   `ports.test.tsx` misura la distanza di luminanza fra una porta cablata e una
+   scollegata: se qualcuno le riduce a due tinte, diventa rosso. */
+
+.step-node__ports {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.step-node__ports-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* L'uscita sta a destra, col segno dalla parte da cui il filo esce davvero. */
+.step-node__ports-column[data-out] {
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.step-node__port {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.step-node__ports-column[data-out] .step-node__port {
+  flex-direction: row-reverse;
+}
+
+.step-node__port-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* IL SEGNO. 8px, e il bordo di 1,5px perché sotto quello un cerchio vuoto e un
+   quadrato vuoto diventano due macchie uguali. */
+.step-node__port-mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--muted);
+  background: transparent;
+}
+
+.step-node__port-mark[data-shape="text"] {
+  border-radius: var(--radius-pill);
+}
+
+/* Il rombo è il quadrato girato: la rotazione non sposta niente, dipinge e
+   basta. */
+.step-node__port-mark[data-shape="structure"] {
+  transform: rotate(45deg);
+}
+
+/* `value` non dichiara niente: resta il quadrato, che è la forma di partenza. */
+
+.step-node__port[data-wired] {
+  color: var(--ink);
+}
+
+.step-node__port[data-wired] .step-node__port-mark {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+/* Un ingresso obbligatorio che nessuno alimenta: la forma vuota dice già «non
+   collegata», il tratteggio lo rimarca, e LA PAROLA dice «e doveva esserlo».
+   Senza la parola resterebbe il colore a portare il fatto, che è il divieto 5. */
+.step-node__port[data-missing] {
+  color: var(--danger);
+}
+
+.step-node__port[data-missing] .step-node__port-mark {
+  border-color: var(--danger);
+  border-style: dashed;
+}
+
+/* ── il fondo del nodo ───────────────────────────────────────────────── */
+
 .step-node__foot {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-2);
 }
 
 /* LA PAROLA DI STATO, MAI IL SOLO COLORE (divieto 5). La tinta è la stessa
-   della barra sul fianco, ma la parola resta leggibile da sola. */
+   della barra sul fianco, ma la parola resta leggibile da sola — e accanto c'è
+   il punto, che è il registro quieto di ogni corsa viva.
+
+   **`margin-left: auto` È UNA SCELTA, E VALE ANCHE SULLA RIGA ANDATA A CAPO.**
+   Da quando la testata va a capo, questo margine ha un secondo effetto che
+   nessun commento riconosceva: quando lo stato scende da solo sulla seconda
+   riga, resta spinto a destra e a sinistra gli si apre un vuoto. Le due
+   versioni sono state guardate una accanto all'altra, sui nodi che vanno a capo
+   davvero (`chiedi` e `leggi` di `chiedi-all-indice` in «aspetta una persona»),
+   e il vuoto resta.
+
+   Resta perché l'alternativa costa di più. Con `margin-left: 0` la parola di
+   stato cambia posizione a seconda che la testata vada a capo o no: misurato,
+   12px dal bordo sui nodi a due righe e 72,8px su quelli a una riga. Chi scorre
+   una tela di 52 nodi cerca gli stati, e cercarli in due colonne diverse
+   secondo la lunghezza del genere è peggio di un vuoto. Con `auto` la parola è
+   **a 12px dal bordo destro su ogni nodo**, andato a capo o no: una colonna
+   sola, che è ciò che si scorre.
+
+   Il vuoto a sinistra della seconda riga è quindi voluto, e non è un buco: è il
+   rientro di una parola che appartiene al bordo destro e lì è rimasta. Succede
+   su 2 nodi su 52 nella condizione più larga. */
 .step-node__state {
+  margin-left: auto;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
   font-family: var(--font-display);
   font-size: var(--text-micro);
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: var(--state, var(--muted));
+}
+
+.step-node__state-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--state, var(--muted));
+}
+
+/* IL REGISTRO QUIETO: lo stesso battito su OGNI corsa viva, uguale per tutte.
+   Dice «vivo», non «guardami» — chi chiede un gesto è l'altro registro, e sta
+   in `[data-calls]`. 2,4 s è lento apposta: un lampeggio più corto diventa un
+   richiamo, e con dieci agenti in parallelo sarebbero dieci richiami. */
+.step-node[data-state="running"] .step-node__state-dot {
+  animation: step-node-breath 2.4s var(--ease) infinite;
+}
+
+@keyframes step-node-breath {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Chi ha chiesto meno movimento non ne riceve: il punto resta, fermo. */
+@media (prefers-reduced-motion: reduce) {
+  .step-node__state-dot {
+    animation: none;
+  }
 }
 
 .step-node__attempt {
@@ -1442,36 +1703,24 @@ button.is-primary {
   padding: 0 var(--space-1);
 }
 
-.step-node__agent {
-  margin-top: var(--space-2);
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--line);
-}
-
+/* Chi tiene il passo, quando un agente lo tiene. È un fatto, e i fatti stanno
+   in fondo quieti: prima viaggiava dentro il riquadro di pulsanti che ogni
+   corsa viva si portava addosso — tre pulsanti che, per giunta, non erano
+   collegati a niente. Toglierli non ha tolto nessun gesto: non ce n'erano. */
 .step-node__pid {
   font-family: var(--font-data);
   font-size: var(--text-small);
   color: var(--muted);
 }
 
-.step-node__actions {
-  display: flex;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-}
-
-.step-node__actions button {
-  flex: 1;
-  padding: var(--space-1) 0;
+/* IL CONTATORE DELLE ALTRE. Quando più di una cosa aspetta una persona,
+   l'isolamento resta uno solo e le altre si contano qui. È il rimedio
+   all'inflazione: la seconda evidenza non è un'evidenza, è un numero. */
+.step-node__elsewhere {
+  margin-left: auto;
+  font-family: var(--font-data);
   font-size: var(--text-small);
-  border-radius: var(--radius);
-}
-
-.step-node__actions button.is-stop {
-  color: var(--danger);
-  background: var(--danger-soft);
-  border-color: var(--danger);
-  font-weight: 600;
+  color: var(--state, var(--muted));
 }
 
 /* Il bollino di corsia sta in alto, sottile: dice a quale flusso appartiene il

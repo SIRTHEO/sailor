@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * Il foglio di stile letto come testo.
  *

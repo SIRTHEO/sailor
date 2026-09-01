@@ -1,8 +1,8 @@
 import { createContext, useContext } from "react";
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import type { Step, StepKind, StepRun, StepState } from "./flow";
-import { nodeId } from "./layout";
-import { MODEL_KEY, toolOf, useTool, useToolsAreKnown } from "./tools";
+import { nodeId, type PortShape, type StepPort, type StepPorts } from "./layout";
+import { MODEL_KEY, TOOL_KEY, useTool, useToolsAreKnown } from "./tools";
 import { ToolMark } from "./ToolMark";
 import { formatCost, formatTokens, usageIsPartial, type StepUsage } from "./stepusage";
 
@@ -44,6 +44,8 @@ export interface StepNodeData extends Record<string, unknown> {
   color: string;
   /** Vero quando un altro flusso è a fuoco: questo passo si ritrae, non sparisce. */
   dimmed: boolean;
+  /** Cosa entra e cosa esce, letto dal grafo. Assente solo nei dati di prova. */
+  ports?: StepPorts;
 }
 
 /**
@@ -80,6 +82,109 @@ const STATE_LABEL: Record<StepState, string> = {
   handed_to_human: "aspetta una persona",
 };
 
+/**
+ * **I DUE REGISTRI DELL'ATTENZIONE, E PRIMA CE N'ERA UNO SOLO.**
+ *
+ * Fino a oggi ogni passo `running` di un agente si portava addosso un riquadro
+ * con tre pulsanti, uno dei quali rosso pieno. Con più agenti in parallelo —
+ * che è il caso normale — ogni corsa viva chiedeva attenzione, cioè nessuna la
+ * otteneva. Von Restorff funziona solo se **pochissimi** elementi deviano, e
+ * il nome dell'errore è *isolation inflation*.
+ *
+ * Adesso i registri sono due. Le corse vive condividono **lo stesso**
+ * indicatore quieto — il punto che respira, in `styles.css` — che dice «vivo»
+ * e non «guardami». L'isolamento è riservato a **una cosa sola per vista**:
+ * ciò che non si sbloccherà da solo. Se ne aspettano più d'una, si ordinano
+ * per gravità e le altre diventano un contatore sul nodo isolato.
+ *
+ * I due stati qui sotto sono quelli che una persona deve toccare: «aspetta una
+ * persona» lo dice da sé, e «fermo al tetto» è il passo che nessuno ritenterà.
+ * «rotto, si ritenta» NON è fra questi: si ritenta da solo, e isolarlo sarebbe
+ * chiedere un gesto che non serve.
+ */
+const GESTURE_GRAVITY: Partial<Record<StepState, number>> = {
+  handed_to_human: 0,
+  capped: 1,
+};
+
+export interface GestureCall {
+  /** La chiave `flusso::passo` del solo nodo isolato, o `null` se nessuno chiama. */
+  key: string | null;
+  /** Quante cose aspettano una persona in tutto, compresa quella isolata. */
+  waiting: number;
+}
+
+/**
+ * Chi, fra tutte le corse che la finestra conosce, si prende l'isolamento.
+ *
+ * Sta qui e non nella disposizione perché legge lo **stato vero** delle corse,
+ * che passa da un contesto: calcolarlo dove si costruisce l'elenco dei nodi lo
+ * renderebbe vecchio di un fatto.
+ */
+export function stepThatCallsForAGesture(runs: Map<string, StepRun>): GestureCall {
+  const calling = Array.from(runs.entries()).filter(
+    ([, run]) => GESTURE_GRAVITY[run.state] !== undefined,
+  );
+  if (calling.length === 0) return { key: null, waiting: 0 };
+  // A parità di gravità decide il nome, che non cambia da un fatto all'altro:
+  // un isolamento che salta di nodo a ogni aggiornamento non è un isolamento.
+  calling.sort(([leftKey, left], [rightKey, right]) => {
+    const gravity =
+      (GESTURE_GRAVITY[left.state] as number) - (GESTURE_GRAVITY[right.state] as number);
+    return gravity !== 0 ? gravity : leftKey.localeCompare(rightKey);
+  });
+  return { key: calling[0][0], waiting: calling.length };
+}
+
+/** Come si chiama, a parole, il tipo che una forma porta. */
+const SHAPE_LABEL: Record<PortShape, string> = {
+  text: "testo",
+  structure: "struttura",
+  value: "valore",
+};
+
+/**
+ * Una porta: la forma dice il tipo, il pieno dice se è cablata.
+ *
+ * **IL COLORE NON PORTA NIENTE DA SOLO** (divieto 5). Cerchio, rombo e
+ * quadrato si distinguono in bianco e nero; vuoto e pieno pure; e un ingresso
+ * obbligatorio che nessuno alimenta aggiunge **la parola**, perché una forma
+ * vuota dice «non collegata» ma non dice «e doveva esserlo».
+ */
+function Port({ port }: { port: StepPort }) {
+  const missing = port.required && !port.wired;
+  return (
+    <span
+      className="step-node__port"
+      data-wired={port.wired || undefined}
+      data-missing={missing || undefined}
+      title={`${port.name} · ${SHAPE_LABEL[port.shape]} · ${port.wired ? "collegata" : "non collegata"}`}
+    >
+      <span className="step-node__port-mark" data-shape={port.shape} aria-hidden="true" />
+      <span className="step-node__port-name">{missing ? `${port.name} manca` : port.name}</span>
+    </span>
+  );
+}
+
+/**
+ * Le porte del nodo: gli ingressi a sinistra, l'uscita a destra, dalla parte
+ * da cui i fili entrano ed escono davvero.
+ */
+function StepPortsRow({ ports }: { ports: StepPorts }) {
+  return (
+    <div className="step-node__ports">
+      <div className="step-node__ports-column">
+        {ports.inputs.map((port) => (
+          <Port key={port.name} port={port} />
+        ))}
+      </div>
+      <div className="step-node__ports-column" data-out>
+        <Port port={ports.output} />
+      </div>
+    </div>
+  );
+}
+
 export const KIND_LABEL: Record<StepKind, string> = {
   trigger: "innesco",
   engine: "agente",
@@ -99,6 +204,29 @@ function modelOf(step: Step): string {
 }
 
 /**
+ * I motori che il passo nomina, **nell'ordine in cui li nomina**.
+ *
+ * **`tool` NON È SOLO UNA STRINGA, E LEGGERLO COSÌ FACEVA DIRE UNA BUGIA AL
+ * NODO.** In `crates/actions/src/lib.rs` il campo è un `ToolChoice`, cioè
+ * `One(String)` **oppure** `Chain(Vec<String>)`: una catena è «chi eseguire, in
+ * ordine di preferenza, il migliore per primo». `toolOf` restituisce il testo o
+ * niente, quindi su una catena rispondeva niente, e il nodo disegnava il
+ * riquadro «*nessun motore*» sopra la parola `external_engine`. Sui dieci
+ * flussi di `flows/` sono **20 passi su 25**: 25 passi `external_engine` in
+ * tutto, 20 con una catena e 5 con una stringa sola (`codex`, `agy`, `cargo`,
+ * `git`, `git`). La tela diceva «nessun motore» a chi ne aveva dichiarati tre.
+ *
+ * Il primo della catena è quello che si mostra, perché è quello che il motore
+ * proverà per primo; gli altri sono ricambi e si dicono come tali.
+ */
+export function enginesOf(params: Record<string, unknown> | null | undefined): string[] {
+  const declared = params?.[TOOL_KEY];
+  if (typeof declared === "string") return declared === "" ? [] : [declared];
+  if (!Array.isArray(declared)) return [];
+  return declared.filter((id): id is string => typeof id === "string" && id !== "");
+}
+
+/**
  * Cosa esegue questo passo, sulla tela: il segno dello strumento, come si
  * chiama, e il modello se ne è stato scelto uno.
  *
@@ -108,7 +236,18 @@ function modelOf(step: Step): string {
  * la scoperta non ha risposto non si accusa nessuno: si mostra
  * l'identificativo scritto nel passo, che è quello che il file dice.
  */
-function StepTool({ id, model, actual }: { id: string; model: string; actual: string[] }) {
+function StepTool({
+  id,
+  model,
+  actual,
+  fallbacks,
+}: {
+  id: string;
+  model: string;
+  actual: string[];
+  /** I ricambi dichiarati dopo il primo, nell'ordine scritto nel passo. */
+  fallbacks: string[];
+}) {
   const tool = useTool(id);
   const known = useToolsAreKnown();
   // Tre stati, non due: trovato e c'è, trovato e non c'è, e «non lo so
@@ -124,10 +263,27 @@ function StepTool({ id, model, actual }: { id: string; model: string; actual: st
     <div className="step-node__tool" data-off={off || undefined}>
       <ToolMark id={id} size={16} off={off} />
       <div className="step-node__tool-text">
-        <span className="step-node__tool-name" title={id}>
+        {/* NOME IN PROSA, IDENTIFICATIVO IN MONOSPAZIO — e questo slot mostra
+            l'uno o l'altro. Finché la scoperta non ha risposto qui ci finisce
+            `id`, che è un dato: senza distinguerli, `claude-code` compariva in
+            due caratteri diversi sulle due righe dello stesso riquadro — in
+            prosa sopra, in monospazio nella catena sotto. La regola non cambia,
+            cambia il fatto che si legge prima di applicarla. */}
+        <span className="step-node__tool-name" data-raw={tool === undefined || undefined} title={id}>
           {tool?.name ?? id}
         </span>
         {model !== "" && <span className="step-node__tool-model">{model}</span>}
+        {/* UNA CATENA SI DICE, e prima non si diceva affatto: il nodo mostrava
+            «nessun motore» proprio dove il passo ne nominava tre. Chi guarda
+            deve sapere che se il primo non c'è ne parte un altro. */}
+        {fallbacks.length > 0 && (
+          <span
+            className="step-node__tool-chain"
+            title={`in ordine di preferenza: ${[id, ...fallbacks].join(", ")}`}
+          >
+            se manca: {fallbacks.join(", ")}
+          </span>
+        )}
         {surprising.length > 0 && (
           <span
             className="step-node__tool-actual"
@@ -149,18 +305,25 @@ function StepTool({ id, model, actual }: { id: string; model: string; actual: st
 }
 
 /**
- * Il riquadro che dice **nessun motore**, quando il passo non ne dichiara uno.
+ * Il riquadro che dice **motore non dichiarato**, quando il passo non nomina
+ * nessuno strumento in `with`.
  *
  * Prima, senza strumento, il riquadro semplicemente non compariva: un passo che
  * gira qui sulla macchina era indistinguibile da un passo di cui non si era
  * ancora guardato il motore. L'assenza è un fatto e va disegnata — è il vincolo
  * «chiarezza per chi guarda» nella sua forma più letterale.
+ *
+ * **LA PAROLA ERA «NESSUN MOTORE», E SI CONTRADDICEVA CON LA RIGA SOTTO.** Il
+ * riquadro scrive sotto il nome dell'azione, e su un `external_engine` si
+ * leggeva «*nessun motore*» sopra «motore esterno». Non era nemmeno quello che
+ * il dato diceva: l'assenza qui è quella del **campo**, non quella del motore.
+ * «motore non dichiarato» dice la stessa cosa e non litiga con la riga sotto.
  */
 function NoTool({ action }: { action: string }) {
   return (
     <div className="step-node__tool" data-none>
       <div className="step-node__tool-text">
-        <span className="step-node__tool-name">nessun motore</span>
+        <span className="step-node__tool-name">motore non dichiarato</span>
         <span className="step-node__tool-model" title={action}>
           {action}
         </span>
@@ -209,22 +372,27 @@ function StepMeter({ usage }: { usage: StepUsage }) {
 }
 
 export function StepNode({ data, selected }: NodeProps) {
-  const { step, kind, run: fromData, flowName, color: flowColor, dimmed } = data as StepNodeData;
+  const { step, kind, run: fromData, flowName, color: flowColor, dimmed, ports } =
+    data as StepNodeData;
   // I FATTI VERI VINCONO SULL'ESEMPIO. `run` nei `data` esiste ancora perché è
   // così che i dati d'esempio colorano la tela fuori dal guscio nativo; quando
   // una corsa vera esiste, è la sua a contare.
   const key = nodeId(flowName, step.id);
-  const run = useContext(StepRunContext).get(key) ?? fromData;
+  const runs = useContext(StepRunContext);
+  const run = runs.get(key) ?? fromData;
   const usage = useContext(StepUsageContext).get(key);
   const state: StepState = run?.state ?? "waiting";
   const isAgent = kind === "engine";
   // Quale strumento esegue questo nodo si legge sulla tela, non solo aprendo il
   // pannello: è la prima domanda di chi guarda un flusso fatto da altri.
-  const tool = toolOf(step.with);
+  const engines = enginesOf(step.with);
   // Quanto è lontano l'occhio. Sotto la soglia il nodo lascia cadere il
   // dettaglio invece di disegnarlo alto sei pixel.
   const zoom = useStore((s) => s.transform[2]);
   const far = zoom < FAR_ZOOM;
+  // L'unico isolato della vista, e il conto di chi aspetta altrove.
+  const call = stepThatCallsForAGesture(runs);
+  const isolated = call.key === key;
 
   return (
     <div
@@ -234,52 +402,69 @@ export function StepNode({ data, selected }: NodeProps) {
       data-state={state}
       data-selected={selected || undefined}
       data-far={far || undefined}
+      data-calls={isolated || undefined}
     >
       {/* Il bollino di corsia: a quale flusso appartiene questo passo, nella
           tela dove tutti i flussi stanno insieme. */}
       <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
       <Handle type="target" position={Position.Left} />
 
-      {!far && (
-        <div className="step-node__head">
-          <span className="step-node__kind">{KIND_LABEL[kind]}</span>
-          {step.when && <span className="step-node__when">condizionato</span>}
-        </div>
-      )}
-
-      <div className="step-node__id">{step.id}</div>
-
-      {/* DA VICINO IL NODO DICE SEMPRE CON COSA GIRA — anche quando la risposta
-          è «con niente». Da lontano no: a quello zoom non si leggerebbe. */}
-      {!far && (tool !== "" ? (
-        <StepTool id={tool} model={modelOf(step)} actual={usage?.models ?? []} />
-      ) : (
-        <NoTool action={step.action} />
-      ))}
-
-      {!far && usage && usage.calls > 0 && <StepMeter usage={usage} />}
-
-      <div className="step-node__foot">
-        <span className="step-node__state">{STATE_LABEL[state]}</span>
-        {run && run.attempt > 1 && (
-          <span className="step-node__attempt">
-            {run.attempt}ª di {step.max_attempts}
-          </span>
-        )}
+      {/* LA TESTATA INCISA dice le due cose che si chiedono per prime: che cosa
+          sei, e come stai. Resta anche da lontano — è ciò che a quello zoom si
+          legge ancora, e prima da lontano spariva insieme al resto. */}
+      <div className="step-node__head">
+        <span className="step-node__kind">{KIND_LABEL[kind]}</span>
+        {step.when && <span className="step-node__when">condizionato</span>}
+        {/* PUNTO PIÙ PAROLA, MAI IL SOLO COLORE (divieto 5). Il punto è il
+            registro quieto — respira, uguale su ogni corsa viva — e la parola
+            è ciò che regge in scala di grigi. */}
+        <span className="step-node__state">
+          <span className="step-node__state-dot" aria-hidden="true" />
+          {STATE_LABEL[state]}
+        </span>
       </div>
 
-      {/* Un nodo che possiede un agente non rimanda altrove: i gesti stanno
-          addosso al nodo, perché è lì che chi guarda li cerca. */}
-      {isAgent && state === "running" && (
-        <div className="step-node__agent">
-          <span className="step-node__pid">pid {run?.held_by_pid ?? "?"}</span>
-          <div className="step-node__actions">
-            <button type="button">apri</button>
-            <button type="button">sospendi</button>
-            <button type="button" className="is-stop">
-              termina
-            </button>
-          </div>
+      <div className="step-node__body">
+        <div className="step-node__id">{step.id}</div>
+
+        {/* DA VICINO IL NODO DICE SEMPRE CON COSA GIRA — anche quando la
+            risposta è «con niente». Da lontano no: a quello zoom non si
+            leggerebbe. */}
+        {!far && (engines.length > 0 ? (
+          <StepTool
+            id={engines[0]}
+            model={modelOf(step)}
+            actual={usage?.models ?? []}
+            fallbacks={engines.slice(1)}
+          />
+        ) : (
+          <NoTool action={step.action} />
+        ))}
+
+        {!far && usage && usage.calls > 0 && <StepMeter usage={usage} />}
+
+        {!far && ports && <StepPortsRow ports={ports} />}
+      </div>
+
+      {!far && (run || isolated) && (
+        <div className="step-node__foot">
+          {/* Chi tiene il passo è un fatto, e sta bene in fondo: non chiede
+              niente a nessuno. Prima viaggiava dentro il riquadro che urlava. */}
+          {isAgent && state === "running" && (
+            <span className="step-node__pid">pid {run?.held_by_pid ?? "?"}</span>
+          )}
+          {run && run.attempt > 1 && (
+            <span className="step-node__attempt">
+              {run.attempt}ª di {step.max_attempts}
+            </span>
+          )}
+          {/* Le altre che aspettano non prendono ciascuna un'evidenza: si
+              contano qui, sull'unico nodo isolato. */}
+          {isolated && call.waiting > 1 && (
+            <span className="step-node__elsewhere">
+              altri {call.waiting - 1} in attesa
+            </span>
+          )}
         </div>
       )}
 

@@ -243,21 +243,58 @@ function textAt(params: Record<string, unknown> | null | undefined, key: string)
   return typeof value === "string" ? value : "";
 }
 
-/** Separa i tre campi gestiti dal pannello dagli altri parametri del passo. */
+/**
+ * Vero se il campo del pannello sa **tenere** questo valore senza perderne un
+ * pezzo. I tre campi di testo tengono una stringa; le opzioni tengono un
+ * oggetto di soli valori scalari.
+ */
+function panelCanHold(key: string, value: unknown): boolean {
+  if (key !== OPTIONS_KEY) return typeof value === "string";
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every(
+    (item) => typeof item === "string" || typeof item === "number" || typeof item === "boolean",
+  );
+}
+
+/**
+ * Separa i campi gestiti dal pannello dagli altri parametri del passo.
+ *
+ * **CIÒ CHE NON SI SA LEGGERE NON SI PUÒ RISCRIVERE.** Un campo gestito il cui
+ * valore il pannello non sa tenere resta fra gli altri parametri: torna sul
+ * disco com'era, e chi guarda lo vede nel riquadro JSON invece di non vederlo
+ * più da nessuna parte. Chi non sa un campo lo lascia dov'era; ometterlo è
+ * anch'essa una scrittura, ed è quella che non si vede.
+ *
+ * **IL CASO CHE HA PAGATO QUESTA REGOLA — guasto 53.** `tool` è un `ToolChoice`
+ * del motore: `One(String)` **oppure** `Chain(Vec<String>)`. Il pannello lo
+ * leggeva solo come stringa, e i tre pezzi si incastravano così: `tool` sta fra
+ * i campi gestiti, quindi usciva da `rest`; letto come testo su una catena dava
+ * `""`; e `joinToolParams` scrive `tool` solo se non è vuoto. Risultato
+ * misurato sui flussi veri: `{ tool: ["claude-code","agy","codex"], model:
+ * "sonnet" }` tornava sul disco come `{ model: "opus" }`. Bastava toccare
+ * modello, prompt o opzioni e premere «Salva» — **20 dei 25 passi
+ * `external_engine`** di `flows/`.
+ *
+ * La causa è la stessa già riparata sul nodo (`enginesOf` in `StepNode.tsx`):
+ * leggere `tool` come se fosse solo una stringa. Là si mostrava «nessun
+ * motore», qui si cancellava.
+ */
 export function splitToolParams(params: Record<string, unknown> | null | undefined): {
   choice: ToolChoice;
   rest: Record<string, unknown>;
 } {
   const rest: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(params ?? {})) {
-    if (!MANAGED_KEYS.includes(key)) rest[key] = value;
+    if (!MANAGED_KEYS.includes(key) || !panelCanHold(key, value)) rest[key] = value;
   }
   return {
     choice: {
       tool: textAt(params, TOOL_KEY),
       model: textAt(params, MODEL_KEY),
       prompt: textAt(params, PROMPT_KEY),
-      options: readOptions(params?.[OPTIONS_KEY]),
+      options: panelCanHold(OPTIONS_KEY, params?.[OPTIONS_KEY])
+        ? readOptions(params?.[OPTIONS_KEY])
+        : {},
     },
     rest,
   };
@@ -299,6 +336,11 @@ export function optionsPreview(choice: ToolChoice): string {
  * Rimette insieme i parametri. Un campo lasciato vuoto non finisce nel file
  * come stringa vuota: sul disco resta la differenza fra «non l'ho scelto» e
  * «l'ho scelto vuoto», e la prima è la verità.
+ *
+ * `rest` viene copiato **per primo** di proposito: un campo che `splitToolParams`
+ * ha lasciato lì perché non sapeva tenerlo — una catena in `tool` — sopravvive,
+ * e una scelta esplicita del pannello gli passa sopra. L'ordine è la differenza
+ * fra «non l'ho toccato» e «l'ho cambiato», e sono due cose diverse.
  */
 export function joinToolParams(
   rest: Record<string, unknown>,
@@ -345,6 +387,21 @@ export function rivalBinary(rest: Record<string, unknown>): string {
 /** L'identificativo dello strumento scelto da un passo, se ne ha uno. */
 export function toolOf(params: Record<string, unknown> | null | undefined): string {
   return textAt(params, TOOL_KEY);
+}
+
+/**
+ * La catena di motori che `splitToolParams` ha lasciato fra gli altri
+ * parametri, se ce n'è una.
+ *
+ * Serve al pannello per **dirlo**: un passo con una catena e un selettore su
+ * «— nessuno —» è la stessa bugia che il nodo raccontava prima, spostata di una
+ * finestra. Il pannello non la sa ancora comporre; sa dire che c'è e che resta
+ * dov'è.
+ */
+export function chainIn(rest: Record<string, unknown>): string[] {
+  const declared = rest[TOOL_KEY];
+  if (!Array.isArray(declared)) return [];
+  return declared.filter((id): id is string => typeof id === "string" && id !== "");
 }
 
 /**
