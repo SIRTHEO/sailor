@@ -55,7 +55,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 /// comando dice la domanda, la riga dice la misura.
 fn report(found: &[Remaining]) -> String {
     if found.is_empty() {
-        return "nessuna finestra di quota dichiarata: il canale ha risposto senza misure"
+        return "no quota window declared: the channel answered with no measurements"
             .to_owned();
     }
     let mut lines = vec![
@@ -65,7 +65,7 @@ fn report(found: &[Remaining]) -> String {
     ];
     for entry in found {
         let resets = match &entry.resets_at {
-            Some(when) => format!(", si azzera il {when}"),
+            Some(when) => format!(", resets on {when}"),
             None => String::new(),
         };
         lines.push(format!(
@@ -83,14 +83,14 @@ fn report(found: &[Remaining]) -> String {
 fn home_dir() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or_else(|| "HOME non è impostata: non so dove sta la casa di chi lavora".to_owned())
+        .ok_or_else(|| "HOME is not set: there is no telling where the person's home is".to_owned())
 }
 
 fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs() as i64)
-        .map_err(|_| "l'orologio della macchina è prima del 1970".to_owned())
+        .map_err(|_| "the machine's clock is before 1970".to_owned())
 }
 
 #[cfg(test)]
@@ -134,7 +134,7 @@ mod tests {
             "{said}"
         );
         assert!(
-            said.contains("si azzera il 2026-09-01T03:29:59+00:00"),
+            said.contains("resets on 2026-09-01T03:29:59+00:00"),
             "{said}"
         );
         assert!(
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn no_window_at_all_is_said_and_never_shown_as_zero() {
         let said = report(&[]);
-        assert!(said.contains("nessuna finestra"), "{said}");
+        assert!(said.contains("no quota window"), "{said}");
         assert!(!said.contains("0.0%"), "{said}");
     }
 
