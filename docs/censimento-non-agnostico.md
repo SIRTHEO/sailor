@@ -17,7 +17,7 @@ decide dove il prodotto scrive.
 **34 violazioni vere in 12 file di prodotto.** La peggiore è `crates/inventory`
 per intero: le sue radici sono un elenco chiuso compilato che nomina la casa di
 un altro prodotto (`~/.claude/...`) **e le cartelle di lavoro di una persona
-sola** (`~/other-repo/work`, `~/personal`) — `crates/inventory/src/lib.rs:648-671`.
+sola** — `crates/inventory/src/lib.rs:648-671`.
 Su una macchina che non è questa, quel crate risponde «non hai niente» senza
 sbagliare nessun controllo.
 
@@ -63,11 +63,11 @@ tornerebbe vivo e deciderebbe la raggiungibilità di una competenza.
 
 | `file:riga` | Cosa c'è | Perché viola | Costo per toglierlo |
 |---|---|---|---|
-| `crates/inventory/src/lib.rs:652-653` | `home.join("other-repo").join("work"),` / `home.join("personal"),` | **La peggiore.** Le cartelle di lavoro di una persona sola, compilate. `other-repo` è il nome di un datore di lavoro; `personal` una convenzione privata. Su un'altra macchina l'inventario dei repo è vuoto e non lo dice | Rifacimento piccolo: le basi diventano un campo di configurazione (`SAILOR_WORK_ROOTS`, o una chiave nella casa) con questo elenco come predefinito **dichiarato**, non come fatto |
-| `crates/inventory/src/lib.rs:658-666` | `(".agents", home.join(".agents").join("skills")),` e `("other-repo/work/.agents", home.join("other-repo").join("work").join(".agents").join("skills"))` | Due magazzini di questa macchina, uno con il nome del datore di lavoro dentro l'etichetta **e** dentro il percorso | Come sopra, stesso file di configurazione |
+| `crates/inventory/src/lib.rs:652-653` | Due `home.join(...)` su cartelle di lavoro | **La peggiore.** Le cartelle di lavoro di una persona sola, compilate: una è il nome di un datore di lavoro, l'altra una convenzione privata. Su un'altra macchina l'inventario dei repo è vuoto e non lo dice | Rifacimento piccolo: le basi diventano un campo di configurazione (`SAILOR_WORK_ROOTS`, o una chiave nella casa) con questo elenco come predefinito **dichiarato**, non come fatto |
+| `crates/inventory/src/lib.rs:658-666` | `(".agents", home.join(".agents").join("skills")),` e un secondo magazzino con il nome del datore di lavoro nell'etichetta | Due magazzini di questa macchina, uno con il nome del datore di lavoro dentro l'etichetta **e** dentro il percorso | Come sopra, stesso file di configurazione |
 | `crates/release/src/lib.rs:91` | `label: "com.theo.notte",` | Nome proprio in un valore di prodotto. **Attenuante forte**: le righe 34-42 dichiarano che è un predefinito e `RELEASE_SERVICE_LABEL` lo sostituisce (`crates/sailor/src/release_cmd.rs:650`) | Una riga; oppure zero, se si accetta la dichiarazione |
 | `crates/release/src/lib.rs:92` | `in_progress_rel: "state/plancia/coda-notte/in-corso",` | Percorso interno di un altro sistema (la plancia, la coda notturna) inchiodato in una tabella di Sailor | Una riga |
-| `flows/chiedi-all-indice.flow.json:266-267` | `"who": "theo",` / `"where": "/home/someone/personal/sailor"` | Un flusso spedito nel repo che si può eseguire **in un posto solo**: è la forma esatta del guasto 25 che `crates/flow/src/workspace.rs:3-8` racconta di aver chiuso | Due righe: la radice viene da chi lancia |
+| `flows/chiedi-all-indice.flow.json:266-267` | Un `"who"` col nome di una persona e un `"where"` con la sua casa | Un flusso spedito nel repo che si può eseguire **in un posto solo**: è la forma esatta del guasto 25 che `crates/flow/src/workspace.rs:3-8` racconta di aver chiuso | Due righe: la radice viene da chi lancia |
 | `flows/come-lo-risolvono-gli-altri.flow.json:411` | `"Guarda com'è fatto Sailor, il progetto in ~/personal/sailor, ..."` | Percorso di questa macchina dentro il testo consegnato a un motore | Una riga |
 
 ### Categoria 3 — fornitore, modello o binario presunto inchiodato
@@ -203,8 +203,8 @@ identificatori, e la prova sull'inglese lo dichiara):
 **Commenti che raccontano un percorso già tolto** — sono la cicatrice, non la
 ferita:
 
-- `crates/flow/src/workspace.rs:4` — cita `"workdir": "/home/someone/personal/sailor"`
-  come il guasto 25 *chiuso*.
+- `crates/flow/src/workspace.rs:4` — cita il `"workdir"` assoluto come il guasto
+  25 *chiuso*.
 - `crates/ui/src/gather.rs:90-91,128-130` — cita `~/.claude/state` e
   `~/personal/sailor` come i percorsi **rimossi** il 28/08.
 - `crates/release/src/lib.rs:50` e `crates/sailor/src/flow_cmd.rs:1350,1529`.
@@ -292,7 +292,7 @@ sull'inglese, per quel che copre, tiene.
 
 ## 5. L'ordine in cui li toglierei
 
-**1. `crates/inventory/src/lib.rs:652-653` — `~/other-repo/work` e `~/personal`.**
+**1. `crates/inventory/src/lib.rs:652-653` — le due cartelle di lavoro compilate.**
 
 Prima di tutto, e per una ragione sola: **è l'unica violazione che risponde una
 bugia invece di rompersi.** Le altre, su una macchina diversa, danno un errore
