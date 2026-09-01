@@ -43,7 +43,7 @@ pub const USAGE: &[&str] = &[
     "sailor session detach    [--tty <name>]   leave this window alone",
     "sailor session attach    [--tty <name>]   follow it again",
     "sailor session census    [--json]         what is on the machine right now",
-    "sailor session install   [--settings <file>]  grafts the hooks in, without touching anyone else's",
+    "sailor session install   [--tool <id> --settings <file>]  grafts every command line that declares how, and names those that do not",
 ];
 
 /// Le opzioni che valgono per più forme, fuori dall'elenco perché non sono
@@ -234,20 +234,17 @@ impl<'a> Request<'a> {
 /// che gira su **ogni** forma non elencata qui.
 const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
 
-/// I ganci che Sailor innesta, e cosa chiama ciascuno.
+/// What Sailor does at each of its moments. What a line calls that moment is
+/// said by the descriptor, never here.
 ///
-/// **QUATTRO, E NON DI PIÙ.** Un gancio in più è un processo in più a ogni
-/// evento di ogni sessione della macchina: si mette solo dove la risposta serve
-/// davvero. `SessionStart` porta il benvenuto ed è l'unico evento in cui ciò che
-/// scriviamo entra nel contesto dell'agente; gli altri tre dicono che la
-/// sessione è viva, cosa le è stato chiesto e quando il contesto sta per essere
-/// compattato — cioè i tre momenti da cui si capisce se tocca passare il
-/// testimone.
-const HOOKS: &[(&str, &str)] = &[
-    ("SessionStart", "open"),
-    ("Stop", "event"),
-    ("UserPromptSubmit", "event"),
-    ("PreCompact", "event"),
+/// **FOUR, AND NO MORE:** one more hook is one more process at every event of
+/// every session. `session_start` carries the welcome and is the only one whose
+/// text reaches the agent; the others say alive, asked, about to be compacted.
+const WHAT_WE_DO_AT_EACH: &[(&str, &str)] = &[
+    ("session_start", "open"),
+    ("alive", "event"),
+    ("asked", "event"),
+    ("compacting", "event"),
 ];
 
 /// Come si riconosce un gancio nostro fra quelli di chiunque altro: dal fatto
@@ -255,28 +252,129 @@ const HOOKS: &[(&str, &str)] = &[
 /// cambiare senza cambiare cosa fa.
 const MARK: &str = " session ";
 
-/// Dove Claude Code tiene le impostazioni dell'utente.
+/// Grafts every command line that declares how, and **names each one that does
+/// not**.
 ///
-/// **NON È UN NOME DI PRODOTTO IN UNA CONDIZIONE**, è l'indirizzo di ciò che
-/// stiamo innestando: un innesto deve sapere dove innesta. Nessun ramo di
-/// questo comando cambia comportamento a seconda di cosa trova lì.
-fn default_settings() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_owned())?;
-    Ok(PathBuf::from(home).join(".claude").join("settings.json"))
-}
-
+/// The settings address used to live here, under a comment arguing it was «the
+/// address of what we are grafting» and so not a coupling. It was: two other
+/// lines with the same four moments got nothing, and silence reads as success.
 fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
-    let settings = match request.options.get("settings") {
-        Some(declared) => PathBuf::from(declared),
-        None => default_settings()?,
-    };
-    let hooks = installed(&settings)?;
-    let commands = settings
-        .parent()
-        .ok_or_else(|| format!("{}: it has no directory", settings.display()))?
-        .join("commands");
-    let written = wrote_the_two_commands(&commands)?;
-    Ok(Report::spoken(format!("{hooks}\n{written}")))
+    // `--settings` stays, and stays one file: it serves the tests and whoever
+    // moved their own. With it, the descriptor says only what the events are
+    // called, no longer where to write them.
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine));
+    let home = machine.env.get("HOME").cloned().unwrap_or_default();
+    let only = request.options.get("tool");
+    let declared_file = request.options.get("settings").map(PathBuf::from);
+    if declared_file.is_some() && only.is_none() {
+        return Err(
+            "«--settings» says where to write and not for whom: name the command \
+             line with «--tool <id>» too. Without it, one file would be handed \
+             to whichever line the code happened to know, which is the coupling \
+             this command just had taken out of it"
+                .to_owned(),
+        );
+    }
+
+    let mut said = Vec::new();
+    let mut grafted_any = false;
+    for loaded in &catalog.descriptors {
+        let tool = &loaded.descriptor;
+        if tool.family != "ai_cli" || tool.disabled {
+            continue;
+        }
+        if only.is_some_and(|wanted| *wanted != tool.id) {
+            continue;
+        }
+        let Some(hooks) = &tool.session_hooks else {
+            said.push(format!(
+                "{}: not grafted - it does not declare how it is told a session \
+                 started. Nothing was written for it",
+                tool.id
+            ));
+            continue;
+        };
+
+        let missing = moments_without_an_event(tool);
+
+        // It applies to the line `--tool` names, never to «the one the code
+        // knows»: a fallback choosing for itself would put a product name back
+        // in a condition, through another door.
+        let file = match &declared_file {
+            Some(path) => path.clone(),
+            None => {
+                let root = machine.env.get(&hooks.file.root_var).cloned();
+                match hooks.file.path(root.as_deref(), &home) {
+                    Some(path) => path,
+                    None => {
+                        said.push(format!("{}: its settings file has no address", tool.id));
+                        continue;
+                    }
+                }
+            }
+        };
+
+        match hooks.file.format {
+            toolbox::descriptor::FileFormat::Json => {
+                said.push(grafted_into(tool, &file)?);
+                grafted_any = true;
+            }
+            // **DECLARED AND NOT DONE, WHICH IS NOT THE SAME AS UNKNOWN.** The
+            // descriptor says where and how; it is Sailor that cannot write
+            // that format yet. Saying nothing here would rebuild the very fault
+            // this block was written to remove.
+            other => said.push(format!(
+                "{}: declares its hooks in {other:?} at {}, and Sailor does not \
+                 write that format yet - so it was NOT grafted",
+                tool.id,
+                file.display()
+            )),
+        }
+
+        if !missing.is_empty() {
+            said.push(format!(
+                "  {}: {:?} have no event on this command line, so they are not \
+                 grafted. Not filled with the nearest one: a welcome on the wrong \
+                 event arrives at every turn instead of once",
+                tool.id, missing
+            ));
+        }
+
+        if let Some(words) = &hooks.words {
+            // Under `--settings` the words follow the declared file instead of
+            // their own address: whoever diverts the graft diverts all of it,
+            // and a test writing half into its scratch and half into the real
+            // home would leave that half behind.
+            let directory = match &declared_file {
+                Some(path) => path.parent().map(|beside| {
+                    beside.join(
+                        std::path::Path::new(&words.below_home)
+                            .file_name()
+                            .unwrap_or_default(),
+                    )
+                }),
+                None => words.path(machine.env.get(&words.root_var).map(String::as_str), &home),
+            };
+            if let Some(directory) = directory {
+                said.push(wrote_the_two_commands(&directory)?);
+            }
+        } else {
+            said.push(format!(
+                "  {}: no words a user types, so the welcome promises none",
+                tool.id
+            ));
+        }
+    }
+
+    if !grafted_any {
+        said.push(
+            "nothing was grafted anywhere. That is a statement, not a silence: \
+             read the lines above for which command line refused and why"
+                .to_owned(),
+        );
+    }
+    Ok(Report::spoken(said.join("\n")))
 }
 
 /// Le due parole che il benvenuto promette, scritte dove Claude Code le cerca.
@@ -321,7 +419,39 @@ fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String>
 /// (`current_exe`): un innesto che scrivesse `sailor` e basta funzionerebbe
 /// solo dove quel nome è già nel `PATH` di chi apre il terminale, che non è
 /// una cosa che si può sapere da qui.
-fn installed(settings: &std::path::Path) -> Result<String, String> {
+/// The moments this command line has no event for, which are the ones the
+/// report has to name. A pure answer, so it can be asked of a descriptor
+/// nobody ships and the check needs no product to exist.
+fn moments_without_an_event(tool: &toolbox::descriptor::Descriptor) -> Vec<&'static str> {
+    WHAT_WE_DO_AT_EACH
+        .iter()
+        .map(|(moment, _)| *moment)
+        .filter(|moment| tool.event_for(moment).is_none())
+        .collect()
+}
+
+/// Grafts the moments **this** command line can report, under its own names.
+/// The ones it cannot report do not enter and are named elsewhere: there is no
+/// fallback here, because a fallback would be invisible to whoever reads.
+fn grafted_into(
+    tool: &toolbox::descriptor::Descriptor,
+    settings: &std::path::Path,
+) -> Result<String, String> {
+    let named: Vec<(&str, &str)> = WHAT_WE_DO_AT_EACH
+        .iter()
+        .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, *verb)))
+        .collect();
+    if named.is_empty() {
+        return Ok(format!(
+            "{}: declares a hooks file and no event names, so there is nothing \
+             to graft into it",
+            tool.id
+        ));
+    }
+    installed(settings, &named)
+}
+
+fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<String, String> {
     let mut root: serde_json::Value = match std::fs::read_to_string(settings) {
         Ok(text) if text.trim().is_empty() => serde_json::json!({}),
         // **UN FILE CHE NON SI CAPISCE NON SI RISCRIVE.** Sostituirlo con la
@@ -346,7 +476,7 @@ fn installed(settings: &std::path::Path) -> Result<String, String> {
         .ok_or_else(|| format!("{}: «hooks» is not an object", settings.display()))?;
 
     let mut added = Vec::new();
-    for (event, verb) in HOOKS {
+    for (event, verb) in events {
         let command = format!("{binary} session {verb}");
         let list = hooks
             .entry(*event)
@@ -798,6 +928,8 @@ mod tests {
                 impossible.display().to_string(),
                 "--settings".to_owned(),
                 settings.display().to_string(),
+                "--tool".to_owned(),
+                "claude-code".to_owned(),
             ];
             let report = dispatch(&words).unwrap_or_else(|error| {
                 panic!(
@@ -828,6 +960,108 @@ mod tests {
         }"#
     }
 
+    /// **A MISSING KEY IS NOT FILLED WITH ITS NEIGHBOUR, AND IS SAID ALOUD.**
+    ///
+    /// A line that can report one moment gets that one, and the other three are
+    /// declared ungrafted. The temptation has a name: an event that looks like
+    /// a session start and fires every turn would put the welcome every turn.
+    #[test]
+    fn a_moment_with_no_event_is_left_out_and_said_out_loud() {
+        let scratch = Scratch::new("momento-assente");
+        let settings = scratch.directory.join("settings.json");
+        // Built as the loader would read it, and sent down the real road: a
+        // test calling `installed` with the list already filtered stays green
+        // when the filter goes, because the filter is the thing that would go.
+        let tool: toolbox::descriptor::Descriptor = serde_json::from_str(
+            r#"{
+              "id": "riga-che-sa-dire-una-cosa-sola",
+              "family": "ai_cli",
+              "session_hooks": {
+                "file": {"below_home": ".da-qualche-parte/settings.json"},
+                "events": {"alive": "SoloQuesto"}
+              }
+            }"#,
+        )
+        .expect("il descrittore si legge");
+
+        grafted_into(&tool, &settings).expect("l'innesto riesce");
+
+        let written = std::fs::read_to_string(&settings).expect("rileggere");
+        let after: serde_json::Value = serde_json::from_str(&written).expect("JSON valido");
+        let hooks = after["hooks"].as_object().expect("i ganci sono un oggetto");
+
+        assert_eq!(
+            hooks.len(),
+            1,
+            "innestato più di ciò che questa riga sa dire: {written}"
+        );
+        assert!(hooks.contains_key("SoloQuesto"), "{written}");
+        for nearby in ["SessionStart", "Stop", "UserPromptSubmit", "PreCompact"] {
+            assert!(
+                !hooks.contains_key(nearby),
+                "«{nearby}» è entrato senza che nessun descrittore lo nominasse: \
+                 un evento vicino messo al posto di uno assente non si vede, e \
+                 il benvenuto finirebbe dove nessuno l'ha chiesto"
+            );
+        }
+    }
+
+    /// And the absence must be **named**, not merely avoided: silence reads as
+    /// success, which is the whole fault this block exists to remove. Asked of
+    /// an invented descriptor, so no shipped product's name enters the check.
+    #[test]
+    fn the_moments_with_no_event_are_the_ones_reported() {
+        let says_one: toolbox::descriptor::Descriptor = serde_json::from_str(
+            r#"{
+              "id": "una-riga-qualsiasi",
+              "family": "ai_cli",
+              "session_hooks": {
+                "file": {"below_home": "altrove/settings.json"},
+                "events": {"alive": "SoloQuesto"}
+              }
+            }"#,
+        )
+        .expect("il descrittore si legge");
+
+        let missing = moments_without_an_event(&says_one);
+
+        assert_eq!(
+            missing,
+            vec!["session_start", "asked", "compacting"],
+            "i momenti senza evento sono quelli che il rapporto deve nominare, \
+             e sono esattamente quelli che il descrittore non dichiara"
+        );
+
+        let says_all: toolbox::descriptor::Descriptor = serde_json::from_str(
+            r#"{
+              "id": "una-riga-completa",
+              "family": "ai_cli",
+              "session_hooks": {
+                "file": {"below_home": "altrove/settings.json"},
+                "events": {"session_start": "A", "alive": "B", "asked": "C", "compacting": "D"}
+              }
+            }"#,
+        )
+        .expect("il descrittore si legge");
+
+        assert!(
+            moments_without_an_event(&says_all).is_empty(),
+            "una riga che li dichiara tutti e quattro non deve avere niente da \
+             dichiarare mancante, o l'avviso diventa rumore e smette di essere letto"
+        );
+    }
+
+    /// The names one command line gives the four moments, as a descriptor
+    /// would give them. Here and not in the code: that is the whole point.
+    fn as_one_line_names_them() -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("SessionStart", "open"),
+            ("Stop", "event"),
+            ("UserPromptSubmit", "event"),
+            ("PreCompact", "event"),
+        ]
+    }
+
     /// **SI AGGIUNGE, NON SI SOSTITUISCE.** Su `~/.claude/settings.json`
     /// scrivono in cinque, e un innesto che riscrive il vettore dei ganci
     /// spegne in silenzio quelli di chi c'era prima — che è il modo in cui uno
@@ -838,7 +1072,7 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
 
-        installed(&settings).expect("l'innesto riesce");
+        installed(&settings, &as_one_line_names_them()).expect("l'innesto riesce");
 
         let after: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings).expect("rileggere"))
@@ -871,9 +1105,9 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, settings_of_someone_else()).expect("scrivere");
 
-        installed(&settings).expect("primo innesto");
+        installed(&settings, &as_one_line_names_them()).expect("primo innesto");
         let once = std::fs::read_to_string(&settings).expect("rileggere");
-        installed(&settings).expect("secondo innesto");
+        installed(&settings, &as_one_line_names_them()).expect("secondo innesto");
         let twice = std::fs::read_to_string(&settings).expect("rileggere");
 
         assert_eq!(once, twice, "il secondo innesto non deve cambiare niente");
@@ -888,7 +1122,8 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         std::fs::write(&settings, "{ questo non è JSON").expect("scrivere");
 
-        let refused = installed(&settings).expect_err("un file illeggibile ferma l'innesto");
+        let refused = installed(&settings, &as_one_line_names_them())
+            .expect_err("un file illeggibile ferma l'innesto");
         assert!(refused.contains("settings.json"), "{refused}");
         assert_eq!(
             std::fs::read_to_string(&settings).expect("rileggere"),
@@ -903,7 +1138,8 @@ mod tests {
     fn what_the_install_writes_names_no_product() {
         let scratch = Scratch::new("innesto-neutro");
         let settings = scratch.directory.join("settings.json");
-        installed(&settings).expect("l'innesto riesce anche su un file che non c'era");
+        installed(&settings, &as_one_line_names_them())
+            .expect("l'innesto riesce anche su un file che non c'era");
 
         let written = std::fs::read_to_string(&settings).expect("rileggere");
         for product in ["orca", "warp", "vscode", "iterm", "tmux"] {
@@ -924,7 +1160,13 @@ mod tests {
         let settings = scratch.directory.join("settings.json");
         let request = Request {
             verb: "install",
-            options: &BTreeMap::from([("settings".to_owned(), settings.display().to_string())]),
+            // `--settings` without `--tool` is refused on purpose: it says
+            // where to write and not for whom, and which line to graft is
+            // named by the descriptor, never by the code.
+            options: &BTreeMap::from([
+                ("settings".to_owned(), settings.display().to_string()),
+                ("tool".to_owned(), "claude-code".to_owned()),
+            ]),
             payload: &Payload::parse("{}").expect("payload vuoto"),
             raw: "",
             store: None,
