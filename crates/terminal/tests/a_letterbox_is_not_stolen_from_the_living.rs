@@ -17,13 +17,12 @@ struct Scratch {
 }
 
 impl Scratch {
-    /// Under `/tmp` and not under `temp_dir()`, because a socket address has a
-    /// hard length cap and the per-user temporary directory eats half of it.
+    /// Short on purpose: a socket address has a hard length cap and the
+    /// per-user temporary directory eats half of it.
     fn new(name: &str) -> Scratch {
-        let directory = PathBuf::from("/tmp").join(format!("sr-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).expect("create the test directory");
-        Scratch { directory }
+        Scratch {
+            directory: terminal::scratch::directory(name),
+        }
     }
 }
 

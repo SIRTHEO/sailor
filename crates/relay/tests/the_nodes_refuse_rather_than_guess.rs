@@ -10,10 +10,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 
 fn scratch(name: &str) -> PathBuf {
-    let directory = PathBuf::from("/tmp").join(format!("sr-relay-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("create the test directory");
-    directory
+    terminal::scratch::directory(&format!("relay-{name}"))
 }
 
 fn registry() -> flow::ActionRegistry {

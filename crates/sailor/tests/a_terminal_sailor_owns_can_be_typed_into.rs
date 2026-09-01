@@ -16,10 +16,7 @@ use terminal::Workspace;
 
 /// A short directory: a socket address has a hard length cap.
 fn scratch(name: &str) -> PathBuf {
-    let directory = PathBuf::from("/tmp").join(format!("sr-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).expect("create the test directory");
-    directory
+    terminal::scratch::directory(name)
 }
 
 fn collect(inner: &Arc<Pty>) -> Arc<Mutex<Vec<u8>>> {
@@ -73,8 +70,14 @@ fn held(directory: &Path) -> Arc<Pty> {
         OsStr::new("/bin/cat"),
     ];
     Arc::new(
-        Pty::open(&workspace, OsStr::new(binary), &arguments, Size::default(), &[])
-            .expect("open a terminal with sailor terminal inside"),
+        Pty::open(
+            &workspace,
+            OsStr::new(binary),
+            &arguments,
+            Size::default(),
+            &[],
+        )
+        .expect("open a terminal with sailor terminal inside"),
     )
 }
 
@@ -85,8 +88,13 @@ fn a_line_pressed_from_outside_reaches_the_program_the_command_started() {
     let shown = collect(&outer);
 
     let room = directory.join("terminals");
-    let address = letterbox_under(&room, Duration::from_secs(10))
-        .unwrap_or_else(|| panic!("no letterbox appeared in {}: {}", room.display(), seen(&shown)));
+    let address = letterbox_under(&room, Duration::from_secs(10)).unwrap_or_else(|| {
+        panic!(
+            "no letterbox appeared in {}: {}",
+            room.display(),
+            seen(&shown)
+        )
+    });
 
     // The tracking store records the terminal the agent sees, which is the one
     // the command opened — not the one it was started from. A letterbox named
