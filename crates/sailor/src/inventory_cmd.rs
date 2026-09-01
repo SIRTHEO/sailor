@@ -144,12 +144,25 @@ fn deposit(found: &Inventory) -> Result<String, String> {
     ))
 }
 
+/// **DOVE STA IL DEPOSITO LO SA UN POSTO SOLO**, e non è questo.
+///
+/// Fino al 01/09/2026 questa funzione ricomponeva `HOME/.claude/state/flussi` da
+/// sé. Non era una copia inerte: era una copia **diversa**, perché
+/// `ledger::default_directory()` guarda anche `SAILOR_LEDGER` e riconosce la
+/// casa di un'installazione precedente. Con quella variabile impostata — come fa
+/// chiunque provi qualcosa senza toccare il deposito vero — `sailor inventory`
+/// scriveva il censimento in un deposito mentre ogni altro comando lo leggeva da
+/// un altro: nessun errore, due depositi, e quello che si guardava risultava
+/// vuoto. È la forma in cui il guasto 12 continua a ripresentarsi, un elenco
+/// vuoto che ha l'aria di una risposta.
+///
+/// La sorveglianza è in `only_the_ledger_knows_where_the_ledger_lives`, che
+/// guarda i sorgenti invece di confrontare due funzioni: due copie che sbagliano
+/// insieme si confermano a vicenda, quindi l'ancora deve stare fuori da tutte e
+/// due.
 fn open_ledger() -> Result<Ledger, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME non è impostata".to_string())?;
-    let directory = std::path::PathBuf::from(home)
-        .join(".claude")
-        .join("state")
-        .join("flussi");
+    let directory = ledger::default_directory()
+        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 

@@ -71,7 +71,17 @@ fn faults() -> Vec<Fault> {
             let status = cells.last().cloned().unwrap_or_default();
             Some(Fault {
                 number,
-                open: status == "**aperto**",
+                // **BASTA CHE COMINCI CON «APERTO», E IL PERCHÉ È IL GUASTO 42
+                // STESSO.** Fino al 01/09/2026 qui c'era `status ==
+                // "**aperto**"`: uno stato che aggiungesse una sola parola —
+                // «**aperto** — le difese di procedura sono in vigore, il codice
+                // no» — non era né aperto né chiuso in parte, quindi **spariva
+                // dal conto**. È successo scrivendo la riga 42, che parla
+                // esattamente di questo: una risorsa condivisa che nessuno
+                // sorveglia. Un confronto esatto su un campo di prosa è una
+                // difesa che si rompe alla prima sfumatura, e si rompe **verso
+                // il basso**, cioè nella direzione che tranquillizza.
+                open: status.starts_with("**aperto**"),
                 partly: status.contains("chiuso in parte"),
                 cells,
             })
@@ -139,7 +149,7 @@ fn no_fault_is_left_without_the_check_that_would_have_stopped_it() {
 /// I numeri scritti in lettere nella prosa, tradotti. Si fermano dove serve:
 /// una tabella più lunga di così vorrà una riga in più qui, e la prova lo dirà
 /// invece di tacere.
-const IN_WORDS: [(&str, usize); 42] = [
+const IN_WORDS: [(&str, usize); 43] = [
     ("zero", 0), ("uno", 1), ("due", 2), ("tre", 3), ("quattro", 4),
     ("cinque", 5), ("sei", 6), ("sette", 7), ("otto", 8), ("nove", 9),
     ("dieci", 10), ("undici", 11), ("dodici", 12), ("tredici", 13),
@@ -151,7 +161,7 @@ const IN_WORDS: [(&str, usize); 42] = [
     ("trentadue", 32), ("trentatré", 33), ("trentaquattro", 34),
     ("trentacinque", 35), ("trentasei", 36), ("trentasette", 37),
     ("trentotto", 38), ("trentanove", 39), ("quaranta", 40),
-    ("quarantuno", 41),
+    ("quarantuno", 41), ("quarantadue", 42),
 ];
 
 fn spelled(number: usize) -> &'static str {
