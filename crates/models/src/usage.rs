@@ -1,28 +1,28 @@
-//! Il conteggio esatto di token e contesto, dalla risposta di un motore.
+//! The exact token and context count, from an engine's answer.
 //!
-//! `None` è una risposta legittima — un numero che quel motore non dice —
-//! `0` non lo è mai per un campo mancante: qui non si inventa nulla.
+//! `None` is a legitimate answer — a number that engine does not say — while
+//! `0` never is for a missing field: nothing is invented here.
 
 use crate::catalog::Model;
 
-/// I token misurati per una singola chiamata. `total_tokens` può essere
-/// noto anche quando `prompt_tokens`/`completion_tokens` non lo sono (è il
-/// caso di Codex, che sull'uscita dice solo il totale).
+/// The tokens measured for a single call. `total_tokens` can be known even
+/// when `prompt_tokens`/`completion_tokens` are not (Codex says only the total
+/// on its output).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct TokenUsage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
-    /// Il costo in USD, quando il motore stesso lo dichiara (OpenRouter lo
-    /// fa per ogni risposta, anche a zero sui modelli gratuiti).
+    /// The cost in USD, when the engine declares it itself (OpenRouter does on
+    /// every answer, zero included on free models).
     pub cost_usd: Option<f64>,
 }
 
 impl TokenUsage {
-    /// Dal corpo JSON di una risposta `chat/completions` di OpenRouter.
-    /// Un campo mancante o non numerico resta `None`, non fa fallire tutto
-    /// il parsing: un corpo di errore (429, chiave non valida, ecc.) deve
-    /// poter tornare un `TokenUsage` vuoto invece di un panico.
+    /// From the JSON body of an OpenRouter `chat/completions` answer. A field
+    /// that is missing, or is not a number, stays `None` rather than failing
+    /// the whole parse: an error body (429, invalid key, …) must be able to
+    /// give back an empty `TokenUsage` instead of a panic.
     pub fn from_openrouter_body(body: &str) -> TokenUsage {
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(body) else {
             return TokenUsage::default();
@@ -37,36 +37,39 @@ impl TokenUsage {
         }
     }
 
-    /// Dall'uscita testuale di `codex exec`: riusa `parse_codex_tokens`
-    /// invece di riscrivere il parsing (`"tokens used"` seguito dal numero
-    /// con il punto come separatore delle migliaia). Codex non separa
-    /// prompt e completamento, e non dichiara un costo: qui restano `None`.
+    /// From the text output of `codex exec`: reuses `parse_codex_tokens`
+    /// instead of rewriting the parsing (`"tokens used"` followed by the number
+    /// with a dot as thousands separator). Codex separates neither prompt from
+    /// completion nor declares a cost: those stay `None`.
     pub fn from_codex_output(output: &str) -> TokenUsage {
         let raw = parse_codex_tokens(output);
-        TokenUsage { total_tokens: raw.parse().ok(), ..TokenUsage::default() }
+        TokenUsage {
+            total_tokens: raw.parse().ok(),
+            ..TokenUsage::default()
+        }
     }
 }
 
-/// Il quadro completo di una chiamata: quanto è entrato, quanto è uscito,
-/// quanto resta della finestra del modello, quanto è costata.
+/// The full picture of a call: what went in, what came out, what is left of
+/// the model's window, what it cost.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ContextAccounting {
     pub usage: TokenUsage,
-    /// La finestra del modello usato: `None` se il modello non è nel
-    /// catalogo (es. Codex, che non è un modello OpenRouter).
+    /// The window of the model used: `None` when the model is not in the
+    /// catalog (e.g. Codex, which is not an OpenRouter model).
     pub context_length: Option<u64>,
-    /// `context_length - total_tokens`. `None` se manca anche solo uno dei
-    /// due addendi — un resto calcolato su un totale ignoto sarebbe un
-    /// numero inventato con la faccia di una misura.
+    /// `context_length - total_tokens`. `None` when either addend is missing —
+    /// a remainder computed on an unknown total would be an invented number
+    /// wearing the face of a measure.
     pub remaining: Option<u64>,
     pub cost_usd: Option<f64>,
 }
 
 impl ContextAccounting {
-    /// Combina l'uso misurato con il modello del catalogo che l'ha servito
-    /// (se lo si conosce). Se `usage.cost_usd` è già dichiarato dal motore
-    /// (OpenRouter lo fa sempre) si usa quello; altrimenti si calcola dal
-    /// listino del modello, quando il listino c'è.
+    /// Combines the measured usage with the catalog model that served it, when
+    /// that model is known. If `usage.cost_usd` is already declared by the
+    /// engine (OpenRouter always does) that one is used; otherwise the cost
+    /// comes from the model's price list, when there is one.
     pub fn compute(usage: TokenUsage, model: Option<&Model>) -> ContextAccounting {
         let context_length = model.and_then(|m| m.context_length);
         let remaining = match (context_length, usage.total_tokens) {
@@ -74,13 +77,18 @@ impl ContextAccounting {
             _ => None,
         };
         let cost_usd = usage.cost_usd.or_else(|| compute_cost(&usage, model));
-        ContextAccounting { usage, context_length, remaining, cost_usd }
+        ContextAccounting {
+            usage,
+            context_length,
+            remaining,
+            cost_usd,
+        }
     }
 }
 
-/// Il costo dal listino del modello, quando il motore non l'ha già detto.
-/// Serve entrambi i pezzi (prompt e completamento, prezzo e conteggio):
-/// manca uno solo, il costo resta sconosciuto.
+/// The cost from the model's price list, when the engine has not said it
+/// already. It needs both halves (prompt and completion, price and count):
+/// with one missing the cost stays unknown.
 fn compute_cost(usage: &TokenUsage, model: Option<&Model>) -> Option<f64> {
     let model = model?;
     let prompt_tokens = usage.prompt_tokens? as f64;
@@ -95,8 +103,8 @@ mod tests {
     use super::*;
     use crate::catalog::{Catalog, Modality};
 
-    // Corpo vero, catturato il 27/08/2026 su nvidia/nemotron-3-super-120b-a12b:free
-    // (chiave letta da file, mai stampata; qui non ne resta traccia).
+    // A real body, captured on nvidia/nemotron-3-super-120b-a12b:free (key
+    // read from a file, never printed; no trace of it left here).
     const OPENROUTER_OK: &str = r#"{"id":"gen-1787833447-8R8Z6Ce3NQrwbjknBeMw","usage":{"prompt_tokens":27,"completion_tokens":20,"total_tokens":47,"cost":0,"is_byok":false}}"#;
 
     #[test]
@@ -110,20 +118,20 @@ mod tests {
 
     #[test]
     fn a_429_body_has_no_usage_at_all_not_a_panic() {
-        let body = r#"{"error":{"code":429,"message":"limite"}}"#;
+        let body = r#"{"error":{"code":429,"message":"limit"}}"#;
         let usage = TokenUsage::from_openrouter_body(body);
         assert_eq!(usage, TokenUsage::default());
     }
 
     #[test]
     fn garbage_input_gives_an_empty_usage_not_a_panic() {
-        let usage = TokenUsage::from_openrouter_body("non è json");
+        let usage = TokenUsage::from_openrouter_body("not json");
         assert_eq!(usage, TokenUsage::default());
     }
 
     #[test]
     fn codex_output_reuses_the_shared_parser() {
-        let output = "roba varia\ntokens used\n13.910\naltra roba";
+        let output = "some noise\ntokens used\n13.910\nmore noise";
         let usage = TokenUsage::from_codex_output(output);
         assert_eq!(usage.total_tokens, Some(13910));
         assert_eq!(usage.prompt_tokens, None);
@@ -133,19 +141,23 @@ mod tests {
 
     #[test]
     fn codex_output_without_the_marker_is_unknown_not_zero() {
-        let usage = TokenUsage::from_codex_output("nessuna riga utile qui");
+        let usage = TokenUsage::from_codex_output("no useful line here");
         assert_eq!(usage.total_tokens, None);
     }
 
     fn sample_model(id: &str) -> Model {
-        let catalog = Catalog::parse(include_str!("../tests/fixtures/catalog-sample.json")).unwrap();
+        let catalog =
+            Catalog::parse(include_str!("../tests/fixtures/catalog-sample.json")).unwrap();
         catalog.find(id).unwrap().clone()
     }
 
     #[test]
     fn computes_remaining_context_against_the_model_window() {
         let model = sample_model("nvidia/nemotron-3-super-120b-a12b:free"); // 262144
-        let usage = TokenUsage { total_tokens: Some(47), ..TokenUsage::default() };
+        let usage = TokenUsage {
+            total_tokens: Some(47),
+            ..TokenUsage::default()
+        };
         let acc = ContextAccounting::compute(usage, Some(&model));
         assert_eq!(acc.context_length, Some(262144));
         assert_eq!(acc.remaining, Some(262144 - 47));
@@ -153,10 +165,16 @@ mod tests {
 
     #[test]
     fn remaining_is_none_when_the_model_is_unknown_codex_case() {
-        let usage = TokenUsage { total_tokens: Some(13910), ..TokenUsage::default() };
+        let usage = TokenUsage {
+            total_tokens: Some(13910),
+            ..TokenUsage::default()
+        };
         let acc = ContextAccounting::compute(usage, None);
         assert_eq!(acc.context_length, None);
-        assert_eq!(acc.remaining, None, "un resto su una finestra ignota sarebbe un numero inventato");
+        assert_eq!(
+            acc.remaining, None,
+            "a remainder on an unknown window would be an invented number"
+        );
     }
 
     #[test]
@@ -172,7 +190,7 @@ mod tests {
         let usage = TokenUsage {
             prompt_tokens: Some(100),
             completion_tokens: Some(100),
-            cost_usd: Some(0.4242), // valore volutamente diverso dal calcolo, per provare che vince
+            cost_usd: Some(0.4242), // deliberately unlike the computed value, to prove it wins
             ..TokenUsage::default()
         };
         let acc = ContextAccounting::compute(usage, Some(&model));
@@ -181,7 +199,7 @@ mod tests {
 
     #[test]
     fn computes_cost_from_the_price_list_when_the_engine_says_nothing() {
-        let model = sample_model("qwen/qwen3.8-flash"); // 0.15 / 0.47 USD per milione
+        let model = sample_model("qwen/qwen3.8-flash"); // 0.15 / 0.47 USD per million
         let usage = TokenUsage {
             prompt_tokens: Some(1_000_000),
             completion_tokens: Some(1_000_000),
@@ -189,13 +207,19 @@ mod tests {
         };
         let acc = ContextAccounting::compute(usage, Some(&model));
         let cost = acc.cost_usd.unwrap();
-        assert!((cost - 0.62).abs() < 1e-9, "atteso 0.15+0.47=0.62, letto {cost}");
+        assert!(
+            (cost - 0.62).abs() < 1e-9,
+            "expected 0.15+0.47=0.62, got {cost}"
+        );
     }
 
     #[test]
     fn cost_is_unknown_when_token_counts_are_only_partial() {
         let model = sample_model("qwen/qwen3.8-flash");
-        let usage = TokenUsage { prompt_tokens: Some(10), ..TokenUsage::default() }; // manca completion
+        let usage = TokenUsage {
+            prompt_tokens: Some(10),
+            ..TokenUsage::default()
+        }; // completion missing
         let acc = ContextAccounting::compute(usage, Some(&model));
         assert_eq!(acc.cost_usd, None);
     }
@@ -207,10 +231,12 @@ mod tests {
     }
 }
 
-/// I token dichiarati da `codex exec` nella sua uscita testuale.
+/// The tokens `codex exec` declares in its text output.
 ///
-/// Veniva da `notte`, rimosso dal repo il 29/08/2026. Sta qui perché leggere
-/// quanto un motore dichiara di aver consumato è il mestiere di questo crate.
+/// It came from `notte`, which is no longer in the repo — so every `crates/notte`
+/// path still named in `config.rs` and `fetch.rs` points at a crate that is not
+/// there. It lives here because reading what an engine says it consumed is this
+/// crate's trade.
 pub fn parse_codex_tokens(output: &str) -> String {
     let mut lines = output.lines();
     while let Some(line) = lines.next() {
@@ -226,113 +252,94 @@ pub fn parse_codex_tokens(output: &str) -> String {
     "?".to_string()
 }
 
-// ── il consumo letto secondo ciò che un descrittore dichiara ──────────────
+// ── consumption read the way a descriptor declares it ─────────────────────
 
-/// In che forma un motore dice il proprio consumo.
+/// The shape in which an engine states its own consumption.
 ///
-/// **PERCHÉ È UN DATO E NON UN RAMO PER FORNITORE.** `from_openrouter_body` e
-/// `from_codex_output` qui sopra sono due letture scritte a mano per due
-/// formati noti: aggiungerne una terza per ogni motore che nasce è esattamente
-/// la strada che il vincolo di indipendenza dal modello vieta. Qui la forma è
-/// dichiarata dal descrittore, e un motore che non esiste ancora si misura
-/// scrivendo un file JSON.
+/// **IT IS DATA, NOT A BRANCH PER PROVIDER.** `from_openrouter_body` and
+/// `from_codex_output` above are hand-written readers for two known formats;
+/// a third for every new engine is the road model-independence forbids. Here
+/// the descriptor says the shape, so a new engine is measured with a file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Shape {
-    /// L'uscita è un involucro JSON, e i puntatori sono cammini di chiavi.
+    /// The output is a JSON envelope, and pointers are key paths.
     #[default]
     Json,
-    /// L'uscita è testo, e i puntatori sono espressioni regolari con un gruppo
-    /// di cattura.
+    /// The output is text, and pointers are regular expressions with one
+    /// capture group.
     Text,
 }
 
-/// Dove sta un valore dentro ciò che il motore ha detto.
+/// Where a value sits inside what the engine said.
 ///
-/// Le due forme non sono intercambiabili: un cammino di chiavi vale solo su un
-/// corpo JSON, un'espressione regolare solo sul testo. Un puntatore della forma
-/// sbagliata non trova niente e lascia il valore **sconosciuto** — che è il modo
-/// giusto di sbagliare, perché nessun numero inventato prende il suo posto.
+/// The two forms are not interchangeable: a key path holds only on a JSON
+/// body, a regular expression only on text. A pointer of the wrong shape finds
+/// nothing and leaves the value **unknown** — the right way to be wrong, since
+/// no invented number takes its place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pointer {
-    /// Un cammino di chiavi dentro l'involucro: `["usage", "input_tokens"]`.
+    /// A key path inside the envelope: `["usage", "input_tokens"]`.
     Path(Vec<String>),
-    /// Un'espressione regolare col numero (o il testo) nel primo gruppo.
+    /// A regular expression with the number (or the text) in the first group.
     Pattern(String),
-    /// **Il nome della prima chiave** dell'oggetto che sta a questo cammino.
-    ///
-    /// Esiste per un caso vero e per niente raro: certi motori non mettono il
-    /// nome del modello in un campo, lo usano come *chiave* di un oggetto —
-    /// `{"modelUsage": {"claude-opus-5[1m]": {...}}}`. Senza questa forma quel
-    /// nome è inarrivabile, e senza il nome nessuna voce di listino si può
-    /// trovare: il costo resterebbe sconosciuto anche con un listino perfetto.
-    ///
-    /// **Si prende la prima e basta.** Se un motore ne nomina più d'uno la
-    /// chiamata ha attraversato più modelli, e questa forma non sa dire come
-    /// spartire il consumo fra loro: prende la prima chiave nell'ordine in cui
-    /// il motore l'ha scritta (`serde_json` conserva l'ordine) e non indovina il
-    /// resto. Chi ha bisogno di quel caso dichiara un cammino esatto.
+    /// **The name of the first key** of the object sitting at this path. Some
+    /// engines use the model name as a *key* rather than a field:
+    /// `{"modelUsage": {"claude-opus-5[1m]": {...}}}`. Without this form the
+    /// name is unreachable, and without the name no price-list entry can be
+    /// found: the cost would stay unknown even with a perfect list. Only the
+    /// first key is taken, and `read_name` says why.
     FirstKey(Vec<String>),
 }
 
-/// Che cosa un descrittore dichiara di saper leggere dall'uscita del proprio
-/// motore. Ogni puntatore è facoltativo: un motore che dice solo il totale
-/// dichiara solo `total_tokens`, e gli altri restano sconosciuti.
+/// What a descriptor declares it can read from its own engine's output. Every
+/// pointer is optional: an engine that says only the total declares only
+/// `total_tokens`, and the rest stay unknown.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Declared {
     pub read: Shape,
     pub input_tokens: Option<Pointer>,
     pub output_tokens: Option<Pointer>,
-    /// I token d'ingresso **letti dalla cache**, che hanno un prezzo per
-    /// milione tutto loro — spesso un ordine di grandezza sotto. Sommarli agli
-    /// altri renderebbe la misura falsa proprio dove conta.
+    /// Input tokens **read from the cache**, which have a price per million
+    /// all of their own — often an order of magnitude below. Summing them with
+    /// the others makes the measure false exactly where it counts.
     pub cached_tokens: Option<Pointer>,
-    /// I token d'ingresso **scritti nella cache**, che è tutt'altra cosa dal
-    /// leggerla: la scrittura costa **più** dell'ingresso normale, la lettura
-    /// molto meno.
+    /// Input tokens **written to the cache** — not the same as reading it:
+    /// writing costs **more** than plain input, reading much less.
     ///
-    /// **PERCHÉ HA UN CAMPO SUO, MISURATO IL 30/08/2026.** Una chiamata a
-    /// `claude -p` con due token d'ingresso e quattro d'uscita è costata 0,1285
-    /// dollari dichiarati: 12.347 token di scrittura in cache erano il **96%**
-    /// di quella cifra. Contarli come ingresso normale, o non contarli affatto,
-    /// sbagliava il conto di 24 volte — sempre verso il basso, cioè sempre nella
-    /// direzione che tranquillizza.
+    /// **IT HAS A FIELD OF ITS OWN.** On a measured call cache writes were
+    /// **96%** of the declared cost; counting them as plain input, or not at
+    /// all, got the sum wrong by 24 times — always the reassuring way, down.
     pub cache_write_tokens: Option<Pointer>,
-    /// I token scritti in una cache **a lunga durata**, che ha un prezzo suo,
-    /// più alto. Chi non la distingue lascia questo campo vuoto e paga il
-    /// prezzo di scrittura breve su tutto — sbagliando in modo dichiarato.
+    /// Tokens written to a **long-lived** cache, which has a higher price of
+    /// its own. Whoever does not tell them apart leaves this empty and pays
+    /// the short-write price on everything — wrongly, but declaredly.
     pub cache_write_long_tokens: Option<Pointer>,
     pub total_tokens: Option<Pointer>,
-    /// **QUANTI TURNI HA FATTO LA CHIAMATA**, cioè quante volte il modello è
-    /// tornato a parlare dentro una sola invocazione.
+    /// **HOW MANY TURNS THE CALL TOOK**, i.e. how many times the model came
+    /// back to speak inside a single invocation.
     ///
-    /// **PERCHÉ È UNA VOCE E NON UNA CURIOSITÀ.** Misurato il 31/08/2026: un
-    /// flusso di quattro passi consuma 2,23 volte la cache letta di una sola
-    /// sessione che fa lo stesso lavoro, e fa 2,07 volte i suoi turni — 62
-    /// contro 30. Per turno legge **l'8% in più**, non il doppio. Il costo di
-    /// una catena di passi non è quanto contesto porta ciascuno: è quante volte
-    /// ciascuno ci ripassa sopra. Senza questo numero nel deposito, ogni
-    /// proposta per far costare meno un flusso è una scommessa, perché la cosa
-    /// che decide il conto non è misurata.
+    /// A four-step flow takes 2.07x the turns of one session doing the same
+    /// work and reads only 8% more per turn: the bill is decided by how often
+    /// each step goes over the context again, not by what each one carries.
     pub turns: Option<Pointer>,
-    /// Il costo che il motore dichiara di suo. Si registra come **confronto**,
-    /// mai al posto del conto fatto sul listino locale.
+    /// The cost the engine declares itself. Recorded as a **comparison**,
+    /// never in place of the sum made on the local price list.
     pub cost: Option<Pointer>,
-    /// Dove il motore nomina il modello che ha davvero servito la chiamata. È
-    /// l'unico legame onesto fra una riga di comando e una voce di listino.
+    /// Where the engine names the model that really served the call. It is the
+    /// only honest link between a command line and a price-list entry.
     pub model: Option<Pointer>,
-    /// Dove sta il testo della risposta dentro l'involucro.
-    ///
-    /// **SERVE PERCHÉ L'USCITA DEL PASSO NON DEVE CAMBIARE.** Chiedere a un
-    /// motore `--output-format json` per farsi dire i token gli fa avvolgere
-    /// anche la risposta: senza questo puntatore un passo a valle riceverebbe
-    /// l'involucro invece del testo, e un flusso con `allow_extra: false` sulla
-    /// propria forma diventerebbe rosso per una misura che non ha chiesto.
+    /// Where the answer text sits inside the envelope, because **THE STEP'S
+    /// OUTPUT MUST NOT CHANGE.** Asking an engine for `--output-format json` so
+    /// it states its tokens wraps the answer too, and without this pointer a
+    /// downstream step gets the envelope instead of the text: a flow with
+    /// `allow_extra: false` on its own shape would go red **for a measurement
+    /// it never asked for**.
     pub answer: Option<Pointer>,
 }
 
 impl Declared {
-    /// Vero se non dichiara nessun puntatore: c'è il blocco, ma non dice dove
-    /// guardare niente.
+    /// True when it declares no pointer at all: the block is there, but it
+    /// says nowhere to look for anything.
     pub fn is_empty(&self) -> bool {
         self.input_tokens.is_none()
             && self.output_tokens.is_none()
@@ -346,8 +353,8 @@ impl Declared {
     }
 }
 
-/// Il consumo letto da una singola uscita, più ciò che serve a legarlo a un
-/// listino e a lasciare intatta l'uscita del passo.
+/// The consumption read from a single output, plus what it takes to tie it to
+/// a price list and leave the step's own output intact.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Reading {
     pub input_tokens: Option<u64>,
@@ -356,23 +363,22 @@ pub struct Reading {
     pub cache_write_tokens: Option<u64>,
     pub cache_write_long_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
-    /// Quanti turni ha fatto la chiamata, quando il motore lo dichiara.
+    /// How many turns the call took, when the engine declares it.
     pub turns: Option<u64>,
-    /// Il costo dichiarato dal motore, nella sua unità (di norma USD).
+    /// The cost declared by the engine, in its own unit (USD as a rule).
     pub declared_cost: Option<f64>,
-    /// Il modello che il motore dice di aver usato.
+    /// The model the engine says it used.
     pub model: Option<String>,
-    /// Il testo della risposta estratto dall'involucro, quando il descrittore
-    /// dice dove sta.
+    /// The answer text pulled out of the envelope, when the descriptor says
+    /// where it sits.
     pub answer: Option<String>,
 }
 
-/// Legge il consumo dall'uscita di un motore secondo ciò che il suo descrittore
-/// dichiara. Funzione pura: testo dentro, valori fuori, nessun nome di
-/// fornitore.
+/// Reads the consumption from an engine's output the way its descriptor
+/// declares. A pure function: text in, values out, no provider name.
 ///
-/// Ogni campo che non si trova resta `None`. Non esiste nessun percorso, in
-/// nessuna forma, che restituisca `0` per un valore mancante.
+/// Every field that is not found stays `None`. No path, in any shape, gives
+/// back `0` for a missing value.
 pub fn read_declared(said: &str, declared: &Declared) -> Reading {
     match declared.read {
         Shape::Json => read_from_json(said, declared),
@@ -380,17 +386,12 @@ pub fn read_declared(said: &str, declared: &Declared) -> Reading {
     }
 }
 
-/// Un solo testo, letto dove il puntatore dice.
-///
-/// **LA FORMA LA DICE IL PUNTATORE, E NON SI CHIEDE DUE VOLTE.** Un cammino di
-/// chiavi vale su un corpo JSON, un'espressione regolare sul testo: è la stessa
-/// corrispondenza che `Pointer` dichiara di sé. Chiedere anche la forma
-/// permetterebbe di rispondere in modo incoerente, e quella incoerenza non
-/// darebbe un errore — darebbe un valore sconosciuto senza motivo visibile.
-///
-/// Serve a leggere ciò che un motore dichiara di sé **fuori dal consumo**: per
-/// primo l'identificativo della sessione che ha appena aperto, che è l'unico
-/// modo di riprenderla per i motori che lo coniano da sé.
+/// One text, read where the pointer says: a key path on JSON, a regular
+/// expression on text — **THE POINTER SAYS THE SHAPE AND IS NOT ASKED TWICE**,
+/// since asking again would allow an incoherent answer, and that incoherence
+/// gives no error, only an unknown value with no visible reason. It reads what
+/// an engine says about itself outside consumption: first the id of the session
+/// it opened, the only way to resume one for engines that mint that id.
 pub fn read_text(said: &str, pointer: &Pointer) -> Option<String> {
     match pointer {
         Pointer::Pattern(pattern) => first_group(said, pattern),
@@ -401,22 +402,12 @@ pub fn read_text(said: &str, pointer: &Pointer) -> Option<String> {
     }
 }
 
-/// Come [`read_text`], ma rende **anche un valore non testuale**: un booleano,
-/// un numero.
+/// Like [`read_text`], but it also yields a boolean or a number.
 ///
-/// **PERCHÉ NON BASTA `read_text`, E PERCHÉ LE DUE RESTANO SEPARATE.** Per il
-/// consumo un puntatore che finisce su un booleano è un puntatore sbagliato, e
-/// `as_text` risponde «niente» apposta: stampare `true` al posto di un conteggio
-/// nasconderebbe l'errore dentro una risposta plausibile. Per una domanda a cui
-/// si risponde sì o no la faccenda si rovescia — `claude auth status` mette la
-/// risposta in `"loggedIn": true`, cioè **il valore che porta la risposta è un
-/// booleano**, e rifiutarlo renderebbe irraggiungibile l'unica forma JSON
-/// misurata. Sono due domande diverse sullo stesso puntatore, quindi due
-/// letture; unirle allentando `as_text` toglierebbe al consumo la difesa che ha
-/// oggi, in silenzio.
-///
-/// Il puntatore dice ancora da sé la forma: un'espressione regolare vale sul
-/// testo, un cammino di chiavi su un involucro JSON.
+/// For consumption a pointer landing on a boolean is a wrong pointer and
+/// `as_text` says "nothing" on purpose; for a yes/no question it is the other
+/// way round — `claude auth status` answers in `"loggedIn": true`. Merging the
+/// two readers would silently take that defence away from consumption.
 pub fn read_scalar(said: &str, pointer: &Pointer) -> Option<String> {
     match pointer {
         Pointer::Pattern(pattern) => first_group(said, pattern),
@@ -428,8 +419,8 @@ pub fn read_scalar(said: &str, pointer: &Pointer) -> Option<String> {
                 serde_json::Value::String(text) => Some(text.clone()),
                 serde_json::Value::Bool(yes) => Some(yes.to_string()),
                 serde_json::Value::Number(number) => Some(number.to_string()),
-                // Un oggetto o un elenco non sono una risposta: chi ha scritto
-                // il puntatore ha puntato al contenitore invece che al valore.
+                // An object or a list is not an answer: whoever wrote the
+                // pointer aimed at the container instead of the value.
                 _ => None,
             }
         }
@@ -437,10 +428,10 @@ pub fn read_scalar(said: &str, pointer: &Pointer) -> Option<String> {
 }
 
 fn read_from_json(said: &str, declared: &Declared) -> Reading {
-    // Un involucro illeggibile non è un guasto: è un motore che ha risposto in
-    // chiaro dove ci si aspettava JSON — quota finita, errore di rete, un
-    // avvertimento sulla prima riga. Tutto resta sconosciuto, e la chiamata si
-    // registra lo stesso.
+    // An unreadable envelope is not a fault: it is an engine that answered in
+    // plain text where JSON was expected — quota exhausted, network error, a
+    // warning on the first line. Everything stays unknown, and the call is
+    // recorded all the same.
     let Ok(body) = serde_json::from_str::<serde_json::Value>(said.trim()) else {
         return Reading::default();
     };
@@ -459,7 +450,12 @@ fn read_from_json(said: &str, declared: &Declared) -> Reading {
     }
 }
 
-/// Un testo che può stare in un campo **o essere il nome di una chiave**.
+/// A text that can sit in a field **or be the name of a key**.
+///
+/// **THE FIRST KEY AND NO MORE.** More than one key means the call crossed more
+/// than one model, and nothing here can split the consumption between them. The
+/// first is the one the engine wrote first — `serde_json` preserves insertion
+/// order, the only thing that makes "first" well defined — and nothing is guessed.
 fn read_name(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<String> {
     match pointer? {
         Pointer::FirstKey(keys) => {
@@ -476,8 +472,8 @@ fn read_name(body: &serde_json::Value, pointer: Option<&Pointer>) -> Option<Stri
 fn read_from_text(said: &str, declared: &Declared) -> Reading {
     let capture = |pointer: &Option<Pointer>| match pointer.as_ref() {
         Some(Pointer::Pattern(pattern)) => first_group(said, pattern),
-        // Un cammino di chiavi su un'uscita testuale: chi ha scritto il
-        // descrittore ha sbagliato forma, e il valore resta sconosciuto.
+        // A key path on a text output: whoever wrote the descriptor got the
+        // shape wrong, and the value stays unknown.
         _ => None,
     };
     Reading {
@@ -495,12 +491,15 @@ fn read_from_text(said: &str, declared: &Declared) -> Reading {
     }
 }
 
-/// Scende un cammino di chiavi. Un cammino vuoto vale il corpo intero: è il
-/// modo di dire «la risposta è tutto quello che ha detto».
-fn walk<'a>(body: &'a serde_json::Value, pointer: Option<&Pointer>) -> Option<&'a serde_json::Value> {
+/// Walks a key path. An empty path means the whole body: the way of saying
+/// "the answer is everything it said".
+fn walk<'a>(
+    body: &'a serde_json::Value,
+    pointer: Option<&Pointer>,
+) -> Option<&'a serde_json::Value> {
     let Pointer::Path(keys) = pointer? else {
-        // Un'espressione regolare dichiarata su una lettura JSON: forma
-        // sbagliata, valore sconosciuto.
+        // A regular expression declared on a JSON read: wrong shape, unknown
+        // value.
         return None;
     };
     let mut here = body;
@@ -510,12 +509,10 @@ fn walk<'a>(body: &'a serde_json::Value, pointer: Option<&Pointer>) -> Option<&'
     Some(here)
 }
 
-/// Un conteggio di token. Si accetta anche la stringa, perché un motore che
-/// scrive numeri oltre 2^53 li manda come testo per non perderli.
+/// A token count. A string is accepted too, because an engine writing numbers
+/// above 2^53 sends them as text so as not to lose them.
 fn as_tokens(value: &serde_json::Value) -> Option<u64> {
-    value
-        .as_u64()
-        .or_else(|| value.as_str().and_then(digits))
+    value.as_u64().or_else(|| value.as_str().and_then(digits))
 }
 
 fn as_money(value: &serde_json::Value) -> Option<f64> {
@@ -524,31 +521,29 @@ fn as_money(value: &serde_json::Value) -> Option<f64> {
         .or_else(|| value.as_str().and_then(|text| text.trim().parse().ok()))
 }
 
-/// Il testo di un valore. Un numero o un booleano **non** diventano testo qui:
-/// un puntatore che finisce su un valore non testuale è un puntatore sbagliato,
-/// e restituire la sua stampa nasconderebbe l'errore dentro una risposta
-/// plausibile.
+/// The text of a value. A number or a boolean does **not** become text here: a
+/// pointer that lands on something which is not text is a wrong pointer, and
+/// giving back its printed form would hide the mistake in a plausible answer.
 fn as_text(value: &serde_json::Value) -> Option<String> {
     value.as_str().map(str::to_owned)
 }
 
-/// Il primo gruppo di cattura, se l'espressione è valida e combacia.
+/// The first capture group, when the expression is valid and matches.
 ///
-/// Un'espressione scritta male non fa fallire niente: quel valore resta
-/// sconosciuto, come se il motore non l'avesse detto. È la stessa regola di
-/// tutto il resto — un descrittore sbagliato peggiora la misura, non rompe la
-/// chiamata che stava misurando.
+/// A badly written expression makes nothing fail: that value stays unknown, as
+/// if the engine had not said it. A wrong descriptor worsens the measure, it
+/// does not break the call it was measuring.
 fn first_group(said: &str, pattern: &str) -> Option<String> {
     let regex = regex::Regex::new(pattern).ok()?;
     let captures = regex.captures(said)?;
     captures.get(1).map(|group| group.as_str().to_owned())
 }
 
-/// Un intero scritto con i separatori delle migliaia. `13.910` e `13,910` sono
-/// tutti e due tredicimilanovecentodieci: quale separatore usi un motore
-/// dipende dalla lingua della macchina su cui gira, e non è una cosa che chi
-/// scrive un descrittore debba indovinare. Un testo che non è fatto di sole
-/// cifre resta `None` — mai uno zero di ripiego.
+/// An integer written with thousands separators. `13.910` and `13,910` are
+/// both thirteen thousand nine hundred and ten: which separator an engine uses
+/// depends on the locale of the machine it runs on, and is not something a
+/// descriptor author should have to guess. Text that is not all digits stays
+/// `None` — never a fallback zero.
 fn digits(text: &str) -> Option<u64> {
     let cleaned: String = text
         .trim()
@@ -566,15 +561,17 @@ mod declared_tests {
     use super::*;
 
     fn path(keys: &[&str]) -> Option<Pointer> {
-        Some(Pointer::Path(keys.iter().map(|k| (*k).to_owned()).collect()))
+        Some(Pointer::Path(
+            keys.iter().map(|k| (*k).to_owned()).collect(),
+        ))
     }
 
-    /// Un involucro nella forma che un motore a riga di comando produce quando
-    /// gli si chiede `--output-format json`. **Non è misurato su nessun motore
-    /// vero**: è la forma su cui si prova il lettore, e la sua fedeltà a un
-    /// fornitore preciso non è ciò che questa prova afferma.
+    /// An envelope shaped the way a command-line engine produces one when
+    /// asked for `--output-format json`. **Not measured on any real engine**:
+    /// it is the shape the reader is tested against, and its fidelity to one
+    /// particular provider is not what this test asserts.
     const WRAPPED: &str = r#"{
-      "result": "la risposta vera",
+      "result": "the real answer",
       "model": "claude-sonnet-5",
       "total_cost_usd": 0.0421,
       "usage": {
@@ -608,12 +605,12 @@ mod declared_tests {
         assert_eq!(reading.cached_tokens, Some(98_000));
         assert_eq!(reading.declared_cost, Some(0.0421));
         assert_eq!(reading.model.as_deref(), Some("claude-sonnet-5"));
-        assert_eq!(reading.answer.as_deref(), Some("la risposta vera"));
+        assert_eq!(reading.answer.as_deref(), Some("the real answer"));
     }
 
-    /// IL BRACCIO CHE CONTA per il criterio 3: la cache ha un puntatore suo, e
-    /// non finisce sommata all'ingresso. Se il lettore le confondesse questi
-    /// due numeri sarebbero uguali.
+    /// THE ARM THAT COUNTS for criterion 3: the cache has a pointer of its own
+    /// and does not end up summed into the input. If the reader confused them,
+    /// these two numbers would be equal.
     #[test]
     fn cache_tokens_never_end_up_inside_the_input_count() {
         let reading = read_declared(WRAPPED, &wrapped_declaration());
@@ -625,8 +622,8 @@ mod declared_tests {
     fn a_pointer_that_finds_nothing_leaves_the_value_unknown_never_zero() {
         let declared = Declared {
             read: Shape::Json,
-            input_tokens: path(&["usage", "non_esiste"]),
-            output_tokens: path(&["nemmeno", "questo"]),
+            input_tokens: path(&["usage", "does_not_exist"]),
+            output_tokens: path(&["not", "this"]),
             ..Declared::default()
         };
         let reading = read_declared(WRAPPED, &declared);
@@ -634,8 +631,8 @@ mod declared_tests {
         assert_eq!(reading.output_tokens, None);
     }
 
-    /// Un motore che ha risposto in chiaro dove ci si aspettava JSON — quota
-    /// finita, avvertimento sulla prima riga — non è un guasto del lettore.
+    /// An engine that answered in plain text where JSON was expected — quota
+    /// exhausted, a warning on the first line — is not a fault of the reader.
     #[test]
     fn plain_text_where_json_was_expected_is_all_unknown_not_a_panic() {
         let reading = read_declared("You've hit your weekly limit", &wrapped_declaration());
@@ -655,9 +652,8 @@ mod declared_tests {
         );
     }
 
-    /// Un puntatore che finisce su un numero non diventa il testo di quel
-    /// numero: restituirlo nasconderebbe un descrittore sbagliato dentro una
-    /// risposta plausibile.
+    /// A pointer landing on a number does not become the text of that number:
+    /// giving it back would hide a wrong descriptor inside a plausible answer.
     #[test]
     fn a_pointer_landing_on_a_number_is_not_read_as_text() {
         let declared = Declared {
@@ -668,12 +664,12 @@ mod declared_tests {
         assert_eq!(read_declared(WRAPPED, &declared).model, None);
     }
 
-    // ── la forma testuale ────────────────────────────────────────────
+    // ── the text shape ───────────────────────────────────────────────
 
-    /// L'uscita di `codex exec` come è scritta nella prova di `parse_codex_tokens`
-    /// qui sopra: il numero sta sulla riga dopo il marcatore, coi punti come
-    /// separatori delle migliaia.
-    const CODEX_LIKE: &str = "roba varia\ntokens used\n13.910\naltra roba";
+    /// The output of `codex exec` as written in the `parse_codex_tokens` test
+    /// above: the number sits on the line after the marker, with dots as
+    /// thousands separators.
+    const CODEX_LIKE: &str = "some noise\ntokens used\n13.910\nmore noise";
 
     #[test]
     fn reads_a_count_from_plain_text_with_a_declared_pattern() {
@@ -684,7 +680,10 @@ mod declared_tests {
         };
         let reading = read_declared(CODEX_LIKE, &declared);
         assert_eq!(reading.total_tokens, Some(13_910));
-        assert_eq!(reading.input_tokens, None, "codex non separa i due lati");
+        assert_eq!(
+            reading.input_tokens, None,
+            "codex does not separate the two sides"
+        );
         assert_eq!(reading.output_tokens, None);
     }
 
@@ -695,23 +694,26 @@ mod declared_tests {
             total_tokens: Some(Pointer::Pattern(r"tokens used\s*\n\s*([\d.,]+)".to_owned())),
             ..Declared::default()
         };
-        assert_eq!(read_declared("nessuna riga utile", &declared).total_tokens, None);
+        assert_eq!(
+            read_declared("no useful line", &declared).total_tokens,
+            None
+        );
     }
 
-    /// Un descrittore con un'espressione regolare scritta male peggiora la
-    /// misura, non rompe la chiamata che stava misurando.
+    /// A descriptor with a badly written regular expression worsens the
+    /// measure, it does not break the call it was measuring.
     #[test]
     fn a_broken_pattern_is_unknown_not_a_panic() {
         let declared = Declared {
             read: Shape::Text,
-            total_tokens: Some(Pointer::Pattern("([non chiusa".to_owned())),
+            total_tokens: Some(Pointer::Pattern("([unclosed".to_owned())),
             ..Declared::default()
         };
         assert_eq!(read_declared(CODEX_LIKE, &declared).total_tokens, None);
     }
 
-    /// Le due forme non si mescolano: un cammino di chiavi su un'uscita
-    /// testuale, o un'espressione su un corpo JSON, non trovano niente.
+    /// The two shapes do not mix: a key path on a text output, or an
+    /// expression on a JSON body, find nothing.
     #[test]
     fn a_pointer_of_the_wrong_shape_finds_nothing() {
         let on_text = Declared {
@@ -721,11 +723,10 @@ mod declared_tests {
         };
         assert_eq!(read_declared(WRAPPED, &on_text).total_tokens, None);
 
-        // IL BRACCIO CHE CONTA: l'espressione è scritta in modo da combaciare
-        // con una CHIAVE vera del corpo. Se il codice trattasse un'espressione
-        // come se fosse un cammino di una chiave sola, qui uscirebbe `Some(7)` —
-        // un numero preso dal posto sbagliato, che nessuno riconoscerebbe come
-        // sbagliato guardandolo.
+        // THE ARM THAT COUNTS: the expression is written so as to match a real
+        // KEY of the body. If the code treated an expression as a one-key
+        // path, `Some(7)` would come out here — a number from the wrong place
+        // that nobody would recognise as wrong by looking at it.
         let on_json = Declared {
             read: Shape::Json,
             total_tokens: Some(Pointer::Pattern("n".to_owned())),
@@ -745,7 +746,7 @@ mod declared_tests {
 
     #[test]
     fn something_that_is_not_a_number_is_unknown_not_zero() {
-        assert_eq!(digits("molti"), None);
+        assert_eq!(digits("many"), None);
         assert_eq!(digits(""), None);
         assert_eq!(digits("-5"), None);
         assert_eq!(digits("12a"), None);

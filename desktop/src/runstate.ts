@@ -38,6 +38,7 @@ const STATE_OF_OUTCOME: Record<string, StepState> = {
  */
 export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
   const states = new Map<string, StepRun>();
+  const startedAt = new Map<string, number>();
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
 
   for (const event of ordered) {
@@ -49,6 +50,9 @@ export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
       const attempt = typeof payload?.attempt === "number" ? payload.attempt : 1;
       const heldBy = typeof payload?.held_by_pid === "number" ? payload.held_by_pid : undefined;
       states.set(stepId, { step_id: stepId, state: "running", attempt, held_by_pid: heldBy });
+      // WHEN THIS ATTEMPT BEGAN, kept aside rather than in the state: a retry
+      // measured from the first start would report the wait between them too.
+      startedAt.set(stepId, event.at);
       continue;
     }
 
@@ -61,6 +65,7 @@ export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
       // rispondere.
       const species = typeof payload?.species === "string" ? payload.species : "";
       const previous = states.get(stepId);
+      const began = startedAt.get(stepId);
       const state: StepState | undefined =
         outcome === "Broke" && species === "hand_to_human"
           ? "handed_to_human"
@@ -70,7 +75,10 @@ export function stepStatesOfRun(events: RunEvent[]): Map<string, StepRun> {
         step_id: stepId,
         state,
         attempt: previous?.attempt ?? 1,
-        elapsed_secs: previous?.elapsed_secs,
+        // The two instants were in the events all along, and nothing read
+        // them: the cell that shows this said «—» on every run there has
+        // ever been.
+        elapsed_secs: began === undefined ? previous?.elapsed_secs : event.at - began,
       });
     }
   }

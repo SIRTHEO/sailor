@@ -1,39 +1,26 @@
-//! Il censimento della macchina: quali terminali ci sono **adesso**, chi ci
-//! vive dentro, e da dove sono stati aperti.
+//! What is on the machine right now: which terminals exist, who lives inside
+//! them, and where they were opened from.
 //!
-//! **LA DISTINZIONE CHE QUESTO MODULO ESISTE PER FARE.** Dentro un perimetro
-//! ristretto `ps` è negato, e il diniego è silenzioso appena si incanala
-//! l'uscita: `ps -e | wc -l` risponde `0` con **uscita 0** e nessun errore. È il
-//! guasto 12 con un altro strumento. Chi riceve un elenco vuoto non ha modo di
-//! sapere se la macchina è deserta o se non gli hanno lasciato guardare, e le
-//! due cose portano a due decisioni opposte.
-//!
-//! Per questo il risultato non è un vettore: è [`Census`], che ha tre stati e
-//! non se ne può ignorare uno. `Terminals` porta almeno un terminale,
-//! `NoTerminal` dice che abbiamo guardato e non c'era niente, `Refused` dice
-//! che non abbiamo guardato.
-//!
-//! **IL CANARINO.** Un `ps` negato può anche uscire pulito con l'uscita vuota,
-//! e allora nessun codice d'errore lo tradisce. Ma chi chiede la tabella dei
-//! processi **è** un processo: se nella tabella non c'è il proprio pid, quella
-//! tabella non è la macchina. È l'unico controllo che regge anche quando il
-//! diniego non dice il proprio nome.
-//!
-//! **NESSUN PRODOTTO DECIDE QUI DENTRO.** L'ancora è `(tty, albero,
-//! capostipite)`: il tty è un oggetto del kernel, l'albero è una cartella, e il
-//! capostipite è **un'etichetta** — si stampa e si registra, non si interroga.
+//! **THE DISTINCTION THIS MODULE EXISTS TO MAKE.** Inside a restricted sandbox
+//! `ps` is denied, and the denial goes silent the moment its output is piped:
+//! `ps -e | wc -l` answers `0` with **exit status 0** and no error at all.
+
+//! Whoever gets back an empty list has no way of telling a deserted machine
+//! from one they were not allowed to look at, and the two lead to opposite
+//! decisions. So the result is not a vector: it is [`Census`], which has three
+//! states and lets no one of them be ignored.
 
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 
-/// Perché non ci è stato permesso guardare.
+/// Why we were not allowed to look.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Refusal {
-    /// A chi era stata fatta la domanda.
+    /// Who the question was put to.
     pub tool: String,
-    /// Cosa ha risposto, con le parole che ha usato: un diniego riconosciuto
-    /// per il suo testo si racconta, uno dedotto no.
+    /// What it answered, in the words it used: a denial recognised by its own
+    /// text can be reported, a deduced one cannot.
     pub reason: String,
 }
 
@@ -43,47 +30,47 @@ impl std::fmt::Display for Refusal {
     }
 }
 
-/// Un processo che vive su un terminale.
+/// A process living on a terminal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Inhabitant {
     pub pid: u32,
     pub parent_pid: u32,
     pub tty: String,
-    /// Da quanto vive, come lo scrive `ps`: non lo si converte, perché un
-    /// formato riscritto è un formato che può divergere dalla sorgente.
+    /// How long it has been alive, as `ps` writes it: not converted, because a
+    /// rewritten format is one that can drift from its source.
     pub uptime: String,
     pub command: String,
-    /// `None` vuol dire **non lo sappiamo**, non «nessuna».
+    /// `None` means **we do not know**, not "none".
     pub working_directory: Option<String>,
 }
 
-/// Un terminale, con dentro tutto quello che ci gira.
+/// A terminal, with everything running inside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Terminal {
     pub tty: String,
-    /// Chi ha disegnato la finestra, risalendo la catena dei genitori.
-    /// **Etichetta**: nessuna decisione la legge.
+    /// Who drew the window, found by walking up the parent chain.
+    /// **A label**: no decision reads it.
     pub ancestor: Option<String>,
     pub inhabitants: Vec<Inhabitant>,
 }
 
-/// Cosa c'è sulla macchina, in tre stati che non si confondono.
+/// What is on the machine, in three states that do not blur together.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum Census {
-    /// Almeno un terminale. **Mai vuoto**: lo garantisce [`Census::of`], e una
-    /// prova lo tiene fermo.
+    /// At least one terminal. **Never empty**: [`Census::of`] guarantees it,
+    /// and a test holds it there.
     Terminals(Vec<Terminal>),
-    /// Abbiamo guardato, e nessun processo ha un terminale.
+    /// We looked, and no process has a terminal.
     NoTerminal,
-    /// Non abbiamo guardato.
+    /// We did not look.
     Refused(Refusal),
 }
 
 impl Census {
-    /// I terminali visti, o niente se non li abbiamo visti. Chi chiama questa
-    /// invece di leggere le varianti **sta buttando via la distinzione**, e per
-    /// questo si chiama così: chiedere «quelli che ho visto» dice da sé che
-    /// esiste un caso in cui non se ne è visto nessuno per un'altra ragione.
+    /// The terminals we saw, or nothing when we did not see them. Calling this
+    /// instead of matching the variants **throws the distinction away**, which
+    /// is why it is named so: asking for "the ones I saw" says by itself that
+    /// there is a case where none were seen for another reason.
     pub fn seen(&self) -> &[Terminal] {
         match self {
             Self::Terminals(terminals) => terminals,
@@ -91,7 +78,7 @@ impl Census {
         }
     }
 
-    /// Il capostipite di un tty, se il censimento ne ha uno da dire.
+    /// A tty's ancestor, if the census has one to give.
     pub fn ancestor_of(&self, tty: &str) -> Option<&str> {
         self.seen()
             .iter()
@@ -100,24 +87,22 @@ impl Census {
     }
 }
 
-/// Chi risponde alle domande sulla macchina.
-///
-/// **È UN TRATTO PERCHÉ IL DINIEGO SI DEVE POTER PROVARE.** Dentro il perimetro
-/// in cui girano le prove `ps` è negato davvero, quindi una prova che lo invoca
-/// misura il perimetro, non il codice. Con un finto che risponde «non ti è
-/// permesso» si prova la strada che quel diniego percorre, e con un finto che
-/// risponde una tabella vera si prova la lettura — senza che le due prove
-/// dipendano da dove girano.
+/// Who answers questions about the machine. **A trait because the denial has to
+/// be provable**: inside the sandbox the tests run in `ps` is really denied, so
+/// a test that invoked it would measure the sandbox and not the code. A fake
+/// answering "not permitted" walks the path that denial takes, a fake answering
+/// a real table walks the reading path, and neither test depends on where it
+/// runs.
 pub trait Machine {
-    /// `pid ppid tty etime comm`, una riga per processo, senza intestazione.
+    /// `pid ppid tty etime comm`, one line per process, no header.
     fn process_table(&self) -> Result<String, Refusal>;
-    /// La cartella di lavoro di un pid. `None` è «non lo so».
+    /// A pid's working directory. `None` is "I do not know".
     fn working_directory(&self, pid: u32) -> Option<String>;
-    /// Il pid di chi sta chiedendo: il canarino.
+    /// The pid of whoever is asking: the canary.
     fn own_pid(&self) -> u32;
 }
 
-/// Una riga della tabella dei processi, prima di sapere se ha un terminale.
+/// One row of the process table, before we know whether it has a terminal.
 #[derive(Debug, Clone)]
 struct Row {
     pid: u32,
@@ -127,11 +112,11 @@ struct Row {
     command: String,
 }
 
-/// Il tty che `ps` scrive quando un processo non ne ha uno.
+/// The tty `ps` writes when a process has none.
 const NO_TTY: &str = "??";
 
-/// Legge la tabella e la spezza in righe. Quello che non si legge si salta:
-/// un'intestazione o una riga monca non deve far cadere il censimento.
+/// Reads the table and splits it into rows. Whatever will not parse is skipped:
+/// a header or a truncated line must not bring the census down.
 fn parse_table(text: &str) -> Vec<Row> {
     text.lines().filter_map(parse_row).collect()
 }
@@ -142,8 +127,8 @@ fn parse_row(line: &str) -> Option<Row> {
     let parent_pid = fields.next()?.parse().ok()?;
     let tty = fields.next()?.to_owned();
     let uptime = fields.next()?.to_owned();
-    // Il comando può contenere spazi (`npm exec qualcosa`): è tutto il resto
-    // della riga, non il campo successivo.
+    // A command can contain spaces (`npm exec something`): it is the whole rest
+    // of the line, not the next field.
     let command = fields.collect::<Vec<_>>().join(" ");
     if command.is_empty() {
         return None;
@@ -157,13 +142,12 @@ fn parse_row(line: &str) -> Option<Row> {
     })
 }
 
-/// L'etichetta di un comando.
+/// The label of a command.
 ///
-/// **UNA CONVENZIONE DEL SISTEMA, NON LA CONOSCENZA DI UN PRODOTTO.** Su macOS
-/// un'applicazione è una cartella `<Nome>.app`, e il binario che ci sta dentro
-/// ha un percorso lungo che non dice niente a chi legge. Si prende il primo
-/// `.app` del percorso, che è l'applicazione ospite; gli involucri interni ne
-/// hanno di propri più in fondo. Nessun nome è scritto qui dentro.
+/// A convention of the system, not knowledge of a product: on macOS an
+/// application is a `<Name>.app` directory whose binary has a long path that
+/// tells a reader nothing. The first `.app` in the path is the host
+/// application; inner wrappers have their own further down. No name goes here.
 pub fn label_for(command: &str) -> String {
     if let Some((head, _)) = command.split_once(".app/") {
         let name = head.rsplit('/').next().unwrap_or(head);
@@ -174,11 +158,11 @@ pub fn label_for(command: &str) -> String {
     command.rsplit('/').next().unwrap_or(command).to_owned()
 }
 
-/// Il capostipite di un processo: si risale finché c'è un genitore da risalire.
-/// Torna anche **quanti gradini** sono stati saliti, e quel numero serve.
+/// A process's ancestor: walk up while there is a parent to walk to. Also
+/// returns **how many steps** were climbed, and that number is used.
 ///
-/// Ci si ferma sotto `launchd` (pid 1) perché il capostipite di tutto sarebbe
-/// sempre lui, e un'etichetta uguale per tutti non etichetta niente.
+/// The walk stops below `launchd` (pid 1), because the ancestor of everything
+/// would always be launchd, and a label shared by all labels nothing.
 fn ancestry_of(start: u32, table: &BTreeMap<u32, Row>) -> Option<(usize, String)> {
     let mut current = start;
     let mut steps = 0;
@@ -197,15 +181,12 @@ fn ancestry_of(start: u32, table: &BTreeMap<u32, Row>) -> Option<(usize, String)
         .map(|row| (steps, label_for(&row.command)))
 }
 
-/// Il capostipite di un terminale: **la catena più lunga fra quelle dei suoi
-/// abitanti**, non la prima che capita.
-///
-/// **PERCHÉ NON LA PRIMA.** Una salita si ferma anche quando il genitore non è
-/// nella tabella — un processo riadottato, o uno che è appena morto — e allora
-/// il processo stesso diventa il proprio capostipite: l'etichetta di un
-/// terminale aperto da un'applicazione risultava `caffeinate`, che è il primo
-/// pid del gruppo e non ha risalito niente. Chi è salito più in alto ha visto
-/// di più, e la sua etichetta è quella vera.
+/// A terminal's ancestor: **the longest chain among its inhabitants**, not the
+/// first one found. A walk also stops when the parent is missing from the table
+/// — a reparented process, or one that has just died — and then the process
+/// becomes its own ancestor: a terminal opened by an application came out
+/// labelled `caffeinate`, the group's first pid, which had climbed nothing.
+/// Whoever climbed highest saw most, and carries the true label.
 fn ancestor_of_terminal(rows: &[&Row], table: &BTreeMap<u32, Row>) -> Option<String> {
     rows.iter()
         .filter_map(|row| ancestry_of(row.pid, table))
@@ -214,7 +195,12 @@ fn ancestor_of_terminal(rows: &[&Row], table: &BTreeMap<u32, Row>) -> Option<Str
 }
 
 impl Census {
-    /// Il censimento, fatto sulla macchina che risponde.
+    /// The census, taken on whichever machine answers.
+    ///
+    /// A denied `ps` can also exit clean with empty output, and then no error
+    /// code betrays it. But whoever asks for the process table **is** a
+    /// process: a table without the asker's own pid is not the machine. That
+    /// canary is the only check that holds when a denial will not name itself.
     pub fn of(machine: &dyn Machine) -> Census {
         let text = match machine.process_table() {
             Ok(text) => text,
@@ -226,9 +212,9 @@ impl Census {
             return Census::Refused(Refusal {
                 tool: "ps".to_owned(),
                 reason: format!(
-                    "la tabella dei processi non contiene il pid di chi l'ha chiesta ({own}): \
-                     {} righe lette. Una macchina senza chi la interroga non è una macchina \
-                     vuota, è una risposta che non abbiamo ricevuto",
+                    "the process table does not contain the pid of the process that asked for \
+                     it ({own}): {} rows read. A machine missing whoever queries it is not an \
+                     empty machine, it is an answer we did not get",
                     rows.len()
                 ),
             });
@@ -265,7 +251,7 @@ impl Census {
     }
 }
 
-/// La macchina vera, interrogata con gli strumenti che ci sono su ogni Unix.
+/// The real machine, asked with the tools every Unix has.
 pub struct LocalMachine;
 
 impl Machine for LocalMachine {
@@ -275,8 +261,8 @@ impl Machine for LocalMachine {
 
     fn working_directory(&self, pid: u32) -> Option<String> {
         let text = read_from("lsof", &["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"]).ok()?;
-        // `-Fn` scrive un campo per riga, con la lettera del campo davanti:
-        // `p<pid>`, `fcwd`, `n<percorso>`.
+        // `-Fn` writes one field per line, with the field letter in front:
+        // `p<pid>`, `fcwd`, `n<path>`.
         text.lines()
             .find_map(|line| line.strip_prefix('n'))
             .map(str::to_owned)
@@ -287,21 +273,24 @@ impl Machine for LocalMachine {
     }
 }
 
-/// **NIENTE PIPE, MAI.** L'uscita si cattura direttamente, così un diniego
-/// arriva con il suo testo e il suo codice invece di sparire nel comando
-/// successivo. `ps -e | wc -l` risponde `0` con uscita `0`; `Command::output`
-/// risponde con l'errore che c'è.
+/// **NO PIPES, EVER.** The output is captured directly, so a denial arrives
+/// with its own text and its own exit code instead of vanishing into the next
+/// command. `ps -e | wc -l` answers `0` with exit `0`; `Command::output`
+/// answers with the error that is there.
 fn read_from(tool: &str, args: &[&str]) -> Result<String, Refusal> {
-    let output = Command::new(tool).args(args).output().map_err(|error| Refusal {
-        tool: tool.to_owned(),
-        reason: format!("non è partito: {error}"),
-    })?;
+    let output = Command::new(tool)
+        .args(args)
+        .output()
+        .map_err(|error| Refusal {
+            tool: tool.to_owned(),
+            reason: format!("did not start: {error}"),
+        })?;
     let complaint = String::from_utf8_lossy(&output.stderr).trim().to_owned();
     if !output.status.success() {
         return Err(Refusal {
             tool: tool.to_owned(),
             reason: format!(
-                "uscito con {}{}",
+                "exited with {}{}",
                 output.status,
                 if complaint.is_empty() {
                     String::new()

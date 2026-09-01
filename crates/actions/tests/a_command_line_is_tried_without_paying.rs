@@ -35,10 +35,7 @@ struct Sandbox {
 impl Sandbox {
     fn new(name: &str) -> Sandbox {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let root = std::env::temp_dir().join(format!(
-            "actions-{name}-{}-{n}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("actions-{name}-{}-{n}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("la cartella di prova si crea");
         Sandbox { root }
@@ -206,7 +203,10 @@ fn the_line_that_is_tried_is_the_real_one_without_the_prompt() {
     // ingresso vuoto sarebbe innocuo, ma dargliene uno aperto lo farebbe
     // aspettare — e la prova a secco diventerebbe un modo per appendere il
     // controllo, su una macchina dove `timeout` non esiste.
-    assert!(stdin.is_none(), "la domanda andava in coda, non sull'ingresso");
+    assert!(
+        stdin.is_none(),
+        "la domanda andava in coda, non sull'ingresso"
+    );
 }
 
 /// E a chi la vuole sull'ingresso si dà un ingresso **vuoto e chiuso**, che è
@@ -271,9 +271,9 @@ fn the_exhausted_reading_comes_first_when_the_output_says_both() {
     );
     match verdict {
         ProbeVerdict::CannotWork { .. } => {}
-        other => panic!(
-            "l'ordine di lettura è invertito: un motore esaurito è diventato {other:?}"
-        ),
+        other => {
+            panic!("l'ordine di lettura è invertito: un motore esaurito è diventato {other:?}")
+        }
     }
 }
 

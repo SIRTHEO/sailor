@@ -1,18 +1,16 @@
-//! Qual è il terminale di **questo** processo.
+//! Which terminal **this** process is on.
 //!
-//! **UNA DOMANDA SUL PROPRIO DESCRITTORE, NON SULLA MACCHINA.** `ttyname` legge
-//! un descrittore che il processo ha già in mano: non esegue niente, non
-//! attraversa nessun perimetro, e non può rispondere «vuoto» al posto di
-//! «negato». È la differenza con `ps`, ed è la ragione per cui l'ancora del
-//! tracciamento comincia da qui.
+//! `ttyname` asks about a descriptor the process already holds: it runs
+//! nothing, crosses no sandbox boundary, and cannot answer "empty" in place of
+//! "denied". That is the difference from `ps`, and the reason the tracking
+//! anchor starts here.
 
-/// Il tty di questo processo, col nome corto che usa `ps`.
+/// This process's tty, under the short name `ps` uses.
 ///
-/// **SI GUARDA PRIMA L'ERRORE STANDARD.** Chi arriva da un gancio ha l'ingresso
-/// occupato dalla pipe che porta il payload, e spesso anche l'uscita è
-/// catturata: il descrittore 2 è l'ultimo a restare attaccato alla finestra.
-/// Provarli in quest'ordine è ciò che fa funzionare il caso vero invece del
-/// caso comodo.
+/// Standard error is tried first. A process invoked from a hook has its input
+/// taken by the pipe carrying the payload, and often its output captured too:
+/// descriptor 2 is the last one still attached to the window. This order is
+/// what makes the real case work rather than the convenient one.
 pub fn current() -> Option<String> {
     for descriptor in [libc::STDERR_FILENO, libc::STDOUT_FILENO, libc::STDIN_FILENO] {
         if let Some(found) = name_of(descriptor) {
@@ -23,8 +21,8 @@ pub fn current() -> Option<String> {
 }
 
 fn name_of(descriptor: i32) -> Option<String> {
-    // `ttyname` scrive in un'area statica del processo: la stringa si copia
-    // subito, prima di qualunque altra chiamata che potrebbe riusarla.
+    // `ttyname` writes into a static area of the process: copy the string at
+    // once, before any other call could reuse it.
     let device = unsafe {
         let raw = libc::ttyname(descriptor);
         if raw.is_null() {
@@ -38,11 +36,11 @@ fn name_of(descriptor: i32) -> Option<String> {
     Some(short_name(&device))
 }
 
-/// `/dev/ttys004` diventa `ttys004`.
+/// `/dev/ttys004` becomes `ttys004`.
 ///
-/// **DUE NOMI PER LA STESSA COSA SAREBBERO DUE CHIAVI.** `ps` scrive la forma
-/// corta, `ttyname` quella lunga: se le due entrassero nel deposito come sono,
-/// lo stesso terminale avrebbe due righe e lo stacco varrebbe su una sola.
+/// Two names for one thing would be two keys: `ps` writes the short form,
+/// `ttyname` the long one. If both reached the store as they come, one terminal
+/// would have two rows and a detach would hold on only one of them.
 pub fn short_name(device: &str) -> String {
     device.strip_prefix("/dev/").unwrap_or(device).to_owned()
 }

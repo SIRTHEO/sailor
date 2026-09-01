@@ -1,107 +1,103 @@
 {
-  "_leggimi": [
-    "L'elenco di cosa cercare, spedito col prodotto. È un dato: si riscrive, si",
-    "estende e si spegne senza ricompilare niente.",
+  "_readme": [
+    "THE LIST OF WHAT TO LOOK FOR, shipped with the product. It is data: rewrite",
+    "it, extend it or switch it off without recompiling anything.",
     "",
-    "Per aggiungere uno strumento: metti un file `.json` in `~/.config/sailor/tools.d/`",
-    "(o dove punta SAILOR_TOOL_DESCRIPTORS) con dentro un array di descrittori,",
-    "o un oggetto con un campo `tools`. Un `id` già presente qui dentro viene",
-    "sostituito dal tuo; per toglierne uno, riscrivi il suo `id` con",
-    "`\"disabled\": true`.",
+    "To add a tool: put a `.json` file in `~/.config/sailor/tools.d/` (or wherever",
+    "SAILOR_TOOL_DESCRIPTORS points) holding an array of descriptors, or an object",
+    "with a `tools` field. An `id` already present in here is replaced by yours;",
+    "to remove one, rewrite its `id` with `\"disabled\": true`.",
     "",
-    "Un descrittore ha `detect` (questa cosa o c'è o non c'è) oppure `enumerate`",
-    "(le voci si scoprono leggendo un file di configurazione), mai tutti e due.",
-    "`detect` è una sonda o un elenco di sonde: `{\"command\": \"nome\"}` cerca un",
-    "eseguibile nelle cartelle del percorso, `{\"path\": \"~/x/*.json\"}` guarda se",
-    "un file c'è. Basta che una risponda.",
+    "A descriptor has `detect` (this thing is either here or not) or `enumerate`",
+    "(the entries are discovered by reading a configuration file), never both.",
+    "`detect` is one probe or a list of probes: `{\"command\": \"name\"}` looks for an",
+    "executable on the search path, `{\"path\": \"~/x/*.json\"}` sees whether a file",
+    "is there. One answering is enough.",
     "",
-    "`version` dice come chiedere la versione all'eseguibile trovato; deve essere",
-    "una domanda, non un gesto: il rilevamento la esegue davvero.",
-    "`config` dice dove vive la sua configurazione. `~/`, `$VAR` e `*` valgono in",
-    "tutti i percorsi.",
+    "`version` says how to ask the executable found for its version; it must be a",
+    "question, not a gesture: the detection really runs it. `config` says where its",
+    "configuration lives. `~/`, `$VAR` and `*` work in every path.",
     "",
-    "`ask` dice come si fa una domanda secca a un motore, e serve perché un passo",
-    "non debba conoscere le opzioni di nessuno: `args` sono le opzioni senza il",
-    "testo della domanda, `prompt` dice dove va quel testo (`stdin` o `last_arg`),",
-    "e `unusable_when` elenca le parole con cui quel motore dichiara di NON poter",
-    "lavorare — quota finita, credenziali mancanti. Solo quelle fanno passare un",
-    "passo al motore successivo della sua catena: si dichiarano le parole del",
-    "fornitore, mai una regola generica come «errore», o un mandato sbagliato",
-    "scenderebbe tutta la catena finché qualcuno risponde comunque. Chi non",
-    "dichiara `ask` resta usabile, ma solo da un passo che scriva da sé le opzioni.",
+    "`ask` says how a one-shot question is put to an engine, so that a step need",
+    "not know anybody's options: `args` are the options without the question's",
+    "text, `prompt` says where that text goes (`stdin` or `last_arg`), and",
+    "`unusable_when` lists the words that engine uses to declare it CANNOT work —",
+    "quota spent, credentials missing. Only those move a step on to the next engine",
+    "in its chain: declare the provider's own words, never a generic rule like",
+    "«error», or a wrong brief would travel the whole chain until somebody answers",
+    "anyway. An engine without `ask` stays usable, but only from a step that writes",
+    "the options itself.",
     "",
-    "`refuses_without_prompt` elenca le parole con cui quel motore rifiuta la riga",
-    "MONTATA SENZA LA DOMANDA. Serve a provare una riga di comando vera a costo",
-    "zero: senza domanda non si chiama nessun fornitore, ma si percorre lo stesso",
-    "parsing di argomenti di una chiamata vera, e una riga malformata lo dice lì",
-    "invece che alla prima corsa che si paga. Si dichiarano le parole del motore e",
-    "non un codice d'uscita: misurato il 31/08/2026, `agy` esce 2 sia quando",
-    "rifiuta bene sia quando la riga è quella malformata del guasto 27, quindi",
-    "l'esito non distingue i due casi e il testo sì. Vuoto vuol dire «nessuno ha",
-    "guardato», mai «la riga è sana».",
+    "`refuses_without_prompt` lists the words that engine refuses the line",
+    "COMPOSED WITHOUT THE QUESTION with. It is how a real command line gets tried",
+    "at zero cost: with no question no provider is called, but the same argument",
+    "parsing as a real call runs, and a malformed line says so there instead of on",
+    "the first run that costs money. Declare the engine's words and not an exit",
+    "code: one measured engine exits 2 both when it refuses properly and when the",
+    "line is malformed, so the status does not tell the two apart and the text",
+    "does. Empty means «nobody looked», never «the line is sound».",
     "",
-    "`login_status` dice come si chiede a quel motore SE LA CASA DA CUI PARTE È",
-    "AUTENTICATA, e serve perché una casa dichiarata e vuota si applica in",
-    "silenzio: `sailor` sa dare a ogni motore un profilo di credenziali, e un",
-    "profilo che punta a una cartella senza credenziali fa partire ogni chiamata",
-    "non autenticata senza che niente lo dica. `args` sono le opzioni della",
-    "domanda (`[\"login\", \"status\"]`), che DEVE essere una domanda e mai un gesto:",
-    "il controllo la esegue davvero, e `codex login` aprirebbe un browser.",
-    "`logged_in_when` e `logged_out_when` sono le parole con cui quel motore dice",
-    "di sì e di no, e `answer` è un puntatore — lo stesso di `usage` — per i motori",
-    "che non rispondono in prosa: `claude` mette la risposta nel campo booleano",
-    "`loggedIn` di un involucro JSON, e `[\"loggedIn\"]` ci arriva. Senza `answer` il",
-    "soggetto è tutto ciò che il motore ha detto, stdout e stderr insieme.",
+    "`login_status` says how that engine is asked WHETHER THE HOME IT STARTS FROM",
+    "IS AUTHENTICATED, and it is needed because a declared and empty home applies",
+    "in silence: `sailor` can give each engine a credentials profile, and a profile",
+    "pointing at a directory with no credentials starts every call unauthenticated",
+    "with nothing to say so. `args` are the question's options (`[\"login\",",
+    "\"status\"]`), and it MUST be a question and never a gesture: the check really",
+    "runs it, and `codex login` would open a browser. `logged_in_when` and",
+    "`logged_out_when` are the words that engine says yes and no with, and `answer`",
+    "is a pointer — the same one `usage` uses — for engines that do not answer in",
+    "prose: `claude` puts the answer in the boolean field `loggedIn` of a JSON",
+    "envelope, and `[\"loggedIn\"]` reaches it. Without `answer` the subject is",
+    "everything the engine said, stdout and stderr together.",
     "",
-    "E CIÒ CHE FINISCE NEL RAPPORTO È IL SOGGETTO, NON L'INVOLUCRO. Non è",
-    "un'economia di parole: la risposta vera di `claude auth status` porta con sé",
-    "l'indirizzo di posta del proprietario, l'identificativo e il nome della sua",
-    "organizzazione e il tipo di abbonamento, e quel testo finirebbe in due uscite",
-    "che si incollano in una consegna e si versano in un registro. Chi dichiara un",
-    "`answer` fa mostrare il valore isolato — «false» dice la stessa cosa senza",
-    "dire chi la usa — e chi non lo dichiara mostra la prosa, che sui motori",
-    "misurati non nomina nessuno.",
+    "AND WHAT ENDS UP IN THE REPORT IS THE SUBJECT, NOT THE ENVELOPE. This is not",
+    "brevity: the real answer of `claude auth status` carries the owner's email",
+    "address, their organisation's identifier and name, and the subscription type,",
+    "and that text would end up in two outputs that get pasted into a handover and",
+    "poured into a log. Declaring an `answer` shows the isolated value — «false»",
+    "says the same thing without saying whose it is — and declaring none shows the",
+    "prose, which on the measured engines names nobody.",
     "",
-    "SI DICHIARANO TUTTE E DUE LE FORME, E IL NO SI LEGGE PER PRIMO. «Not logged",
-    "in» contiene «logged in»: il modo di dire di no è quasi sempre il modo di dire",
-    "di sì con una negazione davanti, e chi cercasse prima il sì troverebbe",
-    "autenticata una casa vuota. L'ordine lo impone il codice; le parole giuste le",
-    "dichiara chi misura. Chi non dichiara il blocco non fa scattare NIENTE: vuoto",
-    "vuol dire «nessuno ha guardato», mai «è autenticato», ed è lo stesso verso di",
-    "`refuses_without_prompt`. Il controllo non fa fallire una corsa per un profilo",
-    "senza credenziali — punire chi non c'entra è la cura sbagliata — lo dice e",
-    "basta, in `sailor flow check` e in `sailor profiles list`.",
+    "BOTH FORMS GET DECLARED, AND THE NO IS READ FIRST. «Not logged in» contains",
+    "«logged in»: the way of saying no is nearly always the way of saying yes with",
+    "a negation in front, and looking for the yes first would find an empty home",
+    "authenticated. The code imposes the order; whoever measures declares the right",
+    "words. An engine without the block triggers NOTHING: empty means «nobody",
+    "looked», never «it is authenticated», the same direction as",
+    "`refuses_without_prompt`. The check does not fail a run over a profile with no",
+    "credentials — punishing the innocent is the wrong cure — it just says so, in",
+    "`sailor flow check` and in `sailor profiles list`.",
     "",
-    "PERCHÉ NON SI GUARDA `auth.json` SUL DISCO. Sarebbe una seconda copia della",
-    "verità, da riscrivere per ogni motore e da tenere allineata mentre i motori",
-    "cambiano dove mettono le proprie cose. E perché il vaglio a secco non basta:",
-    "quello prova la riga SENZA la domanda, quindi il motore si ferma prima di",
-    "arrivare ai controlli sulle credenziali — misurato, `codex exec < /dev/null`",
-    "risponde uguale con la casa piena e con quella vuota.",
+    "WHY `auth.json` ON DISK IS NOT INSPECTED. It would be a second copy of the",
+    "truth, rewritten per engine and kept aligned while engines move their things",
+    "around. And because the dry run is not enough: it tries the line WITHOUT the",
+    "question, so the engine stops before reaching the credential checks —",
+    "measured, `codex exec < /dev/null` answers the same with a full home and an",
+    "empty one.",
     "",
-    "`usage` dice come si legge QUANTO HA CONSUMATO quel motore, e serve perché",
-    "Sailor sappia dove sono finiti i soldi senza un ramo di codice per nessun",
-    "fornitore. `args` sono le opzioni da aggiungere per farselo dire (per",
-    "esempio `[\"--output-format\", \"json\"]`), `read` è `json` o `text`, e i",
-    "puntatori dicono dove stanno i valori: `input_tokens`, `output_tokens`,",
-    "`cached_tokens`, `total_tokens`, `cost`, `model`, `answer`. Con `read: json`",
-    "un puntatore è un cammino di chiavi (`[\"usage\", \"input_tokens\"]`); con",
-    "`read: text` è un'espressione regolare col valore nel primo gruppo.",
+    "`usage` says how THAT ENGINE'S CONSUMPTION is read, so that Sailor knows where",
+    "the money went with no code branch for any provider. `args` are the options to",
+    "add so it reports it (for example `[\"--output-format\", \"json\"]`), `read` is",
+    "`json` or `text`, and the pointers say where the values are: `input_tokens`,",
+    "`output_tokens`, `cached_tokens`, `total_tokens`, `cost`, `model`, `answer`.",
+    "With `read: json` a pointer is a key path (`[\"usage\", \"input_tokens\"]`); with",
+    "`read: text` it is a regular expression with the value in the first group.",
     "",
-    "TRE COSE DA SAPERE PRIMA DI SCRIVERNE UNO.",
-    "1. `cached_tokens` va tenuto separato: i token letti dalla cache costano un",
-    "   ordine di grandezza meno, e un solo numero d'ingresso renderebbe la",
-    "   misura falsa proprio dove conta.",
-    "2. Se metti `args` che chiedono un involucro JSON, DEVI dichiarare anche",
-    "   `answer`, cioè dove sta il testo della risposta dentro quell'involucro:",
-    "   senza, il passo a valle riceverebbe l'involucro al posto della risposta.",
-    "   Misurare non deve cambiare ciò che si misura.",
-    "3. `model` è l'unico legame onesto col listino (`~/.config/sailor/pricing.json`):",
-    "   il nome che il motore dichiara si cerca fra gli `id` e gli `aliases` del",
-    "   listino. Chi non lo dichiara lascia il COSTO sconosciuto — mai zero.",
+    "THREE THINGS TO KNOW BEFORE WRITING ONE.",
+    "1. `cached_tokens` must be kept separate: tokens read from the cache cost an",
+    "   order of magnitude less, and a single input number would make the",
+    "   measurement false exactly where it counts.",
+    "2. If you set `args` that ask for a JSON envelope, you MUST declare `answer`",
+    "   too, that is where the answer's text sits inside that envelope: without",
+    "   it, the downstream step would receive the envelope instead of the answer.",
+    "   Measuring must not change what is measured.",
+    "3. `model` is the only honest link to the price list",
+    "   (`~/.config/sailor/pricing.json`): the name the engine declares is looked",
+    "   up among the list's `id`s and `aliases`. Declaring none leaves the COST",
+    "   unknown — never zero.",
     "",
-    "Un esempio della forma `json`, da scrivere in ~/.config/sailor/tools.d/ per un",
-    "motore le cui chiavi hai misurato tu su questa macchina:",
+    "An example of the `json` form, to write in ~/.config/sailor/tools.d/ for an",
+    "engine whose keys you measured yourself on this machine:",
     "  \"usage\": {",
     "    \"args\": [\"--output-format\", \"json\"],",
     "    \"read\": \"json\",",
@@ -113,45 +109,45 @@
     "    \"answer\": [\"result\"]",
     "  }",
     "",
-    "Chi non dichiara `usage` funziona esattamente come prima, e lascia i propri",
-    "token a SCONOSCIUTO. Non a zero: uno zero al posto di «non lo so» si somma,",
-    "e nessuna vista a valle può più correggerlo.",
+    "An engine without `usage` works exactly as before, and leaves its tokens at",
+    "UNKNOWN. Not at zero: a zero in place of «I do not know» adds up, and no",
+    "downstream view can correct it any more.",
     "",
-    "`capabilities` dice CHE COSA QUEL MOTORE SA FARE OLTRE A RISPONDERE, e con",
-    "quali argomenti lo si ottiene. È una mappa da nome a dichiarazione, e il",
-    "codice non conosce nessuno di quei nomi: aggiungerne uno è scrivere qui",
-    "dentro, mai ricompilare. Ogni voce si scrive in uno di tre modi:",
+    "`capabilities` says WHAT THAT ENGINE CAN DO BEYOND ANSWERING, and with which",
+    "arguments it is obtained. It is a map from name to declaration, and the code",
+    "knows none of those names: adding one means writing in here, never a",
+    "recompile. Each entry is written in one of three ways:",
     "  \"choose_model\": { \"args\": [\"--model\"], \"takes_value\": true }",
     "  \"resume_session\": [ {\"args\": [\"--resume\"]}, {\"args\": [\"--continue\"]} ]",
     "  \"fork_session\": false",
-    "Una forma ha `args` (le opzioni, o il sottocomando), `takes_value` (l'ultima",
-    "vuole un valore subito dopo), `values` (l'insieme chiuso, dove esiste) e",
-    "`note` (il vincolo che la tabella non porta: «solo con --print»).",
+    "A form has `args` (the options, or the subcommand), `takes_value` (the last",
+    "one wants a value straight after), `values` (the closed set, where one",
+    "exists) and `note` (the constraint the table cannot carry: «only with",
+    "--print»).",
     "",
-    "SCRIVERE `false` NON È LA STESSA COSA CHE TACERE, ed è la ragione per cui",
-    "questo blocco esiste in questa forma. `false` dice «qualcuno ha guardato e",
-    "non c'è»; l'assenza della riga dice «nessuno ha guardato». Un blocco che",
-    "permettesse solo di elencare ciò che c'è farebbe passare per misurata ogni",
-    "assenza, compresa quella di uno strumento che nessuno ha mai aperto.",
+    "WRITING `false` IS NOT THE SAME AS STAYING SILENT, and that is why this block",
+    "has this shape. `false` says «somebody looked and it is not there»; a missing",
+    "line says «nobody looked». A block that only let you list what is there would",
+    "pass every absence off as measured, including that of a tool nobody ever",
+    "opened.",
     "",
-    "CHI NON DICHIARA NIENTE CONTINUA A FUNZIONARE. Una capacità che manca non è",
-    "un errore: chi non sa imporre una forma alla risposta se la fa chiedere nel",
-    "prompt e paga più token — che è il comportamento di sempre, e resta il",
-    "ripiego. Un passo dichiara ciò che gli serve con `needs_capabilities`, e",
-    "`sailor flow check` avvisa nominando passo, motore e capacità.",
+    "AN ENGINE THAT DECLARES NOTHING KEEPS WORKING. A missing capability is not an",
+    "error: an engine that cannot impose a shape on the answer asks for it in the",
+    "prompt and pays more tokens — which is how it always worked, and stays the",
+    "fallback. A step declares what it needs with `needs_capabilities`, and `sailor",
+    "flow check` warns, naming the step, the engine and the capability.",
     "",
-    "I nomi usati qui: `ask_without_interaction`, `response_shape`,",
+    "The names used here: `ask_without_interaction`, `response_shape`,",
     "`resume_session`, `fork_session`, `isolate_from_user_config`,",
     "`receive_equipment`, `native_spend_cap`, `choose_model`, `fallback_model`,",
-    "`read_remaining_quota`. Quest'ultima non è una bandiera ma un canale, ed è",
-    "la prova che il blocco regge anche per ciò che non sta sulla riga di",
-    "comando: dichiara che quello strumento sa dire quanta quota la PERSONA ha",
-    "già consumato. Chi non ce l'ha continua a funzionare senza saperlo — che è",
-    "il ripiego di sempre — e chi la dichiara `false` sta dicendo che qualcuno",
-    "ha guardato, non che è impossibile.",
-    "Non sono un elenco chiuso — non c'è nessun posto nel codice dove sia",
-    "scritto — ma chi ne inventa uno accanto a uno che c'è già ottiene che due",
-    "descrittori parlino di due cose che nessuno può confrontare."
+    "`read_remaining_quota`. The last is not a flag but a channel, and it is the",
+    "proof that the block holds for what is not on the command line too: it",
+    "declares that the tool can say how much quota the PERSON has already spent.",
+    "An engine without it keeps working without knowing — the usual fallback — and",
+    "one declaring it `false` is saying somebody looked, not that it is impossible.",
+    "They are not a closed list — nowhere in the code is one written down — but",
+    "inventing one beside an existing one gets you two descriptors talking about",
+    "two things nobody can compare."
   ],
   "tools": [
     {
@@ -186,51 +182,51 @@
         "logged_out_when": ["false"]
       },
       "capabilities": {
-        "ask_without_interaction": { "args": ["-p"], "note": "`--print` è la forma lunga della stessa bandiera" },
+        "ask_without_interaction": { "args": ["-p"], "note": "`--print` is the long form of the same flag" },
         "response_shape": {
           "args": ["--json-schema"],
           "takes_value": true,
-          "note": "prende uno schema JSON per intero, non un nome di formato: è l'unico dei quattro che imponga la forma dei campi e non solo l'involucro"
+          "note": "it takes a whole JSON schema, not a format name: the only one of the four that imposes the shape of the fields and not just the envelope"
         },
         "resume_session": [
-          { "args": ["--resume"], "note": "il valore è facoltativo: senza, apre il selettore" },
-          { "args": ["--session-id"], "takes_value": true, "note": "vuole un UUID valido" },
-          { "args": ["--continue"], "note": "riprende l'ultima conversazione di questa cartella" }
+          { "args": ["--resume"], "note": "the value is optional: without it, the picker opens" },
+          { "args": ["--session-id"], "takes_value": true, "note": "wants a valid UUID" },
+          { "args": ["--continue"], "note": "resumes the last conversation of this directory" }
         ],
         "fork_session": {
           "args": ["--fork-session"],
-          "note": "va insieme a --resume o a --continue: da solo non ha niente da ramificare"
+          "note": "goes together with --resume or --continue: on its own it has nothing to fork"
         },
         "isolate_from_user_config": [
           {
             "args": ["--setting-sources"],
             "takes_value": true,
             "values": ["user", "project", "local"],
-            "note": "con il valore vuoto la riga di comando nasce vergine E RESTA AUTENTICATA: le competenze dell'utente spariscono, restano le incorporate. È la forma da usare per equipaggiare un motore senza scrivere in casa d'altri"
+            "note": "with an empty value the command line starts clean AND STAYS AUTHENTICATED: the user's skills disappear, the built-in ones remain. This is the form to use to equip an engine without writing in somebody else's home"
           },
           {
             "args": ["--bare"],
-            "note": "isola di più e costa le credenziali: senza ANTHROPIC_API_KEY risponde «Not logged in», perché OAuth e portachiavi non vengono letti"
+            "note": "isolates more and costs the credentials: without ANTHROPIC_API_KEY it answers «Not logged in», because OAuth and the keychain are not read"
           }
         ],
         "receive_equipment": [
-          { "args": ["--plugin-dir"], "takes_value": true, "note": "ripetibile; una cartella o uno .zip, solo per questa sessione" },
+          { "args": ["--plugin-dir"], "takes_value": true, "note": "repeatable; a directory or a .zip, for this session only" },
           { "args": ["--mcp-config"], "takes_value": true },
-          { "args": ["--agents"], "takes_value": true, "note": "un oggetto JSON, non un percorso" }
+          { "args": ["--agents"], "takes_value": true, "note": "a JSON object, not a path" }
         ],
         "native_spend_cap": {
           "args": ["--max-budget-usd"],
           "takes_value": true,
-          "note": "funziona solo insieme a --print"
+          "note": "works only together with --print"
         },
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": {
           "args": ["--fallback-model"],
           "takes_value": true,
-          "note": "elenco separato da virgole, provato in ordine; solo con --print"
+          "note": "comma-separated list, tried in order; only with --print"
         },
         "read_remaining_quota": {
-          "note": "Non è una bandiera: è un canale. Il gettone OAuth sta in ~/.claude/.credentials.json sotto claudeAiOauth.accessToken, e https://api.anthropic.com/api/oauth/usage risponde con le finestre di quota — `utilization` in percentuale e `resets_at` — con l'intestazione `anthropic-beta: oauth-2025-04-20`. Misurato con una risposta HTTP 200 il 01/09/2026 su questa macchina: five_hour al 2%, seven_day al 32%. È quota DELLA PERSONA su tutte le sue sessioni, mai il consumo di una corsa. Solo lettura, nessun costo. Il lettore è `models::remaining`."
+          "note": "Not a flag: a channel. The OAuth token is in ~/.claude/.credentials.json under claudeAiOauth.accessToken, and https://api.anthropic.com/api/oauth/usage answers with the quota windows — `utilization` as a percentage and `resets_at` — given the header `anthropic-beta: oauth-2025-04-20`. Measured with an HTTP 200 response: five_hour at 2%, seven_day at 32%. It is the PERSON's quota across all their sessions, never the usage of one run. Read only, no cost. The reader is `models::remaining`."
         }
       },
       "reset_context": {
@@ -238,7 +234,7 @@
         "note": "Typed into a session that is already running, not passed at launch. Established from the command list this command line publishes to its own sessions, NOT by running it and watching the context empty: the effect is on a live session, and measuring it means having one to spend. What is measured is that the line reaches the program — the conduit is provable without knowing what the line means. Whoever gets a chance to watch a real session empty should say so here and take this sentence out."
       },
       "config": ["~/.claude/settings.json", "~/.claude.json"],
-      "note": "Le parole di `unusable_when` sono quelle viste il 29/08/2026 su questa macchina: «You've hit your weekly limit · resets 7am». Non sono una regola generale, e non devono esserlo: se un giorno cambiano, il ripiego smette di scattare e il passo diventa rosso col messaggio vero — che è il modo giusto di sbagliare. Il blocco `usage` è misurato il 30/08/2026 su questa macchina, e ogni chiave viene da un'uscita vera, non dalla documentazione. DUE COSE NON OVVIE. (1) LA CACHE SCRITTA È LA VOCE PIÙ CARA: nella chiamata misurata — due token d'ingresso, quattro d'uscita — i 12.347 token scritti in cache erano il 96% dei 0,1285 dollari dichiarati. Le due durate hanno prezzi diversi e stanno in due chiavi diverse, quindi si dichiarano separate: sommarle sarebbe una perdita di informazione che nessuno vedrebbe più. (2) IL MODELLO NON È UN CAMPO: claude lo usa come CHIAVE di `modelUsage` (`{\"modelUsage\": {\"claude-opus-5[1m]\": {…}}}`), e per questo il puntatore è nella forma `first_key_of`. Senza quel nome nessuna voce di listino si trova, e il costo resterebbe sconosciuto pur avendo tutti i conteggi. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina montando la riga vera senza la domanda: `claude -p --output-format json < /dev/null` esce 1 e stampa «Error: Input must be provided either through stdin or as a prompt argument when using --print». `login_status` è misurato il 01/09/2026 su questa macchina, e la sua forma è la ragione per cui il blocco ha un puntatore: `claude auth status` non risponde in prosa ma con un involucro JSON su STDOUT, e la risposta è un BOOLEANO — `\"loggedIn\": true` nella casa vera, `\"loggedIn\": false` con `CLAUDE_CONFIG_DIR` su una cartella vuota (dove `authMethod` passa da «claude.ai» a «none»). Il puntatore `[\"loggedIn\"]` è lo stesso cammino di chiavi con cui questo descrittore dichiara dove stanno i token: nessun secondo meccanismo. Il comando è locale e non chiama nessun modello. NOTA CHE SMENTISCE UNA MISURA PRECEDENTE: `claude auth status` esce **1** quando non è autenticato e **0** quando lo è, quindi qui l'esito distinguerebbe — ma il verdetto resta sul testo, perché l'esito è un fatto di questo motore e non una regola dichiarabile per tutti."
+      "note": "The words in `unusable_when` are the ones seen on a real machine: «You've hit your weekly limit · resets 7am». They are not a general rule, and must not be: if they change one day, the fallback stops firing and the step goes red with the real message — which is the right way to be wrong. The `usage` block is measured, and every key comes from a real output, not from documentation. TWO NON-OBVIOUS THINGS. (1) THE CACHE WRITE IS THE MOST EXPENSIVE ENTRY: in the measured call — two input tokens, four output — the 12,347 tokens written to cache were 96% of the 0.1285 dollars declared. The two durations have different prices and live in two different keys, so they are declared separately: adding them up would be a loss of information nobody would ever see again. (2) THE MODEL IS NOT A FIELD: claude uses it as the KEY of `modelUsage` (`{\"modelUsage\": {\"claude-opus-5[1m]\": {…}}}`), which is why the pointer takes the `first_key_of` form. Without that name no price-list entry is found, and the cost would stay unknown even with every count in hand. `refuses_without_prompt` is measured by composing the real line without the question: `claude -p --output-format json < /dev/null` exits 1 and prints «Error: Input must be provided either through stdin or as a prompt argument when using --print». `login_status` is measured, and its shape is the reason the block has a pointer: `claude auth status` does not answer in prose but with a JSON envelope on STDOUT, and the answer is a BOOLEAN — `\"loggedIn\": true` in the real home, `\"loggedIn\": false` with `CLAUDE_CONFIG_DIR` pointed at an empty directory (where `authMethod` goes from «claude.ai» to «none»). The pointer `[\"loggedIn\"]` is the same key path this descriptor declares the tokens' location with: no second mechanism. The command is local and calls no model. A NOTE THAT CONTRADICTS AN EARLIER MEASUREMENT: `claude auth status` exits **1** when not authenticated and **0** when it is, so here the status would tell them apart — but the verdict stays on the text, because the status is a fact about this engine and not a rule anyone can declare for all."
     },
     {
       "id": "codex",
@@ -262,29 +258,29 @@
         "logged_out_when": ["not logged in"]
       },
       "capabilities": {
-        "ask_without_interaction": { "args": ["exec"], "note": "sottocomando, non bandiera: vuole stare primo sulla riga" },
+        "ask_without_interaction": { "args": ["exec"], "note": "a subcommand, not a flag: it wants to be first on the line" },
         "response_shape": {
           "args": ["--output-schema"],
           "takes_value": true,
-          "note": "vuole il PERCORSO di un file con dentro lo schema, non lo schema"
+          "note": "it wants the PATH of a file holding the schema, not the schema"
         },
         "resume_session": {
           "args": ["exec", "resume"],
           "takes_value": true,
-          "note": "l'identificativo è facoltativo se si aggiunge --last"
+          "note": "the identifier is optional when --last is added"
         },
         "fork_session": {
           "args": ["exec", "fork"],
           "takes_value": true,
-          "note": "l'identificativo è OBBLIGATORIO. Misurato con `codex exec fork --help` il 31/08/2026: non compare fra le opzioni di `codex --help`, solo fra i sottocomandi di `exec`, ed è per questo che una lettura delle sole opzioni lo dà per assente"
+          "note": "the identifier is MANDATORY. Measured with `codex exec fork --help`: it does not appear among the options of `codex --help`, only among the subcommands of `exec`, which is why a reading of the options alone reports it absent"
         },
         "isolate_from_user_config": [
-          { "args": ["--ignore-user-config"], "note": "non carica $CODEX_HOME/config.toml; le credenziali restano" },
-          { "args": ["--ephemeral"], "note": "non scrive i file di sessione su disco" }
+          { "args": ["--ignore-user-config"], "note": "does not load $CODEX_HOME/config.toml; the credentials remain" },
+          { "args": ["--ephemeral"], "note": "does not write the session files to disk" }
         ],
         "receive_equipment": [
-          { "args": ["--profile"], "takes_value": true, "note": "sovrappone $CODEX_HOME/<nome>.config.toml alla configurazione base; la forma breve è -p, che su codex NON vuol dire «stampa»" },
-          { "args": ["-c"], "takes_value": true, "note": "chiave=valore, ripetibile; il valore si legge come TOML" }
+          { "args": ["--profile"], "takes_value": true, "note": "lays $CODEX_HOME/<name>.config.toml over the base configuration; the short form is -p, which on codex does NOT mean «print»" },
+          { "args": ["-c"], "takes_value": true, "note": "key=value, repeatable; the value is read as TOML" }
         ],
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
@@ -292,7 +288,7 @@
         "read_remaining_quota": false
       },
       "config": ["~/.codex/config.toml", "$CODEX_HOME/config.toml"],
-      "note": "CODEX_HOME può spostare la configurazione: quella che si legge a mano e quella che gli passa chi lo ospita non sono sempre la stessa. `exec` legge il prompt dall'ingresso quando non è un argomento (misurato il 28/08/2026); il 401 di `unusable_when` è quello visto il 29/08/2026 con le credenziali scadute. Il `usage` non ha `args`: codex scrive già i token nella sua uscita normale, quindi misurarlo non cambia né la riga di comando né ciò che il passo riceve. Dichiara solo il TOTALE perché è tutto ciò che dice — non separa ingresso e uscita — e da un totale non si può dedurre un costo senza inventare la proporzione fra i due lati: il costo di codex resta quindi sconosciuto, e i token no. La forma della riga («tokens used», e il numero su quella dopo, coi punti come separatori) è quella misurata su questa macchina il 28/08/2026, la stessa su cui è provato `models::usage::parse_codex_tokens`. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina: `codex exec --sandbox read-only < /dev/null` esce 1 e stampa «Reading prompt from stdin...» seguito da «No prompt provided via stdin.». Si dichiara solo la seconda riga: la prima dice che sta aspettando, non che ha rinunciato. `read_remaining_quota` è `false` perché PROVATO E NON RIUSCITO il 01/09/2026, che è diverso da impossibile — ed ecco fin dove si è arrivati, così chi riprova non ricomincia da zero. Il metodo ESISTE nel protocollo pubblicato: `codex app-server generate-json-schema --out DIR` elenca `account/rateLimits/read` fra le richieste del client, con `params` di tipo `null`. `initialize` risponde in un istante. La richiesta successiva NON riceve risposta: provata due volte, 45 e 50 secondi, con e senza la notifica `initialized` che il protocollo prevede, e nemmeno `account/read` risponde. Nessun errore, nessun diniego: silenzio. Da provare ancora: il sottocomando `app-server proxy` verso il socket del demone già acceso, invece di un processo nuovo che parte da zero. E `~/.codex/state_5.sqlite` ha `tokens_used` per filo, che sono token consumati, non quota residua: non è la stessa domanda. Nota per chi riprova dentro un perimetro: `codex app-server` vuole SCRIVERE sotto `~/.codex`, e se non può muore con «failed to initialize sqlite state runtime» — un diniego di scrittura che si presenta come un guasto del motore. `login_status` è misurato il 01/09/2026 su questa macchina, con le due case vere: `CODEX_HOME=~/.codex codex login status` risponde «Logged in using ChatGPT», e con `CODEX_HOME` su una delle due cartelle di profilo senza `auth.json` risponde «Not logged in». TRE COSE MISURATE CHE NON SI INDOVINANO. (1) Scrive tutto su STDERR, niente su stdout: chi leggesse una pipa sola non troverebbe mai nessuna delle due forme. (2) Sotto perimetro premette una riga sua — «WARNING: proceeding, even though we could not create PATH aliases» — che non c'entra con le credenziali, quindi le parole si cercano dentro l'uscita e non la si confronta per intero. (3) «Not logged in» CONTIENE «logged in»: per questo il sì si dichiara «logged in using», e per questo `judge_login_status` legge comunque il no per primo — due difese, perché la prima dipende da chi scrive il descrittore e la seconda no. Nessun puntatore: la risposta è in prosa, e il soggetto è tutto ciò che il motore ha detto. DUE MISURE PRECEDENTI SMENTITE, TUTTE E DUE SUI CODICI D'USCITA. (a) `codex login status` esce **1** non autenticato e **0** autenticato: qui l'esito distinguerebbe. (b) `codex exec < /dev/null` esce **1**, non zero, e lo fa in tutte e due le case — la riga del guasto 39 che diceva «esce zero» era falsa, mentre la conclusione che ci stava sopra regge, perché quella si appoggia all'IDENTITÀ delle due risposte e non al numero. Da notare che questa stessa nota, tre frasi più su, dichiarava già «esce 1» per la stessa riga: due frasi dello stesso campo dicevano cose diverse, ed è il guasto 32 in miniatura. Il verdetto resta comunque sul testo: l'esito è un fatto di questo motore, non una regola che valga per chi verrà."
+      "note": "CODEX_HOME can move the configuration: the one you read by hand and the one its host passes it are not always the same. `exec` reads the prompt from standard input when it is not an argument (measured); the 401 in `unusable_when` is the one seen with expired credentials. The `usage` block has no `args`: codex already writes the tokens in its normal output, so measuring it changes neither the command line nor what the step receives. It declares only the TOTAL because that is all it says — it does not split input from output — and a cost cannot be derived from a total without inventing the proportion between the two sides: codex's cost therefore stays unknown, and its tokens do not. The shape of the line («tokens used», with the number on the next one and dots as separators) is the one measured on a real machine, the same one `models::usage::parse_codex_tokens` is tested on. `refuses_without_prompt` is measured: `codex exec --sandbox read-only < /dev/null` exits 1 and prints «Reading prompt from stdin...» followed by «No prompt provided via stdin.». Only the second line is declared: the first says it is waiting, not that it gave up. `read_remaining_quota` is `false` because it was TRIED AND FAILED, which is different from impossible — and here is how far it got, so whoever tries again does not start over. The method EXISTS in the published protocol: `codex app-server generate-json-schema --out DIR` lists `account/rateLimits/read` among the client requests, with `params` of type `null`. `initialize` answers instantly. The next request gets NO answer: tried twice, 45 and 50 seconds, with and without the `initialized` notification the protocol expects, and `account/read` does not answer either. No error, no refusal: silence. Still to try: the `app-server proxy` subcommand against the socket of the daemon already running, instead of a fresh process starting from scratch. And `~/.codex/state_5.sqlite` has `tokens_used` per thread, which is tokens spent, not quota left: not the same question. A note for whoever retries inside a sandbox: `codex app-server` wants to WRITE under `~/.codex`, and if it cannot it dies with «failed to initialize sqlite state runtime» — a write denial that presents itself as an engine fault. `login_status` is measured with both real homes: `CODEX_HOME=~/.codex codex login status` answers «Logged in using ChatGPT», and with `CODEX_HOME` pointed at one of the two profile directories without `auth.json` it answers «Not logged in». THREE MEASURED THINGS NOBODY WOULD GUESS. (1) It writes everything to STDERR, nothing to stdout: reading one pipe alone would never find either form. (2) Under a sandbox it prefixes a line of its own — «WARNING: proceeding, even though we could not create PATH aliases» — unrelated to the credentials, so the words are searched for inside the output rather than comparing it whole. (3) «Not logged in» CONTAINS «logged in»: hence the yes is declared as «logged in using», and hence `judge_login_status` reads the no first anyway — two defences, because the first depends on whoever writes the descriptor and the second does not. No pointer: the answer is prose, and the subject is everything the engine said. TWO EARLIER MEASUREMENTS CONTRADICTED, BOTH ABOUT EXIT CODES. (a) `codex login status` exits **1** unauthenticated and **0** authenticated: here the status would tell them apart. (b) `codex exec < /dev/null` exits **1**, not zero, and does so with both homes — the line claiming «exits zero» was false, while the conclusion resting on it holds, because that leans on the IDENTITY of the two answers and not on the number. Note that this same note, three sentences earlier, already declared «exits 1» for the same line: two sentences of one field said different things, a contradiction in miniature. The verdict stays on the text regardless: the status is a fact about this engine, not a rule that holds for whoever comes next."
     },
     {
       "id": "gemini-cli",
@@ -307,29 +303,29 @@
         "refuses_without_prompt": ["not enough arguments following: prompt"]
       },
       "capabilities": {
-        "ask_without_interaction": { "args": ["--prompt"], "takes_value": true, "note": "la forma breve è -p; il testo va nell'opzione, non in un argomento libero" },
+        "ask_without_interaction": { "args": ["--prompt"], "takes_value": true, "note": "the short form is -p; the text goes in the option, not in a free argument" },
         "response_shape": {
           "args": ["--output-format"],
           "takes_value": true,
           "values": ["text", "json", "stream-json"],
-          "note": "SCEGLIE L'INVOLUCRO, NON I CAMPI: è un insieme chiuso di tre formati, non uno schema. Un passo che pretende una forma di campi precisa da gemini deve continuare a chiederla nel prompt"
+          "note": "IT CHOOSES THE ENVELOPE, NOT THE FIELDS: a closed set of three formats, not a schema. A step demanding a precise field shape from gemini must go on asking for it in the prompt"
         },
         "resume_session": [
-          { "args": ["--resume"], "takes_value": true, "note": "«latest» o il numero d'indice, non un UUID" },
-          { "args": ["--session-id"], "takes_value": true, "note": "apre una sessione NUOVA con l'UUID dato: non ne riprende una" }
+          { "args": ["--resume"], "takes_value": true, "note": "«latest» or the index number, not a UUID" },
+          { "args": ["--session-id"], "takes_value": true, "note": "opens a NEW session with the given UUID: it does not resume one" }
         ],
         "fork_session": false,
         "isolate_from_user_config": {
           "args": ["--skip-trust"],
-          "note": "salta la fiducia sulla cartella di lavoro, non la configurazione dell'utente: è il più debole dei tre isolamenti misurati"
+          "note": "it skips the trust prompt for the working directory, not the user's configuration: the weakest of the three isolations measured"
         },
-        "receive_equipment": { "args": ["--extensions"], "takes_value": true, "note": "elenco di estensioni; senza l'opzione si caricano tutte" },
+        "receive_equipment": { "args": ["--extensions"], "takes_value": true, "note": "a list of extensions; without the option they are all loaded" },
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false
       },
       "config": ["~/.gemini/settings.json"],
-      "note": "Il blocco `capabilities` è misurato con `gemini --help` il 31/08/2026; il blocco `ask` il 01/09/2026 su questa macchina, con gemini 0.57.0. La domanda va IN UN ARGOMENTO dopo `--prompt`, non sull'ingresso: `-p/--prompt` è un'opzione con valore, e la documentazione dello strumento dice che il testo dell'ingresso standard, se c'è, viene ACCODATO a quello. `refuses_without_prompt` viene dalla riga vera montata senza la domanda — `gemini --prompt` esce 1 e stampa «Not enough arguments following: prompt» — cioè non è costata niente e non ha chiamato nessun fornitore. DUE COSE CHE NON CI SONO, E NON SONO DIMENTICANZE. (1) Nessun `usage`: `--output-format json` avvolge la risposta, ma dove metta i token non è stato misurato, e dichiarare puntatori indovinati lascerebbe il consumo sconosciuto facendo credere il contrario. Senza il blocco, gemini si invoca come si invocava e i suoi token restano sconosciuti — che è la risposta onesta. (2) Nessun `unusable_when`: non si è visto come dichiara di essere esaurito. È il guasto 31 sullo stesso campo di `agy`, e per questo gemini NON PUÒ STARE IN MEZZO A UNA CATENA: `Descriptor::cannot_be_a_fallback` lo dice, e la prova `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` diventa rossa se qualcuno ce lo mette. Fino al 01/09/2026 questo era il motivo per non scrivere l'`ask` affatto — cioè per lasciare `ask_without_interaction` dichiarata e inservibile, che è il guasto 32. NESSUN BLOCCO `login_status`, E QUESTO È CIÒ CHE È STATO PROVATO: `gemini --help` il 01/09/2026 su questa macchina elenca cinque sottocomandi — `mcp`, `extensions`, `skills`, `hooks`, `gemma` — più la query predefinita, e nessuna opzione; in tutte e 45 le righe non compare la parola `auth`, né `login`, né `logout`, né `credential`. Quindi non si sa come chiedergli se è autenticato. Non è «non ce l'ha»: è «non l'ho trovato guardando lì», e la differenza conta perché la risposta potrebbe stare in un sottocomando annidato che `--help` di primo livello non mostra — è successo con `codex exec fork`. Scrivere qui un blocco indovinato sarebbe peggio dell'assenza: una parola sbagliata farebbe dichiarare autenticata una casa vuota, che è il difetto che questo blocco esiste per chiudere. NOTA DI FUSIONE: l'altro ramo, che ha scritto il capoverso qui sopra, apriva questa nota con «Nessun blocco `ask`» — vero quando l'ha scritta, falso adesso: l'`ask` è stato misurato lo stesso giorno su questo ramo, e i due lati parlavano dello stesso campo in due momenti diversi. Vale la misura, non l'assenza."
+      "note": "The `capabilities` block is measured with `gemini --help`; the `ask` block on a real machine with gemini 0.57.0. The question goes IN AN ARGUMENT after `--prompt`, not on standard input: `-p/--prompt` is an option with a value, and the tool's documentation says that standard input text, when present, is APPENDED to it. `refuses_without_prompt` comes from the real line composed without the question — `gemini --prompt` exits 1 and prints «Not enough arguments following: prompt» — so it cost nothing and called no provider. TWO THINGS THAT ARE NOT HERE, AND ARE NOT OVERSIGHTS. (1) No `usage`: `--output-format json` wraps the answer, but where it puts the tokens was never measured, and declaring guessed pointers would leave the usage unknown while making the opposite look true. Without the block, gemini is invoked as it always was and its tokens stay unknown — which is the honest answer. (2) No `unusable_when`: how it declares itself exhausted has not been seen. So gemini CANNOT SIT IN THE MIDDLE OF A CHAIN: `Descriptor::cannot_be_a_fallback` says so, and the test `every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` goes red if anyone puts it there. That used to be the reason for not writing the `ask` block at all — that is, for leaving `ask_without_interaction` declared and unusable, which is a self-contradiction. NO `login_status` BLOCK, AND THIS IS WHAT WAS TRIED: `gemini --help` lists five subcommands — `mcp`, `extensions`, `skills`, `hooks`, `gemma` — plus the default query, and no options; across all 45 lines the words `auth`, `login`, `logout` and `credential` never appear. So there is no known way to ask it whether it is authenticated. That is not «it does not have one»: it is «I did not find it looking there», and the difference matters because the answer could live in a nested subcommand the top-level `--help` does not show — it happened with `codex exec fork`. Writing a guessed block here would be worse than the absence: one wrong word would declare an empty home authenticated, the very defect this block exists to close. A MERGE NOTE: the other branch, which wrote the paragraph above, opened this note with «No `ask` block» — true when written, false now: the `ask` was measured the same day on this branch, and the two sides were talking about the same field at two different moments. The measurement counts, not the absence."
     },
     {
       "id": "agy",
@@ -358,24 +354,24 @@
         "answer": ["response"]
       },
       "capabilities": {
-        "ask_without_interaction": { "args": ["--print"], "takes_value": true, "note": "la forma breve è -p; `--prompt` è un alias della stessa cosa. `takes_value` era assente — cioè diceva `false` — fino al 31/08/2026, e diceva il falso: `agy --mode plan --output-format json --print` risponde «flag needs an argument: -print». Era il guasto 27 su un campo che ancora nessuno legge, cioè la stessa verità scritta in due blocchi che si smentivano; corretto sulla misura, non sulla documentazione" },
+        "ask_without_interaction": { "args": ["--print"], "takes_value": true, "note": "the short form is -p; `--prompt` is an alias of the same thing. `takes_value` used to be absent — that is, said `false` — and said something untrue: `agy --mode plan --output-format json --print` answers «flag needs an argument: -print». It was the same truth written in two blocks that contradicted each other; corrected against the measurement, not the documentation" },
         "response_shape": {
           "args": ["--json-schema"],
           "takes_value": true,
-          "note": "accetta lo schema per intero o il percorso di un file che lo contiene"
+          "note": "it accepts the whole schema or the path of a file holding it"
         },
         "resume_session": [
-          { "args": ["--conversation"], "takes_value": true, "note": "riprende per identificativo" },
-          { "args": ["--continue"], "note": "l'ultima conversazione; la forma breve è -c" }
+          { "args": ["--conversation"], "takes_value": true, "note": "resumes by identifier" },
+          { "args": ["--continue"], "note": "the last conversation; the short form is -c" }
         ],
         "fork_session": false,
         "isolate_from_user_config": false,
-        "receive_equipment": { "args": ["--add-dir"], "takes_value": true, "note": "aggiunge una cartella allo spazio di lavoro, ripetibile: è tutto ciò che si può passargli da fuori" },
+        "receive_equipment": { "args": ["--add-dir"], "takes_value": true, "note": "adds a directory to the workspace, repeatable: it is all that can be handed to it from outside" },
         "native_spend_cap": false,
         "choose_model": { "args": ["--model"], "takes_value": true },
         "fallback_model": false
       },
-      "note": "Il blocco `capabilities` è misurato con `agy --help` il 31/08/2026, e le quattro assenze sono scritte `false` di proposito: agy non ha nessun modo di ramificare una sessione, di isolarsi dalla configurazione dell'utente, di tenere un tetto di spesa suo né di ripiegare su un altro modello. «Non ce l'ha» e «nessuno ha guardato» sono due fatti diversi, e omettere la riga direbbe il secondo. Il blocco `usage` è misurato il 30/08/2026 su questa macchina: agy conta i token e li mette in `usage`, ma NON dichiara né il modello né il costo — quindi i suoi conteggi si registrano e il costo resta sconosciuto, che è la risposta onesta. Nessuna chiave per la cache scritta: non ne dichiara nessuna. DOVE TIENE LA PROPRIA CASA, MISURATO IL 01/09/2026: `~/.gemini/antigravity-cli`, sotto `$HOME` — agy è la riga di comando di Antigravity (Google), versione 1.1.22, e le credenziali stanno in `jetski_state.pbtxt`. NON legge `GEMINI_CLI_HOME`: quella variabile non compare fra le sue stringhe, quindi il profilo attivo di Sailor non sposta la casa di agy come sposta quella di codex e di claude. Il percorso non è dichiarato qui perché il campo vorrebbe un percorso di configurazione e questa è la casa intera; sta scritto qui perché serve a chi vuole rifare la misura. Il prompt va in un argomento, e `--print` sta in `args_before_prompt` perche deve restare attaccato alla domanda: misurato il 28/08/2026 che `--print` prende come domanda la parola che lo segue, e rimisurato il 31/08/2026 che le opzioni di `usage`, accodandosi dopo `ask`, gli finivano proprio li in mezzo - `agy` rispondeva \u00abError: --print took \"--output-format\" as its prompt\u00bb e il testo vero veniva ignorato. `unusable_when` È MISURATO IL 01/09/2026, E FINO A QUEL GIORNO ERA VUOTO. La misura è quella con cui il 01/09 era stato misurato codex: si punta `HOME` a una cartella vuota e si esegue LA RIGA CHE SAILOR MONTA DAVVERO — `agy --mode plan --output-format json --print \"<domanda>\"` — che senza credenziali non chiama nessun fornitore e non costa niente. Uscita **1**, ripetuta due volte identica: su stdout il JSON `{\"status\":\"ERROR\",\"response\":\"\",\"error\":\"authentication failed or timed out\",...}` con tutti i token a zero, su stderr «Authentication required. Please visit the URL to log in:», l'URL OAuth, «Waiting for authentication (timeout 60s)...» e infine «Error: authentication timed out.». Le tre voci dell'elenco sono quelle parole, copiate come sono uscite. SI DICHIARA QUELLO CHE NON È STATO MISURATO: le parole con cui agy dice di aver finito la QUOTA restano ignote. Cercate in `agy --help` e in tutti i sottocomandi annidati (`agy help <sub>`, compresi `mcp` e `plugin`), che non nominano nessun limite; cercate nella tabella delle stringhe del binario, dove l'esaurimento di capacità compare solo come motivo di ritentativo interno (`ShouldRetryModelCapacityExhausted`, `HasModelCapacityExhaustedReason`) e non come messaggio stampato; e non provocabili senza spendere la quota vera. Un esaurimento di quota, quindi, per agy passa ancora per un fallimento qualunque. Ciò che l'elenco copre è l'altra metà di ciò che `unusable_when` dichiara — le credenziali mancanti — che è esattamente la metà con cui codex dichiara il proprio 401. ATTENZIONE A COSA COSTA UNA MISURA COSÌ: senza credenziali agy apre il browser sull'URL OAuth e ASPETTA 60 SECONDI un codice sull'ingresso prima di arrendersi. In una catena quei 60 secondi si pagano a ogni passo. `refuses_without_prompt` è misurato il 31/08/2026 su questa macchina: `agy --mode plan --output-format json --print` esce 2 e stampa «flag needs an argument: -print». LA STESSA MISURA MOSTRA PERCHÉ IL VERDETTO NON PUÒ VENIRE DAL CODICE D'USCITA: la riga malformata del guasto 27 — `agy --mode plan --print --output-format json` — esce 2 anche lei, e dice tutt'altro («--print took \"--output-format\" as its prompt»). E `--help` non serve a provare niente: `agy --mode nonsense-value --not-a-real-flag --help` esce 0, perché cortocircuita prima di leggere gli argomenti. NESSUN BLOCCO `login_status`, E QUESTO È CIÒ CHE È STATO PROVATO: `agy --help` il 01/09/2026 su questa macchina elenca undici sottocomandi — `agent`, `agents`, `changelog`, `help`, `install`, `mcp`, `mic-serve`, `models`, `plugin`, `plugins`, `update` — e ventiquattro opzioni, e fra tutti non compare né `auth` né `login` né `logout`. L'assenza si scrive tacendo e non indovinando — un `logged_in_when` sbagliato farebbe dichiarare autenticata una casa vuota, cioè rimetterebbe in silenzio il difetto che il blocco chiude. DUE FRASI CHE ACCOMPAGNAVANO QUEL CAPOVERSO SONO STATE TOLTE ALLA FUSIONE DEL 01/09/2026, PERCHÉ UNA MISURA DELLO STESSO GIORNO LE SMENTISCE: dicevano «nessun `unusable_when`, non si è visto come dichiara di essere esaurito» e «non si sa nemmeno dove agy tenga la propria configurazione». Le due misure scritte qui sopra — l'uscita 1 con le tre frasi verbatim, e la casa `~/.gemini/antigravity-cli` — vengono dall'altro ramo della stessa giornata. Chi riprende la ricerca del `login_status` parta da lì: la casa adesso si conosce, quindi si può guardarci dentro; resta ignoto solo con quali parole agy risponda alla domanda."
+      "note": "The `capabilities` block is measured with `agy --help`, and the four absences are written `false` on purpose: agy has no way to fork a session, to isolate itself from the user's configuration, to keep a spend cap of its own or to fall back on another model. «It does not have it» and «nobody looked» are two different facts, and omitting the line would say the second. The `usage` block is measured: agy counts the tokens and puts them in `usage`, but declares NEITHER the model NOR the cost — so its counts are recorded and the cost stays unknown, which is the honest answer. No key for the cache write: it declares none. WHERE IT KEEPS ITS OWN HOME, MEASURED: `~/.gemini/antigravity-cli`, under `$HOME` — agy is the command line of Antigravity (Google), version 1.1.22, and the credentials live in `jetski_state.pbtxt`. It does NOT read `GEMINI_CLI_HOME`: that variable does not appear among its strings, so Sailor's active profile does not move agy's home the way it moves codex's and claude's. The path is not declared here because the field wants a configuration path and this is the whole home; it is written here because whoever wants to redo the measurement needs it. The prompt goes in an argument, and `--print` sits in `args_before_prompt` because it must stay glued to the question: measured that `--print` takes the word following it as the question, and measured again that the `usage` options, appended after `ask`'s, landed right in between - `agy` answered\u00abError: --print took \"--output-format\" as its prompt\u00bb and the real text was ignored. `unusable_when` IS MEASURED, AND USED TO BE EMPTY. The measurement is the one codex was measured with: point `HOME` at an empty directory and run THE LINE SAILOR ACTUALLY COMPOSES — `agy --mode plan --output-format json --print \"<question>\"` — which without credentials calls no provider and costs nothing. Exit **1**, repeated twice identically: on stdout the JSON `{\"status\":\"ERROR\",\"response\":\"\",\"error\":\"authentication failed or timed out\",...}` with every token at zero, on stderr «Authentication required. Please visit the URL to log in:», the OAuth URL, «Waiting for authentication (timeout 60s)...» and finally «Error: authentication timed out.». The three entries in the list are those words, copied as they came out. WHAT WAS NOT MEASURED IS DECLARED TOO: the words agy uses to say it has run out of QUOTA stay unknown. Searched in `agy --help` and in every nested subcommand (`agy help <sub>`, `mcp` and `plugin` included), which name no limit; searched in the binary's string table, where capacity exhaustion appears only as an internal retry reason (`ShouldRetryModelCapacityExhausted`, `HasModelCapacityExhaustedReason`) and not as a printed message; and not provokable without spending the real quota. A quota exhaustion therefore still passes for an ordinary failure on agy. What the list covers is the other half of what `unusable_when` declares — missing credentials — exactly the half codex declares with its own 401. MIND WHAT A MEASUREMENT LIKE THIS COSTS: without credentials agy opens the browser on the OAuth URL and WAITS 60 SECONDS for a code on standard input before giving up. In a chain those 60 seconds are paid at every step. `refuses_without_prompt` is measured: `agy --mode plan --output-format json --print` exits 2 and prints «flag needs an argument: -print». THE SAME MEASUREMENT SHOWS WHY THE VERDICT CANNOT COME FROM THE EXIT CODE: the malformed line — `agy --mode plan --print --output-format json` — exits 2 as well, and says something else entirely («--print took \"--output-format\" as its prompt»). And `--help` proves nothing: `agy --mode nonsense-value --not-a-real-flag --help` exits 0, because it short-circuits before reading the arguments. NO `login_status` BLOCK, AND THIS IS WHAT WAS TRIED: `agy --help` lists eleven subcommands — `agent`, `agents`, `changelog`, `help`, `install`, `mcp`, `mic-serve`, `models`, `plugin`, `plugins`, `update` — and twenty-four options, and among them all neither `auth` nor `login` nor `logout` appears. The absence is written by staying silent and not by guessing — a wrong `logged_in_when` would declare an empty home authenticated, silently reinstating the defect the block closes. TWO SENTENCES THAT ACCOMPANIED THAT PARAGRAPH WERE REMOVED AT A MERGE, BECAUSE A MEASUREMENT FROM THE SAME DAY CONTRADICTS THEM: they said «no `unusable_when`, how it declares itself exhausted has not been seen» and «nobody even knows where agy keeps its configuration». The two measurements written above — the exit 1 with the three verbatim sentences, and the home `~/.gemini/antigravity-cli` — come from the other branch of the same day. Whoever picks the `login_status` search back up should start there: the home is known now, so it can be looked into; all that stays unknown is the words agy answers the question with."
     },
     {
       "id": "openrouter-cli",
@@ -383,7 +379,7 @@
       "label": "OpenRouter CLI",
       "detect": { "command": "openrouter" },
       "version": { "args": ["--version"] },
-      "note": "Pacchetto `@openrouter/cli` su npm, pubblicato da OpenRouter; installa il comando `openrouter`. Sta qui come descrittore, non come codice: è la prova che una riga di comando nuova si dichiara senza ricompilare."
+      "note": "The `@openrouter/cli` package on npm, published by OpenRouter; it installs the `openrouter` command. It is here as a descriptor and not as code: the proof that a new command line is declared without recompiling."
     },
     {
       "id": "ollama",
@@ -392,13 +388,13 @@
       "detect": { "command": "ollama" },
       "version": { "args": ["--version"], "must_contain": "version" },
       "config": ["~/.ollama"],
-      "note": "Con il servizio non raggiungibile stampa prima un avvertimento: senza `must_contain` quella riga finirebbe registrata come se fosse la versione."
+      "note": "With the service unreachable it prints a warning first: without `must_contain` that line would be recorded as if it were the version."
     },
 
     {
       "id": "mcp-claude-code",
       "family": "mcp_server",
-      "label": "server MCP dichiarati per Claude Code",
+      "label": "MCP servers declared for Claude Code",
       "enumerate": {
         "json_keys": {
           "files": ["~/.claude.json", "~/.claude/settings.json", "~/.mcp.json"],
@@ -409,7 +405,7 @@
     {
       "id": "mcp-claude-projects",
       "family": "mcp_server",
-      "label": "server MCP dichiarati progetto per progetto",
+      "label": "MCP servers declared project by project",
       "enumerate": {
         "json_keys": {
           "files": ["~/.claude.json"],
@@ -420,7 +416,7 @@
     {
       "id": "mcp-claude-plugins",
       "family": "mcp_server",
-      "label": "server MCP portati da un plugin",
+      "label": "MCP servers brought in by a plugin",
       "enumerate": {
         "json_keys": {
           "files": [
@@ -435,7 +431,7 @@
     {
       "id": "mcp-claude-desktop",
       "family": "mcp_server",
-      "label": "server MCP dell'applicazione Claude",
+      "label": "MCP servers of the Claude application",
       "enumerate": {
         "json_keys": {
           "files": ["~/Library/Application Support/Claude/claude_desktop_config.json"],
@@ -446,7 +442,7 @@
     {
       "id": "mcp-cursor",
       "family": "mcp_server",
-      "label": "server MCP dichiarati per Cursor",
+      "label": "MCP servers declared for Cursor",
       "enumerate": {
         "json_keys": {
           "files": ["~/.cursor/mcp.json"],
@@ -465,7 +461,7 @@
       ],
       "version": { "args": ["--version"] },
       "config": ["~/.claude/plugins/marketplaces/socraticode/.mcp.json"],
-      "note": "Ha un eseguibile suo e si dichiara anche come server MCP: due sonde, basta che risponda una."
+      "note": "It has an executable of its own and also declares itself as an MCP server: two probes, and one answering is enough."
     },
     {
       "id": "docker",
@@ -503,7 +499,7 @@
     {
       "id": "newman",
       "family": "tool",
-      "label": "Newman (Postman da riga di comando)",
+      "label": "Newman (Postman from the command line)",
       "detect": { "command": "newman" },
       "version": { "args": ["--version"] }
     },
@@ -526,7 +522,7 @@
     {
       "id": "psql",
       "family": "tool",
-      "label": "PostgreSQL da riga di comando",
+      "label": "PostgreSQL from the command line",
       "detect": { "command": "psql" },
       "version": { "args": ["--version"] },
       "config": ["~/.psqlrc", "~/.pgpass"]
@@ -534,7 +530,7 @@
     {
       "id": "mysql",
       "family": "tool",
-      "label": "MySQL da riga di comando",
+      "label": "MySQL from the command line",
       "detect": { "command": "mysql" },
       "version": { "args": ["--version"] },
       "config": ["~/.my.cnf"]
@@ -550,7 +546,7 @@
     {
       "id": "redis-cli",
       "family": "tool",
-      "label": "Redis da riga di comando",
+      "label": "Redis from the command line",
       "detect": { "command": "redis-cli" },
       "version": { "args": ["--version"] }
     },

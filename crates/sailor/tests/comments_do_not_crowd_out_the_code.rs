@@ -1,42 +1,51 @@
-//! I commenti non soffocano il codice: due numeri che possono solo scendere.
+//! Comments do not crowd out the code: three numbers that can only go down.
 //!
-//! Non è gusto. L'indice semantico incorpora i commenti alla lettera — vedi la
-//! regola in `AGENTS.md` — quindi un blocco lungo prende il posto del codice
-//! nella risposta a una ricerca.
+//! Not taste. The semantic index embeds comments literally — see the rule in
+//! `AGENTS.md` — so a long block takes the code's place in a search result.
+//!
+//! **THIS FILE IS SCAFFOLDING AND SHOULD DISAPPEAR.** Every seed below is a
+//! debt, not a target. When one reaches zero its constant goes and the test
+//! asks for zero outright; the day all three do, so does this file.
 
 use std::path::{Path, PathBuf};
 
-/// Il tetto per blocco. Sopra, è cronaca: va nel registro dei guasti o nel
-/// commit, non qui.
+/// The per-block cap. Above it, a comment is chronicle: it belongs in the fault
+/// ledger or the commit, not here.
+///
+/// **A COMMENT IN SEVERAL PARAGRAPHS IS ONE BLOCK**, because the line between
+/// them is `///` and stays a comment. The cap bites harder than it reads, which
+/// is why 636 blocks once carried two thirds of the volume.
 const MAX_BLOCK: usize = 6;
 
-/// Quanti blocchi sforano oggi. **Può solo scendere**: abbassarlo è la
-/// riparazione, alzarlo va discusso e si vede nel diff.
-const LONG_BLOCKS_TODAY: usize = 635;
+/// How many blocks run over today. **It can only go down**: lowering it is the
+/// repair, raising it has to be argued and shows in the diff.
+const LONG_BLOCKS_TODAY: usize = 522;
 
-/// Quanti commenti citano una data. Stessa regola: solo verso il basso.
-const DATED_COMMENTS_TODAY: usize = 310;
+/// How many comments cite a date. Same rule: downwards only.
+const DATED_COMMENTS_TODAY: usize = 207;
 
-/// Quante righe di commento sono ancora in italiano.
+/// How many comment lines are still not in English.
 ///
-/// La conversione all'inglese e' un cantiere: questo numero e' il debito, e
-/// puo' solo scendere. Chi lo alza sta scrivendo italiano nuovo.
-///
-/// **L'UNICO RIALZO ONESTO** e' una fusione che porta dentro italiano gia'
-/// scritto altrove: li' si rimisura, si alza col numero misurato, e lo si dice
-/// nel commit. Alzarlo perche' e' diventato rosso e' disarmarlo.
-const ITALIAN_COMMENT_LINES_TODAY: usize = 11_854;
+/// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
+/// written elsewhere: there you re-measure, raise to the measured number, and
+/// say so in the commit. Raising it because it went red is disarming it.
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 8_143;
 
-/// Parole senza le quali una frase italiana non sta in piedi, e che **non sono
-/// parole inglesi valide**.
+/// How far a seed may drift above what the tree actually holds. **Zero.**
 ///
-/// Mancano apposta: `come`, `con`, `per`, `dice`, `fare`, `la`, `del` — esistono
-/// in tutte e due le lingue e accuserebbero l'inglese. E `ai`, che minuscolato
-/// è la stessa cosa di «AI». Il prezzo dichiarato: una riga italiana che usa
-/// solo quelle non viene contata, quindi **questo numero è un minimo**, non il
-/// totale. Sbaglia verso il basso, che qui vuol dire che un debito nascosto
-/// resta nascosto — mai che una riga inglese venga accusata.
-const ITALIAN_FUNCTION_WORDS: &[&str] = &[
+/// **A SEED IS A NUMBER IN A FILE, AND A FILE MERGES.** A merge taking the older
+/// side raises the ceiling with no conflict and no signal. It was 20, an
+/// absolute number over three counters of different scale, and 20 does not tell
+/// whoever re-measured from whoever passed by two.
+const HOW_STALE_A_SEED_MAY_BE: usize = 0;
+
+/// Words no English sentence uses, which a sentence in this tree's other
+/// language cannot do without.
+///
+/// **THIS LIST IS THE DETECTION, NOT THE RULE.** The rule is that comments are
+/// in English; the list is how a machine guesses they are not, and it would be
+/// replaced wholesale for a codebase carrying a different language.
+const WORDS_NO_ENGLISH_SENTENCE_USES: &[&str] = &[
     "che", "non", "della", "delle", "degli", "nella", "nelle", "questo", "questa", "quello",
     "quella", "perché", "perche", "cioè", "cioe", "invece", "quindi", "anche", "essere", "senza",
     "più", "piu", "già", "gia", "sono", "dove", "quando", "sulla", "dalla", "dello", "il", "lo",
@@ -44,14 +53,35 @@ const ITALIAN_FUNCTION_WORDS: &[&str] = &[
     "questi", "queste", "quali", "quale", "ogni", "solo", "ancora", "adesso", "prima", "dopo",
 ];
 
+/// **THE COUNT ERRS DOWNWARDS, ON PURPOSE.** Words that exist in both languages
+/// are left out — a line using only those is not counted, so this number is a
+/// floor. Hidden debt stays hidden; an English line is never accused, which
+/// would make the debt unpayable even by translating.
+fn is_not_english(line: &str) -> bool {
+    let lowered = line.to_lowercase();
+    lowered
+        .split(|c: char| !c.is_alphabetic() && c != '\'')
+        .any(|word| WORDS_NO_ENGLISH_SENTENCE_USES.contains(&word))
+}
+
+/// **THE WINDOW TOO, OR THE NUMBER LIES.** Counting `crates` alone measured
+/// 11,476 non-English lines while `desktop/` — twelve thousand lines of
+/// TypeScript and CSS — was watched by nobody. An invisible debt falls to zero
+/// on its own without anyone paying it.
 fn sources() -> Vec<PathBuf> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
-        .expect("il crate sta due livelli sotto la radice")
-        .join("crates");
+        .expect("the crate sits two levels under the root");
     let mut found = Vec::new();
-    walk(&root, &mut found);
+    for place in [
+        "crates",
+        "desktop/src",
+        "desktop/src-tauri/src",
+        "desktop/scripts",
+    ] {
+        walk(&root.join(place), &mut found);
+    }
     found
 }
 
@@ -66,17 +96,48 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
             if !matches!(name.as_str(), "target" | ".git") {
                 walk(&path, found);
             }
-        } else if name.ends_with(".rs") && name != "comments_do_not_crowd_out_the_code.rs" {
+        } else if name != "comments_do_not_crowd_out_the_code.rs"
+            && [".rs", ".ts", ".tsx", ".css", ".mjs"]
+                .iter()
+                .any(|suffix| name.ends_with(suffix))
+        {
             found.push(path);
         }
     }
 }
 
-fn is_comment(line: &str) -> bool {
-    line.trim_start().starts_with("//")
+/// **THREE SHAPES, BECAUSE STYLESHEETS HAVE NO `//` AND JSX HAS NEITHER.** The
+/// `in_block` travels from line to line: without it a ninety-line CSS banner
+/// would count as one line and the rest would pass for code.
+///
+/// **AND `{/* … */}` OPENS WITH A BRACE**, so it is neither: 65 blocks in 13
+/// files of `desktop/src` — 256 lines, 178 of them not in English — passed for
+/// code, which is exactly the window's long prose this count exists to watch.
+/// Counting them lifts the three seeds by 9, 2 and 178 with nobody having
+/// written a line: **the counter started seeing**, the debt did not grow.
+fn is_comment(line: &str, in_block: &mut bool) -> bool {
+    let trimmed = line.trim_start();
+    if *in_block {
+        if trimmed.contains("*/") {
+            *in_block = false;
+        }
+        return true;
+    }
+    if trimmed.starts_with("//") {
+        return true;
+    }
+    for opener in ["/*", "{/*"] {
+        if let Some(rest) = trimmed.strip_prefix(opener) {
+            if !rest.contains("*/") {
+                *in_block = true;
+            }
+            return true;
+        }
+    }
+    false
 }
 
-/// `31/08/2026` e simili. Una data in un commento è cronaca per definizione.
+/// `31/08/2026` and the like. A date in a comment is chronicle by definition.
 fn cites_a_date(line: &str) -> bool {
     let bytes: Vec<char> = line.chars().collect();
     bytes.windows(10).any(|w| {
@@ -90,38 +151,86 @@ fn cites_a_date(line: &str) -> bool {
     })
 }
 
+/// **THE WAY ROUND THE CAP: SPLIT INSTEAD OF SHORTENING.** Two doc groups with
+/// a blank line between them are one doc comment — both attach to the same item
+/// — so twelve lines become two blocks of six and the cap is satisfied with
+/// nothing removed. Found by general-01 in `desktop/src`, where the same move
+/// went from 4 to 41 and orphans the first block outright, since in JSDoc only
+/// the last comment before a declaration documents it.
+///
+/// **THE THREE FAMILIES, AND WHY NOT ONE.** `///` documents the item below,
+/// `//!` the module around it, `/** */` both in TypeScript. Each is closed
+/// against itself and not against the others: a `///` followed by a `//!` is
+/// two comments about two different things, and joining them would count a
+/// block nobody wrote. Measured on this tree: closing `///` alone left the
+/// count at 775 for a split in `desktop/src` and for one in a `//!` header —
+/// the way round stayed open in the very place it was found.
+///
+/// **AND `*/` ALONE ON ITS LINE, NOT `*/` ANYWHERE.** A one-line banner —
+/// `/* ═══ 3. THE INVITATIONS ═══ */` — also ends with `*/`, and joining it to
+/// the doc comment underneath invented two long blocks in
+/// `unhappystates.test.tsx` that nobody had written.
+fn splits_one_doc_comment(lines: &[&str], at: usize) -> bool {
+    if !lines[at].trim().is_empty() || at == 0 {
+        return false;
+    }
+    let resumes = next_line_with_something_on_it(lines, at);
+    if resumes >= lines.len() {
+        return false;
+    }
+    let ends = lines[at - 1].trim();
+    let opens = lines[resumes].trim_start();
+    ["///", "//!"]
+        .iter()
+        .any(|mark| ends.starts_with(mark) && opens.starts_with(mark))
+        || (ends == "*/" && opens.starts_with("/**"))
+}
+
+fn next_line_with_something_on_it(lines: &[&str], from: usize) -> usize {
+    let mut at = from;
+    while at < lines.len() && lines[at].trim().is_empty() {
+        at += 1;
+    }
+    at
+}
+
 struct Counts {
     long_blocks: usize,
     dated: usize,
-    italian: usize,
+    not_english: usize,
     worst: (usize, String),
 }
 
-/// Una riga di commento che porta almeno una parola funzione italiana.
-fn looks_italian(line: &str) -> bool {
-    let lowered = line.to_lowercase();
-    lowered
-        .split(|c: char| !c.is_alphabetic() && c != '\'')
-        .any(|word| ITALIAN_FUNCTION_WORDS.contains(&word))
-}
-
 fn count() -> Counts {
-    let mut counts =
-        Counts { long_blocks: 0, dated: 0, italian: 0, worst: (0, String::new()) };
+    let mut counts = Counts {
+        long_blocks: 0,
+        dated: 0,
+        not_english: 0,
+        worst: (0, String::new()),
+    };
     for path in sources() {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
+        let lines: Vec<&str> = text.lines().collect();
         let mut run = 0usize;
-        for line in text.lines() {
-            if is_comment(line) {
+        let mut in_block = false;
+        let mut index = 0usize;
+        while index < lines.len() {
+            let line = lines[index];
+            if is_comment(line, &mut in_block) {
                 run += 1;
                 if cites_a_date(line) {
                     counts.dated += 1;
                 }
-                if looks_italian(line) {
-                    counts.italian += 1;
+                if is_not_english(line) {
+                    counts.not_english += 1;
                 }
+                index += 1;
+                continue;
+            }
+            if run > 0 && splits_one_doc_comment(&lines, index) {
+                index = next_line_with_something_on_it(&lines, index);
                 continue;
             }
             if run > MAX_BLOCK {
@@ -131,6 +240,7 @@ fn count() -> Counts {
                 }
             }
             run = 0;
+            index += 1;
         }
         if run > MAX_BLOCK {
             counts.long_blocks += 1;
@@ -139,16 +249,31 @@ fn count() -> Counts {
     counts
 }
 
+/// **ALL THREE NUMBERS, WHATEVER FAILED.** Each test names its own, so whoever
+/// repairs re-measures that one alone and leaves the other two above the tree —
+/// by one or two, under the band, invisible to everything. Asked for by
+/// general-ad, who pruned and re-measured only the line the message named.
+fn all_three(counts: &Counts) -> String {
+    format!(
+        "\nMeasured right now, all three: {} blocks over {MAX_BLOCK} lines, \
+         {} comments citing a date, {} comment lines not in English. \
+         When you re-measure one, rewrite them all.",
+        counts.long_blocks, counts.dated, counts.not_english
+    )
+}
+
 #[test]
 fn no_new_comment_block_runs_past_the_cap() {
     let counts = count();
     assert!(
         counts.long_blocks <= LONG_BLOCKS_TODAY,
-        "blocchi sopra {MAX_BLOCK} righe: {} (il tetto dichiarato è {LONG_BLOCKS_TODAY}). \
-         Il più lungo è di {} righe in {}. Accorcia, o sposta la cronaca nel commit",
+        "blocks over {MAX_BLOCK} lines: {} (the declared cap is {LONG_BLOCKS_TODAY}). \
+         The longest runs {} lines in {}. Shorten it, or move the chronicle into \
+         the commit message{}",
         counts.long_blocks,
         counts.worst.0,
-        counts.worst.1
+        counts.worst.1,
+        all_three(&counts)
     );
 }
 
@@ -157,44 +282,168 @@ fn no_new_comment_tells_a_date() {
     let counts = count();
     assert!(
         counts.dated <= DATED_COMMENTS_TODAY,
-        "commenti che citano una data: {} (dichiarati {DATED_COMMENTS_TODAY}). \
-         La data la conserva git, con l'autore vero",
-        counts.dated
+        "comments citing a date: {} (declared {DATED_COMMENTS_TODAY}). \
+         Git keeps the date, with the real author{}",
+        counts.dated,
+        all_three(&counts)
     );
 }
 
-/// L'italiano nei commenti scende e non sale: la conversione decisa il
-/// 01/09/2026 e' un cantiere, e questo numero e' quanto ne resta.
+/// The debt goes down and never up. Whoever raises it is writing new comments
+/// in a language this repository does not publish in.
 #[test]
-fn the_italian_left_in_the_comments_only_shrinks() {
+fn the_comments_not_in_english_only_shrink() {
     let counts = count();
     assert!(
-        counts.italian <= ITALIAN_COMMENT_LINES_TODAY,
-        "righe di commento ancora in italiano: {} (dichiarate {ITALIAN_COMMENT_LINES_TODAY}). \
-         Se stai scrivendo un commento nuovo, scrivilo in inglese; se ne stai \
-         traducendo, abbassa il numero",
-        counts.italian
+        counts.not_english <= COMMENT_LINES_NOT_IN_ENGLISH,
+        "comment lines not in English: {} (declared {COMMENT_LINES_NOT_IN_ENGLISH}). \
+         If you are writing a new comment, write it in English; if you are \
+         translating, lower the number{}",
+        counts.not_english,
+        all_three(&counts)
     );
 }
 
-/// **CHI MISURA VA MISURATO.** Se `is_comment` o `cites_a_date` smettessero di
-/// vedere, i due numeri crollerebbero a zero e le prove resterebbero verdi per
-/// sempre.
+/// The other side of every ratchet: a ceiling that stops describing the tree.
+///
+/// The three tests above only ask that the count not exceed the seed, so a seed
+/// that drifted upwards is invisible to them — and the seeds are constants in a
+/// file, which a merge can raise without a conflict. Found by general-01, who
+/// watched a clean merge silently undo a repair because both sides were green.
+#[test]
+fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
+    let counts = count();
+    for (what, declared, measured) in [
+        ("long blocks", LONG_BLOCKS_TODAY, counts.long_blocks),
+        ("dated comments", DATED_COMMENTS_TODAY, counts.dated),
+        (
+            "comment lines not in English",
+            COMMENT_LINES_NOT_IN_ENGLISH,
+            counts.not_english,
+        ),
+    ] {
+        assert!(
+            declared <= measured + HOW_STALE_A_SEED_MAY_BE,
+            "the seed «{what}» says {declared}, the tree holds {measured}: \
+             {} apart. Either a merge raised the ceiling, or somebody pruned \
+             without re-measuring — either way the number to write here is \
+             {measured}{}",
+            declared - measured,
+            all_three(&counts)
+        );
+    }
+}
+
+/// **WHOEVER MEASURES GETS MEASURED.** If `is_comment` or `cites_a_date`
+/// stopped seeing, the numbers would collapse to zero and the tests above would
+/// stay green for ever.
 #[test]
 fn the_check_can_still_see_what_it_counts() {
-    assert!(is_comment("    // così"));
-    assert!(is_comment("/// e così"));
-    assert!(!is_comment("let x = 1; // non così: la riga è codice"));
-    assert!(cites_a_date("// misurato il 31/08/2026"));
-    assert!(!cites_a_date("// nessuna data qui"));
+    let mut block = false;
+    assert!(is_comment("    // like this", &mut block));
+    assert!(is_comment("/// and this", &mut block));
+    assert!(!is_comment(
+        "let x = 1; // not this: the line is code",
+        &mut block
+    ));
+    // And a stylesheet banner, which without the state would count one line.
+    assert!(is_comment("/* the banner opens", &mut block));
+    assert!(block, "and the next line is still inside the comment");
+    assert!(is_comment("   still inside", &mut block));
+    assert!(is_comment("   and it ends here */", &mut block));
+    assert!(!block, "the block closes");
+    assert!(!is_comment(".a-class { color: red; }", &mut block));
+    // And the JSX comment, which opens with a brace: without this line it
+    // vanishes quietly, because all three thresholds **permit** a fall.
+    assert!(is_comment("        {/* the window's prose", &mut block));
+    assert!(block, "`{{/*` opens a block that carries on too");
+    assert!(is_comment("            and it goes on here", &mut block));
+    assert!(is_comment("            up to here */}", &mut block));
+    assert!(!block, "and `*/}}` closes it");
+    assert!(cites_a_date("// measured on 31/08/2026"));
+    assert!(!cites_a_date("// no date here"));
     let counts = count();
-    assert!(counts.long_blocks > 0, "zero blocchi lunghi: il contatore non sta guardando");
-    assert!(counts.dated > 0, "zero date: il contatore non sta guardando");
-    assert!(looks_italian("// perché questo non basta"));
-    assert!(
-        !looks_italian("// the cap must truncate, not merely be measured"),
-        "una riga inglese non deve contare come italiana, o il debito non \
-         scenderebbe mai nemmeno traducendo"
+    // Today's three numbers, for whoever prunes: `cargo test -p sailor --test
+    // comments_do_not_crowd_out_the_code -- --nocapture`. Without this the only
+    // way to learn them was to zero a seed and read the failure.
+    println!(
+        "today: {} blocks over {MAX_BLOCK} lines, {} comments citing a date, \
+         {} comment lines not in English",
+        counts.long_blocks, counts.dated, counts.not_english
     );
-    assert!(counts.italian > 0, "zero italiano: il contatore non sta guardando");
+    // Splitting a block in two does not shorten it: twelve lines stay twelve.
+    let split = [
+        "/// one",
+        "/// two",
+        "/// three",
+        "/// four",
+        "",
+        "/// five",
+        "/// six",
+        "/// seven",
+        "fn something() {}",
+    ];
+    assert!(
+        splits_one_doc_comment(&split, 4),
+        "a blank line between two /// groups does not split a rustdoc, and must not split the count"
+    );
+    let real_end = ["/// one", "", "fn something() {}"];
+    assert!(
+        !splits_one_doc_comment(&real_end, 1),
+        "a blank line followed by code really does close the block"
+    );
+    // The other two families: the module banner and the window's JSDoc. Closing
+    // the way round for `///` only left it open where it had been found.
+    let module = ["//! one", "//! two", "", "//! three", "use std::fmt;"];
+    assert!(
+        splits_one_doc_comment(&module, 2),
+        "two //! groups are one banner: the module they document is the same"
+    );
+    let jsdoc = [
+        "/**",
+        " * one",
+        " */",
+        "",
+        "/**",
+        " * two",
+        " */",
+        "export const x = 1;",
+    ];
+    assert!(
+        splits_one_doc_comment(&jsdoc, 3),
+        "in JSDoc only the last block documents: splitting orphans, it does not shorten"
+    );
+    // And the negatives, or the rule counts blocks nobody wrote.
+    let mixed = ["/// one", "", "//! two", "fn something() {}"];
+    assert!(
+        !splits_one_doc_comment(&mixed, 1),
+        "/// documents what follows, //! the module around: they are two comments"
+    );
+    let banner = [
+        "/* ═══ 3. THE SECTIONS ═══ */",
+        "",
+        "/**",
+        " * one",
+        " */",
+        "const y = 2;",
+    ];
+    assert!(
+        !splits_one_doc_comment(&banner, 1),
+        "a one-line banner ends with */ but is not a split block"
+    );
+    assert!(
+        counts.long_blocks > 0,
+        "zero long blocks: the counter is not looking"
+    );
+    assert!(counts.dated > 0, "zero dates: the counter is not looking");
+    assert!(is_not_english("// perché questo non basta"));
+    assert!(
+        !is_not_english("// the cap must truncate, not merely be measured"),
+        "an English line must not count as non-English, or the debt could never \
+         fall even by translating"
+    );
+    assert!(
+        counts.not_english > 0,
+        "zero non-English: the counter is not looking"
+    );
 }

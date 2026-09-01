@@ -1,10 +1,9 @@
-//! Esegue il rilevamento su questa macchina e lo stampa.
+//! Runs the detection on this machine and prints it.
 //!
-//! È un esempio e non un sottocomando perché il posto del sottocomando è il
-//! binario `sailor`, e quell'aggancio non appartiene a questo crate: qui serve
-//! il modo di guardare l'esito senza aspettare che qualcuno lo agganci.
+//! An example, not a subcommand: that wiring belongs to the `sailor` binary.
+//! Here what is needed is to see the outcome before anybody wires it up.
 //!
-//!     cargo run -p toolbox --example scan -- [famiglia] [--json]
+//!     cargo run -p toolbox --example scan -- [family] [--json]
 
 use toolbox::{Catalog, Machine, Presence, VersionReading};
 
@@ -27,35 +26,38 @@ fn main() {
             continue;
         }
         let (mark, why) = match &f.presence {
-            Presence::Present(why) => ("c'è      ", why.as_str()),
-            Presence::Absent(why) => ("non c'è  ", why.as_str()),
-            Presence::Undetermined(why) => ("non so   ", why.as_str()),
+            Presence::Present(why) => ("here    ", why.as_str()),
+            Presence::Absent(why) => ("missing ", why.as_str()),
+            Presence::Undetermined(why) => ("unknown ", why.as_str()),
         };
         let version = match &f.version {
             VersionReading::Declared(v) => v.clone(),
-            VersionReading::Unavailable(why) => format!("versione non ottenuta — {why}"),
+            VersionReading::Unavailable(why) => format!("version not obtained — {why}"),
             VersionReading::NotAsked(_) => String::new(),
         };
         println!("{mark} [{}] {:<24} {}", f.family, f.name, version);
-        println!("           da: {} ({})", f.descriptor_id, f.descriptor_source);
+        println!(
+            "           from: {} ({})",
+            f.descriptor_id, f.descriptor_source
+        );
         if let Some(bin) = &f.executable {
-            println!("           eseguibile: {bin}");
+            println!("           executable: {bin}");
         }
         for c in f.config.iter().filter(|c| c.presence.is_present()) {
-            println!("           configurazione: {}", c.path);
+            println!("           configuration: {}", c.path);
         }
         if !f.presence.is_present() {
-            println!("           perché: {why}");
+            println!("           why: {why}");
         }
     }
     println!();
     println!(
-        "{} voci, {} presenti, {} descrittori non letti",
+        "{} entries, {} present, {} descriptors unread",
         report.findings.len(),
         report.present().len(),
         report.problems.len()
     );
     for p in &report.problems {
-        println!("  segnalazione: {} in {} — {}", p.about, p.source, p.reason);
+        println!("  problem: {} in {} — {}", p.about, p.source, p.reason);
     }
 }

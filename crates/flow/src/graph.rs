@@ -12,14 +12,14 @@ pub struct Step {
     pub deps: Vec<String>,
     pub input_schema: ValueSchema,
     pub output_schema: ValueSchema,
-    /// I parametri dichiarati dal passo vincono sulle chiavi ricevute in ingresso.
+    /// Values declared by the step win over the keys it receives as input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub with: Option<Value>,
-    /// Riceve soltanto il valore tipato in ingresso; `said` non è raggiungibile.
+    /// Sees only the typed input value; `said` is out of reach.
     pub when: Option<Condition>,
-    /// Nome stabile dell'azione risolta dall'esecutore, non codice incorporato nel grafo.
+    /// Stable name the executor resolves, not code embedded in the graph.
     pub action: String,
-    /// Include il primo tentativo; zero non è un valore valido.
+    /// Counts the first attempt; zero is not a valid value.
     pub max_attempts: u32,
 }
 
@@ -63,7 +63,7 @@ pub struct DependencyEdge {
 }
 
 impl DependencyEdge {
-    /// Identifica un arco; il costruttore del grafo lo dichiara saltabile.
+    /// Names an edge; the graph constructor is what declares it skippable.
     pub fn new(step: impl Into<String>, dependency: impl Into<String>) -> Self {
         Self {
             step: step.into(),
@@ -185,7 +185,7 @@ impl Graph {
                 if step.deps.iter().any(|dependency| dependency == done) {
                     let count = remaining
                         .get_mut(step.id.as_str())
-                        .expect("tutti i passi sono stati inseriti");
+                        .expect("every step was inserted");
                     *count -= 1;
                     if *count == 0 {
                         front.push(step.id.as_str());
@@ -222,7 +222,7 @@ impl Graph {
         if let [only] = step.deps.as_slice() {
             let output_schema = &by_id
                 .get(only.as_str())
-                .expect("la dipendenza esiste")
+                .expect("the dependency exists")
                 .output_schema;
             if !self.dependency_is_skippable(&step.id, only)
                 && !matches!(output_schema, ValueSchema::Object { .. } | ValueSchema::Any)
@@ -232,15 +232,14 @@ impl Graph {
                 });
             }
         } else if step.deps.iter().any(|dependency| {
-            !self.dependency_is_skippable(&step.id, dependency)
-                && with.get(dependency).is_some()
+            !self.dependency_is_skippable(&step.id, dependency) && with.get(dependency).is_some()
         }) {
             return Err(GraphError::DestructiveInputOverlay {
                 step: step.id.clone(),
             });
         }
-        // Una dipendenza saltabile promette già che il suo dato può mancare:
-        // `with` può dichiarare il valore sostitutivo che il nodo riceverà comunque.
+        // A skippable dependency already promises its data may be missing, so
+        // `with` may declare the stand-in the node receives instead.
         Ok(())
     }
 
@@ -260,7 +259,7 @@ impl Graph {
                         id.clone(),
                         by_id
                             .get(id.as_str())
-                            .expect("le dipendenze esistono")
+                            .expect("the dependencies exist")
                             .output_schema
                             .clone(),
                     )
@@ -352,7 +351,7 @@ impl Display for GraphError {
             GraphError::ZeroAttempts(step) => write!(formatter, "step {step} allows zero attempts"),
             GraphError::DestructiveInputOverlay { step } => write!(
                 formatter,
-                "il campo with del passo {step} scarterebbe l'uscita di una dipendenza obbligatoria"
+                "the `with` field of step {step} would discard the output of a required dependency"
             ),
             GraphError::IncompatibleInput { step } => {
                 write!(

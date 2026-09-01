@@ -142,8 +142,6 @@ codex — senza inventare niente, che era la condizione.
   il routing, fatto sul modello invece che sul passo.
 - **Vibestrate** — «*flusso YAML di fasi*».
 - **DeerFlow**, **fractal** — deleghe gerarchiche a sotto-agenti.
-- E in quell'elenco c'è anche **Orca**, classificato fra i «solo paralleli,
-  nessun grafo dichiarato».
 
 ## Cosa resta da fare
 

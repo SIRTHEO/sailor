@@ -509,7 +509,10 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
             if text.contains(&check.proves) {
                 return (
                     "passed",
-                    format!("«{}» risponde e contiene «{}»", check.server_tool, check.proves),
+                    format!(
+                        "«{}» risponde e contiene «{}»",
+                        check.server_tool, check.proves
+                    ),
                 );
             }
             if let Some(blinded) = check
@@ -690,7 +693,11 @@ impl Action for McpReadyAction {
         let spec: ReadySpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         crate::check_tolerance(&spec.accept, READY_FAILURES)?;
-        require_preflight(&spec.checks, &spec.checks_waived_because, &spec.project_root)?;
+        require_preflight(
+            &spec.checks,
+            &spec.checks_waived_because,
+            &spec.project_root,
+        )?;
         let outcome = look(
             &spec.server,
             &spec.server_tool,
@@ -736,7 +743,11 @@ impl Action for McpAskAction {
         let spec: AskSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         crate::check_tolerance(&spec.accept, ASK_FAILURES)?;
-        require_preflight(&spec.checks, &spec.checks_waived_because, &spec.project_root)?;
+        require_preflight(
+            &spec.checks,
+            &spec.checks_waived_because,
+            &spec.project_root,
+        )?;
 
         let mut session = match Session::open(&spec.server, Duration::from_secs(spec.timeout_secs))
         {
@@ -774,7 +785,8 @@ impl Action for McpAskAction {
         // La chiamata vera parte **solo adesso**, sulla stessa conversazione:
         // fra la verifica e la domanda non c'è nessun passo in cui il flusso
         // possa saltare la prima.
-        if let Err(why) = session.say(&call_request(ERRAND_ID, &spec.server_tool, &spec.arguments)) {
+        if let Err(why) = session.say(&call_request(ERRAND_ID, &spec.server_tool, &spec.arguments))
+        {
             let output = json!({
                 "status": "unreachable",
                 "said": why,
@@ -790,7 +802,10 @@ impl Action for McpAskAction {
         let stderr = session.close();
         let (status, said, text) = match &answer {
             Answer::Unanswered(why) => ("tool_failed", with_stderr(why, &stderr), String::new()),
-            Answer::Said { text, refused: true } => (
+            Answer::Said {
+                text,
+                refused: true,
+            } => (
                 "tool_failed",
                 format!("«{}» ha risposto con un errore: {text}", spec.server_tool),
                 text.clone(),
@@ -798,7 +813,11 @@ impl Action for McpAskAction {
             Answer::Said {
                 text,
                 refused: false,
-            } => ("ok", format!("«{}» ha risposto", spec.server_tool), text.clone()),
+            } => (
+                "ok",
+                format!("«{}» ha risposto", spec.server_tool),
+                text.clone(),
+            ),
         };
         let output = json!({
             "status": status,
@@ -825,12 +844,7 @@ impl Action for McpAskAction {
 }
 
 /// Apre la conversazione solo per verificarla, e la chiude.
-fn look(
-    server: &ServerSpec,
-    tool: &str,
-    checks: &[PreflightCheck],
-    limit: Duration,
-) -> Preflight {
+fn look(server: &ServerSpec, tool: &str, checks: &[PreflightCheck], limit: Duration) -> Preflight {
     let mut session = match Session::open(server, limit) {
         Ok(session) => session,
         Err(why) => {
@@ -1149,12 +1163,16 @@ mod tests {
     #[test]
     fn blindness_outranks_a_no() {
         let sandbox = Sandbox::new("blind-and-no");
-        let mut pairs = handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"},{\"name\":\"status\"}]");
+        let mut pairs =
+            handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"},{\"name\":\"status\"}]");
         pairs.push((
             "\"name\":\"list_projects\"",
             text_reply("archivio vettoriale non raggiungibile"),
         ));
-        pairs.push(("\"name\":\"status\"", text_reply("indicizzato al 12 percento")));
+        pairs.push((
+            "\"name\":\"status\"",
+            text_reply("indicizzato al 12 percento"),
+        ));
         let spec = server(&sandbox, "blind-and-no", pairs);
 
         let stale = PreflightCheck {
@@ -1191,7 +1209,10 @@ mod tests {
         let sandbox = Sandbox::new("ready");
         let mut pairs = handshake("[{\"name\":\"impact\"},{\"name\":\"list_projects\"}]");
         pairs.push(("\"name\":\"list_projects\"", text_reply(ROOT)));
-        pairs.push(("\"name\":\"impact\"", text_reply("22 file usano questo crate")));
+        pairs.push((
+            "\"name\":\"impact\"",
+            text_reply("22 file usano questo crate"),
+        ));
         let spec = server(&sandbox, "ready", pairs);
 
         let outcome = McpAskAction
@@ -1314,7 +1335,11 @@ mod tests {
                 .expect("la verifica passa"),
         );
         assert_eq!(value["status"], "ready", "{}", value["said"]);
-        assert_eq!(value.get("text"), None, "la verifica non chiama lo strumento");
+        assert_eq!(
+            value.get("text"),
+            None,
+            "la verifica non chiama lo strumento"
+        );
     }
 
     /// **UNA PROVA VUOTA PASSEREBBE SEMPRE, E NESSUNO LA SCRIVE APPOSTA.**

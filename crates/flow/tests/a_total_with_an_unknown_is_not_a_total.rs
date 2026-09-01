@@ -1,17 +1,14 @@
-//! I tre casi di una spesa, interrogati da soli.
-//!
-//! **PERCHÉ UNA PROVA A PARTE, E NON SOLO QUELLA DEL COMANDO.** `Spend`
-//! documenta tre casi dal giorno in cui è nato, e per tutto quel tempo l'unico
-//! modo di interrogarli era `is_complete()`. Una regola che nessuno interroga da
-//! sola vive solo dentro chi la usa: quando `sailor flow cost` stampava
-//! «1,6674» per una corsa da 7,2080 dollari, nessuna prova era rossa — la
-//! distinzione era giusta nel motore e non arrivava a chi legge. Qui la regola
-//! ha una prova sua, e chi scriverà il prossimo lettore la trova già scritta.
+//! The three cases of a spend, asked on their own. A rule nobody asks on its
+//! own lives only inside whoever uses it: `Spend` has documented three cases
+//! since it was born, and for all that time the only way to ask was
+//! `is_complete()`. When `sailor flow cost` printed "1.6674" for a run that had
+//! cost 7.2080, no test was red — the distinction was right in the engine and
+//! never reached the reader. Here the rule has a test of its own.
 
 use flow::{CostReading, Spend};
 
-/// Come il deposito riassume una corsa: quante chiamate, quanto costo noto, e
-/// quante di quelle chiamate non hanno detto niente.
+/// How the store sums up a run: how many calls, how much known cost, and how
+/// many of those calls said nothing.
 fn spent(micros: i64, calls: i64, calls_without_cost: i64) -> Spend {
     Spend {
         micros,
@@ -21,8 +18,8 @@ fn spent(micros: i64, calls: i64, calls_without_cost: i64) -> Spend {
     }
 }
 
-/// Il caso facile, e serve che ci sia: senza, una lettura che si dichiarasse
-/// sempre incompleta passerebbe le altre due prove.
+/// The easy case, and it has to be here: without it, a reading that always
+/// declared itself incomplete would pass the other two tests.
 #[test]
 fn every_call_measured_reads_as_the_total() {
     assert_eq!(
@@ -31,10 +28,10 @@ fn every_call_measured_reads_as_the_total() {
     );
 }
 
-/// **UNA SOLA CHIAMATA MUTA CAMBIA IL VERSO DELLA LETTURA.** Sono i numeri veri
-/// della corsa consegnata dell'A/B del 31/08/2026: quattro chiamate, tre senza
-/// costo, e la quarta da 1,6674 dollari che il comando presentava come il
-/// totale di una corsa costata 7,2080.
+/// One silent call turns the reading around. These are the real numbers of the
+/// handed-off run from the A/B: four calls, three with no known cost, and the
+/// fourth at 1.6674 that `sailor flow cost` presented as the total of a run
+/// that had cost 7.2080.
 #[test]
 fn one_unmeasured_call_turns_the_total_into_a_floor() {
     assert_eq!(
@@ -44,12 +41,12 @@ fn one_unmeasured_call_turns_the_total_into_a_floor() {
             calls: 4,
             calls_without_cost: 3,
         },
-        "con una chiamata muta il numero è un pavimento, non una somma"
+        "with a silent call the number is a floor, not a sum"
     );
 }
 
-/// **LA SPESA A ZERO NON SI CONFONDE CON LA SPESA IGNOTA**, ed è il terzo caso.
-/// Le due corse hanno lo stesso `micros`; solo una ha davvero speso zero.
+/// Spending zero is not the same as spending an unknown amount — the third
+/// case. Both runs have the same `micros`; only one really spent zero.
 #[test]
 fn nothing_spent_and_nothing_known_are_two_different_readings() {
     assert_eq!(spent(0, 2, 0).reading(), CostReading::Nothing);
@@ -60,22 +57,16 @@ fn nothing_spent_and_nothing_known_are_two_different_readings() {
             calls: 2,
             calls_without_cost: 2,
         },
-        "nessuna misura non è «ha speso zero»: sono due corse diverse"
+        "no measurement is not \"spent zero\": these are two different runs"
     );
 }
 
-/// **IL PONTE FRA IL BOOLEANO E I TRE CASI.** La lettura deve passare da
-/// `is_complete()`, non da un secondo confronto scritto accanto: due regole per
-/// lo stesso fatto divergono, e a divergere sarebbe quella che una persona
-/// legge.
+/// The bridge between the boolean and the three cases: the reading must go
+/// through `is_complete()`, not a second comparison beside it.
 ///
-/// **QUESTA PROVA NON PRENDE IL MUTANTE CHE CONTA, E VA DETTO.** Con
-/// `is_complete()` sempre vero resta **verde**: confronta due cose che si
-/// muovono insieme, quindi si conferma da sola. A prendere quel mutante sono le
-/// due prove qui sopra, che scrivono il caso atteso a mano. Questa serve a
-/// un'altra domanda — «la lettura e il booleano sono ancora la stessa regola?» —
-/// e diventa rossa il giorno che qualcuno riscrive `reading()` con un confronto
-/// suo.
+/// Said plainly, this does not catch the mutant that matters — it compares two
+/// things that move together, so it stays green. The two tests above catch it;
+/// this goes red the day someone rewrites `reading()` on its own comparison.
 #[test]
 fn the_reading_agrees_with_what_the_engine_calls_complete() {
     for spend in [
@@ -88,7 +79,7 @@ fn the_reading_agrees_with_what_the_engine_calls_complete() {
         assert_eq!(
             reads_as_a_floor,
             !spend.is_complete(),
-            "un pavimento e un totale incompleto sono la stessa cosa detta due volte: {spend:?}"
+            "a floor and an incomplete total are one thing said twice: {spend:?}"
         );
     }
 }

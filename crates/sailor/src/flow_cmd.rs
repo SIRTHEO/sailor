@@ -5,21 +5,21 @@
 // Il formato del file vive nel crate del flusso: qui si importa, non si
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
+use flow::reference;
 use flow::{
     ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
     SystemClock,
 };
-use flow::reference;
 use ledger::Ledger;
 use models::pricing::{Known, PriceList};
 use serde_json::Value;
-use ui::gather::FlowSource;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+use ui::gather::FlowSource;
 
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args, &ui::gather::flow_sources()) {
@@ -52,9 +52,7 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name] if command == "cap" => cap_of(sources, name),
         [command, name, value] if command == "cap" => set_cap(sources, name, value),
         [command, name] if command == "schedule" => schedule_of(sources, name),
-        [command, name, value] if command == "schedule" => {
-            set_schedule(sources, name, value, None)
-        }
+        [command, name, value] if command == "schedule" => set_schedule(sources, name, value, None),
         [command, name, value, weight] if command == "schedule" => {
             set_schedule(sources, name, value, Some(weight))
         }
@@ -130,8 +128,12 @@ fn cost_of(flow: &str) -> Result<String, String> {
         .ok_or_else(|| format!("il flusso {flow} non è mai girato su questa macchina"))?;
     let view = ui::dashboard::summarize_run(
         run,
-        data.steps_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
-        data.calls_by_run.get(&run.run_id).map_or(&[], Vec::as_slice),
+        data.steps_by_run
+            .get(&run.run_id)
+            .map_or(&[], Vec::as_slice),
+        data.calls_by_run
+            .get(&run.run_id)
+            .map_or(&[], Vec::as_slice),
         now_secs()?,
     );
     Ok(spending_report(&view, &actions::current_price_list()))
@@ -146,7 +148,12 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     let tokens = &view.tokens;
     let mut report = format!(
         "corsa {} — flusso {} — {}\npassi: {} ({} andati, {} rotti)\nchiamate: {}",
-        view.run_id, view.entity, view.status, view.steps_total, view.steps_went, view.steps_broke,
+        view.run_id,
+        view.entity,
+        view.status,
+        view.steps_total,
+        view.steps_went,
+        view.steps_broke,
         tokens.calls
     );
     // **I TURNI ACCANTO ALLE CHIAMATE, E NON È UN DETTAGLIO.** Una chiamata a un
@@ -171,10 +178,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     let _ = write!(
         report,
         "\ntoken: {} in · {} out · {} letti da cache · {} scritti in cache",
-        tokens.input_tokens,
-        tokens.output_tokens,
-        tokens.cached_tokens,
-        tokens.cache_write_tokens
+        tokens.input_tokens, tokens.output_tokens, tokens.cached_tokens, tokens.cache_write_tokens
     );
     if tokens.total_tokens_only > 0 {
         let _ = write!(
@@ -188,7 +192,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // qualcuno tocca uno dei due posti le due versioni divergono in silenzio.
     // Chi decide quanti passi aprire e chi legge il consumo devono leggere la
     // stessa frase.
-    let _ = write!(report, "\n{}", ui::dashboard::how_the_cost_reads(&tokens.cost_reading()));
+    let _ = write!(
+        report,
+        "\n{}",
+        ui::dashboard::how_the_cost_reads(&tokens.cost_reading())
+    );
     // **QUELLO CHE MANCA SI DICE, O IL TOTALE SI LEGGE COME COMPLETO.** È la
     // stessa regola della finestra: una somma che tace su ciò che non ha
     // contato è una rassicurazione, non una misura. Resta anche adesso che il
@@ -241,7 +249,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     if !identities.is_empty() {
         report.push_str("\nidentità:");
         for (identity, how_many) in identities {
-            let word = if how_many == 1 { "chiamata" } else { "chiamate" };
+            let word = if how_many == 1 {
+                "chiamata"
+            } else {
+                "chiamate"
+            };
             let _ = write!(report, "\n  {identity} — {how_many} {word}");
         }
     }
@@ -431,11 +443,7 @@ fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> 
 /// sarebbe inventarlo. L'unica fonte onesta è chi ha già risposto, cioè le corse
 /// passate — per questo un flusso mai girato qui non riceve un elenco vuoto ma
 /// una frase che dice che non si sa, come per il rilevatore assente.
-fn what_is_priced(
-    prices: &PriceList,
-    seen: Option<&BTreeSet<String>>,
-    cap: Option<i64>,
-) -> String {
+fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Option<i64>) -> String {
     let mut said = format!("\nlistino: {} modelli prezzati", prices.entries.len());
     let Some(seen) = seen else {
         said.push_str(
@@ -488,13 +496,12 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
     let mut report = format!("flusso: {} ({origin})", flow.id);
     match flow.spend_cap_micros {
-        None => report.push_str(
-            "\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede",
-        ),
+        None => report
+            .push_str("\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede"),
         Some(cap) => {
             let _ = write!(
                 report,
-                "\ntetto: {cap} micro ({} di costo equivalente)",
+                "\ntetto: {cap} micro ({} of equivalent cost)",
                 in_units(cap)
             );
             report.push_str(WHAT_THE_CAP_DOES_NOT_PROMISE);
@@ -757,7 +764,9 @@ fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
 /// motore non sa eseguire.
 fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
     if let Some(digits) = value.strip_suffix('s') {
-        let seconds: u64 = digits.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        let seconds: u64 = digits
+            .parse()
+            .map_err(|_| how_a_schedule_is_written(value))?;
         if seconds == 0 {
             return Err(format!(
                 "«ogni 0 secondi» non vuol dire niente: un flusso dovuto sempre \
@@ -768,7 +777,9 @@ fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
     }
     if let Some((hour, minute)) = value.split_once(':') {
         let hour: u32 = hour.parse().map_err(|_| how_a_schedule_is_written(value))?;
-        let minute: u32 = minute.parse().map_err(|_| how_a_schedule_is_written(value))?;
+        let minute: u32 = minute
+            .parse()
+            .map_err(|_| how_a_schedule_is_written(value))?;
         if hour > 23 || minute > 59 {
             return Err(format!(
                 "«{value}» non è un'ora del giorno: le ore vanno da 00 a 23 e i \
@@ -950,12 +961,18 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
     let known = known_flows(sources);
     match known.iter().find(|(known, _, _)| known == name) {
         Some((_, origin, Ok(flow))) => Ok((flow.clone(), origin)),
-        Some((_, origin, Err(reason))) => Err(format!("il flusso {name} ({origin}) non si carica: {reason}")),
+        Some((_, origin, Err(reason))) => Err(format!(
+            "il flusso {name} ({origin}) non si carica: {reason}"
+        )),
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
             Err(format!(
                 "nessun flusso si chiama {name}; quelli che vedo sono: {}",
-                if names.is_empty() { "nessuno".to_owned() } else { names.join(", ") }
+                if names.is_empty() {
+                    "nessuno".to_owned()
+                } else {
+                    names.join(", ")
+                }
             ))
         }
     }
@@ -1428,6 +1445,24 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
             flow.id
         ));
     }
+    // An error, not a warning: the step does not fail, it commits another
+    // session's staged work under a message about something else.
+    let sweeping: Vec<String> = undelimited_commits(&flow)
+        .iter()
+        .map(|commit| format!("{} in «{}»", commit.step, commit.field))
+        .collect();
+    if !sweeping.is_empty() {
+        println!("{report}");
+        return Err(format!(
+            "flow {} runs `git commit` without saying what it commits: {}. \
+             With no paths, `git commit` commits everything already staged — and in a work \
+             tree shared with other sessions the index also holds another session's staged \
+             work, which then travels inside a commit that never mentions it. Say what the \
+             step commits: «--» followed by the paths, or «--only»/«--include» with a path.",
+            flow.id,
+            sweeping.join(", ")
+        ));
+    }
     if unknown.is_empty() {
         return Ok(report);
     }
@@ -1526,7 +1561,7 @@ fn check_report(
         Some(cap) => {
             let _ = write!(
                 report,
-                "\ntetto di spesa: {cap} micro ({} di costo equivalente){WHAT_THE_CAP_DOES_NOT_PROMISE}",
+                "\ntetto di spesa: {cap} micro ({} of equivalent cost){WHAT_THE_CAP_DOES_NOT_PROMISE}",
                 in_units(cap)
             );
         }
@@ -1535,7 +1570,11 @@ fn check_report(
     // rapporto nominava solo le azioni mancanti, cioè rispondeva a «questo
     // flusso gira?» e non a «cosa posso mettere nel prossimo passo». L'elenco
     // arriva dal registro, non da una copia scritta qui accanto.
-    let _ = write!(report, "\nazioni disponibili: {}", registry.names().join(", "));
+    let _ = write!(
+        report,
+        "\nazioni disponibili: {}",
+        registry.names().join(", ")
+    );
     if missing.is_empty() {
         report.push_str("\nazioni mancanti: nessuna");
     } else {
@@ -1595,8 +1634,9 @@ fn check_report(
 
     // **IL GUASTO 25, DETTO PRIMA DI PARTIRE.** Un `workdir` assoluto non si
     // vede eseguendo: si vede dopo, guardando quale repository si è sporcato.
-    let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) =
-        hardcoded_paths(flow).into_iter().partition(|path| path.fatal);
+    let (fatal, advisory): (Vec<HardcodedPath>, Vec<HardcodedPath>) = hardcoded_paths(flow)
+        .into_iter()
+        .partition(|path| path.fatal);
     if !fatal.is_empty() {
         let _ = write!(
             report,
@@ -1824,11 +1864,7 @@ fn fallbacks_into(report: &mut String, graph: &Graph, tools: &toolbox::Tools) {
 /// percorso legittimo. Si dichiara come secondo argomento — posizionale come
 /// il mandato di `run`, che è la forma di questa riga di comando — e quello che
 /// non combacia si vede nel rapporto invece di sparire.
-fn relocate_flow(
-    sources: &[FlowSource],
-    name: &str,
-    from: Option<&str>,
-) -> Result<String, String> {
+fn relocate_flow(sources: &[FlowSource], name: &str, from: Option<&str>) -> Result<String, String> {
     let root = workspace_root().ok_or_else(|| {
         format!(
             "non c'è nessuna radice di progetto risalendo da qui: manca un {}. \
@@ -1910,10 +1946,7 @@ fn relocate_flow(
 /// — è il guasto 21, che qui si evita non avendo bisogno del processo.
 ///
 /// Torna `None` se il documento non ha nemmeno un elenco di passi.
-fn relocate_workdirs(
-    document: &mut Value,
-    old_root: &Path,
-) -> Option<(Vec<String>, Vec<String>)> {
+fn relocate_workdirs(document: &mut Value, old_root: &Path) -> Option<(Vec<String>, Vec<String>)> {
     let mut moved = Vec::new();
     let mut left_alone = Vec::new();
     let steps = document
@@ -1998,7 +2031,7 @@ const WORKDIR_KEY: &str = flow::WORKDIR_FIELD;
 ///
 /// Un percorso assoluto qui non è un dettaglio del testo: è la posizione in cui
 /// il passo lavorerà davvero, ed è il guasto 25 parola per parola — sette passi
-/// con `"workdir": "/home/someone/personal/sailor"`, un flusso che lanciato da un
+/// con la casa di chi scriveva scritta in chiaro, e un flusso che lanciato da un
 /// clone commetteva nel repository principale senza dirlo.
 const POSITION_FIELDS: [&str; 2] = ["workdir", "bin"];
 
@@ -2171,6 +2204,237 @@ fn walk_for_paths(step: &str, field: &str, value: &Value, found: &mut Vec<Hardco
         }
         _ => {}
     }
+}
+
+// ── a `git commit` that does not say what it commits ──────────────────────
+
+/// A step that runs `git commit` without delimiting what it commits.
+#[derive(Debug)]
+struct UndelimitedCommit {
+    step: String,
+    field: String,
+}
+
+/// `git` options that sit before the subcommand and eat the value after them.
+/// `git -C repo commit` is the same gesture as `git commit`, and looking only
+/// at the first argument misses it.
+///
+/// A declared list, not a parser. An unlisted option makes the check stop
+/// looking for the subcommand rather than get it wrong: it stays quiet.
+const GIT_GLOBAL_OPTIONS_WITH_VALUE: [&str; 7] = [
+    "-C",
+    "-c",
+    "--git-dir",
+    "--work-tree",
+    "--namespace",
+    "--exec-path",
+    "--config-env",
+];
+
+/// `git commit` options that eat the value after them.
+///
+/// Without this list the value would read as the delimiting path, and
+/// `-C <commit>` would be confused with git's global `-C <dir>`: same letter,
+/// told apart only by position. These change where the message comes from,
+/// never what lands in the commit, so they do not delimit.
+const COMMIT_OPTIONS_WITH_VALUE: [&str; 16] = [
+    "-m",
+    "--message",
+    "-F",
+    "--file",
+    "-C",
+    "--reuse-message",
+    "-c",
+    "--reedit-message",
+    "--author",
+    "--date",
+    "-t",
+    "--template",
+    "--fixup",
+    "--squash",
+    "--trailer",
+    "--cleanup",
+];
+
+/// Options with which a `git commit` says it commits paths only. Alone they
+/// are not enough: `--only` with no paths delimits nothing. The one exception
+/// is with `--amend`, which the git manual states explicitly.
+const DELIMITING_OPTIONS: [&str; 4] = ["--only", "-o", "--include", "-i"];
+
+/// Takes the paths from a file instead of the line: it delimits on its own,
+/// because the paths exist — they are just written elsewhere.
+///
+/// It passes without the file being opened. The danger here is committing the
+/// whole index; an empty path list commits the opposite, nothing. A check that
+/// is red on a correct form gets switched off within a day.
+const PATHSPEC_FILE_OPTION: &str = "--pathspec-from-file";
+
+/// Characters that end a command inside shell text.
+///
+/// A split, not a shell parser, and the direction of the error is declared: it
+/// does not honour quotes, so a `git commit` written inside a string counts as
+/// if it ran. It errs by flagging, never by staying quiet.
+const SHELL_SEPARATORS: [char; 7] = [';', '&', '|', '\n', '(', ')', '`'];
+
+/// An argument the flow assembles at run time — a `$join`, a `$from` — which
+/// cannot be read here. It does not start with `-`, so it is consumed as an
+/// option's value and counts as a path after `--`: the two readings the check
+/// needs, neither claiming to know what will be written there.
+const MOUNTED_ARG: &str = "<mounted>";
+
+/// Steps that run `git commit` without delimiting what they commit, which in a
+/// shared work tree means committing another session's staged work. `--amend`
+/// and `-a` are stopped too: both sweep what is staged. A bare path without
+/// `--` does not count, because a path cannot be told from the value of an
+/// unknown option. Blind to: `git` behind a variable or alias, `xargs git
+/// commit`, and quotes `SHELL_SEPARATORS` ignores.
+fn undelimited_commits(flow: &FlowFile) -> Vec<UndelimitedCommit> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        let Some(with) = step.with.as_ref() else {
+            continue;
+        };
+        let Value::Object(fields) = with else {
+            continue;
+        };
+        // The engine door. `engines_of` reads both `"tool": "git"` and the
+        // chain that names it, in one place: a second copy here would drop
+        // half the steps. `bin` is the same door under another name.
+        let names_git = engines_of(with).iter().any(|id| is_git(id))
+            || fields
+                .get("bin")
+                .and_then(Value::as_str)
+                .is_some_and(is_git);
+        if names_git {
+            if let Some(Value::Array(args)) = fields.get("args") {
+                let argv: Vec<&str> = args.iter().map(mounted_or_written).collect();
+                if commits_without_paths(&argv) {
+                    found.push(UndelimitedCommit {
+                        step: step.id.clone(),
+                        field: "args".to_owned(),
+                    });
+                }
+            }
+        }
+        // The shell door. The same field `outside_text_in_command` watches,
+        // for the same reason: that text is not read, it is run.
+        for name in EXECUTED_FIELDS {
+            let Some(value) = fields.get(*name) else {
+                continue;
+            };
+            let mut command = String::new();
+            executed_text(value, &mut command);
+            if shell_commits_without_paths(&command) {
+                found.push(UndelimitedCommit {
+                    step: step.id.clone(),
+                    field: (*name).to_owned(),
+                });
+            }
+        }
+    }
+    found
+}
+
+/// True if this name is `git`, however it was written.
+fn is_git(name: &str) -> bool {
+    name == "git" || name.ends_with("/git")
+}
+
+/// An argument as the check sees it: the text the flow wrote, or the
+/// placeholder for what the flow assembles at run time.
+fn mounted_or_written(arg: &Value) -> &str {
+    arg.as_str().unwrap_or(MOUNTED_ARG)
+}
+
+/// The text that will really land in the executed field, in written order. A
+/// reference becomes the placeholder, because skipping it would glue together
+/// the two pieces around it.
+fn executed_text(value: &Value, into: &mut String) {
+    match value {
+        Value::String(text) => into.push_str(text),
+        Value::Array(items) => items.iter().for_each(|item| executed_text(item, into)),
+        Value::Object(fields) => {
+            if fields.contains_key(reference::FROM_KEY) || fields.contains_key(reference::JSON_KEY)
+            {
+                into.push_str(MOUNTED_ARG);
+            } else {
+                fields.values().for_each(|inner| executed_text(inner, into));
+            }
+        }
+        _ => {}
+    }
+}
+
+/// True if this shell text holds a `git commit` that does not say what it
+/// commits. Same rule as the engine door; only where the arguments come from
+/// changes.
+fn shell_commits_without_paths(command: &str) -> bool {
+    command
+        .split(|letter| SHELL_SEPARATORS.contains(&letter))
+        .any(|segment| {
+            let tokens: Vec<&str> = segment.split_whitespace().collect();
+            tokens
+                .iter()
+                .position(|token| is_git(token))
+                .is_some_and(|at| commits_without_paths(&tokens[at + 1..]))
+        })
+}
+
+/// The arguments of `git commit`, past the global options that sit before the
+/// subcommand. `None` when this line is not a commit, including when the
+/// subcommand could not be found.
+fn commit_arguments<'a>(argv: &'a [&'a str]) -> Option<&'a [&'a str]> {
+    let mut rest = argv;
+    while rest.first().is_some_and(|token| token.starts_with('-')) {
+        let eats_the_next = GIT_GLOBAL_OPTIONS_WITH_VALUE.contains(&rest[0]);
+        rest = rest.get(if eats_the_next { 2 } else { 1 }..)?;
+    }
+    match rest.split_first() {
+        Some((&"commit", after)) => Some(after),
+        _ => None,
+    }
+}
+
+/// The rule, in one place: both doors ask it, neither copies it.
+fn commits_without_paths(argv: &[&str]) -> bool {
+    let Some(mut rest) = commit_arguments(argv) else {
+        return false;
+    };
+    let mut amends = false;
+    let mut says_only = false;
+    let mut names_a_path = false;
+    while let Some(token) = rest.first() {
+        rest = &rest[1..];
+        if *token == "--" {
+            // After `--` git reads no more options: what follows are paths,
+            // and one is enough.
+            return rest.is_empty();
+        }
+        // `--option=value` is a single argument: the value is not consumed.
+        let (name, attached) = match token.split_once('=') {
+            Some((name, _)) if name.starts_with("--") => (name, true),
+            _ => (*token, false),
+        };
+        if name == PATHSPEC_FILE_OPTION {
+            return false;
+        }
+        if name == "--amend" {
+            amends = true;
+        }
+        if DELIMITING_OPTIONS.contains(&name) {
+            says_only = true;
+        }
+        if COMMIT_OPTIONS_WITH_VALUE.contains(&name) {
+            if !attached {
+                rest = rest.get(1..).unwrap_or_default();
+            }
+            continue;
+        }
+        if !token.starts_with('-') {
+            names_a_path = true;
+        }
+    }
+    !(says_only && (names_a_path || amends))
 }
 
 // ── le case di credenziali, chieste al motore ────────────────────────────
@@ -2448,9 +2712,7 @@ fn engine_lines_into(
                 ProbeVerdict::Broken { said } => broken.push(format!(
                     "{who}: riga montata «{line}»; il motore ha risposto: «{said}»"
                 )),
-                ProbeVerdict::CannotWork { said } => {
-                    exhausted.push(format!("{who}: «{said}»"))
-                }
+                ProbeVerdict::CannotWork { said } => exhausted.push(format!("{who}: «{said}»")),
                 ProbeVerdict::NotDeclared => untried.push(format!(
                     "{who}: il suo descrittore non dichiara come rifiuta la riga senza \
                      domanda (`refuses_without_prompt`), quindi non c'è modo di dire se \
@@ -2761,13 +3023,7 @@ fn run_flow(sources: &[FlowSource], name: &str, mandate: Option<&str>) -> Result
     record_run(&ledger, &flow, &run_id, "running", started_at, None, None)?;
 
     let mut store = ledger.clone();
-    let result = execute_flow(
-        &flow,
-        &run_id,
-        &mut store,
-        &registry,
-        &mut SystemClock,
-    );
+    let result = execute_flow(&flow, &run_id, &mut store, &registry, &mut SystemClock);
     match result {
         Ok(execution) => {
             let (status, exit_ok) = execution_status(&execution);
@@ -3080,11 +3336,8 @@ mod tests {
         )
         .expect("il flusso di prova è valido");
 
-        let mut store = InMemoryRecordStore::from_records(vec![a_handed_record(
-            1_000,
-            Some(3_600),
-            None,
-        )]);
+        let mut store =
+            InMemoryRecordStore::from_records(vec![a_handed_record(1_000, Some(3_600), None)]);
         let registry = default_registry(None, None);
         let shared = flow::SharedState::new();
         let probe = HandoffLease { now: 1_100 };
@@ -3170,7 +3423,9 @@ mod tests {
             1_100,
         );
         record.species = Some(flow::StepSpecies::Repeatable);
-        ledger.append_step_started(&record).expect("aprire il passo");
+        ledger
+            .append_step_started(&record)
+            .expect("aprire il passo");
         ledger
             .close_step(
                 "run-vecchia",
@@ -3213,10 +3468,8 @@ mod tests {
     impl TestDirectory {
         fn new() -> Self {
             let serial = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
-            let path = std::env::temp_dir().join(format!(
-                "sailor-flow-test-{}-{serial}",
-                std::process::id()
-            ));
+            let path = std::env::temp_dir()
+                .join(format!("sailor-flow-test-{}-{serial}", std::process::id()));
             fs::create_dir(&path).expect("creare la cartella di prova");
             Self(path)
         }
@@ -3607,7 +3860,10 @@ mod tests {
         .expect("elencare i flussi");
 
         assert!(report.contains("prova\t1 passi\tdi prova"), "{report}");
-        assert!(report.contains("rotto\tdi prova\tnon caricabile:"), "{report}");
+        assert!(
+            report.contains("rotto\tdi prova\tnon caricabile:"),
+            "{report}"
+        );
         assert!(report.contains("rotto.flow.json"), "{report}");
     }
 
@@ -3625,8 +3881,8 @@ mod tests {
             "inputs": {}
         }"#;
 
-        let error = serde_json::from_str::<FlowFile>(json)
-            .expect_err("il ciclo deve essere rifiutato");
+        let error =
+            serde_json::from_str::<FlowFile>(json).expect_err("il ciclo deve essere rifiutato");
 
         assert!(error.to_string().contains("backward dependency"), "{error}");
     }
@@ -3680,11 +3936,14 @@ mod tests {
         let flow = flow_wanting_tool("questo-non-esiste-in-nessun-catalogo");
         let tools = tools_declaring(&["git"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, unknown) =
+            check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert_eq!(unknown, vec!["questo-non-esiste-in-nessun-catalogo"]);
         assert!(
-            report.contains("strumenti che nessun descrittore dichiara: questo-non-esiste-in-nessun-catalogo"),
+            report.contains(
+                "strumenti che nessun descrittore dichiara: questo-non-esiste-in-nessun-catalogo"
+            ),
             "{report}"
         );
     }
@@ -3698,7 +3957,8 @@ mod tests {
         let flow = flow_wanting_tool("strumento-dichiarato-mai-installato");
         let tools = tools_declaring(&["strumento-dichiarato-mai-installato"]);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, unknown) =
+            check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
         assert!(unknown.is_empty(), "non è un errore: {unknown:?}");
         assert!(
@@ -3765,12 +4025,19 @@ mod tests {
         let flow = flow_needing_capability("un-motore", "response_shape");
         let tools = tools_with_capabilities("un-motore", r#"{"response_shape": false}"#);
 
-        let (report, unknown) = check_report(&flow, &default_registry(None, None), Some(&tools), None);
+        let (report, unknown) =
+            check_report(&flow, &default_registry(None, None), Some(&tools), None);
 
-        assert!(unknown.is_empty(), "resta un avviso, non un errore: {unknown:?}");
+        assert!(
+            unknown.is_empty(),
+            "resta un avviso, non un errore: {unknown:?}"
+        );
         assert!(report.contains("root"), "nomina il passo: {report}");
         assert!(report.contains("un-motore"), "nomina il motore: {report}");
-        assert!(report.contains("response_shape"), "nomina la capacità: {report}");
+        assert!(
+            report.contains("response_shape"),
+            "nomina la capacità: {report}"
+        );
         assert!(
             report.contains("dichiara di non averla"),
             "e dice che qualcuno ha guardato: {report}"
@@ -3967,7 +4234,10 @@ mod tests {
             said_without, said_with,
             "il tetto non compare nel rapporto: {said_with}"
         );
-        assert!(said_without.contains("tetto di spesa: nessuno"), "{said_without}");
+        assert!(
+            said_without.contains("tetto di spesa: nessuno"),
+            "{said_without}"
+        );
         assert!(said_with.contains("2500000 micro"), "{said_with}");
     }
 
@@ -4025,10 +4295,19 @@ mod tests {
             None,
         );
 
-        assert!(!said.contains("prezzato ("), "un modello prezzato non si segnala: {said}");
-        assert!(said.contains("mai-visto (nessuna voce nel listino)"), "{said}");
+        assert!(
+            !said.contains("prezzato ("),
+            "un modello prezzato non si segnala: {said}"
+        );
+        assert!(
+            said.contains("mai-visto (nessuna voce nel listino)"),
+            "{said}"
+        );
         assert!(said.contains("a-meta (voce senza prezzi)"), "{said}");
-        assert!(said.contains("sconosciuto"), "e dice cosa gli succede: {said}");
+        assert!(
+            said.contains("sconosciuto"),
+            "e dice cosa gli succede: {said}"
+        );
     }
 
     /// **QUANDO SONO TUTTI PREZZATI LO DICE LO STESSO.** Un rapporto che tace
@@ -4058,7 +4337,10 @@ mod tests {
         let never_ran = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
 
         assert_ne!(unreadable, never_ran);
-        assert!(unreadable.contains("non si è potuto leggere"), "{unreadable}");
+        assert!(
+            unreadable.contains("non si è potuto leggere"),
+            "{unreadable}"
+        );
         assert!(!unreadable.contains("mai girato"), "{unreadable}");
     }
 
@@ -4173,7 +4455,10 @@ mod tests {
 
         let said = spending_report(&view, &a_small_price_list());
 
-        assert!(said.contains("mai-visto (nessuna voce nel listino)"), "{said}");
+        assert!(
+            said.contains("mai-visto (nessuna voce nel listino)"),
+            "{said}"
+        );
         assert!(
             !said.contains("prezzato ("),
             "un modello prezzato non si segnala: {said}"
@@ -4220,11 +4505,13 @@ mod tests {
 
         assert!(said.contains("identità:"), "{said}");
         assert!(
-            said.contains("profilo codex/lavoro — casa /case/codex/lavoro — 2 chiamate"),
+            said.contains("profile codex/lavoro — home /case/codex/lavoro — 2 chiamate"),
             "{said}"
         );
         assert!(
-            said.contains("casa scelta dal passo (codex) — casa /una/casa/scritta/nel/passo — 1 chiamata"),
+            said.contains(
+                "home chosen by the step (codex) — home /una/casa/scritta/nel/passo — 1 chiamata"
+            ),
             "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
         );
     }
@@ -4287,12 +4574,7 @@ mod tests {
     /// tutto — con l'aria di una misura su molti campioni.
     #[test]
     fn runs_that_spent_nothing_are_not_samples() {
-        let seen = observed_from(&[
-            vec![Some(0)],
-            vec![],
-            vec![None, None],
-            vec![Some(900)],
-        ]);
+        let seen = observed_from(&[vec![Some(0)], vec![], vec![None, None], vec![Some(900)]]);
 
         assert_eq!(seen.runs, 4, "le corse ci sono tutte");
         assert_eq!(seen.costed_runs, 1, "ma una sola ha speso");
@@ -4354,7 +4636,10 @@ mod tests {
     #[test]
     fn a_file_named_differently_from_its_id_is_refused_instead_of_duplicated() {
         let home = TestDirectory::new();
-        home.write("altro-nome.flow.json", &flow_json("shell_check", "[]", "{}"));
+        home.write(
+            "altro-nome.flow.json",
+            &flow_json("shell_check", "[]", "{}"),
+        );
         let sources = flow::system::sources(&home.0, None, None);
 
         let error = set_cap(&sources, "altro-nome", "500").expect_err("nome e id divergono");
@@ -4421,8 +4706,8 @@ mod tests {
             "si parte da un flusso senza innesco"
         );
 
-        let said = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
-            .expect("l'innesco si scrive");
+        let said =
+            set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("l'innesco si scrive");
 
         assert!(said.contains("ogni 3600s"), "{said}");
         let after = written_flow(&home.0, "prova");
@@ -4457,7 +4742,10 @@ mod tests {
         assert_eq!(
             written_flow(&home.0, "prova").schedule,
             Some(flow::Schedule {
-                recurrence: flow::Recurrence::DailyAt { hour: 7, minute: 30 },
+                recurrence: flow::Recurrence::DailyAt {
+                    hour: 7,
+                    minute: 30
+                },
                 weight: flow::Weight::Heavy,
                 perimeter: vec![],
             })
@@ -4506,10 +4794,15 @@ mod tests {
 
         set_schedule(&sources, "prova", "05:15", None).expect("solo l'ora cambia");
 
-        let after = written_flow(&home.0, "prova").schedule.expect("l'innesco c'è");
+        let after = written_flow(&home.0, "prova")
+            .schedule
+            .expect("l'innesco c'è");
         assert_eq!(
             after.recurrence,
-            flow::Recurrence::DailyAt { hour: 5, minute: 15 }
+            flow::Recurrence::DailyAt {
+                hour: 5,
+                minute: 15
+            }
         );
         assert_eq!(after.weight, flow::Weight::Heavy, "il peso resta quello");
         assert_eq!(
@@ -4548,8 +4841,8 @@ mod tests {
         let sources = flow::system::sources(&home.0, None, None);
 
         for wrong in ["ogni-tanto", "0s", "25:00", "07:70", "3600"] {
-            let error = set_schedule(&sources, "prova", wrong, Some(LIGHT))
-                .unwrap_or_else(|error| error);
+            let error =
+                set_schedule(&sources, "prova", wrong, Some(LIGHT)).unwrap_or_else(|error| error);
             assert!(
                 error.contains(NO_SCHEDULE) || error.contains("ore vanno"),
                 "«{wrong}» è stato accettato o rifiutato senza dire come si scrive: {error}"
@@ -4601,7 +4894,10 @@ mod tests {
         // Due file, lo stesso `id` dentro: il registro li indicizza per nome di
         // file, la scrittura per `id`.
         home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
-        home.write("nome-diverso.flow.json", &flow_json("shell_check", "[]", "{}"));
+        home.write(
+            "nome-diverso.flow.json",
+            &flow_json("shell_check", "[]", "{}"),
+        );
         let sources = flow::system::sources(&home.0, None, None);
 
         let refused = set_schedule(&sources, "nome-diverso", "3600s", Some(LIGHT))
@@ -4615,11 +4911,11 @@ mod tests {
         // **E LA PARTE CHE CONTA: IL FLUSSO ESTRANEO NON È STATO TOCCATO.** Un
         // rifiuto che avesse comunque scritto sarebbe peggio del difetto.
         let bystander = written_flow(&home.0, "prova");
-        assert_eq!(bystander.schedule, None, "l'innesco di «prova» non si tocca");
         assert_eq!(
-            bystander.spend_cap_micros, None,
-            "e nemmeno il suo tetto"
+            bystander.schedule, None,
+            "l'innesco di «prova» non si tocca"
         );
+        assert_eq!(bystander.spend_cap_micros, None, "e nemmeno il suo tetto");
         assert_eq!(written_flow(&home.0, "nome-diverso").schedule, None);
         assert_eq!(
             entries_of(&home.0).len(),
@@ -4662,7 +4958,10 @@ mod tests {
         let after = schedule_of(&sources, "prova").expect("si rilegge");
         assert!(after.contains("ogni 300s"), "{after}");
         assert!(after.contains(HEAVY), "{after}");
-        assert!(after.contains("non dichiarato"), "il perimetro vuoto lo dice: {after}");
+        assert!(
+            after.contains("non dichiarato"),
+            "il perimetro vuoto lo dice: {after}"
+        );
     }
 
     /// **OGNI GESTO CHE `dispatch` SA FARE È SCRITTO NELL'USO.**
@@ -4683,8 +4982,7 @@ mod tests {
     /// nominarlo in `usage()` — cioè il modo in cui un gesto diventa invisibile.
     #[test]
     fn every_arm_of_the_dispatcher_is_written_in_the_usage_line() {
-        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("src/flow_cmd.rs");
+        let source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/flow_cmd.rs");
         let text = fs::read_to_string(&source).expect("questo file si rilegge");
         let body = text
             .split_once("fn dispatch(")
@@ -4744,7 +5042,10 @@ mod tests {
         assert!(report.contains("cicli: nessuno"), "{report}");
         assert!(report.contains("dipendenze: 0"), "{report}");
         assert!(report.contains("root <- nessuna"), "{report}");
-        assert!(report.contains("azioni mancanti: azione_assente"), "{report}");
+        assert!(
+            report.contains("azioni mancanti: azione_assente"),
+            "{report}"
+        );
     }
 
     #[test]
@@ -4827,7 +5128,9 @@ mod tests {
     #[test]
     fn the_registered_engine_knows_how_to_resolve_a_tool_id() {
         let registry = default_registry(None, None);
-        let engine = registry.get("external_engine").expect("il motore è registrato");
+        let engine = registry
+            .get("external_engine")
+            .expect("il motore è registrato");
         let input = serde_json::json!({
             "tool": "nessuno-strumento-si-chiama-cosi",
             "timeout_secs": 1
@@ -4933,7 +5236,9 @@ mod tests {
         }
         assert_eq!(
             seen.get("workdir").and_then(Value::as_str),
-            workspace_root().as_deref().map(|root| root.to_str().expect("un percorso leggibile")),
+            workspace_root()
+                .as_deref()
+                .map(|root| root.to_str().expect("un percorso leggibile")),
             "la cartella di lavoro è la radice, non dove sta il processo"
         );
     }
@@ -4953,7 +5258,13 @@ mod tests {
             dir: directory.0.clone(),
         }];
 
-        for name in ["../segreto", "cartella/segreto", "", "..", "buono.flow.json"] {
+        for name in [
+            "../segreto",
+            "cartella/segreto",
+            "",
+            "..",
+            "buono.flow.json",
+        ] {
             let refused = one_flow(&sources, name).expect_err(&format!(
                 "«{name}» non è un flusso di questa macchina e non deve aprirsi"
             ));
@@ -4962,7 +5273,10 @@ mod tests {
                 "«{name}»: {refused}"
             );
         }
-        assert!(one_flow(&sources, "buono").is_ok(), "il flusso vero si apre");
+        assert!(
+            one_flow(&sources, "buono").is_ok(),
+            "il flusso vero si apre"
+        );
     }
 
     /// I FLUSSI SPEDITI SI VEDONO ANCHE DALLA RIGA DI COMANDO. Il difetto che
@@ -4995,8 +5309,16 @@ mod tests {
                 .expect("registrare la chiamata");
         }
 
-        record_run(&ledger, &flow, "corsa-costosa", "complete", 100, Some(110), None)
-            .expect("registrare la corsa");
+        record_run(
+            &ledger,
+            &flow,
+            "corsa-costosa",
+            "complete",
+            100,
+            Some(110),
+            None,
+        )
+        .expect("registrare la corsa");
 
         let dump = ledger.projection_dump().expect("leggere la proiezione");
         let run = dump["runs"]
@@ -5240,10 +5562,8 @@ mod tests {
     fn tools_with_engines(entries: &[(&str, &str)]) -> toolbox::Tools {
         static SERIAL: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let serial = SERIAL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!(
-            "prova-motori-{}-{serial}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("prova-motori-{}-{serial}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("la cartella di prova");
         let mut declared = Vec::new();
         for (id, ask) in entries {
@@ -5260,7 +5580,8 @@ mod tests {
             ));
         }
         let file = dir.join("tools.json");
-        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, declared.join(","))).expect("scrivere");
+        std::fs::write(&file, format!(r#"{{"tools":[{}]}}"#, declared.join(",")))
+            .expect("scrivere");
         let catalog = toolbox::Catalog::load(&[toolbox::Source::File(file)]);
         toolbox::Tools::new(
             catalog,
@@ -5396,11 +5717,8 @@ mod tests {
     #[test]
     fn every_engine_of_the_chain_is_tried_not_only_the_first() {
         let flow = flow_with_chain(r#"["primo", "secondo", "terzo"]"#);
-        let tools = tools_with_engines(&[
-            ("primo", REFUSES),
-            ("secondo", REFUSES),
-            ("terzo", REFUSES),
-        ]);
+        let tools =
+            tools_with_engines(&[("primo", REFUSES), ("secondo", REFUSES), ("terzo", REFUSES)]);
         let probe = ScriptedProbe(vec![
             ("primo", "Input must be provided through stdin"),
             ("secondo", "took --output-format as its prompt"),
@@ -5459,10 +5777,7 @@ mod tests {
             "un motore senza `ask` non è una riga non provata: {untried}"
         );
         assert!(unassemblable.contains("senza-ask"), "{unassemblable}");
-        assert!(
-            !unassemblable.contains("senza-rifiuto"),
-            "{unassemblable}"
-        );
+        assert!(!unassemblable.contains("senza-rifiuto"), "{unassemblable}");
     }
 
     /// **UN MOTORE ESAURITO NON È UNA RIGA ROTTA**, e la sua frase è la quarta.
@@ -5605,7 +5920,7 @@ mod tests {
     /// fallisce — fa danno nel posto sbagliato.
     #[test]
     fn an_absolute_workdir_is_an_error() {
-        let flow = flow_with(r#"{"workdir": "/home/someone/personal/sailor"}"#);
+        let flow = flow_with(r#"{"workdir": "/work/sailor"}"#);
 
         let found = hardcoded_paths(&flow);
 
@@ -5701,15 +6016,149 @@ mod tests {
     /// persona.
     #[test]
     fn an_absolute_path_inside_a_prompt_is_a_warning() {
-        let flow = flow_with(
-            r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/personal/sailor.\n"]}}"#,
-        );
+        let flow =
+            flow_with(r#"{"stdin": {"$join": ["Lavora solo dentro /home/someone/sailor.\n"]}}"#);
 
         let found = hardcoded_paths(&flow);
 
         assert_eq!(found.len(), 1);
         assert!(!found[0].fatal, "dentro un testo è un avviso");
         assert_eq!(found[0].field, "stdin.$join");
+    }
+
+    // ── a `git commit` that does not say what it commits ──────────────
+
+    /// The shipped form of the defect: an `external_engine` step running
+    /// `git commit -m …` and nothing else, which commits the whole index —
+    /// and in a shared tree the index is not only its own.
+    #[test]
+    fn a_commit_that_names_no_path_is_an_error() {
+        let flow = flow_with(r#"{"tool": "git", "args": ["commit", "-m", "a message"]}"#);
+
+        let found = undelimited_commits(&flow);
+
+        assert_eq!(found.len(), 1, "exactly one: {found:?}");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(
+            found[0].field, "args",
+            "the step commits with no path delimiting what it commits"
+        );
+    }
+
+    /// `git -C <dir> commit` is the same gesture: global options sit before
+    /// the subcommand, so looking at the first argument alone sees `-C` and
+    /// closes green on a commit identical to the one above.
+    #[test]
+    fn a_global_option_does_not_hide_the_commit() {
+        let flow =
+            flow_with(r#"{"tool": "git", "args": ["-C", "subdir", "commit", "-m", "a message"]}"#);
+
+        assert_eq!(undelimited_commits(&flow).len(), 1);
+    }
+
+    /// The second door. `shell_check`'s `command` is executed text, and a
+    /// `git commit` fits mid-line. No flow commits this way today: without
+    /// this test the same rule would mean two things by door.
+    #[test]
+    fn a_commit_inside_shell_text_is_an_error() {
+        let flow = shell_flow_with(
+            r#"{"command": "cargo fmt && git commit -m 'un messaggio'", "timeout_secs": 5}"#,
+        );
+
+        let found = undelimited_commits(&flow);
+
+        assert_eq!(found.len(), 1, "uno solo: {found:?}");
+        assert_eq!(found[0].step, "unico");
+        assert_eq!(found[0].field, "command");
+    }
+
+    /// The delimited forms pass. A check that is red on the correct form gets
+    /// switched off within a day, so what passes is tested with what stops.
+    #[test]
+    fn a_delimited_commit_is_clean() {
+        for args in [
+            r#"["commit", "-m", "un messaggio", "--", "docs/decisioni.md"]"#,
+            r#"["commit", "--only", "docs/decisioni.md", "-m", "un messaggio"]"#,
+            r#"["commit", "--include", "docs/decisioni.md", "-m", "un messaggio"]"#,
+        ] {
+            let flow = flow_with(&format!(r#"{{"tool": "git", "args": {args}}}"#));
+
+            assert!(
+                undelimited_commits(&flow).is_empty(),
+                "this commit says what it commits: {args}"
+            );
+        }
+
+        let on_one_line = shell_flow_with(
+            r#"{"command": "git commit -m 'un messaggio' -- docs/decisioni.md", "timeout_secs": 5}"#,
+        );
+
+        assert!(undelimited_commits(&on_one_line).is_empty());
+    }
+
+    /// A step that does not name `git` is untouched, and so is a `git` that
+    /// does not commit: reading the world is not writing it.
+    #[test]
+    fn a_step_that_does_not_commit_is_untouched() {
+        for with in [
+            r#"{"tool": "cargo", "args": ["test", "--workspace"]}"#,
+            r#"{"tool": "git", "args": ["add", "-A"]}"#,
+        ] {
+            assert!(
+                undelimited_commits(&flow_with(with)).is_empty(),
+                "niente da dire su: {with}"
+            );
+        }
+
+        let reading =
+            shell_flow_with(r#"{"command": "git status --porcelain", "timeout_secs": 5}"#);
+
+        assert!(undelimited_commits(&reading).is_empty());
+    }
+
+    /// The two ambiguous forms, decided above the function: `--amend` and `-a`
+    /// delimit nothing, so both are stopped. The one exception is
+    /// `--amend --only` with no paths, the documented way to rewrite only
+    /// the message.
+    #[test]
+    fn amend_and_all_do_not_say_what_is_committed() {
+        for args in [
+            r#"["commit", "--amend", "--no-edit"]"#,
+            r#"["commit", "-a", "-m", "un messaggio"]"#,
+            r#"["commit", "--all", "-m", "un messaggio"]"#,
+        ] {
+            let flow = flow_with(&format!(r#"{{"tool": "git", "args": {args}}}"#));
+
+            assert_eq!(
+                undelimited_commits(&flow).len(),
+                1,
+                "this takes what is staged without saying so: {args}"
+            );
+        }
+
+        let only_the_message =
+            flow_with(r#"{"tool": "git", "args": ["commit", "--amend", "--only", "-m", "x"]}"#);
+
+        assert!(
+            undelimited_commits(&only_the_message).is_empty(),
+            "«--amend --only» with no paths is the documented form"
+        );
+    }
+
+    /// An option's value is not the path that delimits. `-m` and `-F` eat what
+    /// follows them, and counting that as a path would let the base case
+    /// through as delimited.
+    #[test]
+    fn the_value_of_an_option_is_not_a_path() {
+        let flow = flow_with(
+            r#"{"tool": "git", "args": ["commit", "--only", "-F", "message.txt", "-C", "HEAD"]}"#,
+        );
+
+        assert_eq!(
+            undelimited_commits(&flow).len(),
+            1,
+            "«--only» with no paths delimits nothing"
+        );
     }
 
     // ── spostare un flusso da un albero all'altro ─────────────────────
@@ -5740,8 +6189,8 @@ mod tests {
     fn a_workdir_equal_to_the_root_is_removed() {
         let mut document = document_with_workdir("/vecchio/albero");
 
-        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
-            .expect("ha dei passi");
+        let (moved, left) =
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
 
         assert_eq!(moved.len(), 1);
         assert!(left.is_empty());
@@ -5792,12 +6241,15 @@ mod tests {
     fn a_workdir_outside_the_prefix_is_left_alone_and_reported() {
         let mut document = document_with_workdir("/altro/posto");
 
-        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
-            .expect("ha dei passi");
+        let (moved, left) =
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
 
         assert!(moved.is_empty());
         assert_eq!(left.len(), 1);
-        assert_eq!(document["graph"]["steps"][0]["with"]["workdir"], "/altro/posto");
+        assert_eq!(
+            document["graph"]["steps"][0]["with"]["workdir"],
+            "/altro/posto"
+        );
     }
 
     /// **UN RINVIO NON SI RISCRIVE.** `{"$from": "/innesco/text"}` è un
@@ -5816,8 +6268,8 @@ mod tests {
             "inputs": {}
         });
 
-        let (moved, left) = relocate_workdirs(&mut document, Path::new("/vecchio/albero"))
-            .expect("ha dei passi");
+        let (moved, left) =
+            relocate_workdirs(&mut document, Path::new("/vecchio/albero")).expect("ha dei passi");
 
         assert!(moved.is_empty() && left.is_empty());
         assert_eq!(
@@ -5914,7 +6366,7 @@ mod tests {
     /// La cifra secca, come la scriverebbe un totale completo. Se compare in un
     /// rapporto parziale, chi legge ha in mano un numero che non è il totale.
     fn bare_total(micros: i64) -> String {
-        format!("costo equivalente: {:.4}", micros as f64 / 1_000_000.0)
+        format!("equivalent cost: {:.4}", micros as f64 / 1_000_000.0)
     }
 
     /// **UN TOTALE CHE CONTIENE UN'INCOGNITA NON È UN TOTALE.**
@@ -5939,11 +6391,11 @@ mod tests {
             "la cifra secca non deve comparire: si legge come il totale vero.\n{report}"
         );
         assert!(
-            report.contains("almeno"),
+            report.contains("at least"),
             "il numero va letto come un pavimento, non come una somma.\n{report}"
         );
         assert!(
-            report.contains("3 chiamate su 4"),
+            report.contains("3 calls out of 4"),
             "quanto manca si dice accanto alla cifra, non in fondo.\n{report}"
         );
     }
@@ -5963,7 +6415,7 @@ mod tests {
             "tutto misurato: la somma è la somma.\n{report}"
         );
         assert!(
-            !report.contains("almeno"),
+            !report.contains("at least"),
             "niente pavimenti dove non manca niente.\n{report}"
         );
     }
@@ -5976,7 +6428,7 @@ mod tests {
         let report = report_for(&[a_call_named("consegnata", None)]);
 
         assert!(
-            report.contains("sconosciuto"),
+            report.contains("unknown"),
             "senza nemmeno una misura non c'è un pavimento da dichiarare.\n{report}"
         );
         assert!(

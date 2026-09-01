@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { FlowBandNode, StepNode, type FlowBandData, type StepNodeData } from "./StepNode";
+import { t } from "./i18n";
 import { Now, RunGroup } from "./Now";
 import { History } from "./History";
 import { Installed } from "./Installed";
@@ -14,25 +15,16 @@ import type { Step, StepRun, StepState } from "./flow";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
 
 /**
- * **IL DIVIETO 6, MISURATO SUL DOM DISEGNATO, DENTRO `npm test`.**
- *
- * Il divieto in testa a `styles.css` — nessuna accoppiata testo/sfondo sotto
- * 4,5:1 — non aveva niente che lo interrogasse. Un verificatore l'ha dimostrato
- * rimettendo `--muted: #94a3b8`: due caratteri, ventitré accoppiate sotto
- * soglia sullo schermo, e `vitest`, `tsc` e `identifiers_are_in_english` tutti
- * e tre verdi. Questa prova è ciò che rende rossa quella modifica.
- *
- * **TRE SCENE, NON UNA.** «Zero sotto soglia» era vero solo sulla schermata a
- * riposo: bastava un clic su un flusso perché le altre corsie si spegnessero e
- * ne comparissero cinque. Quindi si misura a riposo, con un flusso a fuoco, e
- * su un nodo per ognuno dei sei stati — compresi quelli che i dati d'esempio
- * non producono.
+ * **PROHIBITION 6, MEASURED ON THE PAINTED DOM, INSIDE `npm test`:** no
+ * text/background pair below 4.5:1, as declared at the top of `styles.css`.
+ * **THREE SCENES, NOT ONE:** at rest, with a flow focused, and one node per
+ * each of the six states — including those the sample data never produces.
  */
 
 afterEach(cleanup);
 
-// React Flow misura il proprio riquadro all'avvio: fuori da un browser vero
-// non c'è chi lo faccia, e senza questi due la tela non si monta affatto.
+// React Flow measures its own box on mount: outside a real browser nobody does
+// it, and without these two the canvas never mounts at all.
 class NoResizeObserver {
   observe() {}
   unobserve() {}
@@ -51,11 +43,10 @@ beforeAll(() => {
 });
 
 /**
- * React Flow tiene un nodo `visibility: hidden` finché non l'ha misurato, e a
- * misurarlo è un `ResizeObserver` che qui non esiste: senza questo la tela
- * intera resterebbe fuori dalla misura, e il controllo direbbe «zero sotto
- * soglia» perché non ha guardato niente. In un browser vero quei nodi sono
- * visibili — è la riga qui sotto a dire la verità, non l'attributo.
+ * React Flow keeps a node `visibility: hidden` until a `ResizeObserver` has
+ * measured it, and there is none here: without this the whole canvas would stay
+ * outside the measurement and the check would say "zero below threshold" having
+ * looked at nothing. In a real browser those nodes are visible.
  */
 function revealCanvasNodes(): void {
   for (const node of Array.from(document.querySelectorAll<HTMLElement>(".react-flow__node"))) {
@@ -64,11 +55,10 @@ function revealCanvasNodes(): void {
 }
 
 /**
- * Il DOM da misurare è tutto il documento: `:root` porta i ruoli.
+ * The DOM to measure is the whole document: `:root` carries the roles.
  *
- * **CHI MISURA VA MISURATO.** La scena dichiara quante accoppiate si aspetta di
- * aver trovato: una prova che non guarda niente passa, ed è il modo esatto in
- * cui questo controllo tornerebbe a essere una decorazione.
+ * **WHOEVER MEASURES MUST BE MEASURED.** Each scene declares how many pairs it
+ * expects to find: a check that looks at nothing passes anyway.
  */
 function measure(atLeast: number): string[] {
   revealCanvasNodes();
@@ -77,39 +67,36 @@ function measure(atLeast: number): string[] {
   return belowThreshold(pairs);
 }
 
-describe("il foglio di stile, letto come regole", () => {
-  test("NESSUN COLORE DENTRO UNA REGOLA-@, che questo motore non guarda", () => {
-    // Se qualcuno ne scrive uno, la misura qui sotto diventerebbe cieca senza
-    // diventare rossa: è esattamente il difetto che questa prova chiude.
+describe("the stylesheet, read as rules", () => {
+  test("NO COLOR INSIDE AN @-RULE, which this engine does not look at", () => {
+    // If someone writes one, the measurement below would go blind without going
+    // red: exactly the flaw this test closes.
     expect(sheet.colorsInsideAtRules).toBe(0);
   });
 
-  test("le regole lette sono tante quante il foglio ne ha", () => {
-    // Un parser che si ferma alla prima stranezza direbbe «zero sotto soglia»
-    // per il motivo sbagliato. Il numero esatto non conta; l'ordine sì.
+  test("as many rules are read as the sheet has", () => {
+    // A parser that stops at the first oddity would say "zero below threshold"
+    // for the wrong reason. The exact number does not matter; the order does.
     expect(sheet.rules.length).toBeGreaterThan(200);
   });
 });
 
 /**
- * Porta la finestra sulla tela dei flussi.
- *
- * **LA FINESTRA NON SI APRE PIÙ DI LÌ**, e queste due scene lo hanno scoperto
- * cadendo: dal 31/08/2026 si apre su «Adesso», e la tela sta dietro un posto
- * che va scelto. Erano scese da 79 accoppiate a 8 senza che una riga del
- * disegno fosse peggiorata — la misura era diventata cieca, e lo ha detto.
+ * Takes the window to the flows canvas. **IT DOES NOT OPEN THERE:** the window
+ * opens on «Adesso» and the canvas sits behind a place that has to be chosen,
+ * so a scene that skips this measures a screen it did not mean to.
  */
 function goToFlows(): void {
   const place = screen.getByRole("button", { name: /^Flussi/ });
   fireEvent.click(place);
 }
 
-describe("la prima schermata: cosa sta succedendo adesso", () => {
-  test("le corse aperte restano leggibili, tutte e due gli stati", () => {
-    // Si disegna `RunGroup` e non `Now`: fuori dal guscio nativo `Now` non ha
-    // un deposito a cui chiedere e mostrerebbe una frase sola. Misurare quella
-    // frase e chiamarla «la prima schermata» è il modo esatto in cui questo
-    // controllo tornerebbe a essere una decorazione.
+describe("the first screen: what is happening right now", () => {
+  test("open runs stay legible, in both states", () => {
+    // We render `RunGroup` and not `Now`: outside the native shell `Now` has no
+    // store to ask and would show a single sentence. Measuring that sentence and
+    // calling it "the first screen" is exactly how this check would go back to
+    // being decoration.
     const runs: OpenRun[] = [
       {
         run_id: "run-01JZ",
@@ -140,22 +127,18 @@ describe("la prima schermata: cosa sta succedendo adesso", () => {
     );
     expect(screen.getByText("aspetta te")).toBeTruthy();
     expect(screen.getByText("senza nome")).toBeTruthy();
-    // Il tentativo che non e' il primo: un passo aperto alla seconda volta
-    // vuol dire che il primo giro e' caduto, ed e' quello che una riga verde
-    // nasconde.
+    // An attempt that is not the first: a step open on the second try means the
+    // first round fell over, and that is what a green line hides.
     expect(screen.getByText("2ª volta")).toBeTruthy();
     expect(measure(20)).toEqual([]);
   });
 });
 
 /**
- * Finge il guscio nativo, con risposte scritte a mano.
- *
- * **SI MISURANO I COMPONENTI VERI, NON UN LORO FRAMMENTO.** Estrarre la
- * tabella per poterla disegnare da sola misurerebbe una cosa che nella finestra
- * non esiste: basterebbe un colore messo sul contenitore attorno perché la
- * misura restasse verde e lo schermo no. Qui la risposta del motore è finta e
- * il componente è quello.
+ * Fakes the native shell, with hand-written answers. **MEASURE THE REAL
+ * COMPONENTS, NOT A FRAGMENT:** a table extracted so it can stand alone is not
+ * what the window has — a color on the container around it would keep this
+ * green while the screen stayed unreadable.
  */
 function pretendShell(answers: Record<string, unknown>): () => void {
   const before = (window as unknown as { __TAURI__?: unknown }).__TAURI__;
@@ -167,8 +150,8 @@ function pretendShell(answers: Record<string, unknown>): () => void {
   };
 }
 
-describe("la storia delle esecuzioni", () => {
-  test("una corsa rotta, una andata e una aperta restano leggibili", async () => {
+describe("the run history", () => {
+  test("a broken, a finished and an open run all stay legible", async () => {
     const stop = pretendShell({
       execution_history: [
         {
@@ -187,7 +170,7 @@ describe("la storia delle esecuzioni", () => {
               started_at: 1000, ended_at: 1100,
             },
             {
-              // La chiamata che non ha detto niente: «non detto» e non zero.
+              // The call that said nothing: «non detto», not zero.
               call_id: "c2", step_id: "prove", purpose: "prove", cli: "codex",
               requested_model: "", actual_model: "", input_tokens: null, output_tokens: null,
               cached_tokens: null, cache_write_tokens: null, total_tokens: null, turns: null,
@@ -222,13 +205,13 @@ describe("la storia delle esecuzioni", () => {
       await screen.findByText("rotta");
       expect(screen.getByText("andata")).toBeTruthy();
       expect(screen.getByText("aperta")).toBeTruthy();
-      // IL COSTO CALCOLATO E QUELLO DICHIARATO, AFFIANCATI. Se divergono, il
-      // posto in cui accorgersene e' questo — ed e' il controllo che manca ai
-      // tre strumenti di osservabilita' con bug pubblici sui numeri.
-      // Due volte: il totale della corsa e la chiamata che lo compone.
+      // COMPUTED COST AND DECLARED COST, SIDE BY SIDE. If they diverge, this is
+      // where you notice — the check the three observability tools with public
+      // bugs on their numbers are missing. Twice: the run total and the call
+      // that makes it up.
       expect(screen.getAllByText("0,412 $").length).toBe(2);
       expect(screen.getByText("0,409 $")).toBeTruthy();
-      // Una chiamata che non ha dichiarato token non ne ha consumati zero.
+      // A call that declared no tokens did not consume zero of them.
       expect(screen.getAllByText("non detto").length).toBeGreaterThan(0);
       expect(measure(30)).toEqual([]);
     } finally {
@@ -237,16 +220,16 @@ describe("la storia delle esecuzioni", () => {
   });
 });
 
-describe("cosa è installato", () => {
-  test("i tre stati di raggiungibilità restano leggibili, col motivo", async () => {
+describe("what is installed", () => {
+  test("the three reachability states stay legible, with the reason", async () => {
     const stop = pretendShell({
       machine_inventory: {
         entries: [
           { kind: "skill", name: "handoff", description: "La staffetta fra sessioni.", origin: "casa", path: "/a", reach: { state: "active" }, by_model: true },
           { kind: "agent", name: "verificatore", description: "Chi crea non giudica.", origin: "repo sailor", path: "/b", reach: { state: "inactive", reason: "il plugin che la contiene è spento" }, by_model: true },
-          { kind: "rule", name: "R05", description: "I permessi.", origin: "repo other-repo", path: "/c", reach: { state: "unknown", reason: "dipende da dove si apre la sessione" }, by_model: false },
+          { kind: "rule", name: "R05", description: "I permessi.", origin: "un altro repo", path: "/c", reach: { state: "unknown", reason: "dipende da dove si apre la sessione" }, by_model: false },
         ],
-        roots: ["/home/someone", "/home/someone/personal/sailor"],
+        roots: ["/work", "/work/sailor"],
         stale_plugin_copies: 2,
       },
     });
@@ -259,8 +242,8 @@ describe("cosa è installato", () => {
       await screen.findByText("attiva");
       expect(screen.getByText("spenta")).toBeTruthy();
       expect(screen.getByText("non lo so")).toBeTruthy();
-      // Il motivo è tutto il valore della terza voce: se sparisse, «spenta»
-      // resterebbe una parola che non si può correggere.
+      // The reason is the whole value of the third entry: without it, «spenta»
+      // stays a word nobody can act on.
       expect(screen.getByText("il plugin che la contiene è spento")).toBeTruthy();
       expect(measure(30)).toEqual([]);
     } finally {
@@ -269,13 +252,12 @@ describe("cosa è installato", () => {
   });
 });
 
-describe("i comandi, dichiarati dal binario", () => {
-  test("il letterale e il buco da riempire si distinguono senza sbiadire", async () => {
-    // **UNA PAGINA CHE NESSUNA SCENA VISITA NON È VERIFICATA.** Lo stile dei
-    // comandi è nato il 01/09/2026 e la batteria è rimasta verde senza averlo
-    // mai disegnato: il divieto 6 vale su ogni parola che qualcuno legge, e
-    // qui la tentazione più forte è proprio quella vietata — distinguere
-    // `<nome>` dal testo letterale sbiadendolo, che è il divieto 7.
+describe("the commands, as the binary declares them", () => {
+  test("literal text and the blank to fill differ without fading", async () => {
+    // **A PAGE NO SCENE VISITS IS NOT VERIFIED.** Prohibition 6 holds on every
+    // word anybody reads, and here the strongest temptation is the forbidden
+    // one — telling `<nome>` apart from literal text by fading it, which is
+    // prohibition 7.
     const stop = pretendShell({
       manual: [
         {
@@ -297,9 +279,9 @@ describe("i comandi, dichiarati dal binario", () => {
         </div>,
       );
       await screen.findByText("sailor flow");
-      // Aprire un comando è ciò che mostra le forme: a pagina chiusa lo stile
-      // delle righe d'uso non verrebbe mai disegnato, e la misura sarebbe fatta
-      // su ciò che non si vede.
+      // Opening a command is what shows the shapes: with the page closed the
+      // usage lines would never be painted, and the measurement would be made on
+      // what nobody sees.
       fireEvent.click(screen.getByText("sailor flow"));
       expect(screen.getByText("<nome>")).toBeTruthy();
       expect(screen.getByText("[mandato]")).toBeTruthy();
@@ -310,11 +292,11 @@ describe("i comandi, dichiarati dal binario", () => {
   });
 });
 
-describe("il riepilogo di oggi", () => {
-  test("CIÒ CHE NON È STATO MISURATO SI LEGGE, e non è sbiadito", async () => {
-    // La riga più importante di tutta la schermata, e quella che negli altri
-    // strumenti manca: `--warn` su `--bg` deve stare sopra 4,5:1 come tutto il
-    // resto, altrimenti l'avvertimento c'è e non si legge.
+describe("today's summary", () => {
+  test("WHAT WAS NOT MEASURED IS READABLE, and not faded", async () => {
+    // The most important line on the whole screen, and the one the other tools
+    // lack: `--warn` on `--bg` must stay above 4.5:1 like everything else, or
+    // the warning is there and cannot be read.
     const stop = pretendShell({
       open_runs: [],
       day_summary: {
@@ -331,9 +313,9 @@ describe("il riepilogo di oggi", () => {
       );
       await screen.findByText(/chiamate senza token/);
       expect(screen.getByText("Non sta girando niente, e niente aspetta te.")).toBeTruthy();
-      // 13 accoppiate: e' la scena piu' scarna che la finestra sappia mostrare
-      // — il riepilogo e una frase — e va bene cosi', perche' e' anche quella
-      // che una macchina tranquilla mostra per ore.
+      // The barest scene the window can show — the summary and one sentence —
+      // and that is fine, because it is also the one a quiet machine shows for
+      // hours on end.
       expect(measure(12)).toEqual([]);
     } finally {
       stop();
@@ -341,18 +323,11 @@ describe("il riepilogo di oggi", () => {
   });
 });
 
-describe("un deposito che non c'e'", () => {
-  test("«NON LO SO» NON DIVENTA «ZERO»", () => {
-    // Questa riga esisteva nella plancia — `the_embedded_page_marks_missing_
-    // ledger_counts_as_unknown` — ed e' l'unica delle sue quattordici prove che
-    // difendeva una distinzione invece di un trasporto. Riscrivere la vista
-    // senza riscrivere il controllo l'avrebbe persa in silenzio: e' esattamente
-    // il modo in cui Airflow 3 si e' accorto otto mesi dopo di aver tolto la
-    // vista calendario.
-    //
-    // Zero corse e' una macchina tranquilla. Un deposito che non esiste e' una
-    // macchina di cui non sappiamo niente, e chi legge deve poterle distinguere
-    // prima di concludere che oggi non e' successo nulla.
+describe("a ledger that is not there", () => {
+  test("«NON LO SO» NEVER BECOMES «ZERO»", () => {
+    // Zero runs is a quiet machine. A ledger that does not exist is a machine we
+    // know nothing about, and whoever reads must be able to tell the two apart
+    // before concluding that nothing happened today.
     const stop = pretendShell({
       open_runs: [],
       day_summary: {
@@ -368,8 +343,7 @@ describe("un deposito che non c'e'", () => {
         </div>,
       );
       return screen.findByText(/non e' la stessa cosa|non è la stessa cosa/).then(() => {
-        // E nessun numero: uno zero scritto accanto a «non lo so» si legge
-        // comunque come zero.
+        // And no number: a zero written next to «non lo so» still reads as zero.
         expect(screen.queryByText("0")).toBeNull();
         stop();
       });
@@ -380,23 +354,21 @@ describe("un deposito che non c'e'", () => {
   });
 });
 
-describe("la finestra a riposo", () => {
-  test("nessuna accoppiata testo/sfondo sotto 4,5:1", () => {
+describe("the window at rest", () => {
+  test("no text/background pair below 4.5:1", () => {
     render(<App />);
     goToFlows();
-    // 79 accoppiate quando questa riga è stata scritta: la soglia lascia
-    // margine a chi toglie un pezzo di finestra, non a chi ne perde metà.
+    // The threshold leaves room for someone removing a piece of the window, not
+    // for someone losing half of it.
     expect(measure(70)).toEqual([]);
   });
 });
 
-describe("la finestra con un flusso a fuoco", () => {
-  test("SPEGNERE UNA CORSIA NON SPEGNE LE SUE PAROLE", () => {
-    // La misura dichiarata dal commit — «54 misurate, 0 sotto soglia» — valeva
-    // solo sulla vista d'apertura. Un clic su un flusso nella colonna metteva
-    // `data-dimmed` sulle altre corsie, `opacity: 0.3`, e cinque accoppiate
-    // sotto soglia: la descrizione a 1,47:1. Lo stesso meccanismo che il
-    // divieto 5 condanna altrove, e più aggressivo di quello che ha tolto.
+describe("the window with a flow focused", () => {
+  test("DIMMING A LANE MUST NOT DIM ITS WORDS", () => {
+    // Clicking a flow in the column puts `data-dimmed` on the other lanes with
+    // `opacity: 0.3`, which sank their description to 1.47:1. It is the same
+    // mechanism prohibition 5 condemns elsewhere.
     const { container } = render(<App />);
     goToFlows();
     const rail = Array.from(container.querySelectorAll("button.rail__item")).find(
@@ -440,11 +412,11 @@ function stepProps(data: StepNodeData): NodeProps {
   } as unknown as NodeProps;
 }
 
-describe("i sei stati di un passo, e le corsie", () => {
-  test("ogni stato resta leggibile, a fuoco e spento", () => {
-    // I dati d'esempio non producono `capped` né `handed_to_human`: senza
-    // questa scena due dei sei finali non verrebbero misurati da nessuno, e
-    // sono proprio quelli che la tela mostra di rado e nessuno guarda.
+describe("the six states of a step, and the lanes", () => {
+  test("every state stays legible, focused and dimmed", () => {
+    // The sample data produces neither `capped` nor `handed_to_human`: without
+    // this scene two of the six endings would be measured by nobody, and they
+    // are exactly the ones the canvas rarely shows.
     const runs = new Map<string, StepRun>(
       EVERY_STATE.map((state) => [
         `flow-${state}::working-tree-is-clean`,
@@ -487,7 +459,7 @@ describe("i sei stati di un passo, e le corsie", () => {
       </ReactFlowProvider>,
     );
 
-    expect(screen.getAllByText("fermo al tetto").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(t("window.step.state.capped")).length).toBeGreaterThan(0);
     expect(measure(80)).toEqual([]);
   });
 });

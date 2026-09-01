@@ -1,14 +1,9 @@
-//! Come si trova ciò che è installato: le radici da cui Claude Code carica, il
-//! filtro dei plugin spenti, e il frontmatter da cui escono nome e descrizione.
-//!
-//! DA DOVE VIENE QUESTO CODICE. Fino al 28/08/2026 viveva dentro
-//! `claude-hooks::skill_nudge`, che è un porto di uno script Python con
-//! un'equivalenza dimostrata contro `tools/oracle/skill-nudge.json`. Non è stato
-//! riscritto: è stato spostato qui parola per parola, perché serve a due
-//! chiamanti — il suggeritore di competenze e l'inventario — e la seconda copia
-//! sarebbe divergita dalla prima al primo cambiamento di Claude Code.
-//! L'equivalenza col Python resta la rete che prova lo spostamento: se questa
-//! estrazione avesse cambiato un comportamento, l'oracolo lo direbbe.
+//! How installed things are found: load roots, disabled-plugin filter, and the
+//! frontmatter that yields name and description. NOT REWRITTEN — moved word for
+//! word out of `claude-hooks::skill_nudge`: two callers need it, the nudge and
+//! the inventory, and a second copy would diverge at the first Claude Code
+//! change. Its proved equivalence with the Python against
+//! `tools/oracle/skill-nudge.json` is the net: change a behaviour, it says so.
 
 use regex::Regex;
 use serde_json::Value;
@@ -16,16 +11,16 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// I posti da cui Claude Code carica davvero le competenze, nell'ordine in cui
-/// le carica. ELENCO CHIUSO, non elenco di esclusioni: un elenco di posti da
-/// saltare è sempre in ritardo sulla cartella nuova.
+/// The places Claude Code actually loads skills from, in the order it loads
+/// them. A CLOSED LIST, not a list of exclusions: a list of places to skip is
+/// always one directory behind.
 pub fn skill_sources(h: &Path) -> Vec<(PathBuf, &'static str)> {
     vec![
         (h.join(".claude/skills"), "*/SKILL.md"),
-        // UNA RACCOLTA INSTALLATA COME CARTELLA, QUALUNQUE SIA. Fino al
-        // 01/09/2026 qui c'era il nome di una sola — quella che chi ha scritto
-        // la riga aveva sotto mano — e ogni altra era invisibile. La forma è
-        // sempre la stessa: una cartella che contiene una `skills/` propria.
+        // A COLLECTION INSTALLED AS A FOLDER, whichever one it is. This line
+        // used to carry the name of the single collection whoever wrote it had
+        // at hand, and every other one was invisible. The shape is always the
+        // same: a folder holding a `skills/` of its own.
         (h.join(".claude/skills"), "*/skills/*/SKILL.md"),
         (h.join(".claude/plugins/cache"), "*/*/skills/*/SKILL.md"),
         (h.join(".claude/plugins/cache"), "*/*/*/skills/*/SKILL.md"),
@@ -40,16 +35,11 @@ pub fn agent_sources(h: &Path) -> Vec<(PathBuf, &'static str)> {
     ]
 }
 
-/// `Path.glob` per i soli schemi che servono qui: componenti letterali e `*`.
+/// `Path.glob` for the only patterns needed here: literal components and `*`.
 ///
-/// L'asterisco può portarsi dietro un suffisso (`*.md`), e allora aggancia per
-/// prefisso e coda: sono le sole due forme che gli schemi qui usano.
-///
-/// `*` NON aggancia i nomi che cominciano con un punto, come in `pathlib` — ed è
-/// la ragione per cui `.claude-plugin/` non compare mai fra i risultati e va
-/// cercata a parte. L'ordine è quello di `readdir`, lo stesso da cui parte
-/// `os.scandir` del Python: due letture della stessa cartella danno la stessa
-/// sequenza, e da quella dipende quale descrizione vince fra due omonime.
+/// `*` does NOT match names beginning with a dot, as in `pathlib` — which is
+/// why `.claude-plugin/` never shows up among the results and has to be looked
+/// up separately.
 pub fn glob(root: &Path, pattern: &str) -> Vec<PathBuf> {
     let mut current = vec![root.to_path_buf()];
     let parts: Vec<&str> = pattern.split('/').collect();
@@ -57,7 +47,14 @@ pub fn glob(root: &Path, pattern: &str) -> Vec<PathBuf> {
         let last = depth + 1 == parts.len();
         let mut next = Vec::new();
         for dir in &current {
+            // The star may carry a suffix (`*.md`), and then it hooks on by
+            // prefix and tail: those are the only two forms the patterns here
+            // use.
             if let Some((head, tail)) = part.split_once('*') {
+                // The order is `readdir`'s, the same one Python's `os.scandir`
+                // starts from: two reads of one directory give the same
+                // sequence, and on that hangs which of two same-named skills
+                // wins its description.
                 let Ok(entries) = fs::read_dir(dir) else {
                     continue;
                 };
@@ -87,26 +84,24 @@ pub fn glob(root: &Path, pattern: &str) -> Vec<PathBuf> {
     current
 }
 
-/// Da dove viene una competenza, e quindi **chi ha il diritto di spegnerla**.
-///
-/// **È LA DOMANDA CHE PRIMA SI FACEVA CON UN NOME.** Un plugin sta nella cache
-/// e `enabledPlugins` decide se è acceso; una raccolta installata come cartella
-/// non compare in quell'elenco, e chiedergli se sia accesa è una domanda che non
-/// le si applica — la risposta «no» che ne usciva era falsa, non negativa. Fino
-/// al 01/09/2026 la differenza era coperta da `plugin.contains("mattpocock")`,
-/// cioè dal nome dell'unica raccolta che qualcuno aveva sotto mano.
+/// Where a skill comes from, and therefore **who may switch it off**. A plugin
+/// sits in the cache and `enabledPlugins` decides whether it is on; a collection
+/// installed as a folder is not in that list, so asking whether it is enabled
+/// does not apply — the "no" that came out was false, not negative. The
+/// difference used to be covered by `plugin.contains("mattpocock")`, the name of
+/// the one collection somebody happened to have at hand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origin {
-    /// Sta direttamente in `.claude/skills/`: la carica sempre.
+    /// Directly under `.claude/skills/`: always loaded.
     Home,
-    /// Sta nella cache dei plugin: la governa `enabledPlugins`.
+    /// In the plugin cache: `enabledPlugins` governs it.
     Plugin(String),
-    /// Una cartella con una `skills/` propria: nessun elenco la governa.
+    /// A folder with a `skills/` of its own: no list governs it.
     Collection(String),
 }
 
 impl Origin {
-    /// Il prefisso con cui la competenza va invocata: `nome:`, o niente.
+    /// The prefix the skill has to be invoked with: `name:`, or nothing.
     pub fn prefix(&self) -> String {
         match self {
             Origin::Home => String::new(),
@@ -122,16 +117,15 @@ pub fn origin(path: &Path) -> Origin {
         .collect();
 
     if let Some(i) = parts.iter().position(|p| p == "cache") {
-        // cache/<mercato>/<plugin>/…
+        // cache/<marketplace>/<plugin>/…
         return match parts.get(i + 2) {
             Some(name) => Origin::Plugin(name.clone()),
             None => Origin::Home,
         };
     }
 
-    // `.claude/skills/<raccolta>/skills/…`: la seconda `skills` è ciò che
-    // distingue una raccolta da una competenza sciolta, e non serve saperne il
-    // nome per riconoscerla.
+    // `.claude/skills/<collection>/skills/…`: the second `skills` is what tells
+    // a collection from a loose skill, and its name is not needed to see it.
     if let Some(i) = parts.iter().position(|p| p == "skills") {
         if parts.get(i + 2).map(String::as_str) == Some("skills") {
             if let Some(name) = parts.get(i + 1) {
@@ -143,16 +137,16 @@ pub fn origin(path: &Path) -> Origin {
     Origin::Home
 }
 
-/// Prefisso con cui la competenza va invocata: `nome:`, o niente.
+/// The prefix the skill has to be invoked with: `name:`, or nothing.
 pub fn prefix(path: &Path) -> String {
     origin(path).prefix()
 }
 
-/// Quali plugin sono accesi. Uno spento non offre competenze.
+/// Which plugins are switched on. A disabled one offers no skills.
 ///
-/// L'elenco vive in `settings.json`, non in `~/.claude.json`, dove la chiave
-/// esiste ma vale `null`: leggere il posto sbagliato non dà errore, dà zero
-/// plugin accesi e quindi un catalogo che tace sui plugin.
+/// The list lives in `settings.json`, not in `~/.claude.json`, where the key
+/// exists but is `null`: reading the wrong place raises no error, it yields
+/// zero enabled plugins and hence a catalogue that stays silent about plugins.
 pub fn enabled_plugins(h: &Path) -> BTreeSet<String> {
     for path in [h.join(".claude/settings.json"), h.join(".claude.json")] {
         let Ok(text) = fs::read_to_string(&path) else {
@@ -176,8 +170,8 @@ pub fn enabled_plugins(h: &Path) -> BTreeSet<String> {
     BTreeSet::new()
 }
 
-/// `bool(v)` di Python: vero anche per un numero diverso da zero o una stringa
-/// non vuota, non solo per `true`.
+/// Python's `bool(v)`: true also for a number that is not zero and a string
+/// that is not empty, not only for `true`.
 pub fn truthy(v: &Value) -> bool {
     match v {
         Value::Null => false,
@@ -189,14 +183,12 @@ pub fn truthy(v: &Value) -> bool {
     }
 }
 
-/// Nomi dichiarati nel `plugin.json` che governa questa competenza.
+/// The names declared in the `plugin.json` that governs this skill.
 ///
-/// Serve perché sul disco restano competenze che il plugin non carica:
-/// mattpocock ne dichiara 25 e ne tiene 35 nelle cartelle. `None` significa
-/// «nessun filtro»: è il caso della cartella intera (`["./skills/"]`), che
-/// letta come un nome farebbe sparire dal catalogo tutte le competenze del
-/// plugin, in silenzio. Il manifesto si cerca risalendo, perché la sua distanza
-/// dalla competenza cambia da plugin a plugin.
+/// Skills a plugin does not load stay on disk: one may declare 25 and keep 35
+/// folders. `None` means "no filter" — the whole-folder case (`["./skills/"]`),
+/// which read as a name would silently drop every skill of the plugin. The
+/// manifest is found by walking up: its distance from the skill varies.
 pub fn manifest(from: &Path) -> Option<BTreeSet<String>> {
     let mut cur = from.to_path_buf();
     for _ in 0..5 {
@@ -215,9 +207,9 @@ pub fn manifest(from: &Path) -> Option<BTreeSet<String>> {
         if items.is_empty() {
             return None;
         }
-        // «Cartella intera» si riconosce dalla FORMA del percorso — una sola
-        // tappa, tipo `./skills/` — non dalla parola finale: una competenza può
-        // chiamarsi `setup-matt-pocock-skills`.
+        // "The whole folder" is recognised by the SHAPE of the path — a single
+        // hop, like `./skills/` — not by the last word: a skill may itself be
+        // named something that ends in `-skills`.
         let segments = |v: &str| {
             v.trim_matches(|c| c == '.' || c == '/')
                 .split('/')
@@ -226,9 +218,11 @@ pub fn manifest(from: &Path) -> Option<BTreeSet<String>> {
         };
         let declared: Vec<&str> = items.iter().filter_map(|v| v.as_str()).collect();
         if declared.len() != items.len() {
-            // `Path(v)` su un non-testo solleva: come sopra, il gancio muore in
-            // silenzio — ma qui l'eccezione è dentro `_scandisci`, che è già
-            // avvolto dal `try` di `catalogo()` e vale «catalogo vuoto».
+            // `Path(v)` raises when an entry is not text: as above, the hook
+            // dies in silence — but the exception lands inside `_scandisci`,
+            // which `catalogo()`'s `try` already wraps, so it means "empty
+            // catalogue". `None` means "no filter": the opposite outcome, the
+            // Python drops every skill and this drops none. A real divergence.
             return None;
         }
         if declared.iter().any(|v| segments(v) <= 1) {
@@ -249,7 +243,7 @@ pub fn manifest(from: &Path) -> Option<BTreeSet<String>> {
     None
 }
 
-/// (nome, descrizione) dal frontmatter, o niente se non è invocabile.
+/// (name, description) from the frontmatter, or nothing if it is not invocable.
 pub fn frontmatter(path: &Path) -> Option<(String, String)> {
     let matter = matter_of(path)?;
     let name = Regex::new(r"(?m)^name:\s*(\S+)")
@@ -262,29 +256,24 @@ pub fn frontmatter(path: &Path) -> Option<(String, String)> {
     Some((name, description(&matter, false)))
 }
 
-/// (nome, descrizione) di un comando di `commands/`.
+/// (name, description) of a command in `commands/`.
 ///
-/// Non riusa `frontmatter`: quella pretende un campo `name`, e un comando non ce
-/// l'ha — si chiama come il suo file. Senza i comandi il catalogo diceva che
-/// `handoff` non esiste, e questo gancio taceva proprio sul consiglio che
-/// serviva di più (misurato il 14/08/2026).
+/// It does not reuse `frontmatter`, which demands a `name` field a command does
+/// not have — a command is named after its file. Without commands the catalogue
+/// said `handoff` did not exist, and this hook stayed silent about the very
+/// advice that was needed most: measured, on the real disk, not supposed.
 pub fn command(path: &Path) -> Option<(String, String)> {
     let matter = matter_of(path)?;
     let stem = path.file_stem()?.to_string_lossy().into_owned();
     Some((stem, description(&matter, true)))
 }
 
-/// Le cartelle di plugin che Claude Code carica davvero, una per plugin.
-///
-/// PERCHÉ NON BASTA CAMMINARE NELLA CACHE, con la misura del 28/08/2026. Sotto
-/// `plugins/cache/` restano **tutte** le versioni mai scaricate: la prima
-/// versione di questo inventario contava 756 agenti, di cui 7 veri e il resto
-/// copie vecchie dello stesso plugin — `pr-review-toolkit` da solo ne teneva
-/// decine. La versione in uso la dichiara `installed_plugins.json`, ed è l'unica
-/// fonte che lo sa: sul disco le copie sono indistinguibili.
-///
-/// Un file assente o illeggibile dà un elenco vuoto, che il chiamante deve
-/// trattare come «non lo so», non come «nessun plugin installato».
+/// The plugin folders Claude Code actually loads, one per plugin. WALKING THE
+/// CACHE IS NOT ENOUGH: **all** versions ever downloaded stay under
+/// `plugins/cache/`, and the first count here found 756 agents, 7 of them real
+/// — `pr-review-toolkit` alone kept dozens. Only `installed_plugins.json` knows
+/// the one in use: on disk the copies are indistinguishable. Missing or
+/// unreadable gives an empty list — "I don't know", never "nothing installed".
 pub fn installed_paths(h: &Path) -> BTreeSet<PathBuf> {
     let path = h.join(".claude/plugins/installed_plugins.json");
     let Ok(text) = fs::read_to_string(&path) else {
@@ -305,14 +294,12 @@ pub fn installed_paths(h: &Path) -> BTreeSet<PathBuf> {
         .collect()
 }
 
-/// Il frontmatter grezzo e se il modello può invocare ciò che descrive.
+/// The raw frontmatter, and whether the model may invoke what it describes.
 ///
-/// LA DIFFERENZA CON `matter_of` È IL PUNTO. Il suggeritore deve tacere su una
-/// competenza che il modello non può invocare, quindi `matter_of` la scarta.
-/// L'inventario invece deve mostrarla: `/learn` e `/work-loop-headless` portano
-/// `disable-model-invocation: true`, esistono, e una persona li invoca a mano —
-/// nasconderli dall'elenco di ciò che si ha sarebbe la stessa bugia che
-/// l'inventario esiste per togliere.
+/// THE DIFFERENCE WITH `matter_of` IS THE POINT. The nudge has to stay silent
+/// about a skill the model cannot invoke, so `matter_of` drops it. The
+/// inventory has to show it: `/learn` and `/work-loop-headless` carry
+/// `disable-model-invocation: true`, exist, and a person invokes them by hand.
 pub fn matter_and_invocability(path: &Path) -> Option<(String, bool)> {
     let raw = fs::read(path).ok()?;
     let text: String = String::from_utf8_lossy(&raw).chars().take(4000).collect();
@@ -328,18 +315,18 @@ pub fn matter_and_invocability(path: &Path) -> Option<(String, bool)> {
     Some((matter, by_model))
 }
 
-/// Il frontmatter grezzo, con gli stessi tagli dell'originale.
+/// The raw frontmatter, with the same cuts as the original.
 pub fn matter_of(path: &Path) -> Option<String> {
     let raw = fs::read(path).ok()?;
-    // `errors='replace'` e poi `[:4000]`: **caratteri**, non byte.
+    // `errors='replace'` and then `[:4000]`: **characters**, not bytes.
     let text: String = String::from_utf8_lossy(&raw).chars().take(4000).collect();
     if !text.starts_with("---") {
         return None;
     }
     let end = text[3..].find("\n---").map(|i| i + 3);
-    // `text.find('\n---', 3)` torna -1 se non c'è, e `text[3:-1]` in Python
-    // sarebbe tutto meno l'ultimo carattere; l'originale però confronta
-    // `end_ > 0`, quindi il caso «non trovato» prende `text[3:4000]`.
+    // `text.find('\n---', 3)` returns -1 when there is none, and Python's
+    // `text[3:-1]` would be everything but the last character; the original
+    // compares `end_ > 0`, so the "not found" case takes `text[3:4000]`.
     let matter = match end {
         Some(i) if i > 0 => text[3..i].to_string(),
         _ => text[3..].to_string(),
@@ -350,24 +337,24 @@ pub fn matter_of(path: &Path) -> Option<String> {
     Some(matter)
 }
 
-/// `^description:\s*(.+?)(?=\n\w+:|\Z)` con `re.M | re.S`, riscritta a mano.
+/// `^description:\s*(.+?)(?=\n\w+:|\Z)` with `re.M | re.S`, rewritten by hand.
 ///
-/// LO SGUARDO AVANTI NON ESISTE nella crate `regex`, e qui non basta consumare
-/// il carattere seguente come negli schemi delle competenze: il gruppo catturato
-/// **è** il valore, quindi mangiare l'a-capo del campo successivo lo
-/// sporcherebbe. Si riproduce la semantica direttamente: il gruppo è la
-/// stringa non vuota più corta dopo la quale comincia o la fine del testo o un
-/// a-capo seguito da un nome di campo e dai due punti. `commands/` usa
-/// `\w[\w-]*` invece di `\w+`, e la differenza è vera: un campo col trattino
-/// (`argument-hint:`) chiude la descrizione lì.
+/// LOOKAHEAD DOES NOT EXIST in the `regex` crate, and consuming the next
+/// character is no option here as it is in the skill patterns: the captured
+/// group **is** the value, so eating the following field's newline would dirty
+/// it. So the semantics are reproduced directly, in the loop below.
 pub fn description(matter: &str, hyphen_in_field: bool) -> String {
     let Some(start) = field_start(matter, "description:") else {
         return String::new();
     };
     let rest = &matter[start..];
     let value = rest.trim_start_matches([' ', '\t', '\r', '\n', '\u{b}', '\u{c}']);
-    // Il gruppo è `(.+?)`, quindi almeno un carattere: la ricerca del terminatore
-    // comincia dopo il primo.
+    // WHAT THE LOOP COMPUTES: the group is the shortest string that is not
+    // empty, after which there begins either the end of the text, or a newline
+    // followed by a field name and a colon. The group is `(.+?)`, hence at
+    // least one character, so the hunt for the terminator starts after the
+    // first. `commands/` uses `\w[\w-]*` instead of `\w+`, and the difference
+    // is real: a hyphenated field (`argument-hint:`) closes it there.
     let bytes: Vec<(usize, char)> = value.char_indices().collect();
     let mut cut = value.len();
     for (i, c) in bytes.iter().skip(1) {
@@ -394,14 +381,17 @@ pub fn description(matter: &str, hyphen_in_field: bool) -> String {
             break;
         }
     }
-    // `' '.join(x.split())` e poi `.strip('>|- ')`.
-    let collapsed = value[..cut].split_whitespace().collect::<Vec<_>>().join(" ");
+    // `' '.join(x.split())` and then `.strip('>|- ')`.
+    let collapsed = value[..cut]
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     collapsed
         .trim_matches(|c| c == '>' || c == '|' || c == '-' || c == ' ')
         .to_string()
 }
 
-/// L'inizio del valore di un campo a inizio riga (`(?m)^campo:`).
+/// The start of a field's value at the beginning of a line (`(?m)^field:`).
 pub fn field_start(matter: &str, field: &str) -> Option<usize> {
     let mut offset = 0;
     for line in matter.split_inclusive('\n') {

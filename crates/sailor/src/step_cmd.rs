@@ -24,9 +24,7 @@
 //! ─────────────────────────────────────────────────────────────────────────
 
 use actions::handoff::{holder_key, HOLDER_COLLECTION};
-use flow::{
-    Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord,
-};
+use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord};
 use ledger::{EngineIdentity, Ledger, ModelCallRecord, StoreRecord};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -127,9 +125,8 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
     let records = ledger
         .steps(run_id)
         .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?;
-    let latest = last_attempt(&records, step_id).ok_or_else(|| {
-        format!("la corsa {run_id} non ha nessun passo che si chiama {step_id}")
-    })?;
+    let latest = last_attempt(&records, step_id)
+        .ok_or_else(|| format!("la corsa {run_id} non ha nessun passo che si chiama {step_id}"))?;
 
     // **SI APRE SOLO CIÒ CHE È IN ATTESA.** Un passo andato, rotto o ancora
     // aperto non è stato consegnato a nessuno: aprirlo di nuovo vorrebbe dire
@@ -779,7 +776,11 @@ mod tests {
 
         let report = open_step_in(
             &ledger,
-            &options(&[("run", "run-1"), ("step", "implementa"), ("as", "chi-lavora")]),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "implementa"),
+                ("as", "chi-lavora"),
+            ]),
         )
         .expect("il passo si prende in carico");
         assert!(
@@ -822,7 +823,11 @@ mod tests {
         let ledger = a_handed_run(&directory, "verdetto", vec!["implementa".to_owned()]);
         open_step_in(
             &ledger,
-            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "chi-giudica")]),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+            ]),
         )
         .expect("il passo si prende in carico");
 
@@ -859,7 +864,11 @@ mod tests {
         let ledger = a_handed_run(&directory, "verdetto", vec!["implementa".to_owned()]);
         open_step_in(
             &ledger,
-            &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "chi-giudica")]),
+            &options(&[
+                ("run", "run-1"),
+                ("step", "verdetto"),
+                ("as", "chi-giudica"),
+            ]),
         )
         .expect("il passo si prende in carico");
 
@@ -1058,7 +1067,10 @@ mod tests {
             ]),
         )
         .expect_err("senza uscita il passo dopo non partirebbe");
-        assert!(error.contains("verdetto"), "deve nominare chi aspetta: {error}");
+        assert!(
+            error.contains("verdetto"),
+            "deve nominare chi aspetta: {error}"
+        );
         assert!(error.contains("--output-file"), "{error}");
     }
 
@@ -1160,8 +1172,15 @@ mod tests {
 
     #[test]
     fn options_come_back_as_pairs() {
-        let found = flags(&words(&["--run", "run-1", "--step", "implementa", "--as", "chi"]))
-            .expect("le coppie si leggono");
+        let found = flags(&words(&[
+            "--run",
+            "run-1",
+            "--step",
+            "implementa",
+            "--as",
+            "chi",
+        ]))
+        .expect("le coppie si leggono");
         assert_eq!(found.get("run").map(String::as_str), Some("run-1"));
         assert_eq!(found.get("step").map(String::as_str), Some("implementa"));
         assert_eq!(found.get("as").map(String::as_str), Some("chi"));

@@ -64,7 +64,10 @@ fn open_ledger() -> Option<ledger::Ledger> {
     match ledger::Ledger::open(&directory) {
         Ok(store) => Some(store),
         Err(error) => {
-            eprintln!("il deposito in {} non si apre: {error}", directory.display());
+            eprintln!(
+                "il deposito in {} non si apre: {error}",
+                directory.display()
+            );
             None
         }
     }
@@ -141,7 +144,10 @@ fn stop_left_running(store: Option<&ledger::Ledger>) {
                 exit_code: None,
                 ended_at: now(),
             });
-            println!("spento {} (pid {})", item.record.process_id, item.record.pid);
+            println!(
+                "spento {} (pid {})",
+                item.record.process_id, item.record.pid
+            );
         } else {
             eprintln!(
                 "non si è riusciti a spegnere {} (pid {}): resta scritto come acceso, \
@@ -193,10 +199,7 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
                 eprintln!(
                     "la porta {DEV_PORT} è tenuta da {} (pid {}), acceso da {} in {}.\n\
                      Spegnilo con `sailor-live --stop`, oppure usalo com'è.",
-                    holder.process_id,
-                    holder.pid,
-                    holder.started_by,
-                    holder.working_directory
+                    holder.process_id, holder.pid, holder.started_by, holder.working_directory
                 );
                 std::process::exit(3);
             }
@@ -219,7 +222,10 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
     );
     let _vite = match vite {
         Ok(process) => {
-            println!("pagina in sviluppo: pid {} sulla porta {DEV_PORT}", process.pid());
+            println!(
+                "pagina in sviluppo: pid {} sulla porta {DEV_PORT}",
+                process.pid()
+            );
             Some(process)
         }
         Err(error) => {
@@ -231,30 +237,28 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
     let roots = watched_roots(root);
     let mut seen = newest_change(&roots);
 
-    publish(
-        &status_path,
-        LiveState::Building,
-        String::new(),
-        None,
-    );
+    publish(&status_path, LiveState::Building, String::new(), None);
     let mut window: Option<Process> = None;
     let mut running_since: Option<i64> = None;
 
     match cargo_build(&manifest, Some(1)) {
-        supervisor::BuildOutcome::Succeeded => {
-            match start_window(&binary, &desktop, store) {
-                Ok(process) => {
-                    println!("finestra accesa: pid {}", process.pid());
-                    running_since = Some(now());
-                    window = Some(process);
-                    publish(&status_path, LiveState::Running, String::new(), running_since);
-                }
-                Err(error) => {
-                    eprintln!("la finestra non parte: {error}");
-                    publish(&status_path, LiveState::BuildFailed, error, None);
-                }
+        supervisor::BuildOutcome::Succeeded => match start_window(&binary, &desktop, store) {
+            Ok(process) => {
+                println!("finestra accesa: pid {}", process.pid());
+                running_since = Some(now());
+                window = Some(process);
+                publish(
+                    &status_path,
+                    LiveState::Running,
+                    String::new(),
+                    running_since,
+                );
             }
-        }
+            Err(error) => {
+                eprintln!("la finestra non parte: {error}");
+                publish(&status_path, LiveState::BuildFailed, error, None);
+            }
+        },
         supervisor::BuildOutcome::Failed { message } => {
             eprintln!("{message}");
             eprintln!(
@@ -303,13 +307,16 @@ fn run_live(root: &Path, store: Option<&ledger::Ledger>) {
             Rebuild::Replaced => {
                 running_since = Some(now());
                 println!("finestra sostituita.");
-                publish(&status_path, LiveState::Running, String::new(), running_since);
+                publish(
+                    &status_path,
+                    LiveState::Running,
+                    String::new(),
+                    running_since,
+                );
             }
             Rebuild::KeptRunning { message } => {
                 eprintln!("{message}");
-                eprintln!(
-                    "costruzione fallita: la finestra resta all'ultima versione buona."
-                );
+                eprintln!("costruzione fallita: la finestra resta all'ultima versione buona.");
                 publish(&status_path, LiveState::BuildFailed, message, running_since);
             }
             Rebuild::StartFailed { message } => {

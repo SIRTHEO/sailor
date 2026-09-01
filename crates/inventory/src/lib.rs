@@ -1,22 +1,16 @@
-//! Il punto comune: che cosa è installato su questa macchina, da dove viene, e
-//! se è raggiungibile.
-//!
-//! PERCHÉ ESISTE, CON LA MISURA. Il 28/08/2026 per sapere che cosa aveva a
-//! disposizione una persona doveva guardare in **diciannove cartelle diverse**:
-//! sei per le competenze, sei per le regole, tre per i comandi, due per gli
-//! agenti, due per i ganci. Nessuna di quelle categorie rispondeva a un comando:
-//! si scopriva camminando nel filesystem, e quindi non si scopriva. Nello stesso
-//! censimento è venuta fuori la conseguenza vera di non avere un elenco unico:
-//! `codex` ha **due configurazioni divergenti** — quella che si legge a mano e
-//! quella che Orca gli passa davvero — e nessuno lo segnalava.
-//!
-//! DUE RESPONSABILITÀ SEPARATE, come nel resto del sistema: `discovery` sa dove
-//! Claude Code carica le cose, qui si costruisce l'elenco. Chi lo mostra — la
-//! riga di comando o la pagina — non sa niente di percorsi.
-//!
-//! COSA NON FA. Non giudica se una competenza sia buona, non la cancella e non
-//! la sposta: elenca. La decisione di togliere resta di chi legge.
+//! What is installed on this machine, where it comes from, and whether it is
+//! reachable. WHY IT EXISTS, WITH THE MEASURE: knowing what one person had
+//! meant looking in **nineteen different directories** — six for skills, six
+//! for rules, three for commands, two for agents, two for hooks. Not one of
+//! those categories answered to a command: you found them by walking the
+//! filesystem, and so you did not find them.
 
+// THE REAL CONSEQUENCE of having no single list came out of the same census:
+// `codex` runs **two divergent configurations** — the one you read by hand and
+// the one Orca actually passes it — and nobody was flagging it.
+//
+// TWO SEPARATE RESPONSIBILITIES, as in the rest of the system: `discovery`
+// knows where Claude Code loads things from, and here the list gets built.
 pub mod discovery;
 
 use serde::Serialize;
@@ -24,7 +18,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Le famiglie di cose che si possono avere installate.
+/// The families of things one can have installed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -36,24 +30,24 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// Il nome con cui la famiglia si presenta a chi legge.
+    /// The name the family goes by for whoever reads the list.
     pub fn label(self) -> &'static str {
         match self {
-            Kind::Skill => "competenza",
-            Kind::Agent => "agente",
-            Kind::Command => "comando",
-            Kind::Rule => "regola",
-            Kind::Hook => "gancio",
+            Kind::Skill => "skill",
+            Kind::Agent => "agent",
+            Kind::Command => "command",
+            Kind::Rule => "rule",
+            Kind::Hook => "hook",
         }
     }
 }
 
-/// È raggiungibile davvero?
+/// Can it actually be reached?
 ///
-/// LA TERZA VOCE NON È UN RIPIEGO. Una competenza dentro un plugin spento è
-/// dimostrabilmente irraggiungibile; una regola in un repo dipende da chi apre
-/// la sessione e da dove, e dire «attiva» sarebbe una bugia comoda. `Unknown`
-/// porta il motivo, così chi legge sa che cosa andrebbe verificato.
+/// The third variant is not a cop-out. A skill inside a disabled plugin is
+/// provably unreachable; a rule in a repo depends on who opens the session and
+/// where, so calling it active would be a convenient lie. `Unknown` carries the
+/// reason, so the reader knows what would have to be checked.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", content = "reason", rename_all = "lowercase")]
 pub enum Reach {
@@ -62,50 +56,44 @@ pub enum Reach {
     Unknown(String),
 }
 
-/// Una voce dell'inventario.
+/// One entry of the inventory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Entry {
     pub kind: Kind,
-    /// Il nome con cui si invoca: `handoff`, `plugin:competenza`, `builder`.
+    /// The name it is invoked by: `handoff`, `plugin:skill`, `builder`.
     pub name: String,
     pub description: String,
-    /// Da dove viene: `casa`, `plugin <nome>`, `repo <nome>`.
+    /// Where it comes from: `home`, `plugin <name>`, `repo <name>`.
     pub origin: String,
     pub path: String,
     pub reach: Reach,
-    /// Il modello può invocarla da sé, o solo la persona che digita.
-    /// `disable-model-invocation: true` non vuol dire «non c'è».
+    /// Whether the model may invoke it, or only the person typing.
+    /// `disable-model-invocation: true` does not mean "it is not there".
     pub by_model: bool,
 }
 
-/// Una radice da cui si carica: la casa, o un repo con la sua `.claude/`.
+/// A root things load from: the home, or a repo with its own `.claude/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Root {
-    /// Come si chiama per chi legge: `casa`, o il nome del repo.
+    /// What it is called for the reader: `home`, or the repo's name.
     pub label: String,
-    /// La cartella che contiene `.claude/`, non la `.claude/` stessa.
+    /// The directory that contains `.claude/`, not `.claude/` itself.
     pub path: PathBuf,
-    /// La casa carica sempre; un repo carica solo se ci si lavora dentro.
+    /// The home always loads; a repo only for a session opened inside it.
     pub is_home: bool,
-    /// Una cartella di competenze che **Claude Code non carica**: quello che ci
-    /// sta esiste sul disco e da qui non è invocabile.
-    ///
-    /// «NON LO CARICA NESSUNO» SAREBBE FALSO, ed è stato scritto qui per mezza
-    /// giornata prima che una misura lo smentisse. `~/.agents/skills` è
-    /// referenziato da due altri harness — `~/.factory` e `~/.commandcode` —
-    /// con **767 collegamenti ciascuno**, di cui **1.508 rotti**: il magazzino
-    /// si è svuotato da oltre 767 voci alle 33 di oggi, e nessuno dei due lati
-    /// se n'è accorto. Quindi il verdetto giusto è ristretto a ciò che questo
-    /// programma può sapere: da **qui** non si invocano, e chi le vuole le
-    /// collega. Che le carichi qualcun altro è una cosa che l'inventario, per
-    /// ora, non guarda — e dirlo è più onesto che affermare il contrario.
+    /// A skills directory **Claude Code does not load**. "Nobody loads it"
+    /// stood here half a day: `~/.factory` and `~/.commandcode` hold **767
+    /// links each** into it, **1508 of them broken**, and it shrank from 767+
+    /// entries to 33 with neither side noticing. The verdict is therefore
+    /// narrowed to what this program can know — from **here** they are not
+    /// invocable, and whoever wants them links them.
     pub is_warehouse: bool,
 }
 
 impl Root {
     pub fn home(path: &Path) -> Root {
         Root {
-            label: "casa".to_string(),
+            label: "home".to_string(),
             path: path.to_path_buf(),
             is_home: true,
             is_warehouse: false,
@@ -121,8 +109,8 @@ impl Root {
         }
     }
 
-    /// Una cartella di competenze che nessuna configurazione carica. `path` è
-    /// la cartella che le contiene direttamente, non la radice di un repo.
+    /// A skills directory no configuration loads. `path` is the directory that
+    /// holds them directly, not a repo root.
     pub fn warehouse(label: &str, path: &Path) -> Root {
         Root {
             label: label.to_string(),
@@ -139,26 +127,25 @@ fn named_after(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
-/// L'inventario intero, in un ordine stabile: due letture di seguito danno la
-/// stessa sequenza, o il confronto fra un giorno e l'altro non vale niente.
+/// The whole inventory, in a stable order: two reads in a row give the same
+/// sequence, or comparing one day against the next is worth nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Inventory {
     pub entries: Vec<Entry>,
-    /// Le radici davvero guardate, in chiaro: un elenco che non dice dove ha
-    /// cercato non si può smentire.
+    /// The roots actually walked, spelled out: a list that does not say where
+    /// it looked cannot be contradicted.
     pub roots: Vec<String>,
-    /// Quante copie di plugin restano in cache senza essere quella installata.
-    /// Non sono voci dell'inventario — nessuno le carica — ma sono spazio, e
-    /// finché nessuno le conta nessuno le toglie.
+    /// Plugin copies left in the cache that are not the installed one. Not
+    /// inventory entries — nothing loads them — but they are disk space, and
+    /// until someone counts them nobody removes them.
     pub stale_plugin_copies: usize,
-    /// **DOVE NON HA POTUTO GUARDARE**, col motivo. È il completamento di
-    /// `roots`: dire dove si è cercato rende l'elenco smentibile, dire dove non
-    /// si è riusciti a cercare lo rende onesto.
+    /// **WHERE IT COULD NOT LOOK**, with the reason. It completes `roots`:
+    /// saying where one searched makes the list refutable, saying where one
+    /// failed to search makes it honest.
     #[serde(default)]
     pub unseen: Vec<String>,
-    /// Se qualcuno ha dichiarato dove cercare. Quando è `false`, un inventario
-    /// magro non dice che la macchina è vuota: dice che nessuno ha detto dove
-    /// guardare.
+    /// Whether anyone declared where to look. When `false`, a thin inventory
+    /// does not say the machine is empty: it says nobody said where to look.
     #[serde(default)]
     pub bases_declared: bool,
 }
@@ -173,12 +160,11 @@ impl Inventory {
     }
 }
 
-/// Costruisce l'inventario camminando su ogni radice.
-/// L'inventario di una ricognizione, **con dentro anche ciò che non si è visto**.
+/// The inventory of a survey, **including what it could not see**.
 ///
-/// Esiste accanto a `collect` e non al suo posto perché chi costruisce le radici
-/// a mano — le prove — non ha nessun rendiconto da passare, e obbligarlo a
-/// fabbricarne uno vuoto sposterebbe la bugia di un gradino invece di toglierla.
+/// It stands beside `collect` rather than replacing it because whoever builds
+/// the roots by hand — the tests — has no survey to pass, and forcing an empty
+/// one would move the lie one step instead of removing it.
 pub fn collect_survey(survey: &Survey) -> Inventory {
     let mut out = collect(&survey.roots);
     out.unseen = survey
@@ -190,6 +176,12 @@ pub fn collect_survey(survey: &Survey) -> Inventory {
     out
 }
 
+/// Builds the inventory by walking every root.
+///
+/// WHAT IT DOES NOT DO: it does not judge whether a skill is any good, it does
+/// not delete it and does not move it — it lists, and the decision to remove
+/// stays with whoever reads. Whoever shows the list — the command line or the
+/// window — knows nothing about paths.
 pub fn collect(roots: &[Root]) -> Inventory {
     let mut entries = Vec::new();
     let mut stale = 0usize;
@@ -216,10 +208,10 @@ pub fn collect(roots: &[Root]) -> Inventory {
     entries.sort_by(|a, b| {
         (a.kind, &a.name, &a.origin, &a.path).cmp(&(b.kind, &b.name, &b.origin, &b.path))
     });
-    // LA DESCRIZIONE FA PARTE DELL'IDENTITÀ, e non è un dettaglio: su un evento
-    // e un matcher condivisi vivono più ganci diversi, distinti solo dal comando
-    // che lanciano. Senza questo campo il conto diceva 29 ganci dove ce n'erano
-    // 57 — misurato il 28/08/2026 contro `settings.json` letto a mano.
+    // THE DESCRIPTION IS PART OF THE IDENTITY, and that is not a detail:
+    // several different hooks share one event and one matcher, told apart only
+    // by the command they run. Without this field the count said 29 hooks where
+    // there were 57 — measured against `settings.json` read by hand.
     entries.dedup_by(|a, b| {
         a.kind == b.kind && a.name == b.name && a.path == b.path && a.description == b.description
     });
@@ -230,20 +222,20 @@ pub fn collect(roots: &[Root]) -> Inventory {
             .map(|r| format!("{}: {}", r.label, r.path.to_string_lossy()))
             .collect(),
         stale_plugin_copies: stale,
-        // VUOTI PERCHÉ CHI CHIAMA `collect` NON HA UN RENDICONTO: ha costruito
-        // le radici da sé e sa cosa gli ha dato. Li riempie `collect_survey`,
-        // che invece parte da una ricognizione e sa anche cosa le è mancato.
+        // Empty because whoever calls `collect` has no survey: they built the
+        // roots themselves and know what they passed. `collect_survey` fills
+        // these in, because it starts from a survey and knows what it missed.
         unseen: Vec::new(),
         bases_declared: true,
     }
 }
 
-/// Il file sta dentro la versione di plugin che Claude Code carica davvero?
+/// Is the file inside the plugin version Claude Code actually loads?
 ///
-/// Fuori dalla cache dei plugin la domanda non si pone: vale sempre. Dentro,
-/// vale solo se sta sotto uno degli `installPath` dichiarati — e se l'elenco è
-/// vuoto (file assente o illeggibile) non si scarta niente: «non lo so» non
-/// deve diventare «non c'è».
+/// Outside the plugin cache the question does not arise: it always holds.
+/// Inside, it holds only under one of the declared `installPath`s — and if that
+/// list is empty (file missing or unreadable) nothing is discarded: "I don't
+/// know" must not turn into "it is not there".
 fn is_the_installed_copy(path: &Path, installed: &BTreeSet<PathBuf>) -> bool {
     if !path.to_string_lossy().contains("/plugins/cache/") || installed.is_empty() {
         return true;
@@ -251,14 +243,12 @@ fn is_the_installed_copy(path: &Path, installed: &BTreeSet<PathBuf>) -> bool {
     installed.iter().any(|root| path.starts_with(root))
 }
 
-/// Le competenze della casa, plugin compresi — con il filtro che rende conto
-/// dei plugin spenti invece di nasconderli.
-///
-/// LA DIFFERENZA COL SUGGERITORE È DELIBERATA: `skill_nudge` scarta in silenzio
-/// ciò che non è raggiungibile, perché deve consigliare solo cose invocabili.
-/// Qui una competenza spenta resta nell'elenco con scritto perché è spenta: è
-/// esattamente il caso che oggi non si vede da nessuna parte, e senza il quale
-/// «ho quattordici plugin» e «ne funzionano sei» sembrano la stessa frase.
+/// The home's skills, plugins included, with disabled plugins accounted for
+/// instead of hidden. THE DIFFERENCE FROM THE NUDGE IS DELIBERATE: `skill_nudge`
+/// drops the unreachable in silence, because it may only suggest invocable
+/// things. Here a disabled skill stays in the list with the reason it is off —
+/// the case shown nowhere today, without which "I have fourteen plugins" and
+/// "six of them work" look like the same sentence.
 fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
     let on = discovery::enabled_plugins(home);
     let installed = discovery::installed_paths(home);
@@ -275,23 +265,25 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
             };
             let origin = discovery::origin(&path);
             let prefix = origin.prefix();
-            // **CHI PUÒ SPEGNERLA DIPENDE DA DOVE VIENE**, e il `match` lo dice
-            // in tre righe. Prima erano tre rami di cui i primi due tornavano
-            // la stessa cosa, e dentro il secondo stava nascosto il nome di una
-            // persona: una condizione il cui esito non cambia niente non si
-            // legge, si scorre — ed è per questo che quella riga è sopravvissuta.
+            // **WHO MAY SWITCH IT OFF DEPENDS ON WHERE IT COMES FROM**, and the
+            // `match` says so in three lines. This used to be three arms whose
+            // first two returned the same thing, with a person's name hidden in
+            // the second: a condition whose outcome changes nothing is not read,
+            // it is skimmed — and that is why that line survived so long.
             let reach = match &origin {
                 discovery::Origin::Home | discovery::Origin::Collection(_) => Reach::Active,
                 discovery::Origin::Plugin(name) if on.contains(name) => Reach::Active,
                 discovery::Origin::Plugin(name) => {
-                    Reach::Inactive(format!("il plugin {name} non è abilitato"))
+                    Reach::Inactive(format!("the plugin {name} is not enabled"))
                 }
             };
             let declared = discovery::manifest(&path);
             let reach = match (&declared, path.parent().and_then(|p| p.file_name())) {
-                (Some(names), Some(own)) if !names.contains(&own.to_string_lossy().into_owned()) => {
+                (Some(names), Some(own))
+                    if !names.contains(&own.to_string_lossy().into_owned()) =>
+                {
                     Reach::Inactive(format!(
-                        "sta sul disco ma il manifesto di {} non la dichiara",
+                        "on disk, but the manifest of {} does not declare it",
                         prefix.trim_end_matches(':')
                     ))
                 }
@@ -301,14 +293,14 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
                 kind: Kind::Skill,
                 name: format!("{prefix}{name}"),
                 description,
-                // **DA DOVE VIENE SI DICE CON LA PAROLA GIUSTA**: una raccolta
-                // installata come cartella non è un plugin, e chiamarla così in
-                // un elenco che una persona legge la manda a cercarla fra i
-                // plugin, dove non c'è.
+                // **WHERE IT COMES FROM NEEDS THE RIGHT WORD**: a collection
+                // installed as a folder is not a plugin, and calling it one in
+                // a list a person reads sends them hunting among the plugins,
+                // where it is not.
                 origin: match &origin {
-                    discovery::Origin::Home => "casa".to_string(),
+                    discovery::Origin::Home => "home".to_string(),
                     discovery::Origin::Plugin(name) => format!("plugin {name}"),
-                    discovery::Origin::Collection(name) => format!("raccolta {name}"),
+                    discovery::Origin::Collection(name) => format!("collection {name}"),
                 },
                 path: path.to_string_lossy().into_owned(),
                 reach,
@@ -339,7 +331,7 @@ fn home_agents(home: &Path) -> (Vec<Entry>, usize) {
                 name,
                 description,
                 origin: if plugin.is_empty() {
-                    "casa".to_string()
+                    "home".to_string()
                 } else {
                     format!("plugin {plugin}")
                 },
@@ -352,11 +344,11 @@ fn home_agents(home: &Path) -> (Vec<Entry>, usize) {
     (out, stale)
 }
 
-/// (nome, descrizione, invocabile dal modello) di ciò che dichiara un `name:`.
+/// (name, description, invocable by the model) of whatever declares a `name:`.
 ///
-/// Non riusa `discovery::frontmatter` perché quella scarta ciò che il modello
-/// non può invocare, e qui va mostrato: la differenza sta scritta accanto a
-/// `matter_and_invocability`.
+/// It does not reuse `discovery::frontmatter`, which drops what the model
+/// cannot invoke; here that has to be shown. The difference is spelled out
+/// next to `matter_and_invocability`.
 fn named(path: &Path) -> Option<(String, String, bool)> {
     let (matter, by_model) = discovery::matter_and_invocability(path)?;
     let start = discovery::field_start(&matter, "name:")?;
@@ -369,22 +361,22 @@ fn named(path: &Path) -> Option<(String, String, bool)> {
     Some((name, discovery::description(&matter, false), by_model))
 }
 
-/// Le competenze di una cartella che nessuna configurazione carica.
+/// The skills of a directory no configuration loads.
 ///
-/// Ce n'è una sola oggi, e vale la pena dire perché non è un caso limite: 95
-/// competenze scritte, cinque raggiungibili. Non è un difetto da riparare qui —
-/// collegarle è una decisione, non una manutenzione — ma finché l'elenco tace,
-/// quella decisione non arriva mai perché nessuno sa che c'è da prenderla.
+/// There is one today, and it is worth saying why that is not a corner case:
+/// **95 skills written, five reachable**. It is not a defect to repair here —
+/// linking them is a decision, not maintenance — but while the list stays
+/// silent that decision never gets taken, because nobody knows it is there.
 fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
     discovery::glob(&root.path, "*/SKILL.md")
         .into_iter()
         .filter_map(|path| {
             let (name, description, by_model) = named(&path)?;
             let folder = path.parent()?.file_name()?.to_string_lossy().into_owned();
-            // UNA COMPETENZA COLLEGATA È RAGGIUNGIBILE, e va detto: cinque di
-            // queste lo sono. Dichiararle spente perché stanno nel magazzino
-            // sarebbe lo stesso errore al contrario — l'inventario perderebbe
-            // credito proprio sulle voci che sa giudicare.
+            // A LINKED SKILL IS REACHABLE, and it has to be said: five of these
+            // are. Declaring them all off because they sit in the warehouse
+            // would be the same error inverted, and would cost the inventory
+            // its credit on exactly the entries it can judge.
             let linked = home
                 .map(|h| h.join(".claude").join("skills").join(&folder).exists())
                 .unwrap_or(false);
@@ -392,14 +384,14 @@ fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
                 kind: Kind::Skill,
                 name,
                 description,
-                origin: format!("magazzino {}", root.label),
+                origin: format!("warehouse {}", root.label),
                 path: path.to_string_lossy().into_owned(),
                 reach: if linked {
                     Reach::Active
                 } else {
                     Reach::Inactive(
-                        "sta in una cartella che nessuna configurazione carica: per invocarla va \
-                         collegata fra le competenze di casa"
+                        "it sits in a directory no configuration loads: to invoke it, link it \
+                         among the home's skills"
                             .to_string(),
                     )
                 },
@@ -409,9 +401,10 @@ fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
         .collect()
 }
 
-/// Competenze e agenti dichiarati dentro un repo.
+/// Skills and agents declared inside a repo.
 ///
-/// Valgono solo per chi apre una sessione lì dentro: `Unknown`, col motivo.
+/// They hold only for whoever opens a session in there: `Unknown`, with the
+/// reason.
 fn repo_dir(root: &Root, folder: &str, kind: Kind) -> Vec<Entry> {
     let base = root.path.join(".claude").join(folder);
     let pattern = if kind == Kind::Skill {
@@ -429,10 +422,7 @@ fn repo_dir(root: &Root, folder: &str, kind: Kind) -> Vec<Entry> {
                 description,
                 origin: format!("repo {}", root.label),
                 path: path.to_string_lossy().into_owned(),
-                reach: Reach::Unknown(format!(
-                    "solo per una sessione aperta dentro {}",
-                    root.label
-                )),
+                reach: Reach::Unknown(format!("only for a session opened inside {}", root.label)),
                 by_model,
             })
         })
@@ -444,12 +434,12 @@ fn commands_of(root: &Root) -> Vec<Entry> {
     discovery::glob(&base, "*.md")
         .into_iter()
         .filter_map(|path| {
-            // UN COMANDO SENZA FRONTMATTER È UN COMANDO. Claude Code prende il
-            // file intero come prompt; pretendere il frontmatter faceva sparire
-            // `/work-loop-headless` dall'elenco di ciò che esiste — e un elenco
-            // che tace su ciò che c'è è peggio di nessun elenco.
-            let (matter, by_model) = discovery::matter_and_invocability(&path)
-                .unwrap_or_else(|| (String::new(), true));
+            // A COMMAND WITHOUT FRONTMATTER IS STILL A COMMAND. Claude Code
+            // takes the whole file as the prompt; demanding frontmatter made
+            // `/work-loop-headless` vanish from the list of what exists — and a
+            // list that stays quiet about what is there is worse than no list.
+            let (matter, by_model) =
+                discovery::matter_and_invocability(&path).unwrap_or_else(|| (String::new(), true));
             let name = path.file_stem()?.to_string_lossy().into_owned();
             let description = match discovery::description(&matter, true) {
                 empty if empty.is_empty() => first_heading(&path),
@@ -468,15 +458,15 @@ fn commands_of(root: &Root) -> Vec<Entry> {
         .collect()
 }
 
-/// Le regole non hanno frontmatter: si chiamano come il file, e la descrizione
-/// è il loro primo titolo. Leggere il testo intero per ricavarne una riga
-/// costerebbe più di quanto rende su una cartella che si sfoglia.
+/// Rules carry no frontmatter: they are named after the file, and their
+/// description is their first heading. Reading the whole text to distil one
+/// line would cost more than it returns on a directory people skim.
 fn rules_of(root: &Root) -> Vec<Entry> {
     let base = root.path.join(".claude").join("rules");
     let mut out = Vec::new();
-    // Un livello di sottocartelle, perché le regole si raggruppano per materia
-    // (`rules/common/`, `rules/typescript/`) e fermarsi al primo livello ne
-    // perdeva un terzo senza dirlo.
+    // One level of subdirectories, because rules group by subject
+    // (`rules/common/`, `rules/typescript/`) and stopping at the top level lost
+    // a third of them without saying so.
     let found: Vec<PathBuf> = discovery::glob(&base, "*.md")
         .into_iter()
         .chain(discovery::glob(&base, "*/*.md"))
@@ -493,14 +483,14 @@ fn rules_of(root: &Root) -> Vec<Entry> {
             origin: origin_of(root),
             path: path.to_string_lossy().into_owned(),
             reach: reach_of(root),
-            // Una regola non si invoca: la si applica. Vale per tutti.
+            // A rule is not invoked, it is applied. That holds for everyone.
             by_model: true,
         });
     }
     out
 }
 
-/// Il titolo di un documento Markdown, o la prima riga di testo se non ne ha.
+/// The title of a Markdown document, or empty when it has none.
 fn first_heading(path: &Path) -> String {
     let Ok(text) = fs::read_to_string(path) else {
         return String::new();
@@ -514,12 +504,12 @@ fn first_heading(path: &Path) -> String {
     String::new()
 }
 
-/// I ganci dichiarati in `settings.json`, evento per evento.
+/// The hooks declared in `settings.json`, event by event.
 ///
-/// IL COMANDO SI GUARDA, NON SI CREDE. Un gancio che punta a un file che non
-/// esiste più non dà errore a nessuno: tace, e chi lo ha scritto continua a
-/// credere che difenda qualcosa. Il 28/08/2026 quattro script puntavano ancora a
-/// `~/.claude/rust/…`, cancellato quel giorno.
+/// THE COMMAND IS CHECKED, NOT BELIEVED. A hook pointing at a file that is gone
+/// raises no error for anyone: it goes quiet, and whoever wrote it keeps
+/// believing it defends something. Four scripts were still pointing at
+/// `~/.claude/rust/…`, deleted the day this was measured.
 fn hooks_of(root: &Root) -> Vec<Entry> {
     let path = root.path.join(".claude").join("settings.json");
     let Ok(text) = fs::read_to_string(&path) else {
@@ -557,7 +547,7 @@ fn hooks_of(root: &Root) -> Vec<Entry> {
                     path: path.to_string_lossy().into_owned(),
                     reach: match missing_file(command, &root.path) {
                         Some(missing) => {
-                            Reach::Inactive(format!("punta a {missing}, che non esiste"))
+                            Reach::Inactive(format!("points at {missing}, which does not exist"))
                         }
                         None => reach_of(root),
                     },
@@ -569,23 +559,23 @@ fn hooks_of(root: &Root) -> Vec<Entry> {
     out
 }
 
-/// Come si chiama un gancio, per chi lo legge: non il comando intero, ma il
-/// pezzo che lo distingue dagli altri.
-///
-/// SENZA QUESTO DUE GANCI DIVENTANO UNO. Evento e matcher non bastano a
-/// identificarli: su `PreToolUse · Bash` ne vivono **otto**, e depositarli con
-/// la stessa chiave ne faceva sparire sette in silenzio — misurato il
-/// 28/08/2026, 30 voci perse su 358. Un elenco che perde per collisione è
-/// peggio di un elenco che non c'è, perché sembra completo.
+/// What a hook is called for whoever reads it: not the whole command, but the
+/// part that tells it apart. WITHOUT THIS TWO HOOKS BECOME ONE — event and
+/// matcher do not identify them: **eight** live on `PreToolUse · Bash`, and
+/// storing them under one key made seven vanish in silence, 30 entries lost out
+/// of 358. A list that loses to collisions is worse than no list, because it
+/// looks complete.
 fn hook_label(command: &str) -> String {
-    // LE OPZIONI DISTINGUONO, e la prima versione le buttava: due ganci che
-    // lanciano lo stesso sottocomando con opzioni diverse — `orca-cleanup
-    // --close` e `orca-cleanup --names --rename` — sono due ganci, e scartare
-    // le opzioni li faceva collassare in uno.
-    const SHELL_NOISE: &[&str] = &["cd", "||", "&&", ";", "&", "true", "exec", "nohup", "sh", "-c"];
+    // OPTIONS TELL HOOKS APART, and the first version threw them away: two
+    // hooks running the same subcommand with different options — `orca-cleanup
+    // --close` and `orca-cleanup --names --rename` — are two hooks, and
+    // dropping the options collapsed them into one.
+    const SHELL_NOISE: &[&str] = &[
+        "cd", "||", "&&", ";", "&", "true", "exec", "nohup", "sh", "-c",
+    ];
     let words: Vec<&str> = command.split_whitespace().collect();
-    // L'eseguibile è l'ultima parola che è un percorso: prima di lei ci sono
-    // solo preamboli di shell, dopo ci sono gli argomenti che contano.
+    // The executable is the last word that is a path: before it there is only
+    // shell preamble, after it the arguments that matter.
     let executable = words.iter().rposition(|word| {
         word.contains('/') && !word.starts_with('>') && !word.contains(">/") && !word.contains("</")
     });
@@ -601,7 +591,7 @@ fn hook_label(command: &str) -> String {
         })
         .collect();
     if label.is_empty() {
-        // Nessun argomento: allora il gancio è lo script che lancia.
+        // No arguments: then the hook is the script it runs.
         if let Some(index) = executable {
             label.push(words[index].rsplit('/').next().unwrap_or(words[index]));
         }
@@ -613,9 +603,9 @@ fn hook_label(command: &str) -> String {
         .join(" ")
         .trim_matches(|c: char| c == '"' || c == '\'' || c == ';')
         .to_string();
-    // Un gancio scritto come programma in linea non ha un nome: ha un corpo.
-    // Si tronca, perché serve a distinguerlo, non a raccontarlo — e il comando
-    // per intero resta nella descrizione, dove chi vuole leggerlo lo trova.
+    // A hook written as an inline program has no name, it has a body. Truncate
+    // it: the name is there to tell it apart, not to tell its story, and the
+    // whole command stays in the description, where whoever wants it finds it.
     const NAME_CEILING: usize = 48;
     if joined.chars().count() <= NAME_CEILING {
         return joined;
@@ -624,20 +614,15 @@ fn hook_label(command: &str) -> String {
     format!("{short}…")
 }
 
-/// Il primo percorso nominato dal comando che non esiste sul disco.
+/// The first path named by the command that does not exist on disk.
 ///
-/// Deliberatamente ingenua: guarda le parole che sembrano un file da eseguire,
-/// non interpreta la shell.
-///
-/// LE DUE STRETTOIE VENGONO DA DUE FALSI ALLARMI VERI, presi alla prima
-/// esecuzione sul disco del 28/08/2026. La punteggiatura della shell resta
-/// attaccata alla parola — `…/claude-hook.sh';` — e va tolta, o un gancio vivo
-/// risulta morto. E `/clear` comincia per `/` senza essere un file: è
-/// l'argomento di un gancio `SessionStart`. Per questo serve anche
-/// un'estensione nell'ultimo pezzo: chi punta a uno script lo scrive con la sua,
-/// e chi non ce l'ha non è un file da cercare.
+/// Deliberately naive: it looks at words that look like a file to run, it does
+/// not interpret the shell. THE TWO NARROWINGS BELOW COME FROM TWO REAL FALSE
+/// ALARMS, both caught on the first run against the real disk.
 fn missing_file(command: &str, home: &Path) -> Option<String> {
     for word in command.split_whitespace() {
+        // Shell punctuation stays glued to the word — `…/claude-hook.sh';` —
+        // and has to come off, or a hook that is alive reads as dead.
         let word = word.trim_matches(|c: char| {
             c == '"' || c == '\'' || c == '`' || c == ';' || c == ',' || c == ')' || c == '('
         });
@@ -646,6 +631,10 @@ fn missing_file(command: &str, home: &Path) -> Option<String> {
             None if word.starts_with('/') => PathBuf::from(word),
             None => continue,
         };
+        // And `/clear` begins with `/` without being a file: it is the argument
+        // of a `SessionStart` hook. Hence an extension in the last segment as
+        // well — whoever points at a script writes it with its own, and a word
+        // that has none is not a file to go looking for.
         let looks_like_a_file = expanded
             .file_name()
             .map(|n| n.to_string_lossy().contains('.'))
@@ -659,7 +648,7 @@ fn missing_file(command: &str, home: &Path) -> Option<String> {
 
 fn origin_of(root: &Root) -> String {
     if root.is_home {
-        "casa".to_string()
+        "home".to_string()
     } else {
         format!("repo {}", root.label)
     }
@@ -669,70 +658,60 @@ fn reach_of(root: &Root) -> Reach {
     if root.is_home {
         Reach::Active
     } else {
-        Reach::Unknown(format!(
-            "solo per una sessione aperta dentro {}",
-            root.label
-        ))
+        Reach::Unknown(format!("only for a session opened inside {}", root.label))
     }
 }
 
-/// Il rendiconto di una ricognizione: cosa si è trovato, **e cosa non si è
-/// potuto guardare**.
-///
-/// I DUE ELENCHI ESISTONO PERCHÉ UNO SOLO MENTE. Fino al 01/09/2026
-/// `repos_under` incontrava una base illeggibile, faceva `continue` e
-/// restituiva un elenco più corto: «non ce ne sono» e «non ho potuto guardare»
-/// arrivavano a chi legge nella stessa forma, e portano a decisioni opposte. È
-/// la forma del guasto 12, dove dentro un perimetro `launchctl` risponde vuoto
-/// invece di negare — e la stessa che il 01/09 ha fatto dichiarare «nessuna CLI
-/// in esecuzione» mentre ne giravano cinque, perché `ps` incanalato non dice
-/// che gli è stato negato.
+/// What a survey found, **and what it could not look at**. TWO LISTS EXIST
+/// BECAUSE ONE LIES: `repos_under` met an unreadable base, did `continue` and
+/// returned a shorter list, so "there are none" and "I could not look" reached
+/// the reader in the same shape — and they lead to opposite decisions. It is
+/// fault 12: inside a sandbox `launchctl` answers empty instead of refusing,
+/// and a piped `ps` read five running CLIs as none.
 #[derive(Debug, Default)]
 pub struct Survey {
-    /// Le radici trovate davvero.
+    /// The roots actually found.
     pub roots: Vec<Root>,
-    /// Le basi che non si sono potute leggere, col motivo.
+    /// The bases that could not be read, with the reason.
     pub unreadable: Vec<Unreadable>,
-    /// Se qualcuno ha dichiarato dove guardare. `false` significa che un elenco
-    /// vuoto non dice niente sul mondo: dice che nessuno ha detto dove cercare.
+    /// Whether anyone declared where to look. `false` means an empty list says
+    /// nothing about the world: it says nobody said where to search.
     pub bases_declared: bool,
 }
 
-/// Una base che non si è potuta leggere, e perché.
+/// A base that could not be read, and why.
 #[derive(Debug)]
 pub struct Unreadable {
     pub path: PathBuf,
     pub reason: String,
 }
 
-/// Le radici da guardare su questa macchina: la casa, e i repo di lavoro.
+/// The roots to look at on this machine: the home, and the working repos.
 ///
-/// STA QUI E NON NEI DUE CHIAMANTI. La riga di comando e la pagina devono dire
-/// lo stesso numero sulla stessa macchina: se ognuna sceglie le proprie radici,
-/// la prima volta che una cambia tornano a divergere — che è il difetto che
-/// questo crate esiste per togliere.
-///
-/// Le basi sono dichiarate, non cercate su tutto il disco: camminare da `/`
-/// troverebbe anche le copie di lavoro, dove le stesse regole ricompaiono
-/// collegate.
+/// IT LIVES HERE AND NOT IN THE TWO CALLERS. The command line and the window
+/// must report the same number on the same machine: if each picked its own
+/// roots, the first time one changed they would diverge again — which is the
+/// defect this crate exists to remove.
 pub fn default_roots(config_dir: Option<&Path>) -> Survey {
     let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
+    // THE BASES ARE DECLARED, NOT SEARCHED ACROSS THE WHOLE DISK: walking from
+    // `/` would also find the worktrees, where the same rules reappear as
+    // links.
     default_roots_from(&home, &declared_bases(config_dir))
 }
 
-/// La stessa regola applicata a una casa e a basi dichiarate, invece che a
-/// quelle di questo processo.
+/// The same rule applied to a given home and given declared bases, instead of
+/// the ones belonging to this process.
 ///
-/// **SEPARATA PERCHÉ ALTRIMENTI NON SI PROVA.** Una funzione che legge
-/// l'ambiente si può provare solo cambiando l'ambiente del processo, e le prove
-/// girano in parallelo: la prima che tocca una variabile falsa le altre.
+/// **SEPARATE, OR IT CANNOT BE TESTED.** A function that reads the environment
+/// can only be tested by changing the process environment, and tests run in
+/// parallel: the first to touch a variable falsifies the others.
 pub fn default_roots_from(home: &Path, bases: &[PathBuf]) -> Survey {
     let mut survey = repos_under(bases);
     survey.roots.insert(0, Root::home(home));
-    // I MAGAZZINI SI CERCANO DOVE SI GUARDA, non dove guardava una persona. Il
-    // primo è quello di casa; gli altri stanno dentro le basi dichiarate, e se
-    // non ne è dichiarata nessuna non ce ne sono — che è la verità, non un
-    // ripiego.
+    // WAREHOUSES ARE LOOKED FOR WHERE WE LOOK, not where one person's used to
+    // be. The first is the home's; the others sit under the declared bases, and
+    // if none is declared there are none — which is the truth, not a fallback.
     let mut warehouses = vec![(".agents".to_string(), home.join(".agents").join("skills"))];
     for base in bases {
         let label = base
@@ -741,9 +720,9 @@ pub fn default_roots_from(home: &Path, bases: &[PathBuf]) -> Survey {
             .unwrap_or_else(|| ".agents".to_string());
         warehouses.push((label, base.join(".agents").join("skills")));
     }
-    // DUE MAGAZZINI SONO DAVVERO DUE: i collegamenti dentro le competenze di
-    // casa puntano al primo, mai al secondo. Trattarli come uno solo faceva
-    // dire «nessuna è collegata» anche di quelle che lo sono.
+    // TWO WAREHOUSES REALLY ARE TWO: the links inside the home's skills point
+    // at the first, never at the second. Treating them as one made the list say
+    // "none is linked" even about the ones that are.
     for (label, path) in warehouses {
         if path.is_dir() {
             survey.roots.push(Root::warehouse(&label, &path));
@@ -752,16 +731,12 @@ pub fn default_roots_from(home: &Path, bases: &[PathBuf]) -> Survey {
     survey
 }
 
-/// Le basi di lavoro **dichiarate**: `SAILOR_WORK_ROOTS` se c'è, altrimenti il
-/// file `work-roots` nella casa di Sailor, una riga per base.
-///
-/// FINO AL 01/09/2026 QUI C'ERANO `~/other-repo/work` E `~/personal`, compilate. Su
-/// questa macchina esistono, quindi il difetto non si vedeva; su qualunque
-/// altra l'inventario avrebbe risposto «zero repo» con uscita 0, che è
-/// indistinguibile da una macchina davvero vuota. Le cartelle di una persona
-/// sola non sono un fatto della macchina: sono configurazione, e adesso
-/// vivono lì. Chi non dichiara niente ottiene `bases_declared` a `false`, così
-/// chi legge può dire *non me l'hai detto* invece di *non c'è niente*.
+/// The **declared** working bases: `SAILOR_WORK_ROOTS` if set, otherwise the
+/// `work-roots` file in Sailor's config directory, one base per line.
+/// Two personal working directories used to be compiled in here: on that
+/// machine they existed, so the defect was invisible; anywhere else the
+/// inventory answered "zero repos" with exit 0, indistinguishable from a
+/// machine that really was empty.
 pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
     if let Ok(declared) = std::env::var("SAILOR_WORK_ROOTS") {
         let bases: Vec<PathBuf> = declared
@@ -774,6 +749,8 @@ pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
         }
     }
     let Some(dir) = config_dir else {
+        // Whoever declares nothing gets `bases_declared` at `false`, so the
+        // reader can say *you never told me* instead of *there is nothing*.
         return Vec::new();
     };
     let Ok(text) = fs::read_to_string(dir.join("work-roots")) else {
@@ -786,12 +763,11 @@ pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
         .collect()
 }
 
-/// I repo che portano una `.claude/`, cercati sotto le cartelle di lavoro.
+/// The repos carrying a `.claude/`, searched under the working directories.
 ///
-/// Profondità due e non di più: `~/other-repo/work/suite` è un repo, ma scendere
-/// oltre significherebbe entrare nelle copie di lavoro, dove le stesse regole
-/// ricompaiono collegate — e l'inventario direbbe di avere venti volte le cose
-/// che ha.
+/// Depth two and no deeper: `<base>/suite` is a repo, but going further would
+/// walk into the worktrees, where the same rules reappear as links — and the
+/// inventory would claim twenty times what it has.
 pub fn repos_under(bases: &[PathBuf]) -> Survey {
     let mut found: BTreeSet<PathBuf> = BTreeSet::new();
     let mut unreadable = Vec::new();
@@ -799,9 +775,9 @@ pub fn repos_under(bases: &[PathBuf]) -> Survey {
         if base.join(".claude").is_dir() {
             found.insert(base.clone());
         }
-        // IL `continue` CHE C'ERA QUI SI MANGIAVA IL MOTIVO. Una base che non si
-        // apre e una base vuota producevano lo stesso elenco più corto, e chi
-        // leggeva concludeva «non ce ne sono» in tutti e due i casi.
+        // THE `continue` THAT USED TO BE HERE ATE THE REASON. A base that will
+        // not open and an empty base produced the same shorter list, and the
+        // reader concluded "there are none" in both cases.
         let entries = match fs::read_dir(base) {
             Ok(entries) => entries,
             Err(why) => {

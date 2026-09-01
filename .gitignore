@@ -1,6 +1,13 @@
-# Prodotti della compilazione: si rifanno, e pesano più del sorgente.
-# `target/` da solo era 1,9 GB su 2,2 GB d'albero il 28/08/2026.
-target/
+# Build products: they are remade, and they weigh more than the source.
+# `target/` alone was 1.9 GB of a 2.2 GB tree on 28/08/2026.
+#
+# THE STAR IS NOT TIDINESS. `target/` named one directory, and on 01/09/2026 a
+# session that set `CARGO_TARGET_DIR=<worktree>/target-int` — to stop parallel
+# agents sharing one build directory — committed **1.58 GB in 14,247 files**
+# with a `git add -A`. A name keeps out what it names; a shape keeps out what
+# it is. Whoever needs a second build directory calls it `target-<something>`
+# and nothing happens.
+target*/
 mutants.out/
 mutants.out.old/
 

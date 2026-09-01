@@ -168,8 +168,16 @@ impl Overlap {
 /// una collisione inventata costa quanto una mancata: chi la riceve smette di
 /// credere alle vere.
 fn one_path_contains_the_other(left: &str, right: &str) -> bool {
-    let left: Vec<&str> = left.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
-    let right: Vec<&str> = right.trim_matches('/').split('/').filter(|s| !s.is_empty()).collect();
+    let left: Vec<&str> = left
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
+    let right: Vec<&str> = right
+        .trim_matches('/')
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .collect();
     let shared = left.len().min(right.len());
     shared > 0 && left[..shared] == right[..shared]
 }
@@ -496,16 +504,26 @@ mod tests {
         let action = WorkClaimAction::new(ledger);
 
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("il primo annuncio");
         let second = went(
             action
-                .execute(&claim("seconda", 102, "/casa/progetto", NOON + 10, &[]), &mut shared)
+                .execute(
+                    &claim("seconda", 102, "/casa/progetto", NOON + 10, &[]),
+                    &mut shared,
+                )
                 .expect("il secondo annuncio"),
         );
 
         let collisions = second["collisions"].as_array().expect("le collisioni");
-        assert_eq!(collisions.len(), 1, "il secondo agente deve vedere il primo");
+        assert_eq!(
+            collisions.len(),
+            1,
+            "il secondo agente deve vedere il primo"
+        );
         assert_eq!(collisions[0]["agent"], json!("prima"));
         assert_eq!(collisions[0]["kind"], json!("same_paths"));
     }
@@ -518,7 +536,10 @@ mod tests {
         let action = WorkClaimAction::new(ledger);
 
         action
-            .execute(&claim("morta", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("morta", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("l'annuncio di chi poi muore");
         let later = went(
             action
@@ -545,13 +566,22 @@ mod tests {
         let survey = WorkSurveyAction::new(ledger);
 
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("prima");
         action
-            .execute(&claim("seconda", 102, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("seconda", 102, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("seconda");
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON + 60, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON + 60, &[]),
+                &mut shared,
+            )
             .expect("il rinnovo della prima");
 
         let seen = went(
@@ -572,11 +602,17 @@ mod tests {
         let action = WorkClaimAction::new(ledger);
 
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("prima");
         let second = went(
             action
-                .execute(&claim("seconda", 102, "/casa/altro-albero", NOON, &[]), &mut shared)
+                .execute(
+                    &claim("seconda", 102, "/casa/altro-albero", NOON, &[]),
+                    &mut shared,
+                )
                 .expect("seconda"),
         );
 
@@ -612,7 +648,13 @@ mod tests {
         let third = went(
             action
                 .execute(
-                    &claim("terza", 103, "/casa/progetto", NOON, &["crates/actions/src/lib.rs"]),
+                    &claim(
+                        "terza",
+                        103,
+                        "/casa/progetto",
+                        NOON,
+                        &["crates/actions/src/lib.rs"],
+                    ),
                     &mut shared,
                 )
                 .expect("terza"),
@@ -670,19 +712,31 @@ mod tests {
         let survey = WorkSurveyAction::new(ledger);
 
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("prima");
         release
-            .execute(&json!({"agent": "prima", "pid": 101, "at": NOON + 30}), &mut shared)
+            .execute(
+                &json!({"agent": "prima", "pid": 101, "at": NOON + 30}),
+                &mut shared,
+            )
             .expect("il rilascio");
 
         let second = went(
             action
-                .execute(&claim("seconda", 102, "/casa/progetto", NOON + 31, &[]), &mut shared)
+                .execute(
+                    &claim("seconda", 102, "/casa/progetto", NOON + 31, &[]),
+                    &mut shared,
+                )
                 .expect("seconda"),
         );
         assert_eq!(
-            second["collisions"].as_array().expect("le collisioni").len(),
+            second["collisions"]
+                .as_array()
+                .expect("le collisioni")
+                .len(),
             0,
             "chi ha rilasciato non trattiene più"
         );
@@ -712,7 +766,10 @@ mod tests {
         let action = WorkClaimAction::new(ledger);
 
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("prima");
 
         let mut wanted = claim("seconda", 102, "/casa/progetto", NOON + 1, &[]);
@@ -738,7 +795,10 @@ mod tests {
         let action = WorkClaimAction::new(ledger);
 
         action
-            .execute(&claim("prima", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("prima", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("prima");
 
         let mut wanted = claim("seconda", 102, "/casa/altro-albero", NOON + 1, &[]);
@@ -760,10 +820,16 @@ mod tests {
         let survey = WorkSurveyAction::new(ledger);
 
         action
-            .execute(&claim("morta", 101, "/casa/progetto", NOON, &[]), &mut shared)
+            .execute(
+                &claim("morta", 101, "/casa/progetto", NOON, &[]),
+                &mut shared,
+            )
             .expect("chi poi muore");
         action
-            .execute(&claim("viva", 102, "/casa/progetto", NOON + 900, &[]), &mut shared)
+            .execute(
+                &claim("viva", 102, "/casa/progetto", NOON + 900, &[]),
+                &mut shared,
+            )
             .expect("chi resta");
 
         let seen = went(

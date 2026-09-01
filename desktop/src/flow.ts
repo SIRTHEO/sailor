@@ -1,6 +1,6 @@
-// I tipi del flusso, ricalcati su `crates/flow`: la finestra deve parlare la
-// stessa lingua del motore, o le due verità divergono senza che nessuno lo veda.
-// Chi cambia `flow::Step` in Rust cambia anche questo file.
+// The flow types, mirrored from `crates/flow`: the window must speak the
+// engine's language, or the two truths drift with nobody seeing it. Whoever
+// changes `flow::Step` in Rust changes this file too.
 
 export type ValueSchema =
   | { type: "any" }
@@ -32,10 +32,10 @@ export interface Step {
   deps: string[];
   input_schema: ValueSchema;
   output_schema: ValueSchema;
-  /** I parametri dichiarati dal passo: vincono sulle chiavi ricevute in ingresso. */
+  /** The step's declared params: they beat the keys received as input. */
   with?: Record<string, unknown> | null;
   when: Condition | null;
-  /** Nome stabile dell'azione, risolto dal registro. Mai codice. */
+  /** The action's stable name, resolved by the registry. Never code. */
   action: string;
   max_attempts: number;
 }
@@ -45,28 +45,33 @@ export interface Graph {
   skippable_dependencies?: DependencyEdge[];
 }
 
-/** Un file di flusso: il grafo più i valori con cui parte. */
+/**
+ * How many steps a flow has, phrased for a reader. It lives here and not in the
+ * two places that show it, because a plural written twice is a plural that goes
+ * wrong in one place only, and nobody notices from the other.
+ */
+export function stepCountLabel(count: number): string {
+  return `${count} ${count === 1 ? "passo" : "passi"}`;
+}
+
+/** A flow file: the graph plus the values it starts with. */
 export interface FlowFile {
   id: string;
   description: string;
   graph: Graph;
   inputs: Record<string, unknown>;
   /**
-   * Quanto una corsa di questo flusso può spendere, in micro-unità: un milione
-   * è un'unità di valuta.
-   *
-   * `null` o assente vuol dire «nessun tetto», e NON zero — `0` è un flusso a
-   * cui qualcuno ha detto di non spendere niente, e si ferma prima della prima
-   * chiamata a pagamento. Il tetto si misura sui costi che i motori dichiarano:
-   * chi non li dichiara lascia righe fuori dal conto, e la corsa fermata lo
-   * scrive nel proprio motivo.
+   * What a run may spend, in micro-units. `null` or absent means "no cap", NOT
+   * zero — `0` is a flow told to spend nothing, and it stops before the first
+   * paid call. The cap is measured on the costs the engines declare; whoever
+   * does not declare them leaves rows out of the tally.
    */
   spend_cap_micros?: number | null;
 }
 
 /**
- * Un flusso che non si carica non sparisce: arriva qui col suo motivo.
- * Il contrario è il difetto che rende un elenco corto senza dirlo.
+ * A flow that will not load does not vanish: it arrives here with its reason.
+ * The opposite is the defect that shortens a list without saying so.
  */
 export interface BrokenFlow {
   name: string;
@@ -77,11 +82,11 @@ export type FlowEntry =
   | { state: "loaded"; flow: FlowFile }
   | { state: "broken"; broken: BrokenFlow };
 
-// ── come finisce un passo, e come si vede ────────────────────────────────
+// ── how a step ends, and how it is shown ─────────────────────────────────
 
 /**
- * I finali non sono intercambiabili: «fermo al tetto dei tentativi» non è
- * «rotto» — nessuno lo ritenterà — e «aspetta una persona» non è un guasto.
+ * The endings are not interchangeable: stopped at the retry cap is not broken
+ * — nobody will retry it — and waiting on a person is not a failure.
  */
 export type StepState =
   | "waiting"
@@ -95,15 +100,15 @@ export interface StepRun {
   step_id: string;
   state: StepState;
   attempt: number;
-  /** Presente solo mentre un agente tiene il passo. */
+  /** Present only while an agent holds the step. */
   held_by_pid?: number;
   elapsed_secs?: number;
 }
 
-/** La specie dice cosa fa Sailor se il passo cade e l'effetto resta ignoto. */
+/** The kind says what Sailor does if the step falls and its effect is unknown. */
 export type StepSpecies = "repeatable" | "compensable" | "hand_to_human";
 
-/** Le famiglie di nodo che la cassetta dei passi offre. */
+/** The node families the step toolbox offers. */
 export type StepKind =
   | "trigger"
   | "engine"
@@ -116,31 +121,18 @@ export type StepKind =
   | "subflow";
 
 /**
- * Da quale azione nasce quale famiglia.
- *
- * **QUESTI SEDICI NOMI ESISTONO, E I PRECEDENTI PER METÀ NO.** Fino al
- * 01/09/2026 questa mappa ne conteneva otto, e sei erano inventati —
- * `pane_until_idle`, `signal_is_gone`, `deposit_write`, `pane_send`,
- * `hand_to_human` e `pane_read`: zero occorrenze in tutto il Rust. Quattro
- * stavano nella cassetta dei passi, quindi premere «attesa», «deposito»,
- * «gesto» o «a una persona» creava un nodo che poi **non si salvava**, con
- * «il flusso usa azioni che il motore non conosce». Quattro famiglie su nove
- * erano bottoni che non funzionano. Il commento che stava qui diceva «il
- * motore ne registra due»: era vero fino al 28/08 e nessuno l'ha più letto.
- *
- * A tenerli allineati adesso è una prova che sta **fuori da tutte e due le
- * copie** — `the_window_vocabulary_names_only_actions_the_engine_registers`
- * in `desktop/src-tauri/src/flows.rs` legge questo file e lo confronta col
- * registro del motore, nei due versi: nessun nome inventato qui, nessuna
- * azione del motore lasciata senza famiglia. Confrontare due mappe scritte a
- * mano le lascerebbe sbagliare insieme.
- *
- * Una sola mappa, non uno switch: la cassetta dei passi e il pannello di
- * modifica leggono lo stesso vocabolario invece di ricopiarlo.
+ * Which action gives which family, in one map rather than a switch, so the
+ * toolbox and the editor panel share a vocabulary instead of copying it.
+ * **EVERY NAME HERE MUST BE AN ACTION THE ENGINE REALLY REGISTERS**: an
+ * invented one puts a button in the toolbox that makes a node which will not
+ * save. The keeper is outside both copies —
+ * `the_window_vocabulary_names_only_actions_the_engine_registers` in
+ * `desktop/src-tauri/src/flows.rs` reads this file against the registry, both
+ * ways, because two hand-written maps can be wrong together.
  */
 const ACTION_KIND: Record<string, StepKind> = {
-  // Da dove arriva il segnale. Prima ricadeva su «verifica», e i sette passi
-  // `trigger` dei flussi veri si disegnavano come nodi di controllo.
+  // Where the signal comes from. Without this entry the real `trigger` steps
+  // fall back to the check family and draw as control nodes.
   trigger: "trigger",
   external_engine: "engine",
   shell_check: "check",
@@ -148,9 +140,8 @@ const ACTION_KIND: Record<string, StepKind> = {
   tool_needs: "check",
   mcp_ready: "check",
   mcp_ask: "gesture",
-  // Il passo che non avvia niente: descrive il lavoro e lo lascia a chi è già
-  // vivo nel terminale. È il nome vero di quello che qui si chiamava
-  // `hand_to_human`.
+  // The step that starts nothing: it describes the work and leaves it to
+  // whoever is already alive in the terminal.
   handed_to_agent: "human",
   history_ask: "deposit",
   store_read: "deposit",
@@ -174,22 +165,14 @@ export function kindOf(action: string): StepKind {
   return ACTION_KIND[action] ?? "check";
 }
 
-/** I nomi di azione che il vocabolario conosce oggi, per il suggerimento nel pannello. */
+/** The action names the vocabulary knows today, for the panel's suggestions. */
 export const KNOWN_ACTIONS: string[] = Object.keys(ACTION_KIND);
 
 /**
- * L'azione con cui nasce un passo creato dalla cassetta, una per famiglia.
- *
- * **LA REGOLA ERA GIÀ SCRITTA QUI, E NON ERA RISPETTATA.** Il commento diceva
- * che «trigger» e «branch» non compaiono perché nessuna azione vi si risolve,
- * e che inventarne una vorrebbe dire scrivere un nome invece che leggerlo dal
- * registro. Poi quattro delle sette voci qui sotto erano esattamente nomi
- * inventati. Adesso ogni valore è un'azione che il motore registra davvero, e
- * una prova lo verifica: la cassetta non può più offrire un bottone che non
- * salva.
- *
- * «attesa» e «ramo» non compaiono: restano le due famiglie senza un'azione. È
- * la lista della spesa vera, ed è corta.
+ * The action a toolbox-created step is born with, one per family. Every value
+ * must be an action the engine registers, and a test checks it. The wait and
+ * branch families are absent because no action resolves to them, and inventing
+ * one would mean writing a name instead of reading it from the registry.
  */
 export const DEFAULT_ACTION_FOR_KIND: Partial<Record<StepKind, string>> = {
   trigger: "trigger",
@@ -201,26 +184,25 @@ export const DEFAULT_ACTION_FOR_KIND: Partial<Record<StepKind, string>> = {
   subflow: "subflow",
 };
 
-// ── quanto è costata una corsa ──────────────────────────────────────────────
-// Ricalcati su `crates/ui/src/dashboard.rs`, con la stessa disciplina dei tipi
-// qui sopra: chi cambia l'uno cambia l'altro.
+// ── what a run cost ─────────────────────────────────────────────────────────
+// Mirrored from `crates/ui/src/dashboard.rs`, under the same discipline as the
+// types above: whoever changes one changes the other.
 
 /**
- * I conteggi di una corsa.
- *
- * `null` NON ESISTE QUI, E NON È UNA SVISTA: questi sono totali, e un totale di
- * cose sconosciute è zero. Quello che non si sa lo dicono `callsWithoutTokens` e
- * `callsWithoutCost` — chi mostra una somma senza mostrare anche quei due numeri
- * sta presentando una cifra che nasconde ciò che le manca.
+ * A run's counts. `null` DOES NOT EXIST HERE, AND THAT IS NOT AN OVERSIGHT:
+ * these are totals, and a total of unknown things is zero. What is not known is
+ * said by `callsWithoutTokens` and `callsWithoutCost` — a sum shown without
+ * those two hides what it is missing.
  */
 export interface TokenTotals {
   input_tokens: number;
   output_tokens: number;
-  /** Letti dalla cache: costano una frazione dell'ingresso. */
+  /** Read from cache: a fraction of the input price. */
   cached_tokens: number;
-  /** Scritti nella cache: costano PIÙ dell'ingresso, ed è la voce che sorprende. */
+  /** Written to cache: they cost MORE than input, which is the surprising one. */
   cache_write_tokens: number;
-  /** Il totale di chi non separa i due lati, tenuto a parte per non contare due volte. */
+  /** The total from engines that do not split the two sides, kept apart so it
+   * is not counted twice. */
   total_tokens_only: number;
   cost_micros: number;
   calls: number;
@@ -228,7 +210,7 @@ export interface TokenTotals {
   calls_without_cost: number;
 }
 
-/** Una chiamata a un motore, come la registra il deposito. */
+/** A call to an engine, as the store records it. */
 export interface CallView {
   call_id: string;
   step_id: string | null;
@@ -241,14 +223,14 @@ export interface CallView {
   cache_write_long_tokens: number | null;
   total_tokens: number | null;
   cost_micros: number | null;
-  /** Quanto il motore ha dichiarato di suo: se diverge dal nostro, si vede. */
+  /** What the engine declared itself: if it diverges from ours, it shows. */
   declared_cost_micros: number | null;
   error_type: string | null;
   started_at: number;
   ended_at: number | null;
 }
 
-/** Una corsa vista dal lato della spesa. */
+/** A run seen from the spending side. */
 export interface RunUsage {
   run_id: string;
   entity: string;
@@ -263,9 +245,9 @@ export interface RunUsage {
 }
 
 /**
- * Vero se questi totali nascondono qualcosa. È la stessa regola di
- * `TokenTotals::is_partial` in Rust, e la finestra deve dirlo a schermo: un
- * totale parziale che tace è peggio del non averlo.
+ * True if these totals hide something. Same rule as `TokenTotals::is_partial`
+ * in Rust, and the window has to say it on screen: a partial total that keeps
+ * quiet is worse than no total.
  */
 export function totalsArePartial(totals: TokenTotals): boolean {
   return totals.calls_without_tokens > 0 || totals.calls_without_cost > 0;
