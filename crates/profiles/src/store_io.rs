@@ -1,8 +1,5 @@
-//! I gesti impuri di `profiles`: variabili d'ambiente, disco, collegamenti
-//! simbolici. Prima del 27/08/2026 stavano nel `main.rs` del crate, quando
-//! `profiles` era ancora un binario a sé; da quando lo esegue `sailor
-//! profiles`, la parte pura resta in `lib.rs` e questa è l'unica che tocca
-//! il mondo.
+//! The impure gestures of `profiles`: environment, disk, symlinks. The pure
+//! part stays in `lib.rs`; this is the only file that touches the world.
 
 use crate::{parse_store, serialize_store, symlink_swap, ProfileStore};
 use std::env;
@@ -10,11 +7,11 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// `HOME`, o un errore leggibile se non è impostata.
+/// `HOME`, or a readable error if it is not set.
 pub fn home_dir() -> Result<PathBuf, String> {
     env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or_else(|| "HOME non impostata".to_owned())
+        .ok_or_else(|| "HOME is not set".to_owned())
 }
 
 fn default_state_path() -> PathBuf {
@@ -25,14 +22,17 @@ fn default_state_path() -> PathBuf {
         .join("profili.json")
 }
 
-/// `PROFILES_STATE_PATH`, se impostata, altrimenti `~/.claude/state/profili.json`.
+/// `PROFILES_STATE_PATH` when set, otherwise `~/.claude/state/profili.json`.
+///
+/// The filename is data, not language: it names state already written on disk,
+/// and renaming it would orphan the profiles somebody already has.
 pub fn state_path() -> PathBuf {
     env::var_os("PROFILES_STATE_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(default_state_path)
 }
 
-/// `PROFILES_HOME_ROOT`, se impostata, altrimenti accanto allo stato, in `profiles-homes/`.
+/// `PROFILES_HOME_ROOT` when set, otherwise `profiles-homes/` beside the state.
 pub fn profiles_root() -> PathBuf {
     env::var_os("PROFILES_HOME_ROOT")
         .map(PathBuf::from)
@@ -46,38 +46,30 @@ pub fn profiles_root() -> PathBuf {
 
 pub fn load_store_from(path: &Path) -> Result<ProfileStore, String> {
     match fs::read_to_string(path) {
-        Ok(content) => {
-            parse_store(&content).map_err(|e| format!("stato illeggibile in {}: {e}", path.display()))
-        }
+        Ok(content) => parse_store(&content)
+            .map_err(|e| format!("unreadable state in {}: {e}", path.display())),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(ProfileStore::default()),
-        Err(e) => Err(format!("impossibile leggere {}: {e}", path.display())),
+        Err(e) => Err(format!("cannot read {}: {e}", path.display())),
     }
 }
 
-/// La cartella da creare prima di scrivere, o niente se non ce n'è una.
+/// The directory to create before writing, or nothing when there is none.
 ///
-/// Il filtro sul vuoto non è pignoleria: per un percorso senza cartella
-/// ("profili.json") `parent()` risponde `Some("")`, e `create_dir_all("")`
-/// fallisce con «file inesistente» — il salvataggio si rifiuterebbe pur avendo
-/// i permessi sulla cartella corrente. Segnalato il 27/08/2026 da un revisore
-/// indipendente.
-///
-/// STA IN UNA FUNZIONE A SÉ PERCHÉ LA PROVA NON DEVE SPOSTARSI DI CARTELLA.
-/// Provare il nome nudo per il suo effetto voleva dire `set_current_dir`, che è
-/// di **processo**: mentre girava, le prove parallele scrivevano altrove e
-/// cadevano. Il 28/08/2026 quella prova ha fatto fallire due batterie e
-/// fermato un rilascio. La decisione, qui, si prova senza toccare niente.
+/// For a path with no directory in front, `parent()` answers `Some("")`, and
+/// `create_dir_all("")` fails with «no such file» — the save would refuse while
+/// holding permission on the current directory. A function of its own so the
+/// test can judge the decision without `set_current_dir`, which is per
+/// **process**: while it ran, parallel tests wrote elsewhere and fell.
 fn parent_to_create(path: &Path) -> Option<&Path> {
     path.parent().filter(|p| !p.as_os_str().is_empty())
 }
 
 pub fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
     if let Some(parent) = parent_to_create(path) {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("impossibile creare {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
-    let json = serialize_store(store).map_err(|e| format!("serializzazione fallita: {e}"))?;
-    fs::write(path, json).map_err(|e| format!("impossibile scrivere {}: {e}", path.display()))
+    let json = serialize_store(store).map_err(|e| format!("serialisation failed: {e}"))?;
+    fs::write(path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 pub fn load_store() -> Result<ProfileStore, String> {
@@ -88,11 +80,11 @@ pub fn save_store(store: &ProfileStore) -> Result<(), String> {
     save_store_to(&state_path(), store)
 }
 
-/// Sposta il collegamento su `profile_home`, senza mai toccare un file
-/// reale: rifiuta se `link_path` non è già un collegamento, e pretende che
-/// il profilo abbia già le sue credenziali — non ne fabbrica di vuote, che
-/// finirebbero prese per vere dalla riga di comando. Così il profilo
-/// lasciato non perde nulla: il suo file non viene mai aperto in scrittura.
+/// Moves the link onto `profile_home` without ever touching a real file: it
+/// refuses when `link_path` is not already a symlink, and requires the profile
+/// to have its own credentials rather than fabricating empty ones a command line
+/// would take for real. The profile being left keeps everything, because its
+/// file is never opened for writing.
 pub fn apply_symlink_swap(
     fixed_home: &Path,
     relative_path: &str,
@@ -101,7 +93,7 @@ pub fn apply_symlink_swap(
     let swap = symlink_swap(fixed_home, relative_path, profile_home);
     if !swap.target_path.exists() {
         return Err(format!(
-            "{} non esiste ancora: il profilo non ha credenziali da collegare",
+            "{} does not exist yet: this profile has no credentials to link to",
             swap.target_path.display()
         ));
     }
@@ -109,31 +101,25 @@ pub fn apply_symlink_swap(
         Ok(meta) if meta.file_type().is_symlink() => {
             fs::remove_file(&swap.link_path).map_err(|e| {
                 format!(
-                    "impossibile rimuovere il vecchio collegamento {}: {e}",
+                    "cannot remove the old link {}: {e}",
                     swap.link_path.display()
                 )
             })?;
         }
         Ok(_) => {
             return Err(format!(
-                "{} non è un collegamento simbolico: lo scambio si ferma per non perdere credenziali reali",
+                "{} is not a symlink: the swap stops rather than lose real credentials",
                 swap.link_path.display()
             ));
         }
         Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => {
-            return Err(format!(
-                "impossibile leggere {}: {e}",
-                swap.link_path.display()
-            ))
-        }
+        Err(e) => return Err(format!("cannot read {}: {e}", swap.link_path.display())),
     }
     if let Some(parent) = swap.link_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("impossibile creare {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
     std::os::unix::fs::symlink(&swap.target_path, &swap.link_path)
-        .map_err(|e| format!("impossibile collegare {}: {e}", swap.link_path.display()))
+        .map_err(|e| format!("cannot link {}: {e}", swap.link_path.display()))
 }
 
 #[cfg(test)]
@@ -143,21 +129,17 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    /// Cartella usa-e-getta sotto `$TMPDIR`, cancellata a fine prova. Niente
-    /// dipendenza esterna: lo stesso schema già usato altrove nell'albero.
+    /// A throwaway directory under `$TMPDIR`, removed when the test ends.
     struct TempDir(PathBuf);
 
     impl TempDir {
         fn new() -> Self {
-            // **IL CONTATORE NON È UN DI PIÙ: senza, queste prove si rubavano la
-            // cartella a vicenda.** Misurato il 30/08/2026: una esecuzione su
-            // venti falliva, ogni volta su una prova diversa. `cargo test`
-            // manda le prove di uno stesso crate su più fili dello **stesso**
-            // processo, quindi il pid è identico per tutte; e l'orologio di
-            // macOS non ha davvero la risoluzione del nanosecondo, così due
-            // prove che partono insieme ottenevano lo stesso nome — e la prima
-            // che finiva cancellava, uscendo, la cartella dell'altra. Un numero
-            // che cresce a ogni chiamata non può ripetersi, l'orologio sì.
+            // **THE COUNTER IS NOT SPARE: without it these tests stole each
+            // other's directory.** `cargo test` runs a crate's tests on threads
+            // of the **same** process, so the pid is identical for all of them,
+            // and macOS's clock has no real nanosecond resolution — two tests
+            // starting together got the same name, and the first to finish
+            // deleted the other's directory on its way out.
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let unique = format!(
                 "profiles-test-{}-{}-{}",
@@ -169,7 +151,7 @@ mod tests {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             );
             let path = env::temp_dir().join(unique);
-            fs::create_dir_all(&path).expect("cartella di prova");
+            fs::create_dir_all(&path).expect("test directory");
             TempDir(path)
         }
 
@@ -187,124 +169,119 @@ mod tests {
     #[test]
     fn store_roundtrip_survives_disk() {
         let dir = TempDir::new();
-        let path = dir.path().join("stato").join("profili.json");
+        let path = dir.path().join("state").join("profili.json");
         let mut store = ProfileStore::default();
         store.profiles.push(Profile {
-            name: "lavoro".to_owned(),
+            name: "work".to_owned(),
             cli_id: "claude".to_owned(),
-            home_dir: dir.path().join("claude").join("lavoro"),
+            home_dir: dir.path().join("claude").join("work"),
         });
-        store.active.insert("claude".to_owned(), "lavoro".to_owned());
+        store.active.insert("claude".to_owned(), "work".to_owned());
 
-        save_store_to(&path, &store).expect("salvataggio");
-        let reloaded = load_store_from(&path).expect("ricarica");
+        save_store_to(&path, &store).expect("saving");
+        let reloaded = load_store_from(&path).expect("reloading");
         assert_eq!(reloaded, store);
     }
 
     #[test]
     fn load_store_from_missing_file_is_an_empty_store() {
         let dir = TempDir::new();
-        let path = dir.path().join("non-esiste.json");
+        let path = dir.path().join("does-not-exist.json");
         assert_eq!(
-            load_store_from(&path).expect("nessun errore su file assente"),
+            load_store_from(&path).expect("no error on a missing file"),
             ProfileStore::default()
         );
     }
 
-    /// La prova che conta per lo scambio rapido: due profili finti in una
-    /// cartella temporanea, e il primo — quello che si lascia — deve uscirne
-    /// con le sue credenziali intatte dopo lo scambio sul secondo.
+    /// The test that matters for a quick swap: the profile being left must come
+    /// out of it with its credentials intact.
     #[test]
     fn switching_profiles_never_loses_the_one_left_behind() {
         let dir = TempDir::new();
-        let fixed_home = dir.path().join("casa-fissa");
-        let profile_a = dir.path().join("profili").join("acme").join("a");
-        let profile_b = dir.path().join("profili").join("acme").join("b");
+        let fixed_home = dir.path().join("fixed-home");
+        let profile_a = dir.path().join("profiles").join("acme").join("a");
+        let profile_b = dir.path().join("profiles").join("acme").join("b");
         fs::create_dir_all(&profile_a).unwrap();
         fs::create_dir_all(&profile_b).unwrap();
         let relative = "credentials.json";
-        fs::write(profile_a.join(relative), "credenziali-a").unwrap();
-        fs::write(profile_b.join(relative), "credenziali-b").unwrap();
+        fs::write(profile_a.join(relative), "credentials-a").unwrap();
+        fs::write(profile_b.join(relative), "credentials-b").unwrap();
 
-        apply_symlink_swap(&fixed_home, relative, &profile_a).expect("scambio su a");
+        apply_symlink_swap(&fixed_home, relative, &profile_a).expect("swap onto a");
         assert_eq!(
             fs::read_to_string(fixed_home.join(relative)).unwrap(),
-            "credenziali-a"
+            "credentials-a"
         );
 
-        apply_symlink_swap(&fixed_home, relative, &profile_b).expect("scambio su b");
+        apply_symlink_swap(&fixed_home, relative, &profile_b).expect("swap onto b");
         assert_eq!(
             fs::read_to_string(fixed_home.join(relative)).unwrap(),
-            "credenziali-b"
+            "credentials-b"
         );
 
         assert_eq!(
             fs::read_to_string(profile_a.join(relative)).unwrap(),
-            "credenziali-a",
-            "il profilo lasciato ha perso le sue credenziali"
+            "credentials-a",
+            "the profile left behind lost its credentials"
         );
     }
 
     #[test]
     fn apply_symlink_swap_refuses_to_clobber_a_real_file() {
         let dir = TempDir::new();
-        let fixed_home = dir.path().join("casa-fissa");
+        let fixed_home = dir.path().join("fixed-home");
         fs::create_dir_all(&fixed_home).unwrap();
         let relative = "credentials.json";
-        fs::write(fixed_home.join(relative), "credenziali-vere").unwrap();
+        fs::write(fixed_home.join(relative), "real-credentials").unwrap();
 
-        let profile_a = dir.path().join("profili").join("acme").join("a");
+        let profile_a = dir.path().join("profiles").join("acme").join("a");
         fs::create_dir_all(&profile_a).unwrap();
-        fs::write(profile_a.join(relative), "credenziali-a").unwrap();
+        fs::write(profile_a.join(relative), "credentials-a").unwrap();
 
         let result = apply_symlink_swap(&fixed_home, relative, &profile_a);
         assert!(result.is_err());
         assert_eq!(
             fs::read_to_string(fixed_home.join(relative)).unwrap(),
-            "credenziali-vere",
-            "un file reale è stato toccato invece di essere rifiutato"
+            "real-credentials",
+            "a real file was touched instead of being refused"
         );
     }
 
     #[test]
     fn apply_symlink_swap_refuses_a_profile_without_credentials_yet() {
         let dir = TempDir::new();
-        let fixed_home = dir.path().join("casa-fissa");
-        let profile_a = dir.path().join("profili").join("acme").join("a");
+        let fixed_home = dir.path().join("fixed-home");
+        let profile_a = dir.path().join("profiles").join("acme").join("a");
         fs::create_dir_all(&profile_a).unwrap();
 
         let result = apply_symlink_swap(&fixed_home, "credentials.json", &profile_a);
         assert!(result.is_err());
     }
 
-    /// Un percorso senza cartella davanti: `parent()` risponde con la stringa
-    /// vuota, e chi la passa a `create_dir_all` si sente rispondere «file
-    /// inesistente» pur avendo i permessi. Prima della riparazione del
-    /// 27/08/2026 il salvataggio di un nome nudo falliva.
-    ///
-    /// I TRE BRACCI SONO LA PROVA: il nome nudo non ha una cartella da creare,
-    /// quello con una cartella davanti ce l'ha, e quello assoluto pure. Togli il
-    /// filtro sul vuoto in `parent_to_create` e il primo diventa rosso.
+    /// A path with no directory in front: `parent()` answers with the empty
+    /// string, and `create_dir_all` refuses it despite the permission being
+    /// there. The three arms are the proof — drop the empty filter in
+    /// `parent_to_create` and the first goes red.
     #[test]
     fn a_bare_filename_has_no_directory_to_create() {
         assert_eq!(parent_to_create(Path::new("profili.json")), None);
         assert_eq!(
-            parent_to_create(Path::new("stato/profili.json")),
-            Some(Path::new("stato"))
+            parent_to_create(Path::new("state/profili.json")),
+            Some(Path::new("state"))
         );
         assert_eq!(
-            parent_to_create(Path::new("/tmp/stato/profili.json")),
-            Some(Path::new("/tmp/stato"))
+            parent_to_create(Path::new("/tmp/state/profili.json")),
+            Some(Path::new("/tmp/state"))
         );
     }
 
-    /// E il salvataggio vero riesce davvero, provato dove nessun'altra prova sta
-    /// guardando: una cartella tutta sua, con un percorso assoluto.
+    /// And the save really works, checked where no other test is looking: a
+    /// directory of its own, with an absolute path.
     #[test]
     fn the_store_is_written_where_it_is_asked_to_be() {
         let dir = TempDir::new();
-        let path = dir.path().join("dentro").join("profili.json");
-        save_store_to(&path, &ProfileStore::default()).expect("il salvataggio deve riuscire");
+        let path = dir.path().join("inside").join("profili.json");
+        save_store_to(&path, &ProfileStore::default()).expect("the save must succeed");
         assert!(path.exists());
     }
 }
