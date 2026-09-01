@@ -11,10 +11,6 @@ use std::path::{Path, PathBuf};
 /// in `desktop/src/RunConsole.tsx`; if it ever moves, both move.
 const FAILURE_PREFIX: &str = "run.failure.";
 
-/// **THERE IS NO SEED FOR THIS ONE, BECAUSE THE DEBT IS PAID.** It stood at 38
-/// for as long as it took to write the entries; a class arriving without one now
-/// is a defect and not a backlog, and it should be refused as such.
-
 /// How many places build a failure whose class this scan cannot read, because it
 /// is a variable rather than a literal. **The blind spot is declared, not
 /// hidden**: no number at all would let it grow while the test stayed green.
@@ -154,6 +150,9 @@ fn every_source_file_git_tracks_is_one_the_scan_opened() {
     );
 }
 
+/// **NO SEED HERE, BECAUSE THE DEBT IS PAID.** It stood at 38 for as long as it
+/// took to write the entries; a class arriving without one is now a defect and
+/// not a backlog, and gets refused as one.
 #[test]
 fn every_failure_the_engine_reports_has_a_sentence() {
     let (classes, _) = measured();
