@@ -456,6 +456,22 @@ impl Enumerate {
     }
 }
 
+/// The line that empties a session that is already open, typed as a person
+/// would type it.
+///
+/// A line and not a flag. A flag is how a command line is launched; this is
+/// what is said to one already running, and no launch flag can reach a session
+/// that is already open.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct ResetContext {
+    pub line: String,
+    /// For whoever reads: how it was established, and what was not checked.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// One line of the list of what to look for.
 ///
 /// **IT DOES NOT REFUSE FIELDS IT DOES NOT KNOW.** `deny_unknown_fields` threw a
@@ -506,6 +522,14 @@ pub struct Descriptor {
     /// constraint "we write code only for what touches the world".
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub capabilities: BTreeMap<String, Capability>,
+    /// How a session of this command line that is already running is told to
+    /// drop what it holds.
+    ///
+    /// Absent means nobody measured it, never «it cannot be done». Anything
+    /// that read absence as a default would type a guess into a working
+    /// session, and a wrong line typed into one cannot be taken back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reset_context: Option<ResetContext>,
     /// Where its configuration lives. Accepts `~/`, `$VAR` and `*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,
@@ -543,6 +567,9 @@ impl Descriptor {
         if let Some(login) = &self.login_status {
             found.extend(login.extra.keys().map(|key| format!("login_status.{key}")));
         }
+        if let Some(reset) = &self.reset_context {
+            found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));
+        }
         // A capability's name is not an unknown field — no name is, by
         // construction. What is unknown sits inside one of its forms.
         for (name, capability) in &self.capabilities {
@@ -555,6 +582,18 @@ impl Descriptor {
             }
         }
         found
+    }
+
+    /// The line that empties a running session, when somebody has measured it.
+    ///
+    /// `None` is the answer that must reach whoever asks: it says the machine
+    /// does not know, and knowing nothing is a reason to refuse, never a reason
+    /// to fall back on a line that belongs to a different command line.
+    pub fn reset_line(&self) -> Option<&str> {
+        self.reset_context
+            .as_ref()
+            .map(|reset| reset.line.as_str())
+            .filter(|line| !line.is_empty())
     }
 
     /// How this tool stands against a capability that was asked for.

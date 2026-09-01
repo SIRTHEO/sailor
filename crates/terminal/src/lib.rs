@@ -25,9 +25,14 @@
 //! `cargo test -p terminal` — e la finestra ci si attacca sopra. Un motore
 //! dentro la finestra sarebbe un motore che nessuno può provare senza aprirla.
 
+pub mod bridge;
+pub mod inbox;
+pub mod mandate;
 pub mod pty;
 pub mod routing;
+pub mod scratch;
 pub mod session;
+pub mod tally;
 
 pub use pty::{Pty, PtyError, Size};
 pub use routing::{

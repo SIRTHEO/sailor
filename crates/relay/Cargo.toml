@@ -1,0 +1,28 @@
+[package]
+name = "relay"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# The nodes a relay is made of, and no sequence: the order lives in a flow file.
+#
+# A CRATE OF ITS OWN, AND NOT PART OF `actions`, BECAUSE OF A CYCLE. These nodes
+# reach a live session, so they need `terminal`; and `terminal` needs `toolbox`,
+# which needs `actions`. Putting them in `actions` makes the workspace refuse to
+# build. The cycle is a fact about the dependency graph, not a preference, and
+# a crate here is what it leaves room for.
+[dependencies]
+flow = { path = "../flow" }
+ledger = { path = "../ledger" }
+# The letterbox, the count and the mandate of a live terminal.
+terminal = { path = "../terminal" }
+# The estimate that turns bytes into how full a context is.
+sessions = { path = "../sessions" }
+# Only to ask a descriptor how a session of that command line is emptied. No
+# node here writes that line: it is a fact about one product, and it stays data.
+toolbox = { path = "../toolbox" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+terminal = { path = "../terminal" }

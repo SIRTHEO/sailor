@@ -13,6 +13,7 @@
 //! moment.
 
 pub mod census;
+pub mod fullness;
 pub mod store;
 pub mod tty;
 
