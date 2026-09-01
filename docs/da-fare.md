@@ -115,6 +115,31 @@ dichiarati:
   va con il mondo che serve.
 - **In modalità viva, un errore di compilazione in un crate qualunque uccide la
   finestra** invece di lasciarla all'ultima versione buona.
+- **Un motore che dice di non poter lavorare ed esce ZERO non fa scattare
+  nessun ripiego**, e la catena non scala anche con tutti i descrittori a posto.
+  Trovato il 01/09/2026 da un giudice che verificava la chiusura del guasto 31,
+  cioè **dal lato da cui quella chiusura non guardava**.
+  `says_it_cannot_work` è interrogato solo dentro il ramo `ExitError`
+  (`crates/actions/src/lib.rs:2218`): nel ramo `Ok` la risposta è presa per
+  buona, si ritorna `Asked::Answered`, e la riga del deposito nasce con
+  `error_type: None`. Non è ipotetico su questa macchina — è il guasto 39:
+  `CODEX_HOME=<cartella vuota> codex exec < /dev/null` risponde «No prompt
+  provided via stdin» **ed esce zero**. Con un `answer_shape` dichiarato — ce
+  l'hanno tutti i passi di questi flussi — il passo muore poi su un errore di
+  forma, cioè **sul sintomo sbagliato, tre gradini più in là**.
+  La sonda a secco la distinzione ce l'ha già (`judge_dry_run`, `lib.rs:818`,
+  applicato a `Ok` *e* a `ExitError`): il controllo statico e la corsa vera
+  divergono, ed è la forma del guasto 39 su un altro campo. Nessuna prova lo
+  vede: quelle ermetiche fanno uscire il motore esaurito **sempre** in errore.
+  **Va portato nella tabella dei guasti alla prossima fusione** — sta qui e non
+  là solo perché due rami stanno numerando righe nuove nello stesso momento, e
+  un numero preso due volte è un conflitto che nessuno vede.
+- **Un passo che scrive `"tool": "agy"` come stringa invece che come elenco
+  esce da ogni controllo sulle catene**: `engines_in_chains()` legge solo
+  `as_array()` e lo salta, `fallbacks_into` gli lascia zero motori da guardare.
+  Succede oggi in `smista-il-lavoro.flow.json`, passo `engine_b`, dove un `agy`
+  esaurito si registra `exit_error` invece di `exhausted` — la distinzione che
+  il guasto 14 ha pagato per avere.
 
 ## Risposte già trovate, da mettere in pratica
 
