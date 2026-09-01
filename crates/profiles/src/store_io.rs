@@ -66,7 +66,8 @@ fn parent_to_create(path: &Path) -> Option<&Path> {
 
 pub fn save_store_to(path: &Path, store: &ProfileStore) -> Result<(), String> {
     if let Some(parent) = parent_to_create(path) {
-        fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
     let json = serialize_store(store).map_err(|e| format!("serialisation failed: {e}"))?;
     fs::write(path, json).map_err(|e| format!("cannot write {}: {e}", path.display()))
@@ -116,7 +117,8 @@ pub fn apply_symlink_swap(
         Err(e) => return Err(format!("cannot read {}: {e}", swap.link_path.display())),
     }
     if let Some(parent) = swap.link_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
     std::os::unix::fs::symlink(&swap.target_path, &swap.link_path)
         .map_err(|e| format!("cannot link {}: {e}", swap.link_path.display()))

@@ -206,12 +206,7 @@ fn print_changes() -> Result<(), String> {
     } else {
         println!("sparite: {}", gone.len());
         for item in &gone {
-            println!(
-                "  {:<10} {:<34} {}",
-                item.kind,
-                item.name,
-                item.origin
-            );
+            println!("  {:<10} {:<34} {}", item.kind, item.name, item.origin);
         }
     }
     Ok(())

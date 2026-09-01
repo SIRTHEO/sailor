@@ -27,7 +27,7 @@
 //! `invalid_input`, le stesse parole del 31/08.
 
 use flow::{
-    Executor, ExecutionRequest, Graph, InProcessExecutor, Outcome, RecordStore, SharedState, Step,
+    ExecutionRequest, Executor, Graph, InProcessExecutor, Outcome, RecordStore, SharedState, Step,
     SystemClock, ValueSchema,
 };
 use ledger::Ledger;

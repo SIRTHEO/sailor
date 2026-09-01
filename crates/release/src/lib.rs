@@ -199,7 +199,10 @@ mod tests {
         let names = vec!["arrivato-per-altra-via.txt".to_string()];
         let ready = readiness(&names, &|_| true);
         assert!(ready.is_ready());
-        assert_eq!(ready.unknown, vec!["arrivato-per-altra-via.txt".to_string()]);
+        assert_eq!(
+            ready.unknown,
+            vec!["arrivato-per-altra-via.txt".to_string()]
+        );
     }
 
     #[test]
@@ -280,7 +283,8 @@ mod tests {
     /// at the top: the first *useful* line must win anyway.
     #[test]
     fn the_stamp_reads_the_first_useful_line_whatever_surrounds_it() {
-        let contents = "\n   \n# why it was reconstructed\n\t abc123 \n# and a note after it\ndef456\n";
+        let contents =
+            "\n   \n# why it was reconstructed\n\t abc123 \n# and a note after it\ndef456\n";
         assert_eq!(read_stamp(contents).as_deref(), Some("abc123"));
     }
 }
@@ -289,7 +293,9 @@ mod tests {
 /// whoever writes the receipts, which is this crate.
 pub fn split_receipt_name(name: &str) -> (String, Option<u32>) {
     match name.rsplit_once('.') {
-        Some((base, suffix)) if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) => {
+        Some((base, suffix))
+            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) =>
+        {
             (base.to_string(), suffix.parse().ok())
         }
         _ => (name.to_string(), None),

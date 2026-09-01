@@ -4,9 +4,9 @@ version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
 
-# Nessuna dipendenza in più: la pagina serve solo `flow`/`ledger` (già nel
-# deposito) e un servitore scritto a mano su `TcpListener`, coerente con la
-# scelta del resto del workspace di tenere le dipendenze al minimo.
+# No extra dependencies: this crate needs only `flow` and `ledger`, which the
+# ledger already brings in, in keeping with the rest of the workspace holding
+# its dependencies to a minimum.
 [dependencies]
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }

@@ -136,7 +136,10 @@ mod tests {
             declared.checks.is_empty(),
             "indovinare una verifica è deciderla al posto di chi lavora qui"
         );
-        assert!(flow::workspace::find_root(&root).is_some(), "ora è una radice");
+        assert!(
+            flow::workspace::find_root(&root).is_some(),
+            "ora è una radice"
+        );
 
         let _ = fs::remove_dir_all(&root);
     }

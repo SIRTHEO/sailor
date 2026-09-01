@@ -1,102 +1,80 @@
-//! Con quale identità un processo esterno è partito.
+//! What identity an external process started with.
 //!
-//! **PERCHÉ UN TIPO E NON UNA STRINGA.** Fino al 01/09/2026 la riga di una
-//! chiamata portava un campo di testo che valeva `<riga di comando>/<profilo>`
-//! quando un profilo era in forza, e la stringa vuota in tutti gli altri casi.
-//! Gli altri casi erano cinque, e non sono la stessa cosa: un comando che non è
-//! un motore conosciuto; nessun profilo in forza, cioè la casa di chi ha aperto
-//! il terminale, che è un'identità vera e nominabile; uno stato che nomina un
-//! profilo sparito; una riga di comando che la casa non la sposta con una
-//! variabile; e un passo consegnato a un agente vivo, di cui Sailor non sa
-//! niente. **Cinque fatti diversi, un solo vuoto.**
-//!
-//! È la stessa regola che questo albero applica già al costo e ai token: *ciò
-//! che non è una misura non diventa uno zero*. Qui: **ciò che non è un'assenza
-//! non diventa una stringa vuota.**
-//!
-//! **E C'ERA UN SESTO CASO, CHE ERA UNA BUGIA.** Un passo che scrive da sé la
-//! variabile di casa vince — è la decisione, e non si cambia — ma la riga
-//! continuava a nominare il profilo attivo. Il registro diceva un'identità e il
-//! processo ne aveva usata un'altra, proprio nel caso in cui qualcuno l'aveva
-//! cambiata apposta: cioè esattamente quello che una diagnostica o un controllo
-//! di sicurezza esiste per vedere.
-//!
-//! **IL GETTONE NON ENTRA QUI.** Nessuna variante porta credenziali, e nessuna
-//! deve portarne: quello che serve a chi guarda è **quale casa** e **come è
-//! stata scelta**. Il percorso è il fondo su cui una diagnostica si appoggia;
-//! il contenuto di quella casa non è affare di una riga di registro.
+//! **A TYPE AND NOT A STRING.** One text field held `<cli>/<profile>` when a
+//! profile was in force and the empty string otherwise: six different facts in
+//! one emptiness, one of them a lie. As *what is not a measure does not become
+//! a zero* elsewhere, **what is not an absence does not become an empty string**.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
 
-/// Con quale identità è partito il processo di cui questa riga parla.
+/// What identity the process this row talks about started with.
 ///
-/// Ogni variante risponde a due domande insieme — **quale casa** e **come è
-/// stata scelta** — perché separarle vorrebbe dire poter scrivere un percorso
-/// giusto con una ragione sbagliata, e nessuno se ne accorgerebbe.
+/// Every variant answers two questions at once — **which home** and **how it
+/// was chosen** — because splitting them lets a right path be written with a
+/// wrong reason and nobody notice. **No variant carries a token**: the path is
+/// the ground a diagnosis stands on, and that home's contents are not ours.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EngineIdentity {
-    /// Un profilo era in forza e la sua casa è stata messa nell'ambiente.
+    /// A profile was in force and its home was put into the environment.
     ProfileInForce {
         cli_id: String,
         profile_name: String,
-        /// **IL DATO CHE VALE.** Il nome di un profilo si può riusare, spostare
-        /// o cancellare; il percorso è ciò su cui si va a guardare quando
-        /// qualcosa è andato storto.
+        /// **THE DATUM THAT COUNTS.** A profile name can be reused, moved or
+        /// deleted; the path is what you go and look at when something went
+        /// wrong.
         home_dir: PathBuf,
     },
-    /// Il passo ha scritto da sé la variabile di casa, e vince lui.
+    /// The step set the home variable itself, and it wins.
     ///
-    /// **NON È UN GUASTO: È LA DECISIONE.** Chi scrive una variabile dentro un
-    /// passo sta dicendo qualcosa di preciso su *quella* chiamata, e non deve
-    /// poter essere scavalcato da uno stato che vive altrove. Il guasto era
-    /// tacerlo — registrare il nome del profilo attivo mentre il processo
-    /// partiva da un'altra parte.
+    /// **NOT A FAULT: THE DECISION.** A variable written inside a step says
+    /// something precise about *that* call and must not be overridden by state
+    /// living elsewhere. The fault was staying quiet about it — recording the
+    /// active profile's name while the process started somewhere else.
     ChosenByTheStep { cli_id: String, home_dir: PathBuf },
-    /// Nessun profilo in forza per questa riga di comando: il processo parte con
-    /// la casa di chi ha aperto il terminale.
+    /// No profile in force: the process starts with the home of whoever opened
+    /// the terminal.
     ///
-    /// **«EREDITATA» NON È «IGNOTA».** È un'identità vera, e dirlo è più utile
-    /// che tacere: chi legge sa che quella chiamata ha usato le credenziali
-    /// della macchina, non quelle di un profilo. Il percorso non c'è perché
-    /// questa decisione si prende senza guardare l'ambiente né il disco, e
-    /// dedurlo dal nome della riga di comando sarebbe indovinarlo.
+    /// **"INHERITED" IS NOT "UNKNOWN"**: a real identity, and saying so tells
+    /// the reader the call used the machine's credentials. No path, because
+    /// this decision looks at neither environment nor disk — it would be a guess.
     InheritedFromTheTerminal { cli_id: String },
-    /// Lo stato nomina un profilo che l'elenco non ha più.
+    /// The state names a profile the list no longer has.
     ///
-    /// Il processo è partito con la casa ereditata, come sopra — ma la ragione è
-    /// un'altra, e questa è la sola che chiede di intervenire: c'è uno stato da
-    /// riparare. Comporre il percorso dal nome darebbe una casa vuota con l'aria
-    /// di un profilo applicato.
-    ProfileVanished { cli_id: String, profile_name: String },
-    /// Un profilo c'è, ma questa riga di comando non sposta la casa con una
-    /// variabile: l'identità dipende da dove punta un file sul disco.
+    /// The process started with the inherited home, as above — but the reason
+    /// differs, and this is the only one that asks for action: there is state to
+    /// repair. Composing the path from the name would give an empty home with
+    /// the air of an applied profile.
+    ProfileVanished {
+        cli_id: String,
+        profile_name: String,
+    },
+    /// A profile exists, but this CLI does not move its home with an
+    /// environment variable: the identity depends on where a file on disk points.
     NotMovedByAnEnvVar {
         cli_id: String,
         profile_name: String,
-        /// Perché non è stata messa in forza, con le parole del meccanismo.
+        /// Why it was not put in force, in the mechanism's own words.
         why: String,
     },
-    /// Il binario non è una riga di comando che Sailor conosce — `sh`, uno
-    /// script: non c'è nessuna casa da spostare, e dargliene una non vorrebbe
-    /// dire niente.
+    /// The binary is not a CLI Sailor knows — `sh`, a script: there is no home
+    /// to move, and giving it one would mean nothing.
     NotAKnownEngine,
-    /// Un passo consegnato: a lavorare è stato l'agente già vivo nel terminale.
+    /// A handed-over step: the work was done by the agent already alive in the
+    /// terminal.
     ///
-    /// Sailor non ha avviato niente e non sa con quale identità quell'agente
-    /// abbia lavorato. Scriverne una qualunque sarebbe inventarla; tacere la
-    /// confonderebbe con «nessun profilo».
+    /// Sailor started nothing and does not know what identity that agent worked
+    /// under. Writing any would be inventing it; silence would confuse it with
+    /// "no profile".
     DeclaredByAnAgent,
-    /// La riga viene da prima che Sailor registrasse l'identità.
+    /// The row predates Sailor recording the identity.
     ///
-    /// `legacy` è il testo che la vecchia colonna portava — `<cli>/<profilo>`
-    /// oppure vuoto. **Non si promuove a un profilo dichiarato**, perché quella
-    /// colonna nominava il profilo attivo anche quando il passo l'aveva
-    /// scavalcato: era già capace di mentire, e trasformarla adesso in una
-    /// dichiarazione strutturata darebbe a una bugia vecchia la faccia di una
-    /// misura nuova.
+    /// `legacy` is the text the old column carried. **It is not promoted to a
+    /// declared profile**: that column named the active profile even when the
+    /// step had overridden it, so it was already able to lie, and structuring it
+    /// now would give an old lie the face of a new measure.
     Unrecorded {
         #[serde(default)]
         legacy: String,
@@ -112,7 +90,7 @@ impl Default for EngineIdentity {
 }
 
 impl EngineIdentity {
-    /// La riga di comando di cui si parla, quando se ne conosce una.
+    /// The CLI being talked about, when one is known.
     pub fn cli_id(&self) -> Option<&str> {
         match self {
             Self::ProfileInForce { cli_id, .. }
@@ -124,11 +102,11 @@ impl EngineIdentity {
         }
     }
 
-    /// La casa con cui il processo è partito, quando Sailor l'ha decisa lui.
+    /// The home the process started with, when Sailor was the one who chose it.
     ///
-    /// `None` non vuol dire «non c'era una casa»: vuol dire che questa riga non
-    /// la conosce, perché a sceglierla è stato qualcun altro — l'ambiente di chi
-    /// ha aperto il terminale, un collegamento simbolico sul disco, un agente.
+    /// `None` does not mean "there was no home": it means this row does not know
+    /// it, because somebody else chose it — the environment of whoever opened
+    /// the terminal, a symlink on disk, an agent.
     pub fn home_dir(&self) -> Option<&std::path::Path> {
         match self {
             Self::ProfileInForce { home_dir, .. } | Self::ChosenByTheStep { home_dir, .. } => {
@@ -138,21 +116,20 @@ impl EngineIdentity {
         }
     }
 
-    /// Come si scrive in una colonna di testo.
+    /// How it is written into a text column.
     pub fn to_column(&self) -> String {
-        // Un tipo con `Serialize` non fallisce a serializzarsi: se mai
-        // succedesse, la colonna resta vuota e si rilegge come «non registrata»,
-        // che è la sola cosa vera che si possa dire di una riga il cui campo non
-        // si è potuto scrivere.
+        // A `Serialize` type does not fail to serialize; if it ever did, the
+        // column stays empty and reads back as "unrecorded", the only true
+        // thing that can be said of a row whose field could not be written.
         serde_json::to_string(self).unwrap_or_default()
     }
 
-    /// Come si rilegge da una colonna di testo.
+    /// How it is read back from a text column.
     ///
-    /// **UN TESTO CHE NON È IL NOSTRO JSON NON SI BUTTA VIA.** Le righe scritte
-    /// prima del 01/09/2026 portano lì `<cli>/<profilo>` o niente: diventano
-    /// [`EngineIdentity::Unrecorded`] con quel testo dentro, che è l'unico
-    /// indizio che quella riga ha.
+    /// **TEXT THAT IS NOT OUR JSON IS NOT THROWN AWAY.** Every row written
+    /// before this type existed carries `<cli>/<profile>` there, or nothing:
+    /// those become [`EngineIdentity::Unrecorded`] holding that text, which is
+    /// the only clue such a row has left.
     pub fn from_column(text: &str) -> Self {
         serde_json::from_str(text).unwrap_or_else(|_| Self::Unrecorded {
             legacy: text.to_owned(),
@@ -160,7 +137,7 @@ impl EngineIdentity {
     }
 }
 
-/// Una riga per una persona: prima **come** è stata scelta, poi **quale casa**.
+/// A line for a person: first **how** it was chosen, then **which home**.
 impl fmt::Display for EngineIdentity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -170,24 +147,24 @@ impl fmt::Display for EngineIdentity {
                 home_dir,
             } => write!(
                 formatter,
-                "profilo {cli_id}/{profile_name} — casa {}",
+                "profile {cli_id}/{profile_name} — home {}",
                 home_dir.display()
             ),
             Self::ChosenByTheStep { cli_id, home_dir } => write!(
                 formatter,
-                "casa scelta dal passo ({cli_id}) — casa {}",
+                "home chosen by the step ({cli_id}) — home {}",
                 home_dir.display()
             ),
             Self::InheritedFromTheTerminal { cli_id } => write!(
                 formatter,
-                "identità ereditata da chi ha aperto il terminale ({cli_id}): nessun profilo in forza"
+                "identity inherited from whoever opened the terminal ({cli_id}): no profile in force"
             ),
             Self::ProfileVanished {
                 cli_id,
                 profile_name,
             } => write!(
                 formatter,
-                "identità ereditata ({cli_id}): lo stato nomina il profilo «{profile_name}», che non esiste più"
+                "inherited identity ({cli_id}): the state names profile \"{profile_name}\", which no longer exists"
             ),
             Self::NotMovedByAnEnvVar {
                 cli_id,
@@ -195,21 +172,21 @@ impl fmt::Display for EngineIdentity {
                 why,
             } => write!(
                 formatter,
-                "profilo {cli_id}/{profile_name} non messo in forza: {why}"
+                "profile {cli_id}/{profile_name} not put in force: {why}"
             ),
             Self::NotAKnownEngine => {
-                write!(formatter, "non è una riga di comando che Sailor conosce")
+                write!(formatter, "not a command line that Sailor knows")
             }
             Self::DeclaredByAnAgent => write!(
                 formatter,
-                "dichiarata da un agente: identità non nota a Sailor"
+                "declared by an agent: identity not known to Sailor"
             ),
             Self::Unrecorded { legacy } if legacy.is_empty() => {
-                write!(formatter, "non registrata")
+                write!(formatter, "unrecorded")
             }
             Self::Unrecorded { legacy } => write!(
                 formatter,
-                "non registrata (la vecchia colonna diceva «{legacy}»)"
+                "unrecorded (the old column said \"{legacy}\")"
             ),
         }
     }
@@ -219,21 +196,21 @@ impl fmt::Display for EngineIdentity {
 mod tests {
     use super::*;
 
-    /// **QUELLO CHE VA NELLA COLONNA TORNA INDIETRO TALE E QUALE.** Senza,
-    /// l'identità sarebbe scritta e riletta diversa, e nessuno se ne
-    /// accorgerebbe finché una diagnostica non guardasse la riga sbagliata.
+    /// **WHAT GOES INTO THE COLUMN COMES BACK UNCHANGED.** Without this the
+    /// identity would be written and read back different, and nobody would
+    /// notice until a diagnosis looked at the wrong row.
     #[test]
     fn every_shape_survives_the_column() {
         for identity in every_shape() {
             assert_eq!(
                 EngineIdentity::from_column(&identity.to_column()),
                 identity,
-                "questa forma non sopravvive al giro nel deposito"
+                "this shape does not survive the round trip through the store"
             );
         }
     }
 
-    /// Il testo di una colonna vecchia non si butta via e non si promuove.
+    /// The text of an old column is neither thrown away nor promoted.
     #[test]
     fn an_old_column_becomes_unrecorded_with_its_text_kept() {
         assert_eq!(
@@ -250,15 +227,15 @@ mod tests {
         );
     }
 
-    /// **OGNI FORMA SI LEGGE DIVERSA DALLE ALTRE.** È la cura del difetto: se
-    /// due fatti diversi producessero la stessa riga per chi guarda, il tipo
-    /// avrebbe solo spostato il vuoto più in là.
+    /// **EVERY SHAPE READS DIFFERENTLY FROM THE OTHERS.** That is the cure: if
+    /// two different facts produced the same line for the reader, the type
+    /// would only have moved the emptiness further along.
     #[test]
     fn no_two_shapes_read_the_same() {
         let said: Vec<String> = every_shape().iter().map(ToString::to_string).collect();
         for (position, one) in said.iter().enumerate() {
             for other in said.iter().skip(position + 1) {
-                assert_ne!(one, other, "due fatti diversi si leggono uguali");
+                assert_ne!(one, other, "two different facts read the same");
             }
         }
     }
@@ -284,7 +261,7 @@ mod tests {
             EngineIdentity::NotMovedByAnEnvVar {
                 cli_id: "antigravity".to_owned(),
                 profile_name: "lavoro".to_owned(),
-                why: "nessuna variabile nota".to_owned(),
+                why: "no known environment variable".to_owned(),
             },
             EngineIdentity::NotAKnownEngine,
             EngineIdentity::DeclaredByAnAgent,

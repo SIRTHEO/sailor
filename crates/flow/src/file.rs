@@ -1,31 +1,21 @@
-//! Il formato di un flusso su disco.
-//!
-//! PERCHÉ STA QUI. Il 28/08/2026 questo tipo è nato due volte nella stessa
-//! notte — in `ui::registry` e in `sailor::flow_cmd` — perché due motori
-//! esterni lavoravano in parallelo su perimetri separati e nessuno dei due
-//! poteva vedere l'altro. I campi coincidevano per fortuna, non per costruzione:
-//! bastava che uno aggiungesse un campo perché la finestra e la riga di comando
-//! leggessero due formati diversi chiamandoli con lo stesso nome. Il formato del
-//! flusso appartiene al crate del flusso, e chi lo legge lo importa.
-//!
-//! Ne resta una terza copia che non si può togliere: `desktop/src/flow.ts`, la
-//! finestra, che è in un altro linguaggio. Chi cambia questo tipo cambia anche
-//! quel file — non c'è compilatore che leghi i due, solo questa riga.
-//!
-//! Il grafo da solo dichiara le forme e non dice mai *quale* comando o *quale*
-//! motore: per questo il file porta anche i valori.
+//! The on-disk format of a flow: the graph plus the values it starts with,
+//! because the graph declares shapes and never names a command or an engine.
+//! Born twice in one night once, in `ui::registry` and `sailor::flow_cmd`: the
+//! fields coincided by luck, and one added field would have had the window and
+//! the command line reading two formats under one name. A third copy no
+//! compiler ties to this one — `desktop/src/flow.ts` — changes when this does.
 
 use crate::{Graph, Schedule};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Un flusso dichiarato: il grafo più i valori con cui parte.
+/// A declared flow: the graph plus the values it starts with.
 ///
-/// `graph` passa dalla validazione di `Graph` al caricamento — cicli,
-/// dipendenze mancanti, tetti a zero e fusioni distruttive vengono rifiutati
-/// lì, non a metà esecuzione. `inputs` diventa i `root_inputs` della richiesta:
-/// una voce per ogni passo senza dipendenze.
+/// `graph` goes through `Graph`'s validation at load time — cycles, missing
+/// dependencies, zero caps and destructive merges are refused there, not
+/// halfway through a run. `inputs` becomes the request's `root_inputs`: one
+/// entry per step with no dependencies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FlowFile {
@@ -33,41 +23,20 @@ pub struct FlowFile {
     pub description: String,
     pub graph: Graph,
     pub inputs: BTreeMap<String, Value>,
-    /// Quando il flusso è dovuto, quanto pesa, dove può scrivere.
+    /// When the flow is due, how much it weighs, where it may write.
     ///
-    /// FACOLTATIVO PERCHÉ ESISTONO TUTTI E DUE I CASI, e non è un ripiego: un
-    /// flusso lanciato a mano non ha una ricorrenza, e dargliene una per forza
-    /// vorrebbe dire che qualcosa, prima o poi, lo fa partire da solo. `None`
-    /// significa «gira quando qualcuno lo chiede», che è un fatto, non un vuoto
-    /// da riempire.
-    ///
-    /// **ASSENTE SI SCRIVE ASSENTE, NON `null`.** Chi riscrive un flusso —
-    /// `sailor flow cap`, o la tela — non deve aggiungergli righe che nessuno ha
-    /// scritto: `"schedule": null` non dice niente più dell'assenza, e riempie
-    /// di rumore il diff di chi rilegge il proprio flusso dopo il comando. Le
-    /// due forme si rileggono identiche, e una prova lo tiene fermo.
+    /// Optional because both cases really exist, not as a fallback: a flow
+    /// launched by hand has no recurrence, and forcing one on it would say that
+    /// something, sooner or later, starts it by itself. `None` means "runs when
+    /// someone asks" — a fact, not a hole to fill. Absent is written absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<Schedule>,
-    /// Quanto una corsa di questo flusso può spendere, in micro-unità di
-    /// valuta. Un milione è un'unità: `1_000_000` è un dollaro.
-    ///
-    /// **`None` NON È ZERO, E LA DIFFERENZA È TUTTA.** `None` è «nessuno ha
-    /// messo un limite», ed è come si sono comportati i flussi fino al
-    /// 31/08/2026; `Some(0)` è «questo flusso non deve spendere niente», e si
-    /// ferma prima della prima chiamata a pagamento. Il predefinito è `None`,
-    /// perché un tetto che comparisse da sé fermerebbe corse che nessuno ha
-    /// chiesto di fermare — e lo farebbe la notte, quando nessuno guarda.
-    ///
-    /// **CHE COSA IL TETTO NON PUÒ PROMETTERE.** Si misura sui costi che i
-    /// motori dichiarano: chi non li dichiara — codex dice il totale dei token
-    /// e non i due lati — lascia righe senza costo, che nel conto non entrano.
-    /// Il tetto è quindi una garanzia su ciò che si sa, e chi lo legge lo vede
-    /// dichiarato: la corsa fermata dice anche quante chiamate erano fuori dal
-    /// conto.
-    ///
-    /// Come `schedule`: nessun tetto si scrive non scrivendo il campo. Un
-    /// `"spend_cap_micros": null` in un flusso a cui nessuno ha messo un limite
-    /// sarebbe una riga in più da leggere per dire ciò che l'assenza dice già.
+    /// What one run may spend, in currency micro-units (`1_000_000` is one
+    /// unit); absent is written absent, as for `schedule`. `None` is not zero:
+    /// `None` is "nobody set a limit", `Some(0)` is "must not spend" and stops
+    /// before the first paid call. The default is `None`, or a cap appearing by
+    /// itself would stop runs nobody asked to stop. What it cannot promise is
+    /// on [`crate::Spend`]: the cap is a guarantee over costs engines declare.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spend_cap_micros: Option<i64>,
 }
@@ -76,13 +45,13 @@ pub struct FlowFile {
 mod tests {
     use super::*;
 
-    /// Il formato che la finestra e la riga di comando devono leggere allo
-    /// stesso modo. Se questa prova cade, le due si sono separate di nuovo.
+    /// The format the window and the command line must read the same way. If
+    /// this test falls, the two have drifted apart again.
     #[test]
     fn a_declared_flow_carries_its_graph_and_its_values() {
         let text = r#"{
             "id": "prima-corsa",
-            "description": "una verifica sola",
+            "description": "a single check",
             "graph": {
                 "steps": [{
                     "id": "clean",
@@ -97,15 +66,15 @@ mod tests {
             "inputs": { "clean": { "command": "true", "timeout_secs": 5 } }
         }"#;
 
-        let file: FlowFile = serde_json::from_str(text).expect("flusso valido");
+        let file: FlowFile = serde_json::from_str(text).expect("valid flow");
 
         assert_eq!(file.id, "prima-corsa");
         assert_eq!(file.graph.steps().len(), 1);
         assert_eq!(file.inputs["clean"]["command"], "true");
     }
 
-    /// Un grafo nudo non è un flusso: senza `inputs` nessuno sa con che valori
-    /// parte, e senza `id` non ha un nome per essere invocato.
+    /// A bare graph is not a flow: without `inputs` nobody knows what values it
+    /// starts from, and without `id` it has no name to be invoked by.
     #[test]
     fn a_naked_graph_is_not_a_flow_file() {
         let text = r#"{"steps": []}"#;

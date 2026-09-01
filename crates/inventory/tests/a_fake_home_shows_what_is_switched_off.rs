@@ -1,20 +1,18 @@
-//! L'inventario su una casa finta, costruita apposta perché ogni verdetto
-//! possa venire diverso da quello atteso.
-//!
-//! LA DOMANDA CHE QUESTE PROVE DIFENDONO non è «quante cose ci sono»: è «quali
-//! non funzionano e nessuno lo sa». Un elenco che dice solo i nomi lo si può
-//! fare con `ls`; il valore sta nelle due righe che dicono *plugin spento* e
-//! *punta a un file che non esiste* — e quelle due righe sono le sole che, se
-//! smettessero di funzionare, lascerebbero l'inventario verde e falso.
+//! The inventory on a fake home, built so that every verdict could come out
+//! different from the one expected. THE QUESTION THESE TESTS DEFEND is not "how
+//! many things are there" — `ls` answers that — it is "which ones do not work,
+//! and nobody knows it". The value sits in the two lines saying *plugin
+//! switched off* and *points at a file that is gone*: they are the only two
+//! that, stopping, would leave the inventory green and false.
 
 use inventory::{collect, Kind, Reach, Root};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Una casa usa-e-getta sotto la cartella temporanea, cancellata e rifatta a
-/// ogni giro: una prova che eredita lo sporco della precedente non prova niente.
+/// A throwaway home under the temp directory, deleted and rebuilt every run: a
+/// test that inherits the previous one's dirt proves nothing.
 fn fake_home(name: &str) -> PathBuf {
-    let home = std::env::temp_dir().join(format!("prova-inventario-{name}"));
+    let home = std::env::temp_dir().join(format!("inventory-test-{name}"));
     let _ = fs::remove_dir_all(&home);
     fs::create_dir_all(&home).unwrap();
     home
@@ -28,74 +26,82 @@ fn write(path: &Path, text: &str) {
 fn skill(home: &Path, at: &str, name: &str) {
     write(
         &home.join(at),
-        &format!("---\nname: {name}\ndescription: che cosa fa {name}\n---\n\n# {name}\n"),
+        &format!("---\nname: {name}\ndescription: what {name} does\n---\n\n# {name}\n"),
     );
 }
 
 #[test]
 fn a_skill_inside_a_switched_off_plugin_stays_in_the_list_and_says_why() {
-    let home = fake_home("plugin-spento");
-    // Un plugin acceso e uno spento, dichiarati come li dichiara Claude Code:
-    // la chiave porta la versione dopo la chiocciola.
+    let home = fake_home("plugin-switched-off");
+    // One plugin on and one off, declared the way Claude Code declares them:
+    // the key carries the version after the at sign.
     write(
         &home.join(".claude/settings.json"),
-        r#"{"enabledPlugins": {"acceso@1.0.0": true, "spento@1.0.0": false}}"#,
+        r#"{"enabledPlugins": {"switched-on@1.0.0": true, "switched-off@1.0.0": false}}"#,
     );
     skill(
         &home,
-        ".claude/plugins/cache/mercato/acceso/skills/prima/SKILL.md",
-        "prima",
+        ".claude/plugins/cache/market/switched-on/skills/first/SKILL.md",
+        "first",
     );
     skill(
         &home,
-        ".claude/plugins/cache/mercato/spento/skills/seconda/SKILL.md",
-        "seconda",
+        ".claude/plugins/cache/market/switched-off/skills/second/SKILL.md",
+        "second",
     );
 
     let found = collect(&[Root::home(&home)]);
     let skills = found.of(Kind::Skill);
     assert_eq!(skills.len(), 2, "{skills:#?}");
 
-    let first = skills.iter().find(|e| e.name == "acceso:prima").unwrap();
+    let first = skills
+        .iter()
+        .find(|e| e.name == "switched-on:first")
+        .unwrap();
     assert_eq!(first.reach, Reach::Active);
-    assert_eq!(first.origin, "plugin acceso");
+    assert_eq!(first.origin, "plugin switched-on");
 
-    let second = skills.iter().find(|e| e.name == "spento:seconda").unwrap();
+    let second = skills
+        .iter()
+        .find(|e| e.name == "switched-off:second")
+        .unwrap();
     match &second.reach {
-        Reach::Inactive(reason) => assert!(reason.contains("spento"), "{reason}"),
-        other => panic!("una competenza in un plugin spento risulta {other:?}"),
+        Reach::Inactive(reason) => assert!(
+            reason.contains("switched-off") && reason.contains("not enabled"),
+            "the reason must name the plugin that is off: {reason}"
+        ),
+        other => panic!("a skill inside a disabled plugin reads as {other:?}"),
     }
 }
 
-/// Il braccio opposto della prova sopra: acceso lo stesso plugin, la stessa
-/// competenza deve cambiare verdetto. Senza questo, «spento» potrebbe essere
-/// una risposta costante.
+/// The opposite arm of the test above: switch the same plugin on and the same
+/// skill has to change verdict. Without it, "off" could be a constant answer.
 #[test]
 fn switching_the_plugin_on_changes_the_verdict_of_the_same_skill() {
-    let home = fake_home("plugin-riacceso");
+    let home = fake_home("plugin-switched-back-on");
     write(
         &home.join(".claude/settings.json"),
-        r#"{"enabledPlugins": {"mercato-mio@1.0.0": true}}"#,
+        r#"{"enabledPlugins": {"my-market@1.0.0": true}}"#,
     );
     skill(
         &home,
-        ".claude/plugins/cache/mercato/mercato-mio/skills/sola/SKILL.md",
-        "sola",
+        ".claude/plugins/cache/market/my-market/skills/only-one/SKILL.md",
+        "only-one",
     );
 
     let found = collect(&[Root::home(&home)]);
     let only = found
         .of(Kind::Skill)
         .into_iter()
-        .find(|e| e.name.ends_with("sola"))
+        .find(|e| e.name.ends_with("only-one"))
         .unwrap();
     assert_eq!(only.reach, Reach::Active, "{only:#?}");
 }
 
 #[test]
 fn a_hook_pointing_at_a_file_that_is_gone_is_reported_as_dead() {
-    let home = fake_home("gancio-morto");
-    let script = home.join(".claude/scripts/vivo.sh");
+    let home = fake_home("dead-hook");
+    let script = home.join(".claude/scripts/alive.sh");
     write(&script, "#!/bin/sh\nexit 0\n");
     write(
         &home.join(".claude/settings.json"),
@@ -103,7 +109,7 @@ fn a_hook_pointing_at_a_file_that_is_gone_is_reported_as_dead() {
             r#"{{"hooks": {{
                 "PreToolUse": [
                   {{"matcher": "Bash", "hooks": [{{"command": "{} --check"}}]}},
-                  {{"matcher": "Write", "hooks": [{{"command": "{}/.claude/scripts/sparito.sh"}}]}}
+                  {{"matcher": "Write", "hooks": [{{"command": "{}/.claude/scripts/vanished.sh"}}]}}
                 ]
             }}}}"#,
             script.to_string_lossy(),
@@ -115,9 +121,9 @@ fn a_hook_pointing_at_a_file_that_is_gone_is_reported_as_dead() {
     let hooks = found.of(Kind::Hook);
     assert_eq!(hooks.len(), 2, "{hooks:#?}");
 
-    // Il nome porta anche quale gancio è, non solo dove scatta: senza, due
-    // ganci sullo stesso evento e matcher sarebbero indistinguibili — e su
-    // questa macchina otto vivono su `PreToolUse · Bash`.
+    // The name carries which hook it is, not only where it fires: without that,
+    // two hooks on the same event and matcher would be indistinguishable — and
+    // on a real machine eight of them live on `PreToolUse · Bash`.
     assert_ne!(hooks[0].name, hooks[1].name, "{hooks:#?}");
 
     let alive = hooks.iter().find(|e| e.name.contains("Bash")).unwrap();
@@ -125,18 +131,21 @@ fn a_hook_pointing_at_a_file_that_is_gone_is_reported_as_dead() {
 
     let dead = hooks.iter().find(|e| e.name.contains("Write")).unwrap();
     match &dead.reach {
-        Reach::Inactive(reason) => assert!(reason.contains("sparito.sh"), "{reason}"),
-        other => panic!("un gancio che punta al vuoto risulta {other:?}"),
+        Reach::Inactive(reason) => assert!(
+            reason.contains("vanished.sh"),
+            "the reason must name the missing file: {reason}"
+        ),
+        other => panic!("a hook pointing at nothing reads as {other:?}"),
     }
 }
 
-/// I due falsi allarmi presi sul disco vero il 28/08/2026, messi qui perché non
-/// tornino: la punteggiatura della shell attaccata al percorso, e una parola che
-/// comincia per `/` senza essere un file.
+/// The two false alarms taken off a real disk, kept here so they do not come
+/// back: shell punctuation glued to the path, and a word starting with `/` that
+/// is not a file.
 #[test]
 fn shell_punctuation_and_slash_arguments_do_not_kill_a_living_hook() {
-    let home = fake_home("falsi-allarmi");
-    let script = home.join(".claude/scripts/vivo.sh");
+    let home = fake_home("false-alarms");
+    let script = home.join(".claude/scripts/alive.sh");
     write(&script, "#!/bin/sh\nexit 0\n");
     write(
         &home.join(".claude/settings.json"),
@@ -160,116 +169,123 @@ fn shell_punctuation_and_slash_arguments_do_not_kill_a_living_hook() {
     }
 }
 
-/// Le regole e i comandi di un repo non sono attivi ovunque, e dirlo «attivo»
-/// sarebbe la bugia comoda: valgono solo per chi apre una sessione lì dentro.
+/// A repo's rules and commands are not active everywhere, and calling them
+/// active would be the convenient lie: they hold only for whoever opens a
+/// session in there.
 #[test]
 fn what_lives_in_a_repo_is_never_reported_as_active_everywhere() {
-    let home = fake_home("regole-di-repo");
-    let repo = home.join("lavoro/suo-repo");
+    let home = fake_home("repo-rules");
+    let repo = home.join("work/their-repo");
     write(
-        &repo.join(".claude/rules/una-regola.md"),
-        "# Come si fa questa cosa\n\nil testo.\n",
+        &repo.join(".claude/rules/a-rule.md"),
+        "# How this thing is done\n\nthe text.\n",
     );
     write(
-        &repo.join(".claude/commands/suo-comando.md"),
-        "---\ndescription: fa la sua cosa\n---\n\nil corpo.\n",
+        &repo.join(".claude/commands/their-command.md"),
+        "---\ndescription: does its own thing\n---\n\nthe body.\n",
     );
 
     let found = collect(&[Root::home(&home), Root::repo(&repo)]);
 
     let rule = found.of(Kind::Rule).into_iter().next().unwrap();
-    assert_eq!(rule.name, "una-regola");
-    assert_eq!(rule.description, "Come si fa questa cosa");
-    assert_eq!(rule.origin, "repo suo-repo");
+    assert_eq!(rule.name, "a-rule");
+    assert_eq!(rule.description, "How this thing is done");
+    assert_eq!(rule.origin, "repo their-repo");
     match &rule.reach {
-        Reach::Unknown(reason) => assert!(reason.contains("suo-repo"), "{reason}"),
-        other => panic!("una regola di repo risulta {other:?}"),
+        Reach::Unknown(reason) => assert!(
+            reason.contains("their-repo"),
+            "the reason must name the repo it holds in: {reason}"
+        ),
+        other => panic!("a repo rule reads as {other:?}"),
     }
 
     let command = found.of(Kind::Command).into_iter().next().unwrap();
-    assert_eq!(command.name, "/suo-comando");
-    assert_eq!(command.description, "fa la sua cosa");
+    assert_eq!(command.name, "/their-command");
+    assert_eq!(command.description, "does its own thing");
 }
 
-/// I due comandi che la prima versione perdeva, entrambi trovati sul disco vero:
-/// uno che il modello non può invocare, e uno senza frontmatter. Esistono tutti
-/// e due, e una persona li digita.
+/// The two commands the first version dropped, both found on a real disk: one
+/// the model may not invoke, and one without frontmatter. Both exist, and a
+/// person types them.
 #[test]
 fn a_command_is_listed_even_without_frontmatter_or_model_invocation() {
-    let home = fake_home("comandi-nascosti");
+    let home = fake_home("hidden-commands");
     write(
-        &home.join(".claude/commands/a-mano.md"),
-        "---\ndescription: solo chi digita\ndisable-model-invocation: true\n---\n\nil corpo.\n",
+        &home.join(".claude/commands/by-hand.md"),
+        "---\ndescription: only whoever types\ndisable-model-invocation: true\n---\n\nthe body.\n",
     );
     write(
-        &home.join(".claude/commands/nudo.md"),
-        "# Il comando nudo\n\nnessun frontmatter, e va bene così.\n",
+        &home.join(".claude/commands/bare.md"),
+        "# The bare command\n\nno frontmatter, and that is fine.\n",
     );
 
     let found = collect(&[Root::home(&home)]);
     let commands = found.of(Kind::Command);
     assert_eq!(commands.len(), 2, "{commands:#?}");
 
-    let by_hand = commands.iter().find(|e| e.name == "/a-mano").unwrap();
+    let by_hand = commands.iter().find(|e| e.name == "/by-hand").unwrap();
     assert!(!by_hand.by_model, "{by_hand:#?}");
-    assert_eq!(by_hand.description, "solo chi digita");
+    assert_eq!(by_hand.description, "only whoever types");
 
-    let bare = commands.iter().find(|e| e.name == "/nudo").unwrap();
+    let bare = commands.iter().find(|e| e.name == "/bare").unwrap();
     assert!(bare.by_model);
-    assert_eq!(bare.description, "Il comando nudo");
+    assert_eq!(bare.description, "The bare command");
 }
 
-/// Un magazzino di competenze che nessuna configurazione carica: quelle
-/// collegate fra le competenze di casa restano raggiungibili, le altre no.
+/// A skills warehouse no configuration loads: the ones linked among the home's
+/// skills stay reachable, the others do not.
 ///
-/// I DUE BRACCI SONO IL PUNTO. Sul disco vero ce ne sono 128 in due magazzini, e
-/// 6 sono collegate: dire «tutte spente» sarebbe comodo e falso, e toglierebbe
-/// credito proprio alle 122 righe che l'inventario ha ragione di dare.
+/// THE TWO ARMS ARE THE POINT. On a real disk there are 128 in two warehouses
+/// and 6 are linked: "all off" would be convenient and false, and would cost
+/// the inventory its credit on the 122 lines it is right about.
 #[test]
 fn a_warehouse_skill_counts_as_reachable_only_once_it_is_linked() {
-    let home = fake_home("magazzino");
-    let warehouse = home.join("magazzino").join("skills");
-    skill(&home, "magazzino/skills/collegata/SKILL.md", "collegata");
-    skill(&home, "magazzino/skills/sola-sua/SKILL.md", "sola-sua");
+    let home = fake_home("warehouse");
+    let warehouse = home.join("warehouse").join("skills");
+    skill(&home, "warehouse/skills/linked-one/SKILL.md", "linked-one");
+    skill(&home, "warehouse/skills/on-its-own/SKILL.md", "on-its-own");
 
-    // Il collegamento come lo fa Claude Code: una voce dentro le competenze di
-    // casa che porta il nome della cartella.
+    // The link as Claude Code makes it: an entry among the home's skills
+    // carrying the folder's name.
     fs::create_dir_all(home.join(".claude/skills")).unwrap();
     std::os::unix::fs::symlink(
-        warehouse.join("collegata"),
-        home.join(".claude/skills/collegata"),
+        warehouse.join("linked-one"),
+        home.join(".claude/skills/linked-one"),
     )
     .unwrap();
 
-    let found = collect(&[Root::home(&home), Root::warehouse("magazzino", &warehouse)]);
+    let found = collect(&[Root::home(&home), Root::warehouse("warehouse", &warehouse)]);
     let stored: Vec<_> = found
         .of(Kind::Skill)
         .into_iter()
-        .filter(|e| e.origin.starts_with("magazzino"))
+        .filter(|e| e.origin.starts_with("warehouse"))
         .collect();
     assert_eq!(stored.len(), 2, "{stored:#?}");
 
-    let linked = stored.iter().find(|e| e.name == "collegata").unwrap();
+    let linked = stored.iter().find(|e| e.name == "linked-one").unwrap();
     assert_eq!(linked.reach, Reach::Active, "{linked:#?}");
 
-    let alone = stored.iter().find(|e| e.name == "sola-sua").unwrap();
+    let alone = stored.iter().find(|e| e.name == "on-its-own").unwrap();
     match &alone.reach {
-        Reach::Inactive(reason) => assert!(reason.contains("collegata"), "{reason}"),
-        other => panic!("una competenza mai collegata risulta {other:?}"),
+        Reach::Inactive(reason) => assert!(
+            reason.contains("no configuration loads") && reason.contains("link it"),
+            "the reason must say both why it is off and what to do about it: {reason}"
+        ),
+        other => panic!("a skill that was never linked reads as {other:?}"),
     }
 }
 
-/// L'inventario dichiara dove ha guardato. Un elenco che non lo dice non si può
-/// smentire: chi legge «zero agenti» non sa se non ce ne sono o se nessuno è
-/// andato a vedere.
+/// The inventory declares where it looked. A list that does not say so cannot
+/// be contradicted: whoever reads "zero agents" cannot tell whether there are
+/// none or whether nobody went to look.
 #[test]
 fn the_inventory_names_the_roots_it_walked() {
-    let home = fake_home("radici-dichiarate");
+    let home = fake_home("declared-roots");
     let found = collect(&[Root::home(&home)]);
     assert_eq!(found.roots.len(), 1);
-    assert!(found.roots[0].starts_with("casa: "), "{:?}", found.roots);
+    assert!(found.roots[0].starts_with("home: "), "{:?}", found.roots);
     assert!(
-        found.roots[0].contains("prova-inventario-radici-dichiarate"),
+        found.roots[0].contains("inventory-test-declared-roots"),
         "{:?}",
         found.roots
     );

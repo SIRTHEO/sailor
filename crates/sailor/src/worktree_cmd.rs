@@ -14,7 +14,6 @@ pub const USAGE: &[&str] = &[
 ];
 
 pub fn run(args: &[String]) -> i32 {
-
     match dispatch(args) {
         Ok(message) => {
             println!("{message}");
@@ -58,7 +57,11 @@ pub fn render(trees: &[Worktree]) -> String {
     if trees.is_empty() {
         return "no worktrees".to_owned();
     }
-    let widest = trees.iter().map(|tree| tree.name().len()).max().unwrap_or(0);
+    let widest = trees
+        .iter()
+        .map(|tree| tree.name().len())
+        .max()
+        .unwrap_or(0);
     trees
         .iter()
         .map(|tree| {

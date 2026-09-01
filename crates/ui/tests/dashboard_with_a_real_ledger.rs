@@ -1,15 +1,9 @@
-//! Prova end-to-end: un deposito vero (in una cartella temporanea, fuori
-//! dall'albero) con esecuzioni finte, letto dalla pipeline pura.
-//!
-//! **IL SERVITORE HTTP NON C'E' PIU', LE SUE DOMANDE SI'.** Fino al 31/08/2026
-//! tre prove qui dentro aprivano un socket vero e interrogavano
-//! `127.0.0.1`. Quel servitore e' stato tolto — l'unica interfaccia e' la
-//! finestra — ma cio' che quelle prove difendevano non era il socket: era che
-//! i conti arrivino a chi guarda **con i nomi di campo che chi guarda legge**.
-//! Quella parte e' rimasta, girata sulla serializzazione invece che sulla
-//! rete. Togliere le prove insieme al trasporto avrebbe tolto anche il
-//! controllo, che e' il modo in cui una riscrittura perde pezzi senza
-//! accorgersene.
+//! End-to-end test: a real ledger in a temporary directory outside the tree,
+//! fake runs, read through the pure pipeline. **THE HTTP SERVER IS GONE, ITS
+//! QUESTIONS ARE NOT.** Three tests here opened a real socket on `127.0.0.1`;
+//! what they defended was not the socket but that the counts reach whoever
+//! looks **under the field names whoever looks reads**. Dropping them with the
+//! transport would have dropped the check: that is how a rewrite loses pieces.
 
 use flow::{Completion, Outcome, StepRecord};
 use ledger::{Ledger, ModelCallRecord, RunRecord};
@@ -22,21 +16,21 @@ fn temp_dir(name: &str) -> PathBuf {
 }
 
 fn seed(dir: &Path) {
-    let ledger = Ledger::open(dir).expect("apertura del deposito di prova");
+    let ledger = Ledger::open(dir).expect("opening the test ledger");
     ledger
         .record_run(&RunRecord {
             run_id: "run-1".into(),
             kind: "sweep".into(),
             entity: "marker-sweep".into(),
             parent_run_id: None,
-            started_by: "prova".into(),
+            started_by: "test".into(),
             status: "running".into(),
             total_cost_micros: 0,
             error: None,
             started_at: 1000,
             ended_at: None,
         })
-        .expect("registrare la corsa");
+        .expect("recording the run");
 
     ledger
         .append_step_started(&StepRecord::started(
@@ -49,7 +43,7 @@ fn seed(dir: &Path) {
             vec![],
             1000,
         ))
-        .expect("passo avviato");
+        .expect("step started");
     ledger
         .close_step(
             "run-1",
@@ -66,7 +60,7 @@ fn seed(dir: &Path) {
                 bytes_discarded: None,
             },
         )
-        .expect("passo chiuso");
+        .expect("step closed");
 
     ledger
         .append_step_started(&StepRecord::started(
@@ -79,14 +73,14 @@ fn seed(dir: &Path) {
             vec![],
             1050,
         ))
-        .expect("passo aperto avviato, mai chiuso: è ancora in corso");
+        .expect("open step started and never closed: it is still running");
 
     ledger
         .record_model_call(&ModelCallRecord {
             call_id: "call-1".into(),
             run_id: "run-1".into(),
             step_id: Some("scan_markers".into()),
-            purpose: "classifica".into(),
+            purpose: "classify".into(),
             cli: "claude".into(),
             requested_model: "sonnet".into(),
             actual_model: "claude-sonnet-5".into(),
@@ -107,8 +101,8 @@ fn seed(dir: &Path) {
             cache_write_long_price_micros_per_million: None,
             engine_identity: ledger::EngineIdentity::ProfileInForce {
                 cli_id: "claude".into(),
-                profile_name: "prova".into(),
-                home_dir: "/case/claude/prova".into(),
+                profile_name: "test".into(),
+                home_dir: "/homes/claude/test".into(),
             },
             retry_chain: vec![],
             error_type: None,
@@ -116,7 +110,7 @@ fn seed(dir: &Path) {
             ended_at: Some(1009),
             session_id: None,
         })
-        .expect("registrare la chiamata al modello");
+        .expect("recording the model call");
 }
 
 #[test]
@@ -125,8 +119,8 @@ fn gather_summarizes_a_seeded_ledger() {
     seed(&dir);
 
     let data = ui::gather::gather(&dir)
-        .expect("lettura riuscita")
-        .expect("il deposito appena scritto è presente");
+        .expect("the read succeeded")
+        .expect("the ledger just written is present");
     assert_eq!(data.runs.len(), 1);
 
     let executions =
@@ -141,41 +135,40 @@ fn gather_summarizes_a_seeded_ledger() {
     assert_eq!(execution.tokens.input_tokens, 100);
     assert_eq!(execution.tokens.cost_micros, 500);
     assert_eq!(
-        execution.tokens_by_model.get("claude-sonnet-5").expect("modello presente").calls,
+        execution
+            .tokens_by_model
+            .get("claude-sonnet-5")
+            .expect("model present")
+            .calls,
         1
     );
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// **L'ANCORA CONTRO LO SPOSTAMENTO SILENZIOSO DI UNA COLONNA.**
-///
-/// `ui::parse` legge la proiezione **per posizione**: ventotto numeri scritti a
-/// mano. Fino al 01/09/2026 di quella funzione ce n'erano due copie, una qui e
-/// una dentro `actions`, e una colonna spostata le avrebbe fatte sbagliare
-/// insieme: le prove che confrontavano l'una con l'altra sarebbero rimaste
-/// verdi. Il guasto vero è quello — un prezzo che compare al posto di un token,
-/// e nessun rosso da nessuna parte.
-///
-/// Qui non si confronta un lettore con l'altro: si scrive **un valore diverso in
-/// ogni campo**, si passa dal deposito vero, e si rilegge. Un indice fuori posto
-/// fa tornare indietro il campo del vicino, e questa diventa rossa qualunque sia
-/// la colonna che si è mossa.
-///
-/// *Mutante eseguito*: vedi la consegna.
+/// **THE ANCHOR AGAINST A COLUMN MOVING IN SILENCE.** `ui::parse` reads the
+/// projection **by position**: twenty-eight hand-written numbers. Comparing one
+/// reader against another leaves both wrong together and both green, and the
+/// real fault is exactly that — a price showing up where a token belongs, with
+/// no red anywhere. So here **every field gets a different value**, goes through
+/// the real ledger, and comes back: a misplaced index returns its neighbour.
 #[test]
 fn a_record_comes_back_from_the_projection_field_for_field() {
-    let dir = temp_dir("andata-e-ritorno");
+    // There were two copies of that reader, one here and one inside `actions`:
+    // a moved column made them wrong together, and the tests that compared one
+    // with the other would have stayed green. *Mutant run*: one index moved by
+    // hand turns this test red whatever the column that shifted.
+    let dir = temp_dir("round-trip");
     let written = ModelCallRecord {
-        call_id: "call-unica".into(),
-        run_id: "run-unica".into(),
-        step_id: Some("passo-unico".into()),
-        purpose: "scopo-unico".into(),
-        cli: "cli-unica".into(),
-        requested_model: "modello-chiesto".into(),
-        actual_model: "modello-risposto".into(),
-        // Ogni conteggio diverso dagli altri: due uguali si coprirebbero a
-        // vicenda proprio nel caso che questa prova esiste per prendere.
+        call_id: "call-only".into(),
+        run_id: "run-only".into(),
+        step_id: Some("step-only".into()),
+        purpose: "purpose-only".into(),
+        cli: "cli-only".into(),
+        requested_model: "model-requested".into(),
+        actual_model: "model-answered".into(),
+        // Every count different from every other: two alike would cover for
+        // each other in exactly the case this test exists to catch.
         input_tokens: Some(11),
         output_tokens: Some(22),
         cached_tokens: Some(33),
@@ -193,29 +186,29 @@ fn a_record_comes_back_from_the_projection_field_for_field() {
         cache_write_long_price_micros_per_million: Some(707),
         engine_identity: ledger::EngineIdentity::ChosenByTheStep {
             cli_id: "codex".into(),
-            home_dir: "/una/casa/scritta/nel/passo".into(),
+            home_dir: "/a/home/written/in/the/step".into(),
         },
-        retry_chain: vec!["call-prima".into()],
-        error_type: Some("tipo-errore".into()),
+        retry_chain: vec!["call-earlier".into()],
+        error_type: Some("error-kind".into()),
         started_at: 808,
         ended_at: Some(909),
-        session_id: Some("sessione-unica".into()),
+        session_id: Some("session-only".into()),
     };
 
     {
-        let ledger = Ledger::open(&dir).expect("aprire il deposito");
+        let ledger = Ledger::open(&dir).expect("opening the ledger");
         ledger
             .record_model_call(&written)
-            .expect("registrare la chiamata");
+            .expect("recording the call");
     }
 
-    let ledger = Ledger::open(&dir).expect("riaprire il deposito");
-    let dump = ledger.projection_dump().expect("leggere la proiezione");
+    let ledger = Ledger::open(&dir).expect("reopening the ledger");
+    let dump = ledger.projection_dump().expect("reading the projection");
     let read = ui::parse::parse_model_calls(&dump);
-    assert_eq!(read.len(), 1, "una riga scritta, una riga letta");
+    assert_eq!(read.len(), 1, "one row written, one row read");
     assert_eq!(
         read[0], written,
-        "un campo torna indietro diverso da come è entrato: un indice legge la colonna del vicino"
+        "a field came back different from how it went in: an index is reading its neighbour's column"
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -224,33 +217,38 @@ fn a_record_comes_back_from_the_projection_field_for_field() {
 #[test]
 fn a_ledger_directory_that_was_never_written_is_reported_as_absent_not_as_an_error() {
     let dir = temp_dir("missing");
-    let data = ui::gather::gather(&dir).expect("nessun errore su un deposito assente");
+    let data = ui::gather::gather(&dir).expect("no error on a ledger that is absent");
     assert!(data.is_none());
-    assert!(!dir.exists(), "leggere lo stato non deve creare il deposito");
+    assert!(
+        !dir.exists(),
+        "reading the state must never create the ledger"
+    );
 }
 
 #[test]
 fn the_shape_the_window_reads_survives_serialization() {
-    // I NOMI DEI CAMPI SONO UN CONTRATTO, e vive fra due linguaggi: `ExecutionView`
-    // di qui e `Execution` di `desktop/src/engine.ts`. Rinominarne uno da questa
-    // parte non fa cadere niente — la finestra legge `undefined` e disegna una
-    // colonna vuota. Questa prova e' cio' che rende rossa quella modifica.
+    // THE FIELD NAMES ARE A CONTRACT, and it spans two languages: `ExecutionView`
+    // here and `Execution` in `desktop/src/engine.ts`. Renaming one on this side
+    // breaks nothing — the window reads `undefined` and draws an empty column.
+    // This test is what turns that change red.
     let dir = temp_dir("shape");
     seed(&dir);
-    let data = ui::gather::gather(&dir).expect("lettura riuscita").expect("deposito presente");
+    let data = ui::gather::gather(&dir)
+        .expect("the read succeeded")
+        .expect("ledger present");
     let executions =
         ui::dashboard::build_executions(&data.runs, &data.steps_by_run, &data.calls_by_run, 1100);
-    let body = serde_json::to_value(&executions).expect("le viste si serializzano");
+    let body = serde_json::to_value(&executions).expect("the views serialize");
 
     assert_eq!(body[0]["run_id"], "run-1");
     assert_eq!(body[0]["tokens"]["input_tokens"].as_u64(), Some(100));
     assert_eq!(body[0]["steps_open"][0]["step_id"], "remove_markers");
-    // Le due cifre che devono restare affiancate: quella che Sailor calcola e
-    // quella che il motore dichiara. Se una delle due sparisse dal JSON, la
-    // finestra mostrerebbe una colonna vuota invece di un disaccordo.
+    // The two figures that must stay side by side: the one Sailor computes and
+    // the one the engine declares. Were either to vanish from the JSON, the
+    // window would show an empty column instead of a disagreement.
     assert!(body[0]["calls"][0].get("cost_micros").is_some());
     assert!(body[0]["calls"][0].get("declared_cost_micros").is_some());
-    // E cio' che non e' stato misurato, che e' la riga piu' importante di tutte.
+    // And what was never measured, which is the most important row of all.
     assert!(body[0]["tokens"].get("calls_without_tokens").is_some());
     assert!(body[0]["tokens"].get("calls_without_cost").is_some());
 
@@ -259,9 +257,9 @@ fn the_shape_the_window_reads_survives_serialization() {
 
 #[test]
 fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
-    // UN FLUSSO ROTTO NON SPARISCE. Un elenco che si accorcia in silenzio fa
-    // credere che il flusso non esista, e nessuno va a cercare un file che
-    // secondo l'elenco non c'e'.
+    // A BROKEN FLOW NEVER VANISHES. A list that shortens in silence leaves
+    // people believing the flow does not exist, and nobody goes looking for a
+    // file the list says is absent.
     let valid_graph = flow::Graph::new(vec![flow::Step {
         id: "step-1".into(),
         deps: vec![],
@@ -272,33 +270,38 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
         action: "action-1".into(),
         max_attempts: 1,
     }])
-    .expect("grafo valido");
+    .expect("valid graph");
     let mut flows = ui::registry::FlowRegistry::new();
     flows.insert(
-        "valido".into(),
+        "valid".into(),
         Ok(ui::registry::FlowFile {
-            id: "valido".into(),
-            description: "Flusso valido di prova".into(),
+            id: "valid".into(),
+            description: "A valid test flow".into(),
             graph: valid_graph,
             inputs: std::collections::BTreeMap::new(),
             schedule: None,
             spend_cap_micros: None,
         }),
     );
-    flows.insert("rotto".into(), Err("errore: ciclo nel grafo".into()));
+    flows.insert("broken".into(), Err("error: cycle in the graph".into()));
 
-    let views = serde_json::to_value(ui::registry::flow_views(&flows)).expect("le viste si serializzano");
-    let array = views.as_array().expect("array dei flussi");
+    let views =
+        serde_json::to_value(ui::registry::flow_views(&flows)).expect("the views serialize");
+    let array = views.as_array().expect("array of flows");
     assert_eq!(array.len(), 2);
 
-    // I nomi cercati restano in italiano: sono i dati del flusso di prova, non
-    // identificatori. E' la variabile che li tiene a dover essere in inglese.
-    let broken = array.iter().find(|entry| entry["name"] == "rotto").expect("flusso rotto presente");
-    assert_eq!(broken["error"], "errore: ciclo nel grafo");
+    let broken = array
+        .iter()
+        .find(|entry| entry["name"] == "broken")
+        .expect("broken flow present");
+    assert_eq!(broken["error"], "error: cycle in the graph");
     assert_eq!(broken["steps"].as_array().map(|steps| steps.len()), Some(0));
 
-    let valid = array.iter().find(|entry| entry["name"] == "valido").expect("flusso valido presente");
+    let valid = array
+        .iter()
+        .find(|entry| entry["name"] == "valid")
+        .expect("valid flow present");
     assert_eq!(valid["error"], serde_json::Value::Null);
-    assert_eq!(valid["description"], "Flusso valido di prova");
+    assert_eq!(valid["description"], "A valid test flow");
     assert_eq!(valid["steps"].as_array().map(|steps| steps.len()), Some(1));
 }

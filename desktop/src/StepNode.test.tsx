@@ -4,6 +4,7 @@ import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import type { Step, StepKind, StepRun } from "./flow";
+import { t } from "./i18n";
 import {
   formatElapsed,
   KIND_LABEL,
@@ -43,6 +44,7 @@ function mountNode(
   data: Partial<StepNodeData>,
   states: Map<string, StepRun>,
   usage: Map<string, StepUsage> = new Map(),
+  selected = false,
 ) {
   const full: StepNodeData = {
     step: STEP,
@@ -58,7 +60,7 @@ function mountNode(
     id: "n",
     type: "step",
     data: full,
-    selected: false,
+    selected,
     zIndex: 0,
     isConnectable: false,
     positionAbsoluteX: 0,
@@ -94,15 +96,22 @@ function runIn(state: StepRun["state"]): StepRun {
   return { step_id: "implementa", state, attempt: 1 };
 }
 
+/**
+ * The words come from the catalogue, the same read the node does. Copying them
+ * here would leave a test that proves its own copy, and it would fail the day
+ * the window is published in English while the wiring stayed right.
+ */
+const SAYS = (state: StepRun["state"]) => t(`window.step.state.${state}`);
+
 describe("il nodo e lo stato della corsa", () => {
-  test("senza nessuna corsa dice «in attesa», e non inventa niente", () => {
+  test("senza nessuna corsa dice che aspetta, e non inventa niente", () => {
     mountNode({}, new Map());
-    expect(screen.getByText("in attesa")).toBeDefined();
+    expect(screen.getByText(SAYS("waiting"))).toBeDefined();
   });
 
   test("con una corsa vera dice quello che sta succedendo, adesso", () => {
     mountNode({}, new Map([["sviluppa-sailor::implementa", runIn("running")]]));
-    expect(screen.getByText("in corso")).toBeDefined();
+    expect(screen.getByText(SAYS("running"))).toBeDefined();
   });
 
   test("LA CORSA VERA VINCE SUI DATI D'ESEMPIO PORTATI DAL NODO", () => {
@@ -113,7 +122,7 @@ describe("il nodo e lo stato della corsa", () => {
       { run: runIn("waiting") },
       new Map([["sviluppa-sailor::implementa", runIn("broke")]]),
     );
-    expect(screen.getByText("rotto, si ritenta")).toBeDefined();
+    expect(screen.getByText(SAYS("broke"))).toBeDefined();
   });
 
   test("lo stato di un passo omonimo di un ALTRO flusso non arriva qui", () => {
@@ -121,7 +130,7 @@ describe("il nodo e lo stato della corsa", () => {
     // sono ripetuti: con una chiave non qualificata il nodo si colorerebbe con
     // la corsa di un flusso che non è il suo.
     mountNode({}, new Map([["un-altro-flusso::implementa", runIn("went")]]));
-    expect(screen.getByText("in attesa")).toBeDefined();
+    expect(screen.getByText(SAYS("waiting"))).toBeDefined();
   });
 });
 
@@ -406,5 +415,23 @@ describe("the two rows that survive the far zoom", () => {
     const node = mountNode({}, new Map());
     expect(node.querySelector(".step-node__head .step-node__state")).not.toBeNull();
     expect(node.querySelectorAll(".step-node__state").length).toBe(1);
+  });
+});
+
+/**
+ * THE FOUR CORNER MARKS, and why not just the ring. The selected node already
+ * had a blue border, and that blue is the same blue as «running»: a hue on its
+ * own is prohibition 5. Shape survives where a tint does not.
+ */
+describe("which node is the one being looked at", () => {
+  test("a selected node carries four corner marks", () => {
+    const node = mountNode({}, new Map(), new Map(), true);
+    expect(node.querySelectorAll(".step-node__marks").length).toBe(2);
+    expect(node.getAttribute("data-selected")).toBe("true");
+  });
+
+  test("a node nobody picked carries none", () => {
+    const node = mountNode({}, new Map(), new Map(), false);
+    expect(node.querySelectorAll(".step-node__marks").length).toBe(0);
   });
 });

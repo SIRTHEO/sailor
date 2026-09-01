@@ -98,7 +98,10 @@ fn the_rest_of_what_the_step_declares_arrives_untouched() {
         &step_env(&[("RUST_LOG", "debug")]),
     );
 
-    assert_eq!(equipment.env.get("RUST_LOG").map(String::as_str), Some("debug"));
+    assert_eq!(
+        equipment.env.get("RUST_LOG").map(String::as_str),
+        Some("debug")
+    );
     assert_eq!(
         equipment.env.get("CODEX_HOME").map(String::as_str),
         Some("/case/codex/lavoro")
@@ -132,7 +135,11 @@ fn a_profile_that_exists_but_is_not_active_moves_nothing() {
 /// in un passo — non ha nessuna casa da spostare, e non deve riceverne una.
 #[test]
 fn a_plain_command_gets_no_home_of_anyones() {
-    let equipment = equipment_for(&a_store_with_one_active_profile(), "/bin/sh", &BTreeMap::new());
+    let equipment = equipment_for(
+        &a_store_with_one_active_profile(),
+        "/bin/sh",
+        &BTreeMap::new(),
+    );
 
     assert!(equipment.env.is_empty(), "{:?}", equipment.env);
     assert_eq!(equipment.identity, EngineIdentity::NotAKnownEngine);
@@ -147,7 +154,11 @@ fn a_plain_command_gets_no_home_of_anyones() {
 /// diagnostica si appoggia, mentre un nome si riusa e si sposta.
 #[test]
 fn the_resolved_profile_is_written_down_not_left_to_be_guessed() {
-    let equipment = equipment_for(&a_store_with_one_active_profile(), "codex", &BTreeMap::new());
+    let equipment = equipment_for(
+        &a_store_with_one_active_profile(),
+        "codex",
+        &BTreeMap::new(),
+    );
 
     assert_eq!(
         equipment.identity,
@@ -233,7 +244,9 @@ fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
 #[test]
 fn a_stale_active_name_that_matches_no_profile_moves_nothing() {
     let mut store = a_store_with_one_active_profile();
-    store.active.insert("codex".to_owned(), "sparito".to_owned());
+    store
+        .active
+        .insert("codex".to_owned(), "sparito".to_owned());
 
     let equipment = equipment_for(&store, "codex", &BTreeMap::new());
 
