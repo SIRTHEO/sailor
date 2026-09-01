@@ -32,3 +32,16 @@ models = { path = "../models" }
 profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# CHI LEGGE LA PROIEZIONE È UNO SOLO, E SOLO NELLE PROVE.
+#
+# Le prove di questo crate rileggevano `model_calls` con una copia privata di
+# `ui::parse::parse_model_call_row`, scritta qui perché «la dipendenza inversa
+# sarebbe un ciclo». Non lo era — `ui` non dipende da `actions` — e comunque
+# cargo ammette i cicli di sole prove, come `flow` fa già con `ledger`. Quella
+# copia leggeva il dump **per posizione**, come l'originale: due copie che
+# sbagliassero insieme sarebbero rimaste verdi tutte e due e si sarebbero
+# confermate a vicenda. Adesso a leggere è uno solo, e a tenerlo onesto c'è
+# `ledger::MODEL_CALL_DUMP_COLUMNS`, che non è nessuno dei due.
+[dev-dependencies]
+ui = { path = "../ui" }

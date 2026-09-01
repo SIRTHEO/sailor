@@ -23,18 +23,29 @@
 //! è un membro del workspace, e il gate del flusso di sviluppo
 //! (`flows/sviluppa-sailor.flow.json`, passo `prove`) lo esegue.
 //!
-//! **IL PERIMETRO, DICHIARATO — QUESTA PROVA VERDE NON CHIUDE IL GUASTO 10.**
-//! Confronta la finestra col registro **del motore**. Ne esiste una **terza**
-//! copia, `action_registry()` in `desktop/src-tauri/src/flows.rs`, che si
-//! costruisce il registro a mano ed è quella a cui `save_flow` chiede se un
-//! flusso si può salvare: `actions::register_default` ne porta quattro, quindi
-//! un nodo `handed_to_agent`, `detect_tools`, `subflow`, `history_ask` o
-//! `work_claim` si disegna con la famiglia giusta e viene **respinto al
-//! salvataggio**. Questa prova non lo vede, e non è un suo difetto: è il suo
-//! confine, che va scritto perché un controllo verde non si prenda per una
-//! promessa più larga di quella che fa. Il giorno che `action_registry()`
-//! smette di costruirsi il registro da sé, il confine cade e il guasto 10 si
-//! chiude. Trovato da un giudice che non aveva scritto questo lavoro.
+//! **IL CONFINE CHE STAVA SCRITTO QUI È CADUTO IL 01/09/2026, E LA RIGA CHE LO
+//! DICHIARAVA ADESSO SAREBBE FALSA.** Diceva: questa prova confronta la
+//! finestra col registro **del motore**, ma ne esiste una **terza** copia —
+//! `action_registry()` in `desktop/src-tauri/src/flows.rs` — che si costruisce
+//! il registro a mano con `actions::register_default`, ed è quella a cui
+//! `save_flow` chiede se un flusso si può salvare: un nodo `handed_to_agent`,
+//! `detect_tools`, `subflow`, `history_ask` o `work_claim` si disegnava con la
+//! famiglia giusta e veniva **respinto al salvataggio**. Il confine era
+//! scritto perché un controllo verde non si prendesse per una promessa più
+//! larga di quella che fa, e l'aveva trovato un giudice che non aveva scritto
+//! quel lavoro.
+//!
+//! **ADESSO `action_registry_with` CHIAMA `registry::default_registry`**, e la
+//! terza copia non c'è più: la riparazione è arrivata da un altro ramo della
+//! stessa giornata, fusa la sera. Il guasto 10 si chiude qui.
+//!
+//! **E LA CHIUSURA SI SORVEGLIA DA QUESTO LATO, NON DA QUELLO.** La prova che
+//! confronta i due registri sta in `desktop/src-tauri`, che dichiara un
+//! `[workspace]` vuoto: nessun `cargo test --workspace` la compila, quindi non
+//! diventa rossa per nessuno. `the_window_shell_asks_the_engine_for_its_action_list`
+//! qui sotto legge quel sorgente dal gate — è la stessa disciplina con cui
+//! questo file legge `flow.ts` — così chi rimettesse tre righe scelte a mano
+//! trova un rosso invece del silenzio.
 //!
 //! **IL PREZZO, DICHIARATO.** Legge testo da un file `.ts`: non ne compila
 //! l'albero sintattico, e una mappa scritta in una forma diversa le sfugge.
@@ -223,5 +234,47 @@ fn every_action_the_palette_creates_is_registered() {
         "la cassetta crea {} passi con un'azione che il motore non registra: {:?}",
         invented.len(),
         invented
+    );
+}
+
+/// **IL GUSCIO CHIEDE LA LISTA AL MOTORE, E NON SE NE COSTRUISCE UNA.**
+///
+/// È la terza copia del registro, quella che `save_flow` interroga per dire se
+/// un flusso si può salvare. Fino al 01/09/2026 si costruiva da sé con tre
+/// righe scelte a mano e rifiutava cinque azioni che dal terminale girano;
+/// adesso delega a `registry::default_registry`.
+///
+/// **STA QUI E NON IN `desktop/src-tauri` PERCHÉ LÀ NON DIVENTEREBBE ROSSA.**
+/// Quel crate dichiara un `[workspace]` vuoto: `cargo test --workspace` non lo
+/// compila, e una prova che nessun gate esegue afferma senza controllare. Il
+/// prezzo è dichiarato — legge testo, non compila l'albero sintattico — quindi
+/// il caso pretende di aver letto qualcosa prima di giudicare, come le prove
+/// qui sopra fanno con `flow.ts`.
+///
+/// Il mutante che la fa cadere: rimettere `actions::register_default(&mut r)`
+/// dentro `action_registry_with`.
+#[test]
+fn the_window_shell_asks_the_engine_for_its_action_list() {
+    let path = repository_root().join("desktop/src-tauri/src/flows.rs");
+    let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
+
+    let from = source
+        .find("fn action_registry_with(")
+        .expect("il guscio costruisce il registro in `action_registry_with`");
+    let body = &source[from..];
+    let end = body.find("\n}").expect("la funzione si chiude");
+    let body = &body[..end];
+
+    assert!(
+        body.contains("registry::default_registry"),
+        "il guscio si costruisce il registro da sé invece di chiederlo al \
+         motore: è la terza copia del guasto 10, e la finestra tornerebbe a \
+         rifiutare al salvataggio azioni che dal terminale girano.\n{body}"
+    );
+    assert!(
+        !body.contains("register_default(&mut"),
+        "il guscio registra azioni a mano dentro `action_registry_with`: \
+         qualunque riga scelta lì è una lista in più da tenere allineata.\n{body}"
     );
 }

@@ -6,7 +6,7 @@
 //! per la pagina — la stessa fonte, così l'elenco che si legge da terminale e
 //! quello che si vede nella finestra non possono divergere.
 
-use inventory::{collect, default_roots, Entry, Inventory, Kind, Reach};
+use inventory::{collect_survey, default_roots, Entry, Inventory, Kind, Reach};
 use ledger::{InventoryItem, InventoryScan, Ledger};
 
 pub fn run(args: &[String]) -> i32 {
@@ -46,7 +46,25 @@ pub fn run(args: &[String]) -> i32 {
         i += 1;
     }
 
-    let found = collect(&default_roots());
+    // LA CASA LA CHIEDE A CHI LA POSSIEDE. Le basi di lavoro sono dichiarate —
+    // `SAILOR_WORK_ROOTS`, o il file `work-roots` — e la casa dove sta quel file
+    // la sa `ledger::sailor_home()`, che è l'unico posto dove quella regola vive.
+    let survey = default_roots(ledger::sailor_home().as_deref());
+    if !survey.bases_declared {
+        eprintln!(
+            "nessuna base di lavoro dichiarata: guardo solo la casa. \
+             Dichiarale in `work-roots` dentro la casa di Sailor, una per riga, \
+             oppure in `SAILOR_WORK_ROOTS` separate da due punti."
+        );
+    }
+    for missing in &survey.unreadable {
+        eprintln!(
+            "non ho potuto guardare in {}: {}",
+            missing.path.display(),
+            missing.reason
+        );
+    }
+    let found = collect_survey(&survey);
 
     if record {
         match deposit(&found) {
@@ -85,11 +103,19 @@ pub fn run(args: &[String]) -> i32 {
     }
 }
 
+/// Le forme di `sailor inventory`, una per riga. Vedi `flow_cmd::USAGE` per il
+/// motivo per cui è una costante pubblica invece di righe dentro la stampa.
+pub const USAGE: &[&str] = &[
+    "sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]",
+    "sailor inventory --record        deposita questa scansione",
+    "sailor inventory --changes       che cosa è comparso e che cosa è sparito",
+];
+
 fn print_usage() {
     eprintln!("uso:");
-    eprintln!("  sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]");
-    eprintln!("  sailor inventory --record        deposita questa scansione");
-    eprintln!("  sailor inventory --changes       che cosa è comparso e che cosa è sparito");
+    for line in USAGE {
+        eprintln!("  {line}");
+    }
 }
 
 /// Deposita la scansione, così la prossima potrà dire che cosa è cambiato.
@@ -136,12 +162,25 @@ fn deposit(found: &Inventory) -> Result<String, String> {
     ))
 }
 
+/// **DOVE STA IL DEPOSITO LO SA UN POSTO SOLO**, e non è questo.
+///
+/// Fino al 01/09/2026 questa funzione ricomponeva `HOME/.claude/state/flussi` da
+/// sé. Non era una copia inerte: era una copia **diversa**, perché
+/// `ledger::default_directory()` guarda anche `SAILOR_LEDGER` e riconosce la
+/// casa di un'installazione precedente. Con quella variabile impostata — come fa
+/// chiunque provi qualcosa senza toccare il deposito vero — `sailor inventory`
+/// scriveva il censimento in un deposito mentre ogni altro comando lo leggeva da
+/// un altro: nessun errore, due depositi, e quello che si guardava risultava
+/// vuoto. È la forma in cui il guasto 12 continua a ripresentarsi, un elenco
+/// vuoto che ha l'aria di una risposta.
+///
+/// La sorveglianza è in `only_the_ledger_knows_where_the_ledger_lives`, che
+/// guarda i sorgenti invece di confrontare due funzioni: due copie che sbagliano
+/// insieme si confermano a vicenda, quindi l'ancora deve stare fuori da tutte e
+/// due.
 fn open_ledger() -> Result<Ledger, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME non è impostata".to_string())?;
-    let directory = std::path::PathBuf::from(home)
-        .join(".claude")
-        .join("state")
-        .join("flussi");
+    let directory = ledger::default_directory()
+        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 
@@ -193,6 +232,18 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     println!("radici guardate:");
     for root in &found.roots {
         println!("  {root}");
+    }
+    // DOVE NON SI È POTUTO GUARDARE STA ACCANTO A DOVE SI È GUARDATO, non in
+    // fondo: chi legge un conteggio deve avere sott'occhio quanto di macchina è
+    // rimasto fuori, o legge un numero credendolo il totale.
+    if !found.unseen.is_empty() {
+        println!("non guardate:");
+        for missing in &found.unseen {
+            println!("  {missing}");
+        }
+    }
+    if !found.bases_declared {
+        println!("nessuna base di lavoro dichiarata: questo conto è della sola casa");
     }
     println!();
 
