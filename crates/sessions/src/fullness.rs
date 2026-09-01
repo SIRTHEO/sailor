@@ -18,7 +18,7 @@ pub struct Model {
 
 impl Default for Model {
     /// Medians over 88 real sessions and 42,591 points; median error 6.0%.
-    /// The write-up is the note on accompanying flows, under `docs/`.
+    /// The write-up is the note on flows that patrol, under `docs/`.
     fn default() -> Model {
         Model {
             per_byte: 0.68,

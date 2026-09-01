@@ -1,4 +1,4 @@
-//! `sailor accompany`: runs a command line inside a terminal Sailor owns,
+//! `sailor terminal`: runs a command line inside a terminal Sailor owns,
 //! inside whatever emulator the person is already using.
 //!
 //! `session` tracks and never enters, which is right for tracking and wrong
@@ -22,11 +22,11 @@ use terminal::tally::{self, Tally};
 use terminal::Workspace;
 
 pub const USAGE: &[&str] = &[
-    "sailor accompany run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
-    "sailor accompany press --tty <name> --text <line> [--store <dir>]   types a line into an accompanied terminal",
-    "sailor accompany reset --tty <name> --cli <id> [--store <dir>]   empties a running session the way its descriptor says",
-    "sailor accompany mandate [--tty <name>] [--store <dir>]   < text   leaves the work for whoever comes next",
-    "sailor accompany list [--ceiling <tokens>] [--store <dir>]   which terminals can be typed into, and how full",
+    "sailor terminal run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
+    "sailor terminal press --tty <name> --text <line> [--store <dir>]   types a line into a terminal Sailor holds",
+    "sailor terminal reset --tty <name> --cli <id> [--store <dir>]   empties a running session the way its descriptor says",
+    "sailor terminal mandate [--tty <name>] [--store <dir>]   < text   leaves the work for whoever comes next",
+    "sailor terminal list [--ceiling <tokens>] [--store <dir>]   which terminals can be typed into, and how full",
 ];
 
 const FORMS: &[&str] = &["run", "press", "reset", "mandate", "list"];
@@ -35,7 +35,7 @@ pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
         Ok(code) => code,
         Err(complaint) => {
-            eprintln!("sailor accompany: {complaint}");
+            eprintln!("sailor terminal: {complaint}");
             2
         }
     }
@@ -53,7 +53,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         return Err(format!("«{form}» is not a form of this command\n{}", usage_text()));
     }
     match form.as_str() {
-        "run" => accompany(&args[1..]),
+        "run" => hold(&args[1..]),
         "press" => press(&args[1..]),
         "reset" => reset(&args[1..]),
         "mandate" => leave_mandate(&args[1..], &mut std::io::stdin()),
@@ -82,7 +82,9 @@ fn mailroom(options: &[(String, String)]) -> Result<PathBuf, String> {
     Ok(inbox::mailroom(&store_root(options)?))
 }
 
-fn accompany(args: &[String]) -> Result<i32, String> {
+/// Opens a terminal we own, runs the command line inside it, and holds the
+/// pipe until the program in there ends.
+fn hold(args: &[String]) -> Result<i32, String> {
     let (before, line) = split_at_the_dashes(args);
     let options = options_of(before)?;
     let Some(program) = line.first() else {
@@ -272,7 +274,7 @@ fn named(options: &[(String, String)], name: &str, missing: &str) -> Result<Stri
         .ok_or_else(|| missing.to_owned())
 }
 
-/// Types a line into an accompanied terminal.
+/// Types a line into a terminal Sailor holds.
 ///
 /// The carriage return is what a terminal receives when someone presses Enter;
 /// a newline would leave the line sitting there unsent.
@@ -282,7 +284,7 @@ fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(),
     typed.push(b'\r');
     inbox::press(&address, &typed).map_err(|error| {
         format!(
-            "{}: nobody is accompanying this terminal ({error})",
+            "{}: Sailor is not holding this terminal ({error})",
             address.display()
         )
     })
@@ -369,7 +371,7 @@ fn list(args: &[String]) -> Result<i32, String> {
     let ceiling = declared_ceiling(&options)?;
     let room = mailroom(&options)?;
     let Ok(entries) = std::fs::read_dir(&room) else {
-        println!("no terminal is being accompanied");
+        println!("Sailor is holding no terminal");
         return Ok(0);
     };
     let mut found = 0;
@@ -390,16 +392,16 @@ fn list(args: &[String]) -> Result<i32, String> {
         found += 1;
     }
     if found == 0 {
-        println!("no terminal is being accompanied");
+        println!("Sailor is holding no terminal");
     }
     Ok(0)
 }
 
 /// One line about a terminal: what it has moved, and what that is worth.
 ///
-/// A count that is missing says so instead of reading as zero. An accompanied
-/// terminal whose count has not landed yet is not an empty one, and the two
-/// must not print the same.
+/// A count that is missing says so instead of reading as zero. A terminal
+/// whose count has not landed yet is not an empty one, and the two must not
+/// print the same.
 fn how_full(room: &Path, tty: &str, ceiling: u64) -> String {
     let Some(counted) = tally::read(&room.join(format!("{tty}.seen"))) else {
         return format!("{tty}   can be typed into, nothing counted yet");
@@ -587,7 +589,7 @@ mod tests {
 
     #[test]
     fn running_nothing_is_refused_instead_of_opening_an_empty_terminal() {
-        let error = accompany(&words(&["--"]))
+        let error = hold(&words(&["--"]))
             .err()
             .expect("an empty command line is refused");
         assert!(error.contains("nothing to run"), "{error}");

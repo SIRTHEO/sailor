@@ -1,4 +1,4 @@
-//! The whole command end to end: a real `sailor accompany run` in a real
+//! The whole command end to end: a real `sailor terminal run` in a real
 //! pseudo-terminal, typed into from outside by a process that shares nothing
 //! with it but a socket.
 //!
@@ -61,11 +61,11 @@ fn letterbox_under(room: &Path, limit: Duration) -> Option<PathBuf> {
 
 /// A terminal with the real command inside, told to keep its letterboxes in a
 /// directory of the test's own instead of the store of whoever runs it.
-fn accompanied(directory: &Path) -> Arc<Pty> {
+fn held(directory: &Path) -> Arc<Pty> {
     let workspace = Workspace::open("/tmp").expect("open the workspace");
     let binary = env!("CARGO_BIN_EXE_sailor");
     let arguments: Vec<&OsStr> = vec![
-        OsStr::new("accompany"),
+        OsStr::new("terminal"),
         OsStr::new("run"),
         OsStr::new("--store"),
         directory.as_os_str(),
@@ -74,14 +74,14 @@ fn accompanied(directory: &Path) -> Arc<Pty> {
     ];
     Arc::new(
         Pty::open(&workspace, OsStr::new(binary), &arguments, Size::default(), &[])
-            .expect("open a terminal with sailor accompany inside"),
+            .expect("open a terminal with sailor terminal inside"),
     )
 }
 
 #[test]
 fn a_line_pressed_from_outside_reaches_the_program_the_command_started() {
-    let directory = scratch("accompany");
-    let outer = accompanied(&directory);
+    let directory = scratch("held");
+    let outer = held(&directory);
     let shown = collect(&outer);
 
     let room = directory.join("terminals");
@@ -110,7 +110,7 @@ fn a_line_pressed_from_outside_reaches_the_program_the_command_started() {
     }
     assert!(
         seen(&shown).contains("a-word-from-outside"),
-        "the line pressed from outside must come out of the accompanied terminal: {}",
+        "the line pressed from outside must come out of the terminal Sailor holds: {}",
         seen(&shown)
     );
 
@@ -141,9 +141,9 @@ fn a_line_pressed_from_outside_reaches_the_program_the_command_started() {
 /// up on its own, or the test above would pass on a command that ignores the
 /// letterbox entirely.
 #[test]
-fn without_a_knock_the_accompanied_terminal_shows_nothing() {
-    let directory = scratch("accompany-quiet");
-    let outer = accompanied(&directory);
+fn without_a_knock_the_held_terminal_shows_nothing() {
+    let directory = scratch("held-quiet");
+    let outer = held(&directory);
     let shown = collect(&outer);
 
     assert!(
