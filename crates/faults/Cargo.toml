@@ -1,0 +1,21 @@
+[package]
+name = "faults"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Faults met while building Sailor: what happened, how it showed, and which
+# check would have stopped it.
+#
+# Data, not a document. A fault number was a shared resource nobody guarded, and
+# no test can guard it either, because a test looks at one branch at a time. The
+# store is one, and it hands out the number.
+#
+# Its own SQLite file, like `sessions` and for the same reason: the version is
+# ours and does not touch the ledger's `PROJECTION_SCHEMA_VERSION`, which two
+# parallel branches would each raise to their own next.
+[dependencies]
+ledger = { path = "../ledger" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
 import { stepCountLabel, type Step, type StepKind, type StepRun, type StepState } from "./flow";
 import { nodeId, type PortShape, type StepPort, type StepPorts } from "./layout";
@@ -150,6 +150,102 @@ function StepPortsRow({ ports }: { ports: StepPorts }) {
       </div>
     </div>
   );
+}
+
+/**
+ * The glyph of each species, drawn with the stroke of whatever inherits it.
+ *
+ * A SHAPE NEXT TO THE WORD, NEVER INSTEAD OF IT (prohibition 5), and never a
+ * tint of its own: a species is not a machine state, and prohibition 4 keeps
+ * colour for those. Nine kinds are told apart in greyscale by these outlines.
+ */
+const KIND_ICON: Record<StepKind, ReactNode> = {
+  trigger: <path d="M13 2L4.5 13.5H11l-1 8.5L19.5 10H13z" fill="currentColor" stroke="none" />,
+  engine: (
+    <>
+      <rect x="4" y="7" width="16" height="12" rx="2.5" />
+      <path d="M12 7V4" />
+      <circle cx="9" cy="13" r="1.2" fill="currentColor" />
+      <circle cx="15" cy="13" r="1.2" fill="currentColor" />
+    </>
+  ),
+  check: <path d="M4 12.5l5 5L20 6.5" />,
+  wait: (
+    <>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v4.5l3 1.8" />
+    </>
+  ),
+  branch: (
+    <>
+      <path d="M6 4v7a6 6 0 0012 0V4" />
+      <path d="M12 21v-4" />
+    </>
+  ),
+  deposit: (
+    <>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h9" />
+    </>
+  ),
+  gesture: (
+    <>
+      <path d="M5 12h14" />
+      <path d="M13 6l6 6-6 6" />
+    </>
+  ),
+  human: (
+    <>
+      <circle cx="12" cy="8" r="3.4" />
+      <path d="M5.5 20a6.5 6.5 0 0113 0" />
+    </>
+  ),
+  subflow: (
+    <>
+      <rect x="3" y="4" width="8" height="8" rx="2" />
+      <rect x="13" y="12" width="8" height="8" rx="2" />
+      <path d="M11 8h2a1 1 0 011 1v3" />
+    </>
+  ),
+};
+
+export function KindIcon({
+  kind,
+  className = "step-node__icon",
+}: {
+  kind: StepKind;
+  className?: string;
+}) {
+  return (
+    <span className={className} aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        {KIND_ICON[kind]}
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * How long a step took, at the precision that answers the question.
+ *
+ * Under ten seconds a tenth is the difference between "instant" and "slow", and
+ * over a minute nobody compares tenths. Comma for the decimal, like every other
+ * number this window prints.
+ */
+export function formatElapsed(seconds: number): string {
+  if (seconds < 10) return `${seconds.toFixed(1).replace(".", ",")} s`;
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min ${Math.round(seconds - minutes * 60)} s`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 export const KIND_LABEL: Record<StepKind, string> = {
@@ -353,12 +449,51 @@ export function StepNode({ data, selected }: NodeProps) {
       <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
       <Handle type="target" position={Position.Left} />
 
-      {/* LA TESTATA INCISA dice le due cose che si chiedono per prime: che cosa
-          sei, e come stai. Resta anche da lontano — è ciò che a quello zoom si
-          legge ancora, e prima da lontano spariva insieme al resto. */}
+      {/* THE HEAD SAYS WHAT YOU ARE: the glyph of the species, its name, and
+          the identifier of the step. It survives the far zoom, where it is the
+          only thing still legible. */}
       <div className="step-node__head">
-        <span className="step-node__kind">{KIND_LABEL[kind]}</span>
-        {step.when && <span className="step-node__when">condizionato</span>}
+        <KindIcon kind={kind} />
+        <div className="step-node__ident">
+          {/* The species and «condizionato» share a row, and the identifier gets
+              the full width below them: squeezed onto one row with the glyph,
+              a name like `working-tree-is-clean` loses its second half. */}
+          <span className="step-node__kindline">
+            <span className="step-node__kind">{KIND_LABEL[kind]}</span>
+            {step.when && <span className="step-node__when">condizionato</span>}
+          </span>
+          <div className="step-node__id" title={step.id}>
+            {step.id}
+          </div>
+        </div>
+      </div>
+
+      {!far && (
+        <div className="step-node__body">
+          {/* DA VICINO IL NODO DICE SEMPRE CON COSA GIRA — anche quando la
+              risposta è «con niente». Da lontano no: a quello zoom non si
+              leggerebbe. */}
+          {engines.length > 0 ? (
+            <StepTool
+              id={engines[0]}
+              model={modelOf(step)}
+              actual={usage?.models ?? []}
+              fallbacks={engines.slice(1)}
+            />
+          ) : (
+            <NoTool action={step.action} />
+          )}
+
+          {usage && usage.calls > 0 && <StepMeter usage={usage} />}
+
+          {ports && <StepPortsRow ports={ports} />}
+        </div>
+      )}
+
+      {/* THE FOOT SAYS HOW IT WENT, and the duration belongs beside the word,
+          not a row apart: they are one answer. The foot is drawn at every zoom
+          — from far, a node that says only what it is says half of it. */}
+      <div className="step-node__foot">
         {/* PUNTO PIÙ PAROLA, MAI IL SOLO COLORE (divieto 5). Il punto è il
             registro quieto — respira, uguale su ogni corsa viva — e la parola
             è ciò che regge in scala di grigi. */}
@@ -366,51 +501,30 @@ export function StepNode({ data, selected }: NodeProps) {
           <span className="step-node__state-dot" aria-hidden="true" />
           {STATE_LABEL[state]}
         </span>
+
+        {/* Chi tiene il passo è un fatto, e sta bene in fondo: non chiede
+            niente a nessuno. */}
+        {!far && isAgent && state === "running" && (
+          <span className="step-node__pid">pid {run?.held_by_pid ?? "?"}</span>
+        )}
+        {!far && run && run.attempt > 1 && (
+          <span className="step-node__attempt">
+            {run.attempt}ª di {step.max_attempts}
+          </span>
+        )}
+        {/* Le altre che aspettano non prendono ciascuna un'evidenza: si
+            contano qui, sull'unico nodo isolato. */}
+        {!far && isolated && call.waiting > 1 && (
+          <span className="step-node__elsewhere">altri {call.waiting - 1} in attesa</span>
+        )}
+
+        {/* A DURATION NOBODY MEASURED IS NOT ZERO, so no slot is drawn for it.
+            The engine's events carry the two instants, but nothing turns them
+            into `elapsed_secs` yet: on a real run this stays empty. */}
+        {!far && run?.elapsed_secs !== undefined && (
+          <span className="step-node__elapsed">{formatElapsed(run.elapsed_secs)}</span>
+        )}
       </div>
-
-      <div className="step-node__body">
-        <div className="step-node__id">{step.id}</div>
-
-        {/* DA VICINO IL NODO DICE SEMPRE CON COSA GIRA — anche quando la
-            risposta è «con niente». Da lontano no: a quello zoom non si
-            leggerebbe. */}
-        {!far && (engines.length > 0 ? (
-          <StepTool
-            id={engines[0]}
-            model={modelOf(step)}
-            actual={usage?.models ?? []}
-            fallbacks={engines.slice(1)}
-          />
-        ) : (
-          <NoTool action={step.action} />
-        ))}
-
-        {!far && usage && usage.calls > 0 && <StepMeter usage={usage} />}
-
-        {!far && ports && <StepPortsRow ports={ports} />}
-      </div>
-
-      {!far && (run || isolated) && (
-        <div className="step-node__foot">
-          {/* Chi tiene il passo è un fatto, e sta bene in fondo: non chiede
-              niente a nessuno. Prima viaggiava dentro il riquadro che urlava. */}
-          {isAgent && state === "running" && (
-            <span className="step-node__pid">pid {run?.held_by_pid ?? "?"}</span>
-          )}
-          {run && run.attempt > 1 && (
-            <span className="step-node__attempt">
-              {run.attempt}ª di {step.max_attempts}
-            </span>
-          )}
-          {/* Le altre che aspettano non prendono ciascuna un'evidenza: si
-              contano qui, sull'unico nodo isolato. */}
-          {isolated && call.waiting > 1 && (
-            <span className="step-node__elsewhere">
-              altri {call.waiting - 1} in attesa
-            </span>
-          )}
-        </div>
-      )}
 
       <Handle type="source" position={Position.Right} />
     </div>
