@@ -30,7 +30,7 @@ const DATED_COMMENTS_TODAY: usize = 329;
 /// **L'UNICO RIALZO ONESTO** e' una fusione che porta dentro italiano gia'
 /// scritto altrove: li' si rimisura, si alza col numero misurato, e lo si dice
 /// nel commit. Alzarlo perche' e' diventato rosso e' disarmarlo.
-const ITALIAN_COMMENT_LINES_TODAY: usize = 14_847;
+const ITALIAN_COMMENT_LINES_TODAY: usize = 14_842;
 
 /// Parole senza le quali una frase italiana non sta in piedi, e che **non sono
 /// parole inglesi valide**.
