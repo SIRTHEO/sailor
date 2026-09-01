@@ -61,7 +61,10 @@ impl Inbox {
             }
             std::fs::remove_file(&path)?;
         }
-        let listener = UnixListener::bind(&path)?;
+        // A perimeter refuses the bind itself, not the path, and the operating
+        // system's four words under a letterbox test read as «this crate is
+        // broken». Naming the refuser costs one branch.
+        let listener = UnixListener::bind(&path).map_err(crate::scratch::blamed)?;
         Ok(Inbox { path, listener })
     }
 
