@@ -41,6 +41,25 @@ carried a comment asking for exactly that: move with the assertions, in one edit
 Two of the six had no constant at all and were written out where they were used
 — a family that lives as scattered literals is a family only in the comment.
 
+`crates/terminal/src/routing.rs` had two more: `BUILTIN_SOURCE = "incorporato"`,
+which travels in the `source` field of `Loaded` and `Problem`, and `format!("la
+voce numero {}", index + 1)`, which is the **fallback for a missing `id`** — when
+a catalogue entry declares none, that phrase *becomes* the identifier, and a test
+compares it. A fallback standing in for an identifier is an identifier.
+
+**Neither needed a decision, and the census is why that was not obvious.** The
+sibling crates had already settled both: `trigger` and `models` say `built-in`,
+`trigger` and `toolbox` say `entry number {}`. Terminal was the only one behind,
+with its neighbours already agreeing. **This census asked «what is Italian?»,
+which cannot answer «it is already written next door»** — and the second question
+is the one that turns a design decision into copying a line. Ask it first: for
+every value, does a sibling crate already spell this?
+
+The same reading argued **against** a repair. `entry number 3` points at a count
+rather than at an entry and moves if the file is reordered — but it does so
+identically in all three crates, so fixing one turns three coherent things into
+two coherent ones and a surprise. Either all three or none.
+
 ### The rest, with what makes each one hard
 
 - **Words a person types.** `sailor flow cap <name> nessuno`, `sailor flow
@@ -54,11 +73,6 @@ Two of the six had no constant at all and were written out where they were used
   `migrazione-a-sailor`, `smista-il-lavoro`. Each is at once a registry key, an
   argument a person types, and a name written into
   `crates/terminal/descriptors/default.json`. Three roles, one string.
-- **`crates/terminal/src/routing.rs`.** `BUILTIN_SOURCE = "incorporato"` travels
-  in the `source` field of `Loaded` and `Problem`. Worse, `format!("la voce
-  numero {}", index + 1)` is the **fallback for a missing `id`**: when a catalogue
-  entry declares none, that Italian phrase *becomes* the identifier, and a test
-  compares it.
 - **`crates/supervisor/src/main.rs`.** `"ignoto"` is the fallback for `$USER`
   inside `sailor-live/{who}/{pid}` — a machine-visible name.
 - **`crates/faults/src/lib.rs`.** The worst of them, and the language is the
