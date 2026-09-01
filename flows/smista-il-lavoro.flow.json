@@ -74,8 +74,8 @@
         "with": {
           "tool": [
             "claude-code",
-            "agy",
-            "codex"
+            "codex",
+            "agy"
           ],
           "answer_shape": {
             "type": "object",
@@ -375,8 +375,8 @@
         "with": {
           "tool": [
             "claude-code",
-            "agy",
-            "codex"
+            "codex",
+            "agy"
           ],
           "answer_shape": {
             "type": "object",
