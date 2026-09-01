@@ -48,8 +48,8 @@ pub const USAGE: &[&str] = &[
 
 /// Le opzioni che valgono per più forme, fuori dall'elenco perché non sono
 /// forme: metterle lì le farebbe contare come tali da chi conta le righe.
-const COMMON_OPTIONS: &str = "opzioni comuni: --tty <nome> per dire il terminale invece di dedurlo,\n\
-                              \x20               --store <file> per scrivere altrove che accanto al deposito";
+const COMMON_OPTIONS: &str = "common options: --tty <name> to say the terminal instead of deducing it,\n\
+                              \x20               --store <file> to write somewhere other than beside the ledger";
 
 /// L'aiuto come lo legge chi digita, costruito dall'elenco invece che
 /// ricopiato accanto.
@@ -114,7 +114,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     };
     if !FORMS.contains(&verb) {
         return Err(format!(
-            "«{verb}» non è una forma di questo comando; ci sono {}\n{}",
+            "«{verb}» is not a form of this command; there are {}\n{}",
             FORMS.join(", "),
             usage_text()
         ));
@@ -125,7 +125,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     // terminale interattivo bloccherebbe il comando senza dire perché.
     let raw = if verb == "open" || verb == "event" {
         std::io::read_to_string(std::io::stdin())
-            .map_err(|error| format!("non riesco a leggere il payload: {error}"))?
+            .map_err(|error| format!("cannot read the payload: {error}"))?
     } else {
         String::new()
     };
@@ -137,8 +137,8 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     let tty = match options.get("tty") {
         Some(declared) => declared.clone(),
         None if NEEDS_A_TERMINAL.contains(&verb) => sessions::tty::current().ok_or_else(|| {
-            "non so su quale terminale gira questo processo: nessuno dei suoi tre \
-             descrittori è un tty. Dillo con --tty <nome>"
+            "there is no telling which terminal this process runs on: none of its \
+             three descriptors is a tty. Say it with --tty <name>"
                 .to_owned()
         })?,
         None => String::new(),
@@ -261,7 +261,7 @@ const MARK: &str = " session ";
 /// stiamo innestando: un innesto deve sapere dove innesta. Nessun ramo di
 /// questo comando cambia comportamento a seconda di cosa trova lì.
 fn default_settings() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME non è definita".to_owned())?;
+    let home = std::env::var("HOME").map_err(|_| "HOME is not set".to_owned())?;
     Ok(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
@@ -273,7 +273,7 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
     let hooks = installed(&settings)?;
     let commands = settings
         .parent()
-        .ok_or_else(|| format!("{}: non ha una cartella", settings.display()))?
+        .ok_or_else(|| format!("{}: it has no directory", settings.display()))?
         .join("commands");
     let written = wrote_the_two_commands(&commands)?;
     Ok(Report::spoken(format!("{hooks}\n{written}")))
@@ -292,25 +292,25 @@ fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String>
         (
             "sailor-off",
             "detach",
-            "Stacca questo terminale da Sailor: smette di essere tracciato, e lo \
-             restano anche le sessioni che si apriranno qui dopo.",
+            "Detach this terminal from Sailor: it stops being tracked, and so do \
+             the sessions opened here afterwards.",
         ),
         (
             "sailor-on",
             "attach",
-            "Ricollega questo terminale a Sailor, se era stato staccato.",
+            "Attach this terminal to Sailor again, if it had been detached.",
         ),
     ] {
         let body = format!(
             "---\ndescription: {what}\nallowed-tools: Bash(sailor session {verb}:*)\n---\n\n\
-             Esegui `sailor session {verb}` e riferisci in una riga cosa ha risposto. \
-             Non fare altro.\n"
+             Run `sailor session {verb}` and report in one line what it answered. \
+             Do nothing else.\n"
         );
         let path = directory.join(format!("{name}.md"));
         std::fs::write(&path, body).map_err(|error| format!("{}: {error}", path.display()))?;
     }
     Ok(format!(
-        "/sailor-off e /sailor-on scritti in {}",
+        "/sailor-off and /sailor-on written in {}",
         directory.display()
     ))
 }
@@ -328,22 +328,22 @@ fn installed(settings: &std::path::Path) -> Result<String, String> {
         // sola parte nostra cancellerebbe la configurazione di chi lo usa, per
         // un errore di battitura.
         Ok(text) => serde_json::from_str(&text)
-            .map_err(|error| format!("{}: non è JSON valido ({error})", settings.display()))?,
+            .map_err(|error| format!("{}: not valid JSON ({error})", settings.display()))?,
         Err(_) => serde_json::json!({}),
     };
 
     let binary = std::env::current_exe()
-        .map_err(|error| format!("non so dove sono: {error}"))?
+        .map_err(|error| format!("there is no telling where I am: {error}"))?
         .display()
         .to_string();
 
     let hooks = root
         .as_object_mut()
-        .ok_or_else(|| format!("{}: la radice non è un oggetto", settings.display()))?
+        .ok_or_else(|| format!("{}: the root is not an object", settings.display()))?
         .entry("hooks")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| format!("{}: «hooks» non è un oggetto", settings.display()))?;
+        .ok_or_else(|| format!("{}: «hooks» is not an object", settings.display()))?;
 
     let mut added = Vec::new();
     for (event, verb) in HOOKS {
@@ -352,7 +352,7 @@ fn installed(settings: &std::path::Path) -> Result<String, String> {
             .entry(*event)
             .or_insert_with(|| serde_json::json!([]))
             .as_array_mut()
-            .ok_or_else(|| format!("{}: «{event}» non è un vettore", settings.display()))?;
+            .ok_or_else(|| format!("{}: «{event}» is not an array", settings.display()))?;
 
         // Già innestato: si riconosce dal comando, non dalla posizione.
         let ours = list.iter().any(|entry| {
@@ -370,7 +370,7 @@ fn installed(settings: &std::path::Path) -> Result<String, String> {
     }
 
     if added.is_empty() {
-        return Ok(format!("già innestato in {}", settings.display()));
+        return Ok(format!("already grafted into {}", settings.display()));
     }
     if let Some(parent) = settings.parent() {
         std::fs::create_dir_all(parent)
@@ -396,7 +396,7 @@ fn act(request: &Request<'_>) -> Result<Report, String> {
         "list" => list_terminals(request),
         "census" => report_census(request),
         "install" => install_hooks(request),
-        other => Err(format!("«{other}» non è una forma di questo comando")),
+        other => Err(format!("«{other}» is not a form of this command")),
     }
 }
 
@@ -519,7 +519,7 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
         format!("chiuso {}", request.tty)
     } else {
         format!(
-            "{} non aveva nessuna riga aperta: il fatto è registrato lo stesso",
+            "{} had no open row: the fact is recorded all the same",
             request.tty
         )
     }))
@@ -534,7 +534,7 @@ fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
         .record_event(&event_named(request, "detach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(format!(
-        "{} è staccato: lo resta anche per chi ci arriverà dopo",
+        "{} is detached: it stays so for whoever arrives here later",
         request.tty
     )))
 }
@@ -548,9 +548,9 @@ fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
         .record_event(&event_named(request, "attach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(if was_detached {
-        format!("{} è di nuovo seguito", request.tty)
+        format!("{} is followed again", request.tty)
     } else {
-        format!("{} non era staccato", request.tty)
+        format!("{} was not detached", request.tty)
     }))
 }
 
@@ -562,9 +562,7 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
         return Ok(Report::spoken(text));
     }
     if rows.is_empty() {
-        return Ok(Report::spoken(
-            "nessun terminale si è ancora presentato".to_owned(),
-        ));
+        return Ok(Report::spoken("no terminal has checked in yet".to_owned()));
     }
     let mut text = String::new();
     for row in &rows {
@@ -605,7 +603,7 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
             "NON LO SO: non mi è stato permesso guardare la macchina ({refusal}). \
              Questo non è «nessun terminale»"
         ),
-        Census::NoTerminal => "nessun processo ha un terminale, e l'ho potuto chiedere".to_owned(),
+        Census::NoTerminal => "no process has a terminal, and asking was possible".to_owned(),
         Census::Terminals(terminals) => {
             let mut text = String::new();
             for terminal in terminals {
@@ -613,7 +611,10 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
                     text,
                     "{} ({}), {} processi",
                     terminal.tty,
-                    terminal.ancestor.as_deref().unwrap_or("capostipite ignoto"),
+                    terminal
+                        .ancestor
+                        .as_deref()
+                        .unwrap_or("an unknown ancestor"),
                     terminal.inhabitants.len()
                 );
                 for inhabitant in &terminal.inhabitants {
@@ -645,18 +646,18 @@ fn refusal_code(census: &Census) -> i32 {
 
 fn described(arrival: &Arrival) -> String {
     format!(
-        "{} in {} ({}), sessione {}",
+        "{} in {} ({}), session {}",
         arrival.anchor.tty,
         arrival.anchor.worktree,
         arrival
             .anchor
             .ancestor
             .as_deref()
-            .unwrap_or("capostipite ignoto"),
+            .unwrap_or("an unknown ancestor"),
         arrival
             .session_id
             .as_deref()
-            .unwrap_or("senza identificativo"),
+            .unwrap_or("with no identifier"),
     )
 }
 
@@ -667,7 +668,10 @@ fn options_of(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     let mut rest = args.iter();
     while let Some(word) = rest.next() {
         let Some(name) = word.strip_prefix("--") else {
-            return Err(format!("non capisco «{word}»\n{}", usage_text()));
+            return Err(format!(
+                "«{word}» is not something I know\n{}",
+                usage_text()
+            ));
         };
         if WITHOUT_VALUE.contains(&name) {
             found.insert(name.to_owned(), "true".to_owned());
@@ -675,10 +679,10 @@ fn options_of(args: &[String]) -> Result<BTreeMap<String, String>, String> {
         }
         let value = rest
             .next()
-            .ok_or_else(|| format!("«--{name}» vuole un valore dopo di sé"))?;
+            .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
         if value.starts_with("--") {
             return Err(format!(
-                "«--{name}» ha preso «{value}» per un valore: manca il valore vero"
+                "«--{name}» took «{value}» for a value: the real value is missing"
             ));
         }
         found.insert(name.to_owned(), value.clone());
@@ -1170,11 +1174,7 @@ mod tests {
         let empty = Census::NoTerminal;
         let other = ask("census", "", &store, &empty, &no_options()).expect("censire");
         assert_eq!(other.code, 0);
-        assert!(
-            other.message.contains("nessun processo"),
-            "{}",
-            other.message
-        );
+        assert!(other.message.contains("no process"), "{}", other.message);
     }
 
     /// Lo stacco vive sul tty: la porta unica lo scrive e lo toglie, e in mezzo

@@ -6,6 +6,7 @@ version = 4
 name = "actions"
 version = "0.1.0"
 dependencies = [
+ "faults",
  "flow",
  "ledger",
  "libc",
@@ -2610,6 +2611,7 @@ name = "registry"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "faults",
  "flow",
  "ledger",
  "relay",

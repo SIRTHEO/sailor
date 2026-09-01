@@ -183,13 +183,13 @@ impl Action for HandoffAction {
             // Un record senza scadenza leggibile non si dichiara scaduto: una
             // consegna senza tetto è ambigua, e l'ambiguità si conserva.
             return Ok(EffectStatus::Unknown(
-                "la consegna non dichiara una scadenza leggibile".to_owned(),
+                "the handover declares no readable deadline".to_owned(),
             ));
         };
         let deadline = record.started_at.saturating_add(limit);
         if (self.now)() < deadline {
             Ok(EffectStatus::Unknown(format!(
-                "consegnato, e la scadenza non è ancora passata: mancano {} secondi",
+                "handed over, and the deadline has not passed: {} seconds to go",
                 deadline - (self.now)()
             )))
         } else {
@@ -209,17 +209,17 @@ impl Action for HandoffAction {
         if spec.mandate.trim().is_empty() {
             return Err(ActionError::new(
                 "invalid_input",
-                "un mandato vuoto non è un lavoro: nessuno saprebbe cosa gli è stato chiesto",
+                "an empty brief is not a job: nobody would know what they were asked for",
             ));
         }
         let run_id = shared
             .get(flow::CURRENT_RUN)
             .and_then(Value::as_str)
-            .unwrap_or("<corsa ignota>");
+            .unwrap_or("<an unknown run>");
         let step_id = shared
             .get(flow::CURRENT_STEP)
             .and_then(Value::as_str)
-            .unwrap_or("<passo ignoto>");
+            .unwrap_or("<an unknown step>");
 
         // IL MANDATO SI VEDE MENTRE SUCCEDE, non a corsa finita: chi guarda
         // deve poterlo prendere in carico adesso.
@@ -227,7 +227,7 @@ impl Action for HandoffAction {
             live.chunk(
                 Pipe::Stdout,
                 format!(
-                    "\n── mandato consegnato a «{}» ──\n{}\n──\n",
+                    "\n── brief handed to «{}» ──\n{}\n──\n",
                     spec.holder, spec.mandate
                 )
                 .as_bytes(),
