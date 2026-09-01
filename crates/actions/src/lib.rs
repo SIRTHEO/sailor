@@ -1001,13 +1001,32 @@ pub fn judge_login_status(recipe: &LoginRecipe, stdout: &str, stderr: &str) -> L
         return LoginVerdict::Unrecognised { said };
     };
 
+    // **SI MOSTRA IL SOGGETTO, NON L'INVOLUCRO CHE LO CONTENEVA.** La risposta
+    // vera di `claude auth status` porta con sé l'indirizzo di posta del
+    // proprietario, l'identificativo e il nome della sua organizzazione e il
+    // tipo di abbonamento; questo testo finisce in `sailor profiles list` e nel
+    // rapporto di `sailor flow check`, cioè in due uscite che si incollano in
+    // una consegna e si versano in un registro. **Una diagnosi non deve
+    // portarsi dietro chi la usa.**
+    //
+    // Non si perde niente: dove un puntatore c'è, il valore che ha isolato *è*
+    // la risposta — «false» è più preciso dell'involucro, non meno — e dove non
+    // c'è, il soggetto è già tutto ciò che il motore ha detto. È la stessa
+    // regola delle righe rotte («le parole del motore per intero») applicata a
+    // un motore che risponde con un campo invece che con una frase.
+    let shown = if recipe.answer.is_some() {
+        subject.clone()
+    } else {
+        said
+    };
+
     if mentions_any(&recipe.logged_out_when, &subject) {
-        return LoginVerdict::LoggedOut { said };
+        return LoginVerdict::LoggedOut { said: shown };
     }
     if mentions_any(&recipe.logged_in_when, &subject) {
-        return LoginVerdict::LoggedIn { said };
+        return LoginVerdict::LoggedIn { said: shown };
     }
-    LoginVerdict::Unrecognised { said }
+    LoginVerdict::Unrecognised { said: shown }
 }
 
 /// Chi fa la domanda locale «sei autenticato?», **dentro una casa precisa**.
