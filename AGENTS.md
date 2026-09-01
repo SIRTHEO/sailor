@@ -71,81 +71,77 @@ Trappole già pagate su questa macchina:
 
 ## Come si scrive
 
-- **Identificatori in inglese.** Nomi di funzione, tipi, campi, opzioni,
-  **variabili locali**, **moduli**, **costanti**, **nomi di file e cartelle**,
-  **classi CSS**, **chiavi JSON**. In Rust un file *è* un modulo: il suo nome è
-  un identificatore come gli altri.
+- **Everything is in English.** Identifiers, comments, documentation, commit
+  messages, and every message a user of the tool can see. There is no inside
+  language and no outside language: this repository is public, and what is
+  committed here is world-readable, permanently.
 
-  **Questo elenco era più corto, e la differenza è costata 136 rinomine.** Fino
-  al 31/08/2026 diceva «nomi di funzione, tipi, campi, opzioni»: chi scriveva un
-  `let listino` o un file `smista_il_lavoro.rs` non trovava il proprio caso
-  nell'elenco, e la direttiva di sessione — che dice «italiano» senza dire
-  «tranne gli identificatori» — vinceva. Una regola incompleta non è una regola
-  parziale: è un permesso.
+  This is the rule the project was founded with, and it was lost. It lived in a
+  `CLAUDE.md` on an orphan branch with an unrelated history — one commit, never
+  published, unreachable from anything. The project then spent days
+  rediscovering it piece by piece. The branch is kept as the tag
+  `archivio-primo-abbozzo`; the rest of what it said is in `docs/decisioni.md`.
+  It is the most expensive shape of the defect this project keeps chasing: not
+  a rule nobody interrogates, but **a rule nobody could read**.
 
-  **La misura è `cargo test -p sailor --test identifiers_are_in_english`**, e
-  vale più di questa riga: una regola che nessuno interroga non diventa rossa
-  mai. Chi incontra una parola italiana che il controllo non conosce la aggiunge
-  al suo elenco.
-- **Commenti in italiano, e pochi.** Un commento dice *perché*, non *cosa*: il
-  cosa lo dice il codice. Vale anche per i **dati di prova**: `f.name ==
-  "assente"` resta così com'è — è un dato, non un identificatore — mentre la
-  variabile che lo tiene si chiama `absent`. Vale per i messaggi delle
-  **prove**, che sono scritti per chi lavora qui dentro.
+  Identifiers include function names, types, fields, options, **local
+  variables**, **modules**, **constants**, **file and directory names**, **CSS
+  classes** and **JSON keys**. In Rust a file *is* a module: its name is an
+  identifier like any other. That list used to be shorter, and the difference
+  cost 136 renames — an incomplete rule is not a partial rule, it is a
+  permission. The measure is `cargo test -p sailor --test
+  identifiers_are_in_english`, which reads workflow job keys too.
 
-  **Il codice è la fonte; un commento è un indizio datato.** Se quello che
-  vorresti scrivere si può ottenere rinominando una variabile, estraendo una
-  funzione o scrivendo una prova, si fa quello. Un commento si scrive quando
-  resta un *perché* che il codice non può portare: un vincolo esterno, una
-  scelta contro-intuitiva, un limite dichiarato.
+  **Fixture data is data, not language.** `f.name == "assente"` stays as it is;
+  the variable holding it is called `absent`.
 
-  **NIENTE CRONACA NEL CODICE.** Date, «fino al 31/08 faceva X», «ci sono
-  cascati in due lo stesso giorno», il racconto di com'è andata: non stanno
-  qui. Stanno nel registro dei guasti e nel messaggio di commit, che è il
-  posto che li conserva **con l'autore e la data veri** invece di ricopiarli a
-  mano. Nel codice al massimo resta il rimando: `// vedi guasto 39`.
+- **Few comments, and no chronicle.** A comment says *why*, not *what*: the
+  what is said by the code. If what you want to write can be had by renaming a
+  variable, extracting a function or writing a test, do that instead. A comment
+  earns its place when a *why* is left that the code cannot carry: an external
+  constraint, a counter-intuitive choice, a declared limit.
 
-  **Tetto: sei righe per blocco.** Misurato il 01/09/2026: 3.036 blocchi,
-  mediana 3 righe. Il commento normale sta già dentro il tetto e non cambia
-  niente. A sforarlo sono **636 blocchi**, che da soli si portano due terzi
-  delle 14.343 righe di commento — il massimo è di 66 righe di fila. Il tetto
-  colpisce la coda, non l'abitudine. Il primo blocco potato è stato quello da
-  66 righe in `flow/src/subflow.rs`: cinque decisioni che stavano già in
-  `docs/decisioni.md` e un limite che ora sta accanto alla funzione che lo
-  causa. Accorciare non è cancellare — è mettere la cosa dove il codice la
-  porta.
+  **Dates, "it used to do X", the story of how it went: not here.** They belong
+  in the fault ledger and in the commit message, which keep them with the real
+  author and the real date instead of a hand copy. In the code, at most a
+  pointer: `// see fault 39`.
 
-  **E c'è una ragione che non è di gusto.** L'indice semantico non toglie i
-  commenti: `chunkFileContent` di SocratiCode incorpora il testo così com'è, e
-  chiama «preamble» tutto ciò che precede una dichiarazione. Un blocco di 66
-  righe **diventa il pezzo che l'indice confronta con la domanda**, al posto
-  del codice che sta sotto. Un progetto al 25% di commenti narrativi si
-  restituisce da solo il racconto quando gli chiedi il codice.
+  **Cap: six lines per block.** Measured 2026-09-01: 3,036 blocks, median 3
+  lines — the ordinary comment is already inside the cap and nothing changes
+  for it. What overflows is 636 blocks carrying two thirds of the 14,343
+  comment lines, the longest being 66 consecutive lines. The cap hits the tail,
+  not the habit. Shortening is not deleting: the first block trimmed was that
+  66-line one in `flow/src/subflow.rs`, five decisions that were already in
+  `docs/decisioni.md` plus one limit that now sits next to the function causing
+  it.
 
-  **La misura è `cargo test -p sailor --test comments_do_not_crowd_out_the_code`**,
-  e i due numeri possono solo scendere.
-- **Ciò che legge uno sconosciuto va in inglese.** Il `README`, la CI, e **i
-  messaggi che un utente dello strumento vede**: quello che `sailor` stampa,
-  quello che dice quando rifiuta, quello che scrive un `--help`. Sotto `docs/`
-  si resta in italiano, e i commenti dentro il codice pure.
+  **And the reason is not taste.** The semantic index does not strip comments:
+  SocratiCode's `chunkFileContent` embeds the text as written, and calls
+  "preamble" everything preceding a declaration. A 66-line block **becomes the
+  chunk the index compares against your question**, instead of the code below
+  it. A project that is 25% narrative comment hands you the story when you ask
+  it for the code.
 
-  **Questa riga diceva il contrario fino al 01/09/2026**, e diceva «commenti e
-  messaggi in italiano» senza distinguere fra i due tipi di messaggio. Il
-  confine di prima — «ciò che il compilatore legge sta in inglese» — divideva
-  bene il codice ma non aveva niente da dire sulla vetrina, perché finché il
-  repo era privato la vetrina non esisteva. Deciso da Theo il 01/09/2026,
-  guardando la CI: tre lavori con la chiave in italiano su una pagina che
-  chiunque può aprire.
+  The measure is `cargo test -p sailor --test comments_do_not_crowd_out_the_code`,
+  and its numbers can only go down.
 
-  **Il confine è chi legge, non che tipo di file è.** Un `panic!` dentro una
-  prova parla a chi lavora qui: italiano. Lo stesso `panic!` in un percorso che
-  un utente può battere parla a lui: inglese. Quando non è chiaro chi legge,
-  chiedi invece di scegliere la lingua che ti viene comoda.
-- **Gli `id` dei flussi e dei passi restano in italiano**, e i nomi dei file
-  `.flow.json` con loro. Il confine è questo: **ciò che il compilatore legge sta
-  in inglese, ciò che il deposito conserva è un dato.** Rinominare un passo
-  farebbe apparire le corse già registrate come passi sconosciuti. Deciso da
-  Theo il 31/08/2026, per esteso in `docs/decisioni.md`.
+- **Notes that cannot meet these rules stay out of the repository**, under
+  `~/personal/.sailor-notes/`, which has no git remote and nothing in it is
+  ever copied in. That covers absolute paths from a developer machine, client
+  or employer names, internal repository names, transcripts and logs copied out
+  of private tooling, and any framing of this work as a reaction to or
+  comparison with somebody else's product.
+- **Flow and step `id`s stay as they are**, and the `.flow.json` filenames with
+  them. This is not an exception to the language rule: **what the compiler
+  reads is language, what the ledger keeps is data.** Renaming a step would
+  make already-recorded runs show up as unknown steps, and renaming a shipped
+  flow would silently stop a user's own replacement from winning. Decided by
+  Theo on 2026-08-31, in full in `docs/decisioni.md`.
+
+- **Commit messages: Conventional Commits.** `<type>(<scope>): <subject>`,
+  lowercase, imperative, no trailing period. The body explains why, not what —
+  it is where the chronicle the code must not carry actually belongs. No
+  tooling attribution trailers.
 - **Scritture solo con gli strumenti di modifica file**, mai con `sed`, heredoc o
   uno script interprete: le scritture da interprete saltano i controlli di casa.
 - **Percorsi assoluti**, mai `cd X && comando`.

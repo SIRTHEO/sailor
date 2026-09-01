@@ -69,7 +69,7 @@ fn event(tty: &str, session: &str, name: &str, at: i64) -> TerminalEvent {
     TerminalEvent {
         tty: tty.to_owned(),
         session_id: Some(session.to_owned()),
-        worktree: Some("/Users/theo/personal/sailor".to_owned()),
+        worktree: Some("/work/sailor".to_owned()),
         ancestor: Some("Whatever".to_owned()),
         name: name.to_owned(),
         transcript_path: None,
@@ -83,7 +83,7 @@ fn the_same_session_sends_many_events_and_the_terminal_stays_one() {
     let scratch = Scratch::new("many-events");
     let store = scratch.store();
     store
-        .open_terminal(&arrival("ttys001", "/Users/theo/personal/sailor", "aaa", 100))
+        .open_terminal(&arrival("ttys001", "/work/sailor", "aaa", 100))
         .expect("aprire");
     for (index, name) in ["SessionStart", "UserPromptSubmit", "Stop"].iter().enumerate() {
         store

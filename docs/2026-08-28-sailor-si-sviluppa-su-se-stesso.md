@@ -223,7 +223,7 @@ ogni volta. Non c'è partita.
 Un solo comando, dalla cartella del guscio:
 
 ```
-cd /Users/theo/personal/sailor/desktop/src-tauri
+cd <radice-del-repo>/desktop/src-tauri
 cargo tauri dev --additional-watch-folders ../../crates
 ```
 

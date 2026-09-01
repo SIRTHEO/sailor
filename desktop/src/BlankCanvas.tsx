@@ -1,49 +1,36 @@
-// La tela senza flussi.
-//
-// È lo stato in cui il prodotto si apre la prima volta, ed è quello che si
-// sbaglia più spesso: una finestra vuota, con la minimappa vuota e i comandi
-// senza niente da comandare, si legge come un guasto — e il gesto che serve,
-// creare il primo flusso, non è da nessuna parte. Qui la tela bianca dice cosa
-// è un flusso e offre il gesto.
-//
-// TRE STATI, TRE FORME DIVERSE. «Sto chiedendo», «il motore non risponde» e
-// «non c'è ancora niente» portano a cose diverse: nel secondo un flusso creato
-// adesso non si potrebbe salvare, e offrire il gesto sarebbe una promessa che
-// nessuno può mantenere.
+// The canvas with no flows. This is how the product opens the first time, and
+// it is the state most often got wrong: an empty window with an empty minimap
+// and controls with nothing to control reads as a failure, and the gesture that
+// is needed is nowhere. Here the blank canvas says what a flow is and offers it.
+
+// THREE STATES, THREE DIFFERENT SHAPES. Asking, engine not answering, and
+// nothing there yet lead to different things: in the second a flow created now
+// could not be saved, so offering the gesture would be an unkeepable promise.
 
 export type CanvasState = "loading" | "failed" | "empty";
 
 interface BlankCanvasProps {
   state: CanvasState;
-  /** Perché il motore non risponde, parola per parola: si mostra, non si riassume. */
+  /** Why the engine is not answering, word for word: shown, not summarised. */
   failure?: string | null;
   brokenCount: number;
   onCreate: () => void;
 }
 
 /**
- * Le corsie dello scheletro, e quanti passi ognuna finge di avere.
- *
- * Due corsie di lunghezza diversa, non due uguali: uno scheletro simmetrico si
- * legge come un motivo decorativo, uno sbilenco come del contenuto che sta
- * arrivando. I numeri non promettono niente — nessuno sa ancora cosa c'è sul
- * disco — e infatti la forma non porta nessuna parola.
+ * The skeleton's lanes, and how many steps each pretends to have. Two lanes of
+ * different length, not two equal ones: a symmetric skeleton reads as a
+ * decorative pattern, a lopsided one as content on its way. The numbers promise
+ * nothing, which is why the shape carries no words.
  */
 const SKELETON_LANES = [3, 4];
 
 export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanvasProps) {
   /**
-   * **LA LETTURA IN CORSO È UNA FORMA, NON UNA ROTELLA.**
-   *
-   * Una rotella dice «aspetta»; uno scheletro dice **cosa sta arrivando** — le
-   * corsie e i loro passi, nel posto dove compariranno — e chi guarda comincia
-   * a leggere lo schermo prima che i dati arrivino.
-   *
-   * Non si muove. Il foglio dichiara due durate e una curva, e le riserva a un
-   * movimento che conferma un gesto: qui non c'è nessun gesto da confermare, e
-   * un battito continuo sarebbe la sola cosa che si muove in tutta la finestra.
-   * A dire che la lettura è in corso è la parola sotto la forma, come il
-   * divieto 5 pretende accanto a ogni segno.
+   * **LOADING IS A SHAPE, NOT A SPINNER.** A spinner says "wait"; a skeleton
+   * says WHAT IS COMING, so the screen reads before the data lands. It does not
+   * move: the sheet keeps its two durations for motion that confirms a gesture,
+   * and there is none here. The word under it says loading, as rule 5 asks.
    */
   if (state === "loading") {
     return (
@@ -84,11 +71,9 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanv
   }
 
   /**
-   * **LO STATO VUOTO INSEGNA IL PRIMO GESTO**, e per insegnarlo deve nominare
-   * posti che esistono. Qui c'era scritto «aggiungi i passi dalla cassetta a
-   * sinistra»: la cassetta è diventata una barra in fondo alla tela, e con zero
-   * flussi non c'è affatto. Un'istruzione falsa costa più del silenzio, perché
-   * chi la segue conclude che il prodotto è rotto.
+   * **THE EMPTY STATE TEACHES THE FIRST GESTURE**, and to teach it, it must
+   * name places that exist. A false instruction costs more than silence,
+   * because whoever follows it concludes the product is broken.
    */
   return (
     <div className="blank" data-state="empty">

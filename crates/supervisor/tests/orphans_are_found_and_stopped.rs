@@ -40,6 +40,73 @@ impl Drop for TestDirectory {
     }
 }
 
+/// Spegnere un processo spegne anche chi lui ha acceso.
+///
+/// `sailor-live` avvia `cargo` e il server della finestra, che di figli ne
+/// fanno: un nipote che sopravvive è la porta che resta occupata dopo uno
+/// `stop` riuscito. Chi giudica è il sistema — `pid_is_alive` — non l'altra
+/// implementazione: due copie che sbagliano uguale si darebbero ragione.
+#[test]
+fn stopping_a_process_also_stops_the_one_it_started() {
+    let dir = TestDirectory::new("nipote");
+    let pidfile = dir.0.join("nipote.pid");
+    let mut process = Process::start(
+        Spec {
+            command: "/bin/sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                format!("sleep 300 & echo $! > {}; wait", pidfile.display()),
+            ],
+            ..sleeper("padre-di-qualcuno", None)
+        },
+        None,
+    )
+    .expect("accendere il padre");
+
+    let grandchild = wait_for_pid(&pidfile);
+    assert!(
+        ledger::pid_is_alive(grandchild),
+        "il nipote non è mai partito: la prova non sta provando niente"
+    );
+
+    process.stop().expect("spegnere il padre");
+
+    // Un pid appena ucciso resta zombie finché qualcuno lo raccoglie, e uno
+    // zombie risponde ancora al segnale nullo: si concede una manciata di giri
+    // prima di accusare.
+    let mut still_here = true;
+    for _ in 0..100 {
+        if !ledger::pid_is_alive(grandchild) {
+            still_here = false;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    if still_here {
+        let _ = std::process::Command::new("kill")
+            .args(["-9", &grandchild.to_string()])
+            .status();
+    }
+    assert!(
+        !still_here,
+        "il nipote {grandchild} è vivo dopo lo stop del padre: è l'orfano che \
+         questo crate esiste per non lasciare"
+    );
+}
+
+/// Aspetta che lo script abbia scritto il pid del nipote, e lo legge.
+fn wait_for_pid(pidfile: &std::path::Path) -> u32 {
+    for _ in 0..200 {
+        if let Ok(text) = std::fs::read_to_string(pidfile) {
+            if let Ok(pid) = text.trim().parse() {
+                return pid;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("il nipote non ha scritto il proprio pid entro quattro secondi");
+}
+
 fn sleeper(process_id: &str, port: Option<u16>) -> Spec {
     Spec {
         process_id: process_id.to_owned(),

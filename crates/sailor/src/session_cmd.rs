@@ -1078,7 +1078,7 @@ mod tests {
         let store = scratch.store();
         let report = ask(
             "open",
-            r#"{"session_id":"abc","cwd":"/Users/theo/personal/sailor",
+            r#"{"session_id":"abc","cwd":"/work/sailor",
                 "transcript_path":"/tmp/abc.jsonl","hook_event_name":"SessionStart"}"#,
             &store,
             &one_terminal(),
@@ -1088,7 +1088,7 @@ mod tests {
         assert_eq!(report.code, 0);
 
         let row = store.terminal("ttys004").expect("leggere").expect("c'è");
-        assert_eq!(row.worktree, "/Users/theo/personal/sailor");
+        assert_eq!(row.worktree, "/work/sailor");
         assert_eq!(row.ancestor.as_deref(), Some("Whatever"));
         assert_eq!(row.session_id.as_deref(), Some("abc"));
         let events = store.events_on("ttys004").expect("gli eventi");
