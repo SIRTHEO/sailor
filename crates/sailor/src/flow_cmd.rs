@@ -217,6 +217,26 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
             unpriced.join(", ")
         );
     }
+    // **CON QUALE IDENTITÀ SONO PARTITI I PROCESSI DI QUESTA CORSA.**
+    //
+    // «Se un processo AI si avvia deve esserci un profilo associato»: fino al
+    // 01/09/2026 quel dato era scritto nel deposito, riletto dentro una
+    // struttura, e non arrivava a **nessuna** schermata né a nessun comando.
+    // Un dato raccolto e mai guardato è a un passo dal diventare un dato
+    // sbagliato che nessuno nota, e questo è il posto dove una persona guarda
+    // quando qualcosa è andato storto.
+    //
+    // **QUI NON COMPARE NESSUN GETTONE**, e non è una svista da riparare: si
+    // dice quale casa e come è stata scelta, che è ciò su cui si va a guardare.
+    // Cosa c'è dentro quella casa non è affare di un rapporto sul consumo.
+    let identities = ui::dashboard::identities_of(&view.calls);
+    if !identities.is_empty() {
+        report.push_str("\nidentità:");
+        for (identity, how_many) in identities {
+            let word = if how_many == 1 { "chiamata" } else { "chiamate" };
+            let _ = write!(report, "\n  {identity} — {how_many} {word}");
+        }
+    }
     report
 }
 
@@ -1702,9 +1722,14 @@ fn login_states_into(
         // sempre: non c'è nessuna scelta di Sailor da rendere visibile, e
         // un avviso qui parlerebbe di una cosa che questo comando non governa.
         let equipment = actions::equipment_for(world.profiles, &bin, &BTreeMap::new());
-        if equipment.profile.is_empty() {
+        let ledger::EngineIdentity::ProfileInForce {
+            cli_id,
+            profile_name,
+            ..
+        } = &equipment.identity
+        else {
             continue;
-        }
+        };
         // La casa si mostra come la riceve il motore — variabile e valore — e
         // non ricalcolata da un'altra parte: due strade che compongono la stessa
         // cosa divergono al primo che cambia.
@@ -1714,7 +1739,10 @@ fn login_states_into(
             .map(|(name, value)| format!("{name}={value}"))
             .collect::<Vec<_>>()
             .join(" ");
-        let who = format!("{} (profilo «{}», {home})", wanted.tool, equipment.profile);
+        let who = format!(
+            "{} (profilo «{cli_id}/{profile_name}», {home})",
+            wanted.tool
+        );
 
         let Some(recipe) = tools.login_recipe(&wanted.tool) else {
             unknown.push(format!(
@@ -3459,8 +3487,7 @@ mod tests {
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 0,
@@ -3506,6 +3533,54 @@ mod tests {
             "un modello prezzato non si segnala: {said}"
         );
         assert!(said.contains("più bassa di quella vera"), "{said}");
+    }
+
+    /// **IL RAPPORTO DICE CON QUALE IDENTITÀ OGNI PROCESSO È PARTITO.**
+    ///
+    /// Fino al 01/09/2026 quel dato era scritto nel deposito, riletto dentro
+    /// `CallView`, e non arrivava a **nessuna** schermata né a nessun comando —
+    /// cercato in `crates/ui`, `desktop/src` e `crates/sailor`. Un dato raccolto
+    /// e mai guardato è a un passo dal diventare un dato sbagliato che nessuno
+    /// nota; questo è il posto dove una persona guarda quando qualcosa è andato
+    /// storto.
+    ///
+    /// **E IL PERCORSO DELLA CASA CI DEVE STARE**, perché è il fondo su cui una
+    /// diagnostica si appoggia: un nome di profilo dice sotto quale etichetta si
+    /// è girato, un percorso dice dove andare a guardare.
+    ///
+    /// *Mutante eseguito*: togliere da `spending_report` il blocco che scrive
+    /// «identità:». Questa diventa rossa e nessun'altra.
+    #[test]
+    fn the_cost_report_says_which_identity_each_process_started_with() {
+        let mut in_force = a_call("prezzato", Some(1_000));
+        in_force.engine_identity = ledger::EngineIdentity::ProfileInForce {
+            cli_id: "codex".to_owned(),
+            profile_name: "lavoro".to_owned(),
+            home_dir: "/case/codex/lavoro".into(),
+        };
+        let mut again = in_force.clone();
+        again.call_id = "call-due".to_owned();
+        let mut by_the_step = a_call("prezzato", Some(1_000));
+        by_the_step.call_id = "call-passo".to_owned();
+        by_the_step.engine_identity = ledger::EngineIdentity::ChosenByTheStep {
+            cli_id: "codex".to_owned(),
+            home_dir: "/una/casa/scritta/nel/passo".into(),
+        };
+
+        let calls = vec![in_force, again, by_the_step];
+        let view = ui::dashboard::summarize_run(&a_finished_run(), &[], &calls, 100);
+
+        let said = spending_report(&view, &a_small_price_list());
+
+        assert!(said.contains("identità:"), "{said}");
+        assert!(
+            said.contains("profilo codex/lavoro — casa /case/codex/lavoro — 2 chiamate"),
+            "{said}"
+        );
+        assert!(
+            said.contains("casa scelta dal passo (codex) — casa /una/casa/scritta/nel/passo — 1 chiamata"),
+            "il caso in cui l'identità è stata cambiata apposta è quello che deve vedersi: {said}"
+        );
     }
 
     /// La gemella: quando tutto è prezzato la riga non compare. Senza di lei un
@@ -4528,8 +4603,7 @@ mod tests {
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 100,
@@ -4793,8 +4867,7 @@ mod tests {
             cached_price_micros_per_million: None,
             cache_write_price_micros_per_million: None,
             cache_write_long_price_micros_per_million: None,
-            mandate_name: String::new(),
-            mandate_version: String::new(),
+            engine_identity: ledger::EngineIdentity::default(),
             retry_chain: vec![],
             error_type: None,
             started_at: 0,
