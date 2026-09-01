@@ -528,6 +528,60 @@ si perde nessun ripiego — dietro di lui non c'è nessuno — e la differenza s
 legge nel motivo del guasto, non nel comportamento. La misura mancante resta
 scritta nel descrittore di `agy`, dove la troverà chi la farà.
 
+### La misura si cerca prima di scegliere la strada che la evita
+
+**01/09/2026, deciso da Theo**, poche ore dopo la voce qui sopra e contro la sua
+seconda metà.
+
+La voce qui sopra dice il vero e resta: una regola ha due modi di essere
+rispettata, e prendere il secondo — non mettere in mezzo chi non dichiara — non
+chiede nessun dato che non esista. Ma quel giorno il dato **si poteva
+misurare**, e nessuno ci aveva provato. «Non inventare un dato» era diventato
+«non cercarlo»: sono due cose diverse, ed è la stessa forma dell'errore che
+quella voce racconta, ripetuta un gradino più in là.
+
+**La regola, adesso.** Davanti a un dato mancante si dichiara **che cosa si è
+provato**. Le strade, in ordine di costo: la documentazione e l'aiuto del
+comando, compresi i sottocomandi annidati — `codex exec fork` non compariva
+nell'aiuto di primo livello, quindi l'aiuto si guarda in profondità; una
+invocazione vera che provochi la condizione senza spendere; il comportamento con
+una casa vuota o senza credenziali. Se la misura viene, si scrive **esattamente
+come è uscita**. Se non viene, si scrive **cosa si è provato e cosa ha
+risposto**: un'assenza misurata vale più di una supposizione, e vale molto più
+di un'assenza non cercata, che non si distingue dalla pigrizia.
+
+`agy` è stato misurato così: `HOME` su una cartella vuota e la riga che Sailor
+monta davvero. Dice di non poter lavorare con parole sue, quelle parole sono nel
+descrittore, e la sua posizione in catena non è più una conseguenza del suo
+silenzio.
+
+### Dove sta un motore in catena si decide su una misura, non su un'abitudine
+
+**01/09/2026, deciso da Theo.**
+
+Dodici posizioni in quattro flussi dichiaravano lo stesso ordine e **nessun
+documento diceva perché**. Un ordine che nessuno ha deciso non è una scelta: è
+un'abitudine, e si difende da sola perché nessuno sa cosa smentirebbe.
+
+Ciò su cui si decide, e che va misurato prima di riordinare: **quanto costa**
+ciascun motore (il listino, `~/.config/sailor/pricing.json`), **quanta quota
+gli resta** (`sailor remaining`), **se è autenticato davvero** — sulla casa del
+profilo attivo, non su quella di chi ha aperto il terminale — e **quante volte
+ha risposto**, dal deposito. Un ordine che non si appoggia ad almeno uno di
+questi quattro non si applica: si scrive in `docs/da-fare.md` come proposta.
+
+**E il primo esito di questa regola è che due dei quattro numeri non ci sono.**
+Il listino conosce un fornitore su tre, e `sailor remaining` risponde per un
+motore solo: un ordine per costo o per quota residua **oggi non è calcolabile**,
+e chi lo proponesse starebbe indovinando. L'unica cosa che la misura impone oggi
+è che un motore misurato **non autenticato** non stia davanti a uno misurato
+autenticato. I numeri e le proposte che ne restano stanno in `docs/da-fare.md`.
+
+**Il limite di questa decisione, dichiarato.** Le credenziali sono uno stato che
+cambia; l'ordine scritto in un flusso no. Scrivere il primo dentro il secondo è
+una cura che invecchia, e la forma giusta — che Sailor misuri e scavalchi a
+esecuzione — è una proposta, non una decisione.
+
 ### Un totale con dentro un'incognita si mostra come pavimento, mai come cifra
 
 **01/09/2026**, dal guasto 37.
