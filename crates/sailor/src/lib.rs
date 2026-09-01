@@ -25,6 +25,7 @@
 //! legge un commento per aggiornarlo. Sta in `COMMANDS`, lo stampa
 //! `print_usage`, e la finestra lo mostra leggendolo da lì.
 
+pub mod accompany_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod models_cmd;
@@ -133,6 +134,12 @@ pub const COMMANDS: &[Command] = &[
         description: "tracks terminals: who checks in, what happens, and what is on the machine",
         usage: session_cmd::USAGE,
         run: session_cmd::run,
+    },
+    Command {
+        name: "accompany",
+        description: "runs a command line in a terminal Sailor owns, and can be typed into",
+        usage: accompany_cmd::USAGE,
+        run: accompany_cmd::run,
     },
 ];
 
