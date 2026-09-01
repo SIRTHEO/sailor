@@ -1,0 +1,32 @@
+[package]
+name = "faults"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# I guasti incontrati costruendo Sailor: cosa è successo, come si è visto, e
+# quale controllo lo impedirebbe.
+#
+# **PERCHÉ SONO DATI E NON UN DOCUMENTO.** Fino all'01/09/2026 stavano in
+# `docs/guasti-incontrati.md`: una tabella a sei colonne travestita da markdown,
+# con una prova che ne faceva il *parsing* per tenerla onesta — contava le righe
+# e dettava a chi scriveva quale numero mettere nella prosa. Era al contrario. Il
+# file stesso lo diceva in testa: «è il materiale grezzo di ciò che Sailor deve
+# imparare a fare da solo; finché quell'anello non è chiuso, la lista si tiene a
+# mano».
+#
+# **E CHIUDE IL GUASTO 42.** Il numero di un guasto era una risorsa condivisa che
+# nessuno sorvegliava: due rami non possono vedersi, quindi il 43, il 47 e il 48
+# sono stati contesi in un giorno solo. Nessuna prova poteva impedirlo, perché
+# una prova guarda un ramo alla volta. Il deposito invece è **uno**, e assegna il
+# numero lui: la collisione diventa impossibile invece che improbabile.
+#
+# Un file SQLite a sé, come per `sessions` e per la stessa ragione: la versione è
+# nostra e non tocca `PROJECTION_SCHEMA_VERSION` del deposito, che due cantieri
+# paralleli alzerebbero ognuno al proprio successivo senza che nessuno dei due
+# risulti sbagliato.
+[dependencies]
+ledger = { path = "../ledger" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
