@@ -32,6 +32,13 @@ const DATED_COMMENTS_TODAY: usize = 329;
 /// nel commit. Alzarlo perche' e' diventato rosso e' disarmarlo.
 const ITALIAN_COMMENT_LINES_TODAY: usize = 14_842;
 
+/// How far a seed may drift above what the tree actually holds.
+///
+/// **A SEED IS A NUMBER IN A FILE, AND A FILE MERGES.** A merge that takes the
+/// older side raises the ceiling with no conflict and no signal, and from then
+/// on reverted translations fit underneath it.
+const HOW_STALE_A_SEED_MAY_BE: usize = 20;
+
 /// Parole senza le quali una frase italiana non sta in piedi, e che **non sono
 /// parole inglesi valide**.
 ///
@@ -210,6 +217,31 @@ fn the_italian_left_in_the_comments_only_shrinks() {
          traducendo, abbassa il numero",
         counts.italian
     );
+}
+
+/// The other side of every ratchet: a ceiling that stops describing the tree.
+///
+/// The three tests above only ask that the count not exceed the seed, so a seed
+/// that drifted upwards is invisible to them — and the seeds are constants in a
+/// file, which a merge can raise without a conflict. Found by general-01, who
+/// watched a clean merge silently undo a repair because both sides were green.
+#[test]
+fn a_seed_that_no_longer_describes_the_tree_is_a_seed_nobody_re_measured() {
+    let counts = count();
+    for (what, declared, measured) in [
+        ("blocchi lunghi", LONG_BLOCKS_TODAY, counts.long_blocks),
+        ("commenti con una data", DATED_COMMENTS_TODAY, counts.dated),
+        ("righe italiane", ITALIAN_COMMENT_LINES_TODAY, counts.italian),
+    ] {
+        assert!(
+            declared <= measured + HOW_STALE_A_SEED_MAY_BE,
+            "il seme «{what}» dice {declared}, l'albero ne ha {measured}: \
+             {} di scarto. O una fusione ha rialzato il tetto, o qualcuno ha \
+             potato senza rimisurare — in tutti e due i casi il numero da \
+             scrivere qui è {measured}",
+            declared - measured
+        );
+    }
 }
 
 /// **CHI MISURA VA MISURATO.** Se `is_comment` o `cites_a_date` smettessero di
