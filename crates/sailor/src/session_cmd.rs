@@ -68,6 +68,23 @@ const FORMS: &[&str] = &[
 /// `list` e `census` non ci sono: parlano di tutti.
 const NEEDS_A_TERMINAL: &[&str] = &["open", "event", "close", "detach", "attach"];
 
+/// Le forme che **leggono o scrivono** `sessions.db`. `census` non c'è: guarda
+/// la macchina, non il deposito.
+///
+/// **ESISTE PER LA STESSA RAGIONE DI `NEEDS_A_TERMINAL`, E IL DANNO ERA
+/// PEGGIORE.** `dispatch` apriva il deposito prima di sapere chi lo stesse
+/// chiedendo, quindi `sailor session census` — il comando che esiste per dire
+/// «non lo so» quando non gli è stato permesso guardare la macchina — falliva
+/// con uscita 1 **prima di poterlo dire**, per un motivo che col censimento non
+/// c'entra niente. Visto eseguendolo dentro il perimetro il 01/09/2026. Chi
+/// legge quell'uscita non distingue tre fatti diversi: il deposito non si apre,
+/// non ho potuto guardare la macchina, non c'è nessun terminale.
+///
+/// Sorvegliata da `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
+/// che gira su **ogni** forma non elencata qui: una aggiunta domani e
+/// dimenticata viene provata senza che nessuno se ne ricordi.
+const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
+
 /// Le opzioni che non vogliono un valore dopo di sé.
 const WITHOUT_VALUE: &[&str] = &["json"];
 
@@ -143,11 +160,20 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         None => String::new(),
     };
 
-    let path = match options.get("store") {
-        Some(declared) => PathBuf::from(declared),
-        None => Sessions::default_path().map_err(|error| error.to_string())?,
+    // **SOLO CHI LEGGE IL DEPOSITO LO APRE**, per la stessa ragione della riga
+    // qui sopra sul terminale. Aprirlo comunque faceva morire `census` — che il
+    // deposito non lo tocca — con l'errore del file al posto della sua risposta;
+    // e la sua risposta è proprio «non lo so», quindi distruggerla con un altro
+    // «non lo so» che parla d'altro è il modo peggiore di sbagliare.
+    let store = if NEEDS_THE_STORE.contains(&verb) {
+        let path = match options.get("store") {
+            Some(declared) => PathBuf::from(declared),
+            None => Sessions::default_path().map_err(|error| error.to_string())?,
+        };
+        Some(Sessions::open(&path).map_err(|error| format!("{}: {error}", path.display()))?)
+    } else {
+        None
     };
-    let store = Sessions::open(&path).map_err(|error| format!("{}: {error}", path.display()))?;
 
     // Qui, e solo qui, si guarda la macchina: un evento è arrivato.
     let census = Census::of(&LocalMachine);
@@ -157,7 +183,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         options: &options,
         payload: &payload,
         raw: &raw,
-        store: &store,
+        store: store.as_ref(),
         census: &census,
         tty: &tty,
         at: now(),
@@ -176,10 +202,32 @@ struct Request<'a> {
     options: &'a BTreeMap<String, String>,
     payload: &'a Payload,
     raw: &'a str,
-    store: &'a Sessions,
+    /// Il deposito, **se questa forma lo legge**. `census` non lo apre affatto:
+    /// vedi [`NEEDS_THE_STORE`].
+    store: Option<&'a Sessions>,
     census: &'a Census,
     tty: &'a str,
     at: i64,
+}
+
+impl Request<'_> {
+    /// Il deposito di questa forma.
+    ///
+    /// **UN ERRORE QUI È UN DIFETTO DI QUESTO FILE, NON UN GUASTO DI CHI
+    /// DIGITA**, e il messaggio lo dice: vuol dire che una forma legge il
+    /// deposito senza essere elencata in [`NEEDS_THE_STORE`]. Non può capitare a
+    /// chi usa il comando, e la prova
+    /// `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`
+    /// gira sull'altra metà dell'elenco.
+    fn store(&self) -> Result<&Sessions, String> {
+        self.store.ok_or_else(|| {
+            format!(
+                "«{}» legge il deposito ma non è in NEEDS_THE_STORE: è un difetto \
+                 di session_cmd.rs, non della riga che hai scritto",
+                self.verb
+            )
+        })
+    }
 }
 
 fn act(request: &Request<'_>) -> Result<Report, String> {
@@ -233,11 +281,11 @@ fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEvent {
 fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     let arrival = arrival_of(request);
     request
-        .store
+        .store()?
         .open_terminal(&arrival)
         .map_err(|error| error.to_string())?;
     request
-        .store
+        .store()?
         .record_event(&event_named(request, "open"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(described(&arrival)))
@@ -246,12 +294,12 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
 fn record_event(request: &Request<'_>) -> Result<Report, String> {
     let arrival = arrival_of(request);
     request
-        .store
+        .store()?
         .remember_terminal(&arrival)
         .map_err(|error| error.to_string())?;
     let happened = event_named(request, "event");
     request
-        .store
+        .store()?
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(format!(
@@ -262,11 +310,11 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
 
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     let closed = request
-        .store
+        .store()?
         .close_terminal(request.tty, request.at)
         .map_err(|error| error.to_string())?;
     request
-        .store
+        .store()?
         .record_event(&event_named(request, "close"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(if closed {
@@ -281,11 +329,11 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
 
 fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
     request
-        .store
+        .store()?
         .detach(&anchor_of(request), request.at)
         .map_err(|error| error.to_string())?;
     request
-        .store
+        .store()?
         .record_event(&event_named(request, "detach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(format!(
@@ -296,11 +344,11 @@ fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
 
 fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
     let was_detached = request
-        .store
+        .store()?
         .attach(request.tty)
         .map_err(|error| error.to_string())?;
     request
-        .store
+        .store()?
         .record_event(&event_named(request, "attach"))
         .map_err(|error| error.to_string())?;
     Ok(Report::spoken(if was_detached {
@@ -312,7 +360,7 @@ fn attach_terminal(request: &Request<'_>) -> Result<Report, String> {
 
 fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let rows = request
-        .store
+        .store()?
         .terminals()
         .map_err(|error| error.to_string())?;
     if request.options.contains_key("json") {
@@ -327,7 +375,7 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
     let mut text = String::new();
     for row in &rows {
         let howmany = request
-            .store
+            .store()?
             .events_on(&row.tty)
             .map(|found| found.len())
             .unwrap_or_default();
@@ -511,7 +559,10 @@ mod tests {
             options,
             payload: &payload,
             raw,
-            store,
+            // Le prove che passano da qui parlano tutte di forme che il deposito
+            // lo leggono: glielo si dà. Chi non lo legge si prova da `dispatch`,
+            // che è dove sta la decisione di aprirlo o no.
+            store: Some(store),
             census,
             tty: "ttys004",
             at: 1_000,
@@ -684,6 +735,54 @@ mod tests {
         let message = dispatch(&["sweep".to_owned()]).expect_err("una forma ignota è un errore");
         for form in FORMS {
             assert!(message.contains(form), "{message} non nomina «{form}»");
+        }
+    }
+
+    /// **CHI NON TOCCA IL DEPOSITO NON DEVE MORIRE PERCHÉ IL DEPOSITO NON SI
+    /// APRE.**
+    ///
+    /// `census` esiste per rispondere «non lo so» quando non gli è stato
+    /// permesso guardare la macchina — è la cura del `pgrep` che risponde vuoto
+    /// (guasto 12) e del `ps` negato in silenzio. Ma `dispatch` apriva
+    /// `sessions.db` **prima** di sapere chi lo stesse chiedendo: il comando che
+    /// esiste per dire «non lo so» falliva con uscita 1 **prima di poterlo
+    /// dire**, per un motivo che col censimento non c'entra niente. Chi legge
+    /// quell'uscita non distingue «il deposito non si apre» da «non ho potuto
+    /// guardare la macchina» da «non c'è nessun terminale»: tre fatti diversi,
+    /// un solo silenzio.
+    ///
+    /// **LA PROVA GIRA SU OGNI FORMA CHE NON DICHIARA DI VOLERE IL DEPOSITO**,
+    /// non solo su `census`: una forma aggiunta domani e lasciata fuori
+    /// dall'elenco viene provata qui senza che nessuno se ne ricordi.
+    ///
+    /// *Mutante eseguito*: aprire il deposito incondizionatamente in `dispatch`
+    /// — cioè il difetto originale. Questa prova torna rossa nominando la forma
+    /// e l'errore del file.
+    #[test]
+    fn a_form_that_never_reads_the_store_survives_a_store_that_will_not_open() {
+        let scratch = Scratch::new("senza-deposito");
+        // Una **cartella** dove ci si aspetta un file: SQLite non la apre, e il
+        // fallimento è dello stesso genere di quelli veri — permessi, disco
+        // pieno, un file di una versione più nuova — senza doverli fabbricare.
+        let impossible = scratch.directory.join("non-e-un-file");
+        std::fs::create_dir_all(&impossible).expect("la cartella di prova");
+
+        for form in FORMS.iter().filter(|form| !NEEDS_THE_STORE.contains(form)) {
+            let words: Vec<String> = vec![
+                (*form).to_owned(),
+                "--store".to_owned(),
+                impossible.display().to_string(),
+            ];
+            let report = dispatch(&words).unwrap_or_else(|error| {
+                panic!(
+                    "«session {form}» non legge il deposito, eppure è morto perché non \
+                     si apriva: {error}"
+                )
+            });
+            assert!(
+                !report.message.is_empty(),
+                "«session {form}» ha risposto senza dire niente"
+            );
         }
     }
 
