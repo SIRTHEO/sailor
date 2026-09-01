@@ -34,10 +34,9 @@ sviluppa. Da indagare seriamente, e le due domande sono queste:
 l'orchestrazione: se esiste un progetto vivo che fa quel pezzo, si collega.
 
 *Domanda aperta, e resta aperta*: quale progetto vivo si può collegare per la
-parte di finestra. **Non è Orca** — il 29/08/2026 era stato scritto qui che lo
-fosse, per un fraintendimento: Theo aveva nominato Orca come *esempio di prodotto
-che integra un browser*, non come cosa da unire. Orca non gli piace, ed è il
-motivo per cui Sailor esiste.
+parte di finestra. Il 29/08/2026 era stato scritto qui che la risposta fosse un
+prodotto preciso, ed era un fraintendimento: Theo l'aveva nominato come *esempio
+di prodotto che integra un browser*, non come cosa da unire.
 
 L'innesto però c'è già, qualunque sia il progetto: le azioni sono un registro, e
 un progetto esterno si collega come **azione nuova** — la stessa forma con cui un
@@ -50,8 +49,8 @@ Non è una comodità: è **l'oracolo del lavoro sull'interfaccia**. Quando si
 disegna un prodotto in React, il browser dentro serve a *vedere* il risultato —
 ed è l'unico modo di giudicarlo.
 
-Orca, che ne ha uno integrato, è **l'esempio citato e nient'altro**: a Theo non
-piace, e Sailor nasce da lì.
+Il prodotto citato il 29/08 come esempio ne ha uno integrato, ed era **l'esempio
+e nient'altro**.
 
 Questa direzione ha già il suo vincolo permanente, e non è nuovo: **lo schermo è
 il giudice** — «una regola di progetto che non si può verificare guardando

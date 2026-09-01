@@ -134,7 +134,7 @@ fn the_flow_the_shipped_rules_name_starts_with_a_manual_trigger() {
 fn a_command_produces_no_signal_at_all() {
     let catalog = Catalog::load(&[terminal::Source::Builtin]);
     let router = Router::new(&catalog, Arc::new(NothingIsRunnable));
-    match router.route("cd /Users/theo/personal/sailor") {
+    match router.route("cd /work/sailor") {
         Routed::Command { .. } => {}
         other => panic!("un comando non deve produrre un segnale: {other:?}"),
     }

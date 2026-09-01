@@ -1396,7 +1396,7 @@ mod workdir_tests {
     #[test]
     fn an_absolute_workdir_is_refused_by_name() {
         let refused = resolved(
-            serde_json::json!({"workdir": "/Users/theo/personal/sailor"}),
+            serde_json::json!({"workdir": "/work/sailor"}),
             Some("/qui"),
         )
         .expect_err("non deve risolversi");
@@ -1404,7 +1404,7 @@ mod workdir_tests {
         match refused {
             FlowError::AbsolutePath { step, value, .. } => {
                 assert_eq!(step, "passo");
-                assert_eq!(value, "/Users/theo/personal/sailor");
+                assert_eq!(value, "/work/sailor");
             }
             altro => panic!("errore sbagliato: {altro}"),
         }

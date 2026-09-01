@@ -1,12 +1,10 @@
-//! Più profili per ogni riga di comando conosciuta, anche quando quella riga
-//! di comando non li supporta da sé.
+//! Several profiles per known command line, even where that command line has
+//! none of its own.
 //!
-//! Il meccanismo: dove la riga di comando legge una variabile d'ambiente per
-//! spostare la propria cartella di casa, un profilo è solo una cartella —
-//! cambiarlo è cambiare una variabile, senza copie né rischio di sovrascrivere.
-//! Dove quella variabile non esiste, il ripiego è un collegamento simbolico
-//! sul file di credenziali dentro la casa fissa: più fragile, va marcato come
-//! tale. Qui solo la parte pura; il filesystem lo tocca `main.rs`.
+//! Where the command line reads an environment variable for its home, a profile
+//! is just a directory: switching is setting a variable, with no copies and
+//! nothing to overwrite. Where it does not, the fallback is a symlink on the
+//! credentials file — more fragile, and marked as such.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -15,40 +13,39 @@ use std::path::{Path, PathBuf};
 
 pub mod store_io;
 
-/// Come una riga di comando trova la propria cartella di casa.
+/// How a command line finds its own home directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HomeMechanism {
-    /// Questa variabile sposta l'intera cartella di casa.
+    /// This variable moves the whole home directory.
     EnvVar(&'static str),
-    /// Nessuna variabile nota: il profilo scambia un collegamento simbolico
-    /// su questo percorso, relativo alla casa fissa.
+    /// No known variable: the profile swaps a symlink at this path, relative to
+    /// the fixed home.
     CredentialSymlink { relative_path: &'static str },
-    /// Non ancora verificato: non si sa come questa riga di comando sposti
-    /// la sua casa, se lo fa.
+    /// Not established: nobody has checked how this command line moves its home,
+    /// or whether it can.
     Unknown,
 }
 
-/// Se la riga di comando gestisce più profili da sé, e quanto è certo.
+/// Whether the command line handles several profiles itself, and how sure we are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeProfiles {
     Supported,
     NotSupported,
-    /// Non verificato in questo ambiente: il comando vero non era
-    /// raggiungibile, o non è stato lanciato.
+    /// Not checked in this environment: the real command was not reachable, or
+    /// was never run.
     Unverified,
 }
 
-/// Una riga di comando conosciuta: come si invoca e come si sposta la sua
-/// casa. `known_clis` è la tabella dichiarata — allungala aggiungendo una
-/// voce, non serve altro.
+/// A known command line: how it is invoked and how its home moves. `known_clis`
+/// is the declared table — extend it by adding an entry, nothing else.
 #[derive(Debug, Clone, Copy)]
 pub struct KnownCli {
     pub id: &'static str,
     pub display_name: &'static str,
     pub executable: &'static str,
     pub native_profiles: NativeProfiles,
-    /// Come si è arrivati al giudizio sopra: cosa dice il comando vero, o
-    /// perché non è stato verificato.
+    /// How the judgement above was reached: what the real command says, or why
+    /// it was not checked.
     pub native_profiles_note: &'static str,
     pub home: HomeMechanism,
     pub home_note: &'static str,
@@ -60,78 +57,70 @@ const KNOWN_CLIS: &[KnownCli] = &[
         display_name: "Claude Code",
         executable: "claude",
         native_profiles: NativeProfiles::NotSupported,
-        native_profiles_note: "verificato su claude 2.1.247: `claude auth` offre solo login/logout/status, nessun sotto-comando di profilo o account multiplo in `--help`.",
+        native_profiles_note: "checked on claude 2.1.247: `claude auth` offers only login/logout/status, and `--help` names no profile or multi-account subcommand.",
         home: HomeMechanism::EnvVar("CLAUDE_CONFIG_DIR"),
-        home_note: "verificato leggendo il binario installato: la variabile sposta l'intera cartella, incluso `.credentials.json` e `settings.json`.",
+        home_note: "checked against the installed binary: the variable moves the whole directory, `.credentials.json` and `settings.json` included.",
     },
     KnownCli {
         id: "codex",
         display_name: "Codex",
         executable: "codex",
         native_profiles: NativeProfiles::Supported,
-        native_profiles_note: "`-p/--profile` in `codex --help`: sovrappone `$CODEX_HOME/<nome>.config.toml` sulla configurazione base — profili di configurazione, non credenziali separate di per sé.",
+        native_profiles_note: "`-p/--profile` in `codex --help` layers `$CODEX_HOME/<name>.config.toml` over the base configuration — config profiles, not separate credentials.",
         home: HomeMechanism::EnvVar("CODEX_HOME"),
-        home_note: "verificato con `codex doctor`: mostra auth.json e config.toml dentro la cartella indicata da CODEX_HOME.",
+        home_note: "checked with `codex doctor`: it shows auth.json and config.toml inside the directory CODEX_HOME names.",
     },
     KnownCli {
         id: "gemini",
         display_name: "Gemini CLI",
         executable: "gemini",
         native_profiles: NativeProfiles::NotSupported,
-        native_profiles_note: "nessun `--profile` in `gemini --help`: solo sessioni (`--resume`, `--session-id`), non identità separate.",
+        native_profiles_note: "no `--profile` in `gemini --help`: only sessions (`--resume`, `--session-id`), not separate identities.",
         home: HomeMechanism::EnvVar("GEMINI_CLI_HOME"),
-        home_note: "verificato leggendo il sorgente installato: `baseDir = process.env[\"GEMINI_CLI_HOME\"] || join(homedir, \".gemini\")`.",
+        home_note: "checked against the installed source: `baseDir = process.env[\"GEMINI_CLI_HOME\"] || join(homedir, \".gemini\")`.",
     },
     KnownCli {
         id: "antigravity",
         display_name: "Antigravity",
         executable: "antigravity",
         native_profiles: NativeProfiles::Unverified,
-        native_profiles_note: "nessun binario `antigravity` in PATH — ma il prodotto C'È, installato come `agy` (verificato il 01/09/2026: /Users/theo/.local/bin/agy, `agy --version` dice 1.1.22, e i descrittori lo chiamano `agy`). Questa voce cerca quindi un nome che nessuno usa. I profili nativi restano non verificati: `agy --help` e i suoi sottocomandi non nominano nessun profilo.",
+        native_profiles_note: "no `antigravity` binary in PATH: the product installs as `agy`, so this entry looks for a name nobody uses. Native profiles stay unchecked — `agy --help` and its subcommands name none.",
         home: HomeMechanism::Unknown,
-        home_note: "i suoi dati vivono sotto ~/.gemini/antigravity-cli/. L'IPOTESI DI CONDIVIDERE `GEMINI_CLI_HOME` È STATA MISURATA IL 01/09/2026, ED È FALSA: quella stringa non compare fra le stringhe del binario, e la casa segue $HOME. Quindi il profilo attivo di Sailor NON sposta la casa di agy come sposta quella di claude e di codex — due profili diversi lo fanno partire nello stesso posto, in silenzio. `Unknown` resta il valore giusto per «non so come spostargli la casa», ma attenzione che la sua documentazione dice «non ancora verificato», che qui non è più vero: è verificato che non c'è modo.",
+        home_note: "its data lives under the Gemini CLI's directory, but `GEMINI_CLI_HOME` does NOT move it: the string is absent from the binary and the home follows $HOME. So the active profile does not move this one's home the way it moves claude's and codex's — two profiles start it in the same place, silently. `Unknown` is still the right value for «no known way», but this is not «not checked yet»: it is checked, and there is no way.",
     },
 ];
 
-/// La tabella delle righe di comando conosciute.
+/// The table of known command lines.
 pub fn known_clis() -> &'static [KnownCli] {
     KNOWN_CLIS
 }
 
-/// La riga di comando che porta questo `id`, o un rifiuto leggibile. Un solo
-/// posto: `sailor profiles` e `sailor run` cercano entrambi qui, non due
-/// copie dello stesso `.find()`.
+/// The command line carrying this `id`, or a readable refusal. One place:
+/// `sailor profiles` and `sailor run` both look here, not in two copies of the
+/// same `.find()`.
 pub fn find_cli(id: &str) -> Result<&'static KnownCli, String> {
     known_clis()
         .iter()
         .find(|c| c.id == id)
-        .ok_or_else(|| format!("riga di comando sconosciuta: {id}"))
+        .ok_or_else(|| format!("unknown command line: {id}"))
 }
 
-/// La riga di comando che si sta per lanciare, riconosciuta dall'**eseguibile**.
+/// The command line about to be launched, recognised by its **executable**.
 ///
-/// **PERCHÉ DALL'ESEGUIBILE E NON DALL'IDENTIFICATIVO DELLO STRUMENTO.** Un
-/// descrittore di `toolbox` chiama `claude-code` ciò che questa tabella chiama
-/// `claude`, e i due elenchi non coincidono né devono: uno risponde a «cosa c'è
-/// su questa macchina», l'altro a «come si sposta la casa di questa riga di
-/// comando». A leggere `CLAUDE_CONFIG_DIR` è il **binario** `claude`, qualunque
-/// nome gli dia chi lo nomina — quindi il legame onesto è quello, e una tabella
-/// di corrispondenze fra i due elenchi sarebbe una terza cosa da tenere
-/// allineata a mano.
-///
-/// Riceve un percorso perché è ciò che il risolutore restituisce: si guarda solo
-/// l'ultimo segmento. `None` per un binario che questa tabella non conosce — un
-/// `sh` scritto a mano in un passo non ha nessuna casa da spostare.
+/// Not by the tool id: a `toolbox` descriptor calls `claude-code` what this
+/// table calls `claude`, and the two lists answer different questions. What
+/// reads `CLAUDE_CONFIG_DIR` is the binary `claude`, whatever anyone names it,
+/// so the binary is the honest link. `None` for a binary this table does not
+/// know — a hand-written `sh` in a step has no home to move.
 pub fn cli_for_executable(bin: &str) -> Option<&'static KnownCli> {
-    // L'ultimo segmento e nient'altro: nessun prefisso, nessuna somiglianza. Un
-    // `claude-wrapper` che ricevesse la casa di `claude` partirebbe con le
-    // credenziali di un altro, e nessuno se ne accorgerebbe guardando il passo.
+    // The last segment and nothing else. A `claude-wrapper` handed Claude's home
+    // would start with someone else's credentials, invisibly from the step.
     let name = Path::new(bin).file_name()?.to_str()?;
     known_clis().iter().find(|cli| cli.executable == name)
 }
 
-/// Un profilo: nome scelto dall'utente, a quale riga di comando appartiene,
-/// dove sta la sua cartella di casa.
+/// A profile: the name its owner chose, which command line it belongs to, and
+/// where its home directory sits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
@@ -139,17 +128,18 @@ pub struct Profile {
     pub home_dir: PathBuf,
 }
 
-/// L'elenco dei profili e quale, per ciascuna riga di comando, è attivo.
+/// The list of profiles, and which one is active for each command line.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileStore {
     #[serde(default)]
     pub profiles: Vec<Profile>,
-    /// `cli_id` -> nome del profilo attivo.
+    /// `cli_id` -> name of the active profile.
     #[serde(default)]
     pub active: BTreeMap<String, String>,
 }
 
-/// Stringa vuota vale come elenco vuoto: è la forma di un file mai scritto.
+/// An empty string counts as an empty store: it is the shape of a file never
+/// written.
 pub fn parse_store(json: &str) -> Result<ProfileStore, serde_json::Error> {
     if json.trim().is_empty() {
         return Ok(ProfileStore::default());
@@ -161,13 +151,13 @@ pub fn serialize_store(store: &ProfileStore) -> Result<String, serde_json::Error
     serde_json::to_string_pretty(store)
 }
 
-/// Perché un nome di profilo non va bene: uno di questi, se non catturato,
-/// è un guasto di sicurezza — un nome che esce dalla cartella dei profili.
+/// Why a profile name will not do. Any of these, uncaught, is a security fault:
+/// a name that leaves the profiles directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileNameError {
     Empty,
-    /// Contiene `/` o `\`: da solo basta a impedire sia `../fuga` sia un
-    /// nome assoluto che rimpiazzerebbe l'intero percorso in `Path::join`.
+    /// Contains `/` or `\`. That alone stops both `../escape` and an absolute
+    /// name, which `Path::join` would take as a replacement for the whole path.
     PathSeparator,
     Traversal,
 }
@@ -175,15 +165,15 @@ pub enum ProfileNameError {
 impl fmt::Display for ProfileNameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Empty => write!(f, "il nome del profilo è vuoto"),
-            Self::PathSeparator => write!(f, "il nome del profilo contiene un separatore di percorso"),
-            Self::Traversal => write!(f, "il nome del profilo è '.' o '..'"),
+            Self::Empty => write!(f, "the profile name is empty"),
+            Self::PathSeparator => write!(f, "the profile name contains a path separator"),
+            Self::Traversal => write!(f, "the profile name is '.' or '..'"),
         }
     }
 }
 
-/// Niente `/`, niente `\`, niente `.`/`..`, niente nome vuoto: un nome
-/// scelto dall'utente diventa un segmento di percorso, mai un percorso.
+/// No `/`, no `\`, no `.`/`..`, no empty name: a name chosen by a person becomes
+/// a path segment, never a path.
 pub fn validate_profile_name(name: &str) -> Result<(), ProfileNameError> {
     if name.is_empty() {
         return Err(ProfileNameError::Empty);
@@ -197,8 +187,8 @@ pub fn validate_profile_name(name: &str) -> Result<(), ProfileNameError> {
     Ok(())
 }
 
-/// Dove sta la cartella di casa di un profilo, dentro la radice dei profili.
-/// Valida sia `cli_id` sia `profile_name`: entrambi diventano un segmento.
+/// Where a profile's home sits inside the profiles root. Validates both
+/// `cli_id` and `profile_name`: each becomes a segment.
 pub fn profile_home_path(
     profiles_root: &Path,
     cli_id: &str,
@@ -209,9 +199,9 @@ pub fn profile_home_path(
     Ok(profiles_root.join(cli_id).join(profile_name))
 }
 
-/// L'ambiente da sovrapporre per lanciare `cli` con la casa in
-/// `profile_home`. Vuoto quando il meccanismo non usa una variabile: lì lo
-/// scambio è un'operazione sul filesystem, vedi [`symlink_swap`].
+/// The environment to overlay to launch `cli` with its home at `profile_home`.
+/// Empty when the mechanism uses no variable: there the swap is a filesystem
+/// operation, see [`symlink_swap`].
 pub fn build_environment(cli: &KnownCli, profile_home: &Path) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     if let HomeMechanism::EnvVar(name) = cli.home {
@@ -220,9 +210,8 @@ pub fn build_environment(cli: &KnownCli, profile_home: &Path) -> BTreeMap<String
     env
 }
 
-/// I due percorsi coinvolti in uno scambio per collegamento simbolico: dove
-/// sta il collegamento dentro la casa fissa, e dove deve puntare per
-/// arrivare al file di questo profilo.
+/// The two paths a symlink swap involves: where the link sits inside the fixed
+/// home, and where it must point to reach this profile's file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SymlinkSwap {
     pub link_path: PathBuf,
@@ -265,15 +254,14 @@ mod tests {
 
     #[test]
     fn validate_profile_name_accepts_ordinary_names() {
-        assert_eq!(validate_profile_name("lavoro"), Ok(()));
-        assert_eq!(validate_profile_name("cliente-1"), Ok(()));
+        assert_eq!(validate_profile_name("work"), Ok(()));
+        assert_eq!(validate_profile_name("client-1"), Ok(()));
         assert_eq!(validate_profile_name("a.b"), Ok(()));
     }
 
-    /// La prova che conta: nomi pensati per uscire dalla cartella dei
-    /// profili — traversal e percorso assoluto — sono tutti respinti prima
-    /// di diventare un `Path::join`, dove un nome assoluto rimpiazzerebbe
-    /// l'intero percorso invece di aggiungersi.
+    /// Names built to leave the profiles directory — traversal and absolute —
+    /// are all refused before they reach `Path::join`, where an absolute name
+    /// would replace the whole path instead of extending it.
     #[test]
     fn profile_home_path_rejects_every_escape_attempt() {
         let root = Path::new("/var/profiles");
@@ -287,7 +275,7 @@ mod tests {
         for name in malicious {
             assert!(
                 profile_home_path(root, "claude", name).is_err(),
-                "atteso rifiuto per {name:?}"
+                "expected a refusal for {name:?}"
             );
         }
     }
@@ -295,18 +283,18 @@ mod tests {
     #[test]
     fn profile_home_path_stays_inside_the_root_for_a_valid_name() {
         let root = Path::new("/var/profiles");
-        let home = profile_home_path(root, "claude", "lavoro").unwrap();
+        let home = profile_home_path(root, "claude", "work").unwrap();
         assert!(home.starts_with(root));
-        assert_eq!(home, root.join("claude").join("lavoro"));
+        assert_eq!(home, root.join("claude").join("work"));
     }
 
     #[test]
     fn build_environment_sets_the_env_var_for_the_env_mechanism() {
         let cli = known_clis().iter().find(|c| c.id == "codex").unwrap();
-        let env = build_environment(cli, Path::new("/home/profiles/codex/lavoro"));
+        let env = build_environment(cli, Path::new("/home/profiles/codex/work"));
         assert_eq!(
             env.get("CODEX_HOME").map(String::as_str),
-            Some("/home/profiles/codex/lavoro")
+            Some("/home/profiles/codex/work")
         );
         assert_eq!(env.len(), 1);
     }
@@ -318,30 +306,30 @@ mod tests {
             display_name: "Acme CLI",
             executable: "acme",
             native_profiles: NativeProfiles::NotSupported,
-            native_profiles_note: "di prova",
+            native_profiles_note: "a fixture",
             home: HomeMechanism::CredentialSymlink {
                 relative_path: "credentials.json",
             },
-            home_note: "di prova",
+            home_note: "a fixture",
         };
-        let env = build_environment(&cli, Path::new("/home/profiles/acme/lavoro"));
+        let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
         assert!(env.is_empty());
     }
 
     #[test]
     fn symlink_swap_composes_the_two_paths() {
         let swap = symlink_swap(
-            Path::new("/home/theo/.acme"),
+            Path::new("/home/someone/.acme"),
             "credentials.json",
-            Path::new("/home/profiles/acme/lavoro"),
+            Path::new("/home/profiles/acme/work"),
         );
         assert_eq!(
             swap.link_path,
-            Path::new("/home/theo/.acme/credentials.json")
+            Path::new("/home/someone/.acme/credentials.json")
         );
         assert_eq!(
             swap.target_path,
-            Path::new("/home/profiles/acme/lavoro/credentials.json")
+            Path::new("/home/profiles/acme/work/credentials.json")
         );
     }
 
@@ -349,11 +337,11 @@ mod tests {
     fn store_roundtrip_through_json() {
         let mut store = ProfileStore::default();
         store.profiles.push(Profile {
-            name: "lavoro".to_owned(),
+            name: "work".to_owned(),
             cli_id: "claude".to_owned(),
-            home_dir: PathBuf::from("/home/profiles/claude/lavoro"),
+            home_dir: PathBuf::from("/home/profiles/claude/work"),
         });
-        store.active.insert("claude".to_owned(), "lavoro".to_owned());
+        store.active.insert("claude".to_owned(), "work".to_owned());
 
         let json = serialize_store(&store).unwrap();
         let parsed = parse_store(&json).unwrap();
@@ -369,19 +357,14 @@ mod tests {
     #[test]
     fn find_cli_finds_a_known_id_and_rejects_an_unknown_one() {
         assert_eq!(find_cli("codex").map(|c| c.id), Ok("codex"));
-        assert!(find_cli("non-esiste").is_err());
+        assert!(find_cli("does-not-exist").is_err());
     }
 
-    /// **UN PERCORSO RISOLTO PORTA ALLA SUA RIGA DI COMANDO.** È il legame che
-    /// mancava al guasto 18: un passo di flusso riceve dal risolutore il
-    /// percorso di un eseguibile, e senza questo non c'era modo di sapere di
-    /// quale casa quel binario legga la configurazione.
-    ///
-    /// I quattro bracci contano tutti: il percorso assoluto è la forma vera che
-    /// arriva dal risolutore, il nome nudo è la forma che arriva da un `bin`
-    /// scritto a mano, e i due rifiuti dicono che non si indovina — `claude-code`
-    /// è l'identificativo del **descrittore**, non il nome dell'eseguibile, e
-    /// accettarlo qui vorrebbe dire tenere due elenchi allineati a mano.
+    /// **A RESOLVED PATH LEADS BACK TO THE COMMAND LINE THAT READS THAT HOME.**
+    /// All four arms count: the absolute path is the real shape the resolver
+    /// returns, the bare name is what a hand-written `bin` gives, and the two
+    /// refusals say nothing is guessed — `claude-code` is the **descriptor's**
+    /// id, not the executable's name.
     #[test]
     fn a_resolved_path_leads_back_to_the_command_line_that_reads_that_home() {
         assert_eq!(
@@ -393,18 +376,15 @@ mod tests {
         assert_eq!(cli_for_executable("claude-code").map(|c| c.id), None);
     }
 
-    /// **UN NOME CHE SOMIGLIA NON È LO STESSO NOME.** `claudia` finisce con
-    /// `claude`? No — ma `claude-wrapper` comincia con `claude`, e un confronto
-    /// per prefisso gli darebbe la casa di Claude Code. Sbagliare qui vuol dire
-    /// lanciare una riga di comando con le credenziali di un'altra, in silenzio:
-    /// è la stessa regola per cui `PriceList::find` non conosce prefissi.
+    /// A prefix comparison would hand `claude-wrapper` Claude Code's home: one
+    /// command line launched with another's credentials, in silence.
     #[test]
     fn a_name_that_merely_resembles_an_executable_is_not_that_executable() {
         for near in ["claude-wrapper", "myclaude", "codexx", "gemini2"] {
             assert_eq!(
                 cli_for_executable(near).map(|cli| cli.id),
                 None,
-                "«{near}» non è un eseguibile in tabella"
+                "«{near}» is not an executable in the table"
             );
         }
     }
@@ -416,7 +396,7 @@ mod tests {
         let mut ids: Vec<&str> = clis.iter().map(|c| c.id).collect();
         ids.sort_unstable();
         ids.dedup();
-        assert_eq!(ids.len(), clis.len(), "id duplicato nella tabella");
+        assert_eq!(ids.len(), clis.len(), "duplicate id in the table");
         for cli in clis {
             assert!(!cli.id.is_empty());
             assert!(!cli.executable.is_empty());

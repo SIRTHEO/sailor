@@ -29,12 +29,27 @@
 
 use std::path::{Path, PathBuf};
 
-/// I nomi che non devono decidere niente.
-///
-/// **SONO NOMI PROPRI, NON PAROLE COMUNI.** `terminal`, `shell`, `window` non
-/// stanno qui e non ci devono stare: sono le cose, non i prodotti, e un elenco
-/// che le contenesse darebbe errori che nessuno può correggere — il primo che
-/// ne incontra uno zittisce la prova insieme a tutti gli altri.
+/// The field the rule is really about: the ancestor is a **label**, so it is
+/// recorded and printed and never interrogated.
+const THE_LABEL_THAT_MUST_NOT_DECIDE: &str = "ancestor";
+
+/// A comparison against a written-down value, spaces removed so `== "x"` and
+/// `=="x"` read alike. **This is the half that needs no list of names**:
+/// whatever the eighteenth emulator is called, comparing the ancestor with a
+/// constant is the defect. Bare `Some("…")` is deliberately absent — it was the
+/// first draft's defect, since `ancestor: Some("x".to_owned())` builds a row
+/// rather than questioning one.
+const COMPARED_WITH_A_WRITTEN_VALUE: &[&str] = &[
+    "==\"", "!=\"", "==some(\"", "!=some(\"", "contains(\"", "starts_with(\"", "ends_with(\"",
+    "eq(\"", "eq_ignore_ascii_case(\"",
+];
+
+/// The names that must decide nothing. **The wide net, not the check**: it
+/// catches a product name wherever it decides anything, ancestor or not, but it
+/// is walked around by picking the entry that is not in it. **Proper names
+/// only** — `terminal`, `shell`, `window` are the things, not the products, and
+/// a list holding them would raise errors nobody can fix, so the first person
+/// to hit one would silence the test along with everything else.
 const PRODUCT_NAMES: &[&str] = &[
     "orca", "iterm", "warp", "ghostty", "alacritty", "wezterm", "kitty", "zellij", "tmux",
     "claude", "codex", "gemini", "cursor", "copilot", "aider", "vscode", "jetbrains",
@@ -103,6 +118,46 @@ fn collect_under(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
+/// Where the ancestor's label is compared with a value written into the code,
+/// whatever that value says.
+///
+/// The literal has to sit **inside** the comparison, or `if ancestor.is_none()
+/// { return "unknown"; }` would be accused: a condition on the ancestor and a
+/// string on the same line, but the string is the answer, not the comparand.
+fn the_label_compared_with_a_constant_in(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for (number, line) in text.lines().enumerate() {
+        let code = code_part(line).to_lowercase();
+        if !code.contains(THE_LABEL_THAT_MUST_NOT_DECIDE) {
+            continue;
+        }
+        // An assertion compares what was **recorded**, and a test must be able
+        // to. What is forbidden is deciding at run time, not checking.
+        if code.contains("assert") {
+            continue;
+        }
+        let tight: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+        let matched_on = tight.contains("match") && tight.contains("some(\"");
+        let shape = if matched_on {
+            "match … Some(\"…\")"
+        } else {
+            match COMPARED_WITH_A_WRITTEN_VALUE
+                .iter()
+                .find(|shape| tight.contains(**shape))
+            {
+                Some(shape) => shape,
+                None => continue,
+            }
+        };
+        found.push(format!(
+            "riga {}: il capostipite confrontato con un valore scritto («{shape}»): {}",
+            number + 1,
+            line.trim()
+        ));
+    }
+    found
+}
+
 /// Le violazioni in un testo: riga per riga, il nome trovato e il segno che
 /// rende quella riga una decisione.
 fn decisions_on_a_product_in(text: &str) -> Vec<String> {
@@ -138,6 +193,9 @@ fn no_product_name_appears_in_a_condition_of_the_tracking() {
         let text = std::fs::read_to_string(path)
             .unwrap_or_else(|error| panic!("leggere {}: {error}", path.display()));
         for problem in decisions_on_a_product_in(&text) {
+            broken.push(format!("{}: {problem}", path.display()));
+        }
+        for problem in the_label_compared_with_a_constant_in(&text) {
             broken.push(format!("{}: {problem}", path.display()));
         }
     }
@@ -177,4 +235,52 @@ fn the_check_finds_a_violation_that_is_there_and_leaves_a_label_alone() {
         decisions_on_a_product_in(commented).is_empty(),
         "un commento parla dei prodotti quanto serve: non decide niente"
     );
+}
+
+/// **THE EIGHTEENTH NAME, WHICH THE LIST DOES NOT HAVE.** This is the whole
+/// reason the shape check exists: a list is walked around by picking the entry
+/// that is not in it, and `PRODUCT_NAMES` has seventeen entries.
+#[test]
+fn a_product_the_list_has_never_heard_of_is_caught_all_the_same() {
+    let unheard_of = "    if ancestor.as_deref() == Some(\"Rossignol\") {\n";
+    assert!(
+        decisions_on_a_product_in(unheard_of).is_empty(),
+        "premessa di questa prova: il nome non è nell'elenco, o non prova niente"
+    );
+    assert_eq!(
+        the_label_compared_with_a_constant_in(unheard_of).len(),
+        1,
+        "il capostipite confrontato con una costante è il difetto, comunque si chiami"
+    );
+
+    for shape in [
+        "    match ancestor.as_deref() { Some(\"Rossignol\") => 1, _ => 0 }\n",
+        "    if ancestor.contains(\"Rossignol\") {\n",
+        "    if ancestor.starts_with(\"Rossignol\") {\n",
+    ] {
+        assert_eq!(
+            the_label_compared_with_a_constant_in(shape).len(),
+            1,
+            "forma non vista: {shape}"
+        );
+    }
+}
+
+/// And the shapes that **must** pass, or the check would be silenced on day one
+/// by somebody who cannot write a legitimate line.
+#[test]
+fn recording_the_label_and_asking_whether_it_is_there_stay_allowed() {
+    for allowed in [
+        "        ancestor: Some(\"Whatever\".to_owned()),\n",
+        "    if ancestor.is_none() { return \"sconosciuto\"; }\n",
+        "    println!(\"capostipite: {ancestor}\");\n",
+        "    row.ancestor = arrival.ancestor.clone();\n",
+        // An assertion compares what was recorded, and must be able to.
+        "        assert_eq!(row.ancestor.as_deref(), Some(\"Whatever\"));\n",
+    ] {
+        assert!(
+            the_label_compared_with_a_constant_in(allowed).is_empty(),
+            "accusata a torto una riga che registra invece di decidere: {allowed}"
+        );
+    }
 }

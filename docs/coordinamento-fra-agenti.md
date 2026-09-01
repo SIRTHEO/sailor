@@ -439,10 +439,10 @@ alberi di lavoro**. Chiesto a git, da dentro il mio albero:
 
 ```
 $ git -C .../sailor-worktrees/coordination rev-parse --git-path HEAD
-/Users/theo/personal/sailor/.git/worktrees/coordination/HEAD    <- mio
+.../sailor/.git/worktrees/coordination/HEAD    <- mio
 
 $ git -C .../sailor-worktrees/coordination rev-parse --git-path refs/stash
-/Users/theo/personal/sailor/.git/refs/stash                     <- di tutti
+.../sailor/.git/refs/stash                     <- di tutti
 ```
 
 `git stash` di una sessione mette il proprio lavoro in una pila da cui un'altra
@@ -614,8 +614,8 @@ centrale del progetto:
   "when": null,
   "with": {
     "agent": "chi-sono",
-    "repository": "/Users/theo/personal/sailor/.git",
-    "workdir": "/Users/theo/personal/sailor",
+    "repository": "/work/sailor/.git",
+    "workdir": "/work/sailor",
     "branch": "sorgenti",
     "paths": ["crates/actions"],
     "doing": "cosa sto facendo",
