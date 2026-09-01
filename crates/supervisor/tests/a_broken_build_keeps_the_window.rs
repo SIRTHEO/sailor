@@ -127,7 +127,7 @@ fn a_good_build_replaces_what_is_running() {
 /// differenza fra «ho scritto il codice che dovrebbe» e «l'ho visto».
 #[test]
 fn a_real_child_is_still_breathing_after_a_broken_build() {
-    let mut child = std::process::Command::new("/bin/sh")
+    let child = std::process::Command::new("/bin/sh")
         .args(["-c", "while true; do sleep 1; done"])
         .spawn()
         .expect("accendere un processo lungo");
