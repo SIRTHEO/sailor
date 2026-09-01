@@ -8,7 +8,8 @@
 use crate::pty::{Pty, PtyError, Size};
 use std::io::{self, Read, Write};
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// The outer terminal, put back the way it was when this is dropped.
 ///
@@ -107,6 +108,34 @@ impl Write for Keys<'_> {
 
 fn as_io(error: PtyError) -> io::Error {
     io::Error::new(io::ErrorKind::Other, error.to_string())
+}
+
+/// A writer that keeps count of what passes through it.
+///
+/// The count is shared rather than returned, because whoever wants to know is
+/// not the caller of the copy: that call only returns when the terminal ends,
+/// and by then the number is of no use to anyone.
+pub struct Counted<W> {
+    inner: W,
+    seen: Arc<AtomicU64>,
+}
+
+impl<W: Write> Counted<W> {
+    pub fn new(inner: W, seen: Arc<AtomicU64>) -> Counted<W> {
+        Counted { inner, seen }
+    }
+}
+
+impl<W: Write> Write for Counted<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let written = self.inner.write(bytes)?;
+        self.seen.fetch_add(written as u64, Ordering::Relaxed);
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Copies bytes until the source ends, telling the caller about each signal.

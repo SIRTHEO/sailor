@@ -114,6 +114,25 @@ fn a_line_pressed_from_outside_reaches_the_program_the_command_started() {
         seen(&shown)
     );
 
+    // The count is what a relay running outside this process will read, and it
+    // only means anything if the pipe actually feeds it.
+    let counted = terminal::tally::read(&room.join(format!("{named}.seen")));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut counted = counted;
+    while Instant::now() < deadline && counted.map(|seen| seen.total()).unwrap_or(0) == 0 {
+        std::thread::sleep(Duration::from_millis(50));
+        counted = terminal::tally::read(&room.join(format!("{named}.seen")));
+    }
+    let counted = counted.expect("the count lands on disk while the session runs");
+    assert!(
+        counted.total() > 0,
+        "the pipe must feed the count: {counted:?}"
+    );
+    assert!(
+        counted.typed >= "a-word-from-outside\r".len() as u64,
+        "what a stranger typed must be counted too: {counted:?}"
+    );
+
     let _ = outer.close();
     let _ = std::fs::remove_dir_all(&directory);
 }

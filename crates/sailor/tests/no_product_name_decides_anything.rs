@@ -75,12 +75,12 @@ fn code_part(line: &str) -> &str {
     }
 }
 
-/// I sorgenti del tracciamento, e quelli del condotto.
+/// The sources of the tracking, and those of the conduit.
 ///
-/// **IL CONDOTTO STA QUI PERCHÉ È LA STESSA REGOLA.** Chi accompagna una riga
-/// di comando e ci scrive dentro non deve sapere quale sia: né quale finestra
-/// l'ha disegnata, né quale motore ci gira. Il primo `if` su un nome fa di
-/// Sailor il prodotto di una CLI sola, e da lì non si torna indietro.
+/// The conduit belongs here because the rule is the same. Whoever accompanies
+/// a command line and writes into it must not know which one it is: not which
+/// window drew it, not which engine runs in it. The first `if` on a name makes
+/// Sailor the product of a single command line, and there is no way back.
 fn tracking_sources() -> Vec<PathBuf> {
     let root = repository_root();
     let mut found = vec![
