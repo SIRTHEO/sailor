@@ -43,6 +43,12 @@
       tabulari. Un costo in carattere proporzionale non si confronta a colpo
       d'occhio, e confrontarli è tutto il punto.
 
+  11. A FIXED COLUMN SAYS WHAT IT DOES WHEN THE WINDOW IS NARROW. A width in
+      pixels with `flex-shrink: 0` holds that width whatever the window does.
+      Two of them beside an elastic canvas divide the window before the canvas
+      gets a say: at 375px the rail and the inspector came to 520 and the
+      canvas — the surface this window exists for — was zero pixels wide.
+
    COME QUESTI DIVIETI DIVENTANO ROSSI. `desktop/src/stylesheet.test.ts` legge
    questo foglio e rifiuta un carattere, un raggio, un'ombra o un colore che non
    passi da un ruolo; `desktop/src/contrast.test.tsx` cammina il DOM disegnato e
@@ -154,6 +160,32 @@
   color: var(--ink);
   /* Le cifre stanno in colonna dappertutto: confrontarle è il mestiere. */
   font-variant-numeric: tabular-nums;
+
+  /* Dark ground for the code block and the filled button. Prohibition 4 keeps
+     colour for machine state, so this is a plate, not a tint.
+     --on-ink 13.81:1 on it, --on-ink-muted 10.90:1. */
+  --ink-surface: #20241f;
+  --on-ink: #f2f0e9;
+  --on-ink-muted: #d8d7ce;
+
+  /* A skippable dependency is neither a gravity nor a state.
+     3.07:1 on --bg, 3.36:1 on --paper (WCAG 1.4.11). */
+  --optional: #7c8a9f;
+
+  /* One tint per flow lane, generated rather than picked: hues evenly spaced,
+     lightness solved so each clears 3:1 on both grounds, closest pair 0.070
+     apart in Oklab. Under 0.05 two lanes read as one. */
+  --lane-1: #d26b71;
+  --lane-2: #c87436;
+  --lane-3: #a5851e;
+  --lane-4: #739432;
+  --lane-5: #129b6b;
+  --lane-6: #18989c;
+  --lane-7: #2391c3;
+  --lane-8: #6b83d8;
+  --lane-9: #a076ca;
+  --lane-10: #c46da5;
+
 }
 
 /* Chi ha chiesto meno movimento non ne riceve. */
@@ -400,6 +432,9 @@ button.is-primary {
   flex-grow: 1;
   display: flex;
   min-height: 0;
+  /* What the floating inspector anchors to: without it, it would anchor to the
+     window and climb over the top bar. */
+  position: relative;
 }
 
 /* LA TELA RESTA MONTATA ANCHE QUANDO NON SI VEDE. Smontarla a ogni cambio di
@@ -1164,6 +1199,10 @@ button.is-primary {
   border-left: 1px solid var(--line);
   padding: 14px 16px;
   overflow-y: auto;
+  /* `--paper` is declared as the ground for nodes, panels and cards. This was
+     the one thing the direction calls a panel that sat on --bg instead, and it
+     has to cover the canvas once it floats. */
+  background: var(--paper);
 }
 
 .panel__title {
@@ -1794,6 +1833,10 @@ button.is-primary {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-3) var(--space-2);
+  /* State, pid, attempt and duration ask for 353px in a 220px node. Wrapping
+     costs a second row; not wrapping costs whichever piece falls off the end,
+     and none of the four is decoration. Measured in `StepNode.test.tsx`. */
+  flex-wrap: wrap;
 }
 
 /* LA PAROLA DI STATO, MAI IL SOLO COLORE (divieto 5). La tinta è la stessa
@@ -3169,4 +3212,975 @@ button.is-primary {
 .manual__hole {
   color: var(--ink);
   font-style: italic;
+}
+
+/* The canvas outranks both side columns: "clarity for whoever is watching"
+   applied to layout. They give way by narrowing, then by leaving the row.
+   The floor is 375px, the width `scripts/screenshots.ts` captures at.
+   Interrogated by `stylesheet.test.ts`, prohibition 11. */
+
+@media (max-width: 1100px) {
+  .rail {
+    width: 176px;
+  }
+
+  .panel {
+    width: 248px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Narrowing is no longer enough: the inspector floats over the canvas, which
+     then keeps everything left. Layout only in here — the contrast engine skips
+     at-rules, so a tint written here would be weighed by nobody. And no shadow:
+     prohibition 3 says what floats separates with its border. */
+  .rail {
+    width: 148px;
+  }
+
+  .panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(288px, 78%);
+    z-index: 2;
+  }
+
+  /* An inspector with nothing to say covers nothing. As a column an empty one
+     costs its width and shows how to fill it; floating it costs the one thing
+     that matters at this width — reaching your own nodes. */
+  .panel:has(.panel__empty) {
+    display: none;
+  }
+
+  /* PROVISIONAL, and the decision behind it is not made yet. Three fixed
+     columns want 148 + 148 + 288; at 375 the canvas was left 79px. The flow
+     list is the one that gives way here because the top bar now names the open
+     flow, so the column is not the only way to know which one it is — a weaker
+     reason than the toolbox has for staying, not a strong one for itself.
+     Where the flow list belongs is a product question; this only keeps the
+     canvas usable until it is answered. */
+  .rail {
+    display: none;
+  }
+}
+
+/* ── top bar and the flow's three tabs ─────────────────────────────────── */
+/* ===========================================================================
+   THE TOP BAR, AND THE THREE TABS UNDER IT.
+   ---------------------------------------------------------------------------
+   Written apart from `styles.css` only so two hands can work at once; it obeys
+   the same eleven prohibitions written at the head of that sheet, and is meant
+   to be folded into it. Nothing here names a colour: every tint comes from a
+   role, and the one rule inside an `@media` moves boxes, never colour — the
+   engine that weighs contrast skips at-rules, so a tint written there would be
+   weighed by nobody.
+
+   THE FILLED BUTTON IS THE ONE OPEN QUESTION. Prohibition 4 reserves colour for
+   the state of the machine, so a button has no tint; the design draws «Run»
+   dark and filled. `.is-primary` in `styles.css` already answers that with ink
+   on background — no tint, a plate — and this bar reuses it rather than
+   inventing a second answer.
+   =========================================================================== */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  flex-shrink: 0;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+/* The mark takes the ink of whoever holds it: no colour of its own to weigh. */
+.topbar__mark {
+  color: var(--ink);
+  flex-shrink: 0;
+}
+
+.topbar__rule {
+  width: 1px;
+  height: 22px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+/* ── which flow is open ─────────────────────────────────────────────────── */
+
+.topbar__flow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.topbar__flow-name {
+  font-size: var(--text-mid);
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__steps {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 2px var(--space-1);
+  flex-shrink: 0;
+}
+
+/* No flow open is a fact, not an absence to hide. */
+.topbar__none {
+  font-size: var(--text-small);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Unsaved work: the dot carries the eye, the word carries the meaning —
+   prohibition 5 forbids the tint from being the only carrier. */
+.topbar__dirty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--warn);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.topbar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--warn);
+  flex-shrink: 0;
+}
+
+/* ── the three tabs ─────────────────────────────────────────────────────── */
+
+.topbar__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-left: var(--space-4);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+/* A tab is not a plate: it says which of three views of the same flow you are
+   looking at. Where you are rides on the surface and on the weight of the
+   word, never on a tint. */
+.topbar__tab {
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.topbar__tab[data-here] {
+  color: var(--ink);
+  font-weight: 600;
+  background: var(--paper);
+  border-color: var(--line);
+}
+
+.topbar__tab:disabled {
+  color: var(--muted);
+  background: none;
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.topbar__spacer {
+  flex-grow: 1;
+  min-width: var(--space-2);
+}
+
+/* ── what the machine is doing, on the right ────────────────────────────── */
+
+.topbar__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--muted);
+  min-width: 0;
+}
+
+.topbar__status-word {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar__live {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--state-running);
+  flex-shrink: 0;
+}
+
+.topbar__live[data-idle] {
+  background: var(--state-waiting);
+}
+
+/* Where the flows on screen come from: discreet when it is the disk, loud when
+   it is a sample or a mute engine — the two cases where someone risks reading
+   as true what is not. */
+.topbar__source {
+  font-size: var(--text-small);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.topbar__source[data-source="sample"] {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.topbar__source[data-source="failed"] {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.topbar__save,
+.topbar__run {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.topbar__glyph {
+  margin-right: var(--space-1);
+}
+
+/* ── the code tab ───────────────────────────────────────────────────────── */
+
+.codeview {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.codeview__note {
+  max-width: 74ch;
+  font-size: var(--text-body);
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.codeview__source {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  line-height: 1.7;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin: 0;
+  overflow-x: auto;
+}
+
+.codeview__empty {
+  font-size: var(--text-body);
+  color: var(--muted);
+  margin: 0;
+}
+
+/* ── narrow windows: boxes only, never colour ───────────────────────────── */
+
+@media (max-width: 760px) {
+  .topbar {
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .topbar__rule,
+  .topbar__source {
+    display: none;
+  }
+
+  .topbar__tabs {
+    margin-left: 0;
+  }
+
+  .topbar__status {
+    order: 1;
+    flex-basis: 100%;
+  }
+}
+
+/* ── step toolbox column ─────────────────────────────────── */
+/* ===========================================================================
+   THE STEP TOOLBOX — the left column.
+
+   Search on top, the step types grouped by family under it, and at the foot
+   the line that says what the canvas is for. Every value comes from a role
+   declared in `styles.css`: this sheet writes no literal colour, no radius of
+   its own, no font stack, and `Toolbar.test.tsx` reads it back and refuses one.
+   =========================================================================== */
+
+/* A rigid column, and ban 11 applies: what it does when the window is narrow
+   is declared at the foot of this sheet, not left to the canvas to pay for. */
+.toolbox {
+  width: 212px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--rail);
+  border-right: 1px solid var(--line);
+}
+
+/* Search stays put: the families scroll under it, it does not scroll away. */
+.toolbox__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin: var(--space-3) var(--space-3) var(--space-2);
+  padding: var(--space-2);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.toolbox__search-mark {
+  display: block;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.toolbox__field {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.toolbox__field::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+.toolbox__list {
+  flex-grow: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.toolbox__family + .toolbox__family {
+  margin-top: var(--space-3);
+}
+
+/* The family heading is drawn here and not only spoken: two families of four
+   and two rows apart need a name, where three buttons in a strip did not. */
+.toolbox__family-name {
+  display: block;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-1);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* One tall row per type: the mark on the left, the name on the right. No
+   border at rest — seven boxed rows read as a wall — and the border arrives on
+   hover and on focus, where it says «this one». */
+.toolbox__tool {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-2);
+  border-color: transparent;
+  background: transparent;
+}
+
+.toolbox__tool + .toolbox__tool {
+  margin-top: var(--space-1);
+}
+
+.toolbox__tool:hover:not(:disabled) {
+  background: var(--raised);
+  border-color: var(--ink);
+}
+
+.toolbox__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--space-5);
+  height: var(--space-5);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.toolbox__mark {
+  display: block;
+}
+
+.toolbox__text {
+  min-width: 0;
+}
+
+.toolbox__name {
+  display: block;
+  font-size: var(--text-body);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The action the node will carry, read from the vocabulary instead of
+   promised: a family whose action the engine does not register is not offered
+   at all, and this line is where that would show. */
+.toolbox__action {
+  display: block;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbox__empty {
+  margin: 0;
+  padding: var(--space-2);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+/* Without a flow in focus the column does not go dark: the list gives way to
+   what is missing and to the gesture that fixes it. */
+.toolbox__prompt {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0 var(--space-3);
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.toolbox__new {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.toolbox__new:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.toolbox__footnote {
+  flex-shrink: 0;
+  margin: 0 var(--space-2) var(--space-3);
+  padding: var(--space-2);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+
+
+/* ── ban 11: how a rigid column behaves when the window is narrow ─────────
+   The breakpoints are the ones `styles.css` already uses for the two columns
+   this one will stand beside. */
+@media (max-width: 1100px) {
+  .toolbox {
+    width: 176px;
+  }
+}
+
+@media (max-width: 760px) {
+  .toolbox {
+    width: 148px;
+  }
+
+  /* A name half-drawn is worse than no second line: the narrow column keeps
+     the names and drops what it cannot finish. */
+  .toolbox__action,
+  .toolbox__footnote {
+    display: none;
+  }
+}
+
+/* ── canvas nodes and cords ─────────────────────────────────── */
+/* Canvas nodes: the pieces the head and foot gained when the node became typed.
+   The rest of `.step-node` is in `styles.css`. */
+
+/* The glyph says the species next to the word, never instead of it: prohibition
+   5 forbids colour or shape carrying a state on its own. */
+.step-node__icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.trigger-node__icon {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+/* The identifier takes the full width below the species, because squeezed onto
+   one row with the glyph a name like `working-tree-is-clean` loses its half. */
+.step-node__ident {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex-grow: 1;
+}
+
+.step-node__kindline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Durations sit in the data face with tabular figures: comparing them between
+   rows is the whole point, and a proportional face defeats it (prohibition 10). */
+.step-node__elapsed {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+/* ── selected-step inspector ─────────────────────────────────── */
+/* ===========================================================================
+   THE INSPECTOR — the right column, when a step is selected.
+   ---------------------------------------------------------------------------
+   Bound by the eleven prohibitions written at the top of `styles.css`: no
+   colour that is not a role, three type families, three radii, no shadow (this
+   column does not float), and nothing below 4,5:1.
+
+   THE DARK BLOCK, MEASURED. The input/output block is the only dark ground in
+   this column: `--on-ink` on `--ink-surface` is 13,81:1, and `--on-ink-muted`
+   — the types and the `in`/`out` words — is 10,90:1. `--muted` is 2,88:1 there
+   and is used nowhere on that ground.
+
+   WHAT HAS NO CONTROL HERE, BECAUSE IT HAS NO FIELD. The species of a step is
+   declared by the action in Rust, not by the flow file; a per-step time limit
+   does not exist in `flow::Step`. Neither is drawn as something to set.
+   =========================================================================== */
+
+.inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ── the head: what is selected, and what it is called ───────────────── */
+
+.inspector__head {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.inspector__flow {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.inspector__eyebrow {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: var(--space-1);
+}
+
+.inspector__title {
+  font-family: var(--font-prose);
+  font-size: var(--text-mid);
+  font-weight: 600;
+  color: var(--ink);
+  margin: var(--space-1) 0 0;
+  line-height: 1.25;
+}
+
+/* The id is the heading's own datum, so it reads as text until it is touched:
+   a box around it would put two titles one above the other. */
+.inspector__id {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.inspector__id:hover,
+.inspector__id:focus {
+  color: var(--ink);
+  background: var(--raised);
+  border-color: var(--line);
+}
+
+/* ── the blocks ──────────────────────────────────────────────────────── */
+
+.inspector__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.inspector__block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Two fields that are read together stay on one line; under a narrow column
+   they stack rather than shrink to nothing. */
+.inspector__pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.inspector__pair > div {
+  flex: 1 1 96px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.inspector__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The family a step belongs to, beside the action that decides it. */
+.inspector__kind {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+/* ── the controls ────────────────────────────────────────────────────── */
+
+.inspector__input,
+.inspector__select,
+.inspector__textarea {
+  display: block;
+  width: 100%;
+  padding: var(--space-2);
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  font-weight: 400;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.inspector__input--data,
+.inspector__textarea--data {
+  font-family: var(--font-data);
+}
+
+.inspector__textarea {
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.inspector__pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* A value the panel can read and not compose: it looks like a field so it sits
+   in the same row, and carries no cursor so nobody types into it. */
+.inspector__readonly {
+  padding: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A sentence, not a value: it wraps instead of being cut at the column edge. */
+.inspector__readonly--wrap {
+  font-family: var(--font-prose);
+  white-space: normal;
+  overflow: visible;
+}
+
+/* ── input and output ────────────────────────────────────────────────── */
+
+.inspector__io {
+  padding: var(--space-3);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--on-ink);
+  background: var(--ink-surface);
+  border-radius: var(--radius-lg);
+}
+
+/* A long union wraps under its own name instead of scrolling the block: the
+   column is narrow, and a type nobody can read is not a type. */
+.inspector__io-line {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.inspector__io-side {
+  flex: 0 0 var(--space-6);
+  font-family: var(--font-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--on-ink-muted);
+}
+
+.inspector__io-type {
+  color: var(--on-ink-muted);
+  word-break: break-word;
+}
+
+/* ── what it depends on ──────────────────────────────────────────────── */
+
+.inspector__deps {
+  max-height: 140px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  background: var(--raised);
+}
+
+.inspector__dep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  padding: 2px 0;
+}
+
+/* ── what the panel has to say ───────────────────────────────────────── */
+
+.inspector__note {
+  font-size: var(--text-small);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--warn);
+  margin: 0;
+}
+
+.inspector__why {
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+  word-break: break-word;
+}
+
+.inspector__warn {
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  margin: 0;
+}
+
+.inspector__error {
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--danger);
+  margin: 0;
+}
+
+.inspector__detail {
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+  word-break: break-word;
+}
+
+.inspector__detail p {
+  margin: 0;
+}
+
+.inspector__detail[data-off] {
+  color: var(--warn);
+}
+
+.inspector__detail-kind {
+  font-family: var(--font-display);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.inspector__detail-path {
+  font-family: var(--font-data);
+  word-break: break-all;
+}
+
+/* ── the options ─────────────────────────────────────────────────────── */
+
+.inspector__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.inspector__option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.inspector__option-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.inspector__preview {
+  font-size: var(--text-small);
+  color: var(--muted);
+  margin: 0;
+  word-break: break-all;
+}
+
+.inspector__preview code {
+  font-family: var(--font-data);
+  color: var(--ink);
+}
+
+/* A gesture that is not the main one: a word, not a coloured surface. */
+.inspector__quiet {
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.inspector__quiet:hover {
+  color: var(--ink);
+}
+
+/* ── the foot ────────────────────────────────────────────────────────── */
+
+.inspector__foot {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.inspector__delete {
+  width: 100%;
+  padding: var(--space-2);
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
 }
