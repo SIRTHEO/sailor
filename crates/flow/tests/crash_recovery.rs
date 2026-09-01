@@ -456,7 +456,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
     assert_eq!(records[0].outcome, None);
 
     let graph = recovery_graph();
-    let mut normal = InMemoryRecordStore::from_records(records.clone());
+    let normal = InMemoryRecordStore::from_records(records.clone());
     normal
         .close(
             "crashed-run",

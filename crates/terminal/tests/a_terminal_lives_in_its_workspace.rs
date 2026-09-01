@@ -17,7 +17,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use terminal::{Buffer, Opening, Passed, Routed, Router, Size, Terminals, Workspace};
+use terminal::{Buffer, Ending, Opening, Passed, Routed, Router, Size, Terminals, Workspace};
 
 /// Quanto si aspetta una risposta prima di dire che non è arrivata. Largo: su
 /// una macchina che sta compilando, avviare una shell può prendere secondi.
@@ -80,11 +80,9 @@ fn a_terminal_runs_what_is_written_into_it() {
     let terminals = plain_terminals();
     let seen = Arc::new(Buffer::new());
     let terminal = terminals
-        .open(
-            scratch.workspace.clone(),
-            &shell(),
-            Arc::clone(&seen) as Arc<dyn terminal::Output>,
-        )
+        .open(scratch.workspace.clone(), &shell(), |_| {
+            Arc::clone(&seen) as Arc<dyn terminal::Output>
+        })
         .expect("aprire uno pseudo-terminale");
 
     let decision = terminal.submit("echo ci\"a\"o").expect("scrivere la riga");
@@ -108,11 +106,9 @@ fn a_terminal_starts_inside_its_workspace() {
     let terminals = plain_terminals();
     let seen = Arc::new(Buffer::new());
     let terminal = terminals
-        .open(
-            scratch.workspace.clone(),
-            &shell(),
-            Arc::clone(&seen) as Arc<dyn terminal::Output>,
-        )
+        .open(scratch.workspace.clone(), &shell(), |_| {
+            Arc::clone(&seen) as Arc<dyn terminal::Output>
+        })
         .expect("aprire uno pseudo-terminale");
 
     terminal.submit("pwd").expect("scrivere la riga");
@@ -137,11 +133,9 @@ fn the_output_arrives_while_it_is_being_produced() {
     let terminals = plain_terminals();
     let seen = Arc::new(Buffer::new());
     let terminal = terminals
-        .open(
-            scratch.workspace.clone(),
-            &shell(),
-            Arc::clone(&seen) as Arc<dyn terminal::Output>,
-        )
+        .open(scratch.workspace.clone(), &shell(), |_| {
+            Arc::clone(&seen) as Arc<dyn terminal::Output>
+        })
         .expect("aprire uno pseudo-terminale");
 
     terminal
@@ -165,6 +159,126 @@ fn the_output_arrives_while_it_is_being_produced() {
     );
 }
 
+/// **LA FINE SI ANNUNCIA, E DICE COM'È ANDATA.**
+///
+/// Senza questo annuncio chi guarda non ha modo di distinguere un terminale
+/// morto da uno che tace: continuerebbe a mostrarlo vivo per sempre. È la
+/// proprietà su cui poggia l'evento `terminal_closed` del contratto.
+///
+/// LA MISURA CHE POTEVA VENIRE DIVERSA: si sceglie `exit 7` e non `exit`,
+/// perché un codice qualunque diverso da zero cade su ogni scorciatoia — un
+/// annuncio che non arriva, e anche un annuncio che arriva con un esito
+/// inventato riuscito.
+#[test]
+fn the_end_of_a_terminal_is_announced_with_how_it_ended() {
+    let scratch = Scratch::make("fine");
+    let terminals = plain_terminals();
+    let seen = Arc::new(Buffer::new());
+    let terminal = terminals
+        .open(scratch.workspace.clone(), &shell(), |_| {
+            Arc::clone(&seen) as Arc<dyn terminal::Output>
+        })
+        .expect("aprire uno pseudo-terminale");
+
+    assert_eq!(
+        seen.ending(),
+        None,
+        "un terminale appena aperto non è finito, e «non ancora» non è un esito"
+    );
+
+    terminal.submit("exit 7").expect("scrivere la riga");
+
+    assert_eq!(
+        seen.wait_for_end(PATIENCE),
+        Some(Ending::Exited(7)),
+        "la fine non è arrivata, o è arrivata con l'esito sbagliato; \
+         ciò che è uscito: {:?}",
+        seen.text()
+    );
+}
+
+/// **IL DESTINATARIO SA DI QUALE TERMINALE È PRIMA DI RICEVERE IL PRIMO BYTE.**
+///
+/// Chi porta l'uscita fuori di qui — la finestra — deve marcare ogni pezzo con
+/// l'identificativo del terminale, e quell'identificativo lo assegna `open`.
+/// Ricevendo un destinatario già fatto resterebbe un istante in cui i byte
+/// esistono e il nome no, e ci cade dentro l'invito della shell: il primo pezzo
+/// che chi guarda si aspetta di vedere.
+///
+/// LA MISURA CHE POTEVA VENIRE DIVERSA: il nome viene registrato **dal
+/// destinatario, alla propria nascita**, non chiesto al terminale dopo. Se
+/// `open` fabbricasse il destinatario senza nome — o lo ricevesse già fatto —
+/// qui resterebbe una stringa vuota.
+#[test]
+fn the_output_is_told_which_terminal_it_belongs_to() {
+    let scratch = Scratch::make("nome");
+    let terminals = plain_terminals();
+
+    /// Un destinatario che si ricorda il nome ricevuto alla nascita e quello
+    /// che aveva quando è arrivato il primo pezzo.
+    struct Named {
+        at_birth: String,
+        at_first_chunk: std::sync::Mutex<Option<String>>,
+    }
+
+    impl terminal::Output for Named {
+        fn chunk(&self, _bytes: &[u8]) {
+            let mut first = self.at_first_chunk.lock().expect("non panica");
+            if first.is_none() {
+                *first = Some(self.at_birth.clone());
+            }
+        }
+    }
+
+    let named = std::sync::Mutex::new(None::<Arc<Named>>);
+    let terminal = terminals
+        .open(scratch.workspace.clone(), &shell(), |id| {
+            let made = Arc::new(Named {
+                at_birth: id.to_owned(),
+                at_first_chunk: std::sync::Mutex::new(None),
+            });
+            *named.lock().expect("non panica") = Some(Arc::clone(&made));
+            made as Arc<dyn terminal::Output>
+        })
+        .expect("aprire uno pseudo-terminale");
+
+    let made = named
+        .lock()
+        .expect("non panica")
+        .clone()
+        .expect("il destinatario è stato fabbricato");
+    assert_eq!(
+        made.at_birth,
+        terminal.id(),
+        "il nome dato al destinatario non è quello del terminale"
+    );
+
+    // Qualcosa deve pur uscire, o la seconda asserzione non misurerebbe niente.
+    terminal.submit("printf 'ec''co\\n'").expect("scrivere");
+    assert!(
+        seen_something(&made, PATIENCE),
+        "nessun pezzo è mai arrivato"
+    );
+    assert_eq!(
+        made.at_first_chunk.lock().expect("non panica").as_deref(),
+        Some(terminal.id()),
+        "il primo pezzo è arrivato a un destinatario che non sapeva ancora il proprio nome"
+    );
+
+    fn seen_something(made: &Named, limit: Duration) -> bool {
+        let until = std::time::Instant::now() + limit;
+        loop {
+            if made.at_first_chunk.lock().expect("non panica").is_some() {
+                return true;
+            }
+            if std::time::Instant::now() >= until {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
 /// **IL RIDIMENSIONAMENTO ARRIVA AL PROGRAMMA DENTRO.** Non si guarda una
 /// variabile nostra: si chiede al terminale, con `stty`, quanto crede di essere
 /// grande. È l'unico modo in cui questa prova poteva venire diversa.
@@ -174,11 +288,9 @@ fn a_resize_is_seen_by_the_program_inside() {
     let terminals = plain_terminals();
     let seen = Arc::new(Buffer::new());
     let terminal = terminals
-        .open(
-            scratch.workspace.clone(),
-            &shell(),
-            Arc::clone(&seen) as Arc<dyn terminal::Output>,
-        )
+        .open(scratch.workspace.clone(), &shell(), |_| {
+            Arc::clone(&seen) as Arc<dyn terminal::Output>
+        })
         .expect("aprire uno pseudo-terminale");
 
     terminal
@@ -206,10 +318,10 @@ fn the_list_says_which_terminals_are_open_and_where() {
     let quiet: Arc<dyn terminal::Output> = Arc::new(Buffer::new());
 
     let first = terminals
-        .open(here.workspace.clone(), &shell(), Arc::clone(&quiet))
+        .open(here.workspace.clone(), &shell(), |_| Arc::clone(&quiet))
         .expect("aprire il primo");
     let second = terminals
-        .open(there.workspace.clone(), &shell(), Arc::clone(&quiet))
+        .open(there.workspace.clone(), &shell(), |_| Arc::clone(&quiet))
         .expect("aprire il secondo");
 
     let listed = terminals.list();
@@ -247,7 +359,7 @@ fn closing_a_terminal_stops_it_and_takes_it_off_the_list() {
     let terminals = plain_terminals();
     let quiet: Arc<dyn terminal::Output> = Arc::new(Buffer::new());
     let terminal = terminals
-        .open(scratch.workspace.clone(), &shell(), quiet)
+        .open(scratch.workspace.clone(), &shell(), |_| quiet)
         .expect("aprire");
     assert!(terminal.alive());
 
@@ -258,6 +370,39 @@ fn closing_a_terminal_stops_it_and_takes_it_off_the_list() {
 
     assert!(!terminal.alive(), "chiuso e ancora vivo");
     assert!(terminals.list().is_empty(), "{:?}", terminals.list());
+}
+
+/// **LA RIGA DELL'ELENCO ESCE COI NOMI CHE LA FINESTRA LEGGE.**
+///
+/// `docs/2026-09-01-il-contratto-del-terminale.md` dice due cose insieme: che la
+/// riga è questo tipo, e che i suoi campi si chiamano `workspaceRoot`,
+/// `workspaceName`, `processId`. Reggono solo se questa struttura esce così: chi
+/// ne ricopiasse una versione in TypeScript o nel guscio farebbe il guasto 10.
+///
+/// LA MISURA CHE POTEVA VENIRE DIVERSA: togliendo `rename_all = "camelCase"` da
+/// [`terminal::Summary`] i nomi tornano con l'underscore, la finestra legge
+/// `undefined` su tre campi su cinque, e non se ne accorge nessuno — un campo
+/// assente in JavaScript non è un errore, è un vuoto.
+#[test]
+fn the_list_row_carries_the_names_the_window_reads() {
+    let row = terminal::Summary {
+        id: "qui-1".to_owned(),
+        workspace_root: "/tmp/qui".to_owned(),
+        workspace_name: "qui".to_owned(),
+        alive: true,
+        process_id: 4242,
+    };
+    let written = serde_json::to_value(&row).expect("la riga si serializza");
+    let object = written.as_object().expect("è un oggetto");
+    let mut names: Vec<&str> = object.keys().map(String::as_str).collect();
+    names.sort_unstable();
+    assert_eq!(
+        names,
+        ["alive", "id", "processId", "workspaceName", "workspaceRoot"],
+        "i nomi della riga non sono quelli del contratto: {written}"
+    );
+    assert_eq!(written["workspaceRoot"], "/tmp/qui");
+    assert_eq!(written["processId"], 4242);
 }
 
 /// Uno spazio di lavoro che non esiste si rifiuta all'apertura, non allo
@@ -278,7 +423,7 @@ fn a_plain_command_passes_and_says_why() {
     let terminals = plain_terminals();
     let quiet: Arc<dyn terminal::Output> = Arc::new(Buffer::new());
     let terminal = terminals
-        .open(scratch.workspace.clone(), &shell(), quiet)
+        .open(scratch.workspace.clone(), &shell(), |_| quiet)
         .expect("aprire");
 
     match terminal.submit("ls").expect("scrivere") {

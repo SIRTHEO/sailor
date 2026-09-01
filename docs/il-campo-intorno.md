@@ -156,6 +156,10 @@ tre cose, in ordine di valore:
 2. **Aprire Crewplane** e guardare come dichiara una fase e come riprende: è la
    cosa più vicina a noi, e sapere dove diverge vale più di qualunque recensione.
 3. **Aprire Claudexor** sul punto della rotazione: come distingue un limite
-   confermato da un errore qualunque, che è il pezzo che il guasto 31 aspetta.
+   confermato da un errore qualunque. Il guasto 31 è chiuso dal 01/09/2026 —
+   chi non dichiara come si esaurisce sta in fondo alla catena, e un controllo
+   lo pretende — ma la misura che manca è ancora quella: le parole con cui `agy`
+   dice di aver finito la quota. Il giorno in cui si vedono, `agy` torna a poter
+   fare da ripiego.
 
 Finché non sono fatte, ogni riga qui sopra è un indizio, non una misura.

@@ -881,39 +881,212 @@ button.is-primary {
   border-color: var(--ink);
 }
 
-.rail__palette {
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-
-.rail__hint {
-  font-size: var(--text-small);
-  color: var(--faint);
-  margin: 0 8px 8px;
-  line-height: 1.4;
-}
-
-.palette__grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  padding: 0 2px;
-}
-
-.palette__item {
-  font-size: var(--text-small);
-  padding: var(--space-2) var(--space-1);
-  text-align: center;
-}
-
-/* Niente `opacity` qui: lo spento lo dice la regola globale su `button`, e lo
-   dice restando leggibile. */
-
 .canvas {
   flex-grow: 1;
   min-width: 0;
   position: relative;
+}
+
+/* ── la cassetta dei passi, dentro la tela ────────────────────────────────
+   Era una griglia di bottoni in fondo alla colonna: `.rail__palette`,
+   `.palette__grid`, `.palette__item`. Chi componeva usciva dalla tela col
+   puntatore e rientrava, a ogni passo.
+
+   Adesso è una barra che galleggia sul bordo basso della tela. Le regole di
+   posizione le mette React Flow (`.react-flow__panel.bottom.left`), che la
+   disegna FUORI dal riquadro trasformato: dentro la tela, ferma rispetto ad
+   essa. Qui c'è solo l'aspetto, e il corridoio.
+
+   IL CORRIDOIO, E PERCHÉ NON È SIMMETRICO. In basso alla tela ci sono già due
+   inquilini di React Flow: i comandi di zoom a sinistra, 26px di bottoni più i
+   15 di margine del pannello — 41 dal fianco — e la minimappa a destra, 200
+   più 15, cioè 215. Una barra CENTRATA può usare solo il doppio del lato più
+   stretto: a 1440 px di finestra la tela è larga 920 e le restano 490, mentre
+   il corridoio vero — da 41 a 705 — ne offre 664. Centrata butta via 174px e
+   poi non ci sta.
+
+   DA CHE LARGHEZZA COPRIVA. La barra misura 468px (7 attrezzi da 56, due fili
+   di gruppo, il padding). Centrata sulla tela larga C, il suo bordo destro
+   arriva a C/2 + 234 e la minimappa comincia a C - 215: si toccano quando
+   C = 898, e la tela è la finestra meno le due colonne (232 + 288 = 520),
+   cioè **da 1418 px in giù**. Misurato in un browser vero, non dedotto:
+   franco 11px a 1440, 1px a 1420, -9 a 1400, -26 a 1366. Il commento che
+   stava qui diceva «~1240» — 178px di errore, tutti nella direzione che
+   rassicura, e nessun portatile da 1366 rientrava nel numero sbagliato.
+
+   LA REGOLA, che non è un numero. Il tetto della barra è il corridoio meno le
+   due riserve, e lo scarto da sinistra supera i comandi: così il bordo destro
+   peggiore resta fuori dalla fascia della minimappa **a ogni larghezza**, non
+   a quella su cui qualcuno ha guardato. `Toolbar.test.tsx` rilegge questi due
+   valori da qui e rifà il conto. Le riserve sono arrotondate in su al reticolo
+   di 4px (41→44, 215→216): il franco può solo crescere, e il divieto 8 resta
+   in piedi. Una striscia verticale sul fianco, invece, avrebbe riletto come
+   una seconda colonna — cioè come la cosa da cui questa barra se ne va.
+
+   IL FONDO, DICHIARATO INVECE CHE TACIUTO. Da 864px di finestra IN GIÙ la
+   barra sfonda il corridoio; il pareggio esatto è a 865, e sotto si perde un
+   pixel per ogni pixel di finestra: 864 -> -1, 861 -> -4, 800 -> -65.
+
+   LA GRANDEZZA CHE VINCOLA NON È QUELLA DI UN ATTREZZO. Sotto il tetto la
+   scatola dichiarata si stringe e il contenuto esce lo stesso — ed è il
+   contenuto che copre la minimappa, non la scatola. L'ingombro dipinto della
+   barra non scende mai sotto i 78px dal suo bordo sinistro: 1px di bordo più
+   12 di padding, 9 di filo e padding di gruppo, 56 dell'attrezzo. A tenerlo
+   fermo è `.toolbar__group`, il cui minimo è 65px (56 + 9), e sotto i 874px di
+   finestra il bordo destro dipinto resta inchiodato a 130 mentre il tetto
+   continua a scendere. Un attrezzo, da solo, ne dipinge 56: esattamente la sua
+   `width`, senza etichette che sbordano.
+
+   IL 65 CHE STAVA SCRITTO QUI ERA IL TETTO, NON UN ATTREZZO. A 861px di
+   finestra il corridoio misura per l'appunto 65px, e chi scrisse il commento
+   lesse quella coincidenza come la larghezza di «un attrezzo solo». Da lì
+   venivano tutti e due gli errori: il fondo di quattro pixel troppo basso e la
+   grandezza sbagliata a spiegarlo.
+
+   Misurato in un Chromium vero, franco dalla minimappa: -65 a 800, 0 a 865;
+   poi la rampa 865-873 (da 0 a +8), +9 costante da 874 a 1264 — dove il tetto
+   smette di mordere perché la barra non cresce oltre i suoi 468px, e la fila
+   torna su una riga sola — e da lì in su cresce con la finestra: +111 a 1366,
+   +185 a 1440, +345 a 1600, +665 a 1920. La riga di prima diceva «+9 da 900 in
+   su» e saltava la rampa 865-873, l'unico tratto in cui il franco c'è ma è
+   meno di 9: da 874 in su vale già 9 esatti.
+
+   A 865px la tela è larga 345 e un nodo ne occupa 240: la finestra è già
+   inservibile per conto suo, e questo fondo è dichiarato per saperlo, non per
+   difenderlo. */
+.toolbar {
+  /* Quanto la barra lascia libero ai due inquilini della fascia bassa. */
+  --controls-reserve: 44px;
+  --minimap-reserve: 216px;
+
+  /* `Panel` porta `margin: 15px`: qui si riscrivono il basso e il fianco, e
+     `--space-2` è il filo d'aria fra la barra e ciò che le sta accanto. */
+  margin-bottom: var(--space-3);
+  margin-left: calc(var(--controls-reserve) + var(--space-2));
+  max-width: calc(100% - var(--controls-reserve) - var(--minimap-reserve) - 2 * var(--space-2));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  /* L'unica ombra, e qui è il caso che il divieto 3 ammette: questa barra
+     galleggia davvero sopra la tela, non è una scheda che levita. */
+  box-shadow: var(--shadow);
+}
+
+/* Dove finisce il passo, scritto prima di premere: la tela mostra tutte le
+   corsie insieme, e senza questa riga la corsia giusta è un indovinello che si
+   risolve dopo. */
+.toolbar__target {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.toolbar__target-name {
+  font-family: var(--font-data);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+
+/* GLI ATTREZZI VANNO A CAPO, e questa riga è metà della regola del corridoio.
+   Un tetto di larghezza su un contenitore flex non trattiene i figli: la
+   scatola si stringe al tetto e la fila esce lo stesso, sopra la minimappa,
+   mentre il `getBoundingClientRect` della barra racconta una scatola stretta e
+   ubbidiente. Andando a capo la barra cresce in altezza, dove non c'è nessuno.
+   Succede sotto i 1260 px circa di finestra; sopra, i tre gruppi stanno in
+   fila. */
+.toolbar__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+/* UN FILO AL POSTO DI TRE CONTENITORI. Sette attrezzi in fila sono un muro;
+   uno, tre e tre si leggono. A separarli basta 1px, che non fa pagare il
+   padding di tre riquadri dentro una barra dove lo spazio costa. */
+/* Anche dentro il gruppo si va a capo: se no il corridoio più stretto di un
+   gruppo da tre attrezzi (185px) lo farebbe uscire lo stesso, e da 980px di
+   finestra IN GIÙ il corridoio è più stretto di così. Il pareggio esatto è a
+   981, dove il corridoio misura per l'appunto 185; misurato: 979 -> 183,
+   980 -> 184, 982 -> 186. Qui stava scritto «sotto i 1000px»: fra 981 e 1000 la
+   frase era falsa, e non portava nessun «circa» a coprirla. */
+.toolbar__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.toolbar__group + .toolbar__group {
+  border-left: 1px solid var(--line);
+  padding-left: var(--space-2);
+}
+
+/* Nessun bordo a riposo: la fila di sette riquadri sarebbe stata il muro che
+   il raggruppamento toglie. L'attrezzo si alza quando lo tocchi, e il segno
+   resta comunque disegnato. */
+.toolbar__tool {
+  width: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-color: transparent;
+  background: transparent;
+}
+
+.toolbar__tool:hover:not(:disabled) {
+  background: var(--raised);
+  border-color: var(--ink);
+}
+
+.toolbar__mark {
+  display: block;
+}
+
+/* Il lettering da targa, come su un nodo: le due cose sono lo stesso oggetto,
+   una nella cassetta e una sulla tela. */
+.toolbar__label {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  line-height: 1.3;
+  text-align: center;
+}
+
+/* SENZA UN FLUSSO A FUOCO LA BARRA NON SI SPEGNE, SI ACCORCIA. Prima erano
+   sette bottoni `disabled` col motivo dentro un `title`: chi non sa che c'è un
+   `title` non lo cerca, e sette bottoni spenti occupano lo spazio di sette
+   gesti offrendone zero. */
+.toolbar__prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.toolbar__new {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--muted);
+  border-style: dashed;
+}
+
+.toolbar__new:hover {
+  color: var(--ink);
+  border-color: var(--ink);
 }
 
 /* ── la tela bianca ──────────────────────────────────────────────────────
@@ -2694,6 +2867,217 @@ button.is-primary {
   font-size: var(--text-micro);
   color: var(--faint);
   word-break: break-all;
+}
+
+/* ===========================================================================
+   I TERMINALI. Le schede, i pannelli, e la riga che si sta componendo.
+   ---------------------------------------------------------------------------
+   Un terminale è già pieno del colore che ci scrive dentro il programma che ci
+   gira: qui attorno non ce n'è nessuno che non sia uno stato. Il divieto 4 vale
+   soprattutto qui, dove la tentazione è il riquadro nero.
+
+   Lo schermo dell'emulatore prende `--paper` e `--ink` — 15,08:1 — e li prende
+   due volte: da questa regola per ciò che il foglio disegna, e dai ruoli letti
+   in `TerminalPane.tsx` per il tema che xterm si dipinge da sé. Un tema lasciato
+   al suo predefinito sarebbe nero su nero-quasi, cioè un pannello con una tinta
+   sua incollato dentro una finestra di carta calda.
+   =========================================================================== */
+
+.terminals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.terminals__mute,
+.terminals__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-mid);
+}
+
+.terminals__open {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.terminals__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-grow: 1;
+}
+
+.terminals__input {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.terminals__trouble {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--ink);
+  border-left: 2px solid var(--line);
+  padding-left: var(--space-2);
+}
+
+.terminals__trouble[data-gravity="warn"] {
+  border-left-color: var(--warn);
+}
+
+.terminals__trouble[data-gravity="danger"] {
+  border-left-color: var(--danger);
+}
+
+.terminals__tabs {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+/* Una scheda porta il nome dello spazio di lavoro, perché è quello che un
+   terminale *è*: due terminali sulla stessa repo si distinguono dall'id, e
+   quello sta nel pannello, dove serve a copiarlo. */
+.terminals__tab {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
+}
+
+.terminals__tab[data-here] {
+  border-color: var(--ink);
+  background: var(--raised);
+}
+
+.terminals__word,
+.pane__state {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--state-waiting);
+}
+
+.terminals__tab[data-state="alive"] .terminals__word,
+.pane__state[data-state="alive"] {
+  color: var(--state-running);
+}
+
+.terminals__tab[data-state="closed"] .terminals__word,
+.pane__state[data-state="closed"] {
+  color: var(--state-broke);
+}
+
+.terminals__tab[data-state="unknown"] .terminals__word,
+.pane__state[data-state="unknown"] {
+  color: var(--state-capped);
+}
+
+.terminals__panes {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  overflow: hidden;
+}
+
+.pane__head,
+.pane__foot {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.pane__foot {
+  border-bottom: none;
+  border-top: 1px solid var(--line);
+}
+
+.pane__root,
+.pane__id {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.pane__why,
+.pane__keys {
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.pane__keys {
+  margin-left: auto;
+}
+
+.pane__mode {
+  flex-shrink: 0;
+}
+
+.pane__screen {
+  flex-grow: 1;
+  min-height: 220px;
+  padding: var(--space-2);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  overflow: hidden;
+}
+
+/* LA RIGA CHE LA FINESTRA TIENE IN MANO SI VEDE PER INTERO, e si vede che è
+   sua: mentre si compone non è ancora arrivata a nessuno, e questa è l'unica
+   riga della schermata che dice a che punto è. */
+.pane__draft {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.pane__draft[data-empty] {
+  font-family: var(--font-prose);
+  color: var(--muted);
+}
+
+.pane__routed {
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.pane__refused[data-gravity="warn"] {
+  font-size: var(--text-small);
+  color: var(--warn);
 }
 
 /* ── I comandi ───────────────────────────────────────────────────────────────
