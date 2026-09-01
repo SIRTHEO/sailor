@@ -28,8 +28,7 @@ fn repository_root() -> PathBuf {
 struct Fault {
     number: usize,
     cells: Vec<String>,
-    open: bool,
-    partly: bool,
+    standing: faults::Standing,
 }
 
 impl Fault {
@@ -48,7 +47,10 @@ impl Fault {
     /// nessuno: un campo calcolato e mai letto non è una difesa, è la forma di
     /// una difesa.
     fn still_open(&self) -> bool {
-        self.open || self.partly
+        matches!(
+            self.standing,
+            faults::Standing::Open | faults::Standing::PartlyClosed
+        )
     }
 }
 
@@ -83,18 +85,13 @@ fn faults() -> Vec<Fault> {
             let status = cells.last().cloned().unwrap_or_default();
             Some(Fault {
                 number,
-                // **BASTA CHE COMINCI CON «APERTO», E IL PERCHÉ È IL GUASTO 42
-                // STESSO.** Fino al 01/09/2026 qui c'era `status ==
-                // "**aperto**"`: uno stato che aggiungesse una sola parola —
-                // «**aperto** — le difese di procedura sono in vigore, il codice
-                // no» — non era né aperto né chiuso in parte, quindi **spariva
-                // dal conto**. È successo scrivendo la riga 42, che parla
-                // esattamente di questo: una risorsa condivisa che nessuno
-                // sorveglia. Un confronto esatto su un campo di prosa è una
-                // difesa che si rompe alla prima sfumatura, e si rompe **verso
-                // il basso**, cioè nella direzione che tranquillizza.
-                open: status.starts_with("**aperto**"),
-                partly: status.contains("chiuso in parte"),
+                // **ONE READING, AND IT LIVES IN THE CRATE.** This test kept
+                // its own — `contains` against the crate's `starts_with` — and
+                // two hand-written readings of one column drift apart: fault 57
+                // between a test and the thing it tests. It asks instead, and
+                // in exchange it guards what the crate cannot guard alone: that
+                // **no row comes out unrecognised**.
+                standing: faults::standing_of(&status),
                 cells,
             })
         })
@@ -134,6 +131,40 @@ fn every_fault_has_its_own_number_and_none_is_missing() {
         missing.is_empty(),
         "numeri saltati: {missing:?}. Un buco vuol dire che una riga è stata \
          tolta senza rinumerare, e i rinvii da altri documenti puntano al vuoto"
+    );
+}
+
+/// **The document has no door to refuse at, so it is guarded here.** The store
+/// turns away a status the count cannot read; a markdown table takes anything
+/// typed into it, and an unreadable status leaves the open tally in silence.
+#[test]
+fn every_row_says_where_it_stands_in_words_the_count_can_read() {
+    let unread: Vec<usize> = faults()
+        .iter()
+        .filter(|fault| fault.standing == faults::Standing::Unrecognised)
+        .map(|fault| fault.number)
+        .collect();
+
+    assert!(
+        unread.is_empty(),
+        "lo stato di {:?} non comincia con nessuno dei marcatori che il conto \
+         sa leggere, quindi quei guasti sono già usciti dal conto degli aperti \
+         senza che niente lo dicesse. È il difetto che il deposito rifiuta alla \
+         porta; qui si sorveglia il documento, che porta non ne ha",
+        unread
+    );
+}
+
+/// The half-done repair is the real case: translating the column one row at a
+/// time would drop the open tally with every row translated.
+#[test]
+fn a_marker_translated_halfway_leaves_the_count_instead_of_lowering_it() {
+    assert_eq!(
+        faults::standing_of("**open** — measured and not yet built"),
+        faults::Standing::Unrecognised,
+        "un marcatore tradotto senza insegnare la lettura dev'essere non \
+         riconosciuto, non chiuso: la direzione dell'errore sarebbe quella che \
+         tranquillizza, e sette righe uscirebbero dal conto in una modifica"
     );
 }
 
