@@ -133,7 +133,6 @@ fn the_dead_are_closed_and_the_living_are_left_alone() {
         Some(&store),
     )
     .expect("accendere il condannato");
-    let doomed_pid = doomed.pid();
     let mut reaped = false;
     for _ in 0..200 {
         if doomed.exited().is_some() {
