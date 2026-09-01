@@ -5,12 +5,11 @@
 //! for acting: nothing can be typed into a terminal nobody owns. Here Sailor
 //! owns the descriptor, so the emulator never has to be recognised.
 
+use sessions::fullness::{self, Model};
 use std::ffi::OsStr;
 use std::fs::File;
 use std::io;
 use std::os::fd::FromRawFd;
-use sessions::fullness::{self, Model};
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrder};
 use std::sync::Arc;
@@ -50,7 +49,10 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         return Ok(0);
     }
     if !FORMS.contains(&form.as_str()) {
-        return Err(format!("«{form}» is not a form of this command\n{}", usage_text()));
+        return Err(format!(
+            "«{form}» is not a form of this command\n{}",
+            usage_text()
+        ));
     }
     match form.as_str() {
         "run" => hold(&args[1..]),
@@ -298,7 +300,11 @@ fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(),
 fn reset(args: &[String]) -> Result<i32, String> {
     let options = options_of(args)?;
     let tty = named(&options, "tty", "which terminal? give --tty <name>")?;
-    let cli = named(&options, "cli", "which command line is running there? give --cli <id>")?;
+    let cli = named(
+        &options,
+        "cli",
+        "which command line is running there? give --cli <id>",
+    )?;
 
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
@@ -385,7 +391,10 @@ fn list(args: &[String]) -> Result<i32, String> {
         if std::os::unix::net::UnixStream::connect(&path).is_err() {
             continue;
         }
-        let Some(name) = path.file_stem().map(|stem| stem.to_string_lossy().into_owned()) else {
+        let Some(name) = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().into_owned())
+        else {
             continue;
         };
         println!("{}", how_full(&room, &name, ceiling));
@@ -486,7 +495,10 @@ mod tests {
         let error = dispatch(&words(&["invented"]))
             .err()
             .expect("an invented form is refused");
-        assert!(error.contains("invented"), "the refusal must name it: {error}");
+        assert!(
+            error.contains("invented"),
+            "the refusal must name it: {error}"
+        );
     }
 
     #[test]
@@ -542,11 +554,7 @@ mod tests {
     }
 
     fn scratch(name: &str) -> PathBuf {
-        let directory =
-            PathBuf::from("/tmp").join(format!("sr-cmd-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).expect("create the test directory");
-        directory
+        terminal::scratch::directory(&format!("cmd-{name}"))
     }
 
     #[test]
@@ -583,7 +591,10 @@ mod tests {
             .err()
             .expect("an empty mandate is refused");
         assert!(refusal.contains("nothing to hand on"), "{refusal}");
-        assert_eq!(mandate::read(&mandate::address_in(&directory, "ttys004")), None);
+        assert_eq!(
+            mandate::read(&mandate::address_in(&directory, "ttys004")),
+            None
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 

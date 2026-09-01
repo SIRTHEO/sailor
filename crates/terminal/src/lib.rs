@@ -30,6 +30,7 @@ pub mod inbox;
 pub mod mandate;
 pub mod pty;
 pub mod routing;
+pub mod scratch;
 pub mod session;
 pub mod tally;
 
