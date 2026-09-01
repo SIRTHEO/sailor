@@ -26,8 +26,15 @@ export default defineConfig({
     //
     // Si aprono le **due cartelle nominate**, mai `..`: la radice intera
     // conterrebbe anche `target/` e le chiavi di chi lavora qui.
-    fs: { allow: [".", "../flows", "../crates/flow/system"] },
+    // E `../i18n`, i due cataloghi: stanno nella radice del repo e non dentro
+    // questa app perché sono **una cosa sola con due superfici** — i crate li
+    // incorporano con `include_str!`, il bundler li impacchetta qui. Se
+    // stessero in casa di una delle due, l'altra sarebbe ospite.
+    fs: { allow: [".", "../flows", "../crates/flow/system", "../i18n"] },
   },
+  // `SAILOR_LANG` arriva fino alla finestra, che altrimenti vedrebbe solo le
+  // variabili con prefisso `VITE_`. In mancanza si parla inglese.
+  envPrefix: ["VITE_", "SAILOR_"],
   build: { outDir: "dist", emptyOutDir: true },
   // Senza questo `vitest` restituisce una stringa vuota per ogni import di CSS,
   // `?raw` compreso: i controlli dei divieti leggerebbero un foglio vuoto e

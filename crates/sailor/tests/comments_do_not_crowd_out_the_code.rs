@@ -30,7 +30,7 @@ const DATED_COMMENTS_TODAY: usize = 322;
 /// **L'UNICO RIALZO ONESTO** e' una fusione che porta dentro italiano gia'
 /// scritto altrove: li' si rimisura, si alza col numero misurato, e lo si dice
 /// nel commit. Alzarlo perche' e' diventato rosso e' disarmarlo.
-const ITALIAN_COMMENT_LINES_TODAY: usize = 13_343;
+const ITALIAN_COMMENT_LINES_TODAY: usize = 13_340;
 
 /// How far a seed may drift above what the tree actually holds.
 ///
