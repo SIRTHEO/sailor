@@ -17,10 +17,10 @@ const MAX_BLOCK: usize = 6;
 
 /// Quanti blocchi sforano oggi. **Può solo scendere**: abbassarlo è la
 /// riparazione, alzarlo va discusso e si vede nel diff.
-const LONG_BLOCKS_TODAY: usize = 775;
+const LONG_BLOCKS_TODAY: usize = 784;
 
 /// Quanti commenti citano una data. Stessa regola: solo verso il basso.
-const DATED_COMMENTS_TODAY: usize = 320;
+const DATED_COMMENTS_TODAY: usize = 322;
 
 /// Quante righe di commento sono ancora in italiano.
 ///
@@ -30,7 +30,7 @@ const DATED_COMMENTS_TODAY: usize = 320;
 /// **L'UNICO RIALZO ONESTO** e' una fusione che porta dentro italiano gia'
 /// scritto altrove: li' si rimisura, si alza col numero misurato, e lo si dice
 /// nel commit. Alzarlo perche' e' diventato rosso e' disarmarlo.
-const ITALIAN_COMMENT_LINES_TODAY: usize = 13_165;
+const ITALIAN_COMMENT_LINES_TODAY: usize = 13_343;
 
 /// How far a seed may drift above what the tree actually holds.
 ///
@@ -94,9 +94,17 @@ fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// **DUE FORME DI COMMENTO, PERCHÉ I FOGLI DI STILE NON HANNO `//`.** Il
-/// `in_block` viaggia da una riga all'altra: senza, un cartiglio CSS di novanta
-/// righe conterebbe una riga sola e il resto passerebbe per codice.
+/// **TRE FORME DI COMMENTO, PERCHÉ I FOGLI DI STILE NON HANNO `//` E IL JSX
+/// NON HA NÉ L'UNO NÉ L'ALTRO.** Il `in_block` viaggia da una riga all'altra:
+/// senza, un cartiglio CSS di novanta righe conterebbe una riga sola e il resto
+/// passerebbe per codice.
+///
+/// **E `{/* … */}` COMINCIA CON UNA GRAFFA**, quindi non è né `//` né `/*`: 65
+/// blocchi in 13 file di `desktop/src` — 256 righe, 178 italiane — passavano
+/// per codice, cioè proprio la prosa lunga della finestra che questo conto
+/// esiste per sorvegliare. Contarle alza i tre semi di 9, 2 e 178 senza che
+/// nessuno abbia scritto una riga: **è il contatore che ha cominciato a
+/// vedere**, non il debito che è cresciuto.
 fn is_comment(line: &str, in_block: &mut bool) -> bool {
     let trimmed = line.trim_start();
     if *in_block {
@@ -108,11 +116,13 @@ fn is_comment(line: &str, in_block: &mut bool) -> bool {
     if trimmed.starts_with("//") {
         return true;
     }
-    if let Some(rest) = trimmed.strip_prefix("/*") {
-        if !rest.contains("*/") {
-            *in_block = true;
+    for opener in ["/*", "{/*"] {
+        if let Some(rest) = trimmed.strip_prefix(opener) {
+            if !rest.contains("*/") {
+                *in_block = true;
+            }
+            return true;
         }
-        return true;
     }
     false
 }
@@ -313,6 +323,13 @@ fn the_check_can_still_see_what_it_counts() {
     assert!(is_comment("   e qui finisce */", &mut block));
     assert!(!block, "il blocco si chiude");
     assert!(!is_comment(".una-classe { color: red; }", &mut block));
+    // E il commento del JSX, che comincia con una graffa: senza questa riga
+    // sparisce senza far rumore, perché le tre soglie **permettono** un calo.
+    assert!(is_comment("        {/* la prosa della finestra", &mut block));
+    assert!(block, "anche `{{/*` apre un blocco che continua");
+    assert!(is_comment("            e prosegue qui", &mut block));
+    assert!(is_comment("            fino a qui */}", &mut block));
+    assert!(!block, "e `*/}}` lo chiude");
     assert!(cites_a_date("// misurato il 31/08/2026"));
     assert!(!cites_a_date("// nessuna data qui"));
     let counts = count();
