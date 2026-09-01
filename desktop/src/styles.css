@@ -2446,3 +2446,94 @@ button.is-primary {
   color: var(--faint);
   word-break: break-all;
 }
+
+/* ── I comandi ───────────────────────────────────────────────────────────────
+   Un manuale è una tabella, non una griglia di schede: la domanda che ci si fa
+   è «quale comando fa questa cosa», e si legge scorrendo una colonna di nomi.
+   Le schede la renderebbero un percorso a zig-zag.
+
+   Il nome sta in `--font-data` per il divieto 10 esteso a ciò che si digita:
+   una riga di comando in carattere proporzionale non si copia con l'occhio. E
+   il buco da riempire — `<nome>`, `[opzioni]` — si distingue dal letterale col
+   corsivo e col peso, MAI sbiadendo: è il divieto 7. */
+
+.manual {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.manual__row {
+  border-bottom: 1px solid var(--line);
+}
+
+.manual__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-2);
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.manual__head:hover {
+  background: var(--band-fill);
+}
+
+.manual__name {
+  flex: 0 0 auto;
+  min-width: 140px;
+  font-family: var(--font-data);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.manual__what {
+  flex: 1 1 auto;
+  color: var(--muted);
+}
+
+.manual__shapes {
+  flex: 0 0 auto;
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.manual__shapes-word {
+  font-family: var(--font-prose);
+}
+
+.manual__shapes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-3) var(--space-4);
+}
+
+.manual__shape {
+  padding: var(--space-1) 0;
+}
+
+.manual__shape code {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  line-height: 1.7;
+}
+
+.manual__word {
+  color: var(--ink);
+}
+
+/* Un buco da riempire: si riconosce dalla forma, non da un grigio più chiaro. */
+.manual__hole {
+  color: var(--ink);
+  font-style: italic;
+}

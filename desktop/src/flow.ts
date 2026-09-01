@@ -116,21 +116,49 @@ export type StepKind =
   | "subflow";
 
 /**
- * Da quale azione nasce quale famiglia. Il motore ne registra due
- * (`external_engine`, `shell_check`); le altre sono la lista della spesa, e
- * finché non esistono un flusso che le nomina non parte.
+ * Da quale azione nasce quale famiglia.
+ *
+ * **QUESTI SEDICI NOMI ESISTONO, E I PRECEDENTI PER METÀ NO.** Fino al
+ * 01/09/2026 questa mappa ne conteneva otto, e sei erano inventati —
+ * `pane_until_idle`, `signal_is_gone`, `deposit_write`, `pane_send`,
+ * `hand_to_human` e `pane_read`: zero occorrenze in tutto il Rust. Quattro
+ * stavano nella cassetta dei passi, quindi premere «attesa», «deposito»,
+ * «gesto» o «a una persona» creava un nodo che poi **non si salvava**, con
+ * «il flusso usa azioni che il motore non conosce». Quattro famiglie su nove
+ * erano bottoni che non funzionano. Il commento che stava qui diceva «il
+ * motore ne registra due»: era vero fino al 28/08 e nessuno l'ha più letto.
+ *
+ * A tenerli allineati adesso è una prova che sta **fuori da tutte e due le
+ * copie** — `the_window_vocabulary_names_only_actions_the_engine_registers`
+ * in `desktop/src-tauri/src/flows.rs` legge questo file e lo confronta col
+ * registro del motore, nei due versi: nessun nome inventato qui, nessuna
+ * azione del motore lasciata senza famiglia. Confrontare due mappe scritte a
+ * mano le lascerebbe sbagliare insieme.
  *
  * Una sola mappa, non uno switch: la cassetta dei passi e il pannello di
- * modifica leggono la stessa vocabolario invece di ricopiarlo.
+ * modifica leggono lo stesso vocabolario invece di ricopiarlo.
  */
 const ACTION_KIND: Record<string, StepKind> = {
+  // Da dove arriva il segnale. Prima ricadeva su «verifica», e i sette passi
+  // `trigger` dei flussi veri si disegnavano come nodi di controllo.
+  trigger: "trigger",
   external_engine: "engine",
   shell_check: "check",
-  pane_until_idle: "wait",
-  signal_is_gone: "wait",
-  deposit_write: "deposit",
-  pane_send: "gesture",
-  hand_to_human: "human",
+  detect_tools: "check",
+  tool_needs: "check",
+  mcp_ready: "check",
+  mcp_ask: "gesture",
+  // Il passo che non avvia niente: descrive il lavoro e lo lascia a chi è già
+  // vivo nel terminale. È il nome vero di quello che qui si chiamava
+  // `hand_to_human`.
+  handed_to_agent: "human",
+  history_ask: "deposit",
+  store_read: "deposit",
+  store_write: "deposit",
+  store_list: "deposit",
+  work_claim: "deposit",
+  work_release: "deposit",
+  work_survey: "deposit",
   subflow: "subflow",
 };
 
@@ -143,18 +171,25 @@ export const KNOWN_ACTIONS: string[] = Object.keys(ACTION_KIND);
 
 /**
  * L'azione con cui nasce un passo creato dalla cassetta, una per famiglia.
- * «trigger» e «branch» non compaiono: nessuna azione vi si risolve ancora nel
- * registro, e inventarne una vorrebbe dire scrivere un nome invece che
- * leggerlo da lì — la cassetta non offre quelle due famiglie finché non
- * esistono davvero.
+ *
+ * **LA REGOLA ERA GIÀ SCRITTA QUI, E NON ERA RISPETTATA.** Il commento diceva
+ * che «trigger» e «branch» non compaiono perché nessuna azione vi si risolve,
+ * e che inventarne una vorrebbe dire scrivere un nome invece che leggerlo dal
+ * registro. Poi quattro delle sette voci qui sotto erano esattamente nomi
+ * inventati. Adesso ogni valore è un'azione che il motore registra davvero, e
+ * una prova lo verifica: la cassetta non può più offrire un bottone che non
+ * salva.
+ *
+ * «attesa» e «ramo» non compaiono: restano le due famiglie senza un'azione. È
+ * la lista della spesa vera, ed è corta.
  */
 export const DEFAULT_ACTION_FOR_KIND: Partial<Record<StepKind, string>> = {
+  trigger: "trigger",
   engine: "external_engine",
   check: "shell_check",
-  wait: "pane_until_idle",
-  deposit: "deposit_write",
-  gesture: "pane_send",
-  human: "hand_to_human",
+  gesture: "mcp_ask",
+  human: "handed_to_agent",
+  deposit: "store_write",
   subflow: "subflow",
 };
 
