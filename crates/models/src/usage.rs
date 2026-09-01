@@ -401,6 +401,41 @@ pub fn read_text(said: &str, pointer: &Pointer) -> Option<String> {
     }
 }
 
+/// Come [`read_text`], ma rende **anche un valore non testuale**: un booleano,
+/// un numero.
+///
+/// **PERCHÉ NON BASTA `read_text`, E PERCHÉ LE DUE RESTANO SEPARATE.** Per il
+/// consumo un puntatore che finisce su un booleano è un puntatore sbagliato, e
+/// `as_text` risponde «niente» apposta: stampare `true` al posto di un conteggio
+/// nasconderebbe l'errore dentro una risposta plausibile. Per una domanda a cui
+/// si risponde sì o no la faccenda si rovescia — `claude auth status` mette la
+/// risposta in `"loggedIn": true`, cioè **il valore che porta la risposta è un
+/// booleano**, e rifiutarlo renderebbe irraggiungibile l'unica forma JSON
+/// misurata. Sono due domande diverse sullo stesso puntatore, quindi due
+/// letture; unirle allentando `as_text` toglierebbe al consumo la difesa che ha
+/// oggi, in silenzio.
+///
+/// Il puntatore dice ancora da sé la forma: un'espressione regolare vale sul
+/// testo, un cammino di chiavi su un involucro JSON.
+pub fn read_scalar(said: &str, pointer: &Pointer) -> Option<String> {
+    match pointer {
+        Pointer::Pattern(pattern) => first_group(said, pattern),
+        Pointer::FirstKey(_) => read_text(said, pointer),
+        Pointer::Path(_) => {
+            let body = serde_json::from_str::<serde_json::Value>(said.trim()).ok()?;
+            let value = walk(&body, Some(pointer))?;
+            match value {
+                serde_json::Value::String(text) => Some(text.clone()),
+                serde_json::Value::Bool(yes) => Some(yes.to_string()),
+                serde_json::Value::Number(number) => Some(number.to_string()),
+                // Un oggetto o un elenco non sono una risposta: chi ha scritto
+                // il puntatore ha puntato al contenitore invece che al valore.
+                _ => None,
+            }
+        }
+    }
+}
+
 fn read_from_json(said: &str, declared: &Declared) -> Reading {
     // Un involucro illeggibile non è un guasto: è un motore che ha risposto in
     // chiaro dove ci si aspettava JSON — quota finita, errore di rete, un
