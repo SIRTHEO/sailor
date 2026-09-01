@@ -38,6 +38,7 @@ import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerS
 import { RunConsole, type ConsoleMode } from "./RunConsole";
 import { StepHistory } from "./StepHistory";
 import { StepLive } from "./StepLive";
+import { Worktrees } from "./Worktrees";
 import { buildUnifiedLayout, nodeId, splitNodeId, wouldCycle } from "./layout";
 import { SAMPLE, SAMPLE_RUN } from "./sample";
 import {
@@ -97,7 +98,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * stasera per rispondere doveva andarsela a cercare. La tela non sparisce:
  * diventa il posto dove si va per guardare dentro.
  */
-type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals";
+type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals" | "worktrees";
 
 /**
  * Three views of ONE flow, not three places of the window. The graph is where
@@ -1149,6 +1150,14 @@ export default function App() {
         <button
           type="button"
           className="places__item"
+          data-here={place === "worktrees" || undefined}
+          onClick={() => setPlace("worktrees")}
+        >
+          Worktrees
+        </button>
+        <button
+          type="button"
+          className="places__item"
           data-here={place === "history" || undefined}
           onClick={() => setPlace("history")}
         >
@@ -1212,6 +1221,7 @@ export default function App() {
       {place === "installed" && <Installed native={NATIVE} />}
       {place === "manual" && <Manual native={NATIVE} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
+      {place === "worktrees" && <Worktrees native={NATIVE} />}
       {/* THE CANVAS STAYS MOUNTED BEHIND THE OTHER TWO TABS. React Flow measures
           its own frame once: unmounting it to change tab would give back a
           canvas that has to find its nodes again every time. */}

@@ -4333,3 +4333,131 @@ button.is-primary {
   content: "err ";
   color: var(--on-ink-muted);
 }
+
+/* ── the trees work happens in ──────────────────────────────────────────
+   One tree per branch, and a terminal opened on it: the gesture every
+   piece of work here starts from. */
+
+.trees {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.trees__note,
+.trees__trouble {
+  padding: var(--space-4);
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.trees__trouble {
+  padding: var(--space-2) var(--space-3);
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--radius);
+}
+
+.trees__cut {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.trees__branch {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-data);
+  font-size: var(--text-body);
+  color: var(--ink);
+}
+
+.trees__do,
+.tree__button {
+  appearance: none;
+  padding: var(--space-2) var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.trees__do:disabled,
+.tree__button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.trees__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+/* The tree this window runs in: the ring, and the words beside it. */
+.tree[data-current] {
+  border-color: var(--focus);
+}
+
+.tree__who {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.tree__name {
+  font-family: var(--font-display);
+  font-size: var(--text-mid);
+  color: var(--ink);
+}
+
+.tree__branch {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.tree__here,
+.tree__flag {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--focus);
+}
+
+.tree__flag { color: var(--warn) }
+
+.tree__path {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+  overflow-x: auto;
+}
+
+.tree__do {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
