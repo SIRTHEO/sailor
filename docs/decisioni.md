@@ -32,6 +32,85 @@ aspetto.
 
 ## Le decisioni prese
 
+### La lingua si sceglie su chi legge: inglese ciò che vede uno sconosciuto, italiano ciò che vede chi lavora qui
+
+**01/09/2026**, decisa da Theo guardando la CI.
+
+`README`, file della CI e **i messaggi che un utente dello strumento vede** —
+quello che `sailor` stampa, quello che dice quando rifiuta, i testi di
+`--help` — vanno in **inglese**. Commenti dentro il codice, messaggi delle
+prove e tutto ciò che sta sotto `docs/` restano in **italiano**.
+
+**Cosa cambia rispetto a prima.** `AGENTS.md` diceva «commenti e messaggi in
+italiano», in una riga sola, senza distinguere i due tipi di messaggio. Il
+confine che c'era — «ciò che il compilatore legge sta in inglese, ciò che il
+deposito conserva è un dato» — divideva bene il codice e non aveva niente da
+dire sulla vetrina: finché il repo era privato, la vetrina non esisteva. Il
+giorno in cui `main` è diventato Sailor la domanda è nata da sola.
+
+**L'occasione.** Il file della CI, scritto il 31/08, aveva tre lavori chiamati
+`prove`, `stile` e `finestra`: chiavi che leggono `needs:`, le API di GitHub e
+`gh run`, cioè identificatori, su una pagina che chiunque può aprire. La
+regola sugli identificatori c'era già; a mancare era chi la interrogasse sui
+`.yml`, perché `identifiers_are_in_english` leggeva solo i sorgenti Rust. Ora
+legge anche le chiavi dei lavori.
+
+**Il confine è chi legge, non che tipo di file è.** Un `panic!` dentro una
+prova parla a chi lavora qui: italiano. Lo stesso `panic!` su un percorso che
+un utente può battere parla a lui: inglese. Il caso ambiguo si chiede, non si
+risolve scegliendo la lingua comoda.
+
+**Cosa NON tocca.** Gli `id` dei flussi e dei passi e i nomi dei file
+`.flow.json` **restano in italiano**: sono dati che il deposito conserva, e la
+decisione del 31/08/2026 che li protegge vale ancora — rinominare un passo
+farebbe apparire le corse già registrate come passi sconosciuti. Chi legge
+questa voce e pensa che i flussi debbano seguire la vetrina, chieda prima.
+
+### I rinvii si sciolgono in un posto solo, dopo la condizione; e `input` è ciò che il passo ha ricevuto
+
+**01/09/2026**, dal guasto 28.
+
+Come un passo riceve il lavoro del passo prima **non è una scelta della singola
+azione**: è la semantica del grafo, e sta in `flow::step_input` — l'unico punto
+attraversato da ogni passo di ogni corsa. Un'azione non risolve i propri rinvii,
+li riceve già sciolti, come riceve già risolto il `workdir`. Ogni azione
+registrata la eredita, comprese quelle che nessuno ha ancora scritto.
+
+**L'ordine dentro quel punto è la decisione, e non è un dettaglio
+d'implementazione**: comporre le dipendenze col `with`, risolvere il `workdir`,
+valutare il `when`, e sciogliere i rinvii **solo se il passo gira**. *Perché il
+`when` prima*: un passo saltato riceve l'ingresso monco della dipendenza che non
+c'è, quindi i suoi puntatori non trovano niente — e un passo che non gira non
+deve rompersi per un lavoro che non farà. Misurato su
+`flows/chiedi-all-indice.flow.json`, che con l'ordine opposto passava da
+«completato» a «terminato con stato failed». *Il prezzo, dichiarato*: un
+`workdir` scritto come `{"$from": …}` non viene attaccato alla radice. Era già
+così, e vale meno del caso qui sopra.
+
+**Che cosa questo obbliga chi scrive un controllo.** Una prova di comportamento
+resta verde con una copia della risoluzione rimessa dentro un'azione: il
+comportamento non cambia, cambia solo il numero di posti in cui vive la regola —
+che è il guasto. Quindi la guardia **conta i posti**
+(`crates/sailor/tests/references_are_resolved_in_one_place.rs`), e ha a sua
+volta delle prove che interrogano lei: due volte quel lettore è stato cieco in
+silenzio, e un controllo che si può spegnere da solo non è un controllo.
+
+**E che cosa vuol dire `StepRecord::input`, che questa decisione ha cambiato.**
+Una regola sola: *l'ingresso come il passo l'ha ricevuto nel momento in cui ha
+smesso di essere elaborato.* Sciolto se il passo gira; **non** sciolto se è
+saltato o se si è rotto proprio sciogliendo un rinvio — nel secondo caso
+apposta, perché chi legge deve vedere il puntatore da correggere e non il vuoto
+che ne è uscito. **Quale dei tre sia non lo dice quel campo: lo dice `outcome`,
+nello stesso record.** Va scritto qui perché un `{"$from": …}` letto in un
+record non è di per sé un difetto — su `Skipped` è la norma, su `Broke` è la
+diagnosi, su `Went` sarebbe un guasto — e chi legge il deposito senza questa
+riga leggerebbe le tre cose allo stesso modo.
+
+**Il residuo, misurato e non nascosto**: una corsa iniziata prima del 01/09 e
+ripresa dopo confronta un'impronta vecchia grezza con una nuova sciolta, e
+dichiara `DifferentInput` sullo stesso lavoro. È un'etichetta sbagliata su un
+tentativo, non un dato perso, e si esaurisce da sé quando quelle corse finiscono.
+
 ### Un passo si può consegnare all'agente vivo; il giudizio no
 **31/08/2026.** Un passo può dichiarare l'azione `handed_to_agent`: descrive il
 lavoro e **non avvia niente**. A eseguirlo è l'agente già vivo nel terminale, che
@@ -482,6 +561,105 @@ offrire otto tipi di passo mentre il motore ne esegue tre.
 
 *Per esteso, con le tre proprietà di un sistema aperto e i numeri del
 censimento*: `docs/2026-08-31-le-quattro-superfici.md`.
+
+### Chi non dichiara come si esaurisce non sta in mezzo a una catena
+
+**01/09/2026**, dai guasti 16, 31 e 32 — che erano lo stesso difetto visto da
+tre lati.
+
+Un motore che non dichiara `ask.unusable_when` **non può occupare una posizione
+di ripiego**: va in fondo alla catena, o non ci va. Non perché il suo descrittore
+sia sbagliato — l'elenco vuoto dice «nessuno ha guardato», ed è la verità — ma
+perché `says_it_cannot_work` su un elenco vuoto è `false`: il suo esaurirsi passa
+per un fallimento qualunque, il passo muore su di lui, e chi sta dietro non parte
+mai. Una catena `claude-code → agy → codex` aveva l'aria di due ripieghi e ne
+aveva zero: `codex`, che dichiara il proprio 401, **non è mai partito**.
+
+**Cosa la rende rossa**, senza cui non sarebbe vincolante: la regola sta in
+`toolbox::Descriptor::cannot_be_a_fallback`, in un posto solo, e la interrogano
+`every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted` sui flussi
+dell'albero e `sailor flow check` sui flussi di chi lo lancia. È nata rossa su
+dodici posizioni in quattro flussi.
+
+**La cosa da ricordare, che vale oltre questo caso.** La regola era scritta da un
+giorno, e la prova che la conteneva era `#[ignore]` con una ragione buona:
+misurare come `agy` dice di aver finito la quota è impossibile finché non lo si
+vede farlo, e inventare quella parola manderebbe un mandato malformato giù per
+tutta la catena. Ma *quella era la ragione per non inventare un dato, ed era
+diventata la ragione per non avere un controllo* — e una regola ha quasi sempre
+**due modi di essere rispettata**. Misurare le parole di chi sta in mezzo, o non
+mettere in mezzo chi non le ha. Il secondo non chiede nessun dato che non esista.
+
+**E il controllo non serve solo a trovare il difetto: serve a rendere sicura la
+riparazione.** `gemini-cli` dichiarava di saper rispondere a una domanda secca e
+non aveva nessuna riga con cui fargliela (guasto 32). Scriverla era considerato
+pericoloso, perché un `ask` senza `unusable_when` avrebbe fatto entrare gemini
+nelle catene senza ripiego — un quarto guasto 31 creato per chiudere il 32.
+Appena la regola sulla posizione esiste, quel pericolo non esiste più, e la riga
+si è potuta scrivere **misurata**: `gemini --prompt` senza la domanda esce 1 e
+dice «Not enough arguments following: prompt», gratis e senza chiamare nessun
+fornitore. Il suo `usage` e le sue parole di esaurimento restano non misurati, e
+quindi non scritti.
+
+**Cosa questo non concede.** Che un `agy` esaurito **in fondo** a una catena
+dica di essere esaurito: non lo dice, muore col proprio messaggio d'errore. Non
+si perde nessun ripiego — dietro di lui non c'è nessuno — e la differenza si
+legge nel motivo del guasto, non nel comportamento. La misura mancante resta
+scritta nel descrittore di `agy`, dove la troverà chi la farà.
+
+### La misura si cerca prima di scegliere la strada che la evita
+
+**01/09/2026, deciso da Theo**, poche ore dopo la voce qui sopra e contro la sua
+seconda metà.
+
+La voce qui sopra dice il vero e resta: una regola ha due modi di essere
+rispettata, e prendere il secondo — non mettere in mezzo chi non dichiara — non
+chiede nessun dato che non esista. Ma quel giorno il dato **si poteva
+misurare**, e nessuno ci aveva provato. «Non inventare un dato» era diventato
+«non cercarlo»: sono due cose diverse, ed è la stessa forma dell'errore che
+quella voce racconta, ripetuta un gradino più in là.
+
+**La regola, adesso.** Davanti a un dato mancante si dichiara **che cosa si è
+provato**. Le strade, in ordine di costo: la documentazione e l'aiuto del
+comando, compresi i sottocomandi annidati — `codex exec fork` non compariva
+nell'aiuto di primo livello, quindi l'aiuto si guarda in profondità; una
+invocazione vera che provochi la condizione senza spendere; il comportamento con
+una casa vuota o senza credenziali. Se la misura viene, si scrive **esattamente
+come è uscita**. Se non viene, si scrive **cosa si è provato e cosa ha
+risposto**: un'assenza misurata vale più di una supposizione, e vale molto più
+di un'assenza non cercata, che non si distingue dalla pigrizia.
+
+`agy` è stato misurato così: `HOME` su una cartella vuota e la riga che Sailor
+monta davvero. Dice di non poter lavorare con parole sue, quelle parole sono nel
+descrittore, e la sua posizione in catena non è più una conseguenza del suo
+silenzio.
+
+### Dove sta un motore in catena si decide su una misura, non su un'abitudine
+
+**01/09/2026, deciso da Theo.**
+
+Dodici posizioni in quattro flussi dichiaravano lo stesso ordine e **nessun
+documento diceva perché**. Un ordine che nessuno ha deciso non è una scelta: è
+un'abitudine, e si difende da sola perché nessuno sa cosa smentirebbe.
+
+Ciò su cui si decide, e che va misurato prima di riordinare: **quanto costa**
+ciascun motore (il listino, `~/.config/sailor/pricing.json`), **quanta quota
+gli resta** (`sailor remaining`), **se è autenticato davvero** — sulla casa del
+profilo attivo, non su quella di chi ha aperto il terminale — e **quante volte
+ha risposto**, dal deposito. Un ordine che non si appoggia ad almeno uno di
+questi quattro non si applica: si scrive in `docs/da-fare.md` come proposta.
+
+**E il primo esito di questa regola è che due dei quattro numeri non ci sono.**
+Il listino conosce un fornitore su tre, e `sailor remaining` risponde per un
+motore solo: un ordine per costo o per quota residua **oggi non è calcolabile**,
+e chi lo proponesse starebbe indovinando. L'unica cosa che la misura impone oggi
+è che un motore misurato **non autenticato** non stia davanti a uno misurato
+autenticato. I numeri e le proposte che ne restano stanno in `docs/da-fare.md`.
+
+**Il limite di questa decisione, dichiarato.** Le credenziali sono uno stato che
+cambia; l'ordine scritto in un flusso no. Scrivere il primo dentro il secondo è
+una cura che invecchia, e la forma giusta — che Sailor misuri e scavalchi a
+esecuzione — è una proposta, non una decisione.
 
 ### Un totale con dentro un'incognita si mostra come pavimento, mai come cifra
 

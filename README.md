@@ -1,121 +1,126 @@
 # Sailor
 
-Sailor fa lavorare insieme gli agenti da riga di comando che hai già installati —
-Claude Code, Codex, Gemini CLI e chiunque altro — dentro **flussi** che sai
-leggere, misurare e fermare.
+Sailor makes the command-line agents you already have — Claude Code, Codex,
+Gemini CLI, anything else — work together inside **flows** you can read,
+measure and stop.
 
-Non è un altro agente. È l'impalcatura attorno a quelli che usi: decide quale
-motore chiamare, con quale identità, quanto può spendere, e **scrive nel
-dettaglio che cosa è successo** — così una corsa si può rivedere, confrontare e
-ripetere invece di raccontare.
+It is not another agent. It is the scaffolding around the ones you use: it
+decides which engine to call, under which identity, how much it may spend, and
+it **writes down what actually happened** — so a run can be reviewed, compared
+and repeated instead of recounted.
 
-> **Stato: in costruzione, e usato ogni giorno da chi lo scrive.** Le interfacce
-> cambiano. Quello che c'è funziona ed è provato; quello che manca è scritto in
-> `docs/guasti-incontrati.md`, con dentro anche i difetti ancora aperti.
+> **Status: under construction, and used every day by the people writing it.**
+> Interfaces change. What is here works and is tested; what is missing is
+> written down in `docs/guasti-incontrati.md`, open defects included.
 
-## Cosa fa, in concreto
+## What it does, concretely
 
-- **Esegue flussi**: un grafo di passi, con quelli indipendenti che partono
-  davvero insieme. Un passo può chiamare un motore, eseguire una verifica,
-  leggere e scrivere in un deposito, o **consegnare il lavoro a una persona**.
-- **Non conosce nessun motore per nome.** Ogni strumento si presenta con un
-  *descrittore* che dichiara come gli si parla: come si fa una domanda secca,
-  con quali parole rifiuta una riga malformata, come dichiara di essere
-  esaurito, come gli si chiede se è autenticato. Chi non dichiara non fa
-  scattare niente — **tacere è diverso da indovinare.**
-- **Prova le righe di comando prima di spendere**: `sailor flow check` monta la
-  riga vera di ogni motore e la esegue *senza la domanda*, così una riga
-  malformata si scopre lì e non alla prima corsa a pagamento.
-- **Misura quanto costa**: token per classe, costo per chiamata, tetto di spesa
-  che si stringe man mano che il residuo cala. E quando un pezzo del conto non è
-  misurato **lo dice al posto del numero**, invece di dare una cifra secca che
-  chi legge prenderebbe per il totale.
-- **Sa con quale identità è partito ogni motore**: profili di credenziali
-  separati per riga di comando, e ogni chiamata registra quale casa ha usato e
-  **come è stata scelta** — mai un campo vuoto.
-- **Non lascia processi orfani**: quello che accende lo registra, e lo sa
-  spegnere anche da un'altra invocazione.
+- **Runs flows**: a graph of steps, where independent ones genuinely start
+  together. A step can call an engine, run a check, read and write a store, or
+  **hand the work to a person**.
+- **It knows no engine by name.** Every tool introduces itself with a
+  *descriptor* declaring how you talk to it: how to ask a one-shot question,
+  which words it uses to refuse a malformed line, how it says it is out of
+  quota, how to ask whether it is authenticated. What does not declare
+  triggers nothing — **staying silent is different from guessing.**
+- **Tries the command lines before spending**: `sailor flow check` assembles
+  each engine's real command line and runs it *without the question*, so a
+  malformed line is found there and not on the first paid run.
+- **Measures what it costs**: tokens per class, cost per call, a spending cap
+  that tightens as the remainder falls. And when part of the bill is not
+  measured **it says so in place of the number**, instead of handing you a
+  bare figure you would read as the total.
+- **Knows which identity every engine started under**: separate credential
+  profiles per command line, and every call records which home it used and
+  **how that home was chosen** — never an empty field.
+- **Leaves no orphan processes**: it records what it starts, and can stop it
+  from a different invocation later.
 
-## Come si costruisce e si prova
+## Building and testing
 
 ```sh
 cargo build --workspace
-cargo test --workspace      # ~880 prove su 73 bersagli
+cargo test --workspace      # around 930 tests across 79 targets
 ```
 
-Serve Rust 1.89 o più recente. Nessun servizio, nessun database da avviare:
-il deposito è un file SQLite creato al primo uso.
+Rust 1.89 or newer. No service and no database to start: the store is a SQLite
+file created on first use.
 
-La finestra (Tauri + React) sta in `desktop/` ed è **fuori dal workspace**:
+The desktop window (Tauri + React) lives in `desktop/` and is **outside the
+workspace**:
 
 ```sh
 cd desktop && npm install && npm run live
 ```
 
-`npm run live` avvia `sailor-live`, non `cargo tauri dev`. La differenza non è di
-gusto: `cargo tauri dev` chiude la finestra a **ogni** file toccato, *prima* di
-compilare, quindi un errore di compilazione la fa sparire e non torna. Con
-`sailor-live` si costruisce prima e si tocca ciò che è acceso **solo se** la
-costruzione è riuscita: la finestra sopravvive, cambia titolo e mostra l'errore.
-Il perché per esteso è il guasto 11 in `docs/guasti-incontrati.md`.
+`npm run live` starts `sailor-live`, not `cargo tauri dev`. The difference is
+not taste: `cargo tauri dev` closes the window on **every** touched file,
+*before* compiling, so a compile error makes it vanish and it does not come
+back. `sailor-live` builds first and touches what is running **only if** the
+build succeeded: the window survives, changes its title and shows the error.
+The long version is fault 11 in `docs/guasti-incontrati.md`.
 
-## I comandi
+## The commands
 
-| comando | a cosa serve |
+| command | what it is for |
 |---|---|
-| `sailor flow list \| check \| run \| cost \| cap` | i flussi: quali ci sono, se reggono, eseguirli, quanto sono costati, che tetto hanno |
-| `sailor step open \| close` | i passi che un agente vivo prende in carico |
-| `sailor run <cli>` | lancia una riga di comando con la dotazione del suo profilo |
-| `sailor profiles list \| create \| switch` | le identità di ogni motore, e se sono autenticate |
-| `sailor remaining` | quanta quota resta, letta dal fornitore invece che dedotta |
-| `sailor inventory` | cosa sa fare questa macchina, e cosa è comparso o sparito |
-| `sailor session` | i terminali tracciati e cosa c'è acceso adesso |
-| `sailor workspace` | la radice del progetto e cosa dichiara |
+| `sailor flow list \| check \| run \| cost \| cap` | flows: which exist, whether they hold up, running them, what they cost, what cap they carry |
+| `sailor step open \| close` | the steps a live agent takes charge of |
+| `sailor run <cli>` | starts a command line with its profile's equipment |
+| `sailor profiles list \| create \| switch` | each engine's identities, and whether they are authenticated |
+| `sailor remaining` | how much quota is left, read from the provider rather than inferred |
+| `sailor inventory` | what this machine can do, and what has appeared or disappeared |
+| `sailor session` | the tracked terminals and what is running right now |
+| `sailor workspace` | the project root and what it declares |
 
-`sailor --help` li elenca tutti, e ogni comando spiega le proprie forme.
+`sailor --help` lists them all, and each command explains its own forms.
 
-## Come è fatto
+## How it is built
 
-Quindici crate Rust in un workspace, con i confini messi dove passano le
-responsabilità e non dove è comodo:
+Fifteen Rust crates in one workspace, with the boundaries placed where the
+responsibilities divide rather than where it was convenient:
 
 | | |
 |---|---|
-| `flow` | il motore: grafo, fronti paralleli, tetto di spesa, ripresa |
-| `actions` | cosa può fare un passo, e come si invoca un motore esterno |
-| `toolbox` | i descrittori: come si parla a uno strumento che non conosciamo |
-| `ledger` | il deposito: eventi, e le proiezioni che se ne ricavano |
-| `models` | catalogo, listino dei prezzi, quota residua |
-| `profiles` | le case di credenziali, una per riga di comando |
-| `registry` · `trigger` · `release` | il registro delle azioni, gli inneschi, i rilasci |
-| `inventory` · `sessions` · `supervisor` · `terminal` | la macchina: cosa c'è, cosa gira, cosa è acceso |
-| `ui` · `sailor` | la vista condivisa e la riga di comando |
+| `flow` | the engine: graph, parallel fronts, spending cap, resume |
+| `actions` | what a step can do, and how an external engine is invoked |
+| `toolbox` | the descriptors: how to talk to a tool we do not know |
+| `ledger` | the store: events, and the projections derived from them |
+| `models` | catalogue, price list, remaining quota |
+| `profiles` | the credential homes, one per command line |
+| `registry` · `trigger` · `release` | the action registry, triggers, releases |
+| `inventory` · `sessions` · `supervisor` · `terminal` | the machine: what exists, what runs, what is live |
+| `ui` · `sailor` | the shared view and the command line |
 
-## Le regole che questo progetto si dà
+## The rules this project holds itself to
 
-Sono poche e valgono più delle preferenze di stile. Stanno per esteso in
-[`AGENTS.md`](AGENTS.md) e [`docs/decisioni.md`](docs/decisioni.md).
+Few, and they count for more than style preferences. In full in
+[`AGENTS.md`](AGENTS.md) and [`docs/decisioni.md`](docs/decisioni.md).
 
-- **Una prova conta solo se può venire diversa.** Si scrive prima della
-  riparazione, si guarda nascere rossa, e si verifica rimettendo il difetto
-  **originale**. Una prova mai vista fallire non è una prova.
-- **Quello che non è una misura non diventa uno zero.** Un costo sconosciuto è
-  sconosciuto, non zero; un elenco vuoto perché non si è potuto guardare non è
-  «non c'è niente». L'errore, se capita, deve andare nella direzione che
-  preoccupa — mai in quella che tranquillizza.
-- **Chi crea non giudica.** Il verdetto su un lavoro non lo dà chi l'ha scritto.
-- **Una regola in un commento non è una difesa: è la forma di una difesa.**
-  Vale solo dove c'è un elenco che la applica o un controllo che la interroga.
-- **I difetti si scrivono tutti**, in `docs/guasti-incontrati.md`, con come si
-  sono visti e **cosa li impedirebbe** — perché il seguito di un guasto è un
-  controllo, non un compito assegnato a qualcuno.
-- **Identificatori in inglese, commenti e messaggi in italiano.** Ovunque,
-  prove comprese.
+- **A test counts only if it can come out differently.** It is written before
+  the repair, watched being born red, and verified by putting the **original**
+  defect back. A test never seen to fail is not a test.
+- **What is not a measurement does not become a zero.** An unknown cost is
+  unknown, not zero; an empty list because nobody could look is not "there is
+  nothing there". When the error happens, it must go in the direction that
+  worries — never in the one that reassures.
+- **Whoever makes a thing does not judge it.** The verdict on a piece of work
+  does not come from whoever wrote it.
+- **A rule in a comment is not a defence: it is the shape of one.** It counts
+  only where a list applies it or a check interrogates it.
+- **Every defect gets written down**, in `docs/guasti-incontrati.md`, with how
+  it came to light and **what would have stopped it** — because what follows a
+  fault is a check, not a task assigned to somebody.
+- **Identifiers in English. What a stranger reads — this README, the CI, the
+  messages a user of the tool sees — in English. Comments inside the code, and
+  everything under `docs/`, in Italian.** Decided by Theo on 2026-09-01, so
+  expect the fault log and the decision record linked above to be in Italian:
+  they are the workshop's notebooks, not the product's surface.
 
-## Licenza
+## Licence
 
 [GNU AGPL v3](LICENSE).
 
-Puoi usarlo, modificarlo e anche venderlo. Se lo modifichi — o se lo offri come
-servizio in rete — **devi pubblicare le tue modifiche** con la stessa licenza.
-Nessuno può prendere questo lavoro e chiuderlo.
+You may use it, modify it, and sell it. If you modify it — or offer it as a
+network service — **you must publish your changes** under the same licence.
+Nobody can take this work and close it.

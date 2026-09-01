@@ -36,14 +36,14 @@ use std::path::PathBuf;
 /// stringa sola costringerebbe la pagina d'aiuto della finestra a spezzarla da
 /// sé, cioè a tenere una seconda idea di dove finisce una forma.
 pub const USAGE: &[&str] = &[
-    "sailor session open      < payload.json   registra un terminale e chi ci è arrivato",
-    "sailor session event     < payload.json   registra un fatto sulla sessione",
-    "sailor session close     [--tty <nome>]   chiude la riga di un terminale",
-    "sailor session list      [--json]         cosa risulta tracciato",
-    "sailor session detach    [--tty <nome>]   lascia stare questa finestra",
-    "sailor session attach    [--tty <nome>]   torna a seguirla",
-    "sailor session census    [--json]         cosa c'è adesso sulla macchina",
-    "sailor session install   [--settings <file>]  innesta i ganci, senza toccare quelli altrui",
+    "sailor session open      < payload.json   records a terminal and who arrived at it",
+    "sailor session event     < payload.json   records a fact about the session",
+    "sailor session close     [--tty <name>]   closes a terminal's row",
+    "sailor session list      [--json]         what is on record as tracked",
+    "sailor session detach    [--tty <name>]   leave this window alone",
+    "sailor session attach    [--tty <name>]   follow it again",
+    "sailor session census    [--json]         what is on the machine right now",
+    "sailor session install   [--settings <file>]  grafts the hooks in, without touching anyone else's",
 ];
 
 /// Le opzioni che valgono per più forme, fuori dall'elenco perché non sono
@@ -54,7 +54,7 @@ const COMMON_OPTIONS: &str = "opzioni comuni: --tty <nome> per dire il terminale
 /// L'aiuto come lo legge chi digita, costruito dall'elenco invece che
 /// ricopiato accanto.
 fn usage_text() -> String {
-    format!("uso: {}\n\n{COMMON_OPTIONS}", USAGE.join("\n     "))
+    format!("usage: {}\n\n{COMMON_OPTIONS}", USAGE.join("\n     "))
 }
 
 /// Le forme che questo comando conosce, in un posto solo: l'elenco che

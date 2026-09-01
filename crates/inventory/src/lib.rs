@@ -273,20 +273,26 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
             let Some((name, description, by_model)) = named(&path) else {
                 continue;
             };
-            let prefix = discovery::prefix(&path);
-            let plugin = prefix.strip_suffix(':').unwrap_or("").to_string();
-            let reach = if plugin.is_empty() {
-                Reach::Active
-            } else if on.contains(&plugin) || plugin.contains("mattpocock") {
-                Reach::Active
-            } else {
-                Reach::Inactive(format!("il plugin {plugin} non è abilitato"))
+            let origin = discovery::origin(&path);
+            let prefix = origin.prefix();
+            // **CHI PUÒ SPEGNERLA DIPENDE DA DOVE VIENE**, e il `match` lo dice
+            // in tre righe. Prima erano tre rami di cui i primi due tornavano
+            // la stessa cosa, e dentro il secondo stava nascosto il nome di una
+            // persona: una condizione il cui esito non cambia niente non si
+            // legge, si scorre — ed è per questo che quella riga è sopravvissuta.
+            let reach = match &origin {
+                discovery::Origin::Home | discovery::Origin::Collection(_) => Reach::Active,
+                discovery::Origin::Plugin(name) if on.contains(name) => Reach::Active,
+                discovery::Origin::Plugin(name) => {
+                    Reach::Inactive(format!("il plugin {name} non è abilitato"))
+                }
             };
             let declared = discovery::manifest(&path);
             let reach = match (&declared, path.parent().and_then(|p| p.file_name())) {
                 (Some(names), Some(own)) if !names.contains(&own.to_string_lossy().into_owned()) => {
                     Reach::Inactive(format!(
-                        "sta sul disco ma il manifesto di {plugin} non la dichiara"
+                        "sta sul disco ma il manifesto di {} non la dichiara",
+                        prefix.trim_end_matches(':')
                     ))
                 }
                 _ => reach,
@@ -295,10 +301,14 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
                 kind: Kind::Skill,
                 name: format!("{prefix}{name}"),
                 description,
-                origin: if plugin.is_empty() {
-                    "casa".to_string()
-                } else {
-                    format!("plugin {plugin}")
+                // **DA DOVE VIENE SI DICE CON LA PAROLA GIUSTA**: una raccolta
+                // installata come cartella non è un plugin, e chiamarla così in
+                // un elenco che una persona legge la manda a cercarla fra i
+                // plugin, dove non c'è.
+                origin: match &origin {
+                    discovery::Origin::Home => "casa".to_string(),
+                    discovery::Origin::Plugin(name) => format!("plugin {name}"),
+                    discovery::Origin::Collection(name) => format!("raccolta {name}"),
                 },
                 path: path.to_string_lossy().into_owned(),
                 reach,

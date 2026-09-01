@@ -90,13 +90,12 @@ impl Action for StoreWriteAction {
         input: &Value,
         _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
-        // Come per il motore e per la verifica: l'ingresso si legge **dopo**
-        // che i rinvii sono stati risolti. È così che ciò che un passo ha
-        // prodotto arriva al deposito senza uscire dal grafo — e senza, questo
-        // nodo accetterebbe solo valori scritti a mano nel flusso, cioè non
-        // potrebbe fare il testimone fra due passi.
-        let input = crate::reference::resolve_references(input)?;
-        let spec: WriteSpec = serde_json::from_value(input)
+        // L'ingresso arriva già coi rinvii risolti: li scioglie `step_input`,
+        // dove l'ingresso si compone, per ogni azione e una volta sola. È così
+        // che ciò che un passo ha prodotto arriva al deposito senza uscire dal
+        // grafo — e senza, questo nodo accetterebbe solo valori scritti a mano
+        // nel flusso, cioè non potrebbe fare il testimone fra due passi.
+        let spec: WriteSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let record = StoreRecord {
             collection: spec.collection,
@@ -144,10 +143,7 @@ impl Action for StoreReadAction {
         input: &Value,
         _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
-        // Stessa ragione del nodo che scrive: una chiave che viene da un passo
-        // precedente è un rinvio, e va risolta prima di leggerla come testo.
-        let input = crate::reference::resolve_references(input)?;
-        let spec: ReadSpec = serde_json::from_value(input)
+        let spec: ReadSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let found = self
             .ledger
@@ -210,11 +206,7 @@ impl Action for StoreListAction {
         input: &Value,
         _shared: &SharedState,
     ) -> Result<ActionOutcome, ActionError> {
-        // Stessa ragione delle altre due: anche «da qui in poi» può venire da
-        // un passo precedente, ed è il caso normale di chi rilegge una
-        // collezione che cresce.
-        let input = crate::reference::resolve_references(input)?;
-        let spec: ListSpec = serde_json::from_value(input)
+        let spec: ListSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let records = self
             .ledger
@@ -309,63 +301,16 @@ mod tests {
         assert_eq!(value["written_by"], json!("flusso-mandato-corrente"));
     }
 
-    /// **Un rinvio arriva al deposito risolto, non come oggetto.**
-    ///
-    /// L'ingresso di un passo è l'uscita della sua dipendenza con sopra i
-    /// propri parametri: è lì che un flusso scrive `{"$from": "/repo"}` per
-    /// depositare ciò che il passo prima ha prodotto. Finché queste azioni non
-    /// risolvevano i rinvii — a differenza delle due che lo facevano da sempre,
-    /// `external_engine` e `shell_check` — quell'oggetto arrivava intatto a
-    /// `serde_json` e la scrittura moriva con «invalid type: map, expected a
-    /// string», perché `key` vuole un testo. Il deposito accettava allora solo
-    /// valori scritti a mano nel flusso, cioè non poteva fare il testimone fra
-    /// due passi che `docs/decisioni.md` gli attribuisce.
-    ///
-    /// Il mutante che la fa cadere è togliere `resolve_references` da una
-    /// qualunque delle due azioni, ed è stato visto: questa prova è nata rossa
-    /// con quel messaggio, prima che la riparazione esistesse.
-    #[test]
-    fn a_reference_reaches_the_store_resolved() {
-        let (ledger, _guard) = store();
-        let mut shared = SharedState::new();
-        let write = StoreWriteAction::new(ledger.clone());
-        let read = StoreReadAction::new(ledger);
-
-        write
-            .execute(
-                &json!({
-                    "repo": "/casa/progetto",
-                    "findings": ["la prima", "la seconda"],
-                    "collection": "repo-findings",
-                    "key": {"$from": "/repo"},
-                    "value": {
-                        "repo": {"$from": "/repo"},
-                        "kept": {"$from": "/findings"},
-                    },
-                    "written_by": "esamina-la-repo/controprova",
-                    "written_at": 1_756_400_000i64,
-                }),
-                &mut shared,
-            )
-            .expect("una chiave presa con un rinvio si scrive");
-
-        let outcome = read
-            .execute(
-                &json!({
-                    "wanted": "/casa/progetto",
-                    "collection": "repo-findings",
-                    "key": {"$from": "/wanted"},
-                }),
-                &mut shared,
-            )
-            .expect("una chiave presa con un rinvio si legge");
-        let ActionOutcome::Went(value) = outcome else {
-            panic!("un nodo che legge un deposito locale non aspetta nessuno");
-        };
-        assert_eq!(value["found"], json!(true));
-        assert_eq!(value["value"]["repo"], json!("/casa/progetto"));
-        assert_eq!(value["value"]["kept"], json!(["la prima", "la seconda"]));
-    }
+    // **IL SINTOMO DEL GUASTO 28 SI PROVA DOVE ACCADE, E NON PIÙ QUI.** La
+    // prova che stava in questo punto chiamava `execute` con `{"$from":
+    // "/repo"}` dentro, e reggeva perché queste tre azioni scioglievano i
+    // rinvii ciascuna per conto proprio: dodici azioni su sedici avevano quella
+    // riga, quattro no, e nessun controllo diceva quali. Riscritta qui,
+    // dovrebbe sciogliere il rinvio a mano prima di chiamare — cioè provare la
+    // prova. La regola vive in `flow::step_input` e si interroga in
+    // `crates/flow/tests/a_reference_reaches_every_action.rs` per ogni azione, e
+    // in `crates/registry/tests/the_store_can_witness_between_two_steps.rs` sul
+    // deposito vero, che è dove il guasto è stato pagato.
 
     /// Una voce mai scritta risponde `found: false`, e il passo **riesce**.
     ///
