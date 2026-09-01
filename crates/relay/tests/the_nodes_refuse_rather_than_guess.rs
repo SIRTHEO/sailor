@@ -196,11 +196,11 @@ fn emptying_a_command_line_nobody_measured_refuses_by_name() {
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-/// Typing into a terminal nobody is holding is a refusal with a name, not a
+/// Typing into a terminal Sailor does not hold is a refusal with a name, not a
 /// silent success. A relay that believed it had typed would clear a context
 /// that is still full and hand on a mandate nobody received.
 #[test]
-fn typing_where_nobody_is_accompanying_refuses_by_name() {
+fn typing_into_a_terminal_sailor_does_not_hold_refuses_by_name() {
     let directory = scratch("nobody");
     let error = run(
         relay::TYPE_INTO_TERMINAL_ACTION,
@@ -208,7 +208,7 @@ fn typing_where_nobody_is_accompanying_refuses_by_name() {
     )
     .err()
     .expect("typing into nothing must refuse");
-    assert_eq!(error.class, "nobody_accompanying");
+    assert_eq!(error.class, "terminal_not_held");
     let _ = std::fs::remove_dir_all(&directory);
 }
 
