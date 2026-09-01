@@ -70,6 +70,23 @@ exactly that and nothing calls it yet.
 that opened it. Closing the window ends it, and `docs/2026-09-01-il-contratto-del-terminale.md`
 already names the separate job that would fix it.
 
+**A denied scratch directory now accuses the perimeter; a denied syscall still
+does not.** Sixteen tests that open a pseudo-terminal or bind a socket fail
+inside a sandbox with the operating system's four words, because there the call
+is refused rather than the path. Their message is worth the same treatment and
+does not have it.
+
+The commit that fixed the first half says that treatment costs one line in
+`PtyError`. That is wrong, and the correction is worth more than the claim: the
+message a failing test prints comes from the **derived `Debug`**, not from the
+hand-written `Display`, because `Result::expect` formats with `{:?}`. Ten types
+across eight crates have a written `Display` and a derived `Debug`, and the
+crates hold 1,239 `.expect()` calls — so the careful prose of all ten is
+invisible in every red test in this repository, while the product, which prints
+with `{e}`, shows it correctly. The two surfaces want different things: a person
+reading a failure wants the sentence *and* the structure. A `Debug` that
+delegates to `Display` would throw away the half that `Debug` is for.
+
 ## The one thing to check first
 
 The conduit. Everything else is composed from it, and if typing into a live
