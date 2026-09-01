@@ -19,11 +19,10 @@ pub const MARKER: &str = "sailor.json";
 
 /// The origin of flows from a project that declared itself with [`MARKER`].
 ///
-/// Still in Italian on purpose. The origin family — `di sistema`, `tuoi`,
-/// `dichiarati`, `del progetto` — is compared literally, here by
-/// `tests/a_flow_that_calls_another.rs` and in `system.rs`, so it moves only in
-/// the same edit as the assertions that name it.
-pub const ORIGIN_DECLARED: &str = "del progetto";
+/// The family lives here and in [`crate::system`], and is compared literally —
+/// by `tests/a_flow_that_calls_another.rs` and in `system.rs` — so a member moves
+/// only in the same edit as the assertions that name it.
+pub const ORIGIN_DECLARED: &str = "this project";
 
 /// The origin of flows from a project *guessed* by walking up to a `flows/`
 /// directory, with no marker at all. The warning rides in the origin and that
@@ -31,7 +30,7 @@ pub const ORIGIN_DECLARED: &str = "del progetto";
 /// window shows it beside every source, so it is the one place a reader really
 /// looks and there is exactly one of it. A warning written elsewhere would be a
 /// second truth to keep aligned — fault 10 — and would show only once.
-pub const ORIGIN_GUESSED: &str = "del progetto (nessun sailor.json: radice indovinata)";
+pub const ORIGIN_GUESSED: &str = "this project (no sailor.json: root guessed)";
 
 /// What a project declares about itself in its [`MARKER`]. Unknown fields are
 /// kept, never a reason to discard the file: it is fault 8, where a descriptor
