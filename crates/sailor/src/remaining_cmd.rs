@@ -55,13 +55,9 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 /// comando dice la domanda, la riga dice la misura.
 fn report(found: &[Remaining]) -> String {
     if found.is_empty() {
-        return "no quota window declared: the channel answered with no measurements".to_owned();
+        return catalogue::say("cli.remaining.no_window", &[]);
     }
-    let mut lines = vec![
-        "the PERSON's quota, not a run's: it counts every session, including the \
-         ones outside Sailor"
-            .to_owned(),
-    ];
+    let mut lines = vec![catalogue::say("cli.remaining.whose_quota", &[])];
     for entry in found {
         let resets = match &entry.resets_at {
             Some(when) => format!(", resets on {when}"),
@@ -82,14 +78,14 @@ fn report(found: &[Remaining]) -> String {
 fn home_dir() -> Result<PathBuf, String> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not set: there is no telling where the person's home is".to_owned())
+        .ok_or_else(|| catalogue::say("cli.remaining.no_home", &[]))
 }
 
 fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs() as i64)
-        .map_err(|_| "the machine's clock is before 1970".to_owned())
+        .map_err(|_| catalogue::say("cli.remaining.clock_before_1970", &[]))
 }
 
 #[cfg(test)]

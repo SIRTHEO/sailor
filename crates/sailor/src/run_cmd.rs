@@ -38,15 +38,15 @@ fn resolve(
 ) -> Result<Launch, String> {
     let cli = find_cli(cli_id)?;
     if matches!(cli.home, HomeMechanism::Unknown) {
-        return Err(format!(
-            "{}: how it moves its home directory is not known yet ({}); sailor run refuses to guess",
-            cli.display_name, cli.home_note
+        return Err(catalogue::say(
+            "cli.run.home_mechanism_unknown",
+            &[("cli", &cli.display_name), ("note", &cli.home_note)],
         ));
     }
     let Some(active_name) = store.active.get(cli.id) else {
-        return Err(format!(
-            "no active profile for {}: use 'sailor profiles switch {} <name>' before starting it",
-            cli.display_name, cli.id
+        return Err(catalogue::say(
+            "cli.run.no_active_profile",
+            &[("cli", &cli.display_name), ("id", cli.id)],
         ));
     };
     let profile = store
@@ -54,9 +54,9 @@ fn resolve(
         .iter()
         .find(|p| p.cli_id == cli.id && &p.name == active_name)
         .ok_or_else(|| {
-            format!(
-                "the active profile '{active_name}' for {} is no longer in the state",
-                cli.id
+            catalogue::say(
+                "cli.run.active_profile_gone",
+                &[("profile", active_name), ("id", cli.id)],
             )
         })?;
 
@@ -147,7 +147,16 @@ pub fn run(args: &[String]) -> i32 {
         .args(&launch.args)
         .envs(&launch.env)
         .exec();
-    eprintln!("sailor run: cannot start {}: {error}", launch.executable);
+    eprintln!(
+        "{}",
+        catalogue::say(
+            "cli.run.cannot_start",
+            &[
+                ("executable", &launch.executable),
+                ("error", &error.to_string())
+            ],
+        )
+    );
     1
 }
 
