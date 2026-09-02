@@ -51,11 +51,7 @@ pub fn run(args: &[String]) -> i32 {
     // la sa `ledger::sailor_home()`, che è l'unico posto dove quella regola vive.
     let survey = default_roots(ledger::sailor_home().as_deref());
     if !survey.bases_declared {
-        eprintln!(
-            "nessuna base di lavoro dichiarata: guardo solo la casa. \
-             Dichiarale in `work-roots` dentro la casa di Sailor, una per riga, \
-             oppure in `SAILOR_WORK_ROOTS` separate da due punti."
-        );
+        eprintln!("{}", catalogue::say("cli.inventory.no_bases_declared", &[]));
     }
     for missing in &survey.unreadable {
         eprintln!(

@@ -227,10 +227,11 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     if !unpriced.is_empty() {
         let _ = write!(
             report,
-            "\nmodelli che il listino non sa prezzare: {}\
-             \n  il loro consumo è nei token qui sopra, il loro costo no: la cifra in \
-             valuta è più bassa di quella vera",
-            unpriced.join(", ")
+            "\n{}",
+            catalogue::say(
+                "cli.flow.models_the_price_list_cannot_price",
+                &[("models", &unpriced.join(", "))]
+            )
         );
     }
     // **CON QUALE IDENTITÀ SONO PARTITI I PROCESSI DI QUESTA CORSA.**
@@ -400,15 +401,7 @@ fn in_units(micros: i64) -> String {
 /// Senza queste due righe il tetto si legge come una garanzia sulla spesa, e non
 /// lo è. Chi mette un tetto e poi trova una fattura più alta ha ragione di
 /// sentirsi tradito: meglio dirglielo quando lo mette.
-const WHAT_THE_CAP_DOES_NOT_PROMISE: &str = "\nquello che il tetto non promette:\
-    \n  - non arriva ai motori: il freno sta prima di aprire un fronte, mai dentro \
-      una chiamata già partita, e nessun motore sa che il tetto esiste\
-    \n  - il primo fronte di una corsa non è mai frenato: senza nessuna chiamata \
-      osservata la larghezza resta al soffitto di quattro, perché stringere su un \
-      numero che non esiste sarebbe inventarlo\
-    \n  - conta solo le chiamate che dichiarano un costo; quelle che non lo \
-      dichiarano restano fuori dalla somma, quindi la spesa vera è più alta di \
-      quella contata";
+const WHAT_THE_CAP_DOES_NOT_PROMISE_KEY: &str = "cli.flow.what_the_cap_does_not_promise";
 
 // ── quello che il listino non sa prezzare ────────────────────────────────
 
@@ -446,17 +439,11 @@ fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> 
 fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Option<i64>) -> String {
     let mut said = format!("\nlistino: {} modelli prezzati", prices.entries.len());
     let Some(seen) = seen else {
-        said.push_str(
-            "\nmodelli: il deposito non si è potuto leggere, quindi non si sa quali \
-             modelli questo flusso abbia usato",
-        );
+        said.push_str(&catalogue::say("cli.flow.models_store_unreadable", &[]));
         return said;
     };
     if seen.is_empty() {
-        said.push_str(
-            "\nmodelli: questo flusso non è mai girato qui, quindi non si sa quali \
-             risponderanno né se il listino saprà prezzarli",
-        );
+        said.push_str(&catalogue::say("cli.flow.models_never_run_here", &[]));
         return said;
     }
     let unpriced = cannot_be_priced(prices, seen);
@@ -470,12 +457,11 @@ fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Opti
     }
     let _ = write!(
         said,
-        "\nmodelli usati dalle corse passate che il listino non sa prezzare: {}\
-         \n  il loro costo resta sconosciuto, non zero: la spesa contata è più bassa \
-         di quella vera\
-         \n  si ripara scrivendo la voce in ~/.config/sailor/pricing.json, che vince su \
-         quella spedita",
-        unpriced.join(", ")
+        "\n{}",
+        catalogue::say(
+            "cli.flow.past_models_unpriced",
+            &[("models", &unpriced.join(", "))]
+        )
     );
     // **LA RIGA DEL TETTO SOLO QUANDO LE DUE COSE COINCIDONO.** Un tetto senza
     // modelli scoperti non ha niente da dichiarare, e modelli scoperti senza
@@ -483,10 +469,7 @@ fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Opti
     // frase per cui il guasto 35 è stato scritto — un freno che non frena si
     // deve vedere prima di lanciare, non a fattura arrivata.
     if cap.is_some() {
-        said.push_str(
-            "\n  e il tetto di spesa non conterà quelle chiamate: si fermerà più tardi \
-             di quanto dichiara, o non si fermerà affatto",
-        );
+        said.push_str(&catalogue::say("cli.flow.cap_will_not_count_them", &[]));
     }
     said
 }
@@ -500,10 +483,13 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
         Some(cap) => {
             let _ = write!(
                 report,
-                "\ntetto: {cap} micro ({} of equivalent cost)",
-                in_units(cap)
+                "{}",
+                catalogue::say(
+                    "cli.flow.cap_is",
+                    &[("micros", &cap.to_string()), ("units", &in_units(cap))]
+                )
             );
-            report.push_str(WHAT_THE_CAP_DOES_NOT_PROMISE);
+            report.push_str(&catalogue::say(WHAT_THE_CAP_DOES_NOT_PROMISE_KEY, &[]));
         }
     }
 
@@ -579,7 +565,8 @@ const NO_CAP: &str = "none";
 /// **A WORD A PERSON HAS ALREADY TYPED INTO A SCRIPT IS A PROMISE.** Dropping it
 /// costs someone a run that fails for a reason the message cannot explain, so it
 /// keeps working; leaving it in the help would teach it to whoever comes next.
-const RETIRED_WORDS: &[(&str, &str)] = &[("nessuno", NO_CAP), ("leggero", LIGHT), ("pesante", HEAVY)];
+const RETIRED_WORDS: &[(&str, &str)] =
+    &[("nessuno", NO_CAP), ("leggero", LIGHT), ("pesante", HEAVY)];
 
 /// What a typed word means, following [`RETIRED_WORDS`] once.
 ///
@@ -599,16 +586,15 @@ fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, St
         None
     } else {
         let micros: i64 = value.parse().map_err(|_| {
-            format!(
-                "«{value}» non è un numero di micro-unità né la parola «{NO_CAP}». \
-                 Un milione è un'unità di valuta: `sailor flow cap {name} 1000000` \
-                 mette un tetto di 1,00"
+            catalogue::say(
+                "cli.flow.cap_not_a_number",
+                &[("value", value), ("none", NO_CAP), ("name", name)],
             )
         })?;
         if micros < 0 {
-            return Err(format!(
-                "un tetto negativo non vuol dire niente: {micros}. Zero è «non deve \
-                 spendere niente», «{NO_CAP}» è «nessuno ha messo un limite»"
+            return Err(catalogue::say(
+                "cli.flow.cap_negative",
+                &[("micros", &micros.to_string()), ("none", NO_CAP)],
             ));
         }
         Some(micros)
@@ -643,27 +629,15 @@ fn said_cap(cap: Option<i64>) -> String {
     }
 }
 
-/// Il flusso che un comando può **riscrivere**, e la sorgente in cui sta.
+/// The flow a command may **rewrite**, and the source it sits in.
 ///
-/// **STA A PARTE PERCHÉ I DUE RIFIUTI SONO DI CHIUNQUE SCRIVA, NON DEL
-/// TETTO.** Erano scritti dentro `set_cap`, quando `cap` era l'unico gesto che
-/// toccasse un file. Al secondo — `schedule`, il 01/09/2026 — ricopiarli
-/// sarebbe stato il guasto 10: due copie della stessa regola su chi si può
-/// riscrivere, che divergono al primo che qualcuno tocca. Chi aggiunge un terzo
-/// gesto passa di qui e non ha niente da ricopiare.
-///
-/// **UN FLUSSO DI SISTEMA NON SI RISCRIVE, E NON SE NE SCRIVE UNO DI
-/// NASCOSTO.** Sta dentro il binario: non c'è nessun file da modificare. La
-/// strada è un omonimo in casa propria, che vince per la regola di precedenza —
-/// ma quel file lo deve creare chi lo vuole, sapendo di averne creato uno.
-/// Scriverne uno qui vorrebbe dire che da domani gira un flusso diverso da
-/// quello spedito senza che nessuno l'abbia deciso, e la sola traccia sarebbe
-/// l'origine in una colonna di `sailor flow list`.
-///
-/// **IL FILE SI CHIAMA COME L'`id`, O NE COMPARIREBBE UN SECONDO.** Il registro
-/// indicizza per nome di file, la scrittura per `id`: dove i due divergono,
-/// riscrivere non sostituirebbe niente — creerebbe un flusso gemello che da
-/// domani vince o perde a seconda dell'ordine alfabetico.
+/// Apart, because both refusals belong to whoever writes, not to the cap: they
+/// lived inside `set_cap` while it was the only gesture touching a file, and
+/// copying them into the second would have been two copies of one rule. A
+/// shipped flow is not rewritten — it is inside the binary, and the way is a
+/// namesake at home, created by whoever wants it. And the file is named after
+/// the `id`, or a twin appears: the register indexes by file name and writing
+/// goes by `id`.
 fn a_flow_i_may_rewrite<'a>(
     sources: &'a [FlowSource],
     name: &str,
@@ -695,12 +669,9 @@ fn a_flow_i_may_rewrite<'a>(
     // nomi coincidono è lo stesso file, altrimenti non lo è — e nessun'altra
     // domanda lo può stabilire.
     if name != flow.id {
-        return Err(format!(
-            "«{name}» sta in un file che non si chiama come il proprio `id` («{}»), e \
-             scrivendolo andrebbe in «{}.flow.json»: o si creerebbe un secondo flusso, \
-             o si riscriverebbe quello di qualcun altro. Rinomina il file come il suo \
-             `id`, o cambia l'`id` perché coincida col nome del file",
-            flow.id, flow.id
+        return Err(catalogue::say(
+            "cli.flow.file_does_not_match_id",
+            &[("name", name), ("id", &flow.id)],
         ));
     }
     // Restano i due casi in cui il nome coincide e il file **non** è quello che
@@ -710,19 +681,15 @@ fn a_flow_i_may_rewrite<'a>(
     let target = source.dir.join(format!("{name}.flow.json"));
     let plain = source.dir.join(format!("{name}.json"));
     if !target.exists() {
-        return Err(format!(
-            "«{name}» sta in «{}», e scrivendolo andrebbe in «{name}.flow.json»: \
-             nascerebbe un secondo flusso invece di sostituire questo. Rinomina il \
-             file con il suffisso «.flow.json»",
-            plain.display()
+        return Err(catalogue::say(
+            "cli.flow.file_without_the_suffix",
+            &[("name", name), ("file", &plain.display().to_string())],
         ));
     }
     if plain.exists() {
-        return Err(format!(
-            "«{name}» sta in due file — «{name}.flow.json» e «{name}.json» — e quale \
-             dei due gira lo decide l'ordine in cui il sistema elenca la cartella. \
-             Non riscrivo niente finché non ne resta uno: cancella quello che non \
-             vuoi"
+        return Err(catalogue::say(
+            "cli.flow.two_files_one_name",
+            &[("name", name)],
         ));
     }
     Ok((flow, source))
@@ -783,9 +750,9 @@ fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
             .parse()
             .map_err(|_| how_a_schedule_is_written(value))?;
         if seconds == 0 {
-            return Err(format!(
-                "«ogni 0 secondi» non vuol dire niente: un flusso dovuto sempre \
-                 ripartirebbe appena finito. Per toglierlo del tutto: «{NO_SCHEDULE}»"
+            return Err(catalogue::say(
+                "cli.flow.every_zero_seconds",
+                &[("none", NO_SCHEDULE)],
             ));
         }
         return Ok(flow::Recurrence::EverySeconds { seconds });
@@ -796,9 +763,9 @@ fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
             .parse()
             .map_err(|_| how_a_schedule_is_written(value))?;
         if hour > 23 || minute > 59 {
-            return Err(format!(
-                "«{value}» non è un'ora del giorno: le ore vanno da 00 a 23 e i \
-                 minuti da 00 a 59"
+            return Err(catalogue::say(
+                "cli.flow.not_a_time_of_day",
+                &[("value", value)],
             ));
         }
         return Ok(flow::Recurrence::DailyAt { hour, minute });
@@ -809,10 +776,9 @@ fn recurrence_from(value: &str) -> Result<flow::Recurrence, String> {
 /// Le forme ammesse, scritte per intero ogni volta che una non è riconosciuta:
 /// un rifiuto che non dice cosa scrivere costringe a leggere il codice.
 fn how_a_schedule_is_written(value: &str) -> String {
-    format!(
-        "«{value}» non è un innesco. Le forme sono tre: «3600s» (ogni tot secondi \
-         dall'ultima corsa), «07:30» (una volta al giorno, da quell'ora locale), \
-         «{NO_SCHEDULE}» (nessun innesco: parte solo a mano)"
+    catalogue::say(
+        "cli.flow.how_a_schedule_is_written",
+        &[("value", value), ("none", NO_SCHEDULE)],
     )
 }
 
@@ -863,9 +829,9 @@ fn set_schedule(
 
     let wanted = if as_written_today(value) == NO_SCHEDULE {
         if let Some(word) = weight {
-            return Err(format!(
-                "«{NO_SCHEDULE}» toglie l'innesco, e un innesco che non c'è non ha \
-                 un peso: «{word}» non ha dove andare"
+            return Err(catalogue::say(
+                "cli.flow.no_schedule_has_no_weight",
+                &[("none", NO_SCHEDULE), ("word", word)],
             ));
         }
         None
@@ -875,11 +841,14 @@ fn set_schedule(
             (Some(word), _) => weight_from(word)?,
             (None, Some(existing)) => existing.weight,
             (None, None) => {
-                return Err(format!(
-                    "«{name}» non ha ancora un innesco, quindi non ha un peso da \
-                     tenere: scrivilo. `sailor flow schedule {name} {value} \
-                     {LIGHT}` oppure `{HEAVY}`. Non lo scelgo io: un peso comparso \
-                     da sé si legge come una misura e non lo è"
+                return Err(catalogue::say(
+                    "cli.flow.no_schedule_yet_so_no_weight",
+                    &[
+                        ("name", name),
+                        ("value", value),
+                        ("light", LIGHT),
+                        ("heavy", HEAVY),
+                    ],
                 ))
             }
         };
@@ -946,9 +915,9 @@ fn where_it_lives<'a>(
         // sopra — e se succedesse vorrebbe dire che le due strade che cercano un
         // flusso si sono separate. Dirlo vale più che panicare in mano a chi sta
         // usando il comando.
-        Ok(_) => Err(format!(
-            "il flusso {name} si carica ma non risulta in nessuna sorgente: le due \
-             strade che cercano i flussi si sono separate"
+        Ok(_) => Err(catalogue::say(
+            "cli.flow.loads_but_no_source_lists_it",
+            &[("name", name)],
         )),
     }
 }
@@ -1435,13 +1404,9 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
         .collect();
     if !montati.is_empty() {
         println!("{report}");
-        return Err(format!(
-            "il flusso {} monta dentro un campo eseguito un valore che non ha scritto: {}. \
-             Il comando è testo di shell e viene eseguito: ciò che arriva da fuori — da un \
-             motore o da un altro comando — va in «env», dove resta un dato, e il comando \
-             lo legge fra virgolette.",
-            flow.id,
-            montati.join(", ")
+        return Err(catalogue::say(
+            "cli.flow.value_mounted_into_an_executed_field",
+            &[("flow", &flow.id), ("fields", &montati.join(", "))],
         ));
     }
 
@@ -1455,13 +1420,9 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
         .collect();
     if !stuck.is_empty() {
         println!("{report}");
-        return Err(format!(
-            "il flusso {} ha un percorso assoluto in un campo di posizione: {}. \
-             Un flusso non deve sapere dove sta il repository — la radice viene da chi \
-             lancia. Si toglie con «sailor flow relocate {}».",
-            flow.id,
-            stuck.join("; "),
-            flow.id
+        return Err(catalogue::say(
+            "cli.flow.absolute_path_in_a_place_field",
+            &[("flow", &flow.id), ("fields", &stuck.join("; "))],
         ));
     }
     // An error, not a warning: the step does not fail, it commits another
@@ -1489,13 +1450,9 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
     // flusso lo fa per capirlo: rispondere con la sola riga dell'errore
     // costringerebbe a rilanciare il comando per vedere il resto.
     println!("{report}");
-    Err(format!(
-        "il flusso {} chiede strumenti che nessun descrittore dichiara: {}. \
-         Non è «manca su questa macchina»: quei nomi non esistono in nessun catalogo, \
-         quindi il flusso non gira da nessuna parte finché non si corregge il nome o \
-         non si aggiunge un descrittore in ~/.config/sailor/tools.d/",
-        flow.id,
-        unknown.join(", ")
+    Err(catalogue::say(
+        "cli.flow.tools_no_descriptor_declares",
+        &[("flow", &flow.id), ("tools", &unknown.join(", "))],
     ))
 }
 
@@ -1576,12 +1533,16 @@ fn check_report(
     // un'informazione, e un rapporto che tace quando non c'è niente da dire
     // lascia chi legge a chiedersi se il controllo abbia guardato.
     match flow.spend_cap_micros {
-        None => report.push_str("\ntetto di spesa: nessuno"),
+        None => report.push_str(&catalogue::say("cli.flow.no_spend_cap", &[])),
         Some(cap) => {
             let _ = write!(
                 report,
-                "\ntetto di spesa: {cap} micro ({} of equivalent cost){WHAT_THE_CAP_DOES_NOT_PROMISE}",
-                in_units(cap)
+                "{}{}",
+                catalogue::say(
+                    "cli.flow.spend_cap",
+                    &[("micros", &cap.to_string()), ("units", &in_units(cap))]
+                ),
+                catalogue::say(WHAT_THE_CAP_DOES_NOT_PROMISE_KEY, &[])
             );
         }
     }
@@ -4253,10 +4214,7 @@ mod tests {
             said_without, said_with,
             "il tetto non compare nel rapporto: {said_with}"
         );
-        assert!(
-            said_without.contains("tetto di spesa: nessuno"),
-            "{said_without}"
-        );
+        assert!(said_without.contains("spend cap: none"), "{said_without}");
         assert!(said_with.contains("2500000 micro"), "{said_with}");
     }
 
@@ -4274,9 +4232,9 @@ mod tests {
 
         let (report, _) = check_report(&flow, &default_registry(None, None), None, None);
 
-        assert!(report.contains("non arriva ai motori"), "{report}");
-        assert!(report.contains("primo fronte"), "{report}");
-        assert!(report.contains("restano fuori dalla somma"), "{report}");
+        assert!(report.contains("does not reach the engines"), "{report}");
+        assert!(report.contains("first front"), "{report}");
+        assert!(report.contains("stay out of the sum"), "{report}");
     }
 
     // ── quello che il listino non sa prezzare ────────────────────────────
@@ -4324,7 +4282,7 @@ mod tests {
         );
         assert!(said.contains("a-meta (an entry with no prices)"), "{said}");
         assert!(
-            said.contains("sconosciuto"),
+            said.contains("stays unknown"),
             "and it says what happens to it: {said}"
         );
     }
@@ -4356,10 +4314,7 @@ mod tests {
         let never_ran = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
 
         assert_ne!(unreadable, never_ran);
-        assert!(
-            unreadable.contains("non si è potuto leggere"),
-            "{unreadable}"
-        );
+        assert!(unreadable.contains("could not be read"), "{unreadable}");
         assert!(!unreadable.contains("mai girato"), "{unreadable}");
     }
 
@@ -4374,7 +4329,7 @@ mod tests {
         let said = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
 
         assert!(!said.contains("all priced"), "{said}");
-        assert!(said.contains("mai girato"), "{said}");
+        assert!(said.contains("has never run here"), "{said}");
     }
 
     /// **UN TETTO CHE NON PUÒ SCATTARE SI DEVE VEDERE PRIMA DI LANCIARE.**
@@ -4393,17 +4348,17 @@ mod tests {
         let priced = names(&["prezzato"]);
 
         let with_cap = what_is_priced(&a_small_price_list(), Some(&unpriced), Some(5_000_000));
-        assert!(with_cap.contains("il tetto"), "{with_cap}");
+        assert!(with_cap.contains("the spend cap"), "{with_cap}");
 
         let all_priced = what_is_priced(&a_small_price_list(), Some(&priced), Some(5_000_000));
         assert!(
-            !all_priced.contains("il tetto"),
+            !all_priced.contains("the spend cap"),
             "senza modelli scoperti il tetto non ha niente da dichiarare: {all_priced}"
         );
 
         let no_cap = what_is_priced(&a_small_price_list(), Some(&unpriced), None);
         assert!(
-            !no_cap.contains("il tetto"),
+            !no_cap.contains("the spend cap"),
             "un flusso senza tetto non ha un tetto da avvisare: {no_cap}"
         );
     }
@@ -4482,7 +4437,7 @@ mod tests {
             !said.contains("prezzato ("),
             "un modello prezzato non si segnala: {said}"
         );
-        assert!(said.contains("più bassa di quella vera"), "{said}");
+        assert!(said.contains("lower than the real one"), "{said}");
     }
 
     /// **IL RAPPORTO DICE CON QUALE IDENTITÀ OGNI PROCESSO È PARTITO.**
@@ -4544,7 +4499,7 @@ mod tests {
 
         let said = spending_report(&view, &a_small_price_list());
 
-        assert!(!said.contains("non sa prezzare"), "{said}");
+        assert!(!said.contains("cannot price"), "{said}");
     }
 
     /// **SOTTO TRE CORSE COSTATE NON SI SUGGERISCE NIENTE, E SI DICE PERCHÉ.**
@@ -4666,7 +4621,7 @@ mod tests {
 
         let error = set_cap(&sources, "altro-nome", "500").expect_err("nome e id divergono");
 
-        assert!(error.contains("secondo flusso"), "{error}");
+        assert!(error.contains("a second flow"), "{error}");
         assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
     }
 
@@ -4683,7 +4638,7 @@ mod tests {
         assert!(error.contains("micro"), "{error}");
 
         let negative = set_cap(&sources, "prova", "-1").expect_err("un tetto negativo");
-        assert!(negative.contains("negativo"), "{negative}");
+        assert!(negative.contains("a negative cap"), "{negative}");
     }
 
     /// **`nessuno` TOGLIE IL TETTO, E NON LO METTE A ZERO.** Senza questa parola
@@ -4915,7 +4870,7 @@ mod tests {
             let error =
                 set_schedule(&sources, "prova", wrong, Some(LIGHT)).unwrap_or_else(|error| error);
             assert!(
-                error.contains(NO_SCHEDULE) || error.contains("ore vanno"),
+                error.contains(NO_SCHEDULE) || error.contains("hours run from"),
                 "«{wrong}» è stato accettato o rifiutato senza dire come si scrive: {error}"
             );
         }
@@ -4973,11 +4928,11 @@ mod tests {
 
         let refused = set_schedule(&sources, "nome-diverso", "3600s", Some(LIGHT))
             .expect_err("il nome del file non è l'id");
-        assert!(refused.contains("secondo flusso"), "{refused}");
+        assert!(refused.contains("a second flow"), "{refused}");
 
         let refused_cap = set_cap(&sources, "nome-diverso", "500000")
             .expect_err("lo stesso rifiuto vale per il tetto");
-        assert!(refused_cap.contains("secondo flusso"), "{refused_cap}");
+        assert!(refused_cap.contains("a second flow"), "{refused_cap}");
 
         // **E LA PARTE CHE CONTA: IL FLUSSO ESTRANEO NON È STATO TOCCATO.** Un
         // rifiuto che avesse comunque scritto sarebbe peggio del difetto.
@@ -5009,7 +4964,7 @@ mod tests {
         let refused = set_schedule(&sources, "prova", "3600s", Some(LIGHT))
             .expect_err("il file letto non è quello che si scriverebbe");
 
-        assert!(refused.contains("secondo flusso"), "{refused}");
+        assert!(refused.contains("a second flow"), "{refused}");
         assert_eq!(entries_of(&home.0).len(), 1, "nessun gemello sul disco");
     }
 

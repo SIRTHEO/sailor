@@ -88,17 +88,20 @@ fn resolve(
 fn link_points_at_the_active_profile(expected: &SymlinkSwap) -> Result<(), String> {
     match std::fs::read_link(&expected.link_path) {
         Ok(actual) if actual == expected.target_path => Ok(()),
-        Ok(actual) => Err(format!(
-            "{} punta a {}, ma il profilo attivo vuole {}: lo stato e il disco si sono separati. \
-             Rifai 'sailor profiles switch' per quella riga di comando prima di lanciarla",
-            expected.link_path.display(),
-            actual.display(),
-            expected.target_path.display()
+        Ok(actual) => Err(catalogue::say(
+            "cli.run.link_points_elsewhere",
+            &[
+                ("link", &expected.link_path.display().to_string()),
+                ("actual", &actual.display().to_string()),
+                ("wanted", &expected.target_path.display().to_string()),
+            ],
         )),
-        Err(error) => Err(format!(
-            "non riesco a leggere il collegamento {}: {error}. \
-             Senza, non so con quale identità partirebbe",
-            expected.link_path.display()
+        Err(error) => Err(catalogue::say(
+            "cli.run.link_unreadable",
+            &[
+                ("link", &expected.link_path.display().to_string()),
+                ("error", &error.to_string()),
+            ],
         )),
     }
 }
@@ -264,12 +267,12 @@ mod tests {
 
         // Nessun collegamento: si rifiuta invece di lanciare alla cieca.
         let error = link_points_at_the_active_profile(&expected).unwrap_err();
-        assert!(error.contains("non riesco a leggere"), "{error}");
+        assert!(error.contains("cannot read the link"), "{error}");
 
         // Collegamento verso un altro profilo: si rifiuta, e dice quale.
         std::os::unix::fs::symlink(other.join("credentials.json"), &expected.link_path).unwrap();
         let error = link_points_at_the_active_profile(&expected).unwrap_err();
-        assert!(error.contains("si sono separati"), "{error}");
+        assert!(error.contains("have come apart"), "{error}");
         assert!(error.contains("altro"), "{error}");
 
         // Collegamento verso il profilo attivo: passa.
