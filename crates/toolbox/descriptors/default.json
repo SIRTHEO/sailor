@@ -177,6 +177,8 @@
         "args": ["-p"],
         "prompt": "stdin",
         "unusable_when": ["weekly limit", "usage limit", "rate limit"],
+        "exhausted_when": ["weekly limit", "usage limit", "rate limit"],
+        "cooldown_secs": 1800,
         "refuses_without_prompt": ["input must be provided either through stdin"]
       },
       "usage": {
@@ -278,6 +280,8 @@
         "args": ["exec", "--sandbox", "read-only"],
         "prompt": "stdin",
         "unusable_when": ["401 unauthorized", "missing bearer", "quota", "insufficient_quota"],
+        "exhausted_when": ["quota", "insufficient_quota"],
+        "cooldown_secs": 1800,
         "refuses_without_prompt": ["no prompt provided via stdin"]
       },
       "usage": {

@@ -34,6 +34,7 @@
 //! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
 //! ferma con un messaggio utile dove non lo trova.
 
+pub mod cooldown;
 pub mod faults;
 pub mod handoff;
 pub mod history;
@@ -1174,6 +1175,11 @@ pub struct AskRecipe {
     /// solo con le parole che il suo descrittore dichiara: chi non le dichiara
     /// non fa scattare nessun ripiego.
     pub unusable_when: Vec<String>,
+    /// The words that mean the quota is spent, and how long to set the engine
+    /// aside when they appear. Empty and `None` when the descriptor does not
+    /// tell a spent quota from a missing credential.
+    pub exhausted_when: Vec<String>,
+    pub cooldown_secs: Option<u64>,
     /// I frammenti con cui questo motore rifiuta la riga **montata senza la
     /// domanda**: «la riga andava bene, mancava solo il testo».
     ///
@@ -1613,6 +1619,9 @@ pub struct ExternalEngineAction {
     tools: Option<Arc<dyn ToolResolver>>,
     watcher: Option<Arc<dyn StepSinks>>,
     ledger: Option<Ledger>,
+    /// Where the engines set aside for a spent quota are listed; `None` when
+    /// the machine has no home to keep the list in, and then nobody is aside.
+    cooldowns: Option<PathBuf>,
 }
 
 impl Default for ExternalEngineAction {
@@ -1629,6 +1638,7 @@ impl ExternalEngineAction {
             tools: None,
             watcher: None,
             ledger: None,
+            cooldowns: cooldown::default_path(),
         }
     }
 
@@ -1639,7 +1649,15 @@ impl ExternalEngineAction {
             tools: Some(Arc::new(resolver)),
             watcher: None,
             ledger: None,
+            cooldowns: cooldown::default_path(),
         }
+    }
+
+    /// With the list of engines set aside kept at `path`: a test hands a
+    /// scratch file, so no test writes the machine's own list.
+    pub fn cooling_down_in(mut self, path: Option<PathBuf>) -> Self {
+        self.cooldowns = path;
+        self
     }
 
     /// Con qualcuno che guarda: il testo del motore gli arriva mentre esce,
@@ -1684,6 +1702,8 @@ impl ExternalEngineAction {
                     args: spec.args.clone(),
                     prompt: PromptVia::Stdin,
                     unusable_when: Vec::new(),
+                    exhausted_when: Vec::new(),
+                    cooldown_secs: None,
                     declared_usage: None,
                     // Un comando scritto a mano non ha un descrittore: non c'è
                     // niente che dichiari che sia un motore, e infatti la riga
@@ -1729,6 +1749,24 @@ impl ExternalEngineAction {
                             continue;
                         }
                     };
+                    // An engine set aside for a spent quota is not knocked on
+                    // again before its time: the refusal says until when, and
+                    // what it said, so the chain goes on with the others.
+                    if let Some(aside) = self
+                        .cooldowns
+                        .as_deref()
+                        .and_then(|path| cooldown::set_aside_until(path, id, now_secs()))
+                    {
+                        refused.push(Refused {
+                            id: id.clone(),
+                            reason: format!(
+                                "set aside until {} after saying its quota was spent: «{}»",
+                                aside.until, aside.said
+                            ),
+                            unresolved: false,
+                        });
+                        continue;
+                    }
                     // Le opzioni scritte nel passo vincono sulla ricetta: chi le
                     // ha scritte sta dicendo qualcosa di preciso su *questa*
                     // chiamata, e sovrascriverle sarebbe decidere al posto suo.
@@ -1744,6 +1782,11 @@ impl ExternalEngineAction {
                             // lui: `git` e `cargo` non dichiarano `ask`, e le
                             // loro esecuzioni non sono chiamate a un modello.
                             can_be_asked: declared.is_some(),
+                            exhausted_when: declared
+                                .as_ref()
+                                .map(|recipe| recipe.exhausted_when.clone())
+                                .unwrap_or_default(),
+                            cooldown_secs: declared.as_ref().and_then(|recipe| recipe.cooldown_secs),
                             unusable_when: declared
                                 .map(|recipe| recipe.unusable_when)
                                 .unwrap_or_default(),
@@ -1770,6 +1813,8 @@ impl ExternalEngineAction {
                             prompt: recipe.prompt,
                             session: session_lines(&recipe, tools.session_recipe(id)),
                             unusable_when: recipe.unusable_when,
+                            exhausted_when: recipe.exhausted_when,
+                            cooldown_secs: recipe.cooldown_secs,
                             declared_usage: recipe.usage.map(|usage| usage.declared),
                             // Siamo dentro il ramo che ha trovato una ricetta
                             // `ask`: questo strumento è per definizione un
@@ -1827,6 +1872,10 @@ struct Candidate {
     args: Vec<String>,
     prompt: PromptVia,
     unusable_when: Vec<String>,
+    /// The words that mean the quota is spent, and how long to set the engine
+    /// aside when they appear; the descriptor's, or empty.
+    exhausted_when: Vec<String>,
+    cooldown_secs: Option<u64>,
     /// Dove leggere il consumo nell'uscita di questo motore. `None` quando il
     /// descrittore non lo dichiara, o quando le opzioni le ha scritte il passo.
     declared_usage: Option<Declared>,
@@ -2635,15 +2684,12 @@ impl ExternalEngineAction {
                 // lavorare — cioè il difetto sopravviveva dentro il proprio
                 // rimedio, in un angolo. L'ha trovato un giudice che non aveva
                 // scritto il lavoro.
-                let cannot_work = candidate.says_it_cannot_work(&stdout, &stderr);
-                note(
-                    reading.clone(),
-                    // La specie è la stessa dell'altro ramo: `exhausted` è una
-                    // cosa che passa da sé, e distinguerla dal codice d'uscita
-                    // con cui è arrivata non direbbe niente a nessuno.
-                    cannot_work.then_some("exhausted"),
-                    &stdout,
-                );
+                let class = candidate.declared_class(&stdout, &stderr);
+                let cannot_work = class.is_some();
+                // The class is the same as the other branch's: a spent quota
+                // or a door shut for another reason, never the exit code.
+                note(reading.clone(), class, &stdout);
+                self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
                 // La tolleranza viene dopo, per la stessa ragione dell'altro
                 // ramo: un passo che con `accept` dichiara di volersi tenere il
                 // fallimento di questo motore lo vuole come dato, e non vuole che
@@ -2696,12 +2742,10 @@ impl ExternalEngineAction {
                 // `exhausted` è una cosa che passa da sé alle sette del mattino,
                 // `exit_error` no, e una somma che le mescola non dice niente a
                 // nessuno.
-                let exhausted = candidate.says_it_cannot_work(&stdout, &stderr);
-                note(
-                    reading.clone(),
-                    Some(if exhausted { "exhausted" } else { "exit_error" }),
-                    &stdout,
-                );
+                let class = candidate.declared_class(&stdout, &stderr);
+                let exhausted = class.is_some();
+                note(reading.clone(), Some(class.unwrap_or("exit_error")), &stdout);
+                self.set_aside_if_spent(candidate, class, ended_at, &stdout, &stderr);
                 if !tolerates(&spec.accept, "exit_error") {
                     // La tolleranza viene prima: un passo che si aspetta un
                     // fallimento lo vuole come dato, non vuole che qualcun altro
@@ -2802,10 +2846,43 @@ impl ExternalEngineAction {
     }
 }
 
+impl ExternalEngineAction {
+    /// An engine that said its quota is spent is set aside for the time its
+    /// descriptor declares; without a declared time, or without a home for
+    /// the list, it is tried again next time, as before.
+    fn set_aside_if_spent(
+        &self,
+        candidate: &Candidate,
+        class: Option<&'static str>,
+        now: i64,
+        stdout: &str,
+        stderr: &str,
+    ) {
+        let (Some("quota_exhausted"), Some(secs), Some(id), Some(path)) =
+            (class, candidate.cooldown_secs, candidate.id.as_deref(), self.cooldowns.as_deref())
+        else {
+            return;
+        };
+        // A list that cannot be written costs the next chain one knock: not
+        // worth breaking this step over.
+        let _ = cooldown::set_aside(path, id, now, secs, &what_it_said(stdout, stderr));
+    }
+}
+
 impl Candidate {
     fn says_it_cannot_work(&self, stdout: &str, stderr: &str) -> bool {
         says_it_cannot_work(&self.unusable_when, stdout)
             || says_it_cannot_work(&self.unusable_when, stderr)
+    }
+
+    /// The class of a failure this engine declared: a spent quota is its own
+    /// class, anything else it cannot work with is `exhausted` as before, and
+    /// an output that says neither is `None`.
+    fn declared_class(&self, stdout: &str, stderr: &str) -> Option<&'static str> {
+        if mentions_any(&self.exhausted_when, stdout) || mentions_any(&self.exhausted_when, stderr) {
+            return Some("quota_exhausted");
+        }
+        self.says_it_cannot_work(stdout, stderr).then_some("exhausted")
     }
 }
 
@@ -4111,6 +4188,8 @@ mod tests {
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                     usage: None,
                 }),
                 "vivo" => Some(AskRecipe {
@@ -4119,6 +4198,8 @@ mod tests {
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                     usage: None,
                 }),
                 "rotto" => Some(AskRecipe {
@@ -4127,6 +4208,8 @@ mod tests {
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
                     refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                     usage: None,
                 }),
                 // Risolvibile ma senza ricetta: un passo che non scrive le
@@ -4442,6 +4525,8 @@ mod tests {
                         args_before_prompt: Vec::new(),
                         unusable_when: vec![String::new(), "   ".to_owned()],
                         refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                         usage: None,
                     }),
                     other => Chain.ask_recipe(other),
@@ -5046,6 +5131,8 @@ mod what_it_cost {
             args_before_prompt: Vec::new(),
             unusable_when: Vec::new(),
             refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
             usage: Some(UsageRecipe {
                 args: vec!["--output-format".to_owned(), "json".to_owned()],
                 declared: Declared {
@@ -5238,6 +5325,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                 usage: None,
             }),
         })
@@ -5392,6 +5481,64 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         assert_eq!(error.class, "engine_exit_error");
         let calls = calls_in(&dir.join("deposito"));
         assert_eq!(calls[0].error_type.as_deref(), Some("exit_error"));
+    }
+
+    /// A spent quota is its own class, and the engine is set aside for the
+    /// time its descriptor declares: the second step in the same window does
+    /// not knock on it. Without `exhausted_when` the same output stays the
+    /// plain `exhausted` of before, and nobody is set aside.
+    #[test]
+    fn a_spent_quota_is_its_own_class_and_sets_the_engine_aside() {
+        let dir = scratch("quota-spesa");
+        let bin = fake_engine(
+            &dir,
+            "motore-a-secco",
+            "cat > /dev/null\necho \"You've hit your weekly limit · resets 7am\"\nexit 1",
+        );
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let mut recipe = declaring_recipe();
+        recipe.unusable_when = vec!["weekly limit".to_owned()];
+        recipe.exhausted_when = vec!["weekly limit".to_owned()];
+        recipe.cooldown_secs = Some(1800);
+        let aside = dir.join("cooldowns.json");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin: bin.clone(),
+            recipe: Some(recipe.clone()),
+        })
+        .recording_to(Some(ledger))
+        .cooling_down_in(Some(aside.clone()));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let error = with_price_list(None, || {
+            action.execute(&input, &mut shared("corsa-a-secco", "passo-1"))
+        })
+        .expect_err("a spent engine alone cannot do the work");
+        assert_eq!(error.class, "engine_exhausted");
+        let calls = calls_in(&dir.join("deposito"));
+        assert_eq!(calls[0].error_type.as_deref(), Some("quota_exhausted"));
+        let set = cooldown::set_aside_until(&aside, "motore-di-prova", now_secs()).expect("set aside");
+        assert!(set.said.contains("weekly limit"), "{set:?}");
+
+        // The second knock is refused before spending, and says until when.
+        let again = with_price_list(None, || {
+            action.execute(&input, &mut shared("corsa-a-secco", "passo-2"))
+        })
+        .expect_err("an engine set aside is not tried");
+        assert_eq!(again.class, "no_usable_engine");
+        assert!(again.said.contains("set aside until"), "{}", again.said);
+        assert_eq!(calls_in(&dir.join("deposito")).len(), 1, "nothing was spent on the second knock");
+
+        // The control: the same words without `exhausted_when` are the old class, and nobody is aside.
+        let plain = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(AskRecipe { exhausted_when: Vec::new(), cooldown_secs: None, ..recipe }),
+        })
+        .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("second ledger")))
+        .cooling_down_in(Some(dir.join("cooldowns-2.json")));
+        with_price_list(None, || plain.execute(&input, &mut shared("corsa-piana", "passo-1")))
+            .expect_err("still cannot work");
+        assert_eq!(calls_in(&dir.join("deposito-2"))[0].error_type.as_deref(), Some("exhausted"));
+        assert!(cooldown::set_aside_until(&dir.join("cooldowns-2.json"), "motore-di-prova", now_secs()).is_none());
     }
 
     /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**
@@ -5563,6 +5710,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                     args_before_prompt: Vec::new(),
                     unusable_when: Vec::new(),
                     refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                     usage: None,
                 }),
             })
@@ -5771,6 +5920,8 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                 usage: None,
             }),
         })
@@ -6145,6 +6296,8 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
                 refuses_without_prompt: Vec::new(),
+            exhausted_when: Vec::new(),
+            cooldown_secs: None,
                 usage: None,
             })
         }

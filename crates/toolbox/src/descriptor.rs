@@ -147,6 +147,16 @@ pub struct Ask {
     /// match any failure and send a wrong brief down the chain to the end.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unusable_when: Vec<String>,
+    /// The words among those that mean **the quota is spent**, as opposed to
+    /// credentials missing: they make the call `quota_exhausted`, a thing that
+    /// passes by itself. Empty means nobody told the two apart.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exhausted_when: Vec<String>,
+    /// How long the engine is set aside after saying its quota is spent, so a
+    /// chain does not knock again on a door known to be shut. Absent means it
+    /// is tried again every time, as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cooldown_secs: Option<u64>,
     /// How this engine refuses the line **composed without the question**: the
     /// only harmless way to try a real command line, since no provider is called
     /// yet the same argument parsing runs. Data, because each refuses in its own
