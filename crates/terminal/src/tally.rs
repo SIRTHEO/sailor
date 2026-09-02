@@ -8,6 +8,8 @@
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// The bytes that crossed a terminal, each direction on its own.
 ///
@@ -58,6 +60,95 @@ pub fn write(path: &Path, tally: &Tally) -> io::Result<()> {
 pub fn read(path: &Path) -> Option<Tally> {
     let text = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()
+}
+
+/// Now, in seconds since the epoch.
+pub fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs() as i64)
+}
+
+/// The bytes each direction has moved, shared with whoever writes them down.
+///
+/// One shape for every terminal Sailor holds — the one in the person's own
+/// emulator and the one the window opened — so `terminal list` reads the same
+/// count from both.
+#[derive(Debug)]
+pub struct Counters {
+    pub shown: Arc<AtomicU64>,
+    pub typed: Arc<AtomicU64>,
+}
+
+impl Default for Counters {
+    fn default() -> Counters {
+        Counters::new()
+    }
+}
+
+impl Counters {
+    pub fn new() -> Counters {
+        Counters {
+            shown: Arc::new(AtomicU64::new(0)),
+            typed: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    pub fn total(&self) -> u64 {
+        self.shown
+            .load(Ordering::Relaxed)
+            .saturating_add(self.typed.load(Ordering::Relaxed))
+    }
+
+    /// Keeps the count on disk while the session runs.
+    ///
+    /// On disk and not in here, because whoever reads it is another process
+    /// that may start after this one and must not have to ask it anything.
+    pub fn recorded_into(&self, path: PathBuf) -> Recording {
+        let running = Arc::new(AtomicBool::new(true));
+        let shown = Arc::clone(&self.shown);
+        let typed = Arc::clone(&self.typed);
+        let going = Arc::clone(&running);
+        let writing = std::thread::spawn(move || {
+            let mut last = Tally::default();
+            while going.load(Ordering::Relaxed) {
+                last = record(&path, &shown, &typed, last);
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            record(&path, &shown, &typed, last);
+        });
+        Recording { running, writing }
+    }
+}
+
+/// Writes the count if it moved, and gives back what is now on disk.
+fn record(path: &Path, shown: &AtomicU64, typed: &AtomicU64, last: Tally) -> Tally {
+    let current = Tally {
+        shown: shown.load(Ordering::Relaxed),
+        typed: typed.load(Ordering::Relaxed),
+        at: now(),
+    };
+    if current.shown == last.shown && current.typed == last.typed {
+        return last;
+    }
+    let _ = write(path, &current);
+    current
+}
+
+/// The thread that keeps a count on disk, until told to stop.
+pub struct Recording {
+    running: Arc<AtomicBool>,
+    writing: std::thread::JoinHandle<()>,
+}
+
+impl Recording {
+    /// Stops and waits, so the last count is on disk before the terminal's row
+    /// disappears: a session that ended full must not read as one that ended
+    /// empty.
+    pub fn stop(self) {
+        self.running.store(false, Ordering::Relaxed);
+        let _ = self.writing.join();
+    }
 }
 
 #[cfg(test)]

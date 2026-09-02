@@ -115,3 +115,51 @@ fn a_program_nobody_typed_into_shows_nothing() {
 
     let _ = inner.close();
 }
+
+/// **A TERMINAL BORN THROUGH THE ENGINE'S OWN `open` CAN BE TYPED INTO FROM
+/// OUTSIDE**, the way one held by `sailor terminal run` can: given a mailroom,
+/// `Terminals::open` registers the letterbox itself, under the tty of the
+/// program inside, and a stranger who knows only that tty reaches it.
+///
+/// This is the terminal the window opens. Without this the relay could type
+/// into a session in the person's emulator and not into one in Sailor's.
+#[test]
+fn a_line_left_in_the_letterbox_reaches_a_terminal_born_through_the_engine() {
+    let directory = scratch("engine-born");
+    let workspace = Workspace::open(&directory).expect("open the workspace");
+    let terminals = terminal::Terminals::with_router(Arc::new(terminal::Router::without_routes(
+        Arc::new(terminal::PathLookup::current()),
+    )))
+    .with_mailroom(inbox::mailroom(&directory));
+    let shown = Arc::new(terminal::Buffer::new());
+    let opened = terminals
+        .open(
+            workspace,
+            &terminal::Opening {
+                program: "/bin/cat".into(),
+                ..terminal::Opening::default()
+            },
+            |_| Arc::clone(&shown) as Arc<dyn terminal::Output>,
+        )
+        .expect("open cat through the engine");
+
+    // The address is derived from the tty the list carries, and from nothing
+    // this test was told by the engine directly.
+    let tty = terminals.list()[0].device.clone();
+    let address = inbox::address_in(&directory, &tty);
+    inbox::press_line(&address, "a-word-from-outside").expect("knock at the letterbox");
+    assert!(
+        shown.wait_for("a-word-from-outside", Duration::from_secs(5)),
+        "what was left in the letterbox must come out of the terminal: {}",
+        shown.text()
+    );
+    // And the count knows a stranger typed.
+    assert!(
+        opened.moved() >= "a-word-from-outside\r".len() as u64,
+        "what a stranger typed must be counted: {}",
+        opened.moved()
+    );
+
+    let _ = terminals.close(opened.id());
+    let _ = std::fs::remove_dir_all(&directory);
+}
