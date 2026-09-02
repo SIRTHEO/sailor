@@ -9,6 +9,8 @@ export interface Store {
   how_many: number | null;
   bytes: number | null;
   exists: boolean;
+  /** When the store came to be, in seconds since the epoch. */
+  since: number | null;
 }
 
 export interface InService {

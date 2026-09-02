@@ -21,6 +21,8 @@ function run(over: Partial<OpenRun>): OpenRun {
     open_now: [],
     since: 0,
     started_here: false,
+    steps_done: 0,
+    steps_total: null,
     ...over,
   };
 }

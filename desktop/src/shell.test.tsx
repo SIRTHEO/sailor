@@ -108,6 +108,8 @@ describe("the bar's three facts", () => {
     open_now: [{ step_id: "write-the-baton", attempt: 1, open_for_secs: 30 }],
     since: 1000,
     started_here: true,
+    steps_done: 3,
+    steps_total: 7,
   };
 
   test("what runs is said from the open runs, and nothing running is said as such", () => {
@@ -115,10 +117,12 @@ describe("the bar's three facts", () => {
     expect(liveWords([], 1700)).toEqual({ live: false, word: "nothing running" });
     const said = liveWords([working], 1000 + 12 * 60);
     expect(said.live).toBe(true);
-    expect(said.word).toBe("relay · at write-the-baton · 12m");
+    expect(said.word).toBe("relay · 3 of 7 · at write-the-baton · 12m");
     const waiting = liveWords([{ ...working, state: "waiting", open_now: [] }], 1030);
     expect(waiting.live).toBe(false);
-    expect(waiting.word).toBe("relay · 30s · waiting for you");
+    expect(waiting.word).toBe("relay · 3 of 7 · 30s · waiting for you");
+    // A flow that cannot be read back gives no total, and no total is invented.
+    expect(liveWords([{ ...working, steps_total: null }], 1030).word).toBe("relay · at write-the-baton · 30s");
     expect(liveWords([working, { ...working, run_id: "x", entity: "night" }], 1005).word).toContain("+1 more");
   });
 
@@ -204,7 +208,7 @@ describe("the bar's three facts", () => {
     const shell = pretendShell({ open_runs: [working], day_summary: { ledger_present: true, cost_micros: 340_000, unpriced: 0 } });
     try {
       render(<LiveChip native now={1000 + 60} />);
-      await screen.findByText(/relay · at write-the-baton · 1m/);
+      await screen.findByText(/relay · 3 of 7 · at write-the-baton · 1m/);
       expect(screen.getByText("$0.34 today")).toBeTruthy();
       expect(shell.calls.map((call) => call.command)).toEqual(expect.arrayContaining(["open_runs", "day_summary"]));
     } finally {

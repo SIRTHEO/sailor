@@ -876,6 +876,12 @@ button.is-primary {
   word-break: break-all;
 }
 
+.keeps__since {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  white-space: nowrap;
+}
+
 .keeps__missing {
   color: var(--danger);
   font-size: var(--text-micro);

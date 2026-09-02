@@ -767,6 +767,33 @@ pub(crate) struct OpenRun {
     pub since: i64,
     /// Vero se questa finestra è quella che l'ha avviata.
     pub started_here: bool,
+    /// Steps with an outcome already, counted once each.
+    pub steps_done: usize,
+    /// Steps the flow declares; `None` when the flow cannot be read back.
+    pub steps_total: Option<usize>,
+}
+
+/// «4 of 7»: how far the run is, from the ledger and the flow it names.
+///
+/// The flow is read back through the same door `step close` uses; a run whose
+/// flow cannot be found still shows how many steps it has done, so the count
+/// never invents a total.
+fn progress_of(ledger: &Ledger, run_id: &str) -> (usize, Option<usize>) {
+    let done = ledger
+        .steps(run_id)
+        .map(|steps| {
+            steps
+                .iter()
+                .filter(|step| step.outcome.is_some())
+                .map(|step| step.step_id.clone())
+                .collect::<std::collections::HashSet<String>>()
+                .len()
+        })
+        .unwrap_or(0);
+    let total = sailor::step_cmd::flow_of_run(ledger, run_id)
+        .ok()
+        .map(|file| file.graph.steps().len());
+    (done, total)
 }
 
 /// **Tutte** le corse che hanno almeno un passo aperto, non solo le nostre.
@@ -809,14 +836,19 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
     let now = now_secs();
     let mut all: Vec<OpenRun> = waiting
         .into_iter()
-        .map(|run| OpenRun {
-            started_here: known.contains_key(&run.run_id),
-            run_id: run.run_id,
-            entity: run.entity,
-            state: OpenState::Waiting,
-            open_steps: 0,
-            open_now: Vec::new(),
-            since: run.waiting_since,
+        .map(|run| {
+            let (steps_done, steps_total) = progress_of(&ledger, &run.run_id);
+            OpenRun {
+                started_here: known.contains_key(&run.run_id),
+                run_id: run.run_id,
+                entity: run.entity,
+                state: OpenState::Waiting,
+                open_steps: 0,
+                open_now: Vec::new(),
+                since: run.waiting_since,
+                steps_done,
+                steps_total,
+            }
         })
         .collect();
     let held: std::collections::HashSet<String> =
@@ -847,6 +879,7 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
             // il conteggio resta, il dettaglio manca, e la riga si vede lo
             // stesso. Perdere la riga sarebbe il danno grosso.
             .unwrap_or_default();
+        let (steps_done, steps_total) = progress_of(&ledger, &run.run_id);
         all.push(OpenRun {
             started_here: known.contains_key(&run.run_id),
             run_id: run.run_id,
@@ -855,6 +888,8 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
             open_steps: run.open_steps,
             open_now,
             since: run.oldest_started_at,
+            steps_done,
+            steps_total,
         });
     }
 
