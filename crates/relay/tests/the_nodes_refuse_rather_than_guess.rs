@@ -29,13 +29,20 @@ fn went(outcome: ActionOutcome) -> Value {
     match outcome {
         ActionOutcome::Went(value) => value,
         ActionOutcome::Waiting(reason) => panic!("expected it to run, it waited: {reason}"),
+        ActionOutcome::NotYet(reason) => panic!("expected it to run, it postponed: {reason}"),
     }
 }
 
-fn waiting(outcome: ActionOutcome) -> String {
+/// **AND IT REFUSES `Waiting`, WHICH IS THE POINT.** From here the two look
+/// alike — both say "I did nothing" — and behave opposite: one comes back
+/// ready, the other parks for good. That was fault 62.
+fn not_yet(outcome: ActionOutcome) -> String {
     match outcome {
-        ActionOutcome::Waiting(reason) => reason,
-        ActionOutcome::Went(value) => panic!("expected it to wait, it ran: {value}"),
+        ActionOutcome::NotYet(reason) => reason,
+        ActionOutcome::Waiting(reason) => {
+            panic!("a step nobody handed over must say «not yet», not «waiting»: {reason}")
+        }
+        ActionOutcome::Went(value) => panic!("expected it to postpone, it ran: {value}"),
     }
 }
 
@@ -103,18 +110,18 @@ fn a_terminal_over_its_ceiling_says_so() {
     let _ = std::fs::remove_dir_all(&directory);
 }
 
-/// Waiting and not failing. No mandate yet is the ordinary state between asking
-/// for one and getting it, and a step that broke there would turn a handover
-/// into a red run every single time.
+/// Not yet, and neither failing nor waiting. No mandate yet is the ordinary
+/// state between asking for one and getting it: breaking there would turn a
+/// handover into a red run every time, and waiting would park it for good.
 #[test]
-fn no_mandate_left_yet_waits_instead_of_breaking() {
+fn no_mandate_left_yet_postpones_instead_of_breaking_or_parking() {
     let directory = scratch("no-mandate");
-    let reason = waiting(
+    let reason = not_yet(
         run(
             relay::TAKE_MANDATE_ACTION,
             json!({"tty": "ttys004", "store": directory}),
         )
-        .expect("waiting is not an error"),
+        .expect("not yet is not an error"),
     );
     assert!(reason.contains("ttys004"), "{reason}");
     let _ = std::fs::remove_dir_all(&directory);
@@ -134,12 +141,12 @@ fn a_mandate_older_than_this_handover_is_not_taken() {
     )
     .expect("leave an old mandate");
 
-    let reason = waiting(
+    let reason = not_yet(
         run(
             relay::TAKE_MANDATE_ACTION,
             json!({"tty": "ttys004", "not_before": 2_000, "store": directory}),
         )
-        .expect("waiting is not an error"),
+        .expect("not yet is not an error"),
     );
     assert!(reason.contains("older"), "{reason}");
     assert!(

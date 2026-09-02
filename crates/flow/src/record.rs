@@ -81,6 +81,13 @@ pub enum Outcome {
     Went,
     Broke,
     Waiting,
+    /// Not yet: the step could not do its work now and asks to be asked again.
+    ///
+    /// Neither of the other two, and the distance from each is why it exists.
+    /// `Broke` says something went wrong and burns an attempt; `Waiting` says
+    /// a person holds the step and it never becomes ready again. How long
+    /// before it is asked again is `Step::ask_again_after_secs`.
+    NotYet,
     Stopped,
     Skipped,
 }

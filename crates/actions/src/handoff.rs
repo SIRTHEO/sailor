@@ -286,6 +286,12 @@ mod tests {
             ActionOutcome::Went(value) => {
                 panic!("una consegna non conosce il proprio risultato: {value}")
             }
+            // A handover waits for **a person**, and a person does not come
+            // back by themselves on the next beat: `NotYet` would put the step
+            // back in play while somebody is holding it.
+            ActionOutcome::NotYet(line) => {
+                panic!("a handover waits for a person, not for a beat: {line}")
+            }
         }
     }
 
