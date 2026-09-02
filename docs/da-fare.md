@@ -78,6 +78,20 @@ Nessuna di queste è bloccata da lavoro: sono bloccate da una scelta.
   finestra.
 - **Spazi di lavoro come pagine**: una pagina per i flussi di sistema, una per i
   generici, una per ogni spazio di lavoro, coi nodi collegabili fra pagine.
+  Il 01/09/2026 Theo l'ha saldata alla voce sulle sospese: la pagina è una tela
+  di **componenti**, non solo di flussi, e il primo componente è il resoconto del
+  giorno — cosa è stato fatto e cosa no, per uno spazio di lavoro. Il pezzo di
+  motore c'è (`shell_check` con `answer_shape` restituisce un valore); il pezzo
+  che manca è la tassonomia dei nodi: un pannello è un tipo di nodo nuovo.
+- **D3 con destinazioni calcolate.** D3 valida l'autorizzazione «per
+  appartenenza a un insieme esatto». Linear ci entra: poteri di scrittura,
+  insieme vuoto. GitHub no: la richiesta di Theo del 01/09/2026 è *«lettura e
+  scrittura solo sui miei rami, sola lettura su quelli di Andrea»*, e «i rami
+  miei» non è un elenco, è una domanda — chi ha depositato l'ultimo commit
+  (autore e depositante sono due persone su un cherry-pick). L'estensione da
+  scrivere: una destinazione è un insieme esatto **oppure una regola** che ne
+  calcola l'appartenenza, e la regola fallisce chiusa — «non so di chi è» è un
+  no. Aperto: sui rami altrui, sola lettura o nemmeno quella in certi contesti.
 
 ## Difetti noti e non riparati
 
