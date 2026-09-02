@@ -41,8 +41,11 @@ interface PaneProps {
   liveness: Liveness;
   /** Where the process's bytes arrive: the pane subscribes for its own `id`. */
   bus: OutputBus;
-  /** Hidden when another tab is open: the emulator stays alive and keeps receiving. */
+  /** Hidden when the screen is away: the emulator stays alive and keeps receiving. */
   visible: boolean;
+  /** Drawn large and first: the one the person is looking at. */
+  focused: boolean;
+  onFocus: () => void;
   /** The line confirmed with Enter. Returns where it went, and the pane writes it. */
   onSubmit: (line: string) => Promise<Submitted>;
   onPress: (bytes: Uint8Array) => void;
@@ -54,10 +57,14 @@ export function TerminalPane({
   liveness,
   bus,
   visible,
+  focused,
+  onFocus,
   onSubmit,
   onPress,
   onResize,
 }: PaneProps) {
+  /** The line under the pane, held by the window until Enter. */
+  const [asked, setAsked] = useState("");
   const host = useRef<HTMLDivElement | null>(null);
   const emulator = useRef<Emulator | null>(null);
   const fitter = useRef<FitAddon | null>(null);
@@ -195,8 +202,8 @@ export function TerminalPane({
   const dead = liveness.state === "closed";
 
   return (
-    <section className="pane" hidden={!visible}>
-      <header className="pane__head">
+    <section className="pane" hidden={!visible} data-focus={focused || undefined}>
+      <header className="pane__head" onClick={onFocus}>
         {/* THE TTY FIRST: it is what this session *is* to everything else on
             the machine — the letterbox, the count, the tracking store. */}
         <span className="pane__device">{summary.device}</span>
@@ -234,6 +241,36 @@ export function TerminalPane({
           process wrote before ending is the part one goes back to read, and
           unmounting it would erase it. */}
       <div className="pane__screen" ref={host} />
+
+      {/* THE LINE UNDER THE PANE: a command for the shell, or a question for
+          a flow; the router decides which. The keys inside the emulator stay
+          the program's, so an editor or an agent never sees this line. */}
+      <form
+        className="pane__ask"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const line = asked.trim();
+          if (line === "" || dead) return;
+          setAsked("");
+          setRefused(null);
+          void onSubmit(line)
+            .then((answer) => setRouted(routingNote(line, answer)))
+            .catch((error: unknown) => setRefused(String(error)));
+        }}
+      >
+        <span className="pane__prompt" aria-hidden="true">
+          ›
+        </span>
+        <input
+          className="pane__ask-line"
+          aria-label={`a line for ${summary.device}`}
+          placeholder="type a command, or ask about a flow"
+          value={asked}
+          disabled={dead}
+          onFocus={onFocus}
+          onChange={(event) => setAsked(event.target.value)}
+        />
+      </form>
 
       <footer className="pane__foot">
         {mode === "compose" ? (
@@ -309,15 +346,14 @@ function readToken(name: string): string {
 }
 
 /**
- * The emulator's colours come from the roles, not from a palette of its own.
- * xterm's default is black on near-black, a dark box glued inside a warm paper
- * window, and prohibition 4 reserves colour for the machine's state. If a role
- * cannot be read — outside a real browser — nothing is invented and the
- * emulator keeps its own.
+ * The emulator's colours come from the roles, not from a palette of its own:
+ * the plate is ink with paper letters, as code is drawn everywhere else, and
+ * prohibition 4 reserves colour for the machine's state. If a role cannot be
+ * read — outside a real browser — nothing is invented.
  */
 function themeFromTokens(): { background?: string; foreground?: string; cursor?: string } {
-  const background = readToken("--paper");
-  const foreground = readToken("--ink");
+  const background = readToken("--ink-surface");
+  const foreground = readToken("--on-ink");
   if (background === "" || foreground === "") return {};
   return { background, foreground, cursor: foreground };
 }

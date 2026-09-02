@@ -317,8 +317,13 @@ export function Terminals({ native, shown = true }: TerminalsProps) {
             })}
           </nav>
 
-          <div className="terminals__panes">
-            {opened.map((entry) => {
+          {/* EVERY TERMINAL IS ON SCREEN AT ONCE. A day is spent watching two
+              agents, and one pane behind tabs meant flipping between them; the
+              one in focus is drawn large and first, the others beside it. */}
+          <div className="terminals__panes" data-count={opened.length}>
+            {[...opened]
+              .sort((a, b) => Number(b.id === visible) - Number(a.id === visible))
+              .map((entry) => {
               const liveness = livenessOf(entry, closed, channel.on);
               return (
                 <TerminalPane
@@ -326,7 +331,9 @@ export function Terminals({ native, shown = true }: TerminalsProps) {
                   summary={entry}
                   liveness={liveness}
                   bus={bus}
-                  visible={entry.id === visible}
+                  visible
+                  focused={entry.id === visible}
+                  onFocus={() => setHere(entry.id)}
                   onSubmit={(line) => submitLine(entry.id, line)}
                   onPress={(bytes) => {
                     void pressKeys(entry.id, bytes).catch((error: unknown) => setTrouble(String(error)));
