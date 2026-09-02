@@ -4701,11 +4701,11 @@ mod tests {
         assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
     }
 
-    /// **A WORD ALREADY TYPED INTO A SCRIPT KEEPS WORKING.** The vocabulary
-    /// moved to English on 02/09/2026; the Italian words stay accepted and stay
-    /// out of the help. Without this test the promise is a comment, and the
-    /// first person to tidy up `as_written_today` breaks somebody's run with a
-    /// message that cannot explain itself.
+    /// **A WORD ALREADY TYPED INTO A SCRIPT KEEPS WORKING.** The vocabulary is
+    /// English; the words it replaced stay accepted and stay out of the help.
+    /// Without this test the promise is a comment, and the first person to tidy
+    /// up `as_written_today` breaks somebody's run with a message that cannot
+    /// explain itself.
     #[test]
     fn the_words_that_used_to_be_the_only_ones_still_work() {
         let home = TestDirectory::new();
