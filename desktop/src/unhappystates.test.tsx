@@ -355,10 +355,12 @@ describe("the framing, when the board appears", () => {
     const { container } = render(<App />);
     await vi.waitUntil(() => spy.ready);
 
-    // The board already exists, but behind a place that is not its own: this is
-    // where the box is born null, and the condition the fix has to survive.
+    // THE CONDITION IS A HIDDEN BOARD, AND THE WINDOW NOW OPENS ON IT: leaving
+    // and coming back is what puts the box back at zero. The fault this guards
+    // — framing a box that measures nothing — is unchanged.
     const body = container.querySelector(".body") as HTMLElement;
-    expect(body.hasAttribute("hidden"), "the board is not born hidden").toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^Adesso/ }));
+    expect(body.hasAttribute("hidden"), "leaving did not hide the board").toBe(true);
 
     spy.fits.length = 0;
     goToFlows();
@@ -563,6 +565,39 @@ describe("two invitations on the same screen cancel each other", () => {
     expect(whoInvitesToCreate(container)).toEqual(["la tela vuota"]);
   });
 });
+
+/* ═══ 2 bis. A LINE THAT POINTS AT A PLACE YOU ARE NOT IN ═══════════════════ */
+
+/**
+ * **THE BAR SENDS YOU TO A COLUMN SIX PLACES OUT OF SEVEN HAVE NOT GOT.** The
+ * line it carries with nothing focused — «pick one in the rail» — belongs to
+ * the board alone, and the window opens away from the board: two invitations
+ * cancelling each other, in its loneliest form.
+ */
+describe("the bar does not send you to a column this place has not got", () => {
+  test("AT REST THE BAR IS SILENT ABOUT THE COLUMN, and speaks on the board", () => {
+    const { container } = render(<App />);
+
+    // The scene is the right one: the window opened away from the board.
+    // **Mounted is not in view**: the board sits inside `.body[hidden]` from
+    // the first paint, so asking for `.react-flow` would fail here for a
+    // reason that is not the fault.
+    expect(container.querySelector(".body[hidden]"), "the board is already in view").not.toBeNull();
+    expect(
+      container.querySelector(".topbar__none"),
+      "the bar names the column in a place that has none",
+    ).toBeNull();
+
+    // THE OTHER DIRECTION, AND IT IS THE CONTROL THAT MAKES THE LINE ABOVE
+    // WORTH ANYTHING: an absence passes just as well when the selector is
+    // wrong. Here the same selector must find something.
+    goToFlows();
+    const line = container.querySelector(".topbar__none");
+    expect(line, "the bar went silent on the board too, where the column is").not.toBeNull();
+    expect(line?.textContent ?? "").toMatch(/rail|colonna/i);
+  });
+});
+
 
 /* ═══ 3 bis. THE SCREEN WITH NO FLOWS, IN FULL ══════════════════════════════ */
 

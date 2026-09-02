@@ -796,6 +796,26 @@ button.is-primary {
   border-color: var(--ink);
 }
 
+/* THE HEADING OF A GROUP IS NOT ANOTHER TITLE. `.rail__title` already names
+   the column; a second line in the same weight would read as a second column.
+   This one is quieter than the flows underneath on purpose: it answers a
+   question nobody asked out loud — «whose is this one» — and must be there to
+   be read, not to be looked at. */
+.rail__origin {
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  padding: 2px 10px 4px;
+}
+
+/* Air between one group and the next, never above the first: there the gap
+   would read as something that failed to draw. Written as «a group that has a
+   group before it» and not `:first-of-type`, which here would name the column
+   title — it is a `div` too, and it comes first. */
+.rail__group + .rail__group .rail__origin {
+  padding-top: 14px;
+}
+
 .rail__item {
   display: block;
   width: 100%;

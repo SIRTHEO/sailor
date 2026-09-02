@@ -23,6 +23,7 @@ mod live;
 mod manual;
 mod run;
 mod terminal;
+mod workspaces;
 mod worktree;
 mod tools;
 
@@ -99,28 +100,34 @@ fn flow_places() -> Vec<Place> {
         .collect()
 }
 
-/// Dove si scrive un flusso.
+/// Where a flow gets written, and what that place is called.
 ///
-/// **UN FLUSSO CHE ESISTE SI SALVA DOV'ERA.** Salvarlo altrove ne creerebbe una
-/// seconda copia che vince sulla prima per posizione, e chi lo ha modificato
-/// vedrebbe la sua modifica funzionare qui e sparire su un'altra macchina —
-/// oppure, peggio, resterebbe l'originale a girare senza che nessuno capisca
-/// perché la modifica non ha effetto.
+/// **A FLOW THAT EXISTS IS SAVED WHERE IT WAS.** Saving it elsewhere would make
+/// a second copy that beats the first by position, and whoever edited it would
+/// see the edit work here and vanish on another machine — or worse, the
+/// original would keep running with nobody able to say why the edit does
+/// nothing.
 ///
-/// **UNO NUOVO VA NELL'ULTIMA SORGENTE**, cioè la più specifica: il progetto se
-/// se ne sta guardando uno, altrimenti la casa di chi usa Sailor. È il posto che
-/// chi scrive sta guardando in quel momento.
-fn flows_dir_for(name: &str) -> std::path::PathBuf {
+/// **A NEW ONE GOES TO THE LAST SOURCE**, the most specific: the project, if
+/// one is being looked at, otherwise the home of whoever uses Sailor. That is
+/// the place the writer is looking at right then.
+///
+/// **AND THE ORIGIN COMES BACK WITH THE FOLDER.** Whoever saves a new flow is
+/// the only one who knows where it landed, and while that stayed here the
+/// window had to guess: a freshly created flow showed up with no origin, and a
+/// list grouped by origin would have had to invent one. The origin is a
+/// `&'static str` living in `flow::system`, so returning it copies nothing.
+fn place_for(name: &str) -> (&'static str, std::path::PathBuf) {
     let sources = flow_sources();
     for source in &sources {
         if source.dir.join(format!("{name}.flow.json")).exists() {
-            return source.dir.clone();
+            return (source.origin, source.dir.clone());
         }
     }
     sources
         .last()
-        .map(|source| source.dir.clone())
-        .unwrap_or_else(ui::gather::default_flows_dir)
+        .map(|source| (source.origin, source.dir.clone()))
+        .unwrap_or_else(|| (flow::system::YOUR_ORIGIN, ui::gather::default_flows_dir()))
 }
 
 #[derive(Serialize)]
@@ -172,10 +179,48 @@ fn main() {
             terminal::terminal_resize,
             terminal::terminal_close,
             terminal::terminal_list,
+            workspaces::workspaces,
+            workspaces::workspace_declaration,
             worktree::worktree_list,
             worktree::worktree_create,
             worktree::worktree_remove
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");
+}
+
+#[cfg(test)]
+mod tests {
+    /// **THE ORIGIN AND THE FOLDER COME FROM ONE SOURCE, OR THEY LIE
+    /// TOGETHER.** A pair built in two steps can name the origin of one place
+    /// and the path of another, and the column would draw a saved flow under a
+    /// heading it does not belong to with nothing to say so — the file is
+    /// written correctly either way. Which place wins depends on the machine;
+    /// that the two halves are one source does not.
+    #[test]
+    fn the_place_a_flow_is_written_to_names_itself_with_its_own_origin() {
+        let sources = super::flow_sources();
+        assert!(!sources.is_empty(), "no source at all: the rest measures nothing");
+
+        let (origin, dir) = super::place_for("a-flow-nobody-has-ever-written");
+        let matching = sources
+            .iter()
+            .find(|source| source.dir == dir)
+            .unwrap_or_else(|| panic!("the folder {} belongs to no source", dir.display()));
+        assert_eq!(
+            origin, matching.origin,
+            "the origin says «{origin}» and the folder is the one of «{}»",
+            matching.origin,
+        );
+
+        // THE ABSURD CASE FIRST would be a name that exists everywhere; the
+        // cheap one available here is the opposite: a flow that exists nowhere
+        // must land in the last source, the most specific one. If it did not,
+        // the loop above would be matching by luck.
+        assert_eq!(
+            dir,
+            sources.last().expect("checked above").dir,
+            "a flow nobody owns did not go to the most specific place",
+        );
+    }
 }

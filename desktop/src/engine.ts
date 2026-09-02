@@ -13,7 +13,7 @@
 // i dati di esempio, e chi guarda deve poterlo capire dalla finestra invece che
 // dal codice.
 
-import type { FlowEntry, FlowFile, RunUsage } from "./flow";
+import type { FlowEntry, FlowFile, Origin, RunUsage } from "./flow";
 import { parseTools, publishTools, type Tool } from "./tools";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -51,10 +51,14 @@ export async function loadFlows(): Promise<FlowEntry[]> {
  * non risponde, questa chiamata fallisce con un errore leggibile invece di
  * restare muta.
  */
-export async function saveFlow(flow: FlowFile): Promise<void> {
+export async function saveFlow(flow: FlowFile): Promise<Origin> {
   const invoke = invoker();
   if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore a cui salvare");
-  await invoke<void>("save_flow", { flow });
+  // The origin comes back because the engine is the only one that knows it: a
+  // flow that has never been saved belongs nowhere, and after this call it
+  // belongs somewhere precise. Guessing here would put the wrong heading over
+  // it in the column, which is the one place the answer is read.
+  return invoke<Origin>("save_flow", { flow });
 }
 
 /**
