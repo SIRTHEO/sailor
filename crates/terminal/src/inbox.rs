@@ -7,6 +7,7 @@
 use std::io::{self, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// How long an address may be, in bytes.
 ///
@@ -99,4 +100,26 @@ pub fn press(address: impl AsRef<Path>, bytes: &[u8]) -> io::Result<()> {
     let mut door = UnixStream::connect(address)?;
     door.write_all(bytes)?;
     door.shutdown(std::net::Shutdown::Write)
+}
+
+/// How long the text is left alone before the Enter follows it.
+///
+/// Two writes are one read to a program that did not get to read in between,
+/// and a program reading a whole burst as pasted text leaves the line sitting
+/// in its box. Somebody typing always leaves this gap.
+pub const ENTER_FOLLOWS_AFTER: Duration = Duration::from_millis(50);
+
+/// Types a whole line into a terminal: the text, then Enter on its own.
+///
+/// The Enter is a delivery of its own and not the tail of the text, because a
+/// command line that reads a long burst as a paste keeps the carriage return
+/// inside it as a newline and submits nothing. An empty line is Enter alone,
+/// which is what sends whatever is already in the box.
+pub fn press_line(address: impl AsRef<Path>, line: &str) -> io::Result<()> {
+    let address = address.as_ref();
+    if !line.is_empty() {
+        press(address, line.as_bytes())?;
+        std::thread::sleep(ENTER_FOLLOWS_AFTER);
+    }
+    press(address, b"\r")
 }
