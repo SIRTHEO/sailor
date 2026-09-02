@@ -640,14 +640,12 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     store
         .record_event(&event_named(request, "close"))
         .map_err(|error| error.to_string())?;
-    Ok(Report::spoken(if closed {
-        format!("chiuso {}", request.tty)
+    let key = if closed {
+        "cli.session.closed"
     } else {
-        format!(
-            "{} had no open row: the fact is recorded all the same",
-            request.tty
-        )
-    }))
+        "cli.session.had_no_open_row"
+    };
+    Ok(Report::spoken(catalogue::say(key, &[("tty", request.tty)])))
 }
 
 fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
@@ -687,8 +685,16 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
         return Ok(Report::spoken(text));
     }
     if rows.is_empty() {
-        return Ok(Report::spoken("no terminal has checked in yet".to_owned()));
+        return Ok(Report::spoken(catalogue::say(
+            "cli.session.none_checked_in",
+            &[],
+        )));
     }
+    let open = catalogue::say("cli.session.row_open", &[]);
+    let closed = catalogue::say("cli.session.row_closed", &[]);
+    let detached = catalogue::say("cli.session.row_detached", &[]);
+    let attached = catalogue::say("cli.session.row_attached", &[]);
+    let events = catalogue::say("cli.session.row_events", &[]);
     let mut text = String::new();
     for row in &rows {
         let howmany = store
@@ -697,14 +703,14 @@ fn list_terminals(request: &Request<'_>) -> Result<Report, String> {
             .unwrap_or_default();
         let _ = writeln!(
             text,
-            "{:<10} {:<14} {:<8} {:<11} eventi={:<4} {} {}",
+            "{:<10} {:<14} {:<8} {:<11} {events}={:<4} {} {}",
             row.tty,
             row.ancestor.as_deref().unwrap_or("?"),
-            if row.is_open() { "aperto" } else { "chiuso" },
+            if row.is_open() { &open } else { &closed },
             if row.is_detached() {
-                "staccato"
+                &detached
             } else {
-                "attaccato"
+                &attached
             },
             howmany,
             row.session_id.as_deref().unwrap_or("-"),
@@ -1451,8 +1457,12 @@ mod tests {
         ask("detach", "", &store, &one_terminal(), &no_options()).expect("staccare");
         let report = ask("list", "", &store, &one_terminal(), &no_options()).expect("elencare");
         assert!(report.message.contains("ttys004"), "{}", report.message);
-        assert!(report.message.contains("aperto"), "{}", report.message);
-        assert!(report.message.contains("staccato"), "{}", report.message);
+        // Through the catalogue, or the day the list is read in another
+        // language this test calls a translation a defect.
+        let open = catalogue::say("cli.session.row_open", &[]);
+        let detached = catalogue::say("cli.session.row_detached", &[]);
+        assert!(report.message.contains(&open), "{}", report.message);
+        assert!(report.message.contains(&detached), "{}", report.message);
         assert!(report.message.contains("Whatever"), "{}", report.message);
     }
 
