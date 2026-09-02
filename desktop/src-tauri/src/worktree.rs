@@ -76,14 +76,23 @@ mod tests {
     #[test]
     fn the_tree_the_window_runs_in_is_marked_as_its_own() {
         let here = PathBuf::from("/repo/main");
-        let seen = seen(vec![tree("/repo/main", "sorgenti"), tree("/repo-worktrees/x", "work/x")], &here);
+        let seen = seen(
+            vec![
+                tree("/repo/main", "sorgenti"),
+                tree("/repo-worktrees/x", "work/x"),
+            ],
+            &here,
+        );
         assert!(seen[0].current);
         assert!(!seen[1].current);
     }
 
     #[test]
     fn a_tree_keeps_the_name_a_person_calls_it_by() {
-        let seen = seen(vec![tree("/repo-worktrees/the-thing", "work/the-thing")], &PathBuf::from("/repo"));
+        let seen = seen(
+            vec![tree("/repo-worktrees/the-thing", "work/the-thing")],
+            &PathBuf::from("/repo"),
+        );
         assert_eq!(seen[0].name, "the-thing");
         assert_eq!(seen[0].branch.as_deref(), Some("work/the-thing"));
     }
