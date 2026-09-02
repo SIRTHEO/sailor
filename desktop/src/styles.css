@@ -3747,6 +3747,48 @@ tr[data-followable]:hover {
   padding: 2px 8px;
 }
 
+.chip--build {
+  color: var(--muted);
+}
+
+.chip--build[data-warn] {
+  color: var(--danger);
+  background: var(--danger-soft);
+  font-weight: 600;
+}
+
+.blank__places {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+}
+
+.blank__place {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.blank__place[data-missing] {
+  color: var(--muted);
+}
+
+.blank__place-origin {
+  color: var(--muted);
+}
+
+.blank__place-path {
+  color: var(--ink);
+}
+
+.blank__place-count {
+  color: var(--muted);
+}
+
 /* ── what changed in a workspace ───────────────────────────────────────── */
 
 .changes {
