@@ -9,28 +9,22 @@ export default defineConfig({
   server: {
     port: 5183,
     strictPort: true,
-    // `ports.test.tsx` conta le porte sui **dieci file veri**, che stanno un
-    // piano sopra la radice di questa app: senza questa riga il guardiano del
-    // file system di Vite li nega e la prova non parte affatto.
+    // The tests read files that live above this app's root, and without these
+    // lines Vite's file-system guard denies them and the test never starts.
     //
-    // **SONO DUE CARTELLE PERCHÉ I FLUSSI VIVONO IN DUE POSTI**, e non è un
-    // dettaglio di percorso: `dispatch-the-work` è **spedito dentro il binario**
-    // (`crates/flow/system/`, incorporato con `include_str!`) perché le regole
-    // di instradamento che viaggiano col prodotto lo nominano, e su un'altra
-    // macchina la cartella `flows/` non esiste. Gli altri nove sono di questo
-    // progetto. **La finestra li disegna allo stesso modo**, quindi la misura
-    // che censisce le porte deve vederli tutti e due i posti: quando quel file
-    // è passato nel binario, il censimento è sceso da 10 flussi a 9 e da 20
-    // catene a 18 senza che nessuno lo volesse — la prova è diventata rossa, ed
-    // era il modo giusto di accorgersene.
+    // `realflows.ts` reads the flows shipped inside the binary from
+    // `crates/flow/system/`, and their list from the `include_str!` lines of
+    // `crates/flow/src/system.rs` — the source that owns it. It used to read
+    // `flows/` too, and count what it found there: that count died the day the
+    // workshop moved out, and `flows/` is not opened any more.
     //
-    // Si aprono le **due cartelle nominate**, mai `..`: la radice intera
-    // conterrebbe anche `target/` e le chiavi di chi lavora qui.
-    // E `../i18n`, i due cataloghi: stanno nella radice del repo e non dentro
-    // questa app perché sono **una cosa sola con due superfici** — i crate li
-    // incorporano con `include_str!`, il bundler li impacchetta qui. Se
-    // stessero in casa di una delle due, l'altra sarebbe ospite.
-    fs: { allow: [".", "../flows", "../crates/flow/system", "../i18n"] },
+    // Named directories, never `..`: the whole root would hold `target/` and
+    // the keys of whoever works here. And `../i18n`, the two catalogues: they
+    // sit at the repo root and not inside this app because they are one thing
+    // with two surfaces — the crates embed them with `include_str!`, the
+    // bundler packs them here. In either one's house, the other would be a
+    // guest.
+    fs: { allow: [".", "../crates/flow/system", "../crates/flow/src", "../i18n"] },
   },
   // `SAILOR_LANG` arriva fino alla finestra, che altrimenti vedrebbe solo le
   // variabili con prefisso `VITE_`. In mancanza si parla inglese.
