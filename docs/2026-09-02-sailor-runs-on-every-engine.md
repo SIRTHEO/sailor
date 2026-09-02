@@ -136,6 +136,21 @@ Starting point, so the mandate builds on it instead of beside it.
    *Proof:* two engines, one at 10 % left resetting in an hour and one at
    80 % left resetting in six days: the dispatcher picks the first for a job
    that fits, and the why says «expires unused».
+9. **A command line can run on another company's model, without a proxy.**
+   A profile declares an endpoint and the environment variable of its key;
+   Sailor launches the unmodified command line with `launch.env` pointing it
+   there (`ANTHROPIC_BASE_URL` for Claude Code), and only at endpoints that
+   speak that command line's protocol natively: OpenRouter's Anthropic-shaped
+   endpoint, a local ollama, a provider that publishes the same protocol.
+   Nothing of Sailor's sits in between and nothing is translated. The ledger
+   row names the endpoint and the model that answered, so the spend is never
+   attributed to the subscription. The idea is free-claude-code's; the fifty
+   providers of its list are candidates to verify one by one, never a
+   catalogue, and the ones that log in through another product's
+   subscription are out.
+   *Proof:* a profile with an endpoint makes the composed command line carry
+   the variable and the ledger row carry the endpoint; a profile whose
+   endpoint is not declared native is refused by `profiles` with the reason.
 
 ## B. Dispatch: the same flow, from three seats, chosen by what is left
 
