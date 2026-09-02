@@ -90,6 +90,7 @@ fn a_shell_opened_through_the_host_survives_the_client_that_opened_it() {
             Vec::new(),
             24,
             80,
+            None,
         )
         .expect("open a shell through the host");
     client
@@ -192,6 +193,7 @@ fn a_terminal_closed_by_one_client_is_gone_for_the_next() {
             Vec::new(),
             24,
             80,
+            None,
         )
         .expect("open a shell through the host");
     client.close(&opened.id).expect("close it");

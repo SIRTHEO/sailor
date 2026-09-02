@@ -6,7 +6,7 @@ import stylesheetSource from "./styles.css?raw";
 import App from "./App";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
 import { ANOTHER_PATH, placesOf, Terminals, WORKSPACE_HINT } from "./Terminals";
-import { movedLabel, routingNote, tokensLabel } from "./TerminalPane";
+import { movedLabel, routingNote, tokensLabel, whoLabel } from "./TerminalPane";
 import { declaredCeiling } from "./terminal";
 import {
   decodeBytes,
@@ -246,9 +246,20 @@ function summary(over: Partial<TerminalSummary>): TerminalSummary {
     device: "ttys004",
     moved: 0,
     estimatedTokens: 60129,
+    program: "zsh",
+    profile: null,
     ...over,
   };
 }
+
+describe("who runs in the pane", () => {
+  test("the program, the profile when one applies, and an older host said as such", () => {
+    expect(whoLabel({ program: "zsh", profile: null })).toBe("zsh");
+    expect(whoLabel({ program: "codex", profile: "prove" })).toBe("codex · as prove");
+    // The control: no program is not a shell, it is a host that did not say.
+    expect(whoLabel({ program: "", profile: null })).toBe("program not reported by this host");
+  });
+});
 
 describe("how a terminal is doing", () => {
   test("the event wins over the list, which is one round of polling old", () => {
@@ -392,8 +403,8 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242, device: "ttys004", moved: 2048, estimatedTokens: 61521 },
-  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243, device: "ttys009", moved: 0, estimatedTokens: 60129 },
+  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242, device: "ttys004", moved: 2048, estimatedTokens: 61521, program: "codex", profile: "prove" },
+  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243, device: "ttys009", moved: 0, estimatedTokens: 60129, program: "zsh", profile: null },
 ];
 
 const PLACES = {

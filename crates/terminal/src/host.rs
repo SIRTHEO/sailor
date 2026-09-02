@@ -44,6 +44,9 @@ pub enum Request {
         environment: Vec<(String, String)>,
         rows: u16,
         columns: u16,
+        /// The profile the program runs under, as the opener knows it.
+        #[serde(default)]
+        profile: Option<String>,
     },
     Submit {
         id: String,
@@ -283,6 +286,7 @@ impl Host {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn open(
         &self,
         workspace_root: &str,
@@ -291,11 +295,13 @@ impl Host {
         environment: Vec<(String, String)>,
         rows: u16,
         columns: u16,
+        profile: Option<String>,
     ) -> Result<Summary, String> {
         let workspace = Workspace::open(workspace_root)
             .map_err(|error| format!("the workspace «{workspace_root}» does not open: {error}"))?;
         let mut opening = Opening {
             size: crate::Size { rows, columns },
+            profile,
             ..Opening::default()
         };
         if let Some(program) = program.filter(|program| !program.trim().is_empty()) {
@@ -331,7 +337,8 @@ impl Host {
                 environment,
                 rows,
                 columns,
-            } => match self.open(&workspace_root, program, args, environment, rows, columns) {
+                profile,
+            } => match self.open(&workspace_root, program, args, environment, rows, columns, profile) {
                 Ok(summary) => Answer::Opened { summary },
                 Err(why) => Answer::Refused { why },
             },
@@ -612,6 +619,7 @@ impl Client {
         environment: Vec<(String, String)>,
         rows: u16,
         columns: u16,
+        profile: Option<String>,
     ) -> Result<Summary, String> {
         match self.ask(&Request::Open {
             workspace_root: workspace_root.to_owned(),
@@ -620,6 +628,7 @@ impl Client {
             environment,
             rows,
             columns,
+            profile,
         })? {
             Answer::Opened { summary } => Ok(summary),
             other => Err(format!("opening answered with {other:?}")),

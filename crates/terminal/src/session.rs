@@ -42,6 +42,9 @@ pub struct Opening {
     pub size: Size,
     /// Variabili aggiunte a quelle ereditate.
     pub environment: Vec<(String, String)>,
+    /// The profile the program runs under, as whoever opens knows it; `None`
+    /// when no profile applies to that program.
+    pub profile: Option<String>,
 }
 
 impl Default for Opening {
@@ -50,6 +53,7 @@ impl Default for Opening {
             program: std::env::var_os("SHELL").unwrap_or_else(|| OsString::from("/bin/sh")),
             args: Vec::new(),
             size: Size::default(),
+            profile: None,
             environment: vec![
                 // Senza `TERM` un programma non sa che tipo di terminale ha
                 // davanti e si comporta come se non ne avesse nessuno: niente
@@ -74,6 +78,11 @@ pub struct Terminal {
     /// The bytes moved so far, each direction on its own: the number the relay
     /// reads from disk, kept here too so a list can show it without the disk.
     counters: Counters,
+    /// The program started inside, by its file name, and the profile it runs
+    /// under when one applies: fixed at opening, so a switch made later does
+    /// not rewrite who this terminal has been running as.
+    program: String,
+    profile: Option<String>,
 }
 
 impl Terminal {
@@ -159,8 +168,19 @@ impl Terminal {
             device: self.tty().to_owned(),
             moved: self.moved(),
             estimated_tokens: estimated_tokens(self.moved()),
+            program: self.program.clone(),
+            profile: self.profile.clone(),
         }
     }
+}
+
+/// The file name of the program an opening starts: what a list shows.
+pub fn program_name(program: &std::ffi::OsStr) -> String {
+    std::path::Path::new(program)
+        .file_name()
+        .unwrap_or(program)
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// The tokens the bytes moved amount to, by the model the relay measures with.
@@ -195,6 +215,12 @@ pub struct Summary {
     pub moved: u64,
     /// What those bytes amount to in tokens, by the relay's model: an estimate.
     pub estimated_tokens: u64,
+    /// The program started inside, by its file name.
+    #[serde(default)]
+    pub program: String,
+    /// The profile it runs under, when one applied at opening.
+    #[serde(default)]
+    pub profile: Option<String>,
 }
 
 /// I terminali aperti da questo processo.
@@ -298,6 +324,8 @@ impl Terminals {
             router: Arc::clone(&self.router),
             closed: Mutex::new(false),
             counters: Counters::new(),
+            program: program_name(&opening.program),
+            profile: opening.profile.clone(),
         });
         let registered = match &self.mailroom {
             Some(mailroom) => Some(register(&terminal, mailroom)?),
