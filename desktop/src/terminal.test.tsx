@@ -399,6 +399,42 @@ function measure(atLeast: number): string[] {
 }
 
 describe("the terminals screen", () => {
+  test("EVERY TERMINAL IS ON SCREEN AT ONCE, the focused one first, and the line under it goes to routing", async () => {
+    const shell = pretendShell({ terminal_list: TWO, terminal_submit: { kind: "command" } });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /ttys009/ });
+      const shown = () => Array.from(document.querySelectorAll(".pane:not([hidden])"));
+      expect(shown()).toHaveLength(2);
+      expect(shown()[0].getAttribute("data-focus")).toBe("true");
+      expect(shown()[0].querySelector(".pane__device")?.textContent).toBe("ttys004");
+
+      // Pressing the other tab brings that pane first and large; the first
+      // pane does not disappear, it moves beside.
+      fireEvent.click(screen.getByRole("button", { name: /ttys009/ }));
+      expect(shown()).toHaveLength(2);
+      expect(shown()[0].querySelector(".pane__device")?.textContent).toBe("ttys009");
+      expect(shown()[1].getAttribute("data-focus")).toBeNull();
+
+      // The line under the focused pane is confirmed with Enter and reaches
+      // the router for that terminal, then the box is empty again.
+      const line = screen.getByLabelText("a line for ttys009") as HTMLInputElement;
+      fireEvent.change(line, { target: { value: "git status" } });
+      await act(async () => {
+        fireEvent.submit(line.closest("form") as HTMLFormElement);
+      });
+      const sent = shell.calls.find((call) => call.command === "terminal_submit");
+      expect(sent?.args).toMatchObject({ line: "git status" });
+      expect(line.value).toBe("");
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("the list comes from `terminal_list`, and every tab carries its tty and its word", async () => {
     const shell = pretendShell({ terminal_list: TWO });
     try {
