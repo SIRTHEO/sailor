@@ -101,7 +101,7 @@ export function loose(name: string, text: string): string[] {
  * can only fall**: lowering it is the repair, raising it means a sentence was
  * written where it cannot be published.
  */
-const LOOSE_TODAY = 129;
+const LOOSE_TODAY = 109;
 
 function everythingLoose(): string[] {
   const found: string[] = [];
@@ -157,6 +157,19 @@ describe("what a person reads comes from the catalogue", () => {
     // here is what made the first hand measure say 253 instead of 133 — the
     // same `{/* … */}` blind spot that hid 256 lines from `is_comment`.
     expect(loose("finto.tsx", `// il motore non risponde\n{/* la tela è vuota */}`)).toEqual([]);
+  });
+
+  /**
+   * **THE TERMINALS SCREEN IS IN ENGLISH, EVERY SENTENCE OF IT.** Not a
+   * ratchet: a gate at zero, on the three files that screen is made of. The
+   * ratchet above would let one Italian line back in as long as another left.
+   */
+  test("EVERY SENTENCE ON THE TERMINALS SCREEN IS IN ENGLISH", () => {
+    for (const name of ["Terminals.tsx", "TerminalPane.tsx", "terminal.ts"]) {
+      const text = sources[`./${name}`];
+      expect(text, `${name} was not read`).toBeTruthy();
+      expect(loose(name, text)).toEqual([]);
+    }
   });
 
   test("the catalogue itself is not counted, or the repair would raise the number", () => {

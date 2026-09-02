@@ -1,18 +1,17 @@
-// Un terminale, disegnato.
+// A terminal, drawn.
 //
-// **L'EMULATORE NON È NOSTRO, ED È UNA SCELTA SCRITTA.** Interpretare le
-// sequenze ANSI a mano è un progetto a sé: il posizionamento del cursore, lo
-// schermo alternativo, i colori a 256, i caratteri larghi il doppio, le
-// sequenze spezzate a metà fra due letture. `@xterm/xterm` fa quel pezzo, lo fa
-// da dieci anni ed è l'emulatore dentro VS Code. La direzione di prodotto 3 di
-// questo repo dice esattamente questo: se esiste un progetto vivo che fa quel
-// pezzo, si collega.
+// **THE EMULATOR IS NOT OURS, AND THAT IS A WRITTEN CHOICE.** Interpreting ANSI
+// sequences by hand is a project of its own: cursor positioning, the alternate
+// screen, 256 colours, double-width characters, sequences cut between two
+// reads. `@xterm/xterm` does that piece, has for ten years, and is the emulator
+// inside VS Code. Product direction 3 of this repository says exactly this: if
+// a live project does that piece, connect it.
 //
-// **QUESTO FILE NON DECIDE NIENTE.** Dove va un tasto, come si legge un byte e
-// se un terminale è vivo stanno in `terminal.ts`, in funzioni pure. Qui c'è
-// solo il collegamento fra quelle decisioni e ciò che si vede — ed è
-// deliberato: un componente che monta un emulatore si prova solo disegnandolo,
-// e ciò che si può provare senza disegnare non deve stare dentro.
+// **THIS FILE DECIDES NOTHING.** Where a key goes, how a byte is read and
+// whether a terminal is alive live in `terminal.ts`, as pure functions. Here is
+// only the wiring between those decisions and what is seen — deliberately: a
+// component that mounts an emulator can only be proved by drawing it, and what
+// can be proved without drawing must not live inside it.
 
 import { useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
@@ -21,6 +20,7 @@ import "@xterm/xterm/css/xterm.css";
 import {
   keyStroke,
   livenessWord,
+  terminalBacklog,
   type KeyMode,
   type Liveness,
   type OutputBus,
@@ -29,11 +29,9 @@ import {
 } from "./terminal";
 
 /**
- * Quanto grande nasce un terminale prima che qualcuno lo misuri.
- *
- * Non è una preferenza: `terminal_open` vuole `cols` e `rows`, e la misura vera
- * arriva dopo il primo disegno. Ottanta per ventiquattro è la dimensione che
- * ogni programma a schermo intero sa gestire.
+ * How big a terminal is born before anybody measures it. Not a preference:
+ * `terminal_open` wants `cols` and `rows`, and the real size arrives after the
+ * first paint. Eighty by twenty-four is what every full-screen program handles.
  */
 export const BORN_COLS = 80;
 export const BORN_ROWS = 24;
@@ -41,11 +39,11 @@ export const BORN_ROWS = 24;
 interface PaneProps {
   summary: TerminalSummary;
   liveness: Liveness;
-  /** Dove arrivano i byte del processo: il pannello si iscrive per il proprio `id`. */
+  /** Where the process's bytes arrive: the pane subscribes for its own `id`. */
   bus: OutputBus;
-  /** Nascosto quando è aperta un'altra scheda: l'emulatore resta vivo e continua a ricevere. */
+  /** Hidden when another tab is open: the emulator stays alive and keeps receiving. */
   visible: boolean;
-  /** La riga confermata con Invio. Torna dove è finita, e il pannello lo scrive. */
+  /** The line confirmed with Enter. Returns where it went, and the pane writes it. */
   onSubmit: (line: string) => Promise<Submitted>;
   onPress: (bytes: Uint8Array) => void;
   onResize: (cols: number, rows: number) => void;
@@ -63,19 +61,21 @@ export function TerminalPane({
   const host = useRef<HTMLDivElement | null>(null);
   const emulator = useRef<Emulator | null>(null);
   const fitter = useRef<FitAddon | null>(null);
-  /** La riga in composizione vive in un `ref`: la tastiera arriva fuori da React. */
+  /** The line being composed lives in a `ref`: the keyboard arrives outside React. */
   const draft = useRef("");
   const [shown, setShown] = useState("");
-  // UN TERMINALE NASCE TERMINALE. Il modo predefinito è `raw` perché comporre
-  // la riga costa il Tab e i programmi a schermo intero: vedi il prezzo scritto
-  // per esteso sopra `keyStroke`.
+  // A TERMINAL IS BORN A TERMINAL. The default mode is `raw` because composing
+  // the line costs Tab and the full-screen programs: see the price written in
+  // full above `keyStroke`.
   const [mode, setMode] = useState<KeyMode>("raw");
   const [routed, setRouted] = useState<string | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
+  /** Why the backlog could not be shown, when it could not. */
+  const [missing, setMissing] = useState<string | null>(null);
 
-  // I gestori cambiano a ogni disegno, l'emulatore si monta una volta sola: se
-  // entrassero nelle dipendenze del montaggio, ogni render butterebbe via il
-  // terminale e con lui tutto ciò che ci è uscito dentro.
+  // The handlers change on every render, the emulator mounts once: in the
+  // mount's dependencies every render would throw the terminal away, and with
+  // it everything that came out inside.
   const latest = useRef({ onSubmit, onPress, onResize, mode });
   latest.current = { onSubmit, onPress, onResize, mode };
 
@@ -117,15 +117,15 @@ export function TerminalPane({
               .catch((error: unknown) => setRefused(String(error)));
             break;
           case "ignored":
-            // UN TASTO CHE NON PARTE LO DICE. Silenzio e «non ha funzionato»
-            // si assomigliano troppo, e sul secondo si preme di nuovo.
+            // A KEY THAT DOES NOT LEAVE SAYS SO. Silence and «it did not work»
+            // look too much alike, and on the second one presses again.
             setRefused(action.why);
             break;
         }
       }
     });
 
-    // Il riquadro cambia quando cambia la finestra, non quando React lo decide.
+    // The frame changes when the window does, not when React decides.
     let watcher: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
       watcher = new ResizeObserver(() => refit(fit, term, latest.current.onResize));
@@ -141,14 +141,50 @@ export function TerminalPane({
     };
   }, []);
 
-  // I byte del processo vanno all'emulatore e non allo stato di React: un
-  // `setState` per pezzo ridisegnerebbe la finestra a ogni riga di un `cargo
-  // build`. Sono `Uint8Array` fino all'ultimo passaggio, così un accento
-  // spezzato fra due eventi si rimette insieme qui dentro invece di perdersi.
-  useEffect(() => bus.subscribe(summary.id, (bytes) => emulator.current?.write(bytes)), [bus, summary.id]);
+  // ATTACHING LATE: the backlog first, then only the live pieces that follow
+  // it. The bytes go to the emulator and not to React state — a `setState`
+  // per piece would redraw the window on every line of a build — and they stay
+  // `Uint8Array` to the end, so an accent split across two events is put back
+  // together in there. Until the backlog has arrived the live pieces are held,
+  // and the offset each carries says whether the backlog already had it.
+  useEffect(() => {
+    const held: Array<{ bytes: Uint8Array; at: number }> = [];
+    let upto: number | null = null;
+    const unsubscribe = bus.subscribe(summary.id, (bytes, at) => {
+      if (upto === null) {
+        held.push({ bytes, at });
+        return;
+      }
+      if (at >= upto) emulator.current?.write(bytes);
+    });
+    let gone = false;
+    terminalBacklog(summary.id)
+      .then((backlog) => {
+        if (gone) return;
+        emulator.current?.write(backlog.bytes);
+        upto = backlog.upto;
+        for (const piece of held) if (piece.at >= upto) emulator.current?.write(piece.bytes);
+        held.length = 0;
+        setMissing(null);
+      })
+      .catch((error: unknown) => {
+        if (gone) return;
+        // Without the backlog the live output still flows, and the pane says
+        // what it could not show instead of passing an empty screen for one
+        // where nothing happened.
+        upto = 0;
+        for (const piece of held) emulator.current?.write(piece.bytes);
+        held.length = 0;
+        setMissing(String(error));
+      });
+    return () => {
+      gone = true;
+      unsubscribe();
+    };
+  }, [bus, summary.id]);
 
-  // Un pannello nascosto non ha larghezza: quando torna visibile va rimisurato,
-  // altrimenti resta della dimensione che aveva quando è nato.
+  // A hidden pane has no width: when it comes back it is measured again, or
+  // it keeps the size it had when it was born.
   useEffect(() => {
     if (!visible) return;
     const term = emulator.current;
@@ -161,9 +197,12 @@ export function TerminalPane({
   return (
     <section className="pane" hidden={!visible}>
       <header className="pane__head">
+        {/* THE TTY FIRST: it is what this session *is* to everything else on
+            the machine — the letterbox, the count, the tracking store. */}
+        <span className="pane__device">{summary.device}</span>
         <span className="label">{summary.workspaceName}</span>
         <span className="pane__root">{summary.workspaceRoot}</span>
-        {/* La parola sta accanto alla tinta: divieto 5. */}
+        {/* The word sits beside the colour: prohibition 5. */}
         <span className="pane__state" data-state={liveness.state}>
           {livenessWord(liveness)}
         </span>
@@ -171,13 +210,14 @@ export function TerminalPane({
         {liveness.state === "closed" && liveness.status !== null && (
           <span className="pane__why">{liveness.status}</span>
         )}
+        <span className="pane__moved">{movedLabel(summary.moved)}</span>
         <span className="pane__id">{summary.id}</span>
-        {/* LO STATO E IL GESTO SONO DUE COSE. Una sola scritta su un pulsante
-            non dice se sta nominando com'è messo adesso o cosa succede a
-            premerlo, e il modo della tastiera è la cosa che qui si sbaglia
-            più caro. */}
+        {/* THE STATE AND THE GESTURE ARE TWO THINGS. One label on a button does
+            not say whether it names how things are now or what happens on
+            pressing it, and the keyboard mode is the costliest thing to get
+            wrong here. */}
         <span className="pane__keys">
-          {mode === "compose" ? "la riga la tiene la finestra" : "i tasti vanno diritti al processo"}
+          {mode === "compose" ? "the window holds the line" : "keys go straight to the process"}
         </span>
         <button
           type="button"
@@ -186,23 +226,28 @@ export function TerminalPane({
           onClick={() => setMode(mode === "compose" ? "raw" : "compose")}
           disabled={dead}
         >
-          {mode === "compose" ? "torna ai tasti diretti" : "componi una riga da smistare"}
+          {mode === "compose" ? "back to direct keys" : "compose a line to route"}
         </button>
       </header>
 
-      {/* L'EMULATORE VIVE QUI DENTRO, E RESTA MONTATO ANCHE DA MORTO: ciò che
-          il processo ha scritto prima di finire è la parte che si va a
-          rileggere, e smontarlo la cancellerebbe. */}
+      {/* THE EMULATOR LIVES IN HERE, AND STAYS MOUNTED EVEN DEAD: what the
+          process wrote before ending is the part one goes back to read, and
+          unmounting it would erase it. */}
       <div className="pane__screen" ref={host} />
 
       <footer className="pane__foot">
         {mode === "compose" ? (
           <span className="pane__draft" data-empty={shown === "" || undefined}>
-            {shown === "" ? "scrivi una riga, Invio la manda allo smistamento" : shown}
+            {shown === "" ? "type a line; Enter sends it to routing" : shown}
           </span>
         ) : (
           <span className="pane__draft" data-empty>
-            ogni tasto va al processo così com'è, Invio compreso
+            every key goes to the process as it is, Enter included
+          </span>
+        )}
+        {missing !== null && (
+          <span className="pane__refused" data-gravity="warn">
+            what this terminal printed earlier could not be shown: {missing}
           </span>
         )}
         {routed !== null && <span className="pane__routed">{routed}</span>}
@@ -217,48 +262,55 @@ export function TerminalPane({
 }
 
 /**
- * Dove è finita la riga, detto a chi guarda.
+ * Where the line ended up, told to whoever is watching.
  *
- * **UNA RIGA DIROTTATA SI VEDE, E SI VEDE QUALE REGOLA L'HA DIROTTATA.** Un
- * terminale che ogni tanto non esegue quello che scrivi è peggio di uno che non
- * smista affatto: diventa imprevedibile, e l'imprevedibilità si paga su ogni
- * riga che si scriverà dopo. Il nome della regola serve a risalire alla riga di
- * JSON che ha deciso, non solo al flusso.
+ * **A REROUTED LINE IS SEEN, AND SO IS THE RULE THAT REROUTED IT.** A terminal
+ * that now and then does not run what you type is worse than one that does
+ * not route at all: it becomes unpredictable, and unpredictability is paid on
+ * every line typed after. The rule's name leads back to the line of JSON that
+ * decided, not only to the flow.
  */
 export function routingNote(line: string, answer: Submitted): string {
-  if (answer.kind === "command") return `«${line}» è andata alla shell`;
-  return `«${line}» non è stata eseguita: la regola «${answer.rule}» l'ha mandata al flusso «${answer.flow}» come «${answer.text}»`;
+  if (answer.kind === "command") return `«${line}» went to the shell`;
+  return `«${line}» was not run: rule «${answer.rule}» sent it to flow «${answer.flow}» as «${answer.text}»`;
 }
 
-/** Rimisura, e dice al motore la nuova taglia solo se è cambiata davvero. */
+/**
+ * The bytes moved so far, in the unit a person reads. The same number
+ * `sailor terminal list` prints, before it turns it into tokens: what the
+ * relay measures to say when this session is about to need the baton.
+ */
+export function movedLabel(moved: number): string {
+  if (moved < 1024) return `${String(moved)} bytes moved`;
+  if (moved < 1024 * 1024) return `${String(Math.round(moved / 1024))} KB moved`;
+  return `${(moved / (1024 * 1024)).toFixed(1)} MB moved`;
+}
+
+/** Measures again, and tells the engine the new size only if it really changed. */
 function refit(fit: FitAddon, term: Emulator, tell: (cols: number, rows: number) => void): void {
   const before = { cols: term.cols, rows: term.rows };
   try {
     fit.fit();
   } catch {
-    // Un riquadro largo zero — un pannello nascosto, la finestra ridotta a
-    // niente — non è un guasto: è una misura che non si può prendere adesso.
+    // A zero-wide frame — a hidden pane, the window shrunk to nothing — is not
+    // a failure: it is a measure that cannot be taken right now.
     return;
   }
   if (term.cols !== before.cols || term.rows !== before.rows) tell(term.cols, term.rows);
 }
 
-/** Il valore di un ruolo del foglio, letto dal documento. */
+/** The value of a stylesheet role, read from the document. */
 function readToken(name: string): string {
   if (typeof getComputedStyle !== "function") return "";
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 /**
- * I colori dell'emulatore vengono dai ruoli, non da una tavolozza sua.
- *
- * **PERCHÉ NON SI LASCIA IL TEMA PREDEFINITO DI XTERM.** È nero su nero-quasi,
- * cioè un riquadro scuro incollato dentro una finestra di carta calda: il
- * divieto 4 riserva il colore allo stato della macchina, e un pannello con una
- * tinta sua è esattamente ciò che vieta. Se un ruolo non si legge — succede
- * fuori da un browser vero — non si inventa niente e l'emulatore tiene il suo:
- * un colore indovinato passerebbe il controllo del foglio senza essere quello
- * che il foglio dice.
+ * The emulator's colours come from the roles, not from a palette of its own.
+ * xterm's default is black on near-black, a dark box glued inside a warm paper
+ * window, and prohibition 4 reserves colour for the machine's state. If a role
+ * cannot be read — outside a real browser — nothing is invented and the
+ * emulator keeps its own.
  */
 function themeFromTokens(): { background?: string; foreground?: string; cursor?: string } {
   const background = readToken("--paper");
