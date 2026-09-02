@@ -251,6 +251,34 @@ impl Census {
     }
 }
 
+/// The terminal of the nearest ancestor that has one, this process included.
+///
+/// A hook holds no descriptor that leads anywhere; the window is a step or two
+/// up the parent chain. Not [`Census::of`], which drops every row without a
+/// terminal — the rows this climbs through. It follows **the chain**: a
+/// stranger's window is not ours.
+pub fn tty_of_nearest_ancestor(machine: &dyn Machine) -> Option<String> {
+    let text = machine.process_table().ok()?;
+    let table: BTreeMap<u32, Row> = parse_table(&text)
+        .into_iter()
+        .map(|row| (row.pid, row))
+        .collect();
+    let mut current = machine.own_pid();
+    let mut walked = BTreeSet::new();
+    walked.insert(current);
+    while let Some(row) = table.get(&current) {
+        if row.tty != NO_TTY {
+            return Some(row.tty.clone());
+        }
+        let parent = row.parent_pid;
+        if parent <= 1 || !walked.insert(parent) {
+            return None;
+        }
+        current = parent;
+    }
+    None
+}
+
 /// The real machine, asked with the tools every Unix has.
 pub struct LocalMachine;
 

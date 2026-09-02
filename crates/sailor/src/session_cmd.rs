@@ -6,8 +6,8 @@
 //! nessun codice specifico di prodotto: **questo comando non legge nessuna
 //! variabile d'ambiente di nessun programma e non nomina nessun terminale.**
 //!
-//! **L'ANCORA È `(tty, albero, capostipite)`.** Il tty lo si chiede al proprio
-//! descrittore, l'albero al payload (o alla cartella corrente), il capostipite
+//! **L'ANCORA È `(tty, albero, capostipite)`.** Il tty al proprio descrittore
+//! o al primo antenato che ne ha uno, l'albero al payload, il capostipite
 //! al censimento — e il capostipite **è un'etichetta**: si stampa e si
 //! registra, nessuna condizione lo legge. La prova
 //! `no_product_name_decides_anything` tiene ferma la regola di ferro: il nome
@@ -136,11 +136,19 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     // catturata, cioè in ogni script e in ogni gancio.
     let tty = match options.get("tty") {
         Some(declared) => declared.clone(),
-        None if NEEDS_A_TERMINAL.contains(&verb) => sessions::tty::current().ok_or_else(|| {
-            "there is no telling which terminal this process runs on: none of its \
-             three descriptors is a tty. Say it with --tty <name>"
-                .to_owned()
-        })?,
+        // **TWO QUESTIONS, NOT ONE.** Our own descriptors first: they run
+        // nothing and cross no perimeter. Then the parent chain, because a hook
+        // has a pipe on all three and the window is a step or two above it.
+        // Asking only the first made this command exit **1 on every hook**,
+        // against the principle at the head of this module.
+        None if NEEDS_A_TERMINAL.contains(&verb) => sessions::tty::current()
+            .or_else(|| sessions::census::tty_of_nearest_ancestor(&LocalMachine))
+            .ok_or_else(|| {
+                "there is no telling which terminal this process runs on: none of its \
+                 three descriptors is a tty, and no process above it on the parent \
+                 chain has one either. Say it with --tty <name>"
+                    .to_owned()
+            })?,
         None => String::new(),
     };
 
