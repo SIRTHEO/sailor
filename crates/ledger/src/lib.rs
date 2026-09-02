@@ -1283,6 +1283,28 @@ impl Ledger {
         })
     }
 
+    /// What one engine has spent since an instant, across every run: the sum
+    /// a budget on a window compares itself to, with the same unknowns as
+    /// [`Self::spent_in_run`].
+    pub fn spent_by_cli_since(&self, cli: &str, since: i64) -> Result<Spend, LedgerError> {
+        let connection = self.lock()?;
+        let (micros, calls, calls_without_cost, dearest_micros) = connection.query_row(
+            "SELECT COALESCE(SUM(cost_micros), 0),
+                    COUNT(*),
+                    COALESCE(SUM(CASE WHEN cost_micros IS NULL THEN 1 ELSE 0 END), 0),
+                    MAX(cost_micros)
+             FROM model_calls WHERE cli = ?1 AND started_at >= ?2",
+            params![cli, since],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+        Ok(Spend {
+            micros,
+            calls,
+            calls_without_cost,
+            dearest_micros,
+        })
+    }
+
     /// The session a step of this run opened **on that engine**.
     ///
     /// **THE ENGINE IS PART OF THE QUESTION, AND DROPPING IT FAILS SILENTLY**: a

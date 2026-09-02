@@ -34,6 +34,7 @@
 //! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
 //! ferma con un messaggio utile dove non lo trova.
 
+pub mod budget;
 pub mod cooldown;
 pub mod faults;
 pub mod handoff;
@@ -1622,6 +1623,8 @@ pub struct ExternalEngineAction {
     /// Where the engines set aside for a spent quota are listed; `None` when
     /// the machine has no home to keep the list in, and then nobody is aside.
     cooldowns: Option<PathBuf>,
+    /// Where the person's spend caps per engine live; `None` means no cap.
+    budgets: Option<PathBuf>,
 }
 
 impl Default for ExternalEngineAction {
@@ -1639,6 +1642,7 @@ impl ExternalEngineAction {
             watcher: None,
             ledger: None,
             cooldowns: cooldown::default_path(),
+            budgets: budget::default_path(),
         }
     }
 
@@ -1650,7 +1654,15 @@ impl ExternalEngineAction {
             watcher: None,
             ledger: None,
             cooldowns: cooldown::default_path(),
+            budgets: budget::default_path(),
         }
+    }
+
+    /// With the person's spend caps read from `path`: a test hands a scratch
+    /// file, so no test reads the machine's own caps.
+    pub fn budgeted_by(mut self, path: Option<PathBuf>) -> Self {
+        self.budgets = path;
+        self
     }
 
     /// With the list of engines set aside kept at `path`: a test hands a
@@ -1763,6 +1775,16 @@ impl ExternalEngineAction {
                                 "set aside until {} after saying its quota was spent: «{}»",
                                 aside.until, aside.said
                             ),
+                            unresolved: false,
+                        });
+                        continue;
+                    }
+                    // A cap on a window excludes, and never reorders: the sum
+                    // is the ledger's, over every run of this engine.
+                    if let Some(why) = self.over_budget(id) {
+                        refused.push(Refused {
+                            id: id.clone(),
+                            reason: why,
                             unresolved: false,
                         });
                         continue;
@@ -2847,6 +2869,20 @@ impl ExternalEngineAction {
 }
 
 impl ExternalEngineAction {
+    /// Why `id` is over the cap the person declared for it, if it is: no
+    /// file, no cap for it, or no ledger to sum from means it fits.
+    fn over_budget(&self, id: &str) -> Option<String> {
+        let budgets = budget::declared(self.budgets.as_deref()?);
+        let declared = budgets.get(id)?;
+        let now = now_secs();
+        let spent = self
+            .ledger
+            .as_ref()?
+            .spent_by_cli_since(id, now - declared.window_secs)
+            .ok()?;
+        budget::over(declared, &spent)
+    }
+
     /// An engine that said its quota is spent is set aside for the time its
     /// descriptor declares; without a declared time, or without a home for
     /// the list, it is tried again next time, as before.
@@ -5539,6 +5575,60 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
             .expect_err("still cannot work");
         assert_eq!(calls_in(&dir.join("deposito-2"))[0].error_type.as_deref(), Some("exhausted"));
         assert!(cooldown::set_aside_until(&dir.join("cooldowns-2.json"), "motore-di-prova", now_secs()).is_none());
+    }
+
+    /// A cap per engine on a window, declared by the person in a file: the
+    /// first priced call fits, the second finds the window full and is refused
+    /// before spending, naming the sum. A cap on another engine changes nothing.
+    #[test]
+    fn an_engine_over_its_budget_is_refused_before_spending() {
+        let dir = scratch("tetto");
+        let price_list = write_price_list(&dir);
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let ledger = Ledger::open(dir.join("deposito")).expect("aprire il deposito");
+        let budgets = dir.join("budgets.json");
+        // One priced call costs 18.30 $ and is checked before it is made: under
+        // a cap of 10 $ the first goes through, and fills the window.
+        std::fs::write(
+            &budgets,
+            r#"{"motore-di-prova": {"cap_micros": 10000000, "window_secs": 3600}}"#,
+        )
+        .expect("write the caps");
+        let action = ExternalEngineAction::resolving_with(Declares {
+            bin: bin.clone(),
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(ledger))
+        .budgeted_by(Some(budgets));
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        with_price_list(Some(&price_list), || {
+            action.execute(&input, &mut shared("corsa-1", "passo-1"))
+        })
+        .expect("the first call fits under the cap");
+        let refused = with_price_list(Some(&price_list), || {
+            action.execute(&input, &mut shared("corsa-2", "passo-1"))
+        })
+        .expect_err("the second call finds the window full");
+        assert_eq!(refused.class, "no_usable_engine");
+        assert!(refused.said.contains("over its budget: spent 18.3000 $ of 10.0000 $"), "{}", refused.said);
+        assert_eq!(calls_in(&dir.join("deposito")).len(), 1, "the refusal spent nothing");
+
+        // The control: a cap declared for some other engine does not bind this one.
+        let others = dir.join("budgets-others.json");
+        std::fs::write(&others, r#"{"another-engine": {"cap_micros": 1, "window_secs": 3600}}"#)
+            .expect("write the other caps");
+        let unbound = ExternalEngineAction::resolving_with(Declares {
+            bin,
+            recipe: Some(declaring_recipe()),
+        })
+        .recording_to(Some(Ledger::open(dir.join("deposito")).expect("reopen")))
+        .budgeted_by(Some(others));
+        with_price_list(Some(&price_list), || {
+            unbound.execute(&input, &mut shared("corsa-3", "passo-1"))
+        })
+        .expect("a cap on another engine is not this engine's");
+        assert_eq!(calls_in(&dir.join("deposito")).len(), 2);
     }
 
     /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**
