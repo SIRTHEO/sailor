@@ -86,7 +86,7 @@ async function main(): Promise<void> {
       });
       const page = await context.newPage();
       await page.goto(URL, { waitUntil: "networkidle" });
-      await page.getByRole("button", { name: /^\s*flussi/i }).first().click();
+      await page.getByRole("button", { name: /^\s*flows/i }).first().click();
       await page.locator(".react-flow__node-step").first().waitFor({ timeout: 8000 });
       // The framing is a declared transition: let it finish before measuring.
       await page.waitForTimeout(900);

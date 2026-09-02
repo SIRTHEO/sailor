@@ -318,18 +318,18 @@ const SKELETON: Array<[selector: string, atLeast: number]> = [
   [".blank__plate--step", 7],
 ];
 
-/** The window opens on «Adesso»: the board sits behind a place to be chosen. */
+/** The window opens on «Now»: the board sits behind a place to be chosen. */
 function goToFlows(): void {
-  fireEvent.click(screen.getByRole("button", { name: /^Flussi/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Flows/ }));
 }
 
 /* ═══ 1. THE FRAMING ════════════════════════════════════════════════════════ */
 
 /**
  * **THE BOARD WAS BORN WITH ITS FRAMING MEASURED AT ZERO.** The window opens on
- * «Adesso»; the board lives inside `.body[hidden]`; the sheet gives that a
+ * «Now»; the board lives inside `.body[hidden]`; the sheet gives that a
  * `display: none`; React Flow mounts with `fitView` on a **0×0** box. The two
- * remaining `fitView` calls fire on `focusName` or `source`, never on «Flussi».
+ * remaining `fitView` calls fire on `focusName` or `source`, never on «Flows».
  * The numbers behind that were measured in a real Chrome — in jsdom nothing has
  * a size, so none is reproduced here and none is faked; what is guarded is the
  * rule that produces them.
@@ -351,7 +351,7 @@ function goToFlows(): void {
  * empty state become indistinguishable — the worst fault in this section.
  */
 describe("the framing, when the board appears", () => {
-  test("PRESSING «Flussi» REDOES THE FRAMING, as soon as the box can be measured", async () => {
+  test("PRESSING «Flows» REDOES THE FRAMING, as soon as the box can be measured", async () => {
     const { container } = render(<App />);
     await vi.waitUntil(() => spy.ready);
 
@@ -359,12 +359,12 @@ describe("the framing, when the board appears", () => {
     // and coming back is what puts the box back at zero. The fault this guards
     // — framing a box that measures nothing — is unchanged.
     const body = container.querySelector(".body") as HTMLElement;
-    fireEvent.click(screen.getByRole("button", { name: /^Adesso/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Now/ }));
     expect(body.hasAttribute("hidden"), "leaving did not hide the board").toBe(true);
 
     spy.fits.length = 0;
     goToFlows();
-    expect(body.hasAttribute("hidden"), "pressing «Flussi» does not show the board").toBe(false);
+    expect(body.hasAttribute("hidden"), "pressing «Flows» does not show the board").toBe(false);
 
     const canvas = container.querySelector(".canvas") as HTMLElement;
 

@@ -18,6 +18,7 @@ use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
 mod board;
+mod faults;
 mod flows;
 mod live;
 mod manual;
@@ -164,6 +165,9 @@ fn main() {
             flows::save_flow,
             flows::delete_flow,
             tools::discover_tools,
+            tools::tools_sweep,
+            faults::faults,
+            faults::fault_status,
             run::flow_trigger,
             run::start_run,
             run::run_snapshot,
