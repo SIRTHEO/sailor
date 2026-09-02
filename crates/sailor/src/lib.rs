@@ -65,7 +65,10 @@ pub mod worktree_cmd;
 #[derive(Debug)]
 pub struct Command {
     pub name: &'static str,
-    pub description: &'static str,
+    /// **THE KEY, NOT THE SENTENCE.** A `const` cannot ask the catalogue, so
+    /// what is written here is the name of the line and not the line: whoever
+    /// shows it says it in the language of whoever is reading.
+    pub description_key: &'static str,
     pub usage: &'static [&'static str],
     pub run: fn(&[String]) -> i32,
 }
@@ -73,88 +76,85 @@ pub struct Command {
 pub const COMMANDS: &[Command] = &[
     Command {
         name: "release",
-        description: "puts into service a binary built from HEAD, never from the working tree",
+        description_key: "cli.command.release",
         usage: release_cmd::USAGE,
         run: release_cmd::run,
     },
     Command {
         name: "profiles",
-        description: "lists, creates and switches the profiles of a known command line",
+        description_key: "cli.command.profiles",
         usage: profiles_cmd::USAGE,
         run: profiles_cmd::run,
     },
     Command {
         name: "models",
-        description: "lists the model catalogue, shows or changes which one is in use",
+        description_key: "cli.command.models",
         usage: models_cmd::USAGE,
         run: models_cmd::run,
     },
     Command {
         name: "flow",
-        description: "lists, checks, runs or resumes the flows declared in flows/",
+        description_key: "cli.command.flow",
         usage: flow_cmd::USAGE,
         run: flow_cmd::run,
     },
     Command {
         name: "step",
-        description: "takes charge of and closes a step a flow has handed over",
+        description_key: "cli.command.step",
         usage: step_cmd::USAGE,
         run: step_cmd::run,
     },
     Command {
         name: "run",
-        description: "starts a command line under its active profile, replacing this process",
+        description_key: "cli.command.run",
         usage: run_cmd::USAGE,
         run: run_cmd::run,
     },
     Command {
         name: "inventory",
-        description:
-            "lists skills, agents, commands, rules and hooks, and says which are switched off",
+        description_key: "cli.command.inventory",
         usage: inventory_cmd::USAGE,
         run: inventory_cmd::run,
     },
     Command {
         name: "remaining",
-        description:
-            "how much quota the person has already used, read from the engine rather than guessed",
+        description_key: "cli.command.remaining",
         usage: remaining_cmd::USAGE,
         run: remaining_cmd::run,
     },
     Command {
         name: "version",
-        description: "the version of this binary",
+        description_key: "cli.command.version",
         usage: version_cmd::USAGE,
         run: version_cmd::run,
     },
     Command {
         name: "workspace",
-        description: "declares the project root, so a flow does not have to know it",
+        description_key: "cli.command.workspace",
         usage: workspace_cmd::USAGE,
         run: workspace_cmd::run,
     },
     Command {
         name: "worktree",
-        description: "the trees this repository is checked out into",
+        description_key: "cli.command.worktree",
         usage: worktree_cmd::USAGE,
         run: worktree_cmd::run,
     },
     Command {
         name: "faults",
-        description:
-            "faults met while building: what happened, and the check that would prevent it",
+        description_key: "cli.command.faults",
         usage: faults_cmd::USAGE,
         run: faults_cmd::run,
     },
     Command {
         name: "session",
-        description: "tracks terminals: who checks in, what happens, and what is on the machine",
+        description_key: "cli.command.session",
         usage: session_cmd::USAGE,
         run: session_cmd::run,
     },
     Command {
         name: "terminal",
-        description: "runs a command line in a terminal Sailor owns, and can be typed into",
+        description_key: "cli.command.terminal",
         usage: terminal_cmd::USAGE,
         run: terminal_cmd::run,
     },
@@ -165,9 +165,14 @@ pub const COMMANDS: &[Command] = &[
 /// catturando lo standard output, e una prova che non guarda le stesse parole
 /// dell'utente sta provando un'altra cosa.
 pub fn help_text() -> String {
-    let mut text = String::from("sailor <command> [options]\n\navailable commands:\n");
+    let mut text = catalogue::say("cli.help.heading", &[]);
+    text.push('\n');
     for command in COMMANDS {
-        text.push_str(&format!("  {:<10} {}\n", command.name, command.description));
+        text.push_str(&format!(
+            "  {:<10} {}\n",
+            command.name,
+            catalogue::say(command.description_key, &[])
+        ));
     }
     text
 }
@@ -311,7 +316,7 @@ mod tests {
                 command.name
             );
             assert!(
-                help.contains(command.description),
+                help.contains(&catalogue::say(command.description_key, &[])),
                 "l'aiuto nomina '{}' senza dire cosa fa",
                 command.name
             );
@@ -431,9 +436,16 @@ mod tests {
     fn every_command_has_exactly_one_line_of_help() {
         for command in COMMANDS {
             assert!(!command.name.is_empty());
-            assert!(!command.description.is_empty());
+            // Through the catalogue: a key that answers with itself is a
+            // missing line, and this is where that shows.
+            let description = catalogue::say(command.description_key, &[]);
+            assert_ne!(
+                description, command.description_key,
+                "{}: «{}» is not declared in the catalogue",
+                command.name, command.description_key
+            );
             assert!(
-                !command.description.contains('\n'),
+                !description.contains('\n'),
                 "{}: la descrizione va su una riga sola",
                 command.name
             );

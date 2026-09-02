@@ -25,20 +25,29 @@ pub fn run(args: &[String]) -> i32 {
             "--kind" => {
                 i += 1;
                 let Some(raw) = args.get(i) else {
-                    eprintln!("--kind needs a value");
+                    eprintln!(
+                        "{}",
+                        catalogue::say("cli.option_wants_a_value", &[("option", "--kind")])
+                    );
                     return 2;
                 };
                 match parse_kind(raw) {
                     Some(k) => only = Some(k),
                     None => {
-                        eprintln!("unknown --kind: {raw}");
+                        eprintln!(
+                            "{}",
+                            catalogue::say("cli.inventory.unknown_kind", &[("raw", raw)])
+                        );
                         print_usage();
                         return 2;
                     }
                 }
             }
             other => {
-                eprintln!("unknown option: {other}");
+                eprintln!(
+                    "{}",
+                    catalogue::say("cli.unknown_option", &[("option", other)])
+                );
                 print_usage();
                 return 2;
             }
@@ -55,9 +64,14 @@ pub fn run(args: &[String]) -> i32 {
     }
     for missing in &survey.unreadable {
         eprintln!(
-            "could not look in {}: {}",
-            missing.path.display(),
-            missing.reason
+            "{}",
+            catalogue::say(
+                "cli.inventory.could_not_look",
+                &[
+                    ("path", &missing.path.display().to_string()),
+                    ("reason", &missing.reason)
+                ],
+            )
         );
     }
     let found = collect_survey(&survey);
@@ -66,7 +80,10 @@ pub fn run(args: &[String]) -> i32 {
         match deposit(&found) {
             Ok(message) => println!("{message}"),
             Err(error) => {
-                eprintln!("the inventory was not stored: {error}");
+                eprintln!(
+                    "{}",
+                    catalogue::say("cli.inventory.not_stored", &[("error", &error)])
+                );
                 return 1;
             }
         }
@@ -75,7 +92,10 @@ pub fn run(args: &[String]) -> i32 {
         match print_changes() {
             Ok(()) => {}
             Err(error) => {
-                eprintln!("the store does not answer: {error}");
+                eprintln!(
+                    "{}",
+                    catalogue::say("cli.inventory.store_silent", &[("error", &error)])
+                );
                 return 1;
             }
         }
@@ -89,7 +109,13 @@ pub fn run(args: &[String]) -> i32 {
                 0
             }
             Err(error) => {
-                eprintln!("the inventory will not be written: {error}");
+                eprintln!(
+                    "{}",
+                    catalogue::say(
+                        "cli.inventory.will_not_be_written",
+                        &[("error", &error.to_string())]
+                    )
+                );
                 1
             }
         }
@@ -108,7 +134,7 @@ pub const USAGE: &[&str] = &[
 ];
 
 fn print_usage() {
-    eprintln!("usage:");
+    eprintln!("{}", catalogue::say("cli.usage_heading", &[]));
     for line in USAGE {
         eprintln!("  {line}");
     }
@@ -125,7 +151,12 @@ fn deposit(found: &Inventory) -> Result<String, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
-        .map_err(|error| format!("the clock is behind the epoch: {error}"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.inventory.clock_behind_epoch",
+                &[("error", &error.to_string())],
+            )
+        })?;
     let items = found
         .entries
         .iter()
@@ -152,9 +183,9 @@ fn deposit(found: &Inventory) -> Result<String, String> {
             items,
         })
         .map_err(|error| error.to_string())?;
-    Ok(format!(
-        "scansione depositata: {} voci",
-        found.entries.len()
+    Ok(catalogue::say(
+        "cli.inventory.scan_stored",
+        &[("count", &found.entries.len().to_string())],
     ))
 }
 
@@ -175,8 +206,8 @@ fn deposit(found: &Inventory) -> Result<String, String> {
 /// insieme si confermano a vicenda, quindi l'ancora deve stare fuori da tutte e
 /// due.
 fn open_ledger() -> Result<Ledger, String> {
-    let directory = ledger::default_directory()
-        .ok_or_else(|| "HOME is not set: there is no telling where to open the store".to_owned())?;
+    let directory =
+        ledger::default_directory().ok_or_else(|| catalogue::say("cli.inventory.no_home", &[]))?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 
@@ -187,20 +218,35 @@ fn print_changes() -> Result<(), String> {
     let present = ledger.inventory_present().map_err(|e| e.to_string())?;
 
     if present.is_empty() && gone.is_empty() {
-        println!("the store holds no scan yet: run one with --record");
+        println!("{}", catalogue::say("cli.inventory.no_scan_yet", &[]));
         return Ok(());
     }
 
-    println!("presenti: {}", present.len());
+    println!(
+        "{}",
+        catalogue::say(
+            "cli.inventory.present",
+            &[("count", &present.len().to_string())]
+        )
+    );
     let blocked = present.iter().filter(|item| item.reach != "active").count();
     if blocked > 0 {
-        println!("di cui irraggiungibili: {blocked}");
+        println!(
+            "{}",
+            catalogue::say(
+                "cli.inventory.of_which_unreachable",
+                &[("count", &blocked.to_string())]
+            )
+        );
     }
     println!();
     if gone.is_empty() {
         println!("{}", catalogue::say("cli.inventory.none_gone", &[]));
     } else {
-        println!("sparite: {}", gone.len());
+        println!(
+            "{}",
+            catalogue::say("cli.inventory.gone", &[("count", &gone.len().to_string())])
+        );
         for item in &gone {
             println!("  {:<10} {:<34} {}", item.kind, item.name, item.origin);
         }
@@ -235,7 +281,7 @@ fn parse_kind(raw: &str) -> Option<Kind> {
 }
 
 fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
-    println!("radici guardate:");
+    println!("{}", catalogue::say("cli.inventory.roots_looked_at", &[]));
     for root in &found.roots {
         println!("  {root}");
     }
@@ -243,13 +289,13 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     // fondo: chi legge un conteggio deve avere sott'occhio quanto di macchina è
     // rimasto fuori, o legge un numero credendolo il totale.
     if !found.unseen.is_empty() {
-        println!("not looked at:");
+        println!("{}", catalogue::say("cli.inventory.not_looked_at", &[]));
         for missing in &found.unseen {
             println!("  {missing}");
         }
     }
     if !found.bases_declared {
-        println!("no working base declared: this count is the home's alone");
+        println!("{}", catalogue::say("cli.inventory.no_working_base", &[]));
     }
     println!();
 
@@ -274,15 +320,24 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
             .iter()
             .filter(|e| matches!(e.reach, Reach::Inactive(_)))
             .count();
+        let of_which = if blocked > 0 {
+            catalogue::say(
+                "cli.inventory.of_which_blocked",
+                &[("count", &blocked.to_string())],
+            )
+        } else {
+            String::new()
+        };
         println!(
-            "{} — {} in tutto{}",
-            kind.label(),
-            found.count(kind),
-            if blocked > 0 {
-                format!(", di cui {blocked} irraggiungibili")
-            } else {
-                String::new()
-            }
+            "{}",
+            catalogue::say(
+                "cli.inventory.kind_in_all",
+                &[
+                    ("kind", kind.label()),
+                    ("count", &found.count(kind).to_string()),
+                    ("of_which", &of_which)
+                ],
+            )
         );
         for entry in entries {
             let mark = match &entry.reach {
