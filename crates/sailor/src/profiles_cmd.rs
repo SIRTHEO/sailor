@@ -38,7 +38,11 @@ pub const USAGE: &[&str] = &[
 ];
 
 fn usage() -> String {
-    format!("usage:\n  {}", USAGE.join("\n  "))
+    format!(
+        "{}\n  {}",
+        catalogue::say("cli.usage_heading", &[]),
+        USAGE.join("\n  ")
+    )
 }
 
 /// **UN ELENCO DI PROFILI CHE NON DICE SE SONO USABILI È UN ELENCO CHE
@@ -72,7 +76,10 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
         // spostare, quindi non c'è nessuna domanda da farle.
         let access = match find_cli(&profile.cli_id) {
             Ok(cli) => access_state(&tools, &probe, cli, &profile.home_dir),
-            Err(reason) => format!("not known ({reason})"),
+            Err(reason) => catalogue::say(
+                "cli.profiles.access.not_known_because",
+                &[("reason", &reason)],
+            ),
         };
         println!(
             "{marker} {} {} -> {} — access: {access}",
@@ -97,16 +104,13 @@ fn access_state(
     home: &Path,
 ) -> String {
     let Some((tool, bin)) = tools.declared_as_executable(cli.executable) else {
-        return format!(
-            "not known: «{}» is not on this machine, or no descriptor declares it",
-            cli.executable
+        return catalogue::say(
+            "cli.profiles.access.no_such_executable",
+            &[("executable", cli.executable)],
         );
     };
     let Some(recipe) = tools.login_recipe(&tool) else {
-        return format!(
-            "not known: descriptor «{tool}» does not declare how to ask it whether it \
-             is authenticated (`login_status`) — nobody looked"
-        );
+        return catalogue::say("cli.profiles.access.no_recipe", &[("tool", &tool)]);
     };
     // **LA CASA DI QUESTO PROFILO, NON QUELLA IN FORZA.** È tutta la ragione per
     // cui `LoginProbe` prende l'ambiente come argomento invece di andarselo a
@@ -114,26 +118,30 @@ fn access_state(
     // tutte le righe dell'elenco, e sarebbe la risposta di uno solo.
     let env = profiles::build_environment(cli, home);
     if env.is_empty() {
-        return format!(
-            "not known: the home of «{}» does not move with a variable ({}), so no \
-             home other than the one in force can be questioned here",
-            cli.id, cli.home_note
+        return catalogue::say(
+            "cli.profiles.access.home_does_not_move",
+            &[("id", cli.id), ("note", cli.home_note)],
         );
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
-        LoginVerdict::LoggedIn { said } => format!("authenticated («{}»)", one_line(&said)),
-        LoginVerdict::LoggedOut { said } => {
-            format!("NOT AUTHENTICATED («{}»)", one_line(&said))
-        }
-        LoginVerdict::NotDeclared => {
-            format!("not known: descriptor «{tool}» declares `login_status` by halves")
-        }
-        LoginVerdict::Unrecognised { said } => format!(
-            "not known: it answered «{}», which resembles neither of the two declared \
-             forms",
-            one_line(&said)
+        LoginVerdict::LoggedIn { said } => catalogue::say(
+            "cli.profiles.access.authenticated",
+            &[("said", &one_line(&said))],
         ),
-        LoginVerdict::NoAnswer { why } => format!("not known: no answer — {why}"),
+        LoginVerdict::LoggedOut { said } => catalogue::say(
+            "cli.profiles.access.not_authenticated",
+            &[("said", &one_line(&said))],
+        ),
+        LoginVerdict::NotDeclared => {
+            catalogue::say("cli.profiles.access.recipe_by_halves", &[("tool", &tool)])
+        }
+        LoginVerdict::Unrecognised { said } => catalogue::say(
+            "cli.profiles.access.unrecognised",
+            &[("said", &one_line(&said))],
+        ),
+        LoginVerdict::NoAnswer { why } => {
+            catalogue::say("cli.profiles.access.no_answer", &[("why", &why)])
+        }
     }
 }
 
@@ -146,12 +154,20 @@ fn one_line(said: &str) -> String {
 
 fn cmd_create(args: &[String]) -> Result<(), String> {
     let [cli_id, name] = args else {
-        return Err("usage: sailor profiles create <cli> <name>".to_owned());
+        return Err(catalogue::say("cli.profiles.usage_create", &[]));
     };
     let cli = find_cli(cli_id)?;
     let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
-        .map_err(|e| format!("not a valid profile name: {e}"))?;
-    std::fs::create_dir_all(&home).map_err(|e| format!("cannot create {}: {e}", home.display()))?;
+        .map_err(|e| catalogue::say("cli.profiles.name_not_valid", &[("error", &e.to_string())]))?;
+    std::fs::create_dir_all(&home).map_err(|e| {
+        catalogue::say(
+            "cli.profiles.cannot_create",
+            &[
+                ("path", &home.display().to_string()),
+                ("error", &e.to_string()),
+            ],
+        )
+    })?;
 
     let mut store = store_io::load_store()?;
     let already_exists = store
@@ -159,7 +175,10 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
         .iter()
         .any(|p| p.cli_id == cli.id && &p.name == name);
     if already_exists {
-        return Err(format!("profile {name} already exists for {}", cli.id));
+        return Err(catalogue::say(
+            "cli.profiles.already_exists",
+            &[("name", name), ("id", cli.id)],
+        ));
     }
     store.profiles.push(Profile {
         name: name.clone(),
@@ -171,7 +190,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
 
 fn cmd_switch(args: &[String]) -> Result<(), String> {
     let [cli_id, name] = args else {
-        return Err("usage: sailor profiles switch <cli> <name>".to_owned());
+        return Err(catalogue::say("cli.profiles.usage_switch", &[]));
     };
     let cli = find_cli(cli_id)?;
     let mut store = store_io::load_store()?;
@@ -180,7 +199,9 @@ fn cmd_switch(args: &[String]) -> Result<(), String> {
         .iter()
         .find(|p| p.cli_id == cli.id && &p.name == name)
         .cloned()
-        .ok_or_else(|| format!("profile {name} not found for {}", cli.id))?;
+        .ok_or_else(|| {
+            catalogue::say("cli.profiles.not_found", &[("name", name), ("id", cli.id)])
+        })?;
 
     if let HomeMechanism::CredentialSymlink { relative_path } = cli.home {
         store_io::apply_symlink_swap(&store_io::home_dir()?, relative_path, &profile.home_dir)?;
@@ -194,13 +215,13 @@ fn cmd_switch(args: &[String]) -> Result<(), String> {
 
 fn cmd_current(args: &[String]) -> Result<(), String> {
     let [cli_id] = args else {
-        return Err("usage: sailor profiles current <cli>".to_owned());
+        return Err(catalogue::say("cli.profiles.usage_current", &[]));
     };
     let cli = find_cli(cli_id)?;
     let store = store_io::load_store()?;
     match store.active.get(cli.id) {
         Some(name) => println!("{name}"),
-        None => println!("(no active profile)"),
+        None => println!("{}", catalogue::say("cli.profiles.none_active", &[])),
     }
     Ok(())
 }

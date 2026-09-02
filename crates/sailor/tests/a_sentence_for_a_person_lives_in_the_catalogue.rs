@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// What `crates/sailor/src` still holds. It goes down as sentences move into
 /// `i18n/`, and a rise means a new one was written into the code. Never raise
 /// it to make the gate green.
-const SENTENCES_STILL_IN_THE_CODE: usize = 233;
+const SENTENCES_STILL_IN_THE_CODE: usize = 199;
 
 /// Words that open a query for the database, not a line for a person.
 const A_QUERY_NOT_A_SENTENCE: &[&str] = &[

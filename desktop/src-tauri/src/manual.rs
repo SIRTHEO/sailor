@@ -21,8 +21,11 @@ use serde::Serialize;
 pub struct CommandDoc {
     /// Il nome che si digita: `flow`, `step`, `release`.
     pub name: &'static str,
-    /// Una riga che dice a cosa serve. È la stessa che stampa `sailor --help`.
-    pub description: &'static str,
+    /// Una riga che dice a cosa serve. È la stessa che stampa `sailor --help`,
+    /// e come quella arriva dal catalogo: nella tabella dei comandi c'è la
+    /// chiave, non la frase, così la finestra la mostra nella lingua di chi
+    /// guarda invece che in quella di chi l'ha scritta.
+    pub description: String,
     /// Le forme complete, una per riga, già pronte da mostrare in colonna.
     pub usage: &'static [&'static str],
 }
@@ -36,7 +39,7 @@ pub(crate) fn manual() -> Vec<CommandDoc> {
         .iter()
         .map(|command| CommandDoc {
             name: command.name,
-            description: command.description,
+            description: catalogue::say(command.description_key, &[]),
             usage: command.usage,
         })
         .collect()
