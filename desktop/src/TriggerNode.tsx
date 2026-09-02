@@ -69,7 +69,7 @@ export interface RunControls {
 
 const MUTE: RunControls = {
   native: false,
-  triggerOf: () => ({ state: "mute", why: "fuori dal guscio: nessun motore da innescare" }),
+  triggerOf: () => ({ state: "mute", why: "outside the shell: no engine to trigger" }),
   runOf: () => undefined,
   mandateOf: () => "",
   onMandate: () => {},
@@ -92,15 +92,15 @@ export function triggerNodeId(flowName: string): string {
 }
 
 const RUNNING_LABEL: Record<string, string> = {
-  running: "in corso",
-  complete: "completato",
-  failed: "fallito",
-  waiting: "in attesa",
-  stopped: "fermato",
+  running: "running",
+  complete: "complete",
+  failed: "failed",
+  waiting: "waiting",
+  stopped: "stopped",
   // Non è «fallito»: la corsa ha rispettato un limite che qualcuno le ha
   // messo. Chi le vede uguali smette di guardare tutte e due.
-  cap_reached: "fermato dal tetto di spesa",
-  incomplete: "incompleto",
+  cap_reached: "stopped by the spend cap",
+  incomplete: "incomplete",
 };
 
 export function TriggerNode({ data }: NodeProps) {
@@ -121,7 +121,7 @@ export function TriggerNode({ data }: NodeProps) {
             one shape, wherever a trigger appears. */}
         <KindIcon kind="trigger" className="trigger-node__icon" />
         <span className="trigger-node__mark" style={{ background: color }} />
-        <span className="trigger-node__kind">innesco · manuale</span>
+        <span className="trigger-node__kind">trigger · by hand</span>
       </div>
 
       <div className="trigger-node__flow">{flowName}</div>
@@ -129,10 +129,10 @@ export function TriggerNode({ data }: NodeProps) {
       {/* La pianificazione non è un dettaglio da nascondere: se il flusso parte
           anche da solo, chi preme deve sapere che non è l'unico a farlo. */}
       {trigger.state === "ready" && trigger.trigger.scheduled && (
-        <div className="trigger-node__note">questo flusso ha anche una pianificazione propria</div>
+        <div className="trigger-node__note">this flow also has a schedule of its own</div>
       )}
 
-      {trigger.state === "asking" && <div className="trigger-node__note">chiedo al motore…</div>}
+      {trigger.state === "asking" && <div className="trigger-node__note">asking the engine…</div>}
 
       {trigger.state === "mute" && <div className="trigger-node__why">{trigger.why}</div>}
 
@@ -144,10 +144,10 @@ export function TriggerNode({ data }: NodeProps) {
           className="trigger-node__mandate nodrag nowheel"
           placeholder={
             mandate?.kind === "field"
-              ? `la consegna: entra in «${mandate.step}» come «${mandate.field}»`
-              : "la consegna: cosa deve fare, questa volta"
+              ? `the mandate: it enters «${mandate.step}» as «${mandate.field}»`
+              : "the mandate: what it has to do, this time"
           }
-          aria-label={`consegna per il flusso ${flowName}`}
+          aria-label={`mandate for the flow ${flowName}`}
           value={controls.mandateOf(flowName)}
           disabled={busy}
           onChange={(event) => controls.onMandate(flowName, event.target.value)}
@@ -168,11 +168,11 @@ export function TriggerNode({ data }: NodeProps) {
           onClick={() => controls.onRun(flowName)}
           title={
             controls.native
-              ? `fai partire «${flowName}»`
-              : "fuori dal guscio nativo non c'è un motore che esegua"
+              ? `start «${flowName}»`
+              : "outside the native shell there is no engine to run it"
           }
         >
-          {busy ? "in corso…" : "▶ Esegui"}
+          {busy ? "running…" : "▶ Run"}
         </button>
 
         {run && (

@@ -111,7 +111,7 @@ export function loose(name: string, text: string, italian: Set<string> = ITALIAN
  * can only fall**: lowering it is the repair, raising it means a sentence was
  * written where it cannot be published.
  */
-const LOOSE_TODAY = 109;
+const LOOSE_TODAY = 1;
 
 function everythingLoose(): string[] {
   const found: string[] = [];

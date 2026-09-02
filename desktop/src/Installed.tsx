@@ -23,11 +23,11 @@ import { machineInventory, type Installed as Census, type InstalledEntry } from 
 const ONCE = null;
 
 const FAMILY_WORD: Record<InstalledEntry["kind"], string> = {
-  skill: "competenze",
-  agent: "agenti",
-  command: "comandi",
-  rule: "regole",
-  hook: "ganci",
+  skill: "skills",
+  agent: "agents",
+  command: "commands",
+  rule: "rules",
+  hook: "hooks",
 };
 
 const FAMILIES = ["skill", "agent", "command", "rule", "hook"] as const;
@@ -40,7 +40,7 @@ export function countByFamily(entries: InstalledEntry[]): Record<InstalledEntry[
 }
 
 export function Installed({ native }: { native: boolean }) {
-  const { asked } = useAsk<Census>(native, machineInventory, ONCE, "fuori dal guscio: il censimento lo fa il motore");
+  const { asked } = useAsk<Census>(native, machineInventory, ONCE, "outside the shell: the engine takes the census");
   const [family, setFamily] = useState<InstalledEntry["kind"] | null>(null);
 
   const entries = asked.state === "answered" ? asked.value.entries : EMPTY;
@@ -53,14 +53,14 @@ export function Installed({ native }: { native: boolean }) {
   if (asked.state === "mute") {
     return (
       <div className="now">
-        <p className="now__mute">Non riesco a censire questa macchina: {asked.why}</p>
+        <p className="now__mute">Cannot take stock of this machine: {asked.why}</p>
       </div>
     );
   }
   if (asked.state === "asking") {
     return (
       <div className="now">
-        <p className="now__mute">Cammino sul disco…</p>
+        <p className="now__mute">Walking the disk…</p>
       </div>
     );
   }
@@ -108,11 +108,11 @@ export function Installed({ native }: { native: boolean }) {
       <table className="now__table">
         <thead>
           <tr>
-            <th>nome</th>
-            <th>famiglia</th>
-            <th>da dove</th>
-            <th>raggiungibile</th>
-            <th>chi la invoca</th>
+            <th>name</th>
+            <th>family</th>
+            <th>from where</th>
+            <th>reachable</th>
+            <th>who invokes it</th>
           </tr>
         </thead>
         <tbody>
@@ -127,10 +127,10 @@ export function Installed({ native }: { native: boolean }) {
               {/* IL MOTIVO STA ACCANTO ALLO STATO. «Spenta» senza il perché
                   non si può correggere: è tutto il valore della terza voce. */}
               <td className="now__state" data-reach={entry.reach.state}>
-                {entry.reach.state === "active" ? "attiva" : entry.reach.state === "inactive" ? "spenta" : "non lo so"}
+                {entry.reach.state === "active" ? "active" : entry.reach.state === "inactive" ? "switched off" : "not known"}
                 {entry.reach.state !== "active" && <span className="now__why">{entry.reach.reason}</span>}
               </td>
-              <td className="now__when">{entry.by_model ? "anche il modello" : "solo tu"}</td>
+              <td className="now__when">{entry.by_model ? "the model too" : "only you"}</td>
             </tr>
           ))}
         </tbody>
@@ -139,7 +139,7 @@ export function Installed({ native }: { native: boolean }) {
       {/* Dove ha guardato. In fondo perché è la risposta a una domanda che
           nasce solo quando manca qualcosa — ma deve esserci. */}
       <details className="roots">
-        <summary className="roots__head">Dove ha guardato</summary>
+        <summary className="roots__head">Where it looked</summary>
         <ul className="roots__list">
           {asked.value.roots.map((root) => (
             <li key={root}>{root}</li>

@@ -422,21 +422,21 @@ describe("a single step is not «1 passi»", () => {
     // would be green for never having met the case.
     const notes = read(".rail__note");
     expect(notes, "no sample flow has a single step").toContain(stepCountLabel(1));
-    expect(notes).not.toContain("1 passi");
+    expect(notes).not.toContain("1 steps");
 
     const counts = read(".flow-band__count");
     expect(counts, "the lane does not count its steps").toContain(stepCountLabel(1));
-    expect(counts).not.toContain("1 passi");
+    expect(counts).not.toContain("1 steps");
 
-    // And the plural stays plural: "no «1 passi»" would be true of a line that
-    // always writes «passo» too.
+    // And the plural stays plural: "no «1 steps»" would be true of a line that
+    // always writes «step» too.
     expect(notes).toContain(stepCountLabel(7));
   });
 
   test("the line that counts knows how to count", () => {
-    expect(stepCountLabel(0)).toBe("0 passi");
-    expect(stepCountLabel(1)).toBe("1 passo");
-    expect(stepCountLabel(7)).toBe("7 passi");
+    expect(stepCountLabel(0)).toBe("0 steps");
+    expect(stepCountLabel(1)).toBe("1 step");
+    expect(stepCountLabel(7)).toBe("7 steps");
   });
 });
 
@@ -446,22 +446,22 @@ describe("a single step is not «1 passi»", () => {
  * **TWO INVITATIONS ON THE SAME SCREEN CANCEL EACH OTHER** — the rule the
  * toolbar invokes to disappear when there are no flows. So the count is of
  * **who** invites, not of words, and the list is not by hand: it once left out
- * the column, which invites with «+ Nuovo flusso», and the rule stayed green.
+ * the column, which invites with «+ New flow», and the rule stayed green.
  */
 const OWNERS: Array<[selector: string, name: string]> = [
-  [".rail", "la colonna"],
-  [".blank__card", "la tela vuota"],
-  [".toolbar__prompt", "la barra"],
-  [".panel__empty", "il pannello"],
+  [".rail", "the column"],
+  [".blank__card", "the blank canvas"],
+  [".toolbar__prompt", "the bar"],
+  [".panel__empty", "the panel"],
 ];
 
 /**
  * An invitation asks for a gesture **on a flow**: with a verb, or with the sign
  * that stands in for one. Demanding the verb left out the most inviting button
- * on the screen, «+ Nuovo flusso», which states the gesture with a `+`.
+ * on the screen, «+ New flow», which states the gesture with a `+`.
  */
 function invites(text: string): boolean {
-  return /fluss[oi]/i.test(text) && /\+|\b(scegli|crea|creane|nuovo|nuova)\b/i.test(text);
+  return /\bflows?\b/i.test(text) && /\+|\b(pick|choose|create|make|new)\b/i.test(text);
 }
 
 /**
@@ -471,9 +471,7 @@ function invites(text: string): boolean {
  * What cancels itself out is the *same* gesture offered twice.
  */
 function invitesToCreate(text: string): boolean {
-  return /(\+\s*(un\s+)?(nuovo|nuova)|\bcrea(ne)?\b)[^.]{0,30}fluss[oi]|fluss[oi][^.]{0,20}\bnuov/i.test(
-    text,
-  );
+  return /(\+\s*(a\s+)?new|\b(create|make)\b)[^.]{0,30}\bflows?\b|\bflows?\b[^.]{0,20}\bnew\b/i.test(text);
 }
 
 function whoInvitesToCreate(container: HTMLElement): string[] {
@@ -510,11 +508,11 @@ describe("two invitations on the same screen cancel each other", () => {
     // screen where nobody speaks.
     const prompt = container.querySelector(".toolbar__prompt") as HTMLElement;
     expect(prompt, "the toolbar has not changed job").not.toBeNull();
-    expect(whoInvitesToCreate(container)).toEqual(["la colonna"]);
+    expect(whoInvitesToCreate(container)).toEqual(["the column"]);
 
     // And the bar still speaks: silencing it would satisfy the count above
     // while leaving the screen with a bar that says nothing at all.
-    expect(prompt.textContent ?? "").toMatch(/nella colonna/i);
+    expect(prompt.textContent ?? "").toMatch(/in the column/i);
     expect(invites(prompt.textContent ?? ""), "the bar stopped asking for a flow").toBe(true);
   });
 
@@ -526,7 +524,7 @@ describe("two invitations on the same screen cancel each other", () => {
     // The bar has its tools back, so this is the other state, not a repeat of
     // the one above: there the gesture could hide in a bar that had no tools.
     expect(container.querySelectorAll(".toolbar__tool").length, "the bar has no tools").toBeGreaterThan(0);
-    expect(whoInvitesToCreate(container)).toEqual(["la colonna"]);
+    expect(whoInvitesToCreate(container)).toEqual(["the column"]);
   });
 
   test("WITH A FLOW FOCUSED, THE PANEL DOES NOT INVITE FOCUSING IT", () => {
@@ -544,10 +542,10 @@ describe("two invitations on the same screen cancel each other", () => {
     expect(
       panel.textContent ?? "",
       "the panel invites focusing a flow that is already focused",
-    ).not.toMatch(/fluss[oi]/i);
+    ).not.toMatch(/\bflows?\b/i);
 
     // And its job remains: the step, which is what the panel shows.
-    expect(panel.textContent ?? "").toMatch(/passo/i);
+    expect(panel.textContent ?? "").toMatch(/\bstep\b/i);
   });
 
   test("ON THE EMPTY CANVAS THE CANVAS INVITES, not the column too", () => {
@@ -559,10 +557,10 @@ describe("two invitations on the same screen cancel each other", () => {
     goToFlows();
 
     expect(container.querySelector(".blank[data-state='empty']"), "this is not the empty canvas").not.toBeNull();
-    expect(whoInvites(container)).toEqual(["la tela vuota"]);
+    expect(whoInvites(container)).toEqual(["the blank canvas"]);
     // The state where the column is closed is the one state where the canvas
     // owns the gesture instead: still one owner, a different one.
-    expect(whoInvitesToCreate(container)).toEqual(["la tela vuota"]);
+    expect(whoInvitesToCreate(container)).toEqual(["the blank canvas"]);
   });
 });
 
@@ -584,7 +582,7 @@ describe("the bar does not send you to a column this place has not got", () => {
     // wrong.
     const line = container.querySelector(".topbar__none");
     expect(line, "the bar is silent on the board, where the column is").not.toBeNull();
-    expect(line?.textContent ?? "").toMatch(/rail|colonna/i);
+    expect(line?.textContent ?? "").toMatch(/rail|column/i);
 
     // Leave the board: **mounted is not in view**. The board sits inside
     // `.body[hidden]`, and the bar must stop naming a column this place has
@@ -627,7 +625,7 @@ describe("the screen with no flows, in full", () => {
     goToFlows();
     const panel = populated.container.querySelector(".panel__empty");
     expect(panel, "the panel is silent even where it has something to say").not.toBeNull();
-    expect(panel?.textContent ?? "").toMatch(/passo/i);
+    expect(panel?.textContent ?? "").toMatch(/\bstep\b/i);
   });
 
   /**
@@ -657,7 +655,7 @@ describe("the screen with no flows, in full", () => {
 
   /**
    * **THE LEFT COLUMN CLOSES AT ZERO FLOWS TOO.** Not for symmetry: its
-   * «+ Nuovo flusso» and the card's «Crea il primo flusso» are one function
+   * «+ New flow» and the card's «Create the first flow» are one function
    * under two names, half a metre apart. The gesture keeps its home — the two
    * never coexist: at the first click the flow is born and the column returns.
    */
@@ -686,7 +684,7 @@ describe("the screen with no flows, in full", () => {
 
   /**
    * **WITH ONLY BROKEN FLOWS THE COLUMN STAYS, AND IS SILENT.** The card says
-   * files that will not load sit «in fondo alla colonna»: closing the column
+   * files that will not load sit «at the foot of the column»: closing the column
    * here too would make that line false, and naming a place that is not there is
    * the very fault this whole screen comes from. It shows, it does not call.
    */
@@ -703,8 +701,8 @@ describe("the screen with no flows, in full", () => {
 
     // The card's line names the column, and the column is there: without this
     // line "the column stays" would be a choice with no reason.
-    expect(container.querySelector(".blank__card")?.textContent ?? "").toMatch(/in fondo alla colonna/i);
-    expect(whoInvites(container)).toEqual(["la tela vuota"]);
+    expect(container.querySelector(".blank__card")?.textContent ?? "").toMatch(/foot of the column/i);
+    expect(whoInvites(container)).toEqual(["the blank canvas"]);
   });
 
   /**
@@ -777,7 +775,7 @@ describe("the three states of the canvas with no flows", () => {
 
     // And the word stays: prohibition 5 allows no state readable only from the
     // shape, just as it allows none readable only from the color.
-    expect(container.textContent ?? "").toMatch(/motore/i);
+    expect(container.textContent ?? "").toMatch(/engine/i);
 
     // A skeleton does not invite: there is nothing to decide yet.
     expect(container.querySelectorAll("button")).toHaveLength(0);
@@ -789,13 +787,13 @@ describe("the three states of the canvas with no flows", () => {
       <BlankCanvas state="empty" brokenCount={0} onCreate={() => (created += 1)} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Crea il primo flusso/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Create the first flow/ }));
     expect(created, "the offered gesture does nothing").toBe(1);
 
     // The gestures are in a row, and they are the real ones. The toolbox is a bar
     // at the bottom of the canvas, not on the left, and with zero flows it is not
     // there at all — a false instruction is worse than no instruction.
-    expect(container.textContent ?? "").not.toMatch(/cassetta a sinistra|colonna a sinistra/i);
+    expect(container.textContent ?? "").not.toMatch(/toolbox on the left|column on the left/i);
     expect(container.querySelectorAll(".blank__gestures li").length).toBeGreaterThanOrEqual(3);
 
     // And the gestures are seen: `display: none` on their row takes the canvas
