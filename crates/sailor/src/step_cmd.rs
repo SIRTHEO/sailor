@@ -73,14 +73,14 @@ fn flags(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     let mut rest = args.iter();
     while let Some(name) = rest.next() {
         let Some(name) = name.strip_prefix("--") else {
-            return Err(format!("non capisco «{name}»; {}", usage()));
+            return Err(format!("«{name}» is not something I know; {}", usage()));
         };
         let value = rest
             .next()
-            .ok_or_else(|| format!("«--{name}» vuole un valore dopo di sé"))?;
+            .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
         if let Some(other) = value.strip_prefix("--") {
             return Err(format!(
-                "«--{name}» ha ricevuto «--{other}» come valore: manca il valore vero"
+                "«--{name}» was given «--{other}» as its value: the real value is missing"
             ));
         }
         found.insert(name.to_owned(), value.clone());
@@ -124,9 +124,9 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
 
     let records = ledger
         .steps(run_id)
-        .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?;
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?;
     let latest = last_attempt(&records, step_id)
-        .ok_or_else(|| format!("la corsa {run_id} non ha nessun passo che si chiama {step_id}"))?;
+        .ok_or_else(|| format!("run {run_id} has no step called {step_id}"))?;
 
     // **SI APRE SOLO CIÒ CHE È IN ATTESA.** Un passo andato, rotto o ancora
     // aperto non è stato consegnato a nessuno: aprirlo di nuovo vorrebbe dire
@@ -135,14 +135,14 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
         Some(Outcome::Waiting) => {}
         None => {
             return Err(format!(
-                "il passo {step_id} è aperto: qualcuno lo sta già eseguendo, e non è stato \
-                 consegnato. Chiudilo prima, o riprendi la corsa con `sailor flow resume {run_id}`"
+                "step {step_id} is open: somebody is already running it, and it was not \
+                 handed over. Close it first, or resume the run with `sailor flow resume {run_id}`"
             ))
         }
         Some(other) => {
             return Err(format!(
-                "il passo {step_id} non è in attesa ma {other:?}: non c'è nessuna consegna \
-                 da prendere in carico"
+                "step {step_id} is not waiting but {other:?}: there is no handover \
+                 to take charge of"
             ))
         }
     }
@@ -175,7 +175,7 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
     started.species = latest.species;
     ledger
         .append_step_started(&started)
-        .map_err(|error| format!("non riesco ad aprire il passo {step_id}: {error}"))?;
+        .map_err(|error| format!("cannot open step {step_id}: {error}"))?;
 
     // **IL MANDATO SI LEGGE DALL'INGRESSO, MAI DA `said`.** In `said` c'è la
     // riga corta, tagliata a 16 KB; il lavoro per esteso sta nell'ingresso, che
@@ -185,7 +185,7 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
         .input
         .get("mandate")
         .and_then(Value::as_str)
-        .unwrap_or("<questo passo non porta nessun mandato scritto>");
+        .unwrap_or("<this step carries no written brief>");
     Ok(format!(
         "passo {step_id} preso in carico da «{holder}» — corsa {run_id}, tentativo {}\n\
          ── mandato ──\n{mandate}\n──\n\
@@ -230,7 +230,7 @@ fn refuse_the_author_as_judge(
     for dependency in &record.deps {
         let written = ledger
             .read_record(HOLDER_COLLECTION, &holder_key(run_id, dependency))
-            .map_err(|error| format!("non riesco a leggere chi ha chiuso {dependency}: {error}"))?;
+            .map_err(|error| format!("cannot read who closed {dependency}: {error}"))?;
         if written.is_some_and(|found| found.written_by == holder) {
             return Err(format!(
                 "«{holder}» ha già chiuso {dependency}, da cui {step_id} dipende: chi crea \
@@ -293,7 +293,7 @@ fn close_step_in(
 
     let records = ledger
         .steps(run_id)
-        .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?;
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?;
     // Il record aperto lo trova da sé: chi chiude non deve sapere a che
     // tentativo è arrivato, e chiederglielo sarebbe un numero da sbagliare.
     let open = records
@@ -359,9 +359,9 @@ fn close_step_in(
             }
             Some(path) => {
                 let text = std::fs::read_to_string(path)
-                    .map_err(|error| format!("non riesco a leggere {path}: {error}"))?;
+                    .map_err(|error| format!("cannot read {path}: {error}"))?;
                 let value: Value = serde_json::from_str(&text)
-                    .map_err(|error| format!("{path} non è JSON valido: {error}"))?;
+                    .map_err(|error| format!("{path} is not valid JSON: {error}"))?;
                 step.output_schema.validate(&value).map_err(|error| {
                     format!(
                         "l'uscita dichiarata non rispetta lo schema del passo {step_id}: {error}. \
@@ -398,7 +398,7 @@ fn close_step_in(
                 bytes_discarded: None,
             },
         )
-        .map_err(|error| format!("non riesco a chiudere il passo {step_id}: {error}"))?;
+        .map_err(|error| format!("cannot close step {step_id}: {error}"))?;
 
     // Chi ha chiuso resta scritto: lo rilegge `open` sul passo che dipende da
     // questo, per rifiutare un giudice che è anche autore.
@@ -410,10 +410,10 @@ fn close_step_in(
             written_by: holder.to_owned(),
             written_at: now,
         })
-        .map_err(|error| format!("non riesco a registrare chi ha chiuso {step_id}: {error}"))?;
+        .map_err(|error| format!("cannot record who closed {step_id}: {error}"))?;
 
     let mut report = format!(
-        "passo {step_id} chiuso da «{holder}» come {}",
+        "step {step_id} closed by «{holder}» as {}",
         match outcome {
             Outcome::Went => "andato",
             _ => "rotto",
@@ -423,7 +423,7 @@ fn close_step_in(
     if let Some(turns) = found.get("turns") {
         let turns: u64 = turns
             .parse()
-            .map_err(|_| format!("«--turns {turns}» non è un numero"))?;
+            .map_err(|_| format!("«--turns {turns}» is not a number"))?;
         write_self_declared_turns(&ledger, run_id, step_id, holder, turns, now)?;
         let _ = write!(
             report,
@@ -437,7 +437,7 @@ fn close_step_in(
     // ha sbloccato qualcosa, cioè uscire da Sailor per interrogare Sailor.
     let decision = InProcessExecutor
         .decision(&flow.graph, run_id, ledger)
-        .map_err(|error| format!("non riesco a calcolare cosa è pronto: {error}"))?;
+        .map_err(|error| format!("cannot work out what is ready: {error}"))?;
     let _ = write!(report, "\n{}", what_comes_next(&decision, run_id));
     Ok(report)
 }
@@ -446,7 +446,7 @@ fn close_step_in(
 fn what_comes_next(decision: &Decision, run_id: &str) -> String {
     match decision {
         Decision::Ready(steps) => format!(
-            "pronti adesso: {}. Riprendi con: sailor flow resume {run_id}",
+            "ready now: {}. Resume with: sailor flow resume {run_id}",
             steps.join(", ")
         ),
         Decision::Waiting(steps) => format!(
@@ -454,11 +454,11 @@ fn what_comes_next(decision: &Decision, run_id: &str) -> String {
              --step <passo> --as <chi>",
             steps.join(", ")
         ),
-        Decision::Running(steps) => format!("ancora in corso: {}", steps.join(", ")),
-        Decision::Stopped(steps) => format!("fermi nel deposito: {}", steps.join(", ")),
+        Decision::Running(steps) => format!("still running: {}", steps.join(", ")),
+        Decision::Stopped(steps) => format!("stopped in the store: {}", steps.join(", ")),
         Decision::Failed(steps) => format!("rotti oltre i tentativi: {}", steps.join(", ")),
         Decision::CapReached(stop) => registry::why_it_stopped(stop),
-        Decision::Complete => "la corsa è completa: non resta niente da fare".to_owned(),
+        Decision::Complete => "the run is complete: nothing is left to do".to_owned(),
     }
 }
 
@@ -532,7 +532,7 @@ fn write_self_declared_turns(
             started_at: now,
             ended_at: Some(now),
         })
-        .map_err(|error| format!("non riesco a registrare i turni dichiarati: {error}"))
+        .map_err(|error| format!("cannot record the declared turns: {error}"))
 }
 
 // ── gli attrezzi comuni ──────────────────────────────────────────────────
@@ -571,8 +571,8 @@ fn last_attempt<'a>(records: &'a [StepRecord], step_id: &str) -> Option<&'a Step
 pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
     let header = ledger
         .run_header(run_id)
-        .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?
-        .ok_or_else(|| format!("nessuna corsa si chiama {run_id} in questo deposito"))?;
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?
+        .ok_or_else(|| format!("no run is called {run_id} in this store"))?;
     if header.entity.is_empty() {
         return Err(format!(
             "la corsa {run_id} non dichiara da quale flusso viene: senza non so quale \
@@ -584,7 +584,7 @@ pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, Str
     match known.iter().find(|(name, _, _)| *name == header.entity) {
         Some((_, _, Ok(flow))) => Ok(flow.clone()),
         Some((_, origin, Err(reason))) => Err(format!(
-            "il flusso {} ({origin}) della corsa {run_id} non si carica: {reason}",
+            "flow {} ({origin}) of run {run_id} does not load: {reason}",
             header.entity
         )),
         None => Err(format!(
@@ -597,13 +597,8 @@ pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, Str
 
 pub(crate) fn open_ledger() -> Result<Ledger, String> {
     let dir = ledger::default_directory()
-        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())?;
-    Ledger::open(&dir).map_err(|error| {
-        format!(
-            "non riesco ad aprire il deposito {}: {error}",
-            dir.display()
-        )
-    })
+        .ok_or_else(|| "HOME is not set: there is no telling where to open the store".to_owned())?;
+    Ledger::open(&dir).map_err(|error| format!("cannot open the store {}: {error}", dir.display()))
 }
 
 fn now_secs() -> Result<i64, String> {
@@ -887,7 +882,7 @@ mod tests {
             ]),
         )
         .expect("l'uscita dichiarata si accetta");
-        assert!(report.contains("chiuso"), "{report}");
+        assert!(report.contains("closed"), "{report}");
 
         let spent = ledger.spent_in_run("run-1").expect("la spesa si chiede");
         assert_eq!(spent.calls, 1, "i turni dichiarati scrivono una chiamata");
@@ -1160,14 +1155,14 @@ mod tests {
             &options(&[("run", "run-1"), ("step", "implementa"), ("as", "un-altro")]),
         )
         .expect_err("un passo già aperto non si riprende");
-        assert!(error.contains("è aperto"), "{error}");
+        assert!(error.contains("is open"), "{error}");
     }
 
     #[test]
     fn an_option_without_a_value_is_refused() {
         let error = flags(&words(&["--run", "--step", "implementa"]))
             .expect_err("un'opzione senza valore si rifiuta");
-        assert!(error.contains("manca il valore vero"), "{error}");
+        assert!(error.contains("the real value is missing"), "{error}");
     }
 
     #[test]

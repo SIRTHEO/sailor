@@ -251,12 +251,22 @@ impl Action for SubflowAction {
                     call.flow
                 )));
             }
-            return Err(ActionError::new(
-                format!("subflow_{status}"),
-                why.unwrap_or_else(|| {
-                    format!("run {run_id} of flow {} ended in state {status}", call.flow)
-                }),
-            ));
+            // **THE CLASS IS WRITTEN OUT WHERE THE ERROR IS BUILT.**
+            // `format!("subflow_{status}")` gave these same names and no reader
+            // could find them: searching for `subflow_failed` came back empty,
+            // and a name held in a variable is one the pairing check cannot see.
+            // The last arm is its own class and not a bucket — a status added to
+            // `run_status` would otherwise arrive wearing another one's name.
+            let said = why.unwrap_or_else(|| {
+                format!("run {run_id} of flow {} ended in state {status}", call.flow)
+            });
+            return Err(match status {
+                "stopped" => ActionError::new("subflow_stopped", said),
+                "failed" => ActionError::new("subflow_failed", said),
+                "cap_reached" => ActionError::new("subflow_cap_reached", said),
+                "incomplete" => ActionError::new("subflow_incomplete", said),
+                _ => ActionError::new("subflow_unknown_state", said),
+            });
         }
 
         let records = store

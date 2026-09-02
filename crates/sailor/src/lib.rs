@@ -141,7 +141,8 @@ pub const COMMANDS: &[Command] = &[
     },
     Command {
         name: "faults",
-        description: "i guasti incontrati: cosa è successo, e quale controllo lo impedirebbe",
+        description:
+            "faults met while building: what happened, and the check that would prevent it",
         usage: faults_cmd::USAGE,
         run: faults_cmd::run,
     },

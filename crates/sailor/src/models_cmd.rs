@@ -52,7 +52,7 @@ fn run_list(args: &[String]) -> i32 {
             "--modality" => {
                 i += 1;
                 let Some(raw) = args.get(i) else {
-                    eprintln!("--modality richiede un valore");
+                    eprintln!("--modality needs a value");
                     return 2;
                 };
                 match command::parse_modality_arg(raw) {
@@ -66,19 +66,19 @@ fn run_list(args: &[String]) -> i32 {
             "--min-context" => {
                 i += 1;
                 let Some(raw) = args.get(i) else {
-                    eprintln!("--min-context richiede un valore");
+                    eprintln!("--min-context needs a value");
                     return 2;
                 };
                 match raw.parse::<u64>() {
                     Ok(n) => filter.min_context = Some(n),
                     Err(_) => {
-                        eprintln!("--min-context vuole un numero, letto \"{raw}\"");
+                        eprintln!("--min-context wants a number, read \"{raw}\"");
                         return 2;
                     }
                 }
             }
             other => {
-                eprintln!("opzione sconosciuta: {other}");
+                eprintln!("unknown option: {other}");
                 print_usage();
                 return 2;
             }
@@ -91,7 +91,7 @@ fn run_list(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("catalogo non leggibile: {e}");
+            eprintln!("the catalogue cannot be read: {e}");
             1
         }
     }
@@ -109,7 +109,7 @@ fn run_current(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("catalogo non leggibile: {e}");
+            eprintln!("the catalogue cannot be read: {e}");
             1
         }
     }
@@ -127,7 +127,7 @@ fn run_set(args: &[String]) -> i32 {
             match command::set(&mut cfg, &catalog, kind, model_id) {
                 Ok(msg) => {
                     if let Err(e) = store::save(&path, &cfg) {
-                        eprintln!("scelta accettata ma non salvata: {e}");
+                        eprintln!("the choice was accepted and not saved: {e}");
                         return 1;
                     }
                     println!("{msg}");
@@ -140,7 +140,7 @@ fn run_set(args: &[String]) -> i32 {
             }
         }
         Err(e) => {
-            eprintln!("catalogo non leggibile: {e}");
+            eprintln!("the catalogue cannot be read: {e}");
             1
         }
     }

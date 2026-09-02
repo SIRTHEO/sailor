@@ -6,6 +6,7 @@ version = 4
 name = "actions"
 version = "0.1.0"
 dependencies = [
+ "faults",
  "flow",
  "ledger",
  "libc",
@@ -2610,10 +2611,25 @@ name = "registry"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "faults",
  "flow",
  "ledger",
+ "relay",
  "toolbox",
  "trigger",
+]
+
+[[package]]
+name = "relay"
+version = "0.1.0"
+dependencies = [
+ "flow",
+ "ledger",
+ "serde",
+ "serde_json",
+ "sessions",
+ "terminal",
+ "toolbox",
 ]
 
 [[package]]
@@ -2698,6 +2714,7 @@ dependencies = [
  "flow",
  "inventory",
  "ledger",
+ "libc",
  "models",
  "profiles",
  "registry",
@@ -2705,6 +2722,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sessions",
+ "terminal",
  "toolbox",
  "trigger",
  "ui",

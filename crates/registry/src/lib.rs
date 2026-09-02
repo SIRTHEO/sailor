@@ -102,6 +102,11 @@ pub fn default_registry(
         actions::handoff::HandoffAction::new().watched_by(watcher.clone()),
     );
     actions::history::register_history(&mut registry, ledger.clone());
+    // The fault register, reachable from a flow and not only from a person's
+    // hands. Registered even where the store is absent, for the same reason as
+    // the two above: `flow check` must be able to say the step names a real
+    // action without opening anything.
+    actions::faults::register_faults(&mut registry, faults::Faults::default_path().ok());
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
