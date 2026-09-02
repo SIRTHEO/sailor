@@ -63,6 +63,7 @@ trigger = { path = "../../crates/trigger" }
 # dato del crate, non codice, e chi installa qualcosa di nuovo lo dichiara in un
 # file invece di aspettare una versione nuova del programma.
 toolbox = { path = "../../crates/toolbox" }
+profiles = { path = "../../crates/profiles" }
 
 # Il motore dei terminali. La finestra non ne contiene nemmeno una riga: apre,
 # scrive, ridimensiona e chiude passando di qui, e riceve l'uscita mentre esce.
