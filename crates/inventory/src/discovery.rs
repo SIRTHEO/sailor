@@ -11,28 +11,30 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The places Claude Code actually loads skills from, in the order it loads
-/// them. A CLOSED LIST, not a list of exclusions: a list of places to skip is
-/// always one directory behind.
-pub fn skill_sources(h: &Path) -> Vec<(PathBuf, &'static str)> {
-    vec![
-        (h.join(".claude/skills"), "*/SKILL.md"),
-        // A COLLECTION INSTALLED AS A FOLDER, whichever one it is. This line
-        // used to carry the name of the single collection whoever wrote it had
-        // at hand, and every other one was invisible. The shape is always the
-        // same: a folder holding a `skills/` of its own.
-        (h.join(".claude/skills"), "*/skills/*/SKILL.md"),
-        (h.join(".claude/plugins/cache"), "*/*/skills/*/SKILL.md"),
-        (h.join(".claude/plugins/cache"), "*/*/*/skills/*/SKILL.md"),
-    ]
+/// The places a command line loads skills from, in the order it loads them.
+///
+/// **DECLARED, NOT COMPILED.** They used to be four joins written here, naming
+/// one product. Now they come from [`crate::extensions`], and a second product
+/// is a file rather than a branch.
+pub fn skill_sources(h: &Path) -> Vec<(PathBuf, String)> {
+    places(h, |product| &product.skills)
 }
 
-pub fn agent_sources(h: &Path) -> Vec<(PathBuf, &'static str)> {
-    vec![
-        (h.join(".claude/agents"), "*.md"),
-        (h.join(".claude/plugins/cache"), "*/*/agents/*.md"),
-        (h.join(".claude/plugins/cache"), "*/*/*/agents/*.md"),
-    ]
+pub fn agent_sources(h: &Path) -> Vec<(PathBuf, String)> {
+    places(h, |product| &product.agents)
+}
+
+fn places(
+    h: &Path,
+    which: impl Fn(&crate::extensions::Product) -> &Vec<crate::extensions::Place>,
+) -> Vec<(PathBuf, String)> {
+    let mut found = Vec::new();
+    for product in crate::extensions::declared(Some(h)) {
+        for place in which(&product) {
+            found.push((h.join(&place.under), place.glob.clone()));
+        }
+    }
+    found
 }
 
 /// `Path.glob` for the only patterns needed here: literal components and `*`.
@@ -148,7 +150,12 @@ pub fn prefix(path: &Path) -> String {
 /// exists but is `null`: reading the wrong place raises no error, it yields
 /// zero enabled plugins and hence a catalogue that stays silent about plugins.
 pub fn enabled_plugins(h: &Path) -> BTreeSet<String> {
-    for path in [h.join(".claude/settings.json"), h.join(".claude.json")] {
+    let declared: Vec<PathBuf> = crate::extensions::declared(Some(h))
+        .iter()
+        .flat_map(|product| product.settings.clone())
+        .map(|rest| h.join(rest))
+        .collect();
+    for path in declared {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
@@ -183,6 +190,17 @@ pub fn truthy(v: &Value) -> bool {
     }
 }
 
+/// The manifest's own path inside a plugin, declared rather than written here.
+/// Only what ships is read: a manifest name is a shape of the product, not of
+/// the machine.
+fn manifest_name() -> String {
+    crate::extensions::declared(None)
+        .into_iter()
+        .map(|product| product.plugin_manifest)
+        .find(|declared| !declared.is_empty())
+        .unwrap_or_default()
+}
+
 /// The names declared in the `plugin.json` that governs this skill.
 ///
 /// Skills a plugin does not load stay on disk: one may declare 25 and keep 35
@@ -193,7 +211,7 @@ pub fn manifest(from: &Path) -> Option<BTreeSet<String>> {
     let mut cur = from.to_path_buf();
     for _ in 0..5 {
         cur = cur.parent()?.to_path_buf();
-        let p = cur.join(".claude-plugin").join("plugin.json");
+        let p = cur.join(&manifest_name());
         if !p.exists() {
             continue;
         }
@@ -275,7 +293,14 @@ pub fn command(path: &Path) -> Option<(String, String)> {
 /// the one in use: on disk the copies are indistinguishable. Missing or
 /// unreadable gives an empty list — "I don't know", never "nothing installed".
 pub fn installed_paths(h: &Path) -> BTreeSet<PathBuf> {
-    let path = h.join(".claude/plugins/installed_plugins.json");
+    let Some(rest) = crate::extensions::declared(Some(h))
+        .into_iter()
+        .map(|product| product.installed_plugins)
+        .find(|declared| !declared.is_empty())
+    else {
+        return BTreeSet::new();
+    };
+    let path = h.join(rest);
     let Ok(text) = fs::read_to_string(&path) else {
         return BTreeSet::new();
     };

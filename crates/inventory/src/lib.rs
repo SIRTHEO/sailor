@@ -12,6 +12,7 @@
 // TWO SEPARATE RESPONSIBILITIES, as in the rest of the system: `discovery`
 // knows where Claude Code loads things from, and here the list gets built.
 pub mod discovery;
+pub mod extensions;
 
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -255,7 +256,7 @@ fn home_skills(home: &Path) -> (Vec<Entry>, usize) {
     let mut out = Vec::new();
     let mut stale = 0usize;
     for (root, pattern) in discovery::skill_sources(home) {
-        for path in discovery::glob(&root, pattern) {
+        for path in discovery::glob(&root, &pattern) {
             if !is_the_installed_copy(&path, &installed) {
                 stale += 1;
                 continue;
@@ -316,7 +317,7 @@ fn home_agents(home: &Path) -> (Vec<Entry>, usize) {
     let mut out = Vec::new();
     let mut stale = 0usize;
     for (root, pattern) in discovery::agent_sources(home) {
-        for path in discovery::glob(&root, pattern) {
+        for path in discovery::glob(&root, &pattern) {
             if !is_the_installed_copy(&path, &installed) {
                 stale += 1;
                 continue;
@@ -378,7 +379,11 @@ fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
             // would be the same error inverted, and would cost the inventory
             // its credit on exactly the entries it can judge.
             let linked = home
-                .map(|h| h.join(".claude").join("skills").join(&folder).exists())
+                .map(|h| {
+                    extensions::declared(Some(h))
+                        .iter()
+                        .any(|product| h.join(&product.home).join("skills").join(&folder).exists())
+                })
                 .unwrap_or(false);
             Some(Entry {
                 kind: Kind::Skill,
@@ -406,7 +411,7 @@ fn warehouse_skills(root: &Root, home: Option<&Path>) -> Vec<Entry> {
 /// They hold only for whoever opens a session in there: `Unknown`, with the
 /// reason.
 fn repo_dir(root: &Root, folder: &str, kind: Kind) -> Vec<Entry> {
-    let base = root.path.join(".claude").join(folder);
+    let base = first_project_dir(root).join(folder);
     let pattern = if kind == Kind::Skill {
         "*/SKILL.md"
     } else {
@@ -429,8 +434,19 @@ fn repo_dir(root: &Root, folder: &str, kind: Kind) -> Vec<Entry> {
         .collect()
 }
 
+/// The project directory of the first product that declares one.
+///
+/// One and not all, because every caller below reads a single directory: a
+/// second product with its own is a second call, not a merged path.
+fn first_project_dir(root: &Root) -> PathBuf {
+    match extensions::project_dirs().first() {
+        Some(dir) => root.path.join(dir),
+        None => root.path.clone(),
+    }
+}
+
 fn commands_of(root: &Root) -> Vec<Entry> {
-    let base = root.path.join(".claude").join("commands");
+    let base = first_project_dir(root).join("commands");
     discovery::glob(&base, "*.md")
         .into_iter()
         .filter_map(|path| {
@@ -462,7 +478,7 @@ fn commands_of(root: &Root) -> Vec<Entry> {
 /// description is their first heading. Reading the whole text to distil one
 /// line would cost more than it returns on a directory people skim.
 fn rules_of(root: &Root) -> Vec<Entry> {
-    let base = root.path.join(".claude").join("rules");
+    let base = first_project_dir(root).join("rules");
     let mut out = Vec::new();
     // One level of subdirectories, because rules group by subject
     // (`rules/common/`, `rules/typescript/`) and stopping at the top level lost
@@ -511,7 +527,7 @@ fn first_heading(path: &Path) -> String {
 /// believing it defends something. Four scripts were still pointing at
 /// `~/.claude/rust/…`, deleted the day this was measured.
 fn hooks_of(root: &Root) -> Vec<Entry> {
-    let path = root.path.join(".claude").join("settings.json");
+    let path = first_project_dir(root).join("settings.json");
     let Ok(text) = fs::read_to_string(&path) else {
         return Vec::new();
     };
@@ -768,11 +784,18 @@ pub fn declared_bases(config_dir: Option<&Path>) -> Vec<PathBuf> {
 /// Depth two and no deeper: `<base>/suite` is a repo, but going further would
 /// walk into the worktrees, where the same rules reappear as links — and the
 /// inventory would claim twenty times what it has.
+/// Whether a directory holds any declared product's extensions.
+fn carries_extensions(at: &Path) -> bool {
+    extensions::project_dirs()
+        .iter()
+        .any(|dir| at.join(dir).is_dir())
+}
+
 pub fn repos_under(bases: &[PathBuf]) -> Survey {
     let mut found: BTreeSet<PathBuf> = BTreeSet::new();
     let mut unreadable = Vec::new();
     for base in bases {
-        if base.join(".claude").is_dir() {
+        if carries_extensions(base) {
             found.insert(base.clone());
         }
         // THE `continue` THAT USED TO BE HERE ATE THE REASON. A base that will
@@ -790,7 +813,7 @@ pub fn repos_under(bases: &[PathBuf]) -> Survey {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() && path.join(".claude").is_dir() {
+            if path.is_dir() && carries_extensions(&path) {
                 found.insert(path);
             }
         }
