@@ -148,6 +148,49 @@ Trappole già pagate su questa macchina:
 - Un commento che afferma qualcosa di falso si corregge subito. Il codice è la
   fonte; commenti e documenti sono indizi datati.
 
+## Le copie di lavoro: chi ne apre una, la chiude
+
+Il 02/09 se ne sono trovate **53 abbandonate, 39 GB**, nate in 28 ore a raffiche
+di sei-otto all'ora. Tutte pulite, nessun processo dentro, e **50 su 53 già
+dentro il tronco byte per byte**: non era lavoro perso, era ingombro.
+
+Nessuno le toglieva perché si credeva che rimuoverle cancellasse il ramo. **Non
+è vero, ed è misurato**: `git worktree remove <cartella>` toglie la cartella e
+lascia il riferimento dov'è. Il comando di Orca è un'altra cosa. Quindi chiudere
+una copia non costa niente e non si perde niente.
+
+- **Quando hai finito, togli la tua copia.** `git worktree remove` sulla
+  cartella, e il ramo resta consultabile.
+- **Non togliere quella di un altro** senza misurare prima: `git status
+  --porcelain` dentro, e nessun processo con la `cwd` lì. Se una delle due parla,
+  chiedi.
+- **Cancellare il ramo è un'altra decisione**, e non è tua: si prova prima che il
+  contenuto sia già nel tronco, e si chiede.
+
+## L'integrazione ha un ramo solo
+
+Undici di quelle 53 esistevano **solo per fondere** — `fusione-quattro`,
+`fusione-sei`, `fusione-46`, `fusione-sera`, e così via — e il tronco porta **47
+fusioni per una quarantina di rami di lavoro**. Ogni sessione che finiva apriva
+la propria copia per integrare e rifaceva da capo gli stessi conflitti. È lì che
+se ne sono andati i token: non a scrivere due volte lo stesso codice, ma a
+fonderlo dodici volte in dodici posti.
+
+Non aprire un ramo per fondere. Fondi il tuo lavoro dove si integra già, e se non
+sai dove sia, **chiedi ai vicini prima di aprirne uno**.
+
+## Come si prova che un ramo è superato
+
+L'antenato non basta e a volte mente: dopo una riscrittura della storia o uno
+squash, `merge-base --is-ancestor` dice «no» su lavoro che c'è già tutto. **Si
+confronta il contenuto**: fondi il ramo in una copia usa-e-getta del tronco e
+guarda se l'albero cambia.
+
+E prima di credere al risultato, **il controllo assurdo**: fai passare dalla
+stessa misura un ramo che *deve* risultare portante — uno con dentro un file che
+il tronco non ha. Se esce «superato», la misura è cieca e ogni numero di quella
+passata si butta.
+
 ## Chi crea non giudica
 
 Il verdetto su un lavoro va a un contesto che non l'ha prodotto. Se hai scritto
