@@ -59,6 +59,12 @@ fn letterbox_under(room: &Path, limit: Duration) -> Option<PathBuf> {
 /// A terminal with the real command inside, told to keep its letterboxes in a
 /// directory of the test's own instead of the store of whoever runs it.
 fn held(directory: &Path) -> Arc<Pty> {
+    holding(directory, "/bin/cat")
+}
+
+/// The same, with the command line inside named: a shell answers what it was
+/// asked, and answering is half of a round trip.
+fn holding(directory: &Path, program: &str) -> Arc<Pty> {
     let workspace = Workspace::open("/tmp").expect("open the workspace");
     let binary = env!("CARGO_BIN_EXE_sailor");
     let arguments: Vec<&OsStr> = vec![
@@ -67,7 +73,7 @@ fn held(directory: &Path) -> Arc<Pty> {
         OsStr::new("--store"),
         directory.as_os_str(),
         OsStr::new("--"),
-        OsStr::new("/bin/cat"),
+        OsStr::new(program),
     ];
     Arc::new(
         Pty::open(
@@ -167,5 +173,98 @@ fn without_a_knock_the_held_terminal_shows_nothing() {
     );
 
     let _ = outer.close();
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// Types through the command line itself.
+///
+/// Through the command and not the library it calls: what is being measured is
+/// the loop a person drives, and the command is the half of it that a library
+/// call would leave untested.
+fn typed(directory: &Path, tty: &str, line: &str) {
+    let done = std::process::Command::new(env!("CARGO_BIN_EXE_sailor"))
+        .args(["terminal", "press", "--tty", tty, "--text", line, "--store"])
+        .arg(directory)
+        .output()
+        .expect("run sailor terminal press");
+    assert!(
+        done.status.success(),
+        "sailor terminal press refused: {}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+}
+
+/// Waits for something to come out of the terminal, and says what did if it
+/// never does.
+fn until_shown(shown: &Arc<Mutex<Vec<u8>>>, text: &str, limit: Duration) {
+    let deadline = Instant::now() + limit;
+    while Instant::now() < deadline && !seen(shown).contains(text) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        seen(shown).contains(text),
+        "«{text}» never came out of the terminal: {}",
+        seen(shown)
+    );
+}
+
+/// How the terminal ended, if it ended before the limit with nobody killing it.
+fn ended_on_its_own(outer: &Arc<Pty>, limit: Duration) -> Option<terminal::Ending> {
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(ending) = outer.finished() {
+            return Some(ending);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// **THE WHOLE LOOP, AND NOBODY LEFT RUNNING.** Open a terminal Sailor owns
+/// with a real command line inside, type into it with the command, read what
+/// came back, and let it end by itself.
+///
+/// Nothing here kills anything: a terminal closed by force would prove the loop
+/// closes when someone shuts it, which is not the promise.
+#[test]
+fn the_round_trip_closes_and_leaves_nobody_running() {
+    let directory = scratch("round-trip");
+    let outer = holding(&directory, "/bin/sh");
+    let shown = collect(&outer);
+
+    let room = directory.join("terminals");
+    let address = letterbox_under(&room, Duration::from_secs(10)).unwrap_or_else(|| {
+        panic!(
+            "no letterbox appeared in {}: {}",
+            room.display(),
+            seen(&shown)
+        )
+    });
+    let tty = address
+        .file_stem()
+        .expect("the letterbox has a name")
+        .to_string_lossy()
+        .into_owned();
+
+    // What comes back is not the echo of what went in: a terminal that typed
+    // and ran nothing would still show the line back, and pass.
+    typed(&directory, &tty, "echo answered-$((6*7))");
+    until_shown(&shown, "answered-42", Duration::from_secs(10));
+
+    typed(&directory, &tty, "exit");
+    let ending = ended_on_its_own(&outer, Duration::from_secs(10));
+    assert!(
+        matches!(ending, Some(terminal::Ending::Exited(_))),
+        "the command must end when the program inside does, or it is an orphan: \
+         {ending:?}"
+    );
+    assert!(
+        !address.exists(),
+        "the letterbox goes when the terminal does: {}",
+        address.display()
+    );
+
     let _ = std::fs::remove_dir_all(&directory);
 }
