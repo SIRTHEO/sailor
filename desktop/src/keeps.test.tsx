@@ -41,8 +41,8 @@ describe("what Sailor keeps", () => {
         home_files: 96,
         home_bytes: 1024 * 1024,
         stores: [
-          { what: "Flows, yours", where: "/home/theo/.config/sailor/flows", how_many: 21, bytes: 344 * 1024, exists: true },
-          { what: "Runs, steps and events", where: "/home/theo/.config/sailor/ledger", how_many: null, bytes: null, exists: false },
+          { what: "Flows, yours", where: "/home/theo/.config/sailor/flows", how_many: 21, bytes: 344 * 1024, exists: true, since: 1_756_000_000 },
+          { what: "Runs, steps and events", where: "/home/theo/.config/sailor/ledger", how_many: null, bytes: null, exists: false, since: null },
         ],
         in_service: { binary: "/home/theo/.local/bin/sailor", built_at: 1_788_365_000, commit: "5742da24aa8e", window_version: "0.1.0" },
         project_root: "/home/theo/personal/sailor",
@@ -54,6 +54,7 @@ describe("what Sailor keeps", () => {
       expect(screen.getByText("/home/theo/.config/sailor/flows")).toBeTruthy();
       expect(screen.getByText("21")).toBeTruthy();
       expect(screen.getByText("344 KB")).toBeTruthy();
+      expect(screen.getByText(/2026/)).toBeTruthy();
       expect(screen.getByText(/not created yet/)).toBeTruthy();
       expect(screen.getByText("/home/theo/.local/bin/sailor")).toBeTruthy();
       expect(screen.getByText("sources 5742da24")).toBeTruthy();

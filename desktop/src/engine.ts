@@ -275,6 +275,10 @@ export interface OpenRun {
   since: number;
   /** Vero se questa finestra è quella che l'ha avviata. */
   started_here: boolean;
+  /** Steps with an outcome already, counted once each. */
+  steps_done: number;
+  /** Steps the flow declares; null when the flow cannot be read back. */
+  steps_total: number | null;
 }
 
 /**
