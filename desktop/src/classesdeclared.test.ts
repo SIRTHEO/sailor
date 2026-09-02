@@ -52,7 +52,12 @@ function bareMarkers(): Map<string, Set<string>> {
   const byFile = new Map<string, Set<string>>();
   for (const [path, text] of Object.entries(sources)) {
     const names = new Set<string>();
+    // Bare, and `={… || undefined}` too: that pattern is a boolean marker in
+    // every way that matters — it is either on the element or absent — and it
+    // is how `data-gone` sat on a row for a project that no longer exists
+    // while looking exactly like a live one.
     for (const match of (text as string).matchAll(/\s(data-[a-z-]+)(?=[\s/>])/g)) names.add(match[1]);
+    for (const match of (text as string).matchAll(/\s(data-[a-z-]+)=\{[^}]*\|\|\s*undefined\}/g)) names.add(match[1]);
     if (names.size > 0) byFile.set(path, names);
   }
   return byFile;
