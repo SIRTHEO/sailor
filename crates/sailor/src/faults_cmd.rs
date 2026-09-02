@@ -22,7 +22,11 @@ const FORMS: &[&str] = &["list", "add", "status", "render", "import", "check"];
 const WITHOUT_VALUE: &[&str] = &["open", "json"];
 
 fn usage_text() -> String {
-    format!("usage: {}", USAGE.join("\n       "))
+    format!(
+        "{} {}",
+        catalogue::say("cli.usage_heading", &[]),
+        USAGE.join("\n       ")
+    )
 }
 
 pub fn run(args: &[String]) -> i32 {
@@ -46,8 +50,11 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     };
     if !FORMS.contains(&verb) {
         return Err(format!(
-            "«{verb}» is not a form of this command; there are {}\n{}",
-            FORMS.join(", "),
+            "{}\n{}",
+            catalogue::say(
+                "cli.faults.not_a_form_of_this_command",
+                &[("verb", verb), ("forms", &FORMS.join(", "))],
+            ),
             usage_text()
         ));
     }
@@ -61,9 +68,12 @@ fn dispatch(args: &[String]) -> Result<String, String> {
                 options.insert(name.to_owned(), "true".to_owned());
             }
             Some(name) => {
-                let value = rest
-                    .next()
-                    .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
+                let value = rest.next().ok_or_else(|| {
+                    catalogue::say(
+                        "cli.option_wants_a_value",
+                        &[("option", &format!("--{name}"))],
+                    )
+                })?;
                 options.insert(name.to_owned(), value.clone());
             }
             None => loose.push(word.clone()),
@@ -83,7 +93,10 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "render" => render(&store),
         "import" => import(&store, &loose),
         "check" => check(&store, &loose),
-        other => Err(format!("«{other}» is not a form of this command")),
+        other => Err(catalogue::say(
+            "cli.faults.no_such_form",
+            &[("verb", other)],
+        )),
     }
 }
 
@@ -107,17 +120,21 @@ fn list(
         // The status leads, not the title: a list of what happened reads as a
         // story, a list of what stands reads as work left, which is the point.
         let standing = if fault.still_open() {
-            "open  "
+            catalogue::say("cli.faults.open", &[])
         } else {
-            "closed"
+            catalogue::say("cli.faults.closed", &[])
         };
         let title: String = fault.what_happened.chars().take(96).collect();
-        out.push_str(&format!("{:>3}  {standing}  {}\n", fault.number, title));
+        out.push_str(&format!("{:>3}  {standing:<6}  {}\n", fault.number, title));
     }
     let open = store.still_open().map_err(|error| error.to_string())?;
-    out.push_str(&format!(
-        "\n{open} still open out of {}, counted now and not copied",
-        all.len()
+    out.push('\n');
+    out.push_str(&catalogue::say(
+        "cli.faults.still_open_out_of",
+        &[
+            ("open", &open.to_string()),
+            ("total", &all.len().to_string()),
+        ],
     ));
     Ok(out)
 }
@@ -127,37 +144,37 @@ fn list(
 /// The number is not a field that can be sent: if it were, whoever writes
 /// would go back to choosing it, and the collision would come back with them.
 fn add(store: &Faults) -> Result<String, String> {
-    let raw = std::io::read_to_string(std::io::stdin())
-        .map_err(|error| format!("cannot read the fault: {error}"))?;
+    let raw = std::io::read_to_string(std::io::stdin()).map_err(|error| {
+        catalogue::say(
+            "cli.faults.cannot_read_the_fault",
+            &[("error", &error.to_string())],
+        )
+    })?;
     let draft: Draft = serde_json::from_str(&raw).map_err(|error| {
-        format!(
-            "a fault is written as JSON with happened_on, what_happened, \
-             how_it_showed, what_would_prevent and status: {error}"
+        catalogue::say(
+            "cli.faults.shape_of_a_fault",
+            &[("error", &error.to_string())],
         )
     })?;
     if draft.what_would_prevent.trim().is_empty() {
         // Without that column this is a diary, which is the one thing the
         // record exists not to be.
-        return Err(
-            "«what_would_prevent» is missing: a fault without the check that \
-             would have stopped it is an anecdote, not work"
-                .to_owned(),
-        );
+        return Err(catalogue::say("cli.faults.no_prevention", &[]));
     }
     let recorded = store.record(&draft).map_err(|error| error.to_string())?;
-    Ok(format!(
-        "recorded fault {}: the store gave it the number",
-        recorded.number
+    Ok(catalogue::say(
+        "cli.faults.recorded",
+        &[("number", &recorded.number.to_string())],
     ))
 }
 
 fn set_status(store: &Faults, loose: &[String]) -> Result<String, String> {
     let [number, status] = loose else {
-        return Err("usage: sailor faults status <number> <status text>".to_owned());
+        return Err(catalogue::say("cli.faults.usage_status", &[]));
     };
     let number: i64 = number
         .parse()
-        .map_err(|_| format!("«{number}» is not a fault number"))?;
+        .map_err(|_| catalogue::say("cli.faults.not_a_number", &[("number", number)]))?;
     let changed = store
         .set_status(number, status)
         .map_err(|error| error.to_string())?;
@@ -177,7 +194,7 @@ fn render(store: &Faults) -> Result<String, String> {
 /// the drift and repairs neither side.
 fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
     let [file] = loose else {
-        return Err("usage: sailor faults check <file.md>".to_owned());
+        return Err(catalogue::say("cli.faults.usage_check", &[]));
     };
     let text = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
     let written: std::collections::BTreeMap<i64, Fault> = faults::parse(&text)
@@ -185,10 +202,9 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         .map(|fault| (fault.number, fault))
         .collect();
     if written.is_empty() {
-        return Err(format!(
-            "{file}: no row with six columns in it. Reporting «they agree» \
-             after reading nothing is the failure this command exists to \
-             prevent"
+        return Err(catalogue::say(
+            "cli.faults.no_rows_to_check",
+            &[("file", file)],
         ));
     }
     let kept: std::collections::BTreeMap<i64, Fault> = store
@@ -215,9 +231,9 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         .collect();
 
     if only_in_store.is_empty() && only_in_table.is_empty() && differing.is_empty() {
-        return Ok(format!(
-            "the store and {file} say the same thing: {} faults",
-            written.len()
+        return Ok(catalogue::say(
+            "cli.faults.they_agree",
+            &[("file", file), ("count", &written.len().to_string())],
         ));
     }
 
@@ -225,32 +241,31 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
     // difference has two readings and the command must not pick for you: work
     // not yet published, or a checkout older than the store. Saying only the
     // first sends whoever reads it to import an older register over a newer one.
-    let mut said = format!(
-        "the store and {file} say different things. Two readings, and this \
-         command cannot tell them apart - check which before moving anything:\n"
-    );
+    let mut said = catalogue::say("cli.faults.they_differ", &[("file", file)]);
+    said.push('\n');
     if !only_in_store.is_empty() {
-        said.push_str(&format!(
-            "  {:?} are in the store and not in the table - either unpublished \
-             work, or this checkout is older than the store\n",
-            only_in_store
+        said.push_str("  ");
+        said.push_str(&catalogue::say(
+            "cli.faults.only_in_the_store",
+            &[("numbers", &format!("{only_in_store:?}"))],
         ));
+        said.push('\n');
     }
     if !only_in_table.is_empty() {
-        said.push_str(&format!(
-            "  {:?} are in the table and not in the store - «sailor faults \
-             import {file}» brings them in\n",
-            only_in_table
+        said.push_str("  ");
+        said.push_str(&catalogue::say(
+            "cli.faults.only_in_the_table",
+            &[("numbers", &format!("{only_in_table:?}")), ("file", file)],
         ));
+        said.push('\n');
     }
     if !differing.is_empty() {
-        said.push_str(&format!(
-            "  {:?} have the same number and different text. The table is the \
-             register, so importing makes the store agree - but importing an \
-             older checkout overwrites newer text with older, and nothing says \
-             so afterwards\n",
-            differing
+        said.push_str("  ");
+        said.push_str(&catalogue::say(
+            "cli.faults.same_number_other_text",
+            &[("numbers", &format!("{differing:?}"))],
         ));
+        said.push('\n');
     }
     Err(said.trim_end().to_owned())
 }
@@ -258,14 +273,14 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
 /// Brings in a hand-written table. Once, and it says so.
 fn import(store: &Faults, loose: &[String]) -> Result<String, String> {
     let [file] = loose else {
-        return Err("usage: sailor faults import <file.md>".to_owned());
+        return Err(catalogue::say("cli.faults.usage_import", &[]));
     };
     let text = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
     let read = faults::parse(&text);
     if read.is_empty() {
-        return Err(format!(
-            "{file}: no row with six columns in it. Better to stop than to \
-             import nothing and call it done"
+        return Err(catalogue::say(
+            "cli.faults.no_rows_to_import",
+            &[("file", file)],
         ));
     }
     // **WHAT IT OVERWROTE, BY NUMBER.** A count of what came in reads the same
@@ -289,16 +304,19 @@ fn import(store: &Faults, loose: &[String]) -> Result<String, String> {
         store.restore(fault).map_err(|error| error.to_string())?;
     }
     let now = store.all().map_err(|error| error.to_string())?;
-    let mut said = format!(
-        "brought in {} faults from {file}; the store now holds {}",
-        read.len(),
-        now.len()
+    let mut said = catalogue::say(
+        "cli.faults.brought_in",
+        &[
+            ("count", &read.len().to_string()),
+            ("file", file),
+            ("total", &now.len().to_string()),
+        ],
     );
     if !replaced.is_empty() {
-        said.push_str(&format!(
-            "\n{:?} already existed and their text was replaced by this file's. \
-             If this checkout is older than the store, that was a step back",
-            replaced
+        said.push('\n');
+        said.push_str(&catalogue::say(
+            "cli.faults.text_replaced",
+            &[("numbers", &format!("{replaced:?}"))],
         ));
     }
     Ok(said)

@@ -50,7 +50,8 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
     }
     if !FORMS.contains(&form.as_str()) {
         return Err(format!(
-            "«{form}» is not a form of this command\n{}",
+            "{}\n{}",
+            catalogue::say("cli.terminal.no_such_form", &[("verb", form)]),
             usage_text()
         ));
     }
@@ -60,7 +61,10 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         "reset" => reset(&args[1..]),
         "mandate" => leave_mandate(&args[1..], &mut std::io::stdin()),
         "list" => list(&args[1..]),
-        other => Err(format!("«{other}» is not a form of this command")),
+        other => Err(catalogue::say(
+            "cli.terminal.no_such_form",
+            &[("verb", other)],
+        )),
     }
 }
 
@@ -77,7 +81,7 @@ fn store_root(options: &[(String, String)]) -> Result<PathBuf, String> {
     if let Some((_, declared)) = options.iter().find(|(name, _)| name == "store") {
         return Ok(PathBuf::from(declared));
     }
-    ledger::default_directory().ok_or_else(|| "I cannot tell where the store lives".to_owned())
+    ledger::default_directory().ok_or_else(|| catalogue::say("cli.terminal.no_store", &[]))
 }
 
 fn mailroom(options: &[(String, String)]) -> Result<PathBuf, String> {
@@ -90,7 +94,7 @@ fn hold(args: &[String]) -> Result<i32, String> {
     let (before, line) = split_at_the_dashes(args);
     let options = options_of(before)?;
     let Some(program) = line.first() else {
-        return Err("nothing to run: give a command line after `--`".to_owned());
+        return Err(catalogue::say("cli.terminal.nothing_to_run", &[]));
     };
     let rest: Vec<&OsStr> = line[1..].iter().map(OsStr::new).collect();
 
@@ -260,14 +264,26 @@ fn exit_code_of(inner: &Pty) -> i32 {
 
 fn press(args: &[String]) -> Result<i32, String> {
     let options = options_of(args)?;
-    let tty = named(&options, "tty", "which terminal? give --tty <name>")?;
-    let text = named(&options, "text", "what should be typed? give --text <line>")?;
+    let tty = named(
+        &options,
+        "tty",
+        &catalogue::say("cli.terminal.which_terminal", &[]),
+    )?;
+    let text = named(
+        &options,
+        "text",
+        &catalogue::say("cli.terminal.what_text", &[]),
+    )?;
     press_into(&options, &tty, &text)?;
-    println!("typed into {tty}");
+    println!(
+        "{}",
+        catalogue::say("cli.terminal.typed_into", &[("tty", &tty)])
+    );
     Ok(0)
 }
 
-/// One option by name, or the sentence that says what is missing.
+/// One option by name, or the sentence that says what is missing. The sentence
+/// arrives already said: asked for by key in here, no scan would see it.
 fn named(options: &[(String, String)], name: &str, missing: &str) -> Result<String, String> {
     options
         .iter()
@@ -284,9 +300,12 @@ fn named(options: &[(String, String)], name: &str, missing: &str) -> Result<Stri
 fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(), String> {
     let address = mailroom(options)?.join(format!("{tty}.sock"));
     inbox::press_line(&address, line).map_err(|error| {
-        format!(
-            "{}: Sailor is not holding this terminal ({error})",
-            address.display()
+        catalogue::say(
+            "cli.terminal.not_held",
+            &[
+                ("address", &address.display().to_string()),
+                ("error", &error.to_string()),
+            ],
         )
     })
 }
@@ -298,11 +317,15 @@ fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(),
 /// make the relay work for that one and quietly misfire on every other.
 fn reset(args: &[String]) -> Result<i32, String> {
     let options = options_of(args)?;
-    let tty = named(&options, "tty", "which terminal? give --tty <name>")?;
+    let tty = named(
+        &options,
+        "tty",
+        &catalogue::say("cli.terminal.which_terminal", &[]),
+    )?;
     let cli = named(
         &options,
         "cli",
-        "which command line is running there? give --cli <id>",
+        &catalogue::say("cli.terminal.which_cli", &[]),
     )?;
 
     let machine = toolbox::Machine::current();
@@ -310,7 +333,10 @@ fn reset(args: &[String]) -> Result<i32, String> {
     let line = reset_line_of(&catalog, &cli)?;
 
     press_into(&options, &tty, &line)?;
-    println!("typed {line} into {tty}");
+    println!(
+        "{}",
+        catalogue::say("cli.terminal.typed_line", &[("line", &line), ("tty", &tty)])
+    );
     Ok(0)
 }
 
@@ -324,18 +350,12 @@ fn reset_line_of(catalog: &toolbox::Catalog, cli: &str) -> Result<String, String
         .live()
         .into_iter()
         .find(|loaded| loaded.descriptor.id == cli)
-        .ok_or_else(|| format!("«{cli}»: no descriptor of that name is loaded"))?;
+        .ok_or_else(|| catalogue::say("cli.terminal.no_such_descriptor", &[("cli", cli)]))?;
     known
         .descriptor
         .reset_line()
         .map(str::to_owned)
-        .ok_or_else(|| {
-            format!(
-                "«{cli}» does not declare how a running session of it is emptied. \
-                 Nobody has measured it, which is not the same as it being impossible: \
-                 add `reset_context` to its descriptor rather than guessing a line here"
-            )
-        })
+        .ok_or_else(|| catalogue::say("cli.terminal.no_reset_declared", &[("cli", cli)]))
 }
 
 /// Leaves the work for whoever comes next, written by the session itself.
@@ -349,13 +369,13 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
     let tty = match options.iter().find(|(name, _)| name == "tty") {
         Some((_, declared)) => declared.clone(),
         None => sessions::tty::current()
-            .ok_or_else(|| "this is not running in a terminal: give --tty <name>".to_owned())?,
+            .ok_or_else(|| catalogue::say("cli.terminal.not_in_a_terminal", &[]))?,
     };
     let mut text = String::new();
     from.read_to_string(&mut text)
         .map_err(|error| error.to_string())?;
     if text.trim().is_empty() {
-        return Err("nothing to hand on: the mandate arrives on standard input".to_owned());
+        return Err(catalogue::say("cli.terminal.nothing_to_hand_on", &[]));
     }
 
     let path = mandate::address_in(&store_root(&options)?, &tty);
@@ -367,7 +387,10 @@ fn leave_mandate(args: &[String], from: &mut impl std::io::Read) -> Result<i32, 
         },
     )
     .map_err(|error| error.to_string())?;
-    println!("mandate left for {tty}");
+    println!(
+        "{}",
+        catalogue::say("cli.terminal.mandate_left", &[("tty", &tty)])
+    );
     Ok(0)
 }
 
@@ -376,7 +399,7 @@ fn list(args: &[String]) -> Result<i32, String> {
     let ceiling = declared_ceiling(&options)?;
     let room = mailroom(&options)?;
     let Ok(entries) = std::fs::read_dir(&room) else {
-        println!("Sailor is holding no terminal");
+        println!("{}", catalogue::say("cli.terminal.none_held", &[]));
         return Ok(0);
     };
     let mut found = 0;
@@ -400,7 +423,7 @@ fn list(args: &[String]) -> Result<i32, String> {
         found += 1;
     }
     if found == 0 {
-        println!("Sailor is holding no terminal");
+        println!("{}", catalogue::say("cli.terminal.none_held", &[]));
     }
     Ok(0)
 }
@@ -412,7 +435,7 @@ fn list(args: &[String]) -> Result<i32, String> {
 /// print the same.
 fn how_full(room: &Path, tty: &str, ceiling: u64) -> String {
     let Some(counted) = tally::read(&room.join(format!("{tty}.seen"))) else {
-        return format!("{tty}   can be typed into, nothing counted yet");
+        return catalogue::say("cli.terminal.nothing_counted_yet", &[("tty", tty)]);
     };
     let reading = fullness::measure(counted.total(), &Model::default(), ceiling);
     let verdict = match (ceiling, reading.past_the_ceiling) {
@@ -435,7 +458,7 @@ fn declared_ceiling(options: &[(String, String)]) -> Result<u64, String> {
     match options.iter().find(|(name, _)| name == "ceiling") {
         Some((_, written)) => written
             .parse()
-            .map_err(|_| format!("«{written}» is not a number of tokens")),
+            .map_err(|_| catalogue::say("cli.terminal.not_a_token_count", &[("written", written)])),
         None => Ok(0),
     }
 }
@@ -457,11 +480,14 @@ fn options_of(args: &[String]) -> Result<Vec<(String, String)>, String> {
     let mut rest = args.iter();
     while let Some(word) = rest.next() {
         let Some(name) = word.strip_prefix("--") else {
-            return Err(format!("«{word}» is not an option"));
+            return Err(catalogue::say("cli.unknown_option", &[("option", word)]));
         };
-        let value = rest
-            .next()
-            .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
+        let value = rest.next().ok_or_else(|| {
+            catalogue::say(
+                "cli.option_wants_a_value",
+                &[("option", &format!("--{name}"))],
+            )
+        })?;
         found.push((name.to_owned(), value.clone()));
     }
     Ok(found)
