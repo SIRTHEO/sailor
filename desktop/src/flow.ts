@@ -96,6 +96,8 @@ export type FlowEntry =
  * — nobody will retry it — and waiting on a person is not a failure.
  */
 export type StepState =
+  /** No run has touched this step: not waiting on anything, simply never run. */
+  | "idle"
   | "waiting"
   | "running"
   | "went"

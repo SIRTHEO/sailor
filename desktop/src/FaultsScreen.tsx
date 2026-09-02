@@ -94,7 +94,8 @@ export function FaultsScreen({ native }: { native: boolean }) {
               </dd>
               <dt>status</dt>
               <dd>
-                {entry.status}
+                {/* The register writes its own words; a person reads the standing. */}
+                {entry.standing === "unrecognised" ? entry.status : entry.standing}
                 {entry.standing === "unrecognised" && (
                   // NOT A FAULT OF THE FAULT: the register did not understand
                   // the wording, and saying so is what keeps it from being
