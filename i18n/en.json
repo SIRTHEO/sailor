@@ -64,6 +64,8 @@
   "cli.flow.totals_not_split": "totals not split out (those that declare neither side): {count}",
   "cli.flow.trigger_input_not_an_object": "the trigger input of {flow} is not an object but {other}: there is nowhere to put the text",
   "cli.flow.will_not_load": "will not load",
+  "desktop.beat.could_not_look": "held: the beat could not read the ledger ({why})",
+  "desktop.beat.still_running": "still running from an earlier start",
   "cli.flow.cap_will_not_count_them": "\n  and the spend cap will not count those calls: it will stop later than it declares, or not stop at all",
   "cli.flow.models_never_run_here": "\nmodels: this flow has never run here, so there is no telling which will answer, nor whether the price list will know how to price them",
   "cli.flow.models_store_unreadable": "\nmodels: the ledger could not be read, so there is no telling which models this flow has used",
