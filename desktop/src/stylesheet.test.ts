@@ -222,3 +222,37 @@ describe("prohibition 9 — no gradients, frosted glass or blur", () => {
     expect(guilty, "a gradient got into the sheet").toEqual([]);
   });
 });
+
+/**
+ * ZOOMING IN MUST NOT SHOW LESS. The far node wrapped the name and read it
+ * whole; the near node clipped it — so approaching a node lost information,
+ * which is the opposite of what the gesture asks. It wraps at every zoom now.
+ */
+describe("the name of a step reads the same at every zoom", () => {
+  function wrapping(selector: string): Map<string, string> {
+    const found = new Map<string, string>();
+    for (const rule of sheet.rules) {
+      if (rule.selector.trim() !== selector) continue;
+      for (const [property, value] of rule.declarations) {
+        if (["white-space", "overflow-wrap", "-webkit-line-clamp"].includes(property)) {
+          found.set(property, value.trim());
+        }
+      }
+    }
+    return found;
+  }
+
+  test("the far node declares no wrapping of its own", () => {
+    const far = wrapping(".step-node[data-far] .step-node__id");
+    expect([...far.keys()], "the two zooms disagree about how the name wraps").toEqual([]);
+  });
+
+  /* Three and not two: measured in a browser, two lines clip the longest step
+     name that exists, and four stops discriminating — a control string of 80
+     characters comes back unclipped, which means the measure has gone blind. */
+  test("the name wraps, and stops at three lines", () => {
+    const near = wrapping(".step-node__id");
+    expect(near.get("white-space")).toBe("normal");
+    expect(near.get("-webkit-line-clamp")).toBe("3");
+  });
+});
