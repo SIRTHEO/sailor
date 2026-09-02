@@ -20,6 +20,7 @@ use ui::gather::{flow_sources, load_all_flows};
 mod board;
 mod faults;
 mod flows;
+mod ledger;
 mod live;
 mod manual;
 mod models;
@@ -168,6 +169,7 @@ fn main() {
             tools::tools_sweep,
             faults::faults,
             faults::fault_status,
+            ledger::ledger_held,
             run::flow_trigger,
             run::start_run,
             run::run_snapshot,
