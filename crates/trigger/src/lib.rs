@@ -21,7 +21,9 @@ pub mod action;
 pub mod descriptor;
 
 pub use action::{register_default, TriggerAction, TRIGGER_ACTION};
-pub use descriptor::{Catalog, Kind, Listen, Loaded, Problem, Source, TriggerDescriptor};
+pub use descriptor::{
+    Catalog, Kind, Listen, Loaded, MissedRun, Periodic, Problem, Source, TriggerDescriptor,
+};
 
 use serde::Serialize;
 use std::path::PathBuf;
@@ -44,7 +46,7 @@ pub struct Signal {
     pub where_from: String,
     /// The `id` of the descriptor that recognised the signal.
     pub source: String,
-    /// The shape of the source: `manual`, `terminal`.
+    /// The shape of the source: `manual`, `terminal`, `periodic`.
     pub kind: String,
 }
 
