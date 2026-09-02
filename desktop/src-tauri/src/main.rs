@@ -189,6 +189,7 @@ fn main() {
             terminal::terminal_resize,
             terminal::terminal_close,
             terminal::terminal_list,
+            terminal::terminal_backlog,
             workspaces::workspaces,
             workspaces::workspace_declaration,
             profiles::profiles,

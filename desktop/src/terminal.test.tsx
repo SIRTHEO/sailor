@@ -3,9 +3,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
+import App from "./App";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
-import { Terminals, WORKSPACE_HINT } from "./Terminals";
-import { routingNote } from "./TerminalPane";
+import { ANOTHER_PATH, placesOf, Terminals, WORKSPACE_HINT } from "./Terminals";
+import { movedLabel, routingNote } from "./TerminalPane";
 import {
   decodeBytes,
   encodeBytes,
@@ -14,18 +15,19 @@ import {
   livenessOf,
   livenessWord,
   OutputBus,
+  splitCommandLine,
   type KeyAction,
   type TerminalSummary,
 } from "./terminal";
 
 /**
- * **THE FOUR THINGS THE REACT HALF OF THE TERMINAL CAN GET WRONG IN SILENCE.**
- * An accent lost inside a long output, a key sent to routing instead of to the
- * program, a dead terminal drawn alive, a contrast pair below threshold: none
- * makes a noise, the window draws the same, and whoever looks believes it. The
- * judge is the contract, not the bridge — the shell is faked from
- * `docs/2026-09-01-il-contratto-del-terminale.md` by hand, while the components
- * are the real ones, emulator included.
+ * **THE THINGS THE REACT HALF OF THE TERMINAL CAN GET WRONG IN SILENCE.** An
+ * accent lost inside a long output, a key sent to routing instead of to the
+ * program, a dead terminal drawn alive, a pane that comes back blank, a
+ * contrast pair below threshold: none makes a noise, the window draws the
+ * same, and whoever looks believes it. The judge is the contract, not the
+ * bridge — the shell is faked from `docs/2026-09-01-il-contratto-del-terminale.md`
+ * by hand, while the components are the real ones, emulator included.
  */
 
 afterEach(cleanup);
@@ -34,9 +36,9 @@ let sheet: Stylesheet;
 
 beforeAll(() => {
   sheet = parseStylesheet(stylesheetSource);
-  // xterm asks the browser for two things jsdom does not have. They are
-  // scaffolding, not fakes over the code under test: a real window supplies
-  // them.
+  // xterm and React Flow ask the browser for things jsdom does not have. They
+  // are scaffolding, not fakes over the code under test: a real window
+  // supplies them.
   (window as unknown as { matchMedia: unknown }).matchMedia = () => ({
     matches: false,
     media: "",
@@ -51,6 +53,10 @@ beforeAll(() => {
     unobserve() {}
     disconnect() {}
   };
+  (globalThis as unknown as { DOMMatrixReadOnly: unknown }).DOMMatrixReadOnly = class {
+    m22 = 1;
+    constructor(_transform?: string) {}
+  };
 });
 
 // ── bytes are not text ───────────────────────────────────────────────────
@@ -58,8 +64,7 @@ beforeAll(() => {
 describe("the bytes going to the shell", () => {
   test("AN ACCENT LEAVES AS UTF-8, not in the latin-1 of `btoa`", () => {
     // `btoa("à")` neither fails nor warns: it answers the byte 0xE0, which in
-    // the shell is a different letter. The defect only shows on accented words,
-    // that is, on the ones written here all day long.
+    // the shell is a different letter. The defect only shows on accented words.
     const mine = encodeBytes(keyBytes("à"));
     expect(mine).toBe("w6A=");
     expect(mine).not.toBe(btoa("à"));
@@ -67,8 +72,6 @@ describe("the bytes going to the shell", () => {
   });
 
   test("every byte from 0 to 255 comes back identical", () => {
-    // The newline, the escape, the Ctrl-C and the high bytes of a multibyte
-    // character all pass through here.
     const every = new Uint8Array(256);
     for (let value = 0; value < 256; value += 1) every[value] = value;
     expect(Array.from(decodeBytes(encodeBytes(every)))).toEqual(Array.from(every));
@@ -77,10 +80,9 @@ describe("the bytes going to the shell", () => {
 
 describe("the bytes coming out of the process", () => {
   test("A LETTER SPLIT ACROSS TWO EVENTS IS PUT BACK TOGETHER ON SCREEN", async () => {
-    // This is why the contract says base64 and not string. The two events are
-    // the ones the bridge will send — `è` is 0xC3 0xA8, and a pseudo-terminal
-    // may deliver them in two reads — and the judge is the real emulator's
-    // buffer, that is, what a person would read.
+    // This is why the contract says base64 and not string: `è` is 0xC3 0xA8,
+    // and a pseudo-terminal may deliver them in two reads. The judge is the
+    // real emulator's buffer, that is, what a person would read.
     const term = new Emulator({ cols: 20, rows: 4 });
     await write(term, decodeBytes(encodeBytes(new Uint8Array([0xc3]))));
     await write(term, decodeBytes(encodeBytes(new Uint8Array([0xa8, 0x21]))));
@@ -92,6 +94,24 @@ describe("the bytes coming out of the process", () => {
 function write(term: Emulator, bytes: Uint8Array): Promise<void> {
   return new Promise((done) => term.write(bytes, () => done()));
 }
+
+// ── what to start ────────────────────────────────────────────────────────
+
+describe("what to start, split into a program and its arguments", () => {
+  test("`claude --resume` IS `claude` WITH `--resume`, not a binary of that name", () => {
+    expect(splitCommandLine("claude --resume")).toEqual({ program: "claude", args: ["--resume"] });
+    expect(splitCommandLine("  codex  ")).toEqual({ program: "codex", args: [] });
+    expect(splitCommandLine("")).toEqual({ program: undefined, args: [] });
+  });
+
+  test("quotes group words, as a shell would", () => {
+    expect(splitCommandLine(`sh -c "echo hi there"`)).toEqual({ program: "sh", args: ["-c", "echo hi there"] });
+    expect(splitCommandLine(`claude --title 'a long one'`)).toEqual({
+      program: "claude",
+      args: ["--title", "a long one"],
+    });
+  });
+});
 
 // ── submitting and pressing are two different roads ──────────────────────
 
@@ -105,9 +125,6 @@ function submittedLines(actions: KeyAction[]): string[] {
 
 describe("where a key goes", () => {
   test("NO KEY OTHER THAN ENTER ENDS UP IN ROUTING", () => {
-    // The defect it guards against: sending everything to `submit` would have
-    // every arrow and every Ctrl-C examined by a set of rules that has nothing
-    // to do with them, and an editor inside the terminal would be unusable.
     const keys = ["l", "s", " ", "-", "à", "\x7f", "\x03", "\x1b[A", "\x1b[B", "\t", "\x04", "\x15"];
     for (const key of keys) {
       for (const draft of ["", "cargo test"]) {
@@ -120,8 +137,6 @@ describe("where a key goes", () => {
   });
 
   test("Enter delivers the whole line, and sends not one byte of it to the shell", () => {
-    // If even a single character had already left, `terminal_submit` — which
-    // writes the line itself — would have it run twice: «lsls».
     const stroke = keyStroke("compose", "cargo test -p terminal", "\r");
     expect(submittedLines(stroke.actions)).toEqual(["cargo test -p terminal"]);
     expect(kinds(stroke.actions)).not.toContain("press");
@@ -142,18 +157,14 @@ describe("where a key goes", () => {
   });
 
   test("INSIDE AN EDITOR ENTER IS A KEY, not a line to route", () => {
-    // This is the case the contract names in full, and it is the whole reason
-    // `submit` and `press` are two commands and not one.
     const stroke = keyStroke("raw", "", "\r");
     expect(kinds(stroke.actions)).toEqual(["press"]);
     expect(submittedLines(stroke.actions)).toEqual([]);
   });
 
   test("Ctrl-C always reaches whatever is running, even on a full line", () => {
-    // A way to stop what is running is taken from nobody, in no way: it is the
-    // one exception to «while composing, nothing leaves».
     for (const mode of ["compose", "raw"] as const) {
-      const stroke = keyStroke(mode, "un comando lunghissimo", "\x03");
+      const stroke = keyStroke(mode, "a very long command", "\x03");
       expect(kinds(stroke.actions)).toContain("press");
       expect(stroke.draft).toBe("");
     }
@@ -165,11 +176,7 @@ describe("where a key goes", () => {
   });
 
   test("on an empty line the terminal is a passthrough; on a full line it refuses", () => {
-    // Arrow up on an empty line brings back the previous command from the shell.
     expect(kinds(keyStroke("compose", "", "\x1b[A").actions)).toEqual(["press"]);
-    // On a full line it does not leave, and says why: leaving would desync the
-    // screen, because that line is held by the window and not by the shell's
-    // `readline`.
     const refused = keyStroke("compose", "ls", "\x1b[A");
     expect(kinds(refused.actions)).toEqual(["ignored"]);
     expect(refused.draft).toBe("ls");
@@ -184,21 +191,25 @@ describe("where a key goes", () => {
 
 describe("where the line ended up, told to whoever is watching", () => {
   test("a rerouted line names the rule and the flow, not just the flow", () => {
-    // Without the name of the rule, whoever is watching knows the line was not
-    // run and has no way back to the line of JSON that decided it.
-    const said = routingNote("? trova i residui", {
+    const said = routingNote("? find the leftovers", {
       kind: "flow",
       flow: "dispatch-the-work",
-      text: "trova i residui",
+      text: "find the leftovers",
       rule: "marked-request",
     });
     expect(said).toContain("marked-request");
     expect(said).toContain("dispatch-the-work");
-    expect(said).toContain("non è stata eseguita");
+    expect(said).toContain("was not run");
   });
 
   test("a command says it went to the shell", () => {
     expect(routingNote("ls", { kind: "command" })).toContain("shell");
+  });
+
+  test("the bytes moved are said in a unit a person reads, and never rounded to nothing", () => {
+    expect(movedLabel(0)).toBe("0 bytes moved");
+    expect(movedLabel(2048)).toBe("2 KB moved");
+    expect(movedLabel(3 * 1024 * 1024)).toBe("3.0 MB moved");
   });
 });
 
@@ -211,16 +222,18 @@ function summary(over: Partial<TerminalSummary>): TerminalSummary {
     workspaceName: "sailor",
     alive: true,
     processId: 4242,
+    device: "ttys004",
+    moved: 0,
     ...over,
   };
 }
 
 describe("how a terminal is doing", () => {
   test("the event wins over the list, which is one round of polling old", () => {
-    const closed = new Map([["t1", "uscita 0"]]);
+    const closed = new Map([["t1", "exited with 0"]]);
     expect(livenessOf(summary({ alive: true }), closed, true)).toEqual({
       state: "closed",
-      status: "uscita 0",
+      status: "exited with 0",
     });
   });
 
@@ -231,12 +244,10 @@ describe("how a terminal is doing", () => {
     });
   });
 
-  test("WITHOUT THE EVENT CHANNEL WE DO NOT SAY «vivo»: we say «non lo so più»", () => {
-    // If `terminal_closed` cannot arrive, «vivo» is a claim this screen cannot
-    // make, and a pane that makes it makes it forever — death will never come.
+  test("WITHOUT THE EVENT CHANNEL WE DO NOT SAY «alive»: we say «no longer known»", () => {
     const mine = livenessOf(summary({ alive: true }), new Map(), false);
     expect(mine.state).toBe("unknown");
-    expect(mine.state === "unknown" && mine.why).toContain("non lo saprebbe");
+    expect(mine.state === "unknown" && mine.why).toContain("would not know");
   });
 
   test("with the channel attached and the list calling it alive, it is alive", () => {
@@ -258,11 +269,33 @@ describe("output reaches the right pane", () => {
     const bus = new OutputBus();
     const mine: number[] = [];
     bus.subscribe("t1", (bytes) => mine.push(...bytes));
-    expect(bus.deliver("t1", new Uint8Array([1, 2]))).toBe(true);
+    expect(bus.deliver("t1", new Uint8Array([1, 2]), 0)).toBe(true);
     // BYTES FOR A TERMINAL WITH NO PANE ARE LOST BYTES, and whoever loses them
     // in silence shows an empty screen where there was output.
-    expect(bus.deliver("t2", new Uint8Array([9]))).toBe(false);
+    expect(bus.deliver("t2", new Uint8Array([9]), 0)).toBe(false);
     expect(mine).toEqual([1, 2]);
+  });
+});
+
+// ── the places a terminal opens in ───────────────────────────────────────
+
+describe("the places offered", () => {
+  test("THE OFFERED PLACES ARE THE ENGINE'S ANSWER, projects and worktrees, one entry per root", () => {
+    const places = placesOf(
+      [
+        { root: "/work/sailor", name: "sailor", first_seen: 1, last_seen: 2, standing: "declared", current: true },
+        { root: "/work/other", name: "other", first_seen: 1, last_seen: 2, standing: "gone", current: false },
+      ],
+      [
+        { name: "sailor", path: "/work/sailor", branch: "main", locked: false, prunable: false, current: true },
+        { name: "x", path: "/work/sailor-worktrees/x", branch: "work/x", locked: false, prunable: false, current: false },
+      ],
+    );
+    expect(places.map((place) => place.root)).toEqual(["/work/sailor", "/work/other", "/work/sailor-worktrees/x"]);
+    expect(places[2].label).toContain("work/x");
+    // The absurd control: nothing known, nothing offered — the list is not
+    // seeded from anywhere in the screen.
+    expect(placesOf([], [])).toEqual([]);
   });
 });
 
@@ -285,23 +318,28 @@ interface FakeShell {
   stop: () => void;
 }
 
+const EMPTY_BACKLOG = { at: 0, bytes: "", upto: 0, ended: null };
+
 /**
- * Fakes the shell: the six commands and the two events of the contract.
+ * Fakes the shell: the seven commands and the two events of the contract.
  * **`listen` IS EITHER THERE OR NOT, AND IT IS A PARAMETER**: without the
- * channel the screen must say «non lo so più» instead of «vivo», and unless it
- * can be removed that rule cannot be tested.
+ * channel the screen must say «no longer known» instead of «alive», and
+ * unless it can be removed that rule cannot be tested. A pane always asks for
+ * its backlog, so an empty one is answered unless the scene says otherwise.
  */
 function pretendShell(answers: Record<string, unknown>, withEvents = true): FakeShell {
   const before = (window as unknown as { __TAURI__?: unknown }).__TAURI__;
   const handlers = new Map<string, Array<(event: { payload: unknown }) => void>>();
   const calls: Call[] = [];
   const asked: string[] = [];
+  const answered: Record<string, unknown> = { terminal_backlog: EMPTY_BACKLOG, ...answers };
   const shell: Record<string, unknown> = {
     core: {
       invoke: (command: string, args?: Record<string, unknown>) => {
         calls.push({ command, args });
         asked.push(command);
-        return Promise.resolve(answers[command]);
+        if (!(command in answered)) return Promise.reject(new Error(`the fake shell has no ${command}`));
+        return Promise.resolve(answered[command]);
       },
     },
   };
@@ -332,15 +370,19 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242 },
-  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243 },
+  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242, device: "ttys004", moved: 2048 },
+  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243, device: "ttys009", moved: 0 },
 ];
+
+const PLACES = {
+  workspaces: [{ root: "/work/sailor", name: "sailor", first_seen: 1, last_seen: 2, standing: "declared", current: true }],
+  worktree_list: [{ name: "x", path: "/work/sailor-worktrees/x", branch: "work/x", locked: false, prunable: false, current: false }],
+};
 
 /**
  * The drawn DOM, measured whole: `:root` carries the roles.
  * **WHOEVER MEASURES MUST BE MEASURED**: the scene declares how many pairs it
- * expects to have found, because a check that looks at nothing passes, and that
- * is exactly how this one would go back to being decoration.
+ * expects to have found, because a check that looks at nothing passes.
  */
 function measure(atLeast: number): string[] {
   const pairs = contrastPairs(document.documentElement, sheet);
@@ -349,7 +391,7 @@ function measure(atLeast: number): string[] {
 }
 
 describe("the terminals screen", () => {
-  test("the list comes from `terminal_list`, and every card carries its word", async () => {
+  test("the list comes from `terminal_list`, and every tab carries its tty and its word", async () => {
     const shell = pretendShell({ terminal_list: TWO });
     try {
       render(
@@ -359,7 +401,13 @@ describe("the terminals screen", () => {
       );
       await screen.findByRole("button", { name: /packages/ });
       expect(shell.asked).toContain("terminal_list");
-      expect(screen.getAllByText("vivo").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("alive").length).toBeGreaterThan(0);
+      // A TAB SAYS WHICH SESSION IT IS: the tty, not a guessed title.
+      expect(screen.getByRole("button", { name: /ttys004/ })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /ttys009/ })).toBeTruthy();
+      // And the pane on screen says it too, with what it has moved so far.
+      expect(document.querySelector(".pane:not([hidden]) .pane__device")?.textContent).toBe("ttys004");
+      expect(document.querySelector(".pane:not([hidden]) .pane__moved")?.textContent).toBe("2 KB moved");
       expect(measure(20)).toEqual([]);
     } finally {
       shell.stop();
@@ -367,9 +415,6 @@ describe("the terminals screen", () => {
   });
 
   test("A DEAD TERMINAL LOOKS DEAD: `terminal_closed` changes the state shown", async () => {
-    // A pane that stays the same when the process inside it has ended. Before
-    // the event the card says «vivo»; after the event it says «finito», and the
-    // list has not changed yet.
     const shell = pretendShell({ terminal_list: TWO });
     try {
       render(
@@ -378,16 +423,14 @@ describe("the terminals screen", () => {
         </div>,
       );
       await screen.findByRole("button", { name: /packages/ });
-      expect(screen.queryByText("finito")).toBeNull();
+      expect(screen.queryByText("ended")).toBeNull();
 
       await act(async () => {
-        shell.emit("terminal_closed", { id: "t1", status: "uscita 130" });
+        shell.emit("terminal_closed", { id: "t1", status: "exited with 130" });
       });
 
-      expect(screen.getAllByText("finito").length).toBeGreaterThan(0);
-      // The outcome is readable, not just the word: «finito» without knowing how
-      // does not say whether the process finished or was killed.
-      expect(screen.getByText("uscita 130")).toBeTruthy();
+      expect(screen.getAllByText("ended").length).toBeGreaterThan(0);
+      expect(screen.getByText("exited with 130")).toBeTruthy();
       expect(measure(20)).toEqual([]);
     } finally {
       shell.stop();
@@ -403,44 +446,47 @@ describe("the terminals screen", () => {
         </div>,
       );
       await screen.findByRole("button", { name: /packages/ });
-      expect(screen.queryByText("vivo")).toBeNull();
-      expect(screen.getAllByText("non lo so più").length).toBeGreaterThan(0);
+      expect(screen.queryByText("alive")).toBeNull();
+      expect(screen.getAllByText("no longer known").length).toBeGreaterThan(0);
       expect(measure(20)).toEqual([]);
     } finally {
       shell.stop();
     }
   });
 
-  test("OPENING DECLARES THE DIRECTORY: with no workspace nothing opens", async () => {
-    // There is no generic terminal you then tell where to go: the directory is
-    // part of what the terminal is, and it belongs in the call that opens it.
-    const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0] });
+  test("A TERMINAL IS OPENED BY CHOOSING A WORKSPACE the engine knows, and the choice reaches the command", async () => {
+    const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0], ...PLACES });
     try {
       render(
         <div className="app">
           <Terminals native />
         </div>,
       );
-      const button = await screen.findByRole("button", { name: "Apri un terminale" });
-      expect((button as HTMLButtonElement).disabled).toBe(true);
-
-      const field = screen.getByPlaceholderText(WORKSPACE_HINT);
-      fireEvent.change(field, { target: { value: "/work/sailor" } });
-      expect((screen.getByRole("button", { name: "Apri un terminale" }) as HTMLButtonElement).disabled).toBe(false);
-
-      await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Apri un terminale" }));
+      const choice = (await screen.findByRole("combobox")) as HTMLSelectElement;
+      await waitFor(() => {
+        expect(Array.from(choice.options).map((option) => option.value)).toEqual([
+          "/work/sailor",
+          "/work/sailor-worktrees/x",
+          ANOTHER_PATH,
+        ]);
       });
-      expect(shell.asked).toContain("terminal_open");
+      // The worktree is offered by the engine, and picking it is enough.
+      fireEvent.change(choice, { target: { value: "/work/sailor-worktrees/x" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open a terminal" }));
+      });
+      expect(shell.argsOf("terminal_open")).toEqual([
+        { workspaceRoot: "/work/sailor-worktrees/x", program: undefined, args: undefined, cols: 80, rows: 24 },
+      ]);
     } finally {
       shell.stop();
     }
   });
 
-  test("OPENING CARRIES THE DIRECTORY TO THE COMMAND, not just to the component", async () => {
-    // The field is filled in and what reached the bridge is inspected: without
-    // this test, `terminal_open` could be called with no `workspaceRoot` and the
-    // test above would stay green.
+  test("with nothing known, only a typed path is offered, and nothing opens without one", async () => {
+    // THE ABSURD CONTROL of the test above: an engine with no projects and no
+    // worktrees leaves the choice empty. A screen that kept its own list
+    // would still offer something here.
     const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0] });
     try {
       render(
@@ -448,13 +494,41 @@ describe("the terminals screen", () => {
           <Terminals native />
         </div>,
       );
-      const field = await screen.findByPlaceholderText(WORKSPACE_HINT);
-      fireEvent.change(field, { target: { value: "/work/other-repo" } });
+      const choice = (await screen.findByRole("combobox")) as HTMLSelectElement;
+      expect(Array.from(choice.options).map((option) => option.value)).toEqual([ANOTHER_PATH]);
+      const button = screen.getByRole("button", { name: "Open a terminal" }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+
+      fireEvent.change(screen.getByPlaceholderText(WORKSPACE_HINT), { target: { value: "/work/other-repo" } });
+      expect((screen.getByRole("button", { name: "Open a terminal" }) as HTMLButtonElement).disabled).toBe(false);
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Apri un terminale" }));
+        fireEvent.click(screen.getByRole("button", { name: "Open a terminal" }));
       });
       expect(shell.argsOf("terminal_open")).toEqual([
-        { workspaceRoot: "/work/other-repo", program: undefined, cols: 80, rows: 24 },
+        { workspaceRoot: "/work/other-repo", program: undefined, args: undefined, cols: 80, rows: 24 },
+      ]);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("WHAT TO START CROSSES THE BRIDGE AS A PROGRAM AND ITS ARGUMENTS", async () => {
+    // Typing `claude --resume` must not look for a binary named, literally,
+    // `claude --resume`: the field is split before the call.
+    const shell = pretendShell({ terminal_list: [], terminal_open: TWO[0], ...PLACES });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("combobox");
+      fireEvent.change(screen.getByPlaceholderText(/claude --resume/), { target: { value: "claude --resume" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Open a terminal" }));
+      });
+      expect(shell.argsOf("terminal_open")).toEqual([
+        { workspaceRoot: "/work/sailor", program: "claude", args: ["--resume"], cols: 80, rows: 24 },
       ]);
     } finally {
       shell.stop();
@@ -462,8 +536,6 @@ describe("the terminals screen", () => {
   });
 
   test("an empty list is not confused with an engine that does not answer", async () => {
-    // «Zero» and «I cannot see» are not the same thing, and they are the two
-    // sentences this screen has to be able to choose between.
     const shell = pretendShell({ terminal_list: [] });
     try {
       render(
@@ -471,14 +543,14 @@ describe("the terminals screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByText(/Nessun terminale aperto/);
+      await screen.findByText(/No terminal is open/);
       cleanup();
       render(
         <div className="app">
           <Terminals native={false} />
         </div>,
       );
-      expect(screen.getByText(/Non riesco a chiedere/)).toBeTruthy();
+      expect(screen.getByText(/I cannot ask/)).toBeTruthy();
     } finally {
       shell.stop();
     }
@@ -486,11 +558,6 @@ describe("the terminals screen", () => {
 });
 
 // ── the wiring, not the pieces ───────────────────────────────────────────
-
-/* **THE TWO TESTS THIS SECTION EXISTS FOR.** `keyStroke`, `decodeBytes` and
-   `OutputBus` are covered as pure functions, never through the wiring that
-   joins them. Here the keys are real events on xterm's textarea, the output is
-   the contract's event, and the judge is the bridge call and the emulator. */
 
 /** The on-screen pane's keyboard: xterm listens on a hidden textarea. */
 function keyboardOf(): HTMLTextAreaElement {
@@ -523,11 +590,12 @@ function typeLetter(area: HTMLElement, letter: string): void {
   );
 }
 
+function occurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
 describe("the wiring between the bridge and the screen", () => {
   test("OUTPUT REACHES THE PANE'S EMULATOR, and a split letter is put back together there", async () => {
-    // Guards against bus bytes never reaching the emulator: the screen would
-    // stay empty on live output, and none of the pure-function tests would
-    // notice.
     const shell = pretendShell({ terminal_list: [TWO[0]] });
     try {
       render(
@@ -535,13 +603,13 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /sailor/ });
+      await screen.findByRole("button", { name: /ttys004/ });
+      // The backlog has been asked for and answered empty before any event.
+      await waitFor(() => expect(shell.asked).toContain("terminal_backlog"));
 
       await act(async () => {
-        // The two events the bridge would send: `è` is 0xC3 0xA8, and a
-        // pseudo-terminal may deliver them in two reads.
-        shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(new Uint8Array([0xc3])) });
-        shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(new Uint8Array([0xa8, 0x21])) });
+        shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(new Uint8Array([0xc3])), at: 0 });
+        shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(new Uint8Array([0xa8, 0x21])), at: 1 });
       });
 
       await waitFor(() => {
@@ -552,30 +620,67 @@ describe("the wiring between the bridge and the screen", () => {
     }
   });
 
-  test("one terminal's output does not land in another one's pane", async () => {
-    const shell = pretendShell({ terminal_list: TWO });
+  test("A PANE ATTACHED LATE SHOWS THE BACKLOG FIRST, then only what follows it", async () => {
+    // The scene: the terminal printed «before-42» while nobody looked, and
+    // the bridge keeps sending events. A piece the backlog already holds
+    // arrives too (the bridge attached before the pane did): it must not be
+    // shown twice. A piece past the backlog must be shown once.
+    const backlog = { at: 0, bytes: encodeBytes(keyBytes("before-42\r\n")), upto: 11, ended: null };
+    const shell = pretendShell({ terminal_list: [TWO[0]], terminal_backlog: backlog });
     try {
       render(
         <div className="app">
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /packages/ });
+      await screen.findByRole("button", { name: /ttys004/ });
       await act(async () => {
-        shell.emit("terminal_output", { id: "t2", bytes: encodeBytes(keyBytes("nel secondo")) });
+        shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(keyBytes("before-42\r\n")), at: 0 });
+        shell.emit("terminal_output", { id: "t1", bytes: encodeBytes(keyBytes("after-48\r\n")), at: 11 });
       });
-      // The first one is the pane on screen, and it must have received nothing.
       await waitFor(() => {
-        expect(paneScreenText()).not.toContain("nel secondo");
+        expect(paneScreenText()).toContain("after-48");
       });
+      expect(occurrences(paneScreenText(), "before-42")).toBe(1);
+      expect(occurrences(paneScreenText(), "after-48")).toBe(1);
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("LEAVING THE SCREEN AND COMING BACK SHOWS WHAT WAS PRINTED MEANWHILE", async () => {
+    // The screen is mounted, unmounted and mounted again. The second mount
+    // finds the pane blank — the emulator was destroyed with it — and asks
+    // the engine what it missed: the backlog is on the pane, once.
+    const backlog = { at: 0, bytes: encodeBytes(keyBytes("printed-while-away\r\n")), upto: 20, ended: null };
+    const shell = pretendShell({ terminal_list: [TWO[0]], terminal_backlog: backlog });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /ttys004/ });
+      await waitFor(() => expect(paneScreenText()).toContain("printed-while-away"));
+      const askedBefore = shell.argsOf("terminal_backlog").length;
+      cleanup();
+      expect(document.querySelector(".pane")).toBeNull();
+
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("button", { name: /ttys004/ });
+      await waitFor(() => expect(paneScreenText()).toContain("printed-while-away"));
+      expect(shell.argsOf("terminal_backlog").length).toBeGreaterThan(askedBefore);
+      expect(occurrences(paneScreenText(), "printed-while-away")).toBe(1);
     } finally {
       shell.stop();
     }
   });
 
   test("A KEY GOES TO `terminal_press`, ENTER TO `terminal_submit`, AND NEVER BOTH", async () => {
-    // Guards against every key being sent **also** to `onSubmit`. This is the
-    // fork in the contract, and skipping it made no noise.
     const shell = pretendShell({
       terminal_list: [TWO[0]],
       terminal_press: null,
@@ -587,14 +692,12 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /sailor/ });
+      await screen.findByRole("button", { name: /ttys004/ });
       const keys = keyboardOf();
 
       // HOW IT IS BORN: A TERMINAL IS BORN A TERMINAL, and the letter is what
-      // proves it. An arrow, a Ctrl-C and an Enter would go to `press` while
-      // composing too, on an empty line: only the `x` tells the two modes
-      // apart, and it is the line that pins the «`raw` by default» decision.
-      expect(screen.getByText("i tasti vanno diritti al processo")).toBeTruthy();
+      // proves it: only the `x` tells the two modes apart.
+      expect(screen.getByText("keys go straight to the process")).toBeTruthy();
       await act(async () => {
         typeLetter(keys, "x");
         tapKey(keys, { key: "ArrowUp", keyCode: 38 });
@@ -609,14 +712,12 @@ describe("the wiring between the bridge and the screen", () => {
       ]);
       expect(shell.asked).not.toContain("terminal_submit");
 
-      // Routing on this line is asked for by whoever wants it.
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "componi una riga da smistare" }));
+        fireEvent.click(screen.getByRole("button", { name: "compose a line to route" }));
       });
 
       // Composing sends nothing to anybody: if even one character left,
-      // `terminal_submit` — which writes the line itself — would have it run
-      // twice.
+      // `terminal_submit` — which writes the line itself — would run it twice.
       await act(async () => {
         typeLetter(keys, "l");
         typeLetter(keys, "s");
@@ -624,16 +725,14 @@ describe("the wiring between the bridge and the screen", () => {
       expect(shell.argsOf("terminal_press").length).toBe(4);
       expect(shell.asked).not.toContain("terminal_submit");
 
-      // Enter: a single call, with the whole line, and not one extra key.
       await act(async () => {
         tapKey(keys, { key: "Enter", keyCode: 13 });
       });
       expect(shell.argsOf("terminal_submit")).toEqual([{ id: "t1", line: "ls" }]);
       expect(shell.argsOf("terminal_press").length).toBe(4);
 
-      // And where it ended up can be read on the screen.
       await waitFor(() => {
-        expect(screen.getByText(/è andata alla shell/)).toBeTruthy();
+        expect(screen.getByText(/went to the shell/)).toBeTruthy();
       });
     } finally {
       shell.stop();
@@ -647,7 +746,7 @@ describe("the wiring between the bridge and the screen", () => {
       terminal_submit: {
         kind: "flow",
         flow: "dispatch-the-work",
-        text: "trova i residui",
+        text: "find the leftovers",
         rule: "marked-request",
       },
     });
@@ -657,17 +756,16 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /sailor/ });
+      await screen.findByRole("button", { name: /ttys004/ });
       const keys = keyboardOf();
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "componi una riga da smistare" }));
+        fireEvent.click(screen.getByRole("button", { name: "compose a line to route" }));
       });
       await act(async () => {
         typeLetter(keys, "?");
         tapKey(keys, { key: "Enter", keyCode: 13 });
       });
       expect(shell.argsOf("terminal_submit")).toEqual([{ id: "t1", line: "?" }]);
-      // NOTHING REACHED THE SHELL: a rerouted line is not executed.
       expect(shell.asked).not.toContain("terminal_press");
       await waitFor(() => {
         expect(screen.getByText(/marked-request/)).toBeTruthy();
@@ -678,10 +776,9 @@ describe("the wiring between the bridge and the screen", () => {
   });
 
   // `terminal_resize` HAS NO TEST, AND HERE IS WHY. The wiring starts from a
-  // `ResizeObserver` and from `fit()`, which measure real frames: in jsdom every
-  // frame is zero by zero, `fit()` produces no new size and `refit` returns
-  // without calling anything. A test here could only assert «zero calls or
-  // more», which is true regardless. It is verified by opening the window.
+  // `ResizeObserver` and from `fit()`, which measure real frames: in jsdom
+  // every frame is zero by zero, `fit()` produces no new size and `refit`
+  // returns without calling anything. It is verified by opening the window.
 
   test("closing a terminal asks the engine, with its id", async () => {
     const shell = pretendShell({ terminal_list: [TWO[0]], terminal_close: null });
@@ -691,13 +788,33 @@ describe("the wiring between the bridge and the screen", () => {
           <Terminals native />
         </div>,
       );
-      await screen.findByRole("button", { name: /sailor/ });
+      await screen.findByRole("button", { name: /ttys004/ });
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Chiudi questo terminale" }));
+        fireEvent.click(screen.getByRole("button", { name: "Close this terminal" }));
       });
       expect(shell.argsOf("terminal_close")).toEqual([{ id: "t1" }]);
     } finally {
       shell.stop();
     }
+  });
+});
+
+// ── the screen inside the window ─────────────────────────────────────────
+
+describe("the terminals inside the window", () => {
+  test("THE SCREEN STAYS MOUNTED BEHIND THE OTHER PLACES: going to Flows and back destroys no pane", () => {
+    // Outside the shell the screen is mute, and that is enough: what is
+    // measured is that the element survives the change of place, hidden.
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /^Terminals/ }));
+    const terminals = container.querySelector(".terminals");
+    expect(terminals, "the terminals screen did not draw").toBeTruthy();
+    expect((terminals as HTMLElement).hidden).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Flows/ }));
+    const behind = container.querySelector(".terminals");
+    expect(behind, "the terminals screen was unmounted on leaving it").toBeTruthy();
+    expect(behind).toBe(terminals);
+    expect((behind as HTMLElement).hidden).toBe(true);
   });
 });
