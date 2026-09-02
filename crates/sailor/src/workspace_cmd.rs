@@ -10,6 +10,15 @@
 use flow::workspace::MARKER;
 use std::path::Path;
 
+/// Seconds since the epoch. The register keeps dates, and a clock that is not
+/// named is a clock nobody can replace in a test.
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or_default()
+}
+
 /// I documenti che, se ci sono, valgono la pena di essere dichiarati.
 ///
 /// **È UN ELENCO DI CANDIDATI, NON UNA SCOPERTA.** Cercare «tutti i `.md` che
@@ -42,14 +51,55 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         [command] if command == "init" => {
             let here = std::env::current_dir()
                 .map_err(|error| format!("there is no telling where I am: {error}"))?;
-            init(&here)
+            init(&here, ledger::sailor_home().as_deref())
         }
-        _ => Err(format!("usage: {}", USAGE[0])),
+        [command] if command == "list" => list(),
+        _ => Err(USAGE
+            .iter()
+            .map(|line| format!("usage: {line}"))
+            .collect::<Vec<_>>()
+            .join("\n")),
     }
 }
 
 /// La forma di `sailor workspace`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor workspace init"];
+pub const USAGE: &[&str] = &["sailor workspace init", "sailor workspace list"];
+
+/// The projects this machine has been opened in.
+///
+/// **A PROJECT THAT LOST ITS MARKER IS PRINTED, NOT DROPPED.** Whoever moved a
+/// folder yesterday and cannot find it today learns nothing from a shorter
+/// list; the row says `gone` and keeps the path, which is the one thing that
+/// makes the situation repairable.
+fn list() -> Result<String, String> {
+    let home =
+        ledger::sailor_home().ok_or_else(|| "no house to read: HOME is not set".to_owned())?;
+    let known = flow::workspace::known_in(&home)?;
+    if known.is_empty() {
+        return Ok(catalogue::say("cli.workspace.none_known", &[]));
+    }
+    let width = known
+        .iter()
+        .map(|entry| entry.name.len())
+        .max()
+        .unwrap_or(0);
+    Ok(known
+        .iter()
+        .map(|entry| {
+            let standing = match flow::workspace::standing_of(entry) {
+                flow::workspace::Standing::Declared => "declared",
+                flow::workspace::Standing::Gone => "gone",
+            };
+            format!(
+                "{:width$}  {standing:8}  {}",
+                entry.name,
+                entry.root.display(),
+                width = width
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n"))
+}
 
 /// Scrive il marcatore nella cartella data.
 ///
@@ -57,7 +107,7 @@ pub const USAGE: &[&str] = &["sailor workspace init"];
 /// progetto qualunque è la stessa presunzione del percorso assoluto che il
 /// guasto 25 racconta: un comando che scrive una verifica che nessuno ha
 /// chiesto la fa poi eseguire a qualcuno che crede l'abbia decisa lui.
-fn init(root: &Path) -> Result<String, String> {
+fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
     let marker = root.join(MARKER);
     if marker.exists() {
         return Err(catalogue::say(
@@ -85,6 +135,14 @@ fn init(root: &Path) -> Result<String, String> {
     text.push('\n');
     std::fs::write(&marker, text)
         .map_err(|error| format!("cannot write {}: {error}", marker.display()))?;
+
+    // DECLARING A PROJECT PUTS IT ON THE LIST, or the marker exists and
+    // `workspace list` cannot see it. **The house is an argument**: fetched
+    // here, the tests of this command wrote into the real register of whoever
+    // ran `cargo test`. A house that will not take it is not a reason to fail.
+    if let Some(home) = home {
+        let _ = flow::workspace::remember_in(home, root, now());
+    }
 
     let found = if rules.is_empty() {
         catalogue::say("cli.workspace.no_rules_found", &[])
@@ -130,7 +188,7 @@ mod tests {
         fs::create_dir_all(root.join("docs")).expect("docs");
         fs::write(root.join("docs/decisioni.md"), "decisioni").expect("un altro");
 
-        init(&root).expect("scrive");
+        init(&root, None).expect("scrive");
 
         let declared = flow::workspace::declaration_at(&root).expect("si rilegge");
         assert_eq!(declared.rules, vec!["AGENTS.md", "docs/decisioni.md"]);
@@ -153,7 +211,7 @@ mod tests {
     fn a_rule_that_is_not_there_is_not_declared() {
         let root = scratch("senza-regole");
 
-        init(&root).expect("scrive lo stesso");
+        init(&root, None).expect("scrive lo stesso");
 
         let declared = flow::workspace::declaration_at(&root).expect("si rilegge");
         assert!(declared.rules.is_empty());
@@ -166,9 +224,9 @@ mod tests {
     #[test]
     fn init_refuses_to_overwrite_a_declaration() {
         let root = scratch("gia-dichiarato");
-        init(&root).expect("la prima volta");
+        init(&root, None).expect("declared the first time");
 
-        let refused = init(&root).expect_err("la seconda no");
+        let refused = init(&root, None).expect_err("and refused the second");
 
         // English, because that is what the product speaks when nobody asked for
         // anything else. The Italian of the same key is checked where the two
@@ -176,5 +234,39 @@ mod tests {
         assert!(refused.contains("is already there"), "{refused}");
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// **DECLARING A PROJECT PUTS IT ON THE LIST**, and the list is the one in
+    /// the house that was handed in. Without this the tests above, which all
+    /// pass `None`, would leave the registration untested — and the version
+    /// that registered nothing at all would pass them just the same.
+    #[test]
+    fn declaring_a_project_writes_it_into_the_house_it_was_given() {
+        let root = scratch("registrato");
+        let house = scratch("casa");
+        init(&root, Some(&house)).expect("dichiara");
+
+        let known = flow::workspace::known_in(&house).expect("the register reads");
+        assert_eq!(known.len(), 1, "the declaration never reached the list");
+        assert_eq!(known[0].root, root);
+    }
+
+    /// **AND WITH NO HOUSE IT WRITES NOWHERE.** This is the other half, and it
+    /// is the one that comes from a real fault: the tests of this command used
+    /// to reach for the real home, and six scratch projects ended up in the
+    /// register of whoever ran `cargo test`.
+    #[test]
+    fn with_no_house_the_marker_is_written_and_nothing_else_is() {
+        let root = scratch("senza-casa");
+        let elsewhere = scratch("casa-che-resta-vuota");
+        init(&root, None).expect("dichiara lo stesso");
+
+        assert!(root.join(MARKER).is_file(), "the marker was not written");
+        assert!(
+            flow::workspace::known_in(&elsewhere)
+                .expect("si legge")
+                .is_empty(),
+            "a house nobody named was written into"
+        );
     }
 }

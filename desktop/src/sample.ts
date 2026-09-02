@@ -148,6 +148,7 @@ export const SAMPLE: FlowEntry[] = [
         },
       },
     },
+    origin: "yours",
   },
   {
     state: "loaded",
@@ -169,15 +170,21 @@ export const SAMPLE: FlowEntry[] = [
       },
       inputs: {},
     },
+    origin: "this project",
   },
   // A broken flow does NOT vanish from the list: it shows, marked, with the
-  // reason.
+  // reason. **AND ITS ORIGIN IS A PLACE ON A DISK**, never `built in`: the
+  // shipped flows travel inside the binary, alike on every machine, and a test
+  // in `flow::system` reads all of them before a release. One could still
+  // reach a window, kept with its reason rather than dropped — but not one
+  // machine at a time, which is the scene this was drawing.
   {
     state: "broken",
     broken: {
       name: "notte",
       reason: "campo sconosciuto `retries` alla riga 14 (forse `max_attempts`?)",
     },
+    origin: "this project",
   },
 ];
 
