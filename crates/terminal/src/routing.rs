@@ -42,7 +42,10 @@ use toolbox::{Look, Machine};
 /// percorso di installazione da indovinare, e restano dati.
 pub const BUILTIN: &str = include_str!("../descriptors/default.json");
 
-pub const BUILTIN_SOURCE: &str = "incorporato";
+/// The provenance written into `Loaded` and `Problem`, so it is a value and not
+/// a label. Spelled as `trigger` and `models` already spell theirs: a reader
+/// comparing sources across the three must not have to know they differ.
+pub const BUILTIN_SOURCE: &str = "built-in";
 
 /// Da dove si prendono le regole. Stesse tre forme dei descrittori degli
 /// strumenti e degli inneschi, e di proposito: chi ha imparato dove si aggiunge
@@ -203,7 +206,10 @@ impl Catalog {
                 .get("id")
                 .and_then(Value::as_str)
                 .map(str::to_string)
-                .unwrap_or_else(|| format!("la voce numero {}", index + 1));
+                // An entry that declares no `id` still has to be named in a
+                // problem, and this stands in as the identifier. Same words as
+                // `trigger` and `toolbox` use for the same stand-in.
+                .unwrap_or_else(|| format!("entry number {}", index + 1));
             let route: Route = match serde_json::from_value(item.clone()) {
                 Ok(route) => route,
                 Err(error) => {
