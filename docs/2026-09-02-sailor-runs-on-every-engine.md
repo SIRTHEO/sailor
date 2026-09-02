@@ -151,6 +151,31 @@ Starting point, so the mandate builds on it instead of beside it.
    *Proof:* a profile with an endpoint makes the composed command line carry
    the variable and the ledger row carry the endpoint; a profile whose
    endpoint is not declared native is refused by `profiles` with the reason.
+10. **free-claude-code is connected as a tool, not built in.** Theo, on
+    02/09 at night: *let us not exclude it a priori; they are AIs that can
+    help, and for the Sailor project I do not mind handing them data.* The
+    decision of 30/08 refused to bring its code inside Sailor; connecting it
+    as a program on the machine is the other rule of this repository, «a
+    node connected, not code of ours». So: a descriptor `free-claude-code`
+    (detect `fcc-server`, version, its admin address, its config) like
+    docker's or gh's; a profile of Claude Code whose endpoint is that server
+    on `localhost:8082` with its token, through A.9; the ledger row names the
+    server and the model that answered, read from the answer's `modelUsage`;
+    the server's fallback list and tier mapping (`MODEL_OPUS`, `MODEL_SONNET`,
+    `MODEL_HAIKU`) stay its own, and Sailor records what came back. The
+    workspace declares its data class (A.5): Sailor is `public`, so its steps
+    may go there; a workspace that is `private` never resolves to that
+    profile. Two things stay out even so: the «connected accounts» that log
+    in with another product's subscription are never configured, and the
+    server is a program Theo installs and keeps running, never a piece Sailor
+    ships or restarts. What Sailor adds is exactly what that project lacks:
+    which provider actually answered, at what cost, on what pact, and how
+    much was left.
+    *Proof:* a step run under that profile leaves a ledger row with the
+    server as endpoint and a non-Claude model as `actual_model`; with the
+    server down, `candidates` refuses the profile with the reason instead of
+    the step breaking; a `private` workspace never composes that command
+    line.
 
 ## B. Dispatch: the same flow, from three seats, chosen by what is left
 
