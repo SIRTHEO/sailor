@@ -36,6 +36,7 @@ import { Manual } from "./Manual";
 import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
+import { ProfileList } from "./ProfileList";
 import { Projects } from "./Projects";
 import { Worktrees } from "./Worktrees";
 import { WireMenu } from "./WireMenu";
@@ -107,6 +108,7 @@ type Place =
   | "manual"
   | "terminals"
   | "workspaces"
+  | "profiles"
   | "worktrees";
 
 /**
@@ -1202,6 +1204,12 @@ export default function App() {
         <button
           type="button"
           className="places__item"
+          data-here={place === "profiles" || undefined}
+          onClick={() => setPlace("profiles")}
+        >Profili</button>
+        <button
+          type="button"
+          className="places__item"
           data-here={place === "worktrees" || undefined}
           onClick={() => setPlace("worktrees")}
         >
@@ -1275,6 +1283,7 @@ export default function App() {
       {place === "manual" && <Manual native={NATIVE} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
       {place === "workspaces" && <Projects native={NATIVE} now={now} />}
+      {place === "profiles" && <ProfileList native={NATIVE} />}
       {place === "worktrees" && <Worktrees native={NATIVE} />}
 
       {/* Outside the canvas element on purpose: it is positioned in window
