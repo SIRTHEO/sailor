@@ -12,13 +12,13 @@ use std::fs::File;
 use std::io;
 use std::os::fd::FromRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrder};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrder};
 use std::sync::Arc;
 use terminal::bridge::{self, Keys, RawMode};
 use terminal::inbox::{self, Inbox};
 use terminal::mandate;
 use terminal::pty::Pty;
-use terminal::tally::{self, Tally};
+use terminal::tally;
 use terminal::Workspace;
 
 pub const USAGE: &[Form] = &[
@@ -42,9 +42,13 @@ pub const USAGE: &[Form] = &[
         form: "sailor terminal list [--ceiling <tokens>] [--store <dir>]",
         says_key: "cli.terminal.form.list",
     },
+    Form {
+        form: "sailor terminal host [--store <dir>]",
+        says_key: "cli.terminal.form.host",
+    },
 ];
 
-const FORMS: &[&str] = &["run", "press", "reset", "mandate", "list"];
+const FORMS: &[&str] = &["run", "press", "reset", "mandate", "list", "host"];
 
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
@@ -77,6 +81,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         "reset" => reset(&args[1..]),
         "mandate" => leave_mandate(&args[1..], &mut std::io::stdin()),
         "list" => list(&args[1..]),
+        "host" => host(&args[1..]),
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
 }
@@ -123,7 +128,7 @@ fn hold(args: &[String]) -> Result<i32, String> {
     // the one this process was started from. Those are two different ttys, and
     // the tracking store records the inner one: keying on the outer would
     // leave whoever reads that store knocking at an address nobody holds.
-    let tty = sessions::tty::short_name(inner.device());
+    let tty = inner.tty().to_owned();
     let address = mailroom(&options)?.join(format!("{tty}.sock"));
     let letterbox = Inbox::open(&address).map_err(|error| {
         let _ = inner.close();
@@ -138,7 +143,7 @@ fn hold(args: &[String]) -> Result<i32, String> {
         .map_err(|error| error.to_string())?;
     bridge::notice_resizes().map_err(|error| error.to_string())?;
 
-    let counted = Counters::new();
+    let counted = tally::Counters::new();
     let counting = counted.recorded_into(mailroom(&options)?.join(format!("{tty}.seen")));
 
     typing_reaches(&inner, letterbox, Arc::clone(&counted.typed));
@@ -153,69 +158,68 @@ fn hold(args: &[String]) -> Result<i32, String> {
     Ok(exit_code_of(&inner))
 }
 
-/// The bytes each direction has moved, shared with whoever writes them down.
-struct Counters {
-    shown: Arc<AtomicU64>,
-    typed: Arc<AtomicU64>,
-}
+/// Holds the terminals the window opens, in a process that is not the window.
+///
+/// **THE WINDOW CLOSES; THIS DOES NOT.** The leader end of every pseudo-terminal
+/// lives in whoever opened it, and a leader that goes away ends the shell
+/// inside. So the window never opens one: it asks this process, which sits in
+/// a session of its own and answers on a socket beside the letterboxes.
+///
+/// Registered in the ledger like everything Sailor starts, so `sailor-live
+/// --list` can name it and `--stop` can end it — fault 4 by the other door.
+fn host(args: &[String]) -> Result<i32, String> {
+    let options = options_of(args)?;
+    let store = store_root(&options)?;
+    let room = inbox::mailroom(&store);
 
-impl Counters {
-    fn new() -> Counters {
-        Counters {
-            shown: Arc::new(AtomicU64::new(0)),
-            typed: Arc::new(AtomicU64::new(0)),
-        }
+    // A session of its own, or the terminal that started the window would take
+    // this process with it when it closes.
+    unsafe {
+        libc::setsid();
+        libc::signal(libc::SIGHUP, libc::SIG_IGN);
     }
 
-    /// Keeps the count on disk while the session runs.
-    ///
-    /// On disk and not in here, because whoever reads it is another process
-    /// that may start after this one and must not have to ask it anything.
-    fn recorded_into(&self, path: PathBuf) -> Recording {
-        let running = Arc::new(AtomicBool::new(true));
-        let shown = Arc::clone(&self.shown);
-        let typed = Arc::clone(&self.typed);
-        let going = Arc::clone(&running);
-        let writing = std::thread::spawn(move || {
-            let mut last = Tally::default();
-            while going.load(AtomicOrder::Relaxed) {
-                last = record(&path, &shown, &typed, last);
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-            record(&path, &shown, &typed, last);
+    let registered = ledger::Ledger::open(&store).ok().and_then(|ledger| {
+        let record = ledger::ProcessRecord {
+            process_id: HOST_PROCESS_ID.to_owned(),
+            pid: std::process::id(),
+            command: "sailor".to_owned(),
+            args: vec![
+                "terminal".to_owned(),
+                "host".to_owned(),
+                "--store".to_owned(),
+                store.display().to_string(),
+            ],
+            working_directory: std::env::current_dir()
+                .map(|here| here.display().to_string())
+                .unwrap_or_default(),
+            port: None,
+            purpose: catalogue::say("cli.terminal.host_purpose", &[]),
+            started_by: "sailor terminal host".to_owned(),
+            run_id: None,
+            started_at: tally::now(),
+        };
+        ledger.record_process_started(&record).ok().map(|_| ledger)
+    });
+
+    let terminals = terminal::Terminals::current().with_mailroom(room);
+    let served = terminal::host::serve(
+        Arc::new(terminal::host::Host::new(terminals)),
+        &terminal::host::address_in(&store),
+    );
+    if let Some(ledger) = registered {
+        let _ = ledger.record_process_ended(&ledger::ProcessEndRecord {
+            process_id: HOST_PROCESS_ID.to_owned(),
+            exit_code: None,
+            ended_at: tally::now(),
         });
-        Recording { running, writing }
     }
+    served.map_err(|error| error.to_string())?;
+    Ok(0)
 }
 
-/// Writes the count if it moved, and gives back what is now on disk.
-fn record(path: &Path, shown: &AtomicU64, typed: &AtomicU64, last: Tally) -> Tally {
-    let now = Tally {
-        shown: shown.load(AtomicOrder::Relaxed),
-        typed: typed.load(AtomicOrder::Relaxed),
-        at: sessions::now(),
-    };
-    if now.shown == last.shown && now.typed == last.typed {
-        return last;
-    }
-    let _ = tally::write(path, &now);
-    now
-}
-
-struct Recording {
-    running: Arc<AtomicBool>,
-    writing: std::thread::JoinHandle<()>,
-}
-
-impl Recording {
-    /// Stops and waits, so the last count is on disk before the terminal's row
-    /// disappears: a session that ended full must not read as one that ended
-    /// empty.
-    fn stop(self) {
-        self.running.store(false, AtomicOrder::Relaxed);
-        let _ = self.writing.join();
-    }
-}
+/// The name the ledger finds the host back by. Not the pid: pids get reused.
+pub const HOST_PROCESS_ID: &str = "terminal-host";
 
 /// The thread that hands whatever a stranger left straight to the terminal.
 fn typing_reaches(inner: &Arc<Pty>, letterbox: Inbox, typed: Arc<AtomicU64>) {
@@ -416,9 +420,14 @@ fn list(args: &[String]) -> Result<i32, String> {
         return Ok(0);
     };
     let mut found = 0;
+    let host_address = terminal::host::address_in(&store_root(&options)?);
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|kind| kind.to_str()) != Some("sock") {
+            continue;
+        }
+        // The host answers here too, and it is not a terminal.
+        if path == host_address {
             continue;
         }
         // A file left behind by a process that died badly answers nobody: the

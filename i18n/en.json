@@ -141,6 +141,8 @@
   "cli.terminal.form.reset": "empties a running session the way its descriptor says",
   "cli.terminal.form.mandate": "leaves the work for whoever comes next",
   "cli.terminal.form.list": "which terminals can be typed into, and how full",
+  "cli.terminal.form.host": "holds the window's terminals, so they outlive the window",
+  "cli.terminal.host_purpose": "holds the terminals the window opened",
   "cli.terminal.mandate_left": "mandate left for {tty}",
   "cli.terminal.no_reset_declared": "«{cli}» does not declare how a running session of it is emptied. Nobody has measured it, which is not the same as it being impossible: add `reset_context` to its descriptor rather than guessing a line here",
   "cli.terminal.no_store": "I cannot tell where the store lives",

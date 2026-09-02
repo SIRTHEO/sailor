@@ -391,6 +391,8 @@ fn the_list_row_carries_the_names_the_window_reads() {
         workspace_name: "qui".to_owned(),
         alive: true,
         process_id: 4242,
+        device: "ttys004".to_owned(),
+        moved: 512,
     };
     let written = serde_json::to_value(&row).expect("la riga si serializza");
     let object = written.as_object().expect("è un oggetto");
@@ -398,11 +400,56 @@ fn the_list_row_carries_the_names_the_window_reads() {
     names.sort_unstable();
     assert_eq!(
         names,
-        ["alive", "id", "processId", "workspaceName", "workspaceRoot"],
+        [
+            "alive",
+            "device",
+            "id",
+            "moved",
+            "processId",
+            "workspaceName",
+            "workspaceRoot"
+        ],
         "i nomi della riga non sono quelli del contratto: {written}"
     );
     assert_eq!(written["workspaceRoot"], "/tmp/qui");
     assert_eq!(written["processId"], 4242);
+    // The tty is the anchor of a tab: it travels as the device, short form.
+    assert_eq!(written["device"], "ttys004");
+    assert_eq!(written["moved"], 512);
+}
+
+/// **A TAB IS ANCHORED ON THE TTY, AND THE TTY IS THE PROGRAM'S OWN.** The
+/// program inside is asked which terminal it is on, and the answer must be the
+/// device the list carries: a device read from anywhere else would name a
+/// session the program does not recognise as its own.
+#[test]
+fn the_device_in_the_list_is_the_one_the_program_inside_reports() {
+    let scratch = Scratch::make("device");
+    let terminals = plain_terminals();
+    let seen = Arc::new(Buffer::new());
+    let terminal = terminals
+        .open(scratch.workspace.clone(), &shell(), |_| {
+            Arc::clone(&seen) as Arc<dyn terminal::Output>
+        })
+        .expect("aprire uno pseudo-terminale");
+
+    let listed = terminals.list();
+    let device = listed[0].device.clone();
+    assert!(
+        device.starts_with("tty") || device.starts_with("pts"),
+        "not a tty name: {device}"
+    );
+    assert!(
+        !device.starts_with("/dev/"),
+        "the short name, as `ps` writes it: {device}"
+    );
+
+    terminal.submit("tty").expect("scrivere la riga");
+    assert!(
+        seen.wait_for(&format!("/dev/{device}"), PATIENCE),
+        "the program inside reports a different terminal; what came out: {:?}",
+        seen.text()
+    );
 }
 
 /// Uno spazio di lavoro che non esiste si rifiuta all'apertura, non allo
