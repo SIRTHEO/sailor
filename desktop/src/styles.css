@@ -3273,7 +3273,8 @@ tr[data-followable]:hover {
   flex-grow: 1;
 }
 
-.terminals__input {
+.terminals__input,
+.terminals__select {
   font-family: var(--font-data);
   font-size: var(--text-small);
   padding: var(--space-2);
@@ -3281,6 +3282,108 @@ tr[data-followable]:hover {
   border-radius: var(--radius);
   background: var(--raised);
   color: var(--ink);
+}
+
+/* The tty on a tab and on the pane's head: the anchor of the session, read
+   character by character to be matched with what the machine says. */
+.terminals__device,
+.pane__device {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.terminals__where {
+  color: var(--muted);
+}
+
+.pane__moved {
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+/* ── what changed in a workspace ───────────────────────────────────────── */
+
+.changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--paper);
+  max-height: 45vh;
+  overflow: auto;
+}
+
+.changes__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.changes__root {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.changes__again {
+  margin-left: auto;
+}
+
+.changes__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+.changes__files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.changes__file {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-small);
+}
+
+.changes__status {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  min-width: 5em;
+}
+
+.changes__path {
+  font-family: var(--font-data);
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.changes__open {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* GIT'S TEXT, IN THE FIXED WIDTH IT WAS WRITTEN FOR: a diff is aligned by
+   column, and reflowing it would move a `+` off the line it belongs to. */
+.changes__diff {
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--ink);
+  white-space: pre;
+  overflow: auto;
 }
 
 .terminals__trouble {

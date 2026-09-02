@@ -31,16 +31,31 @@ inglese, come dice `AGENTS.md`. Ciò che legge una persona resta italiano.
 
 ## I comandi che il ponte espone
 
-Sei, e nessuno di più senza aggiornare questo file.
+Sette dal 02/09/2026 (erano sei: `terminal_backlog` è entrato con la
+sopravvivenza alla finestra), e nessuno di più senza aggiornare questo file.
 
 | comando | argomenti | risposta |
 |---|---|---|
-| `terminal_open` | `{ workspaceRoot: string, program?: string, args?: string[], cols: number, rows: number }` | `{ id, workspaceRoot, workspaceName, alive, processId }` |
+| `terminal_open` | `{ workspaceRoot: string, program?: string, args?: string[], cols: number, rows: number }` | `{ id, workspaceRoot, workspaceName, alive, processId, device, moved }` |
 | `terminal_submit` | `{ id: string, line: string }` | `{ kind: "command" } \| { kind: "flow", flow: string, text: string, rule: string }` |
 | `terminal_press` | `{ id: string, bytes: string }` (base64) | `null` |
 | `terminal_resize` | `{ id: string, cols: number, rows: number }` | `null` |
 | `terminal_close` | `{ id: string }` | `null` |
-| `terminal_list` | — | `[{ id, workspaceRoot, workspaceName, alive, processId }]` |
+| `terminal_list` | — | `[{ id, workspaceRoot, workspaceName, alive, processId, device, moved }]` |
+| `terminal_backlog` | `{ id: string }` | `{ at: number, bytes: string (base64), upto: number, ended: string \| null }` |
+
+`device` è il tty del programma dentro, in forma corta (`ttys004`): è
+l'ancora di una scheda, la chiave della cassetta delle lettere e del conteggio.
+`moved` sono i byte passati finora nelle due direzioni, lo stesso numero che
+`sailor terminal list` stampa. `terminal_open` apre sotto i profili attivi:
+l'ambiente del processo dentro porta `CLAUDE_CONFIG_DIR`, `CODEX_HOME` e le
+altre variabili che `profiles::active_environment` ricava dal deposito dei
+profili al momento dell'apertura.
+
+`terminal_backlog` serve ciò che il terminale ha stampato prima che questo
+pannello guardasse, fino a un limite dichiarato (`terminal::host::BACKLOG_LIMIT`),
+e `upto` è l'offset da cui gli eventi vivi prendono il testimone: un pannello
+scrive il backlog e poi solo gli eventi il cui `at` non è sotto `upto`.
 
 La riga dell'elenco è `terminal::Summary`, che è già `Serialize`: **non si
 ricopia in TypeScript un tipo che il Rust già dichiara** — è il guasto 10, che
@@ -64,8 +79,10 @@ diventerebbe inservibile.
 
 ## L'evento dell'uscita
 
-Nome: **`terminal_output`**. Payload: `{ id: string, bytes: string }`, dove
-`bytes` è base64.
+Nome: **`terminal_output`**. Payload: `{ id: string, bytes: string, at: number }`,
+dove `bytes` è base64 e `at` è l'offset del primo byte dall'apertura del
+terminale — ciò che permette a un pannello di unire il backlog e l'uscita viva
+senza un buco né una ripetizione.
 
 **Base64 e non una stringa** perché ciò che esce da uno pseudo-terminale è una
 sequenza di byte che può spezzarsi a metà di un carattere multibyte: consegnarla
@@ -113,6 +130,17 @@ l'ha scritto.
 1. **Un terminale sopravvive alla finestra.** Chi chiude la finestra non uccide
    la sessione dentro: al riavvio, `terminal_list` la ritrova e la finestra si
    riaggancia.
+
+   **Vera dal 02/09/2026, e per la strada che il paragrafo sotto indicava come
+   necessaria: un processo residente che tiene i capi dei pty.** È `sailor
+   terminal host` (`crates/terminal/src/host.rs`): il ponte non apre nessuno
+   pseudo-terminale, è un cliente di quel processo su un socket accanto alle
+   cassette delle lettere, e lo avvia se nessuno risponde. La prova è
+   `crates/sailor/tests/a_terminal_outlives_the_window.rs`, col binario vero:
+   il cliente che ha aperto la shell sparisce, un cliente nuovo la ritrova viva
+   col suo backlog, e il controllo assurdo — spento l'ospite, la shell muore —
+   dice che il pty è dell'ospite e di nessun altro. Ciò che segue è la storia
+   di com'era misurato prima.
 
    **Non si fa passando da `supervisor::child::Process::start`, e questo
    documento diceva il contrario.** Misurato il 01/09, e confermato da un
