@@ -65,6 +65,7 @@ trigger = { path = "../../crates/trigger" }
 toolbox = { path = "../../crates/toolbox" }
 profiles = { path = "../../crates/profiles" }
 models = { path = "../../crates/models" }
+faults = { path = "../../crates/faults" }
 
 # Il motore dei terminali. La finestra non ne contiene nemmeno una riga: apre,
 # scrive, ridimensiona e chiude passando di qui, e riceve l'uscita mentre esce.
