@@ -11,8 +11,15 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug)]
 pub struct GatherError(String);
+
+/// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** A derived one turned
+/// the sentence into `GatherError("…")`, quotes and escapes included.
+impl fmt::Debug for GatherError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, formatter)
+    }
+}
 
 impl fmt::Display for GatherError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

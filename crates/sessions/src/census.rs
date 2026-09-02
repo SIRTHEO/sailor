@@ -15,13 +15,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 
 /// Why we were not allowed to look.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct Refusal {
     /// Who the question was put to.
     pub tool: String,
     /// What it answered, in the words it used: a denial recognised by its own
     /// text can be reported, a deduced one cannot.
     pub reason: String,
+}
+
+/// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** A derived one showed
+/// the two fields and hid the sentence they compose.
+impl std::fmt::Debug for Refusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, formatter)
+    }
 }
 
 impl std::fmt::Display for Refusal {
