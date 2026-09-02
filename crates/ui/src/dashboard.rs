@@ -247,7 +247,13 @@ pub fn summarize_run(
                 started_at: step.started_at,
                 open_for_secs: now - step.started_at,
             }),
-            Some(Outcome::Waiting) | Some(Outcome::Stopped) | Some(Outcome::Skipped) => {}
+            // `NotYet` is deliberately not counted as broken: an ordinary poll
+            // is not a fault, and putting it in that tally would make a patrol
+            // flow read as failing every time it looked.
+            Some(Outcome::Waiting)
+            | Some(Outcome::NotYet)
+            | Some(Outcome::Stopped)
+            | Some(Outcome::Skipped) => {}
         }
     }
     steps_open.sort_by(|a, b| a.step_id.cmp(&b.step_id));

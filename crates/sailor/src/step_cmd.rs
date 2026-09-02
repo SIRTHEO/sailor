@@ -456,14 +456,21 @@ fn close_step_in(
     // mano non ha davanti il grafo: senza questo dovrebbe aprirlo per sapere se
     // ha sbloccato qualcosa, cioè uscire da Sailor per interrogare Sailor.
     let decision = InProcessExecutor
-        .decision(&flow.graph, run_id, ledger)
+        .decision(&flow.graph, run_id, ledger, &flow::SystemClock)
         .map_err(|error| format!("cannot work out what is ready: {error}"))?;
-    let _ = write!(report, "\n{}", what_comes_next(&decision, run_id));
+    let _ = write!(
+        report,
+        "\n{}",
+        what_comes_next(&decision, run_id, now_secs()?)
+    );
     Ok(report)
 }
 
 /// Cosa si può fare adesso, detto a chi ha appena chiuso.
-fn what_comes_next(decision: &Decision, run_id: &str) -> String {
+///
+/// The clock comes from outside: a postponed step is told as how long is left,
+/// and a function reading the clock itself could not be interrogated.
+fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
     match decision {
         Decision::Ready(steps) => format!(
             "ready now: {}. Resume with: sailor flow resume {run_id}",
@@ -472,6 +479,14 @@ fn what_comes_next(decision: &Decision, run_id: &str) -> String {
         Decision::Waiting(steps) => catalogue::say(
             "cli.step.waiting_for_someone",
             &[("steps", &steps.join(", ")), ("run_id", run_id)],
+        ),
+        Decision::NotYet { steps, due_at } => catalogue::say(
+            "cli.step.not_yet",
+            &[
+                ("steps", &steps.join(", ")),
+                ("seconds", &(due_at - now).max(0).to_string()),
+                ("run_id", run_id),
+            ],
         ),
         Decision::Running(steps) => format!("still running: {}", steps.join(", ")),
         Decision::Stopped(steps) => format!("stopped in the store: {}", steps.join(", ")),
@@ -1227,8 +1242,25 @@ mod tests {
 
     #[test]
     fn what_comes_next_names_the_resume_line() {
-        let next = what_comes_next(&Decision::Ready(vec!["verdetto".to_owned()]), "run-1");
+        let next = what_comes_next(&Decision::Ready(vec!["verdetto".to_owned()]), "run-1", 100);
         assert!(next.contains("sailor flow resume run-1"), "{next}");
         assert!(next.contains("verdetto"), "{next}");
+    }
+
+    /// A postponed step says how long is left, not just that it is not ready:
+    /// without the number, a reader cannot tell a moment from tomorrow.
+    #[test]
+    fn what_comes_next_says_how_long_a_postponed_step_has_left() {
+        let next = what_comes_next(
+            &Decision::NotYet {
+                steps: vec!["raccogli-il-mandato".to_owned()],
+                due_at: 130,
+            },
+            "run-1",
+            100,
+        );
+        assert!(next.contains("raccogli-il-mandato"), "{next}");
+        assert!(next.contains("30 s"), "{next}");
+        assert!(next.contains("sailor flow resume run-1"), "{next}");
     }
 }

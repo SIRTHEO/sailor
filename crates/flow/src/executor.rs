@@ -93,6 +93,12 @@ pub enum ActionOutcome {
     Went(Value),
     /// The action cannot know the result; not a retryable failure.
     Waiting(String),
+    /// Not yet: the work cannot be done now, and asking again later may do it.
+    ///
+    /// It carries the reason and no duration. What counts as long enough is a
+    /// decision, and one taken inside a node could not be argued with by the
+    /// flow that uses it — so the wait is declared on the step.
+    NotYet(String),
 }
 
 pub trait Action: Send + Sync {
@@ -459,6 +465,17 @@ pub enum Decision {
     Ready(Vec<String>),
     Running(Vec<String>),
     Waiting(Vec<String>),
+    /// Nothing is ready *now*, and something becomes ready later.
+    ///
+    /// Apart from `Waiting`, which is a run somebody has to come and take, and
+    /// apart from `Running`, which is a run in flight. The executor never waits
+    /// on this: it ends the run and hands back `due_at`, so whoever beats does
+    /// not have to reread the records to work out when to come back.
+    NotYet {
+        steps: Vec<String>,
+        /// The nearest instant at which one of them becomes ready.
+        due_at: i64,
+    },
     Stopped(Vec<String>),
     Failed(Vec<String>),
     /// The run stopped itself rather than go over the spend cap: its own word,
@@ -504,6 +521,7 @@ pub fn run_status(execution: &Execution) -> (&'static str, bool) {
     match execution.decisions.last() {
         Some(Decision::Complete) => ("complete", true),
         Some(Decision::Waiting(_)) => ("waiting", false),
+        Some(Decision::NotYet { .. }) => ("not_yet", false),
         Some(Decision::Stopped(_)) => ("stopped", false),
         Some(Decision::Failed(_)) => ("failed", false),
         Some(Decision::CapReached(_)) => ("cap_reached", false),
@@ -564,14 +582,20 @@ pub trait Executor {
 pub struct InProcessExecutor;
 
 impl InProcessExecutor {
+    /// What is to be done on this run, as of the clock's `now`.
+    ///
+    /// The clock is a parameter and not a detail: since a step can be postponed
+    /// to an instant, "what is ready" is a question with a time in it, and one
+    /// answered without a clock could only be answered wrongly.
     pub fn decision(
         &self,
         graph: &Graph,
         run_id: &str,
         store: &dyn RecordStore,
+        clock: &dyn Clock,
     ) -> Result<Decision, FlowError> {
         let records = store.records(run_id)?;
-        decision_from(graph, &records)
+        decision_from(graph, &records, clock.now()?)
     }
 
     pub fn reconcile(
@@ -734,7 +758,7 @@ impl Executor for InProcessExecutor {
             .map(PathBuf::from);
         loop {
             let records = store.records(&request.run_id)?;
-            let decision = decision_from(graph, &records)?;
+            let decision = decision_from(graph, &records, clock.now()?)?;
             decisions.push(decision.clone());
             let Decision::Ready(front) = decision else {
                 return Ok(Execution {
@@ -1058,6 +1082,17 @@ fn run_one(
                 bytes_seen: None,
                 bytes_discarded: None,
             },
+            // No `failure_class`: not yet is not a failure, and a class here
+            // would put an ordinary poll into every count of what went wrong.
+            Ok(ActionOutcome::NotYet(reason)) => Completion {
+                outcome: Outcome::NotYet,
+                output: None,
+                said: Some(reason),
+                failure_class: None,
+                ended_at: clock.now()?,
+                bytes_seen: None,
+                bytes_discarded: None,
+            },
             Err(error) => Completion {
                 outcome: Outcome::Broke,
                 output: None,
@@ -1202,30 +1237,77 @@ fn species_for(record: &StepRecord, action: Option<&dyn Action>) -> StepSpecies 
         .unwrap_or(StepSpecies::HandToHuman)
 }
 
-fn decision_from(graph: &Graph, records: &[StepRecord]) -> Result<Decision, FlowError> {
+/// The smallest gap the engine can tell from "now": its clock counts whole
+/// seconds. Not a policy — the policy is `Step::ask_again_after_secs`, and this
+/// is what stands in for it when a step declares none, so that "not yet" cannot
+/// mean "again immediately" and spin the executor on one step.
+const NEXT_INVOCATION_AT_THE_EARLIEST: i64 = 1;
+
+/// When a closed record may be tried again. A record with no closing instant
+/// counts as closed now, so the step is postponed rather than tried at once:
+/// the way to be wrong here is to spin, not to wait a beat too long.
+fn ready_again_at(record: &StepRecord, now: i64, wait_secs: i64) -> i64 {
+    record.ended_at.unwrap_or(now).saturating_add(wait_secs)
+}
+
+/// How many times this step has broken. **Not the attempt number**: a step that
+/// answers `NotYet` opens an attempt without failing, so counting the ordinal
+/// would let ordinary polling exhaust `max_attempts`. On a flow with no `NotYet`
+/// the two are the same number, which is why nothing existing changes.
+fn times_broken(step: &Step, records: &[StepRecord]) -> u32 {
+    records
+        .iter()
+        .filter(|record| record.step_id == step.id && record.outcome == Some(Outcome::Broke))
+        .count() as u32
+}
+
+fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Decision, FlowError> {
     let mut ready = Vec::new();
     let mut running = Vec::new();
     let mut waiting = Vec::new();
+    let mut not_yet: Vec<(String, i64)> = Vec::new();
     let mut stopped = Vec::new();
     let mut failed = Vec::new();
     for step in graph.steps() {
         let latest = latest_for(step, records);
+        // Ready or later, for a step that has closed and may be tried again.
+        // Not being ready is never a reason to drop it: it goes in `not_yet`
+        // with the instant it comes back, which is what tells this apart from
+        // `Waiting`, where nothing comes back.
+        let mut ready_or_later = |due: Option<i64>| match due {
+            Some(due) if due > now => not_yet.push((step.id.clone(), due)),
+            _ => {
+                if dependencies_satisfied(graph, step, records) {
+                    ready.push(step.id.clone());
+                }
+            }
+        };
         match latest.and_then(|record| record.outcome) {
             Some(Outcome::Went) => continue,
             None if latest.is_some() => running.push(step.id.clone()),
             Some(Outcome::Waiting) => waiting.push(step.id.clone()),
             Some(Outcome::Stopped) => stopped.push(step.id.clone()),
             Some(Outcome::Skipped) => continue,
-            Some(Outcome::Broke)
-                if latest.is_some_and(|record| record.attempt >= step.max_attempts) =>
-            {
+            Some(Outcome::NotYet) => {
+                // Zero declared reads as "as soon as possible", and as soon as
+                // possible is the next invocation: taken literally it would
+                // make the step ready in the loop that just postponed it, and
+                // the executor would spin on one step for ever.
+                let wait = step
+                    .ask_again_after_secs
+                    .map_or(NEXT_INVOCATION_AT_THE_EARLIEST, i64::from)
+                    .max(NEXT_INVOCATION_AT_THE_EARLIEST);
+                ready_or_later(latest.map(|record| ready_again_at(record, now, wait)));
+            }
+            Some(Outcome::Broke) if times_broken(step, records) >= step.max_attempts => {
                 failed.push(step.id.clone());
             }
-            Some(Outcome::Broke) | None => {
-                if dependencies_satisfied(graph, step, records) {
-                    ready.push(step.id.clone());
-                }
+            Some(Outcome::Broke) => {
+                ready_or_later(step.retry_after_secs.and_then(|wait| {
+                    latest.map(|record| ready_again_at(record, now, i64::from(wait)))
+                }));
             }
+            None => ready_or_later(None),
         }
     }
     if !failed.is_empty() {
@@ -1234,6 +1316,15 @@ fn decision_from(graph: &Graph, records: &[StepRecord]) -> Result<Decision, Flow
         Ok(Decision::Ready(ready))
     } else if !running.is_empty() {
         Ok(Decision::Running(running))
+    } else if !not_yet.is_empty() {
+        // Before `Waiting` on purpose: a run with something coming back is not
+        // a run parked on a person, and reading it as one would send whoever
+        // looks to go and take a step nobody handed them.
+        let due_at = not_yet.iter().map(|(_, due)| *due).min().unwrap_or(now);
+        Ok(Decision::NotYet {
+            steps: not_yet.into_iter().map(|(step, _)| step).collect(),
+            due_at,
+        })
     } else if !waiting.is_empty() {
         Ok(Decision::Waiting(waiting))
     } else if !stopped.is_empty() {
@@ -1682,6 +1773,8 @@ mod tests {
             when: None,
             action: action.to_owned(),
             max_attempts,
+            ask_again_after_secs: None,
+            retry_after_secs: None,
         }
     }
 

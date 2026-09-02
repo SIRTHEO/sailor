@@ -1054,6 +1054,7 @@ mod tests {
         match outcome {
             ActionOutcome::Went(value) => value,
             ActionOutcome::Waiting(said) => panic!("nessuna attesa: {said}"),
+            ActionOutcome::NotYet(said) => panic!("nothing is postponed here: {said}"),
         }
     }
 

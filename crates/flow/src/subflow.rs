@@ -262,6 +262,15 @@ impl Action for SubflowAction {
                     call.flow
                 )));
             }
+            // Nor is not-yet breaking, and it must not decay into waiting: the
+            // child comes back by itself, so the calling step has to be asked
+            // again as well, or the branch parks on a child that did not park.
+            if status == "not_yet" {
+                return Ok(ActionOutcome::NotYet(format!(
+                    "run {run_id} of flow {} is not done yet",
+                    call.flow
+                )));
+            }
             // **THE CLASS IS WRITTEN OUT WHERE THE ERROR IS BUILT.**
             // `format!("subflow_{status}")` gave these same names and no reader
             // could find them: searching for `subflow_failed` came back empty,
@@ -548,6 +557,8 @@ mod tests {
                 when: None,
                 action: SUBFLOW_ACTION.to_owned(),
                 max_attempts: 1,
+                ask_again_after_secs: None,
+                retry_after_secs: None,
             })
             .collect();
         FlowFile {
