@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 /// The keys the code asks for, found where they are written.
 ///
-/// A literal and not a variable: `say(chosen_key)` would be invisible here, and
-/// that is the point at which this check would have to be replaced rather than
-/// widened. Nothing in this tree does it yet.
+/// A literal and not a variable: `say(chosen_key)` is invisible here. There is
+/// one of those now — the description of each command, which a `const` cannot
+/// ask the catalogue for — and it is checked from the table itself, below.
 fn keys_the_code_asks_for() -> BTreeSet<String> {
     let mut asked = BTreeSet::new();
     for path in sources() {
@@ -156,4 +156,27 @@ fn the_scan_still_finds_what_it_is_there_to_find() {
          reading the sources it thinks it is",
         asked.len()
     );
+}
+
+/// **THE ONE KEY THAT IS NOT A LITERAL.** A `const` cannot ask the catalogue,
+/// so `sailor::COMMANDS` carries the key of each description. The scan above
+/// cannot see those; this reads the table that ships. Asked of `entries` and
+/// not of `look`, which falls back to English: written with `look` this test
+/// stayed **green** with the Italian line deleted, and only the mutation said
+/// so.
+#[test]
+fn every_command_says_what_it_does_in_every_language() {
+    let mut missing = Vec::new();
+    for (language, _) in catalogue::LANGUAGES {
+        let entries = catalogue::entries(language).expect("a catalogue that parses");
+        for command in sailor::COMMANDS {
+            if !entries.contains_key(command.description_key) {
+                missing.push(format!(
+                    "{language} does not say what «{}» does ({})",
+                    command.name, command.description_key
+                ));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "{missing:#?}");
 }

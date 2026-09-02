@@ -43,6 +43,10 @@ workspace = { path = "../../crates/workspace" }
 # binario alla prima opzione aggiunta — il guasto 10, alla sesta occorrenza.
 sailor = { path = "../../crates/sailor" }
 
+# Le frasi, in una lingua o nell'altra. La tabella dei comandi porta la chiave
+# e non la riga: senza il catalogo la finestra mostrerebbe la chiave.
+catalogue = { path = "../../crates/catalogue" }
+
 # Per dire, dentro la finestra, che la ricostruzione è fallita — guasto 11. È
 # lo stesso crate che tiene acceso questo programma da fuori: il formato dello
 # stato è dichiarato una volta sola, o supervisore e finestra si scriverebbero
