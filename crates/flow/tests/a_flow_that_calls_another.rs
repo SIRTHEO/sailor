@@ -223,12 +223,19 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
 /// of something nobody ever put there.
 const PARENT_ONLY: &str = "parents-secret";
 
+/// La radice che il padre ha, e che il figlio deve ereditare. Sta accanto a
+/// `PARENT_ONLY` di proposito: le due chiavi provano le due metà della stessa
+/// regola — quello che il figlio *riceve* è solo ciò che il passo dichiara,
+/// ma *dove lavora* non è un ingresso e scende comunque.
+const A_ROOT: &str = "/una/radice";
+
 /// Runs a one-step graph that calls `calls`.
 fn run_calling(bench: &Arc<Bench>, calls: &str, inputs: Value, cap: Option<i64>) -> Execution {
     let graph = Graph::new(vec![calling_step("chiamata", calls, inputs)]).expect("valid graph");
     let registry = bench.registry();
     let mut shared = SharedState::new();
     shared.insert(PARENT_ONLY.to_owned(), json!("must not reach the child"));
+    shared.insert(flow::WORKSPACE_ROOT.to_owned(), json!(A_ROOT));
     InProcessExecutor
         .execute(
             &graph,
@@ -392,6 +399,78 @@ fn the_child_gets_the_declared_inputs_and_not_the_parent_state() {
     assert!(
         !shared.contains_key(PARENT_ONLY),
         "nothing of the parent's shared state reaches the child: {shared:?}"
+    );
+    // L'eccezione è una sola e ha un nome: la radice del progetto, che non è
+    // stato del padre ma la stessa macchina sotto tutti e due. La prova che la
+    // difende sta qui sotto.
+}
+
+/// **DOVE LAVORA IL FIGLIO NON È UN INGRESSO: È LA RADICE DEL PADRE.**
+///
+/// Senza questa riga in `subflow.rs` il figlio non riceve `workspace.root`, e
+/// ogni suo passo cade sulla cartella del processo: `shell_check` applica
+/// `current_dir` solo se `workdir` è `Some`, e nessuno gliela offre. Non
+/// fallisce — lavora nel posto sbagliato, che è il guasto 25 preso dalla porta
+/// di servizio, e proprio la forma che rende il riuso per chiamata inservibile:
+/// un flusso «accendi la macchina» chiamato da un altro accenderebbe la
+/// macchina di qualunque cartella si trovi a essere il `cwd`.
+#[test]
+fn the_child_works_where_the_parent_works() {
+    let scratch = Scratch::new("radice");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place());
+
+    run_calling(&bench, "foglia", json!({}), None);
+
+    let seen = bench
+        .watcher
+        .seen
+        .lock()
+        .unwrap_or_else(|held| held.into_inner());
+    let (_, shared) = seen.first().expect("the child ran");
+    assert_eq!(
+        shared.get(flow::WORKSPACE_ROOT).and_then(Value::as_str),
+        Some(A_ROOT),
+        "the root reaches the child without the child asking: {shared:?}"
+    );
+}
+
+/// **E UN PADRE SENZA RADICE NON NE INVENTA UNA.** Assente resta assente: il
+/// figlio fallirà dicendolo, come lo direbbe il padre. Un ripiego qui sarebbe
+/// il guasto 25 scritto due volte.
+#[test]
+fn a_parent_without_a_root_hands_the_child_none() {
+    let scratch = Scratch::new("senza-radice");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place());
+
+    let graph = Graph::new(vec![calling_step("chiamata", "foglia", json!({}))]).expect("valid graph");
+    let registry = bench.registry();
+    InProcessExecutor
+        .execute(
+            &graph,
+            ExecutionRequest {
+                run_id: "corsa-senza-radice".to_owned(),
+                root_inputs: Default::default(),
+                gates: Vec::new(),
+                shared: SharedState::new(),
+                spend_cap_micros: None,
+            },
+            bench.store.as_ref(),
+            &registry,
+            &SystemClock,
+        )
+        .expect("the execution is not an engine fault");
+
+    let seen = bench
+        .watcher
+        .seen
+        .lock()
+        .unwrap_or_else(|held| held.into_inner());
+    let (_, shared) = seen.first().expect("the child ran");
+    assert!(
+        !shared.contains_key(flow::WORKSPACE_ROOT),
+        "no root invented for the child: {shared:?}"
     );
 }
 
