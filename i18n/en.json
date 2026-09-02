@@ -317,6 +317,8 @@
   "cli.step.waiting_for_someone": "waiting for someone: {steps}. Take the work with: sailor step open --run {run_id} --step <step> --as <who>",
   "cli.step.would_close_without_output": "step {step_id} would close with no output, but {dependents} depends on it and demands a typed one: the run would stop there. Declare it with `--output-file <file>`",
   "cli.workspace.already_declared": "{file} is already there: this command does not overwrite a declaration, because someone may have written into it by hand",
+  "cli.workspace.cannot_compose": "cannot compose the declaration: {error}",
+  "cli.workspace.no_house_to_read": "no house to read: HOME is not set",
   "cli.workspace.no_rules_found": "none found",
   "cli.workspace.none_known": "no project has been opened yet: run «sailor workspace init» inside one",
   "cli.workspace.written": "wrote {file}\n  name: {name}\n  rules: {rules}\n  checks: none (they are written by hand: guessing them would be deciding them for you)",
