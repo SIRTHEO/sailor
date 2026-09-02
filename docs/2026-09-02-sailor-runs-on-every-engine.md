@@ -66,7 +66,9 @@ Starting point, so the mandate builds on it instead of beside it.
 ## A. Fuel: every engine says what it has left, before it is chosen
 
 1. **Every engine that can be read is read before the choice.** The
-   descriptor declares a `quota_probe`: Claude's OAuth usage channel (known);
+   descriptor declares a `quota` block (done on 03/09 for the OAuth usage
+   kind: `reader`, `credentials`, `token_pointer`, `url`, `headers`): Claude's
+   OAuth usage channel (known);
    Codex's app-server `account/rateLimits/read` (`usedPercent`,
    `windowDurationMins`, `resetsAt`, cached because it costs seconds to
    start); a provider endpoint for keyed engines (OpenRouter `GET
@@ -416,7 +418,19 @@ enters here as claims, not as praise.
    become modules: at least `cost`, `cap` and `schedule` out of `flow_cmd`.
    *Proof:* no file in the workspace over 2 000 lines, as a ratchet seeded
    with today's count.
-7. **The front door is in English and says what it solves.** The README opens
+7. **Comments do not talk more than the code.** Theo, 03/09: *unacceptable*.
+   Measured that night, comment lines over code lines per crate: release
+   0.52, registry 0.41, actions 0.39, desktop 0.34, toolbox 0.30, models 0.29,
+   terminal 0.29, inventory 0.28, sailor 0.27, catalogue 0.27, sessions 0.25,
+   trigger 0.25, flow 0.22, faults 0.21, ui 0.19, workspace 0.19, profiles
+   0.19, ledger 0.17, relay 0.16; the whole tree 0.28. A ratchet per crate is
+   seeded with those numbers and may only fall; the pruning is a mechanical
+   mandate for `sweep-the-tree` (B.5): a comment stays only where the code
+   alone misleads, at most two lines; the why that still holds moves to the
+   faults document or the commit that introduced it; chronicle is removed.
+   *Proof:* the ratchet is red on any crate whose ratio rose; a crate under
+   0.10 is the target the mandate reports against.
+8. **The front door is in English and says what it solves.** The README opens
    with what a person gets in five minutes, and the installation is one line
    (`cargo install` or a release binary); the documents that explain why the
    project exists get an English summary at their top.
