@@ -3867,11 +3867,64 @@ tr[data-followable]:hover {
   color: var(--state-capped);
 }
 
+/* EVERY TERMINAL AT ONCE: the one in focus large on the left, the others
+   stacked beside it. One pane alone takes the whole width. */
 .terminals__panes {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  grid-auto-rows: minmax(200px, 1fr);
+  grid-auto-flow: dense;
+  gap: var(--space-3);
   flex-grow: 1;
   min-height: 0;
+  overflow-y: auto;
+}
+
+.terminals__panes[data-count="1"] {
+  grid-template-columns: 1fr;
+}
+
+.pane[data-focus] {
+  grid-column: 1;
+  grid-row: 1 / span 3;
+}
+
+.terminals__panes[data-count="1"] .pane[data-focus],
+.terminals__panes[data-count="2"] .pane[data-focus] {
+  grid-row: 1 / span 1;
+}
+
+.pane__head {
+  cursor: pointer;
+}
+
+.pane__ask {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--ink-surface);
+  border-top: 1px solid var(--on-ink-muted);
+}
+
+.pane__prompt {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--on-ink-muted);
+}
+
+.pane__ask-line {
+  flex: 1;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--on-ink);
+  background: var(--ink-surface);
+  border: none;
+  padding: var(--space-1) 0;
+}
+
+.pane__ask-line::placeholder {
+  color: var(--on-ink-muted);
 }
 
 .pane {
@@ -3925,10 +3978,10 @@ tr[data-followable]:hover {
 
 .pane__screen {
   flex-grow: 1;
-  min-height: 220px;
+  min-height: 160px;
   padding: var(--space-2);
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--ink-surface);
+  color: var(--on-ink);
   font-family: var(--font-data);
   font-size: var(--text-small);
   overflow: hidden;
