@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const BOOK = {
-  path: "/Users/someone/.config/sailor/faults.json",
+  path: "/home/pilot/.config/sailor/faults.json",
   still_open: 2,
   entries: [
     { number: 12, happened_on: "2026-08-30", what_happened: "a list could not say it had not looked",
