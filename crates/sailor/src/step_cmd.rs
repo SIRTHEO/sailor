@@ -138,7 +138,7 @@ fn open_step(found: &BTreeMap<String, String>) -> Result<String, String> {
 /// legge una variabile d'ambiente, che è globale al processo: una prova che la
 /// scrivesse rovinerebbe le altre a caso, e chi vede il rosso guarderebbe il
 /// modulo sbagliato.
-fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<String, String> {
+pub fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<String, String> {
     let run_id = required(found, "run")?;
     let step_id = required(found, "step")?;
     let holder = required(found, "as")?;
@@ -323,7 +323,7 @@ fn declared_outcome(found: &BTreeMap<String, String>) -> Result<Outcome, String>
 }
 
 /// Il corpo di `close`, col deposito e il flusso dichiarati invece che dedotti.
-fn close_step_in(
+pub fn close_step_in(
     ledger: &Ledger,
     flow: &FlowFile,
     found: &BTreeMap<String, String>,
@@ -678,7 +678,7 @@ fn last_attempt<'a>(records: &'a [StepRecord], step_id: &str) -> Option<&'a Step
 /// validata contro lo schema di un altro — cioè il controllo direbbe di sì
 /// guardando la cosa sbagliata. La corsa sa da sola da dove viene: sta scritto
 /// in `runs.entity`.
-pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
+pub fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
     let header = ledger
         .run_header(run_id)
         .map_err(|error| {
