@@ -264,6 +264,18 @@ const WHAT_WE_DO_AT_EACH: &[(&str, &str)] = &[
 /// without changing what it does.
 const MARK: &str = " session ";
 
+/// The other half of the same recognition: our own name inside the command
+/// line. On its own «session» is a word anybody's hook may hold.
+const WHAT_WE_ARE: &str = "sailor";
+
+/// The words that all have to be there, as one list.
+///
+/// **THE LIST IS THE DEFINITION, AND EVERY ASKER READS IT.** [`ours`] answers
+/// on a piece of text; the TOML graft is handed the same words and looks for
+/// them itself. Written out twice they could drift apart, and a graft and an
+/// inverse recognising different lines is a graft that cannot be undone.
+const MARKS: &[&str] = &[MARK, WHAT_WE_ARE];
+
 /// Whether a piece of writing is ours, asked of a serialised hook entry and of
 /// a command file alike.
 ///
@@ -271,7 +283,7 @@ const MARK: &str = " session ";
 /// mean one of them leaves behind what the other cannot see, and neither would
 /// report it: each is right on its own terms.
 fn ours(text: &str) -> bool {
-    text.contains(MARK) && text.contains("sailor")
+    MARKS.iter().all(|mark| text.contains(mark))
 }
 
 /// Walks every command line and hands the resolved addresses to `work`, which
@@ -282,6 +294,8 @@ fn ours(text: &str) -> bool {
 /// is a graft that cannot be undone.
 fn each_command_line(
     request: &Request<'_>,
+    catalog: &toolbox::descriptor::Catalog,
+    machine: &toolbox::Machine,
     said: &mut Vec<String>,
     mut work: impl FnMut(
         &toolbox::descriptor::Descriptor,
@@ -290,11 +304,13 @@ fn each_command_line(
         &mut Vec<String>,
     ) -> Result<bool, String>,
 ) -> Result<bool, String> {
+    // **THE LIST AND THE MACHINE ARE HANDED OVER, NOT READ HERE.** A check must
+    // be able to ask this about a command line nobody ships, and asking through
+    // the shipped list would put a product's name inside the check.
+
     // `--settings` stays, and stays one file: it serves the tests and whoever
     // moved their own. With it, the descriptor says only what the events are
     // called, no longer where to write them.
-    let machine = toolbox::Machine::current();
-    let catalog = toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine));
     let home = machine.env.get("HOME").cloned().unwrap_or_default();
     let only = request.options.get("tool");
     let declared_file = request.options.get("settings").map(PathBuf::from);
@@ -366,48 +382,68 @@ fn each_command_line(
 /// address of what we are grafting» and so not a coupling. It was: two other
 /// lines with the same four moments got nothing, and silence reads as success.
 fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine));
+    grafting(request, &catalog, &machine)
+}
+
+/// The same graft, with the list and the machine handed over, so a check can
+/// run the whole road over a command line nobody ships.
+fn grafting(
+    request: &Request<'_>,
+    catalog: &toolbox::descriptor::Catalog,
+    machine: &toolbox::Machine,
+) -> Result<Report, String> {
     let mut said = Vec::new();
-    let grafted_any = each_command_line(request, &mut said, |tool, file, words, said| {
-        let missing = moments_without_an_event(tool);
-        let mut grafted = false;
-        match format_of(tool) {
-            toolbox::descriptor::FileFormat::Json => {
-                said.push(grafted_into(tool, file)?);
-                grafted = true;
+    let declared_file = request.options.contains_key("settings");
+    let grafted_any = each_command_line(
+        request,
+        catalog,
+        machine,
+        &mut said,
+        |tool, file, words, said| {
+            let missing = moments_without_an_event(tool);
+            // **NO CATCH-ALL ARM.** A format that gets a variant and no arm is a
+            // compile error, which is the same promise the old arm made in prose:
+            // a format declared and not written must never pass in silence.
+            match format_of(tool) {
+                toolbox::descriptor::FileFormat::Json => said.push(grafted_into(tool, file)?),
+                toolbox::descriptor::FileFormat::Toml => {
+                    said.push(grafted_into_toml(tool, file, &key_of(tool))?)
+                }
             }
-            // **DECLARED AND NOT DONE, WHICH IS NOT THE SAME AS UNKNOWN.** The
-            // descriptor says where and how; it is Sailor that cannot write
-            // that format yet. Saying nothing here would rebuild the very fault
-            // this block was written to remove.
-            other => said.push(catalogue::say(
-                "cli.session.format_not_written_yet",
-                &[
-                    ("tool", &tool.id),
-                    ("format", &format!("{other:?}")),
-                    ("file", &file.display().to_string()),
-                ],
-            )),
-        }
 
-        if !missing.is_empty() {
-            said.push(format!(
-                "  {}",
-                catalogue::say(
-                    "cli.session.moments_without_an_event",
-                    &[("tool", &tool.id), ("moments", &format!("{missing:?}"))],
-                )
-            ));
-        }
+            // **WHICH HOME, AND WHY THAT ONE.** A line whose file moves with a
+            // variable has two addresses, and a graft that names only the file it
+            // wrote leaves whoever reads unable to tell it went to the one their
+            // sessions actually read.
+            let root_var = root_var_of(tool);
+            if !declared_file && !root_var.is_empty() {
+                said.push(which_home(tool, &root_var, machine));
+            }
 
-        match words {
-            Some(directory) => said.push(wrote_the_two_commands(directory)?),
-            None => said.push(format!(
-                "  {}",
-                catalogue::say("cli.session.no_typed_words", &[("tool", &tool.id)])
-            )),
-        }
-        Ok(grafted)
-    })?;
+            if !missing.is_empty() {
+                said.push(format!(
+                    "  {}",
+                    catalogue::say(
+                        "cli.session.moments_without_an_event",
+                        &[("tool", &tool.id), ("moments", &format!("{missing:?}"))],
+                    )
+                ));
+            }
+
+            match words {
+                Some(directory) => said.push(wrote_the_two_commands(directory)?),
+                None => said.push(format!(
+                    "  {}",
+                    catalogue::say("cli.session.no_typed_words", &[("tool", &tool.id)])
+                )),
+            }
+            // Every format the walk reaches is written now, so reaching a line is
+            // grafting it. What is left below answers for the lines never reached.
+            Ok(true)
+        },
+    )?;
 
     if !grafted_any {
         said.push(catalogue::say("cli.session.nothing_grafted", &[]));
@@ -422,32 +458,50 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
 /// A silent failure here is worse than at the graft: whoever ran this believes
 /// the file is clean and has no reason to look again.
 fn uninstall_hooks(request: &Request<'_>) -> Result<Report, String> {
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine));
+    taking_out(request, &catalog, &machine)
+}
+
+/// The same inverse, with the list and the machine handed over, for the same
+/// reason [`grafting`] has it: a check must be able to ask about a command line
+/// nobody ships.
+fn taking_out(
+    request: &Request<'_>,
+    catalog: &toolbox::descriptor::Catalog,
+    machine: &toolbox::Machine,
+) -> Result<Report, String> {
     let mut said = Vec::new();
-    let looked_anywhere = each_command_line(request, &mut said, |tool, file, words, said| {
-        let mut looked = false;
-        match format_of(tool) {
-            toolbox::descriptor::FileFormat::Json => {
-                said.push(uninstalled(file)?);
-                looked = true;
+    let looked_anywhere = each_command_line(
+        request,
+        catalog,
+        machine,
+        &mut said,
+        |tool, file, words, said| {
+            let mut looked = false;
+            // No catch-all here either, and the arms no longer say the same
+            // thing: the graft writes one of these formats and not the other.
+            match format_of(tool) {
+                toolbox::descriptor::FileFormat::Json => {
+                    said.push(uninstalled(file)?);
+                    looked = true;
+                }
+                // **THE GRAFT CAN HAVE BEEN HERE, AND THE INVERSE CANNOT YET
+                // REACH IT.** The old arm claimed there was nothing of ours in
+                // a format we could not write; the graft writes this one now,
+                // so that claim would be a lie. Nothing is taken out, the file
+                // is named, and whoever ran this is told to look.
+                toolbox::descriptor::FileFormat::Toml => said.push(catalogue::say(
+                    "cli.session.uninstall.format_not_taken_back",
+                    &[("tool", &tool.id), ("file", &file.display().to_string())],
+                )),
             }
-            // The same honesty as the graft, and for a sharper reason: a format
-            // Sailor cannot write is a format it cannot have written into, so
-            // there is nothing of ours there — but that is a claim, and it is
-            // made out loud rather than left to a silence.
-            other => said.push(catalogue::say(
-                "cli.session.uninstall.format_not_written",
-                &[
-                    ("tool", &tool.id),
-                    ("format", &format!("{other:?}")),
-                    ("file", &file.display().to_string()),
-                ],
-            )),
-        }
-        if let Some(directory) = words {
-            said.push(took_the_two_commands_out(directory)?);
-        }
-        Ok(looked)
-    })?;
+            if let Some(directory) = words {
+                said.push(took_the_two_commands_out(directory)?);
+            }
+            Ok(looked)
+        },
+    )?;
 
     if !looked_anywhere {
         said.push(catalogue::say("cli.session.uninstall.nothing_read", &[]));
@@ -462,6 +516,26 @@ fn format_of(tool: &toolbox::descriptor::Descriptor) -> toolbox::descriptor::Fil
     tool.session_hooks
         .as_ref()
         .map(|hooks| hooks.file.format)
+        .unwrap_or_default()
+}
+
+/// The key this command line keeps its hooks under, as it declares it.
+///
+/// **THE KEY COMES FROM THE DESCRIPTOR**, never from here: where a line keeps
+/// its hooks is the coupling, and a coupling in the code is one nobody reading
+/// the data can check.
+fn key_of(tool: &toolbox::descriptor::Descriptor) -> Vec<String> {
+    tool.session_hooks
+        .as_ref()
+        .map(|hooks| hooks.file.key.clone())
+        .unwrap_or_default()
+}
+
+/// The variable this command line's file moves with, empty when it has none.
+fn root_var_of(tool: &toolbox::descriptor::Descriptor) -> String {
+    tool.session_hooks
+        .as_ref()
+        .map(|hooks| hooks.file.root_var.clone())
         .unwrap_or_default()
 }
 
@@ -682,17 +756,102 @@ fn grafted_into(
     tool: &toolbox::descriptor::Descriptor,
     settings: &std::path::Path,
 ) -> Result<String, String> {
-    let named: Vec<(&str, &str)> = WHAT_WE_DO_AT_EACH
-        .iter()
-        .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, *verb)))
-        .collect();
+    let named = events_this_line_can_report(tool);
     if named.is_empty() {
-        return Ok(catalogue::say(
-            "cli.session.no_event_names",
-            &[("tool", &tool.id)],
-        ));
+        return Ok(nothing_to_graft(tool));
     }
     installed(settings, &named)
+}
+
+/// The moments this line can report, paired with the verb we run at each.
+fn events_this_line_can_report(tool: &toolbox::descriptor::Descriptor) -> Vec<(&str, &str)> {
+    WHAT_WE_DO_AT_EACH
+        .iter()
+        .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, *verb)))
+        .collect()
+}
+
+fn nothing_to_graft(tool: &toolbox::descriptor::Descriptor) -> String {
+    catalogue::say("cli.session.nothing_to_graft", &[("tool", &tool.id)])
+}
+
+/// The same graft into a settings file written in TOML.
+fn grafted_into_toml(
+    tool: &toolbox::descriptor::Descriptor,
+    settings: &std::path::Path,
+    under: &[String],
+) -> Result<String, String> {
+    let named = events_this_line_can_report(tool);
+    if named.is_empty() {
+        return Ok(nothing_to_graft(tool));
+    }
+    let binary = std::env::current_exe()
+        .map_err(|error| format!("there is no telling where I am: {error}"))?
+        .display()
+        .to_string();
+    let commands: Vec<(&str, String)> = named
+        .iter()
+        .map(|(event, verb)| (*event, format!("{binary} session {verb}")))
+        .collect();
+
+    // **A FILE THAT IS THERE AND WILL NOT BE READ STOPS THE GRAFT.** Treating
+    // an unreadable file as an empty one appends to nothing and writes back a
+    // file holding our lines alone, which is the configuration of whoever uses
+    // it deleted over a permission.
+    let existing = match std::fs::read_to_string(settings) {
+        Ok(text) => text,
+        Err(_) if !settings.exists() => String::new(),
+        Err(error) => return Err(format!("{}: {error}", settings.display())),
+    };
+    let graft = crate::toml_graft::appended(&existing, under, &commands, MARKS)
+        .map_err(|reason| format!("{}: {reason}", settings.display()))?;
+    if graft.added.is_empty() {
+        return Ok(already_grafted(settings));
+    }
+    if let Some(parent) = settings.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    std::fs::write(settings, &graft.text)
+        .map_err(|error| format!("{}: {error}", settings.display()))?;
+    Ok(just_grafted(settings, &graft.added.join(", ")))
+}
+
+/// Which of a line's two addresses was grafted, and what that leaves open.
+///
+/// A file whose place moves with a variable has two homes, and the one a
+/// session reads is the one set where that session starts. Naming only the file
+/// written would let a graft that landed in the other read as done.
+fn which_home(
+    tool: &toolbox::descriptor::Descriptor,
+    root_var: &str,
+    machine: &toolbox::Machine,
+) -> String {
+    match machine.env.get(root_var).filter(|root| !root.is_empty()) {
+        Some(root) => catalogue::say(
+            "cli.session.home_the_variable_names",
+            &[("tool", &tool.id), ("variable", root_var), ("root", root)],
+        ),
+        None => catalogue::say(
+            "cli.session.home_below_yours",
+            &[("tool", &tool.id), ("variable", root_var)],
+        ),
+    }
+}
+
+/// The two sentences the report ends on, said the same for every format: two
+/// formats wording it differently would read as two different things done.
+fn already_grafted(settings: &std::path::Path) -> String {
+    let file = settings.display().to_string();
+    catalogue::say("cli.session.already_grafted", &[("file", &file)])
+}
+
+fn just_grafted(settings: &std::path::Path, events: &str) -> String {
+    let file = settings.display().to_string();
+    catalogue::say(
+        "cli.session.grafted",
+        &[("file", &file), ("events", events)],
+    )
 }
 
 /// Grafts the hooks into a settings file, **by adding**.
@@ -769,7 +928,7 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
     }
 
     if added.is_empty() {
-        return Ok(format!("already grafted into {}", settings.display()));
+        return Ok(already_grafted(settings));
     }
     if let Some(parent) = settings.parent() {
         std::fs::create_dir_all(parent)
@@ -778,11 +937,7 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
     let text = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?;
     std::fs::write(settings, format!("{text}\n"))
         .map_err(|error| format!("{}: {error}", settings.display()))?;
-    Ok(format!(
-        "innestato in {}: {}",
-        settings.display(),
-        added.join(", ")
-    ))
+    Ok(just_grafted(settings, &added.join(", ")))
 }
 
 fn act(request: &Request<'_>) -> Result<Report, String> {
@@ -1397,6 +1552,275 @@ mod tests {
             std::fs::read_to_string(&settings).expect("rileggere"),
             "{ questo non è JSON",
             "il file resta esattamente com'era"
+        );
+    }
+
+    /// A command line that keeps its hooks in TOML, as a descriptor declares
+    /// it. Invented on purpose: what is under test is the format and the key,
+    /// and no shipped name enters the check.
+    fn a_line_that_writes_toml() -> toolbox::descriptor::Descriptor {
+        serde_json::from_str(
+            r#"{
+              "id": "a-line-that-keeps-its-hooks-in-toml",
+              "family": "ai_cli",
+              "session_hooks": {
+                "file": {
+                  "root_var": "SOME_HOME",
+                  "below_root": "config.toml",
+                  "below_home": ".somewhere/config.toml",
+                  "format": "toml",
+                  "key": ["hooks"]
+                },
+                "events": {"session_start": "SessionStart", "alive": "Stop"}
+              }
+            }"#,
+        )
+        .expect("the descriptor reads")
+    }
+
+    /// A file written by hand, with a comment and a section **after** the place
+    /// a careless graft would cut in.
+    fn a_toml_written_by_hand() -> &'static str {
+        "notify = [\"somebody\"]\n\
+         \n\
+         [hooks.state]\n\
+         trusted = \"abc\"\n\
+         \n\
+         # and the servers, which keep their comment and their keys\n\
+         [servers.one]\n\
+         command = \"/somewhere\"\n"
+    }
+
+    fn the_key_it_declares() -> Vec<String> {
+        vec!["hooks".to_owned()]
+    }
+
+    /// **A DECLARED FORMAT IS A WRITTEN FORMAT.** The report used to say the
+    /// descriptor declared where and how and that nothing had been written, and
+    /// what was missing was only the writing.
+    #[test]
+    fn a_line_that_declares_toml_is_grafted_and_the_rest_is_left_alone() {
+        let scratch = Scratch::new("toml-graft");
+        let settings = scratch.directory.join("config.toml");
+        std::fs::write(&settings, a_toml_written_by_hand()).expect("writing the file");
+
+        let said = grafted_into_toml(
+            &a_line_that_writes_toml(),
+            &settings,
+            &the_key_it_declares(),
+        )
+        .expect("the graft works");
+
+        let after = std::fs::read_to_string(&settings).expect("reading it back");
+        assert!(
+            after.starts_with(a_toml_written_by_hand()),
+            "the graft rewrote what was above it: {after}"
+        );
+        assert!(said.contains("SessionStart"), "{said}");
+        assert!(after.contains("[[hooks.SessionStart]]"), "{after}");
+        assert!(
+            !after.contains("UserPromptSubmit"),
+            "a moment this line never named entered anyway: {after}"
+        );
+    }
+
+    #[test]
+    fn grafting_toml_twice_does_not_double_anything() {
+        let scratch = Scratch::new("toml-graft-twice");
+        let settings = scratch.directory.join("config.toml");
+        std::fs::write(&settings, a_toml_written_by_hand()).expect("writing the file");
+
+        grafted_into_toml(
+            &a_line_that_writes_toml(),
+            &settings,
+            &the_key_it_declares(),
+        )
+        .expect("the first graft");
+        let once = std::fs::read_to_string(&settings).expect("reading it back");
+        let said = grafted_into_toml(
+            &a_line_that_writes_toml(),
+            &settings,
+            &the_key_it_declares(),
+        )
+        .expect("the second graft");
+        let twice = std::fs::read_to_string(&settings).expect("reading it back");
+
+        assert_eq!(once, twice, "the second graft must change nothing");
+        assert!(
+            said == already_grafted(&settings),
+            "the second graft did not say it had already been done: {said}"
+        );
+    }
+
+    /// A file whose shape leaves no room at the bottom: the graft stops, says
+    /// why, and the file stays exactly as it was.
+    #[test]
+    fn a_toml_that_cannot_take_the_graft_is_left_alone_and_said_out_loud() {
+        let scratch = Scratch::new("toml-graft-impossible");
+        let settings = scratch.directory.join("config.toml");
+        let awkward = "[hooks.SessionStart]\nwhatever = 1\n";
+        std::fs::write(&settings, awkward).expect("writing the file");
+
+        let refused = grafted_into_toml(
+            &a_line_that_writes_toml(),
+            &settings,
+            &the_key_it_declares(),
+        )
+        .expect_err("a shape that cannot take it stops the graft");
+
+        assert!(refused.contains("config.toml"), "{refused}");
+        assert!(refused.contains("nothing was written"), "{refused}");
+        assert_eq!(
+            std::fs::read_to_string(&settings).expect("reading it back"),
+            awkward,
+            "the file stays exactly as it was"
+        );
+    }
+
+    /// **THE WHOLE ROAD, NOT THE LAST STEP.** The format used to be read here
+    /// and answered with «Sailor does not write that yet»; a check calling the
+    /// writer straight would stay green with that answer back in place.
+    #[test]
+    fn the_report_of_a_line_that_declares_toml_says_it_was_grafted() {
+        let scratch = Scratch::new("toml-graft-whole-road");
+        let settings = scratch.directory.join("config.toml");
+        std::fs::write(&settings, a_toml_written_by_hand()).expect("writing the file");
+        let tool = a_line_that_writes_toml();
+        let catalog = toolbox::descriptor::Catalog {
+            descriptors: vec![toolbox::descriptor::Loaded {
+                descriptor: tool.clone(),
+                source: "the check".to_owned(),
+            }],
+            ..Default::default()
+        };
+        let options = BTreeMap::from([
+            ("settings".to_owned(), settings.display().to_string()),
+            ("tool".to_owned(), tool.id.clone()),
+        ]);
+        let payload = Payload::parse("{}").expect("an empty payload");
+        let request = Request {
+            verb: "install",
+            options: &options,
+            payload: &payload,
+            raw: "",
+            store: None,
+            census: &one_terminal(),
+            tty: "",
+            at: 1_000,
+        };
+
+        let report = grafting(&request, &catalog, &a_machine_saying(None)).expect("the graft");
+
+        assert!(
+            report
+                .message
+                .contains(&just_grafted(&settings, "SessionStart, Stop")),
+            "a declared format that is written must not be reported as refused: {}",
+            report.message
+        );
+        assert!(
+            !report.message.contains(&nothing_to_graft(&tool)),
+            "the report says there was nothing to graft into a file it wrote: {}",
+            report.message
+        );
+        assert!(
+            std::fs::read_to_string(&settings)
+                .expect("reading it back")
+                .contains("[[hooks.SessionStart]]"),
+            "the report said grafted and the file has nothing in it"
+        );
+    }
+
+    fn a_machine_saying(root: Option<&str>) -> toolbox::Machine {
+        let mut env = BTreeMap::new();
+        if let Some(root) = root {
+            env.insert("SOME_HOME".to_owned(), root.to_owned());
+        }
+        toolbox::Machine {
+            path_dirs: Vec::new(),
+            home: PathBuf::from("/home/somebody"),
+            env,
+            version_probes: false,
+        }
+    }
+
+    /// **TWO ADDRESSES, AND THE REPORT SAYS WHICH ONE.** A file whose place
+    /// moves with a variable is grafted where that variable says right here,
+    /// and a session started elsewhere reads the other one. Naming only the
+    /// file written would let a graft that landed in the wrong home read as
+    /// done — measured on a real machine, twice in two days.
+    #[test]
+    fn the_report_says_which_of_the_two_homes_was_grafted() {
+        let tool = a_line_that_writes_toml();
+
+        let set = which_home(&tool, "SOME_HOME", &a_machine_saying(Some("/elsewhere")));
+        let unset = which_home(&tool, "SOME_HOME", &a_machine_saying(None));
+
+        assert!(set.contains("/elsewhere"), "{set}");
+        assert_ne!(
+            set, unset,
+            "the two homes must not read the same, or the report answers nothing"
+        );
+        for said in [&set, &unset] {
+            assert!(
+                said.contains("SOME_HOME"),
+                "the report must name the variable it looked at: {said}"
+            );
+        }
+    }
+
+    /// **THE INVERSE DOES NOT REACH THIS FORMAT, AND SAYS SO.** The graft
+    /// writes TOML now, so the old answer — «a format we cannot write is one we
+    /// cannot have written into» — would send whoever ran `uninstall` away
+    /// believing the file was clean.
+    #[test]
+    fn taking_the_graft_out_of_a_toml_says_it_could_not() {
+        let scratch = Scratch::new("toml-uninstall");
+        let settings = scratch.directory.join("config.toml");
+        std::fs::write(&settings, a_toml_written_by_hand()).expect("writing the file");
+        let tool = a_line_that_writes_toml();
+        let catalog = toolbox::descriptor::Catalog {
+            descriptors: vec![toolbox::descriptor::Loaded {
+                descriptor: tool.clone(),
+                source: "the check".to_owned(),
+            }],
+            ..Default::default()
+        };
+        let options = BTreeMap::from([
+            ("settings".to_owned(), settings.display().to_string()),
+            ("tool".to_owned(), tool.id.clone()),
+        ]);
+        let payload = Payload::parse("{}").expect("an empty payload");
+        let request = Request {
+            verb: "uninstall",
+            options: &options,
+            payload: &payload,
+            raw: "",
+            store: None,
+            census: &one_terminal(),
+            tty: "",
+            at: 1_000,
+        };
+
+        let report =
+            taking_out(&request, &catalog, &a_machine_saying(None)).expect("the inverse answers");
+
+        let owned_up = catalogue::say(
+            "cli.session.uninstall.format_not_taken_back",
+            &[
+                ("tool", &tool.id),
+                ("file", &settings.display().to_string()),
+            ],
+        );
+        assert!(
+            report.message.contains(&owned_up),
+            "the inverse let a format it cannot undo pass as done: {}",
+            report.message
+        );
+        assert_eq!(
+            std::fs::read_to_string(&settings).expect("reading it back"),
+            a_toml_written_by_hand(),
+            "the inverse touched a file it says it did not"
         );
     }
 
