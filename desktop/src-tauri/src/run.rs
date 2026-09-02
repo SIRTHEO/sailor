@@ -50,11 +50,11 @@
 // `registry` insieme alla sua gemella della riga di comando, e l'importazione
 // era rimasta. Nessuno l'aveva vista perché questo guscio sta fuori dal
 // workspace, quindi i suoi avvisi non li stampa `cargo test --workspace`.
-use flow::{
-    ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile,
-    InProcessExecutor, RecordStore, StepRecord, SystemClock,
-};
 use actions::{LiveSink, Pipe, StepSinks};
+use flow::{
+    ActionRegistry, Completion, Execution, Executor, FlowError, FlowFile, InProcessExecutor,
+    RecordStore, StepRecord, SystemClock,
+};
 use ledger::Ledger;
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -184,9 +184,19 @@ impl Runs {
     /// Prima si scrive nel registro, poi si annuncia: al contrario, chi
     /// ricevesse l'annuncio e chiedesse subito l'elenco potrebbe non trovarci
     /// dentro il fatto appena annunciato.
-    fn publish(&self, app: &AppHandle, run_id: &str, kind: &str, step_id: Option<String>, payload: Value) {
+    fn publish(
+        &self,
+        app: &AppHandle,
+        run_id: &str,
+        kind: &str,
+        step_id: Option<String>,
+        payload: Value,
+    ) {
         let event = {
-            let mut runs = self.0.lock().expect("il registro delle corse non è avvelenato");
+            let mut runs = self
+                .0
+                .lock()
+                .expect("il registro delle corse non è avvelenato");
             let Some(state) = runs.get_mut(run_id) else {
                 return;
             };
@@ -341,7 +351,8 @@ impl RecordStore for WatchedStore {
             "bytes_seen": completion.bytes_seen,
             "bytes_discarded": completion.bytes_discarded,
         });
-        self.inner.close(run_id, step_id, attempt, epoch, completion)?;
+        self.inner
+            .close(run_id, step_id, attempt, epoch, completion)?;
         self.runs.publish(
             &self.app,
             &self.run_id,
@@ -444,7 +455,9 @@ pub(crate) fn start_run(
     // propria provenienza prima che qualunque passo giri, e resta nel deposito
     // append-only anche se la corsa si schianta al primo passo.
     let origin = origin_label(mandate.as_deref());
-    record_run(&ledger, &flow, &run_id, "running", started_at, None, None, &origin)?;
+    record_run(
+        &ledger, &flow, &run_id, "running", started_at, None, None, &origin,
+    )?;
 
     {
         let mut known = runs.lock_map();
@@ -549,7 +562,10 @@ pub(crate) fn start_run(
 
 /// Tutto quello che una corsa ha detto finora, per chi si affaccia adesso.
 #[tauri::command]
-pub(crate) fn run_snapshot(runs: State<'_, Arc<Runs>>, run_id: String) -> Result<RunSnapshot, String> {
+pub(crate) fn run_snapshot(
+    runs: State<'_, Arc<Runs>>,
+    run_id: String,
+) -> Result<RunSnapshot, String> {
     let known = runs.lock_map();
     let state = known
         .get(&run_id)
@@ -670,7 +686,10 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
         .collect();
     let held: std::collections::HashSet<String> =
         all.iter().map(|run| run.run_id.clone()).collect();
-    for run in unfinished.into_iter().filter(|run| !held.contains(&run.run_id)) {
+    for run in unfinished
+        .into_iter()
+        .filter(|run| !held.contains(&run.run_id))
+    {
         // UNA DOMANDA IN PIÙ PER CORSA APERTA, e sono poche per costruzione:
         // qui ci finisce solo ciò che è in volo adesso, non la storia. Se un
         // giorno fossero tante, il posto dove si ripara è il deposito con una
@@ -736,7 +755,9 @@ pub(crate) fn known_runs(runs: State<'_, Arc<Runs>>) -> Vec<RunSnapshot> {
 
 impl Runs {
     fn lock_map(&self) -> std::sync::MutexGuard<'_, HashMap<String, RunState>> {
-        self.0.lock().expect("il registro delle corse non è avvelenato")
+        self.0
+            .lock()
+            .expect("il registro delle corse non è avvelenato")
     }
 }
 
@@ -1057,7 +1078,9 @@ fn inputs_with_mandate(
                 ),
             }
         }
-        MandateTarget::None { why } => Err(format!("questo flusso non accetta una consegna: {why}")),
+        MandateTarget::None { why } => {
+            Err(format!("questo flusso non accetta una consegna: {why}"))
+        }
     }
 }
 
@@ -1085,7 +1108,10 @@ fn execution_status(execution: &Execution) -> &'static str {
 /// qui diceva «chi registra un'azione nuova la registra in tutti e due i
 /// posti»: era l'istruzione giusta per un difetto che andava tolto, non
 /// rispettato.
-fn default_registry(ledger: &Ledger, watcher: Option<Arc<dyn actions::StepSinks>>) -> ActionRegistry {
+fn default_registry(
+    ledger: &Ledger,
+    watcher: Option<Arc<dyn actions::StepSinks>>,
+) -> ActionRegistry {
     registry::default_registry(Some(ledger.clone()), watcher)
 }
 
@@ -1176,9 +1202,9 @@ fn load_flow(name: &str) -> Result<FlowFile, String> {
     let known = ui::gather::load_all_flows(&ui::gather::flow_sources());
     match known.iter().find(|(known, _, _)| known == name) {
         Some((_, _, Ok(flow))) => Ok(flow.clone()),
-        Some((_, origin, Err(reason))) => {
-            Err(format!("il flusso «{name}» ({origin}) non si carica: {reason}"))
-        }
+        Some((_, origin, Err(reason))) => Err(format!(
+            "il flusso «{name}» ({origin}) non si carica: {reason}"
+        )),
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
             Err(format!(
@@ -1242,7 +1268,9 @@ mod tests {
             emit: Arc::new({
                 let said = said.clone();
                 move |_step: &str, pipe: Pipe, text: String| {
-                    said.lock().expect("not poisoned").push((pipe.name().to_owned(), text));
+                    said.lock()
+                        .expect("not poisoned")
+                        .push((pipe.name().to_owned(), text));
                 }
             }),
         };
@@ -1264,7 +1292,10 @@ mod tests {
         let said = said.lock().expect("not poisoned");
         let whole: String = said.iter().map(|(_, text)| text.as_str()).collect();
         assert_eq!(whole, "perché");
-        assert!(!whole.contains('\u{fffd}'), "a letter reached the window broken");
+        assert!(
+            !whole.contains('\u{fffd}'),
+            "a letter reached the window broken"
+        );
     }
 
     /// Two threads drain the two pipes: one buffer between them would splice
@@ -1278,7 +1309,13 @@ mod tests {
         sink.chunk(Pipe::Stdout, &out[1..]);
 
         let said = said.lock().expect("not poisoned");
-        assert_eq!(said.as_slice(), [("err".to_owned(), "broke\n".to_owned()), ("out".to_owned(), "è".to_owned())]);
+        assert_eq!(
+            said.as_slice(),
+            [
+                ("err".to_owned(), "broke\n".to_owned()),
+                ("out".to_owned(), "è".to_owned())
+            ]
+        );
     }
 
     /// A tail that will never be completed must not silence the pipe for good.
@@ -1288,7 +1325,11 @@ mod tests {
         sink.chunk(Pipe::Stdout, &[0xff, 0xfe, 0xfd, 0xfc, 0xfb]);
 
         let said = said.lock().expect("not poisoned");
-        assert_eq!(said.len(), 1, "five bytes that no character starts were held back");
+        assert_eq!(
+            said.len(),
+            1,
+            "five bytes that no character starts were held back"
+        );
     }
 
     /// THE MEASURE THAT COULD HAVE COME OUT DIFFERENTLY. While the shell hands
@@ -1311,7 +1352,11 @@ mod tests {
     #[test]
     fn a_single_engine_root_takes_the_mandate_on_its_stdin() {
         let flow = flow_with(
-            json!([engine_step("dispatch", vec![], json!({ "bin": "true", "timeout_secs": 5 }))]),
+            json!([engine_step(
+                "dispatch",
+                vec![],
+                json!({ "bin": "true", "timeout_secs": 5 })
+            )]),
             json!({ "dispatch": { "bin": "true", "timeout_secs": 5 } }),
         );
         match mandate_target(&flow) {
@@ -1432,7 +1477,11 @@ mod tests {
         let flow = flow_with(
             json!([
                 trigger_step("trigger", json!({ "source": "manual" })),
-                engine_step("dispatch", vec!["trigger"], json!({ "bin": "true", "timeout_secs": 5 })),
+                engine_step(
+                    "dispatch",
+                    vec!["trigger"],
+                    json!({ "bin": "true", "timeout_secs": 5 })
+                ),
             ]),
             json!({ "trigger": { "text": "la consegna di ieri" } }),
         );

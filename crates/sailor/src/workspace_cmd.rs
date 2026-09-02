@@ -49,21 +49,34 @@ pub fn run(args: &[String]) -> i32 {
 fn dispatch(args: &[String]) -> Result<String, String> {
     match args {
         [command] if command == "init" => {
-            let here = std::env::current_dir()
-                .map_err(|error| format!("there is no telling where I am: {error}"))?;
+            let here = std::env::current_dir().map_err(|error| {
+                catalogue::say(
+                    "cli.no_telling_where_i_am",
+                    &[("error", &error.to_string())],
+                )
+            })?;
             init(&here, ledger::sailor_home().as_deref())
         }
         [command] if command == "list" => list(),
-        _ => Err(USAGE
+        _ => Err(crate::forms_as_lines(USAGE)
             .iter()
-            .map(|line| format!("usage: {line}"))
+            .map(|line| format!("{} {line}", catalogue::say("cli.usage_heading", &[])))
             .collect::<Vec<_>>()
             .join("\n")),
     }
 }
 
 /// La forma di `sailor workspace`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor workspace init", "sailor workspace list"];
+pub const USAGE: &[crate::Form] = &[
+    crate::Form {
+        form: "sailor workspace init",
+        says_key: "",
+    },
+    crate::Form {
+        form: "sailor workspace list",
+        says_key: "",
+    },
+];
 
 /// The projects this machine has been opened in.
 ///
@@ -72,8 +85,8 @@ pub const USAGE: &[&str] = &["sailor workspace init", "sailor workspace list"];
 /// list; the row says `gone` and keeps the path, which is the one thing that
 /// makes the situation repairable.
 fn list() -> Result<String, String> {
-    let home =
-        ledger::sailor_home().ok_or_else(|| "no house to read: HOME is not set".to_owned())?;
+    let home = ledger::sailor_home()
+        .ok_or_else(|| catalogue::say("cli.workspace.no_house_to_read", &[]))?;
     let known = flow::workspace::known_in(&home)?;
     if known.is_empty() {
         return Ok(catalogue::say("cli.workspace.none_known", &[]));
@@ -130,8 +143,12 @@ fn init(root: &Path, home: Option<&Path>) -> Result<String, String> {
         "rules": rules,
         "checks": serde_json::Map::new(),
     });
-    let mut text = serde_json::to_string_pretty(&declared)
-        .map_err(|error| format!("cannot compose the declaration: {error}"))?;
+    let mut text = serde_json::to_string_pretty(&declared).map_err(|error| {
+        catalogue::say(
+            "cli.workspace.cannot_compose",
+            &[("error", &error.to_string())],
+        )
+    })?;
     text.push('\n');
     std::fs::write(&marker, text)
         .map_err(|error| format!("cannot write {}: {error}", marker.display()))?;
