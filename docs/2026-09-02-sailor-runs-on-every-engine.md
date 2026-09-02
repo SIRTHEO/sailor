@@ -91,12 +91,16 @@ Starting point, so the mandate builds on it instead of beside it.
    *Proof:* a fake engine that prints the weekly-limit sentence closes the step
    with that class; removing the form from the descriptor turns it back into
    `exit_error`.
-3. **A budget per profile on a declared window excludes, never reorders.**
-   Declared in a file beside the profile store; summed from `model_calls` of
-   the active profile; over the cap the engine leaves `candidates` as
-   `Refused { unresolved: false }` with the reset day in the reason.
-   *Proof:* two calls under a cap of one, the second is refused and the chain
-   goes on.
+3. **A budget per engine on a declared window excludes, never reorders.**
+   Declared in `budgets.json` beside the profile store (`SAILOR_BUDGETS`
+   overrides), per engine id: a cap in micro-units and a window in seconds.
+   Summed from `model_calls` of that engine since the window opened, across
+   every run; at the cap the engine leaves `candidates` as
+   `Refused { unresolved: false }` naming the sum, the cap, the window and
+   the calls of unknown cost. Per engine, not per profile: `model_calls` has
+   no profile column yet, and a cap per profile would have nothing to sum.
+   *Proof:* two priced calls under a cap one call fills, the second is refused
+   before spending and the chain goes on; a cap on another engine binds nothing.
 4. **The catalogue carries what nobody's does: how much is free, on what pact,
    how much is left.** Three columns in `crates/models`, fed by the OmniRoute
    free-tier dataset (MIT, decision of 30/08) and by A.1. Every free entry
