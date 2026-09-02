@@ -16,20 +16,24 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import { StepEditor } from "./StepEditor";
 import { joinToolParams, splitToolParams } from "./tools";
-import { readRealFlows, shippedFlowsMissingFrom } from "./realflows";
+import {
+  SHIPPED_WITH_THE_BINARY,
+  parseFlow,
+  readRealFlows,
+  shippedFlowsMissingFrom,
+} from "./realflows";
 import type { FlowFile, Step } from "./flow";
 
 afterEach(cleanup);
 
 /**
- * The real flows, read through the one reader `realflows.ts` owns — from both
- * places they live, `flows/` in this project and the ones shipped inside the
- * binary. The panel rewrites them all alike, so this sees all of them.
+ * The flows shipped inside the binary, read through the one reader
+ * `realflows.ts` owns. The panel rewrites them all alike, so this sees all.
  */
 function realFlows(): Array<{ path: string; flow: FlowFile }> {
   return readRealFlows().map(({ path, source }) => ({
     path,
-    flow: JSON.parse(source) as FlowFile,
+    flow: parseFlow<FlowFile>(path, source),
   }));
 }
 
@@ -82,13 +86,14 @@ describe("the panel rewrites a step without losing what it cannot read", () => {
   test("the real flows with a chain really load, and the shipped ones are among them", () => {
     // Without this, everything else would run on zero steps — the quietest way
     // to be green for having looked at nothing. A count was the wrong guard:
-    // `toBe(20)` described a `flows/` directory that moved out of the repo, so
-    // the day the premise died the test called it a defect. Named instead: the
-    // set that ships inside the binary. Today 4 `external_engine` steps, 2 with
-    // a chain and 2 with a single string.
+    // `toBe(20)` described a `flows/` directory that moved out of the repo, and
+    // the test called it a defect. Named instead: what ships inside the binary,
+    // read from `system.rs`. Today 2 chains, both in `dispatch-the-work`; the
+    // floor is one, which is what the tests below need.
+    expect(SHIPPED_WITH_THE_BINARY, "system.rs yields no include_str! line").not.toEqual([]);
     const paths = realFlows().map(({ path }) => path);
-    expect(shippedFlowsMissingFrom(paths), `read: ${paths.join(", ")}`).toEqual([]);
-    expect(chained.length).toBeGreaterThanOrEqual(2);
+    expect(shippedFlowsMissingFrom(paths).join(", "), `read: ${paths.join(", ")}`).toBe("");
+    expect(chained.length).toBeGreaterThanOrEqual(1);
   });
 
   test("ONE PASS THROUGH THE PANEL DOES NOT ERASE THE CHAIN FROM THE FILE", () => {

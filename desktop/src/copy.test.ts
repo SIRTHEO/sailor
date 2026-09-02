@@ -65,36 +65,20 @@ function commentLines(lines: string[]): Set<number> {
 
 const LITERAL = /"([^"\n]{2,})"|'([^'\n]{2,})'|`([^`\n]{2,})`/g;
 
-// A bare filename: it has no slash to be recognised by, and a flow is named in
-// Italian because its contents are, which is not this gate's business.
-const A_FILENAME = /\.[a-z0-9]{2,5}$/;
-
-// A line that is nothing but a quoted string — a list entry, say. Not JSX text,
-// so it must reach the literal loop where the name shapes are honoured.
-const ONLY_A_LITERAL = /^["'`][^"'`\n]*["'`][,;)\]]*$/;
-
 /**
  * A line that puts Italian on screen: JSX text, or a literal that is prose.
  * Paths, selectors and keys are skipped by shape — a slash, a leading dot, an
- * underscore, a trailing extension — because a name is not a sentence even when
- * it reads like one.
+ * underscore — because a name is not a sentence even when it reads like one.
+ * No skip for a trailing extension: tried once, it let «Salva come .json» in.
  */
 function saysItalian(line: string): string | null {
   const bare = line.trim();
   if (!bare) return null;
   const withoutTags = bare.replace(/<[^>]*>/g, "").trim();
-  if (
-    withoutTags &&
-    !ONLY_A_LITERAL.test(withoutTags) &&
-    !/[{};=]/.test(withoutTags) &&
-    looksItalian(withoutTags)
-  ) {
-    return withoutTags;
-  }
+  if (withoutTags && !/[{};=]/.test(withoutTags) && looksItalian(withoutTags)) return withoutTags;
   for (const match of bare.matchAll(LITERAL)) {
     const text = match[1] ?? match[2] ?? match[3];
     if (text.includes("/") || text.startsWith(".") || text.includes("_")) continue;
-    if (A_FILENAME.test(text)) continue;
     if (looksItalian(text)) return text;
   }
   return null;
@@ -165,14 +149,9 @@ describe("what a person reads comes from the catalogue", () => {
     expect(looksItalian("Choose a flow in the column")).toBe(false);
     expect(saysItalian(`  <p>Il motore non risponde.</p>`)).not.toBeNull();
     expect(saysItalian(`  const path = "src/una/cartella";`)).toBeNull();
-    // A filename is a name; a sentence that happens to end in a word is not.
-    // Both halves are here because the skip is the kind of rule that quietly
-    // grows to swallow prose, and only the second line would notice.
-    expect(saysItalian(`  "smista-il-lavoro.flow.json",`)).toBeNull();
-    expect(saysItalian(`  <p>Nessun flusso: creane uno.</p>`)).not.toBeNull();
-    // And a list entry that IS copy stays counted: the line above is skipped for
-    // its shape as a name, not for sitting in a list.
-    expect(saysItalian(`  "Nessun flusso",`)).not.toBeNull();
+    // A sentence that ends in something shaped like a file name is still a
+    // sentence. This is the line a trailing-extension skip would have missed.
+    expect(saysItalian(`  const hint = "Salva il flusso come nome.flow.json";`)).not.toBeNull();
     expect(everythingLoose().length).toBeGreaterThan(0);
     // A comment is not copy: it belongs to the Rust ratchet, and counting it
     // here is what made the first hand measure say 253 instead of 133 — the

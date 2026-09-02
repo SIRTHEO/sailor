@@ -3,7 +3,12 @@ import stylesheetSource from "./styles.css?raw";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
-import { SHIPPED_WITH_THE_BINARY, readRealFlows, shippedFlowsMissingFrom } from "./realflows";
+import {
+  SHIPPED_WITH_THE_BINARY,
+  parseFlow,
+  readRealFlows,
+  shippedFlowsMissingFrom,
+} from "./realflows";
 import type { FlowFile, Graph, Step, StepRun, StepState, ValueSchema } from "./flow";
 import {
   COLUMN,
@@ -85,11 +90,10 @@ function graphOf(steps: Step[], skippable: Graph["skippable_dependencies"] = [])
  * that keeps nine. Only the tests import them, so they never ship.
  */
 function realFlows(): FlowFile[] {
-  // **TWO PLACES, NOT ONE**, and the reader that knows both lives in
-  // `realflows.ts` — one copy, because two copies is how this test and
-  // `StepEditor.test.tsx` came to hold two separate counts of the same
-  // directory and go red together the day it emptied.
-  return readRealFlows().map(({ source }) => JSON.parse(source) as FlowFile);
+  // The reader lives in `realflows.ts` — one copy, because two copies is how
+  // this test and `StepEditor.test.tsx` came to hold two separate counts of the
+  // same directory and go red together the day it emptied.
+  return readRealFlows().map(({ path, source }) => parseFlow<FlowFile>(path, source));
 }
 
 interface PortCensus {
@@ -519,38 +523,42 @@ describe("a node's width, and the gap between two nodes", () => {
 describe("the three shapes on the real flows, not on the sample", () => {
   const flows = realFlows();
 
-  test("the shipped files really are read, and no glob came back empty", () => {
+  test("every flow system.rs ships is read, and the list itself is not empty", () => {
     // Without this, every threshold below could pass on zero files read — the
     // quietest way of being green for having looked at nothing. It used to ask
     // for ten files: a number about a directory, not about this test, and when
     // the flows moved out of the repo a passing test went red. What it names
-    // now ships inside the binary, so it cannot quietly become nothing.
+    // now is read from `system.rs`, so a rename there is not a red here.
+    expect(SHIPPED_WITH_THE_BINARY, "system.rs yields no include_str! line").not.toEqual([]);
+    // The measurer, measured: a `shippedFlowsMissingFrom` that always answered
+    // «nothing missing» would keep both canaries green on an empty directory.
+    expect(shippedFlowsMissingFrom([])).toEqual(SHIPPED_WITH_THE_BINARY);
     const paths = readRealFlows().map(({ path }) => path);
-    expect(shippedFlowsMissingFrom(paths), `read: ${paths.join(", ")}`).toEqual([]);
-    expect(flows.length).toBeGreaterThanOrEqual(SHIPPED_WITH_THE_BINARY.length);
+    expect(shippedFlowsMissingFrom(paths).join(", "), `read: ${paths.join(", ")}`).toBe("");
   });
 
   test("CIRCLE, DIAMOND AND SQUARE ARE ALL THERE, AND NONE IS A ONE-OFF", () => {
     const census = portCensus(flows);
     const shapes = `circles ${census.text}, diamonds ${census.structure}, squares ${census.value} of ${census.total}`;
-    expect(census.total, `ports read: ${shapes}`).toBeGreaterThan(30);
-    // Today: 7 circles, 8 diamonds, 30 squares of 45. Five is below each of them
-    // and above what an accident produces: if `shapeOf` collapsed onto a single
-    // shape, two of these three would go to zero and the line would say which.
-    expect(census.text, shapes).toBeGreaterThanOrEqual(5);
-    expect(census.structure, shapes).toBeGreaterThanOrEqual(5);
-    expect(census.value, shapes).toBeGreaterThanOrEqual(5);
+    expect(census.total, `ports read: ${shapes}`).toBeGreaterThan(20);
+    // Today, on the three shipped flows: 7 circles, 8 diamonds, 17 squares of
+    // 32. Four is below each of them and above what an accident produces: if
+    // `shapeOf` collapsed onto a single shape, two of these three would go to
+    // zero and the line would say which.
+    expect(census.text, shapes).toBeGreaterThanOrEqual(4);
+    expect(census.structure, shapes).toBeGreaterThanOrEqual(4);
+    expect(census.value, shapes).toBeGreaterThanOrEqual(4);
   });
 
   test("EMPTY AND FILLED BOTH EXIST: \"which input is missing\" is visible", () => {
     // If every port came out wired, the canvas would be legible and useless: the
     // question the ports exist to answer would never get an answer.
     const census = portCensus(flows);
-    // Today: 38 wired, 7 empty of 45. The empty ones are the scarce side, so the
-    // floor is set under them: were every port to come out wired, this is the
-    // line that would say so.
+    // Today, on the three shipped flows: 26 wired, 6 empty of 32. The empty
+    // ones are the scarce side, so the floor sits under them with room for an
+    // edit: were every port to come out wired, this is the line that would say.
     const fill = `wired ${census.wired}, empty ${census.empty} of ${census.total}`;
     expect(census.wired, fill).toBeGreaterThanOrEqual(10);
-    expect(census.empty, fill).toBeGreaterThanOrEqual(5);
+    expect(census.empty, fill).toBeGreaterThanOrEqual(3);
   });
 });
