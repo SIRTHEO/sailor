@@ -568,14 +568,33 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     said
 }
 
-/// La parola che toglie il tetto invece di metterne uno.
+/// The word that takes the cap off instead of setting one.
 ///
-/// Serve perché senza di lei il comando saprebbe entrare in uno stato e non
-/// uscirne: `0` non è «nessuno», è «questo flusso non deve spendere niente».
-const NO_CAP: &str = "nessuno";
+/// Without it the command could enter a state and not leave it: `0` is not
+/// «none», it is «this flow must spend nothing».
+const NO_CAP: &str = "none";
 
-/// `sailor flow cap <nome> <micro|nessuno>`: mette o toglie il tetto.
+/// Words that used to be the only spelling, still accepted and no longer shown.
+///
+/// **A WORD A PERSON HAS ALREADY TYPED INTO A SCRIPT IS A PROMISE.** Dropping it
+/// costs someone a run that fails for a reason the message cannot explain, so it
+/// keeps working; leaving it in the help would teach it to whoever comes next.
+const RETIRED_WORDS: &[(&str, &str)] = &[("nessuno", NO_CAP), ("leggero", LIGHT), ("pesante", HEAVY)];
+
+/// What a typed word means, following [`RETIRED_WORDS`] once.
+///
+/// One hop and no more: an alias of an alias would make the accepted vocabulary
+/// depend on the order of this list.
+fn as_written_today(word: &str) -> &str {
+    RETIRED_WORDS
+        .iter()
+        .find(|(retired, _)| *retired == word)
+        .map_or(word, |(_, current)| *current)
+}
+
+/// `sailor flow cap <name> <micros|none>`: sets the cap or takes it off.
 fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, String> {
+    let value = as_written_today(value);
     let wanted = if value == NO_CAP {
         None
     } else {
@@ -709,16 +728,15 @@ fn a_flow_i_may_rewrite<'a>(
     Ok((flow, source))
 }
 
-/// La parola che toglie l'innesco invece di metterne uno.
+/// The word that takes the trigger off instead of setting one.
 ///
-/// Stessa ragione di [`NO_CAP`]: senza di lei il comando saprebbe entrare in
-/// uno stato e non uscirne. E un flusso senza innesco non è un flusso rotto —
-/// «gira quando qualcuno lo chiede» è un fatto, non un vuoto da riempire.
-const NO_SCHEDULE: &str = "nessuno";
+/// Same reason as [`NO_CAP`]. And a flow with no trigger is not a broken flow —
+/// «it runs when somebody asks» is a fact, not a gap to fill.
+const NO_SCHEDULE: &str = "none";
 
-/// Le due parole con cui un flusso dichiara quanto pesa una sua corsa.
-const LIGHT: &str = "leggero";
-const HEAVY: &str = "pesante";
+/// The two words a flow uses to say what one of its runs weighs.
+const LIGHT: &str = "light";
+const HEAVY: &str = "heavy";
 
 /// Un innesco come lo legge una persona, compreso quando non c'è.
 ///
@@ -799,7 +817,7 @@ fn how_a_schedule_is_written(value: &str) -> String {
 }
 
 fn weight_from(word: &str) -> Result<flow::Weight, String> {
-    match word {
+    match as_written_today(word) {
         LIGHT => Ok(flow::Weight::Light),
         HEAVY => Ok(flow::Weight::Heavy),
         other => Err(format!(
@@ -818,8 +836,8 @@ fn schedule_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     ))
 }
 
-/// `sailor flow schedule <nome> <ogni|ora|nessuno> [peso]`: mette, cambia o
-/// toglie l'innesco.
+/// `sailor flow schedule <name> <every|at|none> [weight]`: sets, changes or
+/// takes off the trigger.
 ///
 /// **PERCHÉ QUESTO COMANDO ESISTE, ED È IL GUASTO 15 ALLA LETTERA.** Il
 /// 29/08/2026 per cambiare l'innesco di un flusso è stato usato uno script
@@ -830,7 +848,7 @@ fn schedule_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
 /// faceva `python3`.
 ///
 /// **IL PESO NON SI INVENTA.** Su un flusso che un innesco non ce l'ha ancora,
-/// senza la parola il comando **rifiuta** invece di scegliere «leggero»: un peso
+/// senza la parola il comando **rifiuta** invece di scegliere [`LIGHT`]: un peso
 /// comparso da sé è un dato inventato con la faccia di una dichiarazione, ed è
 /// il guasto 22 in un'altra forma. Su un flusso che ce l'ha già, tacere vuol
 /// dire «lascialo com'è», che è un'altra cosa e si vede dal messaggio.
@@ -843,7 +861,7 @@ fn set_schedule(
     let (mut flow, source) = a_flow_i_may_rewrite(sources, name)?;
     let before = said_schedule(flow.schedule.as_ref());
 
-    let wanted = if value == NO_SCHEDULE {
+    let wanted = if as_written_today(value) == NO_SCHEDULE {
         if let Some(word) = weight {
             return Err(format!(
                 "«{NO_SCHEDULE}» toglie l'innesco, e un innesco che non c'è non ha \
@@ -1022,8 +1040,8 @@ pub const USAGE: &[&str] = &[
     // dei flussi restano in italiano (`AGENTS.md`, la riga sui dati del
     // deposito). Se un giorno si vogliono in inglese, la strada è accettarle
     // in tutte e due le lingue e mostrare la nuova, mai sostituirle.
-    "sailor flow cap <name> [micro|nessuno]",
-    "sailor flow schedule <name> [3600s|07:30|nessuno] [leggero|pesante]",
+    "sailor flow cap <name> [micros|none]",
+    "sailor flow schedule <name> [3600s|07:30|none] [light|heavy]",
     "sailor flow relocate <name> [prefix-to-strip]",
 ];
 
@@ -1554,7 +1572,7 @@ fn check_report(
     // controlla un flusso prima di lanciarlo sta decidendo se può permetterselo:
     // un tetto invisibile qui si scopre solo a corsa fermata, e uno che si vede
     // senza i suoi limiti si legge come una garanzia sulla spesa — che non è.
-    // La riga c'è sempre, anche quando il tetto non c'è: «nessuno» è
+    // La riga c'è sempre, anche quando il tetto non c'è: la parola di NO_CAP è
     // un'informazione, e un rapporto che tace quando non c'è niente da dire
     // lascia chi legge a chiedersi se il controllo abbia guardato.
     match flow.spend_cap_micros {
@@ -4681,6 +4699,55 @@ mod tests {
         set_cap(&sources, "prova", NO_CAP).expect("poi si toglie");
 
         assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
+    }
+
+    /// **A WORD ALREADY TYPED INTO A SCRIPT KEEPS WORKING.** The vocabulary
+    /// moved to English on 02/09/2026; the Italian words stay accepted and stay
+    /// out of the help. Without this test the promise is a comment, and the
+    /// first person to tidy up `as_written_today` breaks somebody's run with a
+    /// message that cannot explain itself.
+    #[test]
+    fn the_words_that_used_to_be_the_only_ones_still_work() {
+        let home = TestDirectory::new();
+        home.write("prova.flow.json", &flow_json("shell_check", "[]", "{}"));
+        let sources = flow::system::sources(&home.0, None, None);
+
+        set_cap(&sources, "prova", "500").expect("prima si mette");
+        set_cap(&sources, "prova", "nessuno").expect("la parola di ieri toglie il tetto");
+        assert_eq!(written_flow(&home.0, "prova").spend_cap_micros, None);
+
+        set_schedule(&sources, "prova", "3600s", Some("leggero")).expect("e sceglie un peso");
+        assert_eq!(
+            weight_from("leggero").expect("è ancora un peso"),
+            weight_from(LIGHT).expect("come la parola di oggi"),
+            "«leggero» e «{LIGHT}» devono dire la stessa cosa"
+        );
+        assert_eq!(
+            weight_from("pesante").expect("è ancora un peso"),
+            weight_from(HEAVY).expect("come la parola di oggi")
+        );
+
+        set_schedule(&sources, "prova", "nessuno", None).expect("e toglie l'innesco");
+        assert!(written_flow(&home.0, "prova").schedule.is_none());
+    }
+
+    /// L'aiuto non le nomina: una parola ritirata che compare dove si impara il
+    /// comando non è ritirata, è la seconda forma ufficiale.
+    #[test]
+    fn the_retired_words_are_accepted_and_never_taught() {
+        let shown = usage();
+        for (retired, _) in RETIRED_WORDS {
+            assert!(
+                !shown.contains(retired),
+                "«{retired}» è ritirata e l'aiuto la insegna ancora:\n{shown}"
+            );
+        }
+        for current in [NO_CAP, LIGHT, HEAVY] {
+            assert!(
+                shown.contains(current),
+                "«{current}» è la parola di oggi e l'aiuto non la nomina:\n{shown}"
+            );
+        }
     }
 
     // ── l'innesco si cambia da dentro Sailor ─────────────────────────
