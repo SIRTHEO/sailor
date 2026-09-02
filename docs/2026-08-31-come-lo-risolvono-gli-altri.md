@@ -136,7 +136,7 @@ agli argomenti**.
 
 Oggi `crates/actions/src/lib.rs` mette `declared_usage: None` quando il passo si
 scrive gli argomenti da sé, e cinque blocchi `args` sono già nei flussi
-(`smista-il-lavoro` due volte, `sviluppa-sailor` tre). Quei passi **perdono la
+(`dispatch-the-work` due volte, `sviluppa-sailor` tre). Quei passi **perdono la
 misura in silenzio**. `choose_model` è già dichiarato `{"args": ["--model"],
 "takes_value": true}` per tutti e quattro i motori: il modello per passo non
 richiede un formato nuovo, richiede che la ricetta continui a dettare la riga.

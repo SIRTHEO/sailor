@@ -30,7 +30,7 @@ pub fn register_default(registry: &mut flow::ActionRegistry) {
 /// **PERÒ CHI COMPONE L'INGRESSO NON È SOLO CHI SCRIVE IL FLUSSO**: l'esecutore
 /// aggiunge il `workdir` a ogni passo il cui schema dichiarato lo accetterebbe,
 /// e `{"type": "any"}` accetta tutto. Guasto misurato il 01/09/2026 sul flusso
-/// spedito `strumenti-di-questa-macchina`, che dichiara proprio quello: dentro
+/// spedito `what-this-machine-has`, che dichiara proprio quello: dentro
 /// una cartella con `sailor.json` moriva sempre — `unknown field 'workdir'`,
 /// `failure_class: invalid_input` — e fuori da un progetto girava, perché senza
 /// radice non c'è niente da offrire. Un campo non dichiarato qui non è «un

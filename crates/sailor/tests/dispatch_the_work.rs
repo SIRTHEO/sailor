@@ -28,10 +28,10 @@ use flow::{
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
-const FLOW_ID: &str = "smista-il-lavoro";
+const FLOW_ID: &str = "dispatch-the-work";
 
 /// **IL FLUSSO NON STA PIÙ SU DISCO, E QUESTA PROVA NON DEVE CERCARLO LÌ.**
-/// Fino all'01/09/2026 leggeva `flows/smista-il-lavoro.flow.json` dalla radice
+/// Fino all'01/09/2026 leggeva `flows/dispatch-the-work.flow.json` dalla radice
 /// del progetto. Poi il flusso è entrato nel binario — le regole di
 /// instradamento spedite lo nominano, e su un'altra macchina la cartella non
 /// c'è — e leggerlo dal disco vorrebbe dire provare un file che il prodotto non

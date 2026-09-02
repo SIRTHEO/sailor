@@ -44,20 +44,20 @@ pub const YOUR_ORIGIN: &str = "yours";
 /// names for one thing would make "run this" and "override this" differ.
 pub const FLOWS: &[(&str, &str)] = &[
     (
-        "strumenti-di-questa-macchina",
-        include_str!("../system/strumenti-di-questa-macchina.flow.json"),
+        "what-this-machine-has",
+        include_str!("../system/what-this-machine-has.flow.json"),
     ),
     (
-        "migrazione-a-sailor",
-        include_str!("../system/migrazione-a-sailor.flow.json"),
+        "migrate-to-sailor",
+        include_str!("../system/migrate-to-sailor.flow.json"),
     ),
     // Shipped because the shipped rules name it: the routing rules in
     // `crates/terminal/descriptors/default.json` travel inside the binary and
     // send work here, so as a project flow the rule pointed at nothing on every
     // machine but this one — and no test saw it, since all of them ran here.
     (
-        "smista-il-lavoro",
-        include_str!("../system/smista-il-lavoro.flow.json"),
+        "dispatch-the-work",
+        include_str!("../system/dispatch-the-work.flow.json"),
     ),
 ];
 

@@ -14,7 +14,7 @@ export default defineConfig({
     // file system di Vite li nega e la prova non parte affatto.
     //
     // **SONO DUE CARTELLE PERCHÉ I FLUSSI VIVONO IN DUE POSTI**, e non è un
-    // dettaglio di percorso: `smista-il-lavoro` è **spedito dentro il binario**
+    // dettaglio di percorso: `dispatch-the-work` è **spedito dentro il binario**
     // (`crates/flow/system/`, incorporato con `include_str!`) perché le regole
     // di instradamento che viaggiano col prodotto lo nominano, e su un'altra
     // macchina la cartella `flows/` non esiste. Gli altri nove sono di questo

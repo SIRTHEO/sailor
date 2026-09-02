@@ -103,7 +103,7 @@ Non è un caso di scuola. È il caso più probabile, perché è anche il più fa
 **Anello 1 — l'autocura non scrive mai.** Nessun passo di un flusso di autocura
 ha permesso di scrittura. Il flusso produce un diff come *dato*, dentro
 un'`answer_shape` dichiarata. Un dato non modifica niente. È già la postura di
-`smista-il-lavoro`, che dichiara: «nessun passo ha permesso di scrittura, e
+`dispatch-the-work`, che dichiara: «nessun passo ha permesso di scrittura, e
 ognuno lo dichiara nei propri argomenti».
 
 **Anello 2 — chi applica è codice, con un diniego che nessun dato può togliere.**
@@ -289,7 +289,7 @@ difetti su tre invisibili. Questo è il lavoro numero uno dell'autocura dei
 flussi, e non richiede nessun modello per essere trovato:
 
 - ogni `tool` chiesto è dichiarato da un descrittore di `toolbox`? (la prova
-  esiste già, ma solo per `smista-il-lavoro`, dentro
+  esiste già, ma solo per `dispatch-the-work`, dentro
   `crates/sailor/tests/smista_il_lavoro.rs`: va resa generale)
 - ogni `answer_shape` compare davvero nel prompt via `{"$json": "/answer_shape"}`?
   (a runtime è `shape_not_in_prompt`, e si paga scoprendolo tardi)

@@ -1,4 +1,4 @@
-# `smista-il-lavoro` — il flusso che divide un incarico fra tre motori
+# `dispatch-the-work` — il flusso che divide un incarico fra tre motori
 
 Un **innesco** riceve la consegna e la mette a disposizione del grafo. Un nodo
 la divide in due incarichi che si reggono da soli. Due motori li eseguono
@@ -69,11 +69,11 @@ d'uscita, dove si vede leggendo il grafo.
 
 ```bash
 cd ~/personal/sailor
-cargo run -p sailor -- flow run smista-il-lavoro
+cargo run -p sailor -- flow run dispatch-the-work
 ```
 
 La cartella conta: il comando cerca i flussi in `flows/` sotto quella corrente.
-Per guardarlo senza eseguirlo: `cargo run -p sailor -- flow check smista-il-lavoro`.
+Per guardarlo senza eseguirlo: `cargo run -p sailor -- flow check dispatch-the-work`.
 
 ## Una cosa che questo flusso sembrava dire e non è vera
 
