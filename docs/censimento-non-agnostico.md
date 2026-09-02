@@ -1,6 +1,6 @@
 # Censimento: dove Sailor non è agnostico
 
-Fatto il 01/09/2026 sull'albero principale (`~/personal/sailor`, ramo `sorgenti`,
+Fatto il 01/09/2026 sull'albero principale (ramo `sorgenti`,
 `HEAD` `5b68c48`, ~30 file modificati non committati — letti così come stanno).
 Nessun file di codice è stato toccato.
 
@@ -68,7 +68,7 @@ tornerebbe vivo e deciderebbe la raggiungibilità di una competenza.
 | `crates/release/src/lib.rs:91` | `label: "com.theo.notte",` | Nome proprio in un valore di prodotto. **Attenuante forte**: le righe 34-42 dichiarano che è un predefinito e `RELEASE_SERVICE_LABEL` lo sostituisce (`crates/sailor/src/release_cmd.rs:650`) | Una riga; oppure zero, se si accetta la dichiarazione |
 | `crates/release/src/lib.rs:92` | `in_progress_rel: "state/plancia/coda-notte/in-corso",` | Percorso interno di un altro sistema (la plancia, la coda notturna) inchiodato in una tabella di Sailor | Una riga |
 | `flows/chiedi-all-indice.flow.json:266-267` | Un `"who"` col nome di una persona e un `"where"` con la sua casa | Un flusso spedito nel repo che si può eseguire **in un posto solo**: è la forma esatta del guasto 25 che `crates/flow/src/workspace.rs:3-8` racconta di aver chiuso | Due righe: la radice viene da chi lancia |
-| `flows/come-lo-risolvono-gli-altri.flow.json:411` | `"Guarda com'è fatto Sailor, il progetto in ~/personal/sailor, ..."` | Percorso di questa macchina dentro il testo consegnato a un motore | Una riga |
+| `flows/come-lo-risolvono-gli-altri.flow.json:411` | «Guarda com'è fatto Sailor, il progetto in ⟨la radice dei sorgenti su quella macchina⟩, ...» | Percorso di questa macchina dentro il testo consegnato a un motore | Una riga |
 
 ### Categoria 3 — fornitore, modello o binario presunto inchiodato
 
@@ -120,7 +120,7 @@ Quello che le sfugge, e che la regola di `AGENTS.md` invece copre:
 | `crates/release/src/lib.rs:92` | `in_progress_rel: "state/plancia/coda-notte/in-corso",` | Tre nomi di cartella in italiano in una stringa letterale | Una riga |
 
 **Il caso noto va smentito per questo albero.** `~/.claude/state/sessioni-vive/`
-**non compare in nessun file di `~/personal/sailor`**: `rg -n 'sessioni' --no-heading -g '!target' -g '!node_modules' .`
+**non compare in nessun file dell'albero**: `rg -n 'sessioni' --no-heading -g '!target' -g '!node_modules' .`
 risponde solo con `docs/2026-08-28-il-flusso-che-accompagna.md`, in prosa.
 Quella cartella la crea qualcosa che sta fuori da questo repo (i ganci in
 `~/.claude`), e censirla non è lavoro per questo albero.
@@ -197,16 +197,17 @@ identificatori, e la prova sull'inglese lo dichiara):
   `crates/toolbox/tests/one_home_for_everything.rs` e
   `crates/trigger/tests/triggers_live_in_the_same_home.rs` (`/home/tizio`).
 - `crates/flow/src/schedule.rs:157,205` — `perimeter: vec!["~/.claude"]` e
-  `["~/.claude", "~/personal/sailor"]` stanno **dentro `#[cfg(test)] mod tests`**
-  (che comincia alla riga 140). Fixture.
+  `["~/.claude", ⟨la radice dei sorgenti⟩]` stanno **dentro `#[cfg(test)] mod tests`**
+  (che comincia alla riga 140). Fixture — **tolte il 01/09**: una fixture che
+  nomina la casa di chi l'ha scritta si pubblica come tutto il resto.
 
 **Commenti che raccontano un percorso già tolto** — sono la cicatrice, non la
 ferita:
 
 - `crates/flow/src/workspace.rs:4` — cita il `"workdir"` assoluto come il guasto
   25 *chiuso*.
-- `crates/ui/src/gather.rs:90-91,128-130` — cita `~/.claude/state` e
-  `~/personal/sailor` come i percorsi **rimossi** il 28/08.
+- `crates/ui/src/gather.rs:90-91,128-130` — cita `~/.claude/state` e la radice
+  dei sorgenti come i percorsi **rimossi** il 28/08.
 - `crates/release/src/lib.rs:50` e `crates/sailor/src/flow_cmd.rs:1350,1529`.
 - `desktop/src/tools.ts:208` — «`/Users/tizio/.local/bin/claude` solo su una».
 
