@@ -124,6 +124,9 @@
   font-family: var(--font-prose);
   font-size: var(--text-body);
   color: var(--ink);
+  /* The root is painted too: under the dark scheme an unpainted root shows
+     white wherever the body ends, and the scheme would flash before it lands. */
+  background: var(--bg);
   /* Figures line up in a column everywhere: comparing them is the job. */
   font-variant-numeric: tabular-nums;
 
@@ -156,6 +159,64 @@
   --lane-9: #a076ca;
   --lane-10: #c46da5;
 
+}
+
+/* THE DARK SCHEME REDEFINES EVERY ROLE THAT CARRIES A COLOUR, AND NOTHING
+   ELSE. No rule below this block names a colour, so the second scheme is a
+   second set of roles and no more: `stylesheet.test.ts` refuses a role left
+   out, and `contrast.test.tsx` measures every scene a second time with these
+   values in place. Warm dark, not black: the same paper, unlit. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #191c18;
+    --paper: #22261f;
+    --raised: #2b3028;
+    --rail: #191c18;
+    --line: #3a3f37;
+    --band-fill: rgb(242 240 233 / 3%);
+
+    --ink: #ecebe4;
+    --muted: #a8ada3;
+    --faint: #a8ada3;
+
+    --state-waiting: #a8ada3;
+    --state-running: #6fb1e6;
+    --state-went: #5fc79a;
+    --state-broke: #ec8b82;
+    --state-capped: #dfa35a;
+    --state-human: #b79ae6;
+
+    --ok: #5fc79a;
+    --ok-soft: #1f3a2e;
+    --warn: #dfa35a;
+    --warn-soft: #3d3120;
+    --danger: #ec8b82;
+    --danger-soft: #3f2422;
+
+    --focus: #6fb1e6;
+
+    --shadow: 0 10px 30px rgb(0 0 0 / 40%);
+    --scrim: rgb(0 0 0 / 55%);
+
+    --ink-surface: #101210;
+    --on-ink: #ecebe4;
+    --on-ink-muted: #a8ada3;
+
+    --optional: #93a0b3;
+    --grid-fine: #20241f;
+    --grid-coarse: #262b24;
+
+    --lane-1: #e58a8f;
+    --lane-2: #dd9160;
+    --lane-3: #c9a53f;
+    --lane-4: #9ab85a;
+    --lane-5: #3fc490;
+    --lane-6: #3fb9bd;
+    --lane-7: #55b0dd;
+    --lane-8: #7f96e8;
+    --lane-9: #b48fdc;
+    --lane-10: #d88ac0;
+  }
 }
 
 /* Whoever asked for less motion gets none. */

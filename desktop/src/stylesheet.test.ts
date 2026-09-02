@@ -110,6 +110,20 @@ describe("il foglio si legge tutto", () => {
     expect(sheet.colorsInsideAtRules).toBe(0);
   });
 
+  test("THE DARK SCHEME REDEFINES EVERY ROLE THAT CARRIES A COLOUR, and no other", () => {
+    // A role left out keeps its light value under the dark ground: legible in
+    // the test that never looked, unreadable on the screen. So the two sets of
+    // colour roles must be the same set, and every dark value must be a colour.
+    const root = sheet.rules.find((rule) => rule.selector === ":root");
+    const lightColours = (root?.declarations ?? []).filter(([, value]) => parseColor(value) !== null).map(([name]) => name);
+    const dark = sheet.darkRoot ?? [];
+    const darkNames = dark.map(([name]) => name);
+    expect(lightColours.length).toBeGreaterThan(30);
+    expect(lightColours.filter((name) => !darkNames.includes(name))).toEqual([]);
+    expect(darkNames.filter((name) => !lightColours.includes(name) && !/^--(shadow|scrim)$/.test(name))).toEqual([]);
+    expect(dark.filter(([name, value]) => parseColor(value) === null && !/^--(shadow|scrim)$/.test(name))).toEqual([]);
+  });
+
   test("il divieto 7 è scritto nel foglio, non solo nel commento", () => {
     // `--faint` was abolished by making it identical to `--muted`. If somebody
     // lightens it again, this line says so before the contrast check does.
