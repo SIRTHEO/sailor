@@ -76,5 +76,9 @@
   "window.step.kind.deposit": "store",
   "window.step.kind.gesture": "gesture",
   "window.step.kind.human": "a person",
-  "window.step.kind.subflow": "subflow"
+  "window.step.kind.subflow": "subflow",
+
+  "cli.workspace.already_declared": "{file} is already there: this command does not overwrite a declaration, because someone may have written into it by hand",
+  "cli.workspace.written": "wrote {file}\n  name: {name}\n  rules: {rules}\n  checks: none (they are written by hand: guessing them would be deciding them for you)",
+  "cli.workspace.no_rules_found": "none found"
 }
