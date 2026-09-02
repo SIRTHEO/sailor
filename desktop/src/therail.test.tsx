@@ -24,9 +24,9 @@ beforeAll(() => {
   };
 });
 
-/** The window opens elsewhere: the board sits behind a place to be chosen. */
+/** The window opens on «Now»: the board sits behind a place to be chosen. */
 function goToFlows(): void {
-  screen.getByRole("button", { name: /^Flussi/ }).click();
+  screen.getByRole("button", { name: /^Flows/ }).click();
 }
 
 describe("the column, grouped by origin", () => {

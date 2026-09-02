@@ -57,9 +57,9 @@ beforeAll(() => {
   };
 });
 
-/** The window opens on «Adesso»: the canvas sits behind a place you must pick. */
+/** The window opens on «Now»: the canvas sits behind a place you must pick. */
 function goToFlows(): void {
-  fireEvent.click(screen.getByRole("button", { name: /^Flussi/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Flows/ }));
 }
 
 function focusAFlow(container: HTMLElement): string {

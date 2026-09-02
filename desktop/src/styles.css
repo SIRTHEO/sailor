@@ -903,6 +903,116 @@ button.is-primary {
   color: var(--danger);
 }
 
+/* A PROJECT WHOSE MARKER IS GONE IS STILL LISTED, and has to look it. The row
+   was drawn identical to a live one while a paragraph underneath said «the rows
+   marked gone» — pointing at a mark nobody had made. */
+tr[data-gone] {
+  color: var(--muted);
+}
+
+tr[data-gone] .now__entity::after {
+  content: " — gone";
+  color: var(--warn);
+}
+
+/* A run that started in this window can be followed into it; one that started
+   elsewhere cannot, and the row says so by not offering. The mark is what the
+   pointer reacts to. */
+tr[data-followable] {
+  cursor: pointer;
+}
+
+tr[data-followable]:hover {
+  background: var(--paper);
+}
+
+/* A step that runs an agent, as opposed to a command: the one distinction on
+   the canvas that changes what the box will actually do. */
+.step-node[data-agent] {
+  border-left: 2px solid var(--state-human);
+}
+
+/* THE THREE STATES OF A SWEEP, told apart at a glance. «Not here» is ordinary
+   and stays quiet; «could not look» is the one that changes what you do next,
+   so it does not read like the other two. */
+[data-state="undetermined"] {
+  color: var(--warn);
+}
+
+[data-state="absent"] {
+  color: var(--muted);
+}
+
+/* ── everything, behind one door ────────────────────────────────────────────
+   A column of what can be asked, and the answer beside it. The column is wider
+   than the flow rail on purpose: each entry carries the line that says what it
+   answers, and without that line eight nouns are eight guesses. */
+.everything {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.everything__rail {
+  width: 232px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  background: var(--rail);
+  padding: 14px 10px;
+  overflow-y: auto;
+}
+
+.everything__body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.everything__group + .everything__group {
+  margin-top: 16px;
+}
+
+.everything__heading {
+  font-size: var(--text-micro);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0 8px 6px;
+}
+
+.everything__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.everything__item[data-here] {
+  background: var(--paper);
+  border-color: var(--line);
+}
+
+.everything__name {
+  display: block;
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* THE LINE THAT TURNS A LIST INTO A CHOICE: it says what the entry answers, so
+   nobody has to open it to find out. */
+.everything__about {
+  display: block;
+  font-size: var(--text-micro);
+  color: var(--faint);
+  line-height: 1.4;
+  margin-top: 1px;
+}
+
 /* A switch with its word beside it, on the line of gestures. */
 .now__toggle {
   display: flex;
@@ -3390,6 +3500,17 @@ button.is-primary {
   line-height: 1.7;
 }
 
+/* What the form does, under the form and not beside it: the shapes are as
+   long as 130 characters, and a second column would either squeeze them or
+   push the sentence off the edge where nobody reads it. */
+.manual__says {
+  display: block;
+  color: var(--muted);
+  font-size: var(--text-small);
+  line-height: 1.5;
+  padding-left: var(--space-2);
+}
+
 .manual__word {
   color: var(--ink);
 }
@@ -3413,9 +3534,29 @@ button.is-primary {
   .panel {
     width: 248px;
   }
+
+  .everything__rail {
+    width: 190px;
+  }
 }
 
 @media (max-width: 760px) {
+  /* THE COLUMN OF QUESTIONS GOES ABOVE THE ANSWER, not beside it. Narrowed any
+     further it would leave the answer a strip nobody can read, and the line
+     that says what each entry is about — the reason the column is wide — would
+     be the first thing to go. Stacked, both keep their room. */
+  .everything {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .everything__rail {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    overflow-y: visible;
+  }
+
   /* Narrowing is no longer enough: the inspector floats over the canvas, which
      then keeps everything left. Layout only in here — the contrast engine skips
      at-rules, so a tint written here would be weighed by nobody. And no shadow:
