@@ -11,6 +11,11 @@ rust-version.workspace = true
 # `ui` sono arrivati il 27/08/2026 con lo stesso schema: la libreria decide,
 # `sailor` fa i gesti.
 [dependencies]
+# The sentences this command line says, in the two languages, so the shipped
+# product speaks English and whoever wants Italian sets one variable. Not a
+# convenience: the prose used to live inside `format!`, where a second language
+# has nowhere to go.
+catalogue = { path = "../catalogue" }
 workspace = { path = "../workspace" }
 release = { path = "../release" }
 profiles = { path = "../profiles" }

@@ -60,10 +60,9 @@ pub const USAGE: &[&str] = &["sailor workspace init"];
 fn init(root: &Path) -> Result<String, String> {
     let marker = root.join(MARKER);
     if marker.exists() {
-        return Err(format!(
-            "{} esiste già: questo comando non sovrascrive una dichiarazione, \
-             perché ci si può aver scritto dentro a mano",
-            marker.display()
+        return Err(catalogue::say(
+            "cli.workspace.already_declared",
+            &[("file", &marker.display().to_string())],
         ));
     }
     let name = root
@@ -87,15 +86,18 @@ fn init(root: &Path) -> Result<String, String> {
     std::fs::write(&marker, text)
         .map_err(|error| format!("cannot write {}: {error}", marker.display()))?;
 
-    Ok(format!(
-        "scritto {}\n  nome: {name}\n  regole: {}\n  verifiche: nessuna \
-         (si scrivono a mano: indovinarle sarebbe deciderle al posto tuo)",
-        marker.display(),
-        if rules.is_empty() {
-            "nessuna trovata".to_owned()
-        } else {
-            rules.join(", ")
-        }
+    let found = if rules.is_empty() {
+        catalogue::say("cli.workspace.no_rules_found", &[])
+    } else {
+        rules.join(", ")
+    };
+    Ok(catalogue::say(
+        "cli.workspace.written",
+        &[
+            ("file", &marker.display().to_string()),
+            ("name", &name),
+            ("rules", &found),
+        ],
     ))
 }
 
@@ -168,7 +170,10 @@ mod tests {
 
         let refused = init(&root).expect_err("la seconda no");
 
-        assert!(refused.contains("esiste già"), "{refused}");
+        // English, because that is what the product speaks when nobody asked for
+        // anything else. The Italian of the same key is checked where the two
+        // catalogues are, not here.
+        assert!(refused.contains("is already there"), "{refused}");
 
         let _ = fs::remove_dir_all(&root);
     }
