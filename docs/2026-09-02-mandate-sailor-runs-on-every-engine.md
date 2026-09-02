@@ -120,9 +120,14 @@ context in abundance: do not stop for context reasons.
 - `sailor remaining` reads Claude only: five-hour used 12 %, seven-day used
   42 %. Codex profiles `lavoro` and `prove` are not authenticated.
 - `sailor workspace list` says no project has been opened yet.
-- The two research reports of the same evening (fuel and multi-engine
-  products; memory, self-knowledge and specialised agents) are in `docs/`
-  under the same date: read them before A.4, D.3 and the choice of agents.
+- The two research reports of the same evening are in `docs/` under the
+  same date: `how-others-run-on-many-engines` (read before A) and
+  `memory-self-knowledge-and-specialists` (read before D and before you
+  spawn any agent). The ledger says who worked so far: nineteen Claude calls
+  for 37.89 $, four codex, one agy, nothing else.
+- Which model to pull on ollama for B.5 and A.7: `qwen2.5-coder:7b`, the
+  smallest coder model that follows a file-by-file mandate; measure it on one
+  file before the sweep and write the measure in the outcome.
 
 ## What you deliver
 
