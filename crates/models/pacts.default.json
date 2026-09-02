@@ -1,0 +1,15 @@
+{
+  "_readme": [
+    "THE DATA PACTS SHIPPED WITH THE PRODUCT, per model id: whether what is sent",
+    "to a model trains the provider's next one. Three words: trains,",
+    "does_not_train, unknown. A model not listed is unknown, and unknown is",
+    "never read as does_not_train.",
+    "",
+    "NO ENTRY IS WRITTEN FROM A BLOG. An entry enters with the provider's own",
+    "published terms, per model, read on the date written in `source`. The list",
+    "is empty until the first one is verified; the machine's ~/.config/sailor/",
+    "pacts.json overrides by id."
+  ],
+  "source": "nothing verified yet",
+  "pacts": {}
+}

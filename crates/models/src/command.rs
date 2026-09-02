@@ -205,6 +205,7 @@ mod tests {
             input_modalities: vec![Modality::Text],
             price_per_million_input: None,
             price_per_million_output: None,
+            data_pact: crate::pact::DataPact::Unknown,
         };
         let line = format_model_line(&m);
         assert!(line.contains("? (unknown)"));

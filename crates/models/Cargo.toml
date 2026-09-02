@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.89"
 
 [dependencies]
+serde.workspace = true
 serde_json.workspace = true
 # `regex` serves the `text` shape of declared consumption: an engine that
 # states its own tokens in plain text instead of JSON is read with an
