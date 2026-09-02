@@ -4859,7 +4859,7 @@ mod tests {
         with_perimeter.schedule = Some(flow::Schedule {
             recurrence: flow::Recurrence::DailyAt { hour: 3, minute: 0 },
             weight: flow::Weight::Heavy,
-            perimeter: vec!["~/personal/sailor".to_owned()],
+            perimeter: vec!["~/progetti/sailor".to_owned()],
         });
         flow::system::save_in(&home.0, &with_perimeter).expect("il flusso di partenza");
 
@@ -4878,7 +4878,7 @@ mod tests {
         assert_eq!(after.weight, flow::Weight::Heavy, "il peso resta quello");
         assert_eq!(
             after.perimeter,
-            vec!["~/personal/sailor".to_owned()],
+            vec!["~/progetti/sailor".to_owned()],
             "il perimetro non si perde cambiando l'orario"
         );
     }

@@ -189,7 +189,7 @@ mod tests {
         let text = r#"{
             "recurrence": {"kind": "daily_at", "hour": 3, "minute": 30},
             "weight": "heavy",
-            "perimeter": ["~/.claude", "~/personal/sailor"]
+            "perimeter": ["~/.claude", "~/progetti/sailor"]
         }"#;
         let parsed: Schedule = serde_json::from_str(text).unwrap();
         assert_eq!(

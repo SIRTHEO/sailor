@@ -128,6 +128,48 @@ fn a_cell_the_table_cannot_hold_is_refused_at_the_door() {
     );
 }
 
+/// **«NOT OPEN» AND «NOT UNDERSTOOD» MUST NOT BE THE SAME ANSWER.**
+///
+/// The old predicate answered yes or no, so a status it could not read left the
+/// open tally silently, and the total moved the reassuring way. Latent when
+/// found — every row on record classified — which makes it no smaller: a latent
+/// fault is one nobody has met yet.
+#[test]
+fn a_status_nobody_taught_this_is_refused_and_never_counted_as_closed() {
+    assert_eq!(
+        faults::standing_of("closed on the first, with a mutant"),
+        faults::Standing::Unrecognised,
+        "a status in another language must read as unrecognised, never as closed"
+    );
+    assert_eq!(
+        faults::standing_of("**riaperto** il 02/09"),
+        faults::Standing::Unrecognised,
+        "a nuance nobody taught this must be refused, not silently closed"
+    );
+
+    let store = Faults::open(scratch("stato-ignoto")).expect("opening");
+    let refused = store.record(&Draft {
+        happened_on: "01/09".to_owned(),
+        what_happened: "something".to_owned(),
+        how_it_showed: "by running it".to_owned(),
+        what_would_prevent: "this test".to_owned(),
+        status: "half done, half not".to_owned(),
+    });
+    assert!(
+        refused.is_err(),
+        "a status the count cannot read went into the store, and the fault it \
+         describes has already left the open tally without anything failing"
+    );
+
+    // And the half-closed reading is asked before the closed one, because the
+    // second is a prefix of nothing and the first begins with the other's word.
+    assert_eq!(
+        faults::standing_of("**chiuso in parte** il 01/09"),
+        faults::Standing::PartlyClosed,
+        "asking in the other order takes every half-closed row out of the tally"
+    );
+}
+
 /// Every door into the store, not the two that were easy to find.
 ///
 /// There are three ways a cell gets written — `record`, `restore`, `set_status`
