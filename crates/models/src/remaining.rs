@@ -66,7 +66,7 @@ pub struct Remaining {
 /// by hand instead of wrapping the underlying error: a generic `Display` that
 /// echoed a command line or a response body is how a secret ends up in a log,
 /// and a log never gives it back.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum RemainingError {
     /// The credentials file is not there: that engine is not authenticated
     /// here.
@@ -87,6 +87,12 @@ pub enum RemainingError {
     /// It answered something that is not the expected JSON: the channel is
     /// beta, and this is how it will break.
     NotUnderstood,
+}
+
+impl fmt::Debug for RemainingError {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, out)
+    }
 }
 
 impl fmt::Display for RemainingError {

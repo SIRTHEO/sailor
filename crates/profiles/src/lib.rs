@@ -153,13 +153,19 @@ pub fn serialize_store(store: &ProfileStore) -> Result<String, serde_json::Error
 
 /// Why a profile name will not do. Any of these, uncaught, is a security fault:
 /// a name that leaves the profiles directory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ProfileNameError {
     Empty,
     /// Contains `/` or `\`. That alone stops both `../escape` and an absolute
     /// name, which `Path::join` would take as a replacement for the whole path.
     PathSeparator,
     Traversal,
+}
+
+impl fmt::Debug for ProfileNameError {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, out)
+    }
 }
 
 impl fmt::Display for ProfileNameError {
