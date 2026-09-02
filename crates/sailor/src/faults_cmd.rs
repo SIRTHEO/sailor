@@ -52,7 +52,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         return Err(format!(
             "{}\n{}",
             catalogue::say(
-                "cli.faults.not_a_form_of_this_command",
+                "cli.not_a_form_of_this_command",
                 &[("verb", verb), ("forms", &FORMS.join(", "))],
             ),
             usage_text()
@@ -93,10 +93,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "render" => render(&store),
         "import" => import(&store, &loose),
         "check" => check(&store, &loose),
-        other => Err(catalogue::say(
-            "cli.faults.no_such_form",
-            &[("verb", other)],
-        )),
+        other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
 }
 
