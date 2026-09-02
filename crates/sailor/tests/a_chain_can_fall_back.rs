@@ -58,23 +58,15 @@ struct InChain {
 /// pretendere da lui una dichiarazione di esaurimento sarebbe pretendere una
 /// misura che non serve a niente.
 fn engines_in_chains() -> Vec<InChain> {
-    let dir = repository_root().join("flows");
+    // Read from the flows compiled into the binary, not from a directory of the
+    // repository. What the product hands out is what has to hold this rule;
+    // a check that reads our own workshop is green here and false everywhere.
     let mut found = Vec::new();
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|error| panic!("leggere {}: {error}", dir.display()));
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.to_string_lossy().ends_with(".flow.json") {
-            continue;
-        }
-        let text = std::fs::read_to_string(&path).expect("leggere il flusso");
-        let Ok(file) = serde_json::from_str::<serde_json::Value>(&text) else {
+    for (name, text) in flow::system::FLOWS {
+        let Ok(file) = serde_json::from_str::<serde_json::Value>(text) else {
             continue;
         };
-        let flow = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let flow = (*name).to_owned();
         let Some(steps) = file["graph"]["steps"].as_array() else {
             continue;
         };
@@ -160,23 +152,24 @@ fn every_engine_that_is_not_last_in_a_chain_says_how_it_is_exhausted() {
     );
 }
 
-/// **E LA REGOLA NON SI RISPETTA SVUOTANDO LE CATENE.** Ogni motore che dichiara
-/// le proprie parole deve poter continuare a stare in mezzo: se
-/// `cannot_be_a_fallback` cominciasse a rispondere «no» a tutti, la prova qui
-/// sopra resterebbe verde su catene che non ripiegano più.
+/// The rule is not kept by emptying the chains. If `cannot_be_a_fallback`
+/// began answering "no" to everyone, the test above would stay green over
+/// chains that no longer fall back. The canary used to perch on the flows of
+/// this tree; those left the repository, so it asks the shipped descriptors.
 #[test]
 fn an_engine_that_declares_its_words_is_still_allowed_in_the_middle() {
-    let engines = engines_in_chains();
-    let in_the_middle: BTreeSet<String> = engines
-        .iter()
-        .filter(|engine| !engine.last)
-        .map(|engine| engine.tool.clone())
+    let catalog = toolbox::Catalog::load(&[toolbox::descriptor::Source::Builtin]);
+    let allowed: BTreeSet<String> = catalog
+        .live()
+        .into_iter()
+        .filter(|loaded| loaded.descriptor.cannot_be_a_fallback().is_none())
+        .map(|loaded| loaded.descriptor.id.clone())
         .collect();
     assert!(
-        in_the_middle.contains("claude-code") && in_the_middle.contains("codex"),
-        "i due motori che dichiarano come si esauriscono non stanno più in mezzo a \
-         nessuna catena: la regola è stata rispettata togliendo i ripieghi invece \
-         che dichiarandoli. Trovati: {in_the_middle:?}"
+        !allowed.is_empty(),
+        "nessuno strumento spedito può stare in mezzo a una catena: la regola \
+         dice «no» a tutti, e la prova qui sopra è verde perché non ha niente \
+         da guardare"
     );
 }
 

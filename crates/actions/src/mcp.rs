@@ -86,7 +86,7 @@ pub fn register_mcp(registry: &mut flow::ActionRegistry) {
 /// scriverà il proprio prompt senza averlo mai aperto. Uscendo da qui, la regola
 /// entra nel prompt del passo successivo con un rinvio — `{"$from": "/caveat"}`
 /// — e non dipende più dalla memoria di nessuno.
-pub const CAVEAT: &str = "Questa risposta viene da un indice esterno: serve a orientarsi, non a decidere. Un perimetro — chi dipende da cosa, cosa si rompe se tocchi questo — lo decide lo strumento che compila, mai il grafo delle dipendenze dell'indice. Misurato il 28/08/2026: interrogato sull'impatto di «crates/flow/src/graph.rs», l'indice ha risposto «nessun chiamante, niente dipende da questo», mentre quel file ha 493 righe, otto «Cargo.toml» dichiarano il crate e 22 file lo usano. Era un falso orfano, sul file che sta al centro del formato dei flussi.";
+pub const CAVEAT: &str = "This answer comes from an external index: it is for finding your bearings, not for deciding. A blast radius — who depends on what, what breaks if you touch this — is decided by the tool that compiles, never by the index's dependency graph. Measured: asked about the impact of «crates/flow/src/graph.rs», the index answered «no callers, nothing depends on this», while that file has 493 lines, eight «Cargo.toml» declare the crate and 22 files use it. It was a false orphan, on the file at the centre of the flow format.";
 
 /// Gli esiti che un passo può dichiarare di tollerare con `accept`.
 ///
@@ -233,7 +233,7 @@ fn require_preflight(
             return Err(ActionError::new(
                 "invalid_input",
                 format!(
-                    "la verifica «{}» non dice cosa deve provare: un «proves» vuoto è contenuto in qualunque risposta, quindi passerebbe sempre",
+                    "check «{}» does not say what it has to prove: an empty «proves» is contained in any answer, so it would always pass",
                     check.name
                 ),
             ));
@@ -247,7 +247,7 @@ fn require_preflight(
     if project_root.is_empty() {
         return Err(ActionError::new(
             "no_preflight",
-            "il passo non dice di quale cartella parla: un «project_root» vuoto è contenuto in qualunque «proves», e il legame che questo controllo impone diventerebbe una formalità",
+            "the step does not say which directory it is about: an empty «project_root» is contained in any «proves», and the tie this check enforces would become a formality",
         ));
     }
     let ties_to_the_root = checks
@@ -259,7 +259,7 @@ fn require_preflight(
     Err(ActionError::new(
         "no_preflight",
         format!(
-            "nessuna verifica preliminare lega la risposta a «{project_root}»: serve almeno un «check» il cui «proves» contenga quel percorso, oppure un «checks_waived_because» scritto che dica perché questo server non sa niente di cartelle"
+            "no preliminary check ties the answer to «{project_root}»: it needs at least one «check» whose «proves» contains that path, or a written «checks_waived_because» saying why this server knows nothing about directories"
         ),
     ))
 }
@@ -306,11 +306,12 @@ impl Session {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        in_its_own_group(&mut command);
         let mut child = command.spawn().map_err(|error| {
             // Il motivo del sistema operativo, com'è già la regola per
             // `SpawnFailed`: «non si è avviato» da solo manda a cercare un
             // binario assente quando il file c'era e non era eseguibile.
-            format!("«{}» non si è avviato: {error}", server.command)
+            format!("«{}» did not start: {error}", server.command)
         })?;
         let stdin = child.stdin.take();
         let out = child.stdout.take();
@@ -349,7 +350,7 @@ impl Session {
 
     fn say(&mut self, request: &Value) -> Result<(), String> {
         let Some(stdin) = self.stdin.as_mut() else {
-            return Err("lo standard input del server è già chiuso".to_owned());
+            return Err("the server's standard input is already closed".to_owned());
         };
         writeln!(stdin, "{request}").map_err(|error| error.to_string())?;
         stdin.flush().map_err(|error| error.to_string())
@@ -391,6 +392,7 @@ impl Session {
     /// l'unico posto dove un server rotto spiega perché.
     fn close(mut self) -> String {
         self.stdin = None;
+        signal_the_whole_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
         match self.errors.take() {
@@ -403,10 +405,35 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         self.stdin = None;
+        signal_the_whole_group(self.child.id());
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
+
+/// A server starts workers, so it is given a group of its own to lead.
+#[cfg(unix)]
+fn in_its_own_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn in_its_own_group(_command: &mut Command) {}
+
+/// The signal goes to the group, which carries the leader's number: the minus
+/// sign is what tells `kill` so. The twins live in `actions::run_with_timeout`
+/// and `supervisor::child`. Known limit: a worker that calls `setsid` on its
+/// own leaves the group and survives.
+#[cfg(unix)]
+fn signal_the_whole_group(pid: u32) {
+    unsafe {
+        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_the_whole_group(_pid: u32) {}
 
 fn initialize_request() -> Value {
     json!({
@@ -454,15 +481,15 @@ enum Answer {
 fn read_answer(response: Option<&Value>) -> Answer {
     let Some(response) = response else {
         return Answer::Unanswered(
-            "il server non ha risposto a questa domanda entro il tempo dato".to_owned(),
+            "the server did not answer this question within the time given".to_owned(),
         );
     };
     if let Some(error) = response.get("error") {
         let said = error
             .get("message")
             .and_then(Value::as_str)
-            .unwrap_or("errore senza messaggio");
-        return Answer::Unanswered(format!("il server ha rifiutato la domanda: {said}"));
+            .unwrap_or("an error with no message");
+        return Answer::Unanswered(format!("the server refused the question: {said}"));
     }
     let result = response.get("result");
     let refused = result
@@ -503,7 +530,7 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
             if *refused {
                 return (
                     "could_not_look",
-                    format!("«{}» ha risposto con un errore: {text}", check.server_tool),
+                    format!("«{}» answered with an error: {text}", check.server_tool),
                 );
             }
             if text.contains(&check.proves) {
@@ -523,7 +550,7 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
                 return (
                     "could_not_look",
                     format!(
-                        "il server non ha potuto guardare — «{}» nella risposta di «{}»: {text}",
+                        "the server could not look — «{}» in the answer of «{}»: {text}",
                         blinded, check.server_tool
                     ),
                 );
@@ -531,7 +558,7 @@ fn judge(check: &PreflightCheck, answer: &Answer) -> (&'static str, String) {
             (
                 "failed",
                 format!(
-                    "«{}» ha risposto, ma «{}» non compare: {text}",
+                    "«{}» answered, and «{}» does not appear: {text}",
                     check.server_tool, check.proves
                 ),
             )
@@ -571,7 +598,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         if let Err(why) = session.say(request) {
             return Preflight {
                 status: "unreachable",
-                said: format!("non si è potuto parlare col server: {why}"),
+                said: format!("the server could not be spoken to: {why}"),
                 checks: Vec::new(),
                 offered: None,
                 offered_count: None,
@@ -587,7 +614,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     if answers.get(&INITIALIZE_ID).is_none() {
         return Preflight {
             status: "unreachable",
-            said: "il server non ha risposto alla stretta di mano".to_owned(),
+            said: "the server did not answer the handshake".to_owned(),
             checks: Vec::new(),
             offered: None,
             offered_count: None,
@@ -598,7 +625,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
             // Il server c'è e risponde, ma non ha saputo dire cosa offre: non
             // si può affermare né che offra lo strumento né che non lo offra.
             status: "could_not_look",
-            said: "il server risponde alla stretta di mano ma non ha elencato i propri strumenti: non si può dire se offre quello che serve".to_owned(),
+            said: "the server answers the handshake and did not list its own tools: there is no telling whether it offers the one needed".to_owned(),
             checks: Vec::new(),
             offered: None,
             offered_count: None,
@@ -609,7 +636,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         return Preflight {
             status: "tool_not_offered",
             said: format!(
-                "il server risponde, ma non offre «{tool}» a questa sessione. Rispondere e offrire sono due fatti diversi: un elenco esterno che lo dà per connesso non prova che questa sessione abbia lo strumento. Offre invece: {}",
+                "the server answers, and does not offer «{tool}» to this session. Answering and offering are two different facts: an external listing that calls it connected does not prove this session has the tool. What it does offer: {}",
                 if offered.is_empty() { "niente".to_owned() } else { offered.join(", ") }
             ),
             checks: Vec::new(),
@@ -640,13 +667,13 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
     let (status, said) = if blind > 0 {
         (
             "could_not_look",
-            format!("{blind} verifiche preliminari su {} non hanno potuto guardare: dove non si è potuto guardare la risposta è «non lo so», non «no»", checks.len()),
+            format!("{blind} preliminary checks out of {} could not look: where looking was not possible the answer is «I do not know», not «no»", checks.len()),
         )
     } else if refused > 0 {
         (
             "check_failed",
             format!(
-                "{refused} verifiche preliminari su {} dicono di no",
+                "{refused} preliminary checks out of {} say no",
                 checks.len()
             ),
         )
@@ -654,7 +681,7 @@ fn preflight(session: &mut Session, tool: &str, checks: &[PreflightCheck]) -> Pr
         (
             "ready",
             format!(
-                "il server offre «{tool}» e {} verifiche preliminari passano",
+                "the server offers «{tool}» and {} preliminary checks pass",
                 checks.len()
             ),
         )
@@ -807,7 +834,7 @@ impl Action for McpAskAction {
                 refused: true,
             } => (
                 "tool_failed",
-                format!("«{}» ha risposto con un errore: {text}", spec.server_tool),
+                format!("«{}» answered with an error: {text}", spec.server_tool),
                 text.clone(),
             ),
             Answer::Said {
@@ -870,7 +897,7 @@ fn with_stderr(said: &str, stderr: &str) -> String {
     if stderr.trim().is_empty() {
         said.to_owned()
     } else {
-        format!("{said} — il server ha scritto: {}", stderr.trim())
+        format!("{said} — the server wrote: {}", stderr.trim())
     }
 }
 
@@ -1091,7 +1118,7 @@ mod tests {
             .expect_err("uno strumento che il server non offre rompe il passo");
         assert_eq!(error.class, "tool_not_offered");
         assert!(
-            error.said.contains("due fatti diversi"),
+            error.said.contains("two different facts"),
             "il messaggio deve dire perché rispondere e offrire non sono la stessa cosa: {}",
             error.said
         );
@@ -1229,7 +1256,7 @@ mod tests {
             value["caveat"]
                 .as_str()
                 .expect("la regola viaggia con la risposta")
-                .contains("non a decidere"),
+                .contains("not for deciding"),
             "la regola sul perimetro deve uscire insieme alla risposta"
         );
     }
@@ -1399,5 +1426,76 @@ mod tests {
             .expect_err("«ok» non è un fallimento e non si tollera");
         assert_eq!(error.class, "invalid_input");
         assert!(error.said.contains("accept"), "{}", error.said);
+    }
+
+    /// Asks the operating system, with a call the cure does not use: signal
+    /// zero delivers nothing and only reports whether the pid is there.
+    fn still_alive(pid: i32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    /// Closing a server takes what the server started, and returns at once.
+    ///
+    /// The worker inherits stderr, so while it lives the reader never sees the
+    /// end of the pipe and `close` waits for it: signalling the server alone
+    /// does not just leak a process, it blocks the caller for as long as the
+    /// worker runs. Measured at three hundred seconds instead of a fraction.
+    #[test]
+    fn closing_a_server_takes_what_it_started() {
+        let sandbox = Sandbox::new("orphans");
+        let told = sandbox.root.join("worker.pid");
+        let script = sandbox.root.join("with-a-worker.sh");
+        fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\nsleep 300 &\necho $! > {}\nwhile IFS= read -r line; do :; done\n",
+                told.display()
+            ),
+        )
+        .expect("the fake server is written");
+        let spec = ServerSpec {
+            command: "sh".to_owned(),
+            args: vec![script.to_string_lossy().into_owned()],
+            env: BTreeMap::new(),
+            cwd: None,
+        };
+
+        let session = Session::open(&spec, Duration::from_secs(10)).expect("the server starts");
+        let mut worker = 0i32;
+        for _ in 0..100 {
+            if let Ok(text) = fs::read_to_string(&told) {
+                if let Ok(found) = text.trim().parse::<i32>() {
+                    worker = found;
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(worker > 0, "the fake server never reported its worker");
+        assert!(
+            still_alive(worker),
+            "the worker {worker} was gone before the server closed, so this \
+             test would pass without proving anything"
+        );
+
+        let began = Instant::now();
+        session.close();
+        let took = began.elapsed();
+
+        assert!(
+            took < Duration::from_secs(10),
+            "closing took {took:?}: the worker kept the pipe open and the \
+             reader waited for it, so closing a server costs as long as \
+             whatever it started"
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && still_alive(worker) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            !still_alive(worker),
+            "the server is closed and its worker {worker} is still running: \
+             the signal reached the server alone, not the group it leads"
+        );
     }
 }

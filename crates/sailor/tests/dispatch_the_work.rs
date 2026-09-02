@@ -508,7 +508,7 @@ fn an_engine_that_fails_stops_the_chain_instead_of_colouring_it_green() {
     assert_eq!(record.outcome, Some(Outcome::Broke));
     assert_eq!(record.failure_class.as_deref(), Some("engine_exit_error"));
     let said = record.said.clone().unwrap_or_default();
-    assert!(said.contains("codice 3"), "{said}");
+    assert!(said.contains("code 3"), "{said}");
     assert!(said.contains("il-motivo"), "{said}");
     for never_ran in ["verify", "verdict"] {
         assert!(

@@ -72,10 +72,10 @@ fn cmd_list(args: &[String]) -> Result<(), String> {
         // spostare, quindi non c'è nessuna domanda da farle.
         let access = match find_cli(&profile.cli_id) {
             Ok(cli) => access_state(&tools, &probe, cli, &profile.home_dir),
-            Err(reason) => format!("non si sa ({reason})"),
+            Err(reason) => format!("not known ({reason})"),
         };
         println!(
-            "{marker} {} {} -> {} — accesso: {access}",
+            "{marker} {} {} -> {} — access: {access}",
             profile.cli_id,
             profile.name,
             profile.home_dir.display()
@@ -98,14 +98,14 @@ fn access_state(
 ) -> String {
     let Some((tool, bin)) = tools.declared_as_executable(cli.executable) else {
         return format!(
-            "non si sa: «{}» non è su questa macchina, o nessun descrittore lo dichiara",
+            "not known: «{}» is not on this machine, or no descriptor declares it",
             cli.executable
         );
     };
     let Some(recipe) = tools.login_recipe(&tool) else {
         return format!(
-            "non si sa: il descrittore «{tool}» non dichiara come chiedergli se è \
-             autenticato (`login_status`) — nessuno ha guardato"
+            "not known: descriptor «{tool}» does not declare how to ask it whether it \
+             is authenticated (`login_status`) — nobody looked"
         );
     };
     // **LA CASA DI QUESTO PROFILO, NON QUELLA IN FORZA.** È tutta la ragione per
@@ -115,25 +115,25 @@ fn access_state(
     let env = profiles::build_environment(cli, home);
     if env.is_empty() {
         return format!(
-            "non si sa: la casa di «{}» non si sposta con una variabile ({}), quindi \
-             qui non si può interrogare una casa diversa da quella in forza",
+            "not known: the home of «{}» does not move with a variable ({}), so no \
+             home other than the one in force can be questioned here",
             cli.id, cli.home_note
         );
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
-        LoginVerdict::LoggedIn { said } => format!("autenticato («{}»)", one_line(&said)),
+        LoginVerdict::LoggedIn { said } => format!("authenticated («{}»)", one_line(&said)),
         LoginVerdict::LoggedOut { said } => {
-            format!("NON AUTENTICATO («{}»)", one_line(&said))
+            format!("NOT AUTHENTICATED («{}»)", one_line(&said))
         }
         LoginVerdict::NotDeclared => {
-            format!("non si sa: il descrittore «{tool}» dichiara `login_status` a metà")
+            format!("not known: descriptor «{tool}» declares `login_status` by halves")
         }
         LoginVerdict::Unrecognised { said } => format!(
-            "non si sa: ha risposto «{}», che non somiglia a nessuna delle due forme \
-             dichiarate",
+            "not known: it answered «{}», which resembles neither of the two declared \
+             forms",
             one_line(&said)
         ),
-        LoginVerdict::NoAnswer { why } => format!("non si sa: nessuna risposta — {why}"),
+        LoginVerdict::NoAnswer { why } => format!("not known: no answer — {why}"),
     }
 }
 
@@ -150,9 +150,8 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
     };
     let cli = find_cli(cli_id)?;
     let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
-        .map_err(|e| format!("nome di profilo non valido: {e}"))?;
-    std::fs::create_dir_all(&home)
-        .map_err(|e| format!("impossibile creare {}: {e}", home.display()))?;
+        .map_err(|e| format!("not a valid profile name: {e}"))?;
+    std::fs::create_dir_all(&home).map_err(|e| format!("cannot create {}: {e}", home.display()))?;
 
     let mut store = store_io::load_store()?;
     let already_exists = store
@@ -160,7 +159,7 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
         .iter()
         .any(|p| p.cli_id == cli.id && &p.name == name);
     if already_exists {
-        return Err(format!("il profilo {name} esiste già per {}", cli.id));
+        return Err(format!("profile {name} already exists for {}", cli.id));
     }
     store.profiles.push(Profile {
         name: name.clone(),
@@ -181,7 +180,7 @@ fn cmd_switch(args: &[String]) -> Result<(), String> {
         .iter()
         .find(|p| p.cli_id == cli.id && &p.name == name)
         .cloned()
-        .ok_or_else(|| format!("profilo {name} non trovato per {}", cli.id))?;
+        .ok_or_else(|| format!("profile {name} not found for {}", cli.id))?;
 
     if let HomeMechanism::CredentialSymlink { relative_path } = cli.home {
         store_io::apply_symlink_swap(&store_io::home_dir()?, relative_path, &profile.home_dir)?;
@@ -201,7 +200,7 @@ fn cmd_current(args: &[String]) -> Result<(), String> {
     let store = store_io::load_store()?;
     match store.active.get(cli.id) {
         Some(name) => println!("{name}"),
-        None => println!("(nessun profilo attivo)"),
+        None => println!("(no active profile)"),
     }
     Ok(())
 }
@@ -307,7 +306,7 @@ mod tests {
         std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
         let said = access_state(&tools, &probe, cli, &empty);
         assert!(
-            said.contains("NON AUTENTICATO") && said.contains("Not logged in"),
+            said.contains("NOT AUTHENTICATED") && said.contains("Not logged in"),
             "una casa senza credenziali deve vedersi, con le parole del motore: {said}"
         );
 
@@ -316,8 +315,8 @@ mod tests {
         std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
         let said = access_state(&tools, &probe, cli, &full);
         assert!(
-            said.starts_with("autenticato"),
-            "una casa piena deve risultare piena: {said}"
+            said.starts_with("authenticated"),
+            "a full home has to read as full: {said}"
         );
     }
 
@@ -340,13 +339,13 @@ mod tests {
         // sarebbe un controllo che non può che essere rosso, cioè non un
         // controllo.
         assert!(
-            said.starts_with("non si sa"),
-            "un'assenza si dichiara, e si dichiara per prima: {said}"
+            said.starts_with("not known"),
+            "an absence is declared, and declared first: {said}"
         );
         assert!(
-            said.contains("nessuno ha guardato"),
-            "e dice anche perché, o chi legge non sa se rimediare cambiando \
-             profilo o misurando il motore: {said}"
+            said.contains("nobody looked"),
+            "and it says why, or the reader cannot tell whether to fix it by changing \
+             profile or by measuring the engine: {said}"
         );
     }
 }

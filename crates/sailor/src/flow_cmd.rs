@@ -74,7 +74,7 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
         .map(|step| step.id.clone())
         .ok_or_else(|| {
             format!(
-                "il flusso {} non ha un passo di innesco: non c'è dove mettere un mandato",
+                "flow {} has no trigger step: there is nowhere to put a brief",
                 flow.id
             )
         })?;
@@ -88,7 +88,7 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
             Ok(())
         }
         other => Err(format!(
-            "l'ingresso dell'innesco di {} non è un oggetto ma {other}: non so dove mettere il testo",
+            "the trigger input of {} is not an object but {other}: there is nowhere to put the text",
             flow.id
         )),
     }
@@ -114,7 +114,7 @@ fn cost_of(flow: &str) -> Result<String, String> {
     let dir = default_ledger_dir()?;
     let Some(data) = ui::gather::gather(&dir).map_err(|error| error.to_string())? else {
         return Err(format!(
-            "nessun deposito in {}: non è ancora girato niente",
+            "no store in {}: nothing has run yet",
             dir.display()
         ));
     };
@@ -125,7 +125,7 @@ fn cost_of(flow: &str) -> Result<String, String> {
         .iter()
         .filter(|run| run.entity == flow)
         .max_by_key(|run| run.started_at)
-        .ok_or_else(|| format!("il flusso {flow} non è mai girato su questa macchina"))?;
+        .ok_or_else(|| format!("flow {flow} has never run on this machine"))?;
     let view = ui::dashboard::summarize_run(
         run,
         data.steps_by_run
@@ -147,7 +147,7 @@ fn cost_of(flow: &str) -> Result<String, String> {
 fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> String {
     let tokens = &view.tokens;
     let mut report = format!(
-        "corsa {} — flusso {} — {}\npassi: {} ({} andati, {} rotti)\nchiamate: {}",
+        "run {} — flow {} — {}\nsteps: {} ({} went, {} broke)\ncalls: {}",
         view.run_id,
         view.entity,
         view.status,
@@ -173,7 +173,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // viene usato per decidere: questo manderebbe a intervenire nel posto
     // sbagliato con l'aria di una misura.
     if tokens.turns > 0 {
-        let _ = write!(report, " in {} turni", tokens.turns);
+        let _ = write!(report, " in {} turns", tokens.turns);
     }
     let _ = write!(
         report,
@@ -183,7 +183,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     if tokens.total_tokens_only > 0 {
         let _ = write!(
             report,
-            "\ntotali non ripartiti (chi non dichiara i due lati): {}",
+            "\ntotals not split out (those that declare neither side): {}",
             tokens.total_tokens_only
         );
     }
@@ -205,7 +205,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     if tokens.calls_without_tokens > 0 || tokens.calls_without_cost > 0 {
         let _ = write!(
             report,
-            "\nparziale: {} chiamate senza token dichiarati, {} senza costo noto",
+            "\npartial: {} calls with no declared tokens, {} with no known cost",
             tokens.calls_without_tokens, tokens.calls_without_cost
         );
     }
@@ -247,7 +247,7 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // Cosa c'è dentro quella casa non è affare di un rapporto sul consumo.
     let identities = ui::dashboard::identities_of(&view.calls);
     if !identities.is_empty() {
-        report.push_str("\nidentità:");
+        report.push_str("\nidentity:");
         for (identity, how_many) in identities {
             let word = if how_many == 1 {
                 "chiamata"
@@ -423,8 +423,8 @@ fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> 
     seen.iter()
         .filter_map(|name| match prices.knows(name) {
             Known::Priced => None,
-            Known::Absent => Some(format!("{name} (nessuna voce nel listino)")),
-            Known::ListedWithoutPrice => Some(format!("{name} (voce senza prezzi)")),
+            Known::Absent => Some(format!("{name} (no entry in the price list)")),
+            Known::ListedWithoutPrice => Some(format!("{name} (an entry with no prices)")),
         })
         .collect()
 }
@@ -463,7 +463,7 @@ fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Opti
     if unpriced.is_empty() {
         let _ = write!(
             said,
-            "\nmodelli usati dalle corse passate: tutti prezzati ({})",
+            "\nmodels used by past runs: all priced ({})",
             seen.iter().cloned().collect::<Vec<_>>().join(", ")
         );
         return said;
@@ -494,10 +494,9 @@ fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Opti
 /// `sailor flow cap <nome>`: il tetto che c'è, e cosa il deposito ha visto.
 fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
-    let mut report = format!("flusso: {} ({origin})", flow.id);
+    let mut report = format!("flow: {} ({origin})", flow.id);
     match flow.spend_cap_micros {
-        None => report
-            .push_str("\ntetto: nessuno — questo flusso può spendere quanto la corsa richiede"),
+        None => report.push_str("\ncap: none — this flow may spend whatever the run needs"),
         Some(cap) => {
             let _ = write!(
                 report,
@@ -519,7 +518,7 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
 /// in una prova è una variabile d'ambiente globale al processo.
 fn what_the_ledger_saw(seen: &Observed) -> String {
     let mut said = format!(
-        "\nnel deposito: {} corse, di cui {} {} speso qualcosa di noto",
+        "\nin the store: {} runs, of which {} {} spent something known",
         seen.runs,
         seen.costed_runs,
         if seen.costed_runs == 1 { "ha" } else { "hanno" }
@@ -527,8 +526,7 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     if seen.calls_without_cost > 0 {
         let _ = write!(
             said,
-            "\n{} chiamate non hanno dichiarato un costo, e non entrano in nessuna \
-             delle cifre qui sopra",
+            "\n{} calls declared no cost, and enter none of the figures above",
             seen.calls_without_cost
         );
     }
@@ -536,14 +534,14 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     if seen.costed_runs < RUNS_BEFORE_SUGGESTING {
         let _ = write!(
             said,
-            "\nnessun suggerimento: servono almeno {RUNS_BEFORE_SUGGESTING} corse \
-             costate, e {}. Un numero calcolato su meno campioni è un dato \
-             inventato con la faccia di una misura, e chi lo riceve ci appoggia \
-             una decisione",
+            "\nno suggestion: it takes at least {RUNS_BEFORE_SUGGESTING} costed \
+             runs, and {}. A number worked out on fewer samples is a datum \
+             invented with the face of a measurement, and whoever receives it \
+             rests a decision on it",
             match seen.costed_runs {
-                0 => "non ce n'è nessuna".to_owned(),
-                1 => "ce n'è una".to_owned(),
-                many => format!("ce ne sono {many}"),
+                0 => "there is none".to_owned(),
+                1 => "there is one".to_owned(),
+                many => format!("there are {many}"),
             }
         );
         return said;
@@ -559,10 +557,10 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     let suggested = seen.worst_run_micros + seen.dearest_call_micros;
     let _ = write!(
         said,
-        "\nsuggerimento: {suggested} micro ({}) — la corsa più cara osservata \
-         ({}) più la chiamata più cara osservata ({}). Il secondo addendo non è \
-         un margine di sicurezza: è la grana con cui il tetto sa fermarsi, \
-         perché il controllo sta prima di aprire un fronte",
+        "\nsuggestion: {suggested} micro ({}) — the dearest run observed ({}) \
+         plus the dearest call observed ({}). The second term is not a safety \
+         margin: it is the grain at which the cap can stop, because the check \
+         comes before opening a front",
         in_units(suggested),
         in_units(seen.worst_run_micros),
         in_units(seen.dearest_call_micros)
@@ -602,7 +600,7 @@ fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, St
     let before = flow.spend_cap_micros;
     if before == wanted {
         return Ok(format!(
-            "flusso {name} ({}): il tetto era già {}, non ho toccato niente",
+            "flow {name} ({}): the cap was already {}, nothing was touched",
             source.origin,
             said_cap(before)
         ));
@@ -610,7 +608,7 @@ fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, St
     flow.spend_cap_micros = wanted;
     flow::system::save_in(&source.dir, &flow)?;
     Ok(format!(
-        "flusso {name} ({}): tetto {} → {}; scritto in {}",
+        "flow {name} ({}): cap {} → {}; written in {}",
         source.origin,
         said_cap(before),
         said_cap(wanted),
@@ -654,11 +652,10 @@ fn a_flow_i_may_rewrite<'a>(
     let (flow, source) = where_it_lives(sources, name)?;
     if source.is_builtin() {
         return Err(format!(
-            "«{name}» è un flusso di sistema, spedito dentro il binario: non c'è \
-             nessun file da riscrivere. Per cambiarlo scrivi un flusso con lo \
-             stesso nome in casa tua o nel progetto — vince il tuo — e cambia \
-             quello. Non lo faccio io: un flusso comparso da sé è un flusso che \
-             nessuno sa di avere"
+            "«{name}» ships inside the binary: there is no file to rewrite. To \
+             change it, write a flow of the same name in your home or in the \
+             project — yours wins — and change that one. I will not do it for \
+             you: a flow that appeared by itself is a flow nobody knows they have"
         ));
     }
     // **SI CONFRONTANO I DUE NOMI, NON SI CHIEDE SE UN FILE ESISTE.** Qui c'era
@@ -731,14 +728,14 @@ const HEAVY: &str = "pesante";
 /// cambiato.
 fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
     let Some(schedule) = schedule else {
-        return format!("{NO_SCHEDULE} — parte solo quando qualcuno lo chiede");
+        return format!("{NO_SCHEDULE} — it starts only when somebody asks");
     };
     let when = match schedule.recurrence {
         flow::Recurrence::EverySeconds { seconds } => {
-            format!("ogni {seconds}s dall'ultima corsa")
+            format!("every {seconds}s from the last run")
         }
         flow::Recurrence::DailyAt { hour, minute } => {
-            format!("una volta al giorno, dalle {hour:02}:{minute:02} locali")
+            format!("once a day, from {hour:02}:{minute:02} local")
         }
     };
     let weight = match schedule.weight {
@@ -748,7 +745,7 @@ fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
     let perimeter = if schedule.perimeter.is_empty() {
         // Vuoto è «non dichiarato», che non è «nessun limite»: chi legge deve
         // poter distinguere i due, e la parola lo dice.
-        "non dichiarato".to_owned()
+        "not declared".to_owned()
     } else {
         schedule.perimeter.join(", ")
     };
@@ -806,7 +803,7 @@ fn weight_from(word: &str) -> Result<flow::Weight, String> {
         LIGHT => Ok(flow::Weight::Light),
         HEAVY => Ok(flow::Weight::Heavy),
         other => Err(format!(
-            "«{other}» non è un peso: le parole sono «{LIGHT}» e «{HEAVY}»"
+            "«{other}» is not a weight: the words are «{LIGHT}» and «{HEAVY}»"
         )),
     }
 }
@@ -815,7 +812,7 @@ fn weight_from(word: &str) -> Result<flow::Weight, String> {
 fn schedule_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
     Ok(format!(
-        "flusso: {} ({origin})\ninnesco: {}",
+        "flow: {} ({origin})\ntrigger: {}",
         flow.id,
         said_schedule(flow.schedule.as_ref())
     ))
@@ -884,7 +881,7 @@ fn set_schedule(
 
     if flow.schedule == wanted {
         return Ok(format!(
-            "flusso {name} ({}): l'innesco era già {before}, non ho toccato niente",
+            "flow {name} ({}): the trigger was already {before}, nothing was touched",
             source.origin
         ));
     }
@@ -892,7 +889,7 @@ fn set_schedule(
     let after = said_schedule(flow.schedule.as_ref());
     flow::system::save_in(&source.dir, &flow)?;
     Ok(format!(
-        "flusso {name} ({}): innesco\n  da: {before}\n  a:  {after}\nscritto in {}",
+        "flow {name} ({}): trigger\n  from: {before}\n  to:   {after}\nwritten in {}",
         source.origin,
         source.dir.display()
     ))
@@ -915,7 +912,7 @@ fn where_it_lives<'a>(
             Some(Ok(flow)) => return Ok((flow, source)),
             Some(Err(reason)) => {
                 return Err(format!(
-                    "il flusso {name} ({}) non si carica, quindi non lo riscrivo: {reason}",
+                    "flow {name} ({}) does not load, so it is not rewritten: {reason}",
                     source.origin
                 ))
             }
@@ -961,15 +958,15 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
     let known = known_flows(sources);
     match known.iter().find(|(known, _, _)| known == name) {
         Some((_, origin, Ok(flow))) => Ok((flow.clone(), origin)),
-        Some((_, origin, Err(reason))) => Err(format!(
-            "il flusso {name} ({origin}) non si carica: {reason}"
-        )),
+        Some((_, origin, Err(reason))) => {
+            Err(format!("flow {name} ({origin}) does not load: {reason}"))
+        }
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
             Err(format!(
-                "nessun flusso si chiama {name}; quelli che vedo sono: {}",
+                "no flow is called {name}; the ones in sight are: {}",
                 if names.is_empty() {
-                    "nessuno".to_owned()
+                    "none".to_owned()
                 } else {
                     names.join(", ")
                 }
@@ -982,7 +979,7 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
 /// dice dove ha cercato è indistinguibile da un guasto.
 fn nothing_found(sources: &[FlowSource]) -> String {
     format!(
-        "nessun flusso trovato. Guardato in:\n  {}",
+        "no flow found. Looked in:\n  {}",
         sources
             .iter()
             .map(|source| format!("{}: {}", source.origin, source.dir.display()))
@@ -1096,8 +1093,8 @@ fn resume_run(run_id: &str) -> Result<String, String> {
 fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
     let header = ledger
         .run_header(run_id)
-        .map_err(|error| format!("non riesco a leggere la corsa {run_id}: {error}"))?
-        .ok_or_else(|| format!("nessuna corsa si chiama {run_id} in questo deposito"))?;
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?
+        .ok_or_else(|| format!("no run is called {run_id} in this store"))?;
     let registry = default_registry(
         Some(ledger.clone()),
         Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
@@ -1138,13 +1135,13 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
             processes: &probe,
             clock: &mut clock,
         })
-        .map_err(|error| format!("non riesco a riconciliare la corsa {run_id}: {error}"))?;
+        .map_err(|error| format!("cannot reconcile run {run_id}: {error}"))?;
 
-    let mut report = format!("corsa {run_id} — flusso {}", flow.id);
+    let mut report = format!("run {run_id} — flow {}", flow.id);
     if !reconciled.still_running.is_empty() {
         let _ = write!(
             report,
-            "\ntenuti, la scadenza non è passata: {}",
+            "\nheld, the deadline has not passed: {}",
             reconciled.still_running.join(", ")
         );
     }
@@ -1158,14 +1155,14 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
     if !reconciled.closed_as_waiting.is_empty() {
         let _ = write!(
             report,
-            "\nlasciati a una persona: {}",
+            "\nleft to a person: {}",
             reconciled.closed_as_waiting.join(", ")
         );
     }
 
     let execution = InProcessExecutor
         .execute(&flow.graph, request, ledger, &registry, &SystemClock)
-        .map_err(|error| format!("la ripresa della corsa {run_id} è fallita: {error}"))?;
+        .map_err(|error| format!("resuming run {run_id} failed: {error}"))?;
 
     let (status, exit_ok) = execution_status(&execution);
     let why = registry::stopped_by_cap(&execution);
@@ -1203,9 +1200,9 @@ fn waiting_report() -> String {
         .and_then(|ledger| ledger.waiting_runs().ok())
         .unwrap_or_default();
     if waiting.is_empty() {
-        return "nessuna corsa in attesa di qualcuno".to_owned();
+        return "no run is waiting for anybody".to_owned();
     }
-    let mut report = format!("{} corse aspettano qualcuno:", waiting.len());
+    let mut report = format!("{} runs are waiting for somebody:", waiting.len());
     for run in waiting {
         let _ = write!(
             report,
@@ -1288,7 +1285,11 @@ fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
             // A beat that stopped at the first broken flow would let one
             // failure hold back every other schedule on the machine.
             Err(complaint) => {
-                let _ = writeln!(report, "{name}\tbroke\t{}", complaint.lines().next().unwrap_or(""));
+                let _ = writeln!(
+                    report,
+                    "{name}\tbroke\t{}",
+                    complaint.lines().next().unwrap_or("")
+                );
             }
         }
     }
@@ -1331,17 +1332,17 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             due += 1;
             "DOVUTO"
         } else {
-            "non ancora"
+            "not yet"
         };
         let when = match last_run {
-            Some(seconds) => format!("ultima corsa {} minuti fa", (now - seconds) / 60),
+            Some(seconds) => format!("last run {} minutes ago", (now - seconds) / 60),
             None => "mai girato".to_owned(),
         };
         let _ = writeln!(report, "{}\t{verdict}\t{when}", flow.id);
     }
     let _ = write!(
         report,
-        "{due} dovuti adesso; {unplanned} senza pianificazione, che partono solo a mano\n{}",
+        "{due} due now; {unplanned} with no schedule, which start by hand only\n{}",
         waiting_report()
     );
     Ok(report)
@@ -1361,7 +1362,7 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
             Ok(flow) => {
                 let _ = writeln!(
                     report,
-                    "{}\t{} passi\t{origin}\t{}",
+                    "{}\t{} steps\t{origin}\t{}",
                     flow.id,
                     flow.graph.steps().len(),
                     flow.description
@@ -3213,7 +3214,7 @@ mod tests {
         let nowhere: Vec<FlowSource> = Vec::new();
         let said = dispatch(&["tick".to_owned()], &nowhere)
             .expect("«tick» must reach its own arm, not the usage error");
-        assert!(said.contains("nessun flusso trovato"), "{said}");
+        assert!(said.contains("no flow found"), "{said}");
     }
 
     /// A beat with nothing due must still say so. The relay this replaces
@@ -3563,7 +3564,7 @@ mod tests {
         let refused = put_mandate(&mut flow, "un incarico").expect_err("non deve accettarlo");
 
         assert!(
-            refused.contains("non ha un passo di innesco"),
+            refused.contains("has no trigger step"),
             "e dice perché: {refused}"
         );
     }
@@ -3859,7 +3860,7 @@ mod tests {
         }])
         .expect("elencare i flussi");
 
-        assert!(report.contains("prova\t1 passi\tdi prova"), "{report}");
+        assert!(report.contains("prova\t1 steps\tdi prova"), "{report}");
         assert!(
             report.contains("rotto\tdi prova\tnon caricabile:"),
             "{report}"
@@ -4297,16 +4298,16 @@ mod tests {
 
         assert!(
             !said.contains("prezzato ("),
-            "un modello prezzato non si segnala: {said}"
+            "a priced model is not flagged: {said}"
         );
         assert!(
-            said.contains("mai-visto (nessuna voce nel listino)"),
+            said.contains("mai-visto (no entry in the price list)"),
             "{said}"
         );
-        assert!(said.contains("a-meta (voce senza prezzi)"), "{said}");
+        assert!(said.contains("a-meta (an entry with no prices)"), "{said}");
         assert!(
             said.contains("sconosciuto"),
-            "e dice cosa gli succede: {said}"
+            "and it says what happens to it: {said}"
         );
     }
 
@@ -4317,8 +4318,8 @@ mod tests {
     fn when_everything_is_priced_the_report_says_so_instead_of_falling_silent() {
         let said = what_is_priced(&a_small_price_list(), Some(&names(&["prezzato"])), None);
 
-        assert!(said.contains("tutti prezzati"), "{said}");
-        assert!(!said.contains("nessuna voce"), "{said}");
+        assert!(said.contains("all priced"), "{said}");
+        assert!(!said.contains("no entry"), "{said}");
     }
 
     /// **«MAI GIRATO QUI» E «NON HO POTUTO GUARDARE» SONO DUE FRASI DIVERSE.**
@@ -4354,7 +4355,7 @@ mod tests {
     fn a_flow_that_never_ran_here_is_told_that_nothing_is_known_yet() {
         let said = what_is_priced(&a_small_price_list(), Some(&BTreeSet::new()), None);
 
-        assert!(!said.contains("tutti prezzati"), "{said}");
+        assert!(!said.contains("all priced"), "{said}");
         assert!(said.contains("mai girato"), "{said}");
     }
 
@@ -4456,7 +4457,7 @@ mod tests {
         let said = spending_report(&view, &a_small_price_list());
 
         assert!(
-            said.contains("mai-visto (nessuna voce nel listino)"),
+            said.contains("mai-visto (no entry in the price list)"),
             "{said}"
         );
         assert!(
@@ -4503,7 +4504,7 @@ mod tests {
 
         let said = spending_report(&view, &a_small_price_list());
 
-        assert!(said.contains("identità:"), "{said}");
+        assert!(said.contains("identity:"), "{said}");
         assert!(
             said.contains("profile codex/lavoro — home /case/codex/lavoro — 2 chiamate"),
             "{said}"
@@ -4540,11 +4541,14 @@ mod tests {
 
         let said = what_the_ledger_saw(&two);
 
-        assert!(said.contains("nessun suggerimento"), "{said}");
-        // La riga del suggerimento comincia a capo: cercare «suggerimento: »
-        // senza l'a-capo troverebbe anche «nessun suggerimento: ».
-        assert!(!said.contains("\nsuggerimento: "), "{said}");
-        assert!(said.contains("ce ne sono 2"), "e dice cosa c'è: {said}");
+        assert!(said.contains("no suggestion"), "{said}");
+        // The suggestion line starts on a new line: looking for «suggestion: »
+        // without the newline would also find «no suggestion: ».
+        assert!(!said.contains("\nsuggestion: "), "{said}");
+        assert!(
+            said.contains("there are 2"),
+            "and it says what is there: {said}"
+        );
     }
 
     /// **CON TRE, IL SUGGERIMENTO È LA PEGGIORE PIÙ LA CHIAMATA PIÙ CARA.**
@@ -4562,8 +4566,8 @@ mod tests {
         let said = what_the_ledger_saw(&three);
 
         // Peggiore corsa 700, chiamata più cara 400: 1100.
-        assert!(said.contains("\nsuggerimento: 1100 micro"), "{said}");
-        assert!(!said.contains("nessun suggerimento"), "{said}");
+        assert!(said.contains("\nsuggestion: 1100 micro"), "{said}");
+        assert!(!said.contains("no suggestion"), "{said}");
     }
 
     /// **UNA CORSA CHE NON HA SPESO NON È UN CAMPIONE.**
@@ -4596,7 +4600,7 @@ mod tests {
 
         let error = set_cap(&sources, shipped, "1000000").expect_err("un flusso di sistema");
 
-        assert!(error.contains("di sistema"), "{error}");
+        assert!(error.contains("ships inside the binary"), "{error}");
         assert!(
             entries_of(&home.0).is_empty(),
             "non deve essere comparso nessun file in casa: {:?}",
@@ -4709,7 +4713,7 @@ mod tests {
         let said =
             set_schedule(&sources, "prova", "3600s", Some(LIGHT)).expect("l'innesco si scrive");
 
-        assert!(said.contains("ogni 3600s"), "{said}");
+        assert!(said.contains("every 3600s"), "{said}");
         let after = written_flow(&home.0, "prova");
         assert_eq!(
             after.schedule,
@@ -4867,7 +4871,7 @@ mod tests {
         let error = set_schedule(&sources, shipped, "3600s", Some(LIGHT))
             .expect_err("un flusso di sistema");
 
-        assert!(error.contains("di sistema"), "{error}");
+        assert!(error.contains("ships inside the binary"), "{error}");
         assert!(
             entries_of(&home.0).is_empty(),
             "non deve essere comparso nessun file in casa: {:?}",
@@ -4956,11 +4960,11 @@ mod tests {
         set_schedule(&sources, "prova", "300s", Some(HEAVY)).expect("si mette");
 
         let after = schedule_of(&sources, "prova").expect("si rilegge");
-        assert!(after.contains("ogni 300s"), "{after}");
+        assert!(after.contains("every 300s"), "{after}");
         assert!(after.contains(HEAVY), "{after}");
         assert!(
-            after.contains("non dichiarato"),
-            "il perimetro vuoto lo dice: {after}"
+            after.contains("not declared"),
+            "an empty scope says so: {after}"
         );
     }
 
@@ -5268,10 +5272,7 @@ mod tests {
             let refused = one_flow(&sources, name).expect_err(&format!(
                 "«{name}» non è un flusso di questa macchina e non deve aprirsi"
             ));
-            assert!(
-                refused.contains("nessun flusso si chiama"),
-                "«{name}»: {refused}"
-            );
+            assert!(refused.contains("no flow is called"), "«{name}»: {refused}");
         }
         assert!(
             one_flow(&sources, "buono").is_ok(),
@@ -5289,7 +5290,7 @@ mod tests {
         for (name, _) in flow::system::FLOWS {
             assert!(report.contains(name), "manca «{name}» in:\n{report}");
         }
-        assert!(report.contains("di sistema"), "{report}");
+        assert!(report.contains("built in"), "{report}");
     }
 
     /// **IL TOTALE DI UNA CORSA È QUELLO DELLE SUE CHIAMATE, NON UNO ZERO.**

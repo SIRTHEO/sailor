@@ -332,7 +332,7 @@ impl Action for WorkClaimAction {
                 .map(|c| {
                     format!(
                         "{} ({})",
-                        c["agent"].as_str().unwrap_or("senza nome"),
+                        c["agent"].as_str().unwrap_or("with no name"),
                         c["kind"].as_str().unwrap_or("?")
                     )
                 })
