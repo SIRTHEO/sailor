@@ -26,6 +26,7 @@
 //! dentro la finestra sarebbe un motore che nessuno può provare senza aprirla.
 
 pub mod bridge;
+pub mod host;
 pub mod inbox;
 pub mod mandate;
 pub mod pty;

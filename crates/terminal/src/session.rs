@@ -16,11 +16,14 @@
 //! `a_routed_request_reaches_the_trigger` fa esattamente questo, ed è lì che si
 //! vede il collegamento completo.
 
+use crate::inbox::{self, Inbox};
 use crate::pty::{Pty, PtyError, Size};
 use crate::routing::{PathLookup, Routed, Router};
+use crate::tally::{self, Counters};
 use crate::{Catalog, Ending, Output, Workspace};
 use std::ffi::OsString;
 use std::io::Read;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -68,6 +71,9 @@ pub struct Terminal {
     pty: Pty,
     router: Arc<Router>,
     closed: Mutex<bool>,
+    /// The bytes moved so far, each direction on its own: the number the relay
+    /// reads from disk, kept here too so a list can show it without the disk.
+    counters: Counters,
 }
 
 impl Terminal {
@@ -87,6 +93,20 @@ impl Terminal {
         self.pty.process_id()
     }
 
+    /// The tty the program inside reports as its own, under its short name.
+    ///
+    /// **THE ANCHOR OF A TAB, AND NOT A GUESS.** A product name or a title read
+    /// out of the output would name the wrong session the day two run the
+    /// same program; the device is what the tracking store already keys on.
+    pub fn tty(&self) -> &str {
+        self.pty.tty()
+    }
+
+    /// How many bytes have crossed this terminal so far, both ways.
+    pub fn moved(&self) -> u64 {
+        self.counters.total()
+    }
+
     /// **LA RIGA CHE L'UTENTE HA SCRITTO, GUARDATA PRIMA DI ESSERE ESEGUITA.**
     ///
     /// Se è un comando, ci finisce dentro col ritorno a capo, come se fosse
@@ -99,7 +119,7 @@ impl Terminal {
         if let Routed::Command { line, .. } = &decision {
             let mut typed = line.as_bytes().to_vec();
             typed.push(b'\n');
-            self.pty.write(&typed)?;
+            self.press(&typed)?;
         }
         Ok(decision)
     }
@@ -112,7 +132,11 @@ impl Terminal {
     /// e passarlo di qui vorrebbe dire farlo esaminare da un elenco di regole
     /// che non lo riguarda.
     pub fn press(&self, bytes: &[u8]) -> Result<(), PtyError> {
-        self.pty.write(bytes)
+        self.pty.write(bytes)?;
+        self.counters
+            .typed
+            .fetch_add(bytes.len() as u64, Ordering::Relaxed);
+        Ok(())
     }
 
     pub fn resize(&self, size: Size) -> Result<(), PtyError> {
@@ -132,6 +156,8 @@ impl Terminal {
             workspace_name: self.workspace.name.clone(),
             alive: self.alive(),
             process_id: self.process_id(),
+            device: self.tty().to_owned(),
+            moved: self.moved(),
         }
     }
 }
@@ -146,7 +172,7 @@ impl Terminal {
 /// forma in cui il contratto li scrive e in cui la finestra li legge; restano
 /// identificatori inglesi da tutte e due le parti, che è ciò che `AGENTS.md`
 /// chiede.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
     pub id: String,
@@ -154,6 +180,10 @@ pub struct Summary {
     pub workspace_name: String,
     pub alive: bool,
     pub process_id: u32,
+    /// The tty of the program inside, short form: what a tab is anchored on.
+    pub device: String,
+    /// Bytes moved so far, both ways: the same number `terminal list` prints.
+    pub moved: u64,
 }
 
 /// I terminali aperti da questo processo.
@@ -168,6 +198,8 @@ pub struct Terminals {
     open: Mutex<Vec<Arc<Terminal>>>,
     router: Arc<Router>,
     next: AtomicU64,
+    /// Where each terminal's letterbox and count go, when they go anywhere.
+    mailroom: Option<PathBuf>,
 }
 
 impl Terminals {
@@ -191,7 +223,21 @@ impl Terminals {
             open: Mutex::new(Vec::new()),
             router,
             next: AtomicU64::new(1),
+            mailroom: None,
         }
+    }
+
+    /// From here on every terminal opened registers its tty and its count the
+    /// way `sailor terminal run` does: a letterbox at `<mailroom>/<tty>.sock`
+    /// and a count at `<mailroom>/<tty>.seen`, so a flow can type into it and
+    /// `terminal list` can say how full it is.
+    pub fn with_mailroom(mut self, mailroom: PathBuf) -> Terminals {
+        self.mailroom = Some(mailroom);
+        self
+    }
+
+    pub fn mailroom(&self) -> Option<&PathBuf> {
+        self.mailroom.as_ref()
     }
 
     pub fn router(&self) -> &Arc<Router> {
@@ -240,7 +286,12 @@ impl Terminals {
             pty,
             router: Arc::clone(&self.router),
             closed: Mutex::new(false),
+            counters: Counters::new(),
         });
+        let registered = match &self.mailroom {
+            Some(mailroom) => Some(register(&terminal, mailroom)?),
+            None => None,
+        };
         let draining = Arc::clone(&terminal);
         std::thread::spawn(move || {
             let mut buffer = [0u8; 8192];
@@ -250,7 +301,13 @@ impl Terminals {
                     // stato detto: consegnarlo farebbe scrivere una riga a chi
                     // guarda per un fatto che non è accaduto.
                     Ok(0) => break,
-                    Ok(read) => output.chunk(&buffer[..read]),
+                    Ok(read) => {
+                        draining
+                            .counters
+                            .shown
+                            .fetch_add(read as u64, Ordering::Relaxed);
+                        output.chunk(&buffer[..read]);
+                    }
                     // Un segnale arrivato durante la lettura non è la fine
                     // dell'uscita, e trattarlo così troncherebbe il testo di un
                     // terminale sano.
@@ -261,6 +318,9 @@ impl Terminals {
                     // chiuso normalmente.
                     Err(_) => break,
                 }
+            }
+            if let Some(registered) = registered {
+                registered.withdraw();
             }
             output.ended(how_it_ended(&draining.pty));
         });
@@ -320,6 +380,50 @@ impl Drop for Terminals {
     fn drop(&mut self) {
         self.close_all();
     }
+}
+
+/// The letterbox and the count of one terminal, while it lives.
+struct Registered {
+    letterbox: inbox::Closer,
+    recording: tally::Recording,
+    seen: PathBuf,
+}
+
+impl Registered {
+    /// Takes both away: a terminal that has ended answers nobody, and a count
+    /// left behind would read as a session still there to be measured.
+    fn withdraw(self) {
+        self.letterbox.close();
+        self.recording.stop();
+        let _ = std::fs::remove_file(&self.seen);
+    }
+}
+
+/// Opens the letterbox and starts the count, keyed on the terminal's own tty.
+///
+/// The letterbox is named after the terminal the program inside sees, which
+/// is the one the tracking store records: keying on anything else would leave
+/// whoever reads that store knocking at an address nobody holds.
+fn register(terminal: &Arc<Terminal>, mailroom: &std::path::Path) -> Result<Registered, PtyError> {
+    let tty = terminal.tty();
+    let letterbox = Inbox::open(mailroom.join(format!("{tty}.sock"))).map_err(|error| {
+        let _ = terminal.close();
+        PtyError::NotRegistered(error)
+    })?;
+    let closer = letterbox.closer();
+    let typing = Arc::clone(terminal);
+    std::thread::spawn(move || {
+        letterbox.serve(|bytes| {
+            let _ = typing.press(bytes);
+        });
+    });
+    let seen = mailroom.join(format!("{tty}.seen"));
+    let recording = terminal.counters.recorded_into(seen.clone());
+    Ok(Registered {
+        letterbox: closer,
+        recording,
+        seen,
+    })
 }
 
 /// Quanto si insiste a chiedere com'è finito, dopo che l'uscita è finita.

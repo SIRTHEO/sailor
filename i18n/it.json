@@ -141,6 +141,8 @@
   "cli.terminal.form.reset": "svuota una sessione in corso come dice il suo descrittore",
   "cli.terminal.form.mandate": "lascia il lavoro a chi viene dopo",
   "cli.terminal.form.list": "in quali terminali si può battere, e quanto sono pieni",
+  "cli.terminal.form.host": "tiene i terminali della finestra, così le sopravvivono",
+  "cli.terminal.host_purpose": "tiene i terminali che la finestra ha aperto",
   "cli.terminal.mandate_left": "mandato lasciato per {tty}",
   "cli.terminal.no_reset_declared": "«{cli}» non dichiara come si svuota una sua sessione in corso. Nessuno l'ha misurato, che non è la stessa cosa che sia impossibile: aggiungi `reset_context` al suo descrittore invece di indovinare una riga qui",
   "cli.terminal.no_store": "non so dire dove sta il deposito",
