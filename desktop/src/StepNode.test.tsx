@@ -431,7 +431,7 @@ describe("which node is the one being looked at", () => {
 
 /**
  * WHAT COULD FOLLOW THIS, WITHOUT A DRAG. Pointing beats dragging on both time
- * and errors, and a gesture with no non-drag path fails WCAG 2.2 SC 2.5.7. The
+ * and errors, and a gesture reachable only by dragging fails WCAG 2.2 SC 2.5.7.
  * button opens the same menu the wire opens, so there is one loop and two ways
  * into it.
  */

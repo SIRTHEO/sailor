@@ -25,7 +25,7 @@ export const StepUsageContext = createContext<Map<string, StepUsage>>(new Map())
 /**
  * How a node asks for the menu of what could follow it — the same menu the wire
  * opens, reachable by pointing. Dragging is slower and three times as
- * error-prone, and a gesture with no non-drag path fails WCAG 2.2 SC 2.5.7.
+ * error-prone, and a gesture reachable only by dragging fails WCAG 2.2 SC 2.5.7.
  * Null when nobody listens: the node then draws no button at all.
  */
 export const WireContext = createContext<((stepId: string, flowName: string, at: { x: number; y: number }) => void) | null>(
