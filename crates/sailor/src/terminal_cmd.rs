@@ -5,6 +5,7 @@
 //! for acting: nothing can be typed into a terminal nobody owns. Here Sailor
 //! owns the descriptor, so the emulator never has to be recognised.
 
+use crate::Form;
 use sessions::fullness::{self, Model};
 use std::ffi::OsStr;
 use std::fs::File;
@@ -20,12 +21,27 @@ use terminal::pty::Pty;
 use terminal::tally::{self, Tally};
 use terminal::Workspace;
 
-pub const USAGE: &[&str] = &[
-    "sailor terminal run [--store <dir>] -- <cli> [args...]   runs a command line in a terminal Sailor owns",
-    "sailor terminal press --tty <name> --text <line> [--store <dir>]   types a line into a terminal Sailor holds",
-    "sailor terminal reset --tty <name> --cli <id> [--store <dir>]   empties a running session the way its descriptor says",
-    "sailor terminal mandate [--tty <name>] [--store <dir>]   < text   leaves the work for whoever comes next",
-    "sailor terminal list [--ceiling <tokens>] [--store <dir>]   which terminals can be typed into, and how full",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor terminal run [--store <dir>] -- <cli> [args...]",
+        says_key: "cli.terminal.form.run",
+    },
+    Form {
+        form: "sailor terminal press --tty <name> --text <line> [--store <dir>]",
+        says_key: "cli.terminal.form.press",
+    },
+    Form {
+        form: "sailor terminal reset --tty <name> --cli <id> [--store <dir>]",
+        says_key: "cli.terminal.form.reset",
+    },
+    Form {
+        form: "sailor terminal mandate [--tty <name>] [--store <dir>] < text",
+        says_key: "cli.terminal.form.mandate",
+    },
+    Form {
+        form: "sailor terminal list [--ceiling <tokens>] [--store <dir>]",
+        says_key: "cli.terminal.form.list",
+    },
 ];
 
 const FORMS: &[&str] = &["run", "press", "reset", "mandate", "list"];
@@ -66,7 +82,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
 }
 
 fn usage_text() -> String {
-    USAGE.join("\n")
+    crate::forms_as_lines(USAGE).join("\n")
 }
 
 /// Where the letterboxes live: beside the store, unless told otherwise.
@@ -502,6 +518,7 @@ mod tests {
     fn every_form_the_usage_promises_is_accepted() {
         for line in USAGE {
             let promised = line
+                .form
                 .split_whitespace()
                 .nth(2)
                 .expect("every usage line names its own form");

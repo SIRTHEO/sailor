@@ -4,17 +4,36 @@
 //! the last row, and two branches do not see each other. Here the store hands
 //! out the number, and there is one store.
 
+use crate::Form;
 use faults::{Draft, Fault, Faults};
 use std::path::PathBuf;
 
 /// The forms of `sailor faults`, one per line.
-pub const USAGE: &[&str] = &[
-    "sailor faults list      [--open] [--json]   the faults on record",
-    "sailor faults add       < fault.json        record a fault; the store gives it a number",
-    "sailor faults status <n> <text>             change a fault's status",
-    "sailor faults render    [--file <md>]       write the table out, for whoever reads it that way",
-    "sailor faults import    <file.md>           bring in a hand-written table, once",
-    "sailor faults check     <file.md>           the store against the table; non-zero if they differ",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor faults list [--open] [--json]",
+        says_key: "cli.faults.form.list",
+    },
+    Form {
+        form: "sailor faults add < fault.json",
+        says_key: "cli.faults.form.add",
+    },
+    Form {
+        form: "sailor faults status <n> <text>",
+        says_key: "cli.faults.form.status",
+    },
+    Form {
+        form: "sailor faults render [--file <md>]",
+        says_key: "cli.faults.form.render",
+    },
+    Form {
+        form: "sailor faults import <file.md>",
+        says_key: "cli.faults.form.import",
+    },
+    Form {
+        form: "sailor faults check <file.md>",
+        says_key: "cli.faults.form.check",
+    },
 ];
 
 const FORMS: &[&str] = &["list", "add", "status", "render", "import", "check"];
@@ -25,7 +44,7 @@ fn usage_text() -> String {
     format!(
         "{} {}",
         catalogue::say("cli.usage_heading", &[]),
-        USAGE.join("\n       ")
+        crate::forms_as_lines(USAGE).join("\n       ")
     )
 }
 
