@@ -43,7 +43,39 @@ function declared(): Set<string> {
   return names;
 }
 
+/**
+ * Bare `data-…` attributes are pure visual markers, so one the sheet never
+ * names reaches nobody. Those written with a value (`data-here={…}`) are left
+ * alone: they also serve tests as handles.
+ */
+function bareMarkers(): Map<string, Set<string>> {
+  const byFile = new Map<string, Set<string>>();
+  for (const [path, text] of Object.entries(sources)) {
+    const names = new Set<string>();
+    for (const match of (text as string).matchAll(/\s(data-[a-z-]+)(?=[\s/>])/g)) names.add(match[1]);
+    if (names.size > 0) byFile.set(path, names);
+  }
+  return byFile;
+}
+
 describe("the sheet and the screens", () => {
+  test("A MARK WITH NO RULE BEHIND IT REACHES NOBODY", () => {
+    const sheet = stylesheetSource;
+    const marks = bareMarkers();
+
+    // THE CONTROL FIRST: no marker parsed would make the loop below vacuous.
+    expect([...marks.values()].reduce((n, set) => n + set.size, 0),
+      "no bare data- marker parsed out of the components").toBeGreaterThan(0);
+
+    const unseen: string[] = [];
+    for (const [path, names] of marks) {
+      for (const name of names) {
+        if (!sheet.includes(`[${name}]`)) unseen.push(`${path}: ${name}`);
+      }
+    }
+    expect(unseen, "markers written on an element that no rule ever looks at").toEqual([]);
+  });
+
   test("EVERY CLASS THE WINDOW WEARS IS ONE THE SHEET DRESSES", () => {
     const inSheet = declared();
     const inCode = used();
