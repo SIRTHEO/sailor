@@ -472,6 +472,90 @@ pub struct ResetContext {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// The moments Sailor needs to hear about, in Sailor's own words.
+///
+/// Named here because they are what Sailor needs, not what any one product
+/// offers. A command line maps them onto its own event names, and stays silent
+/// about the ones it cannot report.
+pub const MOMENTS: &[&str] = &["session_start", "alive", "asked", "compacting"];
+
+/// How a settings file is written, because grafting has to read it back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileFormat {
+    #[default]
+    Json,
+    Toml,
+}
+
+/// Where a command line keeps a file: a variable, and where to look without it.
+///
+/// **NEITHER HALF IS ENOUGH ALONE.** `CODEX_HOME` is unset in a plain shell and
+/// points elsewhere under a host that declares it — so a wired path is wrong in
+/// the second case and a bare variable name in the first. Both, and the
+/// fallback below the home is never empty.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct HooksFile {
+    /// The environment variable holding the root, when this line has one.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub root_var: String,
+    /// The path below that variable, when it is set.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub below_root: String,
+    /// Where to look when it is not: below the home.
+    pub below_home: String,
+    #[serde(default)]
+    pub format: FileFormat,
+    /// The key the hooks sit under, nested where a line nests them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key: Vec<String>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+impl HooksFile {
+    /// The file itself, given what the environment says. Both values are
+    /// arguments rather than read here, so the choice can be tested without a
+    /// machine that happens to declare one of them.
+    pub fn path(&self, root: Option<&str>, home: &str) -> Option<PathBuf> {
+        match root.filter(|value| !value.is_empty()) {
+            Some(root) if !self.below_root.is_empty() => {
+                Some(Path::new(root).join(&self.below_root))
+            }
+            _ => (!self.below_home.is_empty()).then(|| Path::new(home).join(&self.below_home)),
+        }
+    }
+}
+
+/// How this command line is made to say that a session started, is alive, was
+/// asked something, is about to be compacted.
+///
+/// Absent means nobody measured it, never «it cannot be done»: the same
+/// direction as `login_status` and `reset_context`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct SessionHooks {
+    pub file: HooksFile,
+    /// Sailor's moments mapped onto this line's own event names.
+    ///
+    /// **A MISSING KEY MEANS «THIS LINE CANNOT SAY IT», NEVER «USE THE NEAREST
+    /// EVENT».** One engine has no session-start of its own, and its closest
+    /// event fires before every turn: filling the gap with it would put the
+    /// welcome in front of every turn instead of once.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub events: BTreeMap<String, String>,
+    /// Where the words a user types live, when this line has such a thing.
+    ///
+    /// Absent, and the welcome must promise none: a word promised and missing
+    /// is worse than a word never offered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub words: Option<HooksFile>,
+    /// For whoever reads: how it was established, and what was not checked.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
 /// One line of the list of what to look for.
 ///
 /// **IT DOES NOT REFUSE FIELDS IT DOES NOT KNOW.** `deny_unknown_fields` threw a
@@ -530,6 +614,13 @@ pub struct Descriptor {
     /// session, and a wrong line typed into one cannot be taken back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reset_context: Option<ResetContext>,
+    /// How this line is grafted so that it reports a session's moments.
+    ///
+    /// Absent means it is not grafted and Sailor says so. Never a nearest
+    /// guess: the address of a settings file is not a detail, it is the
+    /// coupling, and it belongs in data where a reader can check it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_hooks: Option<SessionHooks>,
     /// Where its configuration lives. Accepts `~/`, `$VAR` and `*`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config: Vec<String>,
@@ -570,6 +661,16 @@ impl Descriptor {
         if let Some(reset) = &self.reset_context {
             found.extend(reset.extra.keys().map(|key| format!("reset_context.{key}")));
         }
+        if let Some(hooks) = &self.session_hooks {
+            found.extend(hooks.extra.keys().map(|key| format!("session_hooks.{key}")));
+            found.extend(
+                hooks
+                    .file
+                    .extra
+                    .keys()
+                    .map(|key| format!("session_hooks.file.{key}")),
+            );
+        }
         // A capability's name is not an unknown field — no name is, by
         // construction. What is unknown sits inside one of its forms.
         for (name, capability) in &self.capabilities {
@@ -582,6 +683,21 @@ impl Descriptor {
             }
         }
         found
+    }
+
+    /// What this line calls one of Sailor's moments, when it can report it.
+    ///
+    /// `None` is an answer and travels as one: this command line cannot say
+    /// that moment, so whoever reads it grafts the others and declares this
+    /// one ungrafted. A neighbouring event put in its place would arrive
+    /// where nobody asked for it.
+    pub fn event_for(&self, moment: &str) -> Option<&str> {
+        self.session_hooks
+            .as_ref()?
+            .events
+            .get(moment)
+            .map(String::as_str)
+            .filter(|name| !name.is_empty())
     }
 
     /// The line that empties a running session, when somebody has measured it.
