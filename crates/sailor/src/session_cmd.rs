@@ -1,27 +1,26 @@
-//! `sailor session`: **la porta unica** del tracciamento dei terminali.
+//! `sailor session`: **the one door** into terminal tracking.
 //!
-//! **IL PRINCIPIO.** Sailor non entra nel terminale: è l'agente — o la shell —
-//! che si presenta. Un gancio manda il proprio payload su standard input, e
-//! questo comando lo registra. Non c'è nessun altro modo di entrare, e non c'è
-//! nessun codice specifico di prodotto: **questo comando non legge nessuna
-//! variabile d'ambiente di nessun programma e non nomina nessun terminale.**
+//! **THE PRINCIPLE.** Sailor does not walk into the terminal: the agent — or
+//! the shell — announces itself. A hook sends its payload on standard input and
+//! this command records it. There is no other way in, and no product-specific
+//! code: **it reads no program's environment variable and names no terminal.**
 //!
-//! **L'ANCORA È `(tty, albero, capostipite)`.** Il tty al proprio descrittore
-//! o al primo antenato che ne ha uno, l'albero al payload, il capostipite
-//! al censimento — e il capostipite **è un'etichetta**: si stampa e si
-//! registra, nessuna condizione lo legge. La prova
-//! `no_product_name_decides_anything` tiene ferma la regola di ferro: il nome
-//! di un prodotto può comparire in un'etichetta, mai in una condizione.
+//! **THE ANCHOR IS `(tty, tree, progenitor)`.** The tty from our own descriptor
+//! or from the first ancestor that has one, the tree from the payload, the
+//! progenitor from the census — and the progenitor **is a label**: it is
+//! printed and recorded, no condition reads it. `no_product_name_decides_anything`
+//! holds the iron rule: a product's name may appear in a label, never in a
+//! condition.
 //!
-//! **IL CENSIMENTO È INNESCATO, NON A OROLOGIO.** Si guarda la macchina quando
-//! arriva un evento, e in nessun altro momento: qui dentro non c'è nessun
-//! timer, nessun ciclo e nessuna attesa.
+//! **THE CENSUS IS TRIGGERED, NOT ON A CLOCK.** The machine is looked at when
+//! an event arrives and at no other moment: in here there is no timer, no loop
+//! and no waiting.
 //!
-//! **UN CENSIMENTO NEGATO NON FA FALLIRE UNA REGISTRAZIONE.** Un gancio che
-//! esce male è un gancio che disturba chi lavora: se non abbiamo potuto
-//! guardare la macchina, il capostipite resta ignoto e la riga si scrive lo
-//! stesso. È solo `sailor session census` che il diniego fa uscire con 3,
-//! perché è l'unico la cui risposta *è* il censimento.
+//! **A REFUSED CENSUS DOES NOT FAIL A RECORDING.** A hook that exits badly is a
+//! hook that disturbs whoever is working: if we were not allowed to look at the
+//! machine the progenitor stays unknown and the row is written all the same.
+//! Only `sailor session census` is made to exit 3 by a refusal, because it is
+//! the only one whose answer *is* the census.
 
 use sessions::census::{Census, LocalMachine};
 use sessions::{anchor_from, now, Anchor, Arrival, Payload, Sessions, TerminalEvent};
@@ -29,12 +28,12 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-/// Le forme di `sailor session`, una per riga.
+/// The forms of `sailor session`, one per line.
 ///
-/// **È UN ELENCO E NON UN BLOCCO DI TESTO PERCHÉ LA LEGGE ANCHE LA FINESTRA.**
-/// `Command::usage` in `lib.rs` vuole righe interrogabili da un programma: una
-/// stringa sola costringerebbe la pagina d'aiuto della finestra a spezzarla da
-/// sé, cioè a tenere una seconda idea di dove finisce una forma.
+/// **A LIST AND NOT A BLOCK OF TEXT BECAUSE THE WINDOW READS IT TOO.**
+/// `Command::usage` in `lib.rs` wants lines a program can question: one single
+/// string would force the window's help page to split it itself, which is to
+/// hold a second idea of where a form ends.
 pub const USAGE: &[&str] = &[
     "sailor session open      < payload.json   records a terminal and who arrived at it",
     "sailor session event     < payload.json   records a fact about the session",
@@ -46,33 +45,32 @@ pub const USAGE: &[&str] = &[
     "sailor session install   [--tool <id> --settings <file>]  grafts every command line that declares how, and names those that do not",
 ];
 
-/// Le opzioni che valgono per più forme, fuori dall'elenco perché non sono
-/// forme: metterle lì le farebbe contare come tali da chi conta le righe.
+/// The options that hold for several forms, kept out of the list because they
+/// are not forms: put there, whoever counts the lines would count them as such.
 const COMMON_OPTIONS: &str = "common options: --tty <name> to say the terminal instead of deducing it,\n\
                               \x20               --store <file> to write somewhere other than beside the ledger";
 
-/// L'aiuto come lo legge chi digita, costruito dall'elenco invece che
-/// ricopiato accanto.
+/// The help as whoever types reads it, built from the list rather than copied
+/// out beside it.
 fn usage_text() -> String {
     format!("usage: {}\n\n{COMMON_OPTIONS}", USAGE.join("\n     "))
 }
 
-/// Le forme che questo comando conosce, in un posto solo: l'elenco che
-/// `--help` stampa e quello che il dispatch accetta devono essere lo stesso,
-/// altrimenti una forma documentata e non accettata si scopre in mano a chi la
-/// digita.
+/// The forms this command knows, in one place: the list `--help` prints and the
+/// one dispatch accepts must be the same, or a form that is documented and not
+/// accepted gets discovered in the hands of whoever typed it.
 const FORMS: &[&str] = &[
     "open", "event", "close", "list", "detach", "attach", "census", "install",
 ];
 
-/// Le forme che parlano di **un** terminale, e quindi devono saperne il nome.
-/// `list` e `census` non ci sono: parlano di tutti.
+/// The forms that speak of **one** terminal, and so must know its name.
+/// `list` and `census` are not here: they speak of all of them.
 const NEEDS_A_TERMINAL: &[&str] = &["open", "event", "close", "detach", "attach"];
 
-/// Le opzioni che non vogliono un valore dopo di sé.
+/// The options that want no value after them.
 const WITHOUT_VALUE: &[&str] = &["json"];
 
-/// Cosa dire e con che codice uscire.
+/// What to say, and with which code to leave.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Report {
     pub message: String,
@@ -88,9 +86,9 @@ impl Report {
     }
 }
 
-/// Il codice d'uscita quando il censimento non è stato permesso. Non è un
-/// errore del comando: è la risposta, e vale la pena poterla riconoscere da
-/// uno script senza leggere il testo.
+/// The exit code for a census we were not allowed to take. It is not an error
+/// of the command: it is the answer, and it is worth recognising from a script
+/// without reading the text.
 pub const REFUSED: i32 = 3;
 
 pub fn run(args: &[String]) -> i32 {
@@ -121,8 +119,8 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     }
     let options = options_of(&args[1..])?;
 
-    // Standard input si legge **solo** dove serve: leggerlo per `list` da un
-    // terminale interattivo bloccherebbe il comando senza dire perché.
+    // Standard input is read **only** where it is needed: reading it for `list`
+    // from an interactive terminal would block the command without saying why.
     let raw = if verb == "open" || verb == "event" {
         std::io::read_to_string(std::io::stdin())
             .map_err(|error| format!("cannot read the payload: {error}"))?
@@ -131,9 +129,9 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     };
     let payload = Payload::parse(&raw)?;
 
-    // **SOLO CHI PARLA DI UN TERMINALE NE PRETENDE UNO.** `list` e `census`
-    // parlano di tutti: chiedere loro un tty li fa fallire ovunque l'uscita sia
-    // catturata, cioè in ogni script e in ogni gancio.
+    // **ONLY WHOEVER SPEAKS OF A TERMINAL DEMANDS ONE.** `list` and `census`
+    // speak of all of them: asking them for a tty makes them fail wherever the
+    // output is captured, which is every script and every hook.
     let tty = match options.get("tty") {
         Some(declared) => declared.clone(),
         // **TWO QUESTIONS, NOT ONE.** Our own descriptors first: they run
@@ -152,10 +150,10 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         None => String::new(),
     };
 
-    // **SOLO CHI LEGGE IL DEPOSITO LO APRE**, per la stessa ragione della riga
-    // qui sopra sul terminale — e questa riga quella ragione non l'aveva
-    // ricevuta, perché era scritta come commento accanto all'altra. Un principio
-    // vale dove c'è un elenco che lo applica.
+    // **ONLY WHOEVER READS THE LEDGER OPENS IT**, for the same reason as the
+    // line above about the terminal — and this line had not received that
+    // reason, because it was written as a comment beside the other one. A
+    // principle holds where there is a list applying it.
     let store = if NEEDS_THE_STORE.contains(&verb) {
         let path = match options.get("store") {
             Some(declared) => PathBuf::from(declared),
@@ -166,7 +164,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         None
     };
 
-    // Qui, e solo qui, si guarda la macchina: un evento è arrivato.
+    // Here, and only here, the machine is looked at: an event has arrived.
     let census = Census::of(&LocalMachine);
 
     act(&Request {
@@ -181,22 +179,22 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     })
 }
 
-/// Tutto quello che serve per agire, già in mano.
+/// Everything needed to act, already in hand.
 ///
-/// **ESISTE PERCHÉ [`act`] SI POSSA PROVARE.** `dispatch` legge standard input,
-/// apre il file vero e interroga la macchina vera: tre cose che una prova non
-/// può avere senza misurare la macchina di chi la esegue. Con questa struttura
-/// le stesse decisioni si provano su un file usa-e-getta, un payload scritto a
-/// mano e un censimento costruito — compreso quello negato.
+/// **IT EXISTS SO [`act`] CAN BE TESTED.** `dispatch` reads standard input,
+/// opens the real file and questions the real machine: three things a test
+/// cannot have without measuring the machine that runs it. With this struct the
+/// same decisions are tested on a throwaway file, a payload written by hand and
+/// a census built on purpose — the refused one included.
 struct Request<'a> {
     verb: &'a str,
     options: &'a BTreeMap<String, String>,
     payload: &'a Payload,
     raw: &'a str,
-    /// **`None` QUANDO NESSUNO NE HA BISOGNO**, e non è un dettaglio di
-    /// comodità: `census` deve poter rispondere «non lo so» anche dove il
-    /// deposito non si apre. Finché era obbligatorio, l'unica forma che esiste
-    /// per non mentire moriva prima di poter parlare.
+    /// **`None` WHEN NOBODY NEEDS IT**, and that is no convenience: `census`
+    /// must be able to answer "I do not know" even where the ledger will not
+    /// open. While it was mandatory, the one form that exists in order not to
+    /// lie died before it could speak.
     store: Option<&'a Sessions>,
     census: &'a Census,
     tty: &'a str,
@@ -204,11 +202,11 @@ struct Request<'a> {
 }
 
 impl<'a> Request<'a> {
-    /// Il deposito di questa forma.
+    /// This form's ledger.
     ///
-    /// **UN ERRORE QUI È UN DIFETTO DI QUESTO FILE, NON UN GUASTO DI CHI
-    /// DIGITA**, e il messaggio lo dice: vuol dire che una forma legge il
-    /// deposito senza essere elencata in [`NEEDS_THE_STORE`].
+    /// **AN ERROR HERE IS A DEFECT OF THIS FILE, NOT A FAULT OF WHOEVER
+    /// TYPED**, and the message says so: it means a form reads the ledger
+    /// without being listed in [`NEEDS_THE_STORE`].
     fn store(&self) -> Result<&'a Sessions, String> {
         self.store.ok_or_else(|| {
             format!(
@@ -219,27 +217,27 @@ impl<'a> Request<'a> {
         })
     }
 
-    /// Se chi parla è un gancio d'avvio di Claude Code.
+    /// Whether whoever speaks is a start-up hook.
     ///
-    /// **LA FORMA DELLA RISPOSTA SEGUE CHI DOMANDA**, e chi domanda sta nel
-    /// payload: a un `SessionStart` si risponde con l'involucro che Claude Code
-    /// inietta nel contesto, a una persona con una frase.
+    /// **THE SHAPE OF THE ANSWER FOLLOWS WHOEVER ASKS**, and who asks is in the
+    /// payload: a `SessionStart` is answered with the wrapper that gets injected
+    /// into the context, a person with a sentence.
     fn is_a_session_start(&self) -> bool {
         self.payload.hook_event_name.as_deref() == Some("SessionStart")
     }
 }
 
-/// Le forme che il deposito lo leggono davvero.
+/// The forms that really do read the ledger.
 ///
-/// **È UN ELENCO DI CHI NE HA BISOGNO, NON DELLE ECCEZIONI**, e la differenza
-/// si vede sulla forma aggiunta domani: un elenco di eccezioni la lascia
-/// passare in silenzio, questo no. Fino al 01/09/2026 `dispatch` apriva
-/// `sessions.db` prima di sapere quale forma fosse stata chiesta, quindi
-/// `census` — che il deposito non lo tocca — moriva con l'errore del file **al
-/// posto della propria risposta**, e la sua risposta è proprio «non lo so».
+/// **A LIST OF WHO NEEDS IT, NOT OF THE EXCEPTIONS**, and the difference shows
+/// on the form added tomorrow: a list of exceptions lets it through in silence,
+/// this one does not. Until 01/09/2026 `dispatch` opened `sessions.db` before
+/// knowing which form had been asked for, so `census` — which never touches the
+/// ledger — died with the file's error **in place of its own answer**, and its
+/// answer is precisely "I do not know".
 ///
-/// Sorvegliata da `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
-/// che gira su **ogni** forma non elencata qui.
+/// Watched by `a_form_that_never_reads_the_store_survives_a_store_that_will_not_open`,
+/// which runs on **every** form not listed here.
 const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "attach"];
 
 /// What Sailor does at each of its moments. What a line calls that moment is
@@ -255,9 +253,9 @@ const WHAT_WE_DO_AT_EACH: &[(&str, &str)] = &[
     ("compacting", "event"),
 ];
 
-/// Come si riconosce un gancio nostro fra quelli di chiunque altro: dal fatto
-/// che invoca **questo** comando. Non da un nome scritto accanto, che si può
-/// cambiare senza cambiare cosa fa.
+/// How one of our hooks is told from anyone else's: by the fact that it invokes
+/// **this** command. Not by a name written beside it, which can be changed
+/// without changing what it does.
 const MARK: &str = " session ";
 
 /// Grafts every command line that declares how, and **names each one that does
@@ -421,12 +419,6 @@ fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String>
     ))
 }
 
-/// Innesta i ganci in un file di impostazioni, **aggiungendo**.
-///
-/// Il percorso del binario è quello che sta girando adesso
-/// (`current_exe`): un innesto che scrivesse `sailor` e basta funzionerebbe
-/// solo dove quel nome è già nel `PATH` di chi apre il terminale, che non è
-/// una cosa che si può sapere da qui.
 /// The moments this command line has no event for, which are the ones the
 /// report has to name. A pure answer, so it can be asked of a descriptor
 /// nobody ships and the check needs no product to exist.
@@ -459,12 +451,17 @@ fn grafted_into(
     installed(settings, &named)
 }
 
+/// Grafts the hooks into a settings file, **by adding**.
+///
+/// The binary's path is the one running right now (`current_exe`): a graft
+/// writing plain `sailor` would work only where that name is already on the
+/// `PATH` of whoever opens the terminal, which is not something knowable here.
 fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<String, String> {
     let mut root: serde_json::Value = match std::fs::read_to_string(settings) {
         Ok(text) if text.trim().is_empty() => serde_json::json!({}),
-        // **UN FILE CHE NON SI CAPISCE NON SI RISCRIVE.** Sostituirlo con la
-        // sola parte nostra cancellerebbe la configurazione di chi lo usa, per
-        // un errore di battitura.
+        // **A FILE WE CANNOT READ IS NOT REWRITTEN.** Replacing it with our own
+        // part alone would erase the configuration of whoever uses it, over a
+        // typo.
         Ok(text) => serde_json::from_str(&text)
             .map_err(|error| format!("{}: not valid JSON ({error})", settings.display()))?,
         Err(_) => serde_json::json!({}),
@@ -601,16 +598,12 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     Ok(Report::spoken(described(&arrival)))
 }
 
-/// Il benvenuto, nell'involucro che Claude Code inietta nel contesto della
-/// sessione.
+/// The welcome, in the wrapper that gets injected into the session's context.
 ///
-/// **PERCHÉ È UN INVOLUCRO E NON UNA RIGA STAMPATA.** `SessionStart` è uno dei
-/// quattro eventi in cui ciò che il gancio scrive diventa contesto che l'agente
-/// legge — verificato sulla documentazione il 01/09/2026. Con una riga normale
-/// il saluto lo leggerebbe la persona davanti allo schermo e non l'agente, e lo
-/// stacco resterebbe una cosa che esiste e che non sa nessuno.
-///
-/// Dice tre cose e basta: dove sei, che sei tracciato, e come smettere.
+/// **A WRAPPER AND NOT A PRINTED LINE** because `SessionStart` is one of the
+/// four moments where what the hook writes becomes context the agent reads. A
+/// plain line would be read by the person at the screen and not by the agent,
+/// and detaching would stay a thing that exists and nobody knows about.
 fn welcome(arrival: &Arrival) -> String {
     let text = format!(
         "Sei collegato a Sailor.\n\
@@ -906,19 +899,12 @@ mod tests {
         })
     }
 
-    /// **LA PROVA GIRA SU OGNI FORMA CHE NON DICHIARA DI VOLERE IL DEPOSITO**,
-    /// non solo su `census`: una forma aggiunta domani e lasciata fuori
-    /// dall'elenco viene provata qui senza che nessuno se ne ricordi.
-    ///
-    /// **E OGNI FORMA RICEVE ANCHE `--settings` DENTRO LA CARTELLA USA-E-GETTA.**
-    /// Non è una precauzione teorica: `install`, aggiunta il 01/09/2026, senza
-    /// quella riga scriverebbe nel `settings.json` **vero** di chi esegue la
-    /// batteria — cioè una prova che riconfigura la macchina di chi la lancia.
-    /// Una prova generica lo diventa: copre anche ciò che non esisteva quando è
-    /// stata scritta, e questo vale per il bene e per il male.
-    ///
-    /// *Mutante eseguito*: aprire il deposito incondizionatamente in `dispatch`
-    /// fa tornare rossa questa prova nominando la forma e l'errore del file.
+    /// **EVERY FORM NOT DECLARING IT WANTS THE LEDGER**, not `census` alone: one
+    /// added tomorrow is tested here with nobody remembering to. Each also gets
+    /// `--settings` inside the scratch — without that line `install` would write
+    /// the **real** settings file of whoever runs the battery. *Mutant run*:
+    /// opening the ledger unconditionally in `dispatch` turns this red, naming
+    /// the form and the file's error.
     #[test]
     fn a_form_that_never_reads_the_store_survives_a_store_that_will_not_open() {
         let scratch = Scratch::new("senza-deposito");
