@@ -190,13 +190,16 @@ Manca del tutto **il tempo**: `flow` ha già `Schedule`, `Recurrence`, `is_due`,
 `tick` — e il documento `2026-09-01-il-tempo-e-l-ultima-scelta.md` elenca le
 cinque decisioni da prendere prima di scriverne il nodo.
 
-### 4.5 Il deposito — otto tabelle, e non esiste ancora
+### 4.5 Il deposito — otto tabelle, e **questo paragrafo diceva il falso**
 
 `runs` · `steps` · `events` · `model_calls` · `inventory_items` · `processes` ·
 `snapshots` · `store`.
 
-Su questa macchina **`~/.config/sailor/ledger` non è mai stato creato**. La
-finestra mostra solo `execution_history` e `run_snapshot`: la storia delle corse.
+Su questa macchina il deposito **esiste ed è vivo**: 8 MB in
+`~/.claude/state/flussi`, scritti oggi. Questo paragrafo diceva «mai creato»
+perché aveva guardato in `~/.config/sailor/ledger` — e `default_directory`
+cerca **prima** la casa di chi è venuto prima, che è dove sta. Un censimento
+che guarda un percorso solo trova quello che quel percorso sa.
 Non si vedono gli eventi, le chiamate ai modelli, l'inventario nel tempo, i
 processi, il deposito chiave-valore.
 
@@ -266,30 +269,51 @@ L'ordine è per **quanto motore sblocca per riga di finestra scritta**.
    chiesto al motore dentro la casa di ciascuno, passare da uno all'altro e
    crearne. Resta ciò che il piano del 31/08 chiama credenziali **di un
    workspace**, e l'`env_clear()`.
-3. **La quota e i prezzi**: quanto resta, quanto costa, quale modello.
-   Tre comandi già scritti.
-4. **Gli strumenti**: cosa c'è sulla macchina, in che versione, se autenticato,
-   e cosa manca a un flusso per girare. 5 510 righe già scritte.
+3. ~~**La quota e i prezzi**~~ — **fatto il 02/09**: quanto **consumato** (mai
+   «rimasto»: su una finestra senza tetto la sottrazione è un'invenzione), il
+   listino coi prezzi per milione, e il modello **in forza** distinto da quello
+   configurato — la regola dei soli gratuiti scavalca in silenzio, e una
+   schermata che mostrasse solo il desiderio non spiegherebbe niente.
+4. ~~**Gli strumenti**~~ — **fatto il 02/09**: cosa c'è, dove, in che versione,
+   **dove ha guardato**, e le righe dell'elenco che non si leggono. Il ponte
+   appiattiva tre stati in un booleano: «non c'è» e «non ho potuto guardare»
+   ora arrivano distinti. Restano fuori le capacità (`Capability`) e
+   `ToolNeedsAction`.
 
 ### Secondo — il deposito che si interroga
 
-5. **Le otto tabelle**, non solo la storia delle corse: eventi, chiamate ai
-   modelli, inventario nel tempo, processi, il deposito chiave-valore.
-6. **I guasti** dentro la finestra, con il controllo che manca a ciascuno.
+5. ~~**Le otto tabelle**~~ — **fatto il 02/09**: i processi che il deposito ha
+   visto partire e mai finire (**col pid chiesto adesso**, perché un record
+   aperto non è un processo vivo), le corse mai chiuse, come sono rotte le
+   ultime cinquanta **per classe**, cosa i flussi hanno depositato, e
+   l'inventario nel tempo.
+6. ~~**I guasti**~~ — **fatto il 02/09**: il registro, il controllo che manca a
+   ciascuno, e il **quarto stato** che nessun sì-o-no può dire: una formula che
+   il registro non conosce non è «chiusa», o un guasto uscirebbe dal conto per
+   una riscrittura che nessuno intendeva così.
 
 ### Terzo — le azioni che nessuno può comporre
 
-7. **Le sedici azioni fuori dalla cassetta**, a partire da quelle che il motore
-   esegue già bene: `store_read`, `store_list`, `history_ask`, `mcp_ask`,
-   `detect_tools`, `tool_needs`.
-8. **Il lavoro condiviso**: `work_claim`, `work_release`, `work_survey`.
+7. ~~**Le azioni**~~ — **fatto il 02/09**, ma solo per metà: la finestra le
+   **elenca tutte e ventitré**, chieste al registro vivo e raggruppate per
+   famiglia, e nomina quelle che la tela non sa disegnare invece di infilarle
+   fra i controlli. Comporle resta il lavoro della tela; qui si vede **cosa
+   esiste**, che è la domanda che non aveva risposta.
+8. **Il lavoro condiviso**: `work_claim`, `work_release`, `work_survey` — visti
+   nell'elenco, mai messi in scena.
 
 ### Quarto — quello che va deciso prima di costruirlo
 
 9. **Il tempo**: cinque decisioni aperte, scritte il 01/09.
 10. **L'innesco da terminale**: dichiarato e muto, per scelta.
 11. **Le credenziali per spazio di lavoro**: il piano del 31/08, mai costruito.
-12. **La staffetta** e **la ricostruzione a caldo**: due motori interi senza porta.
+12. **La staffetta** e **la ricostruzione a caldo**: due motori interi senza
+    porta. La staffetta però **non è una schermata**: sono quattro azioni
+    (`measure_terminal`, `type_into_terminal`, `empty_terminal`,
+    `take_mandate`) e la loro porta è che un flusso possa usarle — cosa che ora
+    si vede, sotto «What Sailor can do». Il supervisore la finestra lo usa già
+    (`live::watch`); il rilascio è un gesto che tocca il binario in servizio, e
+    esporlo è una decisione, non un collegamento.
 
 ---
 
