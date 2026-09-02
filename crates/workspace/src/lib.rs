@@ -166,22 +166,28 @@ pub struct Changes {
     pub diff: String,
 }
 
-/// Reads `git status --porcelain`: two letters of status, a space, the path.
-/// A rename carries `old -> new`, and the new name is the one to open.
+/// Reads `git status --porcelain -z`: two letters of status, a space, the
+/// path, a NUL. The `-z` form because the line form quotes a path with a
+/// space or an accent, and a quoted path is one no editor can open. A rename
+/// carries the new name first and the old one as a second entry.
 pub fn parse_status(porcelain: &str) -> Vec<ChangedFile> {
-    porcelain
-        .lines()
-        .filter(|line| line.len() > 3)
-        .map(|line| {
-            let (status, path) = line.split_at(2);
-            let path = path.trim_start();
-            let path = path.rsplit(" -> ").next().unwrap_or(path);
-            ChangedFile {
-                status: status.to_owned(),
-                path: path.to_owned(),
-            }
-        })
-        .collect()
+    let mut files = Vec::new();
+    let mut entries = porcelain.split('\0').filter(|entry| !entry.is_empty());
+    while let Some(entry) = entries.next() {
+        if entry.len() < 4 {
+            continue;
+        }
+        let (status, path) = entry.split_at(2);
+        let path = path.strip_prefix(' ').unwrap_or(path);
+        if status.starts_with('R') || status.starts_with('C') {
+            entries.next();
+        }
+        files.push(ChangedFile {
+            status: status.to_owned(),
+            path: path.to_owned(),
+        });
+    }
+    files
 }
 
 /// What changed in `root` since its last commit, as git says it.
@@ -190,7 +196,7 @@ pub fn parse_status(porcelain: &str) -> Vec<ChangedFile> {
 /// that ran `git add` has still changed the tree. A repository with no commit
 /// yet has no `HEAD`, and then the plain diff is what git can answer.
 pub fn changes(root: &Path) -> Result<Changes, String> {
-    let status = git(root, &["status", "--porcelain", "--untracked-files=all"])?;
+    let status = git(root, &["status", "--porcelain", "-z", "--untracked-files=all"])?;
     let diff = match git(root, &["diff", "HEAD"]) {
         Ok(text) => text,
         Err(_) => git(root, &["diff"])?,
