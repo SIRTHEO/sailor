@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// What `crates/sailor/src` still holds. It goes down as sentences move into
 /// `i18n/`, and a rise means a new one was written into the code. Never raise
 /// it to make the gate green.
-const SENTENCES_STILL_IN_THE_CODE: usize = 218;
+const SENTENCES_STILL_IN_THE_CODE: usize = 247;
 
 /// Words that open a query for the database, not a line for a person.
 const A_QUERY_NOT_A_SENTENCE: &[&str] = &[
@@ -43,60 +43,124 @@ fn sources_of_the_command_line(root: &Path, into: &mut Vec<PathBuf>) {
     }
 }
 
-/// The line without its trailing comment, aware that a `//` inside a string is
-/// not a comment. Prose about a sentence is not a sentence.
-fn code_part(line: &str) -> String {
-    let mut out = String::new();
-    let mut inside = false;
-    let mut escaped = false;
-    let mut letters = line.chars().peekable();
-    while let Some(letter) = letters.next() {
-        if inside {
-            if escaped {
-                escaped = false;
-            } else if letter == '\\' {
-                escaped = true;
-            } else if letter == '"' {
-                inside = false;
+/// Every string literal of a file, with the line it opens on — **the whole
+/// file, not a line at a time**: a line-shaped reader stops at the margin and
+/// never sees the sentence that runs on past it with a `\`, which is where the
+/// long prose lives. Two extractors in a row went blind on that seam. Comments
+/// are dropped as it goes and `r"…"` / `r#"…"#` are skipped whole: nothing
+/// spoken to a person is written that way.
+fn literals_with_their_line(text: &str) -> Vec<(usize, String)> {
+    let letters: Vec<char> = text.chars().collect();
+    let mut found = Vec::new();
+    let mut at = 0usize;
+    let mut line = 1usize;
+    while at < letters.len() {
+        let letter = letters[at];
+        if letter == '\n' {
+            line += 1;
+            at += 1;
+            continue;
+        }
+        // A comment, to the end of its line.
+        if letter == '/' && letters.get(at + 1) == Some(&'/') {
+            while at < letters.len() && letters[at] != '\n' {
+                at += 1;
             }
+            continue;
+        }
+        // A raw string: `r`, some `#`, a quote, up to the same run of `#`.
+        if letter == 'r' && matches!(letters.get(at + 1), Some('"') | Some('#')) {
+            let mut ahead = at + 1;
+            let mut hashes = 0;
+            while letters.get(ahead) == Some(&'#') {
+                hashes += 1;
+                ahead += 1;
+            }
+            if letters.get(ahead) == Some(&'"') {
+                ahead += 1;
+                let closing: String = std::iter::once('"')
+                    .chain(std::iter::repeat_n('#', hashes))
+                    .collect();
+                while ahead < letters.len() {
+                    if letters[ahead] == '\n' {
+                        line += 1;
+                    }
+                    if letters[ahead..]
+                        .iter()
+                        .collect::<String>()
+                        .starts_with(&closing)
+                    {
+                        ahead += closing.chars().count();
+                        break;
+                    }
+                    ahead += 1;
+                }
+                at = ahead;
+                continue;
+            }
+        }
+        if letter == '"' {
+            let opened_on = line;
+            let mut text_of_it = String::new();
+            let mut ahead = at + 1;
+            let mut escaped = false;
+            while ahead < letters.len() {
+                let inner = letters[ahead];
+                if inner == '\n' {
+                    line += 1;
+                }
+                if escaped {
+                    escaped = false;
+                } else if inner == '\\' {
+                    escaped = true;
+                } else if inner == '"' {
+                    break;
+                }
+                text_of_it.push(inner);
+                ahead += 1;
+            }
+            found.push((opened_on, text_of_it));
+            at = ahead + 1;
+            continue;
+        }
+        at += 1;
+    }
+    found
+}
+
+/// A literal that runs on past the margin comes back with its `\`, its newline
+/// and the indent of the next line inside it. Rust throws all three away, and
+/// so does this, or a sentence would be counted as words it does not have.
+fn as_the_reader_sees_it(text: &str) -> String {
+    let mut out = String::new();
+    let mut letters = text.chars().peekable();
+    while let Some(letter) = letters.next() {
+        if letter != '\\' {
             out.push(letter);
-        } else if letter == '"' {
-            inside = true;
-            out.push(letter);
-        } else if letter == '/' && letters.peek() == Some(&'/') {
-            break;
-        } else {
-            out.push(letter);
+            continue;
+        }
+        match letters.peek() {
+            Some('\n') => {
+                letters.next();
+                while letters
+                    .peek()
+                    .is_some_and(|next| *next == ' ' || *next == '\t')
+                {
+                    letters.next();
+                }
+            }
+            Some('n') | Some('t') => {
+                letters.next();
+                out.push(' ');
+            }
+            Some(_) => {
+                let escaped = letters.next().expect("peeked");
+                out.push(escaped);
+            }
+            None => out.push(letter),
         }
     }
     out
-}
-
-/// The string literals of one line, escapes kept as written.
-fn literals(code: &str) -> Vec<String> {
-    let mut found = Vec::new();
-    let mut current = String::new();
-    let mut inside = false;
-    let mut escaped = false;
-    for letter in code.chars() {
-        if inside {
-            if escaped {
-                escaped = false;
-                current.push(letter);
-            } else if letter == '\\' {
-                escaped = true;
-                current.push(letter);
-            } else if letter == '"' {
-                inside = false;
-                found.push(std::mem::take(&mut current));
-            } else {
-                current.push(letter);
-            }
-        } else if letter == '"' {
-            inside = true;
-        }
-    }
-    found
 }
 
 /// What a person reads and a machine does not: `{a placeholder}`, `<a slot>` in
@@ -138,25 +202,37 @@ fn is_a_sentence(text: &str) -> bool {
         >= 4
 }
 
-/// Where the sentences are, file by file. Everything below a `#[cfg(test)]` is
-/// left alone: a test's own prose is written for whoever reads the failure.
-fn sentences_of(text: &str) -> Vec<(usize, String)> {
-    let mut found = Vec::new();
-    for (number, line) in text.lines().enumerate() {
-        if line.trim() == "#[cfg(test)]" {
-            break;
+/// Where the sentences are, file by file: the literals of the file, minus the
+/// ones a person never reads, minus the ones that are not prose. Everything
+/// from `#[cfg(test)]` down is left alone — a test's own prose is written for
+/// whoever reads the failure.
+fn sentences_of(whole: &str) -> Vec<(usize, String)> {
+    let text = match whole.lines().position(|line| line.trim() == "#[cfg(test)]") {
+        Some(at) => whole.lines().take(at).collect::<Vec<_>>().join("\n"),
+        None => whole.to_owned(),
+    };
+    let text = text.as_str();
+    let lines: Vec<&str> = text.lines().collect();
+    // The call is on the line the literal opens on, or on the one above when
+    // the argument was pushed down to fit.
+    let spoken_to_nobody = |number: usize| {
+        let mut around = Vec::new();
+        if number >= 2 {
+            around.push(lines[number - 2]);
         }
-        let code = code_part(line);
-        if SPOKEN_TO_NOBODY.iter().any(|call| code.contains(call)) {
-            continue;
+        if let Some(line) = lines.get(number - 1) {
+            around.push(line);
         }
-        for literal in literals(&code) {
-            if is_a_sentence(&literal) {
-                found.push((number + 1, literal));
-            }
-        }
-    }
-    found
+        around
+            .iter()
+            .any(|line| SPOKEN_TO_NOBODY.iter().any(|call| line.contains(call)))
+    };
+    literals_with_their_line(text)
+        .into_iter()
+        .filter(|(number, _)| !spoken_to_nobody(*number))
+        .map(|(number, raw)| (number, as_the_reader_sees_it(&raw)))
+        .filter(|(_, text)| is_a_sentence(text))
+        .collect()
 }
 
 fn count_them(root: &Path) -> (usize, BTreeMap<String, usize>, Vec<String>) {
@@ -253,6 +329,27 @@ let _ = value.expect("the lock does not panic when nobody else holds it");
         sentences_of(not_sentences).is_empty(),
         "something that is not a line for a person was counted: {:?}",
         sentences_of(not_sentences)
+    );
+
+    // The seam two earlier extractors went blind on: a line-shaped reader stops
+    // at the margin and never sees the sentence that runs on past it.
+    let across_the_margin = r#"
+fn speak() -> String {
+    "the quota of a PERSON and not of one run: it counts every session, \
+     including the ones held outside"
+        .to_owned()
+}
+"#;
+    let over_there = sentences_of(across_the_margin);
+    assert_eq!(
+        over_there.len(),
+        1,
+        "a sentence that runs on past the margin was not seen: {over_there:?}"
+    );
+    assert!(
+        !over_there[0].1.contains('\\'),
+        "the sentence came back with the `\\` and the indent Rust throws away: {:?}",
+        over_there[0].1
     );
 
     // The slots go, the description stays: a usage line that explains itself is
