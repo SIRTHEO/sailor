@@ -43,6 +43,7 @@ pub const USAGE: &[&str] = &[
     "sailor session attach    [--tty <name>]   follow it again",
     "sailor session census    [--json]         what is on the machine right now",
     "sailor session install   [--tool <id> --settings <file>]  grafts every command line that declares how, and names those that do not",
+    "sailor session uninstall [--tool <id> --settings <file>]  takes the graft back out, and names what it could not take out and why",
 ];
 
 /// The options that hold for several forms, kept out of the list because they
@@ -60,7 +61,15 @@ fn usage_text() -> String {
 /// one dispatch accepts must be the same, or a form that is documented and not
 /// accepted gets discovered in the hands of whoever typed it.
 const FORMS: &[&str] = &[
-    "open", "event", "close", "list", "detach", "attach", "census", "install",
+    "open",
+    "event",
+    "close",
+    "list",
+    "detach",
+    "attach",
+    "census",
+    "install",
+    "uninstall",
 ];
 
 /// The forms that speak of **one** terminal, and so must know its name.
@@ -253,13 +262,32 @@ const WHAT_WE_DO_AT_EACH: &[(&str, &str)] = &[
 /// without changing what it does.
 const MARK: &str = " session ";
 
-/// Grafts every command line that declares how, and **names each one that does
-/// not**.
+/// Whether a piece of writing is ours, asked of a serialised hook entry and of
+/// a command file alike.
 ///
-/// The settings address used to live here, under a comment arguing it was «the
-/// address of what we are grafting» and so not a coupling. It was: two other
-/// lines with the same four moments got nothing, and silence reads as success.
-fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
+/// **ONE QUESTION, ASKED BY THE GRAFT AND BY ITS INVERSE.** Two answers would
+/// mean one of them leaves behind what the other cannot see, and neither would
+/// report it: each is right on its own terms.
+fn ours(text: &str) -> bool {
+    text.contains(MARK) && text.contains("sailor")
+}
+
+/// Walks every command line and hands the resolved addresses to `work`, which
+/// answers whether it did anything there.
+///
+/// **THE ADDRESSES ARE RESOLVED IN ONE PLACE.** A second walk would be a second
+/// idea of where Sailor wrote, and a graft and an inverse disagreeing about it
+/// is a graft that cannot be undone.
+fn each_command_line(
+    request: &Request<'_>,
+    said: &mut Vec<String>,
+    mut work: impl FnMut(
+        &toolbox::descriptor::Descriptor,
+        &std::path::Path,
+        Option<&std::path::Path>,
+        &mut Vec<String>,
+    ) -> Result<bool, String>,
+) -> Result<bool, String> {
     // `--settings` stays, and stays one file: it serves the tests and whoever
     // moved their own. With it, the descriptor says only what the events are
     // called, no longer where to write them.
@@ -269,17 +297,10 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
     let only = request.options.get("tool");
     let declared_file = request.options.get("settings").map(PathBuf::from);
     if declared_file.is_some() && only.is_none() {
-        return Err(
-            "«--settings» says where to write and not for whom: name the command \
-             line with «--tool <id>» too. Without it, one file would be handed \
-             to whichever line the code happened to know, which is the coupling \
-             this command just had taken out of it"
-                .to_owned(),
-        );
+        return Err(catalogue::say("cli.session.settings_without_tool", &[]));
     }
 
-    let mut said = Vec::new();
-    let mut grafted_any = false;
+    let mut worked_anywhere = false;
     for loaded in &catalog.descriptors {
         let tool = &loaded.descriptor;
         if tool.family != "ai_cli" || tool.disabled {
@@ -289,15 +310,12 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
             continue;
         }
         let Some(hooks) = &tool.session_hooks else {
-            said.push(format!(
-                "{}: not grafted - it does not declare how it is told a session \
-                 started. Nothing was written for it",
-                tool.id
+            said.push(catalogue::say(
+                "cli.session.declares_no_hooks",
+                &[("tool", &tool.id)],
             ));
             continue;
         };
-
-        let missing = moments_without_an_event(tool);
 
         // It applies to the line `--tool` names, never to «the one the code
         // knows»: a fallback choosing for itself would put a product name back
@@ -309,17 +327,51 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
                 match hooks.file.path(root.as_deref(), &home) {
                     Some(path) => path,
                     None => {
-                        said.push(format!("{}: its settings file has no address", tool.id));
+                        said.push(catalogue::say(
+                            "cli.session.no_settings_address",
+                            &[("tool", &tool.id)],
+                        ));
                         continue;
                     }
                 }
             }
         };
 
-        match hooks.file.format {
+        // Under `--settings` the words follow the declared file instead of
+        // their own address: whoever diverts the graft diverts all of it,
+        // and a test writing half into its scratch and half into the real
+        // home would leave that half behind.
+        let directory = hooks.words.as_ref().and_then(|words| match &declared_file {
+            Some(path) => path.parent().map(|beside| {
+                beside.join(
+                    std::path::Path::new(&words.below_home)
+                        .file_name()
+                        .unwrap_or_default(),
+                )
+            }),
+            None => words.path(machine.env.get(&words.root_var).map(String::as_str), &home),
+        });
+
+        worked_anywhere |= work(tool, &file, directory.as_deref(), said)?;
+    }
+    Ok(worked_anywhere)
+}
+
+/// Grafts every command line that declares how, and **names each one that does
+/// not**.
+///
+/// The settings address used to live here, under a comment arguing it was «the
+/// address of what we are grafting» and so not a coupling. It was: two other
+/// lines with the same four moments got nothing, and silence reads as success.
+fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
+    let mut said = Vec::new();
+    let grafted_any = each_command_line(request, &mut said, |tool, file, words, said| {
+        let missing = moments_without_an_event(tool);
+        let mut grafted = false;
+        match format_of(tool) {
             toolbox::descriptor::FileFormat::Json => {
-                said.push(grafted_into(tool, &file)?);
-                grafted_any = true;
+                said.push(grafted_into(tool, file)?);
+                grafted = true;
             }
             // **DECLARED AND NOT DONE, WHICH IS NOT THE SAME AS UNKNOWN.** The
             // descriptor says where and how; it is Sailor that cannot write
@@ -342,31 +394,15 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
             ));
         }
 
-        if let Some(words) = &hooks.words {
-            // Under `--settings` the words follow the declared file instead of
-            // their own address: whoever diverts the graft diverts all of it,
-            // and a test writing half into its scratch and half into the real
-            // home would leave that half behind.
-            let directory = match &declared_file {
-                Some(path) => path.parent().map(|beside| {
-                    beside.join(
-                        std::path::Path::new(&words.below_home)
-                            .file_name()
-                            .unwrap_or_default(),
-                    )
-                }),
-                None => words.path(machine.env.get(&words.root_var).map(String::as_str), &home),
-            };
-            if let Some(directory) = directory {
-                said.push(wrote_the_two_commands(&directory)?);
-            }
-        } else {
-            said.push(format!(
+        match words {
+            Some(directory) => said.push(wrote_the_two_commands(directory)?),
+            None => said.push(format!(
                 "  {}: no words a user types, so the welcome promises none",
                 tool.id
-            ));
+            )),
         }
-    }
+        Ok(grafted)
+    })?;
 
     if !grafted_any {
         said.push(
@@ -376,6 +412,56 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
         );
     }
     Ok(Report::spoken(said.join("\n")))
+}
+
+/// Takes the graft back out of every command line it went into, and **names
+/// each thing it could not take out and why**.
+///
+/// The owner's requirement is that a command line be left as Sailor found it.
+/// A silent failure here is worse than at the graft: whoever ran this believes
+/// the file is clean and has no reason to look again.
+fn uninstall_hooks(request: &Request<'_>) -> Result<Report, String> {
+    let mut said = Vec::new();
+    let looked_anywhere = each_command_line(request, &mut said, |tool, file, words, said| {
+        let mut looked = false;
+        match format_of(tool) {
+            toolbox::descriptor::FileFormat::Json => {
+                said.push(uninstalled(file)?);
+                looked = true;
+            }
+            // The same honesty as the graft, and for a sharper reason: a format
+            // Sailor cannot write is a format it cannot have written into, so
+            // there is nothing of ours there — but that is a claim, and it is
+            // made out loud rather than left to a silence.
+            other => said.push(catalogue::say(
+                "cli.session.uninstall.format_not_written",
+                &[
+                    ("tool", &tool.id),
+                    ("format", &format!("{other:?}")),
+                    ("file", &file.display().to_string()),
+                ],
+            )),
+        }
+        if let Some(directory) = words {
+            said.push(took_the_two_commands_out(directory)?);
+        }
+        Ok(looked)
+    })?;
+
+    if !looked_anywhere {
+        said.push(catalogue::say("cli.session.uninstall.nothing_read", &[]));
+    }
+    Ok(Report::spoken(said.join("\n")))
+}
+
+/// How this command line writes the file the hooks sit in. Asked of the
+/// descriptor rather than assumed: the walk above has already refused every
+/// line that declares no hooks at all.
+fn format_of(tool: &toolbox::descriptor::Descriptor) -> toolbox::descriptor::FileFormat {
+    tool.session_hooks
+        .as_ref()
+        .map(|hooks| hooks.file.format)
+        .unwrap_or_default()
 }
 
 /// The two words the welcome promises, written where they are looked for.
@@ -412,6 +498,167 @@ fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String>
         "/sailor-off and /sailor-on written in {}",
         directory.display()
     ))
+}
+
+/// Takes those same two words back out, **and only if they are ours**.
+///
+/// A file with one of those names that Sailor did not write belongs to whoever
+/// did: it stays, and it is named. The directory stays too - it is the command
+/// line's own, and it held other words before Sailor arrived.
+fn took_the_two_commands_out(directory: &std::path::Path) -> Result<String, String> {
+    let mut taken = Vec::new();
+    let mut left = Vec::new();
+    for name in ["sailor-off", "sailor-on"] {
+        let path = directory.join(format!("{name}.md"));
+        match std::fs::read_to_string(&path) {
+            Ok(body) if ours(&body) => {
+                std::fs::remove_file(&path)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                taken.push(format!("/{name}"));
+            }
+            Ok(_) => left.push(catalogue::say(
+                "cli.session.uninstall.word_not_ours",
+                &[("word", name), ("file", &path.display().to_string())],
+            )),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => left.push(catalogue::say(
+                "cli.session.uninstall.word_unreadable",
+                &[
+                    ("word", name),
+                    ("file", &path.display().to_string()),
+                    ("error", &error.to_string()),
+                ],
+            )),
+        }
+    }
+    let mut said = match taken.is_empty() {
+        true => catalogue::say(
+            "cli.session.uninstall.no_words",
+            &[("directory", &directory.display().to_string())],
+        ),
+        false => catalogue::say(
+            "cli.session.uninstall.words_taken",
+            &[
+                ("words", &taken.join(" and ")),
+                ("directory", &directory.display().to_string()),
+            ],
+        ),
+    };
+    for one in left {
+        said.push_str(&format!("\n  {one}"));
+    }
+    Ok(said)
+}
+
+/// Takes our hooks out of a settings file, **by subtraction**.
+///
+/// It reads every event the file holds, not the ones the descriptor names
+/// today: a command line that renames an event would otherwise leave ours
+/// behind for ever, in the one place nobody would think to look. What may be
+/// taken is settled by [`ours`], which is also what the graft asks.
+fn uninstalled(settings: &std::path::Path) -> Result<String, String> {
+    let text = match std::fs::read_to_string(settings) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(catalogue::say(
+                "cli.session.uninstall.no_file",
+                &[("file", &settings.display().to_string())],
+            ))
+        }
+        Err(error) => return Err(format!("{}: {error}", settings.display())),
+    };
+    if text.trim().is_empty() {
+        return Ok(catalogue::say(
+            "cli.session.uninstall.file_empty",
+            &[("file", &settings.display().to_string())],
+        ));
+    }
+    // **A FILE WE CANNOT READ IS NOT REWRITTEN**, the same rule as the graft:
+    // rewriting it with our part taken out would erase the configuration of
+    // whoever uses it, over a typo.
+    let mut root: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| format!("{}: not valid JSON ({error})", settings.display()))?;
+
+    let Some(hooks) = root.get_mut("hooks").and_then(|at| at.as_object_mut()) else {
+        return Ok(catalogue::say(
+            "cli.session.uninstall.no_hooks",
+            &[("file", &settings.display().to_string())],
+        ));
+    };
+
+    let mut taken = Vec::new();
+    let mut emptied = Vec::new();
+    let mut unreadable = Vec::new();
+    for (event, entries) in hooks.iter_mut() {
+        let Some(list) = entries.as_array_mut() else {
+            unreadable.push(event.clone());
+            continue;
+        };
+        let before = list.len();
+        list.retain(|entry| {
+            !serde_json::to_string(entry)
+                .map(|written| ours(&written))
+                .unwrap_or(false)
+        });
+        if list.len() == before {
+            continue;
+        }
+        taken.push(event.clone());
+        if list.is_empty() {
+            emptied.push(event.clone());
+        }
+    }
+
+    let mut said = Vec::new();
+    for event in &unreadable {
+        said.push(catalogue::say(
+            "cli.session.uninstall.not_an_array",
+            &[("event", event), ("file", &settings.display().to_string())],
+        ));
+    }
+    if taken.is_empty() {
+        said.insert(
+            0,
+            catalogue::say(
+                "cli.session.uninstall.nothing_of_ours",
+                &[("file", &settings.display().to_string())],
+            ),
+        );
+        return Ok(said.join("\n"));
+    }
+
+    // An event left holding an empty array is a trace of the graft too, and it
+    // goes - but only where we are the ones who emptied it.
+    for event in &emptied {
+        hooks.remove(event);
+    }
+    let all_gone = hooks.is_empty();
+    if let Some(object) = root.as_object_mut() {
+        if all_gone {
+            object.remove("hooks");
+        }
+        if object.is_empty() {
+            said.push(catalogue::say(
+                "cli.session.uninstall.empty_object_left",
+                &[("file", &settings.display().to_string())],
+            ));
+        }
+    }
+
+    let written = serde_json::to_string_pretty(&root).map_err(|error| error.to_string())?;
+    std::fs::write(settings, format!("{written}\n"))
+        .map_err(|error| format!("{}: {error}", settings.display()))?;
+    said.insert(
+        0,
+        catalogue::say(
+            "cli.session.uninstall.taken_out",
+            &[
+                ("file", &settings.display().to_string()),
+                ("events", &taken.join(", ")),
+            ],
+        ),
+    );
+    Ok(said.join("\n"))
 }
 
 /// The moments this command line has no event for, which are the ones the
@@ -485,12 +732,12 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
             .ok_or_else(|| format!("{}: «{event}» is not an array", settings.display()))?;
 
         // Already grafted: told by the command, not by the position.
-        let ours = list.iter().any(|entry| {
+        let already = list.iter().any(|entry| {
             serde_json::to_string(entry)
-                .map(|text| text.contains(MARK) && text.contains("sailor"))
+                .map(|written| ours(&written))
                 .unwrap_or(false)
         });
-        if ours {
+        if already {
             continue;
         }
         list.push(serde_json::json!({
@@ -526,6 +773,7 @@ fn act(request: &Request<'_>) -> Result<Report, String> {
         "list" => list_terminals(request),
         "census" => report_census(request),
         "install" => install_hooks(request),
+        "uninstall" => uninstall_hooks(request),
         other => Err(format!("«{other}» is not a form of this command")),
     }
 }
@@ -1197,6 +1445,166 @@ mod tests {
         assert!(
             saluto.contains("/sailor-off"),
             "il saluto deve promettere lo stacco, o lo stacco non lo sa nessuno"
+        );
+    }
+
+    /// The options that send a graft, and its inverse, into a scratch instead
+    /// of the real settings file of whoever runs the battery.
+    fn into_the_scratch(settings: &std::path::Path) -> BTreeMap<String, String> {
+        BTreeMap::from([
+            ("settings".to_owned(), settings.display().to_string()),
+            ("tool".to_owned(), "claude-code".to_owned()),
+        ])
+    }
+
+    /// One form, down the road dispatch sends it: the catalogue is the real
+    /// one, and only the addresses are diverted.
+    fn ran(verb: &str, options: &BTreeMap<String, String>) -> Result<Report, String> {
+        act(&Request {
+            verb,
+            options,
+            payload: &Payload::parse("{}").expect("the empty payload"),
+            raw: "",
+            store: None,
+            census: &one_terminal(),
+            tty: "",
+            at: 1_000,
+        })
+    }
+
+    /// **THE INVERSE LEAVES THE FILE AS THE GRAFT FOUND IT**, and the whole
+    /// file is what gets compared. Asserting «something was removed» would stay
+    /// green over an emptied array left behind and over somebody else's hook
+    /// dropped along the way, which are the two ways this can go wrong.
+    #[test]
+    fn uninstalling_leaves_the_settings_file_as_the_graft_found_it() {
+        let scratch = Scratch::new("stacco");
+        let settings = scratch.directory.join("settings.json");
+        std::fs::write(&settings, settings_of_someone_else()).expect("write");
+        let before: serde_json::Value =
+            serde_json::from_str(settings_of_someone_else()).expect("the fixture is JSON");
+
+        installed(&settings, &as_one_line_names_them()).expect("the graft runs");
+        let grafted = std::fs::read_to_string(&settings).expect("read back");
+        assert!(ours(&grafted), "the graft wrote nothing of ours: {grafted}");
+
+        uninstalled(&settings).expect("the inverse runs");
+
+        let text = std::fs::read_to_string(&settings).expect("read back");
+        let after: serde_json::Value = serde_json::from_str(&text).expect("it is still valid JSON");
+        assert_eq!(
+            before, after,
+            "the file is not what the graft found. What is left over, or what \
+             went missing, is the difference between these two: {text}"
+        );
+    }
+
+    /// Taking out twice is taking out once: whoever runs it a second time to be
+    /// sure must not be told a second removal happened, and must not fail.
+    #[test]
+    fn uninstalling_twice_takes_nothing_the_second_time() {
+        let scratch = Scratch::new("stacco-doppio");
+        let settings = scratch.directory.join("settings.json");
+        std::fs::write(&settings, settings_of_someone_else()).expect("write");
+        installed(&settings, &as_one_line_names_them()).expect("the graft runs");
+
+        uninstalled(&settings).expect("the first removal");
+        let once = std::fs::read_to_string(&settings).expect("read back");
+        let said = uninstalled(&settings).expect("the second removal");
+        let twice = std::fs::read_to_string(&settings).expect("read back");
+
+        assert_eq!(once, twice, "the second removal changed the file");
+        // Asked of the catalogue rather than written out here: the sentence is
+        // translated, and a literal would make this test fail in one language.
+        let found_nothing = catalogue::say(
+            "cli.session.uninstall.nothing_of_ours",
+            &[("file", &settings.display().to_string())],
+        );
+        assert_eq!(
+            said, found_nothing,
+            "the second removal claims to have taken something out: {said}"
+        );
+    }
+
+    /// **A FILE WE CANNOT READ IS NOT REWRITTEN**, the same rule the graft
+    /// holds: the removal has to refuse, name the file, and touch nothing.
+    #[test]
+    fn a_settings_file_that_does_not_parse_survives_the_uninstall() {
+        let scratch = Scratch::new("stacco-rotto");
+        let settings = scratch.directory.join("settings.json");
+        std::fs::write(&settings, "{ this is not JSON").expect("write");
+
+        let refused = uninstalled(&settings).expect_err("an unreadable file stops the removal");
+        assert!(refused.contains("settings.json"), "{refused}");
+        assert_eq!(
+            std::fs::read_to_string(&settings).expect("read back"),
+            "{ this is not JSON",
+            "the file is exactly as it was"
+        );
+    }
+
+    /// The two words go, and nothing else in that directory does. A file with
+    /// one of their names that Sailor did not write belongs to whoever did:
+    /// deleting it by its name alone is how a removal becomes a loss.
+    #[test]
+    fn uninstalling_takes_out_its_own_words_and_leaves_the_others() {
+        let scratch = Scratch::new("parole-tolte");
+        let settings = scratch.directory.join("settings.json");
+        let options = into_the_scratch(&settings);
+        ran("install", &options).expect("the graft runs");
+
+        let commands = scratch.directory.join("commands");
+        let someone_elses = commands.join("sailor-off.md");
+        std::fs::write(&someone_elses, "written by somebody else\n").expect("write");
+        let unrelated = commands.join("a-word-of-my-own.md");
+        std::fs::write(&unrelated, "nothing to do with the tracking\n").expect("write");
+
+        let report = ran("uninstall", &options).expect("the inverse runs");
+
+        assert!(
+            !commands.join("sailor-on.md").exists(),
+            "a word the graft wrote is still there: {}",
+            report.message
+        );
+        assert_eq!(
+            std::fs::read_to_string(&someone_elses).unwrap_or_default(),
+            "written by somebody else\n",
+            "a file Sailor did not write was taken by its name alone: {}",
+            someone_elses.display()
+        );
+        assert!(unrelated.exists(), "an unrelated word was taken away");
+        assert!(
+            report.message.contains("sailor-off"),
+            "the file it could not take out is not named: {}",
+            report.message
+        );
+    }
+
+    /// **TAKING THE GRAFT OUT IS A GESTURE ON THE CONFIGURATION, NOT ON THE
+    /// DATA.** The ledger is not read, not written and not created: a removal
+    /// that opened it would be a removal that could lose what was recorded.
+    #[test]
+    fn uninstalling_does_not_so_much_as_open_the_ledger() {
+        let scratch = Scratch::new("stacco-senza-registro");
+        let ledger = scratch.directory.join("a-ledger-nobody-asked-for.db");
+        let settings = scratch.directory.join("settings.json");
+        let words: Vec<String> = vec![
+            "uninstall".to_owned(),
+            "--store".to_owned(),
+            ledger.display().to_string(),
+            "--settings".to_owned(),
+            settings.display().to_string(),
+            "--tool".to_owned(),
+            "claude-code".to_owned(),
+        ];
+
+        dispatch(&words).expect("the inverse runs");
+
+        assert!(
+            !ledger.exists(),
+            "the removal created {}: it opened the ledger to take hooks out of a \
+             settings file",
+            ledger.display()
         );
     }
 
