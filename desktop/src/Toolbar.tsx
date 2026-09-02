@@ -68,7 +68,7 @@ export function Toolbar({ flowName, onAdd }: ToolbarProps) {
   if (flowName === null) {
     return (
       <Panel position="bottom-left" className="toolbar">
-        <p className="toolbar__prompt">Scegli un flusso nella colonna per aggiungere passi.</p>
+        <p className="toolbar__prompt">Pick a flow in the column to add steps.</p>
       </Panel>
     );
   }
@@ -80,7 +80,7 @@ export function Toolbar({ flowName, onAdd }: ToolbarProps) {
           in una corsia qualunque delle tante, e capire quale è un indovinello
           che si risolve dopo. */}
       <div className="toolbar__target">
-        Aggiungi a <span className="toolbar__target-name">«{flowName}»</span>
+        Add to <span className="toolbar__target-name">«{flowName}»</span>
       </div>
       <div className="toolbar__row">
         {TOOL_GROUPS.map((group) => (

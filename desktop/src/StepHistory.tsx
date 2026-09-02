@@ -38,7 +38,7 @@ function when(seconds: number): string {
 }
 
 function lasted(from: number, to: number | null): string {
-  if (to === null) return "in corso";
+  if (to === null) return "still going";
   const delta = Math.max(0, to - from);
   if (delta < 60) return `${delta}s`;
   return `${Math.floor(delta / 60)}m ${delta % 60}s`;
@@ -81,9 +81,9 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
 
   return (
     <section className="history">
-      <div className="history__title">Cosa è entrato in questo passo</div>
+      <div className="history__title">What came into this step</div>
 
-      {ask.state === "asking" && <div className="history__note">chiedo al deposito…</div>}
+      {ask.state === "asking" && <div className="history__note">asking the ledger…</div>}
 
       {ask.state === "mute" && <div className="history__note">{ask.why}</div>}
 
@@ -91,7 +91,7 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
         // Un elenco vuoto ha due cause diverse, e confonderle manda a cercare
         // un guasto: qui è sempre la prima, perché un errore di lettura arriva
         // come `mute`.
-        <div className="history__note">questo passo non è mai stato attraversato</div>
+        <div className="history__note">this step has never been passed through</div>
       )}
 
       {ask.state === "ready" &&
@@ -108,7 +108,7 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
               >
                 <span className="passage__when">{when(passage.started_at)}</span>
                 <span className="passage__outcome">
-                  {passage.outcome ? (OUTCOME_LABEL[passage.outcome] ?? passage.outcome) : "in corso"} ·{" "}
+                  {passage.outcome ? (OUTCOME_LABEL[passage.outcome] ?? passage.outcome) : "still going"} ·{" "}
                   {lasted(passage.started_at, passage.ended_at)}
                 </span>
               </button>
@@ -122,36 +122,36 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
                   che il dato ci sia. */}
               <div className="passage__origin">
                 {passage.started_by}
-                {passage.signal_where && ` · da ${passage.signal_where}`}
+                {passage.signal_where && ` · from ${passage.signal_where}`}
                 {passage.signal_who && ` · ${passage.signal_who}`}
               </div>
 
               {passage.attempt > 1 && (
-                <div className="passage__attempt">{passage.attempt}ª volta di questa corsa</div>
+                <div className="passage__attempt">attempt {passage.attempt} of this run</div>
               )}
 
               {passage.mandate && (
                 <div className="passage__mandate" title={passage.mandate}>
-                  <span className="passage__label">consegna</span>
+                  <span className="passage__label">mandate</span>
                   {shorten(passage.mandate)}
                 </div>
               )}
 
               {isOpen && (
                 <div className="passage__detail">
-                  <div className="passage__label">è entrato</div>
+                  <div className="passage__label">came in</div>
                   <pre className="passage__code">{JSON.stringify(passage.input, null, 2)}</pre>
 
                   {passage.output !== null && passage.output !== undefined && (
                     <>
-                      <div className="passage__label">ne è uscito</div>
+                      <div className="passage__label">came out</div>
                       <pre className="passage__code">{JSON.stringify(passage.output, null, 2)}</pre>
                     </>
                   )}
 
                   {passage.said && (
                     <>
-                      <div className="passage__label">ha detto</div>
+                      <div className="passage__label">said</div>
                       <pre className="passage__code">{passage.said}</pre>
                     </>
                   )}
@@ -160,7 +160,7 @@ export function StepHistory({ flowName, stepId }: StepHistoryProps) {
                     <div className="passage__failure">{whyFailed(passage.failure_class)}</div>
                   )}
 
-                  <div className="passage__run">corsa {passage.run_id}</div>
+                  <div className="passage__run">run {passage.run_id}</div>
                 </div>
               )}
             </article>

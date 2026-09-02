@@ -41,7 +41,7 @@ export function insideTheWindow(): boolean {
  */
 export async function loadFlows(): Promise<FlowEntry[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore da interrogare");
+  if (!invoke) throw new Error("outside the native shell: no engine to ask");
   return invoke<FlowEntry[]>("flows");
 }
 
@@ -53,7 +53,7 @@ export async function loadFlows(): Promise<FlowEntry[]> {
  */
 export async function saveFlow(flow: FlowFile): Promise<Origin> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore a cui salvare");
+  if (!invoke) throw new Error("outside the native shell: no engine to save to");
   // The origin comes back because the engine is the only one that knows it: a
   // flow that has never been saved belongs nowhere, and after this call it
   // belongs somewhere precise. Guessing here would put the wrong heading over
@@ -75,7 +75,7 @@ export async function saveFlow(flow: FlowFile): Promise<Origin> {
  */
 export async function discoverTools(): Promise<Tool[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore a cui chiedere gli strumenti");
+  if (!invoke) throw new Error("outside the native shell: no engine to ask for the tools");
   const tools = parseTools(await invoke<unknown>("discover_tools"));
   // L'esito si deposita nel registro condiviso perché un nodo sulla tela possa
   // mostrare il segno e lo stato del proprio strumento senza che la scoperta
@@ -89,7 +89,7 @@ export async function discoverTools(): Promise<Tool[]> {
 /** Cancella un flusso dal disco, tramite il motore. Stessa premessa di `saveFlow`. */
 export async function deleteFlow(name: string): Promise<void> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore da cui cancellare");
+  if (!invoke) throw new Error("outside the native shell: no engine to delete from");
   await invoke<void>("delete_flow", { name });
 }
 
@@ -146,7 +146,7 @@ export interface FlowTrigger {
 /** Come si innesca un flusso: da dove parte, e se accetta una consegna. */
 export async function flowTrigger(name: string): Promise<FlowTrigger> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore da innescare");
+  if (!invoke) throw new Error("outside the native shell: no engine to trigger");
   return invoke<FlowTrigger>("flow_trigger", { name });
 }
 
@@ -157,14 +157,14 @@ export async function flowTrigger(name: string): Promise<FlowTrigger> {
  */
 export async function startRun(name: string, mandate: string | null): Promise<StartedRun> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun motore che esegua");
+  if (!invoke) throw new Error("outside the native shell: no engine to run it");
   return invoke<StartedRun>("start_run", { name, mandate });
 }
 
 /** Tutto quello che una corsa ha detto finora, per chi si affaccia adesso. */
 export async function runSnapshot(runId: string): Promise<RunSnapshot> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessuna corsa da guardare");
+  if (!invoke) throw new Error("outside the native shell: no run to watch");
   return invoke<RunSnapshot>("run_snapshot", { runId });
 }
 
@@ -177,7 +177,7 @@ export async function runSnapshot(runId: string): Promise<RunSnapshot> {
  */
 export async function knownRuns(): Promise<RunSnapshot[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessuna corsa da elencare");
+  if (!invoke) throw new Error("outside the native shell: no runs to list");
   return invoke<RunSnapshot[]>("known_runs");
 }
 
@@ -211,7 +211,7 @@ export interface OpenRun {
  */
 export async function openRuns(): Promise<OpenRun[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da interrogare");
+  if (!invoke) throw new Error("outside the native shell: no ledger to ask");
   return invoke<OpenRun[]>("open_runs");
 }
 
@@ -246,7 +246,7 @@ export interface DaySummary {
  */
 export async function todaySummary(): Promise<DaySummary> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da riepilogare");
+  if (!invoke) throw new Error("outside the native shell: no ledger to sum up");
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   return invoke<DaySummary>("day_summary", { since: Math.floor(midnight.getTime() / 1000) });
@@ -317,7 +317,7 @@ export interface ModelCall {
 /** Tutte le corse che il deposito ricorda, dalla più recente. */
 export async function executionHistory(): Promise<Execution[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessuna storia da leggere");
+  if (!invoke) throw new Error("outside the native shell: no history to read");
   return invoke<Execution[]>("execution_history");
 }
 
@@ -344,7 +344,7 @@ export interface Installed {
 /** Competenze, agenti, comandi, regole, ganci: cosa c'è su questa macchina. */
 export async function machineInventory(): Promise<Installed> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: il censimento lo fa il motore");
+  if (!invoke) throw new Error("outside the native shell: the engine takes the census");
   return invoke<Installed>("machine_inventory");
 }
 
@@ -381,7 +381,7 @@ export interface FormDoc {
  */
 export async function manual(): Promise<CommandDoc[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: i comandi li dichiara il binario");
+  if (!invoke) throw new Error("outside the native shell: the binary declares the commands");
   return invoke<CommandDoc[]>("manual");
 }
 
@@ -405,11 +405,11 @@ export async function listenToRuns(
   handler: (event: RunEvent) => void,
 ): Promise<{ stop: Unlisten } | { why: string }> {
   const tauri = (window as unknown as { __TAURI__?: TauriGlobal & { event?: EventGlobal } }).__TAURI__;
-  if (!tauri) return { why: "fuori dal guscio nativo: nessun canale di eventi" };
+  if (!tauri) return { why: "outside the native shell: no channel of events" };
   const listen = tauri.event?.listen;
   if (!listen) {
     return {
-      why: "il guscio non espone «event.listen»: la vista si aggiorna interrogando invece che in ascolto",
+      why: "the shell exposes no «event.listen»: the view refreshes by asking instead of listening",
     };
   }
   try {
@@ -454,7 +454,7 @@ export interface StepPassage {
 /** Tutto quello che è passato per un nodo, dal più recente. */
 export async function stepHistory(flow: string, step: string, limit?: number): Promise<StepPassage[]> {
   const invoke = invoker();
-  if (!invoke) throw new Error("fuori dal guscio nativo: nessun deposito da interrogare");
+  if (!invoke) throw new Error("outside the native shell: no ledger to ask");
   return invoke<StepPassage[]>("step_history", { flow, step, limit: limit ?? null });
 }
 

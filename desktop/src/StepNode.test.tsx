@@ -141,7 +141,7 @@ describe("il nodo e il motore che lo esegue", () => {
     // macchina e un passo di cui nessuno ha guardato il motore si disegnavano
     // identici.
     mountNode({}, new Map());
-    expect(screen.getByText("motore non dichiarato")).toBeDefined();
+    expect(screen.getByText("engine not declared")).toBeDefined();
     // E dice cosa lo esegue al posto suo.
     expect(screen.getByText("external_engine")).toBeDefined();
   });
@@ -217,13 +217,13 @@ describe("il nodo e il motore che lo esegue", () => {
         ],
       ]),
     );
-    expect(screen.getByText("↑ 12,4k")).toBeDefined();
+    expect(screen.getByText("↑ 12.4k")).toBeDefined();
     expect(screen.getByText("↓ 840")).toBeDefined();
-    expect(screen.getByText("0,1285 $")).toBeDefined();
+    expect(screen.getByText("$0.1285")).toBeDefined();
   });
 
   test("UN COSTO CHE NESSUNO HA DICHIARATO SI DICE, e non diventa zero", () => {
-    // Codex dichiara il totale dei token e non i due lati: un `0,0000 $` qui
+    // Codex dichiara il totale dei token e non i due lati: un `$0.0000` qui
     // sarebbe una misura inventata sulla faccia del nodo.
     mountNode(
       {},
@@ -234,8 +234,8 @@ describe("il nodo e il motore che lo esegue", () => {
     // as «it ran for free», which is a different fact.
     const cell = document.querySelector(".step-node__bench .step-node__cell:last-child .step-node__cell-value");
     expect(cell?.textContent).toBe("—");
-    expect(cell?.getAttribute("title")).toContain("nessuna delle chiamate");
-    expect(screen.queryByText(/0,0000/)).toBeNull();
+    expect(cell?.getAttribute("title")).toContain("none of this step's calls");
+    expect(screen.queryByText(/0\.0000/)).toBeNull();
   });
 });
 
@@ -318,8 +318,8 @@ describe("a row gives up a line, never a fact", () => {
  */
 describe("how long the step took", () => {
   test("under ten seconds a tenth is the difference that matters", () => {
-    expect(formatElapsed(0.2)).toBe("0,2 s");
-    expect(formatElapsed(6)).toBe("6,0 s");
+    expect(formatElapsed(0.2)).toBe("0.2 s");
+    expect(formatElapsed(6)).toBe("6.0 s");
   });
 
   test("over ten seconds nobody compares tenths", () => {
@@ -338,12 +338,12 @@ describe("how long the step took", () => {
         ],
       ]),
     );
-    expect(screen.getByText("0,2 s")).toBeDefined();
+    expect(screen.getByText("0.2 s")).toBeDefined();
   });
 
   test("A DURATION NOBODY MEASURED LEAVES NO SLOT, and never becomes zero", () => {
     // `elapsed_secs` is optional and, on a real run, always absent: nothing
-    // turns the two event instants into it yet. A `0,0 s` here would be a
+    // turns the two event instants into it yet. A `0.0 s` here would be a
     // measurement invented on the face of the node.
     const node = mountNode({}, new Map([["sviluppa-sailor::implementa", runIn("went")]]));
     expect(node.querySelector(".step-node__elapsed")).toBeNull();

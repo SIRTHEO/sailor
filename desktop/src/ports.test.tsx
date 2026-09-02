@@ -472,7 +472,7 @@ describe("the two registers of attention", () => {
       ]),
     );
     expect(node.getAttribute("data-calls")).toBe("true");
-    expect(screen.getByText("altri 1 in attesa")).toBeDefined();
+    expect(screen.getByText("1 more waiting")).toBeDefined();
   });
 
   test("the second one waiting is NOT singled out", () => {
