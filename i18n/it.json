@@ -425,5 +425,6 @@
   "window.step.state.handed_to_human": "aspetta una persona",
   "window.step.state.running": "in corso",
   "window.step.state.waiting": "in attesa",
+  "window.step.state.idle": "mai eseguito",
   "window.step.state.went": "andato"
 }
