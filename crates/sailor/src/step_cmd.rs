@@ -186,12 +186,15 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
         .get("mandate")
         .and_then(Value::as_str)
         .unwrap_or("<this step carries no written brief>");
-    Ok(format!(
-        "passo {step_id} preso in carico da «{holder}» — corsa {run_id}, tentativo {}\n\
-         ── mandato ──\n{mandate}\n──\n\
-         quando hai finito: sailor step close --run {run_id} --step {step_id} --as {holder} \
-         --outcome went [--output-file <file>] [--turns <n>]",
-        started.attempt
+    Ok(catalogue::say(
+        "cli.step.taken_on",
+        &[
+            ("step_id", step_id),
+            ("holder", holder),
+            ("run_id", run_id),
+            ("attempt", &started.attempt.to_string()),
+            ("mandate", mandate),
+        ],
     ))
 }
 
@@ -232,10 +235,13 @@ fn refuse_the_author_as_judge(
             .read_record(HOLDER_COLLECTION, &holder_key(run_id, dependency))
             .map_err(|error| format!("cannot read who closed {dependency}: {error}"))?;
         if written.is_some_and(|found| found.written_by == holder) {
-            return Err(format!(
-                "«{holder}» ha già chiuso {dependency}, da cui {step_id} dipende: chi crea \
-                 non giudica. Usa un altro nome, oppure dichiara `\"same_holder_ok\": true` \
-                 nel passo se il flusso vuole davvero che sia la stessa mano"
+            return Err(catalogue::say(
+                "cli.step.author_would_judge",
+                &[
+                    ("holder", holder),
+                    ("dependency", dependency),
+                    ("step_id", step_id),
+                ],
             ));
         }
     }
@@ -273,9 +279,9 @@ fn declared_outcome(found: &BTreeMap<String, String>) -> Result<Outcome, String>
     match required(found, "outcome")? {
         "went" => Ok(Outcome::Went),
         "broke" => Ok(Outcome::Broke),
-        other => Err(format!(
-            "«--outcome {other}» non è un esito che una persona possa dichiarare: \
-             i valori sono `went` e `broke`"
+        other => Err(catalogue::say(
+            "cli.step.outcome_not_declarable",
+            &[("outcome", other)],
         )),
     }
 }
@@ -301,9 +307,9 @@ fn close_step_in(
         .filter(|record| record.step_id == step_id && record.outcome.is_none())
         .max_by_key(|record| (record.attempt, record.epoch))
         .ok_or_else(|| {
-            format!(
-                "la corsa {run_id} non ha nessun passo {step_id} aperto: \
-                 prendilo in carico con `sailor step open` prima di chiuderlo"
+            catalogue::say(
+                "cli.step.none_open",
+                &[("run_id", run_id), ("step_id", step_id)],
             )
         })?;
 
@@ -314,11 +320,13 @@ fn close_step_in(
     // altro terminale. Un passo consegnato non porta pid, quindi la regola
     // separa esattamente i due casi senza doverli indovinare.
     if open.held_by_pid.is_some() {
-        return Err(format!(
-            "il passo {step_id} è tenuto dal processo {}: non è stato consegnato a nessuno, \
-             lo sta eseguendo il motore. Se quel processo è morto, usa \
-             `sailor flow resume {run_id}`",
-            open.held_by_pid.unwrap_or_default()
+        return Err(catalogue::say(
+            "cli.step.held_by_the_engine",
+            &[
+                ("step_id", step_id),
+                ("pid", &open.held_by_pid.unwrap_or_default().to_string()),
+                ("run_id", run_id),
+            ],
         ));
     }
 
@@ -327,10 +335,9 @@ fn close_step_in(
     refuse_the_author_as_judge(ledger, run_id, step_id, holder, open)?;
 
     let step = flow.graph.step(step_id).ok_or_else(|| {
-        format!(
-            "il flusso {} non dichiara nessun passo {step_id}: il deposito e il file \
-             si sono separati",
-            flow.id
+        catalogue::say(
+            "cli.step.flow_declares_no_such_step",
+            &[("flow", &flow.id), ("step_id", step_id)],
         )
     })?;
 
@@ -348,11 +355,12 @@ fn close_step_in(
             None => {
                 let waiting_on_it = dependents_of(flow, step_id);
                 if !waiting_on_it.is_empty() {
-                    return Err(format!(
-                        "il passo {step_id} si chiuderebbe senza uscita, ma {} dipende da lui \
-                         e ne pretende una tipata: la corsa si fermerebbe lì. Dichiarala con \
-                         `--output-file <file>`",
-                        waiting_on_it.join(", ")
+                    return Err(catalogue::say(
+                        "cli.step.would_close_without_output",
+                        &[
+                            ("step_id", step_id),
+                            ("dependents", &waiting_on_it.join(", ")),
+                        ],
                     ));
                 }
                 None
@@ -363,10 +371,9 @@ fn close_step_in(
                 let value: Value = serde_json::from_str(&text)
                     .map_err(|error| format!("{path} is not valid JSON: {error}"))?;
                 step.output_schema.validate(&value).map_err(|error| {
-                    format!(
-                        "l'uscita dichiarata non rispetta lo schema del passo {step_id}: {error}. \
-                         Il passo non è stato chiuso — un'uscita malformata accettata qui \
-                         ucciderebbe la corsa più avanti, e la colpa cadrebbe su un altro passo"
+                    catalogue::say(
+                        "cli.step.output_breaks_the_schema",
+                        &[("step_id", step_id), ("error", &error.to_string())],
                     )
                 })?;
                 Some(value)
@@ -412,12 +419,22 @@ fn close_step_in(
         })
         .map_err(|error| format!("cannot record who closed {step_id}: {error}"))?;
 
-    let mut report = format!(
-        "step {step_id} closed by «{holder}» as {}",
-        match outcome {
-            Outcome::Went => "andato",
-            _ => "rotto",
-        }
+    let mut report = catalogue::say(
+        "cli.step.closed",
+        &[
+            ("step_id", step_id),
+            ("holder", holder),
+            (
+                "outcome",
+                &catalogue::say(
+                    match outcome {
+                        Outcome::Went => "cli.step.outcome.went",
+                        _ => "cli.step.outcome.broke",
+                    },
+                    &[],
+                ),
+            ),
+        ],
     );
 
     if let Some(turns) = found.get("turns") {
@@ -427,8 +444,11 @@ fn close_step_in(
         write_self_declared_turns(&ledger, run_id, step_id, holder, turns, now)?;
         let _ = write!(
             report,
-            "\n{turns} turni autodichiarati, senza costo: entrano fra le chiamate \
-             che il totale non conosce, e da adesso la spesa di questa corsa è un «almeno»"
+            "\n{}",
+            catalogue::say(
+                "cli.step.self_declared_turns",
+                &[("turns", &turns.to_string())]
+            )
         );
     }
 
@@ -449,14 +469,16 @@ fn what_comes_next(decision: &Decision, run_id: &str) -> String {
             "ready now: {}. Resume with: sailor flow resume {run_id}",
             steps.join(", ")
         ),
-        Decision::Waiting(steps) => format!(
-            "in attesa di qualcuno: {}. Prendi il lavoro con: sailor step open --run {run_id} \
-             --step <passo> --as <chi>",
-            steps.join(", ")
+        Decision::Waiting(steps) => catalogue::say(
+            "cli.step.waiting_for_someone",
+            &[("steps", &steps.join(", ")), ("run_id", run_id)],
         ),
         Decision::Running(steps) => format!("still running: {}", steps.join(", ")),
         Decision::Stopped(steps) => format!("stopped in the store: {}", steps.join(", ")),
-        Decision::Failed(steps) => format!("rotti oltre i tentativi: {}", steps.join(", ")),
+        Decision::Failed(steps) => catalogue::say(
+            "cli.step.broken_past_the_attempts",
+            &[("steps", &steps.join(", "))],
+        ),
         Decision::CapReached(stop) => registry::why_it_stopped(stop),
         Decision::Complete => "the run is complete: nothing is left to do".to_owned(),
     }
@@ -574,9 +596,9 @@ pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, Str
         .map_err(|error| format!("cannot read run {run_id}: {error}"))?
         .ok_or_else(|| format!("no run is called {run_id} in this store"))?;
     if header.entity.is_empty() {
-        return Err(format!(
-            "la corsa {run_id} non dichiara da quale flusso viene: senza non so quale \
-             grafo caricare"
+        return Err(catalogue::say(
+            "cli.step.run_declares_no_flow",
+            &[("run_id", run_id)],
         ));
     }
     let sources = ui::gather::flow_sources();
@@ -587,10 +609,9 @@ pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, Str
             "flow {} ({origin}) of run {run_id} does not load: {reason}",
             header.entity
         )),
-        None => Err(format!(
-            "il flusso {} della corsa {run_id} non si trova più: era su questa macchina \
-             quando la corsa è partita",
-            header.entity
+        None => Err(catalogue::say(
+            "cli.step.flow_no_longer_found",
+            &[("flow", &header.entity), ("run_id", run_id)],
         )),
     }
 }
@@ -840,7 +861,7 @@ mod tests {
             ]),
         )
         .expect_err("un'uscita fuori schema si respinge");
-        assert!(error.contains("non rispetta lo schema"), "{error}");
+        assert!(error.contains("does not meet step"), "{error}");
 
         let records = ledger.steps("run-1").expect("rileggere i passi");
         assert!(
@@ -937,7 +958,7 @@ mod tests {
             &options(&[("run", "run-1"), ("step", "verdetto"), ("as", "autore")]),
         )
         .expect_err("l'autore non apre il passo che lo giudica");
-        assert!(refused.contains("non giudica"), "{refused}");
+        assert!(refused.contains("does not judge"), "{refused}");
 
         // E nemmeno chiudere, entrando da un nome qualunque: è il gesto che
         // conta, ed è quello che la porta lasciata aperta permetterebbe.
@@ -960,7 +981,7 @@ mod tests {
             ]),
         )
         .expect_err("l'autore non chiude il passo che lo giudica");
-        assert!(refused.contains("non giudica"), "{refused}");
+        assert!(refused.contains("does not judge"), "{refused}");
     }
 
     /// Il permesso esiste e si dichiara nel passo: una negazione senza scampo
@@ -1128,7 +1149,7 @@ mod tests {
             ]),
         )
         .expect_err("un passo tenuto dal motore non si chiude a mano");
-        assert!(error.contains("lo sta eseguendo il motore"), "{error}");
+        assert!(error.contains("the engine is running it"), "{error}");
         assert!(
             ledger
                 .steps("run-1")
@@ -1201,7 +1222,7 @@ mod tests {
         .map(|(name, value)| (name.to_owned(), value.to_owned()))
         .collect();
         let error = close_step(&found).expect_err("«waiting» non si dichiara a mano");
-        assert!(error.contains("`went` e `broke`"), "{error}");
+        assert!(error.contains("`went` and `broke`"), "{error}");
     }
 
     #[test]

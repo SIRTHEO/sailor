@@ -208,13 +208,8 @@ impl<'a> Request<'a> {
     /// TYPED**, and the message says so: it means a form reads the ledger
     /// without being listed in [`NEEDS_THE_STORE`].
     fn store(&self) -> Result<&'a Sessions, String> {
-        self.store.ok_or_else(|| {
-            format!(
-                "«{}» legge il deposito ma non è in NEEDS_THE_STORE: è un difetto \
-                 di session_cmd.rs, non della riga che hai scritto",
-                self.verb
-            )
-        })
+        self.store
+            .ok_or_else(|| catalogue::say("cli.session.form_not_listed", &[("form", self.verb)]))
     }
 
     /// Whether whoever speaks is a start-up hook.
@@ -605,13 +600,12 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
 /// plain line would be read by the person at the screen and not by the agent,
 /// and detaching would stay a thing that exists and nobody knows about.
 fn welcome(arrival: &Arrival) -> String {
-    let text = format!(
-        "Sei collegato a Sailor.\n\
-         terminale {} · albero {}\n\
-         Questo terminale è tracciato: Sailor sa che esisti, in che albero lavori \
-         e quando avrai bisogno di passare il testimone.\n\
-         Per staccarlo: /sailor-off",
-        arrival.anchor.tty, arrival.anchor.worktree,
+    let text = catalogue::say(
+        "cli.session.welcome",
+        &[
+            ("tty", &arrival.anchor.tty),
+            ("worktree", &arrival.anchor.worktree),
+        ],
     );
     serde_json::json!({
         "hookSpecificOutput": {
@@ -730,9 +724,9 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
         });
     }
     let message = match request.census {
-        Census::Refused(refusal) => format!(
-            "NON LO SO: non mi è stato permesso guardare la macchina ({refusal}). \
-             Questo non è «nessun terminale»"
+        Census::Refused(refusal) => catalogue::say(
+            "cli.session.census_refused",
+            &[("refusal", &refusal.to_string())],
         ),
         Census::NoTerminal => "no process has a terminal, and asking was possible".to_owned(),
         Census::Terminals(terminals) => {
@@ -1307,7 +1301,11 @@ mod tests {
         .expect("il censimento risponde");
 
         assert_eq!(report.code, REFUSED);
-        assert!(report.message.contains("NON LO SO"), "{}", report.message);
+        assert!(
+            report.message.contains("I DO NOT KNOW"),
+            "{}",
+            report.message
+        );
     }
 
     /// L'elenco stampato e quello accettato sono lo stesso: una forma
@@ -1402,7 +1400,7 @@ mod tests {
         let report = ask("census", "", &store, &refused(), &no_options()).expect("censire");
         assert_eq!(report.code, REFUSED);
         assert!(
-            report.message.contains("NON LO SO"),
+            report.message.contains("I DO NOT KNOW"),
             "un diniego va detto, non trasformato in un elenco vuoto: {}",
             report.message
         );
