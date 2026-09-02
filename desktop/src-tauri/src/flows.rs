@@ -61,7 +61,7 @@ fn save_flow_in(flows_dir: &Path, flow_json: serde_json::Value) -> Result<(), St
     // `Graph::validate`: cicli, dipendenze mancanti o incompatibili sono
     // rifiutati qui dentro, non ricontrollati a mano.
     let flow: FlowFile = serde_json::from_value(flow_json)
-        .map_err(|error| format!("il flusso non supera la validazione del motore: {error}"))?;
+        .map_err(|error| format!("the flow fails the engine's validation: {error}"))?;
     reject_unknown_actions(&flow)?;
     flow::system::save_in(flows_dir, &flow)
 }
@@ -138,7 +138,7 @@ fn reject_unknown_actions(flow: &FlowFile) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!(
-            "il flusso usa azioni che il motore non conosce: {}",
+            "the flow uses actions the engine does not know: {}",
             missing.join(", ")
         ))
     }
@@ -241,7 +241,7 @@ mod tests {
             "inputs": {}
         });
         let error = save_flow_in(&dir, cyclic).expect_err("grafo ciclico rifiutato");
-        assert!(error.contains("validazione"), "{error}");
+        assert!(error.contains("fails the engine's validation"), "{error}");
         assert!(
             entries(&dir).is_empty(),
             "un grafo rifiutato non deve toccare il disco"
@@ -263,7 +263,7 @@ mod tests {
             "inputs": {}
         });
         let error = save_flow_in(&dir, broken).expect_err("dipendenza mancante rifiutata");
-        assert!(error.contains("validazione"), "{error}");
+        assert!(error.contains("fails the engine's validation"), "{error}");
         assert!(entries(&dir).is_empty());
     }
 

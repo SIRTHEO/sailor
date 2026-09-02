@@ -235,7 +235,7 @@ impl Runs {
             return Err(format!("no run {run_id} in this window"));
         };
         if state.status != "running" {
-            return Err(format!("run {run_id} has already ended: {}", state.status));
+            return Err(format!("run {run_id} is not running: {}", state.status));
         }
         state.halt = true;
         Ok(())
@@ -399,6 +399,80 @@ impl RecordStore for WatchedStore {
     fn halt_requested(&self, run_id: &str) -> Result<bool, FlowError> {
         Ok(self.runs.halt_requested(run_id))
     }
+}
+
+/// Resumes a run the ledger holds — one parked on a person and just closed —
+/// through this window: the run joins the registry, every step reaches the
+/// console, and Stop applies to it. The root is the one the window stands
+/// in, and the answer says so, because the ledger keeps no root of a run's own.
+pub(crate) fn resume(
+    app: &AppHandle,
+    runs: &Arc<Runs>,
+    ledger: Ledger,
+    flow: FlowFile,
+    run_id: String,
+) -> Result<String, String> {
+    let header = ledger
+        .run_header(&run_id)
+        .map_err(|error| format!("cannot read run {run_id}: {error}"))?
+        .ok_or_else(|| format!("no run {run_id} in the ledger"))?;
+    let root = std::env::current_dir()
+        .ok()
+        .and_then(|working| flow::workspace::find_root(&working));
+    {
+        let mut known = runs.lock_map();
+        if known.get(&run_id).is_some_and(|state| state.status == "running") {
+            return Err(format!("run {run_id} is already running in this window"));
+        }
+        known.insert(
+            run_id.clone(),
+            RunState {
+                flow: flow.id.clone(),
+                started_at: header.started_at,
+                status: "running".to_owned(),
+                events: Vec::new(),
+                next_seq: 0,
+                halt: false,
+            },
+        );
+    }
+    let where_it_runs = root
+        .as_ref()
+        .map_or("no project root: steps that declare a workdir will fail".to_owned(), |root| {
+            format!("in {}", root.display())
+        });
+    let handle = runs.clone();
+    let app = app.clone();
+    let id = run_id.clone();
+    std::thread::spawn(move || {
+        let mut store = WatchedStore {
+            inner: ledger.clone(),
+            app: app.clone(),
+            runs: handle.clone(),
+            run_id: id.clone(),
+        };
+        let outcome = sailor::flow_cmd::resume_run_with(&ledger, &flow, &id, &mut store, root.as_deref());
+        // The status the resume recorded is the ledger's word for it; the
+        // report, right or wrong, reaches the console as the run's last line.
+        let status = ledger
+            .run_header(&id)
+            .ok()
+            .flatten()
+            .map_or("incomplete".to_owned(), |header| header.status);
+        let (report, error) = match outcome {
+            Ok(report) => (Some(report), None),
+            Err(error) => (None, Some(error)),
+        };
+        handle.set_status(&id, &status);
+        handle.publish(
+            &app,
+            &id,
+            "run_ended",
+            None,
+            json!({ "status": status, "error": error, "report": report, "ended_at": now_secs() }),
+        );
+    });
+    Ok(format!("run {run_id} is resuming {where_it_runs}; follow it in the console"))
 }
 
 /// Asks a run held by this window to stop before its next front. The step
@@ -630,7 +704,7 @@ pub(crate) fn run_snapshot(
     let known = runs.lock_map();
     let state = known
         .get(&run_id)
-        .ok_or_else(|| format!("la corsa {run_id} non è nota a questa finestra"))?;
+        .ok_or_else(|| format!("run {run_id} is not known to this window"))?;
     Ok(RunSnapshot {
         run_id: run_id.clone(),
         flow: state.flow.clone(),
@@ -723,13 +797,13 @@ pub(crate) fn open_runs(runs: State<'_, Arc<Runs>>) -> Result<Vec<OpenRun>, Stri
         return Ok(Vec::new());
     }
     let ledger = Ledger::open(&ledger_dir)
-        .map_err(|error| format!("non riesco ad aprire il deposito: {error}"))?;
+        .map_err(|error| format!("cannot open the ledger: {error}"))?;
     let unfinished = ledger
         .unfinished_runs()
-        .map_err(|error| format!("non riesco a leggere le corse aperte: {error}"))?;
+        .map_err(|error| format!("cannot read the open runs: {error}"))?;
     let waiting = ledger
         .waiting_runs()
-        .map_err(|error| format!("non riesco a leggere le corse in attesa: {error}"))?;
+        .map_err(|error| format!("cannot read the waiting runs: {error}"))?;
     let known = runs.lock_map();
 
     let now = now_secs();
@@ -885,7 +959,7 @@ pub struct StepPassage {
 pub(crate) fn run_usage(run_id: String) -> Result<Option<ui::dashboard::ExecutionView>, String> {
     let ledger_dir = default_ledger_dir();
     let Some(data) = ui::gather::gather(&ledger_dir)
-        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?
+        .map_err(|error| format!("cannot read the ledger: {error}"))?
     else {
         return Ok(None);
     };
@@ -916,7 +990,7 @@ pub(crate) fn step_history(
 ) -> Result<Vec<StepPassage>, String> {
     let ledger_dir = default_ledger_dir();
     let Some(data) = ui::gather::gather(&ledger_dir)
-        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?
+        .map_err(|error| format!("cannot read the ledger: {error}"))?
     else {
         // Nessun deposito non è un guasto: è un programma che non ha ancora
         // eseguito niente, e dirlo come errore manderebbe a cercare un guasto
@@ -1031,10 +1105,10 @@ fn mandate_target(flow: &FlowFile) -> MandateTarget {
     let [root] = roots.as_slice() else {
         return MandateTarget::None {
             why: if roots.is_empty() {
-                "il flusso non ha un passo di partenza: ogni passo aspetta qualcun altro".to_owned()
+                "the flow has no starting step: every step waits on another".to_owned()
             } else {
                 format!(
-                    "il flusso parte da {} passi ({}), e una consegna sola non dice a quale va",
+                    "the flow starts from {} steps ({}), and one mandate does not say which it goes to",
                     roots.len(),
                     roots.join(", ")
                 )
@@ -1044,14 +1118,14 @@ fn mandate_target(flow: &FlowFile) -> MandateTarget {
 
     let Some(step) = flow.graph.steps().iter().find(|step| &step.id == root) else {
         return MandateTarget::None {
-            why: "il passo di partenza non si trova nel grafo".to_owned(),
+            why: "the starting step is not in the graph".to_owned(),
         };
     };
 
     let Some(field) = text_field_of(&step.action) else {
         return MandateTarget::None {
             why: format!(
-                "il passo di partenza «{root}» esegue «{}», che non ha un ingresso di testo",
+                "the starting step «{root}» runs «{}», which has no text input",
                 step.action
             ),
         };
@@ -1067,7 +1141,7 @@ fn mandate_target(flow: &FlowFile) -> MandateTarget {
                 Some(Value::String(source)) => {
                     return MandateTarget::None {
                         why: format!(
-                            "l'innesco «{root}» aspetta un segnale di tipo «{source}», non il gesto di una persona"
+                            "the trigger «{root}» waits for a signal of kind «{source}», not a person's gesture"
                         ),
                     };
                 }
@@ -1149,7 +1223,7 @@ fn inputs_with_mandate(
             }
         }
         MandateTarget::None { why } => {
-            Err(format!("questo flusso non accetta una consegna: {why}"))
+            Err(format!("this flow takes no mandate: {why}"))
         }
     }
 }
@@ -1273,12 +1347,12 @@ fn load_flow(name: &str) -> Result<FlowFile, String> {
     match known.iter().find(|(known, _, _)| known == name) {
         Some((_, _, Ok(flow))) => Ok(flow.clone()),
         Some((_, origin, Err(reason))) => Err(format!(
-            "il flusso «{name}» ({origin}) non si carica: {reason}"
+            "flow «{name}» ({origin}) does not load: {reason}"
         )),
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
             Err(format!(
-                "nessun flusso si chiama «{name}»; quelli che vedo sono: {}",
+                "no flow is called «{name}»; the ones I see are: {}",
                 if names.is_empty() {
                     "nessuno".to_owned()
                 } else {
@@ -1347,7 +1421,7 @@ mod tests {
         assert!(runs.halt_requested("live"));
 
         let ended = runs.request_halt("done").expect_err("an ended run refuses");
-        assert!(ended.contains("already ended"), "{ended}");
+        assert!(ended.contains("is not running: complete"), "{ended}");
         assert!(!runs.halt_requested("done"));
 
         let unknown = runs.request_halt("nobody").expect_err("an unknown run refuses");
@@ -1518,7 +1592,7 @@ mod tests {
             json!({ "solo": { "command": "true", "timeout_secs": 5 } }),
         );
         match mandate_target(&flow) {
-            MandateTarget::None { why } => assert!(why.contains("ingresso di testo"), "{why}"),
+            MandateTarget::None { why } => assert!(why.contains("no text input"), "{why}"),
             other => panic!("atteso un rifiuto, trovato {other:?}"),
         }
     }
@@ -1533,7 +1607,7 @@ mod tests {
             json!({}),
         );
         match mandate_target(&flow) {
-            MandateTarget::None { why } => assert!(why.contains("2 passi"), "{why}"),
+            MandateTarget::None { why } => assert!(why.contains("2 steps"), "{why}"),
             other => panic!("atteso un rifiuto, trovato {other:?}"),
         }
     }
@@ -1687,7 +1761,7 @@ mod tests {
             );
             let why = outcome.unwrap_err();
             assert!(
-                why.contains("nessun flusso si chiama"),
+                why.contains("no flow is called"),
                 "e il motivo dev'essere che non è in elenco, non un errore di lettura: {why}"
             );
         }

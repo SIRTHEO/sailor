@@ -76,7 +76,7 @@ pub(crate) fn execution_history() -> Result<Vec<ExecutionView>, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
     let data = gather(&ledger_dir)
-        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?;
+        .map_err(|error| format!("cannot read the ledger: {error}"))?;
     let Some(data) = data else {
         return Ok(Vec::new());
     };
@@ -100,7 +100,7 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
     let data = gather(&ledger_dir)
-        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?;
+        .map_err(|error| format!("cannot read the ledger: {error}"))?;
     let Some(data) = data else {
         // Deposito assente: `ledger_present` resta falso, e ogni conteggio è
         // zero. Chi legge deve poter distinguere «non è girato niente» da
