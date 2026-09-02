@@ -107,7 +107,7 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
           at: event.at,
           stepId: event.step_id,
           stream: "system",
-          text: `— «${event.step_id}» è partito`,
+          text: `— «${event.step_id}» started`,
         });
         break;
       }
@@ -119,7 +119,7 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
           at: event.at,
           stepId: event.step_id,
           stream: failure ? "stderr" : "system",
-          text: `— «${event.step_id}» ha chiuso: ${OUTCOME_LABEL[outcome] ?? outcome}${
+          text: `— «${event.step_id}» closed: ${OUTCOME_LABEL[outcome] ?? outcome}${
             failure ? ` — ${whyFailed(failure)}` : ""
           }`,
         });
@@ -184,6 +184,11 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
           stream: error ? "stderr" : "system",
           text: `══ the run ended: ${status}${error ? ` — ${error}` : ""}`,
         });
+        // A run resumed through the window ends with the engine's own report:
+        // what was reconciled, what was left to a person, the status it wrote.
+        if (typeof payload?.report === "string" && payload.report !== "") {
+          lines.push({ key: `${event.seq}:report`, at: event.at, stepId: null, stream: "system", text: payload.report });
+        }
         break;
       }
       default: {
@@ -302,13 +307,13 @@ export function whyFailed(failure: string): string {
   return tryT(`run.failure.${failure}`) ?? failure;
 }
 
-/** Come è finito un passo, detto in italiano. */
+/** How a step ended, in a word a person reads. */
 export const OUTCOME_LABEL: Record<string, string> = {
-  Went: "andato",
-  Broke: "rotto",
+  Went: "went",
+  Broke: "broke",
   Waiting: "waiting",
-  Stopped: "fermato",
-  Skipped: "saltato",
+  Stopped: "stopped",
+  Skipped: "skipped",
 };
 
 function clock(at: number, since: number): string {
@@ -385,17 +390,17 @@ function Spend({ usage }: { usage: RunUsage }) {
       {t.cached_tokens > 0 && <span title="read from the cache">cache read {tokens(t.cached_tokens)}</span>}
       {t.cache_write_tokens > 0 && (
         <span title="written to the cache: dearer than ordinary input">
-          cache scritta {tokens(t.cache_write_tokens)}
+          cache written {tokens(t.cache_write_tokens)}
         </span>
       )}
       {t.total_tokens_only > 0 && (
         <span title="engines that declare only the total, without the two sides">
-          totale non spezzato {tokens(t.total_tokens_only)}
+          unsplit total {tokens(t.total_tokens_only)}
         </span>
       )}
       {totalsArePartial(t) && (
         <span className="console__spend-partial">
-          totale parziale:{" "}
+          partial total:{" "}
           {t.calls_without_tokens > 0 && `${t.calls_without_tokens} without counts`}
           {t.calls_without_tokens > 0 && t.calls_without_cost > 0 && ", "}
           {t.calls_without_cost > 0 && `${t.calls_without_cost} without a price`}
@@ -524,7 +529,7 @@ export function RunConsole({
           {running && openPanes.length > 0 && (
             <div className="console__waiting">
               {openPanes
-                .map((pane) => `«${pane.stepId}» gira da ${clock(now, pane.startedAt)}`)
+                .map((pane) => `«${pane.stepId}» running for ${clock(now, pane.startedAt)}`)
                 .join(" · ")}
             </div>
           )}
@@ -538,7 +543,7 @@ export function RunConsole({
                 <span className="pane__id">{pane.stepId}</span>
                 <span className="pane__state" data-outcome={pane.outcome ?? "open"}>
                   {pane.endedAt === null
-                    ? `in corso · ${clock(now, pane.startedAt)}`
+                    ? `running · ${clock(now, pane.startedAt)}`
                     : `${OUTCOME_LABEL[pane.outcome ?? ""] ?? pane.outcome ?? "?"} · ${clock(
                         pane.endedAt,
                         pane.startedAt,
@@ -552,7 +557,7 @@ export function RunConsole({
                     passo, che resta la cosa che si guarda per prima. */}
                 {pane.input !== null && pane.input !== undefined && (
                   <details className="pane__input">
-                    <summary className="pane__input-head">è entrato</summary>
+                    <summary className="pane__input-head">what came in</summary>
                     <pre className="pane__code">{JSON.stringify(pane.input, null, 2)}</pre>
                   </details>
                 )}
