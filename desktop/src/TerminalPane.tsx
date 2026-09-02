@@ -38,6 +38,8 @@ export const BORN_ROWS = 24;
 
 interface PaneProps {
   summary: TerminalSummary;
+  /** The ceiling the relay hands on at, or `null` when no loaded flow declares one. */
+  ceiling: number | null;
   liveness: Liveness;
   /** Where the process's bytes arrive: the pane subscribes for its own `id`. */
   bus: OutputBus;
@@ -54,6 +56,7 @@ interface PaneProps {
 
 export function TerminalPane({
   summary,
+  ceiling,
   liveness,
   bus,
   visible,
@@ -218,6 +221,14 @@ export function TerminalPane({
           <span className="pane__why">{liveness.status}</span>
         )}
         <span className="pane__moved">{movedLabel(summary.moved)}</span>
+        {/* The number the relay compares to its ceiling, next to the bytes it
+            is made from: an estimate, and marked as one. */}
+        <span
+          className="pane__tokens"
+          data-past={ceiling !== null && summary.estimatedTokens >= ceiling ? "true" : undefined}
+        >
+          {tokensLabel(summary.estimatedTokens, ceiling)}
+        </span>
         <span className="pane__id">{summary.id}</span>
         {/* THE STATE AND THE GESTURE ARE TWO THINGS. One label on a button does
             not say whether it names how things are now or what happens on
@@ -324,6 +335,23 @@ export function movedLabel(moved: number): string {
   if (moved < 1024) return `${String(moved)} bytes moved`;
   if (moved < 1024 * 1024) return `${String(Math.round(moved / 1024))} KB moved`;
   return `${(moved / (1024 * 1024)).toFixed(1)} MB moved`;
+}
+
+/** A token count in the short form a header has room for: `840`, `62k`, `1.2M`. */
+function shortCount(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${String(Math.round(n / 1000))}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * The estimate against the ceiling, when a flow declares one. The `≈` is not
+ * decoration: the count is fitted from bytes, and a header that wrote it as a
+ * measurement would be claiming what nobody measured.
+ */
+export function tokensLabel(estimated: number, ceiling: number | null): string {
+  if (ceiling === null) return `≈ ${shortCount(estimated)} tokens`;
+  return `≈ ${shortCount(estimated)} of ${shortCount(ceiling)} tokens`;
 }
 
 /** Measures again, and tells the engine the new size only if it really changed. */

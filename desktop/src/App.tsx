@@ -35,6 +35,7 @@ import { LiveChip, WhoChip } from "./Bar";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen, SAILOR_TABS, type SailorTab } from "./SailorScreen";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
+import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
@@ -137,6 +138,15 @@ function isDirty(working: WorkingFlow): boolean {
  * without the origin the search starts with «in which of the three folders».
  */
 type BrokenAt = BrokenFlow & { origin: Origin };
+
+/** The first ceiling any loaded flow declares for measuring a terminal, or `null`. */
+function ceilingOf(flows: Map<string, WorkingFlow>): number | null {
+  for (const working of flows.values()) {
+    const ceiling = declaredCeiling(working.flow.graph.steps);
+    if (ceiling !== null) return ceiling;
+  }
+  return null;
+}
 
 /** Splits the input into editable flows (map by name) and broken flows (list). */
 function splitEntries(entries: FlowEntry[]): { flows: Map<string, WorkingFlow>; broken: BrokenAt[] } {
@@ -1269,6 +1279,7 @@ export default function App() {
         shown={place === "terminals"}
         tab={terminalsTab}
         onTab={setTerminalsTab}
+        ceiling={ceilingOf(flows)}
       />
 
       {/* Outside the canvas element on purpose: it is positioned in window

@@ -3546,6 +3546,7 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "sessions",
  "toolbox",
 ]
 

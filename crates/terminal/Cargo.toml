@@ -30,6 +30,10 @@ rust-version.workspace = true
 # macchina, e sa dire «non so» invece di tirare a indovinare.
 [dependencies]
 toolbox = { path = "../toolbox" }
+# `sessions` for one thing: the estimate of how many tokens the bytes moved
+# amount to. The row of the list carries it, so the window and `terminal list`
+# read the same number from the same model instead of each fitting their own.
+sessions = { path = "../sessions" }
 libc = "0.2"
 serde = { workspace = true }
 serde_json = { workspace = true }
