@@ -146,6 +146,62 @@ pub fn remove(repo: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// One file git reports as changed, with its two-letter porcelain status.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ChangedFile {
+    pub path: String,
+    pub status: String,
+}
+
+/// The working tree of a workspace against its last commit.
+///
+/// **`diff` IS GIT'S OWN TEXT, NEVER ONE COMPUTED HERE.** A second diff would
+/// disagree with the one a person runs in a terminal, and neither would say
+/// so. The file list is `git status --porcelain`, which also names what a
+/// diff cannot show: a file git does not track yet.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct Changes {
+    pub root: String,
+    pub files: Vec<ChangedFile>,
+    pub diff: String,
+}
+
+/// Reads `git status --porcelain`: two letters of status, a space, the path.
+/// A rename carries `old -> new`, and the new name is the one to open.
+pub fn parse_status(porcelain: &str) -> Vec<ChangedFile> {
+    porcelain
+        .lines()
+        .filter(|line| line.len() > 3)
+        .map(|line| {
+            let (status, path) = line.split_at(2);
+            let path = path.trim_start();
+            let path = path.rsplit(" -> ").next().unwrap_or(path);
+            ChangedFile {
+                status: status.to_owned(),
+                path: path.to_owned(),
+            }
+        })
+        .collect()
+}
+
+/// What changed in `root` since its last commit, as git says it.
+///
+/// Against `HEAD` so that staged and unstaged changes both show: an agent
+/// that ran `git add` has still changed the tree. A repository with no commit
+/// yet has no `HEAD`, and then the plain diff is what git can answer.
+pub fn changes(root: &Path) -> Result<Changes, String> {
+    let status = git(root, &["status", "--porcelain", "--untracked-files=all"])?;
+    let diff = match git(root, &["diff", "HEAD"]) {
+        Ok(text) => text,
+        Err(_) => git(root, &["diff"])?,
+    };
+    Ok(Changes {
+        root: root.to_string_lossy().into_owned(),
+        files: parse_status(&status),
+        diff,
+    })
+}
+
 /// The repository the current directory belongs to.
 pub fn root() -> Result<PathBuf, String> {
     let here = std::env::current_dir().map_err(|error| error.to_string())?;
