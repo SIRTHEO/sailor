@@ -17,6 +17,7 @@
 use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
+mod beat;
 mod board;
 mod changes;
 mod faults;
@@ -69,7 +70,10 @@ struct BrokenFlow {
 /// file di poche decine di righe: rileggerli costa meno che spiegare a chi
 /// guarda perché non vede quello che ha appena scritto.
 #[tauri::command]
-fn flows() -> Vec<FlowEntry> {
+fn flows(app: tauri::AppHandle) -> Vec<FlowEntry> {
+    // READING IS THE EVENT: whoever looks at the flows has the due ones
+    // started, so a schedule expires when somebody looks, not only on the clock.
+    beat::on_read(&app);
     load_all_flows(&flow_sources())
         .into_iter()
         .map(|(name, origin, entry)| match entry {
@@ -150,6 +154,7 @@ fn main() {
         // girando: il registro sta qui, e chi si riaffaccia ritrova tutto
         // quello che è stato detto mentre non guardava.
         .manage(std::sync::Arc::new(run::Runs::default()))
+        .manage(std::sync::Arc::new(beat::Beat::default()))
         // LA MODALITÀ VIVA SI DICHIARA — guasto 11. Il supervisore
         // (`sailor-live`) tiene accesa questa finestra anche quando la
         // ricostruzione fallisce; senza questa riga la terrebbe accesa **in
@@ -158,6 +163,9 @@ fn main() {
         // filo non dice mai niente.
         .setup(|app| {
             live::watch(&app.handle().clone());
+            // THE DEADLINE: due flows start from in here, on a clock of their
+            // own, whether or not anybody reads the flows or types a command.
+            beat::keep(&app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -179,6 +187,7 @@ fn main() {
             run::open_runs,
             run::step_history,
             run::run_usage,
+            beat::beat_report,
             board::execution_history,
             board::day_summary,
             board::machine_inventory,
