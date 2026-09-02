@@ -258,6 +258,7 @@ pub(crate) fn terminal_open(
         crossing.environment,
         rows,
         cols,
+        crossing.profile,
     )?;
     follow(&app, &opened.id);
     Ok(opened)
@@ -270,6 +271,8 @@ struct Crossing {
     program: Option<String>,
     args: Vec<String>,
     environment: Vec<(String, String)>,
+    /// The active profile of the command line the program is, when it is one.
+    profile: Option<String>,
 }
 
 fn what_crosses(
@@ -277,10 +280,21 @@ fn what_crosses(
     args: Option<Vec<String>>,
     profiles: &profiles::ProfileStore,
 ) -> Crossing {
+    let profile = program.as_deref().and_then(|program| {
+        let name = std::path::Path::new(program)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(program);
+        profiles::known_clis()
+            .iter()
+            .find(|cli| cli.executable == name)
+            .and_then(|cli| profiles.active.get(cli.id).cloned())
+    });
     Crossing {
         program,
         args: args.unwrap_or_default(),
         environment: profiles::active_environment(profiles),
+        profile,
     }
 }
 
@@ -426,12 +440,17 @@ mod tests {
                     "CLAUDE_CONFIG_DIR".to_owned(),
                     "/homes/claude/prove".to_owned()
                 )],
+                profile: Some("prove".to_owned()),
             }
         );
+        // A program that is no command line of the profiles runs under none,
+        // however many profiles are active.
+        let shell = what_crosses(Some("/bin/zsh".to_owned()), None, &store);
+        assert_eq!(shell.profile, None);
         // The absurd control: nothing given, nothing invented.
         let bare = what_crosses(None, None, &profiles::ProfileStore::default());
         assert_eq!(bare.program, None);
-        assert!(bare.args.is_empty() && bare.environment.is_empty());
+        assert!(bare.args.is_empty() && bare.environment.is_empty() && bare.profile.is_none());
     }
 
     /// **A HOST THAT ENDS BEFORE ANSWERING SAYS WHY**, in its own words: a

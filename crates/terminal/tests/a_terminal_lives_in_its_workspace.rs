@@ -394,6 +394,8 @@ fn the_list_row_carries_the_names_the_window_reads() {
         device: "ttys004".to_owned(),
         moved: 512,
         estimated_tokens: 60_477,
+        program: "codex".to_owned(),
+        profile: Some("prove".to_owned()),
     };
     let written = serde_json::to_value(&row).expect("la riga si serializza");
     let object = written.as_object().expect("è un oggetto");
@@ -408,11 +410,21 @@ fn the_list_row_carries_the_names_the_window_reads() {
             "id",
             "moved",
             "processId",
+            "profile",
+            "program",
             "workspaceName",
             "workspaceRoot"
         ],
         "i nomi della riga non sono quelli del contratto: {written}"
     );
+    assert_eq!(written["program"], "codex");
+    assert_eq!(written["profile"], "prove");
+    // A row from an older host, without the two names, still reads.
+    let older: terminal::Summary = serde_json::from_str(
+        r#"{"id":"a","workspaceRoot":"/r","workspaceName":"r","alive":true,"processId":1,"device":"ttys001","moved":0,"estimatedTokens":0}"#,
+    )
+    .expect("an older row reads");
+    assert_eq!((older.program.as_str(), older.profile), ("", None));
     assert_eq!(written["workspaceRoot"], "/tmp/qui");
     assert_eq!(written["processId"], 4242);
     // The tty is the anchor of a tab: it travels as the device, short form.
