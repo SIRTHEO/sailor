@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// What `crates/sailor/src` still holds. It goes down as sentences move into
 /// `i18n/`, and a rise means a new one was written into the code. Never raise
 /// it to make the gate green.
-const SENTENCES_STILL_IN_THE_CODE: usize = 160;
+const SENTENCES_STILL_IN_THE_CODE: usize = 3;
 
 /// Words that open a query for the database, not a line for a person.
 const A_QUERY_NOT_A_SENTENCE: &[&str] = &[
@@ -67,6 +67,21 @@ fn literals_with_their_line(text: &str) -> Vec<(usize, String)> {
                 at += 1;
             }
             continue;
+        }
+        // **A CHAR LITERAL IS NOT A STRING, AND `'"'` IS THE ONE THAT BITES.**
+        // Read as an opening quote it swallows the code and the doc comments
+        // that follow, up to the next `"` anywhere below, and hands the lot
+        // back as one sentence nobody wrote. A lifetime falls through: `'a` is
+        // not closed by a second quote two characters along.
+        if letter == '\'' {
+            let closes = match letters.get(at + 1) {
+                Some('\\') => at + 3,
+                _ => at + 2,
+            };
+            if letters.get(closes) == Some(&'\'') {
+                at = closes + 1;
+                continue;
+            }
         }
         // A raw string: `r`, some `#`, a quote, up to the same run of `#`.
         if letter == 'r' && matches!(letters.get(at + 1), Some('"') | Some('#')) {
@@ -227,9 +242,21 @@ fn sentences_of(whole: &str) -> Vec<(usize, String)> {
             .iter()
             .any(|line| SPOKEN_TO_NOBODY.iter().any(|call| line.contains(call)))
     };
+    // **WHAT IS TYPED IS NOT PROSE, AND THE FIELD SAYS WHICH IS WHICH.** The
+    // `form` of a `Form` is `sailor faults status <n> <text>`: four lowercase
+    // words, which the counter would call a sentence. It is not a hole in the
+    // rule but a reading of the code — a `form` that stopped being a shape
+    // fails `every_command_says_how_it_is_written_and_names_itself` in
+    // `lib.rs`, which wants every one of them to start with `sailor <name>`.
+    let is_a_shape_to_type = |number: usize| {
+        lines
+            .get(number - 1)
+            .is_some_and(|line| line.trim_start().starts_with("form: \""))
+    };
     literals_with_their_line(text)
         .into_iter()
         .filter(|(number, _)| !spoken_to_nobody(*number))
+        .filter(|(number, _)| !is_a_shape_to_type(*number))
         .map(|(number, raw)| (number, as_the_reader_sees_it(&raw)))
         .filter(|(_, text)| is_a_sentence(text))
         .collect()
@@ -362,10 +389,71 @@ fn speak() -> String {
         "the words a person actually reads were thrown out with the slots"
     );
 
+    // A char literal holding a quote. Read as an opening string it swallows
+    // everything down to the next quote — the doc comment included — and comes
+    // back as a sentence, which is how four of them were counted in a file
+    // whose prose was already all in the catalogue.
+    let a_quote_that_is_a_char = r#"
+fn probe(letter: char) -> bool {
+    letter == '"'
+}
+
+/// a doc comment holding plenty of ordinary words for a reader to look at
+const PROBE: &str = "ok";
+"#;
+    assert!(
+        sentences_of(a_quote_that_is_a_char).is_empty(),
+        "a char literal was read as a string, and what followed was counted: {:?}",
+        sentences_of(a_quote_that_is_a_char)
+    );
+
+    // And a lifetime must still fall through to nothing: `'a` is not a char
+    // literal, and swallowing it would hide the string that comes after.
+    let a_lifetime_is_not_a_char = r#"
+fn speak<'a>(from: &'a str) -> String {
+    format!("no terminal has checked in yet, and none is expected: {from}")
+}
+"#;
+    assert_eq!(
+        sentences_of(a_lifetime_is_not_a_char).len(),
+        1,
+        "a lifetime was mistaken for a char literal and the sentence after it was lost"
+    );
+
     let below_the_tests =
         "#[cfg(test)]\nmod tests {\n    let text = \"this one is only for a failing test\";\n}\n";
     assert!(
         sentences_of(below_the_tests).is_empty(),
         "the prose of a test was counted as a line for a person"
+    );
+
+    // **THE SHAPE IS NOT PROSE, AND THE FIELD IS WHAT SAYS SO — AND IT SAYS SO
+    // ONLY THERE.** `form:` exempts what is typed; the sentence that travels
+    // with it, in `says_key`, is a key and not prose either; and a sentence
+    // written into any other field is still counted. Without this third half
+    // the exemption would be a hole any literal could be pushed through by
+    // renaming its field.
+    let a_form_and_a_sentence_beside_it = r#"
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor terminal press --tty <name> --text <line> [--store <dir>]",
+        says_key: "cli.terminal.form.press",
+    },
+    Form {
+        form: "sailor terminal list",
+        note: "types a line into a terminal that Sailor already holds open",
+    },
+];
+"#;
+    let counted = sentences_of(a_form_and_a_sentence_beside_it);
+    assert_eq!(
+        counted.len(),
+        1,
+        "the shape and its key must not count, and a sentence in any other field must: {counted:?}"
+    );
+    assert!(
+        counted[0].1.starts_with("types a line"),
+        "the one counted is not the sentence: {:?}",
+        counted[0].1
     );
 }

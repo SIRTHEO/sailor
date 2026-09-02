@@ -23,6 +23,7 @@
 //! garanzia si sta fidando di una cosa che non regge.
 //! ─────────────────────────────────────────────────────────────────────────
 
+use crate::Form;
 use actions::handoff::{holder_key, HOLDER_COLLECTION};
 use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord};
 use ledger::{EngineIdentity, Ledger, ModelCallRecord, StoreRecord};
@@ -52,14 +53,23 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 }
 
 /// Le forme di `sailor step`, una per riga. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &[
-    "sailor step open --run <run> --step <step> --as <who>",
-    "sailor step close --run <run> --step <step> --as <who> --outcome <went|broke> \
-     [--output-file <file>] [--turns <n>] [--said <text>]",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor step open --run <run> --step <step> --as <who>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor step close --run <run> --step <step> --as <who> --outcome <went|broke> [--output-file <file>] [--turns <n>] [--said <text>]",
+        says_key: "",
+    },
 ];
 
 fn usage() -> String {
-    format!("usage:\n  {}", USAGE.join("\n  "))
+    format!(
+        "{}\n  {}",
+        catalogue::say("cli.usage_heading", &[]),
+        crate::forms_as_lines(USAGE).join("\n  ")
+    )
 }
 
 /// Le opzioni scritte sulla riga, in coppie `--nome valore`.
@@ -73,14 +83,22 @@ fn flags(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     let mut rest = args.iter();
     while let Some(name) = rest.next() {
         let Some(name) = name.strip_prefix("--") else {
-            return Err(format!("«{name}» is not something I know; {}", usage()));
-        };
-        let value = rest
-            .next()
-            .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
-        if let Some(other) = value.strip_prefix("--") {
             return Err(format!(
-                "«--{name}» was given «--{other}» as its value: the real value is missing"
+                "{}; {}",
+                catalogue::say("cli.not_something_i_know", &[("word", name)]),
+                usage()
+            ));
+        };
+        let value = rest.next().ok_or_else(|| {
+            catalogue::say(
+                "cli.option_wants_a_value",
+                &[("option", &format!("--{name}"))],
+            )
+        })?;
+        if let Some(other) = value.strip_prefix("--") {
+            return Err(catalogue::say(
+                "cli.value_is_another_option",
+                &[("option", name), ("given", other)],
             ));
         }
         found.insert(name.to_owned(), value.clone());
@@ -89,10 +107,13 @@ fn flags(args: &[String]) -> Result<BTreeMap<String, String>, String> {
 }
 
 fn required<'a>(found: &'a BTreeMap<String, String>, name: &str) -> Result<&'a str, String> {
-    found
-        .get(name)
-        .map(String::as_str)
-        .ok_or_else(|| format!("manca «--{name}»; {}", usage()))
+    found.get(name).map(String::as_str).ok_or_else(|| {
+        format!(
+            "{}; {}",
+            catalogue::say("cli.option_missing", &[("option", &format!("--{name}"))]),
+            usage()
+        )
+    })
 }
 
 // ── prendere in carico ───────────────────────────────────────────────────
@@ -122,11 +143,18 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
     let step_id = required(found, "step")?;
     let holder = required(found, "as")?;
 
-    let records = ledger
-        .steps(run_id)
-        .map_err(|error| format!("cannot read run {run_id}: {error}"))?;
-    let latest = last_attempt(&records, step_id)
-        .ok_or_else(|| format!("run {run_id} has no step called {step_id}"))?;
+    let records = ledger.steps(run_id).map_err(|error| {
+        catalogue::say(
+            "cli.step.cannot_read_run",
+            &[("run_id", run_id), ("error", &error.to_string())],
+        )
+    })?;
+    let latest = last_attempt(&records, step_id).ok_or_else(|| {
+        catalogue::say(
+            "cli.step.no_step_called",
+            &[("run_id", run_id), ("step_id", step_id)],
+        )
+    })?;
 
     // **SI APRE SOLO CIÒ CHE È IN ATTESA.** Un passo andato, rotto o ancora
     // aperto non è stato consegnato a nessuno: aprirlo di nuovo vorrebbe dire
@@ -134,15 +162,15 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
     match latest.outcome {
         Some(Outcome::Waiting) => {}
         None => {
-            return Err(format!(
-                "step {step_id} is open: somebody is already running it, and it was not \
-                 handed over. Close it first, or resume the run with `sailor flow resume {run_id}`"
+            return Err(catalogue::say(
+                "cli.step.already_open",
+                &[("step_id", step_id), ("run_id", run_id)],
             ))
         }
         Some(other) => {
-            return Err(format!(
-                "step {step_id} is not waiting but {other:?}: there is no handover \
-                 to take charge of"
+            return Err(catalogue::say(
+                "cli.step.not_waiting",
+                &[("step_id", step_id), ("outcome", &format!("{other:?}"))],
             ))
         }
     }
@@ -173,9 +201,12 @@ fn open_step_in(ledger: &Ledger, found: &BTreeMap<String, String>) -> Result<Str
     // La specie resta quella congelata alla consegna: un'azione riscritta nel
     // frattempo non deve cambiare il giudizio su un passo già offerto.
     started.species = latest.species;
-    ledger
-        .append_step_started(&started)
-        .map_err(|error| format!("cannot open step {step_id}: {error}"))?;
+    ledger.append_step_started(&started).map_err(|error| {
+        catalogue::say(
+            "cli.step.cannot_open_step",
+            &[("step_id", step_id), ("error", &error.to_string())],
+        )
+    })?;
 
     // **IL MANDATO SI LEGGE DALL'INGRESSO, MAI DA `said`.** In `said` c'è la
     // riga corta, tagliata a 16 KB; il lavoro per esteso sta nell'ingresso, che
@@ -233,7 +264,12 @@ fn refuse_the_author_as_judge(
     for dependency in &record.deps {
         let written = ledger
             .read_record(HOLDER_COLLECTION, &holder_key(run_id, dependency))
-            .map_err(|error| format!("cannot read who closed {dependency}: {error}"))?;
+            .map_err(|error| {
+                catalogue::say(
+                    "cli.step.cannot_read_who_closed",
+                    &[("dependency", dependency), ("error", &error.to_string())],
+                )
+            })?;
         if written.is_some_and(|found| found.written_by == holder) {
             return Err(catalogue::say(
                 "cli.step.author_would_judge",
@@ -297,9 +333,12 @@ fn close_step_in(
     let holder = required(found, "as")?;
     let outcome = declared_outcome(found)?;
 
-    let records = ledger
-        .steps(run_id)
-        .map_err(|error| format!("cannot read run {run_id}: {error}"))?;
+    let records = ledger.steps(run_id).map_err(|error| {
+        catalogue::say(
+            "cli.step.cannot_read_run",
+            &[("run_id", run_id), ("error", &error.to_string())],
+        )
+    })?;
     // Il record aperto lo trova da sé: chi chiude non deve sapere a che
     // tentativo è arrivato, e chiederglielo sarebbe un numero da sbagliare.
     let open = records
@@ -366,10 +405,18 @@ fn close_step_in(
                 None
             }
             Some(path) => {
-                let text = std::fs::read_to_string(path)
-                    .map_err(|error| format!("cannot read {path}: {error}"))?;
-                let value: Value = serde_json::from_str(&text)
-                    .map_err(|error| format!("{path} is not valid JSON: {error}"))?;
+                let text = std::fs::read_to_string(path).map_err(|error| {
+                    catalogue::say(
+                        "cli.step.cannot_read_file",
+                        &[("path", path), ("error", &error.to_string())],
+                    )
+                })?;
+                let value: Value = serde_json::from_str(&text).map_err(|error| {
+                    catalogue::say(
+                        "cli.step.not_valid_json",
+                        &[("path", path), ("error", &error.to_string())],
+                    )
+                })?;
                 step.output_schema.validate(&value).map_err(|error| {
                     catalogue::say(
                         "cli.step.output_breaks_the_schema",
@@ -405,7 +452,12 @@ fn close_step_in(
                 bytes_discarded: None,
             },
         )
-        .map_err(|error| format!("cannot close step {step_id}: {error}"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_close_step",
+                &[("step_id", step_id), ("error", &error.to_string())],
+            )
+        })?;
 
     // Chi ha chiuso resta scritto: lo rilegge `open` sul passo che dipende da
     // questo, per rifiutare un giudice che è anche autore.
@@ -417,7 +469,12 @@ fn close_step_in(
             written_by: holder.to_owned(),
             written_at: now,
         })
-        .map_err(|error| format!("cannot record who closed {step_id}: {error}"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_record_who_closed",
+                &[("step_id", step_id), ("error", &error.to_string())],
+            )
+        })?;
 
     let mut report = catalogue::say(
         "cli.step.closed",
@@ -440,7 +497,7 @@ fn close_step_in(
     if let Some(turns) = found.get("turns") {
         let turns: u64 = turns
             .parse()
-            .map_err(|_| format!("«--turns {turns}» is not a number"))?;
+            .map_err(|_| catalogue::say("cli.step.turns_not_a_number", &[("turns", turns)]))?;
         write_self_declared_turns(&ledger, run_id, step_id, holder, turns, now)?;
         let _ = write!(
             report,
@@ -457,7 +514,12 @@ fn close_step_in(
     // ha sbloccato qualcosa, cioè uscire da Sailor per interrogare Sailor.
     let decision = InProcessExecutor
         .decision(&flow.graph, run_id, ledger, &flow::SystemClock)
-        .map_err(|error| format!("cannot work out what is ready: {error}"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_work_out_what_is_ready",
+                &[("error", &error.to_string())],
+            )
+        })?;
     let _ = write!(
         report,
         "\n{}",
@@ -472,9 +534,9 @@ fn close_step_in(
 /// and a function reading the clock itself could not be interrogated.
 fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
     match decision {
-        Decision::Ready(steps) => format!(
-            "ready now: {}. Resume with: sailor flow resume {run_id}",
-            steps.join(", ")
+        Decision::Ready(steps) => catalogue::say(
+            "cli.step.ready_now",
+            &[("steps", &steps.join(", ")), ("run_id", run_id)],
         ),
         Decision::Waiting(steps) => catalogue::say(
             "cli.step.waiting_for_someone",
@@ -488,14 +550,19 @@ fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
                 ("run_id", run_id),
             ],
         ),
-        Decision::Running(steps) => format!("still running: {}", steps.join(", ")),
-        Decision::Stopped(steps) => format!("stopped in the store: {}", steps.join(", ")),
+        Decision::Running(steps) => {
+            catalogue::say("cli.step.still_running", &[("steps", &steps.join(", "))])
+        }
+        Decision::Stopped(steps) => catalogue::say(
+            "cli.step.stopped_in_the_store",
+            &[("steps", &steps.join(", "))],
+        ),
         Decision::Failed(steps) => catalogue::say(
             "cli.step.broken_past_the_attempts",
             &[("steps", &steps.join(", "))],
         ),
         Decision::CapReached(stop) => registry::why_it_stopped(stop),
-        Decision::Complete => "the run is complete: nothing is left to do".to_owned(),
+        Decision::Complete => catalogue::say("cli.step.run_complete", &[]),
     }
 }
 
@@ -569,7 +636,12 @@ fn write_self_declared_turns(
             started_at: now,
             ended_at: Some(now),
         })
-        .map_err(|error| format!("cannot record the declared turns: {error}"))
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_record_turns",
+                &[("error", &error.to_string())],
+            )
+        })
 }
 
 // ── gli attrezzi comuni ──────────────────────────────────────────────────
@@ -608,8 +680,13 @@ fn last_attempt<'a>(records: &'a [StepRecord], step_id: &str) -> Option<&'a Step
 pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, String> {
     let header = ledger
         .run_header(run_id)
-        .map_err(|error| format!("cannot read run {run_id}: {error}"))?
-        .ok_or_else(|| format!("no run is called {run_id} in this store"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.step.cannot_read_run",
+                &[("run_id", run_id), ("error", &error.to_string())],
+            )
+        })?
+        .ok_or_else(|| catalogue::say("cli.step.no_such_run", &[("run_id", run_id)]))?;
     if header.entity.is_empty() {
         return Err(catalogue::say(
             "cli.step.run_declares_no_flow",
@@ -620,9 +697,14 @@ pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, Str
     let known = ui::gather::load_all_flows(&sources);
     match known.iter().find(|(name, _, _)| *name == header.entity) {
         Some((_, _, Ok(flow))) => Ok(flow.clone()),
-        Some((_, origin, Err(reason))) => Err(format!(
-            "flow {} ({origin}) of run {run_id} does not load: {reason}",
-            header.entity
+        Some((_, origin, Err(reason))) => Err(catalogue::say(
+            "cli.step.flow_does_not_load",
+            &[
+                ("flow", &header.entity),
+                ("origin", origin),
+                ("run_id", run_id),
+                ("reason", reason),
+            ],
         )),
         None => Err(catalogue::say(
             "cli.step.flow_no_longer_found",
@@ -632,16 +714,23 @@ pub(crate) fn flow_of_run(ledger: &Ledger, run_id: &str) -> Result<FlowFile, Str
 }
 
 pub(crate) fn open_ledger() -> Result<Ledger, String> {
-    let dir = ledger::default_directory()
-        .ok_or_else(|| "HOME is not set: there is no telling where to open the store".to_owned())?;
-    Ledger::open(&dir).map_err(|error| format!("cannot open the store {}: {error}", dir.display()))
+    let dir = ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
+    Ledger::open(&dir).map_err(|error| {
+        catalogue::say(
+            "cli.step.cannot_open_the_store",
+            &[
+                ("path", &dir.display().to_string()),
+                ("error", &error.to_string()),
+            ],
+        )
+    })
 }
 
 fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_secs() as i64)
-        .map_err(|error| format!("l'orologio di sistema precede Unix epoch: {error}"))
+        .map_err(|error| catalogue::say("cli.clock_before_epoch", &[("error", &error.to_string())]))
 }
 
 #[cfg(test)]

@@ -29,11 +29,18 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 /// La forma di `sailor remaining`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor remaining"];
+pub const USAGE: &[crate::Form] = &[crate::Form {
+    form: "sailor remaining",
+    says_key: "",
+}];
 
 fn dispatch(args: &[String]) -> Result<String, String> {
     if !args.is_empty() {
-        return Err(format!("usage: {}", USAGE[0]));
+        return Err(format!(
+            "{} {}",
+            catalogue::say("cli.usage_heading", &[]),
+            USAGE[0].form
+        ));
     }
     let home = home_dir()?;
     let now = now_secs()?;
@@ -85,7 +92,7 @@ fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs() as i64)
-        .map_err(|_| catalogue::say("cli.remaining.clock_before_1970", &[]))
+        .map_err(|error| catalogue::say("cli.clock_before_epoch", &[("error", &error.to_string())]))
 }
 
 #[cfg(test)]
