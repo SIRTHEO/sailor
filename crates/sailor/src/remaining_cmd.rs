@@ -85,7 +85,7 @@ fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_secs() as i64)
-        .map_err(|_| catalogue::say("cli.remaining.clock_before_1970", &[]))
+        .map_err(|error| catalogue::say("cli.clock_before_epoch", &[("error", &error.to_string())]))
 }
 
 #[cfg(test)]

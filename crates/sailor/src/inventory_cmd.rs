@@ -207,7 +207,7 @@ fn deposit(found: &Inventory) -> Result<String, String> {
 /// due.
 fn open_ledger() -> Result<Ledger, String> {
     let directory =
-        ledger::default_directory().ok_or_else(|| catalogue::say("cli.inventory.no_home", &[]))?;
+        ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 
