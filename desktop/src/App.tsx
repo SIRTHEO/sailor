@@ -60,6 +60,7 @@ import {
   runUsage,
   saveFlow,
   startRun,
+  stopRun,
   type Execution,
   type RunEvent,
   type RunSnapshot,
@@ -1589,6 +1590,7 @@ export default function App() {
           onMode={setConsoleMode}
           onPick={setWatching}
           onClose={() => setWatching(null)}
+          onStop={() => stopRun(watched.run_id)}
         />
       )}
       </StepUsageContext.Provider>
