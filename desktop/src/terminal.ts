@@ -67,7 +67,16 @@ export interface TerminalSummary {
  */
 export type Submitted =
   | { kind: "command" }
-  | { kind: "flow"; flow: string; text: string; rule: string };
+  | {
+      kind: "flow";
+      flow: string;
+      text: string;
+      rule: string;
+      /** The run the bridge started with the line as its mandate, if it could. */
+      run_id?: string | null;
+      /** Why the flow did not start, in the engine's words. */
+      refused?: string | null;
+    };
 
 /** How a terminal is opened: where, what to start with which arguments, how big. */
 export interface Opening {
