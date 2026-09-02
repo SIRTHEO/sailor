@@ -22,13 +22,8 @@ actions = { path = "../actions" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
 inventory = { path = "../inventory" }
+# The quota channel a descriptor declares is read by `models::remaining`; the
+# dispatch from the declaration to the reader lives here, once.
+models = { path = "../models" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# For the tests only, and for one of them: the one that takes the shipped
-# descriptor, gives it a real engine output and checks that the cost coming out
-# is the one the engine itself declared. Without the price list in here that
-# chain could only be tested piecewise — and the pieces passed even when they
-# did not touch. It is not part of what ships.
-[dev-dependencies]
-models = { path = "../models" }

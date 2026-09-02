@@ -12,8 +12,7 @@
 //! è già stato consumato. Per questo lo si può chiamare prima di decidere se
 //! lanciare qualcosa, che è l'unico momento in cui serve.
 
-use models::remaining::{self, Remaining};
-use std::path::PathBuf;
+use models::remaining::Remaining;
 
 pub fn run(args: &[String]) -> i32 {
     match dispatch(args) {
@@ -42,16 +41,33 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             USAGE[0].form
         ));
     }
-    let home = home_dir()?;
     let now = now_secs()?;
-    match remaining::read_from_claude(&home, now) {
-        Ok(found) => Ok(report(&found)),
-        // **UN CANALE CHE NON RISPONDE NON È UN GUASTO DI SAILOR.** È beta e
-        // versionato: il giorno che cambia, chi lo chiedeva deve sapere che la
-        // misura non c'è — mai crederla a zero, che è la direzione
-        // rassicurante.
-        Err(why) => Err(format!("{why}")),
+    // **EVERY ENGINE THAT DECLARES A CHANNEL, NONE NAMED HERE.** The catalogue
+    // says who can be asked; an engine that cannot is not in the list, and a
+    // channel that does not answer is a line saying so, never a zero.
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    let readings = toolbox::quota::read_all(&catalog, &machine, now);
+    if readings.is_empty() {
+        return Err(catalogue::say("cli.remaining.no_channel", &[]));
     }
+    let mut found = Vec::new();
+    let mut refused = Vec::new();
+    for reading in readings {
+        match reading.result {
+            Ok(windows) => found.extend(windows),
+            Err(why) => refused.push(format!("{} · cannot read: {why}", reading.engine)),
+        }
+    }
+    if found.is_empty() {
+        return Err(refused.join("\n"));
+    }
+    let mut said = report(&found);
+    for line in refused {
+        said.push('\n');
+        said.push_str(&line);
+    }
+    Ok(said)
 }
 
 /// Le quote per una persona, una per riga.
@@ -80,14 +96,6 @@ fn report(found: &[Remaining]) -> String {
     lines.join("\n")
 }
 
-/// La casa della persona. Senza, non c'è nessun posto dove cercare credenziali
-/// di nessuno.
-fn home_dir() -> Result<PathBuf, String> {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| catalogue::say("cli.remaining.no_home", &[]))
-}
-
 fn now_secs() -> Result<i64, String> {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -102,7 +110,7 @@ mod tests {
 
     fn a_window(unit: &str, used_fraction: f64, resets_at: Option<&str>) -> Remaining {
         Remaining {
-            engine: remaining::CLAUDE_CODE.to_owned(),
+            engine: "an-engine".to_owned(),
             unit: unit.to_owned(),
             used_fraction,
             resets_at: resets_at.map(str::to_owned),
@@ -132,7 +140,7 @@ mod tests {
             a_window("seven_day", 0.32, None),
         ]);
         assert!(
-            said.contains("claude-code · five_hour: used 50.0%"),
+            said.contains("an-engine · five_hour: used 50.0%"),
             "{said}"
         );
         assert!(
@@ -140,7 +148,7 @@ mod tests {
             "{said}"
         );
         assert!(
-            said.contains("claude-code · seven_day: used 32.0%"),
+            said.contains("an-engine · seven_day: used 32.0%"),
             "{said}"
         );
         assert!(

@@ -456,6 +456,51 @@ impl Enumerate {
     }
 }
 
+/// The gesture that signs a command line in: the options it is started with,
+/// and whether the sign-in then happens inside the program (a browser opens,
+/// a code is typed) rather than on the line. **A GESTURE, NEVER RUN BY A
+/// CHECK**: it changes the machine's state, so only a person starts it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Login {
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub interactive: bool,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
+/// The channel a person's spent quota is read from, as data. **THE CODE KNOWS
+/// A KIND OF CHANNEL, NEVER A PROVIDER**: `oauth_usage` is a credentials file,
+/// a pointer to the token inside it, an address and its headers; a second
+/// provider with the same kind of channel is a descriptor, not a recompile.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Quota {
+    /// The kind of channel: `oauth_usage` is the only one read today.
+    pub reader: String,
+    /// The credentials file; accepts `~/` and `$VAR`.
+    pub credentials: String,
+    /// The path of keys down to the token inside that file.
+    pub token_pointer: Vec<String>,
+    pub url: String,
+    /// Whole header lines, `name: value`, sent beside the bearer token.
+    #[serde(default)]
+    pub headers: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
+/// The one line that installs a command line, and how it was established.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Install {
+    pub line: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+}
+
 /// The line that empties a session that is already open, typed as a person
 /// would type it.
 ///
@@ -598,6 +643,18 @@ pub struct Descriptor {
     /// to make visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login_status: Option<LoginStatus>,
+    /// How a person signs it in, as a gesture to run in a terminal of theirs.
+    /// Absent means nobody measured it, never «it needs no sign-in».
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login: Option<Login>,
+    /// How it is put on a machine that lacks it: one line, typed for a person
+    /// to confirm. Absent means nobody measured where it installs from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install: Option<Install>,
+    /// The channel that says how much of the person's quota is spent. Absent
+    /// means no channel is known, and the engine works without knowing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quota: Option<Quota>,
     /// What this tool can do beyond answering: resume a session, impose a shape
     /// on the answer, isolate itself from its host's configuration, receive an
     /// allowance, keep a spend cap of its own. **The code knows no capability

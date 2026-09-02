@@ -26,6 +26,18 @@ pub(crate) struct Window {
     observed_at: i64,
 }
 
+impl From<::models::remaining::Remaining> for Window {
+    fn from(one: ::models::remaining::Remaining) -> Self {
+        Window {
+            engine: one.engine,
+            unit: one.unit,
+            spent_fraction: one.used_fraction,
+            resets_at: one.resets_at,
+            observed_at: one.observed_at,
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub(crate) struct Priced {
     id: String,
@@ -107,31 +119,31 @@ pub(crate) fn models_catalogue() -> Result<Catalogue, String> {
 /// which is the only moment it matters.
 #[tauri::command]
 pub(crate) fn quota() -> Result<Vec<Window>, String> {
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .ok_or_else(|| {
-            "HOME is not set: there is no house to look for credentials in".to_owned()
-        })?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs() as i64);
-    // The error's own words say what to do — «the token has been revoked» is
-    // cured by authenticating again — so they travel whole. A channel that does
-    // not answer is never a quota of zero, which is the reassuring direction.
-    ::models::remaining::read_from_claude(&home, now)
-        .map(|found| {
-            found
-                .into_iter()
-                .map(|one| Window {
-                    engine: one.engine,
-                    unit: one.unit,
-                    spent_fraction: one.used_fraction,
-                    resets_at: one.resets_at,
-                    observed_at: one.observed_at,
-                })
-                .collect()
-        })
-        .map_err(|why| why.to_string())
+    // Every engine whose descriptor declares a channel, none named here. The
+    // error's own words say what to do — «the token has been revoked» is cured
+    // by authenticating again — so they travel whole; a channel that does not
+    // answer is never a quota of zero, which is the reassuring direction.
+    let machine = toolbox::Machine::current();
+    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+    let readings = toolbox::quota::read_all(&catalog, &machine, now);
+    if readings.is_empty() {
+        return Err("no engine on this machine declares a channel to read its quota from".to_owned());
+    }
+    let mut windows = Vec::new();
+    let mut refused = Vec::new();
+    for reading in readings {
+        match reading.result {
+            Ok(found) => windows.extend(found.into_iter().map(Window::from)),
+            Err(why) => refused.push(format!("{}: {why}", reading.engine)),
+        }
+    }
+    if windows.is_empty() {
+        return Err(refused.join("; "));
+    }
+    Ok(windows)
 }
 
 #[tauri::command]
