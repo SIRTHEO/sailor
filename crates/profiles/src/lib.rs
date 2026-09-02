@@ -216,6 +216,31 @@ pub fn build_environment(cli: &KnownCli, profile_home: &Path) -> BTreeMap<String
     env
 }
 
+/// The environment a terminal opens with so that every command line inside it
+/// runs under its active profile: one variable per command line whose home
+/// moves by variable and whose store names an active profile.
+///
+/// Empty for a store with nothing active, and silent about a command line
+/// whose home does not move: there is no variable to set, and setting a made-up
+/// one would promise a switch that does nothing.
+pub fn active_environment(store: &ProfileStore) -> Vec<(String, String)> {
+    let mut environment = Vec::new();
+    for (cli_id, name) in &store.active {
+        let Ok(cli) = find_cli(cli_id) else {
+            continue;
+        };
+        let Some(profile) = store
+            .profiles
+            .iter()
+            .find(|profile| &profile.cli_id == cli_id && &profile.name == name)
+        else {
+            continue;
+        };
+        environment.extend(build_environment(cli, &profile.home_dir));
+    }
+    environment
+}
+
 /// The two paths a symlink swap involves: where the link sits inside the fixed
 /// home, and where it must point to reach this profile's file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -323,6 +348,38 @@ mod tests {
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
         assert!(env.is_empty());
+    }
+
+    /// **THE TERMINAL'S ENVIRONMENT IS THE ACTIVE PROFILE'S HOME, PER COMMAND
+    /// LINE.** Two command lines, two variables; a profile that exists but is
+    /// not active sets nothing; an active name with no profile behind it sets
+    /// nothing rather than a path invented from the name.
+    #[test]
+    fn the_active_profiles_become_the_variables_a_terminal_opens_with() {
+        let mut store = ProfileStore::default();
+        for (cli, name) in [("claude", "prove"), ("claude", "work"), ("codex", "work")] {
+            store.profiles.push(Profile {
+                name: name.to_owned(),
+                cli_id: cli.to_owned(),
+                home_dir: PathBuf::from(format!("/homes/{cli}/{name}")),
+            });
+        }
+        store.active.insert("claude".to_owned(), "prove".to_owned());
+        store.active.insert("codex".to_owned(), "work".to_owned());
+        store.active.insert("gemini".to_owned(), "nobody".to_owned());
+
+        let mut environment = active_environment(&store);
+        environment.sort();
+        assert_eq!(
+            environment,
+            vec![
+                ("CLAUDE_CONFIG_DIR".to_owned(), "/homes/claude/prove".to_owned()),
+                ("CODEX_HOME".to_owned(), "/homes/codex/work".to_owned()),
+            ]
+        );
+
+        // The absurd control: nothing active, nothing set.
+        assert!(active_environment(&ProfileStore::default()).is_empty());
     }
 
     #[test]
