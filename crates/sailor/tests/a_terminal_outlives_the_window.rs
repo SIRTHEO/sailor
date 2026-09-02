@@ -18,8 +18,25 @@ fn scratch(name: &str) -> PathBuf {
     terminal::scratch::directory(&format!("outlives-{name}"))
 }
 
+/// The host's process, ended with the test whichever way the test ends: a
+/// red assertion used to leave a host and its shell holding a pty for good.
+struct Host(Child);
+
+impl Host {
+    fn stop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
 /// The real host, in a process of its own, keeping its files under `store`.
-fn host_under(store: &Path) -> (Child, Client) {
+fn host_under(store: &Path) -> (Host, Client) {
     let child = Command::new(env!("CARGO_BIN_EXE_sailor"))
         .args(["terminal", "host", "--store"])
         .arg(store)
@@ -34,7 +51,7 @@ fn host_under(store: &Path) -> (Child, Client) {
         assert!(Instant::now() < deadline, "the host never answered");
         std::thread::sleep(Duration::from_millis(20));
     }
-    (child, client)
+    (Host(child), client)
 }
 
 fn backlog_text(client: &Client, id: &str) -> String {
@@ -149,8 +166,7 @@ fn a_shell_opened_through_the_host_survives_the_client_that_opened_it() {
 
     // THE ABSURD CONTROL: the pty is the host's. Take the host away and the
     // shell inside has nobody holding its terminal.
-    host.kill().expect("stop the host");
-    host.wait().expect("reap the host");
+    host.stop();
     let deadline = Instant::now() + PATIENCE;
     while pid_is_alive(shell_pid) {
         assert!(
@@ -188,7 +204,6 @@ fn a_terminal_closed_by_one_client_is_gone_for_the_next() {
         "a closed terminal is still listed: {listed:?}"
     );
 
-    host.kill().expect("stop the host");
-    host.wait().expect("reap the host");
+    host.stop();
     let _ = std::fs::remove_dir_all(&store);
 }
