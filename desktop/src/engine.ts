@@ -171,6 +171,40 @@ export async function stopRun(runId: string): Promise<void> {
   await invoke<void>("stop_run", { runId });
 }
 
+/** One of the places the engine reads flows from, and what it found there. */
+export interface FlowPlace {
+  origin: string;
+  path: string;
+  exists: boolean;
+  count: number;
+}
+
+/**
+ * Where the engine looked for flows. Worth asking when the board is empty:
+ * an empty list without the places it came from cannot be told from a fault.
+ */
+export async function flowPlaces(): Promise<FlowPlace[]> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no disk to look at");
+  return invoke<FlowPlace[]>("flow_places");
+}
+
+/** What the supervisor of the live window says about the build it is showing. */
+export interface LiveStatus {
+  state: "building" | "running" | "build_failed";
+  /** Empty when all is well; the compiler's output when it is not. */
+  message: string;
+  changed_at: number;
+  running_since: number | null;
+}
+
+/** `null` when no supervisor has written a status: the window is not in live mode. */
+export async function liveStatus(): Promise<LiveStatus | null> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no supervisor");
+  return invoke<LiveStatus | null>("live_status");
+}
+
 /** Everything a run has said so far, for whoever looks in now. */
 export async function runSnapshot(runId: string): Promise<RunSnapshot> {
   const invoke = invoker();

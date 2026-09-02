@@ -79,9 +79,9 @@ fn announce(app: &AppHandle, status: &LiveStatus) {
             // **IL NUMERO DI SECONDI NON CI STA NEL TITOLO, E VA BENE.** Qui
             // serve che chi guarda sappia che *quello che vede è vecchio*; da
             // quanto lo dice l'evento, dove c'è spazio.
-            "Sailor — ricostruzione FALLITA: stai guardando l'ultima versione buona".to_owned()
+            "Sailor — rebuild FAILED: you are looking at the last good version".to_owned()
         }
-        LiveState::Building => "Sailor — ricostruzione in corso…".to_owned(),
+        LiveState::Building => "Sailor — rebuilding…".to_owned(),
         LiveState::Running => CALM_TITLE.to_owned(),
     };
     let _ = window.set_title(&title);
