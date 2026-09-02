@@ -68,6 +68,21 @@ fn literals_with_their_line(text: &str) -> Vec<(usize, String)> {
             }
             continue;
         }
+        // **A CHAR LITERAL IS NOT A STRING, AND `'"'` IS THE ONE THAT BITES.**
+        // Read as an opening quote it swallows the code and the doc comments
+        // that follow, up to the next `"` anywhere below, and hands the lot
+        // back as one sentence nobody wrote. A lifetime falls through: `'a` is
+        // not closed by a second quote two characters along.
+        if letter == '\'' {
+            let closes = match letters.get(at + 1) {
+                Some('\\') => at + 3,
+                _ => at + 2,
+            };
+            if letters.get(closes) == Some(&'\'') {
+                at = closes + 1;
+                continue;
+            }
+        }
         // A raw string: `r`, some `#`, a quote, up to the same run of `#`.
         if letter == 'r' && matches!(letters.get(at + 1), Some('"') | Some('#')) {
             let mut ahead = at + 1;
@@ -360,6 +375,37 @@ fn speak() -> String {
     assert!(
         is_a_sentence(a_usage_line_that_explains_itself),
         "the words a person actually reads were thrown out with the slots"
+    );
+
+    // A char literal holding a quote. Read as an opening string it swallows
+    // everything down to the next quote — the doc comment included — and comes
+    // back as a sentence, which is how four of them were counted in a file
+    // whose prose was already all in the catalogue.
+    let a_quote_that_is_a_char = r#"
+fn probe(letter: char) -> bool {
+    letter == '"'
+}
+
+/// a doc comment holding plenty of ordinary words for a reader to look at
+const PROBE: &str = "ok";
+"#;
+    assert!(
+        sentences_of(a_quote_that_is_a_char).is_empty(),
+        "a char literal was read as a string, and what followed was counted: {:?}",
+        sentences_of(a_quote_that_is_a_char)
+    );
+
+    // And a lifetime must still fall through to nothing: `'a` is not a char
+    // literal, and swallowing it would hide the string that comes after.
+    let a_lifetime_is_not_a_char = r#"
+fn speak<'a>(from: &'a str) -> String {
+    format!("no terminal has checked in yet, and none is expected: {from}")
+}
+"#;
+    assert_eq!(
+        sentences_of(a_lifetime_is_not_a_char).len(),
+        1,
+        "a lifetime was mistaken for a char literal and the sentence after it was lost"
     );
 
     let below_the_tests =
