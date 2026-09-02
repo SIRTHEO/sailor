@@ -22,6 +22,7 @@ mod board;
 mod changes;
 mod faults;
 mod flows;
+mod handoff;
 mod keeps;
 mod ledger;
 mod live;
@@ -187,6 +188,9 @@ fn main() {
             run::flow_trigger,
             run::start_run,
             run::stop_run,
+            handoff::handed_steps,
+            handoff::take_handed_step,
+            handoff::close_handed_step,
             run::run_snapshot,
             run::known_runs,
             run::open_runs,
