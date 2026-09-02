@@ -35,10 +35,20 @@ const ITALIAN = new Set([
   "pannello", "attesa", "verifica",
 ]);
 
-export function looksItalian(text: string): boolean {
+export function looksItalian(text: string, italian: Set<string> = ITALIAN): boolean {
   const words = text.toLowerCase().match(/[a-zà-ÿ']+/g) ?? [];
-  return words.some((word) => ITALIAN.has(word));
+  return words.some((word) => italian.has(word));
 }
+
+/**
+ * The words the terminals screen used to say, on top of the floor above: a
+ * gate at zero can afford a wider net than a ratchet, and a judge showed the
+ * floor alone lets «Spazio di lavoro» and «Cosa avviare» straight through.
+ */
+const ON_THE_SCREEN = new Set([
+  ...ITALIAN, "spazio", "lavoro", "cosa", "avviare", "apro", "apre", "avvio",
+  "terminale", "terminali", "percorso", "chiudo", "chiuso", "scheda", "riga",
+]);
 
 /** The lines that are comment, which the Rust ratchet already watches. */
 function commentLines(lines: string[]): Set<number> {
@@ -71,26 +81,26 @@ const LITERAL = /"([^"\n]{2,})"|'([^'\n]{2,})'|`([^`\n]{2,})`/g;
  * underscore — because a name is not a sentence even when it reads like one.
  * No skip for a trailing extension: tried once, it let «Salva come .json» in.
  */
-function saysItalian(line: string): string | null {
+function saysItalian(line: string, italian: Set<string> = ITALIAN): string | null {
   const bare = line.trim();
   if (!bare) return null;
   const withoutTags = bare.replace(/<[^>]*>/g, "").trim();
-  if (withoutTags && !/[{};=]/.test(withoutTags) && looksItalian(withoutTags)) return withoutTags;
+  if (withoutTags && !/[{};=]/.test(withoutTags) && looksItalian(withoutTags, italian)) return withoutTags;
   for (const match of bare.matchAll(LITERAL)) {
     const text = match[1] ?? match[2] ?? match[3];
     if (text.includes("/") || text.startsWith(".") || text.includes("_")) continue;
-    if (looksItalian(text)) return text;
+    if (looksItalian(text, italian)) return text;
   }
   return null;
 }
 
-export function loose(name: string, text: string): string[] {
+export function loose(name: string, text: string, italian: Set<string> = ITALIAN): string[] {
   const lines = text.split("\n");
   const comments = commentLines(lines);
   const found: string[] = [];
   lines.forEach((line, i) => {
     if (comments.has(i)) return;
-    const said = saysItalian(line);
+    const said = saysItalian(line, italian);
     if (said !== null) found.push(`${name}:${String(i + 1)}  ${said.slice(0, 70)}`);
   });
   return found;
@@ -169,12 +179,12 @@ describe("what a person reads comes from the catalogue", () => {
     for (const name of ["Terminals.tsx", "TerminalPane.tsx", "terminal.ts", "ChangesScreen.tsx", "changes.ts"]) {
       const text = sources[`./${name}`];
       expect(text, `${name} was not read`).toBeTruthy();
-      expect(loose(name, text)).toEqual([]);
+      expect(loose(name, text, ON_THE_SCREEN)).toEqual([]);
     }
   });
 
   test("the catalogue itself is not counted, or the repair would raise the number", () => {
-    const inCatalogue = Object.values(CATALOGUES.it).filter(looksItalian).length;
+    const inCatalogue = Object.values(CATALOGUES.it).filter((text) => looksItalian(text)).length;
     expect(inCatalogue).toBeGreaterThan(0);
     expect(everythingLoose().join("\n")).not.toContain("i18n.ts:");
   });

@@ -13,7 +13,8 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::io::Read;
+use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -87,18 +88,39 @@ fn client_with_host() -> Result<Client, String> {
     if let Ok((protocol, pid)) = client.hello() {
         return checked(client, protocol, pid);
     }
-    start_host(&store()?)?;
-    let deadline = Instant::now() + HOST_STARTS_WITHIN;
+    let host = start_host(&sailor_binary()?, &store()?)?;
+    await_host(client, host, Instant::now() + HOST_STARTS_WITHIN)
+}
+
+/// Waits for a host just started to answer, or says why it will not.
+///
+/// A host that ended says how it ended, in its own words: «did not answer»
+/// alone hid a sailor in service that had no `host` form at all.
+fn await_host(client: Client, mut host: Child, deadline: Instant) -> Result<Client, String> {
     loop {
         match client.hello() {
             Ok((protocol, pid)) => return checked(client, protocol, pid),
-            Err(error) if Instant::now() >= deadline => {
-                return Err(format!(
-                    "the terminal host was started and did not answer within {} seconds: {error}",
-                    HOST_STARTS_WITHIN.as_secs()
-                ))
+            Err(error) => {
+                if let Ok(Some(status)) = host.try_wait() {
+                    let mut said = String::new();
+                    if let Some(mut stderr) = host.stderr.take() {
+                        let _ = stderr.read_to_string(&mut said);
+                    }
+                    return Err(format!(
+                        "`sailor terminal host` ended at once ({status}): {}. If the sailor \
+                         in service predates the host, reinstall it from these sources, or \
+                         point SAILOR_BIN at one that has it",
+                        said.trim()
+                    ));
+                }
+                if Instant::now() >= deadline {
+                    return Err(format!(
+                        "the terminal host was started and did not answer within {} seconds: {error}",
+                        HOST_STARTS_WITHIN.as_secs()
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(50));
             }
-            Err(_) => std::thread::sleep(Duration::from_millis(50)),
         }
     }
 }
@@ -134,23 +156,22 @@ fn sailor_binary() -> Result<PathBuf, String> {
 }
 
 /// Starts the host, detached: it makes its own session, and this process
-/// never waits for it.
-fn start_host(store: &Path) -> Result<(), String> {
-    let binary = sailor_binary()?;
-    Command::new(&binary)
+/// never waits for it beyond its first answer. Its complaint is kept, for
+/// the case it ends before answering.
+fn start_host(binary: &Path, store: &Path) -> Result<Child, String> {
+    Command::new(binary)
         .args(["terminal", "host", "--store"])
         .arg(store)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| {
             format!(
                 "could not start `{} terminal host`: {error}",
                 binary.display()
             )
-        })?;
-    Ok(())
+        })
 }
 
 // ── the output, as it comes ─────────────────────────────────────────────
@@ -229,17 +250,38 @@ pub(crate) fn terminal_open(
 ) -> Result<terminal::Summary, String> {
     let profiles = profiles::store_io::load_store()
         .map_err(|error| format!("the profile store cannot be read, so no terminal opens under a profile: {error}"))?;
-    let environment = profiles::active_environment(&profiles);
+    let crossing = what_crosses(program, args, &profiles);
     let opened = client_with_host()?.open(
         &workspace_root,
-        program,
-        args.unwrap_or_default(),
-        environment,
+        crossing.program,
+        crossing.args,
+        crossing.environment,
         rows,
         cols,
     )?;
     follow(&app, &opened.id);
     Ok(opened)
+}
+
+/// What the open request carries to the host: the program and its arguments
+/// as the window gave them, and the environment of the profiles active now.
+#[derive(Debug, PartialEq, Eq)]
+struct Crossing {
+    program: Option<String>,
+    args: Vec<String>,
+    environment: Vec<(String, String)>,
+}
+
+fn what_crosses(
+    program: Option<String>,
+    args: Option<Vec<String>>,
+    profiles: &profiles::ProfileStore,
+) -> Crossing {
+    Crossing {
+        program,
+        args: args.unwrap_or_default(),
+        environment: profiles::active_environment(profiles),
+    }
 }
 
 /// The line the person confirmed with Enter, **looked at before it runs**: it
@@ -310,6 +352,77 @@ pub(crate) fn terminal_backlog(id: String) -> Result<Backlog, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **THE ARGUMENTS AND THE ENVIRONMENT CROSS THE BRIDGE AS GIVEN.** The
+    /// window and the host each prove their own end; this is the piece in
+    /// between, where dropping either would turn nothing else red.
+    #[test]
+    fn what_the_window_gives_is_what_the_host_is_asked_to_open() {
+        let mut store = profiles::ProfileStore::default();
+        store.profiles.push(profiles::Profile {
+            name: "prove".to_owned(),
+            cli_id: "claude".to_owned(),
+            home_dir: PathBuf::from("/homes/claude/prove"),
+        });
+        store.active.insert("claude".to_owned(), "prove".to_owned());
+
+        let crossing = what_crosses(
+            Some("claude".to_owned()),
+            Some(vec!["--resume".to_owned()]),
+            &store,
+        );
+        assert_eq!(
+            crossing,
+            Crossing {
+                program: Some("claude".to_owned()),
+                args: vec!["--resume".to_owned()],
+                environment: vec![(
+                    "CLAUDE_CONFIG_DIR".to_owned(),
+                    "/homes/claude/prove".to_owned()
+                )],
+            }
+        );
+        // The absurd control: nothing given, nothing invented.
+        let bare = what_crosses(None, None, &profiles::ProfileStore::default());
+        assert_eq!(bare.program, None);
+        assert!(bare.args.is_empty() && bare.environment.is_empty());
+    }
+
+    /// **A HOST THAT ENDS BEFORE ANSWERING SAYS WHY**, in its own words: a
+    /// sailor in service without the `host` form was reported as «did not
+    /// answer», which sends a person to look at the wrong thing.
+    #[test]
+    fn a_host_that_ends_at_once_is_reported_with_its_own_complaint() {
+        let scratch = std::env::temp_dir().join(format!("sailor-bridge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        std::fs::create_dir_all(&scratch).expect("scratch");
+        let fake = scratch.join("sailor");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\necho 'sailor terminal: «host» is not a form of this command' >&2\nexit 2\n",
+        )
+        .expect("write the fake sailor");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755))
+                .expect("make it runnable");
+        }
+
+        let host = start_host(&fake, &scratch).expect("the fake starts");
+        let refused = await_host(
+            Client::in_store(&scratch),
+            host,
+            Instant::now() + Duration::from_secs(5),
+        )
+        .err()
+        .expect("a host that ended is not a client");
+        assert!(
+            refused.contains("is not a form of this command") && refused.contains("SAILOR_BIN"),
+            "{refused}"
+        );
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
 
     /// **THE EVENTS KEEP THE NAMES THE WINDOW LISTENS TO.** A typo here breaks
     /// nothing that compiles, and leaves a window mute in front of a terminal
