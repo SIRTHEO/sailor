@@ -183,7 +183,7 @@ fn no_shipped_flow_carries_a_path_from_one_machine() {
 /// chiedono, e quali di quelli non ci sono.
 #[test]
 fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
-    let flow = shipped("strumenti-di-questa-macchina");
+    let flow = shipped("what-this-machine-has");
     let (execution, records) = run(&flow);
 
     assert_eq!(
@@ -241,7 +241,7 @@ fn the_tools_flow_runs_and_answers_which_flows_would_stop() {
 /// ogni versione diventare una domanda non fatta, non una risposta vuota.
 #[test]
 fn the_tools_flow_asks_for_versions_only_if_told_to() {
-    let flow = shipped("strumenti-di-questa-macchina");
+    let flow = shipped("what-this-machine-has");
     let asked = flow.inputs["rileva"]["version_probes"]
         .as_bool()
         .expect("il flusso dichiara se chiedere le versioni");
@@ -258,7 +258,7 @@ fn the_tools_flow_asks_for_versions_only_if_told_to() {
 /// famiglia di automazioni, e il nome del passo dice cosa se ne potrebbe fare.
 #[test]
 fn the_migration_flow_runs_and_looks_at_four_families() {
-    let flow = shipped("migrazione-a-sailor");
+    let flow = shipped("migrate-to-sailor");
     let (execution, records) = run(&flow);
 
     assert_eq!(
@@ -307,7 +307,7 @@ fn the_migration_flow_runs_and_looks_at_four_families() {
 /// fatto di essere stato guardato.
 #[test]
 fn the_migration_flow_never_runs_anything() {
-    let flow = shipped("migrazione-a-sailor");
+    let flow = shipped("migrate-to-sailor");
     let (_, records) = run(&flow);
 
     for step in [

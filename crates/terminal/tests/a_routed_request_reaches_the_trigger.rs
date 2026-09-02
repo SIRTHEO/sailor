@@ -52,7 +52,7 @@ fn a_routed_request_becomes_the_signal_of_a_manual_trigger() {
     else {
         panic!("la riga marcata doveva essere smistata");
     };
-    assert_eq!(flow, "smista-il-lavoro");
+    assert_eq!(flow, "dispatch-the-work");
     assert_eq!(route, "marked-request");
 
     // Questo è il giunto: ciò che lo smistamento ha prodotto, messo in mano

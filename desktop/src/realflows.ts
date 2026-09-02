@@ -17,9 +17,9 @@
  * glob finds is a bonus, not a premise.
  */
 export const SHIPPED_WITH_THE_BINARY = [
-  "migrazione-a-sailor.flow.json",
-  "smista-il-lavoro.flow.json",
-  "strumenti-di-questa-macchina.flow.json",
+  "migrate-to-sailor.flow.json",
+  "dispatch-the-work.flow.json",
+  "what-this-machine-has.flow.json",
 ];
 
 /**

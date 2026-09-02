@@ -234,7 +234,7 @@ flusso che qualcuno ha già scritto.
 **Cosa ne discende.** Il controllo `identifiers_are_in_english` non guarda i
 `.flow.json` e non guarderà mai gli `id`: non è una dimenticanza da completare.
 Chi in futuro lo estende ai dati sta rompendo questa decisione, non applicandola.
-Resta l'asimmetria dichiarata: `flows/smista-il-lavoro.flow.json` ha l'id in
+Resta l'asimmetria dichiarata: `flows/dispatch-the-work.flow.json` ha l'id in
 italiano e i passi in inglese, e va bene così — sono tutti e due dati.
 
 ### Il tetto di spesa è del flusso, e la larghezza del fronte ne discende
