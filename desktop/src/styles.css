@@ -1013,6 +1013,24 @@ tr[data-followable]:hover {
   margin-top: 1px;
 }
 
+/* The actions, laid out to be scanned rather than read: they are names a flow
+   file spells exactly, so they get the fixed width and enough room around each
+   to be picked out and copied. */
+.abilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.abilities__one {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
 /* A switch with its word beside it, on the line of gestures. */
 .now__toggle {
   display: flex;

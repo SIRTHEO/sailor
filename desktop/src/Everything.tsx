@@ -5,6 +5,7 @@
  * by what they are about.
  */
 import { useState } from "react";
+import { AbilitiesScreen } from "./AbilitiesScreen";
 import { FaultsScreen } from "./FaultsScreen";
 import { Installed } from "./Installed";
 import { LedgerScreen } from "./LedgerScreen";
@@ -24,6 +25,7 @@ export type Corner =
   | "installed"
   | "commands"
   | "ledger"
+  | "abilities"
   | "faults";
 
 /**
@@ -51,6 +53,7 @@ const GROUPS: { heading: string; corners: { id: Corner; name: string; about: str
       { id: "machine", name: "Tools", about: "what is installed, where, in which version" },
       { id: "installed", name: "Skills and rules", about: "what a session is given to work with" },
       { id: "commands", name: "Commands", about: "every verb Sailor answers to" },
+      { id: "abilities", name: "What Sailor can do", about: "the actions a flow may use" },
     ],
   },
   {
@@ -98,6 +101,7 @@ export function Everything({ native, now }: { native: boolean; now: number }) {
         {corner === "machine" && <MachineScreen native={native} />}
         {corner === "installed" && <Installed native={native} />}
         {corner === "commands" && <Manual native={native} />}
+        {corner === "abilities" && <AbilitiesScreen native={native} />}
         {corner === "ledger" && <LedgerScreen native={native} now={now} />}
         {corner === "faults" && <FaultsScreen native={native} />}
       </div>
