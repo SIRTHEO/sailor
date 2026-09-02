@@ -8,7 +8,7 @@ use crate::system::{self, FlowSource};
 use crate::{
     Action, ActionError, ActionOutcome, ActionRegistry, Clock, Execution, ExecutionRequest,
     Executor, FlowFile, Graph, InProcessExecutor, Outcome, RecordStore, SharedState, StepRecord,
-    StepSpecies, SystemClock, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP,
+    StepSpecies, SystemClock, CURRENT_CAP, CURRENT_RUN, CURRENT_STEP, WORKSPACE_ROOT,
 };
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -201,6 +201,17 @@ impl Action for SubflowAction {
 
         let mut child_shared = SharedState::new();
         child_shared.insert(CALL_CHAIN.to_owned(), chain_value(&chain));
+        // **LA RADICE SCENDE, GLI INGRESSI NO.** Sono due cose diverse e vanno
+        // dette separate: quello che il figlio *riceve* è scritto in un posto
+        // solo (sopra), ma *dove lavora* non è un ingresso — è la stessa
+        // macchina e lo stesso progetto del padre. Senza questa riga il figlio
+        // di una chiamata cade sulla cartella del processo, che è il guasto 25
+        // preso dalla porta di servizio: non fallisce, lavora nel posto
+        // sbagliato. Un padre senza radice non ne inventa una: assente resta
+        // assente, e il figlio fallirà dicendolo come lo direbbe il padre.
+        if let Some(root) = shared.get(WORKSPACE_ROOT) {
+            child_shared.insert(WORKSPACE_ROOT.to_owned(), root.clone());
+        }
 
         let actions = self.host.actions()?;
         let outcome = InProcessExecutor.execute(
