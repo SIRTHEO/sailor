@@ -128,7 +128,7 @@ export function ProfileList({ native }: { native: boolean }) {
                 <p className="now__empty">No profile yet for {cli.display_name}.</p>
               )
             ) : (
-              <table className="now__table">
+              <table className="now__table now__table--four">
                 <thead>
                   <tr><th>profile</th><th>home</th><th>access</th><th /></tr>
                 </thead>

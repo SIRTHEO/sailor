@@ -862,19 +862,56 @@ button.is-primary {
   margin-top: 2px;
 }
 
-/* THE COLUMNS LINE UP ACROSS BLOCKS, or the eye cannot run down them. Each
-   command line draws its own table, and left to size themselves the same
-   column landed in a different place in every one — «access» was at the right
-   edge in the first block and mid-page in the second. */
-.panel__block .now__table {
+/* THE COLUMNS LINE UP ACROSS BLOCKS, or the eye cannot run down them: left to
+   size themselves, «access» sat at the right edge in one block and mid-page in
+   the next. Asked for by name — these widths describe four columns, and on
+   every table in a block they starved the catalogue's fifth to nothing. */
+.now__table--four {
   table-layout: fixed;
   width: 100%;
 }
 
-.panel__block .now__table th:nth-child(1) { width: 18%; }
-.panel__block .now__table th:nth-child(2) { width: 34%; }
-.panel__block .now__table th:nth-child(3) { width: 36%; }
-.panel__block .now__table th:nth-child(4) { width: 12%; }
+.now__table--four th:nth-child(1) { width: 18%; }
+.now__table--four th:nth-child(2) { width: 34%; }
+.now__table--four th:nth-child(3) { width: 36%; }
+.now__table--four th:nth-child(4) { width: 12%; }
+
+/* A fraction already spent, drawn. The bar is not decoration: a number alone
+   makes «61.4%» and «6.14%» look alike at a glance, and the whole point of
+   this screen is the glance before deciding to launch something. */
+.quota__bar {
+  height: 4px;
+  background: var(--line);
+  margin-top: 4px;
+}
+
+.quota__fill {
+  height: 100%;
+  background: var(--ink);
+}
+
+/* Full is a fact, not an error — but it is the one that changes what you do
+   next, so it does not read like the others. */
+.quota__bar[data-full] .quota__fill {
+  background: var(--danger);
+}
+
+/* WHAT IS MARKED AS WRONG HAS TO LOOK WRONG. `data-bad` was being written on
+   lines that then came out in the same grey as the rest: the marker existed in
+   the markup, meant something to whoever wrote it, and reached nobody. */
+[data-bad] {
+  color: var(--danger);
+}
+
+/* A switch with its word beside it, on the line of gestures. */
+.now__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-small);
+  color: var(--muted);
+  white-space: nowrap;
+}
 
 /* A PATH IS READ CHARACTER BY CHARACTER, never skimmed: it is the one thing
    that lets somebody find the folder again, so it gets the fixed width. */
