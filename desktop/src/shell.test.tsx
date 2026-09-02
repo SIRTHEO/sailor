@@ -187,6 +187,19 @@ describe("the bar's three facts", () => {
     );
   });
 
+  test("AN ENGINE THAT DOES NOT ANSWER IS SAID, never read as «nothing running»", async () => {
+    // The absurd control: every command refused. The chip must not turn a
+    // refusal into an empty list and call the machine quiet.
+    const shell = pretendShell({});
+    try {
+      render(<LiveChip native now={1000} />);
+      await screen.findByText(/cannot ask what runs: .*no open_runs/);
+      expect(screen.queryByText(/nothing running/)).toBeNull();
+    } finally {
+      shell.stop();
+    }
+  });
+
   test("THE CHIP READS THE ENGINE, from any place: open_runs and day_summary are asked", async () => {
     const shell = pretendShell({ open_runs: [working], day_summary: { ledger_present: true, cost_micros: 340_000, unpriced: 0 } });
     try {

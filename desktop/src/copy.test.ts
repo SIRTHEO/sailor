@@ -32,7 +32,9 @@ const ITALIAN = new Set([
   "apri", "registrati", "vuoto", "vuota", "niente", "nessun", "nessuna",
   "errore", "avvia", "ferma", "modifica", "elimina", "cerca", "carica",
   "deposito", "motore", "guscio", "macchina", "tela", "colonna", "barra",
-  "pannello", "attesa", "verifica",
+  "pannello", "attesa", "verifica", "andato", "andata", "andate", "rotto",
+  "rotta", "rotte", "partito", "chiuso", "tentativo", "durata", "costo",
+  "manca", "gira", "entrato", "totale", "scritta", "guarda", "volta",
 ]);
 
 export function looksItalian(text: string, italian: Set<string> = ITALIAN): boolean {
@@ -86,6 +88,10 @@ function saysItalian(line: string, italian: Set<string> = ITALIAN): string | nul
   if (!bare) return null;
   const withoutTags = bare.replace(/<[^>]*>/g, "").trim();
   if (withoutTags && !/[{};=]/.test(withoutTags) && looksItalian(withoutTags, italian)) return withoutTags;
+  // JSX text with an expression in it: «{count} corse» is a sentence too, and
+  // skipping every line with a brace was how twenty-five lines hid from this.
+  const withoutBraces = withoutTags.replace(/\{[^{}]*\}/g, " ").replace(/\s+/g, " ").trim();
+  if (withoutBraces && !/[{};=]/.test(withoutBraces) && looksItalian(withoutBraces, italian)) return withoutBraces;
   for (const match of bare.matchAll(LITERAL)) {
     const text = match[1] ?? match[2] ?? match[3];
     if (text.includes("/") || text.startsWith(".") || text.includes("_")) continue;
@@ -107,11 +113,11 @@ export function loose(name: string, text: string, italian: Set<string> = ITALIAN
 }
 
 /**
- * How many lines still write Italian into a component instead of a key. **It
- * can only fall**: lowering it is the repair, raising it means a sentence was
- * written where it cannot be published.
+ * How many lines still write Italian into a component: **it can only fall**.
+ * The three left are a sample flow's id the tests use by name, and the two
+ * words the faults register writes in its own language, sent back verbatim.
  */
-const LOOSE_TODAY = 1;
+const LOOSE_TODAY = 3;
 
 function everythingLoose(): string[] {
   const found: string[] = [];

@@ -97,9 +97,10 @@ function runIn(state: StepRun["state"]): StepRun {
 const SAYS = (state: StepRun["state"]) => t(`window.step.state.${state}`);
 
 describe("il nodo e lo stato della corsa", () => {
-  test("senza nessuna corsa dice che aspetta, e non inventa niente", () => {
+  test("without any run it says «not run yet», never «waiting»: nothing is waited on", () => {
     mountNode({}, new Map());
-    expect(screen.getByText(SAYS("waiting"))).toBeDefined();
+    expect(screen.getByText(SAYS("idle"))).toBeDefined();
+    expect(screen.queryByText(SAYS("waiting"))).toBeNull();
   });
 
   test("con una corsa vera dice quello che sta succedendo, adesso", () => {
@@ -123,7 +124,7 @@ describe("il nodo e lo stato della corsa", () => {
     // sono ripetuti: con una chiave non qualificata il nodo si colorerebbe con
     // la corsa di un flusso che non è il suo.
     mountNode({}, new Map([["un-altro-flusso::implementa", runIn("went")]]));
-    expect(screen.getByText(SAYS("waiting"))).toBeDefined();
+    expect(screen.getByText(SAYS("idle"))).toBeDefined();
   });
 });
 
@@ -165,7 +166,7 @@ describe("il nodo e il motore che lo esegue", () => {
       new Map(),
     );
     expect(screen.getByText("claude-code")).toBeDefined();
-    expect(screen.getByText("se manca: agy, codex")).toBeDefined();
+    expect(screen.getByText("if missing: agy, codex")).toBeDefined();
     expect(screen.queryByText("motore non dichiarato")).toBeNull();
   });
 
@@ -197,7 +198,7 @@ describe("il nodo e il motore che lo esegue", () => {
   test("un motore solo non si porta dietro una catena vuota", () => {
     mountNode({ step: { ...STEP, with: { tool: "codex" } } as Step }, new Map());
     expect(screen.getByText("codex")).toBeDefined();
-    expect(screen.queryByText(/se manca/)).toBeNull();
+    expect(screen.queryByText(/if missing/)).toBeNull();
   });
 
   test("senza nessuna chiamata non mostra un conto, invece di mostrare zeri", () => {

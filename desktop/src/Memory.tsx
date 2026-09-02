@@ -23,12 +23,15 @@ export function Memory({
   tab,
   onTab,
   onOpenRun,
+  onLedgerTable,
 }: {
   native: boolean;
   now: number;
   tab: MemoryTab;
   onTab: (tab: MemoryTab) => void;
   onOpenRun: (runId: string) => void;
+  /** The table open in the ledger browser, for the breadcrumbs; `null` when none. */
+  onLedgerTable?: (table: string | null) => void;
 }) {
   return (
     <div className="section">
@@ -40,7 +43,7 @@ export function Memory({
             <History native={native} />
           </>
         )}
-        {tab === "ledger" && <LedgerBrowser native={native} />}
+        {tab === "ledger" && <LedgerBrowser native={native} onTable={onLedgerTable} />}
         {tab === "spend" && <QuotaScreen native={native} now={now} />}
         {tab === "faults" && <FaultsScreen native={native} />}
       </div>

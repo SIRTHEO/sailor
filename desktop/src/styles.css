@@ -2244,6 +2244,7 @@ tr[data-followable]:hover {
 }
 
 /* The state tint enters once and flows down over the whole node. */
+.step-node[data-state="idle"] { --state: var(--state-waiting); }
 .step-node[data-state="waiting"] { --state: var(--state-waiting); }
 .step-node[data-state="running"] { --state: var(--state-running); }
 .step-node[data-state="went"] { --state: var(--state-went); }
@@ -3810,6 +3811,22 @@ tr[data-followable]:hover {
 
 .chip--build {
   color: var(--muted);
+}
+
+.chip[data-warn],
+.chip__spend[data-warn] {
+  color: var(--danger);
+}
+
+.pane__close {
+  margin-left: auto;
+  font-size: var(--text-small);
+  color: var(--muted);
+  padding: 0 var(--space-2);
+}
+
+.pane__close:hover {
+  color: var(--danger);
 }
 
 .now__handed td {
