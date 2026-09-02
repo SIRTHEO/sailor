@@ -290,6 +290,14 @@ pub trait RecordStore: Sync {
     /// tells nobody. Whoever implements this declares what they know, even when
     /// the honest answer is "nothing, because I do not record the calls".
     fn spent(&self, run_id: &str) -> Result<Spend, FlowError>;
+
+    /// Whether somebody asked this run to stop. Asked before a front opens,
+    /// never in the middle of a step: a step already running finishes, and
+    /// the ones that were ready are handed back as not started. The default
+    /// is `false` because a store that keeps no such request has none.
+    fn halt_requested(&self, _run_id: &str) -> Result<bool, FlowError> {
+        Ok(false)
+    }
 }
 
 /// The store that lives in memory, for tests and for anyone wanting no file.
@@ -485,6 +493,10 @@ pub enum Decision {
     /// still; here it is the run that stopped, and for a reason that can be
     /// read in money.
     CapReached(SpendStop),
+    /// Somebody asked the run to stop, and it did before opening this front.
+    /// The steps carried are the ones that were ready and did not start: not
+    /// faults, and a resume finds them where they were.
+    Halted(Vec<String>),
     Complete,
 }
 
@@ -525,6 +537,7 @@ pub fn run_status(execution: &Execution) -> (&'static str, bool) {
         Some(Decision::Stopped(_)) => ("stopped", false),
         Some(Decision::Failed(_)) => ("failed", false),
         Some(Decision::CapReached(_)) => ("cap_reached", false),
+        Some(Decision::Halted(_)) => ("stopped", false),
         Some(Decision::Ready(_)) | Some(Decision::Running(_)) | None => ("incomplete", false),
     }
 }
@@ -766,6 +779,17 @@ impl Executor for InProcessExecutor {
                     shared: request.shared,
                 });
             };
+
+            // A stop asked by hand is read before the front opens, the only
+            // moment it costs nothing to honour: a step already at work has
+            // already paid, and the engine cannot take it back.
+            if store.halt_requested(&request.run_id)? {
+                decisions.push(Decision::Halted(front));
+                return Ok(Execution {
+                    decisions,
+                    shared: request.shared,
+                });
+            }
 
             // The cap is checked before opening, not after spending: a step
             // that discovers halfway through that it went over has already
@@ -1825,6 +1849,80 @@ mod tests {
             *seen.lock().expect("nobody panics here"),
             vec!["first".to_owned(), "second".to_owned()]
         );
+    }
+
+    /// A store that answers "stop" once a number of fronts have asked.
+    struct HaltAfter {
+        inner: InMemoryRecordStore,
+        fronts: usize,
+        asked: AtomicUsize,
+    }
+
+    impl RecordStore for HaltAfter {
+        fn append_started(&self, record: StepRecord) -> Result<(), FlowError> {
+            self.inner.append_started(record)
+        }
+        fn close(
+            &self,
+            run_id: &str,
+            step_id: &str,
+            attempt: u32,
+            epoch: u64,
+            completion: Completion,
+        ) -> Result<(), FlowError> {
+            self.inner.close(run_id, step_id, attempt, epoch, completion)
+        }
+        fn records(&self, run_id: &str) -> Result<Vec<StepRecord>, FlowError> {
+            self.inner.records(run_id)
+        }
+        fn spent(&self, run_id: &str) -> Result<Spend, FlowError> {
+            self.inner.spent(run_id)
+        }
+        fn halt_requested(&self, _run_id: &str) -> Result<bool, FlowError> {
+            Ok(self.asked.fetch_add(1, Ordering::SeqCst) >= self.fronts)
+        }
+    }
+
+    /// **A STOP ASKED BY HAND ENDS THE RUN BEFORE THE NEXT FRONT, AND SAYS
+    /// WHICH STEPS IT LEFT.** The first front runs to its end; the second is
+    /// handed back as not started, and the run's word is `stopped`, not
+    /// `failed`: nothing broke. Without the check in the loop the second step
+    /// would run and this would go red on the records.
+    #[test]
+    fn a_stop_asked_by_hand_holds_the_next_front_and_names_it() {
+        let graph = Graph::new(vec![
+            step("first", &[], "echo", 1),
+            step("second", &["first"], "echo", 1),
+        ])
+        .expect("valid graph");
+        let mut actions = ActionRegistry::default();
+        actions.register("echo", Echo);
+        let request = ExecutionRequest {
+            run_id: "run".to_owned(),
+            root_inputs: BTreeMap::new(),
+            gates: vec![],
+            shared: SharedState::new(),
+            spend_cap_micros: None,
+        };
+        let store = HaltAfter {
+            inner: InMemoryRecordStore::default(),
+            fronts: 1,
+            asked: AtomicUsize::new(0),
+        };
+        let result = InProcessExecutor
+            .execute(&graph, request, &store, &actions, &mut Tick::new(0))
+            .expect("the run ends without an error");
+        assert_eq!(
+            result.decisions,
+            vec![
+                Decision::Ready(vec!["first".to_owned()]),
+                Decision::Ready(vec!["second".to_owned()]),
+                Decision::Halted(vec!["second".to_owned()]),
+            ]
+        );
+        assert_eq!(run_status(&result), ("stopped", false));
+        let opened: Vec<String> = store.inner.all().into_iter().map(|record| record.step_id).collect();
+        assert_eq!(opened, vec!["first".to_owned()], "the second step must not have opened");
     }
 
     #[test]

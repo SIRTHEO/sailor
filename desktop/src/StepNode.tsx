@@ -328,7 +328,7 @@ function StepTool({
         {fallbacks.length > 0 && (
           <span
             className="step-node__tool-chain"
-            title={`in ordine di preferenza: ${[id, ...fallbacks].join(", ")}`}
+            title={`in order of preference: ${[id, ...fallbacks].join(", ")}`}
           >
             se manca: {fallbacks.join(", ")}
           </span>

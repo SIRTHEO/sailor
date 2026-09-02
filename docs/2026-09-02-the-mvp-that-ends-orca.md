@@ -278,7 +278,7 @@ registry.*
 *Outcome: yes, measured.* `sailor release sailor` cloned HEAD `5742da24`, ran
 the whole suite on it, built, and put the binary in service under
 `~/.config/sailor/bin`; the same file was then copied to
-`/Users/theo/.local/bin/sailor`, the path the hooks name. `sailor` with no
+`~/.local/bin/sailor`, the path the hooks name. `sailor` with no
 arguments lists fourteen commands, `terminal` among them with the `host` form,
 and no `ui`. The binary in service before this run was built at 13:52 and had
 no `host`, which is why the window could not open a terminal on this machine

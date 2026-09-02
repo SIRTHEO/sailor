@@ -107,7 +107,7 @@ export async function deleteFlow(name: string): Promise<void> {
 export interface RunEvent {
   run_id: string;
   seq: number;
-  kind: "step_started" | "step_text" | "step_closed" | "run_ended" | "note";
+  kind: "step_started" | "step_text" | "step_closed" | "run_ended" | "stop_requested" | "note";
   at: number;
   step_id: string | null;
   payload: unknown;
@@ -161,7 +161,17 @@ export async function startRun(name: string, mandate: string | null): Promise<St
   return invoke<StartedRun>("start_run", { name, mandate });
 }
 
-/** Tutto quello che una corsa ha detto finora, per chi si affaccia adesso. */
+/**
+ * Asks a run to stop before its next step. The step running now finishes:
+ * the engine cannot take a step back from an agent already at work.
+ */
+export async function stopRun(runId: string): Promise<void> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no run to stop");
+  await invoke<void>("stop_run", { runId });
+}
+
+/** Everything a run has said so far, for whoever looks in now. */
 export async function runSnapshot(runId: string): Promise<RunSnapshot> {
   const invoke = invoker();
   if (!invoke) throw new Error("outside the native shell: no run to watch");

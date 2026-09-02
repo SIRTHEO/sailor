@@ -562,6 +562,7 @@ fn what_comes_next(decision: &Decision, run_id: &str, now: i64) -> String {
             &[("steps", &steps.join(", "))],
         ),
         Decision::CapReached(stop) => registry::why_it_stopped(stop),
+        Decision::Halted(steps) => registry::why_it_halted(steps),
         Decision::Complete => catalogue::say("cli.step.run_complete", &[]),
     }
 }

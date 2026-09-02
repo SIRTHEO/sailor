@@ -60,6 +60,26 @@ pub fn stopped_by_cap(execution: &Execution) -> Option<String> {
     }
 }
 
+/// Why the run stopped, if somebody asked it to: the steps it did not start.
+pub fn halted_by_hand(execution: &Execution) -> Option<String> {
+    match execution.decisions.last() {
+        Some(Decision::Halted(not_started)) => Some(why_it_halted(not_started)),
+        _ => None,
+    }
+}
+
+/// The sentence for a stop asked by hand, composed once for every caller.
+pub fn why_it_halted(not_started: &[String]) -> String {
+    format!(
+        "stopped by hand before the next step. Steps not started: {}",
+        if not_started.is_empty() {
+            "none".to_owned()
+        } else {
+            not_started.join(", ")
+        }
+    )
+}
+
 /// Micro-units as a person reads them, to two decimals.
 fn in_units(micros: i64) -> String {
     format!("{:.2}", micros as f64 / 1_000_000.0)

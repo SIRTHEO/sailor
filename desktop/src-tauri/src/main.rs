@@ -186,6 +186,7 @@ fn main() {
             flows::engine_actions,
             run::flow_trigger,
             run::start_run,
+            run::stop_run,
             run::run_snapshot,
             run::known_runs,
             run::open_runs,
