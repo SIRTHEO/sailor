@@ -27,13 +27,18 @@ pub const SESSIONS_FILE: &str = "sessions.db";
 /// left behind by the migration that should have moved it.
 const SESSIONS_SCHEMA_VERSION: i64 = 1;
 
-#[derive(Debug)]
 pub enum SessionError {
     Sqlite(rusqlite::Error),
     /// The file was written by a version we do not know. It is not repaired and
     /// not worked around: it is declared.
     UnsupportedSchema(i64),
     NoDirectory(String),
+}
+
+impl fmt::Debug for SessionError {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, out)
+    }
 }
 
 impl fmt::Display for SessionError {

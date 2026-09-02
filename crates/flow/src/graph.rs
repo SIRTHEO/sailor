@@ -72,7 +72,7 @@ impl DependencyEdge {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum GraphError {
     EmptyId,
     DuplicateStep(String),
@@ -326,6 +326,12 @@ impl From<Graph> for GraphData {
             steps: value.steps,
             skippable_dependencies: value.skippable_dependencies,
         }
+    }
+}
+
+impl std::fmt::Debug for GraphError {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, out)
     }
 }
 

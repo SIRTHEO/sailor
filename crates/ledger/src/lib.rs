@@ -113,7 +113,6 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// every read died with `no such column: cache_write_tokens`.
 const PROJECTION_SCHEMA_VERSION: i64 = 8;
 
-#[derive(Debug)]
 pub enum LedgerError {
     Sqlite(rusqlite::Error),
     Json(serde_json::Error),
@@ -123,6 +122,14 @@ pub enum LedgerError {
     AlreadyClosed { step: String, attempt: u32 },
     StaleEpoch { step: String, epoch: u64 },
     Poisoned,
+}
+
+/// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** A derived one showed
+/// the fields and hid the sentence in every red test.
+impl fmt::Debug for LedgerError {
+    fn fmt(&self, out: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, out)
+    }
 }
 
 impl fmt::Display for LedgerError {

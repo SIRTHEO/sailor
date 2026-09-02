@@ -34,7 +34,6 @@ use std::sync::Mutex;
 /// **OGNI VOCE DICE QUALE GESTO È FALLITO**, non solo che qualcosa è fallito:
 /// «non si è aperto» manda a cercare in quattro posti diversi, e i quattro
 /// hanno riparazioni diverse.
-#[derive(Debug)]
 pub enum PtyError {
     /// Il sistema operativo non ha dato un terminale nuovo.
     NotOpened(io::Error),
@@ -46,6 +45,14 @@ pub enum PtyError {
     /// Scrittura, lettura o ridimensionamento su un terminale già chiuso o
     /// rotto.
     Broken(io::Error),
+}
+
+/// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** A derived one showed
+/// the `io::Error` bare and hid the gesture that failed.
+impl std::fmt::Debug for PtyError {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, out)
+    }
 }
 
 impl std::fmt::Display for PtyError {

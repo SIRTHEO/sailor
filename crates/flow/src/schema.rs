@@ -25,7 +25,7 @@ pub enum ValueSchema {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct SchemaError {
     pub path: String,
     pub expected: String,
@@ -190,6 +190,12 @@ impl ValueSchema {
             ValueSchema::Array { .. } => "array",
             ValueSchema::Object { .. } => "object",
         }
+    }
+}
+
+impl std::fmt::Debug for SchemaError {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, out)
     }
 }
 

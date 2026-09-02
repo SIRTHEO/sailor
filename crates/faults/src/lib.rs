@@ -16,13 +16,21 @@ pub const FAULTS_FILE: &str = "faults.db";
 /// the reason written in `Cargo.toml`.
 const FAULTS_SCHEMA_VERSION: i64 = 1;
 
-#[derive(Debug)]
 pub enum FaultError {
     Database(rusqlite::Error),
     NoDirectory(String),
     UnsupportedSchema(i64),
     Unknown(i64),
     CannotCrossTheTable(String),
+}
+
+/// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** With a derived one,
+/// every red test showed the fields and hid the sentence this type exists to
+/// say. Delegating costs nothing and makes the prose visible where it matters.
+impl std::fmt::Debug for FaultError {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, out)
+    }
 }
 
 impl std::fmt::Display for FaultError {
