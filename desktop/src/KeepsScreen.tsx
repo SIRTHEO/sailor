@@ -33,6 +33,7 @@ export function KeepsScreen({ native }: { native: boolean }) {
                   <th>where</th>
                   <th className="keeps__num">how many</th>
                   <th className="keeps__num">size</th>
+                  <th>since</th>
                 </tr>
               </thead>
               <tbody>
@@ -44,9 +45,10 @@ export function KeepsScreen({ native }: { native: boolean }) {
                       <>
                         <td className="keeps__num">{store.how_many ?? "–"}</td>
                         <td className="keeps__num">{store.bytes === null ? "–" : sizeWords(store.bytes)}</td>
+                        <td className="keeps__since">{when(store.since)}</td>
                       </>
                     ) : (
-                      <td className="keeps__missing" colSpan={2}>
+                      <td className="keeps__missing" colSpan={3}>
                         not created yet — nothing written here
                       </td>
                     )}

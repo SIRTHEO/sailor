@@ -66,6 +66,7 @@ export function liveWords(runs: OpenRun[], now: number): { live: boolean; word: 
   const first = working[0] ?? waiting[0];
   const step = first.open_now[0]?.step_id;
   const parts = [first.entity];
+  if (first.steps_total !== null) parts.push(`${first.steps_done} of ${first.steps_total}`);
   if (step !== undefined) parts.push(`at ${step}`);
   parts.push(elapsed(first.since, now));
   const more = working.length + waiting.length - 1;

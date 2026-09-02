@@ -116,6 +116,8 @@ describe("the first screen: what is happening right now", () => {
         open_now: [],
         since: 0,
         started_here: true,
+        steps_done: 2,
+        steps_total: 4,
       },
       {
         run_id: "run-01K0",
@@ -128,6 +130,8 @@ describe("the first screen: what is happening right now", () => {
         ],
         since: 0,
         started_here: false,
+        steps_done: 1,
+        steps_total: null,
       },
     ];
     render(
