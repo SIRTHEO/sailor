@@ -5,12 +5,13 @@
 // said so only on the board; leaving it left the run out of sight.
 
 import { useEffect, useState } from "react";
-import { openRuns, todaySummary, type DaySummary, type OpenRun } from "./engine";
+import { liveStatus, openRuns, todaySummary, type DaySummary, type LiveStatus, type OpenRun } from "./engine";
 import { rows as profileRows, type Row as ProfileRow } from "./profiles";
 
 const RUNS_EVERY_MS = 4000;
 const SPEND_EVERY_MS = 30000;
 const WHO_EVERY_MS = 60000;
+const BUILD_EVERY_MS = 2000;
 
 /** Polls a question on a cadence; `null` while unanswered or outside the shell. */
 function useEvery<T>(native: boolean, ask: () => Promise<T>, every: number): T | null {
@@ -98,6 +99,29 @@ export function LiveChip({ native, now, onOpen }: { native: boolean; now: number
 export function whoWords(rows: ProfileRow[]): string {
   const active = rows.filter((row) => row.active).map((row) => `${row.cli_id} ${row.name}`);
   return active.length === 0 ? "no profile active" : active.join(" · ");
+}
+
+/**
+ * The build under the window, in words. Silent while it runs the latest
+ * build and outside live mode: a chip that always says «fine» teaches nobody
+ * to read it. A failed rebuild says what is being looked at and since when.
+ */
+export function buildWords(status: LiveStatus | null, now: number): { warn: boolean; word: string } | null {
+  if (status === null || status.state === "running") return null;
+  if (status.state === "building") return { warn: false, word: "rebuilding the window…" };
+  const since = status.running_since === null ? "" : ` running since ${elapsed(status.running_since, now)} ago`;
+  return { warn: true, word: `REBUILD FAILED · you see the last good version${since}` };
+}
+
+export function BuildChip({ native, now }: { native: boolean; now: number }) {
+  const status = useEvery(native, liveStatus, BUILD_EVERY_MS);
+  const said = buildWords(status, now);
+  if (!native || said === null) return null;
+  return (
+    <span className="chip chip--build" data-warn={said.warn || undefined} title={status?.message || undefined}>
+      {said.word}
+    </span>
+  );
 }
 
 export function WhoChip({ native }: { native: boolean }) {

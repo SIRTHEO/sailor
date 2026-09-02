@@ -7,10 +7,16 @@
 // nothing there yet lead to different things: in the second a flow created now
 // could not be saved, so offering the gesture would be an unkeepable promise.
 
+import type { FlowPlace } from "./engine";
+
 export type CanvasState = "loading" | "failed" | "empty";
+
+/** Where the engine looked for flows, once asked; `null` while nobody asked. */
+export type PlacesAsk = { state: "ready"; places: FlowPlace[] } | { state: "mute"; why: string } | null;
 
 interface BlankCanvasProps {
   state: CanvasState;
+  places?: PlacesAsk;
   /** Why the engine is not answering, word for word: shown, not summarised. */
   failure?: string | null;
   brokenCount: number;
@@ -25,7 +31,7 @@ interface BlankCanvasProps {
  */
 const SKELETON_LANES = [3, 4];
 
-export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanvasProps) {
+export function BlankCanvas({ state, failure, brokenCount, onCreate, places = null }: BlankCanvasProps) {
   /**
    * **LOADING IS A SHAPE, NOT A SPINNER.** A spinner says "wait"; a skeleton
    * says WHAT IS COMING, so the screen reads before the data lands. It does not
@@ -99,6 +105,23 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanv
               : `${brokenCount} flows on the disk will not load: they are at the foot of the column, with the reason.`}
           </p>
         )}
+        {/* THE PLACES IT LOOKED IN, WITH THEIR REAL PATHS. The window once said
+            «no flows» while four sat one folder away, and from inside there
+            was no way to know where it had looked. */}
+        {places?.state === "ready" && (
+          <ul className="blank__places" role="list" aria-label="where the engine looked">
+            {places.places.map((place) => (
+              <li className="blank__place" key={place.path} data-missing={!place.exists || undefined}>
+                <span className="blank__place-origin">{place.origin}</span>
+                <span className="blank__place-path">{place.path}</span>
+                <span className="blank__place-count">
+                  {place.exists ? `${String(place.count)} found` : "no such folder"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {places?.state === "mute" && <p className="blank__why">Where it looked is not known: {places.why}</p>}
         <button type="button" className="is-primary" onClick={onCreate}>
           Create the first flow
         </button>
