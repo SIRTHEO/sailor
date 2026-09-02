@@ -72,7 +72,10 @@ fn run_list(args: &[String]) -> i32 {
                 match raw.parse::<u64>() {
                     Ok(n) => filter.min_context = Some(n),
                     Err(_) => {
-                        eprintln!("--min-context wants a number, read \"{raw}\"");
+                        eprintln!(
+                            "{}",
+                            catalogue::say("cli.models.min_context_not_a_number", &[("raw", raw)])
+                        );
                         return 2;
                     }
                 }
@@ -91,7 +94,13 @@ fn run_list(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("the catalogue cannot be read: {e}");
+            eprintln!(
+                "{}",
+                catalogue::say(
+                    "cli.models.catalogue_unreadable",
+                    &[("error", &e.to_string())]
+                )
+            );
             1
         }
     }
@@ -109,7 +118,13 @@ fn run_current(args: &[String]) -> i32 {
             0
         }
         Err(e) => {
-            eprintln!("the catalogue cannot be read: {e}");
+            eprintln!(
+                "{}",
+                catalogue::say(
+                    "cli.models.catalogue_unreadable",
+                    &[("error", &e.to_string())]
+                )
+            );
             1
         }
     }
@@ -127,7 +142,13 @@ fn run_set(args: &[String]) -> i32 {
             match command::set(&mut cfg, &catalog, kind, model_id) {
                 Ok(msg) => {
                     if let Err(e) = store::save(&path, &cfg) {
-                        eprintln!("the choice was accepted and not saved: {e}");
+                        eprintln!(
+                            "{}",
+                            catalogue::say(
+                                "cli.models.choice_not_saved",
+                                &[("error", &e.to_string())]
+                            )
+                        );
                         return 1;
                     }
                     println!("{msg}");
@@ -140,7 +161,13 @@ fn run_set(args: &[String]) -> i32 {
             }
         }
         Err(e) => {
-            eprintln!("the catalogue cannot be read: {e}");
+            eprintln!(
+                "{}",
+                catalogue::say(
+                    "cli.models.catalogue_unreadable",
+                    &[("error", &e.to_string())]
+                )
+            );
             1
         }
     }

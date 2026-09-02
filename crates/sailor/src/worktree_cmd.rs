@@ -65,13 +65,18 @@ pub fn render(trees: &[Worktree]) -> String {
     trees
         .iter()
         .map(|tree| {
-            let branch = tree.branch.clone().unwrap_or_else(|| "detached".to_owned());
+            let branch = tree
+                .branch
+                .clone()
+                .unwrap_or_else(|| catalogue::say("cli.worktree.detached", &[]));
             let mut line = format!("{:widest$}  {branch}", tree.name());
             if tree.locked {
-                line.push_str("  locked");
+                line.push_str("  ");
+                line.push_str(&catalogue::say("cli.worktree.locked", &[]));
             }
             if tree.prunable {
-                line.push_str("  its directory is gone");
+                line.push_str("  ");
+                line.push_str(&catalogue::say("cli.worktree.directory_gone", &[]));
             }
             line
         })
