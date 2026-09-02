@@ -58,16 +58,25 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             init(&here, ledger::sailor_home().as_deref())
         }
         [command] if command == "list" => list(),
-        _ => Err(USAGE
+        _ => Err(crate::forms_as_lines(USAGE)
             .iter()
-            .map(|line| format!("usage: {line}"))
+            .map(|line| format!("{} {line}", catalogue::say("cli.usage_heading", &[])))
             .collect::<Vec<_>>()
             .join("\n")),
     }
 }
 
 /// La forma di `sailor workspace`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor workspace init", "sailor workspace list"];
+pub const USAGE: &[crate::Form] = &[
+    crate::Form {
+        form: "sailor workspace init",
+        says_key: "",
+    },
+    crate::Form {
+        form: "sailor workspace list",
+        says_key: "",
+    },
+];
 
 /// The projects this machine has been opened in.
 ///

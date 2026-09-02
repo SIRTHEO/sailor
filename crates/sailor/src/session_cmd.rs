@@ -22,6 +22,7 @@
 //! Only `sailor session census` is made to exit 3 by a refusal, because it is
 //! the only one whose answer *is* the census.
 
+use crate::Form;
 use sessions::census::{Census, LocalMachine};
 use sessions::{anchor_from, now, Anchor, Arrival, Payload, Sessions, TerminalEvent};
 use std::collections::BTreeMap;
@@ -34,27 +35,58 @@ use std::path::PathBuf;
 /// `Command::usage` in `lib.rs` wants lines a program can question: one single
 /// string would force the window's help page to split it itself, which is to
 /// hold a second idea of where a form ends.
-pub const USAGE: &[&str] = &[
-    "sailor session open      < payload.json   records a terminal and who arrived at it",
-    "sailor session event     < payload.json   records a fact about the session",
-    "sailor session close     [--tty <name>]   closes a terminal's row",
-    "sailor session list      [--json]         what is on record as tracked",
-    "sailor session detach    [--tty <name>]   leave this window alone",
-    "sailor session attach    [--tty <name>]   follow it again",
-    "sailor session census    [--json]         what is on the machine right now",
-    "sailor session install   [--tool <id> --settings <file>]  grafts every command line that declares how, and names those that do not",
-    "sailor session uninstall [--tool <id> --settings <file>]  takes the graft back out, and names what it could not take out and why",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor session open < payload.json",
+        says_key: "cli.session.form.open",
+    },
+    Form {
+        form: "sailor session event < payload.json",
+        says_key: "cli.session.form.event",
+    },
+    Form {
+        form: "sailor session close [--tty <name>]",
+        says_key: "cli.session.form.close",
+    },
+    Form {
+        form: "sailor session list [--json]",
+        says_key: "cli.session.form.list",
+    },
+    Form {
+        form: "sailor session detach [--tty <name>]",
+        says_key: "cli.session.form.detach",
+    },
+    Form {
+        form: "sailor session attach [--tty <name>]",
+        says_key: "cli.session.form.attach",
+    },
+    Form {
+        form: "sailor session census [--json]",
+        says_key: "cli.session.form.census",
+    },
+    Form {
+        form: "sailor session install [--tool <id> --settings <file>]",
+        says_key: "cli.session.form.install",
+    },
+    Form {
+        form: "sailor session uninstall [--tool <id> --settings <file>]",
+        says_key: "cli.session.form.uninstall",
+    },
 ];
-
-/// The options that hold for several forms, kept out of the list because they
-/// are not forms: put there, whoever counts the lines would count them as such.
-const COMMON_OPTIONS: &str = "common options: --tty <name> to say the terminal instead of deducing it,\n\
-                              \x20               --store <file> to write somewhere other than beside the ledger";
 
 /// The help as whoever types reads it, built from the list rather than copied
 /// out beside it.
+///
+/// **THE COMMON OPTIONS ARE NOT IN THE LIST, AND THEY ARE NOT FORMS.** Put
+/// there, whoever counts the lines would count them as such; asked for here,
+/// they are one more sentence the catalogue holds like any other.
 fn usage_text() -> String {
-    format!("usage: {}\n\n{COMMON_OPTIONS}", USAGE.join("\n     "))
+    format!(
+        "{} {}\n\n{}",
+        catalogue::say("cli.usage_heading", &[]),
+        crate::forms_as_lines(USAGE).join("\n     "),
+        catalogue::say("cli.session.common_options", &[])
+    )
 }
 
 /// The forms this command knows, in one place: the list `--help` prints and the
@@ -2183,7 +2215,7 @@ mod tests {
             assert!(
                 USAGE
                     .iter()
-                    .any(|line| line.contains(&format!("session {form}"))),
+                    .any(|line| line.form.contains(&format!("session {form}"))),
                 "«{form}» è accettata e non è scritta in USAGE"
             );
         }

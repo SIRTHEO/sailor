@@ -354,8 +354,19 @@ export interface CommandDoc {
   name: string;
   /** La riga che dice a cosa serve — la stessa di `sailor --help`. */
   description: string;
-  /** Le forme complete, una per riga. */
-  usage: string[];
+  /** The forms, each already split into what is typed and what it says. */
+  usage: FormDoc[];
+}
+
+/**
+ * One usage form, in its two halves. **`form` is not translated and `says`
+ * is**: translating the first would break the command it describes.
+ */
+export interface FormDoc {
+  /** What is typed: `sailor flow run <name> [mandate]`. */
+  form: string;
+  /** What it does. Empty when the shape says it all on its own. */
+  says: string;
 }
 
 /**

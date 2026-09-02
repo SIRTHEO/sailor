@@ -106,10 +106,10 @@ export function Manual({ native }: { native: boolean }) {
               </button>
               {here && (
                 <ul className="manual__shapes-list">
-                  {command.usage.map((line) => (
-                    <li className="manual__shape" key={line}>
+                  {command.usage.map((shape) => (
+                    <li className="manual__shape" key={shape.form}>
                       <code>
-                        {pieces(line).map((piece, index) => (
+                        {pieces(shape.form).map((piece, index) => (
                           <span
                             key={`${piece.text}-${index}`}
                             className={piece.hole ? "manual__hole" : "manual__word"}
@@ -118,6 +118,9 @@ export function Manual({ native }: { native: boolean }) {
                           </span>
                         ))}
                       </code>
+                      {shape.says !== "" && (
+                        <span className="manual__says">{shape.says}</span>
+                      )}
                     </li>
                   ))}
                 </ul>

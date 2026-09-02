@@ -29,11 +29,18 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 /// La forma di `sailor remaining`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor remaining"];
+pub const USAGE: &[crate::Form] = &[crate::Form {
+    form: "sailor remaining",
+    says_key: "",
+}];
 
 fn dispatch(args: &[String]) -> Result<String, String> {
     if !args.is_empty() {
-        return Err(format!("usage: {}", USAGE[0]));
+        return Err(format!(
+            "{} {}",
+            catalogue::say("cli.usage_heading", &[]),
+            USAGE[0].form
+        ));
     }
     let home = home_dir()?;
     let now = now_secs()?;

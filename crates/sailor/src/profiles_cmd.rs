@@ -5,6 +5,7 @@
 //! argomenti e la stampa. Prima del 27/08/2026 questo era il `main.rs` di un
 //! binario a sé (`profiles`).
 
+use crate::Form;
 use actions::{LoginProbe, LoginVerdict, ToolResolver};
 use profiles::{find_cli, profile_home_path, store_io, HomeMechanism, KnownCli, Profile};
 use std::path::Path;
@@ -30,18 +31,30 @@ fn dispatch(args: &[String]) -> Result<(), String> {
 }
 
 /// Le forme di `sailor profiles`, una per riga. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &[
-    "sailor profiles list [cli]",
-    "sailor profiles create <cli> <name>",
-    "sailor profiles switch <cli> <name>",
-    "sailor profiles current <cli>",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor profiles list [cli]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles create <cli> <name>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles switch <cli> <name>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles current <cli>",
+        says_key: "",
+    },
 ];
 
 fn usage() -> String {
     format!(
         "{}\n  {}",
         catalogue::say("cli.usage_heading", &[]),
-        USAGE.join("\n  ")
+        crate::forms_as_lines(USAGE).join("\n  ")
     )
 }
 

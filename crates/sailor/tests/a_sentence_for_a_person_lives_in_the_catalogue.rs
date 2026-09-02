@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// What `crates/sailor/src` still holds. It goes down as sentences move into
 /// `i18n/`, and a rise means a new one was written into the code. Never raise
 /// it to make the gate green.
-const SENTENCES_STILL_IN_THE_CODE: usize = 24;
+const SENTENCES_STILL_IN_THE_CODE: usize = 3;
 
 /// Words that open a query for the database, not a line for a person.
 const A_QUERY_NOT_A_SENTENCE: &[&str] = &[
@@ -242,9 +242,21 @@ fn sentences_of(whole: &str) -> Vec<(usize, String)> {
             .iter()
             .any(|line| SPOKEN_TO_NOBODY.iter().any(|call| line.contains(call)))
     };
+    // **WHAT IS TYPED IS NOT PROSE, AND THE FIELD SAYS WHICH IS WHICH.** The
+    // `form` of a `Form` is `sailor faults status <n> <text>`: four lowercase
+    // words, which the counter would call a sentence. It is not a hole in the
+    // rule but a reading of the code — a `form` that stopped being a shape
+    // fails `every_command_says_how_it_is_written_and_names_itself` in
+    // `lib.rs`, which wants every one of them to start with `sailor <name>`.
+    let is_a_shape_to_type = |number: usize| {
+        lines
+            .get(number - 1)
+            .is_some_and(|line| line.trim_start().starts_with("form: \""))
+    };
     literals_with_their_line(text)
         .into_iter()
         .filter(|(number, _)| !spoken_to_nobody(*number))
+        .filter(|(number, _)| !is_a_shape_to_type(*number))
         .map(|(number, raw)| (number, as_the_reader_sees_it(&raw)))
         .filter(|(_, text)| is_a_sentence(text))
         .collect()
@@ -413,5 +425,35 @@ fn speak<'a>(from: &'a str) -> String {
     assert!(
         sentences_of(below_the_tests).is_empty(),
         "the prose of a test was counted as a line for a person"
+    );
+
+    // **THE SHAPE IS NOT PROSE, AND THE FIELD IS WHAT SAYS SO — AND IT SAYS SO
+    // ONLY THERE.** `form:` exempts what is typed; the sentence that travels
+    // with it, in `says_key`, is a key and not prose either; and a sentence
+    // written into any other field is still counted. Without this third half
+    // the exemption would be a hole any literal could be pushed through by
+    // renaming its field.
+    let a_form_and_a_sentence_beside_it = r#"
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor terminal press --tty <name> --text <line> [--store <dir>]",
+        says_key: "cli.terminal.form.press",
+    },
+    Form {
+        form: "sailor terminal list",
+        note: "types a line into a terminal that Sailor already holds open",
+    },
+];
+"#;
+    let counted = sentences_of(a_form_and_a_sentence_beside_it);
+    assert_eq!(
+        counted.len(),
+        1,
+        "the shape and its key must not count, and a sentence in any other field must: {counted:?}"
+    );
+    assert!(
+        counted[0].1.starts_with("types a line"),
+        "the one counted is not the sentence: {:?}",
+        counted[0].1
     );
 }

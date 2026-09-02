@@ -23,6 +23,7 @@
 //! garanzia si sta fidando di una cosa che non regge.
 //! ─────────────────────────────────────────────────────────────────────────
 
+use crate::Form;
 use actions::handoff::{holder_key, HOLDER_COLLECTION};
 use flow::{Completion, Decision, FlowFile, InProcessExecutor, Outcome, StepRecord};
 use ledger::{EngineIdentity, Ledger, ModelCallRecord, StoreRecord};
@@ -52,17 +53,22 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 }
 
 /// Le forme di `sailor step`, una per riga. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &[
-    "sailor step open --run <run> --step <step> --as <who>",
-    "sailor step close --run <run> --step <step> --as <who> --outcome <went|broke> \
-     [--output-file <file>] [--turns <n>] [--said <text>]",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor step open --run <run> --step <step> --as <who>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor step close --run <run> --step <step> --as <who> --outcome <went|broke> [--output-file <file>] [--turns <n>] [--said <text>]",
+        says_key: "",
+    },
 ];
 
 fn usage() -> String {
     format!(
         "{}\n  {}",
         catalogue::say("cli.usage_heading", &[]),
-        USAGE.join("\n  ")
+        crate::forms_as_lines(USAGE).join("\n  ")
     )
 }
 
