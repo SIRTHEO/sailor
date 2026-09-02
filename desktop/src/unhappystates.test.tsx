@@ -320,7 +320,7 @@ const SKELETON: Array<[selector: string, atLeast: number]> = [
 
 /** The window opens on «Now»: the board sits behind a place to be chosen. */
 function goToFlows(): void {
-  fireEvent.click(screen.getByRole("button", { name: /^Flows/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
 }
 
 /* ═══ 1. THE FRAMING ════════════════════════════════════════════════════════ */
@@ -359,7 +359,7 @@ describe("the framing, when the board appears", () => {
     // and coming back is what puts the box back at zero. The fault this guards
     // — framing a box that measures nothing — is unchanged.
     const body = container.querySelector(".body") as HTMLElement;
-    fireEvent.click(screen.getByRole("button", { name: /^Now/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Memory/ }));
     expect(body.hasAttribute("hidden"), "leaving did not hide the board").toBe(true);
 
     spy.fits.length = 0;
@@ -575,26 +575,26 @@ describe("two invitations on the same screen cancel each other", () => {
  * cancelling each other, in its loneliest form.
  */
 describe("the bar does not send you to a column this place has not got", () => {
-  test("AT REST THE BAR IS SILENT ABOUT THE COLUMN, and speaks on the board", () => {
+  test("AWAY FROM THE BOARD THE BAR IS SILENT ABOUT THE COLUMN, and speaks on the board", () => {
     const { container } = render(<App />);
 
-    // The scene is the right one: the window opened away from the board.
-    // **Mounted is not in view**: the board sits inside `.body[hidden]` from
-    // the first paint, so asking for `.react-flow` would fail here for a
-    // reason that is not the fault.
-    expect(container.querySelector(".body[hidden]"), "the board is already in view").not.toBeNull();
+    // The window opens on the board now, where the column is: the line must
+    // be there. This is the control that makes the absence below worth
+    // anything, because an absence passes just as well when the selector is
+    // wrong.
+    const line = container.querySelector(".topbar__none");
+    expect(line, "the bar is silent on the board, where the column is").not.toBeNull();
+    expect(line?.textContent ?? "").toMatch(/rail|colonna/i);
+
+    // Leave the board: **mounted is not in view**. The board sits inside
+    // `.body[hidden]`, and the bar must stop naming a column this place has
+    // not got.
+    fireEvent.click(screen.getByRole("button", { name: /^Memory/ }));
+    expect(container.querySelector(".body[hidden]"), "the board is still in view").not.toBeNull();
     expect(
       container.querySelector(".topbar__none"),
       "the bar names the column in a place that has none",
     ).toBeNull();
-
-    // THE OTHER DIRECTION, AND IT IS THE CONTROL THAT MAKES THE LINE ABOVE
-    // WORTH ANYTHING: an absence passes just as well when the selector is
-    // wrong. Here the same selector must find something.
-    goToFlows();
-    const line = container.querySelector(".topbar__none");
-    expect(line, "the bar went silent on the board too, where the column is").not.toBeNull();
-    expect(line?.textContent ?? "").toMatch(/rail|colonna/i);
   });
 });
 

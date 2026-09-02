@@ -407,33 +407,76 @@ button.is-primary {
 
 /* ── the places of the window ───────────────────────────────────────────── */
 
-.places {
+/* THE PLACES ARE A COLUMN, IN THREE GROUPS: where work happens, what
+   happened, and the program itself. Each entry carries the question it
+   answers under its name, so the list is a choice and not a vocabulary. */
+.app__body {
   display: flex;
-  gap: var(--space-5);
-  flex-shrink: 0;
-  padding: 0 var(--space-4);
-  border-bottom: 1px solid var(--line);
+  flex: 1;
+  min-height: 0;
 }
 
-.places__item {
+.places {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  flex-shrink: 0;
+  width: 168px;
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--line);
+  background: var(--paper);
+  overflow-y: auto;
+}
+
+.places__group,
+.subrail__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.places__heading {
   font-family: var(--font-display);
   font-size: var(--text-micro);
   text-transform: uppercase;
   letter-spacing: 0.09em;
   color: var(--muted);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.places__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  color: var(--ink);
   background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: var(--space-2) 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: var(--space-2);
   cursor: pointer;
 }
 
-/* Where you are: the rule underneath, not a coloured background. Rule 4
-   reserves tint for machine state, and "I am here" is not one — the word
-   changes weight instead, so colour is not the sole carrier. */
+/* Where you are: a bordered plate and a heavier word, not a tint. Rule 4
+   reserves colour for machine state, and "I am here" is not one. */
 .places__item[data-here] {
-  color: var(--ink);
-  border-bottom-color: var(--focus);
+  border-color: var(--line);
+  background: var(--bg);
+}
+
+.places__item[data-here] .places__name {
+  font-weight: 600;
+  color: var(--focus);
+}
+
+.places__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
 }
 
 .places__count {
@@ -442,6 +485,152 @@ button.is-primary {
   letter-spacing: 0;
   color: var(--muted);
   margin-left: var(--space-1);
+}
+
+.places__asks {
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.section {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.section[hidden] {
+  display: none;
+}
+
+.section__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.section__body--terminals {
+  overflow: hidden;
+}
+
+.subrail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex-shrink: 0;
+  width: 200px;
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.subrail__item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: var(--space-2) var(--space-2);
+  cursor: pointer;
+}
+
+.subrail__item[data-here] {
+  border-left-color: var(--focus);
+}
+
+.subrail__item[data-here] .subrail__name {
+  font-weight: 600;
+}
+
+.subrail__about {
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+/* The bar's three facts: where, what runs, what it costs, and who as. */
+.topbar__crumbs {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+}
+
+.topbar__crumb {
+  color: var(--muted);
+}
+
+.topbar__crumb:last-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.topbar__crumb + .topbar__crumb::before {
+  content: "›";
+  color: var(--muted);
+  margin-right: var(--space-2);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  white-space: nowrap;
+}
+
+.chip--live {
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip__word {
+  color: var(--ink);
+}
+
+.chip__button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.chip__spend {
+  color: var(--muted);
+}
+
+.chip__spend::before {
+  content: "·";
+  margin-right: var(--space-2);
+}
+
+.chip--who[data-warn] {
+  border-color: var(--danger);
 }
 
 /* ── now ────────────────────────────────────────────────────────────────── */
@@ -3659,6 +3848,49 @@ tr[data-followable]:hover {
   .everything__rail {
     width: 190px;
   }
+
+  .places {
+    width: 140px;
+  }
+
+  .subrail {
+    width: 168px;
+  }
+
+  .browser__tables {
+    width: 180px;
+  }
+}
+
+/* NARROWER STILL, THE COLUMNS STACK: the places become a row along the top,
+   and a section's column of questions goes above its answer, so the answer
+   is never squeezed to a strip nobody can read. */
+@media (max-width: 760px) {
+  .app__body {
+    flex-direction: column;
+  }
+
+  .places {
+    width: auto;
+    flex-direction: row;
+    gap: var(--space-4);
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .section,
+  .browser {
+    flex-direction: column;
+  }
+
+  .subrail,
+  .browser__tables {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
 }
 
 @media (max-width: 760px) {
@@ -5048,4 +5280,194 @@ tr[data-followable]:hover {
   color: var(--ink);
   border-color: var(--focus);
   outline: none;
+}
+
+/* THE LEDGER AS A DATABASE: tables on the left with their counts, the
+   statement above, the rows, and the row picked laid out as key and value,
+   because a wide table hides half its columns and one row hides none. */
+.browser {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.browser__tables {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 220px;
+  padding: var(--space-4) var(--space-3);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.browser__table {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  font-family: var(--font-data);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: none;
+  border: none;
+  border-left: 2px solid transparent;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.browser__table[data-here] {
+  border-left-color: var(--focus);
+  font-weight: 600;
+}
+
+.browser__table-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browser__table-rows {
+  color: var(--muted);
+  font-size: var(--text-micro);
+}
+
+.browser__file-heading {
+  margin-top: var(--space-5);
+}
+
+.browser__file {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  padding: 0 var(--space-2);
+  word-break: break-all;
+}
+
+.browser__stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.browser__ask {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.browser__sql {
+  flex: 1;
+  font-family: var(--font-data);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+.browser__run {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+
+.browser__note {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.browser__note[data-gravity="danger"] {
+  color: var(--danger);
+}
+
+.browser__grid {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.browser__rows {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+}
+
+.browser__rows th {
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+  text-align: left;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.browser__rows td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browser__rows tr {
+  cursor: pointer;
+}
+
+.browser__rows tr[data-picked] td {
+  background: var(--bg);
+}
+
+.browser__rows td[data-null],
+.browser__pair dd[data-null] {
+  font-style: italic;
+  color: var(--muted);
+}
+
+.browser__picked {
+  flex-shrink: 0;
+  max-height: 40%;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.browser__pairs {
+  margin: 0;
+}
+
+.browser__pair {
+  display: flex;
+  gap: var(--space-4);
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  padding: 2px 0;
+}
+
+.browser__pair dt {
+  width: 160px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.browser__pair dd {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
 }

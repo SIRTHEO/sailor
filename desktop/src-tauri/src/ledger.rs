@@ -82,9 +82,51 @@ pub(crate) struct Held {
 /// count it hides the one that started yesterday.
 const RECENT: usize = 50;
 
+/// How many rows a browsed statement may answer with: enough to read, not
+/// enough to freeze the window on `SELECT * FROM events`.
+const BROWSE_LIMIT: usize = 200;
+
 #[tauri::command]
 pub(crate) fn ledger_held() -> Result<Held, String> {
     held_in(&ui::gather::default_ledger_dir())
+}
+
+/// The tables of the store with their row counts, and where the store is.
+#[derive(Serialize)]
+pub(crate) struct Tables {
+    directory: String,
+    exists: bool,
+    tables: Vec<ledger::TableCount>,
+}
+
+#[tauri::command]
+pub(crate) fn ledger_tables() -> Result<Tables, String> {
+    let directory = ui::gather::default_ledger_dir();
+    if !ui::gather::ledger_present(&directory) {
+        return Ok(Tables {
+            directory: directory.display().to_string(),
+            exists: false,
+            tables: Vec::new(),
+        });
+    }
+    let ledger = ledger::Ledger::open(&directory).map_err(|error| error.to_string())?;
+    Ok(Tables {
+        directory: directory.display().to_string(),
+        exists: true,
+        tables: ledger.tables().map_err(|error| error.to_string())?,
+    })
+}
+
+/// One statement a person typed, answered read-only: the store refuses to
+/// write through here, and says so in SQLite's own words.
+#[tauri::command]
+pub(crate) fn ledger_query(sql: String) -> Result<ledger::Answer, String> {
+    let directory = ui::gather::default_ledger_dir();
+    if !ui::gather::ledger_present(&directory) {
+        return Err(format!("no ledger at {}: nothing has been written yet", directory.display()));
+    }
+    let ledger = ledger::Ledger::open(&directory).map_err(|error| error.to_string())?;
+    ledger.browse(&sql, BROWSE_LIMIT).map_err(|error| error.to_string())
 }
 
 /// The heart, with the directory passed in: a test reads a throwaway place,

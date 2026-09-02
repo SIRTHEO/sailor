@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -28,11 +28,13 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas } from "./BlankCanvas";
-import { Now } from "./Now";
-import { History, lastedOf, outcomeOf, whenOf } from "./History";
+import { lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
-import { Everything } from "./Everything";
-import { Terminals } from "./Terminals";
+import { Rail, PLACES, type Section } from "./Rail";
+import { LiveChip, WhoChip } from "./Bar";
+import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
+import { SailorScreen, SAILOR_TABS, type SailorTab } from "./SailorScreen";
+import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
 import { WireMenu } from "./WireMenu";
@@ -96,7 +98,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * on the inventory answers "what could I run", while whoever reopens the window
  * is asking "what is happening". The canvas is where you go to look inside.
  */
-type Place = "now" | "flows" | "terminals" | "history" | "everything";
+type Place = Section;
 
 /**
  * Only the graph: "Code" was a data file dressed as source, and "Runs" is
@@ -211,7 +213,10 @@ export default function App() {
   const [source, setSource] = useState<Source>(NATIVE ? "loading" : "sample");
   const [failure, setFailure] = useState<string | null>(null);
 
-  const [place, setPlace] = useState<Place>("now");
+  const [place, setPlace] = useState<Place>("board");
+  const [memoryTab, setMemoryTab] = useState<MemoryTab>("runs");
+  const [sailorTab, setSailorTab] = useState<SailorTab>("cando");
+  const [terminalsTab, setTerminalsTab] = useState<TerminalsTab>("live");
   const [flowView] = useState<FlowView>("graph");
 
   // Focus belongs to the branch, not the canvas: the rail points at a path
@@ -708,7 +713,7 @@ export default function App() {
   const canvasRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (place !== "flows") return;
+    if (place !== "board") return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const watcher = new ResizeObserver((entries) => {
@@ -1094,6 +1099,17 @@ export default function App() {
    * of borrowing a verdict nobody gave.
    */
   const focusedRun = focusName ? latestByFlow.get(focusName) : undefined;
+  // WHERE YOU ARE, IN WORDS: the section and the entry inside it. A window
+  // that changes content without saying where it is makes the person read it
+  // off the shape of the page.
+  const crumbs = useMemo<string[]>(() => {
+    const section = PLACES.find((one) => one.id === place)?.name ?? place;
+    if (place === "board") return focusName === null ? [section] : [section, focusName];
+    if (place === "memory") return [section, MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab];
+    if (place === "sailor") return [section, SAILOR_TABS.find((one) => one.id === sailorTab)?.name ?? sailorTab];
+    return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
+  }, [place, focusName, memoryTab, sailorTab, terminalsTab]);
+
   const barStatus = useMemo<BarStatus | null>(() => {
     if (focusName === null || focusedWorking === undefined) return null;
     const total = focusedWorking.flow.graph.steps.length;
@@ -1117,8 +1133,15 @@ export default function App() {
           need a subject, and the subject is the flow the rail has in focus. */}
       <TopBar
         view={flowView}
-        onView={() => setPlace("flows")}
-        onBoard={place === "flows"}
+        onView={() => setPlace("board")}
+        onBoard={place === "board"}
+        crumbs={crumbs}
+        chips={
+          <>
+            <LiveChip native={NATIVE} now={now} onOpen={(runId) => setWatching(runId)} />
+            <WhoChip native={NATIVE} />
+          </>
+        }
         flowName={focusName}
         steps={focusedWorking ? focusedWorking.flow.graph.steps.length : 0}
         dirty={focusedDirty}
@@ -1144,76 +1167,15 @@ export default function App() {
         }}
       />
 
-      {/* I POSTI, NOMINATI E DIVISI IN DUE INTENZIONI. Una finestra che cambia
-          contenuto senza dire dove si è costringe a ricostruirlo dall'aspetto
-          della pagina.
+      {/* FOUR PLACES IN A COLUMN, each the question a person asks: what am I
+          doing, what is running, what happened, what does Sailor know. A row
+          of nouns was a list of what exists; a section opens on what its
+          question wants, and everything else lives inside it. */}
+      <div className="app__body">
+      <Rail here={place} onGo={setPlace} counts={{ board: flows.size }} />
+      <div className="stage">
 
-          La divisione — guardare a sinistra, amministrare a destra — è il
-          criterio che Inngest ha adottato riprogettando la propria
-          navigazione, e lo misura in clic: «i run falliti a un clic dalla barra
-          laterale» invece che scavando dentro la pagina delle funzioni. È
-          l'unico documento della ricognizione che nomina un criterio invece di
-          descrivere una disposizione.
-
-          Quelli che mancano — spazi, profili, server MCP — si aggiungono
-          quando esiste il motore che li risponde, non prima: una voce che apre
-          una schermata vuota è una promessa non mantenuta a ogni clic.
-
-          «Terminali» stava in quell'elenco fino al 01/09/2026 e adesso è una
-          voce, e la differenza non è che il motore risponda — il ponte nasce in
-          un altro cantiere mentre questa riga si scrive. È che quella schermata
-          **non si apre vuota**: senza motore scrive quale domanda non ha potuto
-          fare, ed è la distinzione fra «non c'è niente» e «non posso vedere» che
-          la promessa non mantenuta faceva sparire. */}
-      <nav className="places">
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "now" || undefined}
-          onClick={() => setPlace("now")}
-        >
-          Now
-        </button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "flows" || undefined}
-          onClick={() => setPlace("flows")}
-        >
-          Flows
-          <span className="places__count">{flows.size}</span>
-        </button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "terminals" || undefined}
-          onClick={() => setPlace("terminals")}
-        >
-          Terminals
-        </button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "history" || undefined}
-          onClick={() => setPlace("history")}
-        >
-          History
-        </button>
-        {/* THE FIFTH DOOR IS NOT A LEFTOVER DRAWER. Behind it is one question —
-            «what is there» — and the answers are grouped by what they are about,
-            each with the line that says what it answers. In the bar they were
-            seven nouns you had to open to find out. */}
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "everything" || undefined}
-          onClick={() => setPlace("everything")}
-        >
-          Everything
-        </button>
-      </nav>
-
-      {place === "flows" && focusName && focusedWorking && focusedBand && (
+      {place === "board" && focusName && focusedWorking && focusedBand && (
         <FocusBar
           key={focusName}
           name={focusName}
@@ -1232,20 +1194,26 @@ export default function App() {
       <StepRunContext.Provider value={stepStates}>
       <WireContext.Provider value={openWireMenu}>
       <StepUsageContext.Provider value={stepUsage}>
-      {place === "now" && (
-        <Now
+      {place === "memory" && (
+        <Memory
           native={NATIVE}
-          onOpen={(runId) => {
-            setWatching(runId);
-          }}
+          now={now}
+          tab={memoryTab}
+          onTab={setMemoryTab}
+          onOpenRun={(runId) => setWatching(runId)}
         />
       )}
-      {place === "history" && <History native={NATIVE} />}
-      {place === "everything" && <Everything native={NATIVE} now={now} />}
+      {place === "sailor" && <SailorScreen native={NATIVE} now={now} tab={sailorTab} onTab={setSailorTab} />}
       {/* THE TERMINALS STAY MOUNTED BEHIND THE OTHER PLACES, like the canvas:
           unmounting the screen would destroy every emulator, and a session
           would come back blank while the process inside is alive. */}
-      <Terminals native={NATIVE} shown={place === "terminals"} />
+      <TerminalsSection
+        native={NATIVE}
+        now={now}
+        shown={place === "terminals"}
+        tab={terminalsTab}
+        onTab={setTerminalsTab}
+      />
 
       {/* Outside the canvas element on purpose: it is positioned in window
           coordinates, and inside it would scroll and scale with the paper. */}
@@ -1263,7 +1231,7 @@ export default function App() {
       {/* THE CANVAS STAYS MOUNTED BEHIND THE OTHER TWO TABS. React Flow measures
           its own frame once: unmounting it to change tab would give back a
           canvas that has to find its nodes again every time. */}
-      <div className="body" hidden={place !== "flows" || flowView !== "graph"}>
+      <div className="body" hidden={place !== "board" || flowView !== "graph"}>
 
         {/* LA COLONNA HA UN MESTIERE SOLO: SCEGLIERE COSA GUARDARE. La cassetta
             dei passi se n'è andata dentro la tela, dove si compone. Quello che
@@ -1560,6 +1528,8 @@ export default function App() {
       </WireContext.Provider>
       </StepRunContext.Provider>
       </RunContext.Provider>
+      </div>
+      </div>
     </div>
   );
 }
@@ -1678,6 +1648,10 @@ interface TopBarProps {
    * belongs to one place only.
    */
   onBoard: boolean;
+  /** Where the person is: the section, and the entry inside it. */
+  crumbs: string[];
+  /** What runs, what it costs, who as: drawn from every place. */
+  chips?: ReactNode;
   flowName: string | null;
   steps: number;
   dirty: boolean;
@@ -1705,6 +1679,8 @@ function TopBar({
   view,
   onView,
   onBoard,
+  crumbs,
+  chips,
   flowName,
   steps,
   dirty,
@@ -1745,6 +1721,14 @@ function TopBar({
         Sailor
       </span>
       <span className="topbar__rule" />
+
+      <nav className="topbar__crumbs" aria-label="where you are">
+        {crumbs.map((crumb, index) => (
+          <span className="topbar__crumb" key={`${index}-${crumb}`}>
+            {crumb}
+          </span>
+        ))}
+      </nav>
 
       {/* A LINE THAT NAMES THE COLUMN IS SILENT WHERE THERE IS NO COLUMN. The
           window opens away from the board, which is the only place holding
@@ -1797,6 +1781,8 @@ function TopBar({
         ) : (
           <span className="topbar__status">{statusBody}</span>
         ))}
+
+      {chips}
 
       <button
         type="button"

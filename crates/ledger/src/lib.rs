@@ -122,6 +122,8 @@ pub enum LedgerError {
     AlreadyClosed { step: String, attempt: u32 },
     StaleEpoch { step: String, epoch: u64 },
     Poisoned,
+    /// A question the store will not answer: a browse that would write.
+    Refused(String),
 }
 
 /// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** A derived one showed
@@ -154,6 +156,7 @@ impl fmt::Display for LedgerError {
                 write!(formatter, "epoch {epoch} for step {step} is stale")
             }
             Self::Poisoned => write!(formatter, "ledger mutex poisoned"),
+            Self::Refused(why) => write!(formatter, "refused: {why}"),
         }
     }
 }
@@ -489,6 +492,62 @@ pub struct WaitingRun {
     /// Since when it has been waiting: the instant the run stopped, or the
     /// instant it started if it has not stopped yet.
     pub waiting_since: i64,
+}
+
+/// One table of the projection, and how many rows it holds right now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TableCount {
+    pub name: String,
+    pub rows: i64,
+}
+
+/// What a browsed statement answered: the columns, the rows as JSON values,
+/// and whether the limit cut the answer short.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Answer {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub truncated: bool,
+}
+
+fn browse_with(connection: &Connection, sql: &str, limit: usize) -> Result<Answer, LedgerError> {
+    let mut statement = connection.prepare(sql)?;
+    let columns: Vec<String> = statement
+        .column_names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let width = columns.len();
+    let mut rows = statement.query([])?;
+    let mut answer = Vec::new();
+    let mut truncated = false;
+    while let Some(row) = rows.next()? {
+        if answer.len() >= limit {
+            truncated = true;
+            break;
+        }
+        let mut cells = Vec::with_capacity(width);
+        for index in 0..width {
+            let value = match row.get_ref(index)? {
+                rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                rusqlite::types::ValueRef::Integer(number) => serde_json::Value::from(number),
+                rusqlite::types::ValueRef::Real(number) => serde_json::Value::from(number),
+                rusqlite::types::ValueRef::Text(text) => {
+                    serde_json::Value::from(String::from_utf8_lossy(text).into_owned())
+                }
+                rusqlite::types::ValueRef::Blob(bytes) => {
+                    serde_json::Value::from(format!("{} bytes", bytes.len()))
+                }
+            };
+            cells.push(value);
+        }
+        answer.push(cells);
+    }
+    Ok(Answer {
+        columns,
+        rows: answer,
+        truncated,
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1069,6 +1128,43 @@ impl Ledger {
             Ok((entity, started))
         })?;
         Ok(rows.collect::<Result<BTreeMap<_, _>, _>>()?)
+    }
+
+    /// Every table of the projection with how many rows it holds, for whoever
+    /// wants to look at the store as it is rather than through a question
+    /// somebody else wrote.
+    pub fn tables(&self) -> Result<Vec<TableCount>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
+             ORDER BY name",
+        )?;
+        let names: Vec<String> = statement
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        names
+            .into_iter()
+            .map(|name| {
+                let rows: i64 =
+                    connection.query_row(&format!("SELECT COUNT(*) FROM \"{name}\""), [], |row| {
+                        row.get(0)
+                    })?;
+                Ok(TableCount { name, rows })
+            })
+            .collect()
+    }
+
+    /// Answers one `SELECT` a person typed, read-only, at most `limit` rows.
+    ///
+    /// **THE STORE IS APPEND-ONLY AND A BROWSER MUST NOT BE A BACK DOOR**: the
+    /// statement is run with `query_only` set, so anything that would write is
+    /// refused by SQLite itself, whatever the text looked like.
+    pub fn browse(&self, sql: &str, limit: usize) -> Result<Answer, LedgerError> {
+        let connection = self.lock()?;
+        connection.pragma_update(None, "query_only", true)?;
+        let outcome = browse_with(&connection, sql, limit);
+        connection.pragma_update(None, "query_only", false)?;
+        outcome
     }
 
     pub fn steps_with_discarded_output(&self) -> Result<Vec<DiscardedOutputStep>, LedgerError> {
