@@ -12,7 +12,7 @@ import { Installed } from "./Installed";
 import { Manual } from "./Manual";
 import type { OpenRun } from "./engine";
 import type { Step, StepRun, StepState } from "./flow";
-import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
+import { belowThreshold, contrastPairs, inDark, parseStylesheet, type Stylesheet } from "./contrast";
 
 /**
  * **PROHIBITION 6, MEASURED ON THE PAINTED DOM, INSIDE `npm test`:** no
@@ -62,9 +62,13 @@ function revealCanvasNodes(): void {
  */
 function measure(atLeast: number): string[] {
   revealCanvasNodes();
-  const pairs = contrastPairs(document.documentElement, sheet);
-  expect(pairs.length).toBeGreaterThanOrEqual(atLeast);
-  return belowThreshold(pairs);
+  const light = contrastPairs(document.documentElement, sheet);
+  expect(light.length).toBeGreaterThanOrEqual(atLeast);
+  // EVERY SCENE TWICE: the dark scheme is the same sheet with the roles
+  // swapped, so it is measured on the same DOM and must find the same pairs.
+  const dark = contrastPairs(document.documentElement, inDark(sheet));
+  expect(dark.length).toBe(light.length);
+  return [...belowThreshold(light), ...belowThreshold(dark).map((pair) => `dark: ${pair}`)];
 }
 
 describe("the stylesheet, read as rules", () => {
@@ -72,6 +76,12 @@ describe("the stylesheet, read as rules", () => {
     // If someone writes one, the measurement below would go blind without going
     // red: exactly the flaw this test closes.
     expect(sheet.colorsInsideAtRules).toBe(0);
+  });
+
+  test("THE DARK SCHEME IS READ, so every scene below is measured twice", () => {
+    // Without this the dark measurement would silently be the light one again.
+    expect(sheet.darkRoot).not.toBeNull();
+    expect(new Map(sheet.darkRoot ?? []).get("--bg")).not.toBe(new Map(sheet.rules.find((r) => r.selector === ":root")?.declarations ?? []).get("--bg"));
   });
 
   test("as many rules are read as the sheet has", () => {
