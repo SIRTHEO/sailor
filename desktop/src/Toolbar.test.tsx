@@ -59,7 +59,7 @@ beforeAll(() => {
 
 /** The window opens on «Now»: the canvas sits behind a place you must pick. */
 function goToFlows(): void {
-  fireEvent.click(screen.getByRole("button", { name: /^Flows/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
 }
 
 function focusAFlow(container: HTMLElement): string {

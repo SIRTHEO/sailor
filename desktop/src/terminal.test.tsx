@@ -811,7 +811,7 @@ describe("the terminals inside the window", () => {
     expect(terminals, "the terminals screen did not draw").toBeTruthy();
     expect((terminals as HTMLElement).hidden).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Flows/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Board/ }));
     const behind = container.querySelector(".terminals");
     expect(behind, "the terminals screen was unmounted on leaving it").toBeTruthy();
     expect(behind).toBe(terminals);
