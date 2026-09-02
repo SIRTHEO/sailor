@@ -786,7 +786,12 @@ fn grafted_into_toml(
         return Ok(nothing_to_graft(tool));
     }
     let binary = std::env::current_exe()
-        .map_err(|error| format!("there is no telling where I am: {error}"))?
+        .map_err(|error| {
+            catalogue::say(
+                "cli.no_telling_where_i_am",
+                &[("error", &error.to_string())],
+            )
+        })?
         .display()
         .to_string();
     let commands: Vec<(&str, String)> = named
