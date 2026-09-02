@@ -4,6 +4,7 @@
 //! qui solo l'interpretazione degli argomenti. Prima del 27/08/2026 questo
 //! era il `main.rs` di un binario a sé (`models`).
 
+use crate::Form;
 use models::catalog::{Catalog, Filter};
 use models::{command, fetch, store};
 
@@ -24,22 +25,30 @@ pub fn run(args: &[String]) -> i32 {
 }
 
 /// Le forme di `sailor models`, una per riga. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &[
-    "sailor models list [--free-only] [--paid-only] [--modality text|image|audio|video] [--min-context N]",
-    "sailor models current <kind>",
-    "sailor models set <kind> <model-id>",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor models list [--free-only] [--paid-only] [--modality text|image|audio|video] [--min-context N]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor models current <kind>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor models set <kind> <model-id>",
+        says_key: "",
+    },
 ];
 
 fn print_usage() {
-    eprintln!("usage:");
-    for line in USAGE {
+    eprintln!("{}", catalogue::say("cli.usage_heading", &[]));
+    for line in crate::forms_as_lines(USAGE) {
         eprintln!("  {line}");
     }
 }
 
 fn load_catalog() -> Result<Catalog, String> {
-    let body = fetch::fetch_catalog_body();
-    Catalog::parse(&body)
+    Catalog::parse(&fetch::catalog_body()?)
 }
 
 fn run_list(args: &[String]) -> i32 {

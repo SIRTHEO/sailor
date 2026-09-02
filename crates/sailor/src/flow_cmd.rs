@@ -5,6 +5,7 @@
 // Il formato del file vive nel crate del flusso: qui si importa, non si
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
+use crate::Form;
 use flow::reference;
 use flow::{
     ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
@@ -72,12 +73,7 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
         .iter()
         .find(|step| step.action == "trigger")
         .map(|step| step.id.clone())
-        .ok_or_else(|| {
-            format!(
-                "flow {} has no trigger step: there is nowhere to put a brief",
-                flow.id
-            )
-        })?;
+        .ok_or_else(|| catalogue::say("cli.flow.no_trigger_step", &[("flow", &flow.id)]))?;
     let entry = flow
         .inputs
         .entry(trigger)
@@ -87,9 +83,9 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
             fields.insert("text".to_owned(), Value::String(text.to_owned()));
             Ok(())
         }
-        other => Err(format!(
-            "the trigger input of {} is not an object but {other}: there is nowhere to put the text",
-            flow.id
+        other => Err(catalogue::say(
+            "cli.flow.trigger_input_not_an_object",
+            &[("flow", &flow.id), ("other", &other.to_string())],
         )),
     }
 }
@@ -113,9 +109,9 @@ fn put_mandate(flow: &mut FlowFile, text: &str) -> Result<(), String> {
 fn cost_of(flow: &str) -> Result<String, String> {
     let dir = default_ledger_dir()?;
     let Some(data) = ui::gather::gather(&dir).map_err(|error| error.to_string())? else {
-        return Err(format!(
-            "no store in {}: nothing has run yet",
-            dir.display()
+        return Err(catalogue::say(
+            "cli.flow.no_store_here",
+            &[("path", &dir.display().to_string())],
         ));
     };
     // L'ultima per inizio, non l'ultima scritta: una corsa aperta e una chiusa
@@ -125,7 +121,7 @@ fn cost_of(flow: &str) -> Result<String, String> {
         .iter()
         .filter(|run| run.entity == flow)
         .max_by_key(|run| run.started_at)
-        .ok_or_else(|| format!("flow {flow} has never run on this machine"))?;
+        .ok_or_else(|| catalogue::say("cli.flow.never_run_here", &[("flow", flow)]))?;
     let view = ui::dashboard::summarize_run(
         run,
         data.steps_by_run
@@ -146,15 +142,17 @@ fn cost_of(flow: &str) -> Result<String, String> {
 /// file esista sulla macchina che esegue la batteria.
 fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> String {
     let tokens = &view.tokens;
-    let mut report = format!(
-        "run {} — flow {} — {}\nsteps: {} ({} went, {} broke)\ncalls: {}",
-        view.run_id,
-        view.entity,
-        view.status,
-        view.steps_total,
-        view.steps_went,
-        view.steps_broke,
-        tokens.calls
+    let mut report = catalogue::say(
+        "cli.flow.run_heading",
+        &[
+            ("run_id", &view.run_id),
+            ("flow", &view.entity),
+            ("status", &view.status.to_string()),
+            ("total", &view.steps_total.to_string()),
+            ("went", &view.steps_went.to_string()),
+            ("broke", &view.steps_broke.to_string()),
+            ("calls", &tokens.calls.to_string()),
+        ],
     );
     // **I TURNI ACCANTO ALLE CHIAMATE, E NON È UN DETTAGLIO.** Una chiamata a un
     // motore agentico non è un giro: ne sono decine, e il conto lo fa quel
@@ -173,18 +171,33 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     // viene usato per decidere: questo manderebbe a intervenire nel posto
     // sbagliato con l'aria di una misura.
     if tokens.turns > 0 {
-        let _ = write!(report, " in {} turns", tokens.turns);
+        let _ = write!(
+            report,
+            " {}",
+            catalogue::say("cli.flow.in_turns", &[("turns", &tokens.turns.to_string())])
+        );
     }
     let _ = write!(
         report,
-        "\ntoken: {} in · {} out · {} letti da cache · {} scritti in cache",
-        tokens.input_tokens, tokens.output_tokens, tokens.cached_tokens, tokens.cache_write_tokens
+        "\n{}",
+        catalogue::say(
+            "cli.flow.tokens_line",
+            &[
+                ("in", &tokens.input_tokens.to_string()),
+                ("out", &tokens.output_tokens.to_string()),
+                ("read", &tokens.cached_tokens.to_string()),
+                ("written", &tokens.cache_write_tokens.to_string()),
+            ],
+        )
     );
     if tokens.total_tokens_only > 0 {
         let _ = write!(
             report,
-            "\ntotals not split out (those that declare neither side): {}",
-            tokens.total_tokens_only
+            "\n{}",
+            catalogue::say(
+                "cli.flow.totals_not_split",
+                &[("count", &tokens.total_tokens_only.to_string())],
+            )
         );
     }
     // **LA CIFRA NON SI COMPONE QUI.** Se la scrivesse questa funzione,
@@ -205,8 +218,14 @@ fn spending_report(view: &ui::dashboard::ExecutionView, prices: &PriceList) -> S
     if tokens.calls_without_tokens > 0 || tokens.calls_without_cost > 0 {
         let _ = write!(
             report,
-            "\npartial: {} calls with no declared tokens, {} with no known cost",
-            tokens.calls_without_tokens, tokens.calls_without_cost
+            "\n{}",
+            catalogue::say(
+                "cli.flow.partial_counts",
+                &[
+                    ("without_tokens", &tokens.calls_without_tokens.to_string()),
+                    ("without_cost", &tokens.calls_without_cost.to_string()),
+                ],
+            )
         );
     }
     // **E SI DICE QUALE MODELLO, NON SOLO QUANTE CHIAMATE.** «Tre senza costo
@@ -416,8 +435,14 @@ fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> 
     seen.iter()
         .filter_map(|name| match prices.knows(name) {
             Known::Priced => None,
-            Known::Absent => Some(format!("{name} (no entry in the price list)")),
-            Known::ListedWithoutPrice => Some(format!("{name} (an entry with no prices)")),
+            Known::Absent => Some(catalogue::say(
+                "cli.flow.model_absent_from_the_list",
+                &[("model", name)],
+            )),
+            Known::ListedWithoutPrice => Some(catalogue::say(
+                "cli.flow.model_listed_without_price",
+                &[("model", name)],
+            )),
         })
         .collect()
 }
@@ -437,7 +462,13 @@ fn cannot_be_priced(prices: &PriceList, seen: &BTreeSet<String>) -> Vec<String> 
 /// passate — per questo un flusso mai girato qui non riceve un elenco vuoto ma
 /// una frase che dice che non si sa, come per il rilevatore assente.
 fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Option<i64>) -> String {
-    let mut said = format!("\nlistino: {} modelli prezzati", prices.entries.len());
+    let mut said = format!(
+        "\n{}",
+        catalogue::say(
+            "cli.flow.price_list_size",
+            &[("count", &prices.entries.len().to_string())],
+        )
+    );
     let Some(seen) = seen else {
         said.push_str(&catalogue::say("cli.flow.models_store_unreadable", &[]));
         return said;
@@ -450,8 +481,14 @@ fn what_is_priced(prices: &PriceList, seen: Option<&BTreeSet<String>>, cap: Opti
     if unpriced.is_empty() {
         let _ = write!(
             said,
-            "\nmodels used by past runs: all priced ({})",
-            seen.iter().cloned().collect::<Vec<_>>().join(", ")
+            "\n{}",
+            catalogue::say(
+                "cli.flow.past_models_all_priced",
+                &[(
+                    "models",
+                    &seen.iter().cloned().collect::<Vec<_>>().join(", ")
+                )],
+            )
         );
         return said;
     }
@@ -479,7 +516,7 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
     let (flow, origin) = one_flow(sources, name)?;
     let mut report = format!("flow: {} ({origin})", flow.id);
     match flow.spend_cap_micros {
-        None => report.push_str("\ncap: none — this flow may spend whatever the run needs"),
+        None => report.push_str(&catalogue::say("cli.flow.cap_none_spends_freely", &[])),
         Some(cap) => {
             let _ = write!(
                 report,
@@ -504,31 +541,37 @@ fn cap_of(sources: &[FlowSource], name: &str) -> Result<String, String> {
 /// in una prova è una variabile d'ambiente globale al processo.
 fn what_the_ledger_saw(seen: &Observed) -> String {
     let mut said = format!(
-        "\nin the store: {} runs, of which {} {} spent something known",
-        seen.runs,
-        seen.costed_runs,
-        if seen.costed_runs == 1 { "ha" } else { "hanno" }
+        "\n{}",
+        catalogue::say(
+            "cli.flow.in_the_store",
+            &[
+                ("runs", &seen.runs.to_string()),
+                ("costed", &seen.costed_runs.to_string()),
+            ],
+        )
     );
     if seen.calls_without_cost > 0 {
         let _ = write!(
             said,
-            "\n{} calls declared no cost, and enter none of the figures above",
-            seen.calls_without_cost
+            "\n{}",
+            catalogue::say(
+                "cli.flow.calls_without_cost",
+                &[("count", &seen.calls_without_cost.to_string())],
+            )
         );
     }
 
     if seen.costed_runs < RUNS_BEFORE_SUGGESTING {
         let _ = write!(
             said,
-            "\nno suggestion: it takes at least {RUNS_BEFORE_SUGGESTING} costed \
-             runs, and {}. A number worked out on fewer samples is a datum \
-             invented with the face of a measurement, and whoever receives it \
-             rests a decision on it",
-            match seen.costed_runs {
-                0 => "there is none".to_owned(),
-                1 => "there is one".to_owned(),
-                many => format!("there are {many}"),
-            }
+            "\n{}",
+            catalogue::say(
+                "cli.flow.no_suggestion_yet",
+                &[
+                    ("needed", &RUNS_BEFORE_SUGGESTING.to_string()),
+                    ("costed", &seen.costed_runs.to_string()),
+                ],
+            )
         );
         return said;
     }
@@ -543,13 +586,16 @@ fn what_the_ledger_saw(seen: &Observed) -> String {
     let suggested = seen.worst_run_micros + seen.dearest_call_micros;
     let _ = write!(
         said,
-        "\nsuggestion: {suggested} micro ({}) — the dearest run observed ({}) \
-         plus the dearest call observed ({}). The second term is not a safety \
-         margin: it is the grain at which the cap can stop, because the check \
-         comes before opening a front",
-        in_units(suggested),
-        in_units(seen.worst_run_micros),
-        in_units(seen.dearest_call_micros)
+        "\n{}",
+        catalogue::say(
+            "cli.flow.suggestion",
+            &[
+                ("suggested", &suggested.to_string()),
+                ("units", &in_units(suggested)),
+                ("worst_run", &in_units(seen.worst_run_micros)),
+                ("dearest_call", &in_units(seen.dearest_call_micros)),
+            ],
+        )
     );
     said
 }
@@ -604,20 +650,26 @@ fn set_cap(sources: &[FlowSource], name: &str, value: &str) -> Result<String, St
 
     let before = flow.spend_cap_micros;
     if before == wanted {
-        return Ok(format!(
-            "flow {name} ({}): the cap was already {}, nothing was touched",
-            source.origin,
-            said_cap(before)
+        return Ok(catalogue::say(
+            "cli.flow.cap_unchanged",
+            &[
+                ("flow", name),
+                ("origin", &source.origin.to_string()),
+                ("cap", &said_cap(before)),
+            ],
         ));
     }
     flow.spend_cap_micros = wanted;
     flow::system::save_in(&source.dir, &flow)?;
-    Ok(format!(
-        "flow {name} ({}): cap {} → {}; written in {}",
-        source.origin,
-        said_cap(before),
-        said_cap(wanted),
-        source.dir.display()
+    Ok(catalogue::say(
+        "cli.flow.cap_written",
+        &[
+            ("flow", name),
+            ("origin", &source.origin.to_string()),
+            ("before", &said_cap(before)),
+            ("after", &said_cap(wanted)),
+            ("directory", &source.dir.display().to_string()),
+        ],
     ))
 }
 
@@ -644,11 +696,9 @@ fn a_flow_i_may_rewrite<'a>(
 ) -> Result<(FlowFile, &'a FlowSource), String> {
     let (flow, source) = where_it_lives(sources, name)?;
     if source.is_builtin() {
-        return Err(format!(
-            "«{name}» ships inside the binary: there is no file to rewrite. To \
-             change it, write a flow of the same name in your home or in the \
-             project — yours wins — and change that one. I will not do it for \
-             you: a flow that appeared by itself is a flow nobody knows they have"
+        return Err(catalogue::say(
+            "cli.flow.ships_inside_the_binary",
+            &[("flow", name)],
         ));
     }
     // **SI CONFRONTANO I DUE NOMI, NON SI CHIEDE SE UN FILE ESISTE.** Qui c'era
@@ -713,15 +763,20 @@ const HEAVY: &str = "heavy";
 /// cambiato.
 fn said_schedule(schedule: Option<&flow::Schedule>) -> String {
     let Some(schedule) = schedule else {
-        return format!("{NO_SCHEDULE} — it starts only when somebody asks");
+        return catalogue::say(
+            "cli.flow.no_schedule_starts_by_hand",
+            &[("none", NO_SCHEDULE)],
+        );
     };
     let when = match schedule.recurrence {
-        flow::Recurrence::EverySeconds { seconds } => {
-            format!("every {seconds}s from the last run")
-        }
-        flow::Recurrence::DailyAt { hour, minute } => {
-            format!("once a day, from {hour:02}:{minute:02} local")
-        }
+        flow::Recurrence::EverySeconds { seconds } => catalogue::say(
+            "cli.flow.every_so_many_seconds",
+            &[("seconds", &seconds.to_string())],
+        ),
+        flow::Recurrence::DailyAt { hour, minute } => catalogue::say(
+            "cli.flow.once_a_day_at",
+            &[("time", &format!("{hour:02}:{minute:02}"))],
+        ),
     };
     let weight = match schedule.weight {
         flow::Weight::Light => LIGHT,
@@ -786,8 +841,9 @@ fn weight_from(word: &str) -> Result<flow::Weight, String> {
     match as_written_today(word) {
         LIGHT => Ok(flow::Weight::Light),
         HEAVY => Ok(flow::Weight::Heavy),
-        other => Err(format!(
-            "«{other}» is not a weight: the words are «{LIGHT}» and «{HEAVY}»"
+        other => Err(catalogue::say(
+            "cli.flow.not_a_weight",
+            &[("word", other), ("light", LIGHT), ("heavy", HEAVY)],
         )),
     }
 }
@@ -867,18 +923,27 @@ fn set_schedule(
     };
 
     if flow.schedule == wanted {
-        return Ok(format!(
-            "flow {name} ({}): the trigger was already {before}, nothing was touched",
-            source.origin
+        return Ok(catalogue::say(
+            "cli.flow.schedule_unchanged",
+            &[
+                ("flow", name),
+                ("origin", &source.origin.to_string()),
+                ("before", &before),
+            ],
         ));
     }
     flow.schedule = wanted;
     let after = said_schedule(flow.schedule.as_ref());
     flow::system::save_in(&source.dir, &flow)?;
-    Ok(format!(
-        "flow {name} ({}): trigger\n  from: {before}\n  to:   {after}\nwritten in {}",
-        source.origin,
-        source.dir.display()
+    Ok(catalogue::say(
+        "cli.flow.schedule_written",
+        &[
+            ("flow", name),
+            ("origin", &source.origin.to_string()),
+            ("before", &before),
+            ("after", &after),
+            ("directory", &source.dir.display().to_string()),
+        ],
     ))
 }
 
@@ -898,9 +963,13 @@ fn where_it_lives<'a>(
         match flow::system::registry_of(source).remove(name) {
             Some(Ok(flow)) => return Ok((flow, source)),
             Some(Err(reason)) => {
-                return Err(format!(
-                    "flow {name} ({}) does not load, so it is not rewritten: {reason}",
-                    source.origin
+                return Err(catalogue::say(
+                    "cli.flow.does_not_load_so_not_rewritten",
+                    &[
+                        ("flow", name),
+                        ("origin", &source.origin.to_string()),
+                        ("reason", &reason),
+                    ],
                 ))
             }
             None => continue,
@@ -945,18 +1014,19 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
     let known = known_flows(sources);
     match known.iter().find(|(known, _, _)| known == name) {
         Some((_, origin, Ok(flow))) => Ok((flow.clone(), origin)),
-        Some((_, origin, Err(reason))) => {
-            Err(format!("flow {name} ({origin}) does not load: {reason}"))
-        }
+        Some((_, origin, Err(reason))) => Err(catalogue::say(
+            "cli.flow.does_not_load",
+            &[("flow", name), ("origin", origin), ("reason", &reason)],
+        )),
         None => {
             let names: Vec<&str> = known.iter().map(|(name, _, _)| name.as_str()).collect();
-            Err(format!(
-                "no flow is called {name}; the ones in sight are: {}",
-                if names.is_empty() {
-                    "none".to_owned()
-                } else {
-                    names.join(", ")
-                }
+            let in_sight = match names.is_empty() {
+                true => catalogue::say("cli.flow.none_in_sight", &[]),
+                false => names.join(", "),
+            };
+            Err(catalogue::say(
+                "cli.flow.no_flow_by_that_name",
+                &[("flow", name), ("names", &in_sight)],
             ))
         }
     }
@@ -965,13 +1035,16 @@ fn one_flow(sources: &[FlowSource], name: &str) -> Result<(FlowFile, &'static st
 /// Dove si è guardato, sempre in coda a un elenco vuoto: una lista vuota che non
 /// dice dove ha cercato è indistinguibile da un guasto.
 fn nothing_found(sources: &[FlowSource]) -> String {
-    format!(
-        "no flow found. Looked in:\n  {}",
-        sources
-            .iter()
-            .map(|source| format!("{}: {}", source.origin, source.dir.display()))
-            .collect::<Vec<_>>()
-            .join("\n  ")
+    catalogue::say(
+        "cli.flow.nothing_found",
+        &[(
+            "places",
+            &sources
+                .iter()
+                .map(|source| format!("{}: {}", source.origin, source.dir.display()))
+                .collect::<Vec<_>>()
+                .join("\n  "),
+        )],
     )
 }
 
@@ -992,14 +1065,35 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 /// Le due regole sono nate lo stesso giorno su due rami diversi e non si
 /// escludono: la prima dice che l'elenco è completo, la seconda che è uno solo.
 /// `schedule` viene dalla prima, la forma a righe dalla seconda.
-pub const USAGE: &[&str] = &[
-    "sailor flow list",
-    "sailor flow due",
-    "sailor flow tick",
-    "sailor flow check <name> [--no-engines]",
-    "sailor flow run <name> [mandate]",
-    "sailor flow resume <run>",
-    "sailor flow cost <name>",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor flow list",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow due",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow tick",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow check <name> [--no-engines]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow run <name> [mandate]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow resume <run>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow cost <name>",
+        says_key: "",
+    },
     // **`micro`, `nessuno`, `leggero` E `pesante` RESTANO COSÌ, E NON È UNA
     // DIMENTICANZA.** Non sono segnaposto: sono le parole che l'utente batte
     // davvero e che il codice confronta, e una `schedule` già scritta le
@@ -1009,13 +1103,26 @@ pub const USAGE: &[&str] = &[
     // dei flussi restano in italiano (`AGENTS.md`, la riga sui dati del
     // deposito). Se un giorno si vogliono in inglese, la strada è accettarle
     // in tutte e due le lingue e mostrare la nuova, mai sostituirle.
-    "sailor flow cap <name> [micros|none]",
-    "sailor flow schedule <name> [3600s|07:30|none] [light|heavy]",
-    "sailor flow relocate <name> [prefix-to-strip]",
+    Form {
+        form: "sailor flow cap <name> [micros|none]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow schedule <name> [3600s|07:30|none] [light|heavy]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow relocate <name> [prefix-to-strip]",
+        says_key: "",
+    },
 ];
 
 fn usage() -> String {
-    format!("usage:\n  {}", USAGE.join("\n  "))
+    format!(
+        "{}\n  {}",
+        catalogue::say("cli.usage_heading", &[]),
+        crate::forms_as_lines(USAGE).join("\n  ")
+    )
 }
 
 /// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
@@ -1081,7 +1188,7 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
     let header = ledger
         .run_header(run_id)
         .map_err(|error| format!("cannot read run {run_id}: {error}"))?
-        .ok_or_else(|| format!("no run is called {run_id} in this store"))?;
+        .ok_or_else(|| catalogue::say("cli.step.no_such_run", &[("run_id", run_id)]))?;
     let registry = default_registry(
         Some(ledger.clone()),
         Some(Arc::new(TerminalWatcher::new()) as Arc<dyn actions::StepSinks>),
@@ -1128,15 +1235,21 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
     if !reconciled.still_running.is_empty() {
         let _ = write!(
             report,
-            "\nheld, the deadline has not passed: {}",
-            reconciled.still_running.join(", ")
+            "\n{}",
+            catalogue::say(
+                "cli.flow.held_deadline_not_passed",
+                &[("steps", &reconciled.still_running.join(", "))],
+            )
         );
     }
     if !reconciled.closed_as_broke.is_empty() {
         let _ = write!(
             report,
-            "\nscaduti e rimessi fra i pronti: {}",
-            reconciled.closed_as_broke.join(", ")
+            "\n{}",
+            catalogue::say(
+                "cli.flow.expired_back_among_the_ready",
+                &[("steps", &reconciled.closed_as_broke.join(", "))],
+            )
         );
     }
     if !reconciled.closed_as_waiting.is_empty() {
@@ -1190,15 +1303,19 @@ fn waiting_report() -> String {
         .unwrap_or_default();
     // Two lists and not one: a run somebody must come and take is not a run
     // that comes back by itself, and reading them together sends a person to
-    // take a step nobody handed them.
+    // take a step nobody handed them. An empty first list cannot return early
+    // any more, or the second one would never be reached.
     let to_ask_again = ledger
         .as_ref()
         .and_then(|ledger| ledger.runs_to_ask_again().ok())
         .unwrap_or_default();
     let mut report = if waiting.is_empty() {
-        "no run is waiting for anybody".to_owned()
+        catalogue::say("cli.flow.no_run_is_waiting", &[])
     } else {
-        let mut lines = format!("{} runs are waiting for somebody:", waiting.len());
+        let mut lines = catalogue::say(
+            "cli.flow.runs_waiting_for_somebody",
+            &[("count", &waiting.len().to_string())],
+        );
         for run in waiting {
             let _ = write!(
                 lines,
@@ -1314,19 +1431,20 @@ fn tick_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, Str
         // declined 2,803 times out of 2,834 and left no trace of any of them,
         // so nobody could tell a working guard from a broken one.
         let reason = match &entry {
-            Err(_) => Some("will not load".to_owned()),
+            Err(_) => Some(catalogue::say("cli.flow.will_not_load", &[])),
             Ok(flow) => match flow.schedule.as_ref() {
-                None => Some("no schedule: it starts by hand only".to_owned()),
+                None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                 Some(schedule) => {
                     let last_run = last.get(&flow.id).copied();
                     if flow::is_due(schedule, last_run, now) {
                         None
                     } else {
                         Some(match last_run {
-                            Some(seconds) => {
-                                format!("not due: last ran {} minutes ago", (now - seconds) / 60)
-                            }
-                            None => "not due".to_owned(),
+                            Some(seconds) => catalogue::say(
+                                "cli.flow.not_due_last_ran",
+                                &[("minutes", &((now - seconds) / 60).to_string())],
+                            ),
+                            None => catalogue::say("cli.flow.not_due", &[]),
                         })
                     }
                 }
@@ -1373,7 +1491,11 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
     let mut unplanned = 0usize;
     for (name, _, entry) in known {
         let Ok(flow) = entry else {
-            let _ = writeln!(report, "{name}\tnon caricabile");
+            let _ = writeln!(
+                report,
+                "{name}\t{}",
+                catalogue::say("cli.flow.will_not_load", &[])
+            );
             continue;
         };
         let Some(schedule) = flow.schedule.as_ref() else {
@@ -1383,19 +1505,29 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
         let last_run = last.get(&flow.id).copied();
         let verdict = if flow::is_due(schedule, last_run, now) {
             due += 1;
-            "DOVUTO"
+            catalogue::say("cli.flow.due", &[])
         } else {
-            "not yet"
+            catalogue::say("cli.flow.not_yet", &[])
         };
         let when = match last_run {
-            Some(seconds) => format!("last run {} minutes ago", (now - seconds) / 60),
-            None => "mai girato".to_owned(),
+            Some(seconds) => catalogue::say(
+                "cli.flow.last_run_minutes_ago",
+                &[("minutes", &((now - seconds) / 60).to_string())],
+            ),
+            None => catalogue::say("cli.flow.never_run", &[]),
         };
         let _ = writeln!(report, "{}\t{verdict}\t{when}", flow.id);
     }
     let _ = write!(
         report,
-        "{due} due now; {unplanned} with no schedule, which start by hand only\n{}",
+        "{}\n{}",
+        catalogue::say(
+            "cli.flow.due_now_and_unplanned",
+            &[
+                ("due", &due.to_string()),
+                ("unplanned", &unplanned.to_string()),
+            ],
+        ),
         waiting_report()
     );
     Ok(report)
@@ -1499,14 +1631,9 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
         .collect();
     if !sweeping.is_empty() {
         println!("{report}");
-        return Err(format!(
-            "flow {} runs `git commit` without saying what it commits: {}. \
-             With no paths, `git commit` commits everything already staged — and in a work \
-             tree shared with other sessions the index also holds another session's staged \
-             work, which then travels inside a commit that never mentions it. Say what the \
-             step commits: «--» followed by the paths, or «--only»/«--include» with a path.",
-            flow.id,
-            sweeping.join(", ")
+        return Err(catalogue::say(
+            "cli.flow.commit_without_paths",
+            &[("flow", &flow.id), ("steps", &sweeping.join(", "))],
         ));
     }
     if unknown.is_empty() {
@@ -3253,7 +3380,7 @@ mod tests {
     #[test]
     fn the_beat_is_promised_and_accepted() {
         assert!(
-            USAGE.iter().any(|line| line.contains("flow tick")),
+            USAGE.iter().any(|line| line.form.contains("flow tick")),
             "the help must promise the beat"
         );
         let nowhere: Vec<FlowSource> = Vec::new();

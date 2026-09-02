@@ -5,6 +5,7 @@
 //! argomenti e la stampa. Prima del 27/08/2026 questo era il `main.rs` di un
 //! binario a sé (`profiles`).
 
+use crate::Form;
 use actions::{LoginProbe, LoginVerdict, ToolResolver};
 use profiles::{find_cli, profile_home_path, store_io, HomeMechanism, KnownCli, Profile};
 use std::path::Path;
@@ -30,18 +31,30 @@ fn dispatch(args: &[String]) -> Result<(), String> {
 }
 
 /// Le forme di `sailor profiles`, una per riga. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &[
-    "sailor profiles list [cli]",
-    "sailor profiles create <cli> <name>",
-    "sailor profiles switch <cli> <name>",
-    "sailor profiles current <cli>",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor profiles list [cli]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles create <cli> <name>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles switch <cli> <name>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles current <cli>",
+        says_key: "",
+    },
 ];
 
 fn usage() -> String {
     format!(
         "{}\n  {}",
         catalogue::say("cli.usage_heading", &[]),
-        USAGE.join("\n  ")
+        crate::forms_as_lines(USAGE).join("\n  ")
     )
 }
 
@@ -57,60 +70,127 @@ fn usage() -> String {
 /// in forza. Costa zero: `codex login status` e `claude auth status` leggono un
 /// file locale, senza chiamare nessun modello.
 fn cmd_list(args: &[String]) -> Result<(), String> {
-    let store = store_io::load_store()?;
-    let filter = args.first();
-    let tools = toolbox::Tools::current();
-    let probe = actions::RealDryProbe;
-    for profile in &store.profiles {
-        if let Some(f) = filter {
-            if &profile.cli_id != f {
-                continue;
-            }
-        }
-        let is_active = store
-            .active
-            .get(&profile.cli_id)
-            .is_some_and(|active_name| active_name == &profile.name);
-        let marker = if is_active { "*" } else { " " };
-        // Una riga di comando che questa tabella non conosce non ha una casa da
-        // spostare, quindi non c'è nessuna domanda da farle.
-        let access = match find_cli(&profile.cli_id) {
-            Ok(cli) => access_state(&tools, &probe, cli, &profile.home_dir),
-            Err(reason) => catalogue::say(
-                "cli.profiles.access.not_known_because",
-                &[("reason", &reason)],
-            ),
-        };
+    for row in overview(args.first().map(String::as_str))? {
+        let marker = if row.active { "*" } else { " " };
         println!(
-            "{marker} {} {} -> {} — access: {access}",
-            profile.cli_id,
-            profile.name,
-            profile.home_dir.display()
+            "{marker} {} {} -> {} — access: {}",
+            row.cli_id,
+            row.name,
+            row.home_dir.display(),
+            row.said
         );
     }
     Ok(())
 }
 
-/// Che cosa il motore dice della casa di **questo** profilo, in una riga.
+/// What is true of a profile's access, as a value and not only as a sentence.
 ///
-/// **OGNI ESITO CHE NON SIA UN SÌ SI SCRIVE COME NON-SÌ.** «Nessuno ha
-/// guardato», «ha risposto e non l'ho capito» e «non è autenticato» sono tre
-/// fatti diversi e nessuno dei tre è «puoi usarlo»: si dicono per quello che
-/// sono, mai riassunti in un silenzio che si legge come un via libera.
-fn access_state(
+/// **THE SENTENCE TRAVELS WITH IT AND IS NEVER PARSED BACK.** A surface that
+/// had to read "authenticated" out of a translated line would break the day the
+/// line is translated, and would break silently — it would read as «not
+/// authenticated», the safe-looking answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    Yes,
+    No,
+    /// Nobody could look, for any of several reasons — the sentence says which.
+    /// **NOT A NO**: an absence and a refusal lead to different gestures.
+    NotKnown,
+    /// The profile exists and moves nothing: this command line has no known way
+    /// to be sent elsewhere, so two profiles start it in the same place.
+    HomeDoesNotMove,
+}
+
+/// One profile, as both surfaces show it.
+#[derive(Debug, Clone)]
+pub struct ProfileView {
+    pub cli_id: String,
+    pub name: String,
+    pub home_dir: std::path::PathBuf,
+    pub active: bool,
+    pub access: Access,
+    /// The engine's own words, already in the reader's language.
+    pub said: String,
+}
+
+/// Every profile, with what the engine says about each one's home.
+///
+/// **ONE COPY FOR BOTH SURFACES.** The window asks the same question the
+/// command line asks, and a second implementation of "which profile is usable"
+/// is the shape of fault 10: the two would answer differently on the machine
+/// where it matters, and neither would say so.
+pub fn overview(filter: Option<&str>) -> Result<Vec<ProfileView>, String> {
+    let store = store_io::load_store()?;
+    let tools = toolbox::Tools::current();
+    Ok(views_of(&store, &tools, &actions::RealDryProbe, filter))
+}
+
+/// The heart of [`overview`], with the store, the toolbox and the probe passed
+/// in: a test measures profiles of its own, never the reader's real ones.
+fn views_of(
+    store: &profiles::ProfileStore,
+    tools: &toolbox::Tools,
+    probe: &dyn LoginProbe,
+    filter: Option<&str>,
+) -> Vec<ProfileView> {
+    store
+        .profiles
+        .iter()
+        .filter(|profile| filter.is_none_or(|wanted| profile.cli_id == wanted))
+        .map(|profile| {
+            // A command line this table does not know has no home to move, so
+            // there is no question to ask it.
+            let (access, said) = match find_cli(&profile.cli_id) {
+                Ok(cli) => access_of(tools, probe, cli, &profile.home_dir),
+                Err(reason) => (
+                    Access::NotKnown,
+                    catalogue::say(
+                        "cli.profiles.access.not_known_because",
+                        &[("reason", &reason)],
+                    ),
+                ),
+            };
+            ProfileView {
+                cli_id: profile.cli_id.clone(),
+                name: profile.name.clone(),
+                home_dir: profile.home_dir.clone(),
+                active: store
+                    .active
+                    .get(&profile.cli_id)
+                    .is_some_and(|active_name| active_name == &profile.name),
+                access,
+                said,
+            }
+        })
+        .collect()
+}
+
+/// What the engine says about **this** profile's home: the verdict to act on,
+/// and the words to show.
+///
+/// **ANY OUTCOME THAT IS NOT A YES IS WRITTEN AS A NON-YES**, and the verdict
+/// comes from the branch, never read back out of the sentence: «nobody looked»
+/// and «not authenticated» are different facts, and neither is «you can use it».
+fn access_of(
     tools: &toolbox::Tools,
     probe: &dyn LoginProbe,
     cli: &KnownCli,
     home: &Path,
-) -> String {
+) -> (Access, String) {
     let Some((tool, bin)) = tools.declared_as_executable(cli.executable) else {
-        return catalogue::say(
-            "cli.profiles.access.no_such_executable",
-            &[("executable", cli.executable)],
+        return (
+            Access::NotKnown,
+            catalogue::say(
+                "cli.profiles.access.no_such_executable",
+                &[("executable", cli.executable)],
+            ),
         );
     };
     let Some(recipe) = tools.login_recipe(&tool) else {
-        return catalogue::say("cli.profiles.access.no_recipe", &[("tool", &tool)]);
+        return (
+            Access::NotKnown,
+            catalogue::say("cli.profiles.access.no_recipe", &[("tool", &tool)]),
+        );
     };
     // **LA CASA DI QUESTO PROFILO, NON QUELLA IN FORZA.** È tutta la ragione per
     // cui `LoginProbe` prende l'ambiente come argomento invece di andarselo a
@@ -118,30 +198,44 @@ fn access_state(
     // tutte le righe dell'elenco, e sarebbe la risposta di uno solo.
     let env = profiles::build_environment(cli, home);
     if env.is_empty() {
-        return catalogue::say(
-            "cli.profiles.access.home_does_not_move",
-            &[("id", cli.id), ("note", cli.home_note)],
+        return (
+            Access::HomeDoesNotMove,
+            catalogue::say(
+                "cli.profiles.access.home_does_not_move",
+                &[("id", cli.id), ("note", cli.home_note)],
+            ),
         );
     }
     match actions::probe_login_status(probe, &bin, &env, &recipe) {
-        LoginVerdict::LoggedIn { said } => catalogue::say(
-            "cli.profiles.access.authenticated",
-            &[("said", &one_line(&said))],
+        LoginVerdict::LoggedIn { said } => (
+            Access::Yes,
+            catalogue::say(
+                "cli.profiles.access.authenticated",
+                &[("said", &one_line(&said))],
+            ),
         ),
-        LoginVerdict::LoggedOut { said } => catalogue::say(
-            "cli.profiles.access.not_authenticated",
-            &[("said", &one_line(&said))],
+        LoginVerdict::LoggedOut { said } => (
+            Access::No,
+            catalogue::say(
+                "cli.profiles.access.not_authenticated",
+                &[("said", &one_line(&said))],
+            ),
         ),
-        LoginVerdict::NotDeclared => {
-            catalogue::say("cli.profiles.access.recipe_by_halves", &[("tool", &tool)])
-        }
-        LoginVerdict::Unrecognised { said } => catalogue::say(
-            "cli.profiles.access.unrecognised",
-            &[("said", &one_line(&said))],
+        LoginVerdict::NotDeclared => (
+            Access::NotKnown,
+            catalogue::say("cli.profiles.access.recipe_by_halves", &[("tool", &tool)]),
         ),
-        LoginVerdict::NoAnswer { why } => {
-            catalogue::say("cli.profiles.access.no_answer", &[("why", &why)])
-        }
+        LoginVerdict::Unrecognised { said } => (
+            Access::NotKnown,
+            catalogue::say(
+                "cli.profiles.access.unrecognised",
+                &[("said", &one_line(&said))],
+            ),
+        ),
+        LoginVerdict::NoAnswer { why } => (
+            Access::NotKnown,
+            catalogue::say("cli.profiles.access.no_answer", &[("why", &why)]),
+        ),
     }
 }
 
@@ -156,6 +250,14 @@ fn cmd_create(args: &[String]) -> Result<(), String> {
     let [cli_id, name] = args else {
         return Err(catalogue::say("cli.profiles.usage_create", &[]));
     };
+    create(cli_id, name)
+}
+
+/// Makes a profile: the directory, and the row that remembers it. Public
+/// because the window offers the same gesture, and a second implementation
+/// would be free to disagree about what a valid name is — which is the one
+/// thing here that is a security rule and not a preference.
+pub fn create(cli_id: &str, name: &String) -> Result<(), String> {
     let cli = find_cli(cli_id)?;
     let home = profile_home_path(&store_io::profiles_root(), cli.id, name)
         .map_err(|e| catalogue::say("cli.profiles.name_not_valid", &[("error", &e.to_string())]))?;
@@ -192,6 +294,13 @@ fn cmd_switch(args: &[String]) -> Result<(), String> {
     let [cli_id, name] = args else {
         return Err(catalogue::say("cli.profiles.usage_switch", &[]));
     };
+    switch(cli_id, name)
+}
+
+/// Puts a profile in force. For the symlink mechanism this touches the disk;
+/// for the environment one it only records, and `build_environment` reads it
+/// when something is launched.
+pub fn switch(cli_id: &str, name: &String) -> Result<(), String> {
     let cli = find_cli(cli_id)?;
     let mut store = store_io::load_store()?;
     let profile = store
@@ -316,7 +425,7 @@ mod tests {
     /// scrivere una risposta, non che qualcuno la va a chiedere.
     ///
     /// *Mutante eseguito*: far rispondere «autenticato» anche al `LoggedOut` in
-    /// `access_state` — il primo braccio diventa rosso.
+    /// `access_of` — il primo braccio diventa rosso.
     #[test]
     fn the_list_asks_the_engine_whether_each_home_has_credentials() {
         let (dir, tools) = a_machine_with_a_fake_codex(true);
@@ -325,7 +434,7 @@ mod tests {
 
         let empty = dir.join("casa-vuota");
         std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
-        let said = access_state(&tools, &probe, cli, &empty);
+        let said = access_of(&tools, &probe, cli, &empty).1;
         assert!(
             said.contains("NOT AUTHENTICATED") && said.contains("Not logged in"),
             "una casa senza credenziali deve vedersi, con le parole del motore: {said}"
@@ -334,10 +443,72 @@ mod tests {
         let full = dir.join("casa-piena");
         std::fs::create_dir_all(&full).expect("la casa autenticata");
         std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
-        let said = access_state(&tools, &probe, cli, &full);
+        let said = access_of(&tools, &probe, cli, &full).1;
         assert!(
             said.starts_with("authenticated"),
             "a full home has to read as full: {said}"
+        );
+    }
+
+    /// **A SURFACE HAS TO TELL THEM APART, NOT ONLY READ THEM.** The list on
+    /// the command line makes do with the sentence; anything that colours or
+    /// sorts needs the verdict as a value. *Mutant run*: return `Access::Yes`
+    /// from the `LoggedOut` branch — the first arm goes red.
+    #[test]
+    fn two_homes_of_one_command_line_do_not_get_the_same_verdict() {
+        let (dir, tools) = a_machine_with_a_fake_codex(true);
+        let probe = actions::RealDryProbe;
+
+        let empty = dir.join("senza-credenziali");
+        let full = dir.join("con-credenziali");
+        std::fs::create_dir_all(&empty).expect("la casa vuota");
+        std::fs::create_dir_all(&full).expect("la casa piena");
+        std::fs::write(full.join("auth.json"), "{}").expect("le credenziali");
+
+        let store = profiles::ProfileStore {
+            profiles: vec![
+                Profile {
+                    name: "vuoto".to_owned(),
+                    cli_id: "codex".to_owned(),
+                    home_dir: empty,
+                },
+                Profile {
+                    name: "pieno".to_owned(),
+                    cli_id: "codex".to_owned(),
+                    home_dir: full,
+                },
+            ],
+            active: [("codex".to_owned(), "pieno".to_owned())]
+                .into_iter()
+                .collect(),
+        };
+
+        let rows = views_of(&store, &tools, &probe, None);
+        assert_eq!(rows.len(), 2, "both profiles have to reach the surface");
+        assert_eq!(
+            (rows[0].access, rows[1].access),
+            (Access::No, Access::Yes),
+            "the two homes differ and the verdicts have to differ with them: {} / {}",
+            rows[0].said,
+            rows[1].said,
+        );
+        assert_eq!(
+            (rows[0].active, rows[1].active),
+            (false, true),
+            "the active one is the one the store names, not the first in the list",
+        );
+        // AND THE SENTENCE TRAVELS: a verdict with no words behind it cannot be
+        // acted on — «no» that does not say why sends nobody anywhere.
+        assert!(
+            rows.iter().all(|row| !row.said.trim().is_empty()),
+            "a verdict arrived with no words behind it",
+        );
+
+        // THE FILTER IS NOT DECORATION: asking for a command line nobody has a
+        // profile for must answer nothing, never everything.
+        assert!(
+            views_of(&store, &tools, &probe, Some("claude")).is_empty(),
+            "the filter let through profiles of another command line",
         );
     }
 
@@ -353,7 +524,7 @@ mod tests {
         let empty = dir.join("casa-vuota");
         std::fs::create_dir_all(&empty).expect("la casa senza credenziali");
 
-        let said = access_state(&tools, &probe, cli, &empty);
+        let said = access_of(&tools, &probe, cli, &empty).1;
         // **IL VERDETTO È LA TESTA DELLA RIGA, E SI GUARDA LÌ.** La spiegazione
         // che segue nomina per forza la parola «autenticato» — sta dicendo che
         // nessuno ha chiesto se lo è — quindi cercarla dentro tutta la riga

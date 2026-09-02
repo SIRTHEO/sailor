@@ -83,11 +83,11 @@ describe("the stylesheet, read as rules", () => {
 
 /**
  * Takes the window to the flows canvas. **IT DOES NOT OPEN THERE:** the window
- * opens on «Adesso» and the canvas sits behind a place that has to be chosen,
+ * opens on «Now» and the canvas sits behind a place that has to be chosen,
  * so a scene that skips this measures a screen it did not mean to.
  */
 function goToFlows(): void {
-  const place = screen.getByRole("button", { name: /^Flussi/ });
+  const place = screen.getByRole("button", { name: /^Flows/ });
   fireEvent.click(place);
 }
 
@@ -263,12 +263,15 @@ describe("the commands, as the binary declares them", () => {
         {
           name: "flow",
           description: "elenca, controlla, esegue o riprende i flussi dichiarati in flows/",
-          usage: ["sailor flow list", "sailor flow run <nome> [mandato]"],
+          usage: [
+            { form: "sailor flow list", says: "" },
+            { form: "sailor flow run <nome> [mandato]", says: "esegue un flusso" },
+          ],
         },
         {
           name: "version",
           description: "la versione di questo binario",
-          usage: ["sailor version"],
+          usage: [{ form: "sailor version", says: "" }],
         },
       ],
     });

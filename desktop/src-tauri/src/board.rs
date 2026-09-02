@@ -75,7 +75,8 @@ pub(crate) fn execution_history() -> Result<Vec<ExecutionView>, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
-    let data = gather(&ledger_dir).map_err(|error| format!("non riesco a leggere il deposito: {error}"))?;
+    let data = gather(&ledger_dir)
+        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?;
     let Some(data) = data else {
         return Ok(Vec::new());
     };
@@ -98,7 +99,8 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs() as i64);
-    let data = gather(&ledger_dir).map_err(|error| format!("non riesco a leggere il deposito: {error}"))?;
+    let data = gather(&ledger_dir)
+        .map_err(|error| format!("non riesco a leggere il deposito: {error}"))?;
     let Some(data) = data else {
         // Deposito assente: `ledger_present` resta falso, e ogni conteggio è
         // zero. Chi legge deve poter distinguere «non è girato niente» da
@@ -112,7 +114,8 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
     };
     for execution in executions.iter().filter(|run| run.started_at >= since) {
         summary.runs += 1;
-        let open = !execution.steps_open.is_empty() || matches!(execution.status.as_str(), "running" | "open");
+        let open = !execution.steps_open.is_empty()
+            || matches!(execution.status.as_str(), "running" | "open");
         // ROTTA È PIÙ FORTE DI APERTA. Una corsa con un passo caduto e un altro
         // ancora in volo è un guasto che sta ancora bruciando, non un lavoro in
         // corso: contarla fra gli aperti la toglierebbe dall'occhio di chi
@@ -135,8 +138,10 @@ pub(crate) fn day_summary(since: i64) -> Result<DaySummary, String> {
         summary.unmeasured += execution.tokens.calls_without_tokens;
         summary.unpriced += execution.tokens.calls_without_cost;
         for (model, tokens) in &execution.tokens_by_model {
-            *summary.tokens_by_model.entry(model.clone()).or_insert(0) +=
-                tokens.input_tokens + tokens.output_tokens + tokens.cached_tokens + tokens.cache_write_tokens;
+            *summary.tokens_by_model.entry(model.clone()).or_insert(0) += tokens.input_tokens
+                + tokens.output_tokens
+                + tokens.cached_tokens
+                + tokens.cache_write_tokens;
         }
     }
     Ok(summary)

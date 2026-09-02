@@ -31,13 +31,10 @@ import { BlankCanvas } from "./BlankCanvas";
 import { Now } from "./Now";
 import { History, lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
-import { Installed } from "./Installed";
-import { Manual } from "./Manual";
+import { Everything } from "./Everything";
 import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
-import { Projects } from "./Projects";
-import { Worktrees } from "./Worktrees";
 import { WireMenu } from "./WireMenu";
 import { withStepWiredTo } from "./wiring";
 import { Toolbar } from "./Toolbar";
@@ -99,15 +96,7 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * on the inventory answers "what could I run", while whoever reopens the window
  * is asking "what is happening". The canvas is where you go to look inside.
  */
-type Place =
-  | "now"
-  | "history"
-  | "flows"
-  | "installed"
-  | "manual"
-  | "terminals"
-  | "workspaces"
-  | "worktrees";
+type Place = "now" | "flows" | "terminals" | "history" | "everything";
 
 /**
  * Only the graph: "Code" was a data file dressed as source, and "Runs" is
@@ -1183,7 +1172,16 @@ export default function App() {
           data-here={place === "now" || undefined}
           onClick={() => setPlace("now")}
         >
-          Adesso
+          Now
+        </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "flows" || undefined}
+          onClick={() => setPlace("flows")}
+        >
+          Flows
+          <span className="places__count">{flows.size}</span>
         </button>
         <button
           type="button"
@@ -1191,21 +1189,7 @@ export default function App() {
           data-here={place === "terminals" || undefined}
           onClick={() => setPlace("terminals")}
         >
-          Terminali
-        </button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "workspaces" || undefined}
-          onClick={() => setPlace("workspaces")}
-        >Progetti</button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "worktrees" || undefined}
-          onClick={() => setPlace("worktrees")}
-        >
-          Worktrees
+          Terminals
         </button>
         <button
           type="button"
@@ -1213,33 +1197,19 @@ export default function App() {
           data-here={place === "history" || undefined}
           onClick={() => setPlace("history")}
         >
-          Storia
+          History
         </button>
-        <span className="places__gap" />
+        {/* THE FIFTH DOOR IS NOT A LEFTOVER DRAWER. Behind it is one question —
+            «what is there» — and the answers are grouped by what they are about,
+            each with the line that says what it answers. In the bar they were
+            seven nouns you had to open to find out. */}
         <button
           type="button"
           className="places__item"
-          data-here={place === "flows" || undefined}
-          onClick={() => setPlace("flows")}
+          data-here={place === "everything" || undefined}
+          onClick={() => setPlace("everything")}
         >
-          Flussi
-          <span className="places__count">{flows.size}</span>
-        </button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "installed" || undefined}
-          onClick={() => setPlace("installed")}
-        >
-          Installato
-        </button>
-        <button
-          type="button"
-          className="places__item"
-          data-here={place === "manual" || undefined}
-          onClick={() => setPlace("manual")}
-        >
-          Comandi
+          Everything
         </button>
       </nav>
 
@@ -1271,11 +1241,8 @@ export default function App() {
         />
       )}
       {place === "history" && <History native={NATIVE} />}
-      {place === "installed" && <Installed native={NATIVE} />}
-      {place === "manual" && <Manual native={NATIVE} />}
+      {place === "everything" && <Everything native={NATIVE} now={now} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
-      {place === "workspaces" && <Projects native={NATIVE} now={now} />}
-      {place === "worktrees" && <Worktrees native={NATIVE} />}
 
       {/* Outside the canvas element on purpose: it is positioned in window
           coordinates, and inside it would scroll and scale with the paper. */}

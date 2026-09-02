@@ -32,7 +32,10 @@ pub(crate) fn save_flow(flow: serde_json::Value) -> Result<String, String> {
     // assente o non testuale finisce nella cartella dei flussi nuovi e viene
     // rifiutato là, col messaggio giusto, invece di essere rifiutato qui con un
     // messaggio peggiore.
-    let id = flow.get("id").and_then(|id| id.as_str()).unwrap_or_default();
+    let id = flow
+        .get("id")
+        .and_then(|id| id.as_str())
+        .unwrap_or_default();
     let (origin, dir) = super::place_for(id);
     save_flow_in(&dir, flow).map(|()| origin.to_owned())
 }
@@ -66,6 +69,23 @@ fn save_flow_in(flows_dir: &Path, flow_json: serde_json::Value) -> Result<(), St
 /// Cuore di `delete_flow`, stessa ragione della cartella passata a mano.
 fn delete_flow_in(flows_dir: &Path, name: &str) -> Result<(), String> {
     flow::system::delete_in(flows_dir, name)
+}
+
+/// Every action the engine can run, by name.
+///
+/// **THE LIST IS ASKED, NEVER WRITTEN.** A test already refuses a name the
+/// engine does not register, but that is a check: a reader had no way to see
+/// the real list, and «what can this do» is not a question a vocabulary
+/// answers.
+#[tauri::command]
+pub(crate) fn engine_actions() -> Vec<String> {
+    let mut names: Vec<String> = action_registry()
+        .names()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    names.sort();
+    names
 }
 
 /// Le azioni note al motore, per rifiutare al salvataggio un flusso che una
@@ -222,7 +242,10 @@ mod tests {
         });
         let error = save_flow_in(&dir, cyclic).expect_err("grafo ciclico rifiutato");
         assert!(error.contains("validazione"), "{error}");
-        assert!(entries(&dir).is_empty(), "un grafo rifiutato non deve toccare il disco");
+        assert!(
+            entries(&dir).is_empty(),
+            "un grafo rifiutato non deve toccare il disco"
+        );
     }
 
     #[test]
@@ -312,10 +335,9 @@ mod tests {
     /// Confrontare due mappe scritte a mano le lascerebbe sbagliare insieme.
     #[test]
     fn the_window_vocabulary_names_only_actions_the_engine_registers() {
-        let source = fs::read_to_string(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/flow.ts"),
-        )
-        .expect("il vocabolario della finestra si legge da desktop/src/flow.ts");
+        let source =
+            fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/flow.ts"))
+                .expect("il vocabolario della finestra si legge da desktop/src/flow.ts");
         let named = action_names_in(&source, "const ACTION_KIND");
         assert!(
             named.len() > 4,
