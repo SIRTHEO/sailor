@@ -42,15 +42,26 @@ pub fn run(args: &[String]) -> i32 {
         Ok(options) => options,
         Err(message) => {
             eprintln!("sailor release: {message}");
-            eprintln!("bersagli disponibili: {}", target_names());
+            eprintln!(
+                "{}",
+                catalogue::say(
+                    "cli.release.targets_available",
+                    &[("targets", &target_names())]
+                )
+            );
             return 2;
         }
     };
     let Some(selected) = target(&options.target_name) else {
         eprintln!(
-            "sailor release: unknown target '{}'; the targets available are: {}",
-            options.target_name,
-            target_names()
+            "sailor release: {}",
+            catalogue::say(
+                "cli.release.unknown_target",
+                &[
+                    ("target", &options.target_name),
+                    ("targets", &target_names())
+                ],
+            )
         );
         return 2;
     };
@@ -79,9 +90,12 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
     let target_name = args
         .next()
-        .ok_or_else(|| format!("no target given (usage: {})", USAGE[0]))?;
+        .ok_or_else(|| catalogue::say("cli.release.no_target_given", &[("usage", USAGE[0])]))?;
     if target_name.starts_with('-') {
-        return Err(format!("no target before '{target_name}'"));
+        return Err(catalogue::say(
+            "cli.release.no_target_before",
+            &[("word", &target_name)],
+        ));
     }
 
     let mut dry_run = false;
@@ -92,14 +106,14 @@ fn parse_options(args: &[String]) -> Result<Options, String> {
             "--dry-run" => dry_run = true,
             "--skip-tests" => skip_tests = true,
             "--wait-secs" => {
-                let value = args
-                    .next()
-                    .ok_or_else(|| "--wait-secs needs a number".to_string())?;
-                wait_secs = value
-                    .parse::<u64>()
-                    .map_err(|_| format!("not a number for --wait-secs: '{value}'"))?;
+                let value = args.next().ok_or_else(|| {
+                    catalogue::say("cli.option_wants_a_value", &[("option", "--wait-secs")])
+                })?;
+                wait_secs = value.parse::<u64>().map_err(|_| {
+                    catalogue::say("cli.release.wait_secs_not_a_number", &[("value", &value)])
+                })?;
             }
-            _ => return Err(format!("unknown option '{arg}'")),
+            _ => return Err(catalogue::say("cli.unknown_option", &[("option", &arg)])),
         }
     }
     Ok(Options {
@@ -127,13 +141,20 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
     let dirty_count = String::from_utf8_lossy(&dirty.stdout).lines().count();
     if dirty_count > 0 {
         println!(
-            "note: {dirty_count} uncommitted file(s) under crates/ stay out of service, by construction"
+            "{}",
+            catalogue::say(
+                "cli.release.uncommitted_stay_out",
+                &[("count", &dirty_count.to_string())],
+            )
         );
     }
 
     let temporary = make_temporary_tree()?;
     let repository = temporary.path.join("repo");
-    println!("== cloning HEAD ({head_short}) into a throwaway tree ==");
+    println!(
+        "{}",
+        catalogue::say("cli.release.cloning_head", &[("head", &head_short)])
+    );
     clone_repository(&root, &repository)?;
     command_success(
         Command::new("git")
@@ -141,14 +162,14 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             .arg(&repository)
             .args(["checkout", "--quiet"])
             .arg(&head_rev),
-        "checking HEAD out in the clone failed",
+        &catalogue::say("cli.release.checkout_failed", &[]),
     )?;
 
     let build_target = root.join("target/from-head");
     // I crate stanno alla radice dell'albero dal trasloco del 27/08/2026: non
     // c'è più un sottoalbero da cui compilare.
     let cloned_rust = repository.clone();
-    println!("== building from that tree ==");
+    println!("{}", catalogue::say("cli.release.building", &[]));
     let build = Command::new("cargo")
         .current_dir(&cloned_rust)
         .env("CARGO_TARGET_DIR", &build_target)
@@ -157,30 +178,30 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         .map_err(|error| format!("cannot start cargo: {error}"))?;
     print_tail(&combined_output(&build), 5);
     if !build.status.success() {
-        return Err(
-            "HEAD does not compile: nothing was replaced and the binary in service is intact"
-                .to_string(),
-        );
+        return Err(catalogue::say("cli.release.head_does_not_compile", &[]));
     }
 
     let fresh = build_target.join("release").join(selected.bin);
     if !fresh.is_file() {
-        return Err(format!(
-            "the build succeeded and produced no {}",
-            fresh.display()
+        return Err(catalogue::say(
+            "cli.release.built_nothing",
+            &[("path", &fresh.display().to_string())],
         ));
     }
 
     if options.skip_tests {
-        println!("== TESTS SKIPPED (--skip-tests): this release was NOT tested ==");
+        println!("{}", catalogue::say("cli.release.tests_skipped", &[]));
     } else {
-        println!("== running the whole suite on HEAD ==");
+        println!("{}", catalogue::say("cli.release.running_the_suite", &[]));
         let suite_path = temporary.path.join("suite.txt");
         let suite_file = File::create(&suite_path)
             .map_err(|error| format!("cannot create {}: {error}", suite_path.display()))?;
-        let suite_error = suite_file
-            .try_clone()
-            .map_err(|error| format!("cannot duplicate the suite file: {error}"))?;
+        let suite_error = suite_file.try_clone().map_err(|error| {
+            catalogue::say(
+                "cli.release.cannot_duplicate_the_suite_file",
+                &[("error", &error.to_string())],
+            )
+        })?;
         let suite_status = Command::new("cargo")
             .current_dir(&cloned_rust)
             .env("CARGO_TARGET_DIR", &build_target)
@@ -192,14 +213,20 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             .stdout(Stdio::from(suite_file))
             .stderr(Stdio::from(suite_error))
             .status()
-            .map_err(|error| format!("cannot start the suite: {error}"))?;
+            .map_err(|error| {
+                catalogue::say(
+                    "cli.release.cannot_start_the_suite",
+                    &[("error", &error.to_string())],
+                )
+            })?;
         let suite = fs::read(&suite_path)
             .map_err(|error| format!("cannot read {} back: {error}", suite_path.display()))?;
         print_tail(&suite, 25);
         if !suite_status.success() {
-            eprintln!("sailor release: the suite is red on HEAD: nothing was replaced and the binary in service is intact.");
-            eprintln!("   Green commits apart do not add up to a green whole: this is that case.");
-            eprintln!("   If the binary in service is broken and waiting costs more, run again with --skip-tests.");
+            eprintln!(
+                "sailor release: {}",
+                catalogue::say("cli.release.suite_is_red", &[])
+            );
             return Ok(1);
         }
         // THE MARKER THIS COUNTS IS WRITTEN BY NOBODY, so the number is always
@@ -212,9 +239,12 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
             .matches(TEST_DID_NOT_RUN)
             .count();
         if not_run > 0 {
-            println!("== {not_run} test(s) NOT RUN (not failed) ==");
             println!(
-                "   Green here does not mean tested there: the sandbox denied what they asked for."
+                "{}",
+                catalogue::say(
+                    "cli.release.tests_not_run",
+                    &[("count", &not_run.to_string())],
+                )
             );
         }
     }
@@ -234,7 +264,10 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         stamp_left_behind(selected.stamp_rel).unwrap_or_else(|| stamp.clone())
     };
     if live.is_file() && files_equal(&fresh, &live)? {
-        println!("== nothing to do: the binary in service already matches HEAD ({head_short}) ==");
+        println!(
+            "{}",
+            catalogue::say("cli.release.nothing_to_do", &[("head", &head_short)])
+        );
         if !options.dry_run {
             write_stamp(&stamp, &source_rev, &head_short);
         }
@@ -243,31 +276,40 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
 
     print_changes(&root, &stamp_to_read, &head_rev, &head_short)?;
     if options.dry_run {
-        println!("== dry run: the binary in service was NOT replaced ==");
+        println!("{}", catalogue::say("cli.release.dry_run", &[]));
         return Ok(0);
     }
 
     if let Some(service) = selected.service {
         let ready = wait_until_ready(&root, service, options.wait_secs)?;
         if !ready {
-            println!("sailor release: release postponed: the service is still working; nothing was replaced");
+            println!(
+                "sailor release: {}",
+                catalogue::say("cli.release.postponed_still_working", &[])
+            );
             return Ok(3);
         }
     }
 
-    println!("== replacing the binary in service ==");
+    println!("{}", catalogue::say("cli.release.replacing", &[]));
     atomic_copy(&fresh, &live)?;
-    println!("   in service: {head_short}");
+    println!(
+        "   {}",
+        catalogue::say("cli.release.in_service", &[("head", &head_short)])
+    );
 
     let safe = home.join(selected.safe_rel);
     match atomic_copy(&fresh, &safe) {
-        Ok(()) => println!("   also outside target/: {}", safe.display()),
+        Ok(()) => println!(
+            "   {}",
+            catalogue::say(
+                "cli.release.also_outside_target",
+                &[("path", &safe.display().to_string())],
+            )
+        ),
         Err(error) => {
-            eprintln!("== WARNING: the safety copy could NOT be written ==");
+            eprintln!("{}", catalogue::say("cli.release.no_safety_copy", &[]));
             eprintln!("   {error}");
-            eprintln!(
-                "   The binary in service is the new one, but anybody's next build can still overwrite it."
-            );
         }
     }
 
@@ -278,9 +320,9 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         // point it may have taken another job, which the restart would cut off.
         if !wait_until_ready(&root, service, 0)? {
             let domain = service_domain(service);
-            println!("sailor release: release postponed: the service has started another job; the new binary and the stamp are in place, but the service is still running the old one.");
             println!(
-                "   When that job ends, close the release with: launchctl kickstart -k {domain}"
+                "sailor release: {}",
+                catalogue::say("cli.release.postponed_another_job", &[("domain", &domain)])
             );
             return Ok(3);
         }
@@ -311,7 +353,7 @@ const TEST_DID_NOT_RUN: &str = "TEST DID NOT RUN";
 /// binary by absolute path, so installing elsewhere leaves the old one in
 /// service with nobody noticing.
 fn install_root() -> Result<PathBuf, String> {
-    ledger::sailor_home().ok_or_else(|| "no house to install into: HOME is not set".to_owned())
+    ledger::sailor_home().ok_or_else(|| catalogue::say("cli.release.no_house_to_install_into", &[]))
 }
 
 /// The stamp left in the previous house, if this house has none yet.
@@ -373,7 +415,12 @@ fn root_under(
         return Ok(PathBuf::from(root));
     }
     home.map(|home| PathBuf::from(home).join(below))
-        .ok_or_else(|| format!("neither {declared_name} nor HOME is set"))
+        .ok_or_else(|| {
+            catalogue::say(
+                "cli.release.neither_variable_nor_home",
+                &[("variable", declared_name)],
+            )
+        })
 }
 
 fn git_output(root: &Path, args: &[&str]) -> Result<Output, String> {
@@ -413,7 +460,12 @@ fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
         .arg(root)
         .arg(repository)
         .output()
-        .map_err(|error| format!("cannot start git clone: {error}"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.release.cannot_start_git_clone",
+                &[("error", &error.to_string())],
+            )
+        })?;
     if first.status.success() {
         return Ok(());
     }
@@ -424,28 +476,38 @@ fn clone_repository(root: &Path, repository: &Path) -> Result<(), String> {
     // space.
     if repository.exists() {
         fs::remove_dir_all(repository).map_err(|error| {
-            format!(
-                "the local clone failed and the partial clone {} cannot be removed: {error}",
-                repository.display()
+            catalogue::say(
+                "cli.release.partial_clone_stuck",
+                &[
+                    ("path", &repository.display().to_string()),
+                    ("error", &error.to_string()),
+                ],
             )
         })?;
     }
-    println!("note: hardlinks for the local clone are denied; copying the git objects");
+    println!("{}", catalogue::say("cli.release.no_hardlinks", &[]));
     let second = Command::new("git")
         .args(["clone", "--local", "--no-hardlinks", "--quiet"])
         .arg(root)
         .arg(repository)
         .output()
-        .map_err(|error| format!("cannot retry git clone without hardlinks: {error}"))?;
+        .map_err(|error| {
+            catalogue::say(
+                "cli.release.cannot_retry_git_clone",
+                &[("error", &error.to_string())],
+            )
+        })?;
     if second.status.success() {
         Ok(())
     } else {
         let first_detail = String::from_utf8_lossy(&first.stderr);
         let second_detail = String::from_utf8_lossy(&second.stderr);
-        Err(format!(
-            "the local clone of HEAD failed (first: {}; without hardlinks: {})",
-            first_detail.trim(),
-            second_detail.trim()
+        Err(catalogue::say(
+            "cli.release.local_clone_failed",
+            &[
+                ("first", first_detail.trim()),
+                ("second", second_detail.trim()),
+            ],
         ))
     }
 }
@@ -468,14 +530,14 @@ fn make_temporary_tree() -> Result<TemporaryTree, String> {
         .output()
         .map_err(|error| format!("cannot start mktemp: {error}"))?;
     if !output.status.success() {
-        return Err(format!(
-            "mktemp created no temporary directory: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+        return Err(catalogue::say(
+            "cli.release.mktemp_made_nothing",
+            &[("said", String::from_utf8_lossy(&output.stderr).trim())],
         ));
     }
     let path = PathBuf::from(OsStr::new(String::from_utf8_lossy(&output.stdout).trim()));
     if path.as_os_str().is_empty() {
-        return Err("mktemp returned an empty path".to_string());
+        return Err(catalogue::say("cli.release.mktemp_empty_path", &[]));
     }
     Ok(TemporaryTree { path })
 }
@@ -537,7 +599,7 @@ fn print_changes(
     head_rev: &str,
     head_short: &str,
 ) -> Result<(), String> {
-    println!("== cosa entra in servizio ==");
+    println!("{}", catalogue::say("cli.release.what_goes_in", &[]));
     let previous = fs::read_to_string(stamp)
         .ok()
         .and_then(|contents| read_stamp(&contents));
@@ -548,24 +610,38 @@ fn print_changes(
             .args(["cat-file", "-e"])
             .arg(format!("{previous}^{{commit}}"))
             .status()
-            .map_err(|error| format!("cannot check the old stamp with git: {error}"))?;
+            .map_err(|error| {
+                catalogue::say(
+                    "cli.release.cannot_check_the_old_stamp",
+                    &[("error", &error.to_string())],
+                )
+            })?;
         if exists.success() {
             let range = format!("{previous}..{head_rev}");
             let log = git_output(root, &["log", "--oneline", &range, "--", "crates"])?;
             print!("{}", String::from_utf8_lossy(&log.stdout));
             let count = git_text(root, &["rev-list", "--count", &range, "--", "crates"])?;
             println!(
-                "   ({count} commit(s) touching crates/, from {} to {head_short})",
-                short_revision(&previous)
+                "   {}",
+                catalogue::say(
+                    "cli.release.commits_touching_crates",
+                    &[
+                        ("count", &count),
+                        ("from", short_revision(&previous)),
+                        ("to", head_short),
+                    ],
+                )
             );
             return Ok(());
         }
     }
 
-    println!("   which commit produced the binary in service is not known.");
     println!(
-        "   That is expected the first time only; from now on the answer is written in {}.",
-        stamp.display()
+        "   {}",
+        catalogue::say(
+            "cli.release.which_commit_is_unknown",
+            &[("stamp", &stamp.display().to_string())],
+        )
     );
     Ok(())
 }
@@ -582,8 +658,8 @@ fn wait_until_ready(root: &Path, service: Service, wait_secs: u64) -> Result<boo
         let state = readiness(&names, &release::process_exists);
         for name in &state.unknown {
             println!(
-                "warning: receipt with no pid '{}' (does not block the release)",
-                name
+                "{}",
+                catalogue::say("cli.release.receipt_with_no_pid", &[("name", name)])
             );
         }
         if state.is_ready() {
@@ -591,8 +667,11 @@ fn wait_until_ready(root: &Path, service: Service, wait_secs: u64) -> Result<boo
         }
         for busy in &state.busy {
             println!(
-                "waiting: the service is working on '{}' with pid {}",
-                busy.task, busy.pid
+                "{}",
+                catalogue::say(
+                    "cli.release.service_is_working",
+                    &[("task", &busy.task), ("pid", &busy.pid.to_string())],
+                )
             );
         }
         let elapsed = started.elapsed();
@@ -609,16 +688,25 @@ fn receipt_names(directory: &Path) -> Result<Vec<String>, String> {
         Ok(entries) => entries,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
-            return Err(format!(
-                "cannot read the jobs in progress from {}: {error}",
-                directory.display()
+            return Err(catalogue::say(
+                "cli.release.cannot_read_jobs_in_progress",
+                &[
+                    ("path", &directory.display().to_string()),
+                    ("error", &error.to_string()),
+                ],
             ))
         }
     };
     let mut names = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
-            format!("cannot read a receipt in {}: {error}", directory.display())
+            catalogue::say(
+                "cli.release.cannot_read_a_receipt",
+                &[
+                    ("path", &directory.display().to_string()),
+                    ("error", &error.to_string()),
+                ],
+            )
         })?;
         names.push(entry.file_name().to_string_lossy().into_owned());
     }
@@ -627,9 +715,12 @@ fn receipt_names(directory: &Path) -> Result<Vec<String>, String> {
 }
 
 fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
-    let parent = destination
-        .parent()
-        .ok_or_else(|| format!("{} has no parent directory", destination.display()))?;
+    let parent = destination.parent().ok_or_else(|| {
+        catalogue::say(
+            "cli.release.no_parent_directory",
+            &[("path", &destination.display().to_string())],
+        )
+    })?;
     fs::create_dir_all(parent)
         .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
     let mut staging_name = destination.as_os_str().to_os_string();
@@ -645,9 +736,12 @@ fn atomic_copy(source: &Path, destination: &Path) -> Result<(), String> {
         return Err(message);
     }
     if let Err(error) = fs::set_permissions(&staging, fs::Permissions::from_mode(0o755)) {
-        let message = format!(
-            "cannot set the permissions of {}: {error}",
-            staging.display()
+        let message = catalogue::say(
+            "cli.release.cannot_set_permissions",
+            &[
+                ("path", &staging.display().to_string()),
+                ("error", &error.to_string()),
+            ],
         );
         let _ = fs::remove_file(&staging);
         return Err(message);
@@ -675,13 +769,19 @@ fn write_stamp(path: &Path, revision: &str, head_short: &str) {
             .ok()
             .and_then(|contents| read_stamp(&contents))
             .unwrap_or_else(|| "nothing".to_string());
-        eprintln!("== WARNING: the stamp could NOT be written ==");
+        eprintln!("{}", catalogue::say("cli.release.no_stamp_written", &[]));
         eprintln!(
-            "   {} names {old}; the binary in service is {head_short}.",
-            path.display()
+            "   {}",
+            catalogue::say(
+                "cli.release.stamp_names_the_wrong_commit",
+                &[
+                    ("stamp", &path.display().to_string()),
+                    ("old", &old),
+                    ("head", head_short),
+                    ("error", &error.to_string()),
+                ],
+            )
         );
-        eprintln!("   Whoever reads it will name the wrong commit ({error}).");
-        eprintln!("   Write this exact line by hand in {}:", path.display());
         eprintln!("     {revision}");
     }
 }
@@ -692,18 +792,24 @@ fn restart_service(service: Service) {
         .args(["kickstart", "-k", &domain])
         .status();
     match result {
-        Ok(status) if status.success() => println!("   service restarted: {domain}"),
-        Ok(status) => {
-            eprintln!(
-                "sailor release: the binary is in place, but the service is still running the old one ({}).",
-                status_description(status)
-            );
-            eprintln!("   To close the gap run: launchctl kickstart -k {domain}");
-        }
-        Err(error) => {
-            eprintln!("sailor release: the binary is in place, but the service is still running the old one ({error}).");
-            eprintln!("   To close the gap run: launchctl kickstart -k {domain}");
-        }
+        Ok(status) if status.success() => println!(
+            "   {}",
+            catalogue::say("cli.release.service_restarted", &[("domain", &domain)])
+        ),
+        Ok(status) => eprintln!(
+            "sailor release: {}",
+            catalogue::say(
+                "cli.release.service_still_on_the_old_one",
+                &[("why", &status_description(status)), ("domain", &domain),],
+            )
+        ),
+        Err(error) => eprintln!(
+            "sailor release: {}",
+            catalogue::say(
+                "cli.release.service_still_on_the_old_one",
+                &[("why", &error.to_string()), ("domain", &domain)],
+            )
+        ),
     }
 }
 
