@@ -152,6 +152,23 @@
   "tools": [
     {
       "id": "claude-code",
+      "login": {
+        "args": ["auth", "login"],
+        "interactive": true,
+        "note": "measured with `claude auth --help`: `login` signs in, `status` asks; the browser opens from the terminal"
+      },
+      "quota": {
+        "reader": "oauth_usage",
+        "credentials": "~/.claude/.credentials.json",
+        "token_pointer": ["claudeAiOauth", "accessToken"],
+        "url": "https://api.anthropic.com/api/oauth/usage",
+        "headers": ["anthropic-beta: oauth-2025-04-20"],
+        "note": "measured with an HTTP 200: `utilization` as a percentage per window and `resets_at`; a beta, versioned channel that can stop answering with nothing here changing, so a missing reading is a reading that is not there, never a zero"
+      },
+      "install": {
+        "line": "curl -fsSL https://claude.ai/install.sh | bash",
+        "note": "the native installer: on the machine measured, `claude` links to ~/.local/share/claude/versions/<version>, which is where that installer puts it"
+      },
       "family": "ai_cli",
       "label": "Claude Code",
       "detect": { "command": "claude" },
@@ -244,6 +261,15 @@
     },
     {
       "id": "codex",
+      "login": {
+        "args": ["login"],
+        "interactive": true,
+        "note": "measured with `codex login --help`: `login` signs in through the browser, `login status` asks"
+      },
+      "install": {
+        "line": "npm install -g @openai/codex",
+        "note": "measured: /opt/homebrew/bin/codex links to ../lib/node_modules/@openai/codex/bin/codex.js, an npm global under Homebrew's node"
+      },
       "family": "ai_cli",
       "label": "Codex",
       "detect": { "command": "codex" },
@@ -303,6 +329,15 @@
     },
     {
       "id": "gemini-cli",
+      "login": {
+        "args": [],
+        "interactive": true,
+        "note": "no sign-in subcommand in `gemini --help`: the sign-in happens inside the program, on first start or with `/auth`"
+      },
+      "install": {
+        "line": "npm install -g @google/gemini-cli",
+        "note": "measured: /opt/homebrew/bin/gemini links to ../lib/node_modules/@google/gemini-cli/bundle/gemini.js; Homebrew also ships a `gemini-cli` formula"
+      },
       "family": "ai_cli",
       "label": "Gemini CLI",
       "detect": { "command": "gemini" },
@@ -345,6 +380,11 @@
     },
     {
       "id": "agy",
+      "login": {
+        "args": [],
+        "interactive": true,
+        "note": "no sign-in subcommand in `agy --help`: started without credentials it prints the OAuth URL and waits, as `unusable_when` records"
+      },
       "family": "ai_cli",
       "label": "agy",
       "detect": { "command": "agy" },
@@ -399,6 +439,10 @@
     },
     {
       "id": "ollama",
+      "install": {
+        "line": "brew install ollama",
+        "note": "measured: /opt/homebrew/bin/ollama links to ../Cellar/ollama/<version>/bin/ollama, the Homebrew formula"
+      },
       "family": "ai_cli",
       "label": "Ollama",
       "detect": { "command": "ollama" },

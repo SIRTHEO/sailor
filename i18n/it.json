@@ -248,7 +248,7 @@
   "cli.release.wait_secs_not_a_number": "non è un numero per --wait-secs: «{value}»",
   "cli.release.what_goes_in": "== cosa entra in servizio ==",
   "cli.release.which_commit_is_unknown": "quale commit ha prodotto il binario in servizio non si sa.\n   È previsto solo la prima volta; da adesso in poi la risposta è scritta in {stamp}.",
-  "cli.remaining.no_home": "HOME non è impostata: non c'è nessuna casa in cui cercare le credenziali",
+  "cli.remaining.no_channel": "nessun motore su questa macchina dichiara un canale da cui leggere la quota: niente da chiedere",
   "cli.remaining.no_window": "nessuna finestra di quota dichiarata: il canale ha risposto senza misure",
   "cli.remaining.whose_quota": "la quota della PERSONA, non di una corsa: conta ogni sessione, comprese quelle fuori da Sailor",
   "cli.run.active_profile_gone": "il profilo attivo «{profile}» per {id} non è più nello stato",

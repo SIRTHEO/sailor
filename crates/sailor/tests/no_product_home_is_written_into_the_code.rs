@@ -46,10 +46,6 @@ const STILL_ALLOWED: &[(&str, &str)] = &[
         "where the usage of one command line is kept",
     ),
     (
-        "crates/models/src/remaining.rs",
-        "where the credentials of one command line are read",
-    ),
-    (
         "crates/profiles/src/store_io.rs",
         "moves a product's home when a profile changes",
     ),
