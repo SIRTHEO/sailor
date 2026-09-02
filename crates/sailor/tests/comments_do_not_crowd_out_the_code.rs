@@ -7,6 +7,7 @@
 //! debt, not a target. When one reaches zero its constant goes and the test
 //! asks for zero outright; the day all three do, so does this file.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The per-block cap. Above it, a comment is chronicle: it belongs in the fault
@@ -19,17 +20,17 @@ const MAX_BLOCK: usize = 6;
 
 /// How many blocks run over today. **It can only go down**: lowering it is the
 /// repair, raising it has to be argued and shows in the diff.
-const LONG_BLOCKS_TODAY: usize = 521;
+const LONG_BLOCKS_TODAY: usize = 520;
 
 /// How many comments cite a date. Same rule: downwards only.
-const DATED_COMMENTS_TODAY: usize = 201;
+const DATED_COMMENTS_TODAY: usize = 199;
 
 /// How many comment lines are still not in English.
 ///
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 8_076;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 8_000;
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**
 ///
@@ -199,6 +200,11 @@ struct Counts {
     dated: usize,
     not_english: usize,
     worst: (usize, String),
+    /// Where each one is, so a red gate is a job and not a search. Whoever had
+    /// to find them wrote a second counter beside this one to do it, and a
+    /// second counter is a second answer: this one points instead.
+    long_at: Vec<String>,
+    not_english_at: Vec<String>,
 }
 
 fn count() -> Counts {
@@ -207,6 +213,8 @@ fn count() -> Counts {
         dated: 0,
         not_english: 0,
         worst: (0, String::new()),
+        long_at: Vec::new(),
+        not_english_at: Vec::new(),
     };
     for path in sources() {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -225,6 +233,9 @@ fn count() -> Counts {
                 }
                 if is_not_english(line) {
                     counts.not_english += 1;
+                    counts
+                        .not_english_at
+                        .push(format!("{}:{}", path.display(), index + 1));
                 }
                 index += 1;
                 continue;
@@ -235,6 +246,11 @@ fn count() -> Counts {
             }
             if run > MAX_BLOCK {
                 counts.long_blocks += 1;
+                counts.long_at.push(format!(
+                    "{}:{} ({run} lines)",
+                    path.display(),
+                    index - run + 1
+                ));
                 if run > counts.worst.0 {
                     counts.worst = (run, path.display().to_string());
                 }
@@ -242,8 +258,19 @@ fn count() -> Counts {
             run = 0;
             index += 1;
         }
+        // A file that ends inside a comment: the loop above never meets the code
+        // line that closes the run, so the last one is counted here — and it was
+        // counted without ever being placed or compared to the worst.
         if run > MAX_BLOCK {
             counts.long_blocks += 1;
+            counts.long_at.push(format!(
+                "{}:{} ({run} lines, at the end of the file)",
+                path.display(),
+                lines.len() - run + 1
+            ));
+            if run > counts.worst.0 {
+                counts.worst = (run, path.display().to_string());
+            }
         }
     }
     counts
@@ -253,6 +280,29 @@ fn count() -> Counts {
 /// repairs re-measures that one alone and leaves the other two above the tree —
 /// by one or two, under the band, invisible to everything. Asked for by
 /// general-ad, who pruned and re-measured only the line the message named.
+/// The twelve files holding most of what a red gate is asking about.
+///
+/// A count alone sends whoever repairs to look for it, and looking for it is
+/// how a second counter gets written beside this one — which then answers
+/// something slightly different and settles nothing.
+fn heaviest(places: &[String]) -> String {
+    let mut per_file: BTreeMap<&str, usize> = BTreeMap::new();
+    for place in places {
+        let file = place.split(':').next().unwrap_or(place);
+        *per_file.entry(file).or_default() += 1;
+    }
+    let mut ranked: Vec<(&str, usize)> = per_file.into_iter().collect();
+    ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(right.0)));
+    let mut said = String::from("\nWhere they are, heaviest first:");
+    for (file, howmany) in ranked.iter().take(12) {
+        said.push_str(&format!("\n  {howmany:>5}  {file}"));
+    }
+    if ranked.len() > 12 {
+        said.push_str(&format!("\n  … and {} more files", ranked.len() - 12));
+    }
+    said
+}
+
 fn all_three(counts: &Counts) -> String {
     format!(
         "\nMeasured right now, all three: {} blocks over {MAX_BLOCK} lines, \
@@ -273,7 +323,7 @@ fn no_new_comment_block_runs_past_the_cap() {
         counts.long_blocks,
         counts.worst.0,
         counts.worst.1,
-        all_three(&counts)
+        format!("{}{}", all_three(&counts), heaviest(&counts.long_at))
     );
 }
 
@@ -300,7 +350,7 @@ fn the_comments_not_in_english_only_shrink() {
          If you are writing a new comment, write it in English; if you are \
          translating, lower the number{}",
         counts.not_english,
-        all_three(&counts)
+        format!("{}{}", all_three(&counts), heaviest(&counts.not_english_at))
     );
 }
 
