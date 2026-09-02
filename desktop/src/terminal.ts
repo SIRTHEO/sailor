@@ -1,3 +1,5 @@
+import type { Step } from "./flow";
+
 // The React half of the terminal contract: the seven commands, the two events,
 // and the decisions that can be proved without the bridge.
 //
@@ -57,6 +59,23 @@ export interface TerminalSummary {
   device: string;
   /** Bytes moved so far, both ways: the number `sailor terminal list` prints. */
   moved: number;
+  /** What those bytes amount to in tokens, by the relay's model: an estimate. */
+  estimatedTokens: number;
+}
+
+/**
+ * The ceiling the relay hands on at, read from the flow that measures: the
+ * step whose action measures a terminal declares it in its own `with`. Never a
+ * constant here — the budget is a decision written in a flow, and the pane
+ * only reports the one it finds. `null` when no loaded flow declares one.
+ */
+export function declaredCeiling(steps: Step[]): number | null {
+  for (const step of steps) {
+    if (step.action !== "measure_terminal") continue;
+    const ceiling = step.with?.ceiling;
+    if (typeof ceiling === "number" && ceiling > 0) return ceiling;
+  }
+  return null;
 }
 
 /**

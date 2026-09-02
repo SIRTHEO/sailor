@@ -6,7 +6,8 @@ import stylesheetSource from "./styles.css?raw";
 import App from "./App";
 import { belowThreshold, contrastPairs, parseStylesheet, type Stylesheet } from "./contrast";
 import { ANOTHER_PATH, placesOf, Terminals, WORKSPACE_HINT } from "./Terminals";
-import { movedLabel, routingNote } from "./TerminalPane";
+import { movedLabel, routingNote, tokensLabel } from "./TerminalPane";
+import { declaredCeiling } from "./terminal";
 import {
   decodeBytes,
   encodeBytes,
@@ -218,6 +219,18 @@ describe("where the line ended up, told to whoever is watching", () => {
     expect(movedLabel(0)).toBe("0 bytes moved");
     expect(movedLabel(2048)).toBe("2 KB moved");
     expect(movedLabel(3 * 1024 * 1024)).toBe("3.0 MB moved");
+    // The estimate is marked as one, and the ceiling appears only when a flow
+    // declares it: a made-up budget would be a decision nobody took.
+    expect(tokensLabel(840, null)).toBe("≈ 840 tokens");
+    expect(tokensLabel(61521, null)).toBe("≈ 62k tokens");
+    expect(tokensLabel(61521, 500000)).toBe("≈ 62k of 500k tokens");
+    expect(tokensLabel(1_250_000, 500000)).toBe("≈ 1.3M of 500k tokens");
+    // The ceiling is read from the measuring step's own `with`, nowhere else.
+    const measuring = { id: "m", deps: [], action: "measure_terminal", when: null, max_attempts: 1, input_schema: { type: "any" as const }, output_schema: { type: "any" as const } };
+    expect(declaredCeiling([{ ...measuring, with: { tty: "ttys004", ceiling: 500000 } }])).toBe(500000);
+    expect(declaredCeiling([{ ...measuring, with: { tty: "ttys004" } }])).toBeNull();
+    expect(declaredCeiling([{ ...measuring, action: "shell_check", with: { ceiling: 500000 } }])).toBeNull();
+    expect(declaredCeiling([])).toBeNull();
   });
 });
 
@@ -232,6 +245,7 @@ function summary(over: Partial<TerminalSummary>): TerminalSummary {
     processId: 4242,
     device: "ttys004",
     moved: 0,
+    estimatedTokens: 60129,
     ...over,
   };
 }
@@ -378,8 +392,8 @@ function pretendShell(answers: Record<string, unknown>, withEvents = true): Fake
 }
 
 const TWO: TerminalSummary[] = [
-  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242, device: "ttys004", moved: 2048 },
-  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243, device: "ttys009", moved: 0 },
+  { id: "t1", workspaceRoot: "/work/sailor", workspaceName: "sailor", alive: true, processId: 4242, device: "ttys004", moved: 2048, estimatedTokens: 61521 },
+  { id: "t2", workspaceRoot: "/work/other-repo/packages", workspaceName: "packages", alive: true, processId: 4243, device: "ttys009", moved: 0, estimatedTokens: 60129 },
 ];
 
 const PLACES = {
@@ -412,6 +426,8 @@ describe("the terminals screen", () => {
       expect(shown()).toHaveLength(2);
       expect(shown()[0].getAttribute("data-focus")).toBe("true");
       expect(shown()[0].querySelector(".pane__device")?.textContent).toBe("ttys004");
+      // The estimate travels in the row and is read on the pane, as an estimate.
+      expect(shown()[0].querySelector(".pane__tokens")?.textContent).toBe("≈ 62k tokens");
 
       // Pressing the other tab brings that pane first and large; the first
       // pane does not disappear, it moves beside.
