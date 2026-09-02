@@ -121,8 +121,11 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     };
     if !FORMS.contains(&verb) {
         return Err(format!(
-            "«{verb}» is not a form of this command; there are {}\n{}",
-            FORMS.join(", "),
+            "{}\n{}",
+            catalogue::say(
+                "cli.not_a_form_of_this_command",
+                &[("verb", verb), ("forms", &FORMS.join(", "))],
+            ),
             usage_text()
         ));
     }
@@ -131,8 +134,12 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     // Standard input is read **only** where it is needed: reading it for `list`
     // from an interactive terminal would block the command without saying why.
     let raw = if verb == "open" || verb == "event" {
-        std::io::read_to_string(std::io::stdin())
-            .map_err(|error| format!("cannot read the payload: {error}"))?
+        std::io::read_to_string(std::io::stdin()).map_err(|error| {
+            catalogue::say(
+                "cli.session.cannot_read_payload",
+                &[("error", &error.to_string())],
+            )
+        })?
     } else {
         String::new()
     };
@@ -150,12 +157,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         // against the principle at the head of this module.
         None if NEEDS_A_TERMINAL.contains(&verb) => sessions::tty::current()
             .or_else(|| sessions::census::tty_of_nearest_ancestor(&LocalMachine))
-            .ok_or_else(|| {
-                "there is no telling which terminal this process runs on: none of its \
-                 three descriptors is a tty, and no process above it on the parent \
-                 chain has one either. Say it with --tty <name>"
-                    .to_owned()
-            })?,
+            .ok_or_else(|| catalogue::say("cli.session.no_terminal_anywhere", &[]))?,
         None => String::new(),
     };
 
@@ -377,39 +379,38 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
             // descriptor says where and how; it is Sailor that cannot write
             // that format yet. Saying nothing here would rebuild the very fault
             // this block was written to remove.
-            other => said.push(format!(
-                "{}: declares its hooks in {other:?} at {}, and Sailor does not \
-                 write that format yet - so it was NOT grafted",
-                tool.id,
-                file.display()
+            other => said.push(catalogue::say(
+                "cli.session.format_not_written_yet",
+                &[
+                    ("tool", &tool.id),
+                    ("format", &format!("{other:?}")),
+                    ("file", &file.display().to_string()),
+                ],
             )),
         }
 
         if !missing.is_empty() {
             said.push(format!(
-                "  {}: {:?} have no event on this command line, so they are not \
-                 grafted. Not filled with the nearest one: a welcome on the wrong \
-                 event arrives at every turn instead of once",
-                tool.id, missing
+                "  {}",
+                catalogue::say(
+                    "cli.session.moments_without_an_event",
+                    &[("tool", &tool.id), ("moments", &format!("{missing:?}"))],
+                )
             ));
         }
 
         match words {
             Some(directory) => said.push(wrote_the_two_commands(directory)?),
             None => said.push(format!(
-                "  {}: no words a user types, so the welcome promises none",
-                tool.id
+                "  {}",
+                catalogue::say("cli.session.no_typed_words", &[("tool", &tool.id)])
             )),
         }
         Ok(grafted)
     })?;
 
     if !grafted_any {
-        said.push(
-            "nothing was grafted anywhere. That is a statement, not a silence: \
-             read the lines above for which command line refused and why"
-                .to_owned(),
-        );
+        said.push(catalogue::say("cli.session.nothing_grafted", &[]));
     }
     Ok(Report::spoken(said.join("\n")))
 }
@@ -473,30 +474,32 @@ fn format_of(tool: &toolbox::descriptor::Descriptor) -> toolbox::descriptor::Fil
 fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String> {
     std::fs::create_dir_all(directory)
         .map_err(|error| format!("{}: {error}", directory.display()))?;
+    // The sentence and not the key, so a scan for what the catalogue is asked
+    // for still sees these two: the gate reads the literal handed to `say`, and
+    // a key travelling in a variable is invisible to it.
     for (name, verb, what) in [
         (
             "sailor-off",
             "detach",
-            "Detach this terminal from Sailor: it stops being tracked, and so do \
-             the sessions opened here afterwards.",
+            catalogue::say("cli.session.word_off", &[]),
         ),
         (
             "sailor-on",
             "attach",
-            "Attach this terminal to Sailor again, if it had been detached.",
+            catalogue::say("cli.session.word_on", &[]),
         ),
     ] {
+        let told = catalogue::say("cli.session.word_body", &[("verb", verb)]);
         let body = format!(
             "---\ndescription: {what}\nallowed-tools: Bash(sailor session {verb}:*)\n---\n\n\
-             Run `sailor session {verb}` and report in one line what it answered. \
-             Do nothing else.\n"
+             {told}\n"
         );
         let path = directory.join(format!("{name}.md"));
         std::fs::write(&path, body).map_err(|error| format!("{}: {error}", path.display()))?;
     }
-    Ok(format!(
-        "/sailor-off and /sailor-on written in {}",
-        directory.display()
+    Ok(catalogue::say(
+        "cli.session.words_written",
+        &[("directory", &directory.display().to_string())],
     ))
 }
 
@@ -684,10 +687,9 @@ fn grafted_into(
         .filter_map(|(moment, verb)| tool.event_for(moment).map(|event| (event, *verb)))
         .collect();
     if named.is_empty() {
-        return Ok(format!(
-            "{}: declares a hooks file and no event names, so there is nothing \
-             to graft into it",
-            tool.id
+        return Ok(catalogue::say(
+            "cli.session.no_event_names",
+            &[("tool", &tool.id)],
         ));
     }
     installed(settings, &named)
@@ -710,17 +712,32 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
     };
 
     let binary = std::env::current_exe()
-        .map_err(|error| format!("there is no telling where I am: {error}"))?
+        .map_err(|error| {
+            catalogue::say(
+                "cli.no_telling_where_i_am",
+                &[("error", &error.to_string())],
+            )
+        })?
         .display()
         .to_string();
 
     let hooks = root
         .as_object_mut()
-        .ok_or_else(|| format!("{}: the root is not an object", settings.display()))?
+        .ok_or_else(|| {
+            catalogue::say(
+                "cli.session.root_not_an_object",
+                &[("file", &settings.display().to_string())],
+            )
+        })?
         .entry("hooks")
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or_else(|| format!("{}: «hooks» is not an object", settings.display()))?;
+        .ok_or_else(|| {
+            catalogue::say(
+                "cli.session.hooks_not_an_object",
+                &[("file", &settings.display().to_string())],
+            )
+        })?;
 
     let mut added = Vec::new();
     for (event, verb) in events {
@@ -729,7 +746,12 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
             .entry(*event)
             .or_insert_with(|| serde_json::json!([]))
             .as_array_mut()
-            .ok_or_else(|| format!("{}: «{event}» is not an array", settings.display()))?;
+            .ok_or_else(|| {
+                catalogue::say(
+                    "cli.session.event_not_an_array",
+                    &[("file", &settings.display().to_string()), ("event", event)],
+                )
+            })?;
 
         // Already grafted: told by the command, not by the position.
         let already = list.iter().any(|entry| {
@@ -774,7 +796,7 @@ fn act(request: &Request<'_>) -> Result<Report, String> {
         "census" => report_census(request),
         "install" => install_hooks(request),
         "uninstall" => uninstall_hooks(request),
-        other => Err(format!("«{other}» is not a form of this command")),
+        other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
 }
 
@@ -904,9 +926,9 @@ fn detach_terminal(request: &Request<'_>) -> Result<Report, String> {
     store
         .record_event(&event_named(request, "detach"))
         .map_err(|error| error.to_string())?;
-    Ok(Report::spoken(format!(
-        "{} is detached: it stays so for whoever arrives here later",
-        request.tty
+    Ok(Report::spoken(catalogue::say(
+        "cli.session.detached",
+        &[("tty", request.tty)],
     )))
 }
 
@@ -982,7 +1004,7 @@ fn report_census(request: &Request<'_>) -> Result<Report, String> {
             "cli.session.census_refused",
             &[("refusal", &refusal.to_string())],
         ),
-        Census::NoTerminal => "no process has a terminal, and asking was possible".to_owned(),
+        Census::NoTerminal => catalogue::say("cli.session.no_process_has_a_terminal", &[]),
         Census::Terminals(terminals) => {
             let mut text = String::new();
             for terminal in terminals {
@@ -1048,7 +1070,8 @@ fn options_of(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     while let Some(word) = rest.next() {
         let Some(name) = word.strip_prefix("--") else {
             return Err(format!(
-                "«{word}» is not something I know\n{}",
+                "{}\n{}",
+                catalogue::say("cli.not_something_i_know", &[("word", word)]),
                 usage_text()
             ));
         };
@@ -1056,12 +1079,16 @@ fn options_of(args: &[String]) -> Result<BTreeMap<String, String>, String> {
             found.insert(name.to_owned(), "true".to_owned());
             continue;
         }
-        let value = rest
-            .next()
-            .ok_or_else(|| format!("«--{name}» wants a value after it"))?;
+        let value = rest.next().ok_or_else(|| {
+            catalogue::say(
+                "cli.option_wants_a_value",
+                &[("option", &format!("--{name}"))],
+            )
+        })?;
         if value.starts_with("--") {
-            return Err(format!(
-                "«--{name}» took «{value}» for a value: the real value is missing"
+            return Err(catalogue::say(
+                "cli.value_is_another_option",
+                &[("option", name), ("given", value.trim_start_matches("--"))],
             ));
         }
         found.insert(name.to_owned(), value.clone());
