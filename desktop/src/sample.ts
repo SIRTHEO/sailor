@@ -108,7 +108,7 @@ export const SAMPLE: FlowEntry[] = [
     flow: {
       id: "relay",
       description:
-        "Azzera una sessione piena e le rimette in mano il lavoro, sul posto.",
+        "Resets a full session and hands the work back to it, in place.",
       graph: {
         steps: [
           // 0. the history, before the moment.
@@ -134,7 +134,7 @@ export const SAMPLE: FlowEntry[] = [
           //    produces anything.
           step("send-the-start", ["signal-is-gone"], "pane_send", {
             max_attempts: 3,
-            with: { text: "riprendi dal punto di ripresa che hai ricevuto" },
+            with: { text: "resume from the checkpoint you were handed" },
             input_schema: paneSendInput,
           }),
         ],
@@ -154,7 +154,7 @@ export const SAMPLE: FlowEntry[] = [
     state: "loaded",
     flow: {
       id: "prima-corsa",
-      description: "Il flusso più piccolo che esista: una verifica sola.",
+      description: "The smallest flow there is: one check alone.",
       graph: {
         // Same action as the relay's first step, and no `inputs` entry: its
         // three ports stay hollow, and that is true — this flow does not say
@@ -182,7 +182,7 @@ export const SAMPLE: FlowEntry[] = [
     state: "broken",
     broken: {
       name: "notte",
-      reason: "campo sconosciuto `retries` alla riga 14 (forse `max_attempts`?)",
+      reason: "unknown field `retries` at line 14 (did you mean `max_attempts`?)",
     },
     origin: "this project",
   },

@@ -129,7 +129,7 @@ function Port({ port }: { port: StepPort }) {
       className="step-node__port"
       data-wired={port.wired || undefined}
       data-missing={missing || undefined}
-      title={`${port.name} · ${SHAPE_LABEL[port.shape]} · ${port.wired ? "collegata" : "non collegata"}`}
+      title={`${port.name} · ${SHAPE_LABEL[port.shape]} · ${port.wired ? "wired" : "not wired"}`}
     >
       <span className="step-node__port-mark" data-shape={port.shape} aria-hidden="true" />
       <span className="step-node__port-name">{missing ? `${port.name} manca` : port.name}</span>
@@ -245,7 +245,7 @@ export function KindIcon({
  * number this window prints.
  */
 export function formatElapsed(seconds: number): string {
-  if (seconds < 10) return `${seconds.toFixed(1).replace(".", ",")} s`;
+  if (seconds < 10) return `${seconds.toFixed(1)} s`;
   if (seconds < 60) return `${Math.round(seconds)} s`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes} min ${Math.round(seconds - minutes * 60)} s`;
@@ -303,7 +303,7 @@ function StepTool({
   // yet". The third is not the second, and greying it out would be a lie that
   // lasts as long as detection does.
   const off = known && !tool?.available;
-  const why = tool?.reason ?? (known ? "non è fra gli strumenti rilevati su questa macchina" : "");
+  const why = tool?.reason ?? (known ? "not among the tools found on this machine" : "");
   // The real model shows only when it says something different from the one
   // written in the step: repeating the same word twice informs nobody.
   const surprising = actual.filter((name) => name !== model);
@@ -336,7 +336,7 @@ function StepTool({
         {surprising.length > 0 && (
           <span
             className="step-node__tool-actual"
-            title={`il motore ha risposto di aver usato: ${surprising.join(", ")}`}
+            title={`the engine answered that it used: ${surprising.join(", ")}`}
           >
             ha girato su {surprising.join(", ")}
           </span>
@@ -363,7 +363,7 @@ function NoTool({ action }: { action: string }) {
   return (
     <div className="step-node__tool" data-none>
       <div className="step-node__tool-text">
-        <span className="step-node__tool-name">motore non dichiarato</span>
+        <span className="step-node__tool-name">engine not declared</span>
         <span className="step-node__tool-model" title={action}>
           {action}
         </span>
@@ -511,7 +511,7 @@ export function StepNode({ data, selected }: NodeProps) {
         {/* Le altre che aspettano non prendono ciascuna un'evidenza: si
             contano qui, sull'unico nodo isolato. */}
         {!far && isolated && call.waiting > 1 && (
-          <span className="step-node__elsewhere">altri {call.waiting - 1} in attesa</span>
+          <span className="step-node__elsewhere">{call.waiting - 1} more waiting</span>
         )}
 
       </div>
@@ -544,10 +544,10 @@ export function StepNode({ data, selected }: NodeProps) {
                 usage == null
                   ? undefined
                   : usage.costMicros === null
-                    ? "nessuna delle chiamate di questo passo dichiara un costo"
+                    ? "none of this step's calls declares a cost"
                     : usageIsPartial(usage)
-                      ? `${usage.callsWithoutCost} chiamate su ${usage.calls} non dichiarano un costo: il conto è più basso del vero`
-                      : `${usage.calls} chiamate`
+                      ? `${usage.callsWithoutCost} calls out of ${usage.calls} declare no cost: the figure is lower than the truth`
+                      : `${usage.calls} calls`
               }
             >
               {usage?.costMicros != null

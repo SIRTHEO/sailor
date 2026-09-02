@@ -52,7 +52,7 @@ export function Manual({ native }: { native: boolean }) {
     native,
     manual,
     ONCE,
-    "fuori dal guscio: i comandi li dichiara il binario",
+    "outside the shell: the binary declares the commands",
   );
   const [open, setOpen] = useState<string | null>(null);
 
@@ -62,14 +62,14 @@ export function Manual({ native }: { native: boolean }) {
   if (asked.state === "mute") {
     return (
       <div className="now">
-        <p className="now__mute">Non posso elencare i comandi: {asked.why}</p>
+        <p className="now__mute">Cannot list the commands: {asked.why}</p>
       </div>
     );
   }
   if (asked.state === "asking") {
     return (
       <div className="now">
-        <p className="now__mute">Chiedo al binario quali comandi ha…</p>
+        <p className="now__mute">Asking the binary which commands it has…</p>
       </div>
     );
   }
@@ -77,7 +77,7 @@ export function Manual({ native }: { native: boolean }) {
   return (
     <div className="now">
       <header className="now__head">
-        <h2 className="now__title">Comandi</h2>
+        <h2 className="now__title">Commands</h2>
         <span className="now__count">{commands.length}</span>
         <span className="now__note">
           {shapes} forme, dichiarate dal binario che sta girando

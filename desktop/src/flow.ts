@@ -51,7 +51,7 @@ export interface Graph {
  * wrong in one place only, and nobody notices from the other.
  */
 export function stepCountLabel(count: number): string {
-  return `${count} ${count === 1 ? "passo" : "passi"}`;
+  return `${count} ${count === 1 ? "step" : "steps"}`;
 }
 
 /** A flow file: the graph plus the values it starts with. */

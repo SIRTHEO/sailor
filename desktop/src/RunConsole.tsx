@@ -172,7 +172,7 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
           at: event.at,
           stepId: null,
           stream: error ? "stderr" : "system",
-          text: `══ la corsa è finita: ${status}${error ? ` — ${error}` : ""}`,
+          text: `══ the run ended: ${status}${error ? ` — ${error}` : ""}`,
         });
         break;
       }
@@ -189,7 +189,7 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
     at: kept[0]?.at ?? 0,
     stepId: null,
     stream: "system",
-    text: `══ ${lines.length - MAX_LINES} righe più vecchie non sono mostrate`,
+    text: `══ ${lines.length - MAX_LINES} older lines are not shown`,
   });
   return kept;
 }
@@ -296,7 +296,7 @@ export function whyFailed(failure: string): string {
 export const OUTCOME_LABEL: Record<string, string> = {
   Went: "andato",
   Broke: "rotto",
-  Waiting: "in attesa",
+  Waiting: "waiting",
   Stopped: "fermato",
   Skipped: "saltato",
 };
@@ -331,14 +331,14 @@ interface RunConsoleProps {
   onClose: () => void;
 }
 
-/** Micro-unità di valuta come le legge una persona: 128_541 → «0,1285 $». */
+/** Micro-units of currency as a person reads them: 128_541 → «$0.1285». */
 function money(micros: number): string {
-  return `${(micros / 1_000_000).toFixed(4).replace(".", ",")} $`;
+  return `$${(micros / 1_000_000).toFixed(4)}`;
 }
 
-/** Migliaia separate, alla maniera italiana. */
+/** Thousands separated, the English way. */
 function tokens(count: number): string {
-  return count.toLocaleString("it-IT");
+  return count.toLocaleString("en-GB");
 }
 
 /**
@@ -361,27 +361,27 @@ function Spend({ usage }: { usage: RunUsage }) {
     <div className="console__spend">
       <span className="console__spend-cost">{money(usage.total_cost_micros)}</span>
       <span>
-        {t.calls} {t.calls === 1 ? "chiamata" : "chiamate"}
+        {t.calls} {t.calls === 1 ? "call" : "calls"}
       </span>
       <span>↑ {tokens(t.input_tokens)}</span>
       <span>↓ {tokens(t.output_tokens)}</span>
-      {t.cached_tokens > 0 && <span title="letti dalla cache">cache letta {tokens(t.cached_tokens)}</span>}
+      {t.cached_tokens > 0 && <span title="read from the cache">cache read {tokens(t.cached_tokens)}</span>}
       {t.cache_write_tokens > 0 && (
-        <span title="scritti in cache: costano più dell'ingresso normale">
+        <span title="written to the cache: dearer than ordinary input">
           cache scritta {tokens(t.cache_write_tokens)}
         </span>
       )}
       {t.total_tokens_only > 0 && (
-        <span title="motori che dichiarano solo il totale, senza separare i lati">
+        <span title="engines that declare only the total, without the two sides">
           totale non spezzato {tokens(t.total_tokens_only)}
         </span>
       )}
       {totalsArePartial(t) && (
         <span className="console__spend-partial">
           totale parziale:{" "}
-          {t.calls_without_tokens > 0 && `${t.calls_without_tokens} senza conteggi`}
+          {t.calls_without_tokens > 0 && `${t.calls_without_tokens} without counts`}
           {t.calls_without_tokens > 0 && t.calls_without_cost > 0 && ", "}
-          {t.calls_without_cost > 0 && `${t.calls_without_cost} senza prezzo`}
+          {t.calls_without_cost > 0 && `${t.calls_without_cost} without a price`}
         </span>
       )}
     </div>
@@ -424,7 +424,7 @@ export function RunConsole({
         <select
           className="console__pick"
           value={run.run_id}
-          aria-label="quale corsa guardare"
+          aria-label="which run to watch"
           onChange={(event) => onPick(event.target.value)}
         >
           {runs.map((entry) => (
@@ -450,7 +450,7 @@ export function RunConsole({
           </button>
         </div>
 
-        <button type="button" className="console__close" onClick={onClose} title="chiudi la vista">
+        <button type="button" className="console__close" onClick={onClose} title="close the view">
           ✕
         </button>
       </header>
@@ -460,8 +460,8 @@ export function RunConsole({
           sua chiusura, perché il motore lo legge fino in fondo prima di
           consegnarlo. Chi guarda deve saperlo mentre guarda, non dopo. */}
       <div className="console__truth">
-        i passi si vedono aprirsi e chiudersi mentre accade; il testo che un passo produce arriva
-        tutto insieme alla sua chiusura — il motore lo legge fino alla fine prima di consegnarlo
+        steps are seen opening and closing as it happens; the text a step produces arrives all
+        at once when it closes — the engine reads it to the end before handing it over
       </div>
 
       {listenFailure && <div className="console__truth">{listenFailure}</div>}
@@ -470,13 +470,13 @@ export function RunConsole({
 
       {mode === "inline" ? (
         <div className="console__lines" ref={tail}>
-          {lines.length === 0 && <div className="console__empty">nessuna riga, ancora</div>}
+          {lines.length === 0 && <div className="console__empty">no lines, yet</div>}
           {lines.map((line) => (
             <div className="console__line" key={line.key} data-stream={line.stream}>
               <span className="console__time">{clock(line.at, run.started_at)}</span>
               {/* Chi ha prodotto la riga: nella vista in linea è l'unica cosa
                   che distingue due passi mescolati. */}
-              <span className="console__who">{line.stepId ?? "corsa"}</span>
+              <span className="console__who">{line.stepId ?? "run"}</span>
               <span className="console__text">{line.text}</span>
             </div>
           ))}
@@ -490,7 +490,7 @@ export function RunConsole({
         </div>
       ) : (
         <div className="console__panes" ref={tail}>
-          {panes.length === 0 && <div className="console__empty">nessun passo, ancora</div>}
+          {panes.length === 0 && <div className="console__empty">no steps, yet</div>}
           {panes.map((pane) => (
             <article className="pane" key={pane.stepId} data-open={pane.endedAt === null || undefined}>
               <header className="pane__bar">
@@ -527,8 +527,8 @@ export function RunConsole({
                 {!pane.spoke && pane.endedAt !== null && (
                   <div className="pane__note">
                     {pane.action === "shell_check"
-                      ? "una verifica di shell non conserva il proprio testo: di questo passo resta l'esito"
-                      : "questo passo non ha prodotto testo"}
+                      ? "a shell check keeps no text of its own: of this step the outcome remains"
+                      : "this step produced no text"}
                   </div>
                 )}
                 {pane.lines.map((line) => (

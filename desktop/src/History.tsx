@@ -39,10 +39,10 @@ export function outcomeOf(run: Execution): "broke" | "open" | "went" | "other" {
 }
 
 const OUTCOME_WORD: Record<ReturnType<typeof outcomeOf>, string> = {
-  broke: "rotta",
-  open: "aperta",
-  went: "andata",
-  other: "altro",
+  broke: "broke",
+  open: "open",
+  went: "went",
+  other: "other",
 };
 
 /** Quando è successo, in ore e minuti. La data solo se non è oggi. */
@@ -53,9 +53,9 @@ export function whenOf(startedAt: number, now: number): string {
     then.getFullYear() === today.getFullYear() &&
     then.getMonth() === today.getMonth() &&
     then.getDate() === today.getDate();
-  const time = then.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+  const time = then.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   if (sameDay) return time;
-  return `${then.toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit" })} ${time}`;
+  return `${then.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit" })} ${time}`;
 }
 
 /** Quanto è durata. `null` è una corsa che non è mai finita, e si dice. */
@@ -69,10 +69,7 @@ export function lastedOf(seconds: number | null): string {
 
 function money(micros: number): string {
   if (micros === 0) return "—";
-  return `${(micros / 1_000_000).toLocaleString("it-IT", {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  })} $`;
+  return `$${(micros / 1_000_000).toFixed(3)}`;
 }
 
 /** Token visti da una chiamata: quelli che ha dichiarato, non una stima. */
@@ -99,17 +96,17 @@ function Calls({ calls }: { calls: ModelCall[] }) {
   return (
     <details className="calls">
       <summary className="calls__head">
-        {calls.length} chiamat{calls.length === 1 ? "a" : "e"} al modello
+        {calls.length} call{calls.length === 1 ? "" : "s"} to the model
       </summary>
       <table className="now__table">
         <thead>
           <tr>
-            <th>passo</th>
-            <th>motore</th>
-            <th>modello</th>
-            <th className="now__num">token</th>
-            <th className="now__num">costo</th>
-            <th className="now__num">dichiarato</th>
+            <th>step</th>
+            <th>engine</th>
+            <th>model</th>
+            <th className="now__num">tokens</th>
+            <th className="now__num">cost</th>
+            <th className="now__num">declared</th>
           </tr>
         </thead>
         <tbody>
@@ -123,10 +120,10 @@ function Calls({ calls }: { calls: ModelCall[] }) {
                   {call.error_type !== null && <span className="now__why">{call.error_type}</span>}
                 </td>
                 <td className="now__when">
-                  {call.actual_model === "" ? "modello non dichiarato" : call.actual_model}
+                  {call.actual_model === "" ? "model not declared" : call.actual_model}
                 </td>
-                <td className="now__num">{tokens < 0 ? "non detto" : tokens.toLocaleString("it-IT")}</td>
-                <td className="now__num">{call.cost_micros === null ? "non detto" : money(call.cost_micros)}</td>
+                <td className="now__num">{tokens < 0 ? "not said" : tokens.toLocaleString("en-GB")}</td>
+                <td className="now__num">{call.cost_micros === null ? "not said" : money(call.cost_micros)}</td>
                 <td className="now__num">
                   {call.declared_cost_micros === null ? "—" : money(call.declared_cost_micros)}
                 </td>
@@ -144,28 +141,28 @@ export function History({ native }: { native: boolean }) {
     native,
     executionHistory,
     REFRESH_MS,
-    "fuori dal guscio: la storia la legge il motore",
+    "outside the shell: the engine reads the history",
   );
   const now = useClock();
 
   if (asked.state === "mute") {
     return (
       <div className="now">
-        <p className="now__mute">Non riesco a leggere la storia: {asked.why}</p>
+        <p className="now__mute">Cannot read the history: {asked.why}</p>
       </div>
     );
   }
   if (asked.state === "asking") {
     return (
       <div className="now">
-        <p className="now__mute">Leggo il deposito…</p>
+        <p className="now__mute">Reading the ledger…</p>
       </div>
     );
   }
   if (asked.value.length === 0) {
     return (
       <div className="now">
-        <p className="now__empty">Il deposito non ricorda nessuna corsa.</p>
+        <p className="now__empty">The ledger remembers no run.</p>
       </div>
     );
   }
@@ -174,22 +171,22 @@ export function History({ native }: { native: boolean }) {
   return (
     <div className="now">
       <header className="now__head">
-        <h2 className="now__title">Storia</h2>
+        <h2 className="now__title">History</h2>
         <span className="now__count">{asked.value.length}</span>
         <span className="now__note">
-          {shown.length < asked.value.length ? `le ${SHOWN} più recenti` : "tutte quelle che il deposito ricorda"}
+          {shown.length < asked.value.length ? `the ${SHOWN} most recent` : "every one the ledger remembers"}
         </span>
       </header>
       <table className="now__table">
         <thead>
           <tr>
-            <th>corsa</th>
-            <th>com'è finita</th>
-            <th>quando</th>
-            <th className="now__num">durata</th>
-            <th className="now__num">passi</th>
-            <th className="now__num">ritentati</th>
-            <th className="now__num">costo</th>
+            <th>run</th>
+            <th>how it ended</th>
+            <th>when</th>
+            <th className="now__num">lasted</th>
+            <th className="now__num">steps</th>
+            <th className="now__num">retried</th>
+            <th className="now__num">cost</th>
           </tr>
         </thead>
         <tbody>
@@ -198,7 +195,7 @@ export function History({ native }: { native: boolean }) {
             const row = (
               <tr key={run.run_id}>
                 <td className="now__entity">
-                  {run.entity === "" ? <span className="now__unnamed">senza nome</span> : run.entity}
+                  {run.entity === "" ? <span className="now__unnamed">unnamed</span> : run.entity}
                   {/* L'ERRORE STA SULLA RIGA, NON DIETRO UN CLIC. Su GitHub
                       Actions «perché è caduta la build» costa un paio di link e
                       migliaia di righe di registro, ed è la lamentela più

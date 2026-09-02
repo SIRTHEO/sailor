@@ -100,17 +100,17 @@ export function usageIsPartial(usage: StepUsage): boolean {
  * costo assente mostrato come zero.
  */
 export function formatCost(micros: number): string {
-  return `${(micros / 1e6).toFixed(4).replace(".", ",")} $`;
+  return `$${(micros / 1e6).toFixed(4)}`;
 }
 
 /**
- * I token in forma corta: `840`, `12,4k`, `1,03M`.
+ * I token in forma corta: `840`, `12.4k`, `1.03M`.
  *
  * Su un nodo non c'è spazio per sette cifre, e il numero esatto non è la
  * domanda che si fa guardando una tela — l'ordine di grandezza sì.
  */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
-  if (n < 1e6) return `${(n / 1000).toFixed(1).replace(".", ",")}k`;
-  return `${(n / 1e6).toFixed(2).replace(".", ",")}M`;
+  if (n < 1e6) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1e6).toFixed(2)}M`;
 }

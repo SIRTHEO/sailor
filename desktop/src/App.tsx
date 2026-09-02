@@ -198,8 +198,8 @@ function mergeEvents(existing: RunEvent[], incoming: RunEvent[]): RunEvent[] {
 /** A free name for a new flow: numbered, never colliding. */
 function freeFlowName(taken: Map<string, WorkingFlow>): string {
   let n = 1;
-  while (taken.has(`flusso-${n}`)) n += 1;
-  return `flusso-${n}`;
+  while (taken.has(`flow-${n}`)) n += 1;
+  return `flow-${n}`;
 }
 
 export default function App() {
@@ -241,7 +241,7 @@ export default function App() {
   const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
 
   const [discovery, setDiscovery] = useState<ToolDiscovery>(() =>
-    NATIVE ? { state: "asking" } : { state: "mute", why: "fuori dal guscio: gli strumenti li conosce il motore" },
+    NATIVE ? { state: "asking" } : { state: "mute", why: "outside the shell: the engine knows the tools" },
   );
 
   useEffect(() => {
@@ -548,8 +548,8 @@ export default function App() {
     if (isDirty(working)) {
       const question =
         working.saved === null
-          ? `«${flowName}» non è mai stato salvato: il motore non lo troverebbe sul disco. Salvarlo e poi eseguirlo?`
-          : `«${flowName}» ha modifiche non salvate: il motore eseguirebbe la versione sul disco. Salvarlo prima?`;
+          ? `«${flowName}» has never been saved: the engine would not find it on the disk. Save it, then run it?`
+          : `«${flowName}» has unsaved changes: the engine would run the version on the disk. Save it first?`;
       if (!window.confirm(question)) return;
       await handleSave(flowName);
       if (saveErrors[flowName]) return;
@@ -596,7 +596,7 @@ export default function App() {
         triggers.get(name) ??
         (NATIVE
           ? { state: "asking" }
-          : { state: "mute", why: "fuori dal guscio: nessun motore da innescare" }),
+          : { state: "mute", why: "outside the shell: no engine to trigger" }),
       runOf: (name) => latestByFlow.get(name),
       mandateOf: (name) => mandates[name] ?? "",
       onMandate: (name, text) => setMandates((prev) => ({ ...prev, [name]: text })),
@@ -1011,8 +1011,8 @@ export default function App() {
     // gesture.
     const neverSaved = working.saved === null;
     const question = neverSaved
-      ? `Scartare il flusso "${name}"? Non è mai stato scritto sul disco.`
-      : `Cancellare il flusso "${name}"? Non si torna indietro da qui.`;
+      ? `Discard the flow "${name}"? It has never been written to the disk.`
+      : `Delete the flow "${name}"? There is no way back from here.`;
     if (!window.confirm(question)) return;
 
     function forget() {
@@ -1304,7 +1304,7 @@ export default function App() {
             va e la colonna torna, col bottone accanto alla cosa appena creata. */}
         {(flows.size > 0 || broken.length > 0) && (
         <aside className="rail">
-          <div className="rail__title">Flussi registrati</div>
+          <div className="rail__title">Flows on record</div>
           {/* «Tutti i flussi» toglie il fuoco: senza flussi non c'è fuoco da
               togliere, e il bottone resterebbe un comando che non comanda. */}
           {flows.size > 0 && (
@@ -1314,7 +1314,7 @@ export default function App() {
             data-active={focusName === null || undefined}
             onClick={() => setFocusName(null)}
           >
-            Tutti i flussi
+            All flows
           </button>
           )}
           {/* A FLAT LIST SAID WHOSE NOTHING WAS. Flows arrive from three
@@ -1343,7 +1343,7 @@ export default function App() {
                     <span className="rail__dot" style={{ background: color }} />
                     <span className="rail__label">
                       {name}
-                      {dirty && <span className="rail__dirty-dot" title="non salvato" />}
+                      {dirty && <span className="rail__dirty-dot" title="not saved" />}
                     </span>
                     <span className="rail__note">{stepCountLabel(flow.graph.steps.length)}</span>
                   </button>
@@ -1366,7 +1366,7 @@ export default function App() {
               scheda nomina — ma tace: il gesto lo offre la scheda, da sola. */}
           {flows.size > 0 && (
           <button type="button" className="rail__new" onClick={addFlow}>
-            + Nuovo flusso
+            + New flow
           </button>
           )}
         </aside>
@@ -1556,8 +1556,8 @@ export default function App() {
                  parameters appear here would promise the impossible. */
               <div className="panel__empty">
                 {focusName === null
-                  ? "I parametri di un passo compaiono qui."
-                  : "Scegli un passo sulla tela per vederne e modificarne i parametri."}
+                  ? "A step's parameters appear here."
+                  : "Pick a step on the canvas to see and change its parameters."}
               </div>
             )}
           </aside>
@@ -1632,7 +1632,7 @@ function FocusBar({
         <input
           className="focusbar__name-input"
           value={nameDraft}
-          aria-label="nome del flusso"
+          aria-label="name of the flow"
           onChange={(event) => setNameDraft(event.target.value)}
           onBlur={() => onRename(nameDraft)}
           onKeyDown={(event) => {
@@ -1640,15 +1640,15 @@ function FocusBar({
           }}
         />
       ) : (
-        <span className="focusbar__name" title="il nome è quello del file: si sceglie prima di salvare">
+        <span className="focusbar__name" title="the name is the file's: it is chosen before saving">
           {name}
         </span>
       )}
       <input
         className="focusbar__desc-input"
         value={descDraft}
-        aria-label="descrizione del flusso"
-        placeholder="a cosa serve questo flusso"
+        aria-label="description of the flow"
+        placeholder="what this flow is for"
         onChange={(event) => setDescDraft(event.target.value)}
         onBlur={() => onDescription(descDraft)}
         onKeyDown={(event) => {
@@ -1658,7 +1658,7 @@ function FocusBar({
       <div className="focusbar__spacer" />
       {error && <span className="focusbar__error">{error}</span>}
       <button type="button" className="is-danger" onClick={onDelete} disabled={busy}>
-        {neverSaved ? "Scarta flusso" : "Elimina flusso"}
+        {neverSaved ? "Discard flow" : "Delete flow"}
       </button>
     </div>
   );
