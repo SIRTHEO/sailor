@@ -1,18 +1,11 @@
 // @vitest-environment jsdom
 import stylesheetSource from "./styles.css?raw";
 import { ReactFlowProvider, type NodeProps } from "@xyflow/react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import type { Step, StepKind, StepRun } from "./flow";
 import { t } from "./i18n";
-import {
-  formatElapsed,
-  KIND_LABEL,
-  StepNode,
-  StepRunContext,
-  StepUsageContext,
-  type StepNodeData,
-} from "./StepNode";
+import { KIND_LABEL, StepNode, StepRunContext, StepUsageContext, WireContext, formatElapsed, type StepNodeData } from "./StepNode";
 import { STEP_WIDTH } from "./layout";
 import { parseStylesheet, styleTree, type Stylesheet } from "./contrast";
 import type { StepUsage } from "./stepusage";
@@ -433,5 +426,58 @@ describe("which node is the one being looked at", () => {
   test("a node nobody picked carries none", () => {
     const node = mountNode({}, new Map(), new Map(), false);
     expect(node.querySelectorAll(".step-node__marks").length).toBe(0);
+  });
+});
+
+/**
+ * WHAT COULD FOLLOW THIS, WITHOUT A DRAG. Pointing beats dragging on both time
+ * and errors, and a gesture with no non-drag path fails WCAG 2.2 SC 2.5.7. The
+ * button opens the same menu the wire opens, so there is one loop and two ways
+ * into it.
+ */
+describe("asking what follows a step", () => {
+  function mountWith(wire: ((id: string, flow: string, at: { x: number; y: number }) => void) | null) {
+    const props = {
+      id: "n",
+      type: "step",
+      data: { step: STEP, kind: "engine", flowName: "sviluppa-sailor", color: "#000", dimmed: false },
+      selected: false,
+      zIndex: 0,
+      isConnectable: false,
+      positionAbsoluteX: 0,
+      positionAbsoluteY: 0,
+      dragging: false,
+    } as unknown as NodeProps;
+    const { container } = render(
+      <StepRunContext.Provider value={new Map()}>
+        <WireContext.Provider value={wire}>
+          <ReactFlowProvider>
+            <StepNode {...props} />
+          </ReactFlowProvider>
+        </WireContext.Provider>
+      </StepRunContext.Provider>,
+    );
+    return container.querySelector(".step-node") as HTMLElement;
+  }
+
+  test("the button names the step it would follow, for whoever cannot see it", () => {
+    const node = mountWith(() => {});
+    const button = node.querySelector(".step-node__more");
+    expect(button?.getAttribute("aria-label")).toContain(STEP.id);
+    expect(button?.tagName).toBe("BUTTON");
+  });
+
+  /* With nobody listening the button would do nothing when pressed, which is
+     worse than not offering it. */
+  test("with no listener the node draws no button at all", () => {
+    expect(mountWith(null).querySelector(".step-node__more")).toBeNull();
+  });
+
+  test("pressing it asks about this step, and does not select the node", () => {
+    const asked: string[] = [];
+    const node = mountWith((id) => asked.push(id));
+    const button = node.querySelector(".step-node__more") as HTMLElement;
+    fireEvent.click(button);
+    expect(asked).toEqual([STEP.id]);
   });
 });

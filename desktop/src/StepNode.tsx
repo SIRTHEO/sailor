@@ -23,6 +23,16 @@ export const StepRunContext = createContext<Map<string, StepRun>>(new Map());
 export const StepUsageContext = createContext<Map<string, StepUsage>>(new Map());
 
 /**
+ * How a node asks for the menu of what could follow it — the same menu the wire
+ * opens, reachable by pointing. Dragging is slower and three times as
+ * error-prone, and a gesture with no non-drag path fails WCAG 2.2 SC 2.5.7.
+ * Null when nobody listens: the node then draws no button at all.
+ */
+export const WireContext = createContext<((stepId: string, flowName: string, at: { x: number; y: number }) => void) | null>(
+  null,
+);
+
+/**
  * Below this zoom a node stops pretending to be readable. Not a number of
  * taste: at 0.5 — the zoom the canvas picks by itself with two flows open — a
  * lane's name renders 6.5px tall and its description 5.5px. They stay drawn,
@@ -387,6 +397,7 @@ export function StepNode({ data, selected }: NodeProps) {
   const runs = useContext(StepRunContext);
   const run = runs.get(key) ?? fromData;
   const usage = useContext(StepUsageContext).get(key);
+  const wire = useContext(WireContext);
   const state: StepState = run?.state ?? "waiting";
   const isAgent = kind === "engine";
   // Which tool runs this node reads off the canvas, not only from the panel:
@@ -413,6 +424,22 @@ export function StepNode({ data, selected }: NodeProps) {
       {/* Il bollino di corsia: a quale flusso appartiene questo passo, nella
           tela dove tutti i flussi stanno insieme. */}
       <div className="step-node__flow" style={{ background: flowColor }} title={flowName} />
+      {/* WHAT COULD FOLLOW THIS, without a drag. Hidden from the far zoom with
+          everything else that cannot be read there. */}
+      {!far && wire && (
+        <button
+          type="button"
+          className="step-node__more"
+          aria-label={`what follows «${step.id}»`}
+          onClick={(event) => {
+            event.stopPropagation();
+            const box = event.currentTarget.getBoundingClientRect();
+            wire(step.id, flowName, { x: box.right + 4, y: box.top });
+          }}
+        >
+          +
+        </button>
+      )}
       {/* «This is the part being dimensioned»: two elements, four corners. */}
       {selected && (
         <>

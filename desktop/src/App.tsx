@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -22,6 +22,7 @@ import {
   STATE_COLOR,
   StepRunContext,
   StepUsageContext,
+  WireContext,
   type StepNodeData,
 } from "./StepNode";
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
@@ -36,6 +37,8 @@ import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
 import { Worktrees } from "./Worktrees";
+import { WireMenu } from "./WireMenu";
+import { withStepWiredTo } from "./wiring";
 import { Toolbar } from "./Toolbar";
 import { RunContext, TriggerNode, triggerNodeId, type RunControls, type TriggerState } from "./TriggerNode";
 import { RunConsole, type ConsoleMode } from "./RunConsole";
@@ -708,6 +711,33 @@ export default function App() {
     setAddedNode(null);
   }, [nodes, addedNode]);
 
+  /**
+   * Where a wire was let go, and which step it came from. The gesture the blank
+   * canvas has been promising did nothing when the wire landed on empty paper;
+   * now it opens a menu and the step is born already wired.
+   */
+  const [wiring, setWiring] = useState<{ from: string; flowName: string; at: { x: number; y: number } } | null>(null);
+  const wireSource = useRef<string | null>(null);
+
+  /** Opens the menu of what could follow a step, from wherever it was asked. */
+  const openWireMenu = useCallback((from: string, flowName: string, at: { x: number; y: number }) => {
+    setWiring({ from, flowName, at });
+  }, []);
+
+  /** Creates a step of `kind` already depending on `from`, in one edit. */
+  function addStepAfter(flowName: string, from: string, kind: StepKind) {
+    let born: string | null = null;
+    updateFlow(flowName, (flow) => {
+      const { graph, id } = withStepWiredTo(flow.graph, kind, from);
+      born = id;
+      return id === null ? flow : { ...flow, graph };
+    });
+    if (born !== null) {
+      setSelectedNode(nodeId(flowName, born));
+      setAddedNode(nodeId(flowName, born));
+    }
+  }
+
   function updateFlow(name: string, updater: (flow: FlowFile) => FlowFile) {
     setFlows((prev) => {
       const current = prev.get(name);
@@ -1158,6 +1188,7 @@ export default function App() {
 
       <RunContext.Provider value={controls}>
       <StepRunContext.Provider value={stepStates}>
+      <WireContext.Provider value={openWireMenu}>
       <StepUsageContext.Provider value={stepUsage}>
       {place === "now" && (
         <Now
@@ -1172,6 +1203,20 @@ export default function App() {
       {place === "manual" && <Manual native={NATIVE} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
       {place === "worktrees" && <Worktrees native={NATIVE} />}
+
+      {/* Outside the canvas element on purpose: it is positioned in window
+          coordinates, and inside it would scroll and scale with the paper. */}
+      {wiring && (
+        <WireMenu
+          at={wiring.at}
+          from={wiring.from}
+          onPick={(kind) => {
+            addStepAfter(wiring.flowName, wiring.from, kind);
+            setWiring(null);
+          }}
+          onClose={() => setWiring(null)}
+        />
+      )}
       {/* THE CANVAS STAYS MOUNTED BEHIND THE OTHER TWO TABS. React Flow measures
           its own frame once: unmounting it to change tab would give back a
           canvas that has to find its nodes again every time. */}
@@ -1262,7 +1307,26 @@ export default function App() {
             onEdgesDelete={onEdgesDelete}
             deleteKeyCode={["Backspace", "Delete"]}
             onNodeClick={onNodeClick}
-            onPaneClick={() => setSelectedNode(null)}
+            onPaneClick={() => {
+              setSelectedNode(null);
+              setWiring(null);
+            }}
+            onConnectStart={(_, { nodeId: source }) => {
+              wireSource.current = source ?? null;
+            }}
+            onConnectEnd={(event) => {
+              const source = wireSource.current;
+              wireSource.current = null;
+              if (!source) return;
+              // A WIRE LET GO ON EMPTY PAPER ASKS A QUESTION. Released over a
+              // node, `onConnect` has already made the edge and there is
+              // nothing to ask; released over nothing, the menu opens here.
+              const target = event.target as HTMLElement | null;
+              if (!target?.classList.contains("react-flow__pane")) return;
+              const { flowName, stepId } = splitNodeId(source);
+              const point = "clientX" in event ? event : event.changedTouches[0];
+              setWiring({ from: stepId, flowName, at: { x: point.clientX, y: point.clientY } });
+            }}
             onInit={(instance) => {
               flowInstance.current = instance;
             }}
@@ -1439,6 +1503,7 @@ export default function App() {
         />
       )}
       </StepUsageContext.Provider>
+      </WireContext.Provider>
       </StepRunContext.Provider>
       </RunContext.Provider>
     </div>
