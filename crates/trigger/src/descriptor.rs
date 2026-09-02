@@ -26,7 +26,7 @@ pub enum Source {
     Dir(PathBuf),
 }
 
-/// The shape of a signal source. **Two, and the code knows no others**: which
+/// The shape of a signal source. **Three, and the code knows no others**: which
 /// terminal, which window, which product is what the descriptors say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -38,6 +38,41 @@ pub enum Kind {
     /// The signal would appear in a terminal session. Declared today, not
     /// listened to: see `action`.
     Terminal,
+    /// The clock is the source: nothing outside speaks, time passes. What it
+    /// must declare is in `Periodic`, and it declares it or does not load.
+    Periodic,
+}
+
+/// What a periodic source does with the runs that went by while it slept.
+///
+/// **THE DESCRIPTOR DECIDES THIS, NOT THE ENGINE.** Twelve hours asleep on a
+/// half-hour source is twenty-four missed runs: catching all of them up is
+/// right for work that accumulates, one run for work that wants only the
+/// current state. Both are correct, so there is no default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MissedRun {
+    /// One run for each occurrence that went by.
+    CatchUpEachOne,
+    /// A single run, however many went by.
+    OnceForAllOfThem,
+}
+
+/// What a periodic source has to declare before it can load.
+///
+/// `every` reuses the flow's own recurrence: interval and appointment are two
+/// different things, and that distinction is already written — and tested —
+/// once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Periodic {
+    pub every: flow::Recurrence,
+    /// No default: see `MissedRun`.
+    pub missed_run: MissedRun,
+    /// How many runs of this source may be alive together. No default for the
+    /// same reason, and zero does not load: a limit of zero is a source that
+    /// never fires, which is what `disabled` says out loud.
+    pub at_most_at_once: u32,
 }
 
 /// Where a signal would be seen appearing in a terminal session.
@@ -90,6 +125,10 @@ pub struct TriggerDescriptor {
     /// describing two different sources under one name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listen: Option<Listen>,
+    /// How often it fires, and what it does with what it missed. Required for a
+    /// periodic source, forbidden for the others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub periodic: Option<Periodic>,
     /// For whoever reads the list: what was measured, what is missing. It
     /// enters no decision.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -283,12 +322,33 @@ impl Catalog {
 /// the day somebody writes it is the only day it is easy to notice.
 fn coherent(descriptor: &TriggerDescriptor) -> Result<(), String> {
     match (descriptor.kind, descriptor.listen.is_some()) {
-        (Kind::Manual, true) => Err(
+        (Kind::Manual, true) => return Err(
             "a manual trigger carries the signal with it: it cannot also declare where to listen"
                 .to_string(),
         ),
-        (Kind::Terminal, false) => Err(
+        (Kind::Terminal, false) => return Err(
             "a terminal trigger must say where the signal would be seen appearing: `listen` is missing"
+                .to_string(),
+        ),
+        (Kind::Periodic, true) => return Err(
+            "a periodic trigger hears nothing: the clock is its source, so it cannot declare where to listen"
+                .to_string(),
+        ),
+        _ => {}
+    }
+    match (descriptor.kind, descriptor.periodic.as_ref()) {
+        (Kind::Periodic, None) => Err(
+            "a periodic trigger must declare `periodic`: how often it fires, what it does with a \
+             missed_run, and its at_most_at_once limit"
+                .to_string(),
+        ),
+        (Kind::Periodic, Some(periodic)) if periodic.at_most_at_once == 0 => Err(
+            "`at_most_at_once` is zero, which is a trigger that never fires: say that with \
+             `disabled` instead"
+                .to_string(),
+        ),
+        (Kind::Manual | Kind::Terminal, Some(_)) => Err(
+            "only a periodic trigger declares `periodic`: this one is fired by something else"
                 .to_string(),
         ),
         _ => Ok(()),
