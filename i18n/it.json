@@ -76,5 +76,9 @@
   "window.step.kind.deposit": "deposito",
   "window.step.kind.gesture": "gesto",
   "window.step.kind.human": "a una persona",
-  "window.step.kind.subflow": "sotto-flusso"
+  "window.step.kind.subflow": "sotto-flusso",
+
+  "cli.workspace.already_declared": "{file} esiste già: questo comando non sovrascrive una dichiarazione, perché ci si può aver scritto dentro a mano",
+  "cli.workspace.written": "scritto {file}\n  nome: {name}\n  regole: {rules}\n  verifiche: nessuna (si scrivono a mano: indovinarle sarebbe deciderle al posto tuo)",
+  "cli.workspace.no_rules_found": "nessuna trovata"
 }
