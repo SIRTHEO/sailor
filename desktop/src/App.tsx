@@ -1242,7 +1242,10 @@ export default function App() {
       )}
       {place === "history" && <History native={NATIVE} />}
       {place === "everything" && <Everything native={NATIVE} now={now} />}
-      {place === "terminals" && <Terminals native={NATIVE} />}
+      {/* THE TERMINALS STAY MOUNTED BEHIND THE OTHER PLACES, like the canvas:
+          unmounting the screen would destroy every emulator, and a session
+          would come back blank while the process inside is alive. */}
+      <Terminals native={NATIVE} shown={place === "terminals"} />
 
       {/* Outside the canvas element on purpose: it is positioned in window
           coordinates, and inside it would scroll and scale with the paper. */}

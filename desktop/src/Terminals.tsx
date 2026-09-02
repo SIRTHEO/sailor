@@ -2,9 +2,10 @@
 
 // **THE LIST BELONGS TO THE ENGINE, NOT TO THIS SCREEN.** `terminal_list` is
 // the only answer to "which terminals exist", and this component keeps no copy.
-// A terminal outlives the window — closing it does not kill the session inside
-// — so a list kept here would say "none" to a machine that has three, wearing
-// the same face it would wear on a machine that has none.
+// The terminals are held by `sailor terminal host`, a process that outlives
+// this window: a list kept here would say "none" on the first paint of a
+// window whose machine has three, wearing the same face it would wear on a
+// machine that has none.
 
 // **WHAT THIS SCREEN REALLY OWNS** are three things the engine cannot know:
 // which tab you are watching, which terminals have sent `terminal_closed` since
@@ -13,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAsk } from "./ask";
+import { ChangesScreen } from "./ChangesScreen";
 import { BORN_COLS, BORN_ROWS, TerminalPane } from "./TerminalPane";
 import {
   closeTerminal,
@@ -23,10 +25,13 @@ import {
   OutputBus,
   pressKeys,
   resizeTerminal,
+  splitCommandLine,
   submitLine,
   watchTerminals,
   type TerminalSummary,
 } from "./terminal";
+import { projects, type Project } from "./workspaces";
+import { listTrees, type Tree } from "./worktree";
 
 /** How often the list is re-asked. A terminal is born and dies by hand. */
 const REFRESH_MS = 4000;
@@ -34,18 +39,54 @@ const REFRESH_MS = 4000;
 interface TerminalsProps {
   /** True inside the native shell: outside there is no pty to open. */
   native: boolean;
+  /**
+   * False while another place is on screen. The screen stays mounted, hidden:
+   * unmounting it would destroy every emulator, and a session would come back
+   * blank while the process inside is alive and talking.
+   */
+  shown?: boolean;
 }
 
 /**
- * The placeholder of the "workspace" field. **IT NAMES NO REAL MACHINE**: a
+ * The placeholder of the path field. **IT NAMES NO REAL MACHINE**: a
  * developer's absolute path in a product field breaks the charter, and a gate
- * finds one. Exported so the test reads it here, not a copy: a text written
- * twice diverges on the first edit — red for a wrong reason, or green over air.
+ * finds one. Exported so the test reads it here, not a copy.
  */
 export const WORKSPACE_HINT = "/path/to/your/project";
 
-export function Terminals({ native }: TerminalsProps) {
-  const outside = "fuori dal guscio: gli pseudo-terminali li apre il motore";
+/** The choice that means «a path typed by hand» instead of a known place. */
+export const ANOTHER_PATH = "…another path";
+
+/** A place a terminal can be opened in, as the engine names it. */
+export interface Place {
+  root: string;
+  label: string;
+}
+
+/**
+ * The known workspaces and worktrees, as the engine answers them. **NOT A
+ * LIST KEPT HERE**: `workspaces` and `worktree_list` already answer the
+ * question, and a screen that remembered places would offer a project that
+ * moved yesterday. A root that is both stays one entry.
+ */
+export function placesOf(known: Project[], trees: Tree[]): Place[] {
+  const places: Place[] = [];
+  const seen = new Set<string>();
+  for (const project of known) {
+    if (seen.has(project.root)) continue;
+    seen.add(project.root);
+    places.push({ root: project.root, label: `${project.name} · project` });
+  }
+  for (const tree of trees) {
+    if (seen.has(tree.path)) continue;
+    seen.add(tree.path);
+    places.push({ root: tree.path, label: `${tree.name} · worktree${tree.branch ? ` on ${tree.branch}` : ""}` });
+  }
+  return places;
+}
+
+export function Terminals({ native, shown = true }: TerminalsProps) {
+  const outside = "outside the desktop shell: pseudo-terminals are the engine's to open";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
 
   const [here, setHere] = useState<string | null>(null);
@@ -54,16 +95,44 @@ export function Terminals({ native }: TerminalsProps) {
   /** The event channel: attached, or the reason it is not. */
   const [channel, setChannel] = useState<{ on: boolean; why: string | null }>({ on: false, why: null });
   const [opening, setOpening] = useState(false);
-  const [root, setRoot] = useState("");
+  /** The chosen place's root, `ANOTHER_PATH`, or "" before anything was chosen. */
+  const [chosen, setChosen] = useState("");
+  const [typed, setTyped] = useState("");
   const [program, setProgram] = useState("");
   const [trouble, setTrouble] = useState<string | null>(null);
   /** Bytes arrived for a terminal with no pane: they would be lost output. */
   const [orphans, setOrphans] = useState(0);
+  /** Whether what changed in the visible terminal's workspace is on screen. */
+  const [reading, setReading] = useState(false);
+  const [places, setPlaces] = useState<Place[]>([]);
+  /** Why the known places could not all be read, when they could not. */
+  const [placesWhy, setPlacesWhy] = useState<string | null>(null);
 
   const bus = useMemo(() => new OutputBus(), []);
   // `again` changes identity on every render; the listener attaches once.
   const refresh = useRef(again);
   refresh.current = again;
+
+  useEffect(() => {
+    if (!native) return;
+    let dropped = false;
+    void Promise.allSettled([projects(), listTrees()]).then(([known, trees]) => {
+      if (dropped) return;
+      setPlaces(
+        placesOf(
+          known.status === "fulfilled" ? known.value : [],
+          trees.status === "fulfilled" ? trees.value : [],
+        ),
+      );
+      const refused = [known, trees]
+        .filter((outcome) => outcome.status === "rejected")
+        .map((outcome) => String((outcome as PromiseRejectedResult).reason));
+      setPlacesWhy(refused.length > 0 ? refused.join("; ") : null);
+    });
+    return () => {
+      dropped = true;
+    };
+  }, [native]);
 
   useEffect(() => {
     if (!native) {
@@ -73,8 +142,8 @@ export function Terminals({ native }: TerminalsProps) {
     let stop: (() => void) | null = null;
     let dropped = false;
     void watchTerminals({
-      onOutput: (id, bytes) => {
-        if (!bus.deliver(id, bytes)) setOrphans((seen) => seen + 1);
+      onOutput: (id, bytes, at) => {
+        if (!bus.deliver(id, bytes, at)) setOrphans((seen) => seen + 1);
       },
       onClosed: (id, status) => {
         setClosed((before) => new Map(before).set(id, status));
@@ -100,22 +169,28 @@ export function Terminals({ native }: TerminalsProps) {
     };
   }, [native, bus, outside]);
 
+  // Nothing chosen yet means the first known place, or a typed path when
+  // there is none: the form is never blank on a machine with projects.
+  const choice = chosen === "" ? (places[0]?.root ?? ANOTHER_PATH) : chosen;
+  const root = choice === ANOTHER_PATH ? typed.trim() : choice;
+
   const open = useCallback(async () => {
     setTrouble(null);
     setOpening(true);
     try {
+      const line = splitCommandLine(program);
       const born = await openTerminal({
-        workspaceRoot: root.trim(),
-        program: program.trim() === "" ? undefined : program.trim(),
+        workspaceRoot: root,
+        program: line.program,
+        args: line.args.length > 0 ? line.args : undefined,
         cols: BORN_COLS,
         rows: BORN_ROWS,
       });
       setHere(born.id);
       again();
     } catch (error) {
-      // The engine's error is the text `PtyError` produces, and it has to be
-      // read: a missing folder and a shell that will not start are fixed in two
-      // different ways, and a `console.error` tells nobody them apart.
+      // The engine's error has to be read: a missing folder and a shell that
+      // will not start are fixed in two different ways.
       setTrouble(String(error));
     } finally {
       setOpening(false);
@@ -124,29 +199,29 @@ export function Terminals({ native }: TerminalsProps) {
 
   if (asked.state === "mute") {
     return (
-      <div className="terminals">
-        <p className="terminals__mute">Non riesco a chiedere quali terminali sono aperti: {asked.why}</p>
+      <div className="terminals" hidden={!shown}>
+        <p className="terminals__mute">I cannot ask which terminals are open: {asked.why}</p>
       </div>
     );
   }
 
   if (asked.state === "asking") {
     return (
-      <div className="terminals">
-        <p className="terminals__mute">Chiedo al motore quali terminali sono aperti…</p>
+      <div className="terminals" hidden={!shown}>
+        <p className="terminals__mute">Asking the engine which terminals are open…</p>
       </div>
     );
   }
 
   const opened = asked.value;
-  const shown = opened.some((entry) => entry.id === here) ? here : (opened[0]?.id ?? null);
+  const visible = opened.some((entry) => entry.id === here) ? here : (opened[0]?.id ?? null);
+  const watched = opened.find((entry) => entry.id === visible) ?? null;
 
   return (
-    <div className="terminals">
-      {/* LA CARTELLA SI DICHIARA APRENDO. Non esiste un terminale generico a cui
-          poi si dice dove andare: lo spazio di lavoro è parte di cosa il
-          terminale è, ed è la condizione perché lo smistamento sappia di quale
-          progetto si sta parlando. */}
+    <div className="terminals" hidden={!shown}>
+      {/* THE DIRECTORY IS DECLARED AT OPENING. There is no generic terminal you
+          then tell where to go: the workspace is part of what the terminal is,
+          and what lets routing know which project is being talked about. */}
       <form
         className="terminals__open"
         onSubmit={(event) => {
@@ -155,27 +230,46 @@ export function Terminals({ native }: TerminalsProps) {
         }}
       >
         <label className="terminals__field">
-          <span className="label">Spazio di lavoro</span>
-          <input
-            className="terminals__input"
-            value={root}
-            placeholder={WORKSPACE_HINT}
-            onChange={(event) => setRoot(event.target.value)}
-          />
+          <span className="label">Workspace</span>
+          <select className="terminals__select" value={choice} onChange={(event) => setChosen(event.target.value)}>
+            {places.map((place) => (
+              <option key={place.root} value={place.root}>
+                {place.label}
+              </option>
+            ))}
+            <option value={ANOTHER_PATH}>{ANOTHER_PATH}</option>
+          </select>
         </label>
+        {choice === ANOTHER_PATH && (
+          <label className="terminals__field">
+            <span className="label">Path</span>
+            <input
+              className="terminals__input"
+              value={typed}
+              placeholder={WORKSPACE_HINT}
+              onChange={(event) => setTyped(event.target.value)}
+            />
+          </label>
+        )}
         <label className="terminals__field">
-          <span className="label">Cosa avviare</span>
+          <span className="label">What to start</span>
           <input
             className="terminals__input"
             value={program}
-            placeholder="la shell di casa"
+            placeholder="your shell, or a command line such as claude --resume"
             onChange={(event) => setProgram(event.target.value)}
           />
         </label>
-        <button type="submit" className="is-primary" disabled={opening || root.trim() === ""}>
-          {opening ? "apro…" : "Apri un terminale"}
+        <button type="submit" className="is-primary" disabled={opening || root === ""}>
+          {opening ? "opening…" : "Open a terminal"}
         </button>
       </form>
+
+      {placesWhy !== null && (
+        <p className="terminals__trouble" data-gravity="warn">
+          The known workspaces could not all be read: {placesWhy}. A path can still be typed.
+        </p>
+      )}
 
       {trouble !== null && (
         <p className="terminals__trouble" data-gravity="danger">
@@ -185,18 +279,18 @@ export function Terminals({ native }: TerminalsProps) {
 
       {channel.why !== null && (
         <p className="terminals__trouble" data-gravity="warn">
-          {channel.why} — finché è così, questi pannelli non ricevono né l'uscita né la fine di un processo.
+          {channel.why} — until then these panes receive neither the output nor the end of a process.
         </p>
       )}
 
       {orphans > 0 && (
         <p className="terminals__trouble" data-gravity="warn">
-          {orphans} pezzi di uscita sono arrivati per un terminale senza pannello, e sono andati persi.
+          {orphans} pieces of output arrived for a terminal with no pane, and were lost.
         </p>
       )}
 
       {opened.length === 0 ? (
-        <p className="terminals__empty">Nessun terminale aperto. Non è lo stesso che non poterlo chiedere.</p>
+        <p className="terminals__empty">No terminal is open. That is not the same as being unable to ask.</p>
       ) : (
         <>
           <nav className="terminals__tabs">
@@ -207,12 +301,16 @@ export function Terminals({ native }: TerminalsProps) {
                   key={entry.id}
                   type="button"
                   className="terminals__tab"
-                  data-here={entry.id === shown || undefined}
+                  data-here={entry.id === visible || undefined}
                   data-state={liveness.state}
                   onClick={() => setHere(entry.id)}
                 >
-                  {entry.workspaceName}
-                  {/* La parola porta lo stato quanto la tinta: divieto 5. */}
+                  {/* THE TTY IS THE ANCHOR: not a product name, not a title
+                      read out of the output. It is what the letterbox, the
+                      count and the tracking store all key on. */}
+                  <span className="terminals__device">{entry.device}</span>
+                  <span className="terminals__where">{entry.workspaceName}</span>
+                  {/* The word carries the state as much as the colour: prohibition 5. */}
                   <span className="terminals__word">{livenessWord(liveness)}</span>
                 </button>
               );
@@ -228,7 +326,7 @@ export function Terminals({ native }: TerminalsProps) {
                   summary={entry}
                   liveness={liveness}
                   bus={bus}
-                  visible={entry.id === shown}
+                  visible={entry.id === visible}
                   onSubmit={(line) => submitLine(entry.id, line)}
                   onPress={(bytes) => {
                     void pressKeys(entry.id, bytes).catch((error: unknown) => setTrouble(String(error)));
@@ -243,19 +341,28 @@ export function Terminals({ native }: TerminalsProps) {
             })}
           </div>
 
-          {shown !== null && (
+          {visible !== null && watched !== null && (
             <div className="terminals__foot">
+              {/* WHAT THE AGENT CHANGED, READ WITHOUT LEAVING: the working tree
+                  of the workspace this terminal was opened in, as git says it. */}
+              <button type="button" onClick={() => setReading((on) => !on)}>
+                {reading ? "hide what changed" : `what changed in ${watched.workspaceName}`}
+              </button>
               <button
                 type="button"
                 onClick={() => {
-                  void closeTerminal(shown)
+                  void closeTerminal(visible)
                     .then(() => again())
                     .catch((error: unknown) => setTrouble(String(error)));
                 }}
               >
-                Chiudi questo terminale
+                Close this terminal
               </button>
             </div>
+          )}
+
+          {reading && watched !== null && (
+            <ChangesScreen key={watched.workspaceRoot} root={watched.workspaceRoot} name={watched.workspaceName} />
           )}
         </>
       )}
