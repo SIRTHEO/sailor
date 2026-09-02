@@ -179,6 +179,8 @@ fn main() {
             faults::faults,
             faults::fault_status,
             ledger::ledger_held,
+            ledger::ledger_tables,
+            ledger::ledger_query,
             flows::engine_actions,
             run::flow_trigger,
             run::start_run,
