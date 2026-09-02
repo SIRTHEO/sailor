@@ -18,14 +18,18 @@ use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
 mod board;
+mod faults;
 mod flows;
+mod ledger;
 mod live;
 mod manual;
+mod models;
+mod profiles;
 mod run;
 mod terminal;
+mod tools;
 mod workspaces;
 mod worktree;
-mod tools;
 
 /// Un flusso come lo riceve la tela. Ricalca `FlowEntry` di
 /// `desktop/src/flow.ts`, tag compreso: chi cambia l'uno cambia l'altro.
@@ -162,6 +166,11 @@ fn main() {
             flows::save_flow,
             flows::delete_flow,
             tools::discover_tools,
+            tools::tools_sweep,
+            faults::faults,
+            faults::fault_status,
+            ledger::ledger_held,
+            flows::engine_actions,
             run::flow_trigger,
             run::start_run,
             run::run_snapshot,
@@ -181,6 +190,13 @@ fn main() {
             terminal::terminal_list,
             workspaces::workspaces,
             workspaces::workspace_declaration,
+            profiles::profiles,
+            profiles::profile_command_lines,
+            profiles::profile_switch,
+            profiles::profile_create,
+            models::models_catalogue,
+            models::quota,
+            models::model_set,
             worktree::worktree_list,
             worktree::worktree_create,
             worktree::worktree_remove
@@ -200,7 +216,10 @@ mod tests {
     #[test]
     fn the_place_a_flow_is_written_to_names_itself_with_its_own_origin() {
         let sources = super::flow_sources();
-        assert!(!sources.is_empty(), "no source at all: the rest measures nothing");
+        assert!(
+            !sources.is_empty(),
+            "no source at all: the rest measures nothing"
+        );
 
         let (origin, dir) = super::place_for("a-flow-nobody-has-ever-written");
         let matching = sources

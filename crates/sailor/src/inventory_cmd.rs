@@ -6,6 +6,7 @@
 //! per la pagina — la stessa fonte, così l'elenco che si legge da terminale e
 //! quello che si vede nella finestra non possono divergere.
 
+use crate::Form;
 use inventory::{collect_survey, default_roots, Entry, Inventory, Kind, Reach};
 use ledger::{InventoryItem, InventoryScan, Ledger};
 
@@ -127,15 +128,24 @@ pub fn run(args: &[String]) -> i32 {
 
 /// Le forme di `sailor inventory`, una per riga. Vedi `flow_cmd::USAGE` per il
 /// motivo per cui è una costante pubblica invece di righe dentro la stampa.
-pub const USAGE: &[&str] = &[
-    "sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]",
-    "sailor inventory --record        stores this scan",
-    "sailor inventory --changes       what has appeared and what has gone",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor inventory [--kind skill|agent|command|rule|hook] [--unreachable] [--json]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor inventory --record",
+        says_key: "cli.inventory.form.record",
+    },
+    Form {
+        form: "sailor inventory --changes",
+        says_key: "cli.inventory.form.changes",
+    },
 ];
 
 fn print_usage() {
     eprintln!("{}", catalogue::say("cli.usage_heading", &[]));
-    for line in USAGE {
+    for line in crate::forms_as_lines(USAGE) {
         eprintln!("  {line}");
     }
 }
@@ -207,7 +217,7 @@ fn deposit(found: &Inventory) -> Result<String, String> {
 /// due.
 fn open_ledger() -> Result<Ledger, String> {
     let directory =
-        ledger::default_directory().ok_or_else(|| catalogue::say("cli.inventory.no_home", &[]))?;
+        ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 
