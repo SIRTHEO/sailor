@@ -240,6 +240,15 @@ impl actions::ToolResolver for Tools {
         })
     }
 
+    fn data_pact(&self, id: &str) -> models::pact::DataPact {
+        self.catalog
+            .live()
+            .into_iter()
+            .find(|loaded| loaded.descriptor.id == id)
+            .and_then(|loaded| loaded.descriptor.data_pact)
+            .unwrap_or_default()
+    }
+
     /// What this tool can do with its own sessions.
     ///
     /// **IT DOES NOT ASK THE CATALOG WHETHER THE TOOL EXISTS**, and that is not
