@@ -85,6 +85,8 @@ mod tests {
             when: conditional.then(|| Condition::Equals { value: json!(true) }),
             action: format!("{id}_action"),
             max_attempts: 2,
+            ask_again_after_secs: None,
+            retry_after_secs: None,
         }
     }
 

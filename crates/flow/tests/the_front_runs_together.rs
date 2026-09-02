@@ -83,6 +83,8 @@ fn step(id: &str) -> Step {
         with: None,
         input_schema: ValueSchema::Any,
         output_schema: ValueSchema::Any,
+        ask_again_after_secs: None,
+        retry_after_secs: None,
     }
 }
 

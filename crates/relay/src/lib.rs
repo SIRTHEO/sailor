@@ -246,14 +246,18 @@ impl Action for TakeMandateAction {
         let spec: TakeSpec = read_input(input)?;
         let root = store_root(&spec.store)?;
         let path = terminal::mandate::address_in(&root, &spec.tty);
+        // **NOT YET, NOT WAITING.** Both refusals here are the ordinary state
+        // between asking for a mandate and its being written: the agent is
+        // still typing. `Waiting` would say a person holds this step and park
+        // the relay for good, which is fault 62.
         let Some(left) = terminal::mandate::read(&path) else {
-            return Ok(ActionOutcome::Waiting(format!(
+            return Ok(ActionOutcome::NotYet(format!(
                 "{}: no mandate has been left yet",
                 spec.tty
             )));
         };
         if spec.not_before.is_some_and(|floor| left.at < floor) {
-            return Ok(ActionOutcome::Waiting(format!(
+            return Ok(ActionOutcome::NotYet(format!(
                 "{}: the only mandate here is older than this handover",
                 spec.tty
             )));

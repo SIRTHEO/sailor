@@ -19,8 +19,22 @@ pub struct Step {
     pub when: Option<Condition>,
     /// Stable name the executor resolves, not code embedded in the graph.
     pub action: String,
-    /// Counts the first attempt; zero is not a valid value.
+    /// How many times this step may **break** before the run gives up on it.
+    /// Counts the first attempt; zero is not a valid value. A step answering
+    /// `NotYet` spends none of these: not yet is not a failure.
     pub max_attempts: u32,
+    /// Seconds before a step that answered `NotYet` is asked again.
+    ///
+    /// Absent means "not again inside this invocation, and no sooner than the
+    /// next one" — never "at once", which would spin the executor on one step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask_again_after_secs: Option<u32>,
+    /// Seconds before a broken step is retried.
+    ///
+    /// Absent keeps what the engine has always done: it returns to the ready
+    /// set in the same loop, so the attempts burn together.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_after_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -385,6 +399,8 @@ mod tests {
             when: None,
             action: id.to_owned(),
             max_attempts: 1,
+            ask_again_after_secs: None,
+            retry_after_secs: None,
         }
     }
 

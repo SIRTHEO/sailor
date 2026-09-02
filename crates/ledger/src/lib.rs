@@ -1029,6 +1029,29 @@ impl Ledger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Runs that stopped on a step saying "not yet", to be run again.
+    ///
+    /// **A SEPARATE QUESTION FROM `waiting_runs`, AND IT HAS TO BE.** That one
+    /// finds work somebody must come and take; merging them would send a person
+    /// to take a step nobody handed them. And without it these runs are found
+    /// by neither — no open step, no `waiting` status — so they vanish twice.
+    pub fn runs_to_ask_again(&self) -> Result<Vec<WaitingRun>, LedgerError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT run_id, entity, COALESCE(ended_at, started_at)
+             FROM runs WHERE status = 'not_yet'
+             ORDER BY COALESCE(ended_at, started_at), run_id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(WaitingRun {
+                run_id: row.get(0)?,
+                entity: row.get(1)?,
+                waiting_since: row.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// When each entity last began.
     ///
     /// Used to tell whether a scheduled flow is due now, and the question is
@@ -2683,6 +2706,7 @@ fn outcome_name(outcome: Outcome) -> &'static str {
         Outcome::Went => "Went",
         Outcome::Broke => "Broke",
         Outcome::Waiting => "Waiting",
+        Outcome::NotYet => "NotYet",
         Outcome::Stopped => "Stopped",
         Outcome::Skipped => "Skipped",
     }
@@ -2693,6 +2717,7 @@ fn parse_outcome(value: &str, column: usize) -> rusqlite::Result<Outcome> {
         "Went" => Ok(Outcome::Went),
         "Broke" => Ok(Outcome::Broke),
         "Waiting" => Ok(Outcome::Waiting),
+        "NotYet" => Ok(Outcome::NotYet),
         "Stopped" => Ok(Outcome::Stopped),
         "Skipped" => Ok(Outcome::Skipped),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
