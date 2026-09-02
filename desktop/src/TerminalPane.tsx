@@ -213,6 +213,9 @@ export function TerminalPane({
         {/* THE TTY FIRST: it is what this session *is* to everything else on
             the machine — the letterbox, the count, the tracking store. */}
         <span className="pane__device">{summary.device}</span>
+        <span className="pane__who" title="the program started inside, and the profile it runs under">
+          {whoLabel(summary)}
+        </span>
         <span className="label">{summary.workspaceName}</span>
         <span className="pane__root">{summary.workspaceRoot}</span>
         {/* The word sits beside the colour: prohibition 5. */}
@@ -362,6 +365,18 @@ function shortCount(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${String(Math.round(n / 1000))}k`;
   return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/**
+ * Who runs in the pane: the program, and the profile when one applies. An
+ * older host reports no program, and the label says so rather than guessing
+ * a shell. No model: an interactive program picks its own, unknown to Sailor.
+ */
+export function whoLabel(summary: Pick<TerminalSummary, "program" | "profile">): string {
+  if (!summary.program) return "program not reported by this host";
+  return summary.profile === null || summary.profile === undefined
+    ? summary.program
+    : `${summary.program} · as ${summary.profile}`;
 }
 
 /**

@@ -3789,6 +3789,12 @@ tr[data-followable]:hover {
   color: var(--muted);
 }
 
+.pane__who {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  white-space: nowrap;
+}
+
 .pane__tokens {
   font-size: var(--text-micro);
   color: var(--muted);
