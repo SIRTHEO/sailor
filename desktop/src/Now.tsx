@@ -22,8 +22,10 @@
 // in cima, e la parola sta accanto alla tinta perché il divieto 5 della
 // direzione visiva non ammette che il colore porti da solo uno stato.
 
+import { Fragment } from "react";
 import { useAsk, useClock } from "./ask";
 import { openRuns, todaySummary, type DaySummary, type OpenRun } from "./engine";
+import { Handed } from "./Handed";
 
 /** Ogni quanto si richiede l'elenco al deposito. */
 const REFRESH_MS = 4000;
@@ -226,14 +228,15 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
         </thead>
         <tbody>
           {runs.map((run) => (
-            <tr key={run.run_id} data-followable={run.started_here || undefined}>
+            <Fragment key={run.run_id}>
+            <tr data-followable={run.started_here || undefined}>
               <td className="now__entity">
                 {run.entity === "" ? <span className="now__unnamed">unnamed</span> : run.entity}
                 <span className="now__id">{run.run_id}</span>
               </td>
               {/* La parola porta lo stato quanto la tinta: divieto 5. */}
               <td className="now__state" data-state={run.state}>
-                {run.state === "waiting" ? "aspetta te" : "in corso"}
+                {run.state === "waiting" ? "waits for you" : "working"}
               </td>
               <td className="now__num">{howLong(now - run.since)}</td>
               {/* QUALE PASSO, NON QUANTI. «3 passi aperti» non dice niente:
@@ -250,7 +253,7 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
                   run.open_now.map((step) => (
                     <span className="now__step" key={`${step.step_id}::${String(step.attempt)}`}>
                       {step.step_id}
-                      {step.attempt > 1 && <b>{step.attempt}ª volta</b>}
+                      {step.attempt > 1 && <b>attempt {step.attempt}</b>}
                       <i>{howLong(step.open_for_secs)}</i>
                     </span>
                   ))
@@ -266,13 +269,23 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
               <td className="now__from">
                 {run.started_here ? (
                   <button type="button" className="now__open" onClick={() => onOpen(run.run_id)}>
-                    guarda
+                    watch
                   </button>
                 ) : (
                   <span className="now__elsewhere">started elsewhere</span>
                 )}
               </td>
             </tr>
+            {/* WHAT IT WAITS FOR, AND THE GESTURE THAT ANSWERS IT, under the
+                row: a run parked on a person is worth nothing as a line alone. */}
+            {run.state === "waiting" && (
+              <tr className="now__handed">
+                <td colSpan={5}>
+                  <Handed runId={run.run_id} />
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

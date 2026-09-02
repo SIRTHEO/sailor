@@ -125,11 +125,11 @@ describe("the first screen: what is happening right now", () => {
         <RunGroup title="Aspettano te" note="ferme finché non fai qualcosa" runs={runs} now={9000} onOpen={() => {}} />
       </div>,
     );
-    expect(screen.getByText("aspetta te")).toBeTruthy();
+    expect(screen.getByText("waits for you")).toBeTruthy();
     expect(screen.getByText("unnamed")).toBeTruthy();
     // An attempt that is not the first: a step open on the second try means the
     // first round fell over, and that is what a green line hides.
-    expect(screen.getByText("2ª volta")).toBeTruthy();
+    expect(screen.getByText("attempt 2")).toBeTruthy();
     expect(measure(20)).toEqual([]);
   });
 });

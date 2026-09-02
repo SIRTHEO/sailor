@@ -1187,7 +1187,7 @@ fn default_registry(
 
 /// Da dove arriva il segnale che questo guscio manda. È la finestra, sempre:
 /// non è un dato da indovinare, è quello che questo programma è.
-const WHERE: &str = "finestra di Sailor";
+const WHERE: &str = "the Sailor window";
 
 /// Chi ha premuto, **per come questa sorgente lo sa**, che è poco: la finestra
 /// non ha un'identità di persona — non c'è login, non c'è account — e l'unica
@@ -1197,7 +1197,7 @@ const WHERE: &str = "finestra di Sailor";
 /// che non sa chi l'ha mandato lo dice con una stringa vuota; scrivere lì un
 /// nome plausibile ma non verificato sarebbe peggio che ammettere di non
 /// saperlo, perché nessuno andrebbe più a controllare.
-fn who() -> String {
+pub(crate) fn who() -> String {
     std::env::var("USER").unwrap_or_default()
 }
 

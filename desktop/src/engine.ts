@@ -205,6 +205,40 @@ export async function liveStatus(): Promise<LiveStatus | null> {
   return invoke<LiveStatus | null>("live_status");
 }
 
+/** A step of a run that waits for a person, with what it asks. */
+export interface HandedStep {
+  step_id: string;
+  /** Whom it was offered to: a label for the reader, not a credential. */
+  holder: string;
+  mandate: string;
+  since: number;
+}
+
+export async function handedSteps(runId: string): Promise<HandedStep[]> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no ledger to read");
+  return invoke<HandedStep[]>("handed_steps", { runId });
+}
+
+/** Takes a handed step as the person at this machine; answers the engine's report. */
+export async function takeHandedStep(runId: string, stepId: string): Promise<string> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no step to take");
+  return invoke<string>("take_handed_step", { runId, stepId });
+}
+
+/** Closes a handed step with the outcome declared, and the run resumes. */
+export async function closeHandedStep(
+  runId: string,
+  stepId: string,
+  outcome: "went" | "broke",
+  said: string,
+): Promise<string> {
+  const invoke = invoker();
+  if (!invoke) throw new Error("outside the native shell: no step to close");
+  return invoke<string>("close_handed_step", { runId, stepId, outcome, said });
+}
+
 /** Everything a run has said so far, for whoever looks in now. */
 export async function runSnapshot(runId: string): Promise<RunSnapshot> {
   const invoke = invoker();

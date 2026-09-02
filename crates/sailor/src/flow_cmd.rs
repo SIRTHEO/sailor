@@ -1184,7 +1184,7 @@ fn resume_run(run_id: &str) -> Result<String, String> {
 /// Il corpo di `resume`, col deposito e il flusso dichiarati invece che dedotti
 /// da `HOME` e dalla cartella corrente: sono tutti e due globali al processo, e
 /// una prova che li scrivesse rovinerebbe le altre a caso.
-fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
+pub fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
     let header = ledger
         .run_header(run_id)
         .map_err(|error| format!("cannot read run {run_id}: {error}"))?
