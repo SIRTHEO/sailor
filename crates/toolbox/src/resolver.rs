@@ -233,6 +233,8 @@ impl actions::ToolResolver for Tools {
             },
             args_before_prompt: ask.args_before_prompt.clone(),
             unusable_when: ask.unusable_when.clone(),
+            exhausted_when: ask.exhausted_when.clone(),
+            cooldown_secs: ask.cooldown_secs,
             refuses_without_prompt: ask.refuses_without_prompt.clone(),
             usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
         })

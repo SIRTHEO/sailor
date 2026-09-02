@@ -66,6 +66,8 @@ fn agy_recipe(refuses: &[&str]) -> AskRecipe {
         args_before_prompt: vec!["--print".to_owned()],
         unusable_when: Vec::new(),
         refuses_without_prompt: refuses.iter().map(|s| (*s).to_owned()).collect(),
+        exhausted_when: Vec::new(),
+        cooldown_secs: None,
         usage: None,
     }
 }
@@ -136,6 +138,8 @@ fn an_exhausted_engine_is_not_called_broken() {
         args_before_prompt: Vec::new(),
         unusable_when: vec!["weekly limit".to_owned()],
         refuses_without_prompt: vec!["input must be provided either through stdin".to_owned()],
+        exhausted_when: Vec::new(),
+        cooldown_secs: None,
         usage: None,
     };
     let verdict = probe_dry_run(&RealDryProbe, &bin.to_string_lossy(), &recipe);
@@ -221,6 +225,8 @@ fn an_engine_that_reads_the_prompt_from_stdin_gets_an_empty_closed_one() {
         args_before_prompt: Vec::new(),
         unusable_when: Vec::new(),
         refuses_without_prompt: vec!["input must be provided".to_owned()],
+        exhausted_when: Vec::new(),
+        cooldown_secs: None,
         usage: None,
     };
     let _ = probe_dry_run(&probe, "claude", &recipe);
@@ -262,6 +268,8 @@ fn the_exhausted_reading_comes_first_when_the_output_says_both() {
         args_before_prompt: Vec::new(),
         unusable_when: vec!["weekly limit".to_owned()],
         refuses_without_prompt: vec!["input must be provided".to_owned()],
+        exhausted_when: Vec::new(),
+        cooldown_secs: None,
         usage: None,
     };
     let verdict = judge_dry_run(
