@@ -32,16 +32,6 @@ const WHERE_THEY_BELONG: &str = "crates/toolbox/descriptors/";
 /// for six; the grafting left the list the day its settings file became data.
 const STILL_ALLOWED: &[(&str, &str)] = &[
     (
-        "crates/inventory/src/discovery.rs",
-        "the largest one: it inventories one product's skills, agents and \
-         plugins, so for the other five Sailor reports nothing and does not say \
-         it looked nowhere",
-    ),
-    (
-        "crates/inventory/src/lib.rs",
-        "same inventory, the reading half",
-    ),
-    (
         "crates/release/src/lib.rs",
         "the house Sailor installed itself into until 01/09/2026, kept so the \
          release can still find a stamp left there. It goes when a machine that \

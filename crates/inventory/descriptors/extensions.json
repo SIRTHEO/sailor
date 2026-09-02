@@ -1,0 +1,47 @@
+{
+  "_readme": [
+    "WHERE A COMMAND LINE KEEPS THE THINGS PEOPLE ADD TO IT: skills, agents,",
+    "commands, rules, plugins. This file is the only place in the inventory that",
+    "names a product. The code reads it and knows nothing else.",
+    "",
+    "IT EXISTS BECAUSE THE CRATE USED TO NAME ONE. `crates/inventory` had",
+    "`.claude/...` built into every path it looked at, so on a machine holding a",
+    "different command line it answered «you have nothing» without failing a",
+    "single check — the worst shape a wrong answer can take. The rule it broke is",
+    "the standing one: a product's name may appear in a label, never in a",
+    "condition, and a constructed path is a condition.",
+    "",
+    "TO ADD ONE: put a `.json` file with this shape in",
+    "`~/.config/sailor/extensions.d/`. An `id` already here is replaced by yours.",
+    "Nothing needs recompiling, and nothing in the code has to learn the name.",
+    "",
+    "WHAT THE INVENTORY SAYS ABOUT WHAT IS NOT HERE. A product nobody declared is",
+    "not searched, and the survey says so by name-count rather than staying",
+    "silent: «looked at 1 of the command lines declared here» is a true sentence,",
+    "«you have no skills» is not."
+  ],
+  "products": [
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "home": ".claude",
+      "project": ".claude",
+      "settings": [".claude/settings.json", ".claude.json"],
+      "installed_plugins": ".claude/plugins/installed_plugins.json",
+      "plugin_manifest": ".claude-plugin/plugin.json",
+      "commands": "commands",
+      "rules": "rules",
+      "skills": [
+        { "under": ".claude/skills", "glob": "*/SKILL.md" },
+        { "under": ".claude/skills", "glob": "*/skills/*/SKILL.md" },
+        { "under": ".claude/plugins/cache", "glob": "*/*/skills/*/SKILL.md" },
+        { "under": ".claude/plugins/cache", "glob": "*/*/*/skills/*/SKILL.md" }
+      ],
+      "agents": [
+        { "under": ".claude/agents", "glob": "*.md" },
+        { "under": ".claude/plugins/cache", "glob": "*/*/agents/*.md" },
+        { "under": ".claude/plugins/cache", "glob": "*/*/*/agents/*.md" }
+      ]
+    }
+  ]
+}
