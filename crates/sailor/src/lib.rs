@@ -36,6 +36,10 @@ pub mod run_cmd;
 pub mod session_cmd;
 pub mod step_cmd;
 pub mod terminal_cmd;
+// Not a subcommand: the one piece of `session install` that knows a file
+// format. It sits apart because it is pure text in and text out, and a graft
+// that must leave a hand-written file alone is proved on the text.
+pub mod toml_graft;
 pub mod version_cmd;
 pub mod workspace_cmd;
 pub mod worktree_cmd;
