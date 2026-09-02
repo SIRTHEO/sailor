@@ -21,6 +21,7 @@ mod board;
 mod flows;
 mod live;
 mod manual;
+mod profiles;
 mod run;
 mod terminal;
 mod workspaces;
@@ -181,6 +182,10 @@ fn main() {
             terminal::terminal_list,
             workspaces::workspaces,
             workspaces::workspace_declaration,
+            profiles::profiles,
+            profiles::profile_command_lines,
+            profiles::profile_switch,
+            profiles::profile_create,
             worktree::worktree_list,
             worktree::worktree_create,
             worktree::worktree_remove

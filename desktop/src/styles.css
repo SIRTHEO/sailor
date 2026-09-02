@@ -816,6 +816,110 @@ button.is-primary {
   padding-top: 14px;
 }
 
+/* ── the screens that list things ───────────────────────────────────────────
+   `Now`, `Projects` and `ProfileList` draw the same three shapes: a block with
+   a title, a table of rows, and pairs of "what / what it says". They were
+   written wearing these classes and the sheet dressed none of them — an
+   element with no rule is invisible to every test, so `classesdeclared.test.ts`
+   now compares the two sides. */
+
+/* A titled block: what `panel__title` heads, given a body and air around it. */
+.panel__block {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+/* Pairs of «what» and «what it says». The term is quiet and the value is not:
+   read down the left edge and you have the list of questions answered. */
+.now__kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 8px 0 0;
+}
+
+.now__kv dt {
+  font-size: var(--text-micro);
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.now__kv dd {
+  margin: 0;
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+/* The command a line is invoked by: a fact, not a heading. It sat under the
+   title in the title's own letterforms and read as the name said twice. */
+.now__command {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--faint);
+  margin-top: 2px;
+}
+
+/* THE COLUMNS LINE UP ACROSS BLOCKS, or the eye cannot run down them. Each
+   command line draws its own table, and left to size themselves the same
+   column landed in a different place in every one — «access» was at the right
+   edge in the first block and mid-page in the second. */
+.panel__block .now__table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.panel__block .now__table th:nth-child(1) { width: 18%; }
+.panel__block .now__table th:nth-child(2) { width: 34%; }
+.panel__block .now__table th:nth-child(3) { width: 36%; }
+.panel__block .now__table th:nth-child(4) { width: 12%; }
+
+/* A PATH IS READ CHARACTER BY CHARACTER, never skimmed: it is the one thing
+   that lets somebody find the folder again, so it gets the fixed width. */
+.now__path {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  word-break: break-all;
+}
+
+/* The evidence under a claim: how we know, in the engine's own words. Quieter
+   than the claim and never folded away — a screen that asserts with the proof
+   hidden is asserting without proof. */
+.now__why {
+  font-size: var(--text-micro);
+  color: var(--faint);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+/* Where a row comes from, and the button that follows it there. */
+.now__from {
+  white-space: nowrap;
+}
+
+/* The line of gestures under a list: naming a new thing, or closing one. */
+.now__new,
+.terminals__foot {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.now__field {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  padding: 7px 9px;
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
 .rail__item {
   display: block;
   width: 100%;
