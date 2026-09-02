@@ -1,32 +1,60 @@
 /**
- * The projects Sailor has been opened in, and what each declares. **A LIST,
- * NOT A SWITCH — YET**: switching moves the root flows resolve against, the
- * open terminals and the credentials in reach. Until that is decided, this
- * shows what is there and where it lives.
+ * The projects Sailor has been opened in, what each declares, and the gesture
+ * that moves the window into one. Moving changes the root the flows, the runs
+ * and the census resolve against; the open terminals keep the tree they were
+ * opened in, because a terminal belongs to its workspace and not to the window.
  */
 import { useCallback, useEffect, useState } from "react";
-import { declarationOf, projects, since, type Declaration, type Project } from "./workspaces";
+import { declarationOf, projects, since, workHere, type Declaration, type Project } from "./workspaces";
 
 type Ask =
   | { state: "asking" }
   | { state: "asked"; seen: Project[] }
   | { state: "mute"; why: string };
 
-export function Projects({ native, now }: { native: boolean; now: number }) {
+interface ProjectsProps {
+  native: boolean;
+  now: number;
+  /** Called once the window has moved into another project, so the flows are read again. */
+  onMoved?: () => void;
+}
+
+export function Projects({ native, now, onMoved }: ProjectsProps) {
   const [ask, setAsk] = useState<Ask>({ state: "asking" });
   const [chosen, setChosen] = useState<string | null>(null);
   const [declared, setDeclared] = useState<Declaration | null>(null);
+  const [trouble, setTrouble] = useState<string | null>(null);
+
+  const read = useCallback(() => {
+    projects().then(
+      (seen) => setAsk({ state: "asked", seen }),
+      (error) => setAsk({ state: "mute", why: String(error) }),
+    );
+  }, []);
 
   useEffect(() => {
     if (!native) {
       setAsk({ state: "mute", why: "outside the desktop shell there is no home to read" });
       return;
     }
-    projects().then(
-      (seen) => setAsk({ state: "asked", seen }),
-      (error) => setAsk({ state: "mute", why: String(error) }),
-    );
-  }, [native]);
+    read();
+  }, [native, read]);
+
+  // The move is asked of the engine, and the list is read again from it: the
+  // row is not marked «here» by the window, or a refused move would look done.
+  const move = useCallback(
+    (root: string) => {
+      setTrouble(null);
+      workHere(root).then(
+        () => {
+          read();
+          onMoved?.();
+        },
+        (error) => setTrouble(String(error)),
+      );
+    },
+    [read, onMoved],
+  );
 
   // The declaration is read for the one project being looked at, never for
   // every row: drawing a list would otherwise touch the disk once per line.
@@ -59,9 +87,10 @@ export function Projects({ native, now }: { native: boolean; now: number }) {
         <h2 className="now__title">Projects</h2>
         <span className="now__count">{ask.seen.length}</span>
       </header>
+      {trouble && <p className="now__mute">The move was refused: {trouble}</p>}
       <table className="now__table">
         <thead>
-          <tr><th>project</th><th>where</th><th>opened</th><th>since</th></tr>
+          <tr><th>project</th><th>where</th><th>opened</th><th>since</th><th /></tr>
         </thead>
         <tbody>
           {ask.seen.map((project) => (
@@ -80,6 +109,20 @@ export function Projects({ native, now }: { native: boolean; now: number }) {
               <td className="now__path">{project.root}</td>
               <td>{since(project.last_seen, now)}</td>
               <td>{since(project.first_seen, now)}</td>
+              <td>
+                {!project.current && project.standing === "declared" && (
+                  <button
+                    type="button"
+                    className="now__act"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      move(project.root);
+                    }}
+                  >
+                    work here
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

@@ -53,6 +53,15 @@ export function declarationOf(root: string): Promise<Declaration> {
 }
 
 /**
+ * Moves the window into a project: from then on the flows, the runs and the
+ * census resolve against that root. Answers the root it moved into, or rejects
+ * with the reason — a place with no marker is not a project.
+ */
+export function workHere(root: string): Promise<string> {
+  return ask<string>("work_here", { root });
+}
+
+/**
  * How long ago, in the words a person uses. Not a date: a list of projects is
  * scanned for «which one was I in», and «3 days ago» answers that where
  * «2026-08-30» has to be worked out.
