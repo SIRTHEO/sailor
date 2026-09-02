@@ -3751,6 +3751,82 @@ tr[data-followable]:hover {
   color: var(--muted);
 }
 
+.now__handed td {
+  padding: 0 0 var(--space-3);
+}
+
+.handed {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.handed__step {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.handed__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.handed__id {
+  font-family: var(--font-data);
+  font-weight: 600;
+}
+
+.handed__holder {
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+.handed__mandate {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+}
+
+.handed__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-small);
+}
+
+.handed__acts {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.handed__said {
+  min-height: 48px;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+}
+
+.handed__report {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--ink);
+}
+
+.handed__trouble {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-small);
+}
+
 .chip--build[data-warn] {
   color: var(--danger);
   background: var(--danger-soft);
