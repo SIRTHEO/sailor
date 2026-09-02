@@ -1185,6 +1185,23 @@ fn resume_run(run_id: &str) -> Result<String, String> {
 /// da `HOME` e dalla cartella corrente: sono tutti e due globali al processo, e
 /// una prova che li scrivesse rovinerebbe le altre a caso.
 pub fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, String> {
+    let root = workspace_root();
+    announce_root(root.as_deref());
+    let mut store = ledger.clone();
+    resume_run_with(ledger, flow, run_id, &mut store, root.as_deref())
+}
+
+/// The body of `resume`, with the store and the root declared by the caller.
+/// The command line resumes through the bare ledger, in the root it stands
+/// in; the window resumes through a store that announces every step, and
+/// says which root it resumed in, since the ledger does not keep a run's own.
+pub fn resume_run_with(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run_id: &str,
+    store: &mut dyn RecordStore,
+    root: Option<&Path>,
+) -> Result<String, String> {
     let header = ledger
         .run_header(run_id)
         .map_err(|error| format!("cannot read run {run_id}: {error}"))?
@@ -1202,19 +1219,11 @@ pub fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<S
     let started_at = header.started_at;
     let now = now_secs()?;
 
-    let mut store = ledger.clone();
     let mut clock = SystemClock;
-    // **LA RIPRESA PASSA DAL COSTRUTTORE UNICO**, come la prima corsa. Costruire
-    // qui una richiesta a mano rimetterebbe in piedi la seconda copia che
-    // `registry::execution_request` esiste per togliere — e questa copia
-    // perderebbe in silenzio la radice del workspace, facendo lavorare i passi
-    // riconciliati in un posto diverso da quello dove sono nati.
-    let root = workspace_root();
-    announce_root(root.as_deref());
-    // LO STESSO IDENTIFICATIVO, e non uno nuovo: una ripresa che aprisse una
-    // corsa nuova perderebbe i passi già andati e li rifarebbe tutti, pagandoli
-    // due volte.
-    let request = registry::execution_request(flow, run_id, root.as_deref());
+    // THE RESUME GOES THROUGH THE ONE CONSTRUCTOR, like the first run, and
+    // keeps the same id: a request built by hand would lose the workspace
+    // root in silence, and a new id would redo every step already paid for.
+    let request = registry::execution_request(flow, run_id, root);
     // La riconciliazione vede quello che vedrà l'esecuzione: stessa radice,
     // stesso stato condiviso.
     let shared = request.shared.clone();
@@ -1223,7 +1232,7 @@ pub fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<S
         .reconcile(flow::ReconciliationRequest {
             graph: &flow.graph,
             run_id,
-            store: &mut store,
+            store: &mut *store,
             actions: &registry,
             shared: &shared,
             processes: &probe,
@@ -1261,11 +1270,12 @@ pub fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<S
     }
 
     let execution = InProcessExecutor
-        .execute(&flow.graph, request, ledger, &registry, &SystemClock)
+        .execute(&flow.graph, request, &*store, &registry, &SystemClock)
         .map_err(|error| format!("resuming run {run_id} failed: {error}"))?;
 
     let (status, exit_ok) = execution_status(&execution);
-    let why = registry::stopped_by_cap(&execution);
+    let why =
+        registry::stopped_by_cap(&execution).or_else(|| registry::halted_by_hand(&execution));
     record_run(
         ledger,
         flow,
