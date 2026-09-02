@@ -9,24 +9,22 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// The engine this reading is about: the same `id` the descriptor catalog uses
-/// for it, so a `Remaining` can be traced back to whoever claims to know it.
-pub const CLAUDE_CODE: &str = "claude-code";
-
-/// Where Claude Code keeps the person's credentials. Under its own home, not
-/// Sailor's: it belongs to it, and this module only reads it.
-const CLAUDE_CREDENTIALS: &str = ".claude/.credentials.json";
-
-/// The endpoint that answers with the quota windows.
-///
-/// **IT IS A BETA, VERSIONED CHANNEL** — the `anthropic-beta` header carries a
-/// date — so it can stop answering with nothing here changing. A missing
-/// reading is therefore never an error for whoever asked: it is a reading that
-/// is not there, and the caller carries on without it.
-const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
-
-/// The channel version, declared the way the provider wants it.
-const BETA_HEADER: &str = "anthropic-beta: oauth-2025-04-20";
+/// An OAuth usage channel, as a descriptor declares it: **THIS MODULE KNOWS
+/// NO PROVIDER.** The credentials file belongs to the engine and is only read;
+/// the address and its headers are the provider's, and a versioned channel can
+/// stop answering with nothing here changing, so a missing reading is a reading
+/// that is not there, never an error and never a zero.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OauthUsageChannel {
+    /// The engine this reading is about: the descriptor's `id`.
+    pub engine: String,
+    pub credentials: PathBuf,
+    /// The keys down to the token inside the credentials file.
+    pub token_pointer: Vec<String>,
+    pub url: String,
+    /// Whole header lines, `name: value`.
+    pub headers: Vec<String>,
+}
 
 /// How much of a quota window is already gone, and when that window resets.
 ///
@@ -134,17 +132,18 @@ impl fmt::Debug for Token {
 }
 
 impl Token {
-    /// The token inside Claude Code's credentials file, shaped
-    /// `{"claudeAiOauth": {"accessToken": "…"}}`. A key that is not there is
+    /// The token inside an engine's credentials file, under the keys the
+    /// descriptor points at. A key that is not there is
     /// [`RemainingError::NoToken`] and not a panic: a credentials file belongs
     /// to somebody else and changes when that somebody decides.
-    pub fn from_credentials(text: &str) -> Result<Token, RemainingError> {
+    pub fn from_credentials_at(text: &str, pointer: &[String]) -> Result<Token, RemainingError> {
         let parsed: serde_json::Value = serde_json::from_str(text)
             .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?;
-        parsed
-            .get("claudeAiOauth")
-            .and_then(|oauth| oauth.get("accessToken"))
-            .and_then(serde_json::Value::as_str)
+        let mut at = &parsed;
+        for key in pointer {
+            at = at.get(key).ok_or(RemainingError::NoToken)?;
+        }
+        at.as_str()
             .filter(|token| !token.is_empty())
             .map(|token| Token(token.to_owned()))
             .ok_or(RemainingError::NoToken)
@@ -156,16 +155,16 @@ impl Token {
     /// FUNCTION.** `curl -H "Authorization: Bearer …"` puts the secret in the
     /// process's command line, and anyone on the machine reads that with `ps`.
     /// With `-K -` it travels on a pipe that exists only between these two.
-    fn curl_config(&self) -> String {
-        format!(
-            "url = \"{USAGE_URL}\"\n\
-             header = \"Authorization: Bearer {}\"\n\
-             header = \"{BETA_HEADER}\"\n\
-             silent\n\
-             show-error\n\
-             max-time = 30\n",
+    fn curl_config(&self, url: &str, headers: &[String]) -> String {
+        let mut config = format!(
+            "url = \"{url}\"\nheader = \"Authorization: Bearer {}\"\n",
             self.0
-        )
+        );
+        for header in headers {
+            config.push_str(&format!("header = \"{header}\"\n"));
+        }
+        config.push_str("silent\nshow-error\nmax-time = 30\n");
+        config
     }
 }
 
@@ -175,8 +174,9 @@ impl Token {
 /// whose value is an object holding a numeric `utilization`. One real answer
 /// carried fourteen: two full, one at zero under a name in no documentation,
 /// eleven null. A `match` would have lost the third the day it appeared.
-pub fn from_claude_oauth_usage(
+pub fn from_oauth_usage(
     body: &str,
+    engine: &str,
     observed_at: i64,
 ) -> Result<Vec<Remaining>, RemainingError> {
     let parsed: serde_json::Value =
@@ -213,7 +213,7 @@ pub fn from_claude_oauth_usage(
             continue;
         };
         found.push(Remaining {
-            engine: CLAUDE_CODE.to_owned(),
+            engine: engine.to_owned(),
             unit: unit.clone(),
             // The provider says `50.0` for half. See the note on
             // `used_fraction`: the unit changes here, once, in one place.
@@ -228,22 +228,24 @@ pub fn from_claude_oauth_usage(
     Ok(found)
 }
 
-/// Really reads Claude Code's quota on this machine. **READ-ONLY, AND FREE**:
-/// it invokes no engine and consumes nothing, which is why it can sit in a
-/// check that runs often. `home` is passed in so whoever tests this module
-/// needs nobody's real credentials. A number from here written next to a step
-/// would be a measure with the right face and the wrong meaning — how fault 37
-/// was born, not its cure; its place is next to "can I launch another one?".
-pub fn read_from_claude(home: &Path, observed_at: i64) -> Result<Vec<Remaining>, RemainingError> {
-    let path = home.join(CLAUDE_CREDENTIALS);
+/// Really reads an engine's quota through the channel its descriptor declares.
+/// **READ-ONLY, AND FREE**: it invokes no engine and consumes nothing, which
+/// is why it can sit in a check that runs often. A number from here written
+/// next to a step would be a measure with the right face and the wrong meaning
+/// (fault 37); its place is next to "can I launch another one?".
+pub fn read_oauth_usage(
+    channel: &OauthUsageChannel,
+    observed_at: i64,
+) -> Result<Vec<Remaining>, RemainingError> {
+    let path: &Path = &channel.credentials;
     if !path.exists() {
-        return Err(RemainingError::NoCredentials(path));
+        return Err(RemainingError::NoCredentials(path.to_path_buf()));
     }
-    let text = std::fs::read_to_string(&path)
+    let text = std::fs::read_to_string(path)
         .map_err(|error| RemainingError::CredentialsUnreadable(error.to_string()))?;
-    let token = Token::from_credentials(&text)?;
-    let body = ask_curl(&token.curl_config())?;
-    from_claude_oauth_usage(&body, observed_at)
+    let token = Token::from_credentials_at(&text, &channel.token_pointer)?;
+    let body = ask_curl(&token.curl_config(&channel.url, &channel.headers))?;
+    from_oauth_usage(&body, &channel.engine, observed_at)
 }
 
 /// `curl` as a process, with the configuration on its stdin.
@@ -289,6 +291,24 @@ mod tests {
     use super::*;
 
     const SAMPLE: &str = include_str!("../tests/fixtures/oauth-usage-sample.json");
+    const ENGINE: &str = "claude-code";
+    const URL: &str = "https://api.anthropic.com/api/oauth/usage";
+    const BETA: &str = "anthropic-beta: oauth-2025-04-20";
+
+    /// The channel of the engine the sample was recorded from, as a
+    /// descriptor would declare it; the tests never carry a provider's name
+    /// anywhere else.
+    fn pointer() -> Vec<String> {
+        vec!["claudeAiOauth".to_owned(), "accessToken".to_owned()]
+    }
+
+    fn parse(body: &str, observed_at: i64) -> Result<Vec<Remaining>, RemainingError> {
+        from_oauth_usage(body, ENGINE, observed_at)
+    }
+
+    fn token_of(text: &str) -> Result<Token, RemainingError> {
+        Token::from_credentials_at(text, &pointer())
+    }
 
     fn window<'a>(found: &'a [Remaining], unit: &str) -> Option<&'a Remaining> {
         found.iter().find(|entry| entry.unit == unit)
@@ -300,14 +320,14 @@ mod tests {
     /// nothing in any unit.
     #[test]
     fn the_two_full_windows_are_read_as_fractions() {
-        let found = from_claude_oauth_usage(SAMPLE, 1_000).expect("the sample parses");
+        let found = parse(SAMPLE, 1_000).expect("the sample parses");
 
         let five_hour = window(&found, "five_hour").expect("the five-hour window is there");
         assert_eq!(
             five_hour.used_fraction, 0.5,
             "50.0 per cent is half a window"
         );
-        assert_eq!(five_hour.engine, CLAUDE_CODE);
+        assert_eq!(five_hour.engine, ENGINE);
         assert_eq!(
             five_hour.resets_at.as_deref(),
             Some("2026-09-01T03:29:59.801054+00:00")
@@ -330,7 +350,7 @@ mod tests {
     /// nowhere.
     #[test]
     fn a_window_this_version_never_heard_of_is_reported_anyway() {
-        let found = from_claude_oauth_usage(SAMPLE, 0).expect("the sample parses");
+        let found = parse(SAMPLE, 0).expect("the sample parses");
         let unknown = window(&found, "nimbus_quill").expect("the unknown window is there too");
         assert_eq!(unknown.used_fraction, 0.075);
     }
@@ -340,7 +360,7 @@ mod tests {
     /// saying "you have everything free".
     #[test]
     fn what_is_not_a_measure_never_becomes_a_zero() {
-        let found = from_claude_oauth_usage(SAMPLE, 0).expect("the sample parses");
+        let found = parse(SAMPLE, 0).expect("the sample parses");
         let units: Vec<&str> = found.iter().map(|entry| entry.unit.as_str()).collect();
 
         for absent in ["seven_day_opus", "extra_usage", "spend", "limits"] {
@@ -360,7 +380,7 @@ mod tests {
     /// known even when the restart is not.
     #[test]
     fn a_window_without_a_reset_keeps_its_measure() {
-        let found = from_claude_oauth_usage(SAMPLE, 0).expect("the sample parses");
+        let found = parse(SAMPLE, 0).expect("the sample parses");
         let no_reset = window(&found, "no_reset").expect("it is there");
         assert_eq!(no_reset.used_fraction, 0.0);
         assert_eq!(no_reset.resets_at, None, "never an invented instant");
@@ -377,7 +397,7 @@ mod tests {
         let refused = r#"{"type":"error","error":{"type":"authentication_error",
             "message":"OAuth access token has been revoked."},"request_id":null}"#;
 
-        let said = from_claude_oauth_usage(refused, 0).expect_err("it is a refusal, not a measure");
+        let said = parse(refused, 0).expect_err("it is a refusal, not a measure");
         assert_eq!(
             said,
             RemainingError::Refused("OAuth access token has been revoked.".to_owned()),
@@ -397,7 +417,7 @@ mod tests {
             "message":"Rate limited. Please try again later."}}"#;
 
         assert_eq!(
-            from_claude_oauth_usage(limited, 0),
+            parse(limited, 0),
             Err(RemainingError::Refused(
                 "Rate limited. Please try again later.".to_owned()
             )),
@@ -411,7 +431,7 @@ mod tests {
     #[test]
     fn a_usage_answer_with_every_window_null_is_not_a_refusal() {
         let empty = r#"{"five_hour":null,"seven_day":null,"member_dashboard_available":false}"#;
-        assert_eq!(from_claude_oauth_usage(empty, 0), Ok(vec![]));
+        assert_eq!(parse(empty, 0), Ok(vec![]));
     }
 
     /// The channel is beta: the way it will break is by answering something
@@ -419,11 +439,11 @@ mod tests {
     #[test]
     fn a_body_that_is_not_the_expected_shape_is_a_declared_failure() {
         assert_eq!(
-            from_claude_oauth_usage("<html>502</html>", 0),
+            parse("<html>502</html>", 0),
             Err(RemainingError::NotUnderstood)
         );
         assert_eq!(
-            from_claude_oauth_usage("[1, 2, 3]", 0),
+            parse("[1, 2, 3]", 0),
             Err(RemainingError::NotUnderstood)
         );
     }
@@ -440,7 +460,7 @@ mod tests {
 
     #[test]
     fn the_token_is_taken_from_the_key_the_file_really_uses() {
-        assert!(Token::from_credentials(&credentials_with(A_SECRET)).is_ok());
+        assert!(token_of(&credentials_with(A_SECRET)).is_ok());
     }
 
     /// **THE TOKEN IS NOT PRINTABLE, AND THIS IS THE TEST THAT HOLDS IT.** A
@@ -449,7 +469,7 @@ mod tests {
     /// test the gesture that would violate it.
     #[test]
     fn no_way_of_printing_a_token_shows_it() {
-        let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("it is there");
+        let token = token_of(&credentials_with(A_SECRET)).expect("it is there");
         let printed = format!("{token:?}");
         assert!(
             !printed.contains(A_SECRET),
@@ -463,14 +483,14 @@ mod tests {
     #[test]
     fn no_failure_message_carries_the_token() {
         let broken = format!("{{\"claudeAiOauth\": {{\"accessToken\": \"{A_SECRET}\"}}");
-        let refused = Token::from_credentials(&broken).expect_err("the JSON is truncated");
+        let refused = token_of(&broken).expect_err("the JSON is truncated");
         let said = format!("{refused} / {refused:?}");
         assert!(
             !said.contains(A_SECRET),
             "the token ended up in the error: {said}"
         );
 
-        let no_key = Token::from_credentials(r#"{"claudeAiOauth": {}}"#).expect_err("missing");
+        let no_key = token_of(r#"{"claudeAiOauth": {}}"#).expect_err("missing");
         assert_eq!(no_key, RemainingError::NoToken);
     }
 
@@ -479,25 +499,43 @@ mod tests {
     /// pipe and a secret readable with `ps`.
     #[test]
     fn the_secret_travels_on_the_pipe_and_never_in_an_argument() {
-        let token = Token::from_credentials(&credentials_with(A_SECRET)).expect("it is there");
-        let config = token.curl_config();
+        let token = token_of(&credentials_with(A_SECRET)).expect("it is there");
+        let config = token.curl_config(URL, &[BETA.to_owned()]);
         assert!(
             config.contains(A_SECRET),
             "without the token the request is not authenticated"
         );
-        assert!(config.contains(USAGE_URL));
+        assert!(config.contains(URL));
         assert!(
-            config.contains(BETA_HEADER),
+            config.contains(BETA),
             "the channel is versioned: the version is declared"
         );
+    }
+
+    /// **THE POINTER IS THE DESCRIPTOR'S, NOT THIS MODULE'S.** The same file
+    /// read under another provider's keys yields no token, and a token under
+    /// other keys is found when the pointer says so.
+    #[test]
+    fn the_token_is_found_where_the_pointer_says_and_nowhere_else() {
+        let text = credentials_with(A_SECRET);
+        let elsewhere = vec!["somebodyElse".to_owned(), "token".to_owned()];
+        assert_eq!(Token::from_credentials_at(&text, &elsewhere), Err(RemainingError::NoToken));
+        let flat = format!(r#"{{"token": "{A_SECRET}"}}"#);
+        assert!(Token::from_credentials_at(&flat, &["token".to_owned()]).is_ok());
     }
 
     /// An engine not authenticated here is not a fault: it is a reading that
     /// is not there, and whoever wanted it carries on without.
     #[test]
     fn a_machine_without_those_credentials_says_so_instead_of_failing_loudly() {
-        let nowhere = PathBuf::from("/this/home/does/not/exist");
-        let refused = read_from_claude(&nowhere, 0).expect_err("there is nothing to read");
+        let channel = OauthUsageChannel {
+            engine: ENGINE.to_owned(),
+            credentials: PathBuf::from("/this/home/does/not/exist/.credentials.json"),
+            token_pointer: pointer(),
+            url: URL.to_owned(),
+            headers: vec![BETA.to_owned()],
+        };
+        let refused = read_oauth_usage(&channel, 0).expect_err("there is nothing to read");
         assert!(matches!(refused, RemainingError::NoCredentials(_)));
     }
 }
