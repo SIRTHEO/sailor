@@ -205,6 +205,7 @@ fn main() {
             terminal::terminal_list,
             terminal::terminal_backlog,
             workspaces::workspaces,
+            workspaces::work_here,
             workspaces::workspace_declaration,
             profiles::profiles,
             profiles::profile_command_lines,
