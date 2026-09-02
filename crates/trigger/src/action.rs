@@ -120,6 +120,13 @@ impl Action for TriggerAction {
                 "listening_not_built",
                 not_listening_yet(descriptor),
             )),
+            // The same border, on the other side: the shape is declared, the
+            // clock that would fire it is not, and who winds that clock is a
+            // decision nobody has taken.
+            Kind::Periodic => Err(ActionError::new(
+                "nobody_keeps_the_time",
+                nobody_keeps_the_time(descriptor),
+            )),
         }
     }
 
@@ -176,6 +183,28 @@ fn not_listening_yet(descriptor: &TriggerDescriptor) -> String {
         said.push_str(&format!(" Descriptor note: {}", descriptor.note));
     }
     said
+}
+
+/// What the descriptor declared, handed back to whoever reads the failure: the
+/// missing piece is a keeper of time, not a missing declaration.
+///
+/// **NOTHING IS INSTALLED TO FILL THE GAP.** Who invokes the beat is Theo's
+/// decision, and a step that quietly started a timer would take it for him.
+fn nobody_keeps_the_time(descriptor: &TriggerDescriptor) -> String {
+    let declared = match &descriptor.periodic {
+        Some(periodic) => format!(
+            "it declares {:?}, a missed run answered with {:?}, and at most {} run(s) at once",
+            periodic.every, periodic.missed_run, periodic.at_most_at_once
+        ),
+        // Loading prevents this; reaching it means the fault is there.
+        None => "it declares nothing about when it fires".to_owned(),
+    };
+    format!(
+        "the trigger «{}» is fired by the clock, and nothing in Sailor keeps time: {declared}. \
+         `sailor flow tick` is the beat and it decides correctly, but somebody has to call it, \
+         and who that is has not been decided — so this step stops instead of inventing a run.",
+        descriptor.id
+    )
 }
 
 #[cfg(test)]
@@ -266,6 +295,39 @@ mod tests {
             assert_eq!(error.class, "listening_not_built");
             assert!(error.said.contains(&id), "{}", error.said);
         }
+    }
+
+    /// **THE SAME BORDER ON THE CLOCK'S SIDE.** A periodic source declares when
+    /// it would fire; nothing keeps that time, so the step breaks instead of
+    /// answering. The mutant that fells this is returning a signal here: a run
+    /// would then claim the hour had come when nobody had looked at a clock.
+    #[test]
+    fn a_periodic_source_refuses_to_pretend_the_hour_came() {
+        let dir = std::env::temp_dir().join(format!("sailor-orologio-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("creating the test directory");
+        let file = dir.join("miei.json");
+        std::fs::write(
+            &file,
+            r#"[{"id": "ogni-mezz-ora", "kind": "periodic", "periodic": {
+                 "every": {"kind": "every_seconds", "seconds": 1800},
+                 "missed_run": "catch_up_each_one", "at_most_at_once": 1}}]"#,
+        )
+        .expect("writing the test descriptors");
+
+        let error = fire(json!({
+            "source": "ogni-mezz-ora",
+            "descriptor_paths": [file.to_string_lossy()],
+            "include_defaults": false
+        }))
+        .expect_err("nobody keeps the time");
+
+        assert_eq!(error.class, "nobody_keeps_the_time");
+        assert!(error.said.contains("ogni-mezz-ora"), "{}", error.said);
+        // What it declared comes back out: the missing piece is the keeper of
+        // time, not the declaration.
+        assert!(error.said.contains("CatchUpEachOne"), "{}", error.said);
+        assert!(error.said.contains("at most 1"), "{}", error.said);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

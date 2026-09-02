@@ -1228,6 +1228,52 @@ fn waiting_report() -> String {
     report
 }
 
+/// What the ledger can say about when each flow last started.
+///
+/// **«NOTHING HAS RUN» AND «I COULD NOT LOOK» ARE DIFFERENT ANSWERS**, and
+/// fault 12 is the two of them sharing one. An empty map makes every scheduled
+/// flow due, which is right the first time and a lie when the ledger simply
+/// would not open — there the honest report is that nobody knows.
+enum LastRuns {
+    Read(BTreeMap<String, i64>),
+    NothingHasRunYet,
+    CouldNotLook(String),
+}
+
+impl LastRuns {
+    /// `consequence` is the catalogue key for what not looking cost, since the
+    /// beat and the due list pay it differently.
+    fn read_or_say_it_could_not(self, consequence: &str) -> Result<BTreeMap<String, i64>, String> {
+        match self {
+            LastRuns::Read(found) => Ok(found),
+            LastRuns::NothingHasRunYet => Ok(BTreeMap::new()),
+            LastRuns::CouldNotLook(why) => Err(catalogue::say(consequence, &[("why", &why)])),
+        }
+    }
+}
+
+fn last_runs() -> LastRuns {
+    let dir = match default_ledger_dir() {
+        Ok(dir) => dir,
+        Err(why) => return LastRuns::CouldNotLook(why),
+    };
+    // A ledger that is not there yet is not a failure: nothing has ever run, so
+    // everything is due, and that is the right answer.
+    if !dir.join("state.db").exists() {
+        return LastRuns::NothingHasRunYet;
+    }
+    match Ledger::open(&dir).and_then(|ledger| ledger.last_started_at()) {
+        Ok(found) => LastRuns::Read(found),
+        Err(error) => LastRuns::CouldNotLook(catalogue::say(
+            "cli.flow.ledger_would_not_be_read",
+            &[
+                ("where", &dir.display().to_string()),
+                ("error", &error.to_string()),
+            ],
+        )),
+    }
+}
+
 /// Quali flussi sono dovuti adesso, e quando ciascuno è girato l'ultima volta.
 ///
 /// PERCHÉ QUESTO COMANDO ESISTE PRIMA DI UNO SCHEDULATORE. Finché nessuno sa
@@ -1246,6 +1292,10 @@ fn waiting_report() -> String {
 /// exactly what it would have decided without the interruption — which is the
 /// one property a thing that runs forever has to have on a machine that sleeps.
 fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
+    tick_flows_with(sources, last_runs())
+}
+
+fn tick_flows_with(sources: &[FlowSource], last: LastRuns) -> Result<String, String> {
     let known = known_flows(sources);
     if known.is_empty() {
         return Ok(nothing_found(sources));
@@ -1254,12 +1304,7 @@ fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let last = default_ledger_dir()
-        .ok()
-        .filter(|dir| dir.join("state.db").exists())
-        .and_then(|dir| Ledger::open(&dir).ok())
-        .and_then(|ledger| ledger.last_started_at().ok())
-        .unwrap_or_default();
+    let last = last.read_or_say_it_could_not("cli.flow.beat_could_not_look")?;
 
     let mut report = String::new();
     let mut ran = 0usize;
@@ -1321,14 +1366,7 @@ fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    // Un deposito che non c'è ancora non è un errore: nessun flusso è mai
-    // girato, quindi sono tutti dovuti — ed è la risposta giusta.
-    let last = default_ledger_dir()
-        .ok()
-        .filter(|dir| dir.join("state.db").exists())
-        .and_then(|dir| Ledger::open(&dir).ok())
-        .and_then(|ledger| ledger.last_started_at().ok())
-        .unwrap_or_default();
+    let last = last_runs().read_or_say_it_could_not("cli.flow.due_could_not_look")?;
 
     let mut report = String::new();
     let mut due = 0usize;
@@ -3246,11 +3284,65 @@ mod tests {
             origin: "prova",
             dir: scratch.clone(),
         }];
-        let said = tick_flows(&sources).expect("a beat over one flow works");
+        // The last runs are handed in rather than read: a test that opens the
+        // ledger of whoever runs it is fault 5, and here it would also decide
+        // the answer.
+        let said = tick_flows_with(&sources, LastRuns::NothingHasRunYet)
+            .expect("a beat over one flow works");
         assert!(
             said.contains("senza-orario\thold\tno schedule"),
             "a held flow must name itself and say why: {said}"
         );
+        assert!(said.contains("0 run, 1 held"), "{said}");
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    /// A beat that could not read the ledger must not answer like a beat that
+    /// found nothing due: without the last runs every scheduled flow reads as
+    /// never run, so the blind beat would fire everything and call it a
+    /// schedule. It is fault 12 in another suit — a `sense` that cannot tell
+    /// zero from "I could not look".
+    #[test]
+    fn a_beat_that_could_not_read_the_ledger_says_so_instead_of_deciding() {
+        let scratch = std::env::temp_dir().join(format!("sailor-cieco-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(&scratch).expect("create the test directory");
+        fs::write(
+            scratch.join("ogni-minuto.flow.json"),
+            r#"{"id":"ogni-minuto","description":"un flusso a intervallo",
+                "schedule":{"recurrence":{"kind":"every_seconds","seconds":60},"weight":"light"},
+                "graph":{"steps":[{"id":"innesco","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"vai"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a scheduled flow");
+        let sources = vec![FlowSource {
+            origin: "prova",
+            dir: scratch.clone(),
+        }];
+
+        let complaint = tick_flows_with(
+            &sources,
+            LastRuns::CouldNotLook("unable to open database file".to_owned()),
+        )
+        .expect_err("a blind beat is not a beat that did nothing");
+        assert!(
+            complaint.contains("unable to open database file"),
+            "the beat must carry why it could not look: {complaint}"
+        );
+        assert!(
+            !complaint.contains("0 run"),
+            "and must not read as a count: {complaint}"
+        );
+
+        // The same flow, with a ledger that answers: the beat decides instead
+        // of refusing. Without this half the test above would pass on a beat
+        // that complains every time. The last run is now, so nothing is started
+        // and this test touches no real ledger.
+        let just_ran = BTreeMap::from([("ogni-minuto".to_owned(), now_secs().unwrap_or(0))]);
+        let said = tick_flows_with(&sources, LastRuns::Read(just_ran))
+            .expect("a beat that could look works");
+        assert!(said.contains("ogni-minuto\thold\tnot due"), "{said}");
         assert!(said.contains("0 run, 1 held"), "{said}");
         let _ = fs::remove_dir_all(&scratch);
     }
