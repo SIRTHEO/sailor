@@ -30,7 +30,7 @@ const DATED_COMMENTS_TODAY: usize = 197;
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_913;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_912;
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**
 ///
