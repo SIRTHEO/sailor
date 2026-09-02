@@ -2,7 +2,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
-import { liveWords, spendWords, whoWords, LiveChip } from "./Bar";
+import { buildWords, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
+import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { PLACES } from "./Rail";
 
@@ -119,6 +120,41 @@ describe("the bar's three facts", () => {
     expect(waiting.live).toBe(false);
     expect(waiting.word).toBe("relay · 30s · waiting for you");
     expect(liveWords([working, { ...working, run_id: "x", entity: "night" }], 1005).word).toContain("+1 more");
+  });
+
+  test("the build under the window is silent when fine, and loud when what you see is old", () => {
+    expect(buildWords(null, 100)).toBeNull();
+    expect(buildWords({ state: "running", message: "", changed_at: 1, running_since: 1 }, 100)).toBeNull();
+    expect(buildWords({ state: "building", message: "", changed_at: 1, running_since: 1 }, 100)).toEqual({
+      warn: false,
+      word: "rebuilding the window…",
+    });
+    const failed = buildWords({ state: "build_failed", message: "error[E0308]", changed_at: 90, running_since: 100 - 15 * 60 }, 100);
+    expect(failed?.warn).toBe(true);
+    expect(failed?.word).toBe("REBUILD FAILED · you see the last good version running since 15m ago");
+  });
+
+  test("THE EMPTY BOARD SAYS WHERE IT LOOKED, with the real paths and what it found", () => {
+    render(
+      <BlankCanvas
+        state="empty"
+        brokenCount={0}
+        onCreate={() => {}}
+        places={{
+          state: "ready",
+          places: [
+            { origin: "yours", path: "/home/x/.config/sailor/flows", exists: true, count: 0 },
+            { origin: "this project", path: "/work/x/flows", exists: false, count: 0 },
+          ],
+        }}
+      />,
+    );
+    const rows = Array.from(document.querySelectorAll(".blank__place"));
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "yours/home/x/.config/sailor/flows0 found",
+      "this project/work/x/flowsno such folder",
+    ]);
+    expect(rows[1].getAttribute("data-missing")).toBe("true");
   });
 
   test("what it cost is a floor when a call had no price, and says so", () => {

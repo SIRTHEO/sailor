@@ -27,11 +27,11 @@ import {
 } from "./StepNode";
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
-import { BlankCanvas } from "./BlankCanvas";
+import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
 import { Rail, PLACES, type Section } from "./Rail";
-import { LiveChip, WhoChip } from "./Bar";
+import { BuildChip, LiveChip, WhoChip } from "./Bar";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen, SAILOR_TABS, type SailorTab } from "./SailorScreen";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
@@ -51,6 +51,7 @@ import {
   deleteFlow,
   discoverTools,
   executionHistory,
+  flowPlaces,
   flowTrigger,
   insideTheWindow,
   knownRuns,
@@ -286,6 +287,29 @@ export default function App() {
       dropped = true;
     };
   }, [readFlows]);
+
+  // WHERE THE ENGINE LOOKED, asked only when it found nothing: an empty board
+  // that cannot say where it looked cannot be told from a fault.
+  const [places, setPlaces] = useState<PlacesAsk>(null);
+  const boardEmpty = source === "engine" && flows.size === 0;
+  useEffect(() => {
+    if (!NATIVE || !boardEmpty) {
+      setPlaces(null);
+      return;
+    }
+    let dropped = false;
+    flowPlaces().then(
+      (found) => {
+        if (!dropped) setPlaces({ state: "ready", places: found });
+      },
+      (error: unknown) => {
+        if (!dropped) setPlaces({ state: "mute", why: String(error) });
+      },
+    );
+    return () => {
+      dropped = true;
+    };
+  }, [boardEmpty]);
 
   // TOOLS ARE ASKED FOR, NOT KNOWN. If `discover_tools` does not answer, the
   // panel says so and lets the id be typed by hand — no blank screen, and no
@@ -1213,6 +1237,7 @@ export default function App() {
               Search or run a command
             </button>
             <LiveChip native={NATIVE} now={now} onOpen={(runId) => setWatching(runId)} />
+            <BuildChip native={NATIVE} now={now} />
             <WhoChip native={NATIVE} />
           </>
         }
@@ -1502,6 +1527,7 @@ export default function App() {
               failure={failure}
               brokenCount={broken.length}
               onCreate={addFlow}
+              places={places}
             />
           )}
         </main>
