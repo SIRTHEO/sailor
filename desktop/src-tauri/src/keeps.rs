@@ -18,6 +18,18 @@ pub(crate) struct Store {
     pub how_many: Option<u64>,
     pub bytes: Option<u64>,
     pub exists: bool,
+    /// When the store came to be, in seconds since the epoch; `None` when it
+    /// is not there or the disk keeps no birth time.
+    pub since: Option<i64>,
+}
+
+/// The birth time of a path, or its last change where the disk keeps no birth.
+fn born(path: &Path) -> Option<i64> {
+    let meta = std::fs::metadata(path).ok()?;
+    let time = meta.created().or_else(|_| meta.modified()).ok()?;
+    time.duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_secs() as i64)
 }
 
 /// The binary the hooks and the terminals call, and what it was built from.
@@ -98,6 +110,7 @@ fn store_of(what: &str, path: &Path, how_many: Option<u64>) -> Store {
         how_many: if exists { how_many } else { None },
         bytes,
         exists,
+        since: if exists { born(path) } else { None },
     }
 }
 
@@ -113,6 +126,7 @@ pub(crate) fn stores_in(home: &Path, sources: &[ui::gather::FlowSource], ledger_
             how_many: counted.map(|(count, _)| count),
             bytes: counted.map(|(_, bytes)| bytes),
             exists: counted.is_some(),
+            since: counted.and_then(|_| born(&source.dir)),
         });
     }
     let ledger_rows = ui::gather::ledger_present(ledger_dir)
@@ -221,6 +235,7 @@ mod tests {
         assert_eq!((yours.exists, yours.how_many, yours.bytes), (true, Some(2), Some(10)));
         let project = by_what("Flows, the project's");
         assert_eq!((project.exists, project.how_many, project.bytes), (false, None, None));
+        assert!(yours.since.is_some() && project.since.is_none(), "{yours:?} {project:?}");
         let ledger = by_what("Runs, steps and events");
         assert!(!ledger.exists && ledger.how_many.is_none(), "{ledger:?}");
         let prices = by_what("Prices");
