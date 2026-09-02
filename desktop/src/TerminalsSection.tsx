@@ -23,18 +23,21 @@ export function TerminalsSection({
   shown,
   tab,
   onTab,
+  ceiling,
 }: {
   native: boolean;
   now: number;
   shown: boolean;
   tab: TerminalsTab;
   onTab: (tab: TerminalsTab) => void;
+  /** The ceiling the relay hands on at, or `null` when no loaded flow declares one. */
+  ceiling: number | null;
 }) {
   return (
     <div className="section" hidden={!shown}>
       <SubRail here={tab} onGo={onTab} tabs={TERMINALS_TABS} />
       <div className="section__body section__body--terminals">
-        <Terminals native={native} shown={shown && tab === "live"} />
+        <Terminals native={native} shown={shown && tab === "live"} ceiling={ceiling} />
         {shown && tab === "projects" && <Projects native={native} now={now} />}
         {shown && tab === "worktrees" && <Worktrees native={native} />}
       </div>

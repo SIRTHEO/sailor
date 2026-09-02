@@ -393,6 +393,7 @@ fn the_list_row_carries_the_names_the_window_reads() {
         process_id: 4242,
         device: "ttys004".to_owned(),
         moved: 512,
+        estimated_tokens: 60_477,
     };
     let written = serde_json::to_value(&row).expect("la riga si serializza");
     let object = written.as_object().expect("è un oggetto");
@@ -403,6 +404,7 @@ fn the_list_row_carries_the_names_the_window_reads() {
         [
             "alive",
             "device",
+            "estimatedTokens",
             "id",
             "moved",
             "processId",
@@ -416,6 +418,25 @@ fn the_list_row_carries_the_names_the_window_reads() {
     // The tty is the anchor of a tab: it travels as the device, short form.
     assert_eq!(written["device"], "ttys004");
     assert_eq!(written["moved"], 512);
+    assert_eq!(written["estimatedTokens"], 60_477);
+}
+
+/// **THE ESTIMATE IN THE ROW IS THE RELAY'S, NOT A SECOND FIT.** The window
+/// shows a token count next to the bytes, and it must be the number the relay
+/// compares to its ceiling: the same model, the same intercept, on the same
+/// bytes. A row that carried zero, or a count fitted elsewhere, would show a
+/// session as empty right up to the moment the baton is handed on.
+#[test]
+fn the_estimate_in_the_row_is_the_one_the_relay_measures_with() {
+    let model = sessions::fullness::Model::default();
+    for moved in [0_u64, 512, 1 << 20] {
+        let expected = sessions::fullness::measure(moved, &model, 0).estimated_tokens;
+        assert_eq!(terminal::estimated_tokens(moved), expected, "at {moved} bytes");
+    }
+    assert!(
+        terminal::estimated_tokens(1 << 20) > terminal::estimated_tokens(0),
+        "more bytes must estimate more tokens"
+    );
 }
 
 /// **A TAB IS ANCHORED ON THE TTY, AND THE TTY IS THE PROGRAM'S OWN.** The

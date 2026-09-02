@@ -3721,6 +3721,16 @@ tr[data-followable]:hover {
   color: var(--muted);
 }
 
+.pane__tokens {
+  font-size: var(--text-micro);
+  color: var(--muted);
+}
+
+.pane__tokens[data-past] {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 /* ── what changed in a workspace ───────────────────────────────────────── */
 
 .changes {

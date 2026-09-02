@@ -158,8 +158,17 @@ impl Terminal {
             process_id: self.process_id(),
             device: self.tty().to_owned(),
             moved: self.moved(),
+            estimated_tokens: estimated_tokens(self.moved()),
         }
     }
+}
+
+/// The tokens the bytes moved amount to, by the model the relay measures with.
+///
+/// No ceiling here: whether this is too full is a budget somebody declares in
+/// a flow, and the row only carries the number that budget is compared to.
+pub fn estimated_tokens(moved: u64) -> u64 {
+    sessions::fullness::measure(moved, &sessions::fullness::Model::default(), 0).estimated_tokens
 }
 
 /// Una riga dell'elenco dei terminali aperti.
@@ -184,6 +193,8 @@ pub struct Summary {
     pub device: String,
     /// Bytes moved so far, both ways: the same number `terminal list` prints.
     pub moved: u64,
+    /// What those bytes amount to in tokens, by the relay's model: an estimate.
+    pub estimated_tokens: u64,
 }
 
 /// I terminali aperti da questo processo.
