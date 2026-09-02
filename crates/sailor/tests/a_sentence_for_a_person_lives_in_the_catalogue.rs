@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 /// What `crates/sailor/src` still holds. It goes down as sentences move into
 /// `i18n/`, and a rise means a new one was written into the code. Never raise
 /// it to make the gate green.
-const SENTENCES_STILL_IN_THE_CODE: usize = 243;
+const SENTENCES_STILL_IN_THE_CODE: usize = 218;
 
 /// Words that open a query for the database, not a line for a person.
 const A_QUERY_NOT_A_SENTENCE: &[&str] = &[
@@ -99,9 +99,27 @@ fn literals(code: &str) -> Vec<String> {
     found
 }
 
-/// A line for a person rather than a name, a path or a format: four words of
-/// its own once the `{placeholders}` are taken out, and at least one small
-/// letter. It can let something through; it must not accuse wrongly.
+/// What a person reads and a machine does not: `{a placeholder}`, `<a slot>` in
+/// a usage line, `[an option]`. What is left is the prose, and only the prose
+/// can be said in another language.
+fn only_the_prose(text: &str) -> String {
+    let mut bare = String::new();
+    let mut depth = 0usize;
+    for letter in text.chars() {
+        match letter {
+            '{' | '<' | '[' => depth += 1,
+            '}' | '>' | ']' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => bare.push(letter),
+            _ => {}
+        }
+    }
+    bare
+}
+
+/// A line for a person rather than a name, a path, a format or a usage line:
+/// four words of its own prose, and at least one small letter. It can let
+/// something through; it must not accuse wrongly — and `sailor worktree create
+/// <branch> [name]` is not something anybody can translate.
 fn is_a_sentence(text: &str) -> bool {
     if !text.chars().any(|letter| letter.is_ascii_lowercase()) {
         return false;
@@ -113,17 +131,8 @@ fn is_a_sentence(text: &str) -> bool {
     {
         return false;
     }
-    let mut bare = String::new();
-    let mut depth = 0usize;
-    for letter in text.chars() {
-        match letter {
-            '{' => depth += 1,
-            '}' => depth = depth.saturating_sub(1),
-            _ if depth == 0 => bare.push(letter),
-            _ => {}
-        }
-    }
-    bare.split_whitespace()
+    only_the_prose(text)
+        .split_whitespace()
         .filter(|word| word.chars().filter(char::is_ascii_alphabetic).count() >= 2)
         .count()
         >= 4
@@ -236,6 +245,7 @@ fn speak() -> String {
 const PATH: &str = "crates/sailor/src/lib.rs";
 const QUERY: &str = "SELECT tty, worktree FROM terminals WHERE open = 1";
 const SHAPE: &str = "{:<10} {:<14} {:<8}";
+const USAGE: &str = "sailor worktree create <branch> [name]";
 let _ = value.expect("the lock does not panic when nobody else holds it");
 // a comment saying that no terminal has checked in yet is prose, not a sentence
 "#;
@@ -243,6 +253,16 @@ let _ = value.expect("the lock does not panic when nobody else holds it");
         sentences_of(not_sentences).is_empty(),
         "something that is not a line for a person was counted: {:?}",
         sentences_of(not_sentences)
+    );
+
+    // The slots go, the description stays: a usage line that explains itself is
+    // half prose, and the half a person reads has to be sayable in their own
+    // language.
+    let a_usage_line_that_explains_itself =
+        "sailor worktree create <branch> [name]   opens a copy of the tree";
+    assert!(
+        is_a_sentence(a_usage_line_that_explains_itself),
+        "the words a person actually reads were thrown out with the slots"
     );
 
     let below_the_tests =
