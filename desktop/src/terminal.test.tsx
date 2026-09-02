@@ -190,16 +190,24 @@ describe("where a key goes", () => {
 });
 
 describe("where the line ended up, told to whoever is watching", () => {
-  test("a rerouted line names the rule and the flow, not just the flow", () => {
-    const said = routingNote("? find the leftovers", {
-      kind: "flow",
+  test("a rerouted line names the rule, the flow, and whether the flow started", () => {
+    const sent = {
+      kind: "flow" as const,
       flow: "dispatch-the-work",
       text: "find the leftovers",
       rule: "marked-request",
-    });
-    expect(said).toContain("marked-request");
-    expect(said).toContain("dispatch-the-work");
-    expect(said).toContain("was not run");
+    };
+    const started = routingNote("? find the leftovers", { ...sent, run_id: "dispatch-the-work-9" });
+    expect(started).toContain("marked-request");
+    expect(started).toContain("dispatch-the-work");
+    expect(started).toContain("run dispatch-the-work-9 started");
+
+    // The flow that refused says why, in the engine's words; and an engine
+    // that started nothing and said nothing is reported as exactly that.
+    expect(routingNote("? x", { ...sent, refused: "no flow is called dispatch-the-work" })).toContain(
+      "did not start: no flow is called dispatch-the-work",
+    );
+    expect(routingNote("? x", sent)).toContain("nothing ran it");
   });
 
   test("a command says it went to the shell", () => {

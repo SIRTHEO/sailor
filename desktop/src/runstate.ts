@@ -26,6 +26,9 @@ const STATE_OF_OUTCOME: Record<string, StepState> = {
   Broke: "broke",
   Stopped: "capped",
   Waiting: "waiting",
+  // A step that answered «not yet, ask me on the next beat» is closed and
+  // will be asked again: it waits, it is not still running.
+  NotYet: "waiting",
 };
 
 /**

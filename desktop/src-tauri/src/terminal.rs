@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::io::Read;
 use std::process::{Child, Command, Stdio};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use base64::Engine;
@@ -288,8 +288,54 @@ fn what_crosses(
 /// may go to a flow instead of the shell. A key pressed inside an editor goes
 /// through [`terminal_press`] and is never examined.
 #[tauri::command]
-pub(crate) fn terminal_submit(id: String, line: String) -> Result<Submitted, String> {
-    client()?.submit(&id, &line)
+pub(crate) fn terminal_submit(
+    app: AppHandle,
+    runs: tauri::State<'_, Arc<crate::run::Runs>>,
+    id: String,
+    line: String,
+) -> Result<Routed, String> {
+    let answer = client()?.submit(&id, &line)?;
+    Ok(match answer {
+        Submitted::Command => Routed::Command,
+        // THE TRIGGER LISTENS, AND NOW SOMETHING RUNS. A line the router sent
+        // to a flow used to end in a note saying it was not run; the flow
+        // starts here, with the line as its mandate, and the pane is told
+        // whether it did.
+        Submitted::Flow { flow, text, rule } => {
+            let origin = format!("terminal · {rule}");
+            let started = crate::run::start(&app, runs.inner(), &flow, Some(&text), origin);
+            routed(flow, text, rule, started.map(|run| run.run_id))
+        }
+    })
+}
+
+/// What became of the line: the shell has it, or a flow was asked to run
+/// and either started or refused, in the engine's words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum Routed {
+    Command,
+    Flow {
+        flow: String,
+        text: String,
+        rule: String,
+        run_id: Option<String>,
+        refused: Option<String>,
+    },
+}
+
+fn routed(flow: String, text: String, rule: String, started: Result<String, String>) -> Routed {
+    let (run_id, refused) = match started {
+        Ok(run_id) => (Some(run_id), None),
+        Err(why) => (None, Some(why)),
+    };
+    Routed::Flow {
+        flow,
+        text,
+        rule,
+        run_id,
+        refused,
+    }
 }
 
 /// Raw bytes on the input: a Ctrl-C, an arrow, the answer to a question.
@@ -422,6 +468,28 @@ mod tests {
             "{refused}"
         );
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// **A LINE SENT TO A FLOW SAYS WHETHER THE FLOW STARTED**, with the run
+    /// or with the refusal: «not run» with no reason was the old answer.
+    #[test]
+    fn a_routed_line_carries_the_run_it_started_or_the_refusal() {
+        let went = routed("relay".into(), "go".into(), "question".into(), Ok("relay-7".into()));
+        assert_eq!(
+            serde_json::to_value(&went).expect("serialise"),
+            serde_json::json!({
+                "kind": "flow", "flow": "relay", "text": "go", "rule": "question",
+                "run_id": "relay-7", "refused": null
+            })
+        );
+        let refused = routed("relay".into(), "go".into(), "question".into(), Err("no flow is called relay".into()));
+        match refused {
+            Routed::Flow { run_id, refused, .. } => {
+                assert_eq!(run_id, None);
+                assert_eq!(refused.as_deref(), Some("no flow is called relay"));
+            }
+            Routed::Command => panic!("a refused flow is not a command"),
+        }
     }
 
     /// **THE EVENTS KEEP THE NAMES THE WINDOW LISTENS TO.** A typo here breaks

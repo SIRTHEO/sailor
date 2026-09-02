@@ -272,7 +272,10 @@ export function TerminalPane({
  */
 export function routingNote(line: string, answer: Submitted): string {
   if (answer.kind === "command") return `«${line}» went to the shell`;
-  return `«${line}» was not run: rule «${answer.rule}» sent it to flow «${answer.flow}» as «${answer.text}»`;
+  const sent = `rule «${answer.rule}» sent «${line}» to flow «${answer.flow}» as «${answer.text}»`;
+  if (answer.run_id) return `${sent}: run ${answer.run_id} started`;
+  if (answer.refused) return `${sent}, and the flow did not start: ${answer.refused}`;
+  return `${sent}; nothing ran it`;
 }
 
 /**
