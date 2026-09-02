@@ -25,20 +25,20 @@ pub fn run(args: &[String]) -> i32 {
             "--kind" => {
                 i += 1;
                 let Some(raw) = args.get(i) else {
-                    eprintln!("--kind richiede un valore");
+                    eprintln!("--kind needs a value");
                     return 2;
                 };
                 match parse_kind(raw) {
                     Some(k) => only = Some(k),
                     None => {
-                        eprintln!("--kind sconosciuto: {raw}");
+                        eprintln!("unknown --kind: {raw}");
                         print_usage();
                         return 2;
                     }
                 }
             }
             other => {
-                eprintln!("opzione sconosciuta: {other}");
+                eprintln!("unknown option: {other}");
                 print_usage();
                 return 2;
             }
@@ -59,7 +59,7 @@ pub fn run(args: &[String]) -> i32 {
     }
     for missing in &survey.unreadable {
         eprintln!(
-            "non ho potuto guardare in {}: {}",
+            "could not look in {}: {}",
             missing.path.display(),
             missing.reason
         );
@@ -70,7 +70,7 @@ pub fn run(args: &[String]) -> i32 {
         match deposit(&found) {
             Ok(message) => println!("{message}"),
             Err(error) => {
-                eprintln!("l'inventario non si è depositato: {error}");
+                eprintln!("the inventory was not stored: {error}");
                 return 1;
             }
         }
@@ -79,7 +79,7 @@ pub fn run(args: &[String]) -> i32 {
         match print_changes() {
             Ok(()) => {}
             Err(error) => {
-                eprintln!("il deposito non risponde: {error}");
+                eprintln!("the store does not answer: {error}");
                 return 1;
             }
         }
@@ -93,7 +93,7 @@ pub fn run(args: &[String]) -> i32 {
                 0
             }
             Err(error) => {
-                eprintln!("l'inventario non si lascia scrivere: {error}");
+                eprintln!("the inventory will not be written: {error}");
                 1
             }
         }
@@ -129,7 +129,7 @@ fn deposit(found: &Inventory) -> Result<String, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
-        .map_err(|error| format!("l'orologio è indietro rispetto all'epoca: {error}"))?;
+        .map_err(|error| format!("the clock is behind the epoch: {error}"))?;
     let items = found
         .entries
         .iter()
@@ -180,7 +180,7 @@ fn deposit(found: &Inventory) -> Result<String, String> {
 /// due.
 fn open_ledger() -> Result<Ledger, String> {
     let directory = ledger::default_directory()
-        .ok_or_else(|| "HOME non è definita: non so dove aprire il deposito".to_owned())?;
+        .ok_or_else(|| "HOME is not set: there is no telling where to open the store".to_owned())?;
     Ledger::open(&directory).map_err(|error| error.to_string())
 }
 
@@ -191,7 +191,7 @@ fn print_changes() -> Result<(), String> {
     let present = ledger.inventory_present().map_err(|e| e.to_string())?;
 
     if present.is_empty() && gone.is_empty() {
-        println!("il deposito non ha ancora nessuna scansione: lanciala con --record");
+        println!("the store holds no scan yet: run one with --record");
         return Ok(());
     }
 
@@ -232,13 +232,13 @@ fn print_human(found: &Inventory, only: Option<Kind>, unreachable_only: bool) {
     // fondo: chi legge un conteggio deve avere sott'occhio quanto di macchina è
     // rimasto fuori, o legge un numero credendolo il totale.
     if !found.unseen.is_empty() {
-        println!("non guardate:");
+        println!("not looked at:");
         for missing in &found.unseen {
             println!("  {missing}");
         }
     }
     if !found.bases_declared {
-        println!("nessuna base di lavoro dichiarata: questo conto è della sola casa");
+        println!("no working base declared: this count is the home's alone");
     }
     println!();
 

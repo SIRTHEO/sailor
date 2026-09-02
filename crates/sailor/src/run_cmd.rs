@@ -39,13 +39,13 @@ fn resolve(
     let cli = find_cli(cli_id)?;
     if matches!(cli.home, HomeMechanism::Unknown) {
         return Err(format!(
-            "{}: non si sa ancora come sposti la sua cartella di casa ({}); sailor run si rifiuta di indovinare",
+            "{}: how it moves its home directory is not known yet ({}); sailor run refuses to guess",
             cli.display_name, cli.home_note
         ));
     }
     let Some(active_name) = store.active.get(cli.id) else {
         return Err(format!(
-            "nessun profilo attivo per {}: usa 'sailor profiles switch {} <nome>' prima di lanciarla",
+            "no active profile for {}: use 'sailor profiles switch {} <name>' before starting it",
             cli.display_name, cli.id
         ));
     };
@@ -55,7 +55,7 @@ fn resolve(
         .find(|p| p.cli_id == cli.id && &p.name == active_name)
         .ok_or_else(|| {
             format!(
-                "il profilo attivo '{active_name}' per {} non esiste più nello stato",
+                "the active profile '{active_name}' for {} is no longer in the state",
                 cli.id
             )
         })?;
@@ -144,10 +144,7 @@ pub fn run(args: &[String]) -> i32 {
         .args(&launch.args)
         .envs(&launch.env)
         .exec();
-    eprintln!(
-        "sailor run: non riesco ad avviare {}: {error}",
-        launch.executable
-    );
+    eprintln!("sailor run: cannot start {}: {error}", launch.executable);
     1
 }
 
@@ -201,7 +198,7 @@ mod tests {
     fn without_an_active_profile_the_launch_is_refused() {
         let store = two_profile_store();
         let error = resolve("codex", &store, &[], Path::new("/casa")).unwrap_err();
-        assert!(error.contains("nessun profilo attivo"), "{error}");
+        assert!(error.contains("no active profile"), "{error}");
     }
 
     #[test]
@@ -211,7 +208,7 @@ mod tests {
             .active
             .insert("codex".to_owned(), "sparito".to_owned());
         let error = resolve("codex", &store, &[], Path::new("/casa")).unwrap_err();
-        assert!(error.contains("non esiste più"), "{error}");
+        assert!(error.contains("no longer in the state"), "{error}");
     }
 
     #[test]
@@ -226,7 +223,7 @@ mod tests {
             .active
             .insert("antigravity".to_owned(), "prova".to_owned());
         let error = resolve("antigravity", &store, &[], Path::new("/casa")).unwrap_err();
-        assert!(error.contains("non si sa ancora"), "{error}");
+        assert!(error.contains("is not known yet"), "{error}");
     }
 
     #[test]
