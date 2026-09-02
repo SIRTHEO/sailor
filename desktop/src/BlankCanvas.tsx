@@ -50,7 +50,7 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanv
             </div>
           ))}
         </div>
-        <p className="blank__waiting">Chiedo i flussi al motore…</p>
+        <p className="blank__waiting">Asking the engine for the flows…</p>
       </div>
     );
   }
@@ -59,10 +59,10 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanv
     return (
       <div className="blank" data-state="failed">
         <div className="blank__card">
-          <h2>Il motore non risponde.</h2>
+          <h2>The engine is not answering.</h2>
           <p>
-            La tela è vuota perché nessuno ha potuto dire cosa c'è sul disco, non perché il disco
-            sia vuoto. Finché il motore tace, un flusso creato adesso non si potrebbe salvare.
+            The canvas is empty because nobody could say what is on the disk, not because the disk
+            is empty. While the engine is silent, a flow created now could not be saved.
           </p>
           {failure && <p className="blank__why">{failure}</p>}
         </div>
@@ -78,9 +78,9 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanv
   return (
     <div className="blank" data-state="empty">
       <div className="blank__card">
-        <h2>Qui non c'è ancora niente. Cominciamo.</h2>
+        <h2>Nothing here yet. Let us begin.</h2>
         <p>
-          Un flusso è una catena di passi: ognuno fa una cosa sola e dice da quali altri dipende.
+          A flow is a chain of steps: each does one thing and says which others it depends on.
         </p>
         {/* `role="list"` non è un di più: il foglio toglie i pallini con
             `list-style: none`, e con quella riga alcuni lettori di schermo
@@ -88,19 +88,19 @@ export function BlankCanvas({ state, failure, brokenCount, onCreate }: BlankCanv
             foglio, quindi senza il ruolo l'ordine dei gesti si perderebbe
             proprio per chi non lo vede. */}
         <ol className="blank__gestures" role="list">
-          <li>Crea il flusso: nasce vuoto, e resta qui finché non lo salvi.</li>
-          <li>Aggiungi i passi dalla barra che compare in fondo alla tela.</li>
-          <li>Collegali trascinando da una porta all'altra: il filo è la dipendenza.</li>
+          <li>Create the flow: it is born empty, and stays here until you save it.</li>
+          <li>Add steps from the bar that appears at the foot of the canvas.</li>
+          <li>Wire them by dragging from one port to another: the wire is the dependency.</li>
         </ol>
         {brokenCount > 0 && (
           <p className="blank__why">
             {brokenCount === 1
-              ? "Un flusso sul disco non si carica: è in fondo alla colonna, col motivo."
-              : `${brokenCount} flussi sul disco non si caricano: sono in fondo alla colonna, col motivo.`}
+              ? "One flow on the disk will not load: it is at the foot of the column, with the reason."
+              : `${brokenCount} flows on the disk will not load: they are at the foot of the column, with the reason.`}
           </p>
         )}
         <button type="button" className="is-primary" onClick={onCreate}>
-          Crea il primo flusso
+          Create the first flow
         </button>
       </div>
     </div>

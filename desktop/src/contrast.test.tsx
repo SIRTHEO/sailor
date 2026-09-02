@@ -126,7 +126,7 @@ describe("the first screen: what is happening right now", () => {
       </div>,
     );
     expect(screen.getByText("aspetta te")).toBeTruthy();
-    expect(screen.getByText("senza nome")).toBeTruthy();
+    expect(screen.getByText("unnamed")).toBeTruthy();
     // An attempt that is not the first: a step open on the second try means the
     // first round fell over, and that is what a green line hides.
     expect(screen.getByText("2ª volta")).toBeTruthy();
@@ -202,17 +202,17 @@ describe("the run history", () => {
           <History native />
         </div>,
       );
-      await screen.findByText("rotta");
-      expect(screen.getByText("andata")).toBeTruthy();
-      expect(screen.getByText("aperta")).toBeTruthy();
+      await screen.findByText("broke");
+      expect(screen.getByText("went")).toBeTruthy();
+      expect(screen.getByText("open")).toBeTruthy();
       // COMPUTED COST AND DECLARED COST, SIDE BY SIDE. If they diverge, this is
       // where you notice — the check the three observability tools with public
       // bugs on their numbers are missing. Twice: the run total and the call
       // that makes it up.
-      expect(screen.getAllByText("0,412 $").length).toBe(2);
-      expect(screen.getByText("0,409 $")).toBeTruthy();
+      expect(screen.getAllByText("$0.412").length).toBe(2);
+      expect(screen.getByText("$0.409")).toBeTruthy();
       // A call that declared no tokens did not consume zero of them.
-      expect(screen.getAllByText("non detto").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("not said").length).toBeGreaterThan(0);
       expect(measure(30)).toEqual([]);
     } finally {
       stop();
@@ -239,9 +239,9 @@ describe("what is installed", () => {
           <Installed native />
         </div>,
       );
-      await screen.findByText("attiva");
-      expect(screen.getByText("spenta")).toBeTruthy();
-      expect(screen.getByText("non lo so")).toBeTruthy();
+      await screen.findByText("active");
+      expect(screen.getByText("switched off")).toBeTruthy();
+      expect(screen.getByText("not known")).toBeTruthy();
       // The reason is the whole value of the third entry: without it, «spenta»
       // stays a word nobody can act on.
       expect(screen.getByText("il plugin che la contiene è spento")).toBeTruthy();
@@ -314,8 +314,8 @@ describe("today's summary", () => {
           <Now native onOpen={() => {}} />
         </div>,
       );
-      await screen.findByText(/chiamate senza token/);
-      expect(screen.getByText("Non sta girando niente, e niente aspetta te.")).toBeTruthy();
+      await screen.findByText(/calls without tokens/);
+      expect(screen.getByText("Nothing is running, and nothing waits for you.")).toBeTruthy();
       // The barest scene the window can show — the summary and one sentence —
       // and that is fine, because it is also the one a quiet machine shows for
       // hours on end.
@@ -345,7 +345,7 @@ describe("a ledger that is not there", () => {
           <Now native onOpen={() => {}} />
         </div>,
       );
-      return screen.findByText(/non e' la stessa cosa|non è la stessa cosa/).then(() => {
+      return screen.findByText(/not the same as/).then(() => {
         // And no number: a zero written next to «non lo so» still reads as zero.
         expect(screen.queryByText("0")).toBeNull();
         stop();

@@ -60,7 +60,7 @@ describe("la spesa per passo", () => {
 
   test("UN COSTO ASSENTE RESTA ASSENTE, non diventa zero", () => {
     // Codex dichiara il totale dei token e non i due lati, quindi la sua riga
-    // resta senza costo: mostrare `0,0000 $` sarebbe una misura inventata.
+    // resta senza costo: mostrare `$0.0000` sarebbe una misura inventata.
     const perStep = stepUsageOfRun(usageWith([call({ cost_micros: null })]), "f");
     const found = perStep.get("f::implementa");
     expect(found?.costMicros).toBe(null);

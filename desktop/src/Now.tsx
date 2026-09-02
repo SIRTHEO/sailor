@@ -33,15 +33,12 @@ const SUMMARY_MS = 30000;
 
 /** Un numero con i separatori delle migliaia, come lo legge una persona. */
 function count(value: number): string {
-  return value.toLocaleString("it-IT");
+  return value.toLocaleString("en-GB");
 }
 
-/** Da micro-unità a euro con tre decimali: sotto il millesimo non si decide. */
+/** From micro-units to dollars with three decimals: below a thousandth nothing is decided. */
 function money(micros: number): string {
-  return `${(micros / 1_000_000).toLocaleString("it-IT", {
-    minimumFractionDigits: 3,
-    maximumFractionDigits: 3,
-  })} $`;
+  return `$${(micros / 1_000_000).toFixed(3)}`;
 }
 
 /**
@@ -60,15 +57,15 @@ function Today({ summary }: { summary: DaySummary }) {
   if (!summary.ledger_present) {
     return (
       <p className="now__mute">
-        Il deposito non esiste ancora: su questa macchina non è mai girato niente. Nessun conteggio è noto — che
-        non è la stessa cosa di «zero».
+        The ledger does not exist yet: nothing has ever run on this machine. No count is known, which is not
+        the same as «zero».
       </p>
     );
   }
   const seen = summary.input_tokens + summary.output_tokens + summary.cached_tokens + summary.cache_write_tokens;
   return (
     <section className="today">
-      <span className="today__label">Oggi</span>
+      <span className="today__label">Today</span>
       <span className="today__cell">
         <b>{count(summary.runs)}</b> corse
       </span>
@@ -82,7 +79,7 @@ function Today({ summary }: { summary: DaySummary }) {
       )}
       {summary.still_open > 0 && (
         <span className="today__cell">
-          <b>{count(summary.still_open)}</b> ancora aperte
+          <b>{count(summary.still_open)}</b> still open
         </span>
       )}
       <span className="today__cell">
@@ -93,10 +90,10 @@ function Today({ summary }: { summary: DaySummary }) {
       </span>
       {(summary.unmeasured > 0 || summary.unpriced > 0) && (
         <span className="today__caveat" data-gravity="warn">
-          {summary.unmeasured > 0 && `${count(summary.unmeasured)} chiamate senza token`}
+          {summary.unmeasured > 0 && `${count(summary.unmeasured)} calls without tokens`}
           {summary.unmeasured > 0 && summary.unpriced > 0 && " · "}
-          {summary.unpriced > 0 && `${count(summary.unpriced)} senza prezzo`}
-          {" — le cifre qui sopra non le contengono"}
+          {summary.unpriced > 0 && `${count(summary.unpriced)} without a price`}
+          {" — the figures above do not contain them"}
         </span>
       )}
     </section>
@@ -145,7 +142,7 @@ interface NowProps {
 }
 
 export function Now({ native, onOpen }: NowProps) {
-  const outside = "fuori dal guscio: il deposito lo legge il motore";
+  const outside = "outside the shell: the engine reads the ledger";
   const { asked } = useAsk<OpenRun[]>(native, openRuns, REFRESH_MS, outside);
   const { asked: day } = useAsk<DaySummary>(native, todaySummary, SUMMARY_MS, outside);
   const now = useClock();
@@ -156,7 +153,7 @@ export function Now({ native, onOpen }: NowProps) {
     // credendo che non stia girando niente.
     return (
       <div className="now">
-        <p className="now__mute">Non riesco a chiedere cosa sta girando: {asked.why}</p>
+        <p className="now__mute">Cannot ask what is running: {asked.why}</p>
       </div>
     );
   }
@@ -164,7 +161,7 @@ export function Now({ native, onOpen }: NowProps) {
   if (asked.state === "asking") {
     return (
       <div className="now">
-        <p className="now__mute">Chiedo al deposito cosa è aperto…</p>
+        <p className="now__mute">Asking the ledger what is open…</p>
       </div>
     );
   }
@@ -175,19 +172,19 @@ export function Now({ native, onOpen }: NowProps) {
     <div className="now">
       {day.state === "answered" && <Today summary={day.value} />}
       {asked.value.length === 0 && (
-        <p className="now__empty">Non sta girando niente, e niente aspetta te.</p>
+        <p className="now__empty">Nothing is running, and nothing waits for you.</p>
       )}
       {waiting.length > 0 && (
         <RunGroup
-          title="Aspettano te"
-          note="ferme finché non fai qualcosa"
+          title="Waiting for you"
+          note="still until you do something"
           runs={waiting}
           now={now}
           onOpen={onOpen}
         />
       )}
       {working.length > 0 && (
-        <RunGroup title="Al lavoro" note="qualcuno o qualcosa ci sta lavorando" runs={working} now={now} onOpen={onOpen} />
+        <RunGroup title="At work" note="somebody or something is working on them" runs={working} now={now} onOpen={onOpen} />
       )}
     </div>
   );
@@ -220,18 +217,18 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
       <table className="now__table">
         <thead>
           <tr>
-            <th>corsa</th>
-            <th>stato</th>
-            <th className="now__num">da</th>
-            <th>cosa sta facendo</th>
-            <th>avviata</th>
+            <th>run</th>
+            <th>state</th>
+            <th className="now__num">for</th>
+            <th>what it is doing</th>
+            <th>started</th>
           </tr>
         </thead>
         <tbody>
           {runs.map((run) => (
             <tr key={run.run_id} data-followable={run.started_here || undefined}>
               <td className="now__entity">
-                {run.entity === "" ? <span className="now__unnamed">senza nome</span> : run.entity}
+                {run.entity === "" ? <span className="now__unnamed">unnamed</span> : run.entity}
                 <span className="now__id">{run.run_id}</span>
               </td>
               {/* La parola porta lo stato quanto la tinta: divieto 5. */}
@@ -272,7 +269,7 @@ export function RunGroup({ title, note, runs, now, onOpen }: GroupProps) {
                     guarda
                   </button>
                 ) : (
-                  <span className="now__elsewhere">avviata fuori da qui</span>
+                  <span className="now__elsewhere">started elsewhere</span>
                 )}
               </td>
             </tr>

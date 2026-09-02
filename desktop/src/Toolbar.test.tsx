@@ -408,12 +408,12 @@ describe("with no flow picked", () => {
     // In their place, what is missing — on screen, not inside a `title`.
     const prompt = container.querySelector(".toolbar__prompt") as HTMLElement;
     expect(prompt).not.toBeNull();
-    expect(prompt.textContent).toContain("Scegli un flusso");
+    expect(prompt.textContent).toContain("Pick a flow");
 
     // And it says where, because a bar that names a lack without naming its
     // owner sends people looking. It does not carry the gesture itself: that
     // one belongs to the column, in every state, and is asserted there.
-    expect(prompt.textContent).toContain("nella colonna");
+    expect(prompt.textContent).toContain("in the column");
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });
 

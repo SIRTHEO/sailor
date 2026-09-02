@@ -4,7 +4,7 @@ import App from "./App";
 import "./styles.css";
 
 const host = document.getElementById("root");
-if (!host) throw new Error("manca #root: la pagina non è quella attesa");
+if (!host) throw new Error("no #root: this is not the expected page");
 
 createRoot(host).render(
   <StrictMode>

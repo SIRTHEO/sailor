@@ -82,10 +82,10 @@ export type ToolDiscovery =
 // stay: somebody else's descriptor may use either, and neither should surface a
 // raw token in the interface.
 const TOOL_KIND_LABEL: Record<string, string> = {
-  ai_cli: "riga di comando IA",
-  mcp: "server MCP",
-  mcp_server: "server MCP",
-  tool: "strumento",
+  ai_cli: "AI command line",
+  mcp: "MCP server",
+  mcp_server: "MCP server",
+  tool: "tool",
 };
 
 /** A family's label; an unknown family is shown under the name it has. */
