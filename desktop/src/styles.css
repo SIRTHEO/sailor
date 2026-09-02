@@ -1562,9 +1562,8 @@ button.is-primary {
 /* Enlarged enough to read, not enough to truncate: `--text-large` on a node
    this wide cuts `working-tree-is-clean` in half, and a cut name is less
    legible than a small one. From far away it wraps instead of vanishing. */
+/* Nothing about wrapping here: the name reads the same near and far. */
 .step-node[data-far] .step-node__id {
-  white-space: normal;
-  overflow-wrap: anywhere;
   margin-bottom: 0;
 }
 
@@ -1639,6 +1638,11 @@ button.is-primary {
    `working-tree-is-clean` did not fit in 224px, and a cut name is less legible
    than a small one. The plate moved the name below the band, so the width is
    not the one that was measured — and nobody has measured the new one. */
+/* THE NAME WRAPS, AT EVERY ZOOM, AND STOPS AT THREE LINES. Measured in a
+   browser: three lines read every step name that exists, two clip the longest
+   (`porta-una-superficie-alla-carta`, a real step), and the node only grows for
+   the names that need it. Clipping near while wrapping far meant approaching a
+   node showed LESS of its name — the opposite of what the gesture asks. */
 .step-node__id {
   font-family: var(--font-data);
   font-size: var(--text-large);
@@ -1647,8 +1651,11 @@ button.is-primary {
   padding: var(--space-2) var(--space-3) 0;
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 /* The tool that runs the node, on the canvas: mark, name, model — and, when
