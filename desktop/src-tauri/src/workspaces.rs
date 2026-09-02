@@ -64,3 +64,67 @@ pub(crate) fn workspace_declaration(root: String) -> Result<serde_json::Value, S
     let declared = flow::workspace::declaration_at(std::path::Path::new(&root))?;
     serde_json::to_value(&declared).map_err(|error| error.to_string())
 }
+
+/// The root a path stands in, or the refusal: a place with no marker at or
+/// above it is not a project, and moving there would leave the window working
+/// wherever it landed, which is fault 19 with a button on it.
+pub(crate) fn root_to_work_in(asked: &std::path::Path) -> Result<std::path::PathBuf, String> {
+    if !asked.is_dir() {
+        return Err(format!("{} is not a directory", asked.display()));
+    }
+    flow::workspace::find_root(asked).ok_or_else(|| {
+        format!(
+            "no {} at or above {}: not a project",
+            flow::workspace::MARKER,
+            asked.display()
+        )
+    })
+}
+
+/// Moves the window into a project. From here on the flows, the runs and the
+/// census resolve against this root, because every one of them reads the
+/// working directory; the register notes the visit before the move, so a
+/// register that cannot be written refuses the whole gesture.
+#[tauri::command]
+pub(crate) fn work_here(root: String) -> Result<String, String> {
+    let found = root_to_work_in(std::path::Path::new(&root))?;
+    let home = ledger::sailor_home().ok_or_else(|| "no home: HOME is not set".to_owned())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or(0);
+    flow::workspace::remember_in(&home, &found, now)?;
+    std::env::set_current_dir(&found)
+        .map_err(|error| format!("cannot move into {}: {error}", found.display()))?;
+    Ok(found.display().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A PLACE WITHOUT A MARKER IS REFUSED BY NAME, AND A PLACE INSIDE A
+    /// PROJECT RESOLVES TO ITS ROOT.** Only the resolution is tested: moving
+    /// the process is one line, and a test that moved it would move every
+    /// other test in this crate along with it.
+    #[test]
+    fn a_project_is_found_from_inside_it_and_refused_where_there_is_none() {
+        let scratch = std::env::temp_dir().join(format!("sailor-work-here-{}", std::process::id()));
+        let project = scratch.join("project");
+        let inside = project.join("src").join("deep");
+        let bare = scratch.join("bare");
+        std::fs::create_dir_all(&inside).expect("the scratch tree is made");
+        std::fs::create_dir_all(&bare).expect("the bare directory is made");
+        std::fs::write(project.join(flow::workspace::MARKER), "{}").expect("the marker is written");
+
+        assert_eq!(root_to_work_in(&inside).expect("inside a project"), project);
+        assert_eq!(root_to_work_in(&project).expect("at the root"), project);
+
+        let refused = root_to_work_in(&bare).expect_err("no marker anywhere above");
+        assert!(refused.contains("not a project"), "{refused}");
+        let missing = root_to_work_in(&scratch.join("nowhere")).expect_err("no such directory");
+        assert!(missing.contains("not a directory"), "{missing}");
+
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+}

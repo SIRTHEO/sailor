@@ -255,12 +255,14 @@ export default function App() {
     NATIVE ? { state: "asking" } : { state: "mute", why: "outside the shell: the engine knows the tools" },
   );
 
-  useEffect(() => {
+  // The flows are read from the disk at the start and again whenever the
+  // window moves into another project: `still` says whether the reader is
+  // still on screen when the answer arrives.
+  const readFlows = useCallback((still: () => boolean) => {
     if (!NATIVE) return;
-    let dropped = false;
     loadFlows()
       .then((loaded) => {
-        if (dropped) return;
+        if (!still()) return;
         const split = splitEntries(loaded);
         setFlows(split.flows);
         setBroken(split.broken);
@@ -269,16 +271,21 @@ export default function App() {
         setSelectedNode(null);
       })
       .catch((error: unknown) => {
-        if (dropped) return;
+        if (!still()) return;
         // A silent engine is not papered over with the sample: that would show
         // flows that are not on disk.
         setSource("failed");
         setFailure(String(error));
       });
+  }, []);
+
+  useEffect(() => {
+    let dropped = false;
+    readFlows(() => !dropped);
     return () => {
       dropped = true;
     };
-  }, []);
+  }, [readFlows]);
 
   // TOOLS ARE ASKED FOR, NOT KNOWN. If `discover_tools` does not answer, the
   // panel says so and lets the id be typed by hand — no blank screen, and no
@@ -1281,6 +1288,7 @@ export default function App() {
         tab={terminalsTab}
         onTab={setTerminalsTab}
         ceiling={ceilingOf(flows)}
+        onProjectChanged={() => readFlows(() => true)}
       />
 
       {/* Outside the canvas element on purpose: it is positioned in window

@@ -3742,6 +3742,11 @@ tr[data-followable]:hover {
   color: var(--danger);
 }
 
+.now__act {
+  font-size: var(--text-small);
+  padding: 2px 8px;
+}
+
 /* ── what changed in a workspace ───────────────────────────────────────── */
 
 .changes {
