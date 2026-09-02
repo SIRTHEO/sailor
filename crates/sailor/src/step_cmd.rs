@@ -79,7 +79,7 @@ fn flags(args: &[String]) -> Result<BTreeMap<String, String>, String> {
         let Some(name) = name.strip_prefix("--") else {
             return Err(format!(
                 "{}; {}",
-                catalogue::say("cli.step.not_something_i_know", &[("word", name)]),
+                catalogue::say("cli.not_something_i_know", &[("word", name)]),
                 usage()
             ));
         };
@@ -91,7 +91,7 @@ fn flags(args: &[String]) -> Result<BTreeMap<String, String>, String> {
         })?;
         if let Some(other) = value.strip_prefix("--") {
             return Err(catalogue::say(
-                "cli.step.value_is_another_option",
+                "cli.value_is_another_option",
                 &[("option", name), ("given", other)],
             ));
         }

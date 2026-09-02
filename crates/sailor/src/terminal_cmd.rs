@@ -51,7 +51,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
     if !FORMS.contains(&form.as_str()) {
         return Err(format!(
             "{}\n{}",
-            catalogue::say("cli.terminal.no_such_form", &[("verb", form)]),
+            catalogue::say("cli.no_such_form", &[("verb", form)]),
             usage_text()
         ));
     }
@@ -61,10 +61,7 @@ fn dispatch(args: &[String]) -> Result<i32, String> {
         "reset" => reset(&args[1..]),
         "mandate" => leave_mandate(&args[1..], &mut std::io::stdin()),
         "list" => list(&args[1..]),
-        other => Err(catalogue::say(
-            "cli.terminal.no_such_form",
-            &[("verb", other)],
-        )),
+        other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     }
 }
 
