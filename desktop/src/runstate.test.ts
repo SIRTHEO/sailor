@@ -126,4 +126,15 @@ describe("how long a step took", () => {
     ]);
     expect(states.get("read")?.elapsed_secs).toBe(3);
   });
+
+  /* THE THIRD OUTCOME IS KNOWN TO THE WINDOW. A step that answered «not yet»
+     is closed and will be asked again on the next beat: drawn as still
+     running, it would look held by a process that is not there. */
+  test("a step that said not yet is waiting, not running", () => {
+    const states = stepStatesOfRun([
+      at(1, "step_started", "read", 1000, { attempt: 1 }),
+      at(2, "step_closed", "read", 1001, { outcome: "NotYet" }),
+    ]);
+    expect(states.get("read")?.state).toBe("waiting");
+  });
 })
