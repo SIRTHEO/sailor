@@ -38,8 +38,8 @@ fn git(repo: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&done.stdout).into_owned()
 }
 
-/// A repository with one commit, one edited file and one new file: the two
-/// kinds of change a diff alone cannot both show.
+/// A repository with one commit, one edited file, one new file and one file
+/// an agent already staged: the kinds of change a plain diff cannot all show.
 fn a_repository_with_changes() -> PathBuf {
     let repo = scratch("edited");
     git(&repo, &["init", "--quiet"]);
@@ -48,6 +48,8 @@ fn a_repository_with_changes() -> PathBuf {
     git(&repo, &["commit", "--quiet", "-m", "first"]);
     std::fs::write(repo.join("kept.txt"), "one\ntwo changed by an agent\nthree\n").expect("edit");
     std::fs::write(repo.join("fresh.md"), "a file nobody tracked yet\n").expect("write");
+    std::fs::write(repo.join("staged.txt"), "added and staged by an agent\n").expect("write");
+    git(&repo, &["add", "staged.txt"]);
     repo
 }
 
@@ -66,6 +68,12 @@ fn the_diff_shown_is_what_git_diff_prints() {
         "the control is blind: git itself shows no change"
     );
     assert_eq!(seen.diff, gits, "the diff shown is not git's answer");
+    // An agent that ran `git add` has still changed the tree: the staged file
+    // is in the diff, which only a diff against HEAD can say.
+    assert!(
+        seen.diff.contains("added and staged by an agent"),
+        "what an agent staged is missing from the diff"
+    );
 
     let mut files: Vec<(String, String)> = seen
         .files
@@ -78,6 +86,7 @@ fn the_diff_shown_is_what_git_diff_prints() {
         vec![
             (" M".to_owned(), "kept.txt".to_owned()),
             ("??".to_owned(), "fresh.md".to_owned()),
+            ("A ".to_owned(), "staged.txt".to_owned()),
         ],
         "the file list is not git's"
     );
@@ -103,11 +112,34 @@ fn a_clean_tree_has_nothing_to_show() {
     let _ = std::fs::remove_dir_all(&repo);
 }
 
+/// A file called with a space or an accent is listed by the name it has on
+/// disk, which is the one an editor can open: git's line form would quote it.
+#[test]
+fn a_path_with_a_space_or_an_accent_is_the_path_on_disk() {
+    let repo = scratch("quoted");
+    git(&repo, &["init", "--quiet"]);
+    std::fs::write(repo.join("kept.txt"), "one\n").expect("write");
+    git(&repo, &["add", "kept.txt"]);
+    git(&repo, &["commit", "--quiet", "-m", "first"]);
+    std::fs::write(repo.join("nuovo file.txt"), "a space\n").expect("write");
+    std::fs::write(repo.join("città.txt"), "an accent\n").expect("write");
+
+    let seen = workspace::changes(&repo).expect("read the changes");
+    let mut paths: Vec<&str> = seen.files.iter().map(|file| file.path.as_str()).collect();
+    paths.sort();
+    assert_eq!(paths, vec!["città.txt", "nuovo file.txt"], "{:?}", seen.files);
+    for file in &seen.files {
+        assert!(repo.join(&file.path).is_file(), "{} is not on disk", file.path);
+    }
+
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
 /// A renamed file is listed under the name it has now, which is the one an
 /// editor can open.
 #[test]
 fn a_rename_is_listed_under_its_new_name() {
-    let listed = workspace::parse_status("R  old.txt -> new.txt\n M kept.txt\n?? fresh.md\n");
+    let listed = workspace::parse_status("R  new.txt\0old.txt\0 M kept.txt\0?? fresh.md\0");
     assert_eq!(
         listed,
         vec![
