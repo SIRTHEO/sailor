@@ -392,7 +392,20 @@ pub(crate) fn start_run(
     name: String,
     mandate: Option<String>,
 ) -> Result<StartedRun, String> {
-    let flow = load_flow(&name)?;
+    let origin = origin_label(mandate.as_deref());
+    start(&app, runs.inner(), &name, mandate.as_deref(), origin)
+}
+
+/// One road for the button and for the beat: whoever starts a run comes
+/// through here, and `origin` is what tells the two apart in the ledger.
+pub(crate) fn start(
+    app: &AppHandle,
+    runs: &Arc<Runs>,
+    name: &str,
+    mandate: Option<&str>,
+    origin: String,
+) -> Result<StartedRun, String> {
+    let flow = load_flow(name)?;
 
     // IL DEPOSITO PRIMA DEL REGISTRO: `store_write` e `store_read` lo
     // possiedono, e un registro costruito prima dichiarerebbe mancanti due
@@ -416,7 +429,7 @@ pub(crate) fn start_run(
     let watcher: Arc<dyn StepSinks> = Arc::new(LiveText {
         emit: Arc::new({
             let app = app.clone();
-            let runs = runs.inner().clone();
+            let runs = runs.clone();
             let run_id = run_id.clone();
             move |step: &str, pipe: Pipe, text: String| {
                 runs.publish(
@@ -448,13 +461,12 @@ pub(crate) fn start_run(
     // La consegna entra qui, in memoria, e non tocca il file sul disco: il
     // documento del flusso descrive il lavoro, non l'ultima volta che qualcuno
     // ha premuto il pulsante.
-    let inputs = inputs_with_mandate(&flow, mandate.as_deref())?;
+    let inputs = inputs_with_mandate(&flow, mandate)?;
 
     // DA DOVE È PARTITA LA CHIAMATA, scritto dal sistema nel momento in cui
     // parte. Non è un racconto di un agente: è il guscio che dichiara la
     // propria provenienza prima che qualunque passo giri, e resta nel deposito
     // append-only anche se la corsa si schianta al primo passo.
-    let origin = origin_label(mandate.as_deref());
     record_run(
         &ledger, &flow, &run_id, "running", started_at, None, None, &origin,
     )?;
@@ -473,7 +485,8 @@ pub(crate) fn start_run(
         );
     }
 
-    let handle = runs.inner().clone();
+    let handle = runs.clone();
+    let app = app.clone();
     let started = StartedRun {
         run_id: run_id.clone(),
         flow: flow.id.clone(),
@@ -758,6 +771,15 @@ impl Runs {
         self.0
             .lock()
             .expect("il registro delle corse non è avvelenato")
+    }
+
+    /// The flows this window is running right now, by flow id.
+    pub(crate) fn running_flows(&self) -> Vec<String> {
+        self.lock_map()
+            .values()
+            .filter(|state| state.status == "running")
+            .map(|state| state.flow.clone())
+            .collect()
     }
 }
 

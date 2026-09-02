@@ -64,6 +64,8 @@
   "cli.flow.totals_not_split": "totali non divisi (quelli che non dichiarano né l'uno né l'altro): {count}",
   "cli.flow.trigger_input_not_an_object": "l'ingresso d'innesco di {flow} non è un oggetto ma {other}: non c'è posto dove mettere il testo",
   "cli.flow.will_not_load": "non si carica",
+  "desktop.beat.could_not_look": "trattenuto: il battito non ha potuto leggere il deposito ({why})",
+  "desktop.beat.still_running": "ancora in corsa da un avvio precedente",
   "cli.flow.cap_will_not_count_them": "\n  e il tetto di spesa non conterà quelle chiamate: si fermerà più tardi di quanto dichiara, o non si fermerà affatto",
   "cli.flow.models_never_run_here": "\nmodelli: questo flusso non è mai girato qui, quindi non si sa quali risponderanno né se il listino saprà prezzarli",
   "cli.flow.models_store_unreadable": "\nmodelli: il deposito non si è potuto leggere, quindi non si sa quali modelli questo flusso abbia usato",
