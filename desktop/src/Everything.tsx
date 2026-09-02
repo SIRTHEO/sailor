@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { FaultsScreen } from "./FaultsScreen";
 import { Installed } from "./Installed";
+import { LedgerScreen } from "./LedgerScreen";
 import { MachineScreen } from "./MachineScreen";
 import { Manual } from "./Manual";
 import { ProfileList } from "./ProfileList";
@@ -22,6 +23,7 @@ export type Corner =
   | "machine"
   | "installed"
   | "commands"
+  | "ledger"
   | "faults";
 
 /**
@@ -52,8 +54,9 @@ const GROUPS: { heading: string; corners: { id: Corner; name: string; about: str
     ],
   },
   {
-    heading: "what went wrong",
+    heading: "what Sailor has written down",
     corners: [
+      { id: "ledger", name: "The ledger", about: "runs, processes, and what flows kept" },
       { id: "faults", name: "Faults", about: "and what would have prevented each" },
     ],
   },
@@ -95,6 +98,7 @@ export function Everything({ native, now }: { native: boolean; now: number }) {
         {corner === "machine" && <MachineScreen native={native} />}
         {corner === "installed" && <Installed native={native} />}
         {corner === "commands" && <Manual native={native} />}
+        {corner === "ledger" && <LedgerScreen native={native} now={now} />}
         {corner === "faults" && <FaultsScreen native={native} />}
       </div>
     </div>
