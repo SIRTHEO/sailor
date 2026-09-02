@@ -48,7 +48,7 @@ pub const WORKSPACE_ROOT: &str = "workspace.root";
 /// file able to write here would raise its own cap.
 pub const CURRENT_CAP: &str = "flow.cap_micros";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
     pub said: String,
@@ -60,6 +60,15 @@ impl ActionError {
             class: class.into(),
             said: said.into(),
         }
+    }
+}
+
+/// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** With a derived one,
+/// every red test showed the fields and hid the sentence. Delegating costs
+/// nothing and puts the prose where a failure is read.
+impl std::fmt::Debug for ActionError {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, out)
     }
 }
 
@@ -1063,7 +1072,7 @@ fn run_one(
     store.close(run_id, &step.id, work.attempt, epoch, completion)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum FlowError {
     Store(String),
     Clock(String),
@@ -1112,6 +1121,12 @@ impl From<SchemaError> for FlowError {
 impl From<ActionError> for FlowError {
     fn from(value: ActionError) -> Self {
         Self::Action(value)
+    }
+}
+
+impl std::fmt::Debug for FlowError {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, out)
     }
 }
 
