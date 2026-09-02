@@ -168,7 +168,7 @@ impl Token {
     }
 }
 
-/// The quota windows inside an `/api/oauth/usage` answer.
+/// The quota windows inside a usage answer.
 ///
 /// **IT KNOWS NO WINDOW NAME, AND MUST NOT.** It takes every top-level key
 /// whose value is an object holding a numeric `utilization`. One real answer

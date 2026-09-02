@@ -46,6 +46,15 @@ your first message, then go on with A.1 to A.5, which do not depend on it.
   the tree while a judge runs: judges mutate tracked files.
 - **This terminal watches.** Once C.4 exists, run `watch-the-crew` at each
   beat and report what it says instead of describing what you did.
+- **Comments do not talk more than the code.** Theo, 03/09: a ratio of
+  0.28 comment lines to code lines is unacceptable. A comment only where the
+  code alone misleads, two lines at most, saying what is not obvious; never a
+  date, never «it used to be», never the history of a choice, never a slogan
+  in capitals. The why goes in the commit message and, when a user needs it,
+  in the docs. Test names say the thing; the comment above a test does not
+  repeat it. The ratchets (`comments_do_not_crowd_out_the_code`, the ratio per
+  crate of G.8, `no_engine_is_named_in_the_code`) may only fall, and are
+  re-measured exactly when they do.
 
 ## How you verify, and it is not self-assessment
 
