@@ -22,6 +22,7 @@ mod board;
 mod changes;
 mod faults;
 mod flows;
+mod keeps;
 mod ledger;
 mod live;
 mod manual;
@@ -181,6 +182,7 @@ fn main() {
             ledger::ledger_held,
             ledger::ledger_tables,
             ledger::ledger_query,
+            keeps::what_sailor_keeps,
             flows::engine_actions,
             run::flow_trigger,
             run::start_run,

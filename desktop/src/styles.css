@@ -113,6 +113,7 @@
 
   /* --- THE ONLY SHADOW, and only for what floats above the canvas. --- */
   --shadow: 0 10px 30px rgb(34 38 31 / 8%);
+  --scrim: rgb(34 38 31 / 40%);  /* what lies under the palette */
 
   /* --- MOTION. Two durations and one curve. Motion confirms a gesture, it
          does not entertain: nothing enters, nothing bounces. --- */
@@ -631,6 +632,235 @@ button.is-primary {
 
 .chip--who[data-warn] {
   border-color: var(--danger);
+}
+
+.topbar__palette {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-prose);
+  font-size: var(--text-micro);
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.topbar__kbd {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 var(--space-1);
+}
+
+/* ⌘K: one box over everything, the entries under it in their groups, and
+   the one the cursor is on marked by a plate rather than a tint. */
+.palette__scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: var(--scrim);
+  z-index: 40;
+}
+
+.palette {
+  width: min(640px, 90vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.palette__box {
+  font-family: var(--font-prose);
+  font-size: var(--text-mid);
+  color: var(--ink);
+  background: var(--paper);
+  border: none;
+  border-bottom: 1px solid var(--line);
+  padding: var(--space-3) var(--space-4);
+}
+
+.palette__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+  overflow-y: auto;
+}
+
+.palette__group {
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  padding: var(--space-2) var(--space-4) var(--space-1);
+}
+
+.palette__entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-4);
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: none;
+  border: none;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+
+.palette__entry[data-cursor] {
+  background: var(--bg);
+}
+
+.palette__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette__hint {
+  font-size: var(--text-micro);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette__none {
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+/* What Sailor keeps: the table of stores with the side that says the home,
+   the version in service and the project root. */
+.keeps {
+  display: flex;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+}
+
+.keeps__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.keeps__side {
+  width: 280px;
+  flex-shrink: 0;
+}
+
+.keeps__title {
+  font-family: var(--font-display);
+  font-size: var(--text-large);
+  margin: 0 0 var(--space-2);
+}
+
+.keeps__lead,
+.keeps__note {
+  font-size: var(--text-body);
+  color: var(--muted);
+  margin: 0 0 var(--space-4);
+}
+
+.keeps__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+  margin-bottom: var(--space-4);
+}
+
+.keeps__table th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: var(--text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.keeps__table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.keeps__num {
+  text-align: right;
+  font-family: var(--font-data);
+  white-space: nowrap;
+}
+
+.keeps__path {
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
+  word-break: break-all;
+}
+
+.keeps__missing {
+  color: var(--danger);
+  font-size: var(--text-micro);
+}
+
+.keeps__small {
+  font-size: var(--text-micro);
+  color: var(--muted);
+  margin: var(--space-1) 0 0;
+}
+
+.keeps__gap {
+  margin-top: var(--space-5);
+}
+
+.keeps__facts {
+  margin: 0;
+  font-size: var(--text-body);
+}
+
+.keeps__facts div {
+  display: flex;
+  gap: var(--space-3);
+  padding: 2px 0;
+}
+
+.keeps__facts dt {
+  width: 64px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.keeps__facts dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.keeps__again {
+  font-family: var(--font-display);
+  font-size: var(--text-body);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
 }
 
 /* ── now ────────────────────────────────────────────────────────────────── */
