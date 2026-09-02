@@ -278,13 +278,12 @@ fn named(options: &[(String, String)], name: &str, missing: &str) -> Result<Stri
 
 /// Types a line into a terminal Sailor holds.
 ///
-/// The carriage return is what a terminal receives when someone presses Enter;
-/// a newline would leave the line sitting there unsent.
+/// How a line is typed lives in the letterbox and not here: the relay types
+/// too, and the two copies of it were drifting apart on the one detail that
+/// decides whether the line is ever sent.
 fn press_into(options: &[(String, String)], tty: &str, line: &str) -> Result<(), String> {
     let address = mailroom(options)?.join(format!("{tty}.sock"));
-    let mut typed = line.as_bytes().to_vec();
-    typed.push(b'\r');
-    inbox::press(&address, &typed).map_err(|error| {
+    inbox::press_line(&address, line).map_err(|error| {
         format!(
             "{}: Sailor is not holding this terminal ({error})",
             address.display()

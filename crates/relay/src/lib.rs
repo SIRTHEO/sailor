@@ -139,12 +139,10 @@ impl Action for TypeIntoTerminalAction {
     }
 }
 
-/// The carriage return is what a terminal receives when someone presses Enter.
+/// How a line is typed is the letterbox's business, not this crate's.
 fn typed_into(root: &std::path::Path, tty: &str, line: &str) -> Result<(), ActionError> {
     let address = terminal::inbox::address_in(root, tty);
-    let mut bytes = line.as_bytes().to_vec();
-    bytes.push(b'\r');
-    terminal::inbox::press(&address, &bytes).map_err(|error| {
+    terminal::inbox::press_line(&address, line).map_err(|error| {
         ActionError::new(
             "terminal_not_held",
             format!(
