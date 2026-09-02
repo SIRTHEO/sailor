@@ -89,7 +89,7 @@ describe("the four places", () => {
     expect(crumbs()).toEqual(["Memory", "Ledger"]);
 
     fireEvent.click(screen.getByRole("button", { name: /^Sailor/ }));
-    expect(crumbs()).toEqual(["Sailor", "What it can do"]);
+    expect(crumbs()).toEqual(["Sailor", "What it keeps"]);
     const groups = Array.from(container.querySelectorAll(`${shown}.subrail .places__heading`)).map((one) => one.textContent);
     expect(groups).toEqual(["itself", "setup"]);
 

@@ -35,6 +35,7 @@ import { LiveChip, WhoChip } from "./Bar";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen, SAILOR_TABS, type SailorTab } from "./SailorScreen";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
+import { Palette, isPaletteKey, type Entry } from "./Palette";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
 import { WireMenu } from "./WireMenu";
@@ -215,8 +216,20 @@ export default function App() {
 
   const [place, setPlace] = useState<Place>("board");
   const [memoryTab, setMemoryTab] = useState<MemoryTab>("runs");
-  const [sailorTab, setSailorTab] = useState<SailorTab>("cando");
+  const [sailorTab, setSailorTab] = useState<SailorTab>("keeps");
   const [terminalsTab, setTerminalsTab] = useState<TerminalsTab>("live");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isPaletteKey(event)) {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [flowView] = useState<FlowView>("graph");
 
   // Focus belongs to the branch, not the canvas: the rail points at a path
@@ -1124,8 +1137,47 @@ export default function App() {
     return { live: false, word: `last run ${focusedRun.status} · ${done} of ${total} steps closed` };
   }, [focusName, focusedWorking, focusedDirty, focusedRun, flowView]);
 
+  // WHAT ⌘K CAN REACH: every place and entry, every flow to open or to run.
+  // The palette computes nothing; the gestures are the same the rail and the
+  // bar own, handed in by name.
+  const paletteEntries = useMemo<Entry[]>(() => {
+    const go: Entry[] = PLACES.map((one) => ({
+      group: "Go to",
+      label: one.name,
+      hint: one.asks,
+      run: () => setPlace(one.id),
+    }));
+    for (const one of MEMORY_TABS) {
+      go.push({ group: "Go to", label: `Memory › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
+    }
+    for (const one of SAILOR_TABS) {
+      go.push({ group: "Go to", label: `Sailor › ${one.name}`, hint: one.about, run: () => { setPlace("sailor"); setSailorTab(one.id); } });
+    }
+    for (const one of TERMINALS_TABS) {
+      go.push({ group: "Go to", label: `Terminals › ${one.name}`, hint: one.about, run: () => { setPlace("terminals"); setTerminalsTab(one.id); } });
+    }
+    const names = Array.from(flows.keys()).sort();
+    const open: Entry[] = names.map((name) => ({
+      group: "Open flow",
+      label: name,
+      hint: flows.get(name)?.origin ?? undefined,
+      run: () => {
+        setPlace("board");
+        setFocusName(name);
+      },
+    }));
+    const run: Entry[] = names.map((name) => ({
+      group: "Run flow",
+      label: name,
+      hint: flows.get(name)?.origin ?? undefined,
+      run: () => void handleRun(name),
+    }));
+    return [...go, ...open, ...run];
+  }, [flows, handleRun]);
+
   return (
     <div className="app">
+      <Palette entries={paletteEntries} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {/* THE BAR NAMES THE FLOW IT IS ABOUT.
           Until now it said «6 flows, one system» — true, and about nothing you
           could act on: neither which flow was on screen, nor whether it was
@@ -1138,6 +1190,10 @@ export default function App() {
         crumbs={crumbs}
         chips={
           <>
+            <button type="button" className="topbar__palette" onClick={() => setPaletteOpen(true)}>
+              <kbd className="topbar__kbd">⌘K</kbd>
+              Search or run a command
+            </button>
             <LiveChip native={NATIVE} now={now} onOpen={(runId) => setWatching(runId)} />
             <WhoChip native={NATIVE} />
           </>
