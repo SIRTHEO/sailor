@@ -38,8 +38,7 @@ fn print_usage() {
 }
 
 fn load_catalog() -> Result<Catalog, String> {
-    let body = fetch::fetch_catalog_body();
-    Catalog::parse(&body)
+    Catalog::parse(&fetch::catalog_body()?)
 }
 
 fn run_list(args: &[String]) -> i32 {

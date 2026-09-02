@@ -21,6 +21,7 @@ mod board;
 mod flows;
 mod live;
 mod manual;
+mod models;
 mod profiles;
 mod run;
 mod terminal;
@@ -186,6 +187,9 @@ fn main() {
             profiles::profile_command_lines,
             profiles::profile_switch,
             profiles::profile_create,
+            models::models_catalogue,
+            models::quota,
+            models::model_set,
             worktree::worktree_list,
             worktree::worktree_create,
             worktree::worktree_remove

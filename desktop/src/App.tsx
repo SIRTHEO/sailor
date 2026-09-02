@@ -37,6 +37,7 @@ import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
 import { ProfileList } from "./ProfileList";
+import { QuotaScreen } from "./QuotaScreen";
 import { Projects } from "./Projects";
 import { Worktrees } from "./Worktrees";
 import { WireMenu } from "./WireMenu";
@@ -109,6 +110,7 @@ type Place =
   | "terminals"
   | "workspaces"
   | "profiles"
+  | "quota"
   | "worktrees";
 
 /**
@@ -1210,6 +1212,12 @@ export default function App() {
         <button
           type="button"
           className="places__item"
+          data-here={place === "quota" || undefined}
+          onClick={() => setPlace("quota")}
+        >Quota</button>
+        <button
+          type="button"
+          className="places__item"
           data-here={place === "worktrees" || undefined}
           onClick={() => setPlace("worktrees")}
         >
@@ -1284,6 +1292,7 @@ export default function App() {
       {place === "terminals" && <Terminals native={NATIVE} />}
       {place === "workspaces" && <Projects native={NATIVE} now={now} />}
       {place === "profiles" && <ProfileList native={NATIVE} />}
+      {place === "quota" && <QuotaScreen native={NATIVE} now={now} />}
       {place === "worktrees" && <Worktrees native={NATIVE} />}
 
       {/* Outside the canvas element on purpose: it is positioned in window
