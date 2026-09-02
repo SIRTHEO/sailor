@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { RunEvent } from "./engine";
-import { linesFromEvents, panesFromEvents } from "./RunConsole";
+import { linesFromEvents, panesFromEvents, stopRequested } from "./RunConsole";
 
 /**
  * **COSA È ENTRATO IN UN PASSO ARRIVA FINO ALLA VISTA.**
@@ -79,6 +79,29 @@ describe("what a step says while it runs", () => {
     const panes = panesFromEvents([started(1, "engine", { bin: "claude" }), text(2, "engine", "out", "working\n")]);
     expect(panes[0]?.spoke).toBe(true);
     expect(panes[0]?.endedAt).toBe(null);
+  });
+});
+
+/**
+ * A stop asked by hand is a fact of the run: the console shows it as a line,
+ * honest about what it can do, and the status word changes while the running
+ * step finishes. Once the run has ended, nothing is "stopping" any more.
+ */
+describe("a stop asked by hand", () => {
+  const stop: RunEvent = { run_id: "r", seq: 2, kind: "stop_requested", at: 10, step_id: null, payload: { by: "theo" } };
+
+  test("is a line of the console that says the running step finishes", () => {
+    const lines = linesFromEvents([started(1, "engine", { bin: "claude" }), stop]);
+    const said = lines.find((line) => line.key.endsWith(":stop"));
+    expect(said?.stream).toBe("system");
+    expect(said?.text).toContain("the one running finishes");
+  });
+
+  test("counts as stopping only while the run is still running", () => {
+    const events = [started(1, "engine", { bin: "claude" }), stop];
+    expect(stopRequested({ run_id: "r", flow: "f", started_at: 0, status: "running", events })).toBe(true);
+    expect(stopRequested({ run_id: "r", flow: "f", started_at: 0, status: "stopped", events })).toBe(false);
+    expect(stopRequested({ run_id: "r", flow: "f", started_at: 0, status: "running", events: [events[0]] })).toBe(false);
   });
 });
 

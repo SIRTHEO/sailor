@@ -168,6 +168,8 @@ struct RunState {
     status: String,
     events: Vec<RunEvent>,
     next_seq: u64,
+    /// Somebody pressed stop: the executor reads it before the next front.
+    halt: bool,
 }
 
 /// **LE CORSE NON APPARTENGONO ALLA PAGINA.** Vivono qui, nel guscio, per la
@@ -223,6 +225,24 @@ impl Runs {
                 state.status = status.to_owned();
             }
         }
+    }
+
+    /// Marks the run to stop before its next front. Refused, with the reason,
+    /// for a run this window does not hold or one that has already ended.
+    pub(crate) fn request_halt(&self, run_id: &str) -> Result<(), String> {
+        let mut runs = self.lock_map();
+        let Some(state) = runs.get_mut(run_id) else {
+            return Err(format!("no run {run_id} in this window"));
+        };
+        if state.status != "running" {
+            return Err(format!("run {run_id} has already ended: {}", state.status));
+        }
+        state.halt = true;
+        Ok(())
+    }
+
+    pub(crate) fn halt_requested(&self, run_id: &str) -> bool {
+        self.lock_map().get(run_id).is_some_and(|state| state.halt)
     }
 }
 
@@ -373,6 +393,32 @@ impl RecordStore for WatchedStore {
     fn spent(&self, run_id: &str) -> Result<flow::Spend, FlowError> {
         self.inner.spent(run_id)
     }
+
+    /// The stop lives in the window's registry of runs, where the button
+    /// wrote it: this is the only store that can carry it to the executor.
+    fn halt_requested(&self, run_id: &str) -> Result<bool, FlowError> {
+        Ok(self.runs.halt_requested(run_id))
+    }
+}
+
+/// Asks a run held by this window to stop before its next front. The step
+/// running now finishes: the engine cannot take a step back from an agent
+/// already at work, and the window says so instead of pretending.
+#[tauri::command]
+pub(crate) fn stop_run(
+    app: AppHandle,
+    runs: State<'_, Arc<Runs>>,
+    run_id: String,
+) -> Result<(), String> {
+    runs.request_halt(&run_id)?;
+    runs.publish(
+        &app,
+        &run_id,
+        "stop_requested",
+        None,
+        json!({ "by": who(), "at": now_secs() }),
+    );
+    Ok(())
 }
 
 // ── i comandi che la finestra chiama ────────────────────────────────────
@@ -481,6 +527,7 @@ pub(crate) fn start(
                 status: "running".to_owned(),
                 events: Vec::new(),
                 next_seq: 0,
+                halt: false,
             },
         );
     }
@@ -546,7 +593,8 @@ pub(crate) fn start(
             // Senza, nella finestra resterebbe una parola sola e nessun motivo.
             Ok(execution) => (
                 execution_status(execution).to_owned(),
-                registry::stopped_by_cap(execution),
+                registry::stopped_by_cap(execution)
+                    .or_else(|| registry::halted_by_hand(execution)),
             ),
             Err(failure) => ("failed".to_owned(), Some(failure.to_string())),
         };
@@ -1268,6 +1316,42 @@ mod tests {
             "inputs": inputs,
         }))
         .expect("il flusso di prova si carica")
+    }
+
+    /// A run as the registry holds it while it runs.
+    fn held_run(runs: &Runs, run_id: &str, status: &str) {
+        runs.lock_map().insert(
+            run_id.to_owned(),
+            RunState {
+                flow: "prova".to_owned(),
+                started_at: 0,
+                status: status.to_owned(),
+                events: Vec::new(),
+                next_seq: 0,
+                halt: false,
+            },
+        );
+    }
+
+    /// **STOP IS A FACT THE EXECUTOR READS, AND ONLY A RUNNING RUN CAN CARRY
+    /// IT.** An unknown run and an ended one are refused with the reason, so
+    /// a button pressed late does not report a stop nobody will honour.
+    #[test]
+    fn a_stop_is_held_for_a_running_run_and_refused_otherwise() {
+        let runs = Runs::default();
+        held_run(&runs, "live", "running");
+        held_run(&runs, "done", "complete");
+
+        assert!(!runs.halt_requested("live"));
+        runs.request_halt("live").expect("a running run takes the stop");
+        assert!(runs.halt_requested("live"));
+
+        let ended = runs.request_halt("done").expect_err("an ended run refuses");
+        assert!(ended.contains("already ended"), "{ended}");
+        assert!(!runs.halt_requested("done"));
+
+        let unknown = runs.request_halt("nobody").expect_err("an unknown run refuses");
+        assert!(unknown.contains("no run nobody"), "{unknown}");
     }
 
     fn engine_step(id: &str, deps: Vec<&str>, with: Value) -> Value {

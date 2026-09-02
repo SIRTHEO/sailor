@@ -3731,6 +3731,17 @@ tr[data-followable]:hover {
   font-weight: 600;
 }
 
+.console__stop {
+  font-size: var(--text-small);
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.console__trouble {
+  font-size: var(--text-small);
+  color: var(--danger);
+}
+
 /* ── what changed in a workspace ───────────────────────────────────────── */
 
 .changes {

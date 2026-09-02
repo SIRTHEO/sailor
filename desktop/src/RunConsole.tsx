@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RunEvent, RunSnapshot } from "./engine";
 import { tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
@@ -162,6 +162,16 @@ export function linesFromEvents(events: RunEvent[]): ConsoleLine[] {
       case "step_text": {
         const pipe = payload?.pipe === "err" ? "stderr" : "stdout";
         pushText(lines, event.seq, event.at, event.step_id, pipe, payload?.text);
+        break;
+      }
+      case "stop_requested": {
+        lines.push({
+          key: `${event.seq}:stop`,
+          at: event.at,
+          stepId: null,
+          stream: "system",
+          text: "══ stop requested: no further step starts; the one running finishes",
+        });
         break;
       }
       case "run_ended": {
@@ -329,6 +339,13 @@ interface RunConsoleProps {
   onMode: (mode: ConsoleMode) => void;
   onPick: (runId: string) => void;
   onClose: () => void;
+  /** Asks the engine to stop this run before its next step. Rejects with the reason. */
+  onStop: () => Promise<void>;
+}
+
+/** Whether a stop has been asked and the run has not ended yet. */
+export function stopRequested(run: RunSnapshot): boolean {
+  return run.status === "running" && run.events.some((event) => event.kind === "stop_requested");
 }
 
 /** Micro-units of currency as a person reads them: 128_541 → «$0.1285». */
@@ -398,7 +415,9 @@ export function RunConsole({
   onMode,
   onPick,
   onClose,
+  onStop,
 }: RunConsoleProps) {
+  const [stopTrouble, setStopTrouble] = useState<string | null>(null);
   const lines = useMemo(() => linesFromEvents(run.events), [run.events]);
   const panes = useMemo(() => panesFromEvents(run.events), [run.events]);
   const tail = useRef<HTMLDivElement | null>(null);
@@ -414,12 +433,13 @@ export function RunConsole({
   }, [lines.length, mode]);
 
   const running = run.status === "running";
+  const stopping = stopRequested(run);
   const openPanes = panes.filter((pane) => pane.endedAt === null);
 
   return (
-    <section className="console" aria-label="vista dell'esecuzione">
+    <section className="console" aria-label="the run, as it goes">
       <header className="console__bar">
-        <span className="console__title">Esecuzione</span>
+        <span className="console__title">Run</span>
 
         <select
           className="console__pick"
@@ -435,18 +455,39 @@ export function RunConsole({
         </select>
 
         <span className="console__status" data-status={run.status}>
-          {running ? `in corso da ${clock(now, run.started_at)}` : run.status}
+          {stopping
+            ? `stopping after the current step · ${clock(now, run.started_at)}`
+            : running
+              ? `running for ${clock(now, run.started_at)}`
+              : run.status}
         </span>
+
+        {/* THE STOP IS HONEST ABOUT WHAT IT CAN DO: the next step does not
+            start; the one at work finishes, because the engine cannot take a
+            step back from an agent already working on it. */}
+        {running && !stopping && (
+          <button
+            type="button"
+            className="console__stop"
+            title="no further step starts; the one running finishes"
+            onClick={() => {
+              onStop().catch((error: unknown) => setStopTrouble(String(error)));
+            }}
+          >
+            ■ Stop
+          </button>
+        )}
+        {stopTrouble && <span className="console__trouble">{stopTrouble}</span>}
 
         <div className="console__spacer" />
 
-        {/* I due modi di guardare, a scelta di chi guarda. */}
-        <div className="console__modes" role="group" aria-label="modo di visualizzazione">
+        {/* The two ways of looking, at the reader's choice. */}
+        <div className="console__modes" role="group" aria-label="how to look">
           <button type="button" data-on={mode === "inline" || undefined} onClick={() => onMode("inline")}>
-            in linea
+            inline
           </button>
           <button type="button" data-on={mode === "split" || undefined} onClick={() => onMode("split")}>
-            affiancata
+            side by side
           </button>
         </div>
 

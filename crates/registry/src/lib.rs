@@ -9,7 +9,8 @@ mod run_record;
 mod subflow_host;
 
 pub use run_record::{
-    execution_status, record_child_run, record_flow_run, stopped_by_cap, why_it_stopped, FlowRun,
+    execution_status, halted_by_hand, record_child_run, record_flow_run, stopped_by_cap,
+    why_it_halted, why_it_stopped, FlowRun,
 };
 pub use subflow_host::LedgerHost;
 
