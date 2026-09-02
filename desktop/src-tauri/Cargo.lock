@@ -281,6 +281,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "catalogue"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "cc"
 version = "1.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2710,6 +2717,7 @@ name = "sailor"
 version = "0.1.0"
 dependencies = [
  "actions",
+ "catalogue",
  "faults",
  "flow",
  "inventory",
@@ -2735,6 +2743,7 @@ version = "0.1.0"
 dependencies = [
  "actions",
  "base64 0.22.1",
+ "catalogue",
  "flow",
  "inventory",
  "ledger",
