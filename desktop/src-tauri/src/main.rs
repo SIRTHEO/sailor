@@ -18,6 +18,7 @@ use serde::Serialize;
 use ui::gather::{flow_sources, load_all_flows};
 
 mod board;
+mod changes;
 mod faults;
 mod flows;
 mod ledger;
@@ -199,7 +200,9 @@ fn main() {
             models::model_set,
             worktree::worktree_list,
             worktree::worktree_create,
-            worktree::worktree_remove
+            worktree::worktree_remove,
+            changes::workspace_changes,
+            changes::open_in_editor
         ])
         .run(tauri::generate_context!())
         .expect("la finestra di Sailor non si è aperta");
