@@ -136,6 +136,41 @@ export interface Stylesheet {
    * il controllo diventerebbe cieco in silenzio.
    */
   colorsInsideAtRules: number;
+  /**
+   * The roles the dark scheme redefines, read from the one at-rule this
+   * engine does look into: `@media (prefers-color-scheme: dark) { :root … }`.
+   * `null` when the sheet has no dark scheme.
+   */
+  darkRoot: Array<[string, string]> | null;
+}
+
+/** Whether an at-rule prelude is the dark scheme's, in any spacing. */
+function isDarkScheme(prelude: string): boolean {
+  return /^@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)$/.test(prelude);
+}
+
+/**
+ * The same sheet with the dark scheme's roles in place of the light ones, so
+ * every measurement made on the light sheet can be made again on the dark.
+ * A role the dark scheme leaves out keeps its light value — which is exactly
+ * what the browser does, and what the stylesheet test refuses.
+ */
+export function inDark(sheet: Stylesheet): Stylesheet {
+  if (sheet.darkRoot === null) return sheet;
+  const dark = new Map(sheet.darkRoot);
+  return {
+    ...sheet,
+    rules: sheet.rules.map((rule) =>
+      rule.selector === ":root"
+        ? {
+            ...rule,
+            declarations: rule.declarations.map(
+              ([property, value]) => [property, dark.get(property) ?? value] as [string, string],
+            ),
+          }
+        : rule,
+    ),
+  };
 }
 
 /** Toglie i commenti senza toccare il resto. */
@@ -206,6 +241,7 @@ export function parseStylesheet(source: string): Stylesheet {
   const text = stripComments(source);
   const rules: CssRule[] = [];
   let colorsInsideAtRules = 0;
+  let darkRoot: Array<[string, string]> | null = null;
   let order = 0;
   let index = 0;
 
@@ -222,6 +258,24 @@ export function parseStylesheet(source: string): Stylesheet {
     const prelude = text.slice(index, open).trim();
     const body = text.slice(open + 1, close - 1);
     index = close;
+
+    if (isDarkScheme(prelude)) {
+      // The dark scheme is read as a sheet of its own: its `:root` is the
+      // second set of roles, and any colour it writes elsewhere is as blind
+      // to the measurement as a colour in any other at-rule.
+      const inner = parseStylesheet(body);
+      for (const rule of inner.rules) {
+        if (rule.selector === ":root") {
+          darkRoot = [...(darkRoot ?? []), ...rule.declarations];
+          continue;
+        }
+        for (const [property, value] of rule.declarations) {
+          if (carriesColor(property, value)) colorsInsideAtRules += 1;
+        }
+      }
+      colorsInsideAtRules += inner.colorsInsideAtRules;
+      continue;
+    }
 
     if (prelude.startsWith("@")) {
       for (const [property, value] of parseDeclarations(body)) {
@@ -240,7 +294,7 @@ export function parseStylesheet(source: string): Stylesheet {
     }
   }
 
-  return { rules, colorsInsideAtRules };
+  return { rules, colorsInsideAtRules, darkRoot };
 }
 
 // ── la cascata, l'eredità e `var()` ────────────────────────────────────
