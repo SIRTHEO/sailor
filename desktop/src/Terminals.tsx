@@ -45,6 +45,8 @@ interface TerminalsProps {
    * blank while the process inside is alive and talking.
    */
   shown?: boolean;
+  /** The ceiling the relay hands on at, from the flow that declares it; `null` when none does. */
+  ceiling?: number | null;
 }
 
 /**
@@ -85,7 +87,7 @@ export function placesOf(known: Project[], trees: Tree[]): Place[] {
   return places;
 }
 
-export function Terminals({ native, shown = true }: TerminalsProps) {
+export function Terminals({ native, shown = true, ceiling = null }: TerminalsProps) {
   const outside = "outside the desktop shell: pseudo-terminals are the engine's to open";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
 
@@ -329,6 +331,7 @@ export function Terminals({ native, shown = true }: TerminalsProps) {
                 <TerminalPane
                   key={entry.id}
                   summary={entry}
+                  ceiling={ceiling}
                   liveness={liveness}
                   bus={bus}
                   visible

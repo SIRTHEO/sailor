@@ -40,7 +40,7 @@ pub use routing::{
     default_sources, Catalog, CommandLookup, Loaded, Match, Passed, PathLookup, Problem, Route,
     Routed, Router, Source,
 };
-pub use session::{Opening, Summary, Terminal, Terminals};
+pub use session::{estimated_tokens, Opening, Summary, Terminal, Terminals};
 
 use std::io;
 use std::path::{Path, PathBuf};
