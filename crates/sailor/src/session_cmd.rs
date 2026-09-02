@@ -378,12 +378,12 @@ fn install_hooks(request: &Request<'_>) -> Result<Report, String> {
     Ok(Report::spoken(said.join("\n")))
 }
 
-/// Le due parole che il benvenuto promette, scritte dove Claude Code le cerca.
+/// The two words the welcome promises, written where they are looked for.
 ///
-/// **SE MANCANO, IL BENVENUTO MENTE.** Il saluto dice «per staccarlo:
-/// /sailor-off», e una parola promessa che non esiste è peggio di una non
-/// promessa: chi la digita crede di essersi staccato. La prova
-/// `the_welcome_only_promises_words_that_exist` tiene insieme le due cose.
+/// **IF THEY ARE MISSING, THE WELCOME LIES.** The greeting says «to detach it:
+/// /sailor-off», and a promised word that does not exist is worse than one
+/// never promised: whoever types it believes they detached.
+/// `the_welcome_only_promises_words_that_exist` holds the two together.
 fn wrote_the_two_commands(directory: &std::path::Path) -> Result<String, String> {
     std::fs::create_dir_all(directory)
         .map_err(|error| format!("{}: {error}", directory.display()))?;
@@ -484,7 +484,7 @@ fn installed(settings: &std::path::Path, events: &[(&str, &str)]) -> Result<Stri
             .as_array_mut()
             .ok_or_else(|| format!("{}: «{event}» is not an array", settings.display()))?;
 
-        // Già innestato: si riconosce dal comando, non dalla posizione.
+        // Already grafted: told by the command, not by the position.
         let ours = list.iter().any(|entry| {
             serde_json::to_string(entry)
                 .map(|text| text.contains(MARK) && text.contains("sailor"))
@@ -543,7 +543,7 @@ fn arrival_of(request: &Request<'_>) -> Arrival {
     }
 }
 
-/// Il nome del fatto: quello che dichiara il payload, o quello del verbo.
+/// The fact's name: the one the payload declares, or the verb's own.
 fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEvent {
     let anchor = anchor_of(request);
     TerminalEvent {
@@ -559,8 +559,8 @@ fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEvent {
             .unwrap_or_else(|| fallback.to_owned()),
         transcript_path: request.payload.transcript_path.clone(),
         occurred_at: request.at,
-        // Quello che oggi non leggiamo si conserva com'è arrivato: un campo
-        // buttato via non si recupera guardando meglio domani.
+        // What we do not read today is kept as it arrived: a field thrown away
+        // is not recovered by looking harder tomorrow.
         payload: (!request.raw.trim().is_empty()).then(|| request.raw.to_owned()),
     }
 }
@@ -569,9 +569,9 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let arrival = arrival_of(request);
 
-    // **STACCATO VUOL DIRE STACCATO**, e vale per i fatti prima che per il
-    // testo: niente riga, niente evento, niente saluto. Uno stacco che
-    // registrasse comunque sarebbe un silenzio di facciata.
+    // **DETACHED MEANS DETACHED**, and it holds for the facts before the text:
+    // no row, no event, no greeting. A detachment that recorded anyway would be
+    // a silence for show.
     let detached = store
         .terminal(&arrival.anchor.tty)
         .map_err(|error| error.to_string())?
@@ -786,8 +786,8 @@ fn described(arrival: &Arrival) -> String {
     )
 }
 
-/// Le opzioni scritte sulla riga. Un'opzione che vuole un valore e non ce l'ha
-/// è un errore, non un vuoto: prenderebbe per valore l'opzione successiva.
+/// The options written on the line. One that wants a value and has none is an
+/// error, not an empty: it would take the next option as its value.
 fn options_of(args: &[String]) -> Result<BTreeMap<String, String>, String> {
     let mut found = BTreeMap::new();
     let mut rest = args.iter();
@@ -902,9 +902,9 @@ mod tests {
     #[test]
     fn a_form_that_never_reads_the_store_survives_a_store_that_will_not_open() {
         let scratch = Scratch::new("senza-deposito");
-        // Una **cartella** dove ci si aspetta un file: SQLite non la apre, e il
-        // fallimento è dello stesso genere di quelli veri — permessi, disco
-        // pieno, un file di una versione più nuova — senza doverli fabbricare.
+        // A **directory** where a file is expected: SQLite will not open it, and
+        // the failure is of the same kind as the real ones — permissions, a full
+        // disk, a file from a newer version — without fabricating any.
         let impossible = scratch.directory.join("non-e-un-file");
         std::fs::create_dir_all(&impossible).expect("la cartella di prova");
         let settings = scratch.directory.join("settings-di-prova.json");
@@ -1050,10 +1050,10 @@ mod tests {
         ]
     }
 
-    /// **SI AGGIUNGE, NON SI SOSTITUISCE.** Su `~/.claude/settings.json`
-    /// scrivono in cinque, e un innesto che riscrive il vettore dei ganci
-    /// spegne in silenzio quelli di chi c'era prima — che è il modo in cui uno
-    /// strumento di tracciamento diventa il guasto che doveva prevenire.
+    /// **IT ADDS, IT DOES NOT REPLACE.** Five hands write into that settings
+    /// file, and a graft that rewrites the hooks array silently switches off
+    /// whoever was there first — which is how a tracking tool becomes the fault
+    /// it was meant to prevent.
     #[test]
     fn installing_leaves_the_hooks_that_were_already_there() {
         let scratch = Scratch::new("innesto");
@@ -1085,8 +1085,8 @@ mod tests {
         );
     }
 
-    /// Un innesto ripetuto è un innesto solo: chi lo lancia due volte per
-    /// sicurezza non deve trovarsi due ganci che registrano lo stesso fatto.
+    /// A repeated graft is one graft: whoever runs it twice for safety must not
+    /// end up with two hooks recording the same fact.
     #[test]
     fn installing_twice_does_not_double_anything() {
         let scratch = Scratch::new("innesto-doppio");
@@ -1101,9 +1101,8 @@ mod tests {
         assert_eq!(once, twice, "il secondo innesto non deve cambiare niente");
     }
 
-    /// **UN FILE CHE NON SI CAPISCE NON SI RISCRIVE.** Sovrascriverlo con la
-    /// sola parte nostra cancellerebbe la configurazione di chi lo usa, e per
-    /// un errore di battitura.
+    /// **A FILE WE CANNOT READ IS NOT REWRITTEN.** Overwriting it with our own
+    /// part alone would erase the configuration of whoever uses it, over a typo.
     #[test]
     fn a_settings_file_that_does_not_parse_is_left_alone() {
         let scratch = Scratch::new("innesto-rotto");
@@ -1120,8 +1119,8 @@ mod tests {
         );
     }
 
-    /// La regola di ferro vale anche per ciò che l'innesto **scrive**: il
-    /// comando che finisce nei ganci non nomina nessun prodotto.
+    /// The iron rule holds for what the graft **writes** too: the command that
+    /// ends up in the hooks names no product.
     #[test]
     fn what_the_install_writes_names_no_product() {
         let scratch = Scratch::new("innesto-neutro");
@@ -1138,10 +1137,10 @@ mod tests {
         }
     }
 
-    /// **IL BENVENUTO PROMETTE SOLO PAROLE CHE ESISTONO.** Il saluto dice «per
-    /// staccarlo: /sailor-off»; se l'innesto non scrivesse quel comando, chi lo
-    /// digita si crederebbe staccato e non lo sarebbe. Le due cose stanno in
-    /// due file diversi e nessun compilatore le lega: le lega questa prova.
+    /// **THE WELCOME PROMISES ONLY WORDS THAT EXIST.** It says «to detach it:
+    /// /sailor-off»; if the graft did not write that command, whoever typed it
+    /// would believe they had detached. The two live in different files and no
+    /// compiler ties them: this test does.
     #[test]
     fn the_welcome_only_promises_words_that_exist() {
         let scratch = Scratch::new("parola-mantenuta");
@@ -1195,7 +1194,7 @@ mod tests {
         );
     }
 
-    /// Il payload di un `SessionStart` vero, come lo manda Claude Code.
+    /// A real `SessionStart` payload, in the shape it arrives in.
     fn a_session_start(session: &str) -> String {
         format!(
             r#"{{"session_id":"{session}","hook_event_name":"SessionStart",
@@ -1203,12 +1202,11 @@ mod tests {
         )
     }
 
-    /// **IL BENVENUTO ENTRA NEL CONTESTO DELL'AGENTE, NON NEL TERMINALE.**
-    /// `SessionStart` è uno dei quattro eventi in cui Claude Code aggiunge al
-    /// contesto ciò che il gancio scrive: è il pilastro su cui sta in piedi la
-    /// promessa piena. Se questo smette di valere, il saluto diventa una riga
-    /// che legge la persona e non l'agente — funziona lo stesso, ma è un'altra
-    /// cosa, e chi la legge deve saperlo prima.
+    /// **THE WELCOME ENTERS THE AGENT'S CONTEXT, NOT THE TERMINAL.**
+    /// `SessionStart` is one of the four moments where what the hook writes is
+    /// added to the context: it is the pillar the full promise stands on. If it
+    /// stops holding, the greeting becomes a line the person reads and the agent
+    /// does not — it still works, and it is another thing.
     #[test]
     fn the_welcome_enters_the_context_of_the_agent() {
         let scratch = Scratch::new("benvenuto");
@@ -1244,8 +1242,8 @@ mod tests {
     }
 
     /// **STACCATO VUOL DIRE STACCATO.** Nessun saluto, e nessuna riga scritta:
-    /// se l'apertura registrasse comunque, «lascia stare questa finestra»
-    /// varrebbe solo per il testo e non per i fatti.
+    /// if opening recorded anyway, «leave this window alone» would hold for the
+    /// text and not for the facts.
     #[test]
     fn a_detached_terminal_is_greeted_by_silence() {
         let scratch = Scratch::new("staccato");
@@ -1276,12 +1274,11 @@ mod tests {
         );
     }
 
-    /// **IL CENSIMENTO NON HA BISOGNO DI UN DEPOSITO**, e finché ne aveva
-    /// bisogno poteva morire prima di poter dire «non lo so» — cioè proprio la
-    /// cosa per cui esiste. Visto eseguendo il binario nel perimetro il
-    /// 01/09/2026: apriva `sessions.db` per ogni forma, e con il deposito
-    /// predefinito non scrivibile usciva 1 con un errore di SQLite invece di 3
-    /// con la frase giusta.
+    /// **THE CENSUS NEEDS NO LEDGER**, and while it did it could die before
+    /// saying "I do not know" — the very thing it exists for. Seen by running
+    /// the binary inside the perimeter: it opened the ledger for every form, and
+    /// with the default one unwritable it exited 1 with an SQLite error instead
+    /// of 3 with the right sentence.
     #[test]
     fn the_census_answers_even_without_a_store() {
         let refused = Census::Refused(Refusal {
@@ -1308,8 +1305,8 @@ mod tests {
         );
     }
 
-    /// L'elenco stampato e quello accettato sono lo stesso: una forma
-    /// documentata e non accettata si scopre solo digitandola.
+    /// The list printed and the list accepted are the same one: a form that is
+    /// documented and not accepted is discovered only by typing it.
     #[test]
     fn the_usage_names_every_form_the_dispatch_accepts() {
         for form in FORMS {
@@ -1322,7 +1319,7 @@ mod tests {
         }
     }
 
-    /// L'ancora è `(tty, albero, capostipite)`, e si vede nella riga scritta.
+    /// The anchor is `(tty, tree, progenitor)`, and it shows in the row written.
     #[test]
     fn an_arrival_is_anchored_to_the_tty_the_tree_and_the_ancestor() {
         let scratch = Scratch::new("anchor");
@@ -1350,8 +1347,8 @@ mod tests {
         );
     }
 
-    /// **UN CAMPO CHE MANCA NON FA FALLIRE NIENTE**: ci si arrangia con quello
-    /// che si ha. Un payload vuoto ha comunque un tty.
+    /// **A MISSING FIELD FAILS NOTHING**: we make do with what there is. An
+    /// empty payload still has a tty.
     #[test]
     fn a_payload_with_nothing_in_it_still_registers_the_terminal() {
         let scratch = Scratch::new("empty-payload");
@@ -1369,8 +1366,8 @@ mod tests {
         );
     }
 
-    /// **UN CENSIMENTO NEGATO NON ROMPE UN GANCIO.** La riga si scrive lo
-    /// stesso, e il capostipite resta ignoto invece di essere inventato.
+    /// **A REFUSED CENSUS DOES NOT BREAK A HOOK.** The row is written all the
+    /// same, and the progenitor stays unknown instead of being invented.
     #[test]
     fn a_refused_census_does_not_stop_the_registration() {
         let scratch = Scratch::new("refused-open");
@@ -1391,8 +1388,8 @@ mod tests {
         );
     }
 
-    /// Ma `census` sì: la sua risposta *è* il censimento, e un diniego si
-    /// riconosce anche senza leggere il testo.
+    /// But `census` does: its answer *is* the census, and a refusal is
+    /// recognisable without reading the text.
     #[test]
     fn the_census_says_it_does_not_know_and_says_it_with_its_own_code() {
         let scratch = Scratch::new("refused-census");
@@ -1411,8 +1408,8 @@ mod tests {
         assert!(other.message.contains("no process"), "{}", other.message);
     }
 
-    /// Lo stacco vive sul tty: la porta unica lo scrive e lo toglie, e in mezzo
-    /// una sessione nuova non lo cancella.
+    /// Detachment lives on the tty: the one door writes it and takes it off, and
+    /// a new session in between does not clear it.
     #[test]
     fn detaching_through_the_command_holds_across_a_new_session() {
         let scratch = Scratch::new("detach");
@@ -1459,12 +1456,11 @@ mod tests {
         assert!(report.message.contains("Whatever"), "{}", report.message);
     }
 
-    /// **CHIEDERE COSA RISULTA NON RICHIEDE UN TERMINALE PROPRIO.** `list` e
-    /// `census` non parlano del terminale da cui li si invoca: parlano di tutti.
-    /// Pretendere un tty li fa fallire ovunque l'uscita sia catturata — cioè in
-    /// ogni script, in ogni gancio e in ogni prova — e il messaggio manda a
-    /// cercare un'opzione invece del difetto. Visto eseguendo il binario vero:
-    /// `sailor session list` usciva 1 su una macchina dove tutto funzionava.
+    /// **ASKING WHAT IS TRACKED NEEDS NO TERMINAL OF ITS OWN.** `list` and
+    /// `census` do not speak of the terminal they are invoked from: they speak
+    /// of all. Demanding a tty makes them fail wherever the output is captured —
+    /// every script, every hook, every test — and the message sends the reader
+    /// after an option instead of the defect.
     #[test]
     fn asking_what_is_tracked_does_not_need_a_terminal_of_its_own() {
         let scratch = Scratch::new("no-tty");
