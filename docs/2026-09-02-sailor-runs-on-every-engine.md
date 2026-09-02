@@ -108,13 +108,22 @@ Starting point, so the mandate builds on it instead of beside it.
    per provider** (OpenRouter and OpenCode Zen declare it per model), and
    `unknown` is not `does_not_train`. No number from a blog enters: Cerebras
    and NVIDIA showed what blogs get wrong.
-   *Proof:* the catalogue refuses to load an entry that names a pact outside
-   the three words.
+   *Where it landed:* `models::pact` (`DataPact`, `Pacts`, shipped
+   `pacts.default.json`, empty until the first pact is read from a provider's
+   own terms); `Model.data_pact` written by `Catalog::declare_pacts`; a
+   descriptor's `data_pact` for the models its own subscription reaches. The
+   OmniRoute import and the «how much is left» column are still to do: the
+   second is A.1's, per engine.
+   *Proof:* the pacts file and the descriptor both refuse a fourth word,
+   naming it.
 5. **Not every job may go everywhere.** A step declares `data: private |
    public`; a private step never resolves to an engine whose pact is `trains`
-   or `unknown`. The refusal names the pact.
-   *Proof:* a flow with a private step and only free-that-train candidates
-   stops red naming the pact; flipping the step to public lets it run.
+   or `unknown`. The refusal names the pact. A step that writes a bare
+   command (`bin`) is not an engine and is not held: the author wrote where
+   its text goes.
+   *Proof:* a private step against an engine whose pact is `trains` or
+   `unknown` is refused before spending, naming the pact; the same step said
+   public, or the same engine under `does_not_train`, runs.
 6. **The free-only rule is decided, not left.** Theo answers one question:
    does `effective_model` keep forcing free models? Until he answers, A.4 and
    A.5 land as data and the rule stays. Whatever he decides is written in

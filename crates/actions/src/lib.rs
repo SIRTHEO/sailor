@@ -606,6 +606,12 @@ pub trait ToolResolver: Send + Sync {
         None
     }
 
+    /// Whether what is sent to `id` trains its provider's next model. The
+    /// default is what nobody measured, and a private step reads it as a no.
+    fn data_pact(&self, _id: &str) -> models::pact::DataPact {
+        models::pact::DataPact::Unknown
+    }
+
     /// Come **questo** motore apre, riprende e ramifica una sessione, se lo sa
     /// fare.
     ///
@@ -1447,6 +1453,10 @@ struct EngineSpec {
     /// provare in ordine.
     #[serde(default)]
     tool: Option<ToolChoice>,
+    /// What the text of this step is: `private` never resolves to an engine
+    /// whose data pact is `trains` or `unknown`. Absent is `public`.
+    #[serde(default)]
+    data: Option<DataClass>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -1518,6 +1528,14 @@ struct EngineSpec {
     /// la struttura.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
+}
+
+/// What the text of a step is, for the pact an engine must hold to read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum DataClass {
+    Private,
+    Public,
 }
 
 /// Il testo da leggere come JSON dentro ciò che un motore ha detto.
@@ -1785,6 +1803,17 @@ impl ExternalEngineAction {
                         refused.push(Refused {
                             id: id.clone(),
                             reason: why,
+                            unresolved: false,
+                        });
+                        continue;
+                    }
+                    let pact = tools.data_pact(id);
+                    if spec.data == Some(DataClass::Private) && pact != models::pact::DataPact::DoesNotTrain {
+                        refused.push(Refused {
+                            id: id.clone(),
+                            reason: format!(
+                                "a private step does not go to an engine whose data pact is «{pact}»"
+                            ),
                             unresolved: false,
                         });
                         continue;
@@ -5629,6 +5658,51 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         })
         .expect("a cap on another engine is not this engine's");
         assert_eq!(calls_in(&dir.join("deposito")).len(), 2);
+    }
+
+    /// An engine that resolves, with the pact its descriptor would declare.
+    struct Pacted {
+        bin: String,
+        pact: models::pact::DataPact,
+    }
+
+    impl ToolResolver for Pacted {
+        fn resolve(&self, _id: &str) -> Result<String, String> {
+            Ok(self.bin.clone())
+        }
+        fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+            Some(declaring_recipe())
+        }
+        fn data_pact(&self, _id: &str) -> models::pact::DataPact {
+            self.pact
+        }
+    }
+
+    /// A step that says its text is private never resolves to an engine whose
+    /// pact is `trains` or `unknown`, and the refusal names the pact; the same
+    /// step said public, or the same engine under `does_not_train`, runs.
+    #[test]
+    fn a_private_step_never_goes_where_the_pact_is_not_a_no() {
+        use models::pact::DataPact;
+        let dir = scratch("patto");
+        let bin = fake_engine(&dir, "motore", WRAPS_ON_DEMAND);
+        let run = |pact: DataPact, input: serde_json::Value| {
+            let action = ExternalEngineAction::resolving_with(Pacted { bin: bin.clone(), pact });
+            with_price_list(None, || action.execute(&input, &mut shared("corsa", "passo")))
+        };
+        let private = json!({"tool": "motore-di-prova", "data": "private", "stdin": "ciao", "timeout_secs": 10});
+        let public = json!({"tool": "motore-di-prova", "data": "public", "stdin": "ciao", "timeout_secs": 10});
+        let unsaid = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+
+        let refused = run(DataPact::Trains, private.clone()).expect_err("a training engine is refused");
+        assert_eq!(refused.class, "no_usable_engine");
+        assert!(refused.said.contains("data pact is «trains»"), "{}", refused.said);
+        let unknown = run(DataPact::Unknown, private.clone()).expect_err("unknown is not a no");
+        assert!(unknown.said.contains("data pact is «unknown»"), "{}", unknown.said);
+
+        run(DataPact::DoesNotTrain, private).expect("a pact that does not train may read it");
+        run(DataPact::Trains, public).expect("a public step goes anywhere");
+        run(DataPact::Unknown, unsaid).expect("a step that says nothing is public");
     }
 
     /// **E IL DEPOSITO DEVE DIRLO ANCHE QUANDO L'USCITA È ZERO.**

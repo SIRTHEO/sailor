@@ -665,6 +665,10 @@ pub struct Descriptor {
     /// means no channel is known, and the engine works without knowing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quota: Option<Quota>,
+    /// Whether what is sent through it trains the provider's next model, for
+    /// the models its own subscription reaches. Absent is unknown, never a no.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_pact: Option<models::pact::DataPact>,
     /// What this tool can do beyond answering: resume a session, impose a shape
     /// on the answer, isolate itself from its host's configuration, receive an
     /// allowance, keep a spend cap of its own. **The code knows no capability

@@ -5,6 +5,7 @@
 //! back values. Downloading lives in `fetch.rs`, on purpose — the tests here
 //! run on a slice of catalog saved in the crate, never over the network.
 
+use crate::pact::{DataPact, Pacts};
 use std::fmt;
 
 /// An input kind a model accepts. The catalog lists other values too (e.g.
@@ -59,6 +60,9 @@ pub struct Model {
     pub input_modalities: Vec<Modality>,
     pub price_per_million_input: Option<f64>,
     pub price_per_million_output: Option<f64>,
+    /// Whether what is sent to it trains the provider's next model, from the
+    /// pacts file and never from the catalog body: OpenRouter's does not say.
+    pub data_pact: DataPact,
 }
 
 impl Model {
@@ -128,10 +132,18 @@ impl Catalog {
                     input_modalities,
                     price_per_million_input,
                     price_per_million_output,
+                    data_pact: DataPact::Unknown,
                 })
             })
             .collect();
         Ok(Catalog { models })
+    }
+
+    /// Writes the declared pacts onto the models by id; the others stay unknown.
+    pub fn declare_pacts(&mut self, pacts: &Pacts) {
+        for model in &mut self.models {
+            model.data_pact = pacts.of(&model.id);
+        }
     }
 
     pub fn find(&self, id: &str) -> Option<&Model> {
