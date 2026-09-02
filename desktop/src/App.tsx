@@ -1316,7 +1316,18 @@ export default function App() {
           onLedgerTable={setLedgerTable}
         />
       )}
-      {place === "sailor" && <SailorScreen native={NATIVE} now={now} tab={sailorTab} onTab={setSailorTab} />}
+      {place === "sailor" && (
+        <SailorScreen
+          native={NATIVE}
+          now={now}
+          tab={sailorTab}
+          onTab={setSailorTab}
+          onTerminalOpened={() => {
+            setPlace("terminals");
+            setTerminalsTab("live");
+          }}
+        />
+      )}
       {/* THE TERMINALS STAY MOUNTED BEHIND THE OTHER PLACES, like the canvas:
           unmounting the screen would destroy every emulator, and a session
           would come back blank while the process inside is alive. */}

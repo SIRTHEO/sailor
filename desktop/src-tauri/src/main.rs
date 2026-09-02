@@ -20,6 +20,7 @@ use ui::gather::{flow_sources, load_all_flows};
 mod beat;
 mod board;
 mod changes;
+mod engines;
 mod faults;
 mod flows;
 mod handoff;
@@ -178,6 +179,7 @@ fn main() {
             flows::delete_flow,
             tools::discover_tools,
             tools::tools_sweep,
+            engines::engines,
             faults::faults,
             faults::fault_status,
             ledger::ledger_held,

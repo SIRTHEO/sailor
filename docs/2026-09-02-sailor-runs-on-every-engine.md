@@ -176,6 +176,22 @@ Starting point, so the mandate builds on it instead of beside it.
     server down, `candidates` refuses the profile with the reason instead of
     the step breaking; a `private` workspace never composes that command
     line.
+11. **No provider is named in code.** Theo, 02/09 at night, on finding
+    `read_from_claude` and `== "claude-code"`: *Sailor should be agnostic to
+    this; analyse and maintain where else it happened.* The quota reader
+    became a kind of channel the descriptor declares (`quota.reader:
+    oauth_usage`, credentials, token pointer, address, headers), and the code
+    reads kinds, never providers. The rest is a census with a ratchet: a test
+    in `crates/sailor/tests/` counts the string literals that name an engine
+    (`claude`, `codex`, `gemini`, `agy`, `ollama`, `openrouter`, and the
+    descriptor ids) in non-test Rust, is seeded with today's exact count, and
+    may only fall. The heaviest places, measured with a rough grep on 02/09:
+    the profiles' table of known command lines (22), the actions crate (19),
+    `flow_cmd` (16), `run_cmd` (12), `profiles_cmd` (10). The profiles' table
+    moves into the descriptors (`home` mechanism, native profiles, executable),
+    which already carry the rest of what a command line is.
+    *Proof:* the ratchet is red on the count of the day before its seed was
+    lowered; putting one literal back turns it red.
 
 ## B. Dispatch: the same flow, from three seats, chosen by what is left
 
@@ -358,6 +374,54 @@ Starting point, so the mandate builds on it instead of beside it.
 2. **The number.** The document's outcome section says how long the migration
    took on this machine, in minutes of Theo's gestures and minutes of flows.
 
+## G. A public repository, and what a reader of the code found
+
+The repository is public since 02/09/2026. Theo, the same night: *let us
+grind, and remove what should not be public: local or reserved flows live on
+the machine, or in the private repository of the user's own that Sailor
+connects them to.* An external agent read the code that evening (about 65k
+lines of Rust, 16 crates, 980 tests) and left a judgement; what it found
+enters here as claims, not as praise.
+
+1. **Nothing reserved is tracked.** No flow of a person's own, no profile
+   home, no credential, no path into a home directory is in the tree; the
+   flows that ship are the system ones and this project's; a test lists what
+   `git ls-files` may contain under `flows/` and refuses the rest.
+   *Proof:* adding a flow file under a home-only name to the tree turns the
+   test red.
+2. **A person's flows sync to a repository of their own.** `sailor flows
+   publish` (the name is the mandate's to choose) initialises or reuses a
+   git repository the person names in `sailor.json` or in the home, private
+   by default, pushes the home's flows there, and **refuses to publish a flow
+   that carries a secret**: a value that looks like a key or a token, or an
+   `env` block with a literal. The refusal names the step and the key.
+   *Proof:* a flow with `"OPENROUTER_API_KEY": "sk-…"` is refused; the same
+   flow with `{"$env": "OPENROUTER_API_KEY"}` is published.
+3. **Clippy gates what is dangerous and counts the rest.** `clippy::correctness`
+   and `clippy::suspicious` are errors in CI; the other groups are a counted
+   ratchet, as the comments are. The reviewer counted 173 warnings never
+   gated.
+   *Proof:* a deliberate `suspicious` lint in a scratch commit fails CI.
+4. **A long process is started only with the supervisor's token.** Fault 4's
+   cure is typological: the function that spawns a long-lived process takes a
+   value only the supervisor emits, so a second road does not compile.
+   *Proof:* a test that tries to spawn without the token does not compile,
+   asserted with a `compile_fail` doctest.
+5. **`Some(Null)` and `None` are two records.** The event register wraps the
+   value so the two serialise differently; the guard in `step close` stays,
+   but the format no longer depends on it (fault 33, half open).
+   *Proof:* a round trip through the register keeps the two apart.
+6. **The two files out of scale are split by responsibility.** `actions/src/lib.rs`
+   (6 443 lines) and `sailor/src/flow_cmd.rs` (6 253 lines, 71 functions)
+   become modules: at least `cost`, `cap` and `schedule` out of `flow_cmd`.
+   *Proof:* no file in the workspace over 2 000 lines, as a ratchet seeded
+   with today's count.
+7. **The front door is in English and says what it solves.** The README opens
+   with what a person gets in five minutes, and the installation is one line
+   (`cargo install` or a release binary); the documents that explain why the
+   project exists get an English summary at their top.
+   *Proof:* Theo's gesture: a stranger reads the README and installs.
+
 ## Out of scope, deliberately
 
 - No proxy, gateway or resident server that translates provider formats
@@ -379,8 +443,12 @@ Starting point, so the mandate builds on it instead of beside it.
 
 ## The order
 
-A, then B, then C, then D, then E, then F. A.6 is asked of Theo at the start
-and does not block A.1–A.5. Inside a group the order is free.
+Theo, 03/09 at night: *priority to the orchestration of the accounts and to
+the window; tomorrow I start working in Sailor's terminals.* So the order is:
+first what a person needs to work in the terminals tomorrow (the engines
+screen with sign-in and install, E.2, D.1), then A, then B, then E, then C,
+then D, then G, then F. A.6 is asked of Theo at the start and does not block
+A.1–A.5. Inside a group the order is free.
 
 ## The termination condition
 
