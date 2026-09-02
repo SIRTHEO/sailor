@@ -5,12 +5,22 @@
 //! records knew which tree a run happened in — and the window, where the work
 //! is meant to move, had no idea trees existed at all.
 
+use crate::Form;
 use workspace::{create, list, remove, root, Worktree};
 
-pub const USAGE: &[&str] = &[
-    "sailor worktree list",
-    "sailor worktree create <branch> [name]",
-    "sailor worktree remove <name>",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor worktree list",
+        says_key: "",
+    },
+    Form {
+        form: "sailor worktree create <branch> [name]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor worktree remove <name>",
+        says_key: "",
+    },
 ];
 
 pub fn run(args: &[String]) -> i32 {
@@ -45,7 +55,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let path = remove(&repo, name)?;
             Ok(format!("taken down: {}", path.display()))
         }
-        _ => Err(USAGE.join("\n")),
+        _ => Err(crate::forms_as_lines(USAGE).join("\n")),
     }
 }
 

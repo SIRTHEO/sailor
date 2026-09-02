@@ -113,11 +113,18 @@ fn home_dir() -> PathBuf {
 }
 
 /// La forma di `sailor run`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor run <cli> [arguments...]"];
+pub const USAGE: &[crate::Form] = &[crate::Form {
+    form: "sailor run <cli> [arguments...]",
+    says_key: "",
+}];
 
 pub fn run(args: &[String]) -> i32 {
     let [cli_id, rest @ ..] = args else {
-        eprintln!("usage: {}", USAGE[0]);
+        eprintln!(
+            "{} {}",
+            catalogue::say("cli.usage_heading", &[]),
+            USAGE[0].form
+        );
         return 2;
     };
     let store = match store_io::load_store() {

@@ -84,13 +84,16 @@ pub fn run(args: &[String]) -> i32 {
 /// `sailor --help`. È il guasto 10 in miniatura: l'elenco vero è
 /// `release::TARGETS`, e chi sbaglia nome se lo sente dire da `target_names()`
 /// con la tabella di adesso, non con quella di allora.
-pub const USAGE: &[&str] = &["sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]"];
+pub const USAGE: &[crate::Form] = &[crate::Form {
+    form: "sailor release <target> [--dry-run] [--skip-tests] [--wait-secs N]",
+    says_key: "",
+}];
 
 fn parse_options(args: &[String]) -> Result<Options, String> {
     let mut args = args.iter().cloned();
-    let target_name = args
-        .next()
-        .ok_or_else(|| catalogue::say("cli.release.no_target_given", &[("usage", USAGE[0])]))?;
+    let target_name = args.next().ok_or_else(|| {
+        catalogue::say("cli.release.no_target_given", &[("usage", USAGE[0].form)])
+    })?;
     if target_name.starts_with('-') {
         return Err(catalogue::say(
             "cli.release.no_target_before",
