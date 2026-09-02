@@ -159,11 +159,12 @@ still Theo's.
    use» distinct from the spend does not exist.
 3. Sailor › can do lists families and names, not the surface (sense / act /
    remember / gate) nor the powers each action claims.
-4. Sailor › keeps has no «since when», no «what happens when it grows», no
-   signing identities.
+4. Sailor › keeps has no «what happens when it grows» and no signing
+   identities. «Since when» is there since `98c80fc6`: every store row
+   carries its birth time from the disk.
 5. The band on the board has no state, no cost per flow, no legend; the pane
-   has no program+model header; the chip says «relay · at step» and not
-   «relay 4 of 7».
+   has no program+model header. The chip says «relay · 3 of 7 · at verify»
+   since `98c80fc6`, and no total when the flow cannot be read back.
 6. The ledger keeps no root of a run's own: a run resumed after a move into
    another project resumes in the window's root, and says so.
 
