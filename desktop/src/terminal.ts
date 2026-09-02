@@ -61,6 +61,10 @@ export interface TerminalSummary {
   moved: number;
   /** What those bytes amount to in tokens, by the relay's model: an estimate. */
   estimatedTokens: number;
+  /** The program started inside, by its file name; empty from an older host. */
+  program: string;
+  /** The profile it runs under, when one applied at opening. */
+  profile: string | null;
 }
 
 /**

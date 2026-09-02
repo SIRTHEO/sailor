@@ -50,6 +50,7 @@ fn shell(client: &Client, workspace: &Path, environment: Vec<(String, String)>) 
             environment,
             24,
             80,
+            None,
         )
         .expect("open a shell through the host")
         .id
@@ -183,6 +184,7 @@ fn arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name() {
             Vec::new(),
             24,
             80,
+            None,
         )
         .expect("open a program with arguments");
     assert!(
@@ -198,6 +200,7 @@ fn arguments_cross_the_wire_as_arguments_and_not_as_part_of_the_name() {
         Vec::new(),
         24,
         80,
+        None,
     );
     assert!(
         refused.is_err(),
