@@ -5,6 +5,7 @@
 // Il formato del file vive nel crate del flusso: qui si importa, non si
 // ridichiara. Averlo scritto due volte, il 28/08/2026, li ha fatti coincidere
 // per fortuna e non per costruzione.
+use crate::Form;
 use flow::reference;
 use flow::{
     ActionRegistry, Execution, Executor, FlowFile, Graph, InProcessExecutor, RecordStore,
@@ -1064,14 +1065,35 @@ fn nothing_found(sources: &[FlowSource]) -> String {
 /// Le due regole sono nate lo stesso giorno su due rami diversi e non si
 /// escludono: la prima dice che l'elenco è completo, la seconda che è uno solo.
 /// `schedule` viene dalla prima, la forma a righe dalla seconda.
-pub const USAGE: &[&str] = &[
-    "sailor flow list",
-    "sailor flow due",
-    "sailor flow tick",
-    "sailor flow check <name> [--no-engines]",
-    "sailor flow run <name> [mandate]",
-    "sailor flow resume <run>",
-    "sailor flow cost <name>",
+pub const USAGE: &[Form] = &[
+    Form {
+        form: "sailor flow list",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow due",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow tick",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow check <name> [--no-engines]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow run <name> [mandate]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow resume <run>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow cost <name>",
+        says_key: "",
+    },
     // **`micro`, `nessuno`, `leggero` E `pesante` RESTANO COSÌ, E NON È UNA
     // DIMENTICANZA.** Non sono segnaposto: sono le parole che l'utente batte
     // davvero e che il codice confronta, e una `schedule` già scritta le
@@ -1081,13 +1103,26 @@ pub const USAGE: &[&str] = &[
     // dei flussi restano in italiano (`AGENTS.md`, la riga sui dati del
     // deposito). Se un giorno si vogliono in inglese, la strada è accettarle
     // in tutte e due le lingue e mostrare la nuova, mai sostituirle.
-    "sailor flow cap <name> [micros|none]",
-    "sailor flow schedule <name> [3600s|07:30|none] [light|heavy]",
-    "sailor flow relocate <name> [prefix-to-strip]",
+    Form {
+        form: "sailor flow cap <name> [micros|none]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow schedule <name> [3600s|07:30|none] [light|heavy]",
+        says_key: "",
+    },
+    Form {
+        form: "sailor flow relocate <name> [prefix-to-strip]",
+        says_key: "",
+    },
 ];
 
 fn usage() -> String {
-    format!("usage:\n  {}", USAGE.join("\n  "))
+    format!(
+        "{}\n  {}",
+        catalogue::say("cli.usage_heading", &[]),
+        crate::forms_as_lines(USAGE).join("\n  ")
+    )
 }
 
 /// Chi tiene un passo consegnato: **una scadenza scritta nel record**, non un
@@ -3278,7 +3313,7 @@ mod tests {
     #[test]
     fn the_beat_is_promised_and_accepted() {
         assert!(
-            USAGE.iter().any(|line| line.contains("flow tick")),
+            USAGE.iter().any(|line| line.form.contains("flow tick")),
             "the help must promise the beat"
         );
         let nowhere: Vec<FlowSource> = Vec::new();

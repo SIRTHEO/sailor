@@ -26,8 +26,23 @@ pub struct CommandDoc {
     /// the sentence, so the window shows it in the language of whoever is
     /// looking instead of the one it was written in.
     pub description: String,
-    /// Le forme complete, una per riga, già pronte da mostrare in colonna.
-    pub usage: &'static [&'static str],
+    /// The forms, each already split in two: the window lays them out as a
+    /// table, and a table wants its columns apart.
+    pub usage: Vec<FormDoc>,
+}
+
+/// One form as the window reads it.
+///
+/// **SPLIT IN TWO BECAUSE THE HALVES ARE NOT THE SAME THING.** Joined in one
+/// line, as they were until today, the window would have had to cut them apart
+/// on a double space — a second idea of where a form ends.
+#[derive(Serialize)]
+pub struct FormDoc {
+    /// What is typed: `sailor flow run <name> [mandate]`. Never translated.
+    pub form: &'static str,
+    /// What it does, in the language of whoever is reading. Empty when the
+    /// shape says it all on its own.
+    pub says: String,
 }
 
 /// I comandi che questo Sailor sa eseguire, nell'ordine in cui li elenca il
@@ -40,7 +55,18 @@ pub(crate) fn manual() -> Vec<CommandDoc> {
         .map(|command| CommandDoc {
             name: command.name,
             description: catalogue::say(command.description_key, &[]),
-            usage: command.usage,
+            usage: command
+                .usage
+                .iter()
+                .map(|form| FormDoc {
+                    form: form.form,
+                    says: if form.says_key.is_empty() {
+                        String::new()
+                    } else {
+                        catalogue::say(form.says_key, &[])
+                    },
+                })
+                .collect(),
         })
         .collect()
 }
@@ -109,7 +135,7 @@ mod tests {
             .iter()
             .map(|command| command.usage.len())
             .sum();
-        let arrivate = json.matches("sailor ").count();
+        let arrivate = json.matches("\"form\":").count();
         assert_eq!(
             arrivate, dichiarate,
             "il binario dichiara {dichiarate} forme d'uso e ne attraversano il ponte {arrivate}: {json}"

@@ -73,8 +73,60 @@ pub struct Command {
     /// what is written here is the name of the line and not the line: whoever
     /// shows it says it in the language of whoever is reading.
     pub description_key: &'static str,
-    pub usage: &'static [&'static str],
+    pub usage: &'static [Form],
     pub run: fn(&[String]) -> i32,
+}
+
+/// One way of writing a command: what is typed, and what it does.
+///
+/// **THE TWO HALVES ARE NOT THE SAME KIND OF TEXT, AND THAT IS THE POINT.**
+/// Kept in one string, as they were until today, the sentence could not leave
+/// for the catalogue and the shape could not stay put: the pair is what lets
+/// each half do what it must.
+#[derive(Debug)]
+pub struct Form {
+    /// What is typed: `sailor faults status <n> <text>`. The same in every
+    /// language, because translating it would break the command it describes.
+    pub form: &'static str,
+    /// **THE KEY, NOT THE SENTENCE.** Prose about the form is a sentence like
+    /// any other and belongs in the catalogue. Empty when the shape says it
+    /// all and there is nothing to add — `sailor version` needs no gloss.
+    pub says_key: &'static str,
+}
+
+impl Form {
+    /// The form and its sentence, in the language of whoever is reading, padded
+    /// so that a list of them lines up. `width` is the widest form in the list.
+    ///
+    /// **THE COLUMN IS MEASURED, NEVER TYPED.** The alignment used to be spaces
+    /// inside the literal, counted by hand and right in exactly one language.
+    pub fn line(&self, width: usize) -> String {
+        if self.says_key.is_empty() {
+            return self.form.to_owned();
+        }
+        format!(
+            "{:width$}   {}",
+            self.form,
+            catalogue::say(self.says_key, &[]),
+            width = width
+        )
+    }
+}
+
+/// The width to pad every form to, so a list of them lines up. A list with no
+/// sentence in it needs no column at all, and asking for one would leave a
+/// trailing hedge of spaces on every row.
+pub fn form_width(forms: &[Form]) -> usize {
+    if forms.iter().all(|form| form.says_key.is_empty()) {
+        return 0;
+    }
+    forms.iter().map(|form| form.form.len()).max().unwrap_or(0)
+}
+
+/// Every form of a command, one per line, each already saying what it does.
+pub fn forms_as_lines(forms: &[Form]) -> Vec<String> {
+    let width = form_width(forms);
+    forms.iter().map(|form| form.line(width)).collect()
 }
 
 pub const COMMANDS: &[Command] = &[
@@ -294,13 +346,70 @@ mod tests {
             );
             for line in command.usage {
                 assert!(
-                    line.starts_with(&format!("sailor {} ", command.name))
-                        || *line == format!("sailor {}", command.name),
-                    "la riga d'uso di '{}' parla di un altro comando: {line}",
-                    command.name
+                    line.form.starts_with(&format!("sailor {} ", command.name))
+                        || line.form == format!("sailor {}", command.name),
+                    "la riga d'uso di '{}' parla di un altro comando: {}",
+                    command.name,
+                    line.form
                 );
             }
         }
+    }
+
+    /// **WHAT A FORM SAYS IS IN THE CATALOGUE, OR IT IS NOWHERE.** A wrong key
+    /// is not a compile error: `catalogue::say` hands back the key itself, and
+    /// the help prints `cli.faults.form.lst` to whoever reads it.
+    #[test]
+    fn every_form_that_says_something_says_it_from_the_catalogue() {
+        for (language, _) in catalogue::LANGUAGES {
+            let entries = catalogue::entries(language).expect("un catalogo che si legge");
+            for command in COMMANDS {
+                for form in command.usage {
+                    assert!(
+                        form.says_key.is_empty() || entries.contains_key(form.says_key),
+                        "«{}» non è nel catalogo {language}, e la forma «{}» la mostrerebbe così com'è",
+                        form.says_key,
+                        form.form
+                    );
+                }
+            }
+        }
+    }
+
+    /// The column is measured: the widest form decides it, and a form with no
+    /// sentence carries no trailing hedge of spaces.
+    #[test]
+    fn the_column_is_measured_and_a_bare_form_carries_no_padding() {
+        let with_prose = &[
+            Form {
+                form: "sailor x aa",
+                says_key: "cli.usage_heading",
+            },
+            Form {
+                form: "sailor x b",
+                says_key: "",
+            },
+        ];
+        let lines = forms_as_lines(with_prose);
+        assert!(
+            lines[0].starts_with("sailor x aa   "),
+            "la prima forma non è seguita dalla sua frase: {}",
+            lines[0]
+        );
+        assert_eq!(
+            lines[1], "sailor x b",
+            "una forma senza frase non si impagina"
+        );
+
+        let bare = &[Form {
+            form: "sailor x b",
+            says_key: "",
+        }];
+        assert_eq!(
+            form_width(bare),
+            0,
+            "un elenco senza frasi non vuole colonna"
+        );
     }
 
     /// L'aiuto **letto** nomina ogni comando e ne dice il perché.

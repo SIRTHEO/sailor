@@ -263,12 +263,15 @@ describe("the commands, as the binary declares them", () => {
         {
           name: "flow",
           description: "elenca, controlla, esegue o riprende i flussi dichiarati in flows/",
-          usage: ["sailor flow list", "sailor flow run <nome> [mandato]"],
+          usage: [
+            { form: "sailor flow list", says: "" },
+            { form: "sailor flow run <nome> [mandato]", says: "esegue un flusso" },
+          ],
         },
         {
           name: "version",
           description: "la versione di questo binario",
-          usage: ["sailor version"],
+          usage: [{ form: "sailor version", says: "" }],
         },
       ],
     });

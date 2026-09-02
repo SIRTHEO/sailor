@@ -3,7 +3,10 @@
 //! timbro) senza dover aprire un debugger.
 
 /// La forma di `sailor version`. Vedi `flow_cmd::USAGE`.
-pub const USAGE: &[&str] = &["sailor version"];
+pub const USAGE: &[crate::Form] = &[crate::Form {
+    form: "sailor version",
+    says_key: "",
+}];
 
 pub fn run(_args: &[String]) -> i32 {
     println!("sailor {}", env!("CARGO_PKG_VERSION"));
