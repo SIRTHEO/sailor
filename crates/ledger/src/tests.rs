@@ -2520,3 +2520,60 @@ fn liveness_asks_about_one_known_pid_not_for_a_list() {
         "a reaped and buried process still reads as alive: pid {pid}"
     );
 }
+
+/// **A BROWSER IS NOT A BACK DOOR.** The store is append-only; a person may
+/// look at any table through one typed statement, and a statement that would
+/// write is refused by SQLite itself, whatever it looked like.
+#[test]
+fn a_browsed_statement_reads_any_table_and_cannot_write() {
+    let directory = TestDirectory::new("browse");
+    let ledger = Ledger::open(&directory.0).expect("open the ledger");
+    sample_all(&ledger);
+
+    let tables = ledger.tables().expect("list the tables");
+    let runs = tables
+        .iter()
+        .find(|table| table.name == "runs")
+        .expect("the runs table is listed");
+    assert_eq!(runs.rows, 1, "{tables:?}");
+
+    let answer = ledger
+        .browse("SELECT run_id, status FROM runs", 10)
+        .expect("a select is answered");
+    assert_eq!(answer.columns, vec!["run_id", "status"]);
+    assert_eq!(
+        answer.rows,
+        vec![vec![
+            serde_json::Value::from("run-1"),
+            serde_json::Value::from("broken")
+        ]]
+    );
+    assert!(!answer.truncated);
+
+    let cut = ledger.browse("SELECT * FROM steps", 0).expect("a limit of zero");
+    assert!(cut.rows.is_empty() && cut.truncated, "{cut:?}");
+
+    // The absurd control: a write through the browser is refused, and the row
+    // is still there afterwards.
+    let refused = ledger.browse("DELETE FROM runs", 10);
+    assert!(refused.is_err(), "a delete went through the browser: {refused:?}");
+    let still = ledger
+        .browse("SELECT COUNT(*) FROM runs", 1)
+        .expect("count after the refusal");
+    assert_eq!(still.rows[0][0], serde_json::Value::from(1));
+    // And an ordinary write still works once the browser is done.
+    ledger
+        .record_run(&RunRecord {
+            run_id: "run-2".to_owned(),
+            kind: "maintenance".to_owned(),
+            entity: "repository".to_owned(),
+            parent_run_id: None,
+            started_by: "person".to_owned(),
+            status: "complete".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 200,
+            ended_at: Some(201),
+        })
+        .expect("the store still writes");
+}

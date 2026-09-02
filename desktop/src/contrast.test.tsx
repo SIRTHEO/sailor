@@ -87,7 +87,7 @@ describe("the stylesheet, read as rules", () => {
  * so a scene that skips this measures a screen it did not mean to.
  */
 function goToFlows(): void {
-  const place = screen.getByRole("button", { name: /^Flows/ });
+  const place = screen.getByRole("button", { name: /^Board/ });
   fireEvent.click(place);
 }
 

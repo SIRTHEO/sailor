@@ -26,7 +26,7 @@ beforeAll(() => {
 
 /** The window opens on «Now»: the board sits behind a place to be chosen. */
 function goToFlows(): void {
-  screen.getByRole("button", { name: /^Flows/ }).click();
+  screen.getByRole("button", { name: /^Board/ }).click();
 }
 
 describe("the column, grouped by origin", () => {
