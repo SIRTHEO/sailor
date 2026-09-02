@@ -26,20 +26,21 @@ use ui::gather::{default_ledger_dir, ledger_present};
 
 /// Il comando che la tela chiama per creare o modificare un flusso.
 #[tauri::command]
-pub(crate) fn save_flow(flow: serde_json::Value) -> Result<(), String> {
+pub(crate) fn save_flow(flow: serde_json::Value) -> Result<String, String> {
     // L'identificativo si legge qui solo per sapere DOVE scrivere. Che sia
     // valido lo decide `save_flow_in`, che ha già tutte le sue regole: un id
     // assente o non testuale finisce nella cartella dei flussi nuovi e viene
     // rifiutato là, col messaggio giusto, invece di essere rifiutato qui con un
     // messaggio peggiore.
     let id = flow.get("id").and_then(|id| id.as_str()).unwrap_or_default();
-    save_flow_in(&super::flows_dir_for(id), flow)
+    let (origin, dir) = super::place_for(id);
+    save_flow_in(&dir, flow).map(|()| origin.to_owned())
 }
 
 /// Il comando che la tela chiama per cancellare un flusso.
 #[tauri::command]
 pub(crate) fn delete_flow(name: String) -> Result<(), String> {
-    delete_flow_in(&super::flows_dir_for(&name), &name)
+    delete_flow_in(&super::place_for(&name).1, &name)
 }
 
 /// Cuore di `save_flow`, con la cartella passata invece che letta

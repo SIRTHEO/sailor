@@ -78,9 +78,16 @@ export interface BrokenFlow {
   reason: string;
 }
 
+/**
+ * Which of the sources a flow came from: shipped inside the binary, yours in
+ * the home, or the project's. On a name clash the most specific wins, and the
+ * origin is the only thing that says which of two same-named flows is running.
+ */
+export type Origin = string;
+
 export type FlowEntry =
-  | { state: "loaded"; flow: FlowFile }
-  | { state: "broken"; broken: BrokenFlow };
+  | { state: "loaded"; flow: FlowFile; origin: Origin }
+  | { state: "broken"; broken: BrokenFlow; origin: Origin };
 
 // ── how a step ends, and how it is shown ─────────────────────────────────
 

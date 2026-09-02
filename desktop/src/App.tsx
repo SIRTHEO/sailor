@@ -36,6 +36,7 @@ import { Manual } from "./Manual";
 import { Terminals } from "./Terminals";
 import { StepEditor } from "./StepEditor";
 import { StepLive } from "./StepLive";
+import { Projects } from "./Projects";
 import { Worktrees } from "./Worktrees";
 import { WireMenu } from "./WireMenu";
 import { withStepWiredTo } from "./wiring";
@@ -69,6 +70,7 @@ import {
   type BrokenFlow,
   type FlowEntry,
   type FlowFile,
+  type Origin,
   type RunUsage,
   type Step,
   type StepKind,
@@ -97,7 +99,15 @@ type Source = "loading" | "sample" | "engine" | "failed";
  * on the inventory answers "what could I run", while whoever reopens the window
  * is asking "what is happening". The canvas is where you go to look inside.
  */
-type Place = "now" | "history" | "flows" | "installed" | "manual" | "terminals" | "worktrees";
+type Place =
+  | "now"
+  | "history"
+  | "flows"
+  | "installed"
+  | "manual"
+  | "terminals"
+  | "workspaces"
+  | "worktrees";
 
 /**
  * Only the graph: "Code" was a data file dressed as source, and "Runs" is
@@ -115,6 +125,13 @@ type FlowView = "graph";
 interface WorkingFlow {
   flow: FlowFile;
   saved: FlowFile | null;
+  /**
+   * Where this flow comes from, as the engine names it — `null` while it has
+   * never touched a disk. Not decoration: three sources reach the window and
+   * the most specific one wins on a name clash, so the origin is also the
+   * answer to «which of the two with this name actually runs».
+   */
+  origin: Origin | null;
 }
 
 function isDirty(working: WorkingFlow): boolean {
@@ -122,18 +139,54 @@ function isDirty(working: WorkingFlow): boolean {
   return JSON.stringify(working.flow) !== JSON.stringify(working.saved);
 }
 
+/**
+ * A flow that will not load, and the place it will not load from. The place
+ * matters more here than anywhere: «one flow is broken» sends you looking, and
+ * without the origin the search starts with «in which of the three folders».
+ */
+type BrokenAt = BrokenFlow & { origin: Origin };
+
 /** Splits the input into editable flows (map by name) and broken flows (list). */
-function splitEntries(entries: FlowEntry[]): { flows: Map<string, WorkingFlow>; broken: BrokenFlow[] } {
+function splitEntries(entries: FlowEntry[]): { flows: Map<string, WorkingFlow>; broken: BrokenAt[] } {
   const flows = new Map<string, WorkingFlow>();
-  const broken: BrokenFlow[] = [];
+  const broken: BrokenAt[] = [];
   for (const entry of entries) {
     if (entry.state === "loaded") {
-      flows.set(entry.flow.id, { flow: entry.flow, saved: entry.flow });
+      flows.set(entry.flow.id, { flow: entry.flow, saved: entry.flow, origin: entry.origin });
     } else {
-      broken.push(entry.broken);
+      broken.push({ ...entry.broken, origin: entry.origin });
     }
   }
   return { flows, broken };
+}
+
+/** What the column writes over a group of flows that has no origin yet. */
+const UNSAVED_GROUP = "not saved yet";
+
+/**
+ * The column's flows, gathered under the place each comes from. **THE ORDER IS
+ * THE ENGINE'S, NOT AN ALPHABET**: `flow_sources` gives the least specific
+ * first and the last wins a name clash, so sorted here the column would stop
+ * matching what runs. The unsaved come last, belonging to no disk.
+ */
+function groupByOrigin(
+  flows: { name: string; flow: FlowFile; origin: Origin | null }[],
+  broken: BrokenAt[],
+): { origin: Origin | null; flows: { name: string; flow: FlowFile }[]; broken: BrokenAt[] }[] {
+  const groups = new Map<string, { origin: Origin | null; flows: { name: string; flow: FlowFile }[]; broken: BrokenAt[] }>();
+  const group = (origin: Origin | null) => {
+    const key = origin ?? UNSAVED_GROUP;
+    const existing = groups.get(key);
+    if (existing) return existing;
+    const fresh = { origin, flows: [], broken: [] };
+    groups.set(key, fresh);
+    return fresh;
+  };
+  for (const entry of flows) group(entry.origin).flows.push({ name: entry.name, flow: entry.flow });
+  for (const entry of broken) group(entry.origin).broken.push(entry);
+  return [...groups.values()].sort(
+    (a, b) => Number(a.origin === null) - Number(b.origin === null),
+  );
 }
 
 /**
@@ -165,7 +218,7 @@ export default function App() {
   const [flows, setFlows] = useState<Map<string, WorkingFlow>>(() =>
     NATIVE ? new Map<string, WorkingFlow>() : splitEntries(SAMPLE).flows,
   );
-  const [broken, setBroken] = useState<BrokenFlow[]>(() => (NATIVE ? [] : splitEntries(SAMPLE).broken));
+  const [broken, setBroken] = useState<BrokenAt[]>(() => (NATIVE ? [] : splitEntries(SAMPLE).broken));
   const [source, setSource] = useState<Source>(NATIVE ? "loading" : "sample");
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -249,9 +302,17 @@ export default function App() {
   }, [anyDirty]);
 
   const flowList = useMemo(
-    () => Array.from(flows.entries()).map(([name, working]) => ({ name, flow: working.flow })),
+    () =>
+      Array.from(flows.entries()).map(([name, working]) => ({
+        name,
+        flow: working.flow,
+        origin: working.origin,
+      })),
     [flows],
   );
+
+  /** The column's contents, under the place each flow comes from. */
+  const railGroups = useMemo(() => groupByOrigin(flowList, broken), [flowList, broken]);
 
   // The models already written in the other steps: the most honest suggestion
   // there is, because it comes from real flows instead of an invented list.
@@ -761,7 +822,7 @@ export default function App() {
       graph: { steps: [], skippable_dependencies: [] },
       inputs: {},
     };
-    setFlows((prev) => new Map(prev).set(name, { flow, saved: null }));
+    setFlows((prev) => new Map(prev).set(name, { flow, saved: null, origin: null }));
     setFocusName(name);
     setSelectedNode(null);
   }
@@ -912,12 +973,16 @@ export default function App() {
       return next;
     });
     try {
-      await saveFlow(working.flow);
+      const origin = await saveFlow(working.flow);
       setFlows((prev) => {
         const current = prev.get(name);
         if (!current) return prev;
         const next = new Map(prev);
-        next.set(name, { flow: current.flow, saved: current.flow });
+        // The origin arrives from the save and is not kept from before: for a
+        // flow born in the window there was none, and the engine decides the
+        // place — the project you are looking at, or your home if there is no
+        // project. Only it knows which.
+        next.set(name, { flow: current.flow, saved: current.flow, origin });
         return next;
       });
     } catch (error) {
@@ -1064,6 +1129,7 @@ export default function App() {
       <TopBar
         view={flowView}
         onView={() => setPlace("flows")}
+        onBoard={place === "flows"}
         flowName={focusName}
         steps={focusedWorking ? focusedWorking.flow.graph.steps.length : 0}
         dirty={focusedDirty}
@@ -1127,6 +1193,12 @@ export default function App() {
         >
           Terminali
         </button>
+        <button
+          type="button"
+          className="places__item"
+          data-here={place === "workspaces" || undefined}
+          onClick={() => setPlace("workspaces")}
+        >Progetti</button>
         <button
           type="button"
           className="places__item"
@@ -1202,6 +1274,7 @@ export default function App() {
       {place === "installed" && <Installed native={NATIVE} />}
       {place === "manual" && <Manual native={NATIVE} />}
       {place === "terminals" && <Terminals native={NATIVE} />}
+      {place === "workspaces" && <Projects native={NATIVE} now={now} />}
       {place === "worktrees" && <Worktrees native={NATIVE} />}
 
       {/* Outside the canvas element on purpose: it is positioned in window
@@ -1250,37 +1323,48 @@ export default function App() {
             Tutti i flussi
           </button>
           )}
-          {flowList.map(({ name, flow }) => {
-            const working = flows.get(name);
-            const dirty = working ? isDirty(working) : false;
-            const color = layout.bands.get(name)?.color;
-            return (
-              <button
-                type="button"
-                key={name}
-                className="rail__item"
-                data-open={name === focusName || undefined}
-                onClick={() => {
-                  setFocusName((current) => (current === name ? null : name));
-                  setSelectedNode(null);
-                }}
-              >
-                <span className="rail__dot" style={{ background: color }} />
-                <span className="rail__label">
-                  {name}
-                  {dirty && <span className="rail__dirty-dot" title="non salvato" />}
-                </span>
-                <span className="rail__note">{stepCountLabel(flow.graph.steps.length)}</span>
-              </button>
-            );
-          })}
-          {broken.map((entry) => (
-            // A broken flow does not vanish from the list: it is shown, marked,
-            // with the reason. It stays off the canvas because it has no graph
-            // to draw.
-            <div className="rail__item" key={entry.name} data-broken>
-              <span className="rail__label">{entry.name}</span>
-              <span className="rail__note">{entry.reason}</span>
+          {/* A FLAT LIST SAID WHOSE NOTHING WAS. Flows arrive from three
+              places, and mixed together a flow of the project you are in sat
+              between two of somebody else's with no way to tell. The heading
+              also answers what came next: two flows can share a name, and the
+              most specific place wins. */}
+          {railGroups.map((group) => (
+            <div className="rail__group" key={group.origin ?? UNSAVED_GROUP}>
+              <div className="rail__origin">{group.origin ?? UNSAVED_GROUP}</div>
+              {group.flows.map(({ name, flow }) => {
+                const working = flows.get(name);
+                const dirty = working ? isDirty(working) : false;
+                const color = layout.bands.get(name)?.color;
+                return (
+                  <button
+                    type="button"
+                    key={name}
+                    className="rail__item"
+                    data-open={name === focusName || undefined}
+                    onClick={() => {
+                      setFocusName((current) => (current === name ? null : name));
+                      setSelectedNode(null);
+                    }}
+                  >
+                    <span className="rail__dot" style={{ background: color }} />
+                    <span className="rail__label">
+                      {name}
+                      {dirty && <span className="rail__dirty-dot" title="non salvato" />}
+                    </span>
+                    <span className="rail__note">{stepCountLabel(flow.graph.steps.length)}</span>
+                  </button>
+                );
+              })}
+              {group.broken.map((entry) => (
+                // A broken flow does not vanish from the list: it is shown,
+                // marked, with the reason. It stays off the canvas because it
+                // has no graph to draw — and it stays under its origin, which
+                // is where whoever goes to repair it has to look.
+                <div className="rail__item" key={entry.name} data-broken>
+                  <span className="rail__label">{entry.name}</span>
+                  <span className="rail__note">{entry.reason}</span>
+                </div>
+              ))}
             </div>
           ))}
           {/* L'INVITO È DELLA TELA FINCHÉ NON C'È NIENTE. Coi soli flussi rotti
@@ -1618,6 +1702,12 @@ const VIEW_WORD: Record<FlowView, string> = { graph: "Graph" };
 interface TopBarProps {
   view: FlowView;
   onView: (view: FlowView) => void;
+  /**
+   * Whether the board — and with it the column — is the place in view. The bar
+   * is the program's and is drawn everywhere; the line about focusing a flow
+   * belongs to one place only.
+   */
+  onBoard: boolean;
   flowName: string | null;
   steps: number;
   dirty: boolean;
@@ -1644,6 +1734,7 @@ interface TopBarProps {
 function TopBar({
   view,
   onView,
+  onBoard,
   flowName,
   steps,
   dirty,
@@ -1685,8 +1776,12 @@ function TopBar({
       </span>
       <span className="topbar__rule" />
 
+      {/* A LINE THAT NAMES THE COLUMN IS SILENT WHERE THERE IS NO COLUMN. The
+          window opens away from the board, which is the only place holding
+          one, and six places out of seven were being sent somewhere they
+          are not. */}
       {flowName === null ? (
-        <span className="topbar__none">no flow in focus — pick one in the rail</span>
+        onBoard && <span className="topbar__none">no flow in focus — pick one in the rail</span>
       ) : (
         <span className="topbar__flow">
           <span className="topbar__flow-name">{flowName}</span>

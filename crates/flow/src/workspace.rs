@@ -5,7 +5,7 @@
 //! The root comes from whoever launches; an absolute path inside a flow is a
 //! flow that can be run in one place only. See fault 25.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ pub const ORIGIN_GUESSED: &str = "this project (no sailor.json: root guessed)";
 /// `deny_unknown_fields` here would mean a project opened with a Sailor older
 /// than the one that wrote it stops working, and stops silently — the root
 /// vanishes, and paths go back to resolving wherever the process sits.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Declaration {
     /// What the project is called for a reader. Empty means "it did not say",
     /// and whoever displays it falls back to the folder name.
@@ -99,6 +99,145 @@ pub fn declaration_at(root: &Path) -> Result<Declaration, String> {
         .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     serde_json::from_str(&text)
         .map_err(|error| format!("{} is not a valid declaration: {error}", path.display()))
+}
+
+// ── The projects Sailor has been opened in ──────────────────────────────
+
+/// The file in the home that holds them, beside `flows/` and `triggers.d/`.
+///
+/// **CONFIGURATION, NOT HISTORY.** A project one has opened has to list the
+/// same on a machine where the ledger was never created — which is every
+/// machine until the first run. The ledger answers "what happened"; this
+/// answers "what am I working on", and the two fail independently.
+pub const REGISTER: &str = "workspaces.json";
+
+/// A project Sailor has been opened in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Known {
+    /// Where it is. The identity of an entry: two names may collide, a path
+    /// may not.
+    pub root: PathBuf,
+    /// What it called itself when it was first seen. Kept even when the
+    /// marker is gone, because a list of paths with no names is unreadable.
+    pub name: String,
+    /// Since when this project is worked on. Cannot be reconstructed from
+    /// anything else once lost, which is why seeing it again never moves it.
+    pub first_seen: i64,
+    /// When it was last opened. What the list is ordered by.
+    pub last_seen: i64,
+    /// Fields a newer Sailor wrote and this one does not know. Kept, never a
+    /// reason to discard the entry — fault 8, in the place it would hurt most.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// Whether a remembered project is still declared where it was left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// The marker is where it was: the project is there.
+    Declared,
+    /// The path holds no marker any more — moved, renamed, or deleted. The
+    /// entry stays on the list carrying this, because a list that silently
+    /// shrinks cannot be told from a list that never had the entry.
+    Gone,
+}
+
+/// What the register file holds. A struct and not a bare array so a later
+/// version can add a sibling field without every older Sailor refusing to read.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Register {
+    #[serde(default)]
+    workspaces: Vec<Known>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
+}
+
+/// The projects remembered in `home`, most recently opened first.
+///
+/// **A HOME THAT HAS SEEN NOTHING IS NOT A FAILURE.** No file means no
+/// projects, and that is a complete answer: returning an error there would
+/// make every caller treat a first run as a broken install.
+pub fn known_in(home: &Path) -> Result<Vec<Known>, String> {
+    let path = home.join(REGISTER);
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+    let register: Register = serde_json::from_str(&text)
+        .map_err(|error| format!("{} is not a valid register: {error}", path.display()))?;
+    let mut seen = register.workspaces;
+    seen.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
+    Ok(seen)
+}
+
+/// Writes down that `root` was opened at `at`.
+///
+/// **SEEING IT AGAIN MOVES ONE DATE AND LEAVES THE OTHER.** `first_seen`
+/// answers "since when do I work on this" and nothing else can reconstruct it;
+/// `last_seen` answers "was I here today" and is rewritten every time.
+pub fn remember_in(home: &Path, root: &Path, at: i64) -> Result<(), String> {
+    let path = home.join(REGISTER);
+    let mut register: Register = match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text)
+            .map_err(|error| format!("{} is not a valid register: {error}", path.display()))?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Register::default(),
+        Err(error) => return Err(format!("cannot read {}: {error}", path.display())),
+    };
+
+    // The name is read from the declaration when there is one, and falls back
+    // to the directory: a project with an empty `{}` marker still needs a name
+    // to be picked out of a list.
+    let name = declaration_at(root)
+        .ok()
+        .map(|declared| declared.name)
+        .filter(|name| !name.is_empty())
+        .or_else(|| {
+            root.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
+
+    match register
+        .workspaces
+        .iter_mut()
+        .find(|entry| entry.root == root)
+    {
+        Some(entry) => {
+            entry.last_seen = at;
+            if !name.is_empty() {
+                entry.name = name;
+            }
+        }
+        None => register.workspaces.push(Known {
+            root: root.to_path_buf(),
+            name,
+            first_seen: at,
+            last_seen: at,
+            extra: BTreeMap::new(),
+        }),
+    }
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create {}: {error}", parent.display()))?;
+    }
+    let mut text = serde_json::to_string_pretty(&register)
+        .map_err(|error| format!("cannot compose the register: {error}"))?;
+    text.push('\n');
+    std::fs::write(&path, text).map_err(|error| format!("cannot write {}: {error}", path.display()))
+}
+
+/// Whether the marker is still where this entry was left.
+///
+/// Read at the moment of asking, never stored: a stored answer would be a
+/// second truth to keep aligned with the disk, which is fault 10.
+pub fn standing_of(known: &Known) -> Standing {
+    if known.root.join(MARKER).is_file() {
+        Standing::Declared
+    } else {
+        Standing::Gone
+    }
 }
 
 #[cfg(test)]
