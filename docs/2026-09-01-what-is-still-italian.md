@@ -69,10 +69,13 @@ two coherent ones and a surprise. Either all three or none.
   accept the English word and keep the Italian one as an alias — and note that
   the `--kind` help already lists only the English forms, so those five aliases
   are undocumented today.
-- **Names of the shipped flows** — `strumenti-di-questa-macchina`,
-  `migrazione-a-sailor`, `smista-il-lavoro`. Each is at once a registry key, an
-  argument a person types, and a name written into
-  `crates/terminal/descriptors/default.json`. Three roles, one string.
+- ~~**Names of the shipped flows.**~~ Done on 02/09 and **without aliases**, by
+  decision: `what-this-machine-has`, `migrate-to-sailor`, `dispatch-the-work`.
+  Each name was three things at once — a registry key, an argument a person
+  types, and a string inside `crates/terminal/descriptors/default.json` — so it
+  moved in all three at once or the routing rules would have pointed at nothing.
+  Whoever named one of them in a flow of their own gets «no flow by that name»,
+  which is the cost that was weighed and accepted.
 - **`crates/supervisor/src/main.rs`.** `"ignoto"` is the fallback for `$USER`
   inside `sailor-live/{who}/{pid}` — a machine-visible name.
 - **`crates/faults/src/lib.rs`.** The worst of them, and the language is the

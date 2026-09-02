@@ -197,7 +197,7 @@ dichiarati:
 - **Un passo che scrive `"tool": "agy"` come stringa invece che come elenco
   esce da ogni controllo sulle catene**: `engines_in_chains()` legge solo
   `as_array()` e lo salta, `fallbacks_into` gli lascia zero motori da guardare.
-  Succede oggi in `smista-il-lavoro.flow.json`, passo `engine_b`. La seconda
+  Succede oggi in `dispatch-the-work.flow.json`, passo `engine_b`. La seconda
   metà di quella riga — «un `agy` esaurito si registra `exit_error` invece di
   `exhausted`» — **è caduta con la riga qui sopra**: adesso si registra `exhausted` in
   tutti e due i rami. Resta la prima, che è la peggiore: quel passo non è
@@ -352,7 +352,7 @@ la configurazione delle righe di comando.
 
 ## Nato dalla serata del 29/08
 
-- **Unire i quattro flussi.** `smista-il-lavoro`, il flusso di sviluppo, la
+- **Unire i quattro flussi.** `dispatch-the-work`, il flusso di sviluppo, la
   ricerca e le future chiamate a SocratiCode sono le fasi di un ciclo unico.
   Deciso di **non** fonderli in un file: si compongono, e serve **`subflow`** —
   un passo che esegue un altro flusso. È uno dei cinque tipi che la finestra

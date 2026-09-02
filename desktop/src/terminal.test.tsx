@@ -188,12 +188,12 @@ describe("where the line ended up, told to whoever is watching", () => {
     // run and has no way back to the line of JSON that decided it.
     const said = routingNote("? trova i residui", {
       kind: "flow",
-      flow: "smista-il-lavoro",
+      flow: "dispatch-the-work",
       text: "trova i residui",
       rule: "marked-request",
     });
     expect(said).toContain("marked-request");
-    expect(said).toContain("smista-il-lavoro");
+    expect(said).toContain("dispatch-the-work");
     expect(said).toContain("non è stata eseguita");
   });
 
@@ -646,7 +646,7 @@ describe("the wiring between the bridge and the screen", () => {
       terminal_press: null,
       terminal_submit: {
         kind: "flow",
-        flow: "smista-il-lavoro",
+        flow: "dispatch-the-work",
         text: "trova i residui",
         rule: "marked-request",
       },

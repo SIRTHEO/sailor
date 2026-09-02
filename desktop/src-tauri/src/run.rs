@@ -124,7 +124,7 @@ pub enum MandateTarget {
 /// Il nome dell'azione di innesco, e il campo in cui porta la consegna.
 ///
 /// **LETTI DAL FLUSSO CHE IL MOTORE SCRIVE, NON DECISI QUI.** Il contratto è
-/// nato il 28/08/2026 in `flows/smista-il-lavoro.flow.json`: un passo senza
+/// nato il 28/08/2026 in `flows/dispatch-the-work.flow.json`: un passo senza
 /// dipendenze con `"action": "trigger"`, `"with": {"source": "manual"}`, e la
 /// consegna in `inputs.<passo>.text`. Se quei nomi cambiano di là, cambiano
 /// qui — e la finestra dirà «non c'è posto» invece di scrivere in un campo che
@@ -1419,7 +1419,7 @@ mod tests {
         })
     }
 
-    /// IL CONTRATTO VERO, letto da `flows/smista-il-lavoro.flow.json` il
+    /// IL CONTRATTO VERO, letto da `flows/dispatch-the-work.flow.json` il
     /// 28/08/2026: un passo `trigger` di sorgente manuale porta la consegna nel
     /// proprio `text`, non in uno `stdin`.
     ///
@@ -1481,7 +1481,7 @@ mod tests {
     #[test]
     fn every_action_of_a_shipped_flow_is_known_to_the_window() {
         let known = registry::default_registry(None, None);
-        for name in ["strumenti-di-questa-macchina", "migrazione-a-sailor"] {
+        for name in ["what-this-machine-has", "migrate-to-sailor"] {
             let flow = load_flow(name).expect("i flussi di sistema si caricano");
             for step in flow.graph.steps() {
                 assert!(
@@ -1507,7 +1507,7 @@ mod tests {
     /// diventa rossa (provato).
     #[test]
     fn a_flow_shipped_inside_the_binary_is_loadable_from_the_window() {
-        let flow = load_flow("strumenti-di-questa-macchina")
+        let flow = load_flow("what-this-machine-has")
             .expect("un flusso di sistema si carica ovunque, senza niente sul disco");
         assert!(
             !flow.graph.steps().is_empty(),

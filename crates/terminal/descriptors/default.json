@@ -35,7 +35,7 @@
     {
       "id": "marked-request",
       "label": "Il punto interrogativo: questa è una richiesta, non un comando",
-      "flow": "smista-il-lavoro",
+      "flow": "dispatch-the-work",
       "when": { "kind": "starts_with", "text": "? " },
       "explicit": true,
       "strip_match": true,
@@ -44,7 +44,7 @@
     {
       "id": "sailor-request",
       "label": "Una richiesta in lingua che nomina Sailor",
-      "flow": "smista-il-lavoro",
+      "flow": "dispatch-the-work",
       "when": { "kind": "contains_all", "words": ["sailor"] },
       "minimum_words": 4,
       "note": "La forma naturale in un terminale aperto sulla repo di Sailor: «trova i residui di configurazione di sailor». Quattro parole almeno, perché `sailor flow run x` ne ha quattro ma è un comando — e infatti non arriva mai qui: la guardia lo ferma prima, perché `sailor` è un eseguibile. Questa regola scatta solo dove quel binario NON c'è, o dove la frase non comincia con lui."

@@ -1,7 +1,7 @@
 //! Il passo di rilevamento non muore su un campo che non ha chiesto.
 //!
 //! GUASTO MISURATO IL 01/09/2026, e non su un flusso scritto male: su
-//! `strumenti-di-questa-macchina`, spedito col prodotto. Dentro una cartella
+//! `what-this-machine-has`, spedito col prodotto. Dentro una cartella
 //! con `sailor.json` falliva sempre —
 //!
 //!   unknown field `workdir`, expected one of `descriptor_paths`,
