@@ -45,6 +45,9 @@ pub enum PtyError {
     /// Scrittura, lettura o ridimensionamento su un terminale già chiuso o
     /// rotto.
     Broken(io::Error),
+    /// The terminal opened, but its letterbox or its count could not be put
+    /// where whoever types from outside will look for them.
+    NotRegistered(io::Error),
 }
 
 /// **`.expect()` PRINTS THE `Debug`, NOT THE `Display`.** A derived one showed
@@ -69,6 +72,10 @@ impl std::fmt::Display for PtyError {
                 write!(out, "il programma del terminale non è partito: {error}")
             }
             PtyError::Broken(error) => write!(out, "il terminale non risponde più: {error}"),
+            PtyError::NotRegistered(error) => write!(
+                out,
+                "the terminal opened, but its letterbox could not be registered: {error}"
+            ),
         }
     }
 }
@@ -200,6 +207,12 @@ impl Pty {
     /// program reports about itself.
     pub fn device(&self) -> &str {
         &self.device
+    }
+
+    /// The same device under the short name `ps` uses: `/dev/ttys004` is
+    /// `ttys004`. It is the key of the letterbox, the count and the mandate.
+    pub fn tty(&self) -> &str {
+        self.device.strip_prefix("/dev/").unwrap_or(&self.device)
     }
 
     /// Un secondo capo aperto sullo stesso terminale, per il filo che legge.
