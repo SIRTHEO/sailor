@@ -230,6 +230,8 @@ export default function App() {
   const [memoryTab, setMemoryTab] = useState<MemoryTab>("runs");
   const [sailorTab, setSailorTab] = useState<SailorTab>("keeps");
   const [terminalsTab, setTerminalsTab] = useState<TerminalsTab>("live");
+  const [terminalCount, setTerminalCount] = useState(0);
+  const [ledgerTable, setLedgerTable] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   useEffect(() => {
@@ -1160,10 +1162,13 @@ export default function App() {
   const crumbs = useMemo<string[]>(() => {
     const section = PLACES.find((one) => one.id === place)?.name ?? place;
     if (place === "board") return focusName === null ? [section] : [section, focusName];
-    if (place === "memory") return [section, MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab];
+    if (place === "memory") {
+      const tab = MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab;
+      return memoryTab === "ledger" && ledgerTable !== null ? [section, tab, ledgerTable] : [section, tab];
+    }
     if (place === "sailor") return [section, SAILOR_TABS.find((one) => one.id === sailorTab)?.name ?? sailorTab];
     return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
-  }, [place, focusName, memoryTab, sailorTab, terminalsTab]);
+  }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
 
   const barStatus = useMemo<BarStatus | null>(() => {
     if (focusName === null || focusedWorking === undefined) return null;
@@ -1236,7 +1241,15 @@ export default function App() {
               <kbd className="topbar__kbd">⌘K</kbd>
               Search or run a command
             </button>
-            <LiveChip native={NATIVE} now={now} onOpen={(runId) => setWatching(runId)} />
+            <LiveChip
+              native={NATIVE}
+              now={now}
+              onOpen={(runId) => setWatching(runId)}
+              onSpend={() => {
+                setPlace("memory");
+                setMemoryTab("spend");
+              }}
+            />
             <BuildChip native={NATIVE} now={now} />
             <WhoChip native={NATIVE} />
           </>
@@ -1271,7 +1284,7 @@ export default function App() {
           of nouns was a list of what exists; a section opens on what its
           question wants, and everything else lives inside it. */}
       <div className="app__body">
-      <Rail here={place} onGo={setPlace} counts={{ board: flows.size }} />
+      <Rail here={place} onGo={setPlace} counts={{ board: flows.size, terminals: terminalCount }} />
       <div className="stage">
 
       {place === "board" && focusName && focusedWorking && focusedBand && (
@@ -1300,6 +1313,7 @@ export default function App() {
           tab={memoryTab}
           onTab={setMemoryTab}
           onOpenRun={(runId) => setWatching(runId)}
+          onLedgerTable={setLedgerTable}
         />
       )}
       {place === "sailor" && <SailorScreen native={NATIVE} now={now} tab={sailorTab} onTab={setSailorTab} />}
@@ -1314,6 +1328,7 @@ export default function App() {
         onTab={setTerminalsTab}
         ceiling={ceilingOf(flows)}
         onProjectChanged={() => readFlows(() => true)}
+        onCount={setTerminalCount}
       />
 
       {/* Outside the canvas element on purpose: it is positioned in window
@@ -1495,7 +1510,7 @@ export default function App() {
                   if (node.type !== "step") return "#d8d7ce";
                   const data = node.data as StepNodeData;
                   const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
-                  return STATE_COLOR[state ?? "waiting"];
+                  return STATE_COLOR[state ?? "idle"];
                 }}
               />
             )}

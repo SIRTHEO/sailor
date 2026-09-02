@@ -42,7 +42,7 @@ describe("howLong", () => {
   test("oltre il giorno non si scrive in ore", () => {
     // 50 h scritte «50 h» si leggono come due giorni solo contando: chi guarda
     // deve vedere che una corsa è aperta da ieri senza fare aritmetica.
-    expect(howLong(50 * 3600)).toBe("2 g 2 h");
+    expect(howLong(50 * 3600)).toBe("2 d 2 h");
   });
 
   test("un tempo negativo non diventa un numero enorme", () => {

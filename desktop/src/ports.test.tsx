@@ -380,7 +380,7 @@ describe("A WIRED PORT AND AN UNWIRED ONE DIFFER WITHOUT COLOR", () => {
 
   test("«manca» is a WORD, not a tint", () => {
     mountNode();
-    expect(screen.getByText("repo manca")).toBeDefined();
+    expect(screen.getByText("repo missing")).toBeDefined();
   });
 
   test("the type lives in the shape, and the three shapes are three different drawings", () => {

@@ -25,6 +25,7 @@ export function TerminalsSection({
   onTab,
   ceiling,
   onProjectChanged,
+  onCount,
 }: {
   native: boolean;
   now: number;
@@ -35,12 +36,14 @@ export function TerminalsSection({
   ceiling: number | null;
   /** The window moved into another project: whoever holds the flows reads them again. */
   onProjectChanged: () => void;
+  /** How many terminals are open, for the column's count. */
+  onCount: (count: number) => void;
 }) {
   return (
     <div className="section" hidden={!shown}>
       <SubRail here={tab} onGo={onTab} tabs={TERMINALS_TABS} />
       <div className="section__body section__body--terminals">
-        <Terminals native={native} shown={shown && tab === "live"} ceiling={ceiling} />
+        <Terminals native={native} shown={shown && tab === "live"} ceiling={ceiling} onCount={onCount} />
         {shown && tab === "projects" && <Projects native={native} now={now} onMoved={onProjectChanged} />}
         {shown && tab === "worktrees" && <Worktrees native={native} />}
       </div>

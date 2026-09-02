@@ -60,6 +60,7 @@ export interface StepNodeData extends Record<string, unknown> {
  * the canvas reads the sheet, so this map tracks `--state-*`. Lowest: 5.24:1.
  */
 export const STATE_COLOR: Record<StepState, string> = {
+  idle: "#656b63",
   waiting: "#656b63",
   running: "#1a5f96",
   went: "#146447",
@@ -132,7 +133,7 @@ function Port({ port }: { port: StepPort }) {
       title={`${port.name} · ${SHAPE_LABEL[port.shape]} · ${port.wired ? "wired" : "not wired"}`}
     >
       <span className="step-node__port-mark" data-shape={port.shape} aria-hidden="true" />
-      <span className="step-node__port-name">{missing ? `${port.name} manca` : port.name}</span>
+      <span className="step-node__port-name">{missing ? `${port.name} missing` : port.name}</span>
     </span>
   );
 }
@@ -330,7 +331,7 @@ function StepTool({
             className="step-node__tool-chain"
             title={`in order of preference: ${[id, ...fallbacks].join(", ")}`}
           >
-            se manca: {fallbacks.join(", ")}
+            if missing: {fallbacks.join(", ")}
           </span>
         )}
         {surprising.length > 0 && (
@@ -381,8 +382,8 @@ function NoTool({ action }: { action: string }) {
 function StepMeter({ usage }: { usage: StepUsage }) {
   return (
     <div className="step-node__meter">
-      <span title={`${usage.inputTokens} token entrati`}>↑ {formatTokens(usage.inputTokens)}</span>
-      <span title={`${usage.outputTokens} token usciti`}>↓ {formatTokens(usage.outputTokens)}</span>
+      <span title={`${usage.inputTokens} tokens in`}>↑ {formatTokens(usage.inputTokens)}</span>
+      <span title={`${usage.outputTokens} tokens out`}>↓ {formatTokens(usage.outputTokens)}</span>
     </div>
   );
 }
@@ -398,7 +399,9 @@ export function StepNode({ data, selected }: NodeProps) {
   const run = runs.get(key) ?? fromData;
   const usage = useContext(StepUsageContext).get(key);
   const wire = useContext(WireContext);
-  const state: StepState = run?.state ?? "waiting";
+  // No run is «not run yet», never «waiting»: a node that waits is waiting
+  // on something, and a flow nobody ran waits on nothing. Fault 30.
+  const state: StepState = run?.state ?? "idle";
   const isAgent = kind === "engine";
   // Which tool runs this node reads off the canvas, not only from the panel:
   // it is the first question asked of a flow somebody else wrote.
@@ -523,19 +526,19 @@ export function StepNode({ data, selected }: NodeProps) {
       {!far && (
         <div className="step-node__bench">
           <span className="step-node__cell">
-            <span className="step-node__cell-label">tentativo</span>
+            <span className="step-node__cell-label">attempt</span>
             <span className="step-node__cell-value">
-              {run ? `${run.attempt}ª di ${step.max_attempts}` : `1ª di ${step.max_attempts}`}
+              {run ? `${run.attempt} of ${step.max_attempts}` : `1 of ${step.max_attempts}`}
             </span>
           </span>
           <span className="step-node__cell">
-            <span className="step-node__cell-label">durata</span>
+            <span className="step-node__cell-label">took</span>
             <span className="step-node__cell-value">
               {run?.elapsed_secs !== undefined ? formatElapsed(run.elapsed_secs) : "—"}
             </span>
           </span>
           <span className="step-node__cell">
-            <span className="step-node__cell-label">costo</span>
+            <span className="step-node__cell-label">cost</span>
             {/* A cost nobody declared is a dash, never a zero: zero would read
                 as «it ran for free». A partial one says so with a plus. */}
             <span

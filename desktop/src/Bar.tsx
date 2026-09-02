@@ -13,19 +13,26 @@ const SPEND_EVERY_MS = 30000;
 const WHO_EVERY_MS = 60000;
 const BUILD_EVERY_MS = 2000;
 
-/** Polls a question on a cadence; `null` while unanswered or outside the shell. */
-function useEvery<T>(native: boolean, ask: () => Promise<T>, every: number): T | null {
-  const [answer, setAnswer] = useState<T | null>(null);
+/**
+ * What a polled question has answered so far. **A REFUSAL IS AN ANSWER**, and
+ * it is kept: a chip that read a failed poll as «nothing» would say «nothing
+ * running» about an engine that is not answering — fault 30 in the bar.
+ */
+export type Answer<T> = { state: "answered"; value: T } | { state: "mute"; why: string } | null;
+
+/** Polls a question on a cadence; `null` before the first answer or outside the shell. */
+function useEvery<T>(native: boolean, ask: () => Promise<T>, every: number): Answer<T> {
+  const [answer, setAnswer] = useState<Answer<T>>(null);
   useEffect(() => {
     if (!native) return;
     let alive = true;
     const once = () => {
       ask().then(
         (value) => {
-          if (alive) setAnswer(value);
+          if (alive) setAnswer({ state: "answered", value });
         },
-        () => {
-          if (alive) setAnswer(null);
+        (error: unknown) => {
+          if (alive) setAnswer({ state: "mute", why: String(error) });
         },
       );
     };
@@ -74,12 +81,28 @@ export function spendWords(summary: DaySummary | null): string {
   return `${money(summary.cost_micros)} today${floor}`;
 }
 
-export function LiveChip({ native, now, onOpen }: { native: boolean; now: number; onOpen?: (runId: string) => void }) {
+interface LiveChipProps {
+  native: boolean;
+  now: number;
+  onOpen?: (runId: string) => void;
+  /** The spend is a line of the bar that opens in Memory: this is the opening. */
+  onSpend?: () => void;
+}
+
+export function LiveChip({ native, now, onOpen, onSpend }: LiveChipProps) {
   const runs = useEvery(native, openRuns, RUNS_EVERY_MS);
   const summary = useEvery(native, todaySummary, SPEND_EVERY_MS);
   if (!native) return null;
-  const { live, word } = liveWords(runs ?? [], now);
-  const first = runs?.[0];
+  if (runs?.state === "mute") {
+    return (
+      <span className="chip chip--live" data-warn="true">
+        cannot ask what runs: {runs.why}
+      </span>
+    );
+  }
+  const list = runs?.state === "answered" ? runs.value : [];
+  const { live, word } = runs === null ? { live: false, word: "asking the engine…" } : liveWords(list, now);
+  const first = list[0];
   return (
     <span className="chip chip--live">
       <span className="topbar__live" data-idle={live ? undefined : true} />
@@ -90,7 +113,19 @@ export function LiveChip({ native, now, onOpen }: { native: boolean; now: number
       ) : (
         <span className="chip__word">{word}</span>
       )}
-      {summary !== null && <span className="chip__spend">{spendWords(summary)}</span>}
+      {summary?.state === "answered" &&
+        (onSpend ? (
+          <button type="button" className="chip__button chip__spend" onClick={onSpend} title="open the spend in Memory">
+            {spendWords(summary.value)}
+          </button>
+        ) : (
+          <span className="chip__spend">{spendWords(summary.value)}</span>
+        ))}
+      {summary?.state === "mute" && (
+        <span className="chip__spend" data-warn="true">
+          cost unknown: {summary.why}
+        </span>
+      )}
     </span>
   );
 }
@@ -115,10 +150,18 @@ export function buildWords(status: LiveStatus | null, now: number): { warn: bool
 
 export function BuildChip({ native, now }: { native: boolean; now: number }) {
   const status = useEvery(native, liveStatus, BUILD_EVERY_MS);
-  const said = buildWords(status, now);
-  if (!native || said === null) return null;
+  if (!native || status === null) return null;
+  if (status.state === "mute") {
+    return (
+      <span className="chip chip--build" data-warn="true">
+        build status unknown: {status.why}
+      </span>
+    );
+  }
+  const said = buildWords(status.value, now);
+  if (said === null) return null;
   return (
-    <span className="chip chip--build" data-warn={said.warn || undefined} title={status?.message || undefined}>
+    <span className="chip chip--build" data-warn={said.warn || undefined} title={status.value?.message || undefined}>
       {said.word}
     </span>
   );
@@ -127,10 +170,17 @@ export function BuildChip({ native, now }: { native: boolean; now: number }) {
 export function WhoChip({ native }: { native: boolean }) {
   const rows = useEvery(native, profileRows, WHO_EVERY_MS);
   if (!native || rows === null) return null;
-  const unreachable = rows.some((row) => row.active && row.access === "no");
+  if (rows.state === "mute") {
+    return (
+      <span className="chip chip--who" data-warn="true">
+        who runs is unknown: {rows.why}
+      </span>
+    );
+  }
+  const unreachable = rows.value.some((row) => row.active && row.access === "no");
   return (
     <span className="chip chip--who" data-warn={unreachable || undefined} title="the active profile of each command line">
-      {whoWords(rows)}
+      {whoWords(rows.value)}
     </span>
   );
 }

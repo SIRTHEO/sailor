@@ -69,14 +69,14 @@ function Today({ summary }: { summary: DaySummary }) {
     <section className="today">
       <span className="today__label">Today</span>
       <span className="today__cell">
-        <b>{count(summary.runs)}</b> corse
+        <b>{count(summary.runs)}</b> runs
       </span>
       <span className="today__cell">
-        <b>{count(summary.went)}</b> andate
+        <b>{count(summary.went)}</b> went
       </span>
       {summary.broke > 0 && (
         <span className="today__cell" data-gravity="danger">
-          <b>{count(summary.broke)}</b> rotte
+          <b>{count(summary.broke)}</b> broke
         </span>
       )}
       {summary.still_open > 0 && (
@@ -118,7 +118,7 @@ export function howLong(seconds: number): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} h ${minutes % 60} min`;
   const days = Math.floor(hours / 24);
-  return `${days} g ${hours % 24} h`;
+  return `${days} d ${hours % 24} h`;
 }
 
 /**

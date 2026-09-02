@@ -425,5 +425,6 @@
   "window.step.state.handed_to_human": "waiting for a person",
   "window.step.state.running": "running",
   "window.step.state.waiting": "waiting",
+  "window.step.state.idle": "not run yet",
   "window.step.state.went": "went"
 }

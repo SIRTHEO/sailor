@@ -80,7 +80,7 @@ export function Manual({ native }: { native: boolean }) {
         <h2 className="now__title">Commands</h2>
         <span className="now__count">{commands.length}</span>
         <span className="now__note">
-          {shapes} forme, dichiarate dal binario che sta girando
+          {shapes} forms, declared by the binary that is running
         </span>
       </header>
 

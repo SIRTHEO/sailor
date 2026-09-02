@@ -47,6 +47,8 @@ interface TerminalsProps {
   shown?: boolean;
   /** The ceiling the relay hands on at, from the flow that declares it; `null` when none does. */
   ceiling?: number | null;
+  /** How many terminals are open, told whenever it changes. */
+  onCount?: (count: number) => void;
 }
 
 /**
@@ -87,9 +89,13 @@ export function placesOf(known: Project[], trees: Tree[]): Place[] {
   return places;
 }
 
-export function Terminals({ native, shown = true, ceiling = null }: TerminalsProps) {
+export function Terminals({ native, shown = true, ceiling = null, onCount }: TerminalsProps) {
   const outside = "outside the desktop shell: pseudo-terminals are the engine's to open";
   const { asked, again } = useAsk<TerminalSummary[]>(native, listTerminals, REFRESH_MS, outside);
+  const openedCount = asked.state === "answered" ? asked.value.length : 0;
+  useEffect(() => {
+    onCount?.(openedCount);
+  }, [openedCount, onCount]);
 
   const [here, setHere] = useState<string | null>(null);
   /** Who sent `terminal_closed`, and with what outcome. */
@@ -338,6 +344,11 @@ export function Terminals({ native, shown = true, ceiling = null }: TerminalsPro
                   focused={entry.id === visible}
                   onFocus={() => setHere(entry.id)}
                   onSubmit={(line) => submitLine(entry.id, line)}
+                  onClose={() => {
+                    void closeTerminal(entry.id)
+                      .then(() => again())
+                      .catch((error: unknown) => setTrouble(String(error)));
+                  }}
                   onPress={(bytes) => {
                     void pressKeys(entry.id, bytes).catch((error: unknown) => setTrouble(String(error)));
                   }}

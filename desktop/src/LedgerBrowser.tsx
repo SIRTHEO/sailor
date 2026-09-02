@@ -8,12 +8,21 @@ import { cellText, ledgerQuery, ledgerTables, openingStatement, type Answer, typ
 type Listed = { state: "asking" } | { state: "listed"; tables: Tables } | { state: "mute"; why: string };
 type Asked = { state: "idle" } | { state: "asking" } | { state: "answered"; answer: Answer } | { state: "refused"; why: string };
 
-export function LedgerBrowser({ native }: { native: boolean }) {
+interface LedgerBrowserProps {
+  native: boolean;
+  /** The table open now, for whoever draws the breadcrumbs. */
+  onTable?: (table: string | null) => void;
+}
+
+export function LedgerBrowser({ native, onTable }: LedgerBrowserProps) {
   const [listed, setListed] = useState<Listed>({ state: "asking" });
   const [table, setTable] = useState<string | null>(null);
   const [sql, setSql] = useState("");
   const [asked, setAsked] = useState<Asked>({ state: "idle" });
   const [picked, setPicked] = useState<number | null>(null);
+  useEffect(() => {
+    onTable?.(table);
+  }, [table, onTable]);
 
   useEffect(() => {
     if (!native) {

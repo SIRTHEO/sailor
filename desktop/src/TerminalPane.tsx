@@ -52,6 +52,8 @@ interface PaneProps {
   onSubmit: (line: string) => Promise<Submitted>;
   onPress: (bytes: Uint8Array) => void;
   onResize: (cols: number, rows: number) => void;
+  /** Closes this terminal: the process inside ends, and the engine says so. */
+  onClose: () => void;
 }
 
 export function TerminalPane({
@@ -65,6 +67,7 @@ export function TerminalPane({
   onSubmit,
   onPress,
   onResize,
+  onClose,
 }: PaneProps) {
   /** The line under the pane, held by the window until Enter. */
   const [asked, setAsked] = useState("");
@@ -226,6 +229,11 @@ export function TerminalPane({
         <span
           className="pane__tokens"
           data-past={ceiling !== null && summary.estimatedTokens >= ceiling ? "true" : undefined}
+          title={
+            ceiling === null
+              ? "an estimate from the bytes moved; no loaded flow declares a ceiling"
+              : "an estimate from the bytes moved, against the ceiling the relay flow declares for whichever terminal it is asked to measure"
+          }
         >
           {tokensLabel(summary.estimatedTokens, ceiling)}
         </span>
@@ -237,6 +245,18 @@ export function TerminalPane({
         <span className="pane__keys">
           {mode === "compose" ? "the window holds the line" : "keys go straight to the process"}
         </span>
+        <button
+          type="button"
+          className="pane__close"
+          title={`close ${summary.device}: the process inside ends`}
+          aria-label="close this terminal"
+          onClick={(event) => {
+            event.stopPropagation();
+            onClose();
+          }}
+        >
+          ✕
+        </button>
         <button
           type="button"
           className="pane__mode"

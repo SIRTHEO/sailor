@@ -101,7 +101,7 @@ export function Installed({ native }: { native: boolean }) {
         // Non sono voci del censimento — nessuno le carica — ma sono spazio, e
         // finché nessuno le conta nessuno le toglie.
         <p className="now__note">
-          {asked.value.stale_plugin_copies} copie di plugin restano in cache senza essere quella installata.
+          {asked.value.stale_plugin_copies} plugin copies sit in the cache without being the installed one.
         </p>
       )}
 
