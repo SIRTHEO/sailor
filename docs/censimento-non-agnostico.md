@@ -178,7 +178,7 @@ della regola):
   commenti e in un banco di mutazione. `tools/mutants.sh:73` nomina
   `crates/claude-hooks/src/orca_cleanup.rs`, **un crate che non esiste**
   (`Cargo.toml` non lo elenca): è attrezzatura scaduta, non prodotto.
-- `flows/smista-il-lavoro.md:130,143,149` — prosa di progetto.
+- `flows/dispatch-the-work.md:130,143,149` — prosa di progetto.
 - `desktop/src/ToolMark.tsx:5` — `Non esiste nessun `if (tool === "claude")``,
   cioè un commento che dice di non avere la condizione.
 - `crates/toolbox/src/lib.rs:7` — `nessun `if id == "docker"``, idem.

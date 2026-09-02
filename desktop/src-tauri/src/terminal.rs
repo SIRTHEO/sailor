@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(passed, serde_json::json!({ "kind": "command" }));
 
         let routed = serde_json::to_value(Submitted::Flow {
-            flow: "smista-il-lavoro".to_owned(),
+            flow: "dispatch-the-work".to_owned(),
             text: "trova i residui".to_owned(),
             rule: "richiesta-in-italiano".to_owned(),
         })
@@ -300,7 +300,7 @@ mod tests {
             routed,
             serde_json::json!({
                 "kind": "flow",
-                "flow": "smista-il-lavoro",
+                "flow": "dispatch-the-work",
                 "text": "trova i residui",
                 "rule": "richiesta-in-italiano"
             })
