@@ -146,7 +146,9 @@ fn parse_ask(input: &Value) -> Result<Ask, ActionError> {
     let object = input.as_object().ok_or_else(|| {
         ActionError::new(
             "invalid_input",
-            format!("una domanda allo storico è un oggetto con un campo `ask` fra: {KNOWN_ASKS}"),
+            format!(
+                "a question to the history is an object with an `ask` field among: {KNOWN_ASKS}"
+            ),
         )
     })?;
     let name = object
@@ -155,14 +157,14 @@ fn parse_ask(input: &Value) -> Result<Ask, ActionError> {
         .ok_or_else(|| {
             ActionError::new(
                 "invalid_input",
-                format!("manca il campo `ask`. Le domande possibili sono: {KNOWN_ASKS}"),
+                format!("the `ask` field is missing. The possible questions are: {KNOWN_ASKS}"),
             )
         })?
         .to_owned();
     let allowed = allowed_fields(&name).ok_or_else(|| {
         ActionError::new(
             "invalid_input",
-            format!("domanda sconosciuta `{name}`. Le domande possibili sono: {KNOWN_ASKS}"),
+            format!("unknown question `{name}`. The possible questions are: {KNOWN_ASKS}"),
         )
     })?;
     if let Some(unexpected) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
@@ -208,7 +210,7 @@ fn window(declared: Option<u32>) -> Result<usize, ActionError> {
     if value == 0 || value > MAX_WINDOW {
         return Err(ActionError::new(
             "invalid_input",
-            format!("`within_last_runs` va fra 1 e {MAX_WINDOW}, non {value}"),
+            format!("`within_last_runs` goes between 1 and {MAX_WINDOW}, not {value}"),
         ));
     }
     Ok(value as usize)

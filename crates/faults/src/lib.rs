@@ -22,6 +22,7 @@ pub enum FaultError {
     NoDirectory(String),
     UnsupportedSchema(i64),
     Unknown(i64),
+    CannotCrossTheTable(String),
 }
 
 impl std::fmt::Display for FaultError {
@@ -35,6 +36,7 @@ impl std::fmt::Display for FaultError {
                  {FAULTS_SCHEMA_VERSION}: it is not broken, it is newer"
             ),
             FaultError::Unknown(number) => write!(f, "fault {number} does not exist"),
+            FaultError::CannotCrossTheTable(what) => write!(f, "{what}"),
         }
     }
 }
@@ -92,6 +94,30 @@ impl Fault {
             "",
         ]
     }
+}
+
+/// What a markdown row cannot carry, and so neither can a fault.
+///
+/// A newline breaks the row into pieces with the wrong number of columns; the
+/// separator adds one. Either way [`parse`] drops the row and the fault leaves
+/// the register in silence. Refused at the door, not escaped on the way out:
+/// the register *is* the table, so a cell no row holds was never an entry.
+fn nothing_that_breaks_a_row(cells: &[(&str, &str)]) -> Result<(), FaultError> {
+    for (column, text) in cells {
+        let wrong = if text.contains('\n') || text.contains('\r') {
+            "a newline"
+        } else if text.contains(" | ") {
+            "the column separator « | »"
+        } else {
+            continue;
+        };
+        return Err(FaultError::CannotCrossTheTable(format!(
+            "the «{column}» column contains {wrong}, and a table row cannot \
+             carry it: rendered, the row would come apart and reading it back \
+             would lose the fault without saying so"
+        )));
+    }
+    Ok(())
 }
 
 pub struct Faults {
@@ -152,6 +178,13 @@ impl Faults {
     /// guarantee: a test looks at one branch, and branches do not see
     /// each other.
     pub fn record(&self, draft: &Draft) -> Result<Fault, FaultError> {
+        nothing_that_breaks_a_row(&[
+            ("data", &draft.happened_on),
+            ("cosa è successo", &draft.what_happened),
+            ("come si è visto", &draft.how_it_showed),
+            ("cosa lo impedirebbe", &draft.what_would_prevent),
+            ("stato", &draft.status),
+        ])?;
         self.connection.execute(
             "INSERT INTO faults
                  (number, happened_on, what_happened, how_it_showed, what_would_prevent, status)
@@ -175,6 +208,13 @@ impl Faults {
     /// the numbers already existed, and changing them would break every
     /// reference other files make to them.
     pub fn restore(&self, fault: &Fault) -> Result<(), FaultError> {
+        nothing_that_breaks_a_row(&[
+            ("data", &fault.happened_on),
+            ("cosa è successo", &fault.what_happened),
+            ("come si è visto", &fault.how_it_showed),
+            ("cosa lo impedirebbe", &fault.what_would_prevent),
+            ("stato", &fault.status),
+        ])?;
         self.connection.execute(
             "INSERT OR REPLACE INTO faults
                  (number, happened_on, what_happened, how_it_showed, what_would_prevent, status)
@@ -226,6 +266,7 @@ impl Faults {
     /// already too narrow: a fault that bites a third time is worse than one
     /// that bit once, and there is nowhere to write that.
     pub fn set_status(&self, number: i64, status: &str) -> Result<Fault, FaultError> {
+        nothing_that_breaks_a_row(&[("stato", status)])?;
         let touched = self.connection.execute(
             "UPDATE faults SET status = ?2 WHERE number = ?1",
             params![number, status],
