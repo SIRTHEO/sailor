@@ -70,6 +70,8 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
         deps: deps.iter().map(|dep| (*dep).to_owned()).collect(),
         action: action.to_owned(),
         max_attempts: 1,
+        ask_again_after_secs: None,
+        retry_after_secs: None,
         when: None,
         with: Some(with),
         input_schema: ValueSchema::Any,

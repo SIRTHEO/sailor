@@ -138,6 +138,8 @@ fn opaque_graph() -> Graph {
         when: None,
         action: "opaque".to_owned(),
         max_attempts: 2,
+        ask_again_after_secs: None,
+        retry_after_secs: None,
     }])
     .expect("valid test graph")
 }
@@ -170,7 +172,7 @@ fn reconcile_opaque(
         })
         .expect("reconciliation succeeded");
     let decision = InProcessExecutor
-        .decision(&graph, run_id, &store)
+        .decision(&graph, run_id, &store, &FixedClock::new(100))
         .expect("decision after reconciliation");
     (report, decision, store)
 }
@@ -373,6 +375,8 @@ fn recovery_graph() -> Graph {
             when: None,
             action: "file".to_owned(),
             max_attempts: 2,
+            ask_again_after_secs: None,
+            retry_after_secs: None,
         },
         Step {
             id: "next".to_owned(),
@@ -386,6 +390,8 @@ fn recovery_graph() -> Graph {
             when: None,
             action: "echo".to_owned(),
             max_attempts: 1,
+            ask_again_after_secs: None,
+            retry_after_secs: None,
         },
     ])
     .expect("valid test graph")
@@ -463,7 +469,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
         )
         .expect("equivalent normal close");
     let expected = InProcessExecutor
-        .decision(&graph, "crashed-run", &normal)
+        .decision(&graph, "crashed-run", &normal, &FixedClock::new(100))
         .expect("normal decision");
 
     let executions = Arc::new(AtomicUsize::new(0));
@@ -489,7 +495,7 @@ fn killed_process_reconstructs_the_same_next_decision_without_replaying_effect()
         })
         .expect("reconciliation succeeded");
     let actual = InProcessExecutor
-        .decision(&graph, "crashed-run", &recovered)
+        .decision(&graph, "crashed-run", &recovered, &FixedClock::new(100))
         .expect("decisione ricostruita");
 
     assert_eq!(report.closed_as_went, vec!["write"]);
@@ -529,7 +535,7 @@ fn absent_process_without_landed_effect_closes_and_retries_itself() {
     assert_eq!(report.closed_as_broke, vec!["write"]);
     assert_eq!(
         InProcessExecutor
-            .decision(&graph, "retry-run", &store)
+            .decision(&graph, "retry-run", &store, &FixedClock::new(100))
             .expect("decision after the close"),
         Decision::Ready(vec!["write".to_owned()])
     );

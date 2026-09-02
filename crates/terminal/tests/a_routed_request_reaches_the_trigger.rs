@@ -35,6 +35,7 @@ fn fire(input: Value) -> Value {
     {
         ActionOutcome::Went(output) => output,
         ActionOutcome::Waiting(reason) => panic!("nessun innesco resta in attesa: {reason}"),
+        ActionOutcome::NotYet(reason) => panic!("no trigger postpones itself: {reason}"),
     }
 }
 

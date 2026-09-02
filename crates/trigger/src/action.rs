@@ -187,6 +187,7 @@ mod tests {
         match TriggerAction.execute(&input, &mut SharedState::new())? {
             ActionOutcome::Went(output) => Ok(output),
             ActionOutcome::Waiting(reason) => panic!("no trigger stays waiting: {reason}"),
+            ActionOutcome::NotYet(reason) => panic!("no trigger postpones itself: {reason}"),
         }
     }
 

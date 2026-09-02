@@ -1180,22 +1180,50 @@ fn resume_run_in(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<Strin
 /// quindi `unfinished_runs` non la trova, e il flusso da cui viene risulta
 /// «girato di recente», quindi `due` lo dichiara non dovuto. Sparisce due volte.
 fn waiting_report() -> String {
-    let waiting = default_ledger_dir()
+    let ledger = default_ledger_dir()
         .ok()
         .filter(|dir| dir.join("state.db").exists())
-        .and_then(|dir| Ledger::open(&dir).ok())
+        .and_then(|dir| Ledger::open(&dir).ok());
+    let waiting = ledger
+        .as_ref()
         .and_then(|ledger| ledger.waiting_runs().ok())
         .unwrap_or_default();
-    if waiting.is_empty() {
-        return "no run is waiting for anybody".to_owned();
-    }
-    let mut report = format!("{} runs are waiting for somebody:", waiting.len());
-    for run in waiting {
+    // Two lists and not one: a run somebody must come and take is not a run
+    // that comes back by itself, and reading them together sends a person to
+    // take a step nobody handed them.
+    let to_ask_again = ledger
+        .as_ref()
+        .and_then(|ledger| ledger.runs_to_ask_again().ok())
+        .unwrap_or_default();
+    let mut report = if waiting.is_empty() {
+        "no run is waiting for anybody".to_owned()
+    } else {
+        let mut lines = format!("{} runs are waiting for somebody:", waiting.len());
+        for run in waiting {
+            let _ = write!(
+                lines,
+                "\n  {}\t{}\tsailor flow resume {}",
+                run.run_id, run.entity, run.run_id
+            );
+        }
+        lines
+    };
+    if !to_ask_again.is_empty() {
         let _ = write!(
             report,
-            "\n  {}\t{}\tsailor flow resume {}",
-            run.run_id, run.entity, run.run_id
+            "\n{}",
+            catalogue::say(
+                "cli.flow.runs_to_ask_again",
+                &[("count", &to_ask_again.len().to_string())]
+            )
         );
+        for run in to_ask_again {
+            let _ = write!(
+                report,
+                "\n  {}\t{}\tsailor flow resume {}",
+                run.run_id, run.entity, run.run_id
+            );
+        }
     }
     report
 }
