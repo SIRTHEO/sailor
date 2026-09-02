@@ -198,13 +198,28 @@ fn print_changes() -> Result<(), String> {
     }
     println!();
     if gone.is_empty() {
-        println!("sparite: nessuna");
+        println!("{}", catalogue::say("cli.inventory.none_gone", &[]));
     } else {
         println!("sparite: {}", gone.len());
         for item in &gone {
             println!("  {:<10} {:<34} {}", item.kind, item.name, item.origin);
         }
     }
+    // **WHICH COMMAND LINES WERE LOOKED AT, ALWAYS.** An inventory that names
+    // only what it found reads as "you have nothing" on a machine holding a
+    // command line nobody declared — and that is the answer this crate was
+    // rewritten to stop giving.
+    println!(
+        "{}",
+        catalogue::say(
+            "cli.inventory.command_lines_looked_at",
+            &[(
+                "count",
+                &inventory::extensions::how_many_declared(ledger::sailor_home().as_deref())
+                    .to_string()
+            )]
+        )
+    );
     Ok(())
 }
 
