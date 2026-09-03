@@ -297,7 +297,6 @@ body {
 
 /* The plate: the only place DIN is used, and always like this. */
 .label,
-.rail__title,
 .panel__title,
 .history__title {
   font-family: var(--font-display);
@@ -1606,25 +1605,8 @@ button.is-primary {
   padding: var(--space-2) 0 0;
 }
 
-.rail {
-  width: 232px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--line);
-  background: var(--rail);
-  padding: 12px 10px;
-  overflow-y: auto;
-}
-
-.rail__title {
-  font-size: var(--text-micro);
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--faint);
-  padding: 0 8px 8px;
-}
-
-/* "All flows": drops the focus, back to the whole system. */
+/* A PLAIN BUTTON WITH A BORDER. It was the flow column's «All flows» and is
+   named after it; four other screens wear it, so it stays. */
 .rail__all {
   display: block;
   width: 100%;
@@ -1643,16 +1625,14 @@ button.is-primary {
   border-color: var(--ink);
 }
 
-/* THE HEADING OF A GROUP IS NOT ANOTHER TITLE. `.rail__title` already names
-   the column; a second line in the same weight would read as a second column.
-   This one is quieter than the flows underneath on purpose: it answers a
-   question nobody asked out loud — «whose is this one» — and must be there to
-   be read, not to be looked at. */
+/* THE HEADING OF A GROUP IS QUIETER THAN THE FLOWS UNDER IT, on purpose: it
+   answers a question nobody asked out loud — «whose is this one» — and has to
+   be there to be read, not to be looked at. */
 .rail__origin {
   font-size: var(--text-micro);
   letter-spacing: 0.04em;
   color: var(--faint);
-  padding: 2px 10px 4px;
+  padding: var(--space-2) var(--space-2) var(--space-1) var(--space-5);
 }
 
 /* Air between one group and the next, never above the first: there the gap
@@ -1932,34 +1912,45 @@ tr[data-followable]:hover {
   color: var(--ink);
 }
 
+/* A ROW IN A COLUMN THAT HOLDS EVERYTHING IS ONE LINE. It used to be two —
+   name over step count — in a column of its own that had room for it; here it
+   sits under a tree, beside a terminal, and two lines per flow would push the
+   workspaces off the screen. */
 .rail__item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
-  border: 1px solid transparent;
+  border: none;
+  border-left: 2px solid transparent;
   background: transparent;
-  padding: 9px 10px;
-  margin-bottom: 3px;
+  padding: 2px var(--space-2) 2px var(--space-5);
   cursor: pointer;
 }
 
+.rail__item:hover {
+  background: var(--bg);
+}
+
 .rail__item[data-open] {
-  background: var(--paper);
-  border-color: var(--line);
+  border-left-color: var(--focus);
+  font-weight: 600;
 }
 
 .rail__dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
+  flex: none;
   border-radius: var(--radius-pill);
-  margin-right: 6px;
 }
 
 .rail__label {
-  display: block;
-  font-size: var(--text-body);
-  font-weight: 500;
+  font-size: var(--text-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rail__dirty-dot {
@@ -1972,12 +1963,14 @@ tr[data-followable]:hover {
 }
 
 .rail__note {
-  display: block;
-  font-size: var(--text-small);
+  margin-left: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-micro);
   color: var(--faint);
-  margin-top: 3px;
-  margin-left: 13px;
-  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 74px;
 }
 
 /* A broken flow is visible and recognisable, never absent. */
@@ -1991,7 +1984,6 @@ tr[data-followable]:hover {
 
 .rail__item[data-broken] .rail__note {
   color: var(--danger);
-  margin-left: 0;
 }
 
 /* The gesture's permanent home, under the list. It is absent on an empty
@@ -2001,10 +1993,14 @@ tr[data-followable]:hover {
   display: block;
   width: 100%;
   text-align: left;
-  margin-top: 6px;
-  font-weight: 600;
+  margin: var(--space-1) 0 var(--space-2);
+  padding: 2px var(--space-2) 2px var(--space-5);
+  background: none;
+  border: none;
+  font-family: var(--font-prose);
+  font-size: var(--text-small);
   color: var(--muted);
-  border-style: dashed;
+  cursor: pointer;
 }
 
 .rail__new:hover {
@@ -4715,10 +4711,6 @@ tr[data-followable]:hover {
    Interrogated by `stylesheet.test.ts`, prohibition 11. */
 
 @media (max-width: 1100px) {
-  .rail {
-    width: 176px;
-  }
-
   .panel {
     width: 248px;
   }
@@ -4802,10 +4794,6 @@ tr[data-followable]:hover {
      then keeps everything left. Layout only in here — the contrast engine skips
      at-rules, so a tint written here would be weighed by nobody. And no shadow:
      prohibition 3 says what floats separates with its border. */
-  .rail {
-    width: 148px;
-  }
-
   .panel {
     position: absolute;
     top: 0;
@@ -4819,17 +4807,6 @@ tr[data-followable]:hover {
      costs its width and shows how to fill it; floating it costs the one thing
      that matters at this width — reaching your own nodes. */
   .panel:has(.panel__empty) {
-    display: none;
-  }
-
-  /* PROVISIONAL, and the decision behind it is not made yet. Three fixed
-     columns want 148 + 148 + 288; at 375 the canvas was left 79px. The flow
-     list is the one that gives way here because the top bar now names the open
-     flow, so the column is not the only way to know which one it is — a weaker
-     reason than the toolbox has for staying, not a strong one for itself.
-     Where the flow list belongs is a product question; this only keeps the
-     canvas usable until it is answered. */
-  .rail {
     display: none;
   }
 }

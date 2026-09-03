@@ -1,14 +1,45 @@
 /**
  * The column is the world: workspaces, the trees each is checked out into, and
- * what lives in every tree. **A list of places is not a navigation**: five
- * nouns say what the program has, not where the work is — and a thing can sit
- * outside every workspace, which is a place of its own.
+ * what lives in every tree — board, flows, terminals. **A list of places is
+ * not a navigation**: five nouns say what the program has, not where the work
+ * is. A thing can also sit outside every workspace, a place of its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PLACES, type Section } from "./Rail";
 import { grouped, treeName } from "./Workspace";
 import { projects, workHere, type Project } from "./workspaces";
 import type { TerminalSummary } from "./terminal";
+
+/**
+ * The flows of one source, as the column draws them. The order is the
+ * engine's: least specific first, the last name wins — sorting here would stop
+ * the column matching what runs.
+ */
+export interface FlowGroup {
+  origin: string | null;
+  flows: { name: string; note: string; color?: string; dirty: boolean }[];
+  broken: { name: string; reason: string }[];
+}
+
+/** Where a source's flows belong in the column. */
+export const OF_THIS_TREE = "this project";
+
+/**
+ * The flows a tree owns: its own, and the ones saved nowhere yet. They hang
+ * under the tree because that is what they answer to — the other sources are
+ * the same wherever you stand, so they get a place of their own.
+ */
+export function ofTheTree(groups: FlowGroup[]): FlowGroup[] {
+  return groups.filter((group) => group.origin === OF_THIS_TREE || group.origin === null);
+}
+
+/** Everything else: one list per source, in the order the engine gave them. */
+export function everywhere(groups: FlowGroup[]): FlowGroup[] {
+  return groups.filter((group) => group.origin !== OF_THIS_TREE && group.origin !== null);
+}
+
+/** What the column writes over flows that belong to no disk yet. */
+const NOT_SAVED = "not saved yet";
 
 /** A tree with what Sailor has open in it. */
 export interface Inhabited {
@@ -63,6 +94,10 @@ export function World({
   counts,
   terminals,
   onMoved,
+  flowGroups,
+  focusName,
+  onFlow,
+  onNewFlow,
 }: {
   native: boolean;
   here: Section;
@@ -71,6 +106,10 @@ export function World({
   terminals: TerminalSummary[];
   /** Called once the window has moved into another tree. */
   onMoved: () => void;
+  flowGroups: FlowGroup[];
+  focusName: string | null;
+  onFlow: (name: string | null) => void;
+  onNewFlow: () => void;
 }) {
   const [seen, setSeen] = useState<Project[]>([]);
   const [why, setWhy] = useState<string | null>(null);
@@ -121,6 +160,45 @@ export function World({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seen]);
 
+  // The list of one source, wherever in the column that source belongs. The
+  // classes are the flow column's own: it did not change, it moved.
+  function flowsOf(group: FlowGroup) {
+    return (
+      <div className="rail__group" key={group.origin ?? NOT_SAVED}>
+        <div className="rail__origin">{group.origin ?? NOT_SAVED}</div>
+        {group.flows.map((one) => (
+          <button
+            type="button"
+            key={one.name}
+            className="rail__item"
+            data-open={one.name === focusName || undefined}
+            onClick={() => onFlow(one.name)}
+          >
+            <span className="rail__dot" style={{ background: one.color }} />
+            <span className="rail__label">
+              {one.name}
+              {one.dirty && <span className="rail__dirty-dot" title="not saved" />}
+            </span>
+            <span className="rail__note">{one.note}</span>
+          </button>
+        ))}
+        {/* A broken flow does not vanish from the list: it is shown, marked,
+            with the reason. It stays off the canvas because it has no graph to
+            draw — and it stays under its source, which is where whoever goes
+            to repair it has to look. */}
+        {group.broken.map((one) => (
+          <div className="rail__item" key={one.name} data-broken>
+            <span className="rail__label">{one.name}</span>
+            <span className="rail__note">{one.reason}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  const mine = ofTheTree(flowGroups);
+  const shared = everywhere(flowGroups);
+  const anyFlow = flowGroups.some((group) => group.flows.length > 0);
   const homeless = outside(terminals, seen);
   // No tree open means the board is not under one: it still has to be reachable.
   const noTreeOpen = !seen.some((one) => one.current);
@@ -189,20 +267,31 @@ export function World({
                     {tree.standing === "gone" && <span className="wsx__gone">gone</span>}
                   </button>
                   {tree.current && (
-                    <button
-                      type="button"
-                      className="wsx__leaf"
-                      data-here={here === "board" || undefined}
-                      onClick={() => onGo("board")}
-                    >
-                      <span className="world__glyph" aria-hidden="true">
-                        ◈
-                      </span>
-                      <span className="world__label">Board</span>
-                      {counts.board !== undefined && (
-                        <span className="wsx__count">{counts.board}</span>
+                    <>
+                      <button
+                        type="button"
+                        className="wsx__leaf"
+                        data-here={here === "board" || undefined}
+                        onClick={() => {
+                          onGo("board");
+                          onFlow(null);
+                        }}
+                      >
+                        <span className="world__glyph" aria-hidden="true">
+                          ◈
+                        </span>
+                        <span className="world__label">Board</span>
+                        {counts.board !== undefined && (
+                          <span className="wsx__count">{counts.board}</span>
+                        )}
+                      </button>
+                      {mine.map(flowsOf)}
+                      {anyFlow && (
+                        <button type="button" className="rail__new" onClick={onNewFlow}>
+                          + New flow
+                        </button>
                       )}
-                    </button>
+                    </>
                   )}
                   {terminals
                     .filter((one) => treeOf(one.workspaceRoot, seen)?.root === tree.root)
@@ -225,6 +314,12 @@ export function World({
         );
       })}
 
+      {/* THE FLOWS THAT ARE THE SAME WHEREVER YOU STAND. Yours, and the ones
+          that ship inside the binary: neither belongs under a tree, and buried
+          in a column of «this project» they read as one more checkout's. */}
+      {shared.length > 0 && <div className="world__head">flows everywhere</div>}
+      {shared.map(flowsOf)}
+
       {/* Outside is a place: a terminal no project claims is where a good
           deal of the work happens. The board lives here when no tree is
           open — unreachable is worse than in the wrong group. */}
@@ -241,6 +336,12 @@ export function World({
           </span>
           <span className="world__label">Board</span>
           {counts.board !== undefined && <span className="wsx__count">{counts.board}</span>}
+        </button>
+      )}
+      {noTreeOpen && mine.map(flowsOf)}
+      {noTreeOpen && anyFlow && (
+        <button type="button" className="rail__new" onClick={onNewFlow}>
+          + New flow
         </button>
       )}
       {homeless.length === 0 && !noTreeOpen && (

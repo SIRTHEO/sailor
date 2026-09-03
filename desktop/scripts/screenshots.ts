@@ -69,6 +69,9 @@ async function openEntry(page: Page, label: string): Promise<void> {
   await entry.click();
 }
 
+/** The mark a refusal carries when the state is not in the product at all. */
+const A_GAP_IN_THE_PRODUCT = "product gap: ";
+
 /**
  * Reaches the canvas and focuses the first flow, then frames it.
  *
@@ -107,9 +110,6 @@ async function focusFirstFlow(page: Page): Promise<void> {
     console.log("    · framing failed: the canvas stays where it was");
   }
 }
-
-/** The mark a refusal carries when the state is not in the product at all. */
-const A_GAP_IN_THE_PRODUCT = "product gap: ";
 
 const SCENES: Scene[] = [
   {
@@ -153,7 +153,18 @@ const SCENES: Scene[] = [
       })()`);
       if (id === null) throw new Error("no node fits entirely inside the canvas at this width");
       const node = page.locator(`.react-flow__node-step[data-id="${id}"]`);
-      await node.click({ timeout: 5000 });
+      // The node fits inside the canvas and is still unreachable: at 375 the
+      // toolbox lies over the lower-left of the paper, and what is under it
+      // takes no click. A gap in the product, not a blind capture — and told
+      // apart from one by the driver's own words.
+      await node.click({ timeout: 5000 }).catch((trouble: unknown) => {
+        const said = String(trouble);
+        if (!said.includes("intercepts pointer events")) throw trouble;
+        throw new Error(
+          `${A_GAP_IN_THE_PRODUCT}the toolbox lies over the canvas at this ` +
+            "width, and a step under it cannot be chosen",
+        );
+      });
       await page.locator(".panel").waitFor({ state: "visible", timeout: 5000 });
     },
   },
