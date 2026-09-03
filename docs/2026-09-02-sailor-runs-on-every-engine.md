@@ -331,9 +331,21 @@ Starting point, so the mandate builds on it instead of beside it.
    apply module, its test) that no data can widen, and an allow file in
    `$SAILOR_HOME/autocura.json` outside the tree. Ring 3: the step that hands
    the patch is `HandToHuman`, taken and closed from the window.
-   *Proof:* the canary test in `crates/sailor/tests/`: a patch that touches the
-   deny list is refused even when the allow file names it; deleting the deny
-   list from the binary turns the canary red.
+   *Where it landed:* `crates/actions/src/apply.rs` registers `apply_patch`,
+   whose species is `HandToHuman`. It reads the paths a unified diff names,
+   asks the compiled wall first — the assent file, the applying module, the
+   canary that defends them — then the assent in `$SAILOR_HOME/autocura.json`,
+   and only then hands the patch to `git apply`, `--check` first. No assent
+   file is no permission, never «anything goes». Ring 1 and ring 3 were
+   already standing: the sweep flow's proposal is data in an `answer_shape`,
+   and `handed_to_agent` is the step a person closes. Still to do: the
+   fingerprint of the assent file written into the ledger at every run,
+   sentinel (b) of the design note.
+   *Proof:* the canary in `crates/sailor/tests/the_wall_a_patch_cannot_widen.rs`
+   asks, under an assent naming everything, to repair the assent file and the
+   applying module: both refused, while an ordinary file under the same assent
+   goes through and is read back changed. Taking the assent file out of the
+   wall turns the first arm green, which was run.
 2. **`sviluppa-sailor` runs under Sailor on Sailor.** The twelve-step flow
    runs from the window on this repository with a real mandate (one of the
    six judge gaps), the implement step in its own worktree, the verify step

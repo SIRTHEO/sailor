@@ -34,6 +34,7 @@
 //! `"tool": "claude-code"` gira ovunque quel descrittore trovi qualcosa, e si
 //! ferma con un messaggio utile dove non lo trova.
 
+pub mod apply;
 pub mod budget;
 pub mod cooldown;
 pub mod faults;
@@ -82,6 +83,7 @@ pub const SHELL_CHECK_ACTION: &str = "shell_check";
 pub fn register_default(registry: &mut flow::ActionRegistry) {
     registry.register(EXTERNAL_ENGINE_ACTION, ExternalEngineAction::new());
     registry.register(SHELL_CHECK_ACTION, ShellCheckAction::new());
+    apply::register_apply_patch(registry);
     mcp::register_mcp(registry);
 }
 
