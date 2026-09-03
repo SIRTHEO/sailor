@@ -25,6 +25,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
+import { PLACES, type Section } from "../src/Rail";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -50,14 +51,25 @@ type Scene = {
 };
 
 /**
- * Opens one of the top-bar places by the text a person reads, not by a class:
- * classes get renamed unnoticed, and if the visible name changes, the product
- * changed and this capture has to notice.
+ * Opens a place by **the name the product gives it**, not by a word written
+ * here. The names were copied into this file once and then the product renamed
+ * them: the scenes went looking for «flussi», «installato» and «storia», found
+ * nothing, and the capture reported success on one scene out of eleven. A
+ * navigation copied is a navigation that goes stale in silence.
  */
-async function openView(page: Page, label: string): Promise<void> {
-  const tab = page.getByRole("button", { name: new RegExp(`^\\s*${label}`, "i") }).first();
+async function openPlace(page: Page, id: Section): Promise<void> {
+  const place = PLACES.find((one) => one.id === id);
+  if (!place) throw new Error(`no place «${id}»: the product does not have it`);
+  const tab = page.getByRole("button", { name: new RegExp(`^\\s*${place.name}`, "i") }).first();
   await tab.waitFor({ state: "visible", timeout: 5000 });
   await tab.click();
+}
+
+/** A column entry inside a place, by the name the column shows. */
+async function openEntry(page: Page, label: string): Promise<void> {
+  const entry = page.locator(".subrail__item", { hasText: label }).first();
+  await entry.waitFor({ state: "visible", timeout: 5000 });
+  await entry.click();
 }
 
 /**
@@ -68,16 +80,17 @@ async function openView(page: Page, label: string): Promise<void> {
  * emptiness the product does not have.
  */
 async function focusFirstFlow(page: Page): Promise<void> {
-  await openView(page, "flussi");
+  await openPlace(page, "board");
   const first = page.locator(".rail__item").first();
 
   // Below the narrow threshold the flow list withdraws so the canvas survives,
   // and with it goes the only way to pick a flow: a product gap, not a capture
-  // failure.
+  // failure — and the difference is what decides the exit code below.
   if (!(await first.isVisible().catch(() => false))) {
     throw new Error(
-      "no way to choose a flow at this width: the flow column is withdrawn and " +
-        "the top bar names the open flow without offering the others",
+      `${A_GAP_IN_THE_PRODUCT}no way to choose a flow at this width: the flow ` +
+        "column is withdrawn and the top bar names the open flow without " +
+        "offering the others",
     );
   }
 
@@ -98,6 +111,13 @@ async function focusFirstFlow(page: Page): Promise<void> {
   }
 }
 
+/**
+ * The mark a scene puts on its own refusal when the state it wants **is not in
+ * the product at this width**. Anything else is the capture gone blind, and
+ * the two are decided on oppositely at the end.
+ */
+const A_GAP_IN_THE_PRODUCT = "product gap: ";
+
 const SCENES: Scene[] = [
   {
     name: "now",
@@ -108,7 +128,7 @@ const SCENES: Scene[] = [
     name: "flows-canvas",
     what: "the flow canvas with its rail: THE surface of this product, drawn with JavaScript objects and never opened by whatever reads the stylesheet",
     reach: async (page) => {
-      await openView(page, "flussi");
+      await openPlace(page, "board");
       await page.locator(".react-flow").waitFor({ state: "visible", timeout: 5000 });
     },
   },
@@ -148,14 +168,15 @@ const SCENES: Scene[] = [
     name: "installed",
     what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
-      await openView(page, "installato");
+      await openPlace(page, "sailor");
+      await openEntry(page, "Equipment");
     },
   },
   {
     name: "history",
     what: "the run history: the other dense view, and the one that ages worst",
     reach: async (page) => {
-      await openView(page, "storia");
+      await openPlace(page, "memory");
     },
   },
 ];
@@ -262,11 +283,18 @@ async function main(): Promise<void> {
   );
 
   console.log(`\n--- ${outDir} ---`);
-  if (missing.length > 0) {
-    console.log(`${missing.length} scenes missing: see missing.txt`);
-    // Not red: the `schermo` step tolerates its own failure, and a partial
-    // capture is worth more than none.
-  }
+  if (missing.length === 0) return;
+  console.log(`${missing.length} scenes missing: see missing.txt`);
+  // **A TOLERANCE WITHOUT A CEILING IS NOT A TOLERANCE.** A partial capture is
+  // worth more than none, and that was the whole rule: ten scenes out of
+  // eleven went missing for days and the script exited zero, so nobody looked
+  // at the window. A scene the product cannot reach at that width says so and
+  // stays tolerated; a scene that simply did not work is the eyes going blind,
+  // and that is red.
+  const blind = missing.filter((why) => !why.includes(A_GAP_IN_THE_PRODUCT));
+  if (blind.length === 0) return;
+  console.log(`${blind.length} of them are not a declared gap: the capture is blind`);
+  process.exitCode = 1;
 }
 
 main().catch((error) => {
