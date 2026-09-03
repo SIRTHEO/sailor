@@ -418,6 +418,7 @@
   "run.failure.subflow_unreadable": "il deposito non si è lasciato leggere — il guasto non è nel flusso",
   "run.failure.terminal_not_held": "Sailor non ha in mano quel terminale",
   "run.failure.tool_unavailable": "lo strumento non c'è su questa macchina",
+  "run.failure.patch_refused": "la patch non è stata applicata: nomina un file a cui nessuno ha dato assenso, o uno dietro la parete che nessun assenso apre",
   "run.failure.tree_not_cut": "il passo ha chiesto un albero suo e git non ha potuto tagliarlo, quindi non è stato eseguito in quello condiviso",
   "run.failure.unjoinable_reference": "si può unire solo testo, e uno dei pezzi non è testo",
   "run.failure.unknown_action": "il passo chiede un'azione che qui nessuno conosce",
