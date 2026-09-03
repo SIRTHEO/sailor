@@ -70,6 +70,7 @@ fn sample_all(ledger: &Ledger) {
             error: Some("compile failed".to_owned()),
             started_at: 90,
             ended_at: Some(121),
+            worktree: None,
         })
         .expect("record the run");
     ledger
@@ -1265,6 +1266,7 @@ fn a_run(ledger: &Ledger, run_id: &str, entity: &str, started_at: i64, ended_at:
             error: None,
             started_at,
             ended_at,
+            worktree: None,
         })
         .expect("record the run");
 }
@@ -1342,6 +1344,7 @@ fn a_handed_run_is_found_by_the_waiting_question_and_not_by_the_unfinished_one()
             error: None,
             started_at: 100,
             ended_at: Some(150),
+            worktree: None,
         })
         .expect("record the handed-over run");
     a_step(
@@ -2633,6 +2636,141 @@ fn a_browsed_statement_reads_any_table_and_cannot_write() {
             error: None,
             started_at: 200,
             ended_at: Some(201),
+            worktree: None,
         })
         .expect("the store still writes");
+}
+
+/// **EVERYTHING A WORKSPACE OWNS COULD BE ASKED FOR BY TREE EXCEPT ITS RUNS.**
+/// `runs` had kind, entity, who started it, status, cost and times — and no
+/// answer to «where», so the window showed every tree's runs mixed and no
+/// filter could be written for them at all. The answer is optional on purpose:
+/// a run started outside every workspace is a real run, and outside is a place.
+#[test]
+fn a_run_comes_back_with_the_tree_it_was_born_in() {
+    let home = TestDirectory::new("run-tree");
+    let ledger = Ledger::open(&home.0).expect("open the ledger");
+
+    ledger
+        .record_run(&born_in("in-a-tree", Some("/t/un-progetto/un-albero")))
+        .expect("record it");
+    ledger
+        .record_run(&born_in("out-there", None))
+        .expect("record it");
+
+    let inside = ledger
+        .run_header("in-a-tree")
+        .expect("read it")
+        .expect("it is there");
+    assert_eq!(
+        inside.worktree.as_deref(),
+        Some("/t/un-progetto/un-albero"),
+        "a run recorded in a tree came back without it"
+    );
+
+    let outside = ledger
+        .run_header("out-there")
+        .expect("read it")
+        .expect("it is there");
+    assert_eq!(
+        outside.worktree, None,
+        "outside every workspace is an answer, not a value to invent"
+    );
+}
+
+/// **WHERE A RUN WAS BORN DOES NOT CHANGE WHEN IT ENDS.** The row that closes a
+/// run is written by whatever process stands there at the time, and for a run
+/// that outlives a `work_here` that is another tree — or none. Without the
+/// `COALESCE` the closing row overwrote the birthplace with `NULL`, which reads
+/// exactly like «this run happened nowhere».
+#[test]
+fn closing_a_run_from_elsewhere_does_not_erase_where_it_started() {
+    let home = TestDirectory::new("run-tree-close");
+    let ledger = Ledger::open(&home.0).expect("open the ledger");
+
+    ledger
+        .record_run(&born_in("long-one", Some("/t/un-progetto/un-albero")))
+        .expect("record it");
+
+    let mut closing = born_in("long-one", None);
+    closing.ended_at = Some(99);
+    ledger.record_run(&closing).expect("close it");
+
+    let found = ledger
+        .run_header("long-one")
+        .expect("read it")
+        .expect("it is there");
+    assert_eq!(found.ended_at, Some(99), "the closing row did not land");
+    assert_eq!(
+        found.worktree.as_deref(),
+        Some("/t/un-progetto/un-albero"),
+        "closing the run erased where it was born"
+    );
+}
+
+fn born_in(run_id: &str, worktree: Option<&str>) -> RunRecord {
+    RunRecord {
+        run_id: run_id.to_owned(),
+        kind: "flow".to_owned(),
+        entity: "sweep-the-tree".to_owned(),
+        parent_run_id: None,
+        started_by: "the window".to_owned(),
+        status: "complete".to_owned(),
+        total_cost_micros: 0,
+        error: None,
+        started_at: 10,
+        ended_at: Some(20),
+        worktree: worktree.map(str::to_owned),
+    }
+}
+
+/// **AN EXISTING STORE MUST GAIN THE COLUMN, NOT REFUSE TO OPEN.** The one on
+/// this machine is at version 9 and holds months of runs; the version is what
+/// tells `Ledger::open` to add what is missing, and a column added without
+/// moving it is the failure written at the top of that constant. Simulated by
+/// taking a fresh store back to 9: dropping the column and the version is
+/// exactly the shape of a store that never had it.
+#[test]
+fn a_store_written_before_the_column_gains_it_on_open() {
+    let home = TestDirectory::new("run-tree-old");
+    {
+        let ledger = Ledger::open(&home.0).expect("open the ledger");
+        ledger
+            .record_run(&born_in("from-before", Some("/t/un-progetto/un-albero")))
+            .expect("record it");
+    }
+
+    {
+        let connection = Connection::open(home.0.join(STATE_FILE)).expect("open by hand");
+        connection
+            .execute_batch("ALTER TABLE runs DROP COLUMN worktree;")
+            .expect("take the column away");
+        connection
+            .pragma_update(None, "user_version", 9_i64)
+            .expect("take the version back");
+    }
+
+    let reopened = Ledger::open(&home.0).expect("an old store must still open");
+    let found = reopened
+        .run_header("from-before")
+        .expect("read it")
+        .expect("the run survived");
+    assert_eq!(
+        found.worktree, None,
+        "a run written before the column knows no tree, and inventing one is worse than none"
+    );
+
+    reopened
+        .record_run(&born_in("from-after", Some("/t/un-progetto/un-altro")))
+        .expect("record a new one");
+    assert_eq!(
+        reopened
+            .run_header("from-after")
+            .expect("read it")
+            .expect("it is there")
+            .worktree
+            .as_deref(),
+        Some("/t/un-progetto/un-altro"),
+        "the migrated store cannot record a tree"
+    );
 }

@@ -581,6 +581,7 @@ mod tests {
                 error: None,
                 started_at,
                 ended_at,
+                worktree: None,
             })
             .expect("registrare la corsa");
     }
@@ -722,6 +723,7 @@ mod tests {
                 error: None,
                 started_at,
                 ended_at: None,
+                worktree: None,
             })
             .expect("registrare la corsa in attesa");
     }

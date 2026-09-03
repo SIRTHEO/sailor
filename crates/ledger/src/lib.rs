@@ -111,7 +111,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// learned four cache columns while this stayed at 4, an existing store was
 /// already registered at 4, `4 < 4` is false, the migration never ran, and
 /// every read died with `no such column: cache_write_tokens`.
-const PROJECTION_SCHEMA_VERSION: i64 = 9;
+const PROJECTION_SCHEMA_VERSION: i64 = 10;
 
 pub enum LedgerError {
     Sqlite(rusqlite::Error),
@@ -187,6 +187,9 @@ pub struct RunRecord {
     pub error: Option<String>,
     pub started_at: i64,
     pub ended_at: Option<i64>,
+    /// The workspace this run was born in. `None` is not missing data: a run
+    /// started outside every workspace is a real run, and outside is a place.
+    pub worktree: Option<String>,
 }
 
 /// An entry seen by an inventory scan.
@@ -1043,7 +1046,7 @@ impl Ledger {
         let found = connection
             .query_row(
                 "SELECT run_id, kind, entity, parent_run_id, started_by, status,
-                        total_cost_micros, error, started_at, ended_at
+                        total_cost_micros, error, started_at, ended_at, worktree
                  FROM runs WHERE run_id = ?1",
                 params![run_id],
                 |row| {
@@ -1058,6 +1061,7 @@ impl Ledger {
                         error: row.get(7)?,
                         started_at: row.get(8)?,
                         ended_at: row.get(9)?,
+                        worktree: row.get(10)?,
                     })
                 },
             )
@@ -1815,7 +1819,8 @@ fn create_projection_tables(connection: &Connection) -> Result<(), LedgerError> 
              total_cost_micros INTEGER NOT NULL,
              error TEXT,
              started_at INTEGER NOT NULL,
-             ended_at INTEGER
+             ended_at INTEGER,
+             worktree TEXT
          );
          CREATE TABLE IF NOT EXISTS steps (
              run_id TEXT NOT NULL,
@@ -1993,6 +1998,12 @@ fn add_missing_projection_columns(transaction: &Transaction<'_>) -> Result<(), L
                 [],
             )?;
         }
+    }
+    // version 10: where a run was born. Everything a workspace owns could be
+    // asked for by tree except its runs, so the window showed every tree's runs
+    // mixed and had no way to ask for one.
+    if !column_exists(transaction, "runs", "worktree")? {
+        transaction.execute("ALTER TABLE runs ADD COLUMN worktree TEXT", [])?;
     }
     // version 6: turns. You pay per turn, and no column counted them.
     if !column_exists(transaction, "model_calls", "turns")? {
@@ -2470,14 +2481,17 @@ fn project_run(transaction: &Transaction<'_>, record: &RunRecord) -> Result<(), 
     transaction.execute(
         "INSERT INTO runs
          (run_id, kind, entity, parent_run_id, started_by, status,
-          total_cost_micros, error, started_at, ended_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+          total_cost_micros, error, started_at, ended_at, worktree)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(run_id) DO UPDATE SET
           kind=excluded.kind, entity=excluded.entity,
           parent_run_id=excluded.parent_run_id, started_by=excluded.started_by,
           status=excluded.status, total_cost_micros=excluded.total_cost_micros,
           error=excluded.error, started_at=excluded.started_at,
-          ended_at=excluded.ended_at",
+          ended_at=excluded.ended_at,
+          -- Where a run was born does not change when it ends, and the row
+          -- that closes it is written from a process that may stand elsewhere.
+          worktree=COALESCE(excluded.worktree, runs.worktree)",
         params![
             record.run_id,
             record.kind,
@@ -2489,6 +2503,7 @@ fn project_run(transaction: &Transaction<'_>, record: &RunRecord) -> Result<(), 
             record.error,
             record.started_at,
             record.ended_at,
+            record.worktree,
         ],
     )?;
     Ok(())
