@@ -6,6 +6,7 @@
 
 import { SubRail } from "./Memory";
 import { Projects } from "./Projects";
+import type { TerminalSummary } from "./terminal";
 import { Terminals } from "./Terminals";
 import { Worktrees } from "./Worktrees";
 
@@ -26,6 +27,7 @@ export function TerminalsSection({
   ceiling,
   onProjectChanged,
   onCount,
+  onList,
 }: {
   native: boolean;
   now: number;
@@ -38,12 +40,14 @@ export function TerminalsSection({
   onProjectChanged: () => void;
   /** How many terminals are open, for the column's count. */
   onCount: (count: number) => void;
+  /** The terminals themselves, for the column that nests them under a tree. */
+  onList: (all: TerminalSummary[]) => void;
 }) {
   return (
     <div className="section" hidden={!shown}>
       <SubRail here={tab} onGo={onTab} tabs={TERMINALS_TABS} />
       <div className="section__body section__body--terminals">
-        <Terminals native={native} shown={shown && tab === "live"} ceiling={ceiling} onCount={onCount} />
+        <Terminals native={native} shown={shown && tab === "live"} ceiling={ceiling} onCount={onCount} onList={onList} />
         {shown && tab === "projects" && <Projects native={native} now={now} onMoved={onProjectChanged} />}
         {shown && tab === "worktrees" && <Worktrees native={native} />}
       </div>

@@ -59,35 +59,48 @@ function pretendShell(answers: Record<string, unknown | ((args?: Record<string, 
   };
 }
 
-describe("the places", () => {
-  test("THE COLUMN HAS THREE GROUPS AND FIVE PLACES, a glyph each, and opens on the board", () => {
+describe("the column is the world", () => {
+  /** A list of places says what the program has, not where the work is. */
+  test("WHAT HOLDS EVERYWHERE IS A STRIP ABOVE THE WORK, and the board is not in it", () => {
     const { container } = render(<App />);
-    const headings = Array.from(container.querySelectorAll(".places__heading")).map((one) => one.textContent);
-    expect(headings).toEqual(["work", "what happened", "itself"]);
 
-    // The workspace is above the places, not inside one: the gesture that
-    // moves the window was a tab under «Terminals», so it never said where.
-    const spine = container.querySelector(".places .wsp");
-    expect(spine, "the window does not say which workspace it is in").not.toBeNull();
-    const first = container.querySelector(".places__item") as Node;
+    const above = Array.from(container.querySelectorAll(".world__above .world__label")).map(
+      (one) => one.textContent,
+    );
+    expect(above).toEqual(["Terminals", "Ledger", "Runs", "Sailor"]);
     expect(
-      (spine as Element).compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
-      "the workspace sits below the places it decides",
-    ).toBeTruthy();
-    const names = Array.from(container.querySelectorAll(".places__name")).map((one) => one.textContent);
-    expect(names).toEqual(["Board", "Terminals", "Ledger", "Runs", "Sailor"]);
-    // A glyph each, and the question is the row's title rather than a second
-    // line: five sentences stacked are a wall of text, not a navigation.
-    const glyphs = Array.from(container.querySelectorAll(".places__glyph")).map((one) => one.textContent);
-    expect(glyphs).toEqual(PLACES.map((place) => place.glyph));
+      above,
+      "the board is above the work: its flows belong to the tree you are in",
+    ).not.toContain("Board");
+
+    // A glyph each, and what a place answers is the row's title: five
+    // sentences stacked are a wall of text, not a navigation.
     for (const place of PLACES) {
+      if (place.id === "board") continue;
       expect(
-        container.querySelector(`.places__item[title="${place.asks}"]`),
+        container.querySelector(`.world__global[title="${place.asks}"]`),
         `«${place.name}» does not say what it answers`,
       ).toBeTruthy();
     }
-    expect(container.querySelector(".places__item[data-here] .places__name")?.textContent).toBe("Board");
+
+    const heads = Array.from(container.querySelectorAll(".world__head")).map(
+      (one) => one.textContent,
+    );
+    expect(heads).toEqual(["workspaces", "outside every workspace"]);
     expect(container.querySelector(".body[hidden]"), "the board is not in view at rest").toBeNull();
+  });
+
+  /** With no tree open the board is still reachable, out here. */
+  test("WITH NO TREE OPEN THE BOARD IS STILL REACHABLE, out here", () => {
+    const { container } = render(<App />);
+    const outThere = container.querySelectorAll(".world__head")[1];
+    const board = screen.getByRole("button", { name: /^Board/ });
+
+    expect(board, "no way to reach the board").toBeTruthy();
+    expect(
+      outThere.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING,
+      "the board is not under «outside every workspace»",
+    ).toBeTruthy();
   });
 
   test("THE BAR SAYS WHERE YOU ARE: the place, then the entry inside it", () => {
