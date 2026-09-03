@@ -30,6 +30,7 @@ pub mod flow_cmd;
 pub mod inventory_cmd;
 pub mod models_cmd;
 pub mod profiles_cmd;
+pub mod publish_cmd;
 pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod run_cmd;

@@ -481,8 +481,19 @@ enters here as claims, not as praise.
    by default, pushes the home's flows there, and **refuses to publish a flow
    that carries a secret**: a value that looks like a key or a token, or an
    `env` block with a literal. The refusal names the step and the key.
-   *Proof:* a flow with `"OPENROUTER_API_KEY": "sk-…"` is refused; the same
-   flow with `{"$env": "OPENROUTER_API_KEY"}` is published.
+   *Where it landed:* `sailor flow publish [remote]`, in
+   `crates/sailor/src/publish_cmd.rs`. It takes the flows of the source that
+   is the person's own, refuses on the first secret before touching git, then
+   initialises the repository if there is none and commits what changed. The
+   remote is named once and remembered by git as `origin`, so a later
+   publication needs no argument; a second, different remote is refused
+   rather than silently splitting the history. Nothing here talks to a forge:
+   creating the repository, private, stays the person's gesture.
+   *Proof:* a flow with `"OPENROUTER_API_KEY": "sk-…"` is refused and nothing
+   is even initialised; the same flow with `{"$env": "OPENROUTER_API_KEY"}` is
+   published. Reverting the token test to a match anchored at the start of the
+   value, or letting the walk judge a string twice, turns the tests red — both
+   were real defects the tests caught.
 3. **Clippy gates what is dangerous and counts the rest.** `clippy::correctness`
    and `clippy::suspicious` are errors in CI; the other groups are a counted
    ratchet, as the comments are. The reviewer counted 173 warnings never
