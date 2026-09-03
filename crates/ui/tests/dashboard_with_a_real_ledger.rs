@@ -103,6 +103,7 @@ fn seed(dir: &Path) {
                 cli_id: "claude".into(),
                 profile_name: "test".into(),
                 home_dir: "/homes/claude/test".into(),
+                endpoint: None,
             },
             retry_chain: vec![],
             error_type: None,
