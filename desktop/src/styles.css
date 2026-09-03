@@ -481,10 +481,10 @@ button.is-primary {
 .places {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
   flex-shrink: 0;
-  width: 168px;
-  padding: var(--space-4) var(--space-3);
+  width: 146px;
+  padding: var(--space-2) var(--space-2);
   border-right: 1px solid var(--line);
   background: var(--paper);
   overflow-y: auto;
@@ -506,11 +506,13 @@ button.is-primary {
   padding: 0 var(--space-2) var(--space-2);
 }
 
+/* One row per place: a mark, a name, a count. A place is found by its shape
+   at the left margin, so the glyph keeps a column of its own. */
 .places__item {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   text-align: left;
   font-family: var(--font-prose);
@@ -519,8 +521,20 @@ button.is-primary {
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   cursor: pointer;
+}
+
+.places__glyph {
+  width: 15px;
+  flex: none;
+  text-align: center;
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.places__item[data-here] .places__glyph {
+  color: var(--focus);
 }
 
 /* Where you are: a bordered plate and a heavier word, not a tint. Rule 4
@@ -535,10 +549,11 @@ button.is-primary {
   color: var(--focus);
 }
 
-.places__row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+.places__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .places__count {
@@ -546,7 +561,7 @@ button.is-primary {
   font-size: var(--text-micro);
   letter-spacing: 0;
   color: var(--muted);
-  margin-left: var(--space-1);
+  margin-left: auto;
 }
 
 .places__asks {

@@ -59,15 +59,22 @@ function pretendShell(answers: Record<string, unknown | ((args?: Record<string, 
   };
 }
 
-describe("the four places", () => {
-  test("THE COLUMN HAS THREE GROUPS AND FOUR PLACES, each with its question, and opens on the board", () => {
+describe("the places", () => {
+  test("THE COLUMN HAS THREE GROUPS AND FIVE PLACES, a glyph each, and opens on the board", () => {
     const { container } = render(<App />);
     const headings = Array.from(container.querySelectorAll(".places__heading")).map((one) => one.textContent);
     expect(headings).toEqual(["work", "what happened", "itself"]);
     const names = Array.from(container.querySelectorAll(".places__name")).map((one) => one.textContent);
-    expect(names).toEqual(["Board", "Terminals", "Memory", "Sailor"]);
+    expect(names).toEqual(["Board", "Terminals", "Ledger", "Runs", "Sailor"]);
+    // A glyph each, and the question is the row's title rather than a second
+    // line: five sentences stacked are a wall of text, not a navigation.
+    const glyphs = Array.from(container.querySelectorAll(".places__glyph")).map((one) => one.textContent);
+    expect(glyphs).toEqual(PLACES.map((place) => place.glyph));
     for (const place of PLACES) {
-      expect(screen.getByText(place.asks)).toBeTruthy();
+      expect(
+        container.querySelector(`.places__item[title="${place.asks}"]`),
+        `«${place.name}» does not say what it answers`,
+      ).toBeTruthy();
     }
     expect(container.querySelector(".places__item[data-here] .places__name")?.textContent).toBe("Board");
     expect(container.querySelector(".body[hidden]"), "the board is not in view at rest").toBeNull();
@@ -78,16 +85,18 @@ describe("the four places", () => {
     const crumbs = () => Array.from(container.querySelectorAll(".topbar__crumb")).map((one) => one.textContent);
     expect(crumbs()).toEqual(["Board"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Memory/ }));
-    expect(crumbs()).toEqual(["Memory", "Runs"]);
+    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
+    expect(crumbs()).toEqual(["Runs", "Runs"]);
     // The terminals stay mounted, hidden, with a column of their own: only
     // the section in view counts.
     const shown = ".section:not([hidden]) ";
     const entries = Array.from(container.querySelectorAll(`${shown}.subrail__name`)).map((one) => one.textContent);
-    expect(entries).toEqual(["Runs", "Ledger", "Spend and quota", "Faults"]);
+    expect(entries).toEqual(["Runs", "Spend and quota", "Faults"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ledger/ }));
-    expect(crumbs()).toEqual(["Memory", "Ledger"]);
+    // The ledger is a place of its own: it is a database, and buried under
+    // another question nobody found it.
+    fireEvent.click(screen.getByRole("button", { name: /Ledger/ }));
+    expect(crumbs()).toEqual(["Ledger"]);
 
     fireEvent.click(screen.getByRole("button", { name: /^Sailor/ }));
     expect(crumbs()).toEqual(["Sailor", "What it keeps"]);
