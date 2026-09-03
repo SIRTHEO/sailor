@@ -167,17 +167,16 @@ fn parse_ask(input: &Value) -> Result<Ask, ActionError> {
             format!("unknown question `{name}`. The possible questions are: {KNOWN_ASKS}"),
         )
     })?;
-    if let Some(unexpected) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
-        return Err(ActionError::new(
-            "invalid_input",
-            format!(
-                "la domanda `{name}` non conosce il campo `{unexpected}`. \
-                 Conosce: {}",
-                allowed.join(", ")
-            ),
-        ));
-    }
-    let ask: Ask = serde_json::from_value(input.clone())
+    // **THE TYPO IS CAUGHT AT CHECK TIME, WHERE THE TEXT IS A PERSON'S.** Here
+    // the input is also the output of the step before, where foreign fields are
+    // the norm: refusing them made this node unusable after any dependency, and
+    // the contract on `Action::unknown_fields` says so in as many words.
+    let pruned: serde_json::Map<String, Value> = object
+        .iter()
+        .filter(|(key, _)| allowed.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    let ask: Ask = serde_json::from_value(Value::Object(pruned))
         .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
     // La finestra si controlla qui, con il resto della domanda, e non al
     // momento di leggere: un limite assurdo è un errore di chi ha scritto il
@@ -442,6 +441,26 @@ fn unreadable(error: ledger::LedgerError) -> ActionError {
 }
 
 impl Action for HistoryAskAction {
+    /// What a hand-written `with` says that this question does not know: a
+    /// `step-id` for `step_id` would otherwise be answered about every step.
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        let Some(object) = declared.as_object() else {
+            return Vec::new();
+        };
+        let Some(allowed) = object
+            .get("ask")
+            .and_then(Value::as_str)
+            .and_then(allowed_fields)
+        else {
+            return Vec::new();
+        };
+        object
+            .keys()
+            .filter(|key| !allowed.contains(&key.as_str()))
+            .cloned()
+            .collect()
+    }
+
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         // La domanda si valida **prima** di guardare il deposito: un campo
         // sbagliato è sbagliato su qualunque macchina, e scoprirlo solo dove il
@@ -631,29 +650,35 @@ mod tests {
         assert_eq!(quiet["runs_considered"], json!(1));
     }
 
-    /// Un campo che la domanda non conosce si rifiuta, dicendo quale.
-    ///
-    /// Cade se il controllo dei campi ignoti sparisce: `step-id` verrebbe
-    /// ignorato, `step_id` mancherebbe, e la domanda risponderebbe su tutti i
-    /// passi insieme — un numero plausibile e sbagliato.
+    /// The typo is named where the text is a person's: `step-id` for `step_id`
+    /// would be answered about every step at once — a plausible wrong number.
+    /// At run time it is not refused: the input is also the output of the step
+    /// before, and refusing a field somebody else wrote made this node
+    /// unusable after any dependency.
     #[test]
-    fn an_unknown_field_is_refused_by_name() {
+    fn a_typo_in_the_written_question_is_named_before_the_run() {
         let action = HistoryAskAction::new(None);
-        let mut shared = SharedState::new();
+        let written = json!({"ask": "step_failures", "step_id": "compile", "step-id": "compile"});
 
-        let error = action
+        assert_eq!(action.unknown_fields(&written), vec!["step-id".to_owned()]);
+        assert!(
+            action
+                .unknown_fields(&json!({"ask": "step_failures", "step_id": "compile"}))
+                .is_empty(),
+            "a question written right accuses nobody"
+        );
+
+        let mut shared = SharedState::new();
+        let carried = action
             .execute(
-                &json!({"ask": "step_failures", "step_id": "compile", "step-id": "compile"}),
+                &json!({"ask": "last_run", "flow": "a-flow", "text": "from the step before"}),
                 &mut shared,
             )
-            .expect_err("un campo ignoto non si ignora");
-
-        assert_eq!(error.class, "invalid_input");
-        assert!(
-            error.said.contains("step-id"),
-            "va nominato: {}",
-            error.said
-        );
+            .expect("a field from the step before is not a typo of ours");
+        let ActionOutcome::Went(answer) = carried else {
+            panic!("a question always answers")
+        };
+        assert_eq!(answer["ask"], json!("last_run"), "and the question stays the one asked");
     }
 
     /// Una domanda che nessuno ha previsto si rifiuta dicendo quali esistono.

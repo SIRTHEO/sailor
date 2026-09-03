@@ -65,6 +65,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "sweep-the-tree",
         include_str!("../system/sweep-the-tree.flow.json"),
     ),
+    // What follows a fault is a check, and nobody writes it while repairing:
+    // this asks the ledger how a run broke and leaves the line in the register.
+    (
+        "write-down-what-broke",
+        include_str!("../system/write-down-what-broke.flow.json"),
+    ),
 ];
 
 /// A place where flows are looked for, with the name a reader sees.
