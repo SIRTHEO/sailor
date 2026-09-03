@@ -356,7 +356,16 @@ Starting point, so the mandate builds on it instead of beside it.
    the last broken run of every flow due today and writes the fault with the
    check that would have caught it; a fault already present is not written
    twice.
-   *Proof:* two runs of the flow on the same broken run leave one fault.
+   *Where it landed:* the shipped flow `write-down-what-broke`. It asks the
+   ledger how the named flow's last closed run went, reads the faults already
+   open, and has an engine write the line — what happened, how it showed, and
+   the check that would have caught it, which the register refuses a fault
+   without. The engine also answers whether the register already holds this
+   defect, and a condition on that answer decides whether the recording step
+   opens: the engine that writes never decides whether its line lands.
+   *Proof:* with the engine answering «already written» the recording step
+   never opens and the run still closes; with the opposite answer the same
+   graph writes, and the register gives it a number.
 4. **This terminal is the watch.** A flow `watch-the-crew` reads
    `work_survey`, the tracked sessions and the open runs, and prints who does
    what, where, since when, and what died; the Claude Code session under the

@@ -10,6 +10,7 @@ const FLOWS_THAT_MAY_BE_TRACKED: &[&str] = &[
     "crates/flow/system/migrate-to-sailor.flow.json",
     "crates/flow/system/sweep-the-tree.flow.json",
     "crates/flow/system/what-this-machine-has.flow.json",
+    "crates/flow/system/write-down-what-broke.flow.json",
     "flows/passa-il-testimone.flow.json",
 ];
 

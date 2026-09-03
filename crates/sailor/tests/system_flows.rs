@@ -21,27 +21,12 @@ use flow::{
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Lo stesso vocabolario che compone `sailor flow`, meno i nodi del deposito.
-///
-/// I due nodi di `store` nascono da un deposito aperto, e aprire un deposito
-/// **crea file sul disco**: una prova che li volesse dovrebbe scrivere. Nessuno
-/// dei flussi spediti li nomina, e la prova qui sotto è esattamente ciò che
-/// impedisce che qualcuno ce li metta senza accorgersene.
+/// The registry the product builds, not one rebuilt here: rebuilt, it held
+/// neither `history_ask` nor the fault nodes, so a shipped flow naming one
+/// passed a check the real program fails. Without a ledger, which is a machine
+/// with no store: the nodes that need one register anyway and say so.
 fn product_registry() -> ActionRegistry {
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    toolbox::register_default(&mut registry);
-    toolbox::register_needs(&mut registry);
-    trigger::register_default(&mut registry);
-    registry.register(
-        actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(toolbox::Tools::current()),
-    );
-    registry.register(
-        actions::handoff::HANDED_TO_AGENT_ACTION,
-        actions::handoff::HandoffAction::new(),
-    );
-    registry
+    registry::default_registry(None, None)
 }
 
 /// Un orologio finto che avanza di uno a ogni domanda. Il contatore è atomico
