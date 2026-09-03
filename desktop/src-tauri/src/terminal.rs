@@ -214,13 +214,12 @@ fn follow(app: &AppHandle, id: &str) {
                     );
                 }
                 Frame::Ended { status } => {
-                    let _ = app.emit(
-                        CLOSED_EVENT,
-                        ClosedEvent {
-                            id: id.clone(),
-                            status,
-                        },
-                    );
+                    let closed = ClosedEvent {
+                        id: id.clone(),
+                        status,
+                    };
+                    let _ = app.emit(CLOSED_EVENT, &closed);
+                    crate::events::emit(&app, "terminal", &closed);
                 }
             });
         }

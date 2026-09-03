@@ -216,7 +216,8 @@ impl Runs {
         };
         // Fuori dal lucchetto: `emit` attraversa il ponte verso la finestra, e
         // tenerlo preso mentre lo fa bloccherebbe il thread della corsa.
-        let _ = app.emit(RUN_EVENT, event);
+        let _ = app.emit(RUN_EVENT, &event);
+        crate::events::emit(app, "run", &event);
     }
 
     fn set_status(&self, run_id: &str, status: &str) {

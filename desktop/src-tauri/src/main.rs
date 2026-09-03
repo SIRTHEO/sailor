@@ -21,6 +21,7 @@ mod beat;
 mod board;
 mod changes;
 mod engines;
+mod events;
 mod faults;
 mod flows;
 mod handoff;

@@ -255,8 +255,14 @@ Starting point, so the mandate builds on it instead of beside it.
    window, and from a bare `sailor flow run` in a shell; the three runs are
    three rows in `runs`, each with its `started_by` naming the seat, and the
    window's Now shows all three while they run.
-   *Proof:* a test on `started_by` for the three values; the gesture is
-   Theo's (see the end).
+   *Where it landed:* `started_by` is written by the system: «sailor flow,
+   in a Sailor terminal» when the pane's mark (`SAILOR_TERMINAL`) is in the
+   environment, «sailor flow, in a shell» otherwise, and the window's own
+   origin from the button or the beat. An agent's session under the hooks is
+   not told apart from the shell yet: the hooks leave no mark in the
+   agent's environment.
+   *Proof:* a test on `started_by` for the two command-line values; the
+   three runs from the three seats are Theo's gesture (see the end).
 3. **Two engines, two trees.** Each engine of the parallel front works in its
    own git worktree of the project, named after the run and the step, and the
    verify step reads both trees. No two engines share a tree.
@@ -409,8 +415,15 @@ Starting point, so the mandate builds on it instead of beside it.
    the build feed one `sailor_event` channel; the bar consumes only that
    channel; Now is a view of the same events. A poll that fails is shown red
    with its reason.
-   *Proof:* a test that the bar subscribes to one channel and asks nothing
-   else; the mute state on a refused poll stays.
+   *Where it landed:* the shell's `sailor_event` channel (`events.rs`),
+   fed by runs, the beat, the build and a terminal that closed; the bar has
+   no timer left: it asks once and asks again at every fact on that
+   channel, and a refused ask is still shown red with its reason. The
+   older channels stay for the views that listen to them; Now is not yet
+   a view of the same events.
+   *Proof:* a test that the bar subscribes to `sailor_event` and to no
+   other channel, and asks again when a fact arrives; the mute state on a
+   refused ask stays.
 4. **Theo is asked only for choices.** Every question the system puts to a
    person is a `HandToHuman` step with closed options and the facts each
    option rests on; free-text questions do not exist in flows. The bar
