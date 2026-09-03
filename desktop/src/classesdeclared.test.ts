@@ -116,9 +116,9 @@ describe("the sheet and the screens", () => {
     expect(inSheet.size, "no class parsed out of the stylesheet").toBeGreaterThan(50);
     expect(inCode.size, "no component file parsed").toBeGreaterThan(3);
     expect(
-      (await utilities(["flex", "justify-strat"])),
+      (await utilities(["flex", "bg-foreground", "justify-strat"])),
       "the compiler answers yes to everything, or to nothing",
-    ).toEqual(new Set(["flex"]));
+    ).toEqual(new Set(["flex", "bg-foreground"]));
 
     const orphans: string[] = [];
     for (const [path, names] of inCode) {
