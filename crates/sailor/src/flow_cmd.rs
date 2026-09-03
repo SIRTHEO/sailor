@@ -4720,6 +4720,7 @@ mod tests {
             cli_id: "codex".to_owned(),
             profile_name: "lavoro".to_owned(),
             home_dir: "/case/codex/lavoro".into(),
+            endpoint: None,
         };
         let mut again = in_force.clone();
         again.call_id = "call-due".to_owned();
@@ -5698,6 +5699,7 @@ mod tests {
                 name: "prove".to_owned(),
                 cli_id: "codex".to_owned(),
                 home_dir: home.to_path_buf(),
+                endpoint: None,
             }],
             active: [("codex".to_owned(), "prove".to_owned())]
                 .into_iter()

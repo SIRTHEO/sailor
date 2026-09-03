@@ -174,9 +174,19 @@ Starting point, so the mandate builds on it instead of beside it.
    providers of its list are candidates to verify one by one, never a
    catalogue, and the ones that log in through another product's
    subscription are out.
-   *Proof:* a profile with an endpoint makes the composed command line carry
-   the variable and the ledger row carry the endpoint; a profile whose
-   endpoint is not declared native is refused by `profiles` with the reason.
+   *Where it landed:* `Profile.endpoint` (`url`, `key_var`, `protocol`; the
+   key itself never in the store), `sailor profiles endpoint <cli> <name>
+   <url> <key-var> <protocol>`, the `endpoint` block of the profiles' table
+   (`ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` for Claude Code,
+   `OPENAI_BASE_URL`/`OPENAI_API_KEY` for Codex), `endpoint_environment`
+   refusing a foreign protocol, a missing key or a line without a variable;
+   `candidates` refuses the engine with that reason; `ProfileInForce.endpoint`
+   on the ledger row. Still to do: the terminal's environment does not carry
+   the endpoint yet (only flow steps do), and the model that answered is read
+   only where the descriptor's `usage` block reads it.
+   *Proof:* a profile with an endpoint makes the composed environment carry
+   the two variables and the identity carry the endpoint; a profile whose
+   endpoint speaks another protocol is refused naming both protocols.
 10. **free-claude-code is connected as a tool, not built in.** Theo, on
     02/09 at night: *let us not exclude it a priori; they are AIs that can
     help, and for the Sailor project I do not mind handing them data.* The

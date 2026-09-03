@@ -106,6 +106,7 @@ fn sample_all(ledger: &Ledger) {
                 cli_id: "codex".to_owned(),
                 profile_name: "lavoro".to_owned(),
                 home_dir: PathBuf::from("/case/codex/lavoro"),
+                endpoint: None,
             },
             retry_chain: vec!["call-0".to_owned()],
             error_type: Some("rate_limit".to_owned()),
