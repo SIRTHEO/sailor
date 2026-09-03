@@ -120,7 +120,7 @@ describe("il foglio si legge tutto", () => {
     const root = sheet.rules.find((rule) => rule.selector === ":root");
     // Raw, not resolved: an alias follows its target under the dark ground.
     const lightColours = (root?.declarations ?? []).filter(([, value]) => parseColor(value) !== null).map(([name]) => name);
-    const dark = sheet.darkRoot ?? [];
+    const dark = sheet.otherRoot ?? [];
     const darkNames = dark.map(([name]) => name);
     expect(lightColours.length).toBeGreaterThan(30);
     expect(lightColours.filter((name) => !darkNames.includes(name))).toEqual([]);
