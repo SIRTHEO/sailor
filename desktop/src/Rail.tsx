@@ -4,6 +4,8 @@
 // and a count — not a sentence each: five sentences stacked, all the same
 // weight, are a wall of text. What a place answers belongs to the place.
 
+import { WorkspaceSwitcher } from "./Workspace";
+
 export type Section = "board" | "terminals" | "ledger" | "memory" | "sailor";
 
 export interface Place {
@@ -42,13 +44,20 @@ export function Rail({
   here,
   onGo,
   counts,
+  native,
+  onMoved,
 }: {
   here: Section;
   onGo: (section: Section) => void;
   counts: Partial<Record<Section, number>>;
+  native: boolean;
+  /** Called once the window has moved into another workspace. */
+  onMoved: () => void;
 }) {
   return (
     <nav className="places" aria-label="places">
+      {/* The workspace is the spine, not a tab three places in. */}
+      <WorkspaceSwitcher native={native} onMoved={onMoved} />
       {GROUPS.map((group) => (
         <div className="places__group" key={group}>
           <div className="places__heading">{group}</div>
