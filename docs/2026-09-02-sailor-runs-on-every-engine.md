@@ -417,6 +417,11 @@ Starting point, so the mandate builds on it instead of beside it.
    counts the choices waiting; Now lists them first; the same list is
    printed by `sailor step list` for a terminal. What is not a choice is done
    and reported.
+   *Where it landed:* `options` on a handed step (`label`, `facts`), printed
+   in the brief; `flow check` names the handed steps without a closed
+   choice and refuses the flow; the shipped sweep's handover offers
+   «applied» and «refused». Not yet: the bar's count, Now's list, and a
+   `sailor step list` (the command does not exist).
    *Proof:* a handed step without options is refused by `flow check`.
 5. **The six gaps of the judges are closed or deprecated with a reason.**
    Bar carries three facts only; Sailor › models is a catalogue with «in use»;
