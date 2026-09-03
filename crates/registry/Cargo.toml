@@ -20,6 +20,9 @@ actions = { path = "../actions" }
 flow = { path = "../flow" }
 faults = { path = "../faults" }
 ledger = { path = "../ledger" }
+# Dove stanno i terminali che Sailor segue: qui si prende solo il percorso, e
+# lo sa dire un posto solo.
+sessions = { path = "../sessions" }
 toolbox = { path = "../toolbox" }
 trigger = { path = "../trigger" }
 # The relay's nodes. A crate of their own because they reach a live terminal,

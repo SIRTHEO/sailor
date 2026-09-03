@@ -108,6 +108,11 @@ pub fn default_registry(
     // the two above: `flow check` must be able to say the step names a real
     // action without opening anything.
     actions::faults::register_faults(&mut registry, faults::Faults::default_path().ok());
+    // The terminals Sailor follows: only the path is taken here.
+    actions::terminals::register_terminals(
+        &mut registry,
+        sessions::Sessions::default_path().ok(),
+    );
     // A flow that runs another one. Registered **even without a ledger**, for
     // the reason declared above: `flow check` must be able to say a `subflow`
     // step names a real action without opening anything. Running without one
@@ -117,12 +122,11 @@ pub fn default_registry(
         flow::subflow::SUBFLOW_ACTION,
         flow::subflow::SubflowAction::new(Arc::new(LedgerHost::new(ledger.clone(), watcher))),
     );
+    // Who is working on what, because an **agent** must be able to ask. The
+    // reading half goes in without a store; the two that write stay out.
+    actions::presence::register_presence(&mut registry, ledger.clone());
     if let Some(ledger) = ledger {
-        actions::store::register_store(&mut registry, ledger.clone());
-        // Who is working on what. Here and not only in the window because an
-        // **agent** must be able to ask: registered, it is a step any flow can
-        // write.
-        actions::presence::register_presence(&mut registry, ledger);
+        actions::store::register_store(&mut registry, ledger);
     }
     registry
 }
@@ -151,6 +155,8 @@ mod tests {
             // The window has always offered the `subflow` node; the engine did
             // not know it, so a flow drawn with it was refused as unknown.
             flow::subflow::SUBFLOW_ACTION,
+            // The watch reads the terminals too, store or no store.
+            actions::terminals::TERMINAL_SURVEY_ACTION,
         ] {
             assert!(
                 registry.get(wanted).is_some(),

@@ -113,6 +113,10 @@ enum Ask {
         #[serde(default)]
         include_said: Option<bool>,
     },
+    /// Which runs are still open: a recorded intent and no outcome, or a step
+    /// waiting for somebody. The two are kept apart because the repair is not
+    /// the same — one is resumed, the other is taken up by a person.
+    OpenRuns {},
     /// Quanto ci mette di solito questo passo.
     StepDuration {
         step_id: String,
@@ -135,12 +139,13 @@ fn allowed_fields(ask: &str) -> Option<&'static [&'static str]> {
         "step_failures" => Some(&["ask", "step_id", "flow", "within_last_runs"]),
         "failure_classes" => Some(&["ask", "flow", "within_last_runs"]),
         "last_run" => Some(&["ask", "flow", "include_said"]),
+        "open_runs" => Some(&["ask"]),
         "step_duration" => Some(&["ask", "step_id", "flow", "within_last_runs"]),
         _ => None,
     }
 }
 
-const KNOWN_ASKS: &str = "step_failures, failure_classes, last_run, step_duration";
+const KNOWN_ASKS: &str = "step_failures, failure_classes, last_run, open_runs, step_duration";
 
 fn parse_ask(input: &Value) -> Result<Ask, ActionError> {
     let object = input.as_object().ok_or_else(|| {
@@ -196,8 +201,9 @@ fn declared_window(ask: &Ask) -> Option<u32> {
         | Ask::StepDuration {
             within_last_runs, ..
         } => *within_last_runs,
-        // `last_run` guarda una corsa sola per definizione.
-        Ask::LastRun { .. } => None,
+        // `last_run` looks at one run by definition, and what is still open is
+        // open now: neither has a window to declare.
+        Ask::LastRun { .. } | Ask::OpenRuns {} => None,
     }
 }
 
@@ -238,6 +244,7 @@ fn ask_name(ask: &Ask) -> &'static str {
         Ask::StepFailures { .. } => "step_failures",
         Ask::FailureClasses { .. } => "failure_classes",
         Ask::LastRun { .. } => "last_run",
+        Ask::OpenRuns {} => "open_runs",
         Ask::StepDuration { .. } => "step_duration",
     }
 }
@@ -354,6 +361,33 @@ impl HistoryAskAction {
                     json!({
                         "failures": classes.iter().map(|c| c.failures).sum::<i64>(),
                         "classes": classes_to_json(&classes),
+                    }),
+                ))
+            }
+            Ask::OpenRuns {} => {
+                let halfway = ledger.unfinished_runs().map_err(unreadable)?;
+                let waiting = ledger.waiting_runs().map_err(unreadable)?;
+                let considered = ledger.recorded_runs().map_err(unreadable)?;
+                Ok((
+                    considered,
+                    json!({
+                        "halfway": halfway
+                            .iter()
+                            .map(|run| json!({
+                                "run_id": run.run_id,
+                                "flow": run.entity,
+                                "open_steps": run.open_steps,
+                                "oldest_started_at": run.oldest_started_at,
+                            }))
+                            .collect::<Vec<Value>>(),
+                        "waiting": waiting
+                            .iter()
+                            .map(|run| json!({
+                                "run_id": run.run_id,
+                                "flow": run.entity,
+                                "waiting_since": run.waiting_since,
+                            }))
+                            .collect::<Vec<Value>>(),
                     }),
                 ))
             }
@@ -587,6 +621,78 @@ mod tests {
             panic!("una lettura locale non aspetta nessuno");
         };
         value
+    }
+
+    /// What is open now, kept apart by what closing it takes: a run left
+    /// halfway is resumed, a run waiting is taken up by a person. One list
+    /// would make the count right and the next gesture unknown.
+    #[test]
+    fn what_is_still_open_says_which_runs_are_resumed_and_which_are_waited_on() {
+        let (ledger, _kept) = store("aperte");
+        a_run(&ledger, "finita", "un-flusso", 10, Some(20));
+        a_step(&ledger, "finita", "passo", 10, Outcome::Went, None, 20);
+        a_run(&ledger, "a-meta", "un-flusso", 30, None);
+        a_step_left_open(&ledger, "a-meta", "passo", 30);
+        a_waiting_run(&ledger, "in-attesa", "un-altro", 40);
+
+        let action = HistoryAskAction::new(Some(ledger));
+        let value = went(&action, json!({"ask": "open_runs"}));
+
+        assert_eq!(value["deposit"], json!("present"));
+        let halfway: Vec<&str> = value["answer"]["halfway"]
+            .as_array()
+            .expect("the runs left halfway")
+            .iter()
+            .map(|run| run["run_id"].as_str().expect("a run id"))
+            .collect();
+        assert_eq!(halfway, vec!["a-meta"], "a closed run is not open, {value}");
+        let waiting: Vec<&str> = value["answer"]["waiting"]
+            .as_array()
+            .expect("the runs waiting")
+            .iter()
+            .map(|run| run["run_id"].as_str().expect("a run id"))
+            .collect();
+        assert_eq!(waiting, vec!["in-attesa"], "{value}");
+        assert!(
+            !serde_json::to_string(&value).expect("it serialises").contains(SECRET),
+            "what passed through the flow does not come back out: {value}"
+        );
+    }
+
+    /// A run whose status is what the engine writes when it hands over: the
+    /// store finds it by that word, not by an open step.
+    fn a_waiting_run(ledger: &Ledger, run_id: &str, flow: &str, started_at: i64) {
+        ledger
+            .record_run(&RunRecord {
+                run_id: run_id.to_owned(),
+                kind: "flow".to_owned(),
+                entity: flow.to_owned(),
+                parent_run_id: None,
+                started_by: "prova".to_owned(),
+                status: "waiting".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at,
+                ended_at: None,
+            })
+            .expect("registrare la corsa in attesa");
+    }
+
+    /// A step whose intent is recorded and whose outcome never was.
+    fn a_step_left_open(ledger: &Ledger, run_id: &str, step_id: &str, started_at: i64) {
+        let record = StepRecord::started(
+            run_id,
+            step_id,
+            1,
+            1,
+            vec![],
+            json!({"prompt": SECRET}),
+            vec![],
+            started_at,
+        );
+        ledger
+            .append_step_started(&record)
+            .expect("registrare l'intenzione");
     }
 
     /// Senza deposito la domanda riceve comunque una risposta, e la risposta
