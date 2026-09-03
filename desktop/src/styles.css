@@ -6237,3 +6237,13 @@ tr[data-followable]:hover {
   color: var(--ink);
   border-color: var(--line);
 }
+
+/* «This tree» or «everywhere»: a view is a filter, and the filter says which
+   one you are looking at rather than hiding in a menu. */
+.now__scope {
+  width: auto;
+  margin: 0 0 0 auto;
+  padding: 2px var(--space-2);
+  font-size: var(--text-micro);
+  font-family: var(--font-data);
+}

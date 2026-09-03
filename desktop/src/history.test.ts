@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { lastedOf, outcomeOf, whenOf } from "./History";
+import { lastedOf, outcomeOf, runsIn, whenOf } from "./History";
 import { countByFamily } from "./Installed";
 import type { Execution, InstalledEntry } from "./engine";
 
@@ -17,6 +17,7 @@ function run(over: Partial<Execution>): Execution {
     run_id: "r",
     kind: "flow",
     entity: "sviluppa-sailor",
+    worktree: null,
     status: "succeeded",
     started_at: 0,
     ended_at: 1,
@@ -109,5 +110,27 @@ describe("countByFamily", () => {
       { kind: "hook", name: "c", description: "", origin: "casa", path: "/c", reach: { state: "active" }, by_model: false },
     ];
     expect(countByFamily(entries)).toEqual({ skill: 2, agent: 0, command: 0, rule: 0, hook: 1 });
+  });
+});
+
+/**
+ * **EVERY TREE'S RUNS IN ONE LIST IS A LIST ABOUT NOBODY.** `runs.worktree` is
+ * what makes the narrower question askable at all; a run recorded before that
+ * column has no answer, and must never be counted into a tree it might not
+ * belong to.
+ */
+describe("the runs of one tree", () => {
+  const mine = run({ run_id: "mine", worktree: "/t/un-progetto/un-albero" });
+  const theirs = run({ run_id: "theirs", worktree: "/t/un-progetto/un-altro" });
+  const older = run({ run_id: "older", worktree: null });
+
+  test("a tree gets its own, and nothing it cannot claim", () => {
+    expect(runsIn([mine, theirs, older], "/t/un-progetto/un-albero").map((one) => one.run_id)).toEqual([
+      "mine",
+    ]);
+  });
+
+  test("and asking about no tree asks about all of them", () => {
+    expect(runsIn([mine, theirs, older], null)).toHaveLength(3);
   });
 });
