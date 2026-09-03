@@ -1,9 +1,8 @@
 //! Writing the register out replaces the rows and nothing else.
 //!
-//! **THE PROSE AROUND THE TABLE IS THE DOCUMENT.** Writing the rendered rows
-//! over the file dropped a preamble saying what the register is for and a
-//! closing section reading it whole — 164 lines — and the command reported
-//! success. That happened on 03/09, once, before this test existed.
+//! Writing the rendered rows over the file dropped a preamble and a closing
+//! section — 164 lines — and the command reported success. That happened on
+//! 03/09, once, before this test existed.
 
 use faults::{render_into, Fault};
 
