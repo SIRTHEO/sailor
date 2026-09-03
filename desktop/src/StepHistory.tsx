@@ -3,34 +3,18 @@ import { stepHistory, type StepPassage } from "./engine";
 import { OUTCOME_LABEL, whyFailed } from "./RunConsole";
 
 /**
- * Cosa è entrato in questo nodo, nel tempo.
+ * What came into this node, over time. The run view tells today's call; this
+ * tells all the others — when, where the run started, with what mandate, and
+ * what entered **this** step that time.
  *
- * ## LA DOMANDA A CUI RISPONDE
+ * **THE SYSTEM WRITES IT, NOT AN AGENT.** The engine records a step's input the
+ * instant it opens it, and `crates/ledger` is append-only. This panel reads.
  *
- * Un nodo, nella vita di un sistema, riceve molte chiamate: da inneschi
- * diversi, da corse diverse, in giorni diversi. La vista dell'esecuzione
- * racconta quella di adesso; questa racconta tutte le altre — quando è
- * successo, da dove era partita la corsa, con quale consegna, e cosa è entrato
- * in **questo** passo quella volta.
- *
- * ## CHI LO SCRIVE È IL SISTEMA, NON UN AGENTE
- *
- * Niente di quello che si legge qui è il racconto di un modello. Il motore
- * registra l'ingresso di ogni passo nell'istante in cui lo apre, e la corsa
- * porta scritta la propria provenienza da prima che qualunque passo giri:
- * `crates/ledger` è append-only, e nessuno può riscrivere quello che c'è.
- * Questo pannello legge, non aggiunge.
- *
- * ## IL CONFINE: LA PROVENIENZA SÌ, IL CONTENUTO DI UN TERMINALE NO
- *
- * Registrare da dove arriva una chiamata è una cosa. Registrare tutto quello
- * che passa in una sessione di terminale è un'altra: lì dentro passano chiavi,
- * gettoni e percorsi privati, e nessuno se lo aspetta da un pannello che
- * mostra un elenco di date. **Questa finestra non registra niente di nuovo**:
- * mostra quello che il deposito già conserva perché serve a eseguire — gli
- * ingressi dichiarati di un passo. Se un giorno si vorrà tenere anche il
- * contenuto di ciò che scorre in un terminale, dovrà essere una scelta
- * esplicita, visibile, e spenta di partenza.
+ * **THE BOUNDARY: WHERE A CALL CAME FROM, YES — WHAT RAN IN A TERMINAL, NO.**
+ * Keys, tokens and private paths pass through a session, and nobody expects
+ * that from a panel showing a list of dates. This window records nothing new:
+ * it shows what the store already keeps in order to execute. Keeping terminal
+ * content would have to be an explicit choice, visible, and off by default.
  */
 
 function when(seconds: number): string {

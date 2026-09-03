@@ -1,26 +1,16 @@
-// La prima schermata: cosa sta succedendo adesso.
+// The first screen: what is happening now.
 //
-// PERCHÉ NON UN ELENCO DI FLUSSI. Fino a stasera la finestra si apriva sulla
-// tela, cioè sull'inventario di ciò che *si potrebbe* far girare. È la scuola
-// vecchia — n8n, Zapier, Dify aprono così — e ha un difetto preciso: chi
-// riapre la finestra dopo un'ora non ha modo di sapere se qualcosa sta ancora
-// lavorando, se qualcosa si è rotto, o se qualcosa aspetta lui. Deve andarlo a
-// cercare. La generazione nuova di questi strumenti (Temporal, Trigger.dev,
-// Inngest, GitHub Actions, Buildkite) apre invece sulle corse, e questa
-// schermata sta di là.
+// NOT AN INVENTORY OF FLOWS. Opening on the canvas answers «what could I run»,
+// while whoever reopens the window is asking whether something is still
+// working, something broke, or something is waiting on them.
 //
-// QUELLO CHE NESSUNO FA, E CHE QUI SI FA. Nei quindici prodotti confrontati il
-// 31/08/2026, «cosa sta girando adesso» si ottiene sempre **filtrando per
-// stato una lista storica**: nessuno ha una vista delle sole corse vive. Qui la
-// domanda è diretta — `open_runs` chiede al deposito ciò che è aperto — e non
-// c'è una lista storica da filtrare, perché non è quella la domanda.
+// The question is asked directly: `open_runs` asks the store what is open.
+// There is no historical list to filter, because that is not the question — in
+// fifteen products compared, every one of them filtered a history by status.
 //
-// «ASPETTA TE» È UNO STATO, NON UN PALLINO. È la lezione più cara della
-// ricognizione: Cursor mostra `1` nel badge mentre la barra laterale ne elenca
-// molti di più, e OpenHands usa lo stesso pallino verde lampeggiante per «sta
-// lavorando» e per «non ho mai iniziato». Qui l'attesa è un gruppo con un nome,
-// in cima, e la parola sta accanto alla tinta perché il divieto 5 della
-// direzione visiva non ammette che il colore porti da solo uno stato.
+// «WAITING ON YOU» IS A STATE, NOT A DOT. It is a named group, at the top, and
+// the word sits beside the tint: prohibition 5 does not let a colour carry a
+// state on its own.
 
 import { Fragment } from "react";
 import { useAsk, useClock } from "./ask";

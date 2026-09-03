@@ -12,7 +12,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser } from "playwright";
-import { PLACES } from "../src/Rail";
+import { PLACES } from "../src/places";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const URL = "http://localhost:5183/";
