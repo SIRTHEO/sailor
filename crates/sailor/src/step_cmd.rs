@@ -834,6 +834,7 @@ mod tests {
                 error: None,
                 started_at: 100,
                 ended_at: Some(150),
+                worktree: None,
             })
             .expect("registrare la corsa");
         hand_over(&ledger, step_id, deps);

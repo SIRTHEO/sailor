@@ -5,6 +5,8 @@
 //! the window displays. Fixing one of the two would have given two different
 //! numbers for the same run depending on who launched it.
 
+use std::path::Path;
+
 use flow::{Decision, Execution, FlowFile, SpendStop};
 use ledger::{Ledger, RunRecord};
 
@@ -140,6 +142,17 @@ pub fn record_child_run(
     write_run(ledger, flow, run, Some(parent_run_id.to_owned()))
 }
 
+/// The workspace a run is born in: the marker found walking up from where the
+/// process stands, which is what «where a run happened» means. `None` is an
+/// answer and not a gap — outside is a place.
+pub fn tree_of(here: &Path) -> Option<String> {
+    flow::workspace::find_root(here).map(|root| root.display().to_string())
+}
+
+fn where_the_process_stands() -> Option<String> {
+    tree_of(&std::env::current_dir().ok()?)
+}
+
 fn write_run(
     ledger: &Ledger,
     flow: &FlowFile,
@@ -161,6 +174,7 @@ fn write_run(
             error: run.error,
             started_at: run.started_at,
             ended_at: run.ended_at,
+            worktree: where_the_process_stands(),
         })
         .map_err(|error| format!("cannot record run {}: {error}", run.run_id))
 }

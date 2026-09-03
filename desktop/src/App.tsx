@@ -30,6 +30,8 @@ import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
 import { World, type FlowGroup } from "./World";
+import { ChangesScreen } from "./ChangesScreen";
+import type { Project } from "./workspaces";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -238,6 +240,8 @@ export default function App() {
   const [place, setPlace] = useState<Place>("board");
   const [memoryTab, setMemoryTab] = useState<MemoryTab>("runs");
   const [sailorTab, setSailorTab] = useState<SailorTab>("keeps");
+  /** The tree the window stands in, as the column reads it. */
+  const [standingIn, setStandingIn] = useState<Project | null>(null);
   const [terminalsTab, setTerminalsTab] = useState<TerminalsTab>("live");
   const [terminalCount, setTerminalCount] = useState(0);
   /** The terminals themselves: the column nests each under the tree it runs in. */
@@ -1343,6 +1347,7 @@ export default function App() {
         counts={{ board: flows.size, terminals: terminalCount }}
         terminals={openTerminals}
         onMoved={() => readFlows(() => true)}
+        onTree={setStandingIn}
         flowGroups={worldGroups}
         focusName={focusName}
         onFlow={(name) => {
@@ -1380,6 +1385,26 @@ export default function App() {
           onTab={setMemoryTab}
           onOpenRun={(runId) => setWatching(runId)}
         />
+      )}
+      {/* WHAT IS NOT SAVED YET IS THE TREE'S, so it hangs under the tree and
+          not under a terminal — three clicks in, which is where the two most
+          urgent things this product knows had ended up. */}
+      {place === "changes" && (
+        <div className="section">
+          <div className="section__body">
+            {standingIn === null ? (
+              <p className="world__mute">
+                No tree open: what changed is a question about one.
+              </p>
+            ) : (
+              <ChangesScreen
+                key={standingIn.root}
+                root={standingIn.root}
+                name={standingIn.name}
+              />
+            )}
+          </div>
+        </div>
       )}
       {place === "ledger" && (
         <div className="section">
