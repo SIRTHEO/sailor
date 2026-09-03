@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
 import { buildWords, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
@@ -199,6 +199,31 @@ describe("the bar's three facts", () => {
       render(<LiveChip native now={1000} />);
       await screen.findByText(/cannot ask what runs: .*no open_runs/);
       expect(screen.queryByText(/nothing running/)).toBeNull();
+    } finally {
+      shell.stop();
+    }
+  });
+
+  test("THE BAR LISTENS TO ONE CHANNEL AND NO TIMER: it asks again when the shell says something moved", async () => {
+    const shell = pretendShell({ open_runs: [], day_summary: { ledger_present: true, cost_micros: 0, unpriced: 0 } });
+    const channels: string[] = [];
+    const handlers: Array<(event: { payload: unknown }) => void> = [];
+    (window as unknown as { __TAURI__: { event: unknown } }).__TAURI__.event = {
+      listen: (channel: string, handler: (event: { payload: unknown }) => void) => {
+        channels.push(channel);
+        handlers.push(handler);
+        return Promise.resolve(() => {});
+      },
+    };
+    try {
+      render(<LiveChip native now={1000} />);
+      await screen.findByText("nothing running");
+      await waitFor(() => expect(channels.length).toBeGreaterThan(0));
+      expect(new Set(channels)).toEqual(new Set(["sailor_event"]));
+      const askedBefore = shell.calls.filter((call) => call.command === "open_runs").length;
+      // The shell says a run moved: every listener of the chip hears the one channel.
+      handlers.forEach((handler) => handler({ payload: { kind: "run", at: 1, payload: {} } }));
+      await waitFor(() => expect(shell.calls.filter((call) => call.command === "open_runs").length).toBe(askedBefore + 1));
     } finally {
       shell.stop();
     }

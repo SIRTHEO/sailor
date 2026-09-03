@@ -502,6 +502,32 @@ export async function listenToRuns(
   }
 }
 
+/** One fact of the shell, on the one channel every fact crosses. */
+export interface SailorEvent {
+  kind: string;
+  at: number;
+  payload: unknown;
+}
+
+/**
+ * Subscribes to the one channel. Outside the shell, or without «event.listen»,
+ * the reason comes back and the caller asks once instead of listening.
+ */
+export async function listenToSailorEvents(
+  handler: (event: SailorEvent) => void,
+): Promise<{ stop: Unlisten } | { why: string }> {
+  const tauri = (window as unknown as { __TAURI__?: TauriGlobal & { event?: EventGlobal } }).__TAURI__;
+  if (!tauri) return { why: "outside the native shell: no channel of events" };
+  const listen = tauri.event?.listen;
+  if (!listen) return { why: "the shell exposes no «event.listen»" };
+  try {
+    const stop = await listen<SailorEvent>("sailor_event", (event) => handler(event.payload));
+    return { stop };
+  } catch (error) {
+    return { why: String(error) };
+  }
+}
+
 // ── cosa è entrato in un nodo, nel tempo ─────────────────────────────────
 
 /**

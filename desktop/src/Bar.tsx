@@ -5,23 +5,31 @@
 // said so only on the board; leaving it left the run out of sight.
 
 import { useEffect, useState } from "react";
-import { liveStatus, openRuns, todaySummary, type DaySummary, type LiveStatus, type OpenRun } from "./engine";
+import {
+  listenToSailorEvents,
+  liveStatus,
+  openRuns,
+  todaySummary,
+  type DaySummary,
+  type LiveStatus,
+  type OpenRun,
+} from "./engine";
 import { rows as profileRows, type Row as ProfileRow } from "./profiles";
 
-const RUNS_EVERY_MS = 4000;
-const SPEND_EVERY_MS = 30000;
-const WHO_EVERY_MS = 60000;
-const BUILD_EVERY_MS = 2000;
-
 /**
- * What a polled question has answered so far. **A REFUSAL IS AN ANSWER**, and
- * it is kept: a chip that read a failed poll as «nothing» would say «nothing
+ * What a question has answered so far. **A REFUSAL IS AN ANSWER**, and it is
+ * kept: a chip that read a failed ask as «nothing» would say «nothing
  * running» about an engine that is not answering — fault 30 in the bar.
  */
 export type Answer<T> = { state: "answered"; value: T } | { state: "mute"; why: string } | null;
 
-/** Polls a question on a cadence; `null` before the first answer or outside the shell. */
-function useEvery<T>(native: boolean, ask: () => Promise<T>, every: number): Answer<T> {
+/**
+ * Asks once, then again at every fact on the one channel. No timer: what the
+ * bar shows moves when the shell says something moved. Where the channel
+ * cannot be listened to, the first answer stays, with nothing pretending to
+ * be fresher.
+ */
+function useOnEvents<T>(native: boolean, ask: () => Promise<T>): Answer<T> {
   const [answer, setAnswer] = useState<Answer<T>>(null);
   useEffect(() => {
     if (!native) return;
@@ -37,12 +45,19 @@ function useEvery<T>(native: boolean, ask: () => Promise<T>, every: number): Ans
       );
     };
     once();
-    const timer = setInterval(once, every);
+    let stop: (() => void) | null = null;
+    listenToSailorEvents(() => once()).then((subscribed) => {
+      if (!alive) {
+        if ("stop" in subscribed) subscribed.stop();
+        return;
+      }
+      if ("stop" in subscribed) stop = subscribed.stop;
+    });
     return () => {
       alive = false;
-      clearInterval(timer);
+      if (stop) stop();
     };
-  }, [native, ask, every]);
+  }, [native, ask]);
   return answer;
 }
 
@@ -91,8 +106,8 @@ interface LiveChipProps {
 }
 
 export function LiveChip({ native, now, onOpen, onSpend }: LiveChipProps) {
-  const runs = useEvery(native, openRuns, RUNS_EVERY_MS);
-  const summary = useEvery(native, todaySummary, SPEND_EVERY_MS);
+  const runs = useOnEvents(native, openRuns);
+  const summary = useOnEvents(native, todaySummary);
   if (!native) return null;
   if (runs?.state === "mute") {
     return (
@@ -150,7 +165,7 @@ export function buildWords(status: LiveStatus | null, now: number): { warn: bool
 }
 
 export function BuildChip({ native, now }: { native: boolean; now: number }) {
-  const status = useEvery(native, liveStatus, BUILD_EVERY_MS);
+  const status = useOnEvents(native, liveStatus);
   if (!native || status === null) return null;
   if (status.state === "mute") {
     return (
@@ -169,7 +184,7 @@ export function BuildChip({ native, now }: { native: boolean; now: number }) {
 }
 
 export function WhoChip({ native }: { native: boolean }) {
-  const rows = useEvery(native, profileRows, WHO_EVERY_MS);
+  const rows = useOnEvents(native, profileRows);
   if (!native || rows === null) return null;
   if (rows.state === "mute") {
     return (
