@@ -83,6 +83,25 @@ fn no_assent_opens_the_file_that_grants_or_the_code_that_applies() {
         "the patch was said to be applied and the file did not change"
     );
 
+    // **THE WAY ROUND THE WALL IS A NAME, NOT A DOOR.** Judged as text,
+    // `crates/../autocura.json` reads as a path under `crates/`, which the
+    // assent names, and lands on the file the wall exists to hold.
+    let walked_up = a_patch_for("crates/../autocura.json", "{}", "{\"may_touch\": [\"/\"]}");
+    let refused = actions::apply::apply(&repo, &walked_up, Some(&home))
+        .expect_err("a path that walks up is not judged where it lands");
+    assert!(refused.contains("plain path"), "{refused}");
+
+    let from_the_root = a_patch_for("/etc/hosts", "one", "another");
+    let refused = actions::apply::apply(&repo, &from_the_root, Some(&home))
+        .expect_err("a patch that starts at the root is outside the tree");
+    assert!(refused.contains("plain path"), "{refused}");
+
+    // A name that merely begins with an assented one is not that name.
+    let next_door = a_patch_for("crates-of-somebody-else/x.rs", "one", "another");
+    let refused = actions::apply::apply(&repo, &next_door, Some(&home))
+        .expect_err("«crates/» does not answer for «crates-of-somebody-else/»");
+    assert!(refused.contains("assents"), "{refused}");
+
     // No assent at all is no permission, never «anything goes».
     let refused = actions::apply::apply(&repo, &ordinary, None)
         .expect_err("a home that grants nothing grants nothing");
