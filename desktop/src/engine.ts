@@ -339,6 +339,8 @@ export interface Execution {
   run_id: string;
   kind: string;
   entity: string;
+  /** The tree it was born in. `null`: outside every workspace, or before v10. */
+  worktree: string | null;
   status: string;
   started_at: number;
   ended_at: number | null;

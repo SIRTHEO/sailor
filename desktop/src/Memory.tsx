@@ -21,12 +21,15 @@ export function Memory({
   tab,
   onTab,
   onOpenRun,
+  root,
 }: {
   native: boolean;
   now: number;
   tab: MemoryTab;
   onTab: (tab: MemoryTab) => void;
   onOpenRun: (runId: string) => void;
+  /** The tree the window stands in, or `null` outside every workspace. */
+  root: string | null;
 }) {
   return (
     <div className="section">
@@ -35,7 +38,7 @@ export function Memory({
         {tab === "runs" && (
           <>
             <Now native={native} onOpen={onOpenRun} />
-            <History native={native} />
+            <History native={native} root={root} />
           </>
         )}
         {tab === "spend" && <QuotaScreen native={native} now={now} />}

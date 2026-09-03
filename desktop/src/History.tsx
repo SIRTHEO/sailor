@@ -1,16 +1,9 @@
-// La storia delle esecuzioni.
-//
-// **NON È «ADESSO» CON PIÙ RIGHE.** «Adesso» chiede al deposito ciò che è
-// aperto e non conosce il passato. Qui si guarda indietro, e la domanda è
-// un'altra: che cosa si ripete. La stessa corsa caduta tre volte di fila si
-// vede solo in una vista che tiene le corse chiuse — è la ragione per cui
-// Airflow ha una griglia passi × corse e non solo una lista.
-//
-// UNA COLONNA CHE QUASI NESSUNO METTE: i tentativi. Un passo ripetuto e poi
-// riuscito conta come andato, e la corsa risulta verde: la fatica sparisce.
-// `steps_retried` la rimette a schermo senza colorare di rosso una corsa che
-// rossa non è.
+// The history of runs. **NOT «NOW» WITH MORE ROWS**: «Now» asks the store what
+// is open and knows no past, while the question here is what repeats. And a
+// column almost nobody draws — the retries: a step repeated and then passed
+// counts as gone, and the struggle disappears from a green run.
 
+import { useState } from "react";
 import { useAsk, useClock } from "./ask";
 import { executionHistory, type Execution, type ModelCall } from "./engine";
 
@@ -136,7 +129,18 @@ function Calls({ calls }: { calls: ModelCall[] }) {
   );
 }
 
-export function History({ native }: { native: boolean }) {
+/**
+ * The runs of one tree, or all of them. Every tree's runs in one list is a list
+ * about nobody: `runs.worktree` is what makes the narrower question askable,
+ * and a run recorded before that column has no answer — it is shown under
+ * «everywhere» and never counted into a tree it might not belong to.
+ */
+export function runsIn(runs: Execution[], root: string | null): Execution[] {
+  if (root === null) return runs;
+  return runs.filter((run) => run.worktree === root);
+}
+
+export function History({ native, root }: { native: boolean; root: string | null }) {
   const { asked } = useAsk<Execution[]>(
     native,
     executionHistory,
@@ -144,6 +148,9 @@ export function History({ native }: { native: boolean }) {
     "outside the shell: the engine reads the history",
   );
   const now = useClock();
+  // Narrow by default when there is a tree to narrow to: the question a person
+  // asks in a project is about that project.
+  const [narrow, setNarrow] = useState(true);
 
   if (asked.state === "mute") {
     return (
@@ -167,15 +174,26 @@ export function History({ native }: { native: boolean }) {
     );
   }
 
-  const shown = asked.value.slice(0, SHOWN);
+  const here = runsIn(asked.value, narrow ? root : null);
+  const shown = here.slice(0, SHOWN);
   return (
     <div className="now">
       <header className="now__head">
         <h2 className="now__title">History</h2>
-        <span className="now__count">{asked.value.length}</span>
+        <span className="now__count">{here.length}</span>
         <span className="now__note">
-          {shown.length < asked.value.length ? `the ${SHOWN} most recent` : "every one the ledger remembers"}
+          {shown.length < here.length ? `the ${SHOWN} most recent` : "every one the ledger remembers"}
         </span>
+        {root !== null && (
+          <button
+            type="button"
+            className="rail__all now__scope"
+            data-active={narrow || undefined}
+            onClick={() => setNarrow((was) => !was)}
+          >
+            {narrow ? "this tree" : "everywhere"}
+          </button>
+        )}
       </header>
       <table className="now__table">
         <thead>
