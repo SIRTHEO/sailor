@@ -2150,6 +2150,33 @@ fn a_run_that_called_no_engine_spent_nothing_and_hides_nothing() {
     );
 }
 
+/// A store written by the version before `work_kind` gains the column on
+/// reopening and takes a call that names the kind: the first real run of the
+/// sweep flow died on «no column named work_kind» because the schema version
+/// had not moved with the column.
+#[test]
+fn a_store_from_before_the_work_kind_column_gains_it_on_reopening() {
+    let directory = TestDirectory::new("before-work-kind");
+    {
+        let ledger = Ledger::open(&directory.0).expect("open the ledger");
+        let connection = ledger.connection.lock().expect("nobody panics here");
+        connection
+            .execute_batch("ALTER TABLE model_calls DROP COLUMN work_kind;")
+            .expect("the shape before the column");
+        connection
+            .pragma_update(None, "user_version", 8i64)
+            .expect("declared at the version before it");
+    }
+
+    let ledger = Ledger::open(&directory.0).expect("reopen the ledger");
+    let mut call = call_with("with-kind", Some(7), Some(11));
+    call.work_kind = Some("mechanical".to_owned());
+    ledger.record_model_call(&call).expect("a call naming its kind is written");
+    let dump = ledger.projection_dump().expect("read the projection");
+    let rows = dump["model_calls"].as_array().expect("the list is there");
+    assert_eq!(rows[0][28], json!("mechanical"));
+}
+
 /// **A STORE THAT CLAIMS TO BE CURRENT WHEN IT IS NOT.**
 ///
 /// Four columns were added while `PROJECTION_SCHEMA_VERSION` stayed at 4: an
