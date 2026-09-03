@@ -491,10 +491,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* THE ONE ACTION A SCREEN IS FOR. The accent exists for this and for nothing
+   else: as a white plate on a dark ground it was the brightest object in the
+   window, brighter than the badge saying the data is not real. */
 button.is-primary {
-  background: var(--ink);
-  color: var(--bg);
-  border-color: var(--ink);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: var(--accent-fill);
   font-weight: 600;
 }
 
@@ -545,7 +548,7 @@ button.is-primary {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  width: 214px;
+  width: 240px;
   padding: var(--space-2) var(--space-2) var(--space-4);
   border-right: 1px solid var(--line);
   background: var(--paper);
@@ -560,10 +563,17 @@ button.is-primary {
   border-bottom: 1px solid var(--line);
 }
 
+/* ONE ROW, THREE DEPTHS. Every line of this column is the same object: same
+   height, same hit area, same hover — a place, a tree, a board, a flow, a
+   terminal. What tells them apart is how far in they start and, at the third
+   depth, one step down in size. Rows that differ by two pixels of padding read
+   as a column that was assembled rather than drawn. */
 .world__global,
 .wsx__leaf,
 .wsx__row,
-.wsx__name {
+.wsx__name,
+.rail__item,
+.rail__new {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -575,14 +585,15 @@ button.is-primary {
   background: none;
   border: none;
   border-left: 2px solid transparent;
-  padding: 2px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   cursor: pointer;
 }
 
 .world__global:hover,
 .wsx__leaf:hover,
 .wsx__row:hover,
-.wsx__name:hover {
+.wsx__name:hover,
+.rail__item:hover {
   background: var(--bg);
 }
 
@@ -640,12 +651,17 @@ button.is-primary {
   font-size: var(--text-micro);
 }
 
+/* The ladder: a project starts at 8, a tree at 16, what lives in a tree at
+   24. Eight pixels a step, and no fourth level — there is nothing to put in
+   one. */
 .wsx__row {
   padding-left: var(--space-4);
 }
 
-.wsx__leaf {
-  padding-left: var(--space-6);
+.wsx__leaf,
+.rail__item,
+.rail__new {
+  padding-left: var(--space-5);
   font-size: var(--text-small);
 }
 
@@ -1632,7 +1648,7 @@ button.is-primary {
   font-size: var(--text-micro);
   letter-spacing: 0.04em;
   color: var(--faint);
-  padding: var(--space-2) var(--space-2) var(--space-1) var(--space-5);
+  padding: var(--space-2) var(--space-2) 0 var(--space-5);
 }
 
 /* Air between one group and the next, never above the first: there the gap
@@ -1916,23 +1932,6 @@ tr[data-followable]:hover {
    name over step count — in a column of its own that had room for it; here it
    sits under a tree, beside a terminal, and two lines per flow would push the
    workspaces off the screen. */
-.rail__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  text-align: left;
-  border: none;
-  border-left: 2px solid transparent;
-  background: transparent;
-  padding: 2px var(--space-2) 2px var(--space-5);
-  cursor: pointer;
-}
-
-.rail__item:hover {
-  background: var(--bg);
-}
-
 .rail__item[data-open] {
   border-left-color: var(--focus);
   font-weight: 600;
@@ -1946,7 +1945,6 @@ tr[data-followable]:hover {
 }
 
 .rail__label {
-  font-size: var(--text-small);
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1990,17 +1988,8 @@ tr[data-followable]:hover {
    folder: that moment belongs to the card on the canvas, and two invitations
    to the same gesture cancel each other out. */
 .rail__new {
-  display: block;
-  width: 100%;
-  text-align: left;
-  margin: var(--space-1) 0 var(--space-2);
-  padding: 2px var(--space-2) 2px var(--space-5);
-  background: none;
-  border: none;
-  font-family: var(--font-prose);
-  font-size: var(--text-small);
+  margin-bottom: var(--space-2);
   color: var(--muted);
-  cursor: pointer;
 }
 
 .rail__new:hover {
@@ -2048,9 +2037,13 @@ tr[data-followable]:hover {
   margin-bottom: var(--space-3);
   margin-left: calc(var(--controls-reserve) + var(--space-2));
   max-width: calc(100% - var(--controls-reserve) - var(--minimap-reserve) - 2 * var(--space-2));
+  /* ONE LINE, NOT THREE. Stacked — a caption row, then marks over words — the
+     bar was the tallest object on the paper and the paper is what the window
+     is for. Laid along its own corridor it costs one row and says the same. */
   display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
   padding: var(--space-2) var(--space-3);
   background: var(--paper);
   border: 1px solid var(--line);
@@ -2109,16 +2102,17 @@ tr[data-followable]:hover {
 }
 
 /* No border at rest: a row of seven boxes would be the wall the grouping
-   removes. The tool lifts on hover, and the mark stays drawn regardless. */
+   removes. The tool lifts on hover, and the mark stays drawn regardless.
+   The word stays beside the mark and is not a tooltip: ban 5 applied to shape
+   — a mark on its own carries nothing, just as a colour on its own does. */
 .toolbar__tool {
-  width: 56px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1);
+  padding: var(--space-1) var(--space-2);
   border-color: transparent;
   background: transparent;
+  white-space: nowrap;
 }
 
 .toolbar__tool:hover:not(:disabled) {
@@ -4822,11 +4816,10 @@ tr[data-followable]:hover {
    engine that weighs contrast skips at-rules, so a tint written there would be
    weighed by nobody.
 
-   THE FILLED BUTTON IS THE ONE OPEN QUESTION. Prohibition 4 reserves colour for
-   the state of the machine, so a button has no tint; the design draws «Run»
-   dark and filled. `.is-primary` in `styles.css` already answers that with ink
-   on background — no tint, a plate — and this bar reuses it rather than
-   inventing a second answer.
+   THE FILLED BUTTON IS THE ACCENT, and the accent is the whole answer to
+   prohibition 4: one hue, and it means «the action». `.is-primary` in
+   `styles.css` carries it, and this bar reuses it rather than inventing a
+   second answer.
    =========================================================================== */
 
 .topbar {
@@ -5011,10 +5004,11 @@ tr[data-followable]:hover {
   flex-shrink: 0;
 }
 
+/* A sample is a condition, not an event: it says what you are looking at and
+   then gets out of the way. A failure keeps its fill. */
 .topbar__source[data-source="sample"] {
   color: var(--warn);
-  border-color: var(--warn);
-  background: var(--warn-soft);
+  border-color: var(--line);
 }
 
 .topbar__source[data-source="failed"] {
@@ -6425,4 +6419,26 @@ tr[data-followable]:hover {
   --xy-node-group-background-color-default: var(--band-fill);
   --xy-selection-background-color-default: var(--band-fill);
   --xy-resize-background-color-default: var(--focus);
+}
+
+/* The mark that always means «what else can I do». It is the only thing in
+   this bar that is not the flow itself, so it is the quietest. */
+.focusbar__more {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-family: var(--font-prose);
+  font-size: var(--text-mid);
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.focusbar__more:hover {
+  color: var(--ink);
+  border-color: var(--line);
 }
