@@ -127,7 +127,7 @@ export function World({
 
   useEffect(() => {
     if (!native) {
-      setWhy("outside the desktop shell there is no home to read");
+      setWhy("no home to read out here");
       return;
     }
     read();
