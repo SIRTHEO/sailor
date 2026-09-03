@@ -203,7 +203,7 @@ fn the_scans_blind_spot_does_not_grow() {
          class that could be missing its sentence with nothing to say so."
     );
     assert!(
-        CLASSES_THE_SCAN_CANNOT_READ_TODAY.saturating_sub(unreadable) <= HOW_STALE_A_SEED_MAY_BE,
+        CLASSES_THE_SCAN_CANNOT_READ_TODAY.saturating_sub(unreadable) == HOW_STALE_A_SEED_MAY_BE,
         "the seed says {CLASSES_THE_SCAN_CANNOT_READ_TODAY} and the tree holds \
          {unreadable}: lower it"
     );

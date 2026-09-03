@@ -6637,13 +6637,6 @@ mod tests {
         );
     }
 
-    /// **LA PROVA CHE MISURA IL LAVORO.** È nata rossa su
-    /// `flows/sviluppa-sailor.flow.json` — sette errori e due avvisi, cioè il
-    /// guasto 25 contato — e diventa verde solo quando quel flusso è stato
-    /// davvero spostato. Non certifica: dice quanto lavoro c'era.
-    ///
-    /// Legge il file vero e non una copia: una copia si aggiornerebbe insieme
-
     // ── il totale che contiene un'incognita ──────────────────────────────
 
     /// Una chiamata come il deposito la conserva, coi soli campi che questo
