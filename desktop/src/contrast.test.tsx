@@ -213,7 +213,7 @@ describe("the run history", () => {
     try {
       render(
         <div className="app">
-          <History native />
+          <History native root={null} />
         </div>,
       );
       await screen.findByText("broke");

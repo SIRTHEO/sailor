@@ -1383,6 +1383,7 @@ export default function App() {
           now={now}
           tab={memoryTab}
           onTab={setMemoryTab}
+          root={standingIn?.root ?? null}
           onOpenRun={(runId) => setWatching(runId)}
         />
       )}
