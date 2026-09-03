@@ -1646,6 +1646,14 @@ fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) -> Result<S
             &[("flow", &flow.id), ("steps", &sweeping.join(", "))],
         ));
     }
+    let unasked = handed_without_choices(&flow);
+    if !unasked.is_empty() {
+        println!("{report}");
+        return Err(catalogue::say(
+            "cli.flow.handed_without_choices",
+            &[("flow", &flow.id), ("steps", &unasked.join(", "))],
+        ));
+    }
     if unknown.is_empty() {
         return Ok(report);
     }
@@ -2464,6 +2472,23 @@ const SHELL_SEPARATORS: [char; 7] = [';', '&', '|', '\n', '(', ')', '`'];
 /// option's value and counts as a path after `--`: the two readings the check
 /// needs, neither claiming to know what will be written there.
 const MOUNTED_ARG: &str = "<mounted>";
+
+/// The handed steps that offer the person no closed choice: a question in
+/// free text is not a step, and is refused before it can be asked.
+fn handed_without_choices(flow: &FlowFile) -> Vec<String> {
+    flow.graph
+        .steps()
+        .iter()
+        .filter(|step| step.action == actions::handoff::HANDED_TO_AGENT_ACTION)
+        .filter(|step| {
+            step.with
+                .as_ref()
+                .map(|with| actions::handoff::choices_of(with).is_empty())
+                .unwrap_or(true)
+        })
+        .map(|step| step.id.clone())
+        .collect()
+}
 
 /// Steps that run `git commit` without delimiting what they commit, which in a
 /// shared work tree means committing another session's staged work. `--amend`
@@ -3545,6 +3570,37 @@ mod tests {
                 .expect("la sonda risponde"),
             "senza una scadenza leggibile l'ambiguità si conserva"
         );
+    }
+
+    /// A handed step must offer closed choices: without them the check names
+    /// the step; with a labelled option it passes.
+    #[test]
+    fn a_handed_step_without_closed_choices_is_named_by_the_check() {
+        let flow_with = |with: &str| -> FlowFile {
+            serde_json::from_str(&format!(
+                r#"{{
+                    "id": "consegna",
+                    "description": "a handed step",
+                    "graph": {{"steps": [{{
+                        "id": "decide",
+                        "deps": [],
+                        "input_schema": {{"type": "any"}},
+                        "output_schema": {{"type": "any"}},
+                        "when": null,
+                        "action": "handed_to_agent",
+                        "max_attempts": 1,
+                        "with": {with}
+                    }}]}},
+                    "inputs": {{}}
+                }}"#
+            ))
+            .expect("the flow is valid")
+        };
+        let base = r#"{"mandate": "choose", "holder": "you", "handoff_timeout_secs": 60"#;
+        assert_eq!(handed_without_choices(&flow_with(&format!("{base}}}"))), vec!["decide".to_owned()]);
+        assert_eq!(handed_without_choices(&flow_with(&format!("{base}, \"options\": []}}"))), vec!["decide".to_owned()]);
+        let asked = format!("{base}, \"options\": [{{\"label\": \"yes\", \"facts\": \"it fits\"}}]}}");
+        assert!(handed_without_choices(&flow_with(&asked)).is_empty());
     }
 
     /// **UNA CONSEGNA VIVA NON SI CHIUDE SOTTO I PIEDI DI CHI CI LAVORA.**

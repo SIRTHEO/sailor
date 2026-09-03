@@ -150,7 +150,11 @@
             ]
           },
           "holder": "whoever is alive in the terminal",
-          "handoff_timeout_secs": 86400
+          "handoff_timeout_secs": 86400,
+          "options": [
+            { "label": "applied", "facts": "the proposal was written over the file, and cargo test and the ratchets are green" },
+            { "label": "refused", "facts": "the proposal does not hold, or the check went red; the reason goes in the closing note" }
+          ]
         },
         "input_schema": {
           "type": "object",
