@@ -3352,9 +3352,19 @@ fn record_run(
             started_at,
             ended_at,
             error,
-            started_by: "sailor flow",
+            started_by: seat_of(std::env::var_os("SAILOR_TERMINAL").is_some()),
         },
     )
+}
+
+/// Which seat this command line runs from: a pane the terminal host opened
+/// carries its mark, a bare shell does not. The window names its own seat.
+pub(crate) fn seat_of(in_a_sailor_terminal: bool) -> &'static str {
+    if in_a_sailor_terminal {
+        "sailor flow, in a Sailor terminal"
+    } else {
+        "sailor flow, in a shell"
+    }
 }
 
 /// Il registro delle azioni sta in `crates/registry`, e ci sta per una ragione
@@ -3570,6 +3580,15 @@ mod tests {
                 .expect("la sonda risponde"),
             "senza una scadenza leggibile l'ambiguità si conserva"
         );
+    }
+
+    /// The seat a run is started from is written by the system, not told: a
+    /// pane of the terminal host and a bare shell are two different rows.
+    #[test]
+    fn the_seat_of_a_run_names_the_pane_or_the_shell() {
+        assert_eq!(seat_of(true), "sailor flow, in a Sailor terminal");
+        assert_eq!(seat_of(false), "sailor flow, in a shell");
+        assert_ne!(seat_of(true), seat_of(false));
     }
 
     /// A handed step must offer closed choices: without them the check names

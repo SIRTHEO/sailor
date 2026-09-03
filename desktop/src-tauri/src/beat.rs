@@ -168,6 +168,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
     }
     *beat.last.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(report.clone());
     let _ = app.emit(EVENT, &report);
+    crate::events::emit(app, "beat", &report);
     Some(report)
 }
 

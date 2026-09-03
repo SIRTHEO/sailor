@@ -70,6 +70,7 @@ fn announce(app: &AppHandle, status: &LiveStatus) {
     // La tela ci disegna sopra quello che vuole; il titolo è il minimo che
     // arriva anche senza di lei.
     let _ = app.emit("live-status", status);
+    crate::events::emit(app, "build", status);
 
     let Some(window) = app.get_webview_window("main") else {
         return;
