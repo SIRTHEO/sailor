@@ -551,6 +551,14 @@ enters here as claims, not as praise.
    with what a person gets in five minutes, and the installation is one line
    (`cargo install` or a release binary); the documents that explain why the
    project exists get an English summary at their top.
+   *Where it landed:* the README opens with «Five minutes»: install with
+   `cargo install --path crates/sailor`, then the five commands that show
+   the engines on this machine, try their command lines without spending,
+   and run a mechanical job on the local model. The commands table names
+   `publish`, `endpoint` and `models`; the language paragraph says the
+   Italian left is a measured debt and not a plan. Still to do: the release
+   binary as the other one-line install, and the English summary at the top
+   of the documents that are still in Italian.
    *Proof:* Theo's gesture: a stranger reads the README and installs.
 
 ## Out of scope, deliberately
