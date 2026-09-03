@@ -38,6 +38,8 @@ fn parse_run_row(row: &Value) -> Option<RunRecord> {
         error: opt_str_at(cols, 7),
         started_at: i64_at(cols, 8)?,
         ended_at: opt_i64_at(cols, 9),
+        // A dump from before the column has no tenth cell.
+        worktree: opt_str_at(cols, 10),
     })
 }
 
