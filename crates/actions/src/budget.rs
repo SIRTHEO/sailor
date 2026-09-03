@@ -22,12 +22,15 @@ pub fn default_path() -> Option<PathBuf> {
     ledger::sailor_home().map(|home| home.join("budgets.json"))
 }
 
-/// The budgets declared, by engine id; an unreadable or missing file is none.
-pub fn declared(path: &Path) -> BTreeMap<String, Budget> {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+/// The budgets declared, by engine id. A missing file declares none; a file
+/// that does not read is an error, never «no caps»: a typo must not lift them.
+pub fn declared(path: &Path) -> Result<BTreeMap<String, Budget>, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) => return Err(format!("{} cannot be read: {error}", path.display())),
+    };
+    serde_json::from_str(&text).map_err(|error| format!("{} does not parse: {error}", path.display()))
 }
 
 /// Why an engine is over its budget, for the refusal; `None` while it fits.
@@ -77,7 +80,13 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_file_declares_no_budget() {
-        assert!(declared(Path::new("/nowhere/budgets.json")).is_empty());
+    fn a_missing_file_declares_no_budget_and_a_broken_one_is_an_error() {
+        assert!(declared(Path::new("/nowhere/budgets.json")).expect("missing is none").is_empty());
+        let dir = std::env::temp_dir().join(format!("budgets-broken-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let broken = dir.join("budgets.json");
+        std::fs::write(&broken, "{ not json").expect("write");
+        let error = declared(&broken).expect_err("a broken file is not «no caps»");
+        assert!(error.contains("does not parse"), "{error}");
     }
 }
