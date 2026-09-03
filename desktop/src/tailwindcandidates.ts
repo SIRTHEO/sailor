@@ -5,9 +5,33 @@
 import { compile } from "tailwindcss";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import stylesheetSource from "./styles.css?raw";
 
-/** Where utilities come from. This window's own sheet is not among them. */
-const UTILITY_SHEETS = '@import "tailwindcss";\n@import "tw-animate-css";\n';
+/**
+ * The `@theme` block of this window's sheet: it is what names `foreground`,
+ * `popover` and the rest, so without it `bg-foreground` compiles to nothing
+ * and reads as a typo.
+ */
+function themeOf(source: string): string {
+  // Comments first: the sheet mentions `@theme` in prose above the block, and
+  // the scan below would take the sentence for the rule.
+  const sheet = source.replace(/\/\*[\s\S]*?\*\//g, "");
+  const start = sheet.indexOf("@theme");
+  if (start < 0) return "";
+  let depth = 0;
+  for (let at = sheet.indexOf("{", start); at < sheet.length; at += 1) {
+    if (sheet[at] === "{") depth += 1;
+    if (sheet[at] === "}") {
+      depth -= 1;
+      if (depth === 0) return sheet.slice(start, at + 1);
+    }
+  }
+  return "";
+}
+
+/** Where utilities come from: Tailwind, its animations, and our own roles. */
+const UTILITY_SHEETS =
+  `@import "tailwindcss";\n@import "tw-animate-css";\n${themeOf(stylesheetSource)}\n`;
 
 /** `require.resolve` cannot reach a sheet published under `style`. */
 function sheetOf(id: string, base: string): string {

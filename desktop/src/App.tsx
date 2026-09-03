@@ -32,6 +32,18 @@ import { lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
 import { PLACES, type Section } from "./Rail";
 import { World, type FlowGroup } from "./World";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { TerminalSummary } from "./terminal";
 import { BuildChip, LiveChip, WhoChip } from "./Bar";
 import { LedgerBrowser } from "./LedgerBrowser";
@@ -107,12 +119,10 @@ type Source = "loading" | "sample" | "engine" | "failed";
  */
 type Place = Section;
 
-/**
- * Only the graph: "Code" was a data file dressed as source, and "Runs" is
- * already the «Adesso» and «Cronologia» places. `FlowCode` and `FlowRuns` stay
- * below, unmounted, with what they measured about the engine.
- */
-type FlowView = "graph";
+/* Only the graph. "Code" was a data file dressed as source and "Runs" is
+   already the «Adesso» and «Cronologia» places, so the bar was left holding a
+   tab bar of one tab, which steers nothing. `FlowCode` and `FlowRuns` stay
+   below, unmounted, with what they measured about the engine. */
 
 /**
  * A flow being edited: what is on screen and what is already on disk.
@@ -249,7 +259,6 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const [flowView] = useState<FlowView>("graph");
 
   // Focus belongs to the branch, not the canvas: the rail points at a path
   // inside the single graph, it does not choose which graph to show.
@@ -1208,7 +1217,7 @@ export default function App() {
       return { live: true, word: `a run in progress · step ${at} of ${total}` };
     }
     return { live: false, word: `last run ${focusedRun.status} · ${done} of ${total} steps closed` };
-  }, [focusName, focusedWorking, focusedDirty, focusedRun, flowView]);
+  }, [focusName, focusedWorking, focusedDirty, focusedRun]);
 
   // WHAT ⌘K CAN REACH: every place and entry, every flow to open or to run.
   // The palette computes nothing; the gestures are the same the rail and the
@@ -1249,6 +1258,7 @@ export default function App() {
   }, [flows, handleRun]);
 
   return (
+    <TooltipProvider>
     <div className="app">
       <Palette entries={paletteEntries} open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {/* THE BAR NAMES THE FLOW IT IS ABOUT.
@@ -1257,8 +1267,6 @@ export default function App() {
           saved, nor whether it was running, nor a way to run it. Save and Run
           need a subject, and the subject is the flow the rail has in focus. */}
       <TopBar
-        view={flowView}
-        onView={() => setPlace("board")}
         onBoard={place === "board"}
         crumbs={crumbs}
         chips={
@@ -1402,7 +1410,7 @@ export default function App() {
       {/* THE CANVAS STAYS MOUNTED BEHIND THE OTHER TWO TABS. React Flow measures
           its own frame once: unmounting it to change tab would give back a
           canvas that has to find its nodes again every time. */}
-      <div className="body" hidden={place !== "board" || flowView !== "graph"}>
+      <div className="body" hidden={place !== "board"}>
 
 
         <main className="canvas" ref={canvasRef}>
@@ -1605,6 +1613,7 @@ export default function App() {
       </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -1675,9 +1684,29 @@ function FocusBar({
       />
       <div className="focusbar__spacer" />
       {error && <span className="focusbar__error">{error}</span>}
-      <button type="button" className="is-danger" onClick={onDelete} disabled={busy}>
-        {neverSaved ? "Discard flow" : "Delete flow"}
-      </button>
+      {/* DELETING IS NOT WHAT THIS BAR IS FOR. A red button beside the name of
+          the thing it destroys is the loudest object on the screen, and it is
+          the one gesture nobody comes here to make. It keeps its place — one
+          click away, under the mark that always means «what else can I do». */}
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild disabled={busy}>
+              <button type="button" className="focusbar__more" aria-label="more for this flow">
+                ⋯
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          {/* The mark has no word beside it, so it needs one the instant the
+              pointer arrives: ban 5 does not stop at colour. */}
+          <TooltipContent side="bottom">More for this flow</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            {neverSaved ? "Discard flow" : "Delete flow"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
@@ -1711,11 +1740,7 @@ function runProgress(run: RunSnapshot): { done: number; running: number } {
   return { done, running };
 }
 
-const VIEW_WORD: Record<FlowView, string> = { graph: "Graph" };
-
 interface TopBarProps {
-  view: FlowView;
-  onView: (view: FlowView) => void;
   /**
    * Whether the board — and with it the column — is the place in view. The bar
    * is the program's and is drawn everywhere; the line about focusing a flow
@@ -1750,8 +1775,6 @@ interface TopBarProps {
  * a number the flow really carries.
  */
 function TopBar({
-  view,
-  onView,
   onBoard,
   crumbs,
   chips,
@@ -1812,7 +1835,6 @@ function TopBar({
         onBoard && <span className="topbar__none">no flow in focus — pick one in the rail</span>
       ) : (
         <span className="topbar__flow">
-          <span className="topbar__flow-name">{flowName}</span>
           <span className="topbar__steps">{steps} steps</span>
           {dirty && (
             <span className="topbar__dirty">
@@ -1822,22 +1844,6 @@ function TopBar({
           )}
         </span>
       )}
-
-      {/* THREE VIEWS OF THE SAME FLOW, not three places of the window. */}
-      <nav className="topbar__tabs" aria-label="views of the flow in focus">
-        {(["graph"] as FlowView[]).map((name) => (
-          <button
-            key={name}
-            type="button"
-            className="topbar__tab"
-            data-here={view === name || undefined}
-            aria-pressed={view === name}
-            onClick={() => onView(name)}
-          >
-            {VIEW_WORD[name]}
-          </button>
-        ))}
-      </nav>
 
       <span className="topbar__spacer" />
 
@@ -1866,9 +1872,9 @@ function TopBar({
       >
         {busy ? "Saving…" : "Save"}
       </button>
-      {/* A FILLED BUTTON HAS NO TINT. Prohibition 4 reserves colour for the
-          state of the machine, so «Run» is a plate — ink on ground — and not a
-          green. `.is-primary` already carried that answer. */}
+      {/* THE ACCENT MEANS «THE ACTION», and this is the action. Not a green:
+          green is a step that went well, and prohibition 4 keeps the state
+          colours for states. */}
       <button
         type="button"
         className="topbar__run is-primary"
