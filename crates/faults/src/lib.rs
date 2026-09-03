@@ -390,6 +390,59 @@ pub fn parse(markdown: &str) -> Vec<Fault> {
 }
 
 /// Writes the rows back the way the table wrote them, for whoever reads that way.
+/// The document with its table replaced, and everything around it kept.
+///
+/// **A DOCUMENT IS NOT ITS TABLE.** `render` alone produces the rows; writing
+/// those over the file drops the preamble that says what the register is for
+/// and the closing section that reads it whole — 164 lines of prose, and the
+/// command would have reported success. What is replaced here is the run of
+/// **data** rows: the heading and the separator are the document's, and so is
+/// every line that is not a row.
+pub fn render_into(document: &str, faults: &[Fault]) -> String {
+    let rows = render(faults);
+    let lines: Vec<&str> = document.lines().collect();
+    let first = lines.iter().position(|line| is_a_data_row(line));
+    let Some(first) = first else {
+        // No table to replace: the rows go at the end rather than nowhere, and
+        // whoever reads sees them instead of an unchanged file.
+        let mut out = document.to_owned();
+        if !out.is_empty() && !out.ends_with('\n') {
+            out.push('\n');
+        }
+        out.push_str(&rows);
+        return out;
+    };
+    let after = lines[first..]
+        .iter()
+        .position(|line| !is_a_data_row(line))
+        .map_or(lines.len(), |offset| first + offset);
+    let mut out = String::new();
+    for line in &lines[..first] {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str(&rows);
+    for line in &lines[after..] {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// A row of the register: a cell holding a number, not the heading and not the
+/// separator, which are the document's own.
+fn is_a_data_row(line: &str) -> bool {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') {
+        return false;
+    }
+    trimmed
+        .trim_start_matches('|')
+        .split('|')
+        .next()
+        .is_some_and(|cell| cell.trim().parse::<i64>().is_ok())
+}
+
 pub fn render(faults: &[Fault]) -> String {
     let mut out = String::new();
     for fault in faults {
