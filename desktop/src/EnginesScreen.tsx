@@ -27,6 +27,14 @@ export function percent(fraction: number): string {
   return `${Math.round(fraction * 100)}% spent`;
 }
 
+export function money(micros: number): string {
+  return `${(micros / 1_000_000).toFixed(2)} $`;
+}
+
+export function hours(secs: number): string {
+  return secs < 3600 ? `${Math.round(secs / 60)} min` : `${Math.round(secs / 3600)} h`;
+}
+
 interface EnginesScreenProps {
   native: boolean;
   /** A terminal was opened for a gesture: whoever holds the places shows it. */
@@ -140,6 +148,24 @@ export function EnginesScreen({ native, onTerminalOpened }: EnginesScreenProps) 
                     {window.resets_at !== null && <span className="now__why"> · resets {window.resets_at}</span>}
                   </div>
                 ))
+              )}
+            </dd>
+            <dt>held back</dt>
+            <dd>
+              {engine.set_aside === null && engine.budget === null && <span className="now__why">not held back</span>}
+              {engine.set_aside !== null && (
+                <div>
+                  set aside until {new Date(engine.set_aside.until * 1000).toLocaleString()}
+                  <div className="now__why">it said «{engine.set_aside.said}»</div>
+                </div>
+              )}
+              {engine.budget !== null && (
+                <div>
+                  {engine.budget.spent_micros === null
+                    ? `cap ${money(engine.budget.cap_micros)} per ${hours(engine.budget.window_secs)}`
+                    : `spent ${money(engine.budget.spent_micros)} of ${money(engine.budget.cap_micros)} in the last ${hours(engine.budget.window_secs)}`}
+                  {engine.budget.spent_why !== null && <div className="now__why">{engine.budget.spent_why}</div>}
+                </div>
               )}
             </dd>
           </dl>
