@@ -1,0 +1,178 @@
+{
+  "id": "write-down-what-broke",
+  "description": "A run that broke becomes a line in the fault register, with the check that would have caught it. The trigger names the flow to look at in «text». The first step asks the ledger how that flow's last closed run went, step by step, with what each said; the second reads the faults already open, because the register is a shared place and the same defect written twice reads as two. The third asks an engine to write the fault: what happened, how it showed, and above all what would have stopped it — a fault without that is an anecdote. It answers whether the register already holds this one, and the writing step runs only when it does not, so two runs of this flow over the same broken run leave one fault. Nothing here judges its own work: the engine that writes never decides whether the line lands, a condition does.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "text": { "type": "string" },
+            "who": { "type": "string" }
+          },
+          "required": ["source", "text"],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "who": { "type": "string" },
+            "where": { "type": "string" },
+            "source": { "type": "string" },
+            "kind": { "type": "string" }
+          },
+          "required": ["text", "who", "source", "kind"],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "how_it_went",
+        "deps": ["trigger"],
+        "action": "history_ask",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "ask": "last_run",
+          "flow": { "$from": "/text" },
+          "include_said": true
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "ask": { "type": "string" },
+            "include_said": { "type": "boolean" }
+          },
+          "required": ["ask"],
+          "allow_extra": true
+        },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "already_known",
+        "deps": ["trigger"],
+        "action": "fault_list",
+        "max_attempts": 1,
+        "when": null,
+        "with": {},
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      },
+      {
+        "id": "write_it",
+        "deps": ["how_it_went", "already_known"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": ["claude-code", "codex", "agy"],
+          "kind": "writing",
+          "data": "private",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "already_written": { "type": "boolean" },
+              "happened_on": { "type": "string" },
+              "what_happened": { "type": "string" },
+              "how_it_showed": { "type": "string" },
+              "what_would_prevent": { "type": "string" },
+              "status": { "type": "string" }
+            },
+            "required": [
+              "already_written",
+              "happened_on",
+              "what_happened",
+              "how_it_showed",
+              "what_would_prevent",
+              "status"
+            ],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "A run of this project broke. Write it down as one line of the fault register, and say first whether the register already holds it.\n\n=== THE RUN, STEP BY STEP, WITH WHAT EACH SAID ===\nThe answer below is the ledger\u2019s envelope: «deposit» says whether there was a store to read at all, and «answer» is there only when there was. An empty store is not a run that went well.\n\n",
+              { "$json": "/how_it_went" },
+              "\n\n=== THE FAULTS ALREADY OPEN ===\n",
+              { "$json": "/already_known" },
+              "\n\n=== WHAT TO WRITE ===\n«already_written» is true when one of the faults above is this same defect — the same cause, not merely the same step or the same words. When it is true the other fields still get written, and nothing is recorded.\n«what_happened» says the defect, not the symptom, and says what a reader would have believed. «how_it_showed» says what made it visible, and whether anything was watching. «what_would_prevent» is the check that would have caught it, and it is the field that matters: a fault without it is an anecdote and gets refused. «status» is written exactly «**aperto**», with the stars, which is what the register reads; «**chiuso**» only when the run itself shows the cure already in the tree. «happened_on» is the day, as dd/mm.\n\nHOW YOUR ANSWER MUST LOOK\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              { "$json": "/answer_shape" }
+            ]
+          },
+          "timeout_secs": 900
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": { "type": "array", "items": { "type": "string" } },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["tool", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "one_of", "values": ["ok"] },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "already_written": { "type": "boolean" },
+                "happened_on": { "type": "string" },
+                "what_happened": { "type": "string" },
+                "how_it_showed": { "type": "string" },
+                "what_would_prevent": { "type": "string" },
+                "status": { "type": "string" }
+              },
+              "required": [
+                "already_written",
+                "happened_on",
+                "what_happened",
+                "how_it_showed",
+                "what_would_prevent",
+                "status"
+              ],
+              "allow_extra": false
+            }
+          },
+          "required": ["status", "answer"],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "record_it",
+        "deps": ["write_it"],
+        "action": "fault_record",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/answer/already_written",
+          "value": false
+        },
+        "with": {
+          "happened_on": { "$from": "/answer/happened_on" },
+          "what_happened": { "$from": "/answer/what_happened" },
+          "how_it_showed": { "$from": "/answer/how_it_showed" },
+          "what_would_prevent": { "$from": "/answer/what_would_prevent" },
+          "status": { "$from": "/answer/status" }
+        },
+        "input_schema": { "type": "any" },
+        "output_schema": { "type": "any" }
+      }
+    ]
+  },
+  "inputs": {
+    "trigger": {
+      "text": "",
+      "who": ""
+    }
+  }
+}
