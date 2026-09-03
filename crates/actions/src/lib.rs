@@ -1494,6 +1494,12 @@ struct EngineSpec {
     env: BTreeMap<String, String>,
     #[serde(default)]
     workdir: Option<String>,
+    /// `"tree": "own"` gives this step a git worktree of the project to
+    /// itself, named after the run and the step. Two steps of one front then
+    /// write over each other's work only if somebody wrote the same name
+    /// twice, which the graph does not allow.
+    #[serde(default)]
+    tree: Option<String>,
     /// Il testo dell'ingresso, se il motore lo legge da lì invece che da un
     /// argomento: JSON non porta byte grezzi, un motore binario sull'ingresso
     /// non è un caso che questa azione copre.
@@ -2129,6 +2135,56 @@ fn fresh_session_id() -> String {
 
 /// The field a step declares to be given nothing it was not handed.
 pub const BLIND: &str = "blind";
+
+/// The field a step declares to work in a tree nobody else touches, and the
+/// only word it takes.
+pub const TREE: &str = "tree";
+pub const A_TREE_OF_ITS_OWN: &str = "own";
+
+/// The worktree this step works in, cut now if it is not there yet.
+///
+/// Refused rather than run in the tree everybody shares: a step that asked to
+/// be alone and silently got the shared tree writes over another engine's work.
+fn tree_of_its_own(
+    spec: &EngineSpec,
+    shared: &SharedState,
+) -> Result<Option<std::path::PathBuf>, ActionError> {
+    let Some(asked) = spec.tree.as_deref() else {
+        return Ok(None);
+    };
+    if asked != A_TREE_OF_ITS_OWN {
+        return Err(ActionError::new(
+            "invalid_input",
+            format!("`{TREE}` knows only «{A_TREE_OF_ITS_OWN}», not «{asked}»"),
+        ));
+    }
+    if spec.workdir.is_some() {
+        return Err(ActionError::new(
+            "invalid_input",
+            format!(
+                "the step asks for a `{TREE}` of its own and also names a `workdir`: \
+                 the two say different places, and one of them would be ignored"
+            ),
+        ));
+    }
+    let said = |key: &str| shared.get(key).and_then(Value::as_str).map(str::to_owned);
+    let (Some(root), Some(run), Some(step)) = (
+        said(flow::WORKSPACE_ROOT),
+        said(flow::CURRENT_RUN),
+        said(flow::CURRENT_STEP),
+    ) else {
+        return Err(ActionError::new(
+            "invalid_input",
+            format!(
+                "the step asks for a `{TREE}` of its own, and this run says neither which \
+                 project nor which run and step it is: there is no name to cut it under"
+            ),
+        ));
+    };
+    workspace::tree_for(std::path::Path::new(&root), &run, &step)
+        .map(Some)
+        .map_err(|why| ActionError::new("tree_not_cut", why))
+}
 
 /// Con quali opzioni girare, e sotto quale identificativo di sessione questa
 /// chiamata risulta essere girata.
@@ -3142,9 +3198,18 @@ impl Action for ExternalEngineAction {
         let written_shape = input.get("answer_shape").map(|shape| {
             serde_json::to_string(shape).expect("a value already in memory always reserialises")
         });
-        let spec: EngineSpec = serde_json::from_value(input.clone())
+        let mut spec: EngineSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &ENGINE_FAILURES)?;
+        if let Some(cut) = tree_of_its_own(&spec, shared)? {
+            if let Some(live) = live.as_deref() {
+                live.chunk(
+                    Pipe::Stderr,
+                    format!("[sailor] this step works in {}\n", cut.display()).as_bytes(),
+                );
+            }
+            spec.workdir = Some(cut.to_string_lossy().into_owned());
+        }
         if let Some(written) = &written_shape {
             shape_was_asked_for(written, &spec)?;
         }

@@ -133,6 +133,29 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
     Ok(path)
 }
 
+/// The tree one step of one run works in, detached so no branch is left behind.
+/// An existing one is the answer: a retried step needs what its first attempt
+/// left.
+pub fn tree_for(repo: &Path, run: &str, step: &str) -> Result<PathBuf, String> {
+    let path = tree_path(repo, &format!("{}/{}", safe(run), safe(step)));
+    if path.exists() {
+        return Ok(path);
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
+    }
+    let target = path.to_string_lossy().into_owned();
+    git(repo, &["worktree", "add", "--detach", &target, "HEAD"])?;
+    Ok(path)
+}
+
+/// A run id becomes a directory name: a separator would cut the tree elsewhere.
+fn safe(name: &str) -> String {
+    name.chars()
+        .map(|letter| if letter.is_ascii_alphanumeric() || letter == '-' || letter == '_' { letter } else { '-' })
+        .collect()
+}
+
 /// Takes a tree down. Git refuses while the tree holds uncommitted work, and
 /// that refusal is kept: losing work is not a thing this command may do.
 pub fn remove(repo: &Path, name: &str) -> Result<PathBuf, String> {
@@ -153,12 +176,8 @@ pub struct ChangedFile {
     pub status: String,
 }
 
-/// The working tree of a workspace against its last commit.
-///
-/// **`diff` IS GIT'S OWN TEXT, NEVER ONE COMPUTED HERE.** A second diff would
-/// disagree with the one a person runs in a terminal, and neither would say
-/// so. The file list is `git status --porcelain`, which also names what a
-/// diff cannot show: a file git does not track yet.
+/// The working tree against its last commit. `diff` is git's own text: a second
+/// one would disagree with the terminal's and neither would say so.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Changes {
     pub root: String,

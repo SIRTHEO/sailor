@@ -96,12 +96,71 @@ impl Clock for Tick {
     }
 }
 
+/// A repository the run can cut trees from, taken down with the test.
+///
+/// The two engine steps ask for a tree of their own, and a run that cannot say
+/// which project it is in refuses rather than putting them both in the
+/// directory the tests happen to start in.
+struct Project(std::path::PathBuf);
+
+impl Project {
+    fn new() -> Self {
+        static MADE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let root = std::env::temp_dir()
+            .join(format!(
+                "dispatch-{}-{}",
+                std::process::id(),
+                MADE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ))
+            .join("repo");
+        std::fs::create_dir_all(&root).expect("a project to run in");
+        for args in [
+            vec!["init", "-q"],
+            vec!["config", "user.email", "prove@example"],
+            vec!["config", "user.name", "prove"],
+        ] {
+            let done = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(&args)
+                .output()
+                .expect("git runs");
+            assert!(done.status.success(), "git {args:?}");
+        }
+        std::fs::write(root.join("README"), "a tree to cut from\n").expect("a file");
+        for args in [vec!["add", "README"], vec!["commit", "-q", "-m", "first"]] {
+            let done = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(&args)
+                .output()
+                .expect("git runs");
+            assert!(done.status.success(), "git {args:?}");
+        }
+        Project(root)
+    }
+}
+
+impl Drop for Project {
+    fn drop(&mut self) {
+        if let Some(above) = self.0.parent() {
+            let _ = std::fs::remove_dir_all(above);
+        }
+    }
+}
+
 fn run_with(
     graph: &Graph,
     inputs: &[(&str, Value)],
     registry: &ActionRegistry,
 ) -> (Execution, InMemoryRecordStore) {
+    let project = Project::new();
     let mut store = InMemoryRecordStore::default();
+    let mut shared = SharedState::new();
+    shared.insert(
+        flow::WORKSPACE_ROOT.to_owned(),
+        json!(project.0.to_string_lossy()),
+    );
     let request = ExecutionRequest {
         run_id: "prova".to_owned(),
         root_inputs: inputs
@@ -109,7 +168,7 @@ fn run_with(
             .map(|(id, value)| ((*id).to_owned(), value.clone()))
             .collect(),
         gates: Vec::new(),
-        shared: SharedState::new(),
+        shared,
         spend_cap_micros: None,
     };
     let execution = InProcessExecutor
@@ -747,8 +806,15 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
 
     let registry = registry_with(EveryToolIsShell);
     let action = registry.get(&engine.action).expect("azione registrata");
+    // The step asks for a tree of its own, so this call needs a project to cut
+    // it from: calling the action outside a run is what the executor never does.
+    let project = Project::new();
+    let mut shared = SharedState::new();
+    shared.insert(flow::WORKSPACE_ROOT.to_owned(), json!(project.0.to_string_lossy()));
+    shared.insert(flow::CURRENT_RUN.to_owned(), json!("prova"));
+    shared.insert(flow::CURRENT_STEP.to_owned(), json!("engine_a"));
     let outcome = action
-        .execute(&input, &mut SharedState::new())
+        .execute(&input, &mut shared)
         .expect("l'azione legge il rinvio e la forma è nel prompt");
     let flow::ActionOutcome::Went(output) = outcome else {
         panic!("un motore che risponde è sempre Went")
@@ -812,5 +878,31 @@ fn the_step_that_judges_is_declared_blind_in_the_flow() {
         vec!["verify"],
         "the verify step is the one that must not continue the session of the \
          work it judges, and it is the only one held to it"
+    );
+}
+
+/// The two engines of the parallel front each work in a tree of their own, so
+/// neither can write over what the other is doing. Declared in the flow: the
+/// tree is a property of the step, not a rule about steps called `engine_*`.
+#[test]
+fn the_two_engines_of_the_front_each_work_in_a_tree_of_their_own() {
+    let flow = flow_file();
+    let alone: Vec<&str> = flow
+        .graph
+        .steps()
+        .iter()
+        .filter(|step| {
+            step.with
+                .as_ref()
+                .and_then(|with| with.get(actions::TREE))
+                .and_then(Value::as_str)
+                == Some(actions::A_TREE_OF_ITS_OWN)
+        })
+        .map(|step| step.id.as_str())
+        .collect();
+    assert_eq!(
+        alone,
+        vec!["engine_a", "engine_b"],
+        "the two steps that write are the two that must not share a tree"
     );
 }

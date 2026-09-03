@@ -1494,13 +1494,12 @@ mod workdir_tests {
     }
 }
 
-/// The field a step uses to say *where* it works. The flow crate knowing this
-/// word is a price paid on purpose: had path resolution lived inside the
-/// actions, every new one would be born without it — fault 28, where the line
-/// sat in two actions of nine, then in twelve of sixteen, which is fault 10 in
-/// twelve copies. Here it happens once where the input is composed, so every
-/// registered action inherits it, unwritten ones included.
+/// Where a step works. Resolved here and not inside each action, so an action
+/// nobody has written yet inherits it: fault 28 in the log.
 pub const WORKDIR_FIELD: &str = "workdir";
+
+/// Asks for a place of its own: the root is handed out here, so is the exception.
+pub const TREE_FIELD: &str = "tree";
 
 /// A step's input, and *whether that step runs*.
 ///
@@ -1622,7 +1621,12 @@ fn resolve_workdir(step: &Step, input: Value, root: Option<&Path>) -> Result<Val
         // `{"$from": …}` workdir is never hung off the root — it resolves after.
         Some(_) => {}
         None => {
-            if let Some(root) = root.filter(|_| step.input_schema.accepts_property(WORKDIR_FIELD)) {
+            // Its own tree means no shared root: it would arrive as a `workdir`
+            // its author never wrote.
+            let has_its_own = fields.contains_key(TREE_FIELD);
+            if let Some(root) = root
+                .filter(|_| !has_its_own && step.input_schema.accepts_property(WORKDIR_FIELD))
+            {
                 fields.insert(WORKDIR_FIELD.to_owned(), root.display().to_string().into());
             }
         }
