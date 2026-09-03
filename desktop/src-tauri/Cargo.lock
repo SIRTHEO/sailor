@@ -14,6 +14,8 @@ dependencies = [
  "profiles",
  "serde",
  "serde_json",
+ "sessions",
+ "workspace",
 ]
 
 [[package]]
@@ -2623,6 +2625,7 @@ dependencies = [
  "flow",
  "ledger",
  "relay",
+ "sessions",
  "toolbox",
  "trigger",
 ]

@@ -102,6 +102,7 @@
   "cli.command.version": "la versione di questo binario",
   "cli.command.workspace": "dichiara la radice del progetto, così un flusso non deve saperla",
   "cli.command.worktree": "gli alberi in cui questo repository è estratto",
+  "cli.faults.written": "la tabella è scritta in {file}: {count} guasti",
   "cli.faults.brought_in": "portati dentro {count} difetti da {file}; adesso il deposito ne tiene {total}",
   "cli.faults.cannot_read_the_fault": "non riesco a leggere il difetto: {error}",
   "cli.faults.closed": "chiuso",
