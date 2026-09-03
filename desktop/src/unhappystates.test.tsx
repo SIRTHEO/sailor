@@ -86,20 +86,6 @@ import {
 import { stepCountLabel } from "./flow";
 import { SAMPLE } from "./sample";
 
-/**
- * Chooses the first step on the canvas, the way a person does. The panel talks
- * about a step and about nothing else, so every check on it needs one chosen.
- */
-function chooseFirstStep(container: HTMLElement): void {
-  const node = container.querySelector(".react-flow__node");
-  if (node === null) throw new Error("no step on the canvas to choose");
-  // The canvas listens for the whole gesture, not for a bare click: without
-  // the press and the release the node is never chosen and the panel would be
-  // judged absent for the wrong reason.
-  fireEvent.mouseDown(node);
-  fireEvent.mouseUp(node);
-  fireEvent.click(node);
-}
 import stylesheetSource from "./styles.css?raw";
 
 /* ── the box observer, driven by the test ───────────────────────────────────
