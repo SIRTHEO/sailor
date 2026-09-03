@@ -85,11 +85,45 @@ struct HandoffSpec {
     /// dimenticata al massimo ferma un lavoro e lo si vede subito.
     #[serde(default)]
     same_holder_ok: bool,
+    /// The closed choices the person may close this step with, each with the
+    /// facts it rests on. A question in free text is not a step.
+    #[serde(default)]
+    options: Vec<Choice>,
     /// Ciò che questa azione non riconosce, per la stessa ragione di
     /// `EngineSpec::extra`: un refuso nel `with` si nomina a `flow check`, cioè
     /// prima di spendere.
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
+}
+
+/// One way a person may close a handed step, and what it rests on.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Choice {
+    pub label: String,
+    #[serde(default)]
+    pub facts: String,
+}
+
+/// The choices of a handed step's `with`, as `flow check` reads them: none
+/// when the block is absent or not a list.
+pub fn choices_of(with: &Value) -> Vec<Choice> {
+    with.get("options")
+        .and_then(|options| serde_json::from_value(options.clone()).ok())
+        .unwrap_or_default()
+}
+
+fn choices_lines(options: &[Choice]) -> String {
+    options
+        .iter()
+        .map(|choice| {
+            if choice.facts.is_empty() {
+                format!("  · {}", choice.label)
+            } else {
+                format!("  · {} — {}", choice.label, choice.facts)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// L'azione che consegna un passo a chi è già vivo.
@@ -224,10 +258,15 @@ impl Action for HandoffAction {
         // IL MANDATO SI VEDE MENTRE SUCCEDE, non a corsa finita: chi guarda
         // deve poterlo prendere in carico adesso.
         if let Some(live) = live.as_deref() {
+            let choices = if spec.options.is_empty() {
+                String::new()
+            } else {
+                format!("\nclose it with one of:\n{}\n", choices_lines(&spec.options))
+            };
             live.chunk(
                 Pipe::Stdout,
                 format!(
-                    "\n── brief handed to «{}» ──\n{}\n──\n",
+                    "\n── brief handed to «{}» ──\n{}\n{choices}──\n",
                     spec.holder, spec.mandate
                 )
                 .as_bytes(),
