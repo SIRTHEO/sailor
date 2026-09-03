@@ -1283,7 +1283,13 @@ export default function App() {
 
       {/* The places, in a column, divided by what you are doing. */}
       <div className="app__body">
-      <Rail here={place} onGo={setPlace} counts={{ board: flows.size, terminals: terminalCount }} />
+      <Rail
+        here={place}
+        onGo={setPlace}
+        counts={{ board: flows.size, terminals: terminalCount }}
+        native={NATIVE}
+        onMoved={() => readFlows(() => true)}
+      />
       <div className="stage">
 
       {place === "board" && focusName && focusedWorking && focusedBand && (
