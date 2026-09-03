@@ -2758,6 +2758,7 @@ dependencies = [
  "sailor",
  "serde",
  "serde_json",
+ "sessions",
  "supervisor",
  "tauri",
  "tauri-build",

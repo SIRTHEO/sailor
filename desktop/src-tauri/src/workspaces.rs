@@ -38,7 +38,19 @@ pub(crate) fn workspaces() -> Result<Vec<Project>, String> {
         .ok()
         .and_then(|from| flow::workspace::find_root(&from));
 
-    Ok(flow::workspace::known_in(&home)?
+    // What Sailor has worked in counts as known: the register is written by
+    // `workspace init` alone, and six markers on disk left this list empty.
+    let seen = sessions::Sessions::default_path()
+        .ok()
+        .and_then(|path| sessions::Sessions::open(path).ok())
+        .and_then(|store| store.trees_worked_in().ok())
+        .unwrap_or_default();
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs() as i64)
+        .unwrap_or_default();
+
+    Ok(flow::workspace::known_including(&home, &seen, at)?
         .into_iter()
         .map(|known| Project {
             standing: match flow::workspace::standing_of(&known) {
