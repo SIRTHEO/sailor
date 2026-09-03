@@ -26,6 +26,7 @@ fn dispatch(args: &[String]) -> Result<(), String> {
         [cmd, rest @ ..] if cmd == "create" => cmd_create(rest),
         [cmd, rest @ ..] if cmd == "switch" => cmd_switch(rest),
         [cmd, rest @ ..] if cmd == "current" => cmd_current(rest),
+        [cmd, rest @ ..] if cmd == "endpoint" => cmd_endpoint(rest),
         _ => Err(usage()),
     }
 }
@@ -46,6 +47,10 @@ pub const USAGE: &[Form] = &[
     },
     Form {
         form: "sailor profiles current <cli>",
+        says_key: "",
+    },
+    Form {
+        form: "sailor profiles endpoint <cli> <name> <url> <key-var> <protocol>",
         says_key: "",
     },
 ];
@@ -286,7 +291,30 @@ pub fn create(cli_id: &str, name: &String) -> Result<(), String> {
         name: name.clone(),
         cli_id: cli.id.to_owned(),
         home_dir: home,
+        endpoint: None,
     });
+    store_io::save_store(&store)
+}
+
+fn cmd_endpoint(args: &[String]) -> Result<(), String> {
+    let [cli_id, name, url, key_var, protocol] = args else {
+        return Err(catalogue::say("cli.profiles.usage_endpoint", &[]));
+    };
+    let cli = find_cli(cli_id)?;
+    let mut store = store_io::load_store()?;
+    let profile = store
+        .profiles
+        .iter_mut()
+        .find(|p| p.cli_id == cli.id && &p.name == name)
+        .ok_or_else(|| catalogue::say("cli.profiles.not_found", &[("name", name), ("id", cli.id)]))?;
+    profile.endpoint = Some(profiles::ProfileEndpoint {
+        url: url.clone(),
+        key_var: key_var.clone(),
+        protocol: protocol.clone(),
+    });
+    // Refused now, before it is written: a profile that cannot be pointed
+    // there would refuse every step later, one at a time.
+    profiles::endpoint_environment(cli, profile, &|variable| std::env::var(variable).ok())?;
     store_io::save_store(&store)
 }
 
@@ -471,11 +499,13 @@ mod tests {
                     name: "vuoto".to_owned(),
                     cli_id: "codex".to_owned(),
                     home_dir: empty,
+                    endpoint: None,
                 },
                 Profile {
                     name: "pieno".to_owned(),
                     cli_id: "codex".to_owned(),
                     home_dir: full,
+                    endpoint: None,
                 },
             ],
             active: [("codex".to_owned(), "pieno".to_owned())]

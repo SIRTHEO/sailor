@@ -179,11 +179,13 @@ mod tests {
             name: "primo".to_owned(),
             cli_id: "codex".to_owned(),
             home_dir: PathBuf::from("/prova/codex/primo"),
+            endpoint: None,
         });
         store.profiles.push(Profile {
             name: "secondo".to_owned(),
             cli_id: "codex".to_owned(),
             home_dir: PathBuf::from("/prova/codex/secondo"),
+            endpoint: None,
         });
         store
     }
@@ -237,6 +239,7 @@ mod tests {
             name: "prova".to_owned(),
             cli_id: "antigravity".to_owned(),
             home_dir: PathBuf::from("/prova/antigravity/prova"),
+            endpoint: None,
         });
         store
             .active

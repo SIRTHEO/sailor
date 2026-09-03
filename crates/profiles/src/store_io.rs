@@ -177,6 +177,7 @@ mod tests {
             name: "work".to_owned(),
             cli_id: "claude".to_owned(),
             home_dir: dir.path().join("claude").join("work"),
+            endpoint: None,
         });
         store.active.insert("claude".to_owned(), "work".to_owned());
 
