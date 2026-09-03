@@ -65,6 +65,7 @@ fn agy_recipe(refuses: &[&str]) -> AskRecipe {
         prompt: PromptVia::LastArg,
         args_before_prompt: vec!["--print".to_owned()],
         unusable_when: Vec::new(),
+        silent_without_prompt: false,
         refuses_without_prompt: refuses.iter().map(|s| (*s).to_owned()).collect(),
         exhausted_when: Vec::new(),
         cooldown_secs: None,
@@ -137,6 +138,7 @@ fn an_exhausted_engine_is_not_called_broken() {
         prompt: PromptVia::Stdin,
         args_before_prompt: Vec::new(),
         unusable_when: vec!["weekly limit".to_owned()],
+        silent_without_prompt: false,
         refuses_without_prompt: vec!["input must be provided either through stdin".to_owned()],
         exhausted_when: Vec::new(),
         cooldown_secs: None,
@@ -224,6 +226,7 @@ fn an_engine_that_reads_the_prompt_from_stdin_gets_an_empty_closed_one() {
         prompt: PromptVia::Stdin,
         args_before_prompt: Vec::new(),
         unusable_when: Vec::new(),
+        silent_without_prompt: false,
         refuses_without_prompt: vec!["input must be provided".to_owned()],
         exhausted_when: Vec::new(),
         cooldown_secs: None,
@@ -267,6 +270,7 @@ fn the_exhausted_reading_comes_first_when_the_output_says_both() {
         prompt: PromptVia::Stdin,
         args_before_prompt: Vec::new(),
         unusable_when: vec!["weekly limit".to_owned()],
+        silent_without_prompt: false,
         refuses_without_prompt: vec!["input must be provided".to_owned()],
         exhausted_when: Vec::new(),
         cooldown_secs: None,
@@ -346,4 +350,18 @@ fn an_engine_that_exits_zero_with_a_help_screen_is_not_sound() {
         ProbeVerdict::Broken { said } => assert!(said.contains("Usage of agy"), "{said}"),
         other => panic!("uscire zero senza domanda non è una riga sana: {other:?}"),
     }
+}
+
+/// An engine measured to answer nothing without a question is sound when its
+/// stdout is empty, whatever spinner it drew on stderr; text on stdout, a
+/// help screen, is still a broken line. Without the declaration the same
+/// silence is «nobody looked».
+#[test]
+fn an_engine_declared_silent_is_sound_on_an_empty_stdout_and_nothing_else() {
+    let mut silent = agy_recipe(&[]);
+    silent.silent_without_prompt = true;
+    assert!(matches!(judge_dry_run(&silent, "", "⠙ ⠹ ⠸"), ProbeVerdict::Sound));
+    assert!(matches!(judge_dry_run(&silent, "Usage of agy:", ""), ProbeVerdict::Broken { .. }));
+    // The control: the same silence, undeclared, proves nothing.
+    assert!(matches!(judge_dry_run(&agy_recipe(&[]), "", ""), ProbeVerdict::NotDeclared));
 }

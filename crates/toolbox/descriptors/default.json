@@ -452,7 +452,43 @@
       "detect": { "command": "ollama" },
       "version": { "args": ["--version"], "must_contain": "version" },
       "config": ["~/.ollama"],
-      "note": "With the service unreachable it prints a warning first: without `must_contain` that line would be recorded as if it were the version."
+      "data_pact": "does_not_train",
+      "capabilities": {
+        "ask_without_interaction": {
+          "args": ["run"],
+          "note": "`run <model>` with the prompt on stdin answers once and exits; without stdin it opens a conversation"
+        }
+      },
+      "ask": {
+        "args": ["run", "qwen2.5-coder:1.5b"],
+        "prompt": "stdin",
+        "unusable_when": ["could not connect to ollama", "pull model manifest", "connection refused"],
+        "refuses_without_prompt": [],
+        "silent_without_prompt": true
+      },
+      "usage": {
+        "args": ["--verbose"],
+        "read": "text",
+        "from": "stderr",
+        "input_tokens": "prompt eval count:\\s*(\\d+)",
+        "output_tokens": "(?m)^eval count:\\s*(\\d+)"
+      },
+      "note": "With the service unreachable it prints a warning first: without `must_contain` that line would be recorded as if it were the version. `ask` runs the local coder model the strengths table names for mechanical work; the model is data here and `ollama pull` is the person's gesture. `--verbose` prints the counts on STDERR, hence `from`; the two patterns are the stats lines measured on 03/09/2026 with qwen2.5-coder:1.5b (`prompt eval count:    36 token(s)`, `eval count:           2 token(s)`; the second is anchored to a line start, or it would match inside the first). Measured the same day: the line composed WITHOUT a question exits 0 and prints nothing at all, so there are no refusal words to declare and `silent_without_prompt` says so. `data_pact` is `does_not_train` because nothing leaves the machine. No `model` pointer: the model is the one in `args`, and the row's model stays undeclared until a reader of the arguments exists."
+    },
+
+    {
+      "id": "free-claude-code",
+      "family": "ai_gateway",
+      "label": "free-claude-code server",
+      "detect": { "command": "fcc-server" },
+      "version": { "args": ["--version"] },
+      "install": {
+        "line": "curl -fsSL \"https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.sh\" | sh",
+        "note": "from the project's README on 03/09/2026: the script installs `fcc-server`; on macOS it also installs an application that starts it"
+      },
+      "config": ["~/.fcc"],
+      "data_pact": "unknown",
+      "note": "A program on this machine, connected and never built in: a server on localhost:8082 that speaks Claude Code's own protocol and answers with other companies' models, free or keyed. Read from its README on 03/09/2026, not measured here: it expects `ANTHROPIC_BASE_URL=http://localhost:8082` and the fixed token `freecc`; its tiers are routed by `MODEL_OPUS`, `MODEL_SONNET`, `MODEL_HAIKU` and stay its own; its «connected accounts», which log in through another product's subscription, are never configured from Sailor. The way in is a Claude Code profile with this address as endpoint (`sailor profiles endpoint claude <name> http://localhost:8082 <var holding freecc> anthropic-messages`), still to verify against the token header the server checks. `data_pact` is unknown because the pact is the answering provider's, per model, and the server does not say which answered before the call."
     },
 
     {

@@ -236,6 +236,7 @@ impl actions::ToolResolver for Tools {
             exhausted_when: ask.exhausted_when.clone(),
             cooldown_secs: ask.cooldown_secs,
             refuses_without_prompt: ask.refuses_without_prompt.clone(),
+            silent_without_prompt: ask.silent_without_prompt,
             usage: loaded.descriptor.usage.as_ref().map(usage_recipe),
         })
     }
@@ -307,6 +308,11 @@ fn usage_recipe(usage: &crate::descriptor::Usage) -> actions::UsageRecipe {
             read: match usage.read {
                 crate::descriptor::ReadAs::Json => actions::Shape::Json,
                 crate::descriptor::ReadAs::Text => actions::Shape::Text,
+            },
+            from: match usage.from {
+                crate::descriptor::ReadFrom::Stdout => models::usage::Heard::Stdout,
+                crate::descriptor::ReadFrom::Stderr => models::usage::Heard::Stderr,
+                crate::descriptor::ReadFrom::Both => models::usage::Heard::Both,
             },
             input_tokens: usage.input_tokens.as_ref().map(pointer),
             output_tokens: usage.output_tokens.as_ref().map(pointer),

@@ -207,6 +207,15 @@ Starting point, so the mandate builds on it instead of beside it.
     ships or restarts. What Sailor adds is exactly what that project lacks:
     which provider actually answered, at what cost, on what pact, and how
     much was left.
+    *Where it landed:* the descriptor `free-claude-code` (detect
+    `fcc-server`, `--version`, `~/.fcc`, the install line, `data_pact:
+    unknown`), read from the project's README on 03/09 and not measured
+    here: the server is not installed on this machine. The way in is A.9's
+    profile endpoint, still to verify against the token header the server
+    checks (it documents `ANTHROPIC_AUTH_TOKEN=freecc`, and the profile sets
+    the key variable). Not done: the workspace's data class, «server down»
+    as a refusal before the step, and the decision line in `decisioni.md`,
+    which waits for Theo's «vai».
     *Proof:* a step run under that profile leaves a ledger row with the
     server as endpoint and a non-Claude model as `actual_model`; with the
     server down, `candidates` refuses the profile with the reason instead of
