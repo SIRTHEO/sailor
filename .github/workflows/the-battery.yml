@@ -97,6 +97,24 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # **THE LINTS THAT NAME A DEFECT STOP THE BATTERY.** `correctness` is code
+  # that is wrong; `suspicious` is code that is very likely wrong. The other
+  # groups stay a counted debt in the job below.
+  gate:
+    name: clippy gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: the Rust version the manifest declares
+        run: |
+          rustup toolchain install "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)" --profile minimal --component clippy
+          rustup default "$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)"
+
+      - name: correctness and suspicious are errors
+        run: cargo clippy --workspace --all-targets -- -D clippy::correctness -D clippy::suspicious
+
   style:
     name: the style debt
     runs-on: ubuntu-latest

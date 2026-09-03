@@ -469,6 +469,10 @@ enters here as claims, not as praise.
    home, no credential, no path into a home directory is in the tree; the
    flows that ship are the system ones and this project's; a test lists what
    `git ls-files` may contain under `flows/` and refuses the rest.
+   *Where it landed:* `crates/sailor/tests/nothing_reserved_is_tracked.rs`
+   lists the five flows `git ls-files` may hold and the file names that are
+   a person's (`.credentials.json`, `auth.json`, `profili.json`,
+   `cooldowns.json`, `budgets.json`, `.env`).
    *Proof:* adding a flow file under a home-only name to the tree turns the
    test red.
 2. **A person's flows sync to a repository of their own.** `sailor flows
@@ -483,6 +487,11 @@ enters here as claims, not as praise.
    and `clippy::suspicious` are errors in CI; the other groups are a counted
    ratchet, as the comments are. The reviewer counted 173 warnings never
    gated.
+   *Where it landed:* the `gate` job of `the-battery.yml` runs clippy with
+   the two groups as errors and stops the battery; the tree passed it on
+   03/09 after two fixes (an orphan doc comment, a comparison with zero
+   that was always true). The other groups stay the counted debt of the
+   `style` job.
    *Proof:* a deliberate `suspicious` lint in a scratch commit fails CI.
 4. **A long process is started only with the supervisor's token.** Fault 4's
    cure is typological: the function that spawns a long-lived process takes a
@@ -496,6 +505,11 @@ enters here as claims, not as praise.
 6. **The two files out of scale are split by responsibility.** `actions/src/lib.rs`
    (6 443 lines) and `sailor/src/flow_cmd.rs` (6 253 lines, 71 functions)
    become modules: at least `cost`, `cap` and `schedule` out of `flow_cmd`.
+   *Where it landed:* `files_do_not_grow_out_of_scale.rs`, seeded with the
+   seven files over 2 000 lines on 03/09 (`actions/src/lib.rs` 7 206,
+   `flow_cmd.rs` 6 799, `ledger/src/lib.rs`, `ledger/src/tests.rs`,
+   `session_cmd.rs`, `flow/src/executor.rs`, `desktop/src/App.tsx`); the
+   split itself is still to do.
    *Proof:* no file in the workspace over 2 000 lines, as a ratchet seeded
    with today's count.
 7. **Comments do not talk more than the code.** Theo, 03/09: *unacceptable*.
@@ -508,6 +522,14 @@ enters here as claims, not as praise.
    mandate for `sweep-the-tree` (B.5): a comment stays only where the code
    alone misleads, at most two lines; the why that still holds moves to the
    faults document or the commit that introduced it; chronicle is removed.
+   *Where it landed:* `COMMENT_PERMILLE_TODAY` in
+   `comments_do_not_crowd_out_the_code.rs`, one exact seed per crate
+   measured on 03/09 with the same comment reader as the other three
+   ratchets (release 520‰, registry 409, actions 371, supervisor 316,
+   toolbox 297, terminal 287, inventory 278, models 276, desktop 273,
+   catalogue 268, sailor 264, sessions 253, trigger 248, flow 221, faults
+   212, ui 192, workspace 191, profiles 183, ledger 170, relay 155); a seed
+   above the tree is red too.
    *Proof:* the ratchet is red on any crate whose ratio rose; a crate under
    0.10 is the target the mandate reports against.
 8. **The front door is in English and says what it solves.** The README opens
