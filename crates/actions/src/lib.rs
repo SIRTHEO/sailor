@@ -612,6 +612,12 @@ pub trait ToolResolver: Send + Sync {
         models::pact::DataPact::Unknown
     }
 
+    /// The subscription windows of `id` as fuel, read now; empty when it
+    /// declares no channel or the reading failed.
+    fn fuel(&self, _id: &str) -> Vec<models::fuel::Fuel> {
+        Vec::new()
+    }
+
     /// Come **questo** motore apre, riprende e ramifica una sessione, se lo sa
     /// fare.
     ///
@@ -1461,6 +1467,10 @@ struct EngineSpec {
     /// `judgement`, `writing`): the strengths table puts its engines first.
     #[serde(default)]
     kind: Option<String>,
+    /// `fuel`: among the chain, the engine whose subscription window would
+    /// otherwise expire unused goes first, and the why is said.
+    #[serde(default)]
+    prefer: Option<String>,
     #[serde(default)]
     args: Vec<String>,
     #[serde(default)]
@@ -1698,25 +1708,45 @@ impl ExternalEngineAction {
     }
 
     /// The chain for this step: the strengths table's engines for its kind
-    /// first, then the chain as the flow wrote it. A kind without a row, or
-    /// a step without a kind, is the chain as written.
-    fn ordered_by_strength(&self, spec: &EngineSpec, chain: &[String]) -> Vec<String> {
-        let Some(kind) = spec.kind.as_deref() else {
-            return chain.to_vec();
+    /// first, then the chain as the flow wrote it; a kind without a row, or
+    /// a step without a kind, is the chain as written. Then, under
+    /// `prefer: fuel`, the engine whose window expires unused soonest moves
+    /// to the front, with the why.
+    fn ordered(
+        &self,
+        tools: &dyn ToolResolver,
+        spec: &EngineSpec,
+        chain: &[String],
+    ) -> (Vec<String>, Option<models::fuel::Preference>) {
+        let mut ordered: Vec<String> = match spec.kind.as_deref() {
+            Some(kind) => self.strengths_table().first_for(kind).to_vec(),
+            None => Vec::new(),
         };
-        let table = self
-            .strengths
-            .as_deref()
-            .and_then(|path| std::fs::read_to_string(path).ok())
-            .and_then(|text| models::strengths::Strengths::parse(&text).ok())
-            .unwrap_or_else(models::strengths::Strengths::shipped);
-        let mut ordered: Vec<String> = table.first_for(kind).to_vec();
         for id in chain {
             if !ordered.contains(id) {
                 ordered.push(id.clone());
             }
         }
-        ordered
+        if spec.prefer.as_deref() != Some("fuel") {
+            return (ordered, None);
+        }
+        let fuels: Vec<models::fuel::Fuel> = ordered.iter().flat_map(|id| tools.fuel(id)).collect();
+        let preferred = models::fuel::prefer(&fuels);
+        if let Some(preference) = &preferred {
+            if let Some(at) = ordered.iter().position(|id| *id == preference.engine) {
+                let first = ordered.remove(at);
+                ordered.insert(0, first);
+            }
+        }
+        (ordered, preferred)
+    }
+
+    fn strengths_table(&self) -> models::strengths::Strengths {
+        self.strengths
+            .as_deref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|text| models::strengths::Strengths::parse(&text).ok())
+            .unwrap_or_else(models::strengths::Strengths::shipped)
     }
 
     /// With the list of engines set aside kept at `path`: a test hands a
@@ -1775,6 +1805,7 @@ impl ExternalEngineAction {
                     // niente che dichiari che sia un motore, e infatti la riga
                     // non si scrive già per via dell'`id` assente.
                     can_be_asked: false,
+                    why: None,
                     session: SessionRecipe::default(),
                 }],
                 Vec::new(),
@@ -1792,7 +1823,7 @@ impl ExternalEngineAction {
                         ),
                     ));
                 };
-                let ids = self.ordered_by_strength(spec, choice.ids());
+                let (ids, preferred) = self.ordered(tools.as_ref(), spec, choice.ids());
                 if ids.is_empty() {
                     return Err(ActionError::new(
                         "invalid_input",
@@ -1869,6 +1900,7 @@ impl ExternalEngineAction {
                             // lui: `git` e `cargo` non dichiarano `ask`, e le
                             // loro esecuzioni non sono chiamate a un modello.
                             can_be_asked: declared.is_some(),
+                            why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
                             exhausted_when: declared
                                 .as_ref()
                                 .map(|recipe| recipe.exhausted_when.clone())
@@ -1907,6 +1939,7 @@ impl ExternalEngineAction {
                             // `ask`: questo strumento è per definizione un
                             // motore.
                             can_be_asked: true,
+                            why: preferred.as_ref().filter(|p| p.engine == *id).map(|p| p.why.clone()),
                         }),
                         None => refused.push(Refused {
                             id: id.clone(),
@@ -1981,6 +2014,8 @@ struct Candidate {
     /// interrogato a modo proprio è sempre un motore, e la sua riga si scrive —
     /// col consumo sconosciuto, che è l'informazione giusta.
     can_be_asked: bool,
+    /// Why this engine was moved to the front, when the fuel said so.
+    why: Option<String>,
     /// Le righe di comando alternative con cui questo motore apre, riprende o
     /// ramifica una sessione — già montate col resto della ricetta, e ancora
     /// col segnaposto al posto dell'identificativo.
@@ -2696,6 +2731,9 @@ impl ExternalEngineAction {
                     Pipe::Stderr,
                     format!("[sailor] moving on to engine «{id}»\n").as_bytes(),
                 );
+            }
+            if let Some(why) = &candidate.why {
+                live.chunk(Pipe::Stderr, format!("[sailor] preferring {why}\n").as_bytes());
             }
         }
         // **LA DOTAZIONE DI SAILOR, NON QUELLA DEL TERMINALE.** È il guasto 18:
@@ -5769,6 +5807,63 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
             Some(declaring_recipe())
         }
+    }
+
+    /// Two engines with a subscription window each, read as fuel.
+    struct Fuelled {
+        bins: std::collections::BTreeMap<&'static str, String>,
+        fuels: std::collections::BTreeMap<&'static str, models::fuel::Fuel>,
+    }
+
+    impl ToolResolver for Fuelled {
+        fn resolve(&self, id: &str) -> Result<String, String> {
+            self.bins.get(id).cloned().ok_or_else(|| format!("«{id}» is not here"))
+        }
+        fn ask_recipe(&self, _id: &str) -> Option<AskRecipe> {
+            Some(declaring_recipe())
+        }
+        fn fuel(&self, id: &str) -> Vec<models::fuel::Fuel> {
+            self.fuels.get(id).cloned().into_iter().collect()
+        }
+    }
+
+    /// Under `prefer: fuel` the engine whose window expires unused soonest
+    /// goes first even when the chain wrote it second; without it the chain
+    /// stays as written.
+    #[test]
+    fn a_window_that_would_expire_unused_is_spent_first() {
+        let dir = scratch("carburante");
+        let long = fake_engine(&dir, "a-lungo", WRAPS_ON_DEMAND);
+        let short = fake_engine(&dir, "a-breve", WRAPS_ON_DEMAND);
+        let fuel = |engine: &str, left: f64, resets_in: i64| models::fuel::Fuel {
+            engine: engine.to_owned(),
+            unit: "five_hour".to_owned(),
+            left_fraction: left,
+            resets_in_secs: Some(resets_in),
+        };
+        let engines = || Fuelled {
+            bins: [("a-lungo", long.clone()), ("a-breve", short.clone())].into_iter().collect(),
+            fuels: [
+                ("a-lungo", fuel("a-lungo", 0.80, 6 * 86_400)),
+                ("a-breve", fuel("a-breve", 0.10, 3_600)),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let by_fuel = json!({"tool": ["a-lungo", "a-breve"], "prefer": "fuel", "stdin": "ciao", "timeout_secs": 10});
+        let as_written = json!({"tool": ["a-lungo", "a-breve"], "stdin": "ciao", "timeout_secs": 10});
+
+        let action = ExternalEngineAction::resolving_with(engines())
+            .recording_to(Some(Ledger::open(dir.join("deposito")).expect("open")));
+        with_price_list(None, || action.execute(&by_fuel, &mut shared("corsa-1", "passo")))
+            .expect("the short window answers");
+        assert_eq!(calls_in(&dir.join("deposito"))[0].cli, "a-breve");
+
+        let plain = ExternalEngineAction::resolving_with(engines())
+            .recording_to(Some(Ledger::open(dir.join("deposito-2")).expect("open")));
+        with_price_list(None, || plain.execute(&as_written, &mut shared("corsa-2", "passo")))
+            .expect("the chain's first answers");
+        assert_eq!(calls_in(&dir.join("deposito-2"))[0].cli, "a-lungo");
     }
 
     /// A step that declares its kind goes first to the engines the strengths

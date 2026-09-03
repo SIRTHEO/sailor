@@ -153,9 +153,15 @@ Starting point, so the mandate builds on it instead of beside it.
    the report says how much of each paid window went unused while work
    waited; the number this claim moves is that one, from unknown to measured
    and then down.
+   *Where it landed:* `models::fuel` (`Fuel::from_remaining`, `prefer`, the
+   provider's instant read to seconds); a step's `prefer: fuel` moves the
+   engine whose window expires unused soonest to the front of its chain,
+   and the why is printed on the step's stderr. The weekly «unused while
+   work waited» number is still to write: it needs the windows sampled over
+   the week, which nothing records yet.
    *Proof:* two engines, one at 10 % left resetting in an hour and one at
-   80 % left resetting in six days: the dispatcher picks the first for a job
-   that fits, and the why says «expires unused».
+   80 % left resetting in six days: the first is preferred and the why says
+   «expires unused»; the same chain without `prefer` runs as written.
 9. **A command line can run on another company's model, without a proxy.**
    A profile declares an endpoint and the environment variable of its key;
    Sailor launches the unmodified command line with `launch.env` pointing it
