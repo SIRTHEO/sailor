@@ -33,5 +33,8 @@ export default defineConfig({
   // Senza questo `vitest` restituisce una stringa vuota per ogni import di CSS,
   // `?raw` compreso: i controlli dei divieti leggerebbero un foglio vuoto e
   // sarebbero verdi per non aver guardato niente.
-  test: { css: true },
+  // The five-second default is a measure of the machine, not of the code: the
+  // contrast checks paint the whole window and read every pair, and on a loaded
+  // laptop one took 37 s against a limit of 5 and went red on a green tree.
+  test: { css: true, testTimeout: 120_000 },
 });
