@@ -28,6 +28,22 @@ pub(crate) struct Install {
     pub note: String,
 }
 
+/// An engine set aside after saying its quota was spent: until when, and its words.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct SetAside {
+    pub until: i64,
+    pub said: String,
+}
+
+/// The cap the person wrote for an engine, and what the ledger sums for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct Budget {
+    pub cap_micros: i64,
+    pub window_secs: i64,
+    pub spent_micros: Option<i64>,
+    pub spent_why: Option<String>,
+}
+
 #[derive(Serialize)]
 pub(crate) struct Engine {
     pub id: String,
@@ -47,6 +63,9 @@ pub(crate) struct Engine {
     pub quota_why: Option<String>,
     pub sign_in: Option<SignIn>,
     pub install: Option<Install>,
+    /// Why the chain would not knock on it now, when it would not.
+    pub set_aside: Option<SetAside>,
+    pub budget: Option<Budget>,
 }
 
 #[derive(Serialize)]
@@ -112,6 +131,36 @@ fn file_name(path: &str) -> &str {
         .unwrap_or(path)
 }
 
+/// What holds an engine back now: the list of engines set aside, and the
+/// person's caps with the ledger's sum. Both come from the same files and
+/// the same query the chain reads, never from a copy.
+pub(crate) fn held_back(id: &str, now: i64) -> (Option<SetAside>, Option<Budget>) {
+    let set_aside = actions::cooldown::default_path()
+        .and_then(|path| actions::cooldown::set_aside_until(&path, id, now))
+        .map(|aside| SetAside { until: aside.until, said: aside.said });
+    let budget = actions::budget::default_path()
+        .and_then(|path| actions::budget::declared(&path).ok())
+        .and_then(|caps| caps.get(id).cloned())
+        .map(|cap| {
+            let dir = ui::gather::default_ledger_dir();
+            let spent = if dir.join("state.db").exists() {
+                ledger::Ledger::open(&dir)
+                    .and_then(|ledger| ledger.spent_by_cli_since(id, now - cap.window_secs))
+                    .map(|spend| spend.micros)
+                    .map_err(|error| error.to_string())
+            } else {
+                Err("no ledger on this machine yet".to_owned())
+            };
+            Budget {
+                cap_micros: cap.cap_micros,
+                window_secs: cap.window_secs,
+                spent_micros: spent.as_ref().ok().copied(),
+                spent_why: spent.err(),
+            }
+        });
+    (set_aside, budget)
+}
+
 /// **THIS READ RUNS COMMANDS**: one detection, and one `login status`-class
 /// question per engine that is here and declares one. They read local files
 /// and call no model; the screen asks when it opens, not on every redraw.
@@ -163,6 +212,7 @@ pub(crate) fn engines() -> Result<Engines, String> {
             },
             None => (Vec::new(), Some("this engine declares no channel to read what is left".to_owned())),
         };
+        let (set_aside, budget) = held_back(&descriptor.id, now);
         engines.push(Engine {
             id: descriptor.id.clone(),
             label: if found.label.is_empty() { found.name.clone() } else { found.label.clone() },
@@ -186,6 +236,8 @@ pub(crate) fn engines() -> Result<Engines, String> {
             quota_why,
             sign_in,
             install,
+            set_aside,
+            budget,
         });
     }
     let workspace_root = std::env::current_dir()

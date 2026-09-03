@@ -28,6 +28,21 @@ export interface QuotaWindow {
   observed_at: number;
 }
 
+/** An engine set aside after saying its quota was spent: until when, in its words. */
+export interface SetAside {
+  until: number;
+  said: string;
+}
+
+/** The cap the person wrote for this engine, and what the ledger sums for it. */
+export interface Budget {
+  cap_micros: number;
+  window_secs: number;
+  spent_micros: number | null;
+  /** Why the sum is not there, when it is not. */
+  spent_why: string | null;
+}
+
 export interface Engine {
   id: string;
   label: string;
@@ -43,6 +58,8 @@ export interface Engine {
   quota_why: string | null;
   sign_in: SignIn | null;
   install: Install | null;
+  set_aside: SetAside | null;
+  budget: Budget | null;
 }
 
 export interface Engines {
