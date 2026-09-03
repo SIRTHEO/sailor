@@ -227,6 +227,9 @@ async function main(): Promise<void> {
         // A capture that catches an animation halfway cannot be compared
         // with yesterday's.
         reducedMotion: "reduce",
+        // The direction's ground is night. Playwright emulates day unless
+        // told, so without this line the eyes photograph the second scheme.
+        colorScheme: "dark",
       });
       const page = await context.newPage();
       await page.goto(URL, { waitUntil: "networkidle" });

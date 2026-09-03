@@ -83,6 +83,27 @@ describe("the sheet and the screens", () => {
     expect(unseen, "markers written on an element that no rule ever looks at").toEqual([]);
   });
 
+  /**
+   * A hex in a component answers to no scheme. `STATE_COLOR` was a copy of the
+   * six state roles, and when the ground went dark the minimap stayed lit from
+   * noon: the only thing on screen still wearing the other palette.
+   */
+  test("NO COMPONENT NAMES A COLOUR OF ITS OWN", () => {
+    // A brand's mark is not a role of this sheet: it is the brand's identity,
+    // and it is the same tint under either ground.
+    const BRANDS = "./ToolMark.tsx";
+    const guilty: string[] = [];
+    for (const [path, text] of Object.entries(sources)) {
+      if (path === BRANDS || path.includes(".test.")) continue;
+      for (const match of (text as string).matchAll(/#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b/g)) {
+        guilty.push(`${path}: ${match[0]}`);
+      }
+    }
+    // THE CONTROL: the brand file really does hold what it is exempted for.
+    expect((sources[BRANDS] as string).match(/#[0-9a-fA-F]{6}/g)?.length ?? 0).toBeGreaterThan(4);
+    expect(guilty, "a tint written into a component follows no scheme").toEqual([]);
+  });
+
   test("EVERY CLASS THE WINDOW WEARS IS ONE THE SHEET DRESSES", async () => {
     const inSheet = declared();
     const inCode = used();
