@@ -197,6 +197,8 @@
   "cli.profiles.none_active": "(no active profile)",
   "cli.profiles.not_found": "profile {name} not found for {id}",
   "cli.profiles.usage_create": "usage: sailor profiles create <cli> <name>",
+  "cli.profiles.usage_endpoint": "usage: sailor profiles endpoint <cli> <name> <url> <key-var> <protocol>",
+  "cli.profiles.not_found": "no profile «{name}» for {id}",
   "cli.profiles.usage_current": "usage: sailor profiles current <cli>",
   "cli.profiles.usage_switch": "usage: sailor profiles switch <cli> <name>",
   "cli.clock_before_epoch": "the machine's clock is before 1970: {error}",

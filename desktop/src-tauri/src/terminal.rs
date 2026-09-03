@@ -423,6 +423,7 @@ mod tests {
             name: "prove".to_owned(),
             cli_id: "claude".to_owned(),
             home_dir: PathBuf::from("/homes/claude/prove"),
+            endpoint: None,
         });
         store.active.insert("claude".to_owned(), "prove".to_owned());
 

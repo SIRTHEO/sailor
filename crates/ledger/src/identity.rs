@@ -26,6 +26,10 @@ pub enum EngineIdentity {
         /// deleted; the path is what you go and look at when something went
         /// wrong.
         home_dir: PathBuf,
+        /// Where the profile sent the command line instead of its maker's
+        /// endpoint, so the spend is never attributed to the subscription.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint: Option<String>,
     },
     /// The step set the home variable itself, and it wins.
     ///
@@ -145,6 +149,17 @@ impl fmt::Display for EngineIdentity {
                 cli_id,
                 profile_name,
                 home_dir,
+                endpoint: Some(endpoint),
+            } => write!(
+                formatter,
+                "profile {cli_id}/{profile_name} at {endpoint} — home {}",
+                home_dir.display()
+            ),
+            Self::ProfileInForce {
+                cli_id,
+                profile_name,
+                home_dir,
+                endpoint: None,
             } => write!(
                 formatter,
                 "profile {cli_id}/{profile_name} — home {}",
@@ -246,6 +261,13 @@ mod tests {
                 cli_id: "codex".to_owned(),
                 profile_name: "lavoro".to_owned(),
                 home_dir: PathBuf::from("/case/codex/lavoro"),
+                endpoint: None,
+            },
+            EngineIdentity::ProfileInForce {
+                cli_id: "codex".to_owned(),
+                profile_name: "altrove".to_owned(),
+                home_dir: PathBuf::from("/case/codex/altrove"),
+                endpoint: Some("http://localhost:11434/v1".to_owned()),
             },
             EngineIdentity::ChosenByTheStep {
                 cli_id: "codex".to_owned(),

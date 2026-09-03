@@ -1885,6 +1885,14 @@ impl ExternalEngineAction {
                         });
                         continue;
                     }
+                    if let Some(why) = current_equipment_for(&bin, &spec.env).refused {
+                        refused.push(Refused {
+                            id: id.clone(),
+                            reason: why,
+                            unresolved: false,
+                        });
+                        continue;
+                    }
                     // Le opzioni scritte nel passo vincono sulla ricetta: chi le
                     // ha scritte sta dicendo qualcosa di preciso su *questa*
                     // chiamata, e sovrascriverle sarebbe decidere al posto suo.
@@ -2254,6 +2262,9 @@ pub struct Equipment {
     /// Con quale identità il processo parte: **quale casa** e **come è stata
     /// scelta**. Risponde sempre — non esiste il caso «vuoto».
     pub identity: EngineIdentity,
+    /// Why this engine must not start under this profile: an endpoint the
+    /// command line cannot be pointed at, or a key the machine lacks.
+    pub refused: Option<String>,
 }
 
 /// La dotazione per invocare `bin`, secondo lo stato dei profili dato.
@@ -2280,12 +2291,24 @@ pub fn equipment_for(
     bin: &str,
     step_env: &BTreeMap<String, String>,
 ) -> Equipment {
+    equipment_with_keys(store, bin, step_env, &|variable| std::env::var(variable).ok())
+}
+
+/// [`equipment_for`] with the machine's key variables read through `key_of`,
+/// so a test hands its own.
+pub fn equipment_with_keys(
+    store: &profiles::ProfileStore,
+    bin: &str,
+    step_env: &BTreeMap<String, String>,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> Equipment {
     let Some(cli) = profiles::cli_for_executable(bin) else {
         // Un comando qualunque — `sh`, uno script — non ha nessuna casa da
         // spostare, e dargliene una non vorrebbe dire niente.
         return Equipment {
             env: step_env.clone(),
             identity: EngineIdentity::NotAKnownEngine,
+            refused: None,
         };
     };
     let named = store.active.get(cli.id);
@@ -2298,9 +2321,19 @@ pub fn equipment_for(
             // cioè senza credenziali, con l'aria di aver applicato un profilo.
             .find(|profile| profile.cli_id == cli.id && &profile.name == active)
     });
-    let from_the_profile = resolved
+    let mut from_the_profile = resolved
         .map(|profile| profiles::build_environment(cli, &profile.home_dir))
         .unwrap_or_default();
+    // The endpoint, when the profile declares one: the same overlay, and a
+    // refusal instead of a launch when it cannot be pointed there.
+    let refused = match resolved.map(|profile| profiles::endpoint_environment(cli, profile, key_of)) {
+        Some(Ok(pointed)) => {
+            from_the_profile.extend(pointed);
+            None
+        }
+        Some(Err(why)) => Some(why),
+        None => None,
+    };
     // Il profilo prima, il passo sopra: chi scrive una variabile nel passo vince.
     let mut env = from_the_profile;
     env.extend(
@@ -2311,6 +2344,7 @@ pub fn equipment_for(
     Equipment {
         env,
         identity: identity_of(cli, named.map(String::as_str), resolved, step_env),
+        refused,
     }
 }
 
@@ -2345,6 +2379,7 @@ fn identity_of(
                 cli_id,
                 profile_name: profile.name.clone(),
                 home_dir: profile.home_dir.clone(),
+                endpoint: profile.endpoint.as_ref().map(|endpoint| endpoint.url.clone()),
             },
             // **UN PROFILO DICHIARATO NON È UN PROFILO IN FORZA.** Dove la casa
             // si sposta scambiando un collegamento simbolico, o dove non si sa
@@ -6387,6 +6422,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 cli_id: "codex".to_owned(),
                 profile_name: "lavoro".to_owned(),
                 home_dir: dir.join("casa"),
+                endpoint: None,
             },
             "la riga non dice con quale identità la chiamata è girata"
         );

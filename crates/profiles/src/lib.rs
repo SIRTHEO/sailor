@@ -49,6 +49,65 @@ pub struct KnownCli {
     pub native_profiles_note: &'static str,
     pub home: HomeMechanism,
     pub home_note: &'static str,
+    /// How this command line is pointed at another endpoint that speaks its
+    /// own protocol, unmodified and with nothing in between; `None` when no
+    /// such variable is known.
+    pub endpoint: Option<NativeEndpoint>,
+}
+
+/// The two variables a command line reads to talk to an endpoint other than
+/// its maker's, and the protocol that endpoint must speak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeEndpoint {
+    pub url_var: &'static str,
+    pub key_var: &'static str,
+    pub protocol: &'static str,
+}
+
+/// Where a profile sends its command line instead of the maker's endpoint.
+/// `key_var` names the variable on this machine that holds the key: the key
+/// itself is never written in the store.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileEndpoint {
+    pub url: String,
+    pub key_var: String,
+    /// The protocol the endpoint speaks, as the person verified it; it must
+    /// be the command line's own, or the profile is refused.
+    pub protocol: String,
+}
+
+/// The environment that points `cli` at the profile's endpoint, or why it
+/// cannot be pointed there. Empty when the profile declares no endpoint.
+pub fn endpoint_environment(
+    cli: &KnownCli,
+    profile: &Profile,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut env = BTreeMap::new();
+    let Some(endpoint) = &profile.endpoint else {
+        return Ok(env);
+    };
+    let Some(native) = cli.endpoint else {
+        return Err(format!(
+            "profile «{}» declares an endpoint, but no variable is known that points {} elsewhere",
+            profile.name, cli.display_name
+        ));
+    };
+    if endpoint.protocol != native.protocol {
+        return Err(format!(
+            "profile «{}» sends {} to {} speaking «{}», and {} speaks «{}»: nothing of Sailor's translates in between",
+            profile.name, cli.display_name, endpoint.url, endpoint.protocol, cli.display_name, native.protocol
+        ));
+    }
+    let Some(key) = key_of(&endpoint.key_var) else {
+        return Err(format!(
+            "profile «{}» takes its key from «{}», which is not set on this machine",
+            profile.name, endpoint.key_var
+        ));
+    };
+    env.insert(native.url_var.to_owned(), endpoint.url.clone());
+    env.insert(native.key_var.to_owned(), key);
+    Ok(env)
 }
 
 const KNOWN_CLIS: &[KnownCli] = &[
@@ -60,6 +119,11 @@ const KNOWN_CLIS: &[KnownCli] = &[
         native_profiles_note: "checked on claude 2.1.247: `claude auth` offers only login/logout/status, and `--help` names no profile or multi-account subcommand.",
         home: HomeMechanism::EnvVar("CLAUDE_CONFIG_DIR"),
         home_note: "checked against the installed binary: the variable moves the whole directory, `.credentials.json` and `settings.json` included.",
+        endpoint: Some(NativeEndpoint {
+            url_var: "ANTHROPIC_BASE_URL",
+            key_var: "ANTHROPIC_API_KEY",
+            protocol: "anthropic-messages",
+        }),
     },
     KnownCli {
         id: "codex",
@@ -69,6 +133,11 @@ const KNOWN_CLIS: &[KnownCli] = &[
         native_profiles_note: "`-p/--profile` in `codex --help` layers `$CODEX_HOME/<name>.config.toml` over the base configuration — config profiles, not separate credentials.",
         home: HomeMechanism::EnvVar("CODEX_HOME"),
         home_note: "checked with `codex doctor`: it shows auth.json and config.toml inside the directory CODEX_HOME names.",
+        endpoint: Some(NativeEndpoint {
+            url_var: "OPENAI_BASE_URL",
+            key_var: "OPENAI_API_KEY",
+            protocol: "openai-responses",
+        }),
     },
     KnownCli {
         id: "gemini",
@@ -78,6 +147,7 @@ const KNOWN_CLIS: &[KnownCli] = &[
         native_profiles_note: "no `--profile` in `gemini --help`: only sessions (`--resume`, `--session-id`), not separate identities.",
         home: HomeMechanism::EnvVar("GEMINI_CLI_HOME"),
         home_note: "checked against the installed source: `baseDir = process.env[\"GEMINI_CLI_HOME\"] || join(homedir, \".gemini\")`.",
+        endpoint: None,
     },
     KnownCli {
         id: "antigravity",
@@ -87,6 +157,7 @@ const KNOWN_CLIS: &[KnownCli] = &[
         native_profiles_note: "no `antigravity` binary in PATH: the product installs as `agy`, so this entry looks for a name nobody uses. Native profiles stay unchecked — `agy --help` and its subcommands name none.",
         home: HomeMechanism::Unknown,
         home_note: "its data lives under the Gemini CLI's directory, but `GEMINI_CLI_HOME` does NOT move it: the string is absent from the binary and the home follows $HOME. So the active profile does not move this one's home the way it moves claude's and codex's — two profiles start it in the same place, silently. `Unknown` is still the right value for «no known way», but this is not «not checked yet»: it is checked, and there is no way.",
+        endpoint: None,
     },
 ];
 
@@ -126,6 +197,9 @@ pub struct Profile {
     pub name: String,
     pub cli_id: String,
     pub home_dir: PathBuf,
+    /// Another endpoint for this profile's command line; absent for the maker's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<ProfileEndpoint>,
 }
 
 /// The list of profiles, and which one is active for each command line.
@@ -345,6 +419,7 @@ mod tests {
                 relative_path: "credentials.json",
             },
             home_note: "a fixture",
+            endpoint: None,
         };
         let env = build_environment(&cli, Path::new("/home/profiles/acme/work"));
         assert!(env.is_empty());
@@ -362,6 +437,7 @@ mod tests {
                 name: name.to_owned(),
                 cli_id: cli.to_owned(),
                 home_dir: PathBuf::from(format!("/homes/{cli}/{name}")),
+                endpoint: None,
             });
         }
         store.active.insert("claude".to_owned(), "prove".to_owned());
@@ -406,6 +482,7 @@ mod tests {
             name: "work".to_owned(),
             cli_id: "claude".to_owned(),
             home_dir: PathBuf::from("/home/profiles/claude/work"),
+            endpoint: None,
         });
         store.active.insert("claude".to_owned(), "work".to_owned());
 

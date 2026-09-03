@@ -12,9 +12,9 @@
 //! Sailor aveva il dato in casa propria e non lo usava. Il listino c'era e non
 //! viaggiava col prodotto; la dotazione c'era e non arrivava ai motori.
 
-use actions::equipment_for;
+use actions::{equipment_for, equipment_with_keys};
 use ledger::EngineIdentity;
-use profiles::{Profile, ProfileStore};
+use profiles::{Profile, ProfileEndpoint, ProfileStore};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -26,11 +26,13 @@ fn a_store_with_one_active_profile() -> ProfileStore {
         name: "lavoro".to_owned(),
         cli_id: "codex".to_owned(),
         home_dir: PathBuf::from("/case/codex/lavoro"),
+        endpoint: None,
     });
     store.profiles.push(Profile {
         name: "riposo".to_owned(),
         cli_id: "claude".to_owned(),
         home_dir: PathBuf::from("/case/claude/riposo"),
+        endpoint: None,
     });
     store.active.insert("codex".to_owned(), "lavoro".to_owned());
     store
@@ -41,6 +43,39 @@ fn step_env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+/// A profile with a native endpoint launches the unmodified command line
+/// pointed there, with the key read from the machine, and the identity names
+/// the endpoint; a profile whose endpoint speaks another protocol refuses the
+/// launch, naming both protocols.
+#[test]
+fn a_profile_with_a_native_endpoint_points_the_engine_there_and_says_so() {
+    let mut store = a_store_with_one_active_profile();
+    let keys = |variable: &str| (variable == "A_KEY_VAR").then(|| "the-key".to_owned());
+    let mut pointed = |protocol: &str| {
+        store.profiles[0].endpoint = Some(ProfileEndpoint {
+            url: "http://localhost:11434/v1".to_owned(),
+            key_var: "A_KEY_VAR".to_owned(),
+            protocol: protocol.to_owned(),
+        });
+        equipment_with_keys(&store, "/opt/homebrew/bin/codex", &BTreeMap::new(), &keys)
+    };
+
+    let native = pointed("openai-responses");
+    assert_eq!(native.refused, None);
+    assert_eq!(native.env.get("OPENAI_BASE_URL").map(String::as_str), Some("http://localhost:11434/v1"));
+    assert_eq!(native.env.get("OPENAI_API_KEY").map(String::as_str), Some("the-key"));
+    assert_eq!(native.env.get("CODEX_HOME").map(String::as_str), Some("/case/codex/lavoro"));
+    let EngineIdentity::ProfileInForce { endpoint, .. } = native.identity else {
+        panic!("a profile in force")
+    };
+    assert_eq!(endpoint.as_deref(), Some("http://localhost:11434/v1"));
+
+    let foreign = pointed("anthropic-messages");
+    let why = foreign.refused.expect("another protocol is refused");
+    assert!(why.contains("anthropic-messages") && why.contains("openai-responses"), "{why}");
+    assert!(!foreign.env.contains_key("OPENAI_BASE_URL"), "nothing points a refused launch");
 }
 
 /// **LA PROVA CHE CHIUDE IL GUASTO 18.** Un passo che invoca `codex` deve
@@ -166,6 +201,7 @@ fn the_resolved_profile_is_written_down_not_left_to_be_guessed() {
             cli_id: "codex".to_owned(),
             profile_name: "lavoro".to_owned(),
             home_dir: PathBuf::from("/case/codex/lavoro"),
+            endpoint: None,
         }
     );
 }
@@ -210,6 +246,7 @@ fn a_cli_whose_home_no_variable_moves_says_so_with_its_reason() {
         name: "lavoro".to_owned(),
         cli_id: "antigravity".to_owned(),
         home_dir: PathBuf::from("/case/antigravity/lavoro"),
+        endpoint: None,
     });
     store
         .active
