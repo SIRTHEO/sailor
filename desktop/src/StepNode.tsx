@@ -55,18 +55,18 @@ export interface StepNodeData extends Record<string, unknown> {
 
 /**
  * Colour says how a step ended, and the endings are not interchangeable: capped
- * is not broken, waiting on a person is not a failure, one colour for all lies.
- * They are TypeScript, not CSS, because React Flow's minimap wants a string;
- * the canvas reads the sheet, so this map tracks `--state-*`. Lowest: 5.24:1.
+ * is not broken, waiting on a person is not a failure. Roles, not tints: as
+ * copied hexes they stayed in the day scheme after the ground went dark, and
+ * the minimap was the only thing on screen still lit from noon.
  */
 export const STATE_COLOR: Record<StepState, string> = {
-  idle: "#656b63",
-  waiting: "#656b63",
-  running: "#1a5f96",
-  went: "#146447",
-  broke: "#a13930",
-  capped: "#92531b",
-  handed_to_human: "#6b46a8",
+  idle: "var(--state-waiting)",
+  waiting: "var(--state-waiting)",
+  running: "var(--state-running)",
+  went: "var(--state-went)",
+  broke: "var(--state-broke)",
+  capped: "var(--state-capped)",
+  handed_to_human: "var(--state-human)",
 };
 
 const STATE_LABEL = group("window.step.state.") as Record<StepState, string>;

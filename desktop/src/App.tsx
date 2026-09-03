@@ -1535,7 +1535,7 @@ export default function App() {
                 pannable
                 zoomable
                 nodeColor={(node) => {
-                  if (node.type !== "step") return "#d8d7ce";
+                  if (node.type !== "step") return "var(--line)";
                   const data = node.data as StepNodeData;
                   const state = stepStates.get(nodeId(data.flowName, data.step.id))?.state ?? data.run?.state;
                   return STATE_COLOR[state ?? "idle"];

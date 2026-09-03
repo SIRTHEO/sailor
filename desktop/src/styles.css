@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
 /* Named, not guessed: Tailwind's own detection depends on how the build was
    started, and under `vitest` it finds nothing. */
 @source "./";
@@ -8,94 +9,97 @@
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 /* ===========================================================================
-   DIRECTION — warm paper, plate lettering, colour reserved for machine state.
+   DIRECTION — night, one accent, colour reserved for machine state.
    Sailor is a tool for watching machines work, so "beautiful" here means
-   "legible". The visual language is the one the board already uses, so the
-   two surfaces read as one product.
+   "legible". The ground is dark because this window sits open all day beside
+   a terminal, and the running work should be the only thing on it that glows.
    =========================================================================== */
 
 /* WHAT THIS DIRECTION FORBIDS — without the list it guides nothing.
-   1. No Inter, Roboto, Arial, Helvetica, Open Sans, Lato, Montserrat, Space
-      Grotesk, and no `system-ui` as a first choice: three families only.
+   1. Two faces, three roles, and none chosen by omission: no Roboto, Arial,
+      Helvetica, Open Sans, Lato, Montserrat, and no `system-ui` first.
    2. No radius outside `--radius`, `--radius-lg`, `--radius-pill`.
    3. ONE shadow (`--shadow`), only for what really floats above the canvas:
       a node is an engraved plate, not a card that levitates. */
 
-/* 4. COLOUR IS RESERVED FOR MACHINE STATE. The only tints are the six step
-      states, the three severities, the flow lane and the focus ring.
+/* 4. COLOUR IS RESERVED FOR MACHINE STATE and for ONE accent meaning «the
+      action». A second accent is a second meaning.
    5. Colour is never the sole carrier of a state: the word sits next to the
       tint, always.
    6. No text/background pair below 4.5:1. Measured, not eyeballed.
-   7. TWO text levels, not three. Emphasis is family, caps and tracking. */
+   7. TWO text levels, not three. Emphasis is weight, caps and tracking. */
 
 /*  8. No size outside the scale, no space outside the 4px grid.
     9. No gradients, frosted glass or blurs, and no pill-shaped button: the
        pill belongs to status badges and to nothing else.
    10. Numbers compared across rows live in `--font-data`, tabular figures:
-       comparing them is the whole point.
-   The dark theme is missing: rule 6 needs its own measured pairs first. */
+       comparing them is the whole point. */
 
 /* 11. A FIXED COLUMN SAYS WHAT IT DOES WHEN THE WINDOW IS NARROW. A width in
        pixels with `flex-shrink: 0` keeps it whatever the window does, and two
        of them beside an elastic canvas divide the window before the canvas
        gets a say: at 375px the rail and the inspector came to 520 and the
-       canvas — the surface this window exists for — was zero pixels wide. */
+       canvas — the surface this window exists for — was zero pixels wide.
+   12. The ground is never pure black: night here starts at #08090a. */
 
 /* HOW THESE PROHIBITIONS TURN RED. `stylesheet.test.ts` reads this sheet and
    rejects a font, a radius, a shadow or a colour that skips a role;
    `contrast.test.tsx` walks the painted DOM and rejects any pair below 4.5:1,
-   focused flow included. Rule 6 is the one that needs the walk: putting
-   `--muted: #94a3b8` back is two characters, and without it the whole battery
-   stays green with a screen full of unreadable text. */
+   focused flow included, under BOTH schemes. Rule 6 is the one that needs the
+   walk: lightening `--muted` by two characters leaves the whole battery green
+   with a screen full of unreadable text. */
 
 :root {
-  /* --- SURFACES. Warm paper, not white: pure white under a canvas of nodes
-         tires the eye. --- */
-  --bg: #f2f0e9;      /* la tela e la colonna: il fondo di tutto */
-  --paper: #fbfaf6;   /* nodi, pannelli, schede: ciò che sta sopra il fondo */
-  --raised: #ffffff;  /* campi di testo e ciò che si apre sopra un pannello */
-  --rail: #f2f0e9;    /* alias storico, = --bg */
-  --line: #d8d7ce;    /* filo di 1px, mai portatore di stato da solo */
-  /* The ink veil under a lane: the panel is visible, and it moves no contrast
+  /* --- SURFACES. Four grounds, each a step out of the night. --- */
+  --bg: #08090a;      /* la tela e la colonna: il fondo di tutto */
+  --paper: #0f1011;   /* nodi, pannelli, schede: ciò che sta sopra il fondo */
+  --raised: #18191a;  /* campi di testo e ciò che si apre sopra un pannello */
+  --rail: #08090a;    /* alias storico, = --bg */
+  --line: #23252a;    /* filo di 1px, mai portatore di stato da solo */
+  /* The veil under a lane: the panel is visible, and it moves no contrast
      pair. */
-  --band-fill: rgb(34 38 31 / 2.5%);
+  --band-fill: rgb(247 248 248 / 3.5%);
 
   /* --- TEXT. Two levels, both legible everywhere. Measured:
-         ink   su --paper 15,08:1 · su --bg 13,81:1
-         muted su --paper  5,24:1 · su --bg  4,80:1 · su --raised 5,47:1 --- */
-  --ink: #20241f;
-  --muted: #656b63;
-  --faint: #656b63;   /* VOLUTAMENTE identico a --muted: vedi il divieto 7 */
+         ink   su --paper 18,4:1 · su --bg 19,3:1
+         muted su --paper  5,9:1 · su --bg  6,1:1 · su --raised 5,5:1 --- */
+  --ink: #f7f8f8;
+  --muted: #8a8f98;
+  --faint: #8a8f98;   /* VOLUTAMENTE identico a --muted: vedi il divieto 7 */
 
   /* --- STEP STATE. Six endings, not interchangeable. All measured on
-         --paper (#fbfaf6), all above 4.5:1:
-         waiting 5.24 · running 6.44 · went 6.83 · broke 6.40 ·
-         capped 5.79 · human 6.56 --- */
-  --state-waiting: #656b63;
-  --state-running: #1a5f96;
-  --state-went: #146447;
-  --state-broke: #a13930;
-  --state-capped: #92531b;
-  --state-human: #6b46a8;
+         --paper (#0f1011), all above 4.5:1:
+         waiting 5.9 · running 7.6 · went 7.7 · broke 5.5 ·
+         capped 12.1 · human 7.1 --- */
+  --state-waiting: #8a8f98;
+  --state-running: #4ea7fc;
+  --state-went: #4cb782;
+  --state-broke: #eb5757;
+  --state-capped: #f2c94c;
+  --state-human: #a78bfa;
 
   /* --- SEVERITY. The board's three, plus their faint backgrounds. --- */
-  --ok: #146447;
-  --ok-soft: #dcebe3;
-  --warn: #92531b;
-  --warn-soft: #f7e8ce;
-  --danger: #a13930;
-  --danger-soft: #f6dedb;
+  --ok: #4cb782;
+  --ok-soft: #10261c;
+  --warn: #f2c94c;
+  --warn-soft: #2a2312;
+  --danger: #eb5757;
+  --danger-soft: #2a1618;
 
-  /* --- FOCUS. The only tint that is not a state; it says "here". --- */
-  --focus: #1a5f96;
+  /* --- THE ACCENT. One hue, two jobs: `--focus` says "here" and is read as
+         text (6,7:1 on --paper); `--accent-fill` carries the one action a
+         screen is for, with `--on-accent` on top (4,7:1). --- */
+  --focus: #828fff;
+  --accent-fill: #5e6ad2;
+  --on-accent: #ffffff;
 
-  /* --- FAMILIES. Three roles, nothing chosen by omission.
-         display: DIN Alternate, Bold only — used ONLY as tracked small caps.
-         prose:   Avenir Next, for sentences a person reads.
-         data:    SF Mono, for everything that gets compared. Tabular
-                  figures, aligned in a column. --- */
-  --font-display: "DIN Alternate", "DIN Condensed", "Avenir Next Condensed", "Avenir Next", sans-serif;
-  --font-prose: "Avenir Next", Avenir, Optima, "Gill Sans", sans-serif;
+  /* --- FAMILIES. Three roles on two faces: display and prose share one on
+         purpose, since emphasis here is weight, caps and tracking.
+         display: Inter, ONLY as tracked small caps.
+         prose:   Inter, for sentences a person reads.
+         data:    SF Mono, for what gets compared. Tabular figures. --- */
+  --font-display: "Inter Variable", Inter, "Helvetica Neue", sans-serif;
+  --font-prose: "Inter Variable", Inter, "Helvetica Neue", sans-serif;
   --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 
   /* --- SIZES. Six, from 10 to 22. Nothing outside the scale. --- */
@@ -121,8 +125,8 @@
   --radius-pill: 999px;
 
   /* --- THE ONLY SHADOW, and only for what floats above the canvas. --- */
-  --shadow: 0 10px 30px rgb(34 38 31 / 8%);
-  --scrim: rgb(34 38 31 / 40%);  /* what lies under the palette */
+  --shadow: 0 8px 24px rgb(0 0 0 / 55%);
+  --scrim: rgb(0 0 0 / 60%);  /* what lies under the palette */
 
   /* --- MOTION. Two durations and one curve. Motion confirms a gesture, it
          does not entertain: nothing enters, nothing bounces. --- */
@@ -139,34 +143,33 @@
   /* Figures line up in a column everywhere: comparing them is the job. */
   font-variant-numeric: tabular-nums;
 
-  /* Dark ground for the code block and the filled button. Prohibition 4 keeps
-     colour for machine state, so this is a plate, not a tint.
-     --on-ink 13.81:1 on it, --on-ink-muted 10.90:1. */
-  --ink-surface: #20241f;
-  --on-ink: #f2f0e9;
-  --on-ink-muted: #d8d7ce;
+  /* The plate under a console or a code block: a step further into the night,
+     not a tint. --on-ink 19,9:1 on it, --on-ink-muted 6,3:1. */
+  --ink-surface: #060708;
+  --on-ink: #f7f8f8;
+  --on-ink-muted: #8a8f98;
 
   /* A skippable dependency is neither a gravity nor a state.
-     3.07:1 on --bg, 3.36:1 on --paper (WCAG 1.4.11). */
-  --optional: #7c8a9f;
+     4.1:1 on --bg (WCAG 1.4.11 asks 3). */
+  --optional: #6b7280;
   /* Graph paper at two pitches, both under 1.5:1 on --bg: a grid that reads
-     competes with the nodes, and the nodes are the figure. 1.09:1 and 1.24:1. */
-  --grid-fine: #eae7de;
-  --grid-coarse: #ddd9cd;
+     competes with the nodes, and the nodes are the figure. */
+  --grid-fine: #0d0e10;
+  --grid-coarse: #131417;
 
   /* One tint per flow lane, generated rather than picked: hues evenly spaced,
      lightness solved so each clears 3:1 on both grounds, closest pair 0.070
      apart in Oklab. Under 0.05 two lanes read as one. */
-  --lane-1: #d26b71;
-  --lane-2: #c87436;
-  --lane-3: #a5851e;
-  --lane-4: #739432;
-  --lane-5: #129b6b;
-  --lane-6: #18989c;
-  --lane-7: #2391c3;
-  --lane-8: #6b83d8;
-  --lane-9: #a076ca;
-  --lane-10: #c46da5;
+  --lane-1: #e58a8f;
+  --lane-2: #dd9160;
+  --lane-3: #c9a53f;
+  --lane-4: #9ab85a;
+  --lane-5: #3fc490;
+  --lane-6: #3fb9bd;
+  --lane-7: #55b0dd;
+  --lane-8: #7f96e8;
+  --lane-9: #b48fdc;
+  --lane-10: #d88ac0;
   /* --- THE ROLES A shadcn COMPONENT ASKS FOR. Not a second palette: each is
          an alias of a role above, so the dark scheme reaches the components
          without redefining a thing. --- */
@@ -176,8 +179,8 @@
   --card-foreground: var(--ink);
   --popover: var(--raised);
   --popover-foreground: var(--ink);
-  --primary: var(--ink-surface);
-  --primary-foreground: var(--on-ink);
+  --primary: var(--accent-fill);
+  --primary-foreground: var(--on-accent);
   --secondary: var(--paper);
   --secondary-foreground: var(--ink);
   --ui-muted: var(--paper);
@@ -195,8 +198,8 @@
   --chart-5: var(--lane-5);
   --sidebar: var(--rail);
   --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--ink-surface);
-  --sidebar-primary-foreground: var(--on-ink);
+  --sidebar-primary: var(--accent-fill);
+  --sidebar-primary-foreground: var(--on-accent);
   --sidebar-accent: var(--paper);
   --sidebar-accent-foreground: var(--ink);
   --sidebar-border: var(--line);
@@ -204,61 +207,63 @@
 
 }
 
-/* THE DARK SCHEME REDEFINES EVERY ROLE THAT CARRIES A COLOUR, AND NOTHING
+/* THE OTHER SCHEME REDEFINES EVERY ROLE THAT CARRIES A COLOUR, AND NOTHING
    ELSE. No rule below this block names a colour, so the second scheme is a
    second set of roles and no more: `stylesheet.test.ts` refuses a role left
    out, and `contrast.test.tsx` measures every scene a second time with these
-   values in place. Warm dark, not black: the same paper, unlit. */
-@media (prefers-color-scheme: dark) {
+   values in place. Day, for whoever works by a window. */
+@media (prefers-color-scheme: light) {
   :root {
-    --bg: #191c18;
-    --paper: #22261f;
-    --raised: #2b3028;
-    --rail: #191c18;
-    --line: #3a3f37;
-    --band-fill: rgb(242 240 233 / 3%);
+    --bg: #f7f8f8;
+    --paper: #ffffff;
+    --raised: #ffffff;
+    --rail: #f7f8f8;
+    --line: #e4e5e7;
+    --band-fill: rgb(8 9 10 / 3.5%);
 
-    --ink: #ecebe4;
-    --muted: #a8ada3;
-    --faint: #a8ada3;
+    --ink: #08090a;
+    --muted: #626169;
+    --faint: #626169;
 
-    --state-waiting: #a8ada3;
-    --state-running: #6fb1e6;
-    --state-went: #5fc79a;
-    --state-broke: #ec8b82;
-    --state-capped: #dfa35a;
-    --state-human: #b79ae6;
+    --state-waiting: #626169;
+    --state-running: #1a5f96;
+    --state-went: #146447;
+    --state-broke: #a13930;
+    --state-capped: #92531b;
+    --state-human: #6b46a8;
 
-    --ok: #5fc79a;
-    --ok-soft: #1f3a2e;
-    --warn: #dfa35a;
-    --warn-soft: #3d3120;
-    --danger: #ec8b82;
-    --danger-soft: #3f2422;
+    --ok: #146447;
+    --ok-soft: #dcebe3;
+    --warn: #92531b;
+    --warn-soft: #f7e8ce;
+    --danger: #a13930;
+    --danger-soft: #f6dedb;
 
-    --focus: #6fb1e6;
+    --focus: #4f5bc4;
+    --accent-fill: #5e6ad2;
+    --on-accent: #ffffff;
 
-    --shadow: 0 10px 30px rgb(0 0 0 / 40%);
-    --scrim: rgb(0 0 0 / 55%);
+    --shadow: 0 8px 24px rgb(8 9 10 / 10%);
+    --scrim: rgb(8 9 10 / 40%);
 
-    --ink-surface: #101210;
-    --on-ink: #ecebe4;
-    --on-ink-muted: #a8ada3;
+    --ink-surface: #08090a;
+    --on-ink: #f7f8f8;
+    --on-ink-muted: #a1a1aa;
 
-    --optional: #93a0b3;
-    --grid-fine: #20241f;
-    --grid-coarse: #262b24;
+    --optional: #7c8a9f;
+    --grid-fine: #eceded;
+    --grid-coarse: #e2e3e5;
 
-    --lane-1: #e58a8f;
-    --lane-2: #dd9160;
-    --lane-3: #c9a53f;
-    --lane-4: #9ab85a;
-    --lane-5: #3fc490;
-    --lane-6: #3fb9bd;
-    --lane-7: #55b0dd;
-    --lane-8: #7f96e8;
-    --lane-9: #b48fdc;
-    --lane-10: #d88ac0;
+    --lane-1: #d26b71;
+    --lane-2: #c87436;
+    --lane-3: #a5851e;
+    --lane-4: #739432;
+    --lane-5: #129b6b;
+    --lane-6: #18989c;
+    --lane-7: #2391c3;
+    --lane-8: #6b83d8;
+    --lane-9: #a076ca;
+    --lane-10: #c46da5;
   }
 }
 
@@ -6390,7 +6395,7 @@ tr[data-followable]:hover {
   /* Tailwind's corner scale is this sheet's two radii and its pill. */
   --radius-sm: var(--radius);
   --radius-md: var(--radius);
-  --radius-lg: 10px;
+  --radius-lg: 8px;
   --radius-xl: var(--radius-lg);
   --radius-2xl: var(--radius-lg);
   --radius-3xl: var(--radius-lg);
@@ -6412,4 +6417,35 @@ tr[data-followable]:hover {
 
   }
 
+}
+/* ── REACT FLOW PAINTS ITS OWN CHROME ────────────────────────────────────
+   The zoom buttons, the minimap and the mask over it come out of a package
+   whose defaults are a light theme, and under this ground they arrived as two
+   white plates on the night. Its roles are pointed at ours, so they follow
+   the scheme like everything else. Ours load after its sheet, so order alone
+   settles it — same specificity, later wins. */
+.react-flow {
+  --xy-controls-button-background-color-default: var(--paper);
+  --xy-controls-button-background-color-hover-default: var(--raised);
+  --xy-controls-button-color-default: var(--ink);
+  --xy-controls-button-color-hover-default: var(--ink);
+  --xy-controls-button-border-color-default: var(--line);
+  --xy-controls-box-shadow-default: var(--shadow);
+  --xy-minimap-background-color-default: var(--paper);
+  --xy-minimap-mask-background-color-default: var(--scrim);
+  --xy-minimap-node-background-color-default: var(--line);
+  --xy-attribution-background-color-default: var(--band-fill);
+  --xy-edge-stroke-default: var(--line);
+  --xy-edge-stroke-selected-default: var(--focus);
+  --xy-edge-label-background-color-default: var(--paper);
+  --xy-edge-label-color-default: var(--ink);
+  --xy-connectionline-stroke-default: var(--focus);
+  --xy-handle-background-color-default: var(--paper);
+  --xy-handle-border-color-default: var(--line);
+  --xy-node-background-color-default: var(--paper);
+  --xy-node-border-default: 1px solid var(--line);
+  --xy-node-color-default: var(--ink);
+  --xy-node-group-background-color-default: var(--band-fill);
+  --xy-selection-background-color-default: var(--band-fill);
+  --xy-resize-background-color-default: var(--focus);
 }
