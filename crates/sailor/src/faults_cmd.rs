@@ -6,6 +6,7 @@
 
 use crate::Form;
 use faults::{Draft, Fault, Faults};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// The forms of `sailor faults`, one per line.
@@ -78,7 +79,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         ));
     }
 
-    let mut options = std::collections::BTreeMap::new();
+    let mut options: BTreeMap<String, String> = BTreeMap::new();
     let mut loose: Vec<String> = Vec::new();
     let mut rest = args[1..].iter();
     while let Some(word) = rest.next() {
@@ -109,7 +110,7 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         "list" => list(&store, &options),
         "add" => add(&store),
         "status" => set_status(&store, &loose),
-        "render" => render(&store),
+        "render" => render(&store, &options),
         "import" => import(&store, &loose),
         "check" => check(&store, &loose),
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
@@ -197,9 +198,26 @@ fn set_status(store: &Faults, loose: &[String]) -> Result<String, String> {
     Ok(format!("fault {}: {}", changed.number, changed.status))
 }
 
-fn render(store: &Faults) -> Result<String, String> {
+/// The table, on the screen or into the file `--file` names.
+///
+/// **THE OPTION WAS IN THE USAGE LINE AND IN NO CODE.** Whoever typed it got
+/// the table on standard output, read «done», and left a file on disk that had
+/// not changed — a command claiming more than it did, which is the family of
+/// defect this very register is kept for.
+fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, String> {
     let all = store.all().map_err(|error| error.to_string())?;
-    Ok(faults::render(&all).trim_end().to_owned())
+    let Some(file) = options.get("file") else {
+        return Ok(faults::render(&all).trim_end().to_owned());
+    };
+    // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
+    // the rows are replaced where they stand and the prose around them stays.
+    let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
+    std::fs::write(file, faults::render_into(&document, &all))
+        .map_err(|error| format!("{file}: {error}"))?;
+    Ok(catalogue::say(
+        "cli.faults.written",
+        &[("file", file), ("count", &all.len().to_string())],
+    ))
 }
 
 /// The store against the table, on a machine that has both.
@@ -354,6 +372,56 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("the scratch directory");
         dir
+    }
+
+    /// **A DOCUMENTED OPTION THAT NO CODE READS IS A COMMAND THAT LIES.** The
+    /// usage line offered `--file` and `render` took no options at all: the
+    /// table went to the screen and the file on disk stayed as it was.
+    #[test]
+    fn rendering_into_a_file_writes_the_file() {
+        let dir = scratch("rendered");
+        let store = Faults::open(dir.join("faults.db")).expect("opening");
+        store
+            .record(&Draft {
+                happened_on: "03/09".to_owned(),
+                what_happened: "what the store holds".to_owned(),
+                how_it_showed: "reading it".to_owned(),
+                what_would_prevent: "a check that reads it back".to_owned(),
+                status: "**aperto**".to_owned(),
+            })
+            .expect("recording");
+        let written = dir.join("table.md");
+        std::fs::write(
+            &written,
+            "# The faults\n\nWhy this file is not a diary.\n\n| # | date |\n|---|---|\n",
+        )
+        .expect("a document to write into");
+        let options: BTreeMap<String, String> = [(
+            "file".to_owned(),
+            written.display().to_string(),
+        )]
+        .into_iter()
+        .collect();
+
+        let said = render(&store, &options).expect("rendering");
+
+        let text = std::fs::read_to_string(&written).expect("the file was written");
+        assert!(
+            text.contains("what the store holds"),
+            "the table is not in the file: {text}"
+        );
+        assert!(
+            said.contains(&written.display().to_string()),
+            "the answer does not name the file it wrote: {said}"
+        );
+        assert!(
+            text.contains("Why this file is not a diary."),
+            "the prose around the table was overwritten: {text}"
+        );
+        assert!(
+            !said.contains("what the store holds"),
+            "the table went to the screen as well, so nobody can tell whether the file was written: {said}"
+        );
     }
 
     /// **A COUNT OF WHAT CAME IN HIDES WHAT WENT OUT.** «Brought in 62» reads
