@@ -589,6 +589,34 @@ mod tests {
         assert!(recipe.refuses_without_prompt.is_empty());
     }
 
+    /// The pipe a descriptor names for its counts reaches the recipe as
+    /// written: a mapping that folded `stderr` into `stdout` would leave every
+    /// count of a local runner unknown with nothing red.
+    #[test]
+    fn the_pipe_the_counts_are_read_from_reaches_the_recipe() {
+        let dir = temp_dir("usage-pipe");
+        fake_executable(&dir, "sussurra");
+        let catalog = catalog_of(
+            r#"[{
+              "id": "sussurra", "family": "ai_cli",
+              "detect": { "command": "sussurra" },
+              "ask": { "args": ["run"], "prompt": "stdin" },
+              "usage": { "read": "text", "from": "stderr", "output_tokens": "eval count:\\s*(\\d+)" }
+            }]"#,
+            &dir,
+        );
+        let tools = Tools {
+            catalog,
+            machine: machine(&dir),
+            sessions: SessionAbilities::default(),
+        };
+
+        let recipe = tools.ask_recipe("sussurra").expect("the recipe is there");
+        let usage = recipe.usage.expect("the usage block reaches the recipe");
+        assert_eq!(usage.declared.from, models::usage::Heard::Stderr);
+        assert_eq!(usage.declared.read, actions::Shape::Text);
+    }
+
     /// A descriptor without `usage` gives a recipe without it: that engine is
     /// invoked as before, and its tokens stay unknown.
     #[test]

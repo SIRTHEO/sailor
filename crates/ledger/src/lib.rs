@@ -111,7 +111,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// learned four cache columns while this stayed at 4, an existing store was
 /// already registered at 4, `4 < 4` is false, the migration never ran, and
 /// every read died with `no such column: cache_write_tokens`.
-const PROJECTION_SCHEMA_VERSION: i64 = 8;
+const PROJECTION_SCHEMA_VERSION: i64 = 9;
 
 pub enum LedgerError {
     Sqlite(rusqlite::Error),

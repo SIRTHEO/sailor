@@ -291,9 +291,6 @@ pub enum Pointer {
     FirstKey(Vec<String>),
 }
 
-/// What a descriptor declares it can read from its own engine's output. Every
-/// pointer is optional: an engine that says only the total declares only
-/// `total_tokens`, and the rest stay unknown.
 /// Which pipe the engine states its usage on. Ollama prints its counts on
 /// stderr while the answer goes to stdout; reading the wrong one finds nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -315,6 +312,9 @@ impl Heard {
     }
 }
 
+/// What a descriptor declares it can read from its own engine's output. Every
+/// pointer is optional: an engine that says only the total declares only
+/// `total_tokens`, and the rest stay unknown.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Declared {
     pub read: Shape,
