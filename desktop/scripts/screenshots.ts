@@ -25,7 +25,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
-import { PLACES, type Section } from "../src/Rail";
+import { PLACES, type Section } from "../src/places";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -62,11 +62,11 @@ async function openPlace(page: Page, id: Section): Promise<void> {
   await tab.click();
 }
 
-/** A column entry inside a place, by the name the column shows. */
-async function openEntry(page: Page, label: string): Promise<void> {
-  const entry = page.locator(".subrail__item", { hasText: label }).first();
-  await entry.waitFor({ state: "visible", timeout: 5000 });
-  await entry.click();
+/** A row of the machine's ground, by the name the column shows. */
+async function openMachineRow(page: Page, label: string): Promise<void> {
+  const row = page.locator(".world__global", { hasText: label }).first();
+  await row.waitFor({ state: "visible", timeout: 5000 });
+  await row.click();
 }
 
 /** The mark a refusal carries when the state is not in the product at all. */
@@ -172,8 +172,8 @@ const SCENES: Scene[] = [
     name: "installed",
     what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
-      await openPlace(page, "sailor");
-      await openEntry(page, "Equipment");
+      // One click: the machine's places are rows of the one column now.
+      await openMachineRow(page, "Equipment");
     },
   },
   {

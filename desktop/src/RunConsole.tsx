@@ -4,48 +4,24 @@ import { tryT } from "./i18n";
 import { totalsArePartial, type RunUsage } from "./flow";
 
 /**
- * La vista di una corsa: cosa sta girando adesso, cosa ha finito, cosa ha detto.
+ * A run as it goes: what is running, what finished, what it said.
  *
- * ## COSA ARRIVA MENTRE IL PASSO GIRA, E COSA NO — misurato, non supposto
+ * **STEP STATE STREAMS. THE TEXT A STEP PRODUCES DOES NOT.** The shell
+ * announces each step opening and closing the instant the store makes it
+ * durable, so a second step is seen starting while the run is half done. But
+ * `drain_and_wait` in `crates/actions/src/lib.rs` reads stdout with
+ * `read_to_end` on a thread of its own, and that buffer only becomes readable
+ * at the `join` — an agent that talks for half an hour delivers all of it at
+ * once, at the end.
  *
- * Due cose diverse viaggiano su questo canale, e confonderle è il modo di
- * rendere una vista d'esecuzione peggiore di nessuna vista.
+ * So an output line carries **the instant the step closed**, which is when it
+ * really arrived, and every box says so while the step is still running.
+ * Spreading them over an invented time to look alive is the exact lie this
+ * guards against. For real streaming, `read_to_end` becomes `BufReader::lines()`
+ * pushing into a channel: that is the only place, everything above it is ready.
  *
- * **Lo stato dei passi scorre davvero.** Il guscio annuncia l'apertura e la
- * chiusura di ogni passo nell'istante in cui il deposito le rende durevoli.
- * Misura del 28/08/2026 sul flusso di prova: `sinistra` aperto al secondo 0 e
- * chiuso al 6, `destra` aperto al 6 e chiuso al 13. Il secondo passo si è visto
- * partire mentre la corsa era ancora a metà, non alla fine.
- *
- * **Il testo che un passo produce non scorre**, e non dipende da questa
- * finestra: `crates/actions/src/lib.rs` legge lo stdout del processo con
- * `read_to_end` su un thread a parte, e quel buffer diventa leggibile solo al
- * `join`, cioè quando il processo è finito. Non esiste, oggi, nessun punto da
- * cui prendere una riga a metà: un agente che parla per mezz'ora consegna tutto
- * il suo testo in un colpo solo, alla fine.
- *
- * Perciò le righe di uscita portano **l'istante della chiusura del passo**, che
- * è quando sono arrivate davvero, e ogni riquadro lo dichiara mentre il passo
- * sta ancora girando. Spalmarle su un tempo inventato per farle sembrare vive
- * sarebbe la bugia esatta da cui questo commento difende.
- *
- * Perché scorra per davvero va cambiato `drain_and_wait` in
- * `crates/actions/src/lib.rs`: `read_to_end` diventa `BufReader::lines()`, e
- * ogni riga va spinta in un canale che il chiamante possa leggere mentre il
- * processo vive. È l'unico punto: sopra, `flow` e il guscio sono già pronti a
- * far passare i fatti nell'istante in cui accadono.
- *
- * ## E I PASSI IN PARALLELO
- *
- * Dal 30/08/2026 il fronte parte **insieme**: due passi indipendenti da sei
- * secondi impiegano 6,07 secondi in tutto, tre ne impiegano 6,05. Fino a quel
- * giorno giravano in fila — due ne impiegavano dodici — e questa vista lo
- * dichiarava a chi guardava, perché due riquadri affiancati suggeriscono due
- * lavori che avanzano insieme e uno solo si muoveva. Ora la riga non serve più
- * e se n'è andata con la ragione che la teneva.
- *
- * Il tetto è quattro passi per ondata (`AT_ONCE` in
- * `crates/flow/src/executor.rs`): un fronte più largo si esegue a gruppi.
+ * The front starts together — the cap is `AT_ONCE` in
+ * `crates/flow/src/executor.rs`, four steps per wave.
  */
 
 /** Come si guarda una corsa. */

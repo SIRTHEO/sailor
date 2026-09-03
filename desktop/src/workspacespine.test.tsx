@@ -3,7 +3,7 @@
  * checked out four times, listed flat, reads as four projects.
  */
 import { describe, expect, test } from "vitest";
-import { grouped, treeName, whereWeAre } from "./Workspace";
+import { grouped, treeName } from "./workspacetrees";
 import type { Project } from "./workspaces";
 
 function tree(name: string, root: string, last_seen: number, current = false): Project {
@@ -33,35 +33,6 @@ describe("the workspace and its trees", () => {
     const seen = [tree("vecchia", "/t/vecchia", 10), tree("nuova", "/t/rami/x", 900)];
 
     expect(grouped(seen).map((one) => one.name)).toEqual(["nuova", "vecchia"]);
-  });
-
-  /** «outside every workspace» came back on screen as «outside every w…». */
-  test("EACH STATE HAS ITS OWN TWO WORDS, and none of them is a sentence", () => {
-    expect(whereWeAre({ state: "asking" }, null).name).toBe("…");
-    expect(whereWeAre({ state: "mute", why: "no home to read" }, null)).toEqual({
-      name: "unknown",
-      tree: "cannot read",
-    });
-    expect(whereWeAre({ state: "asked", seen: [] }, null)).toEqual({
-      name: "no workspace",
-      tree: "outside",
-    });
-    const here = tree("una-casa", "/t/rami/primo", 10, true);
-    expect(whereWeAre({ state: "asked", seen: [here] }, here)).toEqual({
-      name: "una-casa",
-      tree: "primo",
-    });
-    for (const state of ["asking", "mute", "asked"] as const) {
-      const said = whereWeAre(
-        state === "mute"
-          ? { state, why: "why" }
-          : state === "asked"
-            ? { state, seen: [] }
-            : { state },
-        null,
-      );
-      expect(said.name.length, `«${said.name}» does not fit the column`).toBeLessThan(15);
-    }
   });
 
   /** The tree is named by its folder: two checkouts differ by that word alone. */
