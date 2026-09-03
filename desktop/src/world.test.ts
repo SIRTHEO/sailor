@@ -4,7 +4,7 @@
  * wrong project.
  */
 import { describe, expect, test } from "vitest";
-import { ago, outside, treeOf } from "./World";
+import { ago, outside, reopenIn, treeOf } from "./World";
 import type { Project } from "./workspaces";
 import type { TerminalSummary } from "./terminal";
 
@@ -58,5 +58,32 @@ describe("how long ago", () => {
     expect(ago(0, 600)).toBe("10m");
     expect(ago(0, 3600 * 5)).toBe("5h");
     expect(ago(0, 3600 * 24 * 3)).toBe("3d");
+  });
+});
+
+/**
+ * Which tree the window reopens in. Read from the process's directory, a
+ * window launched from the Finder starts in `/`: every project on the list
+ * and none of them open.
+ */
+describe("where the window reopens", () => {
+  function seen(current: boolean, last: number, root: string): Project {
+    return { name: "p", root, first_seen: 1, last_seen: last, standing: "declared", current };
+  }
+
+  test("THE MOST RECENTLY WORKED IN, when none is open", () => {
+    const list = [seen(false, 10, "/a"), seen(false, 99, "/b"), seen(false, 50, "/c")];
+
+    expect(reopenIn(list)?.root).toBe("/b");
+  });
+
+  test("NOTHING TO DO when a tree is already open: it would drag you out of it", () => {
+    const list = [seen(false, 99, "/a"), seen(true, 10, "/b")];
+
+    expect(reopenIn(list)).toBeNull();
+  });
+
+  test("NOTHING TO DO with no project on record", () => {
+    expect(reopenIn([])).toBeNull();
   });
 });

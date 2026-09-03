@@ -4,7 +4,7 @@
  * nouns say what the program has, not where the work is — and a thing can sit
  * outside every workspace, which is a place of its own.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PLACES, type Section } from "./Rail";
 import { grouped, treeName } from "./Workspace";
 import { projects, workHere, type Project } from "./workspaces";
@@ -44,6 +44,16 @@ export function ago(seconds: number, now: number): string {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h`;
   return `${Math.round(hours / 24)}d`;
+}
+
+/**
+ * The tree to reopen in, or `null` when there is nothing to do. Nothing when
+ * one is already open — reopening then would drag you out of the tree you
+ * chose — and nothing when no project is on record.
+ */
+export function reopenIn(seen: Project[]): Project | null {
+  if (seen.length === 0 || seen.some((one) => one.current)) return null;
+  return seen.reduce((newest, one) => (one.last_seen > newest.last_seen ? one : newest));
 }
 
 export function World({
@@ -94,6 +104,22 @@ export function World({
       (error: unknown) => setWhy(String(error)),
     );
   }
+
+  // **THE WINDOW REOPENS WHERE YOU LEFT OFF.** Which tree is current is read
+  // from the process's directory, and a window launched from the Finder starts
+  // in `/`: every project on the list and none of them open. Once, and only
+  // when nothing is current — otherwise it would drag you back out of a tree
+  // you chose.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (settled.current) return;
+    const last = reopenIn(seen);
+    if (seen.length === 0) return;
+    settled.current = true;
+    if (last !== null) move(last.root);
+    // `move` is stable enough for this: it is called once, on the first list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seen]);
 
   const homeless = outside(terminals, seen);
   // No tree open means the board is not under one: it still has to be reachable.
