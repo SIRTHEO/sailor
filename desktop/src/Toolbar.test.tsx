@@ -314,13 +314,15 @@ describe("where the bar is", () => {
     expect(Number.parseInt(countOf(), 10)).toBe(before + 1);
   });
 
-  test("the rail no longer holds any tool", () => {
+  test("the column no longer holds any tool", () => {
     const { container } = render(<App />);
     goToFlows();
     focusAFlow(container);
-    const rail = container.querySelector(".rail") as HTMLElement;
-    expect(rail.querySelectorAll(".toolbar__tool")).toHaveLength(0);
-    expect(rail.querySelectorAll(".palette__item")).toHaveLength(0);
+    // The flows moved into the world column; the toolbox stayed on the canvas.
+    const column = container.querySelector(".world") as HTMLElement;
+    expect(column.querySelectorAll(".rail__item").length).toBeGreaterThan(0);
+    expect(column.querySelectorAll(".toolbar__tool")).toHaveLength(0);
+    expect(column.querySelectorAll(".palette__item")).toHaveLength(0);
   });
 });
 
