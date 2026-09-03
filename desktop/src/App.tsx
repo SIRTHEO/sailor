@@ -32,6 +32,7 @@ import { lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
 import { Rail, PLACES, type Section } from "./Rail";
 import { BuildChip, LiveChip, WhoChip } from "./Bar";
+import { LedgerBrowser } from "./LedgerBrowser";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
 import { SailorScreen, SAILOR_TABS, type SailorTab } from "./SailorScreen";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
@@ -1164,8 +1165,9 @@ export default function App() {
     if (place === "board") return focusName === null ? [section] : [section, focusName];
     if (place === "memory") {
       const tab = MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab;
-      return memoryTab === "ledger" && ledgerTable !== null ? [section, tab, ledgerTable] : [section, tab];
+      return [section, tab];
     }
+    if (place === "ledger") return ledgerTable === null ? [section] : [section, ledgerTable];
     if (place === "sailor") return [section, SAILOR_TABS.find((one) => one.id === sailorTab)?.name ?? sailorTab];
     return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
   }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
@@ -1279,10 +1281,9 @@ export default function App() {
         }}
       />
 
-      {/* FOUR PLACES IN A COLUMN, each the question a person asks: what am I
-          doing, what is running, what happened, what does Sailor know. A row
-          of nouns was a list of what exists; a section opens on what its
-          question wants, and everything else lives inside it. */}
+      {/* THE PLACES, IN A COLUMN, divided by what you are doing and not by how
+          the program is built. A section opens on what its question wants, and
+          everything else lives inside it. */}
       <div className="app__body">
       <Rail here={place} onGo={setPlace} counts={{ board: flows.size, terminals: terminalCount }} />
       <div className="stage">
@@ -1313,8 +1314,16 @@ export default function App() {
           tab={memoryTab}
           onTab={setMemoryTab}
           onOpenRun={(runId) => setWatching(runId)}
-          onLedgerTable={setLedgerTable}
         />
+      )}
+      {/* THE LEDGER IS A PLACE, NOT A TAB. It is a database and it is looked
+          at like one; buried under another question nobody found it. */}
+      {place === "ledger" && (
+        <div className="section">
+          <div className="section__body">
+            <LedgerBrowser native={NATIVE} onTable={setLedgerTable} />
+          </div>
+        </div>
       )}
       {place === "sailor" && (
         <SailorScreen

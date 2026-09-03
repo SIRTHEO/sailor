@@ -359,7 +359,7 @@ describe("the framing, when the board appears", () => {
     // and coming back is what puts the box back at zero. The fault this guards
     // — framing a box that measures nothing — is unchanged.
     const body = container.querySelector(".body") as HTMLElement;
-    fireEvent.click(screen.getByRole("button", { name: /^Memory/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
     expect(body.hasAttribute("hidden"), "leaving did not hide the board").toBe(true);
 
     spy.fits.length = 0;
@@ -587,7 +587,7 @@ describe("the bar does not send you to a column this place has not got", () => {
     // Leave the board: **mounted is not in view**. The board sits inside
     // `.body[hidden]`, and the bar must stop naming a column this place has
     // not got.
-    fireEvent.click(screen.getByRole("button", { name: /^Memory/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Runs/ }));
     expect(container.querySelector(".body[hidden]"), "the board is still in view").not.toBeNull();
     expect(
       container.querySelector(".topbar__none"),
