@@ -31,7 +31,7 @@ import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
 import { lastedOf, outcomeOf, whenOf } from "./History";
 import { useAsk, useClock } from "./ask";
 import { PLACES, type Section } from "./Rail";
-import { World } from "./World";
+import { World, type FlowGroup } from "./World";
 import type { TerminalSummary } from "./terminal";
 import { BuildChip, LiveChip, WhoChip } from "./Bar";
 import { LedgerBrowser } from "./LedgerBrowser";
@@ -1145,6 +1145,26 @@ export default function App() {
   const selectedData = selected?.data as StepNodeData | undefined;
   const selectedFlow = selectedData ? flows.get(selectedData.flowName) : undefined;
 
+  // The column's flows in the shape the world column draws. The wording and
+  // the lane colour stay here, with the flows.
+  const worldGroups = useMemo<FlowGroup[]>(
+    () =>
+      railGroups.map((group) => ({
+        origin: group.origin,
+        flows: group.flows.map(({ name, flow }) => {
+          const working = flows.get(name);
+          return {
+            name,
+            note: stepCountLabel(flow.graph.steps.length),
+            color: layout.bands.get(name)?.color,
+            dirty: working ? isDirty(working) : false,
+          };
+        }),
+        broken: group.broken.map((entry) => ({ name: entry.name, reason: entry.reason })),
+      })),
+    [railGroups, layout, flows],
+  );
+
   const focusedBand = focusName ? layout.bands.get(focusName) : undefined;
   const focusedWorking = focusName ? flows.get(focusName) : undefined;
   const focusedDirty = focusedWorking ? isDirty(focusedWorking) : false;
@@ -1294,6 +1314,13 @@ export default function App() {
         counts={{ board: flows.size, terminals: terminalCount }}
         terminals={openTerminals}
         onMoved={() => readFlows(() => true)}
+        flowGroups={worldGroups}
+        focusName={focusName}
+        onFlow={(name) => {
+          setFocusName((current) => (name !== null && current === name ? null : name));
+          setSelectedNode(null);
+        }}
+        onNewFlow={addFlow}
       />
       <div className="stage">
 
@@ -1377,88 +1404,6 @@ export default function App() {
           canvas that has to find its nodes again every time. */}
       <div className="body" hidden={place !== "board" || flowView !== "graph"}>
 
-        {/* LA COLONNA HA UN MESTIERE SOLO: SCEGLIERE COSA GUARDARE. La cassetta
-            dei passi se n'è andata dentro la tela, dove si compone. Quello che
-            resta — l'elenco dei flussi, «tutti i flussi», il flusso nuovo —
-            risponde a una domanda sola, e la larghezza resta quella: a fissarla
-            era il nome di un flusso accanto al suo conteggio di passi, e
-            stringere la colonna li troncherebbe senza guadagnare niente sulla
-            tela, che il pannello a destra delimita comunque. */}
-        {/* A ZERO FLUSSI LA COLONNA SI CHIUDE, come la destra. Un elenco di
-            niente col suo invito accanto metteva DUE INVITI ALLO STESSO GESTO:
-            «+ Nuovo flusso» qui e «Crea il primo flusso» sulla tela, la stessa
-            funzione con due nomi a mezzo metro. E il gesto non perde la sua
-            casa, perché i due non convivono mai: al primo clic la scheda se ne
-            va e la colonna torna, col bottone accanto alla cosa appena creata. */}
-        {(flows.size > 0 || broken.length > 0) && (
-        <aside className="rail">
-          <div className="rail__title">Flows on record</div>
-          {/* «Tutti i flussi» toglie il fuoco: senza flussi non c'è fuoco da
-              togliere, e il bottone resterebbe un comando che non comanda. */}
-          {flows.size > 0 && (
-          <button
-            type="button"
-            className="rail__all"
-            data-active={focusName === null || undefined}
-            onClick={() => setFocusName(null)}
-          >
-            All flows
-          </button>
-          )}
-          {/* A FLAT LIST SAID WHOSE NOTHING WAS. Flows arrive from three
-              places, and mixed together a flow of the project you are in sat
-              between two of somebody else's with no way to tell. The heading
-              also answers what came next: two flows can share a name, and the
-              most specific place wins. */}
-          {railGroups.map((group) => (
-            <div className="rail__group" key={group.origin ?? UNSAVED_GROUP}>
-              <div className="rail__origin">{group.origin ?? UNSAVED_GROUP}</div>
-              {group.flows.map(({ name, flow }) => {
-                const working = flows.get(name);
-                const dirty = working ? isDirty(working) : false;
-                const color = layout.bands.get(name)?.color;
-                return (
-                  <button
-                    type="button"
-                    key={name}
-                    className="rail__item"
-                    data-open={name === focusName || undefined}
-                    onClick={() => {
-                      setFocusName((current) => (current === name ? null : name));
-                      setSelectedNode(null);
-                    }}
-                  >
-                    <span className="rail__dot" style={{ background: color }} />
-                    <span className="rail__label">
-                      {name}
-                      {dirty && <span className="rail__dirty-dot" title="not saved" />}
-                    </span>
-                    <span className="rail__note">{stepCountLabel(flow.graph.steps.length)}</span>
-                  </button>
-                );
-              })}
-              {group.broken.map((entry) => (
-                // A broken flow does not vanish from the list: it is shown,
-                // marked, with the reason. It stays off the canvas because it
-                // has no graph to draw — and it stays under its origin, which
-                // is where whoever goes to repair it has to look.
-                <div className="rail__item" key={entry.name} data-broken>
-                  <span className="rail__label">{entry.name}</span>
-                  <span className="rail__note">{entry.reason}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-          {/* L'INVITO È DELLA TELA FINCHÉ NON C'È NIENTE. Coi soli flussi rotti
-              la colonna resta aperta — sparire porterebbe via il posto che la
-              scheda nomina — ma tace: il gesto lo offre la scheda, da sola. */}
-          {flows.size > 0 && (
-          <button type="button" className="rail__new" onClick={addFlow}>
-            + New flow
-          </button>
-          )}
-        </aside>
-        )}
 
         <main className="canvas" ref={canvasRef}>
           <ReactFlow

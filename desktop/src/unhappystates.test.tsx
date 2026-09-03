@@ -450,7 +450,7 @@ describe("a single step is not «1 passi»", () => {
  * the column, which invites with «+ New flow», and the rule stayed green.
  */
 const OWNERS: Array<[selector: string, name: string]> = [
-  [".rail", "the column"],
+  [".world", "the column"],
   [".blank__card", "the blank canvas"],
   [".toolbar__prompt", "the bar"],
   [".panel__empty", "the panel"],
@@ -640,28 +640,33 @@ describe("the screen with no flows, in full", () => {
   });
 
   /**
-   * **THE LEFT COLUMN CLOSES AT ZERO FLOWS TOO.** Not for symmetry: its
-   * «+ New flow» and the card's «Create the first flow» are one function
-   * under two names, half a metre apart. The gesture keeps its home — the two
-   * never coexist: at the first click the flow is born and the column returns.
+   * **AT ZERO FLOWS THE COLUMN SAYS NOTHING ABOUT FLOWS.** Not the whole
+   * column — it holds the workspaces and the terminals, and they are there
+   * whatever the flows do. But «+ New flow» and the card's «Create the first
+   * flow» are one function under two names half a metre apart, so the list and
+   * its invitation are absent until there is a list.
    */
-  test("THE LEFT COLUMN CLOSES AT ZERO FLOWS, and the canvas takes the full width", () => {
+  test("AT ZERO FLOWS THE COLUMN LISTS NO FLOW AND OFFERS NONE", () => {
     disk.empty = true;
     const { container } = render(<App />);
     goToFlows();
     expect(
-      container.querySelectorAll(".rail"),
-      "a list of nothing with its invitation beside it, while the card offers the same gesture",
+      container.querySelectorAll(".rail__item"),
+      "a list of nothing, while the card offers the same gesture",
     ).toHaveLength(0);
+    expect(
+      container.querySelector(".rail__new"),
+      "two invitations to one gesture, half a metre apart",
+    ).toBeNull();
 
     cleanup();
     disk.empty = false;
     const populated = render(<App />);
     goToFlows();
     expect(
-      populated.container.querySelectorAll(".rail"),
-      "the column is gone even where it has flows to list",
-    ).toHaveLength(1);
+      populated.container.querySelectorAll(".rail__item").length,
+      "the flows are gone from the column that lists them",
+    ).toBeGreaterThan(0);
     expect(
       populated.container.querySelector(".rail__new"),
       "the gesture has lost its permanent home",

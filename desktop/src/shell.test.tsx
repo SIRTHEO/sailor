@@ -86,7 +86,7 @@ describe("the column is the world", () => {
     const heads = Array.from(container.querySelectorAll(".world__head")).map(
       (one) => one.textContent,
     );
-    expect(heads).toEqual(["workspaces", "outside every workspace"]);
+    expect(heads).toEqual(["workspaces", "flows everywhere", "outside every workspace"]);
     expect(container.querySelector(".body[hidden]"), "the board is not in view at rest").toBeNull();
   });
 
