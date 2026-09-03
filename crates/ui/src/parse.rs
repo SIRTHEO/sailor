@@ -91,6 +91,7 @@ fn parse_model_call_row(row: &Value) -> Option<ModelCallRecord> {
         // Version 7, the session: what lets a step resume instead of
         // rediscovering.
         session_id: opt_str_at(cols, 27),
+        work_kind: opt_str_at(cols, 28),
     })
 }
 
@@ -190,6 +191,7 @@ mod tests {
             (25, "cache_write_long_price_micros_per_million"),
             (26, "turns"),
             (27, "session_id"),
+            (28, "work_kind"),
         ] {
             assert_eq!(
                 dumped.get(index).copied(),
@@ -199,7 +201,7 @@ mod tests {
         }
         assert_eq!(
             dumped.len(),
-            28,
+            29,
             "the ledger dumps a column this file never reads"
         );
     }

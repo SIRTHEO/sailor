@@ -109,6 +109,7 @@ fn seed(dir: &Path) {
             started_at: 1001,
             ended_at: Some(1009),
             session_id: None,
+            work_kind: None,
         })
         .expect("recording the model call");
 }
@@ -193,6 +194,7 @@ fn a_record_comes_back_from_the_projection_field_for_field() {
         started_at: 808,
         ended_at: Some(909),
         session_id: Some("session-only".into()),
+        work_kind: None,
     };
 
     {

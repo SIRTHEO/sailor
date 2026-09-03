@@ -13,4 +13,5 @@ pub mod pact;
 pub mod pricing;
 pub mod remaining;
 pub mod store;
+pub mod strengths;
 pub mod usage;
