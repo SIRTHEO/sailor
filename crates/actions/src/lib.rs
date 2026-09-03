@@ -804,6 +804,15 @@ pub fn judge_dry_run(recipe: &AskRecipe, stdout: &str, stderr: &str) -> ProbeVer
     if says_it_cannot_work(&recipe.unusable_when, &said) {
         return ProbeVerdict::CannotWork { said };
     }
+    // An engine measured to answer nothing without a question is sound when
+    // stdout is empty; stderr may carry a spinner and is not read here.
+    if recipe.silent_without_prompt {
+        return if stdout.trim().is_empty() {
+            ProbeVerdict::Sound
+        } else {
+            ProbeVerdict::Broken { said }
+        };
+    }
     if recipe
         .refuses_without_prompt
         .iter()
@@ -1193,6 +1202,9 @@ pub struct AskRecipe {
     /// tell a spent quota from a missing credential.
     pub exhausted_when: Vec<String>,
     pub cooldown_secs: Option<u64>,
+    /// Measured: without a question it exits quietly with an empty stdout
+    /// instead of refusing in words.
+    pub silent_without_prompt: bool,
     /// I frammenti con cui questo motore rifiuta la riga **montata senza la
     /// domanda**: «la riga andava bene, mancava solo il testo».
     ///
@@ -2795,8 +2807,8 @@ impl ExternalEngineAction {
         // suo descrittore dichiara. Chi non dichiara niente lascia tutto
         // sconosciuto — e non è un ramo `if` per fornitore: è l'assenza di un
         // dato nel descrittore.
-        let read = |said: &str| match &candidate.declared_usage {
-            Some(declared) => models::usage::read_declared(said, declared),
+        let read = |stdout: &str, stderr: &str| match &candidate.declared_usage {
+            Some(declared) => models::usage::read_declared(&declared.from.text(stdout, stderr), declared),
             None => Reading::default(),
         };
         // Ogni ramo passa di qui: anche il fallimento e anche il silenzio, che è
@@ -2824,7 +2836,7 @@ impl ExternalEngineAction {
         };
         let outcome = match result {
             EngineResult::Ok { stdout, stderr } => {
-                let reading = read(&stdout);
+                let reading = read(&stdout, &stderr);
                 // **DIRE DI NON POTER LAVORARE E USCIRE ZERO SONO COMPATIBILI, E
                 // FINO AL 01/09/2026 QUI NON SI GUARDAVA.** La domanda «questo
                 // motore ha detto di non poter lavorare?» stava solo nel ramo
@@ -2900,7 +2912,7 @@ impl ExternalEngineAction {
                 // Il consumo si legge dall'uscita GREZZA, prima di qualunque
                 // altra cosa: un motore uscito in errore può aver già speso, e
                 // i suoi token vanno letti dove li ha scritti.
-                let reading = read(&stdout);
+                let reading = read(&stdout, &stderr);
                 // **ESAURITO NON È ROTTO, E SI GUARDA PRIMA DI SCRIVERE LA
                 // RIGA.** Fino al 31/08/2026 questa distinzione stava dieci
                 // righe più in basso e valeva solo quando c'era una catena
@@ -4377,6 +4389,7 @@ mod tests {
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
+                    silent_without_prompt: false,
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
@@ -4387,6 +4400,7 @@ mod tests {
                     prompt: PromptVia::LastArg,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
+                    silent_without_prompt: false,
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
@@ -4397,6 +4411,7 @@ mod tests {
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
                     unusable_when: vec!["weekly limit".to_owned()],
+                    silent_without_prompt: false,
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
@@ -4714,6 +4729,7 @@ mod tests {
                         prompt: PromptVia::Stdin,
                         args_before_prompt: Vec::new(),
                         unusable_when: vec![String::new(), "   ".to_owned()],
+                        silent_without_prompt: false,
                         refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
@@ -5320,6 +5336,7 @@ mod what_it_cost {
             prompt: PromptVia::Stdin,
             args_before_prompt: Vec::new(),
             unusable_when: Vec::new(),
+            silent_without_prompt: false,
             refuses_without_prompt: Vec::new(),
             exhausted_when: Vec::new(),
             cooldown_secs: None,
@@ -5327,6 +5344,7 @@ mod what_it_cost {
                 args: vec!["--output-format".to_owned(), "json".to_owned()],
                 declared: Declared {
                     read: Shape::Json,
+                    from: models::usage::Heard::Stdout,
                     input_tokens: path(&["usage", "input_tokens"]),
                     output_tokens: path(&["usage", "output_tokens"]),
                     cached_tokens: path(&["usage", "cache_read_input_tokens"]),
@@ -5514,6 +5532,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 prompt: PromptVia::Stdin,
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
+                silent_without_prompt: false,
                 refuses_without_prompt: Vec::new(),
                 exhausted_when: Vec::new(),
                 cooldown_secs: None,
@@ -5844,6 +5863,45 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
         }
     }
 
+    /// An engine that answers on stdout and states its counts on stderr, the
+    /// way a local model runner does: the descriptor says which pipe, and the
+    /// row carries the counts; read from stdout instead, they stay unknown.
+    #[test]
+    fn counts_stated_on_stderr_are_read_when_the_descriptor_says_so() {
+        let dir = scratch("stderr-counts");
+        let bin = fake_engine(
+            &dir,
+            "locale",
+            "cat > /dev/null\necho \"the answer\"\necho \"prompt eval count:    26 token(s)\" >&2\necho \"eval count:           298 token(s)\" >&2",
+        );
+        let recipe = |from: models::usage::Heard| AskRecipe {
+            usage: Some(UsageRecipe {
+                args: vec!["--verbose".to_owned()],
+                declared: Declared {
+                    read: Shape::Text,
+                    from,
+                    input_tokens: Some(Pointer::Pattern(r"prompt eval count:\s*(\d+)".to_owned())),
+                    output_tokens: Some(Pointer::Pattern(r"(?m)^eval count:\s*(\d+)".to_owned())),
+                    ..Declared::default()
+                },
+            }),
+            ..declaring_recipe()
+        };
+        let input = json!({"tool": "motore-di-prova", "stdin": "ciao", "timeout_secs": 10});
+        let run = |from, ledger: &str| {
+            let action = ExternalEngineAction::resolving_with(Declares { bin: bin.clone(), recipe: Some(recipe(from)) })
+                .recording_to(Some(Ledger::open(dir.join(ledger)).expect("open")));
+            with_price_list(None, || action.execute(&input, &mut shared("corsa", "passo"))).expect("answers");
+            calls_in(&dir.join(ledger)).remove(0)
+        };
+
+        let heard = run(models::usage::Heard::Stderr, "deposito");
+        assert_eq!((heard.input_tokens, heard.output_tokens), (Some(26), Some(298)));
+        // The control: the same engine read on stdout states nothing.
+        let unheard = run(models::usage::Heard::Stdout, "deposito-2");
+        assert_eq!((unheard.input_tokens, unheard.output_tokens), (None, None));
+    }
+
     /// Two engines with a subscription window each, read as fuel.
     struct Fuelled {
         bins: std::collections::BTreeMap<&'static str, String>,
@@ -6105,6 +6163,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                     prompt: PromptVia::Stdin,
                     args_before_prompt: Vec::new(),
                     unusable_when: Vec::new(),
+                    silent_without_prompt: false,
                     refuses_without_prompt: Vec::new(),
                     exhausted_when: Vec::new(),
                     cooldown_secs: None,
@@ -6315,6 +6374,7 @@ printf '{"result":"la risposta vera","model":"modello-di-prova","total_cost_usd"
                 prompt: PromptVia::Stdin,
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
+                silent_without_prompt: false,
                 refuses_without_prompt: Vec::new(),
                 exhausted_when: Vec::new(),
                 cooldown_secs: None,
@@ -6692,6 +6752,7 @@ printf 'session id: sessione-%s\nok\n' "$n""#;
                 prompt: PromptVia::Stdin,
                 args_before_prompt: Vec::new(),
                 unusable_when: Vec::new(),
+                silent_without_prompt: false,
                 refuses_without_prompt: Vec::new(),
                 exhausted_when: Vec::new(),
                 cooldown_secs: None,
