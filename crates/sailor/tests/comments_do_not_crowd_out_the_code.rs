@@ -30,7 +30,32 @@ const DATED_COMMENTS_TODAY: usize = 195;
 /// **THE ONLY HONEST RAISE** is a merge bringing in non-English comments
 /// written elsewhere: there you re-measure, raise to the measured number, and
 /// say so in the commit. Raising it because it went red is disarming it.
-const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_558;
+const COMMENT_LINES_NOT_IN_ENGLISH: usize = 7_553;
+
+/// Comment lines per thousand code lines, per crate, as measured today.
+/// Downwards only; a crate under 100 is where the sweep stops.
+const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
+    ("actions", 371),
+    ("catalogue", 268),
+    ("desktop", 273),
+    ("faults", 212),
+    ("flow", 221),
+    ("inventory", 278),
+    ("ledger", 170),
+    ("models", 276),
+    ("profiles", 183),
+    ("registry", 409),
+    ("relay", 155),
+    ("release", 520),
+    ("sailor", 264),
+    ("sessions", 253),
+    ("supervisor", 316),
+    ("terminal", 287),
+    ("toolbox", 297),
+    ("trigger", 248),
+    ("ui", 192),
+    ("workspace", 191),
+];
 
 /// How far a seed may drift above what the tree actually holds. **Zero.**
 ///
@@ -310,6 +335,70 @@ fn all_three(counts: &Counts) -> String {
          When you re-measure one, rewrite them all.",
         counts.long_blocks, counts.dated, counts.not_english
     )
+}
+
+/// Comment lines and code lines per crate: the crate is the first directory
+/// under `crates/`, and the shell is `desktop`.
+fn permille_per_crate() -> BTreeMap<String, usize> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the crate sits two levels under the root");
+    let mut comments: BTreeMap<String, usize> = BTreeMap::new();
+    let mut code: BTreeMap<String, usize> = BTreeMap::new();
+    for path in sources() {
+        let relative = path.strip_prefix(&root).unwrap_or(&path);
+        let mut parts = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned());
+        let crate_name = match parts.next().as_deref() {
+            Some("crates") => parts.next().unwrap_or_default(),
+            Some("desktop") => "desktop".to_owned(),
+            _ => continue,
+        };
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let mut in_block = false;
+        for line in text.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if is_comment(line, &mut in_block) {
+                *comments.entry(crate_name.clone()).or_default() += 1;
+            } else {
+                *code.entry(crate_name.clone()).or_default() += 1;
+            }
+        }
+    }
+    code.into_iter()
+        .map(|(name, lines)| {
+            let said = comments.get(&name).copied().unwrap_or(0);
+            (name, said * 1000 / lines.max(1))
+        })
+        .collect()
+}
+
+/// Every crate's ratio is seeded exactly and may only fall: a crate whose
+/// comments grew faster than its code is red, and a seed left above the
+/// tree is a seed nobody re-measured.
+#[test]
+fn no_crate_lets_its_comments_outtalk_its_code_more_than_today() {
+    let measured = permille_per_crate();
+    let table: Vec<String> = measured.iter().map(|(name, permille)| format!("    (\"{name}\", {permille}),")).collect();
+    let seeded: BTreeMap<&str, usize> = COMMENT_PERMILLE_TODAY.iter().copied().collect();
+    for (name, permille) in &measured {
+        let seed = seeded.get(name.as_str()).copied();
+        assert!(
+            seed.is_some_and(|seed| *permille <= seed),
+            "crate «{name}» carries {permille}‰ comment lines against a seed of {seed:?}. Cut comments, or the table is stale; measured now:\n{}",
+            table.join("\n")
+        );
+        assert!(
+            seed.is_some_and(|seed| seed <= permille + HOW_STALE_A_SEED_MAY_BE),
+            "crate «{name}» is seeded at {seed:?}‰ and holds {permille}‰: lower the seed. Measured now:\n{}",
+            table.join("\n")
+        );
+    }
+    assert_eq!(seeded.len(), measured.len(), "the table names crates the tree lacks, or lacks some; measured now:\n{}", table.join("\n"));
 }
 
 #[test]
