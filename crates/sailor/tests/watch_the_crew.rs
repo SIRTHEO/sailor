@@ -97,6 +97,7 @@ fn a_claim_and_a_waiting_run(ledger: &Ledger, agent: &str, repository: &str) {
             error: None,
             started_at: 1_700_000_100,
             ended_at: None,
+            worktree: None,
         })
         .expect("the waiting run is recorded");
 }

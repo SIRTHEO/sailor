@@ -5,7 +5,7 @@
  * is. A thing can also sit outside every workspace, a place of its own.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MACHINE, MACHINE_GROUND, inTheStrip, type Section } from "./places";
+import { MACHINE, MACHINE_GROUND, PLACES, UNDER_A_TREE, inTheStrip, type Section } from "./places";
 import { grouped, treeName } from "./workspacetrees";
 import { projects, workHere, type Project } from "./workspaces";
 import type { SailorTab } from "./sailortabs";
@@ -97,6 +97,7 @@ export function World({
   counts,
   terminals,
   onMoved,
+  onTree,
   flowGroups,
   focusName,
   onFlow,
@@ -113,6 +114,8 @@ export function World({
   terminals: TerminalSummary[];
   /** Called once the window has moved into another tree. */
   onMoved: () => void;
+  /** The tree the window stands in, whenever the answer changes. */
+  onTree: (tree: Project | null) => void;
   flowGroups: FlowGroup[];
   focusName: string | null;
   onFlow: (name: string | null) => void;
@@ -206,6 +209,15 @@ export function World({
   const mine = ofTheTree(flowGroups);
   const shared = everywhere(flowGroups);
   const anyFlow = flowGroups.some((group) => group.flows.length > 0);
+  // What hangs under the tree is drawn by whoever holds the places, and it
+  // needs the root. Read once here, told once — not asked for a second time.
+  const standingIn = seen.find((one) => one.current) ?? null;
+  useEffect(() => {
+    onTree(standingIn);
+    // `onTree` is a setter: re-running on its identity would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [standingIn]);
+
   const homeless = outside(terminals, seen);
   // No tree open means the board is not under one: it still has to be reachable.
   const noTreeOpen = !seen.some((one) => one.current);
@@ -276,23 +288,27 @@ export function World({
                   </button>
                   {tree.current && (
                     <>
-                      <button
-                        type="button"
-                        className="wsx__leaf"
-                        data-here={here === "board" || undefined}
-                        onClick={() => {
-                          onGo("board");
-                          onFlow(null);
-                        }}
-                      >
-                        <span className="world__glyph" aria-hidden="true">
-                          ◈
-                        </span>
-                        <span className="world__label">Board</span>
-                        {counts.board !== undefined && (
-                          <span className="wsx__count">{counts.board}</span>
-                        )}
-                      </button>
+                      {PLACES.filter((place) => UNDER_A_TREE.includes(place.id)).map((place) => (
+                        <button
+                          type="button"
+                          key={place.id}
+                          className="wsx__leaf"
+                          data-here={here === place.id || undefined}
+                          title={place.asks}
+                          onClick={() => {
+                            onGo(place.id);
+                            if (place.id === "board") onFlow(null);
+                          }}
+                        >
+                          <span className="world__glyph" aria-hidden="true">
+                            {place.glyph}
+                          </span>
+                          <span className="world__label">{place.name}</span>
+                          {counts[place.id] !== undefined && (
+                            <span className="wsx__count">{counts[place.id]}</span>
+                          )}
+                        </button>
+                      ))}
                       {mine.map(flowsOf)}
                       {anyFlow && (
                         <button type="button" className="rail__new" onClick={onNewFlow}>

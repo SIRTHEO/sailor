@@ -23,6 +23,7 @@ fn main() {
             error: None,
             started_at: 1_756_000_000,
             ended_at: Some(1_756_000_042),
+            worktree: Some("/t/un-progetto/un-albero".into()),
         })
         .expect("recording the finished run");
     close_step(
@@ -68,6 +69,7 @@ fn main() {
             error: None,
             started_at: 1_756_000_100,
             ended_at: None,
+            worktree: Some("/t/un-progetto/un-albero".into()),
         })
         .expect("recording the run still going");
     close_step(

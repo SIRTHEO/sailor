@@ -29,6 +29,7 @@ fn seed(dir: &Path) {
             error: None,
             started_at: 1000,
             ended_at: None,
+            worktree: None,
         })
         .expect("recording the run");
 

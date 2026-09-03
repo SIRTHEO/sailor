@@ -7,7 +7,7 @@
 import type { SailorTab } from "./sailortabs";
 import { SAILOR_TABS } from "./sailortabs";
 
-export type Section = "board" | "terminals" | "ledger" | "memory" | "sailor";
+export type Section = "board" | "changes" | "terminals" | "ledger" | "memory" | "sailor";
 
 export interface Place {
   id: Section;
@@ -21,6 +21,13 @@ export interface Place {
 
 export const PLACES: Place[] = [
   { id: "board", name: "Board", glyph: "◈", asks: "what am I doing", group: "work" },
+  {
+    id: "changes",
+    name: "Changes",
+    glyph: "⇄",
+    asks: "what is not saved yet, in this tree",
+    group: "work",
+  },
   { id: "terminals", name: "Terminals", glyph: "▮", asks: "what is running", group: "work" },
   {
     id: "ledger",
@@ -91,6 +98,13 @@ export function tabsThatExist(): SailorTab[] {
  */
 export function inTheStrip(): Place[] {
   return PLACES.filter(
-    (place) => place.id !== "board" && !MACHINE.some((row) => row.section === place.id),
+    (place) => !UNDER_A_TREE.includes(place.id) && !MACHINE.some((row) => row.section === place.id),
   );
 }
+
+/**
+ * The places that belong to the tree you stand in, and hang under it. Not a
+ * strip row: what they answer changes with the tree, and a row that answers
+ * about a tree you cannot see from it is a row that lies.
+ */
+export const UNDER_A_TREE: Section[] = ["board", "changes"];

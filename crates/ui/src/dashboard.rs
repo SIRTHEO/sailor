@@ -193,6 +193,8 @@ pub struct ExecutionView {
     pub run_id: String,
     pub kind: String,
     pub entity: String,
+    /// Where it was born: `None` outside every workspace, or before v10.
+    pub worktree: Option<String>,
     pub status: String,
     pub started_at: i64,
     pub ended_at: Option<i64>,
@@ -303,6 +305,7 @@ pub fn summarize_run(
         run_id: run.run_id.clone(),
         kind: run.kind.clone(),
         entity: run.entity.clone(),
+        worktree: run.worktree.clone(),
         status: run.status.clone(),
         started_at: run.started_at,
         ended_at: run.ended_at,
@@ -382,6 +385,7 @@ mod tests {
             error: None,
             started_at,
             ended_at,
+            worktree: None,
         }
     }
 
@@ -574,6 +578,7 @@ mod what_is_not_known {
             error: None,
             started_at: 0,
             ended_at: Some(10),
+            worktree: None,
         }
     }
 

@@ -3794,6 +3794,7 @@ mod tests {
                 error: None,
                 started_at: 1_000,
                 ended_at: Some(1_500),
+                worktree: None,
             })
             .expect("registrare la corsa");
         let mut record = StepRecord::started(
@@ -4815,6 +4816,7 @@ mod tests {
             error: None,
             started_at: 0,
             ended_at: Some(10),
+            worktree: None,
         }
     }
 
@@ -6768,6 +6770,7 @@ mod tests {
             error: None,
             started_at: 0,
             ended_at: Some(10),
+            worktree: None,
         }
     }
 
