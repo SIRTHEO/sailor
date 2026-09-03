@@ -355,6 +355,19 @@ impl Sessions {
     }
 
     /// A terminal's events, in the order they arrived.
+    /// The trees Sailor saw a terminal opened in, most recent first, each once.
+    pub fn trees_worked_in(&self) -> Result<Vec<PathBuf>, SessionError> {
+        let mut statement = self.connection.prepare(
+            "SELECT worktree FROM terminals GROUP BY worktree ORDER BY MAX(opened_at) DESC",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        let mut trees = Vec::new();
+        for tree in rows {
+            trees.push(PathBuf::from(tree?));
+        }
+        Ok(trees)
+    }
+
     pub fn events_on(&self, tty: &str) -> Result<Vec<TerminalEvent>, SessionError> {
         let mut statement = self.connection.prepare(
             "SELECT tty, session_id, worktree, ancestor, name, transcript_path, occurred_at,

@@ -51,11 +51,8 @@ type Scene = {
 };
 
 /**
- * Opens a place by **the name the product gives it**, not by a word written
- * here. The names were copied into this file once and then the product renamed
- * them: the scenes went looking for «flussi», «installato» and «storia», found
- * nothing, and the capture reported success on one scene out of eleven. A
- * navigation copied is a navigation that goes stale in silence.
+ * Opens a place by the name the product gives it, not by a word written here:
+ * copied once, the names went stale and the capture went blind in silence.
  */
 async function openPlace(page: Page, id: Section): Promise<void> {
   const place = PLACES.find((one) => one.id === id);
@@ -111,11 +108,7 @@ async function focusFirstFlow(page: Page): Promise<void> {
   }
 }
 
-/**
- * The mark a scene puts on its own refusal when the state it wants **is not in
- * the product at this width**. Anything else is the capture gone blind, and
- * the two are decided on oppositely at the end.
- */
+/** The mark a refusal carries when the state is not in the product at all. */
 const A_GAP_IN_THE_PRODUCT = "product gap: ";
 
 const SCENES: Scene[] = [
@@ -285,12 +278,9 @@ async function main(): Promise<void> {
   console.log(`\n--- ${outDir} ---`);
   if (missing.length === 0) return;
   console.log(`${missing.length} scenes missing: see missing.txt`);
-  // **A TOLERANCE WITHOUT A CEILING IS NOT A TOLERANCE.** A partial capture is
-  // worth more than none, and that was the whole rule: ten scenes out of
-  // eleven went missing for days and the script exited zero, so nobody looked
-  // at the window. A scene the product cannot reach at that width says so and
-  // stays tolerated; a scene that simply did not work is the eyes going blind,
-  // and that is red.
+  // A tolerance without a ceiling is not a tolerance: ten scenes out of eleven
+  // went missing for days and this exited zero. A scene the product cannot
+  // reach says so and stays tolerated; anything else is the eyes going blind.
   const blind = missing.filter((why) => !why.includes(A_GAP_IN_THE_PRODUCT));
   if (blind.length === 0) return;
   console.log(`${blind.length} of them are not a declared gap: the capture is blind`);

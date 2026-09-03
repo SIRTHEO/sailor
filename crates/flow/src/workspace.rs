@@ -131,6 +131,45 @@ pub struct Known {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// The projects `home` remembers, plus the ones Sailor has worked in. `seen`
+/// is what the caller worked in, never a scan of the disk — that would find
+/// other people's projects and call them yours.
+pub fn known_including(home: &Path, seen: &[PathBuf], at: i64) -> Result<Vec<Known>, String> {
+    let mut known = known_in(home)?;
+    for tree in seen {
+        // The tree a terminal reports is not the root: work happens in
+        // subfolders, so the marker is looked for walking up.
+        let Some(root) = find_root(tree) else { continue };
+        if known.iter().any(|entry| entry.root == root) {
+            continue;
+        }
+        known.push(Known {
+            name: name_declared_in(&root),
+            root,
+            // The register learns the real date next time somebody opens one.
+            first_seen: at,
+            last_seen: at,
+            extra: BTreeMap::new(),
+        });
+    }
+    known.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
+    Ok(known)
+}
+
+/// What a tree calls itself, falling back to the directory name.
+fn name_declared_in(root: &Path) -> String {
+    declaration_at(root)
+        .ok()
+        .map(|declared| declared.name)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| {
+            root.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?")
+                .to_owned()
+        })
+}
+
 /// Whether a remembered project is still declared where it was left.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Standing {
@@ -264,6 +303,56 @@ mod tests {
     fn put_marker(dir: &Path, text: &str) {
         fs::create_dir_all(dir).expect("directory");
         fs::write(dir.join(MARKER), text).expect("marker");
+    }
+
+    /// **SIX ON THE DISK, ZERO ON THE LIST**: a tree that declared itself
+    /// without `workspace init` was invisible to every screen.
+    #[test]
+    fn a_tree_sailor_worked_in_joins_the_list_if_it_declares_itself() {
+        let home = scratch("home-seen");
+        let declared = scratch("seen-declared");
+        put_marker(&declared, r#"{"name":"il-progetto"}"#);
+        let bare = scratch("seen-bare");
+        fs::create_dir_all(&bare).expect("a tree with no marker");
+
+        let known = known_including(&home, &[declared.clone(), bare.clone()], 100)
+            .expect("the list is readable");
+
+        let roots: Vec<&PathBuf> = known.iter().map(|entry| &entry.root).collect();
+        assert_eq!(roots, vec![&declared], "a tree with no marker is not a project");
+        assert_eq!(known[0].name, "il-progetto", "the marker names it, not the folder");
+    }
+
+    /// A terminal opened three folders down belongs to the project above it:
+    /// reading the reported path as a root would have listed nothing.
+    #[test]
+    fn a_terminal_below_the_root_still_names_its_project() {
+        let home = scratch("home-below");
+        let root = scratch("below-root");
+        put_marker(&root, r#"{"name":"la-casa"}"#);
+        let deep = root.join("un-servizio").join("src");
+        fs::create_dir_all(&deep).expect("a folder to work in");
+
+        let known = known_including(&home, &[deep], 100).expect("the list is readable");
+
+        assert_eq!(known.len(), 1, "the project was not found walking up: {known:?}");
+        assert_eq!(known[0].root, root);
+        assert_eq!(known[0].name, "la-casa");
+    }
+
+    /// **SEEING IT AGAIN NEVER MOVES `first_seen`.** It answers «since when do I
+    /// work on this» and nothing else can reconstruct it once overwritten.
+    #[test]
+    fn a_project_already_registered_keeps_its_dates() {
+        let home = scratch("home-dates");
+        let root = scratch("dates-root");
+        put_marker(&root, r#"{"name":"sailor"}"#);
+        remember_in(&home, &root, 10).expect("registering it");
+
+        let known = known_including(&home, &[root.clone()], 999).expect("the list is readable");
+
+        assert_eq!(known.len(), 1, "the seen tree was added a second time: {known:?}");
+        assert_eq!(known[0].first_seen, 10, "the date of the first day was rewritten");
     }
 
     /// The everyday case: work happens three directories below the root.

@@ -27,6 +27,9 @@ flow = { path = "../../crates/flow" }
 # `register_store`, non riscritta.
 actions = { path = "../../crates/actions" }
 ledger = { path = "../../crates/ledger" }
+# I terminali che Sailor segue: da qui si sa in quali alberi ha lavorato, che è
+# come un progetto entra nell'elenco senza che nessuno abbia battuto `init`.
+sessions = { path = "../../crates/sessions" }
 
 # Quali azioni sa eseguire il motore: la stessa lista che usa il terminale.
 # Averla in copia qui ha fatto girare lo stesso flusso in due modi diversi a

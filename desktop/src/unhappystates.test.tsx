@@ -629,11 +629,9 @@ describe("the screen with no flows, in full", () => {
       "the panel promises a step's parameters on a screen with no steps",
     ).toBeNull();
 
-    // **THE OPPOSITE DIRECTION IS NOT HERE, AND THAT IS DECLARED.** Choosing a
-    // step is what makes the panel appear, and choosing one asks the canvas to
-    // measure itself: jsdom gives every box zero, so the node never takes the
-    // click. The `step-selected` capture does it where the geometry is real,
-    // waits for `.panel`, and turns the capture red if it never comes.
+    // The opposite direction is not here, and that is declared: choosing a
+    // step asks the canvas to measure itself, and jsdom gives every box zero.
+    // The `step-selected` capture does it where the geometry is real.
   });
 
   /**
