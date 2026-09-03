@@ -223,6 +223,7 @@
               }
             ]
           },
+          "tree": "own",
           "timeout_secs": 1800
         },
         "input_schema": {
@@ -324,6 +325,7 @@
             ],
             "allow_extra": false
           },
+          "tree": "own",
           "timeout_secs": 1800
         },
         "input_schema": {

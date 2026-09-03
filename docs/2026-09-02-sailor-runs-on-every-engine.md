@@ -270,8 +270,18 @@ Starting point, so the mandate builds on it instead of beside it.
 3. **Two engines, two trees.** Each engine of the parallel front works in its
    own git worktree of the project, named after the run and the step, and the
    verify step reads both trees. No two engines share a tree.
-   *Proof:* a run leaves two worktrees named `<run>/<step>`; `git worktree
-   list` shows them; a flow with the trees disabled is refused.
+   *Where it landed:* a step declares `"tree": "own"` and works in a worktree
+   cut under `<repo>-worktrees/<run>/<step>`, detached so no branch is left
+   behind; a retried step finds the one its first attempt left. The two engine
+   steps of the shipped dispatch declare it. A step that asks for a tree and
+   also names a `workdir` is refused, and so is one whose run cannot say which
+   project it is in: the shared tree is never the quiet fallback. The
+   executor stopped handing the root to a step that asked for its own, or the
+   `workdir` it never wrote would read as a contradiction.
+   *Proof:* two steps of one run stand in two different trees, both checkouts
+   git lists, both named after the run; the same step run twice stands in the
+   same one; with the tree unwired both stand in the directory the process
+   started in.
 4. **The judge is blind by construction.** The verify step runs in a fresh
    session (never `--continue`), receives only the mandate and the two
    answers, and its verdict is a closed word. The descriptor's `fork_session`

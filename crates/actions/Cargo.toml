@@ -33,6 +33,9 @@ models = { path = "../models" }
 profiles = { path = "../profiles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Cutting a step its own tree is git's job, and the one place that talks to
+# git worktrees already lives here. No cycle: this crate depends on serde.
+workspace = { path = "../workspace" }
 
 # Serve a uccidere un gruppo di processi, non un processo: `libc::kill` con un
 # pid negativo. È già la dipendenza di `ledger`, `sessions` e `terminal`.

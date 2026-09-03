@@ -15,6 +15,7 @@ dependencies = [
  "serde",
  "serde_json",
  "ui",
+ "workspace",
 ]
 
 [[package]]
