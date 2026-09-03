@@ -1,0 +1,181 @@
+{
+  "id": "sweep-the-tree",
+  "description": "A mechanical mandate on one file, done by the local model and handed over as a proposal. The trigger carries the mandate in «text» and the file's path, relative to the tree, in «where». The first step reads the file as it is committed, through git, so the proposal is made on what the tree holds and not on an editor's buffer. The second asks the local runner, and only it: the step declares its kind as mechanical, so the strengths table puts the local runner first, and its text as private, so no engine that trains or whose pact is unknown may read it; no paid subscription is in the chain, and a machine without the local runner stops here saying so. The answer is the whole file rewritten, whether anything changed, and the notes. Nothing writes: the last step hands the proposal to whoever is alive in the terminal, with the check that makes it green — cargo test and the ratchets — as their gesture, never the model's word.",
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "text": { "type": "string" },
+            "who": { "type": "string" },
+            "where": { "type": "string" }
+          },
+          "required": ["source", "text", "where"],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "who": { "type": "string" },
+            "where": { "type": "string" },
+            "source": { "type": "string" },
+            "kind": { "type": "string" }
+          },
+          "required": ["text", "who", "where", "source", "kind"],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "read",
+        "deps": ["trigger"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": "git",
+          "args": ["show", { "$join": ["HEAD:", { "$from": "/where" }] }],
+          "timeout_secs": 60
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": { "type": "string" },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["tool", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "one_of", "values": ["ok"] },
+            "stdout": { "type": "string" },
+            "stderr": { "type": "string" }
+          },
+          "required": ["status", "stdout"],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "rewrite",
+        "deps": ["trigger", "read"],
+        "action": "external_engine",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "tool": ["ollama"],
+          "kind": "mechanical",
+          "data": "private",
+          "answer_shape": {
+            "type": "object",
+            "properties": {
+              "content": { "type": "string" },
+              "changed": { "type": "boolean" },
+              "notes": { "type": "string" }
+            },
+            "required": ["content", "changed", "notes"],
+            "allow_extra": false
+          },
+          "stdin": {
+            "$join": [
+              "You do one mechanical job on one file and nothing else: no new behaviour, no opinion, no line you were not asked for. Keep every identifier, every string a test could read, every path and every number exactly as they are unless the mandate names them.\n\nTHE MANDATE\n\n",
+              { "$from": "/trigger/text" },
+              "\n\nTHE FILE, «",
+              { "$from": "/trigger/where" },
+              "», AS IT IS\n\n",
+              { "$from": "/read/stdout" },
+              "\n\nHOW YOUR ANSWER MUST LOOK\nAnswer with one JSON object and nothing else: no preamble, no greeting, no reasoning outside the fields. «content» is the WHOLE file after the job, byte for byte where nothing changes; «changed» says whether anything did; «notes» says in one or two lines what you touched, or why nothing needed touching. It must match exactly this shape, where «properties» are the fields, «required» the mandatory ones and «allow_extra: false» means no others are accepted:\n",
+              { "$json": "/answer_shape" }
+            ]
+          },
+          "timeout_secs": 900
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "tool": { "type": "array", "items": { "type": "string" } },
+            "timeout_secs": { "type": "number" }
+          },
+          "required": ["tool", "timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "one_of", "values": ["ok"] },
+            "answer": {
+              "type": "object",
+              "properties": {
+                "content": { "type": "string" },
+                "changed": { "type": "boolean" },
+                "notes": { "type": "string" }
+              },
+              "required": ["content", "changed", "notes"],
+              "allow_extra": false
+            }
+          },
+          "required": ["status", "answer"],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "hand",
+        "deps": ["trigger", "rewrite"],
+        "action": "handed_to_agent",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "mandate": {
+            "$join": [
+              "A proposal from the local model for «",
+              { "$from": "/trigger/where" },
+              "», under this mandate:\n\n",
+              { "$from": "/trigger/text" },
+              "\n\nWhat it says it did: ",
+              { "$from": "/rewrite/answer/notes" },
+              "\n\nThe file it proposes, whole:\n\n",
+              { "$from": "/rewrite/answer/content" },
+              "\n\nNothing has been written. If the proposal holds, write it over the file and close this step green only after `cargo test --no-fail-fast` and the ratchets in `crates/sailor/tests/` are green; otherwise close it saying why."
+            ]
+          },
+          "holder": "whoever is alive in the terminal",
+          "handoff_timeout_secs": 86400
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "holder": { "type": "string" },
+            "handoff_timeout_secs": { "type": "number" }
+          },
+          "required": ["holder", "handoff_timeout_secs"],
+          "allow_extra": true
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "allow_extra": true
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  },
+  "inputs": {
+    "trigger": {
+      "text": "Rewrite every comment in this file so that it says only what the code alone would mislead a reader about: at most two lines per comment, no dates, no history, no slogans. Leave the code untouched.",
+      "who": "",
+      "where": "crates/models/src/fuel.rs"
+    }
+  }
+}

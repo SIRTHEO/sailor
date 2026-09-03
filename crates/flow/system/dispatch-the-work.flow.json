@@ -85,17 +85,25 @@
               },
               "second_engine": {
                 "type": "string"
+              },
+              "why_first": {
+                "type": "string"
+              },
+              "why_second": {
+                "type": "string"
               }
             },
             "required": [
               "first_engine",
-              "second_engine"
+              "second_engine",
+              "why_first",
+              "why_second"
             ],
             "allow_extra": false
           },
           "stdin": {
             "$join": [
-              "Ricevi una consegna e non la esegui: la dividi in due incarichi che si reggono da soli, per due motori che gireranno subito dopo, insieme e senza vedersi. Nessuno dei due vedrà questa consegna né la risposta dell'altro: riceverà soltanto il proprio incarico.\n\nCOME SI DIVIDE\n- ogni incarico dice cosa cercare, dove cercarlo e in che forma rispondere;\n- si divide per territorio, mai per fase: due motori che girano insieme non possono aspettarsi a vicenda;\n- nessuno dei due può scrivere, spostare o cancellare niente: si chiedono solo letture, ricerche e conteggi;\n- a tutti e due si chiede di rispondere con un elenco di voci e con il loro totale.",
+              "Ricevi una consegna e non la esegui: la dividi in due incarichi che si reggono da soli, per due motori che gireranno subito dopo, insieme e senza vedersi. Nessuno dei due vedrà questa consegna né la risposta dell'altro: riceverà soltanto il proprio incarico.\n\nCOME SI DIVIDE\n- ogni incarico dice cosa cercare, dove cercarlo e in che forma rispondere;\n- si divide per territorio, mai per fase: due motori che girano insieme non possono aspettarsi a vicenda;\n- nessuno dei due può scrivere, spostare o cancellare niente: si chiedono solo letture, ricerche e conteggi;\n- a tutti e due si chiede di rispondere con un elenco di voci e con il loro totale;\n- per ogni incarico scrivi anche un «why»: perché quel territorio va a quel motore, in una frase. Una scelta senza il suo perché è fuori forma.",
               "\n\nCOME DEVE ESSERE LA TUA RISPOSTA\nRispondi con un oggetto JSON e nient'altro: niente premesse, niente saluti, niente ragionamento fuori dai campi. Deve rispettare esattamente questa forma, dove «properties» sono i campi, «required» quelli obbligatori e «allow_extra: false» vuol dire che non ne accetto altri:\n",
               {
                 "$json": "/answer_shape"
@@ -144,11 +152,19 @@
                 },
                 "second_engine": {
                   "type": "string"
+                },
+                "why_first": {
+                  "type": "string"
+                },
+                "why_second": {
+                  "type": "string"
                 }
               },
               "required": [
                 "first_engine",
-                "second_engine"
+                "second_engine",
+                "why_first",
+                "why_second"
               ],
               "allow_extra": false
             }

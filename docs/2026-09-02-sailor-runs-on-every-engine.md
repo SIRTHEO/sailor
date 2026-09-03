@@ -244,8 +244,12 @@ Starting point, so the mandate builds on it instead of beside it.
    remaining of every candidate (A.1) and the pact (A.4) and writes
    `first_engine`/`second_engine` with a `why` per choice; the ledger keeps the
    why on the run. A choice without a why is out of shape.
-   *Proof:* the run record carries both whys; a dispatch answer without them
-   fails the shape.
+   *Where it landed:* `why_first` and `why_second`, required in the dispatch
+   step's `answer_shape` and output schema of `dispatch-the-work`; the whys
+   live in the step's recorded output. Not yet: the remaining and the pact
+   are not injected into the dispatch prompt.
+   *Proof:* a dispatch answer without the whys fails the shape and the run
+   stops on that step; with them the chain runs to its verdict.
 2. **Three seats, one ledger.** The same flow is started from this terminal
    (a Claude Code session under the Sailor hooks), from a Sailor pane in the
    window, and from a bare `sailor flow run` in a shell; the three runs are
@@ -271,8 +275,18 @@ Starting point, so the mandate builds on it instead of beside it.
    coder model file by file in a worktree, and closes green only on
    `cargo test` and the ratchets, never on the model's word. Claude is not a
    candidate of that flow.
-   *Proof:* the run on this repository for one of the ratchets, with zero
-   Claude calls in its ledger rows.
+   *Where it landed:* the ollama descriptor's `ask` and `usage` blocks
+   (measured with qwen2.5-coder:1.5b, pulled on 03/09; the 7b is the
+   upgrade); the shipped flow `sweep-the-tree`: one file named in the
+   trigger's `where`, read as committed through `git`, rewritten by the local
+   runner alone (`kind: mechanical`, `data: private`), and handed over whole
+   as a proposal, with `cargo test` and the ratchets as the person's closing
+   gesture. Not yet: file by file, the worktree, and the check as a step: a
+   proposal is data until C.1's `apply_patch` exists, so nothing writes.
+   *Proof:* the shipped flow names the local runner as its only engine and
+   ends in a handover; run without spending, the file read reaches the model
+   and the proposal reaches the handover whole while the run waits for a
+   person. The real run on one file of this repository is still to make.
 
 ## C. Sailor develops Sailor, and this terminal watches
 
