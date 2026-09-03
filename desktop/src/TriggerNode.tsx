@@ -4,41 +4,23 @@ import type { FlowTrigger, RunSnapshot } from "./engine";
 import { KindIcon } from "./StepNode";
 
 /**
- * Il nodo di innesco: il punto da cui un flusso parte, e il gesto che lo fa
- * partire.
+ * The trigger node: where a flow starts, and the gesture that starts it.
  *
- * ## PERCHÉ È UN NODO E NON SOLO UN PULSANTE NELLA BARRA
+ * **IT IS A NODE AND NOT A BUTTON IN THE BAR.** A button up there starts «the
+ * focused flow», and on a canvas holding every flow at once that is a way to
+ * launch the wrong one. The gesture sits where the graph begins, on the branch
+ * it concerns, and the mandate written into it is that flow's.
  *
- * Un pulsante in cima alla finestra fa partire «il flusso a fuoco», e chi
- * guarda deve ricordarsi quale sia. Su una tela dove tutti i flussi stanno
- * insieme è un modo di lanciare la cosa sbagliata. Il gesto sta invece dove
- * comincia il grafo, addosso al ramo che riguarda: si vede a quale flusso
- * appartiene senza chiederlo, e la consegna che si scrive è la sua.
+ * **THIS NODE IS THE GESTURE, NOT THE STEP.** The step is in the flow file — no
+ * deps, `"action": "trigger"`, taking its mandate in `inputs.<step>.text` — and
+ * draws like any other. This one sends it the signal, is never saved, never
+ * wired by hand and never in the `.flow.json`: the line between what the engine
+ * knows and what the window adds has to stay visible.
  *
- * ## QUESTO NODO È IL GESTO, NON IL PASSO
- *
- * Il contratto dell'innesco è nato in `crates/flow` il 28/08/2026, mentre
- * questo pannello si scriveva: un passo senza dipendenze con
- * `"action": "trigger"` e `"with": {"source": "manual"}`, che riceve la
- * consegna in `inputs.<passo>.text`. Quel passo è nel file del flusso e si
- * disegna come tutti gli altri.
- *
- * Il nodo qui sotto **non è quel passo**: è il gesto che gli manda il segnale.
- * Un flusso può anche non avere un passo di innesco — in `crates/flow` un
- * flusso senza `schedule` «gira quando qualcuno lo chiede», che è un fatto e
- * non un vuoto da riempire — e allora questo nodo resta l'unico punto di
- * partenza visibile. Non si salva, non si collega a mano e non compare nel
- * `.flow.json`: è la finestra che lo disegna, e il confine fra ciò che il
- * motore conosce e ciò che la finestra aggiunge deve restare visibile.
- *
- * ## LO STATO ARRIVA DA UN CONTESTO, NON DAI `data` DEL NODO
- *
- * Mettere la corsa nei `data` significherebbe ricostruire l'elenco dei nodi a
- * ogni fatto che arriva dal guscio — e il 28/08/2026 una tela che ricostruiva i
- * nodi dentro un effetto è entrata in un ciclo di render che non si fermava mai
- * abbastanza per misurarsi: nodi invisibili e minimappa piena. I `data` restano
- * due stringhe stabili; quello che cambia passa dal contesto, che ridisegna
- * questo nodo e basta.
+ * **THE STATE COMES FROM A CONTEXT, NOT FROM THE NODE'S `data`.** Putting the
+ * run in `data` means rebuilding the node list on every fact from the shell,
+ * and a canvas that rebuilt its nodes inside an effect never settled long
+ * enough to measure itself: invisible nodes, a full minimap.
  */
 
 /** Come sta l'interrogazione al guscio su come si innesca un flusso. */

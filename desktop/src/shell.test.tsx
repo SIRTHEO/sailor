@@ -5,7 +5,7 @@ import App from "./App";
 import { buildWords, liveWords, spendWords, whoWords, LiveChip } from "./Bar";
 import { BlankCanvas } from "./BlankCanvas";
 import { LedgerBrowser } from "./LedgerBrowser";
-import { PLACES } from "./Rail";
+import { MACHINE, inTheStrip, machineHolds, tabsThatExist } from "./places";
 
 /**
  * **FOUR PLACES, A BAR THAT SPEAKS FROM ANYWHERE, AND THE LEDGER AS A
@@ -67,7 +67,9 @@ describe("the column is the world", () => {
     const above = Array.from(container.querySelectorAll(".world__above .world__label")).map(
       (one) => one.textContent,
     );
-    expect(above).toEqual(["Terminals", "Ledger", "Runs", "Sailor"]);
+    // Only what belongs to no ground below. The board hangs under the tree it
+    // draws; the ledger and what this machine holds have a ground of their own.
+    expect(above).toEqual(["Terminals", "Runs"]);
     expect(
       above,
       "the board is above the work: its flows belong to the tree you are in",
@@ -75,8 +77,7 @@ describe("the column is the world", () => {
 
     // A glyph each, and what a place answers is the row's title: five
     // sentences stacked are a wall of text, not a navigation.
-    for (const place of PLACES) {
-      if (place.id === "board") continue;
+    for (const place of inTheStrip()) {
       expect(
         container.querySelector(`.world__global[title="${place.asks}"]`),
         `«${place.name}» does not say what it answers`,
@@ -86,7 +87,12 @@ describe("the column is the world", () => {
     const heads = Array.from(container.querySelectorAll(".world__head")).map(
       (one) => one.textContent,
     );
-    expect(heads).toEqual(["workspaces", "flows everywhere", "outside every workspace"]);
+    expect(heads).toEqual([
+      "workspaces",
+      "flows everywhere",
+      "this mac",
+      "outside every workspace",
+    ]);
     expect(container.querySelector(".body[hidden]"), "the board is not in view at rest").toBeNull();
   });
 
@@ -119,12 +125,16 @@ describe("the column is the world", () => {
     // The ledger is a place of its own: it is a database, and buried under
     // another question nobody found it.
     fireEvent.click(screen.getByRole("button", { name: /Ledger/ }));
-    expect(crumbs()).toEqual(["Ledger"]);
+    expect(crumbs()).toEqual(["this mac", "Ledger"]);
 
-    fireEvent.click(screen.getByRole("button", { name: /^Sailor/ }));
-    expect(crumbs()).toEqual(["Sailor", "What it keeps"]);
-    const groups = Array.from(container.querySelectorAll(`${shown}.subrail .places__heading`)).map((one) => one.textContent);
-    expect(groups).toEqual(["itself", "setup"]);
+    // ONE CLICK, NOT TWO: the machine's places are rows of the column, and
+    // landing on one lands on the screen itself, not on a list that asks again.
+    fireEvent.click(screen.getByRole("button", { name: /^Profiles/ }));
+    expect(crumbs()).toEqual(["this mac", "Profiles"]);
+    expect(
+      container.querySelectorAll(`${shown}.subrail`),
+      "the screen kept a column of its own, so the window offers one list twice",
+    ).toHaveLength(0);
 
     fireEvent.click(screen.getByRole("button", { name: /^Terminals/ }));
     expect(crumbs()).toEqual(["Terminals", "Live"]);
@@ -345,6 +355,29 @@ describe("the ledger as a database", () => {
       await screen.findByText(/No ledger at \/nowhere\/ledger/);
     } finally {
       shell.stop();
+    }
+  });
+});
+
+/**
+ * **A SCREEN THAT LOSES ITS ROW GOES BACK INTO HIDING.** The seven were behind
+ * one noun called «Sailor» and cost two clicks each; the day an eighth is added
+ * to the list and not to the ground, it is invisible again and nothing says so.
+ */
+describe("the machine's ground and the screens it holds", () => {
+  test("EVERY SCREEN THIS MACHINE HOLDS HAS A ROW, AND EVERY ROW A SCREEN", () => {
+    // Both sides read from the files, so neither can drift from a list kept here.
+    expect([...machineHolds()].sort()).toEqual([...tabsThatExist()].sort());
+    expect(tabsThatExist().length).toBeGreaterThan(4);
+  });
+
+  test("and every row of that ground says what it answers", () => {
+    const { container } = render(<App />);
+    for (const row of MACHINE) {
+      expect(
+        container.querySelector(`.world__global[title="${row.asks}"]`),
+        `«${row.name}» does not say what it answers`,
+      ).toBeTruthy();
     }
   });
 });

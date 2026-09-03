@@ -28,9 +28,7 @@ import {
 import { stepUsageOfRun, type StepUsage } from "./stepusage";
 import { stepStatesOfCanvas, stepStatesOfRun } from "./runstate";
 import { BlankCanvas, type PlacesAsk } from "./BlankCanvas";
-import { lastedOf, outcomeOf, whenOf } from "./History";
-import { useAsk, useClock } from "./ask";
-import { PLACES, type Section } from "./Rail";
+import { MACHINE, MACHINE_GROUND, PLACES, inTheStrip, type Section } from "./places";
 import { World, type FlowGroup } from "./World";
 import {
   DropdownMenu,
@@ -48,7 +46,8 @@ import type { TerminalSummary } from "./terminal";
 import { BuildChip, LiveChip, WhoChip } from "./Bar";
 import { LedgerBrowser } from "./LedgerBrowser";
 import { Memory, MEMORY_TABS, type MemoryTab } from "./Memory";
-import { SailorScreen, SAILOR_TABS, type SailorTab } from "./SailorScreen";
+import { SailorScreen } from "./SailorScreen";
+import { type SailorTab } from "./sailortabs";
 import { TerminalsSection, TERMINALS_TABS, type TerminalsTab } from "./TerminalsSection";
 import { declaredCeiling } from "./terminal";
 import { Palette, isPaletteKey, type Entry } from "./Palette";
@@ -65,7 +64,6 @@ import { SAMPLE, SAMPLE_RUN } from "./sample";
 import {
   deleteFlow,
   discoverTools,
-  executionHistory,
   flowPlaces,
   flowTrigger,
   insideTheWindow,
@@ -77,7 +75,6 @@ import {
   saveFlow,
   startRun,
   stopRun,
-  type Execution,
   type RunEvent,
   type RunSnapshot,
 } from "./engine";
@@ -120,9 +117,8 @@ type Source = "loading" | "sample" | "engine" | "failed";
 type Place = Section;
 
 /* Only the graph. "Code" was a data file dressed as source and "Runs" is
-   already the «Adesso» and «Cronologia» places, so the bar was left holding a
-   tab bar of one tab, which steers nothing. `FlowCode` and `FlowRuns` stay
-   below, unmounted, with what they measured about the engine. */
+   already the «Adesso» and «Cronologia» places. What the two unmounted screens
+   had measured about the engine is in `docs/guasti-incontrati.md`. */
 
 /**
  * A flow being edited: what is on screen and what is already on disk.
@@ -1179,15 +1175,10 @@ export default function App() {
   const focusedDirty = focusedWorking ? isDirty(focusedWorking) : false;
 
   /**
-   * WHAT THE RIGHT-HAND SIDE OF THE BAR IS ALLOWED TO SAY.
-   *
-   * The mockup writes «one run in progress · step 7 of 9» on the graph, and the
-   * verdict of a check on the code. Only the first of the two exists: the count
-   * is folded here from the run's own events and the number of steps the flow
-   * declares. The second is `sailor flow check`, which lives in the command line
-   * and has no door into this window — so the code tab says what the engine
-   * really did (it refuses a graph it cannot load, on load and on save) instead
-   * of borrowing a verdict nobody gave.
+   * WHAT THE RIGHT-HAND SIDE OF THE BAR MAY SAY. The count is folded from the
+   * run's own events and the steps the flow declares. The verdict of a check
+   * is not: `sailor flow check` has no door into this window, and borrowing a
+   * verdict nobody gave is worse than not showing one.
    */
   const focusedRun = focusName ? latestByFlow.get(focusName) : undefined;
   // WHERE YOU ARE, IN WORDS: the section and the entry inside it. A window
@@ -1200,8 +1191,17 @@ export default function App() {
       const tab = MEMORY_TABS.find((one) => one.id === memoryTab)?.name ?? memoryTab;
       return [section, tab];
     }
-    if (place === "ledger") return ledgerTable === null ? [section] : [section, ledgerTable];
-    if (place === "sailor") return [section, SAILOR_TABS.find((one) => one.id === sailorTab)?.name ?? sailorTab];
+    // «Sailor» is not a place a person picks any more: what used to hide under
+    // it is a ground, and the bar says the ground and then the row.
+    if (place === "ledger") {
+      const row = MACHINE.find((one) => one.section === "ledger");
+      const named = [MACHINE_GROUND, row?.name ?? section];
+      return ledgerTable === null ? named : [...named, ledgerTable];
+    }
+    if (place === "sailor") {
+      const row = MACHINE.find((one) => one.tab === sailorTab);
+      return [MACHINE_GROUND, row?.name ?? sailorTab];
+    }
     return [section, TERMINALS_TABS.find((one) => one.id === terminalsTab)?.name ?? terminalsTab];
   }, [place, focusName, memoryTab, sailorTab, terminalsTab, ledgerTable]);
 
@@ -1223,17 +1223,33 @@ export default function App() {
   // The palette computes nothing; the gestures are the same the rail and the
   // bar own, handed in by name.
   const paletteEntries = useMemo<Entry[]>(() => {
-    const go: Entry[] = PLACES.map((one) => ({
+    // The same words the column uses. It said «Sailor › Profiles» while the
+    // column said «Profiles», so searching for what you can see found nothing.
+    const go: Entry[] = inTheStrip().map((one) => ({
       group: "Go to",
       label: one.name,
       hint: one.asks,
       run: () => setPlace(one.id),
     }));
+    go.push({
+      group: "Go to",
+      label: "Board",
+      hint: PLACES[0].asks,
+      run: () => setPlace("board"),
+    });
+    for (const one of MACHINE) {
+      go.push({
+        group: "Go to",
+        label: one.name,
+        hint: one.asks,
+        run: () => {
+          if (one.tab !== undefined) setSailorTab(one.tab);
+          setPlace(one.section);
+        },
+      });
+    }
     for (const one of MEMORY_TABS) {
       go.push({ group: "Go to", label: `Memory › ${one.name}`, hint: one.about, run: () => { setPlace("memory"); setMemoryTab(one.id); } });
-    }
-    for (const one of SAILOR_TABS) {
-      go.push({ group: "Go to", label: `Sailor › ${one.name}`, hint: one.about, run: () => { setPlace("sailor"); setSailorTab(one.id); } });
     }
     for (const one of TERMINALS_TABS) {
       go.push({ group: "Go to", label: `Terminals › ${one.name}`, hint: one.about, run: () => { setPlace("terminals"); setTerminalsTab(one.id); } });
@@ -1318,7 +1334,12 @@ export default function App() {
       <World
         native={NATIVE}
         here={place}
+        hereTab={sailorTab}
         onGo={setPlace}
+        onOpen={(section, tab) => {
+          if (tab !== undefined) setSailorTab(tab);
+          setPlace(section);
+        }}
         counts={{ board: flows.size, terminals: terminalCount }}
         terminals={openTerminals}
         onMoved={() => readFlows(() => true)}
@@ -1372,7 +1393,6 @@ export default function App() {
           native={NATIVE}
           now={now}
           tab={sailorTab}
-          onTab={setSailorTab}
           onTerminalOpened={() => {
             setPlace("terminals");
             setTerminalsTab("live");
@@ -1721,14 +1741,10 @@ interface BarStatus {
 }
 
 /**
- * How far a run has got, folded from its own facts.
- *
- * THE SNAPSHOT CARRIES NO COUNTERS. `RunSnapshot` has `status` and a list of
- * events and nothing else; the ledger has `steps_went`/`steps_total`, but it
- * only counts steps it has already recorded, so mid-run it undercounts, and it
- * is read on demand rather than at every beat. The denominator therefore comes
- * from the flow on screen, and the numerator from the events — the same fold
- * the canvas already uses to colour its nodes.
+ * How far a run has got, folded from its own facts. THE SNAPSHOT CARRIES NO
+ * COUNTERS, and the ledger's undercount mid-run: so the denominator comes from
+ * the flow on screen and the numerator from the events — the same fold the
+ * canvas uses to colour its nodes.
  */
 function runProgress(run: RunSnapshot): { done: number; running: number } {
   let done = 0;
@@ -1890,138 +1906,3 @@ function TopBar({
   );
 }
 
-/**
- * THE CODE TAB SHOWS WHAT IS ACTUALLY WRITTEN, which is JSON.
- *
- * The mockup draws TypeScript — `createStep`, `createFlow`, imports from
- * `@sailor/core`. Nothing of the sort exists: there is no package, no generator,
- * no engine command that emits source, and the project decided the opposite on
- * purpose — a flow is a data file and a step is an action registered in Rust,
- * with no interpreter inside Sailor. So this tab does not draw an imaginary
- * language: it shows the file the engine reads, and says why it is that file.
- */
-/* Kept, unmounted: what it measured is worth more than the view — there is no
-   Tauri command for `sailor flow check`, so the window only knows the graph
-   loaded. See the top bar's status line. */
-function FlowCode({ name, flow }: { name: string | null; flow: FlowFile | undefined }) {
-  if (name === null || flow === undefined) {
-    return (
-      <div className="codeview">
-        <p className="codeview__empty">Pick a flow in the rail to read what is written for it.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="codeview">
-      <div className="label">{name}.flow.json</div>
-      <p className="codeview__note">
-        This is the flow as it is stored, and it is the whole of it: a flow is a data file, and every
-        step names an action the engine has registered — never code that runs from here. The mockup
-        for this tab drew generated TypeScript; no such generator exists, and none is planned, so
-        what you read below is the file and not a rendering of it.
-      </p>
-      <pre className="codeview__source">{JSON.stringify(flow, null, 2)}</pre>
-    </div>
-  );
-}
-
-/**
- * THE RUNS TAB IS THE LEDGER, NARROWED BY HAND.
- *
- * The engine keeps every run in a ledger and hands the window the lot: there is
- * no per-flow query behind `execution_history`, though the SQL for one already
- * exists unexposed in `crates/ledger`. Filtering here is what the command line
- * does too — but it means the window carries the whole history to show a slice
- * of it, and that is worth knowing before this list gets long.
- */
-/* Kept, unmounted: the ledger has flow-scoped queries (`runs_in_window`,
-   `last_finished_run`) that no Tauri command exposes, so this filtered in the
-   window. The places «Adesso» and «Cronologia» serve the need. */
-function FlowRuns({ name }: { name: string | null }) {
-  const now = useClock();
-  const { asked } = useAsk<Execution[]>(
-    NATIVE,
-    executionHistory,
-    15000,
-    "outside the shell: the ledger is the engine's to read",
-  );
-
-  if (name === null) {
-    return (
-      <div className="now">
-        <p className="now__empty">Pick a flow in the rail to see the runs it has had.</p>
-      </div>
-    );
-  }
-  if (asked.state === "mute") {
-    return (
-      <div className="now">
-        <p className="now__mute">I cannot read the runs of «{name}»: {asked.why}</p>
-      </div>
-    );
-  }
-  if (asked.state === "asking") {
-    return (
-      <div className="now">
-        <p className="now__mute">Reading the ledger…</p>
-      </div>
-    );
-  }
-
-  const mine = asked.value.filter((run) => run.entity === name);
-  if (mine.length === 0) {
-    return (
-      <div className="now">
-        <p className="now__empty">
-          The ledger remembers no run of «{name}». It remembers {asked.value.length} of other flows.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="now">
-      <header className="now__head">
-        <h2 className="now__title">Runs of {name}</h2>
-        <span className="now__count">{mine.length}</span>
-        <span className="now__note">out of {asked.value.length} the ledger remembers</span>
-      </header>
-      <table className="now__table">
-        <thead>
-          <tr>
-            <th>run</th>
-            <th>how it ended</th>
-            <th>when</th>
-            <th className="now__num">lasted</th>
-            <th className="now__num">steps</th>
-            <th className="now__num">retried</th>
-          </tr>
-        </thead>
-        <tbody>
-          {mine.map((run) => (
-            <tr key={run.run_id}>
-              <td className="now__entity">
-                {run.run_id}
-                {run.error !== null && <span className="now__why">{run.error}</span>}
-              </td>
-              <td className="now__state" data-outcome={outcomeOf(run)}>
-                {outcomeOf(run)}
-              </td>
-              <td className="now__when">{whenOf(run.started_at, now)}</td>
-              <td className="now__num">{lastedOf(run.duration_secs)}</td>
-              <td className="now__num">
-                {run.steps_went}/{run.steps_total}
-              </td>
-              <td className="now__num">{run.steps_retried === 0 ? "—" : run.steps_retried}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/* Not mounted today, and not dead: see the notes above each one. */
-void FlowCode;
-void FlowRuns;
