@@ -322,7 +322,12 @@ impl HistoryAskAction {
         Self { ledger }
     }
 
-    fn answer(&self, ledger: &Ledger, ask: &Ask) -> Result<(i64, Value), ActionError> {
+    fn answer(
+        &self,
+        ledger: &Ledger,
+        ask: &Ask,
+        asking: Option<&str>,
+    ) -> Result<(i64, Value), ActionError> {
         match ask {
             Ask::StepFailures {
                 step_id,
@@ -366,6 +371,14 @@ impl HistoryAskAction {
             }
             Ask::OpenRuns {} => {
                 let halfway = ledger.unfinished_runs().map_err(unreadable)?;
+                // **THE RUN THAT ASKS IS NOT ONE OF THE OPEN ONES.** While
+                // this question answers, its own run has open steps by
+                // construction: counting it means whoever watches at every beat
+                // always reads one open, and learns to stop reading it.
+                let halfway: Vec<_> = halfway
+                    .into_iter()
+                    .filter(|run| Some(run.run_id.as_str()) != asking)
+                    .collect();
                 let waiting = ledger.waiting_runs().map_err(unreadable)?;
                 let considered = ledger.recorded_runs().map_err(unreadable)?;
                 Ok((
@@ -495,7 +508,7 @@ impl Action for HistoryAskAction {
             .collect()
     }
 
-    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+    fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         // La domanda si valida **prima** di guardare il deposito: un campo
         // sbagliato è sbagliato su qualunque macchina, e scoprirlo solo dove il
         // deposito esiste renderebbe il difetto invisibile a chi prova altrove.
@@ -508,7 +521,8 @@ impl Action for HistoryAskAction {
         if recorded == 0 {
             return Ok(ActionOutcome::Went(envelope(name, DEPOSIT_EMPTY, 0, None)));
         }
-        let (considered, answer) = self.answer(ledger, &ask)?;
+        let asking = shared.get(flow::CURRENT_RUN).and_then(Value::as_str);
+        let (considered, answer) = self.answer(ledger, &ask, asking)?;
         Ok(ActionOutcome::Went(envelope(
             name,
             DEPOSIT_PRESENT,
@@ -656,6 +670,40 @@ mod tests {
         assert!(
             !serde_json::to_string(&value).expect("it serialises").contains(SECRET),
             "what passed through the flow does not come back out: {value}"
+        );
+    }
+
+    /// **A WATCH THAT COUNTS ITSELF TEACHES PEOPLE TO IGNORE IT.** While this
+    /// question answers, its own run has open steps by construction: found on
+    /// the first real run of `watch-the-crew`, which reported itself.
+    #[test]
+    fn the_run_that_asks_is_not_among_the_ones_left_open() {
+        let (ledger, _kept) = store("chiede");
+        a_run(&ledger, "chi-chiede", "la-guardia", 30, None);
+        a_step_left_open(&ledger, "chi-chiede", "passo", 30);
+        a_run(&ledger, "un-altra", "un-flusso", 40, None);
+        a_step_left_open(&ledger, "un-altra", "passo", 40);
+
+        let action = HistoryAskAction::new(Some(ledger));
+        let mut shared = SharedState::new();
+        shared.insert(flow::CURRENT_RUN.to_owned(), json!("chi-chiede"));
+        let ActionOutcome::Went(value) = action
+            .execute(&json!({"ask": "open_runs"}), &mut shared)
+            .expect("the question answers")
+        else {
+            panic!("a local reading waits for nobody");
+        };
+
+        let halfway: Vec<&str> = value["answer"]["halfway"]
+            .as_array()
+            .expect("the runs left halfway")
+            .iter()
+            .map(|run| run["run_id"].as_str().expect("a run id"))
+            .collect();
+        assert_eq!(
+            halfway,
+            vec!["un-altra"],
+            "the asking run counted itself: {value}"
         );
     }
 
