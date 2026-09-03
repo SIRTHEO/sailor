@@ -362,7 +362,9 @@ fn chain_with(verdict: &str, engine_a_args: Option<Value>) -> Graph {
     let flow = flow_file();
     let dispatched = json!({
         "first_engine": format!("primo incarico, {MARK}"),
-        "second_engine": format!("secondo incarico, {MARK}")
+        "second_engine": format!("secondo incarico, {MARK}"),
+        "why_first": "a territory of files",
+        "why_second": "the other territory"
     })
     .to_string();
     let found = json!({"findings": ["src/a.rs"], "total": 1}).to_string();
@@ -387,6 +389,39 @@ fn chain_with(verdict: &str, engine_a_args: Option<Value>) -> Graph {
         }
     }
     Graph::new(steps).expect("il grafo del file resta valido")
+}
+
+/// A dispatch that names the two engines and not the why of either is out
+/// of shape, and the run stops on that step: a choice without its reason is
+/// not a choice the ledger can keep.
+#[test]
+fn a_dispatch_without_a_why_per_choice_fails_the_shape() {
+    let flow = flow_file();
+    let without_whys = json!({
+        "first_engine": format!("primo incarico, {MARK}"),
+        "second_engine": format!("secondo incarico, {MARK}")
+    })
+    .to_string();
+    let mut steps: Vec<Step> = flow.graph.steps().to_vec();
+    for step in &mut steps {
+        if step.id == "dispatch" {
+            step.with.as_mut().expect("the step carries its values")["args"] =
+                reads_stdin(&without_whys);
+        }
+    }
+    let graph = Graph::new(steps).expect("the graph stays valid");
+
+    let (execution, _) = run_with(
+        &graph,
+        &[("trigger", trigger_input())],
+        &registry_with(EveryToolIsShell),
+    );
+
+    assert_eq!(
+        last_decision(&execution),
+        Decision::Failed(vec!["dispatch".to_owned()]),
+        "an answer without the whys must not pass the shape"
+    );
 }
 
 /// La consegna dell'innesco, col segno dentro: è l'unica cosa che entra nel
@@ -691,7 +726,9 @@ fn the_declared_reference_puts_the_dispatch_answer_on_the_engines_input() {
     input["status"] = json!("ok");
     input["answer"] = json!({
         "first_engine": format!("conta i ganci morti, {MARK}"),
-        "second_engine": "un altro territorio"
+        "second_engine": "un altro territorio",
+        "why_first": "a territory of files",
+        "why_second": "the other territory"
     });
 
     // **L'INGRESSO SI COMPONE COME LO COMPONE L'ESECUTORE.** Dal 01/09/2026 i
